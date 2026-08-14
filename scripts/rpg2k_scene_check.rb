@@ -9467,24 +9467,30 @@ def save_load_scene(mode, state = nil, db = fake_db, parent: nil)
   [RPG2k::Scene::SaveLoad.new(parent, state, mode), parent]
 end
 
-check 'Scene::SaveLoad: an empty slot shows the "No Data" placeholder' do
+check 'Scene::SaveLoad: an empty slot shows only the file label, no placeholder text' do
+  # Confirmed against genuine RPG_RT under wine: each slot is its own box
+  # (file label / leader name / level+HP), and an empty one draws only the
+  # label line -- no "No Data" text at all, unlike this screen's old
+  # single-list-window layout.
   scene, = save_load_scene(:load)
-  texts = window_texts(scene.instance_variable_get(:@list_window))
-  ok texts.include?('File 01'), 'slot 1 is labelled, zero-padded'
-  ok texts.include?('-- No Data --'), 'and shown as empty'
+  texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
+  ok texts.include?('File 1'), 'slot 1 is labelled with a plain, non-zero-padded number'
+  ok !texts.any? { |t| t.include?('No Data') }, 'no placeholder text for an empty slot'
 end
 
-check 'Scene::SaveLoad: an occupied slot shows the leader, level, HP and gold' do
+check 'Scene::SaveLoad: an occupied slot shows the leader, level and HP -- no gold or map' do
   st = menu_state
   st.party.leader = st.party.actors.first # Hero, Lv5, 80/120 HP (MenuStubActor)
   st.party.instance_variable_set(:@gold, 250)
   parent = fake_parent(fake_db)
   parent.save_states[1] = st
   scene, = save_load_scene(:load, nil, fake_db, parent: parent)
-  texts = window_texts(scene.instance_variable_get(:@list_window))
-  ok texts.any? { |t| t.include?('Hero') && t.include?('Lv5') }, 'name and level on the first line'
-  ok texts.any? { |t| t.include?('HP 80/120') && t.include?('250G') },
-     'current/max HP and gold on the second line'
+  texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
+  ok texts.include?('Hero'), 'the leader name gets its own line'
+  ok texts.any? { |t| t.include?('Lv5') && t.include?('HP80') },
+     'level and current HP together on the third line'
+  ok !texts.any? { |t| t.include?('250G') }, 'no gold shown -- confirmed absent from the ' \
+                                              'reference capture, unlike this screen\'s old layout'
 end
 
 check 'Scene::SaveLoad :save mode: confirming a slot saves through the parent, shows a ' \

@@ -2216,7 +2216,24 @@ The work below is roughly ordered by the critical path to a walkable game
   almost certainly has the same two-column shape (RPG2000's skill list is
   drawn by the same kind of window as the item list), but that has not
   itself been driven under wine with a populated skill list, so it is left
-  single-column rather than assumed.
+  single-column rather than assumed. **Tried and inconclusive:** getting a
+  populated skill list under wine to check turned out to need more than a
+  save edit -- Nepheshel's own actor 15 (デモ用, the leader on the test save)
+  carries no skills in the save's own chunk 108 at all, so three separate
+  attempts at editing that field in directly (via the same technique that
+  worked for the item bag) each granted a handful of skills this engine's
+  own `Game::Party#field_skill?` heuristic (scope >= 2 plus
+  affect_hp/affect_sp/inflicts a state) predicts should all show up field-
+  side -- and RPG_RT then showed only *one* of them each time (a different
+  one depending which ids were granted, always the first list entry).
+  Genuine RPG_RT's real field-eligibility rule is evidently narrower than
+  that heuristic in some way this comparison did not pin down (the
+  `occasion_field`/`occasion_battle` byte flags this schema does not decode
+  for ordinary, non-switch skills are the likely culprit -- `field_skill?`'s
+  own comment already notes they gate switch skills only *in this engine's
+  own port*, which this result casts some doubt on as the full RPG_RT
+  picture). Left for whoever picks this up next rather than guessed at
+  further.
   - The item count's separator glyph differs: RPG_RT draws something
     resembling a bold "＝" between the name and the count (e.g. "薬草　＝　５"),
     where this engine draws a plain ASCII ":" (`":#{count}"` in
@@ -2322,16 +2339,30 @@ The work below is roughly ordered by the critical path to a walkable game
   `RPG2k#continue_game` passes `apply_access: false`; both the headless
   `--rpg2k_continue` path and the in-game Continue/Load screen
   (`Scene::SaveLoad`, which calls the same `#continue_game`) go through it.
-  **Left open by the same fixed capture:** RPG_RT's save-file-select screen
-  shows one taller box per slot with just the leader's name/level/HP and
-  only 3 of 15 slots visible per screen (presumably scrolling); this
-  engine's own screen packs more per slot (gold and the current map name
-  too, matching the README's own description of what it shows) and fits 6
-  slots without scrolling. A real layout/format difference, not chased into
-  a fix here -- unlike the access-flag bug above it is not a correctness
-  question, and picking which of RPG_RT's specific choices (box height,
-  slots-per-screen, which fields to show) to match wants its own pass
-  rather than folding into this one.
+  ✅ **The save-file-select screen's layout/format difference flagged by the
+  same fixed capture is now fixed too.** RPG_RT shows one taller box *per
+  slot* -- its own bordered window, not a row inside one shared list -- with
+  just the leader's name and level+HP (no gold, no current map, no `/max`
+  on the HP figure), a compact pill-shaped cursor around just the "File N"
+  label rather than a full-row highlight, and exactly 3 of 15 slots visible
+  at once; an empty slot draws only its label line, no "No Data" text at
+  all (the same class of gap the Item/Skill empty-list placeholders turned
+  out to be). This engine's own screen used to pack more into one shared
+  list window (zero-padded "File 01", gold and the current map name,
+  current/max HP, "-- No Data --" on empty slots, 6 slots without
+  scrolling) -- confirmed against a real reference capture
+  (`ファイル　1` / `デモ用` / `LV50    HP600`, with File 2/3 showing only
+  their bare label). `Scene::SaveLoad` now builds `VISIBLE_SLOTS` (3, derived
+  from `(SCREEN_H - HEADER_H) / SLOT_BOX_H`) separate per-slot windows
+  instead of one list window, drops the gold/map/max-HP fields and the
+  zero-padding, and sizes each slot's cursor to its own label text via
+  `Bitmap#text_size`. Verified against the same reference frame field-for-
+  field, on both the header state (File 1 selected, occupied) and after
+  pressing Down onto the empty File 2 slot. **Not chased further:** the
+  16px strip below the third box that a scroll indicator arrow presumably
+  occupies once there is more than one screenful -- the reference capture
+  used here never scrolled, so there is no confirmed glyph/position for it
+  yet.
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an

@@ -1,9 +1,11 @@
 class RPG2k
   module Scene
     # RPG2000's save-select screen: a scrollable list of the MAX_SAVE_SLOTS
-    # file slots, each showing the party leader, level, HP, gold and current
-    # map when the slot holds a save, or a "no data" placeholder when it does
-    # not. Pushed in two shapes:
+    # file slots, each its own bordered box (not rows in one shared list
+    # window) showing the party leader, level and HP when the slot holds a
+    # save, or just the file label when it does not -- confirmed against
+    # genuine RPG_RT under wine (see VISIBLE_SLOTS/SLOT_BOX_H below for the
+    # specifics this ports). Pushed in two shapes:
     #
     #   * `:save`, from Scene::Menu's Save command, with the running
     #     Game::State to write out. Every slot -- occupied or not -- is
@@ -28,10 +30,26 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
       SLOT_COUNT = RPG2k::MAX_SAVE_SLOTS
       LINE_H = 16
-      # Two text lines per slot: the file label/name/level row, and the
-      # HP/gold/map row beneath it.
-      ROW_H = LINE_H * 2
       HEADER_H = LINE_H + Window::BORDER * 2
+
+      # Each visible slot is its own bordered window, three text lines tall
+      # (file label, leader name, level+HP) -- confirmed against genuine
+      # RPG_RT under wine, which draws File 1/2/3 as three separate boxes
+      # stacked below the header, not rows inside one shared list window
+      # (scripts/rpg2k_scene_check.rb's fixtures aside, a real screenshot
+      # showed each box's own purple border independently). An empty slot's
+      # box shows only the label line, the other two blank -- no "No Data"
+      # placeholder text at all, the same class of gap the Item/Skill empty-
+      # list placeholders turned out to be (see docs/TODO.md).
+      SLOT_LINES = 3
+      SLOT_BOX_H = LINE_H * SLOT_LINES + Window::BORDER * 2
+
+      # (SCREEN_H - HEADER_H) / SLOT_BOX_H, i.e. how many slot boxes fit
+      # below the header -- 3 on RPG2000's 320x240 screen (32 + 3*64 = 224,
+      # leaving 16px for a scroll indicator this port does not draw yet).
+      # Matches the reference capture exactly: three boxes on screen, the
+      # rest reached by scrolling.
+      VISIBLE_SLOTS = (SCREEN_H - HEADER_H) / SLOT_BOX_H
 
       def initialize parent, state, mode
         super parent
@@ -44,14 +62,15 @@ class RPG2k
         @index = 0
         @top = 0
         @message = nil
+        @slot_windows = []
         build_header_window
-        build_list_window
+        build_slot_windows
       end
 
       def dispose
         close_message
         @header_window.dispose if @header_window
-        @list_window.dispose if @list_window
+        @slot_windows.each(&:dispose)
       end
 
       def update
@@ -70,15 +89,11 @@ class RPG2k
 
       private
 
-      def visible_rows
-        [(@list_window.height - Window::BORDER * 2) / ROW_H, 1].max
-      end
-
       def move_selection(delta)
         @index = (@index + delta) % SLOT_COUNT
         @top = @index if @index < @top
-        @top = @index - visible_rows + 1 if @index >= @top + visible_rows
-        draw_list_contents
+        @top = @index - VISIBLE_SLOTS + 1 if @index >= @top + VISIBLE_SLOTS
+        refresh_slot_windows
       end
 
       def confirm_selection
@@ -87,7 +102,7 @@ class RPG2k
         when :save
           ok = @parent.save_game(@state, slot)
           @slots[@index] = @parent.load_save_state(slot) if ok
-          draw_list_contents
+          refresh_slot_windows
           show_message(ok ? "Game saved." : "Save failed.")
         when :load
           # An empty slot has nothing to resume -- ignored, like the
@@ -110,67 +125,59 @@ class RPG2k
         @header_window.contents = c
       end
 
-      def build_list_window
-        y = HEADER_H
-        @list_window = Window.new(0, y, SCREEN_W, SCREEN_H - y)
-        @list_window.z = 400
-        @list_window.windowskin = @skin
-        draw_list_contents
+      def build_slot_windows
+        VISIBLE_SLOTS.times do |i|
+          w = Window.new(0, HEADER_H + i * SLOT_BOX_H, SCREEN_W, SLOT_BOX_H)
+          w.z = 400
+          w.windowskin = @skin
+          @slot_windows << w
+        end
+        refresh_slot_windows
       end
 
-      # Redraw the list window's contents for the current scroll offset
-      # (`@top`) and reposition the cursor onto the selected row -- called
-      # whenever the selection moves or a save just changed a slot's preview.
-      def draw_list_contents
-        inner_w = @list_window.width - Window::BORDER * 2
-        rows = visible_rows
-        c = Bitmap.new(inner_w, rows * ROW_H)
-        c.font.color = Color.new(255, 255, 255, 255)
-        rows.times do |i|
+      # Redraw every visible slot box for the current scroll offset (`@top`)
+      # and put the cursor on the selected one -- called whenever the
+      # selection moves or a save just changed a slot's preview.
+      def refresh_slot_windows
+        inner_w = SCREEN_W - Window::BORDER * 2
+        @slot_windows.each_with_index do |win, i|
           slot_index = @top + i
-          break if slot_index >= SLOT_COUNT
-          draw_slot_row(c, i * ROW_H, inner_w, slot_index)
+          draw_slot_box(win, inner_w, slot_index)
         end
-        @list_window.contents = c
-        @list_window.cursor_rect =
-          Rect.new(0, (@index - @top) * ROW_H, inner_w, ROW_H)
       end
 
       def slot_label(slot_index)
-        slot = slot_index + 1
-        n = slot < 10 ? "0#{slot}" : "#{slot}"
-        "#{term(:file, 'File')} #{n}"
+        "#{term(:file, 'File')} #{slot_index + 1}"
       end
 
-      def draw_slot_row(c, y, w, slot_index)
+      # `slot_index`'s box: the file label always, and -- when the slot holds
+      # a save -- the leader's name and level+HP beneath it. Confirmed
+      # against genuine RPG_RT under wine: an empty slot shows only the
+      # label (no placeholder text at all), and an occupied one shows
+      # neither gold nor the current map, and HP with no `/max`, unlike this
+      # screen's own previous single-list-window layout.
+      def draw_slot_box(win, inner_w, slot_index)
         label = slot_label(slot_index)
+        c = Bitmap.new(inner_w, LINE_H * SLOT_LINES)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, LINE_H, label
         state = @slots[slot_index]
-        unless state
-          c.draw_text 0, y, w, LINE_H, label
-          c.draw_text 0, y + LINE_H, w, LINE_H, "-- No Data --"
-          return
+        if state
+          leader = state.party.leader
+          name = leader ? leader.name.to_s : ''
+          level = leader ? leader.level : 0
+          hp = leader ? leader.hp : 0
+          c.draw_text 0, LINE_H, inner_w, LINE_H, name
+          c.draw_text 0, LINE_H * 2, inner_w, LINE_H,
+                      "#{term(:level_short, 'Lv')}#{level}    " \
+                      "#{term(:hp_short, 'HP')}#{hp}"
         end
-        leader = state.party.leader
-        name = leader ? leader.name.to_s : ''
-        level = leader ? leader.level : 0
-        hp = leader ? leader.hp : 0
-        max_hp = leader ? leader.max_hp : 0
-        c.draw_text 0, y, w, LINE_H,
-                    "#{label}  #{name}  #{term(:level_short, 'Lv')}#{level}"
-        c.draw_text 0, y + LINE_H, w, LINE_H,
-                    "#{term(:hp_short, 'HP')} #{hp}/#{max_hp}  " \
-                    "#{state.party.gold}#{term(:gold, 'G')}  " \
-                    "#{map_display_name(state.map_id)}"
-      end
-
-      # A map's editor name, or its bare id when the tree carries no name for
-      # it -- mirrors Scene::ItemMenu#map_display_name /
-      # Scene::SkillMenu#map_display_name (the teleport destination pickers),
-      # each keeping their own copy rather than sharing one through Base.
-      def map_display_name(map_id)
-        row = map_tree.respond_to?(:map_properties) ? map_tree.map_properties[map_id] : nil
-        name = row && row.respond_to?(:name) ? row.name.to_s : nil
-        name.nil? || name.empty? ? "Map #{map_id}" : name
+        win.contents = c
+        win.cursor_rect = if slot_index == @index
+                             Rect.new(0, 0, c.text_size(label).width, LINE_H)
+                           else
+                             Rect.new(0, 0, 0, 0)
+                           end
       end
 
       # The "Game saved." / "Save failed." feedback banner, mirroring
