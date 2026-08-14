@@ -7107,6 +7107,56 @@ check 'the message window moves away from the hero when not position-fixed' do
   eq (240 - win_h) / 2, mwy.call(cfg), 'position-fixed keeps the configured slot'
 end
 
+check 'auto-relocation uses RPG_RT\'s real 112px/160px zone thresholds and ' \
+      'the feet position, not the earlier SCREEN_H/2 approximation' do
+  # Confirmed against EasyRPG's own Game_Message::GetRealPosition() (fetched
+  # verbatim): the zone boundaries are 16*7=112 and 16*10=160 real pixels --
+  # not this build's old SCREEN_H/2=120 guess -- measured off the hero's
+  # *feet* (Game_Character::GetScreenY(), the tile's bottom edge), not its
+  # centre. A map exactly one screen tall (15 tiles * 16px = 240px) never
+  # scrolls, so #hero_screen_y tracks `st.y * 16 + 16` directly with no
+  # camera-clamp interference, letting these boundaries be hit exactly.
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  cfg = st.message_config
+  w = 6; h = 15
+  flat = Game::Map.new(1, OpenStruct.new(
+    width: w, height: h, chipset_id: 1,
+    lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+    events: {}))
+  scene.instance_variable_set(:@map, flat)
+  st.map = flat
+  amp = ->(configured) { scene.send(:auto_message_position, configured) }
+
+  # Configured Down (RPG2000's own default): >=160 -> Top, else Bottom.
+  st.y = 9 # feet at 9*16+16 = 160, exactly on the threshold
+  eq Game::MessageConfig::POS_TOP, amp.call(Game::MessageConfig::POS_BOTTOM),
+     'feet exactly at 160 already counts as clearing the hero -- Top'
+  st.y = 8 # feet at 144
+  eq Game::MessageConfig::POS_BOTTOM, amp.call(Game::MessageConfig::POS_BOTTOM),
+     'one tile short of the threshold -- still Bottom'
+
+  # Configured Up: >112 (strictly) -> Top, else Bottom.
+  st.y = 7 # feet at 128
+  eq Game::MessageConfig::POS_TOP, amp.call(Game::MessageConfig::POS_TOP),
+     'feet past 112 -- Top'
+  st.y = 6 # feet at 112, exactly on the threshold -- Up's own check is `>`, not `>=`
+  eq Game::MessageConfig::POS_BOTTOM, amp.call(Game::MessageConfig::POS_TOP),
+     'feet exactly at 112 does not clear Up\'s own strict threshold -- Bottom'
+
+  # Configured Center: a real three-way split, not just top-or-bottom.
+  st.y = 6 # feet at 112
+  eq Game::MessageConfig::POS_BOTTOM, amp.call(Game::MessageConfig::POS_MIDDLE),
+     'at or below 112 -- Bottom'
+  st.y = 9 # feet at 160
+  eq Game::MessageConfig::POS_TOP, amp.call(Game::MessageConfig::POS_MIDDLE),
+     'at or above 160 -- Top'
+  st.y = 7 # feet at 128, strictly between the two thresholds
+  eq Game::MessageConfig::POS_MIDDLE, amp.call(Game::MessageConfig::POS_MIDDLE),
+     'strictly between the two thresholds -- Middle, the one outcome only ' \
+     'the Center-configured case can ever produce'
+end
+
 check 'Weather draws a particle overlay when active and hides it when clear' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)

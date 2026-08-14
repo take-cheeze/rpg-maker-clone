@@ -1564,11 +1564,38 @@ The work below is roughly ordered by the critical path to a walkable game
   RPG2000 draws it (`Game::MessagePalette` locates each swatch — a 10×2 grid of
   16×16 cells from y = 48, per EasyRPG's layout), falling back to a flat colour
   only when no windowskin loaded or for an out-of-range index. When the message
-  is **not pinned** (`position_fixed` off, the RPG2000 default) the window now
-  relocates to keep clear of the hero — top when the hero sits in the lower half
-  of the screen, bottom otherwise — so talking to something at a map's bottom
-  edge shows the text up top; the exact zone boundary is approximate pending a
-  wine diff, but the direction matches RPG_RT. ✅ **The mirrored-face flag is
+  is **not pinned** (`position_fixed` off, the RPG2000 default) the window
+  relocates to keep clear of the hero.
+  ✅ **The exact zone boundary is no longer approximate.** Confirmed against
+  EasyRPG's own `Game_Message::GetRealPosition()`, fetched verbatim: the real
+  thresholds are `16 * 7` = 112px and `16 * 10` = 160px (7 and 10 map tiles
+  at RPG2000's real 16px tile size), not this build's earlier `SCREEN_H / 2`
+  = 120px guess, and they are measured off the hero's **feet** (the tile's
+  bottom edge, `Game_Character::GetScreenY()`), not its centre --
+  `#hero_screen_y` used to compute the latter (`+ TILE / 2`), the same
+  centre-vs-feet distinction this file's "Hero's screen X/Y" Picture-binding
+  bullet already flags for a different command entirely, now also fixed here
+  (`+ TILE`, matching `GetScreenY()`'s own `+ TILE_SIZE` exactly). More
+  significantly, real RPG_RT's auto-relocation is not simply "top when low,
+  bottom when high" regardless of the *configured* Message Options
+  preference the way this build's own `#auto_message_position` always did
+  -- `GetRealPosition()` keys a genuine three-way switch off that
+  preference: configured Down (RPG2000's own default) is `disp >= 160 ?
+  Top : Bottom`; configured Up is the *strict* `disp > 112 ? Top : Bottom`
+  (note the different threshold and the `>` vs `>=`); configured Center is
+  a real three-way split (`<= 112` Bottom, `>= 160` Top, otherwise the one
+  case that can actually land on Middle while unpinned). `#auto_message_
+  position` now takes the configured position and implements all three
+  branches exactly; `#effective_message_position` threads `cfg.position`
+  through instead of ignoring it for the unpinned case. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check exercising all three configured
+  branches at the exact threshold pixels, on a map exactly one screen tall
+  (240px, matching RPG2000's own 15-tile screen height) so the follow
+  camera never scrolls and `#hero_screen_y` tracks `st.y * 16 + 16`
+  directly with nothing else to interfere. Not itself wine-verified (this
+  session's wine harness stayed broken throughout), but the EasyRPG source
+  read leaves little ambiguity.
+  ✅ **The mirrored-face flag is
   now honoured too.** Change Face Graphic's param2 (`cfg.face_flipped`) was
   already read, stored on `Game::MessageConfig` and persisted through the
   save, but `Scene::Map#draw_message_face` never looked at it — the flag was
