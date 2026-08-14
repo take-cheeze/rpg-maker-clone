@@ -310,16 +310,16 @@ class RPG2k
         @item_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
-        if rows.empty?
-          c.draw_text 0, 2, inner_w, LINE_H, "No items"
-        else
-          rows.each_with_index do |(id, count), i|
-            it = @state.party.db_item(id)
-            name = (it && it.name.to_s)
-            name = "Item #{id}" if name.nil? || name.empty?
-            c.draw_text 0, i * LINE_H + 2, inner_w - 40, LINE_H, name
-            c.draw_text inner_w - 40, i * LINE_H + 2, 40, LINE_H, ":#{count}"
-          end
+        # An empty bag draws no placeholder text -- confirmed against genuine
+        # RPG_RT under wine, which shows a blank list row (still with a
+        # visible, empty cursor box; see #refresh_item_cursor) rather than
+        # any "no items" message.
+        rows.each_with_index do |(id, count), i|
+          it = @state.party.db_item(id)
+          name = (it && it.name.to_s)
+          name = "Item #{id}" if name.nil? || name.empty?
+          c.draw_text 0, i * LINE_H + 2, inner_w - 40, LINE_H, name
+          c.draw_text inner_w - 40, i * LINE_H + 2, 40, LINE_H, ":#{count}"
         end
         @item_window.contents = c
         refresh_item_cursor
@@ -327,7 +327,10 @@ class RPG2k
 
       def refresh_item_cursor
         return unless @item_window
-        h = items.empty? ? 0 : LINE_H
+        # The cursor box stays visible on the empty row even with no items --
+        # matched against genuine RPG_RT under wine, which highlights the
+        # blank slot rather than hiding the cursor.
+        h = LINE_H
         @item_window.cursor_rect =
           Rect.new(0, @item_index * LINE_H, @item_window.contents.width, h)
       end
