@@ -3796,13 +3796,32 @@ Everything below is unverified against the codebase.
   session notes); if a multi-page event's move route is mid-execution when
   its page switches, the route restarts *unless* the two pages' move-route
   settings are byte-identical (**same fact as the "confirmed gap" above**).
-- **Menu screen** — Call Menu Screen bypasses "Prohibit Menu" (only the
-  player's own Cancel-key shortcut respects it); no sub-part of the menu
-  can be called except the dedicated Save-screen command; can't open during
-  battle; opening it pauses *all* event processing including active
-  timers/parallel processes; Erase Screen's black-out is undone if the
-  player opens and closes the menu (✅ implemented — see the "Screen
-  effects" bullet below, same fact from a different site page).
+- **Menu screen** — ✅ **Call Menu Screen bypasses "Prohibit Menu" (only the
+  player's own Cancel-key shortcut respects it) -- confirmed already
+  correct, and now covered by a regression test.** `Scene::Map#
+  perform_event_menu` (Open Main Menu, 11950) never reads `@state.
+  menu_access` at all -- it was already unconditional, the same way
+  `perform_event_save` (Open Save Menu) already ignores `save_access` (see
+  that check's own comment). Nothing exercised this specific claim before,
+  though: `scripts/rpg2k_scene_check.rb` gains "Open Main Menu ignores a
+  Change Main Menu Access lock", setting `menu_access = false` first and
+  asserting the menu still opens, mirroring the existing Open Save Menu
+  check exactly. RPG2003's Open Load Menu (5001) also exists as its own
+  event command (separately tested), so "no sub-part of the menu can be
+  called except the dedicated Save-screen command" describes stock
+  RPG2000's own real limitation accurately rather than something this
+  engine's RPG2003 support contradicts. **Still open, not chased this
+  pass:** whether Call Menu Screen genuinely refuses to open during battle
+  (no battle-context guard exists on `perform_event_menu` today, and there
+  is no battle-time interpreter code path in this codebase that would even
+  reach it to test either way) and the "pauses all event processing
+  including active timers/parallel processes" claim specifically for Open
+  Main Menu (the same *shape* of pausing is already confirmed for the
+  Erase Screen black-out case referenced below, but that is not the same
+  claim as parallel processes/timers themselves halting). Erase Screen's
+  black-out being undone by opening and closing the menu is ✅ implemented
+  — see the "Screen effects" bullet below, same fact from a different site
+  page.
 - **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
   where it left off, *unless* the map was edited/re-saved since, in which
   case that event restarts from the top (edge case, likely not applicable
