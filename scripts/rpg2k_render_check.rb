@@ -263,11 +263,17 @@ check 'a fixed-graphic event never animates or turns' do
   eq [6, 0], EG.frame(EG::FIXED_GRAPHIC, 6, 0, 4, 1, false)
 end
 
-check 'a spinning event derives facing from the phase' do
-  eq [2, 1], EG.frame(EG::SPIN, 8, 2, 4, 0, false)
-  eq [4, 1], EG.frame(EG::SPIN, 8, 2, 4, 1, false)
-  eq [8, 1], EG.frame(EG::SPIN, 8, 2, 4, 2, false)
-  eq [6, 1], EG.frame(EG::SPIN, 8, 2, 4, 3, false)
+check 'a spinning event derives facing from the phase but keeps its own ' \
+      'pattern column' do
+  # base_pattern (2) is carried through unchanged on every phase -- a graphic
+  # that repurposes the 3 columns for unrelated frames (Nepheshel's Crystal
+  # Gate save point: column 0 lit, column 2 unlit) must keep showing its own
+  # column while only the row (facing) cycles, not fall back to a fixed
+  # "standing" column that happens to belong to a different picture.
+  eq [2, 2], EG.frame(EG::SPIN, 8, 2, 4, 0, false)
+  eq [4, 2], EG.frame(EG::SPIN, 8, 2, 4, 1, false)
+  eq [8, 2], EG.frame(EG::SPIN, 8, 2, 4, 2, false)
+  eq [6, 2], EG.frame(EG::SPIN, 8, 2, 4, 3, false)
 end
 
 check 'ordinary events walk while moving and rest on the page pose when idle' do

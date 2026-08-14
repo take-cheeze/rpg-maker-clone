@@ -963,12 +963,16 @@ module Game
     # `base_dir`/`base_pattern` the page's initial facing/pattern, `phase` the
     # walk counter and `moving` whether the event is currently stepping. Fixed
     # graphics stay on their page frame; spinning events derive facing from the
-    # phase; the ordinary types walk (cycling columns) while moving/continuous
-    # and rest on the page pattern when idle.
+    # phase but keep the page's own pattern column (a graphic that repurposes
+    # the 3 columns for unrelated frames, like Nepheshel's Crystal Gate save
+    # point -- column 0 lit, column 2 unlit -- would show the wrong one of
+    # those for 3 out of 4 spin frames if the column were forced to a fixed
+    # "standing" index instead); the ordinary types walk (cycling columns)
+    # while moving/continuous and rest on the page pattern when idle.
     def self.frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
       case anim_type
       when SPIN
-        [spin_direction(phase), 1]
+        [spin_direction(phase), base_pattern]
       when FIXED_GRAPHIC
         [base_dir, base_pattern]
       else
