@@ -3817,11 +3817,25 @@ Everything below is unverified against the codebase.
   #do_change_actor_name` only accepts a literal command string, never
   another actor's own name, so no built-in command can copy one. (Party caps
   at 4, Change Party Member no-ops past that — now fixed, see above.)
-- **Processing order** — map/common events process in ascending id order;
-  only one event/parallel-process advances per tick engine-wide (round
-  robin, not true concurrency) — a process that hits Wait/Show-Text yields
-  to the others that tick. **"Get Event ID at coordinates" on overlapping
-  events resolving to the highest id is confirmed already correct**:
+- ✅ **Processing order** — map/common events process in ascending id order;
+  a process that hits Wait/Show-Text yields to the others that tick. **The
+  "only one event/parallel-process advances per tick engine-wide (round
+  robin, not true concurrency)" half of this claim is wrong, and this
+  codebase already gets it right rather than reproducing the misreading.**
+  `Scene::Map#step_parallels` (`mruby-rpg2k/mrblib/scene/map.rb`) is
+  `@parallels.dup.each { |p| step_parallel(p) }` — every Parallel Process
+  (map event or Common Event alike) is stepped once, every single real
+  frame, with no round-robin turn-taking between them at all; this matches
+  EasyRPG Player's own `Game_Map::UpdateCommonEvents`/`UpdateMapEvents`
+  (`src/game_map.cpp`), which likewise loop over and `.Update()` *every*
+  common/map event every frame, not one per tick. "Round robin" only
+  describes the single foreground `@interpreter` slot (map/common Autorun,
+  or whichever Parallel Process happens to have opened a Battle Processing
+  command and briefly borrowed it) — a genuinely exclusive resource only one
+  script can hold at a time — not parallel processes generally, which run
+  with true per-frame concurrency. **"Get Event ID at coordinates" on
+  overlapping events resolving to the highest id is confirmed already
+  correct**:
   `Scene::Map#build_events` walks the map's event table (`LCF::Array2D`,
   always ascending id — a plain Ruby Array iterated low to high) into
   `@events` in that order, and `#rebuild_event_tiles` writes
