@@ -4521,17 +4521,35 @@ class RPG2k
           @battle_ui[:cmd] += 1
           @battle_ui[:cmd] %= battle_commands.length
           draw_battle_command
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @battle_ui[:cmd] -= 1
           @battle_ui[:cmd] %= battle_commands.length
           draw_battle_command
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
           select_battle_command
         elsif Input.trigger?(Input::B)
           prev_i = prev_commandable_actor_index
           if prev_i.nil?
-            try_battle_escape if @battle_ui[:req][:allow_escape]
+            # Real RPG2k's B here reopens a Fight/Auto Battle/Escape options
+            # window this engine never modelled (Escape is instead a direct
+            # B-press on the first actor, a deliberate simplification) --
+            # confirmed against EasyRPG's own ProcessSceneActionCommand's
+            # Escape branch, whose disallowed case plays Buzzer rather than
+            # nothing at all: `case Escape: if (!IsEscapeAllowed()) {
+            # ...Buzzer... } else { ...Decision...; SetState(State_Escape) }`.
+            if @battle_ui[:req][:allow_escape]
+              play_system_se(SFX_DECISION)
+              try_battle_escape
+            else
+              play_system_se(SFX_BUZZER)
+            end
           else
+            # Re-commanding the previous actor is a plain Cancel, matching
+            # `ProcessSceneActionCommand`'s own B branch exactly: `...Cancel...;
+            # --actor_index; SelectPreviousActor();`.
+            play_system_se(SFX_CANCEL)
             @battle_ui[:actor_i] = prev_i # re-command the previous commandable member
             @battle_ui[:cmd] = 0
             draw_battle_command
@@ -4549,6 +4567,11 @@ class RPG2k
       def try_battle_escape
         battle = @battle_ui[:battle]
         if battle.attempt_escape
+          # A dedicated Escape SE, not Decision -- confirmed against
+          # EasyRPG's own ProcessSceneActionEscape: the success branch plays
+          # `GetSystemSE(SFX_Escape)` right before ending the battle. A
+          # failed attempt plays no SE at all there, just the message.
+          play_system_se(SFX_ESCAPE)
           enter_battle_result(:escape)
         else
           $stderr.puts '[RPG2k battle] escape failed'
@@ -4560,15 +4583,23 @@ class RPG2k
 
       # Act on the highlighted command: Attack / Skill open a selection, Defend
       # is committed at once.
+      # Which SE each command plays on confirm -- Decision immediately for
+      # Attack/Defend (`Scene_Battle::AttackSelected`/`DefendSelected` both
+      # play it as their own first statement, before doing anything else),
+      # Skill/Item deferred to #open_battle_skill/#open_battle_item since
+      # RPG_RT's own Decision-on-opening-the-submenu and Buzzer-on-nothing-
+      # to-pick are both conditional on that submenu's own state there.
       def select_battle_command
         case @battle_ui[:cmd]
         when 0 # Attack
+          play_system_se(SFX_DECISION)
           @battle_ui[:pending] = { kind: :attack }
           @battle_ui[:target_i] = 0
           @battle_ui[:phase] = :target
           draw_battle_target
         when 1 then open_battle_skill
         when 2 # Defend
+          play_system_se(SFX_DECISION)
           @battle_ui[:battle].command_defend(current_actor)
           advance_actor
         when 3 then open_battle_item
@@ -4583,11 +4614,14 @@ class RPG2k
           @battle_ui[:target_i] += 1
           @battle_ui[:target_i] %= foes.length
           draw_battle_target
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) && !foes.empty?
           @battle_ui[:target_i] -= 1
           @battle_ui[:target_i] %= foes.length
           draw_battle_target
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           target = foes[@battle_ui[:target_i]]
           close_battle_target
           if pending_kind == :skill
@@ -4599,6 +4633,7 @@ class RPG2k
             advance_actor
           end
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           close_battle_target
           if pending_kind == :skill
             @battle_ui[:phase] = :skill
@@ -4630,7 +4665,17 @@ class RPG2k
           end
         end
         @battle_ui[:skills] = list
-        return if @battle_ui[:skills].empty?
+        # RPG_RT always plays Decision opening this list, and Buzzer only
+        # once a confirm inside it finds nothing usable
+        # (`Scene_Battle::SkillSelected`'s own `!skill || !CheckEnable`
+        # check) -- this engine instead never opens an empty list at all, so
+        # Buzzer plays here, at the one point that same "nothing to pick"
+        # outcome is actually known.
+        if @battle_ui[:skills].empty?
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         @battle_ui[:skill_i] = 0
         @battle_ui[:phase] = :skill
         draw_battle_skill
@@ -4642,25 +4687,33 @@ class RPG2k
           @battle_ui[:skill_i] += 1
           @battle_ui[:skill_i] %= skills.length
           draw_battle_skill
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) && !skills.empty?
           @battle_ui[:skill_i] -= 1
           @battle_ui[:skill_i] %= skills.length
           draw_battle_skill
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
           confirm_battle_skill
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           close_battle_skill
           @battle_ui[:phase] = :command
           draw_battle_command
         end
       end
 
-      # Choose the highlighted skill: if the caster cannot afford its SP, ignore
-      # the press; otherwise route to enemy / ally target selection (or cast at
-      # once on a self-scope skill).
+      # Choose the highlighted skill: if the caster cannot afford its SP, this
+      # is RPG_RT's own Buzzer case (`SkillSelected`'s `CheckEnable` covers
+      # affordability); otherwise Decision, then route to enemy / ally target
+      # selection (or cast at once on a self-scope skill).
       def confirm_battle_skill
         sid, cost = @battle_ui[:skills][@battle_ui[:skill_i]]
-        return if current_actor.mp < cost # can't afford: stay on the list
+        if current_actor.mp < cost # can't afford: stay on the list
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         sk = @state.party.db_skill(sid)
         @battle_ui[:pending] = { kind: :skill, sk: sk, sid: sid }
         close_battle_skill
@@ -4751,7 +4804,13 @@ class RPG2k
       # none).
       def open_battle_item
         @battle_ui[:items] = @state.party.battle_items
-        return if @battle_ui[:items].empty?
+        # See #open_battle_skill's identical comment -- the same Decision/
+        # Buzzer split, ported from `Scene_Battle::ItemSelected`.
+        if @battle_ui[:items].empty?
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         @battle_ui[:item_i] = 0
         @battle_ui[:phase] = :item
         draw_battle_item
@@ -4763,11 +4822,14 @@ class RPG2k
           @battle_ui[:item_i] += 1
           @battle_ui[:item_i] %= items.length
           draw_battle_item
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) && !items.empty?
           @battle_ui[:item_i] -= 1
           @battle_ui[:item_i] %= items.length
           draw_battle_item
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           item_id, _count = @battle_ui[:items][@battle_ui[:item_i]]
           it = @state.party.db_item(item_id)
           @battle_ui[:pending] = { kind: :item, item_id: item_id, it: it }
@@ -4782,6 +4844,7 @@ class RPG2k
             draw_battle_ally_target
           end
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           close_battle_item
           @battle_ui[:phase] = :command
           draw_battle_command
@@ -4796,11 +4859,18 @@ class RPG2k
           @battle_ui[:ally_i] += 1
           @battle_ui[:ally_i] %= allies.length
           draw_battle_ally_target
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) && !allies.empty?
           @battle_ui[:ally_i] -= 1
           @battle_ui[:ally_i] %= allies.length
           draw_battle_ally_target
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C) && !allies.empty?
+          # `Scene_Battle::AllySelected` was not itself fetched verbatim,
+          # but it is one of the same family of "Selected" callbacks as
+          # Attack/Defend/Item/Skill above, every one of which plays
+          # Decision as its own first statement before acting.
+          play_system_se(SFX_DECISION)
           target = allies[@battle_ui[:ally_i]]
           close_battle_ally_target
           if pending_kind == :skill
@@ -4809,6 +4879,7 @@ class RPG2k
             apply_pending_item(target)
           end
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           close_battle_ally_target
           if pending_kind == :skill
             @battle_ui[:phase] = :skill
