@@ -3415,21 +3415,23 @@ Full page read; ~140 distinct quirks catalogued, grouped by the page's own
 section headers (English). Items already Fixed/Confirmed above are omitted.
 Everything below is unverified against the codebase.
 
-- **Items & equipment** — counts silently cap at 99 (not clamped, just
-  ignored past it); Change Equipment creates/returns inventory copies
-  implicitly; ✅ **item list always sorts by database id, never acquisition
+- **Items & equipment** — ✅ **counts silently cap at 99 (not clamped, just
+  ignored past it) -- already correct, and now asserted head-on rather than
+  only indirectly (the Shop `max_buy` cap checks).** `Game::Party#
+  gain_item`'s own `c = 99 if c > 99` already matched this exactly (a gain
+  past 99 clamps rather than overflowing or erroring); `rpg2k_logic_check.rb`
+  gains "gain_item clamps at 99, silently, past a single gain or several
+  smaller ones" -- a single gain of 150 lands on 99 (not 150 or an error), a
+  further gain once already at the cap is a silent no-op, and losing still
+  works normally once back below it.
+  ✅ **item list always sorts by database id, never acquisition
   order** -- already correct and already tested: `Game::Party#field_items`/
   `#battle_items` (`mruby-rpg2k/mrblib/game.rb`) both build their list off
   `@items.keys.sort`, and `rpg2k_logic_check.rb`'s own "field_items lists
   only held medicines, in id order with counts" check already proves the
   *order*, not just the presence, of the fix: it gains item 9 before item 5
   and still asserts the list comes back `[[5, 1], [9, 2]]`, id-ascending
-  despite the reverse acquisition order. `Game::Party#gain_item`'s own
-  `c = 99 if c > 99` also already matches this same bullet's 99-cap claim
-  functionally (a gain past 99 clamps rather than overflowing or erroring),
-  though that specific claim is so far only indirectly exercised (the Shop
-  `max_buy` cap checks), not asserted head-on the way the sort order now
-  is -- left as-is rather than claiming a rigor it does not have yet.
+  despite the reverse acquisition order.
   ✅ **"Equipped item No." reads 0 when empty, and the 2nd weapon slot reads
   through the *Shield* No. operand for dual-wield -- both already correct
   and already tested too.** `Interpreter#actor_operand`'s equip-slot cases
@@ -3468,11 +3470,20 @@ Everything below is unverified against the codebase.
   mean. ("hero equips X" — the Conditional Branch actor sub-condition —
   already reads `actor.equipped?` directly and was fine; "has item X" was
   the actual gap, now fixed, see above.)
-  **Still genuinely open in this bullet:** "counts silently cap at 99" (see
-  the caveat two paragraphs up -- functionally matched but not yet asserted
-  head-on) and "Change Equipment creates/returns inventory copies
-  implicitly" (not yet checked against this engine's own
-  `equip_from_bag`/`unequip_to_bag`).
+  ✅ **"Change Equipment creates/returns inventory copies implicitly" --
+  also already correct, and it is the well-known real RPG2000 quirk it
+  sounds like: the event command bypasses the party's bag entirely,
+  unlike the Equip menu screen.** `do_change_equipment`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) drives `Game::Actor#equip_item`/
+  `#unequip` (`mruby-rpg2k/mrblib/game.rb`) directly -- neither calls
+  `#gain_item`/`#lose_item` anywhere, unlike `Scene::EquipMenu`'s own
+  `#equip_from_bag`/`#unequip_to_bag`, which explicitly swap through
+  `Game::Party`'s held-item counts. `rpg2k_logic_check.rb` gains "Change
+  Equipment command creates/returns items implicitly", asserting the bag's
+  own count for the equipped item stays exactly 0 throughout: equipping an
+  item the party never held at all still equips it (conjured, not drawn
+  from a bag that had none), and unequipping does not add a copy back
+  either. **Every sub-claim in this bullet is now confirmed correct.**
 - **Call Event** — doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself
   once the callee finishes/cancels; calling a bad event/page id raises
