@@ -3889,7 +3889,9 @@ class RPG2k
                                           variance: c[:variance] || 0,
                                           attributes: c[:attributes],
                                           attr_shift: c[:attr_shift],
-                                          attr_ids: c[:attr_ids])
+                                          attr_ids: c[:attr_ids],
+                                          stat_mod_keys: c[:stat_mod_keys],
+                                          stat_effect: c[:stat_effect] || 0)
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
@@ -3916,7 +3918,9 @@ class RPG2k
                                               variance: meta[:variance] || 0,
                                               attributes: meta[:attributes],
                                               attr_shift: meta[:attr_shift],
-                                              attr_ids: meta[:attr_ids])
+                                              attr_ids: meta[:attr_ids],
+                                              stat_mod_keys: meta[:stat_mod_keys],
+                                              stat_effect: meta[:stat_effect] || 0)
         @battle_ui[:pending] = nil
         @battle_ui[:phase] = :command
         advance_actor
