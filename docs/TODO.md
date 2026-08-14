@@ -1703,6 +1703,37 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` checks that drive a `\.`/`\|` pause end to
   end and count the exact number of frames the reveal stays held, both
   confirmed to fail against the pre-fix code (15/60) before the fix.
+  ✅ **`\s[n]` (typing speed) is now implemented, no longer dropped.**
+  `Game::Message.scan` (`mruby-rpg2k/mrblib/game.rb`) records each `\s[n]` as
+  a `{ at:, speed: }` entry in a new `:speeds` list (revealed-character
+  coordinates, same as `:pauses`/`:instants`), `n` clamped to RPG_RT's real
+  1..20 range — confirmed against EasyRPG Player's `window_message.cpp`,
+  fetched verbatim (`speed = Utils::Clamp(pres.value, 1, 20)`), not the
+  editor's own documentation, following this file's established
+  check-the-source-not-the-docs methodology (the same one that caught the
+  16/61-not-15/60 `\.`/`\|` gap two paragraphs up). `\s[]` produces no
+  characters and burns no reveal tick, matching `\c[]`. `Game::TextReveal`
+  threads a `speeds` list through and picks the `\s[n]` in effect at the
+  current reveal position (`#speed_at`, 1 = full speed, RPG_RT's own default
+  before the first change); `#advance` banks its per-frame character budget
+  in a fractional `@carry` while a slower speed is active, so e.g. speed 3
+  reveals roughly one character every three frames instead of stalling
+  outright, the same "consume a pacing span, don't just note it" shape
+  `:pauses`/`:instants` already established. This is a simplification of
+  RPG_RT's own pixel-width-scaled per-character wait
+  (`Window_Message::SetWaitForCharacter`: `frames = speed * width / 2 + 1`)
+  down to this codebase's fixed-budget-per-frame typewriter model, not a
+  glyph-width simulation — the duration still scales linearly with `speed`,
+  which is the part that matters for the control code to have an observable
+  effect. `Scene::Map#open_message` collects the per-line `:speeds` the same
+  way it already does `:pauses`/`:instants` and passes them into the
+  `Game::TextReveal` it builds. Covered by new `scripts/rpg2k_logic_check.rb`
+  checks (`Message.scan`'s clamped `:speeds` list; `TextReveal#speed_at`;
+  `TextReveal#advance` revealing at a fraction of its base rate across a
+  `\s[3]` span) and a new `scripts/rpg2k_scene_check.rb` check driving a real
+  `\s[4]` message through `Scene::Map` end to end, all confirmed to fail
+  against the old code, which dropped `\s[]` outright and revealed at a flat
+  rate regardless of it.
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
@@ -5158,9 +5189,10 @@ not yet verified:
   (`\N[5]`, `\V[1]`) resolved exactly as before. `\C[]`/`\S[]` are untouched
   — the site's wording doesn't name them as nesting-capable, only as
   degrading gracefully out of range, which they already do (`\C[]` falls
-  back to a flat colour for an out-of-range index, already implemented;
-  `\S[]` is dropped outright today, a separate open question tracked in the
-  Message window doc above). An out-of-range `\N[]` argument crashing real
+  back to a flat colour for an out-of-range index; `\S[]` clamps to RPG_RT's
+  1..20 range instead, both already implemented — neither reads its bracket
+  argument through `#resolve_arg`, so a nested `\V[]` inside either is not a
+  case this fix covers). An out-of-range `\N[]` argument crashing real
   RPG_RT is a genuine engine crash, not reproduced here. Covered by a new
   `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the
   pre-fix code.
@@ -5899,10 +5931,10 @@ not yet verified:
   call — caller and callee — finishes), confirmed to fail against the
   pre-fix code before the fix. It also shrinks the per-line text capacity
   vs. no portrait — unverified, a separate open question.
-- 🚧 \c[]/\s[] (color/speed) control codes set inside Show Text **bleed into
+- ✅ \c[]/\s[] (color/speed) control codes set inside Show Text **bleed into
   an attached Show Choices list** when the two merge into one window
   (≤4 combined lines) — an explicit `\c[0]` reset is needed to stop
-  choices inheriting the preceding text's color. **The colour half is now
+  choices inheriting the preceding text's color. **The colour half is
   implemented**: `Game::Message.scan` takes an optional `start_color` and
   reports the colour still in effect at the end of the line as `:end_color`
   (`mruby-rpg2k/mrblib/game.rb`), and `Scene::Map#open_message` records a
@@ -5910,12 +5942,17 @@ not yet verified:
   now seeds its own scans with instead of always starting at 0 — chained
   across the choice labels themselves too, so the whole merged window (text
   then choices) reads as one continuous colour stream that an explicit
-  `\c[0]` breaks, matching the finding. **The speed half is not addressed**:
-  this codebase drops `\s[]` outright today (see the Message window doc
-  above, "the remaining display code (`\s` speed) is dropped") rather than
-  varying the reveal rate at all, so there is no speed *state* yet for
-  anything to bleed — implementing the bleed would first need `\s[]` itself,
-  a larger, separate feature.
+  `\c[0]` breaks, matching the finding. **The speed half is now moot, not
+  just unaddressed**: `\s[]` is implemented today (see the Message window
+  doc above) and does vary the reveal rate, but a Show Choices list — whether
+  standalone or merged onto a preceding Show Text — always calls
+  `Game::TextReveal#reveal_all` the instant it is built
+  (`Scene::Map#open_message`/`#append_choice_lines`) rather than typing out
+  gradually, the same reason a `\^` inside one is already confirmed inert
+  below. A speed that only throttles a typewriter that never runs for choice
+  labels has nothing to bleed into; `#append_choice_lines` does not even
+  thread a `:speeds` list into the `Game::TextReveal` it builds. No code
+  change needed here beyond `\s[]` itself existing.
 - `\>` (instant display) only affects the current line — must be repeated
   per line for a fully-instant multi-line message.
 - ✅ **`\<`, `\$`, `\^` each cost one character's worth of display time even

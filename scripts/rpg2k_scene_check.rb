@@ -3060,6 +3060,26 @@ check 'a \\! pause holds the reveal until a button is pressed' do
   ok reveal.done?
 end
 
+check '\\s[n] slows the message typewriter; a higher n takes longer to fully reveal' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # "ab" reveals at the default speed, then \s[4] slows the rest ("cdefgh").
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'ab\\s[4]cdefgh')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  # At the plain 2 chars/frame rate all 8 characters would be fully revealed
+  # within 4 frames; a message that drops \s[] outright (the pre-fix
+  # behaviour) reveals at that same flat rate regardless of the code, so it
+  # would already be done here too.
+  6.times { RGSS::Input.reset; scene.update }
+  ok !reveal.done?, '\\s[4] slows the reveal well past where the plain rate would finish'
+  30.times { RGSS::Input.reset; scene.update }
+  ok reveal.done?, 'the slowed reveal still finishes given enough frames'
+end
+
 # A party whose actors have been renamed in play, backed by a roster, for the
 # \N[n] message-code check.
 class RosterStubActor

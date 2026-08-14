@@ -70,9 +70,11 @@ module Game
 
   # Expansion of RPG2000 message control codes. `\v[n]` inserts variable n,
   # `\n[n]` the name of actor n, `\\` a literal backslash, `\_` a space; `\c[n]`
-  # changes colour. The pacing codes `\.`/`\|`/`\!` (waits), `\^` (auto-close),
-  # `\>`/`\<` (instant span) and `\$` (show the gold window) are surfaced by #scan
-  # for the scene to act on; the remaining display code (`\s` speed) is dropped.
+  # changes colour and `\s[n]` changes the typewriter speed (1..20, RPG_RT's own
+  # clamp -- EasyRPG Player's `window_message.cpp` `Utils::Clamp(pres.value, 1,
+  # 20)`). The pacing codes `\.`/`\|`/`\!` (waits), `\^` (auto-close), `\>`/`\<`
+  # (instant span), `\$` (show the gold window) and `\s[n]` (speed change) are
+  # surfaced by #scan for the scene to act on.
   # `names` may be a Hash or any object responding to `[]`.
   module Message
     # Expand a line to its plain visible text (no colour information): the same
@@ -85,7 +87,7 @@ module Game
     # `{ text:, color: }`, where `color` is the `\c[n]` palette index in effect
     # for that run (0 = the default colour). `\v[n]` (variable) and `\n[n]`
     # (actor name) are expanded into the text and `\\` yields a literal
-    # backslash and `\_` a space; the pacing / display codes (`\s` speed,
+    # backslash and `\_` a space; the pacing / display codes (`\s[n]` speed,
     # `\.`/`\|`/`\!` waits, `\>`/`\<`, `\^`, `\$`) produce no characters here (see
     # #scan for the pacing ones). Runs with no text (e.g. a colour change before
     # any character) are omitted, so a line that renders nothing yields an empty
@@ -102,6 +104,9 @@ module Game
     #   :auto_close — `\^` (close the window without a keypress once revealed);
     #   :instants — [[start, end)] spans that reveal at once (`\>` … `\<`);
     #   :show_gold — `\$` (show the party's gold in a small window);
+    #   :speeds  — [{ at:, speed: }] for `\s[n]` speed changes, `speed` clamped
+    #              to RPG_RT's 1..20 (1 = full speed, the default before the
+    #              first one) and in effect from `at` until the next entry;
     #   :length  — the visible character count (what the reveal counts);
     #   :end_color — the colour still in effect once the line ends, for a
     #                caller that wants to carry it into the next scan (a Show
@@ -113,6 +118,7 @@ module Game
       segs = []
       pauses = []
       instants = []
+      speeds = []
       instant_start = nil # character index where an open `\>` span began
       auto_close = false
       show_gold = false
@@ -136,6 +142,10 @@ module Game
             segs << { text: cur, color: color } unless cur.empty?
             cur = ''
             color = arg ? arg.to_i : 0
+          when 's', 'S' # speed change: how fast the typewriter reveals from
+            # here on, clamped to RPG_RT's 1..20 (EasyRPG Player's
+            # window_message.cpp: `speed = Utils::Clamp(pres.value, 1, 20)`).
+            speeds << { at: count, speed: Game.clamp(arg ? arg.to_i : 1, 1, 20) }
           when '.'      then pauses << { at: count, kind: :quarter }
           when '|'      then pauses << { at: count, kind: :full }
           when '!'      then pauses << { at: count, kind: :key }
@@ -151,8 +161,6 @@ module Game
               instant_start = nil
               count += 1
             end
-          # the remaining display code (`\s` speed) produces no characters and no
-          # pacing here: dropped.
           end
         else
           cur << ch
@@ -163,7 +171,7 @@ module Game
       segs << { text: cur, color: color } unless cur.empty?
       instants << [instant_start, count] if instant_start # unclosed `\>` runs to EOL
       { segments: segs, pauses: pauses, auto_close: auto_close,
-        instants: instants, show_gold: show_gold, length: count,
+        instants: instants, show_gold: show_gold, speeds: speeds, length: count,
         end_color: color }
     end
 
@@ -297,8 +305,13 @@ module Game
     # unreleased one until the owner calls #release_pause. `auto_close` is the
     # `\^` flag (close the window without a keypress once fully revealed).
     # `instants` are [start, end) spans (`\>` … `\<`) that appear in one frame.
+    # `speeds` are `\s[n]` speed changes ({ at:, speed: }), sorted ascending;
+    # `speed` 1 (full speed, RPG_RT's default before the first one) reveals at
+    # the caller's own per-frame rate unchanged, and each step up slows the
+    # reveal proportionally (RPG_RT's own `Window_Message::SetWaitForCharacter`
+    # scales its per-character wait linearly by `speed`).
     def initialize(lines, revealed = 0, pauses = [], auto_close = false,
-                   instants = [])
+                   instants = [], speeds = [])
       @lines = lines || []
       @total = 0
       @lines.each { |l| @total += l.length }
@@ -308,7 +321,12 @@ module Game
       @pauses = (pauses || []).sort { |a, b| a[:at] <=> b[:at] }
       @auto_close = auto_close ? true : false
       @instants = instants || []
+      @speeds = (speeds || []).sort { |a, b| a[:at] <=> b[:at] }
       @released = 0 # how many leading pauses the owner has let through
+      @carry = 0 # fractional per-frame budget banked while a \s[] slowdown is
+                 # in effect, so a sub-1-character-per-frame rate still lands
+                 # on whole characters over several frames instead of rounding
+                 # every frame down to zero
     end
 
     attr_reader :revealed, :total
@@ -323,17 +341,41 @@ module Game
       @revealed = stop ? stop[:at] : @total
     end
 
-    # Reveal `n` more characters (default 1), never past the total nor past the
-    # next unreleased pause. When the newly revealed position lands inside an
-    # instant (`\>` … `\<`) span, the whole span appears at once (still capped at
-    # the pause limit).
+    # Reveal up to `n` more characters (default 1) at the caller's own base
+    # rate, never past the total nor past the next unreleased pause. The
+    # `\s[n]` speed in effect at the current position throttles that budget:
+    # at speed 1 (the default) the full `n` lands this frame, same as before
+    # `\s[]` existed; a higher speed banks the unused fraction in `@carry`
+    # instead of dropping it, so e.g. speed 3 reveals two characters every
+    # three frames rather than never advancing. When the newly revealed
+    # position lands inside an instant (`\>` … `\<`) span, the whole span
+    # appears at once (still capped at the pause limit).
     def advance(n = 1)
       n = 0 if n < 0
       stop = next_pause
       limit = stop ? stop[:at] : @total
-      pos = Game.clamp(@revealed + n, 0, limit)
+      return if @revealed >= limit # blocked on the pause: no time banked either
+      s = speed_at(@revealed)
+      @carry += n
+      step = @carry / s
+      @carry -= step * s
+      pos = Game.clamp(@revealed + step, 0, limit)
       pos = through_instant(pos) if pos > @revealed
       @revealed = Game.clamp(pos, 0, limit)
+    end
+
+    # The `\s[n]` speed in effect at revealed-character position `pos`: the
+    # most recent `\s[]` entry at or before it, or 1 (full speed) before the
+    # first one -- RPG2000's own default (EasyRPG Player's Window_Message
+    # resets `speed = 1` on every new page, only `\s[]` itself ever changes
+    # it).
+    def speed_at(pos)
+      s = 1
+      @speeds.each do |sp|
+        break if sp[:at] > pos
+        s = sp[:speed]
+      end
+      s
     end
 
     # If the next character to reveal (`pos`) falls inside an instant span, jump
