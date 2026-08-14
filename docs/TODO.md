@@ -4304,17 +4304,36 @@ above are repeated here)
   on every `Combatant#attr_ranks_of` call (`Game::Actor#attribute_ranks`
   caches nothing), and `Battle#apply_to_party` never writes it back to the
   actor — so a shift dies with the Combatant along with everything else the
-  fight didn't ask to persist. **The direction is this build's own reading,
-  not confirmed against RPG_RT or either test bed**: it reuses
-  `reverse_state_effect` (unset = up/better, set = down/worse), the same
-  polarity flag a skill's state effects already use, on the assumption
-  RPG2000's skill editor drives one shared "raise/lower" toggle for both the
-  state-effect list and the attribute-defence list rather than a separate
-  field of its own — neither Nepheshel nor mtf-meido-action ships a skill
-  with the flag set, so there is nothing to check it against. Attribute
-  ranks must be configured strictly `A>B>C>D>E` for the ±1-step logic to make
-  sense. Covered by a new `scripts/rpg2k_logic_check.rb` check (both
-  directions, and that repeat casts don't stack past the cap).
+  fight didn't ask to persist. ✅ **The direction question this entry left
+  open is now settled against EasyRPG Player's actual C++ source, and the
+  original guess was wrong.** `Game::Party#skill_attr_shift` used to reuse
+  `reverse_state_effect` (unset = up/better, set = down/worse) on the
+  assumption RPG2000's skill editor drives one shared "raise/lower" toggle
+  for both the state-effect list and the attribute-defence list — flagged
+  explicitly as unconfirmed, since neither Nepheshel nor mtf-meido-action
+  ships a skill with the flag set to check it against. EasyRPG's
+  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`)
+  settles it: `auto shift = IsPositive() ? 1 : -1;` right where it applies
+  `affect_attr_defence`, and `IsPositive()` comes from
+  `Algo::SkillTargetsAllies(skill)` (`src/algo.h`) — purely the skill's own
+  `scope` field (true for every scope except Scope_enemy(0)/
+  Scope_enemies(1)). `reverse_state_effect` plays no part in this at all —
+  that flag's own state-cure/inflict role is, per the same function,
+  `IsPositive() ^ (Player::IsRPG2k3() && skill.reverse_state_effect)`, gated
+  behind an RPG2003-only check this runtime does not model either way, a
+  separate, wider question still left untouched. Fixed by reading the
+  skill's scope instead (mirroring `#battle_skill_target`'s own enemy-scope
+  test, `scope == 0 || scope == 1`): an ally-scoped skill (self/single
+  ally/all allies) always raises resistance, an enemy-scoped one
+  (single/all enemies) always lowers it, regardless of
+  `reverse_state_effect`. Attribute ranks must be configured strictly
+  `A>B>C>D>E` for the ±1-step logic to make sense. Covered by two
+  `scripts/rpg2k_logic_check.rb` checks (direction is scope-driven with
+  `reverse_state_effect` proven inert on every combination; the existing
+  shift-and-cap mechanic check reworked around scope-based skills — an
+  enemy-scoped Curse Fire shifting down, an ally-scoped Ward Fire shifting
+  back up, both capped at one step from base), both confirmed to fail
+  against the pre-fix code before the fix.
 - Enemy group members are numbered by add-order. ✅ **The lower-numbered
   member renders in front (closer to camera)**: `Scene::Map#build_battle_sprites`
   / `#rebuild_battler_sprite` / `#reveal_battle_monster`

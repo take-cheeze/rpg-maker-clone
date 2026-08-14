@@ -2484,7 +2484,9 @@ FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost
                        :ignore_defense,
                        # 属性有効度変化 (attribute defence up/down, field 45):
                        # shifts the target's rank for each attribute_effects id
-                       # by one step, direction shared with reverse_state_effect.
+                       # by one step; direction is the skill's own scope
+                       # (ally-scoped raises resistance, enemy-scoped lowers
+                       # it) -- see Game::Party#skill_attr_shift.
                        :affect_attr_defence)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
@@ -7559,17 +7561,54 @@ check 'battle_skill_command respects a stat-doubling state on the target' do
      'doubled spirit (40): 20 base - 40*40/80 (20) = 0, floored to 1')
 end
 
-check 'a skill flagged "attribute defence up/down" shifts the target rank, ' \
-      'capped at +-1 from base' do
-  # scope 3 (single, non-attack) so this exercises the shift without also
-  # tripping battle_skill_command's separate "scope 0/1 always deals at
-  # least 1 damage" behaviour -- a different, pre-existing question.
-  down = fake_skill(name: 'Weaken Fire', scope: 3, sp_cost: 0, power: 0,
-                    attribute_effects: [1], affect_attr_defence: true,
-                    reverse_state: true) # down: toward a worse (higher) rank
+check 'a skill flagged "attribute defence up/down" picks direction from ' \
+      'the skill\'s own scope, not reverse_state_effect' do
+  # Ported from EasyRPG's Game_BattleAlgorithm::Skill::vExecute: `auto shift
+  # = IsPositive() ? 1 : -1;`, where IsPositive() comes from
+  # Algo::SkillTargetsAllies(skill) -- purely the skill's own `scope` field.
+  # reverse_state_effect never enters into it, unlike this codebase's old,
+  # explicitly-unconfirmed guess that it did. Every scope/reverse_state_effect
+  # combination below targets the same `foe`, proving the flag is inert here:
+  # only scope decides.
+  ally_single = fake_skill(name: 'Ward Fire (ally)', scope: 3, sp_cost: 0, power: 0,
+                            attribute_effects: [1], affect_attr_defence: true,
+                            reverse_state: false)
+  ally_all_reversed = fake_skill(name: 'Ward Fire (all allies, reverse flag set)',
+                                  scope: 4, sp_cost: 0, power: 0,
+                                  attribute_effects: [1], affect_attr_defence: true,
+                                  reverse_state: true) # still ally-scoped -> still up
+  enemy_single = fake_skill(name: 'Curse Fire (enemy)', scope: 0, sp_cost: 0, power: 0,
+                             attribute_effects: [1], affect_attr_defence: true,
+                             reverse_state: false)
+  enemy_all_reversed = fake_skill(name: 'Curse Fire (all enemies, reverse flag set)',
+                                   scope: 1, sp_cost: 0, power: 0,
+                                   attribute_effects: [1], affect_attr_defence: true,
+                                   reverse_state: true) # still enemy-scoped -> still down
+  skills = { 7 => ally_single, 8 => ally_all_reversed,
+             9 => enemy_single, 10 => enemy_all_reversed }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+
+  eq 1, st.party.battle_skill_command(st.party.db_skill(7), caster, foe)[:attr_shift],
+     'ally scope (single ally) -> +1 (up/better) regardless of reverse_state_effect'
+  eq 1, st.party.battle_skill_command(st.party.db_skill(8), caster, foe)[:attr_shift],
+     'ally scope (all allies), reverse_state_effect ON -> still +1, the flag is irrelevant'
+  eq(-1, st.party.battle_skill_command(st.party.db_skill(9), caster, foe)[:attr_shift],
+     'enemy scope (single enemy) -> -1 (down/worse) regardless of reverse_state_effect')
+  eq(-1, st.party.battle_skill_command(st.party.db_skill(10), caster, foe)[:attr_shift],
+     'enemy scope (all enemies), reverse_state_effect ON -> still -1, the flag is irrelevant')
+end
+
+check 'attribute defence shift applies to the target rank, capped at ' \
+      '+-1 from base' do
+  # scope 3/0 (single ally / single enemy) so this also exercises
+  # battle_skill_command's separate "scope 0/1 always deals at least 1
+  # damage" behaviour alongside the shift, unaffected by it.
+  down = fake_skill(name: 'Curse Fire', scope: 0, sp_cost: 0, power: 0,
+                    attribute_effects: [1], affect_attr_defence: true)
   up = fake_skill(name: 'Ward Fire', scope: 3, sp_cost: 0, power: 0,
-                  attribute_effects: [1], affect_attr_defence: true,
-                  reverse_state: false) # up: toward a better (lower) rank
+                  attribute_effects: [1], affect_attr_defence: true)
   skills = { 7 => down, 8 => up }
   st = skill_party(skills)
   caster = Game::Battle.from_actor(st.party.actor_by_id(1))
@@ -7579,32 +7618,33 @@ check 'a skill flagged "attribute defence up/down" shifts the target rank, ' \
   bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
 
   c = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
-  eq 1, c[:attr_shift], 'reverse_state_effect set -> down (worse)'
+  eq(-1, c[:attr_shift], 'enemy-scoped Curse Fire -> down (worse)')
   eq [1], c[:attr_ids]
-  bat.command_skill(caster, foe, name: 'Weaken Fire', cost: c[:cost],
+  bat.command_skill(caster, foe, name: 'Curse Fire', cost: c[:cost],
                     hp: c[:hp], mp: c[:mp], attr_shift: c[:attr_shift],
                     attr_ids: c[:attr_ids])
   bat.run_round
-  eq 3, foe.attr_ranks[1], 'shifted one step down (C -> D)'
+  eq 1, foe.attr_ranks[1], 'shifted one step down (C -> B)'
 
   # A second cast does not stack past the +-1 cap from the base rank (2).
-  bat.command_skill(caster, foe, name: 'Weaken Fire', cost: c[:cost],
+  bat.command_skill(caster, foe, name: 'Curse Fire', cost: c[:cost],
                     hp: c[:hp], mp: c[:mp], attr_shift: c[:attr_shift],
                     attr_ids: c[:attr_ids])
   bat.run_round
-  eq 3, foe.attr_ranks[1], 'capped at one step from base, does not keep sliding'
+  eq 1, foe.attr_ranks[1], 'capped at one step from base, does not keep sliding'
 
-  # The opposite skill shifts it back the other way, past base and up to its
-  # own +-1 (better) cap -- three casts, still capped at one step from base.
+  # The opposite (ally-scoped) skill shifts it back the other way, past base
+  # and up to its own +-1 (better) cap -- three casts, still capped at one
+  # step from base.
   c2 = st.party.battle_skill_command(st.party.db_skill(8), caster, foe)
-  eq(-1, c2[:attr_shift], 'reverse_state_effect unset -> up (better)')
+  eq 1, c2[:attr_shift], 'ally-scoped Ward Fire -> up (better)'
   3.times do
     bat.command_skill(caster, foe, name: 'Ward Fire', cost: c2[:cost],
                       hp: c2[:hp], mp: c2[:mp], attr_shift: c2[:attr_shift],
                       attr_ids: c2[:attr_ids])
     bat.run_round
   end
-  eq 1, foe.attr_ranks[1], 'capped one step better than base (C -> B)'
+  eq 3, foe.attr_ranks[1], 'capped one step better than base (C -> D)'
 end
 
 check 'a battle attack skill inflicts its state_effects on a surviving enemy' do
