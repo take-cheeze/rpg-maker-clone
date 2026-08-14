@@ -3732,7 +3732,45 @@ not yet verified:
   (and the `bgm_looped` reset) when they match, so a same-file re-trigger
   leaves the still-playing track alone. `@state.current_bgm` is still
   updated unconditionally to the command's latest vol/tempo, so Memorize
-  BGM continues to stash whatever was most recently requested. **The
+  BGM continues to stash whatever was most recently requested. ✅ **The
+  "field and battle BGM sharing the same file continue seamlessly across
+  the transition" half is now implemented too — it turned out to be a
+  distinct, unaddressed gap rather than a restatement of the Play BGM fix
+  above.** Verified against EasyRPG Player's actual C++ source rather than
+  guessed at: real RPG_RT has exactly **one** native BGM entry point,
+  `Game_System::BgmPlay` (`src/game_system.cpp`), and its same-file check
+  ("Same music: Only adjust volume and speed" — `previous_music.name ==
+  bgm.name`) applies to *every* caller, not just the Play BGM event command
+  — `Scene_Battle::Init` (`src/scene_battle.cpp`) opens a fight with a bare
+  `BgmPlay(GetSystemBGM(BGM_Battle))`, the identical function, so a battle
+  track configured to the same file as whatever the field was already
+  playing never breaks and restarts it either. This codebase instead has
+  seven separate BGM-switching helpers on `Scene::Map`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — `#play_battle_bgm`/
+  `#restore_pre_battle_bgm`, `#play_vehicle_bgm`/`#restore_pre_vehicle_bgm`,
+  `#play_victory_bgm`, and `#play_inn_bgm`/`#restore_pre_inn_bgm` — each of
+  which called `RGSS::Audio.bgm_play` unconditionally and independently of
+  the already-fixed `Game::Interpreter#play_audio` same-file check, so a
+  battle/vehicle/inn BGM naming the same file as the current track (or
+  restoring a pre-transition track this scene never actually stopped)
+  wrongly broke and restarted it. Fixed by extracting a shared
+  `Scene::Map#play_bgm(music)` — the same `@state.current_bgm &&
+  @state.current_bgm[:name] == music[:name]` idiom `play_audio`'s `:bgm`
+  branch already uses, skipping `RGSS::Audio.bgm_play` on a match while
+  still updating `@state.current_bgm` to the new call's own vol/tempo — and
+  routing all seven call sites through it, so entering battle no longer
+  restarts a field track that happens to share the battle BGM's filename,
+  and — the asymmetric half a battle-only fix would have missed — restoring
+  that same field track once the fight ends no longer restarts it either,
+  since this scene's own BGM state already agrees it was never stopped.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a battle BGM
+  matching the already-playing field track, at different vol/tempo, opens
+  and closes an encounter with zero `RGSS::Audio.bgm_calls` on either
+  transition, while `@state.current_bgm`'s tracked vol/tempo still follows
+  each side's own configured values, matching `play_audio`'s existing
+  "tracks what should be playing even when the native call is skipped"
+  behaviour), confirmed to fail against the pre-fix code (asserting no
+  native replay, getting `[["BattleBGM", 70, 110]]`) before the fix. **The
   vol/tempo/pan-without-restart half is not addressed**: this build's
   `RGSS::Audio` exposes no primitive to adjust an already-playing BGM's
   volume, pitch, or pan in place — `bgm_play` (`mruby-rgss/src/audio.cxx`,
