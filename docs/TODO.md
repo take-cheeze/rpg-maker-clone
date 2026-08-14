@@ -3406,6 +3406,49 @@ not yet verified:
   after parking on its own trailing Wait). The rest of this bullet — within
   one group, one command block at a time, round-robin, yielding at a blocking
   command, ascending-id order — was already correct and needed no change.
+- ✅ **A screen-effect or Move Picture/Flash Sprite command's own wait flag,
+  issued from a Parallel Process, now actually blocks that process — same
+  defect class as the already-fixed Proceed With Movement and Transfer
+  Player cases just above, now closed for the remaining wait kinds those two
+  fixes' own comments enumerated as still missing.** `Scene::Map#
+  drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`) — the dispatch
+  `#step_parallel` uses for whichever wait kind a parallel-process
+  interpreter is parked on — had cases for `:wait`/`:key_input`/
+  `:animation`/`:game_over`/`:movement`/`:teleport` but none for `:screen`
+  (Erase/Show/Tint/Flash/Pan/Shake Screen, all six of which share this one
+  wait kind — `Game::Interpreter#do_erase_screen`/`#do_show_screen`/
+  `#do_tint_screen`/`#do_flash_screen`/`#do_pan_screen`/`#do_shake_screen`,
+  `interpreter.rb`), `:picture` (Move Picture's own wait flag,
+  `#do_move_picture`) or `:sprite_flash` (Flash Sprite's own wait flag,
+  `#do_flash_sprite`) — each of the three fell into the generic `else`
+  branch (`it.resume # background: ignore message/choice requests`) and
+  resumed unconditionally on the very next tick regardless of the issuing
+  command's own wait flag, exactly the "fire-and-forget no-op" failure mode
+  already documented and fixed for `:movement`/`:teleport` above. The
+  foreground's own `#drive_event` already had the matching cases (`when
+  :screen then @interpreter.resume unless @state.screen.busy?`; `when
+  :picture then @interpreter.resume unless @state.pictures_moving?`; `when
+  :sprite_flash then @interpreter.resume unless sprite_flashing?`), so an
+  Autorun's own screen fade/picture move/sprite flash always blocked
+  correctly; only the identical commands issued from a Parallel Process
+  (a Common Event's or a map event's own) were affected — the effect itself
+  already started regardless, since `#apply_interpreter_requests` (which
+  actually applies a screen/picture/flash write) runs for a parallel
+  process's own requests exactly as it does for the foreground's, only the
+  *wait* never held anything up. Fixed by adding the same three cases to
+  `#drive_parallel_wait`, each the identical pure-predicate check
+  `#drive_event`'s own dispatch already uses — no stepping logic needed,
+  since `Game::Screen`/`Game::State#pictures`/`#update_sprite_flashes` are
+  already advanced once per frame elsewhere in `#update`, the same reasoning
+  the `:movement` fix's own comment gives for calling `#forced_movement_done?`
+  rather than re-stepping anything itself. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (a Parallel Process's Erase Screen
+  holds its own follow-up Control Switches command until the fade settles;
+  its Move Picture holds until the picture reaches its target; its Flash
+  Sprite holds until the flash decays), all three confirmed to fail against
+  the pre-fix code before the fix (each follow-up command ran immediately,
+  one frame after the triggering command, instead of waiting for the effect
+  to finish).
 - A parallel process reaching its own loop end and restarting always costs
   ~1/60s (an implicit one-frame gap), independent of any explicit Wait.
 - "Hero Touch" (trigger 1) does **not** fire in three specific cases

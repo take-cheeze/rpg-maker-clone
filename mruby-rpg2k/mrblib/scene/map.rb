@@ -1394,6 +1394,25 @@ class RPG2k
           # its context is gone post-transfer".
           perform_teleport(it.teleport)
           it.resume
+        elsif it.wait_kind == :screen
+          # Erase/Show/Tint/Flash/Pan/Shake Screen issued with its own wait
+          # flag from a Parallel Process: block that process until the effect
+          # settles, the same as #drive_event's own :screen branch does for
+          # the foreground. Before this branch existed this fell into the
+          # generic #resume below, so a background screen-effect wait was a
+          # fire-and-forget no-op regardless of "wait for completion" set on
+          # the command -- the effect itself already ran (#apply_interpreter_
+          # requests runs for a parallel process's own requests too), only
+          # the wait never actually held anything up.
+          it.resume unless @state.screen.busy?
+        elsif it.wait_kind == :picture
+          # Move Picture's own wait flag, the parallel-process equivalent of
+          # the :screen case just above.
+          it.resume unless @state.pictures_moving?
+        elsif it.wait_kind == :sprite_flash
+          # Flash Sprite's own wait flag, the parallel-process equivalent of
+          # the :screen/:picture cases just above.
+          it.resume unless sprite_flashing?
         else
           it.resume # background: ignore message/choice requests
         end

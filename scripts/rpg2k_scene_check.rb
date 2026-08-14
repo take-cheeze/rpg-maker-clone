@@ -3666,6 +3666,90 @@ check "Proceed With Movement blocks a Parallel Process's own interpreter, not ju
   ok st.switches[1], 'the Parallel Process resumed once the route actually finished'
 end
 
+check "Erase Screen's own wait flag blocks a Parallel Process's own interpreter, " \
+      'not just the foreground\'s' do
+  # Same defect class as Proceed With Movement/Transfer Player above:
+  # #drive_parallel_wait had no :screen case at all, so Erase/Show/Tint/
+  # Flash/Pan/Shake Screen issued from a Parallel Process fell into the
+  # generic "background: ignore ..." #resume branch and read as fire-and-
+  # forget regardless of the command's own wait flag -- the fade itself
+  # already ran (#apply_interpreter_requests applies a parallel process's
+  # own screen writes too, unaffected by this fix), only the wait never
+  # actually held the process up.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  pg.event_commands = [
+    ECmd.new(ic::ERASE_SCREEN, [0]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, pg) })
+  st = scene.instance_variable_get(:@state)
+
+  scene.update # runs Erase Screen -> suspends on :screen
+  ok !st.switches[1],
+     'the Parallel Process must wait too, not resume immediately'
+  ok st.screen.fading?, 'the fade is in progress'
+
+  40.times { scene.update } # the scene advances Game::Screen each frame
+  ok st.screen.erased?, 'the screen fully erased'
+  ok st.switches[1], 'the Parallel Process resumed once the fade settled'
+end
+
+check "Move Picture's own wait flag blocks a Parallel Process's own interpreter, " \
+      'not just the foreground\'s' do
+  # Same defect class as the Erase Screen check just above, for the :picture
+  # wait kind #drive_parallel_wait also had no case for.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  pg.event_commands = [
+    ECmd.new(ic::MOVE_PICTURE,
+             [1, 0, 200, 200, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 10, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, pg) })
+  st = scene.instance_variable_get(:@state)
+  st.pictures[1] = Game::Picture.new(1, x: 100, y: 100)
+
+  scene.update # runs Move Picture -> suspends on :picture
+  ok !st.switches[1],
+     'the Parallel Process must wait too, not resume immediately'
+  ok st.pictures[1].moving?, 'the picture is still moving toward its target'
+
+  70.times { scene.update } # 10 tenths (60 frames) is plenty
+  eq [200, 200], [st.pictures[1].x, st.pictures[1].y],
+     'the picture reached its target'
+  ok st.switches[1], 'the Parallel Process resumed once the move settled'
+end
+
+check "Flash Sprite's own wait flag blocks a Parallel Process's own interpreter, " \
+      'not just the foreground\'s' do
+  # Same defect class as the two checks just above, for the :sprite_flash
+  # wait kind #drive_parallel_wait also had no case for.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  # 1 tenth (6 frames) with the wait flag set, then a switch flip that only
+  # runs once the flash is over. The page has no gate of its own, so once the
+  # switch flips the loop immediately re-issues the same Flash Sprite for its
+  # next lap -- fine here, since only the *first* lap's timing is asserted,
+  # not that the hero stops flashing for good.
+  pg.event_commands = [
+    ECmd.new(ic::FLASH_SPRITE, [10001, 31, 0, 0, 31, 1, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  scene.update # runs Flash Sprite -> suspends on :sprite_flash
+  ok scene.instance_variable_get(:@player_flash), 'the hero is flashing'
+  ok !st.switches[1], 'the Parallel Process must wait too, not resume immediately'
+
+  4.times { scene.update } # still mid-flash (6-frame duration)
+  ok !st.switches[1], 'still waiting partway through the flash'
+
+  10.times { scene.update } # comfortably past the 6-frame decay
+  ok st.switches[1], 'the Parallel Process resumed once the flash finished'
+end
+
 check "a forced route auto-runs to completion before an immediately-following Show Text opens (yado.tk)" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
