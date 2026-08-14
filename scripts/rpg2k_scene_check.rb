@@ -4937,6 +4937,47 @@ check 'A Screen Flash concurrent with a Show Battle Animation is capped to the c
   ok st.switches[6], 'the event resumed after the animation'
 end
 
+# yado.tk's own "Character Flash" half of the same claim, capped the same way
+# and for the same reason (corroborated independently against EasyRPG's own
+# C++ source, see #hold_animation_target_flash's comment):
+# `BattleAnimation::Update` calls `UpdateTargetFlash()` unconditionally right
+# alongside `UpdateScreenFlash()` on every real frame, and it always ends in
+# an unconditional `FlashTargets(r, g, b, p)` the same way `FlashOnce` is for
+# the screen. Fired here with a Flash Sprite (11320) on the player (wait off,
+# so the event moves straight on to the animation instead of blocking on the
+# flash's own long duration), then animation 8 -- the screen-flash-only
+# fixture, no flash_scope-1 timing at all -- targeting the player: its own
+# timing-less opening frames must stomp the unrelated Character Flash to
+# nothing the same way they already do the unrelated Screen Flash above.
+check 'A Character Flash concurrent with a Show Battle Animation targeting the same character is capped ' \
+      'to the current frame' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::FLASH_SPRITE, [10001, 31, 0, 0, 31, 20, 0], indent: 0), # player, r g b power, 2s, wait=0
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),            # animation 8, player, wait=1
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  stomped_at_frame_0 = false
+  saw_the_flash_at_all = false
+  40.times do
+    scene.update
+    pf = scene.instance_variable_get(:@player_flash)
+    saw_the_flash_at_all ||= !pf.nil?
+    anim = scene.instance_variable_get(:@map_animation)
+    stomped_at_frame_0 ||= (anim && anim[:frame_i] == 0 &&
+                            scene.instance_variable_get(:@player_flash).nil?)
+    break if st.switches[6]
+  end
+  ok saw_the_flash_at_all, 'the independently-fired Flash Sprite command did take effect at some point'
+  ok stomped_at_frame_0, "the battle animation's own per-frame state stomps the unrelated Character Flash " \
+                         "to nothing during its own timing-less opening frames, capping it well short of " \
+                         'its own configured 120-frame duration'
+  ok st.switches[6], 'the event resumed after the animation'
+end
+
 # yado.tk: Show Battle Animation targeting a Vehicle position reads that
 # vehicle's real, currently-live x/y (the same source the Control Variables
 # vehicle-position fix reads), not the player's or the triggering event's own
@@ -7133,6 +7174,28 @@ check 'a target-scope flash with no resolvable target sprite is a silent no-op' 
   ma = { frame_i: 0, battle: true, target_index: nil, timings: [timing] }
   scene.send(:fire_animation_flashes, ma) # must not raise
   ok true, 'no exception targeting nothing'
+end
+
+# The battle-round half of the Character Flash cap (see the map-triggered
+# check above and #hold_animation_target_flash's own comment): an unrelated
+# flash already in flight on an animation's own target enemy -- simulating an
+# earlier hit's own target-scope timing still decaying when a second, later
+# animation with no flash_scope-1 timing of its own starts playing over the
+# same enemy -- gets forcibly cleared the moment #hold_animation_target_flash
+# runs with nothing of its own to hold, mirroring #hold_animation_screen_flash
+# exactly but scoped to just this one sprite: the untargeted bystander is left
+# alone.
+check 'a Character Flash concurrent with a battle-round animation on the same enemy is capped, a bystander is not' do
+  scene, ui = battle_at_command
+  spr = ui[:enemy_sprites][0]
+  bystander = ui[:enemy_sprites][1]
+  spr.flash(Color.new(200, 0, 0, 200), 60)
+  bystander.flash(Color.new(0, 200, 0, 200), 60)
+  ok spr.flash_color && bystander.flash_color, 'both unrelated flashes are in flight to start with'
+  ma = { frame_i: 0, battle: true, target_index: 0, timings: [] } # no target_flash_hold armed
+  scene.send(:hold_animation_target_flash, ma)
+  eq nil, spr.flash_color, "the animation's own target sprite had its unrelated flash stomped to nothing"
+  ok bystander.flash_color, 'the untargeted bystander sprite is untouched'
 end
 
 check 'a skill that names none plays nothing' do

@@ -3612,16 +3612,59 @@ not yet verified:
   undisturbed for that window, and forcibly zeroes the screen flash
   (`@state.screen.flash(0, 0, 0, 0, 0)`) every real frame outside it —
   reproducing `FlashOnce(0,0,0,0,0)`'s own "nothing fired yet/lapsed" case.
-  Scoped to Screen Flash only: **Character Flash is a structurally different
-  mechanism in this codebase** (the decaying `{red:, green:, blue:, power:,
-  frames:, total:}` hash `#apply_sprite_flash`/`#update_sprite_flashes` drive
-  per-target, vs. `Game::Screen`'s own single flash state) and would need its
-  own, separate per-real-frame reassertion — left open. Covered by a new
-  `scripts/rpg2k_scene_check.rb` check (a Flash Screen command fired with a
-  120-frame duration right before a Show Battle Animation whose own frame 0
-  carries no timing at all gets stomped to not-flashing during those
-  timing-less opening frames, well short of its own configured duration),
-  confirmed to fail against the pre-fix code before the fix.
+  Scoped to Screen Flash only at the time: **Character Flash is a
+  structurally different mechanism in this codebase** (the decaying `{red:,
+  green:, blue:, power:, frames:, total:}` hash `#apply_sprite_flash`/
+  `#update_sprite_flashes` drive per-target, vs. `Game::Screen`'s own single
+  flash state) and needed its own, separate per-real-frame reassertion — left
+  open at the time. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
+  Flash Screen command fired with a 120-frame duration right before a Show
+  Battle Animation whose own frame 0 carries no timing at all gets stomped to
+  not-flashing during those timing-less opening frames, well short of its own
+  configured duration), confirmed to fail against the pre-fix code before the
+  fix. ✅ **The Character Flash half is now fixed too, verified against the
+  same EasyRPG C++ source's exact parallel structure.**
+  `BattleAnimation::Update` calls `UpdateTargetFlash()` unconditionally on
+  every real frame right alongside `UpdateScreenFlash()` — not gated on that
+  frame carrying its own flash_scope-1 timing either — and `UpdateTargetFlash`
+  always ends in an unconditional `FlashTargets(r, g, b, p)`:
+  `BattleAnimationMap::FlashTargets` (`target->Flash(r, g, b, p, 0)`, the
+  map-triggered shape) and `BattleAnimationBattle::FlashTargets`
+  (`battler->Flash(r, g, b, p, 0)`, the battle-round shape — the two classes
+  this codebase's own `#fire_map_target_flash`/`#fire_target_flash` already
+  mirror) are both unconditional the exact same way `Game_Screen::FlashOnce`
+  is, with r/g/b/p either the most recently fired flash_scope-1 timing's own
+  decaying value or all zero — so an unrelated Character Flash already
+  running on an animation's own target (a Flash Sprite command mid-decay on
+  the player/a map event, or an enemy's own in-flight flash from an earlier
+  battle-round hit) got silently overwritten the very next real frame too,
+  the same uncapped gap `#hold_animation_screen_flash` closed for the screen.
+  Fixed with a new `#hold_animation_target_flash`, called from
+  `#step_map_animation` alongside `#hold_animation_screen_flash` on every real
+  frame the animation drives: a new `ma[:target_flash_hold]` counter (set to
+  `ANIM_FLASH_FRAMES` by `#fire_animation_flashes` whenever a flash_scope-1
+  timing actually fires, mirroring `ma[:screen_flash_hold]` exactly) lets the
+  animation's own just-fired target flash decay undisturbed for that window,
+  and forcibly clears the target's flash every real frame outside it — a new
+  `#clear_target_flash` (`spr.flash(nil, 0)` on the battle-round path's own
+  `@battle_ui[:enemy_sprites]` entry, the same RGSS `Sprite#flash` primitive
+  `#fire_target_flash` already arms) or `#clear_map_target_flash`
+  (`@player_flash = nil` / an `@events` entry's own `[:flash] = nil`, the same
+  "no flash in flight" state `#tick_flash`'s own decay already leaves behind)
+  depending on `ma[:battle]`. Unlike the screen-flash half, this is scoped to
+  just the animation's own target — a Character Flash on a *different*
+  character is untouched, matching `FlashTargets`' own target-list scope; a
+  nil target (an ally-scoped battle animation with no on-screen sprite, or a
+  map animation aimed at a vehicle/unresolved event id) is a silent no-op on
+  both sides, mirroring `#fire_target_flash`/`#fire_map_target_flash`'s own
+  missing-target guards. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a Flash Sprite fired on the player right before a Show Battle
+  Animation targeting the player, using the same screen-flash-only fixture
+  animation with no flash_scope-1 timing at all, gets stomped to nothing
+  during its own timing-less opening frames; a battle-round check directly
+  arming both a targeted enemy sprite's and a bystander enemy sprite's flash,
+  confirming `#hold_animation_target_flash` clears only the targeted one),
+  both confirmed to fail against the pre-fix code before the fix.
 - Change Screen Tone affects **only** the map tile+character layer —
   pictures, screen/character flash, battle animations, and message text
   are all completely unaffected even at a maximal dark tone; Erase Screen,
