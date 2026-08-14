@@ -4318,9 +4318,41 @@ not yet verified:
   silent no-op. Removing a member preserves equipment/level/EXP/HP/status;
   re-adding a KO'd member keeps them KO'd. Only the party **leader's**
   sprite is ever drawn on the field, regardless of party size.
-- Empty party doesn't itself Game Over, but battling with one is instant
-  defeat; all-KO'd (or an unrecoverable input-blocking state across the
-  whole party) is instant Game Over the same way.
+- ✅ **Empty party doesn't itself Game Over, but battling with one is instant
+  defeat; an all-KO'd party reads as an instant defeat the same way.** (An
+  unrecoverable input-blocking *state* lock — every member asleep/paralysed
+  at once, rather than HP 0 — is a separate, still-open case; nothing here
+  addresses it.) `Scene::Map#draw_battle_command`'s `current_actor`
+  (`living_allies[@battle_ui[:actor_i]]`) already resolved to `nil` for both
+  an empty party and an all-KO'd one (`living_allies` rejects `dead?`), so it
+  already declined to open a command window rather than crash (`return
+  unless actor`) — but nothing then moved the fight along: a round only ever
+  starts once the player picks a command for *some* actor via the command
+  window, so `#open_battle` left the command phase frozen forever, with no
+  window and no input to act on, instead of ever reaching the
+  `battle.finished?` check `#finish_round_animation`/`#leave_battle_event_phase`
+  already run after every other round. Fixed with a new
+  `#settle_already_finished_battle`, called from `#open_battle` right after
+  the Turn-0 battle-event pages get their chance to run (unchanged) and
+  before the command window would otherwise be drawn: it checks
+  `Game::Battle#finished?` (already true the instant the battle is
+  constructed with no living ally, via the same `alive?(@allies)` empty-`any?`
+  check `#finished?` uses everywhere else) and, if so, calls
+  `Game::Battle#end_round` — the same method that already computes `#result`
+  (`alive?(@allies) ? :victory : :defeat`) at the end of an ordinary round,
+  and is safe to call with nothing queued (`@allies.each` no-ops on an empty
+  or fully-KO'd roster) — then `#enter_battle_result(battle.result)`, the
+  same path a real round's own defeat takes into the result screen.
+  `#finish_battle`'s own existing `@state.party.all_dead?` check (`!any_alive?`,
+  which reads an *empty* actor list as "all dead" too, via `Array#any?`'s
+  empty-is-false rule) already turns that defeat into a genuine Game Over
+  once the result screen is dismissed when the encounter has no custom
+  [Defeat] handler — unaffected by this fix, it only needed to be reachable
+  in the first place. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (an empty-actors party and a single HP-0 actor party both settle a
+  fresh encounter straight to a `:defeat` result instead of stalling in
+  `:command`), both confirmed to fail against the pre-fix code (the battle
+  staying open in `:command` forever) before the fix.
 - "Hero X is in the party" always evaluates in **database ID order**, not
   current seat/slot order — there is no built-in way to read a member's
   current seat position.
