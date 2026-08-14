@@ -6638,10 +6638,10 @@ def combatant_mp(name, atk, dfn, agi, hp, mp)
   c
 end
 
-check 'Battle.attack_damage is half attack less a quarter defence, min 1' do
+check 'Battle.attack_damage is half attack less a quarter defence, floored at 0' do
   eq 18, Game::Battle.attack_damage(40, 8),  '20 - 2'
-  eq 1,  Game::Battle.attack_damage(2, 40),  'floored at 1'
-  eq 1,  Game::Battle.attack_damage(0, 0)
+  eq 0,  Game::Battle.attack_damage(2, 40),  'floored at 0, not 1 (a genuine no-damage hit)'
+  eq 0,  Game::Battle.attack_damage(0, 0)
 end
 
 # base 20 (atk 40 vs def 0); variance 4 -> adj = 8, spread 20-4 .. 20+8-4 = 16..24.
@@ -7533,7 +7533,9 @@ check 'Battle: a stronger party wins, a weaker one is defeated' do
   eq :victory, b.run
   ok slime.dead?, 'the enemy was defeated'
   ok !hero.dead?
-  ok hero.hp < 200, 'the hero took some damage on the way'
+  # Slime's own attack (8/2 - 20/4 = -1) floors at 0, not 1: this armoured a
+  # hero takes no damage at all rather than a guaranteed 1-point scratch.
+  eq 200, hero.hp, 'the slime never landed a scratch (its attack floors at 0 damage against this armour)'
 
   weak = combatant('Weak', 6, 2, 3, 10)
   boss = combatant('Boss', 60, 30, 40, 500)
@@ -7577,7 +7579,9 @@ check 'Battle#run records a combat log of every hit' do
                        [combatant('Slime', 8, 4, 5, 30)], Game::Rng.new(1))
   eq :victory, b.run
   ok b.log.length >= 2, 'the Slime took at least two hits'
-  ok b.log.all? { |e| e[:damage] >= 1 }, 'every hit did at least 1 damage'
+  ok b.log.none? { |e| e[:damage].negative? }, 'no hit ever does negative damage'
+  ok b.log.select { |e| e[:target] == 'Slime' }.all? { |e| e[:damage] >= 1 },
+     "every hit against the Slime did at least 1 damage (the Hero's own attack)"
 end
 
 check 'Battle: a commanded attack hits the chosen enemy; run_round clears it' do
@@ -7739,7 +7743,7 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   # skill_effect = 20 + 40*12/40 = 32. Fire is purely magical (physical_rate 0,
   # magical_rate 40), so RPG_RT blunts it with the target's *spirit* and not at
   # all with its armour: 32 - (0*8/40 + 40*16/80) = 32 - 8 = 24.
-  eq({ cost: 6, hp: -24, mp: 0, inflict: [], chance: 100, variance: 4,
+  eq({ cost: 6, hp: -24, mp: 0, attack: true, inflict: [], chance: 100, variance: 4,
        attributes: [], absorb: false, attr_shift: nil, attr_ids: [],
        stat_mod_keys: [], cured: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
@@ -7788,8 +7792,41 @@ check 'battle_skill_command respects a stat-doubling state on the target' do
   tough_foe = combatant('Foe', 0, 0, 5, 100)
   tough_foe.spi = 20
   tough_foe.states = [2]
-  eq(-1, st.party.battle_skill_command(st.party.db_skill(7), caster, tough_foe)[:hp],
-     'doubled spirit (40): 20 base - 40*40/80 (20) = 0, floored to 1')
+  eq(0, st.party.battle_skill_command(st.party.db_skill(7), caster, tough_foe)[:hp],
+     'doubled spirit (40): 20 base - 40*40/80 (20) = 0, floored at 0 (a genuine no-damage hit)')
+end
+
+check 'an attack skill that computes to 0 damage still reads as an attack, not a recovery' do
+  # Same fixture as the stat-doubling check above (skill_effect 20, doubled
+  # spirit 40 -> defence term 20 -> dmg = 0), driven all the way through
+  # Battle#command_skill/#step_action/#apply_skill_hit this time -- the actual
+  # bug was not the formula alone: #apply_skill_hit used to tell an attack
+  # apart from a recovery purely by the sign of `hp` (negative = attack), and
+  # `-0 == 0` reads exactly like an ordinary non-negative recovery amount, so
+  # a 0-damage attack skill would have silently taken the recovery branch
+  # (wrong caster/target field names, no `damage:`/`skill:` on the entry, and
+  # -- since `hp` is 0 -- no actual healing either, but the wrong shape of
+  # log entry) without the explicit `attack:` flag this fix threads through.
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40) }
+  states = { 2 => fake_state(affect_type: 1, affect_spirit: true) } # 1 = double
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8, int: 20, agi: 7) }
+  db = FakeActorDB.new(players, [1], {}, skills, {}, states)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  tough_foe = combatant('Foe', 0, 0, 5, 100)
+  tough_foe.spi = 20
+  tough_foe.states = [2] # doubled spirit blunts the spell to exactly 0
+  bat = Game::Battle.new([caster], [tough_foe], Game::Rng.new(1), states)
+  cmd = st.party.battle_skill_command(st.party.db_skill(7), caster, tough_foe)
+  bat.command_skill(caster, tough_foe, name: 'Fire', cost: cmd[:cost], hp: cmd[:hp],
+                     mp: cmd[:mp], attack: cmd[:attack])
+  bat.begin_round
+  e = bat.step_action
+  eq 0, e[:damage], 'the spell genuinely dealt no damage'
+  eq 'Fire', e[:skill], 'still reads as the attack skill that landed, not a recovery'
+  ok !e[:recover], 'never mistaken for a heal'
+  eq 100, tough_foe.hp, 'the target neither took damage nor was healed'
 end
 
 check 'a skill flagged "attribute defence up/down" picks direction from ' \
@@ -8576,7 +8613,7 @@ check 'battle: a confused battler (restriction 3) attacks its own side' do
   bat.command_attack(hero, slime)                         # commanded at the enemy...
   bat.run_round
   eq 100, slime.hp                                        # ...confusion spared the enemy
-  eq 79, hero.hp                                          # slime's 1 + the hero's own 20
+  eq 80, hero.hp                                          # slime's 0 (atk 0 floors at 0, not 1) + the hero's own 20
 end
 
 check 'battle: a berserk battler (restriction 2) attacks despite defending' do
@@ -8678,8 +8715,8 @@ check 'battle: a state that doubles DEF blunts incoming damage' do
   tough_foe = combatant('Foe', 0, 40, 5, 100)
   tough_foe.states = [3]
   bat = Game::Battle.new([hero], [tough_foe], Game::Rng.new(1), states)
-  eq 1, bat.send(:deal_attack, hero, tough_foe)[:damage],
-     'doubled def 80: 40 / 2 - 80 / 4 = 0, floored to 1'
+  eq 0, bat.send(:deal_attack, hero, tough_foe)[:damage],
+     'doubled def 80: 40 / 2 - 80 / 4 = 0, floored at 0 (a genuine no-damage hit)'
 
   plain_foe = combatant('Foe', 0, 40, 5, 100)
   bat2 = Game::Battle.new([hero], [plain_foe], Game::Rng.new(1), states)
@@ -11185,8 +11222,8 @@ check 'a magical skill is blunted by spirit, not by armour' do
      'armour is irrelevant to a spell')
   wise = combatant('Foe', 0, 40, 5, 100)
   wise.spi = 80
-  eq(-1, st.party.battle_skill_command(st.party.db_skill(2), caster, wise)[:hp],
-     'spirit is what resists it (floored at 1)')
+  eq(0, st.party.battle_skill_command(st.party.db_skill(2), caster, wise)[:hp],
+     'spirit resists it hard enough to floor at 0 (32 - 40), not a guaranteed 1')
 end
 
 check 'a skill with both rates takes both halves of the term' do
