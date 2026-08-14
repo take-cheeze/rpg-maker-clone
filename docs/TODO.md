@@ -3647,15 +3647,28 @@ Everything below is unverified against the codebase.
   item the party never held at all still equips it (conjured, not drawn
   from a bag that had none), and unequipping does not add a copy back
   either. **Every sub-claim in this bullet is now confirmed correct.**
-- **Call Event** — doesn't move the target event, ignores its appearance
+- ✅ **Call Event** — every checkable engine-behavior sub-claim is confirmed
+  correct: it doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself
-  once the callee finishes/cancels; calling a bad event/page id raises
-  specific distinct error dialogs; nesting caps at 1000; under heavy
-  nested-Call-Event + multi-parallel-process load, processing can freeze
-  (workaround: a Wait:0.0s before the call). Battle Events can't use Call
-  Event through the normal editor at all. ("A variable can't pick the
-  called common-event id directly" is confirmed already correct — see
-  below.)
+  once the callee finishes/cancels, and nesting caps at 1000.
+  `Interpreter#do_call_event` (`mruby-rpg2k/mrblib/interpreter.rb`) only
+  splices the callee's raw command list onto the *caller's* own
+  `@call_stack`/`@list`/`@index` — it never touches the target's
+  `Game::Character` (so "doesn't move the target event" holds), and both a
+  common-event target (`Scene::Map#build_resolver`, discarding
+  `:trigger`/`:need_flag`/`:switch_id`) and a map-event-page target
+  (`EventResolver#map_event_commands`, reading the raw page by index) read
+  straight past any appearance condition — the common-event half of this was
+  already independently confirmed elsewhere in this doc. `MAX_CALL_DEPTH =
+  1000` matches "nesting caps at 1000" exactly, and "caller resumes right
+  after itself" is the natural consequence of the call-stack push/pop.
+  Calling a bad event/page id's specific Windows error dialogs, the heavy-
+  load freeze and its `Wait:0.0s` workaround (a timing/performance edge
+  case), and "Battle Events can't use Call Event through the normal editor"
+  (an editor-authoring limitation with no runtime analog) remain
+  unverifiable in this environment and are not modelled. ("A variable can't
+  pick the called common-event id directly" is confirmed already correct —
+  see below.)
 - **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
   above).
@@ -3748,11 +3761,19 @@ Everything below is unverified against the codebase.
   on; an approaching trigger-2 bystander still never starts its own event
   while the flag is on), two confirmed to fail against the pre-fix code
   before the fix.
-- **Hero & party** — removing a hero preserves their equipment/level/EXP/HP/
+- ✅ **Hero & party** — removing a hero preserves their equipment/level/EXP/HP/
   status; the field sprite is always party member 1's; only the front member
   draws on the field at all; a hero's name can't be copied to another via any
-  built-in command. (Party caps at 4, Change Party Member no-ops past that —
-  now fixed, see above.)
+  built-in command. **Every sub-claim confirmed correct.**
+  `Game::Party#remove_actor` (`mruby-rpg2k/mrblib/game.rb`) only filters
+  `@actors` — the removed roster entry (full level/EXP/equipment/status) is
+  left untouched, and `#add_actor` hands the same object straight back
+  unchanged. `Game::Party#leader` (`@actors.first`) is what the field
+  charset/sprite-hide logic (`Scene::Map`) draws from, so the field sprite is
+  always party member 1's and only the front member ever draws. `Interpreter
+  #do_change_actor_name` only accepts a literal command string, never
+  another actor's own name, so no built-in command can copy one. (Party caps
+  at 4, Change Party Member no-ops past that — now fixed, see above.)
 - **Processing order** — map/common events process in ascending id order;
   only one event/parallel-process advances per tick engine-wide (round
   robin, not true concurrency) — a process that hits Wait/Show-Text yields
@@ -3780,9 +3801,11 @@ Everything below is unverified against the codebase.
 - **Material data** — an imported asset takes priority over a same-named RTP
   one; dropping files directly into asset folders bypasses size/transparent-
   colour-index validation.
-- **Parallel Process** — yields to others during its own Wait/Show-Text
+- ✅ **Parallel Process** — yields to others during its own Wait/Show-Text
   pause; appearance condition going false mid-run only stops at the next
-  yield point, not instantly (same fact as the `09_bug` item above); ✅ **a
+  yield point, not instantly (same fact as the `09_bug` item above,
+  already confirmed and fixed there — `step_parallel` structurally cannot
+  reconsider a running interpreter's own condition mid-command). ✅ **a
   Transfer Player command issued from a Parallel Process now actually warps
   the party**, instead of being silently dropped outright — a much larger
   gap than the bullet's own "needs a Wait:0.0s after it" wording implies.
