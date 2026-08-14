@@ -1275,9 +1275,20 @@ class RPG2k
           # A plain Wait resolves the instant its timer elapses; keep spending
           # this same frame's step budget instead of losing a frame to the
           # resume, matching drive_event's foreground handling (see there for
-          # why: Wait 0.0 sec must cost exactly one frame). Other wait kinds
-          # keep their old one-frame-per-call pacing.
-          unless wait_kind == :wait && !it.waiting?
+          # why: Wait 0.0 sec must cost exactly one frame). A Show Battle
+          # Animation's own :animation wait gets the identical same-frame
+          # treatment now too, for the identical reason (see #drive_event's
+          # own :animation case): when *this* process's own animation
+          # finishes naturally inside #drive_map_animation (not cut off by a
+          # different process -- that resumes the *other* interpreter, from
+          # its own step_parallel turn, and is unaffected by this check), it
+          # used to sit merely unparked until the next real frame's
+          # step_parallel call before its own next command ever ran, one
+          # frame later than real RPG_RT -- yado.tk's "chaining two Show
+          # Battle Animation calls back-to-back produces a visible one-frame
+          # stutter", the parallel-process half. Other wait kinds keep their
+          # old one-frame-per-call pacing.
+          unless (wait_kind == :wait || wait_kind == :animation) && !it.waiting?
             apply_interpreter_requests(it, p[:event])
             return record_parallel_progress(p)
           end
@@ -3221,7 +3232,27 @@ class RPG2k
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
           when :name_input then drive_name_input
-          when :animation then drive_map_animation(@interpreter)
+          when :animation
+            drive_map_animation(@interpreter)
+            # Same "spend this frame's own step budget immediately" idiom as
+            # :wait/:battle above: EasyRPG's own Game_Interpreter::Update loop
+            # only breaks early *while* `_state.wait_time` is still > 0 (`if
+            # (_state.wait_time > 0) { _state.wait_time--; break; }`) -- once a
+            # waited-for Show Battle Animation's own countdown reaches exactly
+            # 0, that same real frame's Update call falls straight through
+            # into whatever command follows instead of costing a further
+            # frame. `#drive_map_animation` resuming `@interpreter` here (its
+            # own animation just finished naturally) used to leave it merely
+            # unparked -- nothing drove it any further until next frame's
+            # `#drive_event` -- so a second Show Battle Animation chained
+            # right after the first always showed its own frame 0 one real
+            # frame later than real RPG_RT: yado.tk's "chaining two Show
+            # Battle Animation calls back-to-back produces a visible
+            # one-frame stutter".
+            if @interpreter.running? && !@interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :sprite_flash then @interpreter.resume unless sprite_flashing?
           when :save_menu then perform_event_save
           when :menu then perform_event_menu
