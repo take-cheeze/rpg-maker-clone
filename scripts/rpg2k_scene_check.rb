@@ -7007,6 +7007,28 @@ check 'the round waits for the animation instead of the banner timer' do
   ok !scene.send(:battle_animation_playing?)
 end
 
+# Real RPG_RT (EasyRPG's BattleAnimation::Update, src/battle_animation.cpp)
+# ticks an internal frame counter once per logical 60fps update and shows
+# `GetFrame() / 2` as the current cell -- so every real (LCF) animation frame
+# is held for exactly 2 ticks (1/30s), whether or not that frame's own cell
+# list is empty ("Wait"), before the next one shows. See the ANIM_CELL_FRAMES
+# comment in scene/map.rb for the fuller citation.
+check 'each battle animation frame is held for exactly ANIM_CELL_FRAMES ticks (2, 1/30s)' do
+  scene, = battle_at_command
+  scene.send(:start_battle_animation,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+               skill_id: 8, target_index: 0, target_ally: false })
+  ma = scene.instance_variable_get(:@map_animation)
+  ok ma, 'the fixture animation (id 8, 4 frames) armed'
+  eq 2, RPG2k::Scene::Map::ANIM_CELL_FRAMES,
+     'matches EasyRPG BattleAnimation::Update -- GetRealFrame() == GetFrame() / 2'
+  eq 0, ma[:frame_i], 'starts on the first frame'
+  2.times { scene.send(:step_map_animation) }
+  eq 0, ma[:frame_i], 'still the first frame after 2 ticks'
+  scene.send(:step_map_animation)
+  eq 1, ma[:frame_i], 'advances to the second frame on tick 3'
+end
+
 check 'an item names its animation the same way a skill does' do
   scene, = battle_at_command
   eq nil, scene.send(:battle_animation_id,
