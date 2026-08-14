@@ -5646,24 +5646,53 @@ level-up).
   a tile" rule (confirmed already correct — see the "Processing order"
   bullet above) now spans live and erased events together: several ids on
   one tile, in any live/erased mix, still resolve to the highest of them.
-  **The other half of this same claim — an event whose current page
-  conditions simply aren't met — is separate and still open**: such an
-  event never gets a `Game::Character` built at all (`#build_events` skips
-  it outright whenever no page's conditions are satisfied), so there is no
-  position to answer from without first deciding what "its" position even
-  means while hidden, which would need a real RPG_RT comparison to pin
-  down rather than a guess. The "id-lookup position snaps to an event's
+  ✅ **The other half of this same claim — an event whose current page
+  conditions simply aren't met — is now settled and fixed too, verified
+  against EasyRPG Player's actual C++ source rather than left a guess.**
+  Such an event never gets a `Game::Character` built at all (`#build_events`
+  skips it outright whenever no page's conditions are satisfied), so this
+  build genuinely had no position to answer from — but real RPG_RT does:
+  `Game_Event`'s own C++ object (`src/game_event.cpp`) is constructed once
+  per map event for the whole visit regardless of page state, and
+  `RefreshPage()` — called whenever a switch/variable/item/party write might
+  flip the active page, this codebase's own `#pages_changed?` equivalent —
+  only clears the active page and forces Through Mode on when no page
+  matches; it never touches `x`/`y`. `Game_Interpreter::CommandStoreEventID`
+  (`src/game_interpreter.cpp`) looks the target up via
+  `Game_Map::GetEventAt(x, y, /* require_active */ false)`
+  (`src/game_map.cpp`), passing `false` explicitly — so an inactive event is
+  matched by position exactly like a live one, settling the question this
+  bullet left open. Fixed with a new per-visit `@event_last_position` hash
+  (`mruby-rpg2k/mrblib/scene/map.rb`), the same shape as the already-fixed
+  `@erased_event_positions` above: `#build_events` seeds an id's entry from
+  its raw `ev.x`/`ev.y` map placement the first time it ever sees that id
+  this visit (covers an event that starts the visit with no page matching at
+  all, mirroring `Game_Event`'s own constructor-time `SetX`/`SetY` before its
+  first `RefreshPage()`), and `#record_map_event_positions` — already
+  running every frame over every *live* event to drive the pre-existing
+  save/reload wandered-position feature — now also writes the same
+  `[x, y, direction]` into this table, so an event that walked somewhere via
+  its own page before losing it is found at wherever it actually stood, not
+  snapped back to its spawn tile. `#event_id_at` now falls back to
+  `@event_last_position` for any id neither currently live nor erased, with
+  the same last-write-wins/highest-id tie-break the erased-event fallback
+  already uses — live, erased and hidden ids sharing one tile, in any mix,
+  still resolve to the highest of them. Both tables reset on a genuine map
+  change (`#perform_teleport`), matching every other per-visit event-state
+  table in this file. The "id-lookup position snaps to an event's
   destination tile the instant it begins moving" half of the original
   bullet was already confirmed correct earlier, under the `Map Event`
   "hero touches event" bullet above (`#reoccupy` rewrites this same
   `@event_tiles` table the instant a step commits, well before the visual
   slide catches up) — `#event_id_at` reads that same table, so the same
-  fact already covered it. Covered by three new
-  `scripts/rpg2k_scene_check.rb` checks (an erased event alone on a tile
-  still answers with its id; an erased event still outranks a lower-id
-  live event sharing its tile; a live event still outranks a lower-id
-  erased one), two confirmed to fail against the pre-fix code before the
-  fix.
+  fact already covered it. Covered by six `scripts/rpg2k_scene_check.rb`
+  checks in total: the three pre-existing erased-event ones above, plus
+  three new ones for this fix (an event whose page condition has never once
+  held still answers at its raw map placement; an event that walked two
+  tiles via a Custom move route before its gating switch turned off answers
+  at that last-known tile, not its original spawn tile; a hidden event still
+  outranks a lower-id live event sharing its old tile), all three of the new
+  ones confirmed to fail against the pre-fix code before the fix.
 
 **Database field semantics** (from the `11_db/` sweep, 48 findings — the
 single densest source in this pass; only the ones not already listed

@@ -3421,6 +3421,57 @@ check 'a live event still outranks a lower-id temporarily-erased event on the sa
      'the live higher id wins over the erased lower-id event'
 end
 
+check 'Store Event ID resolves an event whose page conditions have never been met' do
+  # yado.tk's "Get Event ID at Location" claim had a second, previously-open
+  # half: an event whose current page conditions simply aren't met never gets
+  # a Game::Character built at all (#build_events skips it outright), so
+  # there was no position to answer from. Verified against EasyRPG Player's
+  # actual C++ source rather than guessed at: real RPG_RT keeps one
+  # Game_Event object per map event for the whole visit regardless of page
+  # state (Game_Event::RefreshPage, src/game_event.cpp, clears the active
+  # page on a no-match but never touches x/y), and
+  # Game_Interpreter::CommandStoreEventID's own lookup,
+  # Game_Map::GetEventAt(x, y, /* require_active */ false) (src/game_map.cpp),
+  # explicitly passes false so an inactive event still matches by position.
+  hidden = page(trigger: 0)
+  hidden.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
+  scene = new_scene({ 2 => event(2, 2, hidden) }, player: [0, 0])
+  5.times { scene.update }
+  ok event_hashes(scene)[2].nil?, 'the condition never held, so nothing is on the map'
+  eq 2, scene.event_id_at(2, 2), 'it still answers at its raw map placement'
+  eq 0, scene.event_id_at(0, 0), 'an ordinary empty tile still answers 0'
+end
+
+check 'Store Event ID resolves a hidden event at wherever it stood before its page stopped matching' do
+  # Distinguishes the fallback from a naive "always answer at the raw spawn
+  # tile": the event walks two tiles east via a Custom move route while its
+  # page is active, then the page's own gating switch turns off -- it should
+  # answer at its last-known (4, 2), not back at its (2, 2) spawn tile.
+  gated = page(trigger: 0, x_move_type: Game::MoveType::CUSTOM,
+               route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false))
+  gated.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
+  scene = new_scene({ 2 => event(2, 2, gated) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.switches[5] = true
+  40.times { scene.update } # walks right twice and settles at (4, 2)
+  eq [4, 2], [chars(scene)[2].x, chars(scene)[2].y], 'the route finished'
+
+  st.switches[5] = false
+  5.times { scene.update }
+  ok event_hashes(scene)[2].nil?, 'the condition no longer holds, so it drops off the map'
+  eq 2, scene.event_id_at(4, 2), 'it still answers at its last-known tile, not its spawn tile'
+  eq 0, scene.event_id_at(2, 2), 'its old spawn tile does not still answer for it'
+end
+
+check 'a hidden event still outranks a lower-id live event sharing its old tile' do
+  gated = page(trigger: 0)
+  gated.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
+  scene = new_scene({ 5 => event(3, 1, gated), 2 => event(3, 1, page) }, player: [0, 0])
+  5.times { scene.update }
+  eq 5, scene.event_id_at(3, 1),
+     'the higher-id hidden event still wins over the live lower-id event'
+end
+
 check 'Proceed With Movement holds the interpreter until a forced route finishes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

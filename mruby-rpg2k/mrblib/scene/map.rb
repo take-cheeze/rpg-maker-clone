@@ -112,6 +112,13 @@ class RPG2k
         # separately from @erased_events since this needs the position, not
         # just the flag.
         @erased_event_positions = {}
+        # Every event's last-known tile this visit, live or not -- unlike
+        # @erased_event_positions (frozen once, at erasure) this is kept live
+        # for as long as an event has a Game::Character, and seeded from its
+        # raw map-data placement the first time #build_events ever sees its
+        # id, so an event whose *very first* selected page fails its
+        # conditions still has a position to answer from. See #event_id_at.
+        @event_last_position = {}
         @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
@@ -844,6 +851,11 @@ class RPG2k
         evs = @map.unit.events
         return unless evs
         evs.each do |id, ev|
+          # First sighting of this id this visit: record its raw placement as
+          # the fallback #event_id_at falls back to while it has no active
+          # page (never touched again from here -- only #record_map_event_positions
+          # keeps it current once the event actually goes live).
+          @event_last_position[id] ||= [ev.x, ev.y, nil]
           next if @erased_events[id] # an Erase Event lasts the whole visit
           selected = Game::EventPage.select(ev.pages, @state.switches,
                                             @state.variables, @state.party)
@@ -925,6 +937,9 @@ class RPG2k
         @events.each do |e|
           ch = e[:char]
           @state.map_event_positions[e[:id]] = [ch.x, ch.y, ch.direction]
+          # Also keeps @event_last_position current for #event_id_at's hidden-
+          # event fallback -- see #build_events' seeding comment.
+          @event_last_position[e[:id]] = [ch.x, ch.y, ch.direction]
         end
       end
 
@@ -3048,17 +3063,31 @@ class RPG2k
       # longer blocks or draws (yado.tk: "Get Event ID at Location... still
       # returns an id for a temporarily-erased event") -- #erase_event freezes
       # its tile in @erased_event_positions instead of dropping it outright.
-      # An event whose current page conditions aren't met is a separate,
-      # still-open half of the same claim: it never gets a Game::Character
-      # built at all (see #build_events), so there is no position to answer
-      # from without deciding what "its" position even means while hidden --
-      # unverified, left for a follow-up.
+      # An event whose current page conditions aren't met answers too, from
+      # @event_last_position (its raw placement, or wherever it last stood
+      # while its own page was still active) -- verified against EasyRPG
+      # Player's actual C++ source rather than left a guess: real RPG_RT keeps
+      # one Game_Event object per map event for the whole visit regardless of
+      # page state (Game_Event::RefreshPage, src/game_event.cpp, clears the
+      # active page and sets Through Mode on a no-match but never touches
+      # x/y), and Game_Interpreter::CommandStoreEventID's own lookup,
+      # Game_Map::GetEventAt(x, y, /* require_active */ false)
+      # (src/game_map.cpp), explicitly passes false so an inactive event is
+      # still matched by position. Both fallback tables are checked with the
+      # same last-write-wins tie-break as the live table, so several ids
+      # sharing a tile -- live, erased and hidden in any mix -- still resolve
+      # to the highest of them.
       def event_id_at(x, y)
         best = 0
         ev = @event_tiles[[x, y]]
         best = ev[:id] if ev
         @erased_event_positions.each do |id, tile|
           best = id if tile == [x, y] && id > best
+        end
+        live_ids = @events.each_with_object({}) { |e, h| h[e[:id]] = true }
+        @event_last_position.each do |id, pos|
+          next if live_ids[id] || @erased_events[id]
+          best = id if pos[0] == x && pos[1] == y && id > best
         end
         best
       end
@@ -6573,6 +6602,7 @@ class RPG2k
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
         @erased_event_positions = {}
+        @event_last_position = {}
         # A saved wandered position is scoped to the map it was taken on --
         # event ids repeat per map, so carrying this forward would misapply a
         # stale entry to an unrelated event on the destination map. Dropped
