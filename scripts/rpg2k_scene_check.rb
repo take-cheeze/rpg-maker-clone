@@ -2965,6 +2965,55 @@ check 'a right-side face draws on the right and does not inset the text' do
   ok msg[:face_x] > 0, 'the face is drawn on the right side of the contents'
 end
 
+# yado.tk: text beyond a line's own display-limit width is silently truncated,
+# not wrapped. #clip_text_to_width is what now enforces that boundary itself
+# (see its own comment on #draw_message_run) rather than relying on the
+# contents bitmap's own edge, which -- unlike here -- this stub's own
+# #text_size (always a flat 0px) can't exercise directly, so this drives the
+# helper with its own small fixed-width stand-in canvas instead.
+check '#clip_text_to_width slices a run at the exact character its own text_size stops fitting' do
+  scene = new_scene({})
+  canvas = Object.new
+  def canvas.text_size(s); RGSS::Rect.new(0, 0, s.length * 6, 0); end
+  eq 'Hello', scene.send(:clip_text_to_width, canvas, 'Hello, World!', 30),
+     'exactly 5 characters (30px) fit; the 6th would overflow'
+  eq 'Hello, World!', scene.send(:clip_text_to_width, canvas, 'Hello, World!', 999),
+     'a run that already fits is returned unchanged, untouched'
+  eq '', scene.send(:clip_text_to_width, canvas, 'Hello', 0), 'no width at all clips to nothing'
+end
+
+# The end-to-end case #clip_text_to_width exists for: a right-side Face
+# Graphic leaves FACE_SIZE + FACE_MARGIN (52px) of *bitmap* width beyond the
+# message layout's own intended text boundary for the portrait -- before this
+# fix, an overflowing run kept drawing straight through that gap and over the
+# face instead of disappearing at the boundary. Re-renders with a realistic
+# fixed-width #text_size patched onto the message's own contents bitmap (the
+# shared stub's own #text_size is a flat 0px, which would never trigger a
+# clip either way) and a fully-revealed 60-character line, well past the
+# window's own available text width at 6px/character.
+check "a message line beyond its own display width is truncated, not left to bleed onto a right-side face" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  long_line = 'A' * 60
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 1, 0], string: 'Faces1'), # right-side face
+    ECmd.new(ic::SHOW_MESSAGE, [], string: long_line),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  c = msg[:contents]
+  def c.text_size(s); RGSS::Rect.new(0, 0, s.length * 6, 0); end
+  msg[:reveal].reveal_all
+  scene.send(:draw_message_contents)
+  drawn = c.draw_calls.last
+  ok drawn, 'the line was actually drawn'
+  text = drawn[4]
+  eq msg[:text_w] / 6, text.length,
+     "clipped to exactly as many characters as fit #{msg[:text_w]}px, not the full #{long_line.length}"
+  ok text.length < long_line.length, 'the overflowing tail was dropped, not left to draw over the face'
+end
+
 check 'Memorize Location stores the player position into variables' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

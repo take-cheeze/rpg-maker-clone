@@ -3846,10 +3846,48 @@ not yet verified:
 - Message Options (window transparency/position) are **sticky global
   state** — once set, they apply to every subsequent message window for
   the rest of the game (or until reset), not scoped to the current event.
-- Text beyond the display-limit line is silently truncated, not wrapped —
-  and because `\V[]`/`\N[]` substitute a runtime value, a message that
-  fits in the editor can still overflow and truncate at runtime if the
-  substituted value/name is long.
+- ✅ **Text beyond the display-limit line is now genuinely truncated by this
+  codebase's own message layout, not just by an accident of bitmap size.**
+  `Scene::Map#draw_message_run` (`mruby-rpg2k/mrblib/scene/map.rb`) handed
+  each colour run straight to `Bitmap#draw_text`/`#blend_text`
+  (`mruby-rgss/src/lib.cxx`) with a `w`/`h` bounding box — but neither
+  primitive actually clips to it; both only ever use `w`/`h` for
+  centre/right alignment math (`blit_glyph_cov`'s own bounds check is
+  against the *bitmap's own* pixel dimensions, confirmed with no
+  `clip_rect`/scissor concept anywhere in the Bitmap implementation), so an
+  overflowing run kept drawing rightward past the message layout's own
+  intended boundary. This looked correct in the common case (no right-side
+  face) purely by coincidence: `#open_message`'s `text_w` there extends
+  exactly to the contents bitmap's own right edge, so an overflowing glyph
+  simply ran off the bitmap and vanished — the "silently truncated" claim
+  held, but only because the *layout* boundary and the *bitmap* boundary
+  happened to be the same pixel. A **right-side Face Graphic** breaks that
+  coincidence: `text_w` there is narrowed by `FACE_SIZE + FACE_MARGIN`
+  (52px) to leave room for the portrait, but the contents bitmap itself is
+  still the *full* window width, so an overflowing run kept drawing straight
+  through that 52px gap and painted over the face graphic instead of
+  disappearing at the line's own display limit — the opposite of "silently
+  truncated." Fixed with a new `#clip_text_to_width`, called from
+  `#draw_message_run` before either draw path (flat `#draw_text` or
+  windowskin-blended `#draw_system_text` → `#blend_text`) ever sees the run:
+  it walks the text one character (not byte) at a time, measuring with the
+  same `Bitmap#text_size` the layout math already trusts, and stops at the
+  last character that still fits `w` — the message layout's own boundary,
+  not the bitmap's — so the fix also makes the no-face/left-face case
+  correct on purpose rather than by accident. The `\V[]`/`\N[]`
+  runtime-substitution half of the original claim needed no separate code
+  change: `Game::Message.scan` already expands those control codes into
+  plain text before layout ever runs, so a long substituted value now
+  truncates through this exact same per-run clip, no different from a long
+  literal string. Covered by two new `scripts/rpg2k_scene_check.rb` checks
+  (`#clip_text_to_width` sliced against a small fixed-width stand-in canvas,
+  since the scene-check harness's own `Bitmap#text_size` stub is a flat 0px
+  and can't exercise a real clip; a full message-open with a right-side face
+  and a 60-character line, `Bitmap#text_size` patched to a realistic
+  6px/character metric, confirming the drawn run is clipped to exactly the
+  window's own available width rather than the full string), both confirmed
+  to fail against the pre-fix code (a `NoMethodError`, and the full
+  unclipped string) before the fix.
 
 **Battle system (default)**
 - ✅ **Battle pages are checked far more often than once per turn** — the
