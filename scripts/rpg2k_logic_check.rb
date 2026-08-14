@@ -10785,14 +10785,14 @@ end
 
 # A minimal skill row for the AI env to resolve.
 class FakeAiSkill
-  attr_accessor :name, :scope, :sp_type, :sp_cost, :sp_percent, :power,
+  attr_accessor :name, :type, :scope, :sp_type, :sp_cost, :sp_percent, :power,
                 :physical_rate, :magical_rate, :hit, :variance, :state_effects,
                 :attribute_effects, :affect_hp, :affect_sp
 
   def initialize(h = {})
-    @name = 'Spell'; @scope = 0; @sp_type = 0; @sp_cost = 0; @power = 0
-    @physical_rate = 0; @magical_rate = 0; @hit = 100; @variance = 0
-    @affect_hp = true; @affect_sp = false
+    @name = 'Spell'; @type = 0; @scope = 0; @sp_type = 0; @sp_cost = 0
+    @power = 0; @physical_rate = 0; @magical_rate = 0; @hit = 100
+    @variance = 0; @affect_hp = true; @affect_sp = false
     h.each { |k, v| send("#{k}=", v) }
   end
 end
@@ -10910,6 +10910,90 @@ check 'casting spends the enemy SP' do
   foe = combatant_mp('Slime', 40, 0, 5, 500, 100)
   enemy_entry([enemy_action(kind: 1, skill_id: 1)], ai, foe: foe)
   eq 88, foe.mp, '100 - 12'
+end
+
+# -- skill effectiveness gates the AI's own weighted choice --------------------
+
+check "an enemy's own state-cure skill is excluded from the running when it has nothing to cure" do
+  # EasyRPG's EnemyAi::IsSkillEffectiveOnAnyTarget (src/enemyai.cpp): unlike an
+  # HP/SP/stat-affecting skill (always considered worth trying against a live
+  # target -- the real engine never actually computes the effect before
+  # choosing), a *pure* state-effect skill only counts as effective once some
+  # target already carries a state it would cure -- the same rule
+  # #skill_effective? already applies to the field menu's own no-op
+  # greying-out, now shared with the enemy AI's own action choice. No
+  # competing action here: with only the useless cure valid at all,
+  # #choose_enemy_action must come back with nothing (total weight 0) once
+  # it is correctly excluded, falling through to a plain default attack --
+  # pre-fix, the same lone action was simply always chosen instead.
+  cure = FakeAiSkill.new(name: 'Focus', scope: 2, power: 0, affect_hp: false,
+                         state_effects: [0, 1]) # flags state id 2
+  ai = skill_ai(1 => cure)
+  acts = [enemy_action(kind: 1, skill_id: 1, rating: 60)]
+  hero = combatant('Hero', 40, 0, 5, 500) # slower, so the foe acts first
+  hero.spi ||= 0
+  foe = combatant_mp('Slime', 40, 0, 20, 500, 100) # unafflicted
+  foe.spi ||= 0
+  foe.actions = acts
+  b = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                       false, false, nil, ai)
+  b.begin_round
+  e = b.step_action
+  ok !e[:recover], 'the useless cure never fires'
+  eq 20, e[:damage], 'the plain default attack fires instead'
+end
+
+check "an enemy's own state-cure skill still fires once a target actually needs it" do
+  # No competing action here (unlike the two checks above/below): with only
+  # the cure valid at all, it must win the draw whenever it is not wrongly
+  # filtered out.
+  cure = FakeAiSkill.new(name: 'Focus', scope: 2, power: 0, affect_hp: false,
+                         state_effects: [0, 1])
+  ai = skill_ai(1 => cure)
+  acts = [enemy_action(kind: 1, skill_id: 1, rating: 60)]
+  hero = combatant('Hero', 40, 0, 5, 500)
+  hero.spi ||= 0
+  foe = combatant_mp('Slime', 40, 0, 20, 500, 100)
+  foe.spi ||= 0
+  foe.states = [2] # actually afflicted this time
+  foe.actions = acts
+  b = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                       false, false, nil, ai)
+  b.begin_round
+  e = b.step_action
+  eq true, e[:recover], 'the cure fires and cures its own state'
+  eq [2], e[:cured]
+end
+
+check "an ineffective skill's own high rating still crowds out a lower-rated action via max_prio" do
+  # EasyRPG computes max_prio from every action's raw rating first, then
+  # zeroes an ineffective skill's own draw in a *separate* later pass
+  # (src/enemyai.cpp's SelectEnemyAiActionRpgRtCompat) -- it does not drop
+  # the ineffective skill before max_prio is found and recompute the other
+  # actions' weights against a lower max. So a much lower-rated action a
+  # naive "exclude it up front" fix would let back into the draw (49 is
+  # within 10 of a recomputed max of 58, but not of the real max of 60) must
+  # still be excluded here.
+  cure = FakeAiSkill.new(name: 'Focus', scope: 2, power: 0, affect_hp: false,
+                         state_effects: [0, 1])
+  ai = skill_ai(1 => cure)
+  acts = [enemy_action(kind: 1, skill_id: 1, rating: 60), # ineffective, filtered
+          enemy_action(kind: 0, basic: 0, rating: 58),    # attack: weight 8
+          enemy_action(kind: 0, basic: 2, rating: 49)]    # guard: weight -1 -> 0
+  30.times do |i|
+    hero = combatant('Hero', 40, 0, 5, 500)
+    hero.spi ||= 0
+    foe = combatant_mp('Slime', 40, 0, 20, 500, 100)
+    foe.spi ||= 0
+    foe.actions = acts
+    b = Game::Battle.new([hero], [foe], Game::Rng.new(i + 1), nil, false,
+                         false, false, false, nil, ai)
+    b.begin_round
+    e = b.step_action
+    ok !e[:recover], "the cure never fires (seed #{i + 1})"
+    ok e[:defend].nil?, "the rating-49 guard stays excluded by the cure's own rating (seed #{i + 1})"
+    eq 20, e[:damage], 'only the attack ever fires'
+  end
 end
 
 # -- transformation ------------------------------------------------------------
