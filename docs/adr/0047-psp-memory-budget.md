@@ -215,16 +215,20 @@ the interpreter-linking slice, in this order:
   mruby gets its own bounded arena. Whichever is chosen, fix
   `app/psp/lv_conf.h`'s comment to state it accurately instead of describing
   the un-taken option.
-- **P3 — ship PSP XP/VX titles unpacked, not as `Game.rgssad`.** Pre-unpack
-  the archive offline (desktop-side, using the existing `RGSSAD` reader) into
-  a loose `Data`/`Graphics`/`Audio` tree, and exclude the packed
-  `Game.rgssad`/`.rgss2a`/`.rgss3a` from the PSP deployment so
-  `open_archive` never reads it. This needs no interpreter/gem changes — only
-  a packaging step and a place to hang it (e.g. a `scripts/` unpack tool). A
-  streaming `RGSSAD` reader is the fallback if Memory Stick space, not RAM,
-  turns out to be the constraint. Deferred relative to P1/P2 since RPG2k
-  bring-up never calls this path, but tracked now so it isn't rediscovered as
-  an on-device crash.
+- **P3 — done (the tool; the deployment step itself is still per-release).**
+  `scripts/rgssad_unpack.rb` unpacks a `Game.rgssad`/`.rgss2a`/`.rgss3a`
+  (desktop-side, reusing the existing `RPGXP::RGSSAD` reader rather than
+  reimplementing the format) into a loose file tree in place beside it,
+  exactly where the loose-file-first loaders already look. Verified against
+  real Marshal-encoded `.rxdata` (the `OpenGame.exe` XP test-bed
+  `scripts/download-opengame-xp.bash` already fetches for CI): packed both as
+  v1 and v3 archives, unpacked, diffed byte-for-byte against the originals —
+  exact match both ways. What's still a per-release step, not something this
+  tool can do for you: excluding the packed archive from a given PSP
+  deployment so `open_archive` never reads it (see Finding 2's catch) — the
+  unpacker never touches or deletes the archive itself. A streaming `RGSSAD`
+  reader remains the fallback if Memory Stick space, not RAM, turns out to be
+  the constraint for a release that can't afford the doubled storage.
 - **P4 — bound the LVGL image cache** and confirm decoded-bitmap sizes for
   the target games' resolutions fit inside whatever pool P2 settles on.
 - **P5 — size and verify the main-thread stack** against measured mruby
@@ -234,13 +238,13 @@ the interpreter-linking slice, in this order:
 ## Consequences
 
 - Unlike ADR 0007's discipline of agreeing every number before any code
-  lands, this revision ships two small, self-contained changes alongside the
-  ADR update: P1a (stripping mrbc's `-g` for the `psp` cross-build) and half
-  of P1 (the bring-up EBOOT's heartbeat now reports real device memory
-  numbers). Neither is a pool-sizing or allocator decision — those still
-  depend on numbers only the interpreter-linking slice can produce (a real
-  database and map actually loaded) — so the rest of the Decision items
-  remain design record only.
+  lands, this revision ships small, self-contained changes alongside the ADR
+  update: P1a (stripping mrbc's `-g` for the `psp` cross-build), half of P1
+  (the bring-up EBOOT's heartbeat now reports real device memory numbers),
+  and the tool half of P3 (`scripts/rgssad_unpack.rb`). None of these is a
+  pool-sizing or allocator decision — those still depend on numbers only the
+  interpreter-linking slice can produce (a real database and map actually
+  loaded) — so the rest of the Decision items remain design record only.
 - ADR 0010's "the full gem set should fit" is narrowed: it holds for gem
   *code* size, but says nothing about per-title asset memory, which Finding 2
   shows can exceed the entire 24 MB budget for an RGSSAD-packed game even
@@ -249,11 +253,11 @@ the interpreter-linking slice, in this order:
 - **Risk register:** P2 (allocator split / pool sizing) is soft-blocking the
   interpreter-linking slice — the slice can land without it decided, but
   `LV_MEM_SIZE` will be guessed rather than sized until it is. P3 (RGSSAD
-  whole-archive loads) is hard-blocking for any future XP/VX PSP target, but
-  cheap to close (a packaging step, not new runtime code) precisely because the
-  loose-file-first loaders already exist — the risk is forgetting to strip the
-  packed archive from the deployment, not the fix itself. P4/P5 are lower-risk
-  follow-ups once a title actually renders.
+  whole-archive loads) is hard-blocking for any future XP/VX PSP target; the
+  tool to close it is done, but running it and excluding the packed archive
+  is still a manual step per release, not something CI or the build enforces
+  — that's the remaining risk, not the unpack logic itself. P4/P5 are
+  lower-risk follow-ups once a title actually renders.
 - Follow-up: once P1's real numbers exist, replace this ADR's estimates with
   measured figures (a memory budget table, as ADR 0007 has for the Wio
   Terminal) — either as an amendment here or a superseding ADR.

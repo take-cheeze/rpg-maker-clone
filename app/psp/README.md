@@ -90,3 +90,12 @@ real risk: mruby 4.0's global allocator hook defaults to sharing LVGL's pool
 (as it does on desktop), so `lv_conf.h`'s 4 MB `LV_MEM_SIZE` may need to cover
 the entire mruby object graph, not just LVGL widgets, unless a PSP-specific
 allocator exception is added.
+
+For a packed RPG Maker XP/VX/VX Ace title,
+[`scripts/rgssad_unpack.rb`](../../scripts/rgssad_unpack.rb) unpacks
+`Game.rgssad`/`.rgss2a`/`.rgss3a` into a loose file tree in place — the
+loose-file-first loaders already prefer it over the archive, so this avoids
+the whole-archive-resident-in-RAM read the packed form forces (see the ADR's
+Finding 2). Excluding the packed archive from a given PSP deployment, so it
+is never opened at all, is still a manual step the unpacker itself doesn't
+take for you.
