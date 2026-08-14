@@ -5617,6 +5617,14 @@ module Game
       # The "miss" flag (field 26): a flagged enemy is clumsier and attacks at a
       # 70% base hit rate rather than the usual 90% (EasyRPG's GetHitChance).
       @miss = row && row.respond_to?(:miss) ? (row.miss ? true : false) : false
+      # The "airborne" flag (field 28, `levitate`): purely a battle-screen
+      # display effect (EasyRPG's Game_Enemy::GetFlyingOffset) with no
+      # accuracy/hit-related effect of any kind -- and, per that same source,
+      # RPG2000 never renders it at all ("2k does not support flying, albeit
+      # mentioned in the help file"), only RPG2003 does, gated by
+      # `Scene::Map#flying_offset` the same way. Read here regardless of
+      # edition, same as every other schema field this class exposes.
+      @levitate = row && row.respond_to?(:levitate) ? (row.levitate ? true : false) : false
       # The 行動パターン table (field 42), decoded now since `row` isn't kept. An
       # enemy whose row lists none falls back to plain attacking.
       @actions = []
@@ -5628,6 +5636,10 @@ module Game
     attr_reader :actions
 
     attr_reader :crit_chance, :attribute_ranks, :state_ranks
+
+    # The "airborne" flag (field 28) -- see the comment in #initialize for what
+    # it does and does not affect.
+    attr_reader :levitate
 
     # Base to-hit percentage for this enemy's normal attack (70 when the "miss"
     # flag is set, otherwise 90); fed into the battle's to-hit roll.

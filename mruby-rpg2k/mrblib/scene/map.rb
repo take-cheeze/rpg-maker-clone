@@ -3386,6 +3386,7 @@ class RPG2k
           return
         end
         update_enemy_flashes
+        update_enemy_positions
         case @battle_ui[:phase]
         when :command     then drive_battle_command
         when :target      then drive_battle_target
@@ -3438,7 +3439,12 @@ class RPG2k
                        # its battler's whole action (see #drive_battle_animate),
                        # and which phase a running battle-event page resumes to
                        # once it finishes (see #run_battle_events).
-                       battler_boundary: false, event_return_phase: :command }
+                       battler_boundary: false, event_return_phase: :command,
+                       # Frames elapsed since this battle opened -- cosmetic
+                       # only (drives a levitating enemy's bob, #flying_offset),
+                       # never read for any combat/save-affecting purpose, so
+                       # it needs no seeding beyond starting at 0 every fight.
+                       frame: 0 }
         @battle_ui[:events].battle = @battle_ui[:battle]
         # A battle page can Call Common Event (1005), so it needs the same
         # resolver the map's events run against.
@@ -3460,6 +3466,39 @@ class RPG2k
         100 + (@battle_ui[:troop].members.size - 1 - i)
       end
 
+      # Vertical pixel bob for a levitating (`Game::Enemy#levitate`) troop
+      # member, or 0 for everyone else. yado.tk only ever says the "airborne"
+      # flag "changes its Y position on screen" with no magnitude or edition
+      # given; EasyRPG's own `Game_Enemy::GetFlyingOffset` supplies both
+      # missing facts and, more importantly, the edition gate the yado.tk
+      # source never mentioned at all: `if (!Player::IsRPG2k3() || !IsFlying())
+      # return 0;` -- "2k does not support flying, albeit mentioned in the
+      # help file" (their comment). So a genuine RPG2000 database's own
+      # `levitate` flag has no on-screen effect whatsoever, real RPG_RT bug and
+      # all; only an RPG2003 one draws the +/-4px, 256-frame-period sine bob
+      # (`round(sin(2*PI*frame/256) * 4)`, their `frame` a per-battler counter
+      # incremented once per battle frame) computed here from this scene's own
+      # per-battle `@battle_ui[:frame]` instead -- a single shared phase for
+      # every levitating member rather than EasyRPG's per-battler-randomized
+      # start offset, since nothing in either wiki mirror (both unreachable
+      # this session) describes members desyncing from one another, only that
+      # each one "changes its Y position".
+      FLYING_AMPLITUDE = 4
+      FLYING_PERIOD = 256
+      def flying_offset(member)
+        return 0 unless member.levitate && @state.party.rpg2003?
+        frame = @battle_ui[:frame] || 0
+        (Math.sin(2 * Math::PI * frame / FLYING_PERIOD.to_f) * FLYING_AMPLITUDE).round
+      end
+
+      # A troop member's on-screen y, centred on its database position and
+      # nudged by #flying_offset -- shared by every site that (re)builds an
+      # enemy sprite so the three stay in lockstep with the per-frame update
+      # (#update_enemy_positions) that keeps a levitating one bobbing after.
+      def battler_y(member, bmp)
+        member.y - bmp.height / 2 + flying_offset(member)
+      end
+
       # RPG2000 is a front-view battle: the enemy troop is drawn as sprites over a
       # battle background, while the party is represented by the status window (not
       # sprites). Build the backdrop and one sprite per visible troop member,
@@ -3473,7 +3512,7 @@ class RPG2k
           spr = Sprite.new
           spr.bitmap = bmp
           spr.x = enemy.x - bmp.width / 2
-          spr.y = enemy.y - bmp.height / 2
+          spr.y = battler_y(enemy, bmp)
           spr.z = battler_z(i)
           spr
         end
@@ -3615,6 +3654,22 @@ class RPG2k
         (@battle_ui[:enemy_sprites] || []).each { |s| s.update if s }
       end
 
+      # Advance the per-battle frame counter #flying_offset reads and re-seat
+      # any levitating troop member's sprite at its new bob height. A no-op
+      # (bar the counter tick) for a plain RPG2000 fight or a troop with no
+      # `levitate` member: #flying_offset already reads 0 for both, so the
+      # assignment below is just re-writing the same y already set.
+      def update_enemy_positions
+        @battle_ui[:frame] = (@battle_ui[:frame] || 0) + 1
+        sprites = @battle_ui[:enemy_sprites]
+        return unless sprites
+        @battle_ui[:troop].members.each_with_index do |member, i|
+          spr = sprites[i]
+          next unless spr && member.levitate
+          spr.y = battler_y(member, spr.bitmap)
+        end
+      end
+
       # Show a living enemy's sprite, hide a defeated one — called after each
       # animated action so a downed enemy vanishes from the field.
       def refresh_battle_sprites
@@ -3648,7 +3703,7 @@ class RPG2k
         spr = Sprite.new
         spr.bitmap = bmp
         spr.x = member.x - bmp.width / 2
-        spr.y = member.y - bmp.height / 2
+        spr.y = battler_y(member, bmp)
         spr.z = battler_z(i)
         spr.visible = !foe.out_of_play?
         sprites[i] = spr
@@ -4333,7 +4388,7 @@ class RPG2k
         spr = Sprite.new
         spr.bitmap = bmp
         spr.x = member.x - bmp.width / 2
-        spr.y = member.y - bmp.height / 2
+        spr.y = battler_y(member, bmp)
         spr.z = battler_z(index)
         dispose_battle_sprite(@battle_ui[:enemy_sprites][index])
         @battle_ui[:enemy_sprites][index] = spr
