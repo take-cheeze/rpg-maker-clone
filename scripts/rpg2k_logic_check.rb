@@ -2738,7 +2738,13 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # every basic attack unconditionally. Appended last,
                           # same reason again -- nil reads as falsy via
                           # #state_field, matching the schema's own false default.
-                          :avoid_attacks)
+                          :avoid_attacks,
+                          # ... and the RPG2003 "cursed" flag (state field 38,
+                          # `cursed`): a battler carrying it can't change
+                          # equipment from the field for as long as it lasts
+                          # (Game::Actor#equipment_fixed?/#state_cursed?).
+                          # Appended last, same reason again.
+                          :cursed)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -2752,7 +2758,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                affect_spirit: false, affect_agility: false,
                hp_change_type: Game::States::CHANGE_TYPE_LOSE,
                sp_change_type: Game::States::CHANGE_TYPE_LOSE,
-               avoid_attacks: false)
+               avoid_attacks: false, cursed: false)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
@@ -2761,7 +2767,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                    hp_map_steps, hp_map_val, sp_map_steps, sp_map_val,
                    affect_type, affect_attack, affect_defense,
                    affect_spirit, affect_agility,
-                   hp_change_type, sp_change_type, avoid_attacks)
+                   hp_change_type, sp_change_type, avoid_attacks, cursed)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -12055,6 +12061,51 @@ check 'equipment_fixed? does not itself block Party#equip_from_bag / #unequip_to
   db = FakeActorDB.new({ 1 => row }, [1], items)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  ok st.party.equip_from_bag(hero, 1)
+  eq 1, hero.equipment[0]
+  ok st.party.unequip_to_bag(hero, 0) != 0
+  eq 0, hero.equipment[0]
+end
+
+# -- 呪い states lock equipment too (Actor#equipment_fixed?/#state_cursed?) ---
+# The RPG2003 state field EasyRPG's own `IsEquipmentFixed(true)` folds into the
+# same predicate as the row's `equipment_fixed` trait -- see the fuller
+# writeup at #equipment_fixed? above. Distinct from #slot_cursed? (a property
+# of the *item*, checked further below): this one is a property of whatever
+# states the actor currently carries, so it comes and goes with the state
+# itself rather than staying put once removed.
+
+check 'Actor#equipment_fixed? is also true while a `cursed`-flagged state is inflicted' do
+  situation = { 9 => fake_state(cursed: true), 10 => fake_state }
+  row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 10 })
+  db = FakeActorDB.new({ 1 => row }, [1], {}, {}, {}, situation)
+  hero = Game::Party.new(db).leader
+  ok !hero.equipment_fixed?, 'no state inflicted yet'
+
+  hero.add_state(10)
+  ok !hero.equipment_fixed?, 'an ordinary (non-cursed) state does not lock equipment'
+
+  hero.add_state(9)
+  ok hero.equipment_fixed?, 'the cursed state locks equipment on top of the ordinary one'
+
+  hero.remove_state(9)
+  ok !hero.equipment_fixed?, 'lifting the cursed state unlocks equipment again'
+  ok !hero.state_cursed?, 'and #state_cursed? itself agrees'
+end
+
+check 'state_cursed? does not itself block Party#equip_from_bag / #unequip_to_bag' do
+  # Same split as the row-flag half above: the gate belongs to the equip menu,
+  # not the bag-swap logic, so a caller that already knows better (an event
+  # command, this test) can still equip/unequip through a cursed state.
+  situation = { 9 => fake_state(cursed: true) }
+  items = { 1 => fake_item(type: 1, atk: 20) }
+  row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 10 })
+  db = FakeActorDB.new({ 1 => row }, [1], items, {}, {}, situation)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(9)
+  ok hero.equipment_fixed?
   st.party.gain_item(1, 1)
   ok st.party.equip_from_bag(hero, 1)
   eq 1, hero.equipment[0]

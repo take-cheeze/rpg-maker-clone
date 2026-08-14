@@ -6977,12 +6977,51 @@ above are repeated here)
   it; a second, unrelated state alongside it changes nothing), confirmed to
   fail against the pre-fix code (`expected 0, got 95`) before the fix.
   **Left open, a separate and more involved feature**: the sibling RPG2003
-  state fields `reflect_magic` (skill/magic attacks bounce back onto their
+  state field `reflect_magic` (skill/magic attacks bounce back onto their
   caster, `Game_Battler::HasReflectState` /
-  `Game_BattleAlgorithm::Skill::IsReflected` in the same C++ source) and
-  `cursed` (`Game_Actor`'s own separate, unrelated usage) — both still
-  parsed but unread here, and both needing real target-redirection/removal
-  logic rather than a single early-return, unlike this narrower fix.
+  `Game_BattleAlgorithm::Skill::IsReflected` in the same C++ source) — still
+  parsed but unread here, and needing real target-redirection logic rather
+  than a single early-return, unlike this narrower fix. ✅ **The sibling
+  `cursed` state field (situation/state field 38) this same bullet flagged
+  as "`Game_Actor`'s own separate, unrelated usage" is now implemented
+  too — the "no test-bed evidence... left unbuilt rather than guessed at"
+  note `Game::Actor#equipment_fixed?` used to carry, now settled straight
+  off EasyRPG Player's actual C++ source instead of left unread.**
+  `Game_Actor::IsEquipmentFixed(check_states)` (`src/game_actor.cpp`) is
+  `data.lock_equipment || (check_states && any inflicted state's own
+  `cursed` flag)`, and its one caller that matters for this codebase's own
+  equip menu, `Scene_Equip::CanRemoveEquipment` (`src/scene_equip.cpp`) —
+  which runs right before opening a slot's item list, refusing to even open
+  it rather than opening it and rejecting a choice, exactly matching
+  `Scene::EquipMenu#update_slots`'s existing `!actor.equipment_fixed? &&
+  !actor.slot_cursed?(@slot_index)` gate (`mruby-rpg2k/mrblib/
+  scene/equip_menu.rb`) — always passes `check_states: true`, so both
+  halves belong in one predicate: `#equipment_fixed?` used to read only the
+  actor/class row's own `equipment_fixed` trait (LCF field 22), leaving a
+  state carrying `cursed` (field 38) cosmetically inert even though the
+  schema already parsed it (`mruby-lcf/mrblib/schema.rb`'s `situation`
+  table). Fixed with a new `Game::Actor#state_cursed?` (`mruby-rpg2k/mrblib/
+  game.rb`) — scanning `@states` for any id whose `@db.situation[sid].cursed`
+  answers true, the same `@db.situation`/`d.respond_to?(name) ? d.send(name)
+  : default` idiom `Game::Party#stat_mode` and `Game::Battle
+  #evades_all_physical?` already use for reading a state row's own flags —
+  consulted by `#equipment_fixed?` alongside the existing row check. Distinct
+  from the neighbouring `#slot_cursed?` (a property of the *item* currently
+  worn, unaffected by this fix): a `cursed` state locks every slot for as
+  long as it is inflicted and unlocks the instant it lifts, regardless of
+  what is equipped, while an equipped cursed *item* keeps locking its own
+  slot even after any such state clears. Matches this codebase's existing
+  "only the equip menu gates on this" split for the row-flag half exactly:
+  RPG_RT's Change Equipment event command still bypasses both halves either
+  way (`Game_Actor::ChangeEquipment` never consults `IsEquipmentFixed` at
+  all), so `Game::Party`'s bag-swapping methods (`#equip_from_bag`/
+  `#unequip_to_bag`) stay unguarded here on purpose, unaffected by the fix.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (a `cursed`-
+  flagged state inflicted and later lifted toggles `#equipment_fixed?`/
+  `#state_cursed?` on and off in step, with an ordinary unrelated state
+  alongside it proven inert; the bag-swap methods stay usable through a
+  cursed state, the same control the row-flag half already has), both
+  confirmed to fail against the pre-fix code before the fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

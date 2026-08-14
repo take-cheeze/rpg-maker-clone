@@ -1775,22 +1775,46 @@ module Game
     end
 
     # 装備固定 — an actor (or RPG2003 class) whose equipment cannot be changed
-    # from the field. Same class-row-then-player-row lookup as #strong_defence?
-    # / #double_hand? (liblcf's `job` table carries the same field id, 22).
-    # EasyRPG's `Game_Actor::IsEquipmentFixed` is `data.lock_equipment ||
-    # (check_states && a currently-inflicted state is 呪い/cursed)` -- the
-    # state-curse half has no test-bed evidence in either game (neither names
-    # a `cursed` state) and is left unbuilt rather than guessed at; this reads
-    # only the row's own flag, which is the half both games actually set.
-    # `Scene::EquipMenu` is what has to act on it (`scene_equip.cpp`'s
-    # `UpdateEquipSelection` refuses to even open the slot's item list, rather
-    # than opening it and rejecting a choice), so nothing in `Game::Party`
-    # reads this -- the bag-swapping methods stay usable for a caller that
-    # already knows better, the same way they do not re-check `menu_access`.
+    # from the field, whether because the actor/class row itself is locked or
+    # because a currently-inflicted state carries RPG2003's own 呪い/cursed flag
+    # (situation/state field 38, `cursed` -- #state_cursed? below) for as long
+    # as it lasts. Same class-row-then-player-row lookup as #strong_defence?
+    # / #double_hand? for the row half (liblcf's `job` table carries the same
+    # field id, 22). Confirmed against EasyRPG Player's actual C++ source
+    # rather than left unbuilt: `Game_Actor::IsEquipmentFixed(check_states)` is
+    # `data.lock_equipment || (check_states && any inflicted state's own
+    # `cursed` flag)` (`src/game_actor.cpp`), and the single caller this class
+    # matters for, `Scene_Equip::CanRemoveEquipment` (`src/scene_equip.cpp`) --
+    # which runs right before opening a slot's item list, refusing to even open
+    # it rather than opening it and rejecting a choice, the exact point
+    # `Scene::EquipMenu#update_slots` gates below -- always passes
+    # `check_states: true`, so both halves belong in this one predicate; the
+    # state-curse half used to have "no test-bed evidence in either game...
+    # left unbuilt rather than guessed at" here, now settled straight off that
+    # source instead of left unread. RPG_RT's Change Equipment event command
+    # still forces past both halves either way (`Game_Actor::ChangeEquipment`
+    # never consults this method at all), so nothing in `Game::Party` reads
+    # this -- the bag-swapping methods stay usable for a caller that already
+    # knows better, the same way they do not re-check `menu_access`.
     def equipment_fixed?
       row = class_row_for(@class_id) if @class_id && @class_id > 0
       row ||= @db_row
-      row.respond_to?(:equipment_fixed) ? (row.equipment_fixed ? true : false) : false
+      return true if row.respond_to?(:equipment_fixed) && row.equipment_fixed
+      state_cursed?
+    end
+
+    # Whether any state currently inflicting the actor carries RPG2003's own
+    # `cursed` flag (situation/state field 38) -- see #equipment_fixed?, the
+    # only reader. Unlike #slot_cursed? below (a property of the item worn in
+    # a slot) this is a property of the actor's own affliction list, so it is
+    # read fresh from `@states` every call rather than cached, the same way
+    # #state? is.
+    def state_cursed?
+      return false unless @db.respond_to?(:situation) && @db.situation
+      @states.any? do |sid|
+        d = @db.situation[sid]
+        d && d.respond_to?(:cursed) && d.cursed
+      end
     end
 
     # 呪われた装備 -- an item flagged `cursed` (item field 29, alongside the other
