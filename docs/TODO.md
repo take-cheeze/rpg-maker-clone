@@ -755,15 +755,25 @@ The work below is roughly ordered by the critical path to a walkable game
   `Scene::GameOver` plays its own `gameover_music` and the map is never
   shown again. A game with no battle BGM configured leaves whatever was
   already playing alone, matching RPG_RT's own no-op on a blank Music
-  struct. Left unaddressed: the victory jingle (`battle_end_music`) and
-  RPG_RT's exact timing for when the field BGM resumes relative to it — that
-  needs a "play a fixed jingle, then resume" sequencing this build's
-  `RGSS::Audio` has no primitive for, so the field track resumes immediately
-  once the result window is dismissed rather than after a fanfare. Covered
-  by a new `scripts/rpg2k_scene_check.rb` check (an Enemy Encounter plays
-  the configured battle BGM at its own vol/tempo the moment the battle UI
-  opens, and the field BGM that was playing before replays once the fight
-  is won), confirmed to fail against the pre-fix code before the fix.
+  struct. ✅ The victory jingle (`battle_end_music`) now plays as a real
+  one-shot "ME" rather than the immediately-cut-off looping BGM this
+  paragraph used to describe: `#play_victory_bgm` calls
+  `RGSS::Audio.me_play`, the same native music-effect primitive
+  `mruby-rpgvx`'s own `RPG::ME#play` already forwards to
+  (`src/sdl_audio.cxx`'s `me_play`/`me_stop`, which auto-pause the BGM
+  channel while the effect plays and auto-resume it once the effect ends),
+  instead of the ordinary looping `#play_bgm`. `#restore_pre_battle_bgm`
+  calls `RGSS::Audio.me_stop` before restarting the pre-battle field/vehicle
+  track, ending the fanfare through the ME's own stop path — a no-op once it
+  has already finished on its own — rather than a bare `RGSS::Audio.bgm_play`
+  yanking the shared music stream out from under it. Covered by
+  `scripts/rpg2k_scene_check.rb` checks (an Enemy Encounter plays the
+  configured battle BGM at its own vol/tempo the moment the battle UI opens,
+  and the field BGM that was playing before replays once the fight is won;
+  the victory fanfare plays through the ME channel rather than an ordinary
+  BGM play, and dismissing the result screen stops it through
+  `RGSS::Audio.me_stop` before the field track restarts), confirmed to fail
+  against the pre-fix code before the fix.
   **A Change System BGM override for the battle slot (slot 0) is now
   consumed too**: `#play_battle_bgm`'s music source used to be
   `db.system.battle_music` unconditionally, so an event that ran Change
@@ -1551,7 +1561,11 @@ The work below is roughly ordered by the critical path to a walkable game
   lookup on slot 1, and `#play_victory_bgm` is called from
   `#enter_battle_result` on `:victory`, leaving `#restore_pre_battle_bgm`
   (called from `#finish_battle` as before) to do the same job it already did
-  for escape and defeat. Only inn (slot 2) is still save-fidelity-only, since
+  for escape and defeat. (`#play_victory_bgm` originally played the fanfare
+  as an ordinary looping BGM, cut off the instant the result screen was
+  dismissed rather than as a real one-shot fanfare; it now plays it through
+  `RGSS::Audio.me_play`/`me_stop` instead — see the battle-BGM paragraph
+  above.) Only inn (slot 2) is still save-fidelity-only, since
   no inn / lodging screen exists in this build. Covered by two new
   `scripts/rpg2k_scene_check.rb` checks (the database `battle_end_music`
   plays over the result screen and the field BGM resumes only once
