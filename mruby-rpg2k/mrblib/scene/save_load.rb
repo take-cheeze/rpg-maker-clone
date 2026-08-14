@@ -265,13 +265,13 @@ class RPG2k
 
       # `slot_index`'s box: the file label always, and -- when the slot holds
       # a save -- the leader's name and level+HP beneath it, plus up to four
-      # party face thumbnails along the right edge. Confirmed against
-      # genuine RPG_RT under wine: an empty slot shows only the label (no
+      # party face thumbnails along the right edge (`#draw_slot_faces`,
+      # reading the same title-chunk FaceSet data `Game::State#to_lsd`
+      # already exports -- see docs/TODO.md). Confirmed against genuine
+      # RPG_RT under wine: an empty slot shows only the label (no
       # placeholder text at all), and an occupied one shows neither gold nor
       # the current map, and HP with no `/max`, unlike this screen's own
-      # previous single-list-window layout. The faces are data
-      # `Game::State#to_lsd` already exports into the save's title chunk
-      # (see docs/TODO.md) but this screen never read back.
+      # previous single-list-window layout.
       def draw_slot_box(win, inner_w, slot_index)
         label = slot_label(slot_index)
         c = Bitmap.new(inner_w, LINE_H * SLOT_LINES)
