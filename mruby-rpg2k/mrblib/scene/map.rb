@@ -6285,8 +6285,18 @@ class RPG2k
       # A plain (non-choice) message: type the text out, and let a button press
       # first complete the reveal, then (once fully shown) dismiss and resume.
       # Frames a `\.` (quarter-second) and `\|` (full-second) pause hold.
-      MSG_PAUSE_QUARTER = 15
-      MSG_PAUSE_FULL = 60
+      #
+      # Not 15 / 60 (a literal quarter-/one-second at 60fps), even though
+      # that is what RPG2000's own documentation names and what "quarter"/
+      # "full" naturally suggest: EasyRPG's `Window_Message` ports RPG_RT's
+      # own measured behaviour instead, one frame longer than the documented
+      # duration in both cases ("Despite documentation saying 1/4 second,
+      # RPG_RT waits for 16 frames" / "...saying 1 second, RPG_RT waits for
+      # 61 frames" -- src/window_message.cpp, `case '.'` / `case '|'`), the
+      # same "the natural reading is wrong" shape this codebase already
+      # tracks for other RPG_RT quirks (e.g. the item-drain clamp order).
+      MSG_PAUSE_QUARTER = 16
+      MSG_PAUSE_FULL = 61
 
       def drive_text_message
         reveal = @message[:reveal]

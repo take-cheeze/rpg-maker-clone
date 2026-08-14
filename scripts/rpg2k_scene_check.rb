@@ -2609,6 +2609,62 @@ check 'a Show Choices that forbids cancelling swallows the cancel key' do
   ok parent.pushed.empty?, 'and the cancel key did not leak to the main menu'
 end
 
+check 'a \\. pause holds the reveal for RPG_RT\'s real 16 frames, not the documented 15' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'a\\.b')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  frames = 0
+  until reveal.pending_pause
+    scene.update
+    frames += 1
+    break if frames > 20
+  end
+  ok reveal.pending_pause, 'the \\. pause is reached'
+  # EasyRPG's own port comment: "Despite documentation saying 1/4 second,
+  # RPG_RT waits for 16 frames" -- one frame past the documented/naive 15
+  # (a quarter of 60fps), the same "natural reading is wrong" shape this
+  # codebase already tracks for other RPG_RT quirks.
+  held = 0
+  until reveal.pending_pause.nil?
+    scene.update
+    held += 1
+    break if held > 30
+  end
+  eq 16, held, 'RPG_RT holds a \\. pause for 16 frames, not the documented 15'
+end
+
+check 'a \\| pause holds the reveal for RPG_RT\'s real 61 frames, not the documented 60' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'a\\|b')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  frames = 0
+  until reveal.pending_pause
+    scene.update
+    frames += 1
+    break if frames > 20
+  end
+  ok reveal.pending_pause, 'the \\| pause is reached'
+  # EasyRPG's own port comment: "Despite documentation saying 1 second,
+  # RPG_RT waits for 61 frames" -- one frame past the documented/naive 60.
+  held = 0
+  until reveal.pending_pause.nil?
+    scene.update
+    held += 1
+    break if held > 70
+  end
+  eq 61, held, 'RPG_RT holds a \\| pause for 61 frames, not the documented 60'
+end
+
 check 'a \\! pause holds the reveal until a button is pressed' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

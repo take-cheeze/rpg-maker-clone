@@ -1407,6 +1407,24 @@ The work below is roughly ordered by the critical path to a walkable game
   crops in 48, with the sheet's leftmost/rightmost source columns landing on
   the destination's rightmost/leftmost columns), both confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **`\.` and `\|` now hold for RPG_RT's real 16/61 frames, not the
+  documented (and naturally-implemented) 15/60.** This paragraph's own "¼ /
+  1-second holds" wording is RPG2000's documented duration and, at 60fps,
+  the literal reading — which is exactly what `Scene::Map::MSG_PAUSE_QUARTER`
+  / `MSG_PAUSE_FULL` held (15 and 60), and exactly the "natural implementation
+  and the wrong one" shape this file already flags elsewhere (the drain
+  clamp-order paragraph above, the item-polarity paragraph before it). RPG_RT
+  itself waits one frame past its own documentation for both codes; EasyRPG's
+  `Window_Message` ports the real figures verbatim, with its own comments
+  spelling out the gap ("Despite documentation saying 1/4 second, RPG_RT
+  waits for 16 frames" / "...saying 1 second, RPG_RT waits for 61 frames" —
+  `src/window_message.cpp`, confirmed by fetching the source directly rather
+  than assumed). Fixed by correcting both constants to 16 and 61 — no other
+  code changed, since `drive_message_pause` already counts down whichever
+  constant it is handed one frame at a time. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks that drive a `\.`/`\|` pause end to
+  end and count the exact number of frames the reveal stays held, both
+  confirmed to fail against the pre-fix code (15/60) before the fix.
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
