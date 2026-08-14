@@ -2705,7 +2705,15 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # 1 double / 2 no change, plus which stat(s)).
                           # Appended last for the same reason again.
                           :affect_type, :affect_attack, :affect_defense,
-                          :affect_spirit, :affect_agility)
+                          :affect_spirit, :affect_agility,
+                          # ... and the RPG2003 hp_change_type/sp_change_type
+                          # fields (Game::States::CHANGE_TYPE_LOSE/GAIN/NOTHING):
+                          # which way the *_change_val/*_change_max amount above
+                          # moves the stat. Appended last, same reason again --
+                          # nil (every pre-existing positional FakeStateDef.new
+                          # call that stops short of here) reads as 0/LOSE via
+                          # #state_field, the schema's own default.
+                          :hp_change_type, :sp_change_type)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -2716,7 +2724,9 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                actor_msg: nil, enemy_msg: nil, recovery_msg: nil,
                hp_map_steps: 0, hp_map_val: 0, sp_map_steps: 0, sp_map_val: 0,
                affect_type: 2, affect_attack: false, affect_defense: false,
-               affect_spirit: false, affect_agility: false)
+               affect_spirit: false, affect_agility: false,
+               hp_change_type: Game::States::CHANGE_TYPE_LOSE,
+               sp_change_type: Game::States::CHANGE_TYPE_LOSE)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
@@ -2724,7 +2734,8 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                    name, color, priority, actor_msg, enemy_msg, recovery_msg,
                    hp_map_steps, hp_map_val, sp_map_steps, sp_map_val,
                    affect_type, affect_attack, affect_defense,
-                   affect_spirit, affect_agility)
+                   affect_spirit, affect_agility,
+                   hp_change_type, sp_change_type)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -8659,15 +8670,49 @@ check 'battle poison slips HP each turn (fixed val + percent of max)' do
   eq 85, hero.hp                                     # 100 - (5 + 10) poison
 end
 
-check 'battle poison (percent of max) can knock the battler out' do
+check 'battle poison (percent of max) floors at 1 HP -- slip damage alone cannot knock the battler out' do
+  # Verified against EasyRPG's own Game_Battler::ApplyConditions
+  # (src/game_battler.cpp): it calls ChangeHp(src_hp, /* lethal = */ false),
+  # which floors at 1 regardless of how large the computed slip is -- state
+  # slip damage can wear a battler down but never itself end its turn in
+  # death, the same non-lethal rule the map-side field-poison drain already
+  # follows (see "map slip damage cannot kill" above). Only a direct attack or
+  # skill can actually finish a battler off.
   states = { 2 => FakeStateDef.new(0, 0, 100, 0, 0) } # 100% of max HP / turn
   hero = combatant('Hero', 0, 0, 1, 50)               # slow so the slip lands
   hero.states = [2]
-  foe = combatant('Foe', 0, 0, 99, 100)               # fast but nearly harmless
+  foe = combatant('Foe', 0, 0, 99, 100)               # fast but harmless (0 atk)
   bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
-  bat.run
-  ok hero.dead?, 'the poison finished the hero off'
-  eq :defeat, bat.result
+  bat.run_round
+  eq 1, hero.hp, 'a 100%-of-max poison tick floors at 1, not 0'
+  ok !hero.dead?, "state slip damage alone can't finish the hero off"
+  eq nil, bat.result, 'the battle is not decided by poison alone'
+  bat.run_round                                       # a second round: still floors, no lower
+  eq 1, hero.hp
+  ok !hero.dead?
+end
+
+check 'battle: a GAIN-type state heals per turn instead of draining, clamped to max' do
+  # hp_change_type/sp_change_type == Game::States::CHANGE_TYPE_GAIN (a
+  # "regen"-style state) adds instead of subtracts, clamped to max_hp/max_mp
+  # the same as an ordinary heal; CHANGE_TYPE_NOTHING does neither despite a
+  # nonzero configured amount.
+  states = { 2 => fake_state(hp_max: 100, hp_change_type: Game::States::CHANGE_TYPE_GAIN) }
+  hero = combatant('Hero', 0, 0, 1, 50)               # max HP 50
+  hero.hp = 40                                        # took some damage on the way
+  hero.states = [2]
+  foe = combatant('Foe', 0, 0, 99, 100)               # fast but harmless (0 atk)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  bat.run_round
+  eq 50, hero.hp, 'a 100%-of-max regen heals to (and clamps at) max_hp'
+
+  inert = { 3 => fake_state(hp_val: 50, hp_change_type: Game::States::CHANGE_TYPE_NOTHING) }
+  hero2 = combatant('Hero2', 0, 0, 1, 50)
+  hero2.states = [3]
+  bat2 = Game::Battle.new([hero2], [combatant('Foe2', 0, 0, 99, 100)],
+                           Game::Rng.new(1), inert)
+  bat2.run_round
+  eq 50, hero2.hp, 'CHANGE_TYPE_NOTHING neither drains nor heals'
 end
 
 check 'battle: a "do nothing" state (restriction 1) skips the turn' do
@@ -9154,20 +9199,41 @@ end
 
 check 'States.map_step_drain: a slip lands only on a multiple of its interval' do
   # mtf-meido-action's Poison, the only state in either test bed that slips on
-  # the map: 1 HP every 4 walked tiles.
+  # the map: 1 HP every 4 walked tiles. The default (unset) hp_change_type/
+  # sp_change_type is LOSE, so the returned delta is negative -- see the
+  # "type-aware" check below for GAIN/NOTHING.
   table = { 2 => fake_state(name: 'Poison', hp_map_steps: 4, hp_map_val: 1) }
   eq [0, 0], Game::States.map_step_drain(2, table, 1)
   eq [0, 0], Game::States.map_step_drain(2, table, 3)
-  eq [1, 0], Game::States.map_step_drain(2, table, 4)
+  eq [-1, 0], Game::States.map_step_drain(2, table, 4)
   eq [0, 0], Game::States.map_step_drain(2, table, 5)
-  eq [1, 0], Game::States.map_step_drain(2, table, 8)
+  eq [-1, 0], Game::States.map_step_drain(2, table, 8)
   # Step 0 is a multiple of every interval, so it has to be excluded outright --
   # otherwise standing still on a fresh map would drain on the first frame.
   eq [0, 0], Game::States.map_step_drain(2, table, 0)
   # The SP half is the same field pair; nothing in either test bed uses it.
   sp = { 3 => fake_state(name: 'Drain', sp_map_steps: 2, sp_map_val: 3) }
-  eq [0, 3], Game::States.map_step_drain(3, sp, 2)
+  eq [0, -3], Game::States.map_step_drain(3, sp, 2)
   eq [0, 0], Game::States.map_step_drain(3, sp, 3)
+end
+
+check 'States.map_step_drain is type-aware: GAIN heals, NOTHING does nothing' do
+  # RPG2003's hp_change_type/sp_change_type (Game::States::CHANGE_TYPE_*):
+  # a "regen"-style field state (GAIN) returns a positive delta instead of a
+  # negative one, and NOTHING returns 0 despite a nonzero configured amount --
+  # verified against EasyRPG's own lcf::rpg::State::ChangeType enum and
+  # Game_Party::ApplyStateDamage (src/game_party.cpp).
+  regen = { 4 => fake_state(name: 'Regen', hp_map_steps: 2, hp_map_val: 5,
+                             hp_change_type: Game::States::CHANGE_TYPE_GAIN,
+                             sp_map_steps: 2, sp_map_val: 3,
+                             sp_change_type: Game::States::CHANGE_TYPE_GAIN) }
+  eq [5, 3], Game::States.map_step_drain(4, regen, 2)
+  eq [0, 0], Game::States.map_step_drain(4, regen, 3), 'not a multiple: no delta either way'
+
+  inert = { 5 => fake_state(name: 'Inert', hp_map_steps: 2, hp_map_val: 5,
+                             hp_change_type: Game::States::CHANGE_TYPE_NOTHING) }
+  eq [0, 0], Game::States.map_step_drain(5, inert, 2),
+     'NOTHING drains and heals neither, despite a configured amount'
 end
 
 check 'States.map_step_drain: a half-configured row drains nothing' do
@@ -9226,6 +9292,26 @@ check 'map slip damage cannot kill: it floors at 1 HP' do
   ally.add_state(2)
   ally.set_hp(0)
   eq [hero], st.party.apply_map_step_damage(table, 3)
+end
+
+check 'map slip damage: a GAIN-type state heals instead of draining, clamped to max_hp/max_sp' do
+  # A field "regen" state (hp_change_type/sp_change_type == CHANGE_TYPE_GAIN)
+  # is the opposite of Poison: it adds, not subtracts, and -- unlike the LOSE
+  # floor-at-1 rule -- simply clamps at the actor's own max, the same as any
+  # other heal (change_hp/change_mp's own existing clamp).
+  table = { 2 => fake_state(name: 'Regen', hp_map_steps: 1, hp_map_val: 30,
+                             hp_change_type: Game::States::CHANGE_TYPE_GAIN,
+                             sp_map_steps: 1, sp_map_val: 30,
+                             sp_change_type: Game::States::CHANGE_TYPE_GAIN) }
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2)
+  hero.set_hp(hero.max_hp - 5)
+  before_mp = hero.mp
+  hit = st.party.apply_map_step_damage(table, 1)
+  eq [hero], hit
+  eq hero.max_hp, hero.hp, 'a 30 HP regen against a 5-HP deficit clamps to max, not overshoots'
+  eq [hero.max_mp, before_mp + 30].min, hero.mp
 end
 
 check 'two slipping states stack rather than the worse one winning' do

@@ -2420,21 +2420,26 @@ module Game
 
     # RPG2000 field slip damage: apply every afflicted member's map-step drain
     # for a party that has now walked `steps` tiles. Each state a member carries
-    # is asked for its due HP / SP loss (Game::States.map_step_drain) and the
-    # totals are applied once, so two slipping states stack rather than the
-    # worse one winning -- unlike the battle-side effects, which pick a single
-    # significant state.
+    # is asked for its due signed HP / SP delta (Game::States.map_step_drain --
+    # negative for the ordinary "lose" case, positive for a "gain"-type state,
+    # see Game::States::CHANGE_TYPE_*) and the totals are applied once, so two
+    # slipping states stack rather than the worse one winning -- unlike the
+    # battle-side effects, which pick a single significant state for its
+    # message (though not, per EasyRPG's own ApplyConditions, for the damage
+    # math itself -- see Battle#apply_turn_states).
     #
-    # The HP drain **cannot kill**: it goes through change_hp with death
-    # disallowed, so a poisoned party is worn down to 1 HP and left standing.
-    # That is RPG_RT's rule, and it is why nothing on this path has to re-check
-    # for a game over the way the twelve event commands that *can* wipe the party
-    # do. A member who is already down slips nothing at all.
+    # A **loss cannot kill**: it goes through change_hp with death disallowed,
+    # so a poisoned party is worn down to 1 HP and left standing. That is
+    # RPG_RT's rule, and it is why nothing on this path has to re-check for a
+    # game over the way the twelve event commands that *can* wipe the party
+    # do. A **gain** clamps to max_hp/max_sp the same way change_hp/change_mp
+    # already clamp an ordinary heal. A member who is already down slips
+    # nothing at all.
     #
     # `table` is the database `situation` array; a caller without one (the seeded
-    # harness fixtures) drains nothing. Returns the actors that actually lost
-    # something, so the scene can flash the screen only when there is something
-    # to report.
+    # harness fixtures) drains nothing. Returns the actors actually affected
+    # (lost *or* gained something), so the scene can flash the screen only when
+    # there is something to report.
     def apply_map_step_damage(table, steps)
       hit = []
       @actors.each do |actor|
@@ -2447,8 +2452,8 @@ module Game
           sp += dsp
         end
         next if hp.zero? && sp.zero?
-        actor.change_hp(-hp, false) if hp > 0
-        actor.change_mp(-sp) if sp > 0
+        actor.change_hp(hp, false) unless hp.zero?
+        actor.change_mp(sp) unless sp.zero?
         hit << actor
       end
       hit
@@ -6112,6 +6117,19 @@ module Game
     # The `situation` table's own default colour (schema element 3).
     DEFAULT_COLOR = 6
 
+    # A state's `hp_change_type` / `sp_change_type` (RPG2003 fields 45/46):
+    # which way its slip/regen amount moves the stat once its interval or
+    # threshold lands. 0 (the schema default, and the only meaning a
+    # pre-2003 database's absent field can carry) is **lose** -- every
+    # existing "poison" state in either test bed relies on this default --
+    # 1 is **gain** (a "regen" state that heals instead of drains), 2 is
+    # **nothing** (neither, despite a possibly-nonzero configured amount).
+    # Matches EasyRPG's `lcf::rpg::State::ChangeType` enum exactly (verified
+    # against liblcf's generated `state.h`), not guessed at.
+    CHANGE_TYPE_LOSE    = 0
+    CHANGE_TYPE_GAIN    = 1
+    CHANGE_TYPE_NOTHING = 2
+
     def self.row(id, table)
       return nil if id.nil? || id <= 0 || table.nil?
       table[id]
@@ -6368,15 +6386,23 @@ module Game
     def self.map_step_drain(id, table, steps)
       r = row(id, table)
       return [0, 0] if r.nil? || steps.nil? || steps <= 0
-      [drain(r, steps, :hp_change_map_steps, :hp_change_map_val),
-       drain(r, steps, :sp_change_map_steps, :sp_change_map_val)]
+      [drain(r, steps, :hp_change_map_steps, :hp_change_map_val, :hp_change_type),
+       drain(r, steps, :sp_change_map_steps, :sp_change_map_val, :sp_change_type)]
     end
 
-    def self.drain(row, steps, steps_field, val_field)
+    # The signed HP/SP delta this landing applies -- negative for the default
+    # **lose** type (RPG2000's only meaning for this field), positive for an
+    # explicit **gain**, 0 for **nothing** or for an interval this step does
+    # not land on (see CHANGE_TYPE_LOSE/GAIN/NOTHING above).
+    def self.drain(row, steps, steps_field, val_field, type_field)
       interval = int_field(row, steps_field)
       amount = int_field(row, val_field)
-      return 0 if interval <= 0 || amount <= 0
-      (steps % interval).zero? ? amount : 0
+      return 0 if interval <= 0 || amount <= 0 || !(steps % interval).zero?
+      case int_field(row, type_field)
+      when CHANGE_TYPE_GAIN then amount
+      when CHANGE_TYPE_NOTHING then 0
+      else -amount
+      end
     end
 
     def self.int_field(row, name)
@@ -7191,8 +7217,8 @@ module Game
         b = @queue.shift
         next if b.dead?
         # Afflicted states act at the start of the battler's turn: slip damage
-        # (which may knock it out) and, if it cannot act (asleep / paralysed), its
-        # turn is skipped.
+        # (which cannot itself knock it out -- see apply_turn_states) and, if it
+        # cannot act (asleep / paralysed), its turn is skipped.
         can_act = apply_turn_states(b)
         next if b.dead? || !can_act
         entry = record_action(strike(b))
@@ -7285,6 +7311,18 @@ module Game
     # HP/SP damage (fixed val + a percentage of the max, per EasyRPG's
     # ApplyConditions) and report whether the battler may act (a "do nothing"
     # restriction skips its turn). Returns true if `b` may act.
+    #
+    # The HP half **cannot knock `b` out**: EasyRPG's own `ApplyConditions`
+    # calls `ChangeHp(src_hp, /* lethal = */ false)`, floored at 1 regardless of
+    # how large the computed slip is, the same non-lethal rule the map-side
+    # field-poison drain already follows (Party#apply_map_step_damage) -- only a
+    # direct attack or skill can actually end a battler's turn in death. A state
+    # flagged `hp_change_type`/`sp_change_type` **gain** (Game::States::
+    # CHANGE_TYPE_GAIN, a "regen"-style state) heals instead of draining, and
+    # **nothing** (CHANGE_TYPE_NOTHING) does neither despite a possibly-nonzero
+    # configured amount; the schema default (0, every pre-2003 database's only
+    # meaning for this RPG2003 field) is **lose**, matching this method's prior,
+    # unconditional-loss behaviour exactly.
     def apply_turn_states(b)
       can_act = true
       b.state_turns ||= {}
@@ -7299,14 +7337,28 @@ module Game
         end
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
         hp = DAMAGE_CAP if hp > DAMAGE_CAP # 999 hard-cap applies to slip damage too
-        b.hp -= hp if hp > 0
+        b.hp = slip_stat(b.hp, b.max_hp, hp, state_field(d, :hp_change_type), 1) if hp > 0
         if b.max_mp && b.mp
           sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100
-          b.mp = [b.mp - sp, 0].max if sp > 0
+          b.mp = slip_stat(b.mp, b.max_mp, sp, state_field(d, :sp_change_type), 0) if sp > 0
         end
         can_act = false if state_field(d, :restriction) == RESTRICTION_DO_NOTHING
       end
       can_act
+    end
+
+    # One state's per-turn slip applied to a single stat (`cur` against `max`):
+    # `type` selects direction (see Game::States::CHANGE_TYPE_LOSE/GAIN/NOTHING
+    # above the apply_turn_states doc), `floor` is the lowest the stat may land
+    # at on a loss -- 1 for HP (state slip damage alone can never knock a
+    # battler out) and 0 for SP (running out of SP is never fatal, so it keeps
+    # its prior unfloored clamp).
+    def slip_stat(cur, max, amount, type, floor)
+      case type
+      when States::CHANGE_TYPE_GAIN then [cur + amount, max].min
+      when States::CHANGE_TYPE_NOTHING then cur
+      else [cur - amount, floor].max
+      end
     end
 
     # Whether `b` shakes off state `id` this turn: only once it has held for more
