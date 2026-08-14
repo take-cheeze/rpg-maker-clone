@@ -5070,6 +5070,44 @@ not yet verified:
   against a defenceless, high-max-HP target clamps at 999, both in the HP
   change and the stored variable), confirmed to fail against the pre-fix
   code.
+- ✅ **A troop member still `hidden` at the moment of victory — never
+  revealed by its own Show Hidden Monster page, or sent running by that
+  page's Force Flee — used to still hand over its EXP, gold and treasure
+  drop, even though it never actually fought or fell.** Not a claim from the
+  site's own text; found by comparing `Game::Troop` against EasyRPG Player's
+  actual C++ source while triaging the drop-related bullets nearby.
+  `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`) already treats
+  `out_of_play?` (dead **or** hidden) as "out of the fight" for win/loss
+  purposes, so `alive?(@enemies)` — and with it victory — can go true the
+  instant every *visible* member is down, with no requirement that a
+  still-hidden one (never revealed, or fled) ever took a hit at all. `Game::
+  Troop#total_exp`/`#total_gold`/`#drops` summed/rolled every member
+  unconditionally, with no such check. Verified against real RPG_RT's own
+  logic rather than guessed at: EasyRPG's `Game_EnemyParty::GetExp`/
+  `GetMoney`/`GenerateDrops` (`src/game_enemyparty.cpp`) each loop `if
+  (enemy.IsDead())` before counting a member at all, and `Game_Battler::
+  IsDead` (`src/game_battler.h`) is a bare `GetHp() == 0` — a hidden
+  member's HP is never touched by sitting out the fight, and Force Flee only
+  ever calls `SetHidden`, never `Kill`, so both cases read `IsDead() ==
+  false` there too, matching this codebase's own "hidden" signal exactly.
+  `Troop`'s own `Enemy` members never take damage in the first place — the
+  actual fight plays out on separate `Combatant` structs in `Game::Battle` —
+  so `hidden` (kept live by `Scene::Map#reveal_battle_monster`/
+  `#remove_fled_monster`, the same flag the already-fixed "reinforcement
+  revealed before a premature victory" and "hidden troop member not
+  targetable" checks rely on) is both the only signal available here and,
+  given the `incapacitated?` equivalence above, the *correct* one: any
+  non-hidden member reaching this call is guaranteed to be the dead case.
+  Fixed by adding a private `Troop#live_members` (`@members.reject(&:hidden)`)
+  and routing all three methods through it instead of the raw `@members`
+  list. Covered by a new `scripts/rpg2k_logic_check.rb` check (a troop with
+  one ordinary member and one starting/ending hidden grants only the visible
+  member's EXP/gold and never rolls the hidden one's 100%-certain drop, both
+  for a never-revealed member and one flagged hidden mid-fight to simulate a
+  Force Flee), confirmed to fail against the pre-fix code before the fix; the
+  pre-existing `Game::Troop instantiates its members and totals EXP / gold`
+  check's own totals (which had baked in the old, buggy inclusion of its
+  fixture's invisible-from-the-start Bat) were corrected to match.
 - ✅ **Turn-order tie-break on equal Agility: an ally acts before an
   equal-agility enemy; among tied allies, the lower actor id acts first.**
   The ally-before-enemy half was already correct by construction —
