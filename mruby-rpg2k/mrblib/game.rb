@@ -5076,10 +5076,21 @@ module Game
   #   the target on the final frame. Applying the tint as an `RGSS::Viewport`
   #   tone is the native (C++) half still to come, so the tint does not yet draw.
   # * **Shake** (Shake Screen, 11050): a horizontal camera offset that oscillates
-  #   while active. `shake` starts a timed shake and `update` advances a float-
-  #   free triangle wave (mruby here has no `Math`), amplitude scaled by power
-  #   and rate by speed — an approximation of RPG_RT's shake. The scene reads
-  #   `shake_offset` and offsets the camera by it, so the shake *is* visible.
+  #   while active. `shake` starts a timed shake and `update` advances it with
+  #   a direct port of EasyRPG Player's own `Shake::NextPosition`/`Shake::Update`
+  #   (`src/shake.h`) rather than an approximation: a genuine `Math.sin` wave
+  #   (`mruby-math` is already in this build's gem set, `build_config.rb` —
+  #   `Scene::Map`'s enemy-levitate flying offset already reaches for
+  #   `Math.sin`/`Math::PI` the same way, see `#draw_enemy_sprite`) whose
+  #   amplitude is `1 + 2 * power` — not just `2 * power`, so even a nominal
+  #   "power 0" shake still moves the view by +-1px, one of the two facts this
+  #   port fixed over the previous triangle-wave guess — and whose per-frame
+  #   *step* is separately capped at `(speed * amplitude) / 8 + 1` off the
+  #   previous frame's own position, the other fixed fact (a smoothing clamp
+  #   with no triangle-wave equivalent,
+  #   the other reason "power 0" no longer reads as flatly inert). The scene
+  #   reads `shake_offset` and offsets the camera by it, so the shake *is*
+  #   visible.
   #
   # `update` (called once per frame by the scene) advances both. Flash will join
   # the class the same way.
@@ -5093,7 +5104,6 @@ module Game
       @shake_power = 0
       @shake_speed = 1
       @shake_frames = 0 # frames left in the current shake (0 = still)
-      @shake_phase = 0
       @shake_offset = 0
       @flash_r = @flash_g = @flash_b = 0
       @flash_power = 0 # peak strength of the current flash
@@ -5218,7 +5228,6 @@ module Game
     def shake(power, speed, frames)
       @shake_power = Game.clamp(power, 0, 9)
       @shake_speed = Game.clamp(speed, 1, 9)
-      @shake_phase = 0
       if frames <= 0
         @shake_frames = 0
         @shake_offset = 0
@@ -5354,6 +5363,11 @@ module Game
       @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target
     end
 
+    # Port of EasyRPG's `Shake::Update`/`Shake::NextPosition` (`src/shake.h`):
+    # `@shake_frames` is the same role as its `time_left` (already converted
+    # from tenths of a second to frames, see Interpreter#do_shake_screen), so
+    # this mirrors its decrement-then-sample structure exactly rather than
+    # re-deriving the timing separately.
     def update_shake
       if @shake_frames <= 0
         @shake_offset = 0
@@ -5364,8 +5378,15 @@ module Game
         @shake_offset = 0 # settle back to centre when the shake ends
         return
       end
-      @shake_phase += @shake_speed
-      @shake_offset = Screen.triangle_wave(@shake_phase, 16, @shake_power * 2)
+      amplitude = 1 + 2 * @shake_power
+      phase = (@shake_frames * 4 * (@shake_speed + 2)) % 256
+      newpos = (amplitude * Math.sin(phase * Math::PI / 128) * -1).to_i
+      # The step off the *previous* frame's own offset is separately capped,
+      # a smoothing rule distinct from the amplitude bound above -- without
+      # it a low-speed, high-power shake could otherwise jump between two far
+      # apart sine samples in a single frame.
+      cutoff = (@shake_speed * amplitude) / 8 + 1
+      @shake_offset = Game.clamp(newpos, @shake_offset - cutoff, @shake_offset + cutoff)
     end
 
     def update_flash
@@ -5392,20 +5413,6 @@ module Game
     # refinement.
     def pan_step_for(speed)
       2**(Game.clamp(speed, 1, 6) - 1)
-    end
-
-    # A symmetric triangle wave in [-amp, amp] over `period` phase units (float-
-    # free, so it runs on the mruby build without Math). 0 amplitude/period -> 0.
-    def self.triangle_wave(phase, period, amp)
-      return 0 if amp <= 0 || period <= 0
-      half = period / 2
-      half = 1 if half <= 0
-      p = phase % period
-      if p < half
-        -amp + (2 * amp * p) / half
-      else
-        amp - (2 * amp * (p - half)) / half
-      end
     end
   end
 

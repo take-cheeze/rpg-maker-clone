@@ -839,9 +839,9 @@ check 'Screen shake oscillates within amplitude and settles after its duration' 
   s = Game::Screen.new
   eq 0, s.shake_offset
   ok !s.shaking?
-  s.shake(4, 5, 10) # power 4 -> amplitude 8 px, over 10 frames
+  s.shake(4, 5, 10) # power 4 -> amplitude 1 + 2*4 = 9 px (Shake::NextPosition), over 10 frames
   ok s.shaking?
-  amp = 8
+  amp = 9
   moved = false
   9.times do
     s.update
@@ -862,11 +862,49 @@ check 'Screen shake with zero duration is inert' do
   eq 0, s.shake_offset
 end
 
-check 'Screen zero-power shake produces no offset' do
+# yado.tk: "Shake strength increases in fixed 2px increments per level."
+# Verified against EasyRPG Player's actual C++ source rather than taken at face
+# value: `Shake::NextPosition` (src/shake.h) computes `amplitude = 1 + 2 *
+# strength`, not `2 * strength` -- there is a base 1px amplitude even at
+# strength (power) 0, on top of the 2px-per-level the wiki page itself names.
+# A "power 0" shake is therefore not flatly inert; it can still nudge the view
+# by exactly +/-1px on frames where the sine sample lands at its own peak.
+check 'Screen zero-power shake still has a +/-1px amplitude, never more' do
   s = Game::Screen.new
   s.shake(0, 5, 30)
-  20.times { s.update }
-  eq 0, s.shake_offset
+  offs = []
+  20.times { s.update; offs << s.shake_offset }
+  ok offs.all? { |o| o >= -1 && o <= 1 }, "zero-power shake left +/-1px: #{offs}"
+  ok offs.any? { |o| o != 0 }, 'a zero-power shake never actually moved the view'
+end
+
+# Direct port of EasyRPG's `Shake::NextPosition`/`Shake::Update` (src/shake.h),
+# re-derived independently here and compared frame-by-frame against
+# `Game::Screen#update`'s own `Math.sin`-based port. Confirmed to fail against
+# the pre-fix triangle-wave approximation before this fix (wrong amplitude,
+# wrong waveform shape, no per-frame cutoff clamp at all).
+check "Screen shake's per-frame offset matches EasyRPG's Shake::NextPosition exactly" do
+  power, speed, frames = 6, 3, 40
+  s = Game::Screen.new
+  s.shake(power, speed, frames)
+  amplitude = 1 + 2 * power
+  cutoff = (speed * amplitude) / 8 + 1
+  time_left = frames
+  expected_pos = 0
+  frames.times do
+    time_left -= 1
+    if time_left <= 0
+      expected_pos = 0
+    else
+      phase = (time_left * 4 * (speed + 2)) % 256
+      newpos = (amplitude * Math.sin(phase * Math::PI / 128) * -1).to_i
+      lo = expected_pos - cutoff
+      hi = expected_pos + cutoff
+      expected_pos = newpos < lo ? lo : (newpos > hi ? hi : newpos)
+    end
+    s.update
+    eq expected_pos, s.shake_offset, "frame #{frames - time_left}"
+  end
 end
 
 check 'Screen flash fades from its peak strength to zero, then settles' do

@@ -4095,11 +4095,72 @@ not yet verified:
   shared off `Game::State` between `Scene::Map` and `Scene::Menu`, so
   nothing re-erases it on return — matching RPG_RT never restoring the
   black-out once the menu has been opened and closed.
-- Shake strength increases in fixed 2px increments per level; duration 0
-  or flash intensity 0 both produce no visible effect (too brief to
-  render, not merely "instant").
+- ✅ **Shake Screen's own waveform, amplitude and per-frame smoothing are now a
+  direct port of EasyRPG Player's real C++ source, not a hand-rolled
+  approximation.** `Game::Screen#update_shake` (`mruby-rpg2k/mrblib/game.rb`)
+  used to drive `shake_offset` with a symmetric triangle wave whose amplitude
+  was `power * 2` and whose phase accumulated by `speed` every frame with no
+  smoothing at all — a stand-in the class's own comment already flagged as
+  "an approximation of RPG_RT's shake", not a verified port. Checked against
+  EasyRPG's actual `src/shake.h` this session rather than left as a guess:
+  `Shake::NextPosition` computes `amplitude = 1 + 2 * strength` (a **1px base
+  amplitude even at power/strength 0**, on top of the `2 * strength` this
+  bullet's own "fixed 2px increments per level" phrasing already names —
+  so a nominal "power 0" shake is not flatly inert, unlike this codebase's
+  own pre-fix `power * 2 = 0` case), samples a genuine sine wave
+  (`amplitude * sin((time_left * 4 * (speed + 2)) % 256 * PI / 128) * -1`,
+  not a triangle wave), and then clamps that raw sample to a **per-frame step
+  cutoff** off the *previous* frame's own position (`(speed * amplitude) / 8
+  + 1`, `Utils::Clamp<int>`) — a velocity-smoothing rule the triangle wave had
+  no equivalent of at all, not merely a differently-shaped curve. `time_left`
+  in `Shake::NextPosition` is already in frame units by the time it reaches
+  this formula (`Game_Interpreter::CommandShakeScreen`, verified against
+  EasyRPG's `src/game_interpreter.cpp`, converts the command's tenths-of-a-
+  second parameter via `tenths * DEFAULT_FPS / 10` before calling
+  `ShakeOnce`), the exact same unit `Interpreter#do_shake_screen`'s own
+  `FRAMES_PER_TENTH` conversion already puts `@shake_frames` in — so the port
+  needed no separate timing-unit reconciliation, only the position formula
+  itself. `#update_shake` now calls `Math.sin` directly — the old
+  triangle-wave comment's premise ("mruby here has no `Math`") does not hold
+  for this build: `mruby-math` is already in `build_config.rb`'s shared gem
+  set, and `Scene::Map`'s enemy-levitate flying offset (`mruby-rpg2k/mrblib/
+  scene/map.rb`) already calls `Math.sin`/`Math::PI` the same way, so this
+  fix follows that existing precedent rather than inventing a lookup-table
+  workaround for a constraint that turned out not to apply. `#update_shake`
+  computes `Math.sin(phase * Math::PI / 128)` for the exact same
+  `(time_left * 4 * (speed + 2)) % 256` phase EasyRPG computes, then
+  truncates `amplitude * sin * -1` toward zero (`Float#to_i`, matching C++'s
+  implicit double-to-int truncation) and clamps it against the previous
+  offset with `Game.clamp`, mirroring `Utils::Clamp<int>` exactly. The
+  now-unused hand-rolled `Screen.triangle_wave` helper was removed rather
+  than left dead. **The "duration 0 produces no visible effect" half of this
+  same bullet was already correct, no change needed**: `#shake`'s `frames <=
+  0` branch already zeroed `@shake_offset`/`@shake_frames` outright before
+  this fix and still does; the "flash intensity 0" half is a different
+  effect (Screen Flash, not Shake) already covered by its own dedicated
+  entry above. Two pre-existing `scripts/rpg2k_logic_check.rb` checks had
+  baked in the old, incorrect formula and are corrected alongside this fix:
+  "...oscillates within amplitude..." (power 4 now asserts a 9px amplitude,
+  `1 + 2*4`, not the old `2*4 = 8`) and the zero-power check, renamed to
+  "...still has a +/-1px amplitude, never more" since a power-0 shake can
+  now genuinely nudge the view by exactly 1px, the opposite of what the old
+  test (correctly, for the old formula) asserted. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check that independently re-derives
+  EasyRPG's own formula with plain Ruby `Math.sin` (available to this host-
+  Ruby test harness even though `Game::Screen` itself cannot use it) and
+  compares it frame-by-frame against `Game::Screen#update`'s own output over
+  a full shake's duration, both confirmed to fail against the pre-fix
+  triangle-wave code before the fix (wrong amplitude, wrong waveform shape,
+  and no per-frame cutoff clamp at all — a triangle wave has no equivalent
+  concept to clamp against).
 - Weather Effects "None" while rain/snow is active interrupts and stops
-  the running effect.
+  the running effect — **confirmed already correct, no code change needed**:
+  `Scene::Map#draw_weather` (`mruby-rpg2k/mrblib/scene/map.rb`) reads
+  `@state.weather` fresh every frame and hides `@weather_sprite` outright the
+  instant `Game::Weather#none?` (type 0) answers true, with no fade-out or
+  other lingering state to interrupt — a Change Weather "None" command takes
+  effect on the very next frame it runs, the same as any other weather-type
+  change.
 
 **BGM / SE**
 - 🚧 BGM has a **single channel** — a new Play BGM force-stops whatever's
