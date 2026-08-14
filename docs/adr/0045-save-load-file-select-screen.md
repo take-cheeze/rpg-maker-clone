@@ -68,8 +68,18 @@ purpose. The database also already carries the vocabulary such a screen needs
   `@event_menu` flag) via a parallel `@event_save_load` flag: the first visit
   pushes the picker (in `:save` mode with the running state, or `:load` mode),
   the second -- once the picker has popped back off the stack -- resumes the
-  interpreter. Change Save Access is still checked *before* the picker opens,
-  same as before. Open Load Menu's cancel path is a genuine behaviour change:
+  interpreter. **Open Save Menu ignores `@state.save_access`** -- the very
+  first version of this gated the picker behind it (matching Scene::Menu's own
+  Save command), which turned out to be wrong: real testing against Nepheshel
+  found its own Crystal Gate save-point event (map 12) sits on a map the tree
+  flags Save-forbidden (`Game::MapAccess::TRISTATE_FORBID`), and the event
+  still opens a save screen there in the genuine game -- "save only works at a
+  gate" is exactly the design that relies on the event bypassing the general
+  restriction, the same way `#perform_event_menu`'s Open Main Menu already
+  ignores Change Main Menu Access (see its own doc comment). Fixed by dropping
+  the `@state.save_access` branch from `#perform_event_save` entirely, so it
+  now always pushes the picker; Scene::Menu's own Save command is unaffected
+  and still checks it. Open Load Menu's cancel path is a genuine behaviour change:
   the old single-slot version unconditionally called `@interpreter.stop`
   (ending the triggering event outright, the same shape as Return to Title,
   since there was no cancel to distinguish from "no save data"), where a
@@ -88,11 +98,27 @@ purpose. The database also already carries the vocabulary such a screen needs
   (available) or nothing at all (unavailable) rather than calling
   `continue_game` directly. `FakeParent` gained matching `pop`,
   `load_save_state`/`save_states`, `continue_game`/`continue_calls` and a
-  slot-aware `save_game`. Sixteen new checks cover the picker itself (empty
+  slot-aware `save_game`. Seventeen new checks cover the picker itself (empty
   vs. occupied rows, confirm/cancel in both modes, scrolling/wraparound) and
-  the two event commands driving it (push timing, Change Save Access denial,
-  a real save/continue through the pushed picker, and Open Load Menu's
-  cancel-resumes-the-event behaviour).
+  the two event commands driving it (push timing, a real save/continue through
+  the pushed picker, `save_access` no longer blocking Open Save Menu, and Open
+  Load Menu's cancel-resumes-the-event behaviour) -- including one built from
+  Nepheshel's own Crystal Gate command shape (Show Choices -> a "SAVE" branch
+  -> Open Save Menu), driven through a real choice confirm rather than calling
+  `Game::Interpreter#choose` directly (which skips `Scene::Map#drive_message`'s
+  `close_message` pairing and would have given a false pass against the
+  pre-fix code).
+- The Open Save Menu `save_access` fix was found and confirmed against real
+  data: `scripts/native-build-without-nix.bash` built the native binary in
+  this container (no Nix needed, per its own header), and a temporary debug
+  hook in `start_new_game` reproduced Nepheshel's own Crystal Gate command
+  list against the real database under `xvfb-run` -- the picker never opened,
+  logging exactly the `[RPG2k] Open Save Menu: saving is disabled` line the
+  pre-fix `#perform_event_save` printed, which traced straight to
+  `Game::MapAccess.save_allowed?(12, ...)` reading that map's own
+  `save == TRISTATE_FORBID` tree flag. The same run confirmed the fix: no more
+  "saving is disabled" line, and the picker opens. The debug hook itself was
+  never committed.
 
 ## Consequences
 

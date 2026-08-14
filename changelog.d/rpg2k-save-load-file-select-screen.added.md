@@ -8,4 +8,8 @@
   Menu only offer occupied slots, and the title screen's Continue is enabled
   as soon as *any* slot holds a save rather than only slot 1. Cancelling an
   event-triggered Open Load Menu now resumes the event instead of ending it
-  outright (ADR 0045).
+  outright. Open Save Menu ignores Change Save Access / the map tree's own
+  Save-forbidden flag, matching Open Main Menu's existing bypass of Change
+  Main Menu Access — real games (Nepheshel's own Crystal Gate save point) rely
+  on this to offer saving only at a designated event on an otherwise
+  Save-forbidden map (ADR 0045).

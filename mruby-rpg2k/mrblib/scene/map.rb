@@ -2322,18 +2322,24 @@ class RPG2k
       # marks that this scene is waiting on its own picker, the same one-visit
       # guard #perform_event_menu uses for Open Main Menu, so the event stays
       # paused for exactly one visit instead of reopening the picker every
-      # frame. A Change Save Access that forbade saving is honoured *before*
-      # ever opening the picker, as in RPG_RT.
+      # frame.
+      #
+      # Unlike Scene::Menu's own Save command, this ignores `@state.save_access`
+      # -- the same way Open Main Menu ignores Change Main Menu Access (see its
+      # own doc comment below): the event is the designer's explicit save point,
+      # and a map that forbids Save at the tree level is exactly what a
+      # "save only works at this one designated event" design (Nepheshel's
+      # own gate/crystal event, `db.map_tree.map_properties[12].save ==
+      # Game::MapAccess::TRISTATE_FORBID`) relies on this command to bypass --
+      # confirmed against Nepheshel's real data, which forbids Save on that
+      # very map and puts its "SAVE" choice behind Open Save Menu regardless.
       def perform_event_save
         if @event_save_load
           @event_save_load = false
           @interpreter.resume
-        elsif @state.save_access
+        else
           @event_save_load = true
           @parent.push Scene::SaveLoad.new(@parent, @state, :save)
-        else
-          $stderr.puts '[RPG2k] Open Save Menu: saving is disabled'
-          @interpreter.resume
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Save Menu failed: #{e.message}"

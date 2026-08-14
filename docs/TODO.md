@@ -2043,7 +2043,14 @@ The work below is roughly ordered by the critical path to a walkable game
   matching Open Main Menu's own push-then-wait-for-it-to-close shape via a
   parallel `@event_save_load` flag), rather than acting on slot 1 directly —
   Open Load Menu's cancel path now resumes the triggering event (RPG_RT's own
-  behaviour) instead of the old unconditional `@interpreter.stop`. Only the
+  behaviour) instead of the old unconditional `@interpreter.stop`. **Open Save
+  Menu ignores `@state.save_access`**, unlike Scene::Menu's own Save command:
+  confirmed against real Nepheshel data (a native build under
+  `scripts/native-build-without-nix.bash`, since the CRuby test harnesses
+  cannot see this), whose own Crystal Gate save event sits on a map the tree
+  flags Save-forbidden and still opens a save screen there — the same
+  "an event bypasses the general access flag" precedent Open Main Menu already
+  set for Change Main Menu Access. Only the
   `--rpg2k_continue` headless flag still resumes slot 1 directly, since it has
   no input loop of its own to drive a second screen. See ADR 0045. **Not done
   yet:** the party face thumbnails a real save-select screen shows

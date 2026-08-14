@@ -8262,21 +8262,30 @@ check 'Open Save Menu: confirming a slot in the pushed picker really saves throu
   eq 1, parent.pop_called, 'the picker popped itself once dismissed'
 end
 
-check 'Open Save Menu honours a Change Save Access lock -- no picker opens at all' do
-  # Unlike a successful open, this path resolves synchronously in a single
-  # #perform_event_save call (no picker, so no two-visit wait) -- same
-  # three-frame shape (raise / resolve+resume / run the next command) the
-  # unconditional version had before the picker existed.
+check 'Open Save Menu ignores a Change Save Access lock -- unlike Scene::Menu\'s ' \
+      'own Save command, the event-triggered picker still opens' do
+  # Ported from a real bug: Nepheshel's own save-point event (a Crystal Gate,
+  # map 12) sits on a map the map tree flags Save-forbidden
+  # (Game::MapAccess::TRISTATE_FORBID) -- "save only at a gate" is exactly the
+  # design that relies on Open Save Menu bypassing that flag, the same way
+  # perform_event_menu's Open Main Menu ignores Change Main Menu Access. The
+  # old version of this check asserted the *opposite* (no picker while access
+  # is locked) and was itself wrong -- it passed against the pre-fix code,
+  # which is exactly why the real event never opened anything in Nepheshel.
   cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(8)]
   scene = new_scene({}, player: [0, 0])
   parent = scene.instance_variable_get(:@parent)
   st = scene.instance_variable_get(:@state)
   st.save_access = false
   scene.instance_variable_get(:@interpreter).start(cmds)
-  3.times { scene.update }
-  eq 0, parent.pushed.length, 'saving was disabled, so the picker never opens'
-  eq 0, parent.saved.length, 'and nothing was written'
-  eq 1, st.variables[8], 'the event still continues past the locked save'
+  2.times { scene.update } # raises the :save_menu wait, then opens the picker
+  eq 1, parent.pushed.length, 'the picker opens even though save_access is false'
+  pushed = parent.pushed.first
+  ok pushed.is_a?(RPG2k::Scene::SaveLoad), "pushed Scene::SaveLoad, got #{pushed.class}"
+  eq :save, pushed.instance_variable_get(:@mode), 'opened in :save mode'
+  eq 0, st.variables[8], 'the event stays paused while the picker is open'
+  2.times { scene.update } # back from the picker: the wait releases, then the event continues
+  eq 1, st.variables[8], 'the event resumed and continued past Open Save Menu'
 end
 
 check 'Open Load Menu pushes Scene::SaveLoad in :load mode' do
@@ -9667,6 +9676,46 @@ check "a troop's terrain_set excludes it from a tile it does not cover" do
      'terrain_set is only one entry long: an omitted tag defaults to allowed'
   ok scene.send(:troop_allowed_on_terrain?, 1, 1),
      'the default Slimes group carries no terrain_set at all: always allowed'
+end
+
+check 'Nepheshel-shaped Save choice event: a Show Choices "SAVE" branch reaches ' \
+      'Open Save Menu through a real choice selection, even with save_access ' \
+      'locked' do
+  # The exact command shape (opcodes, indentation, choice count) of Nepheshel's
+  # own Crystal Gate event -- the real-world event the save/load picker
+  # originally failed to open for, on a map the tree flags Save-forbidden.
+  # Reproduced end to end here: opening the choice window, selecting "SAVE" by
+  # pressing the confirm key (not calling Game::Interpreter#choose directly --
+  # that skips Scene::Map#drive_message's own close_message pairing and gives
+  # a false pass/fail), and confirming the picker opens.
+  ic = Game::Interpreter::Cmd
+  cmds = [
+    ECmd.new(ic::SHOW_CHOICES, [4], indent: 0, string: 'SAVE/Enter Game Space/Remove Crystal/Do nothing'),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'SAVE'),
+    ECmd.new(IC2::OPEN_SAVE_MENU, [], indent: 1),
+    ECmd.new(0, [], indent: 1), # blank
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'Enter Game Space'),
+    ECmd.new(0, [], indent: 1),
+    ECmd.new(ic::CHOICE_OPTION, [2], indent: 0, string: 'Remove Crystal'),
+    ECmd.new(0, [], indent: 1),
+    ECmd.new(ic::CHOICE_OPTION, [3], indent: 0, string: 'Do nothing'),
+    ECmd.new(0, [], indent: 1),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  st.save_access = false # Nepheshel's own Crystal Gate map forbids Save at the tree level
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  msg = open_msg(scene)
+  ok msg && msg[:choice], 'the choice window opened'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the first choice, "SAVE"
+  scene.update # closes the choice window and calls Game::Interpreter#choose
+  RGSS::Input.reset
+  scene.update # steps the interpreter past the choice, into Open Save Menu's wait
+  scene.update # dispatches the wait and opens the picker
+  eq 1, parent.pushed.size, 'the SAVE branch reaches Open Save Menu, which opens the picker'
+  ok parent.pushed.first.is_a?(RPG2k::Scene::SaveLoad), 'the pushed scene is the picker'
 end
 
 # -- summary ------------------------------------------------------------------
