@@ -18,10 +18,11 @@ concurrency:
 
 jobs:
   label:
-    # Just a checkout and a Ruby script driving `gh`, no build tooling -- so
-    # the small `ubuntu-slim` image (1 CPU, 5 GB RAM, 15-minute cap) covers it
-    # at a lower rate. See `preview-gate` in build.yml for the same reasoning.
-    runs-on: ubuntu-slim
+    # NOT ubuntu-slim: this needs Ruby (`ruby scripts/issue_form_labels.rb`
+    # below), and that small image doesn't ship an interpreter -- only `gh`
+    # and `jq` are preinstalled there. See labels.yml's `sync` job, which hit
+    # this same gap ("ruby: command not found", exit 127) for real.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
