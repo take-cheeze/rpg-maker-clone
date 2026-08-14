@@ -2507,10 +2507,42 @@ following this paragraph as the original record.
   "wait for completion" targeting a permanently-impassable tile without
   "Ignore if can't move" stalls a parallel process forever.
 - `015_shujinkou_idou_huka/` — catalogue of hero-can't-move causes; most
-  already covered by existing passability/move-route logic, but **"Force
-  Move All" targeting a currently-hidden (appearance-conditions-unmet) map
-  event causes a hard freeze in real RPG_RT** is a distinct crash-class quirk
-  not cross-checked yet.
+  already covered by existing passability/move-route logic. ✅ **"Force Move
+  All" targeting a currently-hidden (appearance-conditions-unmet) map event
+  now hard-freezes here too, matching real RPG_RT**, instead of silently
+  doing nothing. This was a real, reachable gap: an event whose current page
+  conditions aren't satisfied never gets a `Game::Character` built at all
+  (`Scene::Map#build_events` skips it outright — the same fact already
+  recorded for `event_id_at` and the Parallel Process bullets above), and
+  `#apply_move_request`'s target-resolution fallback
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — the same method a Set Move Route
+  command's queued request goes through — looked the target id up in
+  `@events` and simply dropped the request when nothing was found, the exact
+  same code path a stale/invalid event id takes. So a Move Event + Proceed
+  With Movement (or the implicit auto-run a Wait/Show Text triggers, see the
+  already-fixed "An implicit auto-run now also happens..." entry above)
+  targeting a hidden map event resumed immediately, the opposite of the
+  documented hard freeze. Fixed by distinguishing the two cases: the target
+  id is now also checked against `@map.unit.events` (the map's raw event
+  table, independent of which pages are currently active — the same source
+  `#pages_changed?` already walks) before giving up, and if the id names a
+  real event that just has no page selected right now, it is recorded in a
+  new `@stuck_move_targets` list instead of discarded outright; a genuinely
+  nonexistent id (never a valid event on this map) still no-ops exactly as
+  before, since that is the separate, unmodelled "invalid event ID" error
+  dialog case (see the "Concrete runtime error catalog" entry below). A
+  non-empty `@stuck_move_targets` now holds `#forced_movement_done?` false
+  forever, the same mechanism an ordinary route stuck on an impassable tile
+  already uses to hang — except there is no obstruction here that can ever
+  clear, so once stuck, permanently so (the list is only ever reset by a
+  genuine map change/Transfer Player, alongside every other per-visit forced-
+  route state, never by the target event later becoming visible). Covered by
+  two new `scripts/rpg2k_scene_check.rb` checks (a Move Event + Proceed With
+  Movement targeting a hidden event never resumes, even many frames later,
+  and even after the target's own gating switch turns on and its pages are
+  refreshed; a control case pins that a target id with no matching event *at
+  all* is left as a plain no-op, not this freeze), the first confirmed to
+  fail against the pre-fix code before the fix.
 - `037_zen_tuukou_kanou/` — passability is the AND of lower+upper chip
   passability (probably already correct, unverified); only the chipset's
   literal top-left upper tile is the canonical "no tile" transparent chip,
@@ -2597,9 +2629,10 @@ Everything below is unverified against the codebase.
   between = vertical hop in place), speed/direction fixed for its duration;
   hero-targeted Set Move Route suppresses random encounters during the
   move; running it from a Parallel Process during a hero/event tile overlap
-  can suppress that event's touch trigger; targeting a currently-hidden map
+  can suppress that event's touch trigger; ✅ targeting a currently-hidden map
   event with Move-All freezes (same family as the `015_shujinkou_idou_huka`
-  item above).
+  item above — now fixed there, see the "Untriaged backlog, from
+  `2k/09_bug/`" section above for the full writeup).
 - **Repeat/Loop** — loops forever without an explicit Break Loop.
 - **Common Event** — can't display map graphics or use touch-style
   triggers, can't run during battle or with the menu open; "This Event" as
