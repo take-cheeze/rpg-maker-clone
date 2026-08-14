@@ -6923,58 +6923,102 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   ok !wsp.visible, 'clearing weather hides the overlay'
 end
 
-check 'the timer window shows M:SS while visible and hides when never shown' do
+check 'the timer draws M:SS as digit-sprite cells cut from the System graphic, and hides when never shown' do
   scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
   st = scene.instance_variable_get(:@state)
   scene.update
-  eq [nil, nil], scene.instance_variable_get(:@timer_windows),
-     'no window until shown'
-  # Show a 75 s timer (Start with the show flag on).
-  st.timer_frames = 75 * 60
-  st.timer_visible = true
+  eq [nil, nil], scene.instance_variable_get(:@timer_sprites),
+     'no sprite until shown'
+  # Show a 75 s timer (Start with the show flag on) at a frame count that lands
+  # in the colon's "on" half of the blink (see the dedicated blink check below
+  # for the "off" half).
+  st.timer(0).frames = 75 * 60 + 30
+  st.timer(0).visible = true
   scene.update
-  win = scene.instance_variable_get(:@timer_windows)[0]
-  ok win, 'the window is built on first display'
-  ok win.visible, 'and shown'
-  eq '1:15', win.contents.draw_calls.last[4], 'it draws the M:SS text'
-  # Hiding the timer hides the window.
-  st.timer_visible = false
+  spr = scene.instance_variable_get(:@timer_sprites)[0]
+  ok spr, 'the sprite is built on first display'
+  ok spr.visible, 'and shown'
+  eq 4, spr.x, 'parked at the screen'"'"'s left edge'
+  eq 4, spr.y, 'parked at the top outside of battle'
+  # 75 s = 1:15 -> cells [0, 1, :, 1, 5], each an 8x16 blit from the System
+  # graphic's digit row (Sprite_Timer::Draw, src/sprite_timer.cpp).
+  calls = spr.bitmap.blt_calls
+  eq [[0, 0, 32, 32, 8, 16], [8, 0, 40, 32, 8, 16], [16, 0, 112, 32, 8, 16],
+      [24, 0, 40, 32, 8, 16], [32, 0, 72, 32, 8, 16]],
+     calls.map { |x, y, src, r| [x, y, r.x, r.y, r.width, r.height] },
+     'draws minute-tens, minute-ones, colon, second-tens, second-ones'
+  ok calls.all? { |c| c[2].equal?(scene.instance_variable_get(:@windowskin)) },
+     'every cell is cut from the System graphic'
+  # Hiding the timer hides the sprite.
+  st.timer(0).visible = false
   scene.update
-  ok !win.visible, 'clearing visibility hides the timer window'
+  ok !spr.visible, 'clearing visibility hides the timer sprite'
 end
 
-check "RPG2003's second timer draws in its own window" do
+check 'the timer colon blinks off for the first half of each second' do
   scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).frames = 30 * 60 # exactly on a second boundary: frames % 60 == 0
+  st.timer(0).visible = true
+  scene.update
+  spr = scene.instance_variable_get(:@timer_sprites)[0]
+  eq 4, spr.bitmap.blt_calls.size, 'the colon cell is skipped -- only 4 digit cells drawn'
+  spr.bitmap.clear_blt_calls
+  st.timer(0).frames = 30 * 60 + 30 # halfway through the second: frames % 60 == 30
+  scene.update
+  eq 5, spr.bitmap.blt_calls.size, 'the colon cell draws once the blink turns back on'
+end
+
+check 'the timer never draws with no System graphic loaded' do
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, nil)
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).set(30)
+  st.timer(0).start(true)
+  scene.update
+  ok scene.instance_variable_get(:@timer_sprites)[0].nil?,
+     'RPG_RT never displays a timer without a System graphic to cut digits from'
+end
+
+check "RPG2003's second timer draws in its own sprite, at the screen's right edge" do
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
   st = scene.instance_variable_get(:@state)
   st.timer(1).set(30)
   st.timer(1).start(true)
   scene.update
-  wins = scene.instance_variable_get(:@timer_windows)
-  eq nil, wins[0], 'the first timer was never shown, so has no window'
-  ok wins[1], 'the second one does'
-  eq '0:30', wins[1].contents.draw_calls.last[4]
-  ok wins[1].x > (RPG2k::Scene::Map::SCREEN_W / 2),
-     'and sits to the right of the first, the way RPG_RT parks it'
+  sprs = scene.instance_variable_get(:@timer_sprites)
+  eq nil, sprs[0], 'the first timer was never shown, so has no sprite'
+  ok sprs[1], 'the second one does'
+  eq RPG2k::Scene::Map::SCREEN_W - RPG2k::Scene::Map::TIMER_INNER_W - 4, sprs[1].x,
+     'sits flush against the right edge, the way RPG_RT parks it'
 end
 
-check 'a timer without the battle flag pauses and hides for the fight' do
+check 'a timer without the battle flag pauses and hides for the fight, and drops to the mid-screen battle position' do
   scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
   st = scene.instance_variable_get(:@state)
   st.timer(0).set(30)
   st.timer(0).start(true, false)  # visible, but not during battle
   scene.update
-  ok scene.instance_variable_get(:@timer_windows)[0].visible
+  spr = scene.instance_variable_get(:@timer_sprites)[0]
+  ok spr.visible
+  eq 4, spr.y, 'parked at the top outside of battle'
 
   frames = st.timer(0).frames
   scene.instance_variable_set(:@battle_ui, { phase: :command })
   scene.update
   eq frames, st.timer(0).frames, 'it stopped counting for the fight'
-  ok !scene.instance_variable_get(:@timer_windows)[0].visible, 'and is hidden'
+  ok !spr.visible, 'and is hidden'
 
   st.timer(0).in_battle = true
   scene.update
   ok st.timer(0).frames < frames, 'with the battle flag it keeps counting'
-  ok scene.instance_variable_get(:@timer_windows)[0].visible, 'and drawing'
+  ok spr.visible, 'and drawing'
+  eq RPG2k::Scene::Map::SCREEN_H * 2 / 3 - 20, spr.y,
+     'and repositioned to the mid-screen battle slot (Sprite_Timer::Draw)'
 end
 
 check 'boarding plays the vehicle BGM; disembarking restores the map BGM' do
