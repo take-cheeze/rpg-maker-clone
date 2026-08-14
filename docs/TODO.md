@@ -2697,6 +2697,37 @@ The work below is roughly ordered by the critical path to a walkable game
   Buzzer, and both the successful-escape and escape-forbidden paths. Also
   visually sanity-checked with this engine's own build under Xvfb (no
   exception, no crash resuming into the map).
+  **The `SelectPreviousActor()` question flagged above is now settled --
+  confirmed, not merely unconfirmed, and it is a real, concretely-shaped
+  gap, not just an SE nuance.** Traced verbatim: `SelectPreviousActor()`
+  (`scene_battle_rpg2k.cpp`), when the actor whose command list is open is
+  `allies[0]` (the very first commandable member), does not attempt Escape
+  and does not clamp/no-op -- it calls `SetState(State_SelectOption)`, a
+  **separate top-level state** handled by `ProcessSceneActionFightAuto
+  Escape()`. That state drives a genuine, navigable options window listing
+  **Battle / Auto Battle / Escape** (stock RPG2k; `Win`/`Lose` entries exist
+  in the enum but are an EasyRPG-specific, `easyrpg_battle_options`-gated
+  addition, not stock RPG2k content). This same window is *also* what shows
+  automatically once, at the very start of every battle, right after the
+  encounter/monster-appear messages -- `ProcessSceneActionStart()`'s final
+  substate calls `battle_message_window->Clear(); SetState(State_Select
+  Option);` unconditionally. It does **not** reappear automatically at the
+  start of round 2+; only those two triggers (battle start, and B-cancel
+  underflow from the first actor) reach it. Selecting Battle returns to
+  actor command selection; Auto Battle sets the whole party to an AI-driven
+  auto-battle mode for the round; only Escape runs the already-ported
+  `IsEscapeAllowed()` Buzzer-vs-Decision gate. B/Cancel does nothing while
+  this menu itself is open (no cancel handling in that state -- it is the
+  state machine's own root). **Not implemented, on purpose:** this needs an
+  actual Auto Battle AI mode built to have a real third option, which is a
+  meaningfully sized feature of its own (a full party-command-selection AI,
+  not a UI tweak), well beyond the scope of the system-SE pass that
+  surfaced this gap -- attempting a 2-option (Battle/Escape) stand-in
+  without a genuine Auto Battle behind it would either mislead a player
+  familiar with real RPG2k or need its own separate design decision about
+  what "Auto Battle" should even mean here first. Left as a real, sized,
+  and now fully evidenced gap for whoever picks up battle-flow work next,
+  rather than a vague "battle screen might have more gaps" note.
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
   `Music/`/`Sound/`/`Audio/*`
