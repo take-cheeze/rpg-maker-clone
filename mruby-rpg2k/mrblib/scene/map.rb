@@ -6484,7 +6484,6 @@ class RPG2k
       # 1/30s per frame, matching the "1 frame = 1/30s" fact this codebase already
       # otherwise assumed correctly.
       ANIM_CELL_FRAMES = 2
-      ANIM_FALLBACK_FRAMES = 10
       # ANIM_FLASH_FRAMES is 11, not some other guess: EasyRPG's
       # `BattleAnimation::UpdateFlashGeneric` (src/battle_animation.cpp) keeps a
       # fired timing's own colour/power alive for `delta_frames = GetFrame() -
@@ -6607,8 +6606,30 @@ class RPG2k
         if @map_animation
           fire_animation_flashes(@map_animation) # frame 0 flashes
         else
-          @anim_wait = ANIM_FALLBACK_FRAMES * ANIM_CELL_FRAMES
+          @anim_wait = missing_animation_wait(req[:animation])
         end
+      end
+
+      # The wait a Show Battle Animation command with nothing drawable still
+      # applies -- confirmed against EasyRPG's own `Game_Screen::
+      # ShowBattleAnimation`/`BattleAnimation` (`src/game_screen.cpp`/
+      # `src/battle_animation.cpp`, fetched verbatim): there is no fixed
+      # fallback duration anywhere in the reference implementation (the
+      # `ANIM_FALLBACK_FRAMES` constant this replaced was an unverified
+      # guess, never checked against source the way `ANIM_CELL_FRAMES` and
+      # `ANIM_FLASH_FRAMES` already were). An invalid animation id, or a
+      # database row with no frames at all, waits exactly 0 --
+      # `Game_Interpreter`'s own `wait_time == 0` falls straight through to
+      # the next command the same tick, no one-frame floor. A row with real
+      # frame data but an unloadable `Battle/<name>` sheet still waits the
+      # row's own real duration (`frames.size * ANIM_CELL_FRAMES`) --
+      # EasyRPG computes the frame count from the database row before it
+      # even attempts the graphic load, so a missing file changes nothing
+      # about the timing, only what (nothing) actually draws.
+      def missing_animation_wait(id)
+        anim = animation_row(id)
+        return 0 unless anim
+        table_entries(anim.frames).size * ANIM_CELL_FRAMES
       end
 
       # Advance the drawable animation one frame per ANIM_CELL_FRAMES, firing that
