@@ -4711,6 +4711,61 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   ok !st.switches[2], 'the Escape handler was skipped'
 end
 
+# yado.tk: "the built-in random-number operand is a genuine non-seeded RNG --
+# two New Games produce different sequences," i.e. real RPG_RT's randomness is
+# one continuously-advancing stream for the whole session, never reset mid-game.
+# `Scene::Map#open_battle` (mruby-rpg2k/mrblib/scene/map.rb) used to build each
+# fight's combat math on a brand-new `Game::Rng.new(0x2000)`, discarding
+# whatever the scene's own already-advancing `@rng` (the same stream random
+# encounters and NPC wandering already draw from) had reached -- so every
+# battle's hit/miss/crit/damage rolls started over from the exact same point
+# regardless of how much other randomness the playthrough had already
+# consumed, and two battles against the same troop played out identically
+# given the same player inputs. Fixed by passing the scene's own `@rng`
+# straight through instead of a disposable fresh one.
+check "Enemy Encounter scene: battle math reuses the scene's own advancing " \
+      'RNG stream, not a fresh one reseeded to the same constant every fight' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  ui = scene.instance_variable_get(:@battle_ui)
+  rng = scene.instance_variable_get(:@rng)
+  ok ui[:battle].rng.equal?(rng),
+     "the battle's own combat math should draw from the scene's single, " \
+     'already-advancing RNG object, not a freshly constructed one'
+end
+
+check 'Enemy Encounter scene: rolls already spent by earlier map activity change ' \
+      'how the ensuing battle plays out' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+
+  scene_a = new_scene({ 1 => event(2, 2, auto) })
+  scene_a.instance_variable_get(:@state)
+          .instance_variable_set(:@party, BattleStubParty.new)
+  battle_attack_to_end(scene_a)
+  log_a = scene_a.instance_variable_get(:@battle_ui)[:battle].log.dup
+
+  scene_b = new_scene({ 1 => event(2, 2, auto) })
+  scene_b.instance_variable_get(:@state)
+          .instance_variable_set(:@party, BattleStubParty.new)
+  # Stand in for ordinary map play before this same scripted fight is ever
+  # reached -- random-encounter rolls, NPC wandering steps, an earlier fight
+  # entirely -- all of which draw from this same per-scene RNG stream.
+  7.times { scene_b.instance_variable_get(:@rng).next_int }
+  battle_attack_to_end(scene_b)
+  log_b = scene_b.instance_variable_get(:@battle_ui)[:battle].log.dup
+
+  ok log_a != log_b,
+     'a fight reached after other map-side rolls should not replay the exact ' \
+     'same hit/miss/damage sequence as one reached with none spent'
+end
+
 check 'Enemy Encounter scene: battle BGM plays on entry, field BGM resumes after' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
