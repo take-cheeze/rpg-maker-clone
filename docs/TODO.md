@@ -3542,7 +3542,45 @@ not yet verified:
   1/30s display while a Battle Animation is playing, because the
   animation continuously re-asserts its own per-frame flash state for its
   whole duration — corroborated by many independent sources as one of the
-  most commonly-hit surprises on the site.
+  most commonly-hit surprises on the site. ✅ **The Screen Flash half is now
+  fixed, verified against EasyRPG Player's actual C++ source rather than
+  guessed at.** `BattleAnimation::Update` (`src/battle_animation.cpp`) calls
+  `UpdateScreenFlash` on **every real frame** the animation is on screen —
+  not only frames carrying their own flash_scope-2 timing — and
+  `UpdateScreenFlash` always ends in `Game_Screen::FlashOnce(r, g, b, p, 0)`,
+  where r/g/b/p come from the most recently fired timing's own decaying value
+  (`UpdateFlashGeneric`/`CalculateFlashPower`) or are all zero once that decay
+  window has lapsed (or before any timing has fired at all this play) —
+  so an unrelated, independently-ticking Screen Flash gets silently
+  overwritten the very next real frame regardless of its own configured
+  duration, for as long as any Battle Animation is on screen. This
+  codebase's `Scene::Map#fire_animation_flashes` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) already reproduced the timing's own decaying flash
+  correctly on a frame that carries one (`@state.screen.flash(...,
+  ANIM_FLASH_FRAMES)`), but `#step_map_animation` only ever touched the
+  screen flash on those throttled, timing-carrying animation-frame ticks —
+  every other real frame (including an animation's opening frames, before
+  any flash_scope-2 timing has fired at all) left an unrelated flash's own
+  decay running completely untouched, the opposite of "capped to 1/30s".
+  Fixed with a new `#hold_animation_screen_flash`, called from
+  `#step_map_animation` on **every** real frame the animation drives
+  (throttled ticks and the frames in between alike): a new
+  `ma[:screen_flash_hold]` counter (set to `ANIM_FLASH_FRAMES` by
+  `#fire_animation_flashes` whenever a flash_scope-2 timing actually fires,
+  ticking down here) lets the animation's own just-fired flash decay
+  undisturbed for that window, and forcibly zeroes the screen flash
+  (`@state.screen.flash(0, 0, 0, 0, 0)`) every real frame outside it —
+  reproducing `FlashOnce(0,0,0,0,0)`'s own "nothing fired yet/lapsed" case.
+  Scoped to Screen Flash only: **Character Flash is a structurally different
+  mechanism in this codebase** (the decaying `{red:, green:, blue:, power:,
+  frames:, total:}` hash `#apply_sprite_flash`/`#update_sprite_flashes` drive
+  per-target, vs. `Game::Screen`'s own single flash state) and would need its
+  own, separate per-real-frame reassertion — left open. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a Flash Screen command fired with a
+  120-frame duration right before a Show Battle Animation whose own frame 0
+  carries no timing at all gets stomped to not-flashing during those
+  timing-less opening frames, well short of its own configured duration),
+  confirmed to fail against the pre-fix code before the fix.
 - Change Screen Tone affects **only** the map tile+character layer —
   pictures, screen/character flash, battle animations, and message text
   are all completely unaffected even at a maximal dark tone; Erase Screen,
