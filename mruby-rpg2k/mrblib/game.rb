@@ -3545,7 +3545,22 @@ module Game
           # is 0 for such a skill, but the ATK/DEF/SPI/AGI modifier applies
           # regardless, off the same `base` EasyRPG's one shared `effect`
           # local would carry into every affect_* branch alike.
-          stat_effect: base }
+          stat_effect: base,
+          # A self/ally-scoped skill's own `state_effects` list -- EasyRPG's
+          # `Game_BattleAlgorithm::Skill::vExecute` computes `heals_states =
+          # IsPositive() ^ (Player::IsRPG2k3() && skill.reverse_state_effect)`,
+          # and `IsPositive()` is simply "this skill targets allies" (true for
+          # every scope reaching this branch) -- so in battle, unlike on the
+          # field (`#skill_cured_states`), `reverse_state_effect` plays no part
+          # at all under the RPG2000-only rule this runtime models (matching
+          # #skill_attr_shift's own already-settled reading of the identical
+          # formula): an ally/self-scoped skill's flagged states are always
+          # cured here, never inflicted. Reuses `Game::Battle#apply_skill_hit`'s
+          # existing `cmd[:cured]` machinery unconditionally, exactly like a
+          # battle medicine's own state cure -- no separate accuracy roll,
+          # since only the *inflict* direction (the enemy-scope branch above)
+          # is ever gated by `chance`.
+          cured: skill_state_ids(sk) }
       end
     end
 
@@ -6742,14 +6757,15 @@ module Game
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
                       absorb: false, attr_shift: nil, attr_ids: nil,
-                      stat_mod_keys: nil, stat_effect: 0)
+                      stat_mod_keys: nil, stat_effect: 0, cured: nil)
       ally.command = { kind: :skill, target: target, name: name,
                        skill_id: skill_id, absorb: absorb,
                        cost: cost, hp: hp, mp: mp,
                        inflict: inflict || [], chance: chance, variance: variance,
                        attributes: attributes || [],
                        attr_shift: attr_shift, attr_ids: attr_ids || [],
-                       stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect }
+                       stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect,
+                       cured: cured || [] }
       ally.action = nil; ally.defending = false
     end
 
@@ -6766,12 +6782,13 @@ module Game
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
                           variance: 0, attributes: nil, skill_id: nil,
                           absorb: false, attr_shift: nil, attr_ids: nil,
-                          stat_mod_keys: nil, stat_effect: 0)
+                          stat_mod_keys: nil, stat_effect: 0, cured: nil)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
                        skill_id: skill_id, absorb: absorb, cost: cost, inflict: inflict || [], chance: chance,
                        variance: variance, attributes: attributes || [],
                        attr_shift: attr_shift, attr_ids: attr_ids || [],
-                       stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect }
+                       stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect,
+                       cured: cured || [] }
       ally.action = nil; ally.defending = false
     end
 
@@ -7287,7 +7304,8 @@ module Game
         absorb: cmd[:absorb] ? true : false,
         cost: cmd[:cost] || 0, hp: cmd[:hp] || 0, mp: cmd[:mp] || 0,
         inflict: cmd[:inflict] || [], chance: cmd[:chance] || 100,
-        variance: cmd[:variance] || 0, attributes: cmd[:attributes] || [] }
+        variance: cmd[:variance] || 0, attributes: cmd[:attributes] || [],
+        cured: cmd[:cured] || [] }
     end
 
     def skill_name_of(sk)

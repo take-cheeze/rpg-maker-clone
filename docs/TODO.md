@@ -4453,6 +4453,62 @@ not yet verified:
   error; the identical command from any other trigger type, or from a
   Parallel-Process **common** event, does not crash. (An authentic engine
   crash — flagged for awareness, not necessarily something to reproduce.)
+- ✅ **A self/ally-scoped skill's own `state_effects` now cure in battle too**,
+  not just heal HP/SP — found while cross-checking this codebase's enemy AI
+  (`Game::Battle#choose_enemy_action`/`#enemy_action_valid?`, already a faithful
+  port of EasyRPG's `EnemyAi::AlgorithmRatingBased`) against EasyRPG's
+  `IsSkillEffectiveOnAnyTarget`/`IsSkillEffectiveOn` (`src/enemyai.cpp`), which
+  filter a self/ally-scoped action out of an enemy's choices unless it would
+  actually cure a state some troop-mate currently carries — that filter
+  presupposed a mechanic this codebase never actually had. `Game::Party
+  #battle_skill_command`'s enemy-scope (attack) branch already carried a
+  skill's `state_effects` into `inflict:`/`chance:` (the existing "Attack
+  skills inflict states" note a few paragraphs up), but its self/ally/party-
+  scope (`else`) branch — the "Cure Poison"/"Full Recovery"-style skill shape
+  — carried none of it: no `cured:` key at all, unlike an **item**'s identical
+  cure (`Game::Party#command_item`'s own `cured:`, wired straight through to
+  `Game::Battle#apply_skill_hit`'s existing, already-tested `cmd[:cured]`
+  removal). So an ally-scoped state-cure *skill* was silently inert in battle
+  — only its HP/SP/stat effects landed — while the equivalent medicine item
+  worked, and while the same skill cast from the *field* menu
+  (`Game::Party#cast_skill`, via `#skill_cured_states`) worked too. Which
+  polarity a self/ally-scoped skill's `state_effects` list applies is
+  settled by EasyRPG's `Game_BattleAlgorithm::Skill::vExecute`: `heals_states
+  = IsPositive() ^ (Player::IsRPG2k3() && skill.reverse_state_effect)`, and
+  `IsPositive()` is `Algo::SkillTargetsAllies(skill)` — true for every scope
+  but Scope_enemy(0)/Scope_enemies(1) — so under the RPG2000-only reading
+  this runtime already commits to elsewhere (no `Player::IsRPG2k3()` gate
+  modelled), `reverse_state_effect` plays **no part** in battle cure-vs-inflict
+  either, exactly like the already-settled `#skill_attr_shift` direction fix
+  above reading the identical formula: only scope decides, and a self/ally-
+  scoped skill's flagged states always cure, never inflict. Fixed by adding
+  `cured: skill_state_ids(sk)` to `battle_skill_command`'s `else` branch (the
+  field-only `#skill_cured_states`/`#skill_inflicted_states`, which *do*
+  consult `reverse_state_effect`, are deliberately not reused here — they
+  answer the field's own, different rule) and threading a new `cured:`
+  keyword through both command builders that feed `Game::Battle#apply_skill_hit`:
+  `Game::Party#command_skill`/`#command_skill_all` (the player's own battle
+  skill menu, `Scene::Map#apply_pending_skill`/`#apply_pending_skill_all`) and
+  `Game::Battle#skill_command_hash` (the AI-chosen enemy-cast path,
+  `#enemy_skill_action`) — both previously missing the field entirely, so a
+  monster's own "Cure" action was exactly as inert as the player-menu path.
+  No change was needed to `#apply_skill_hit` itself: its recovery branch's
+  `cured = (cmd[:cured] || []).select { |s| target.state?(s) }` already
+  existed, generic over item- and skill-sourced commands alike, unconditional
+  (no accuracy roll, matching EasyRPG's own unconditional `State::Remove` for
+  the healing direction, versus the probability-gated `State::Add` the
+  inflict direction alone already used). Covered by three new
+  `scripts/rpg2k_logic_check.rb` checks: `battle_skill_command`'s `:cured`
+  across ally-single/ally-all/self scope (with `reverse_state_effect` proven
+  inert on every one, mirroring the `attr_shift` check's own structure) and
+  its absence on the enemy-scope branch; a full `Game::Battle#run_round`
+  confirming a poisoned ally's state is actually removed from a player-cast
+  Antidote skill; and the enemy-cast counterpart, a self-scoped "Focus"
+  monster skill curing its own status through `#enemy_skill_action` — all
+  three confirmed to fail against the pre-fix code (a missing `:cured` key,
+  and the state still present after the round) before the fix, alongside a
+  pre-existing full-hash `battle_skill_command` assertion updated to expect
+  the new key.
 
 **Party / Actor / Vehicle**
 - Party is hard-capped at 4; adding a 5th via Change Party Member is a
