@@ -6656,7 +6656,7 @@ module Game
     # existing fixture keeps its results.
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
                    criticals = false, accuracy = false, first_strike = false,
-                   attributes = nil, ai = nil)
+                   attributes = nil, ai = nil, rpg2003: false)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
@@ -6667,6 +6667,7 @@ module Game
       @first_strike = first_strike
       @attributes = attributes
       @ai = ai
+      @rpg2003 = rpg2003 ? true : false
       @rounds = 0
       @result = nil
       @escaped = false # set once the party successfully flees (#attempt_escape)
@@ -7990,9 +7991,18 @@ module Game
     # caller as `dmg * combined / 100`) was tried and dropped in an earlier
     # revision of this method for exactly that reason. Unchanged for an
     # attribute-less attack; a rank the target doesn't list defaults to C
-    # (100%). RPG2000 attribute rates never go negative, so EasyRPG's "one
-    # side is negative" fallback branch (2003's `attribute.type` add-on)
-    # never applies here.
+    # (100%). A database's own `a_rate`..`e_rate` fields are plain signed
+    # ints with no validation (`#attr_rate`), so a negative rank rate is
+    # real, reachable data (a deliberate "elemental absorb" trick), not
+    # exclusive to RPG2003 -- `ApplyAttributeMultiplier`'s own
+    # `limit = Player::IsRPG2k() ? -1 : INT_MIN` gate (verified against
+    # EasyRPG Player's `src/attribute.cpp`) treats the two editions
+    # differently: RPG2000 drops a side whose best rate is negative from
+    # consideration entirely (the attack passes through unscaled by that
+    # side, never healing), while RPG2003 lets a negative side scale the
+    # damage directly when it is the only one present, and falls to
+    # `dmg * [physical, magical].max / 100` (the milder of the two rather
+    # than multiplying) once either side is negative and both are present.
     def apply_attr_multiplier(dmg, attr_ids, target)
       return dmg if attr_ids.nil? || attr_ids.empty?
       ranks = target.attr_ranks || {}
@@ -8009,15 +8019,30 @@ module Game
           magical = pct if magical.nil? || pct > magical
         end
       end
-      if physical && magical
-        magical * (physical * dmg / 100) / 100
-      elsif physical
+      p_ok = above_attr_limit?(physical)
+      m_ok = above_attr_limit?(magical)
+      if p_ok && m_ok
+        if physical >= 0 && magical >= 0
+          magical * (physical * dmg / 100) / 100
+        else
+          dmg * [physical, magical].max / 100
+        end
+      elsif p_ok
         physical * dmg / 100
-      elsif magical
+      elsif m_ok
         magical * dmg / 100
       else
         dmg
       end
+    end
+
+    # Whether a bucket-max rate `v` (nil when that type matched nothing at
+    # all) clears `ApplyAttributeMultiplier`'s own edition-gated floor: any
+    # real value on RPG2003 (mirroring its `INT_MIN` limit), non-negative
+    # only on RPG2000 (its `-1` limit) -- see #apply_attr_multiplier above.
+    def above_attr_limit?(v)
+      return false if v.nil?
+      @rpg2003 || v >= 0
     end
 
     # The most disruptive "forced action" restriction among `b`'s states (0 = act

@@ -4002,7 +4002,12 @@ class RPG2k
                                                 # Lets the troop run its 行動パターン:
                                                 # skills, transformations and the
                                                 # switch / party-level conditions.
-                                                Game::EnemyAi.new(db, @state)),
+                                                Game::EnemyAi.new(db, @state),
+                                                # A negative attribute rank rate
+                                                # (see #apply_attr_multiplier)
+                                                # is handled differently per
+                                                # edition.
+                                                rpg2003: db.respond_to?(:rpg2003?) && db.rpg2003?),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
