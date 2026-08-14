@@ -6064,6 +6064,17 @@ module Game
       # sprite would otherwise have (255 outside of the death-fade/explode
       # animations this codebase does not yet model).
       @transparent = row && row.respond_to?(:transparent) ? (row.transparent ? true : false) : false
+      # The battle-graphic hue shift (field 3, degrees 0..359): lets a game
+      # reuse one Monster/<name> bitmap for several palette-swapped variants
+      # (a red slime and a blue slime sharing "Slime.png") instead of shipping
+      # a separate file per colour. Verified against EasyRPG Player's actual
+      # C++ source: `Game_Enemy::GetHue` (`src/game_enemy.h`) is a bare
+      # `enemy->battler_hue` passthrough, and `Sprite_Enemy::OnMonsterSpriteReady`
+      # (`src/sprite_enemy.cpp`) rotates the loaded bitmap through
+      # `Bitmap::HueChangeBlit` whenever it is nonzero, before the sprite is
+      # ever shown -- purely a render-time recolour with no stat effect,
+      # unlike every field above it.
+      @battler_hue = row && row.respond_to?(:battler_hue) ? (row.battler_hue || 0) : 0
       # The 行動パターン table (field 42), decoded now since `row` isn't kept. An
       # enemy whose row lists none falls back to plain attacking.
       @actions = []
@@ -6082,6 +6093,9 @@ module Game
 
     # The "Appear Transparent" flag (field 10) -- see the comment in #initialize.
     attr_reader :transparent
+
+    # The battle-graphic hue shift (field 3) -- see the comment in #initialize.
+    attr_reader :battler_hue
 
     # Base to-hit percentage for this enemy's normal attack (70 when the "miss"
     # flag is set, otherwise 90); fed into the battle's to-hit roll.
@@ -6583,6 +6597,7 @@ module Game
                            :prevents_crit, :attr_ranks, :atk_attrs, :skip,
                            :hit_rate, :state_ranks, :hidden, :battle_turn,
                            :actions, :charged, :enemy_id, :battler_name,
+                           :battler_hue,
                            # Equipment-granted combat modifiers (ADR 0033):
                            # how many times a basic attack swings, whether it
                            # can be evaded, whether Defend halves twice, and
@@ -6721,6 +6736,7 @@ module Game
       # The Monster/<name> graphic, carried so the battle screen can redraw a
       # combatant whose transformation swapped it.
       c.battler_name = e.respond_to?(:battler_name) ? e.battler_name : nil
+      c.battler_hue = e.respond_to?(:battler_hue) ? (e.battler_hue || 0) : 0
       c.attr_base_ranks = c.attr_ranks.dup
       c
     end
@@ -7995,6 +8011,7 @@ module Game
       b.actions = into.actions
       b.enemy_id = act.enemy_id
       b.battler_name = into.battler_name
+      b.battler_hue = into.battler_hue
       { attacker: b.name, transform: true, target: into.name }
     end
 
