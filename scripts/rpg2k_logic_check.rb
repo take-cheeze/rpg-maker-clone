@@ -5801,6 +5801,44 @@ check 'Weather round-trips through the save' do
   ok Game::State.load(db, legacy).weather.none?
 end
 
+check 'Screen pan/lock round-trips through the save; other effects stay transient' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.screen.pan(1, 2, 3) # pan right 2 tiles (32px) at speed 3 -> 4px/frame
+  2.times { st.screen.update } # in-flight (8px), short of the 32px target
+  st.screen.pan_lock
+  # Deliberately-transient effects, armed too, to prove they do NOT survive.
+  st.screen.tint_to(200, 100, 100, 100, 10)
+  st.screen.shake(5, 5, 10)
+  st.screen.flash(255, 0, 0, 20, 10)
+  ok st.screen.pan_locked?
+  ok st.screen.panning?
+  before_offset = st.screen.pan_offset
+
+  loaded = Game::State.load(db, st.to_h)
+  eq true, loaded.screen.pan_locked?, 'the Lock survives the save'
+  eq before_offset, loaded.screen.pan_offset,
+     'the in-progress pan offset survives at whatever point it had scrolled to'
+  ok loaded.screen.panning?, 'the still-unfinished scroll toward its target survives too'
+  6.times { loaded.screen.update } # remaining 24px at 4px/frame lands on the 32px target
+  eq [32, 0], loaded.screen.pan_offset, 'the scroll resumes toward its original target'
+  ok !loaded.screen.tinting?, 'tint transitions stay transient, unlike pan'
+  ok !loaded.screen.shaking?, 'shake stays transient, unlike pan'
+  ok !loaded.screen.flashing?, 'flash stays transient, unlike pan'
+
+  # A save written before Screen pan state was persisted defaults to a
+  # neutral, hero-following camera -- not locked, no offset.
+  legacy = st.to_h
+  legacy.delete(:screen)
+  legacy_loaded = Game::State.load(db, legacy)
+  ok !legacy_loaded.screen.pan_locked?
+  eq [0, 0], legacy_loaded.screen.pan_offset
+end
+
 # -- Change Teleport / Escape Access ------------------------------------------
 
 check 'Change Teleport / Escape Access toggle their flags, non-blocking' do
