@@ -2098,7 +2098,10 @@ The work below is roughly ordered by the critical path to a walkable game
   but empty cursor, no text -- `Scene::ItemMenu`/`Scene::SkillMenu` instead
   drew a hardcoded English "No items"/"No skills" (the only menu text in
   either scene not sourced through `term(...)`) and collapsed the cursor to
-  zero height. Both fixed to match.
+  zero height. Both fixed to match -- **the Skill side is now wine-confirmed
+  too**, not just inferred from the identical Item-screen code pattern: once
+  reachable at all (see the reachability note below), RPG_RT's empty Skill
+  screen showed the same blank cursor row, no "no skills" text.
   **Left open by the same comparison, not fixed here:**
   - The Item/Skill list windows stay full-`SCREEN_W` wide even with nothing
     in them, where RPG_RT's own list window in that state is narrower (looks
@@ -2122,6 +2125,27 @@ The work below is roughly ordered by the critical path to a walkable game
     obvious dedicated slot for this message to source from, so whether RPG_RT
     shows *any* text here at all is still an open question rather than an
     assumed one.
+  **A harness reachability wall, worth recording for whoever extends this
+  comparison next:** navigating the field menu's command list under wine and
+  then confirming is unreliable past the *second* cursor position. Escape
+  (open the menu) and a bare confirm from the freshly-opened menu (position
+  0, Item) work every time; one Down then a confirm (position 1, Skill)
+  eventually lands if the confirm key is retried several times a second
+  apart; two Downs then a confirm (position 2, Equip, and by extension
+  position 3, Save) never lands, across every combination tried -- longer
+  per-key settle (up to 2.5s), re-resolving and re-activating the window
+  before every single key, an explicit numeric window id (RPG_RT opens
+  *two* `HWND`s both titled "Nepheshel Ver2.04b"; pinning either one made no
+  difference), swapping the confirm key from Return to Z, and retrying the
+  confirm up to 6 times with a pixel-diff check to stop as soon as the frame
+  actually changes. The Down presses themselves are never in doubt -- the
+  menu cursor visibly moves to the right row every time -- only the
+  following confirm is the problem, and only two-or-more-Downs deep. Ruled
+  out as an explanation: `equipment_fixed` on the actor (false), and the
+  equipped items resolving to invalid database ids (all five resolve
+  cleanly). This reads as an Xvfb/wine/xdotool input-queue quirk rather than
+  anything about the engine being compared, but it blocked getting genuine
+  RPG_RT frames for the Equip and Save screens in this pass.
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
