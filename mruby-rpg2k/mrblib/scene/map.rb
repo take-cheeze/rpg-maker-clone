@@ -583,6 +583,11 @@ class RPG2k
       # leaves the black behind it. The snapshot is taken once, the first frame
       # this particular Game::Transition instance is drawn (identity, not
       # value, so a same-style transition right after it still re-snapshots).
+      #
+      # Zoom is the one captured style that resamples instead of pasting 1:1
+      # (see Game::Transition#zoom?): its single #capture_ops piece is `[dx,
+      # dy, dw, dh, sx, sy, sw, sh]` for `Bitmap#stretch_blt`, rather than the
+      # `[dx, dy, sx, sy, sw, sh]` every other style hands to `Bitmap#blt`.
       def draw_captured_transition(tr)
         unless @captured_transition.equal?(tr)
           @transition_capture.dispose if @transition_capture
@@ -598,8 +603,13 @@ class RPG2k
           return
         end
         @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
-        tr.capture_ops.each do |dx, dy, sx, sy, sw, sh|
-          @fade_bmp.blt dx, dy, cap, Rect.new(sx, sy, sw, sh)
+        if tr.zoom?
+          dx, dy, dw, dh, sx, sy, sw, sh = tr.capture_ops.first
+          @fade_bmp.stretch_blt Rect.new(dx, dy, dw, dh), cap, Rect.new(sx, sy, sw, sh)
+        else
+          tr.capture_ops.each do |dx, dy, sx, sy, sw, sh|
+            @fade_bmp.blt dx, dy, cap, Rect.new(sx, sy, sw, sh)
+          end
         end
         @fade_masked = true
         @fade_sprite.opacity = 255
