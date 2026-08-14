@@ -5840,23 +5840,64 @@ same-map page-reselection copy loop is unaffected by the new override: it
 already overwrites `x`/`y`/`direction` from the live pre-rebuild character
 right after `build_events` runs, so the saved-position lookup is
 functionally a no-op there, just a harmless extra read before being
-immediately superseded by the fresher live value. **Not addressed**: the
-move-route execution *index* itself — the "a map event's move route/
-execution point if paused mid-way" claim in the "persists across both
-map-revisit and save/load" list below — a custom-route event mid-loop
-still restarts its route from the top after this fix exactly as it did
-before; only its raw tile position and facing are restored. Matching real
-RPG_RT's own `original_move_route_index`/`move_route_index` fields
-(`src/game_character.h`, alongside `move_route_finished`) would need those
-threaded through separately, a larger follow-up left open. Covered by a
-new `scripts/rpg2k_logic_check.rb` check (`map_event_positions` round-trips
-through `to_h`/`.load`, with a legacy-save fallback to `{}`) and a new
-`scripts/rpg2k_scene_check.rb` check (a Move Event forces event 2 two
-tiles east and turns it to face down via Proceed With Movement; a
-save/load taken afterward restores exactly that spot on a fresh
-`Scene::Map`, while an ordinary Transfer Player back to the same map id
-instead resets it to its own page default), both confirmed to fail against
-the pre-fix code before the fix.
+immediately superseded by the fresher live value. ✅ **The move-route
+execution *index* itself — the "a map event's move route/execution point
+if paused mid-way" claim in the "persists across both map-revisit and
+save/load" list below, explicitly left as "Not addressed" here and flagged
+again in `Game::State#map_event_positions`' own comment ("plus a move-route
+index this codebase does not attempt to round-trip yet") — is now
+implemented too, for a page's own CUSTOM-move-type route specifically.** A
+custom-route event mid-loop used to restart its route from the top on every
+Save/Continue, since `Scene::Map#build_event` always built a fresh
+`Game::MoveRoute` at index 0 straight from the page's own `move_route`
+field, with no override path of any kind — only the position/facing half
+above was ever threaded through. Fixed with a new `Game::State
+#map_event_route_index` (event id => `Game::MoveRoute#index`), scoped and
+round-tripped identically to `#map_event_positions` right above it (Marshal-
+save-only, per-map, cleared on `#perform_teleport`): `#record_map_event_positions`
+now also snapshots `e[:route].index` every frame for any event whose current
+page has a live custom route, and a new `Game::MoveRoute#resume_at(i)` seeks
+a freshly-built route to that saved cursor in `#build_event` — including
+reproducing `#advance_cursor`'s own `@commands.size` sentinel for a
+non-repeating route that had already finished by save time (marking `#done?`
+true again rather than clamping into a bogus re-run of the last command). A
+genuine map re-visit still restarts every route fresh, matching the position
+half's own scoping and the existing "does not survive a map re-visit"
+list above (`#perform_teleport` clears `#map_event_route_index` alongside
+`#map_event_positions`). One correctness wrinkle the naive version of this
+fix would have introduced, caught and closed before landing: `Scene::Map
+#rebuild_events_preserving_positions` (the *live*, in-place page-reselection
+rebuild any unrelated event's switch/variable write can trigger — see the
+"A Map Event's own... Parallel Process" and "Change Graphic" fixes above)
+also calls `#build_events`/`#build_event`, and unconditionally consulting
+`#map_event_route_index` there would misapply a *stale* index recorded for
+whichever route this event id's *previous* page was running onto a freshly
+selected, unrelated route on its new page — that rebuild's own follow-up
+copy loop already restores a bystander's own *unchanged* route with full
+live fidelity (`e[:route] = old[:route]` when `same_route?`), so the saved-
+index path only needed to fire for the very first build of a scene (a
+genuine Continue), not this one. Fixed with a new `restore_route_index:`
+keyword threaded through `#build_events`/`#build_event`, `true` by default
+(`Scene::Map#initialize`, `#perform_teleport` — moot there anyway, since
+`#map_event_route_index` is cleared immediately before that call) and passed
+`false` only from `#rebuild_events_preserving_positions`. The
+`original_move_route_index`/`move_route_index` real-RPG_RT fields this
+bullet cites remain unmodelled at the `.lsd` layer (chunk 111's
+`SaveMapEvent`/`SAVE_MOVABLE` schema still has no documented field for
+this), matching `#common_event_progress`'s identical "Marshal save only, not
+yet `.lsd`" scoping. Covered by two new `scripts/rpg2k_scene_check.rb`
+checks: a non-repeating 4-tile custom route snapshotted partway through (via
+`to_h`/`Game::State.load`) resumes a fresh `Scene::Map` at the exact saved
+command index and tile, then finishes only the *remaining* distance rather
+than replaying the whole route, confirmed to fail against the pre-fix code
+(`expected 2, got 0`) before the fix; and a two-page event whose page 2 (a
+different, unrelated custom route) is selected mid-visit by an outside
+switch write starts that new route at index 0, not a stale index carried
+over from page 1's own route — passing unchanged before this fix too (there
+was no saved-index consultation at all yet to leak), added as a standing
+regression guard against the exact mistake described above. The earlier
+`map_event_positions` round-trip and Proceed-With-Movement save/load checks
+this same paragraph already listed are unaffected and still pass.
 
 State that does **not** survive a save/load specifically (distinct from
 mere map-revisit): screen-shake offset (never saved, always resets);
