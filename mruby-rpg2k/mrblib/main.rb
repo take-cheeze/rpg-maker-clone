@@ -554,16 +554,27 @@ class RPG2k
   end
   private :native_test_play?
 
+  # Push `scene` on top of the stack. The scene it covers gets a #suspend
+  # call first (Scene::Menu uses it to hide its own command/status windows --
+  # see the comment there) -- verified against genuine RPG_RT under wine:
+  # opening Item/Skill/Equip/Status from the field menu shows only that
+  # screen's own window, with none of the menu's own command list or status
+  # panel drawn behind it. Optional (`respond_to?`-gated) since most scenes
+  # have nothing of their own to hide from whatever gets pushed on top.
   def push scene
+    @scenes.last.suspend if @scenes.last && @scenes.last.respond_to?(:suspend)
     @scenes.push scene
   end
 
-  # Pop the top scene (e.g. closing the menu), disposing it. The base scene is
-  # never popped so the loop always has something to update.
+  # Pop the top scene (e.g. closing the menu), disposing it, then #resume the
+  # scene that becomes active again -- the counterpart to #push's #suspend
+  # call. The base scene is never popped so the loop always has something to
+  # update.
   def pop
     return if @scenes.size <= 1
     scene = @scenes.pop
     scene.dispose if scene.respond_to?(:dispose)
+    @scenes.last.resume if @scenes.last.respond_to?(:resume)
   end
 
   # Pop every scene down to (and stopping at) the base `Scene::Map`, disposing
