@@ -3173,7 +3173,72 @@ Everything below is unverified against the codebase.
   `#drive_parallel_wait`'s "background: ignore message/choice requests"
   branch — `:teleport` no longer falls into it, see the "a Transfer Player
   command issued from a Parallel Process..." fix just above), confirmed to
-  fail against the pre-fix code before the fix.
+  fail against the pre-fix code before the fix. ✅ **A Battle Processing
+  (Enemy Encounter) command issued from a Parallel Process now actually
+  opens and drives a real fight**, instead of being silently skipped
+  outright — the last member of this exact defect-class family left
+  unfixed: `Scene::Map#drive_parallel_wait` had cases for `:wait`/
+  `:key_input`/`:animation`/`:game_over`/`:movement`/`:teleport`/`:message`/
+  `:choice`/`:number`/`:screen`/`:picture`/`:sprite_flash` — every other
+  wait kind reachable from a Parallel Process, each earning its own dispatch
+  over earlier rounds of this same fix — but none for `:battle`, the wait
+  kind `Game::Interpreter#do_enemy_encounter` sets, so it fell into the
+  generic `else` branch (`it.resume`) and cleared the wait unconditionally
+  the very next frame: `@battle_request` sat on the parallel process's own
+  interpreter unread (`#drive_battle` only ever consulted the foreground
+  `@interpreter`'s own copy), no battle screen ever opened, and the process
+  fell straight through into whatever followed the command in its own list
+  (its `[Victory]` handler marker) as though the encounter had been a no-op
+  — a real, reachable gap for the ordinary "a Common Event's Parallel
+  Process polls a variable/switch threshold and starts a scripted or
+  wandering-style fight" pattern real games use. Fixing this needed more
+  than a new dispatch case, since `@battle_ui` is a single shared slot that
+  used to be reachable only from the foreground: `#drive_battle`/
+  `#open_battle`/`#finish_battle` now take the raising interpreter
+  explicitly (`it`, defaulting to `@interpreter`, the same `interp =
+  @interpreter` idiom `#perform_game_over` already used), and the hash
+  itself now records its own `owner`, read by the battle-page Call Common
+  Event resolver (`owner.resolver`, previously hardcoded to the foreground's)
+  and by `#finish_battle` to resume the right interpreter with the outcome
+  (captured before `#close_battle` clears `@battle_ui` out from under it).
+  Two further gaps surfaced once a *parallel* owner became possible: (1)
+  `@battle_ui`'s mere presence already pauses `#step_parallels` for every
+  *other* parallel process for a fight's duration (`#parallels_paused?`,
+  matching "Common events never run during battle" a few lines below), but
+  that pause caught the fight's own owning entry too, freezing it solid one
+  frame after it opened — fixed with a new `#step_battle_owner_parallel`,
+  called from `#update` exactly when `#parallels_paused?` already skipped
+  the ordinary `#step_parallels` pass this frame (so it can never
+  double-step the same entry), which finds and steps only the `@parallels`
+  entry matching `@battle_ui[:owner]`, the same per-frame service
+  `#drive_event`'s own `:battle` case already gives a foreground-opened
+  fight. (2) `#event_busy?` used to read only the foreground `@interpreter`'s
+  own `running?`/`waiting?`, so an otherwise-idle foreground never noticed a
+  Parallel-Process-opened fight at all — the player could freely walk
+  around, open the menu or trigger other events underneath the battle
+  screen; fixed by widening `#event_busy?` with `!@battle_ui.nil?` (a no-op
+  for the pre-existing foreground-owned case, where `@interpreter.waiting?`
+  was already true regardless) and adding a matching early-return to
+  `#drive_event` itself so the foreground's own interpreter does not keep
+  grinding through an unrelated script it was already mid-way through when
+  someone else's fight opened (message/choice/number-input display, a
+  shared resource independent of battle ownership, is deliberately left
+  unblocked by that guard). Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a Common Event Parallel Process's own Battle Processing command
+  opens a real battle screen — owned by the parallel interpreter, not the
+  idle foreground — runs it to a Victory result and reaches its own
+  `[Victory]` handler; ordinary held-direction player movement stays frozen
+  at its starting tile for the fight's whole duration), both confirmed to
+  fail against the pre-fix code before the fix (the first on `@battle_ui`
+  never becoming non-nil at all; the second on the party walking freely
+  since nothing gated it). Two deeper edges are left unaddressed, matching
+  this backlog's own established tolerance for genuinely rare timing
+  questions: two different interpreters each raising their own `:battle`
+  wait on the exact same real frame (whichever opens first wins the slot;
+  the other retries next frame via the same `@battle_ui[:owner].equal?(it)`
+  block-and-retry shape `:message`/`:choice`/`:number` already use) and a
+  shown message window's own display priority interacting with an unrelated
+  parallel process's battle opening concurrently.
 - **Vehicles** — an unset vehicle defaults to map id 0, (0,0); Small/Large
   Ship aren't hardcoded to water, their passability follows the terrain
   table's boat/ship-pass flags like any other vehicle rule; ✅ an airship

@@ -5136,6 +5136,71 @@ check 'a game with no game-over picture still reaches the screen' do
   Input.reset
 end
 
+# yado.tk ("Common events... never run during battle") describes what
+# happens to *other* events while a fight is up; the more basic half it
+# implies -- a Parallel Process's own Battle Processing (Enemy Encounter)
+# command, the shape a scripted/threshold-triggered fight actually takes in
+# a real game (a Common Event whose Parallel Process trigger checks a
+# variable, then runs the encounter) -- was never modelled at all.
+# #drive_parallel_wait's wait-kind dispatch had cases for :wait/:key_input/
+# :animation/:game_over/:movement/:teleport/:message/:choice/:number/
+# :screen/:picture/:sprite_flash -- every other wait kind reachable from a
+# Parallel Process, each earning its own case over earlier rounds of this
+# same defect class -- but none for :battle, so it fell into the generic
+# "background: ignore ... requests" #resume and cleared the wait
+# unconditionally the very next frame: @battle_request sat on the parallel
+# process's own interpreter unread (#drive_battle used to only ever consult
+# the foreground @interpreter's copy), no battle screen ever opened, and the
+# process just fell straight through into whatever followed the Enemy
+# Encounter command (its own [Victory] handler marker) as though the fight
+# had been skipped outright.
+check "a Common Event Parallel Process's own Battle Processing now actually opens and drives a real fight" do
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: Game::CommonEvent::PARALLEL, need_flag: false,
+                      switch_id: nil, event: battle_event_commands(ic))
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  eq nil, scene.instance_variable_get(:@battle_ui), 'no battle before the process reaches it'
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, "the parallel process's own Enemy Encounter actually opened a real battle screen"
+  eq :result, ui[:phase]
+  fg = scene.instance_variable_get(:@interpreter)
+  ok !ui[:owner].equal?(fg),
+     "the parallel process's own interpreter owns this fight, not the (idle) foreground"
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
+  scene.update
+  RGSS::Input.triggered = []
+  3.times { scene.update }
+  ok st.switches[1], "the Victory handler ran, on the parallel process's own command list"
+  ok !st.switches[2], 'the Escape handler was skipped'
+end
+
+# A battle a Parallel Process opened owns the single @battle_ui slot exactly
+# the way one the foreground opened does -- ordinary player movement/menu
+# access must freeze for its whole duration regardless of which interpreter
+# is driving it, the same freeze every *other* parallel process already gets
+# from #parallels_paused? during any battle. Before this fix, #event_busy?
+# only ever consulted the foreground @interpreter's own running?/waiting?
+# state, so an otherwise-idle foreground (nothing of its own running) never
+# noticed a Parallel-Process-opened fight at all: the player could freely
+# walk around underneath the battle screen.
+check "a battle a Parallel Process opened blocks player movement, just like one the foreground opened" do
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: Game::CommonEvent::PARALLEL, need_flag: false,
+                      switch_id: nil,
+                      event: [ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  RGSS::Input.dir_value = 6 # hold right the whole time
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  ok scene.instance_variable_get(:@battle_ui), 'the fight is open by now'
+  eq 0, st.x, "the party must not walk anywhere while a Parallel Process's own fight is up"
+end
+
 check 'Change System Graphics reloads the windowskin from the override' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
