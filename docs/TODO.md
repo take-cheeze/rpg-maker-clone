@@ -2287,6 +2287,28 @@ The work below is roughly ordered by the critical path to a walkable game
   (e.g. OCR/template-matching the captured frame itself to confirm the
   screen actually changed, rather than trusting either a fixed retry count
   or a naive pixel diff).
+  **A second, distinct harness failure mode, found much later in the same
+  long comparison session and worth telling apart from the one above:**
+  after dozens of wine launches in one session, genuine `RPG_RT.exe`'s
+  Continue stopped rendering the map at all -- title screen and the
+  save-file-select list both drew correctly (confirming Xvfb/wine
+  themselves were not simply broken), but the frame right after confirming
+  a file went solid black and stayed there for as long as it was given
+  (tested past 30 seconds). New Game's own early screens rendered fine in
+  the same launch, isolating the failure to resuming a save specifically,
+  not rendering in general. Ruled out: the save file itself (this engine's
+  own `--rpg2k_continue` loaded the identical file cleanly throughout);
+  two save fields this survey had been editing, the party roster (chunk
+  109 field 1) and an actor's skill list (chunk 108 field 52), reverting
+  either alone made no difference; the Xvfb resolution (640x480 vs the
+  game's native 320x240, tried both); a full `wineserver -k` reset (no
+  change). The wine debug log's own `err:system:NtUserChangeDisplaySettings
+  ... returned -2` around the same point is the strongest lead -- something
+  about a display-mode negotiation specific to entering the map scene --
+  but this was not chased to a root cause or a workaround; recorded so
+  whoever hits it next does not re-derive the same ruled-out list from
+  scratch. Swapping to a fresh `WINEPREFIX` (untried, since it would lose
+  this session's whole configured setup) is the next thing to try.
   ✅ **A whole-frame pixel diff was itself the bug in that "smarter
   automation loop."** Cropping the retry's change-check down to just the
   menu command-list's own region, rather than diffing the entire frame,
