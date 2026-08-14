@@ -2091,7 +2091,37 @@ The work below is roughly ordered by the critical path to a walkable game
 - ✅ Menu screens — the Item, Skill, Equip and Status screens all exist now (see
   Menu scene above). The Skill screen's recovery formula (`power +
   physical_rate*atk/20 + magical_rate*spirit/40`) is the same one the battle
-  system will reuse for skills; battle adds the +/- variance the field path omits
+  system will reuse for skills; battle adds the +/- variance the field path omits.
+  ✅ **The Item/Skill screens' empty-list placeholder didn't match RPG_RT.**
+  Found by driving the field menu under wine against a genuine `RPG_RT.exe`:
+  with an empty bag/skill list, RPG_RT draws a blank list row with a visible
+  but empty cursor, no text -- `Scene::ItemMenu`/`Scene::SkillMenu` instead
+  drew a hardcoded English "No items"/"No skills" (the only menu text in
+  either scene not sourced through `term(...)`) and collapsed the cursor to
+  zero height. Both fixed to match.
+  **Left open by the same comparison, not fixed here:**
+  - The Item/Skill list windows stay full-`SCREEN_W` wide even with nothing
+    in them, where RPG_RT's own list window in that state is narrower (looks
+    roughly menu-command-window width, ~300px) -- seen once the cursor became
+    visible again by the fix above, but not cross-checked against a
+    *populated* list on both engines, so it is recorded rather than guessed
+    at: the window may simply always be full-width once real rows are drawn,
+    which an empty list alone cannot tell apart from a genuine layout bug.
+  - Opening the Item/Skill screen leaves the parent command list and status
+    panel visibly drawn behind/around the new window instead of being fully
+    replaced, where RPG_RT's own screen shows only the one clean window --
+    seen on the Item screen specifically; not chased into a fix, since it
+    touches the scene stack's window-visibility handling and wants more than
+    one data point to scope correctly.
+  - The Save command's "you cannot save right now" message (shown when
+    `Change Save Access` has turned saving off) is a hardcoded English
+    literal, the same class of bug the two placeholders above turned out to
+    be -- but unlike those, this one is *not* wine-verified: the comparison
+    never reached this exact state on the reference side (input lag stacked
+    up over the menu's earlier steps), and RPG2000's Term table has no
+    obvious dedicated slot for this message to source from, so whether RPG_RT
+    shows *any* text here at all is still an open question rather than an
+    assumed one.
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an

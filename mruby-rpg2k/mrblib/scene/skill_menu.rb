@@ -252,14 +252,14 @@ class RPG2k
         a = caster
         mp_term = term(:mp_short, 'MP')
         c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   #{mp_term} #{a.mp}/#{a.max_mp}"
-        if rows.empty?
-          c.draw_text 0, head_h, inner_w, LINE_H, "No skills"
-        else
-          rows.each_with_index do |(sid, cost), i|
-            y = head_h + i * LINE_H
-            c.draw_text 0, y, inner_w - 40, LINE_H, skill_name(sid)
-            c.draw_text inner_w - 40, y, 40, LINE_H, "#{cost} #{mp_term}"
-          end
+        # An empty skill list draws no placeholder text -- matching the fix
+        # for the analogous Item screen (see item_menu.rb), confirmed there
+        # against genuine RPG_RT under wine: a blank list row with a visible,
+        # empty cursor box (see #refresh_skill_cursor) rather than a message.
+        rows.each_with_index do |(sid, cost), i|
+          y = head_h + i * LINE_H
+          c.draw_text 0, y, inner_w - 40, LINE_H, skill_name(sid)
+          c.draw_text inner_w - 40, y, 40, LINE_H, "#{cost} #{mp_term}"
         end
         @skill_window.contents = c
         refresh_skill_cursor
@@ -267,7 +267,9 @@ class RPG2k
 
       def refresh_skill_cursor
         return unless @skill_window
-        h = skills.empty? ? 0 : LINE_H
+        # The cursor box stays visible on the empty row even with no skills
+        # -- see item_menu.rb's analogous fix.
+        h = LINE_H
         @skill_window.cursor_rect =
           Rect.new(0, LINE_H + @skill_index * LINE_H, @skill_window.contents.width, h)
       end
