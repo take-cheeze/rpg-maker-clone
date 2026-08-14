@@ -5819,6 +5819,87 @@ check 'a fire-and-forget Show Battle Animation also forcibly cuts off a still-pl
   ok st.switches[6], "CE2's own command list reached its trailing Control Switches (it was never blocked by its own no-wait animation)"
 end
 
+# yado.tk: "Battle Animation... chaining two Show Battle Animation calls
+# back-to-back produces a visible one-frame stutter." Settled against
+# EasyRPG's actual C++ source rather than guessed at: `Game_Interpreter::
+# Update`'s own per-frame loop is `if (_state.wait_time > 0) { _state.wait_time
+# --; break; }` -- it only breaks early *while* wait_time is still above zero,
+# so the exact real frame a waited-for Show Battle Animation's own countdown
+# reaches 0 falls straight through into whatever command follows instead of
+# costing a further frame. `#drive_event`'s `:animation` case used to just call
+# `#drive_map_animation` and stop -- unlike the `:wait`/`:battle` cases right
+# above it, which already spend the rest of the frame's own step budget the
+# instant they come off their wait -- so a command chained right after a
+# finished Show Battle Animation (a second one included) always ran one real
+# frame later than real RPG_RT.
+check 'a Show Battle Animation resumes its own event/process and runs the next command the same real ' \
+      'frame it finishes, not one frame later' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # animation 8 then a marker, chained straight into a second Show Battle
+  # Animation (animation 9) then a second marker -- the literal "chaining two
+  # Show Battle Animation calls back-to-back" case.
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0),
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [9, 10001, 1], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@animation_sprite)
+  finish_frame = nil
+  switch_frame = nil
+  40.times do |i|
+    was_visible = spr.visible
+    scene.update
+    finish_frame ||= i if was_visible && !spr.visible
+    switch_frame ||= i if st.switches[5]
+    break if st.switches[6]
+  end
+  ok finish_frame, 'the first animation actually finished'
+  ok switch_frame, 'the command right after it (marking switch 5) ran'
+  eq finish_frame, switch_frame,
+     "the trailing command runs the exact same real frame the first animation finishes, not one frame " \
+     'later'
+  ok st.switches[6], 'the second (chained) animation played through to its own trailing command too'
+end
+
+# Same fact, for a Common Event Parallel Process's own chained calls -- the
+# `#step_parallel` counterpart to the foreground fix directly above. Before
+# this fix, only a `:wait` wait-kind got the same-frame "spend this frame's
+# own step budget immediately" treatment there; `:animation` kept the old
+# one-frame-per-call pacing even when the process's own animation had just
+# finished naturally (as opposed to being cut off by a *different* process,
+# which resumes that other process from its own turn and is unaffected by
+# this).
+check "a Common Event Parallel Process's own chained Show Battle Animation calls run back-to-back too" do
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),
+                              ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0),
+                              ECmd.new(ic::SHOW_BATTLE_ANIM, [9, 10001, 1], indent: 0),
+                              ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@animation_sprite)
+  finish_frame = nil
+  switch_frame = nil
+  40.times do |i|
+    was_visible = spr.visible
+    scene.update
+    finish_frame ||= i if was_visible && !spr.visible
+    switch_frame ||= i if st.switches[5]
+    break if st.switches[6]
+  end
+  ok finish_frame, "the parallel process's first animation actually finished"
+  ok switch_frame, 'the command right after it (marking switch 5) ran'
+  eq finish_frame, switch_frame,
+     "a parallel process's own trailing command runs the exact same real frame its animation finishes, " \
+     'not one frame later, matching the foreground fix above'
+  ok st.switches[6], 'the second (chained) animation played through to its own trailing command too'
+end
+
 # yado.tk: RPG_RT drops straight into Game Over the instant a wipe-triggering
 # command finds the whole party dead outside battle, regardless of which
 # event noticed it -- a Simulated Attack floor trap on a background Parallel
