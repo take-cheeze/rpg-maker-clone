@@ -6795,10 +6795,13 @@ module Game
     # Queue a single-target Item for `ally` on `target`: restore the HP / SP and
     # cure the status conditions from Game::Party#battle_item_command. `item_id`
     # rides along on the log entry so the scene consumes one from the bag when the
-    # action lands.
-    def command_item(ally, target, item_id:, name:, hp: 0, mp: 0, cured: nil)
+    # action lands. `switch_id` is the same ride-along for a switch item (type
+    # 10, no real target -- the scene passes `ally` itself as `target` for one,
+    # see Scene::Map#apply_pending_switch_item): the scene flips it when the
+    # action lands too, the same moment the bag is finally debited.
+    def command_item(ally, target, item_id:, name:, hp: 0, mp: 0, cured: nil, switch_id: nil)
       ally.command = { kind: :item, target: target, item_id: item_id,
-                       name: name, hp: hp, mp: mp, cured: cured || [] }
+                       name: name, hp: hp, mp: mp, cured: cured || [], switch_id: switch_id }
       ally.action = nil; ally.defending = false
     end
 
@@ -7747,7 +7750,7 @@ module Game
           target_index: @enemies.index(target),
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, target_ally: ally?(target), attr_shifted: shifted,
-          stat_changed: stat_changed,
+          stat_changed: stat_changed, switch_id: cmd[:switch_id],
           target_hp: target.hp, target_mp: target.mp }
       end
     end

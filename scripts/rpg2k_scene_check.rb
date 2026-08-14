@@ -6009,6 +6009,7 @@ class BattleMagicParty
   def db_item(id); id == 5 ? OpenStruct.new(name: 'Potion') : nil; end
   def battle_item_command(_it, _target); { hp: 20, mp: 0 }; end
   def item_all_allies?(it); it.respond_to?(:scope) && it.scope == 1; end
+  def switch_item?(_id); false; end
 end
 
 # Open a battle and step to the per-actor command menu.
@@ -6080,6 +6081,57 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   scene.update                          # the Hero uses the Potion first
   eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
   eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'ItemUse' }, 'the item SE played too'
+end
+
+# A party whose only battle item is a switch (type 10) one -- battle-usability
+# and #use_switch_item's own consumption are Game::Party logic covered by
+# scripts/rpg2k_logic_check.rb; this stub only has to hand the scene something
+# that behaves the same way, so the check below stays about the RGSS wiring
+# (does choosing it skip ally targeting, and does landing actually flip the
+# switch and consume one -- the battle-side gap the field menu never had).
+class BattleSwitchItemParty < BattleMagicParty
+  SWITCH_ITEM_ID = 6
+  ITEM_SWITCH_ID = 42
+
+  def initialize
+    super()
+    @items = { SWITCH_ITEM_ID => 1 }
+  end
+
+  def db_item(id)
+    return OpenStruct.new(name: 'Whistle', switch_id: ITEM_SWITCH_ID) if id == SWITCH_ITEM_ID
+    nil
+  end
+
+  def switch_item?(id); id == SWITCH_ITEM_ID; end
+end
+
+check 'Enemy Encounter scene: using a switch item skips ally targeting, then ' \
+      'flips its switch and consumes one when the action lands' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleSwitchItemParty.new)
+  ui = battle_to_command(scene)
+
+  press_key(scene, RGSS::Input::DOWN)   # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN)   # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN)   # Defend -> Item
+  press_key(scene, RGSS::Input::C)      # open the item list
+  eq :item, ui[:phase]
+  press_key(scene, RGSS::Input::C)      # choose the switch item
+  eq :animate, ui[:phase],
+     'a switch item has no target -- it queues straight into the round, unlike the Potion above'
+  eq 1, st.party.item_count(BattleSwitchItemParty::SWITCH_ITEM_ID), 'not spent until the action lands'
+  ok !st.switches[BattleSwitchItemParty::ITEM_SWITCH_ID], 'not flipped yet either'
+
+  RGSS::Audio.reset_se
+  scene.update                          # the Hero's action lands
+  eq 0, st.party.item_count(BattleSwitchItemParty::SWITCH_ITEM_ID), 'one consumed when it landed'
+  ok st.switches[BattleSwitchItemParty::ITEM_SWITCH_ID], 'the switch is flipped'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'ItemUse' }, 'the item SE played too'
 end
 

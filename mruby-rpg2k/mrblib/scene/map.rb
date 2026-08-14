@@ -4162,7 +4162,9 @@ class RPG2k
           it = @state.party.db_item(item_id)
           @battle_ui[:pending] = { kind: :item, item_id: item_id, it: it }
           close_battle_item
-          if @state.party.item_all_allies?(it)
+          if @state.party.switch_item?(item_id)
+            apply_pending_switch_item
+          elsif @state.party.item_all_allies?(it)
             apply_pending_item_all(living_allies)
           else
             @battle_ui[:ally_i] = 0
@@ -4206,6 +4208,27 @@ class RPG2k
             draw_battle_item
           end
         end
+      end
+
+      # Commit a switch item: it has no target at all -- the same as the field
+      # menu's own switch item (Scene::ItemMenu#apply_switch_item) skips
+      # straight past target selection -- so this queues immediately off
+      # #drive_battle_item's Confirm, with `current_actor` standing in for
+      # `command_item`'s `target:` (never read for a switch effect; a switch
+      # item's hp/mp are always 0, so it does not touch its HP/MP either).
+      # `switch_id` rides the log entry the same way `item_id` does, so
+      # #drive_battle_animate can flip it -- and only then, deferred to when
+      # the action actually lands, exactly like the bag deduction it sits
+      # beside there.
+      def apply_pending_switch_item
+        pending = @battle_ui[:pending]
+        @battle_ui[:battle].command_item(current_actor, current_actor,
+                                         item_id: pending[:item_id],
+                                         name: pending[:it].name,
+                                         switch_id: pending[:it].switch_id)
+        @battle_ui[:pending] = nil
+        @battle_ui[:phase] = :command
+        advance_actor
       end
 
       # Commit the pending item on `target` (recovery from the model; the bag is
@@ -4299,8 +4322,12 @@ class RPG2k
         entry = @battle_ui[:battle].step_action
         if entry
           # An Item action consumes one from the real bag when it lands (so
-          # backing out during the command phase never spends it).
+          # backing out during the command phase never spends it). A switch
+          # item flips its switch at the same moment -- the state table is
+          # the scene's, same as the field menu's own Scene::ItemMenu, and
+          # this is the only place a queued switch-item action ever reaches it.
           @state.party.lose_item(entry[:item_id], 1) if entry[:item_id]
+          @state.switches[entry[:switch_id]] = true if entry[:switch_id]
           log_round([entry])
           refresh_battle_status
           refresh_battle_sprites
@@ -4742,7 +4769,13 @@ class RPG2k
         start = bt.item_start(t, e[:actor].to_s, e[:source].to_s)
         return [battle_action_line(e)] unless start
         rest =
-          if skill_achieved_nothing?(e)
+          if e[:switch_id]
+            # A switch item always "does something" (flips its switch), even
+            # though it restores no HP/MP and cures nothing -- unlike a
+            # medicine it never "achieves nothing", so it is just the "used
+            # it!" line alone, the same silent flip the field menu shows.
+            []
+          elsif skill_achieved_nothing?(e)
             # An item that did nothing has no `failure_message` to choose with,
             # so RPG2000 has no sentence for it: the composed line still says
             # more than the bare "used it" would.
@@ -4831,7 +4864,10 @@ class RPG2k
           parts = []
           parts << "#{e[:recover_hp]} HP" if e[:recover_hp] && e[:recover_hp] > 0
           parts << "#{e[:recover_mp]} MP" if e[:recover_mp] && e[:recover_mp] > 0
-          body = parts.empty? ? 'no effect' : "+#{parts.join(' / ')}"
+          body = if !parts.empty? then "+#{parts.join(' / ')}"
+                 elsif e[:switch_id] then 'switch on'
+                 else 'no effect'
+                 end
           "#{e[:actor]}'s #{e[:source]}: #{e[:target]} #{body}"
         elsif e[:missed]
           "#{e[:attacker]} misses #{e[:target]}"

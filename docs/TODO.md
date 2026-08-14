@@ -2261,6 +2261,28 @@ The work below is roughly ordered by the critical path to a walkable game
   excludes the second actor: the picker offers only the first, and moving
   the cursor has nowhere to go), confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **A battle switch item now actually flips its switch.** A switch item
+  (type 10) was already listed in the battle Item command
+  (`Game::Party#battle_usable?` / `#battle_items` both include `ITEM_SWITCH`,
+  gated by `occasion_battle`) and consumed like any other landed item
+  (`Scene::Map#drive_battle_animate`'s `lose_item`), but the pipeline it went
+  through — `#battle_item_command` computing `item_recovery` / `cured` states,
+  then `Combatant`'s HP/MP change — has nothing for a switch item to compute
+  (its `recover_hp`/`recover_sp` are unset), so it silently consumed a copy
+  and did nothing, every time. `Scene::Map#drive_battle_item` now special-cases
+  a switch item the same way `Scene::ItemMenu#choose_item` already does for
+  the field menu — no ally-target step at all, since a switch item has no
+  target — queuing straight through `#apply_pending_switch_item`.
+  `Game::Battle#command_item` carries a new `switch_id:` alongside `item_id:`,
+  threaded through `#apply_command`'s log entry the same way, so
+  `#drive_battle_animate` can flip `@state.switches[entry[:switch_id]]` at the
+  exact moment it debits the bag — deferred to when the action lands, same as
+  every other battle item. The battle log no longer reports a flipped switch
+  as "no effect" either (`Scene::Map#battle_item_body` / `#battle_action_line`
+  treat a `switch_id` entry as always having done something, the same as
+  `Game::Party#item_effective?` already does for the field menu). Covered by
+  a new `scripts/rpg2k_scene_check.rb` check, confirmed to fail against the
+  pre-fix code (the switch stayed off, the item still vanished) before the fix.
 - ✅ **物理回避率アップ** (the item row's `raise_evasion`, field 26) — unread, so
   a shield/armour/helmet/accessory bought specifically for its evasion bonus
   was purely a stat stick against a normal attack. `ruby
