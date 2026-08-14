@@ -6027,21 +6027,49 @@ module Game
       @pages = row && row.respond_to?(:pages) ? row.pages : nil
     end
 
-    def total_exp;  @members.reduce(0) { |s, e| s + e.exp } end
-    def total_gold; @members.reduce(0) { |s, e| s + e.gold } end
+    # EXP / gold / drops are only earned from members that actually fell in
+    # this fight -- a member still flagged `hidden` at victory time (either
+    # never revealed by a Show Hidden Monster page, or sent running by a
+    # page's own Force Flee) contributes none of the three, even though a
+    # fight can end in victory while such a member is technically still at
+    # full HP: `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`)
+    # already treats hidden the same as dead for win/loss purposes
+    # (`out_of_play?`), so `alive?(@enemies)` goes false -- and victory fires
+    # -- the instant every *visible* member is down, with no requirement that
+    # a still-hidden one ever engaged at all. Matches EasyRPG's actual C++
+    # source: `Game_EnemyParty::GetExp`/`GetMoney`/`GenerateDrops`
+    # (`src/game_enemyparty.cpp`) each loop `if (enemy.IsDead())` before
+    # summing/rolling that member at all, and `Game_Battler::IsDead` (`src/
+    # game_battler.h`) is a bare `GetHp() == 0` check -- a hidden member's own
+    # HP is never touched by never fighting, and a Force-Fled member's isn't
+    # either (`SetHidden` alone, no `Kill`), so both read `IsDead() == false`
+    # and are skipped by all three real methods. This class never lets a
+    # member's HP move at all -- the actual combat plays out on parallel
+    # `Combatant` structs in `Game::Battle`, not on `Troop`'s own `Enemy`
+    # objects -- so `hidden` (kept live by `Scene::Map#reveal_battle_monster`/
+    # `#remove_fled_monster`) is the one signal available here, and by the
+    # "hidden ~ not dead" equivalence above it is also the *correct* one: a
+    # non-hidden member reaching this call is always the dead case.
+    def total_exp;  live_members.reduce(0) { |s, e| s + e.exp } end
+    def total_gold; live_members.reduce(0) { |s, e| s + e.gold } end
 
     # The item ids the troop yields on victory: each member carrying a drop item
     # rolls its `drop_prob` percentage against `rng` (0..99 < prob, EasyRPG's
     # Rand::PercentChance), so a 100% drop is certain, a 0% never lands, and the
     # same item can drop from several members. Returns the ids in member order.
     def drops(rng)
-      @members.each_with_object([]) do |e, out|
+      live_members.each_with_object([]) do |e, out|
         next unless e.drop_id && e.drop_id > 0
         out << e.drop_id if rng.random(100) < e.drop_prob
       end
     end
 
     private
+
+    # Members that actually took part and fell -- see the comment on
+    # #total_exp/#total_gold/#drops above for why `hidden` is the right (and
+    # only available) proxy for "dead" at this call site.
+    def live_members; @members.reject(&:hidden) end
 
     def member(db, m)
       Enemy.new(db, m.enemy_id, m.x, m.y, m.invisible)

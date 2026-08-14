@@ -6710,8 +6710,13 @@ check 'Game::Troop instantiates its members and totals EXP / gold' do
   troop = Game::Troop.new(battle_db, 1)
   eq 'Slimes', troop.name
   eq [2, 2, 3], troop.members.map(&:id)
-  eq 13, troop.total_exp, '5 + 5 + 3'
-  eq 24, troop.total_gold, '10 + 10 + 4'
+  # The third member (a Bat) starts invisible; totals only ever count members
+  # a fight actually finished off, so the still-hidden Bat's own 3 EXP / 4
+  # gold are excluded here even though it's a live member of this troop --
+  # see the "Troop EXP/gold/drops exclude a member still hidden..." check
+  # below for the dedicated regression coverage.
+  eq 10, troop.total_exp, '5 + 5, excluding the still-hidden Bat'
+  eq 20, troop.total_gold, '10 + 10, excluding the still-hidden Bat'
   first = troop.members.first
   eq 30, first.max_hp
   eq 30, first.hp, 'starts at full HP'
@@ -6778,6 +6783,31 @@ check 'Troop#drops rolls the drop probability on the given RNG' do
   results = Array.new(40) { troop.drops(rng) }
   ok results.any? { |r| r == [7] }, 'the 50% drop sometimes lands'
   ok results.any?(&:empty?), 'and sometimes misses'
+end
+
+check 'Troop EXP/gold/drops exclude a member still hidden at victory time (yado.tk, EasyRPG game_enemyparty.cpp)' do
+  # A never-revealed Show-Hidden-Monster member: victory can fire while it's
+  # still flagged invisible (Game::Battle#incapacitated? treats hidden the
+  # same as dead for win/loss purposes), yet it never actually fell.
+  db = BattleDB.new(
+    { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10, 7, 100),  # visible, always drops 7
+      3 => EnemyRow.new('Bat',   12, 0, 6, 2, 2, 9, 3,  4, 9, 100) },# hidden, would always drop 9
+    { 1 => GroupRow.new('Mob', { 1 => GroupMember.new(2, 0, 0, false),
+                                 2 => GroupMember.new(3, 0, 0, true) }) })
+  troop = Game::Troop.new(db, 1)
+  eq 5, troop.total_exp, 'only the visible Slime\'s 5 EXP counts, not the hidden Bat\'s 3'
+  eq 10, troop.total_gold, 'same for gold: 10, not 10 + 4'
+  eq [7], troop.drops(Game::Rng.new(1)), 'the hidden Bat\'s 100% drop never rolls'
+
+  # A Force-Fled member: starts visible, but a battle-event page's Force Flee
+  # (Scene::Map#remove_fled_monster) sets `hidden` mid-fight the same way an
+  # unrevealed one starts -- it ran off, so it drops nothing either, exactly
+  # like the never-shown case above.
+  fled_troop = Game::Troop.new(db, 1)
+  fled_troop.members[1].hidden = true # simulates a mid-battle Force Flee
+  eq 5, fled_troop.total_exp, 'a fled member grants no EXP even though it started visible'
+  eq 10, fled_troop.total_gold
+  eq [7], fled_troop.drops(Game::Rng.new(1)), 'and no drop either'
 end
 
 check 'a missing troop / enemy degrades to an empty, harmless model' do
