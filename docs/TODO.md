@@ -2151,6 +2151,27 @@ The work below is roughly ordered by the critical path to a walkable game
   too**, not just inferred from the identical Item-screen code pattern: once
   reachable at all (see the reachability note below), RPG_RT's empty Skill
   screen showed the same blank cursor row, no "no skills" text.
+  ✅ **Opening Item (or Skill/Equip/Status) used to leave the field menu's own
+  command list and status panel visibly drawn behind/around the new
+  window.** Found the same way as the two placeholder gaps above: genuine
+  `RPG_RT.exe`'s Item screen under wine shows only its own item-list window
+  against the plain field backdrop, nothing else -- none of Item/Skill/
+  Equip/Status build a status/command panel of their own (they rely on
+  `Scene::Menu`'s own `@background` staying up behind them to cover the map,
+  the same full-screen-backdrop idiom `Scene::Base#build_field_background`
+  documents), but `Scene::Menu`'s own two windows (`@command`, the five-entry
+  list; `@status`, the party HP/MP panel) were never hidden while a child
+  screen sat on top of it -- they are ordinary RGSS windows that keep
+  rendering every frame until explicitly hidden or disposed, independent of
+  which scene is receiving input, and `Scene::Menu#dispose` (which does hide
+  them) only runs when Menu itself is popped, not when something is merely
+  pushed above it. `RPG2k#push` now calls an optional `#suspend` on the
+  scene it is about to cover, and `RPG2k#pop` calls an optional `#resume` on
+  the scene that becomes active again once the top is popped off --
+  `Scene::Menu` implements both, toggling `@command.visible`/
+  `@status.visible`. Verified against the same reference frame: our Item
+  screen now shows only its own window, and backing out with Escape
+  correctly restores the command list and status panel.
   **Left open by the same comparison, not fixed here:**
   - The Item/Skill list windows stay full-`SCREEN_W` wide even with nothing
     in them, where RPG_RT's own list window in that state is narrower (looks
@@ -2159,12 +2180,6 @@ The work below is roughly ordered by the critical path to a walkable game
     *populated* list on both engines, so it is recorded rather than guessed
     at: the window may simply always be full-width once real rows are drawn,
     which an empty list alone cannot tell apart from a genuine layout bug.
-  - Opening the Item/Skill screen leaves the parent command list and status
-    panel visibly drawn behind/around the new window instead of being fully
-    replaced, where RPG_RT's own screen shows only the one clean window --
-    seen on the Item screen specifically; not chased into a fix, since it
-    touches the scene stack's window-visibility handling and wants more than
-    one data point to scope correctly.
   - The Save command's "you cannot save right now" message (shown when
     `Change Save Access` has turned saving off) is a hardcoded English
     literal, the same class of bug the two placeholders above turned out to

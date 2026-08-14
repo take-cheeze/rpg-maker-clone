@@ -76,6 +76,26 @@ class RPG2k
         @status.dispose if @status
       end
 
+      # Hide this menu's own command list and status panel while a child
+      # screen (Item/Skill/Equip/Status) sits on top -- called by
+      # RPG2k#push. None of those screens build a background of their own
+      # (see Scene::Base#build_field_background's comment); they rely on
+      # this menu's `@background` staying up to cover the map, but its two
+      # windows must go, or they show through around/behind whatever the
+      # child draws. Confirmed against genuine RPG_RT under wine: its own
+      # Item screen shows only its own item-list window, nothing else.
+      def suspend
+        @command.visible = false if @command
+        @status.visible = false if @status
+      end
+
+      # Undo #suspend once the child screen above this menu is popped and it
+      # is active again -- called by RPG2k#pop.
+      def resume
+        @command.visible = true if @command
+        @status.visible = true if @status
+      end
+
       def update
         return drive_message if @message
 
