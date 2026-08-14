@@ -3932,7 +3932,38 @@ not yet verified:
 - Jump needs paired Begin/End; movement commands between them sum into a
   net displacement vector (opposite-axis moves cancel); only the *landing*
   tile's passability is tested, tiles crossed are ignored; speed/direction
-  can't change mid-jump.
+  can't change mid-jump. ✅ **A jump landing where it started (net-zero
+  displacement) now still forces `#last_move_direction` to Down, verified
+  against EasyRPG Player's actual C++ source rather than guessed at.**
+  `Game_Character::Jump` (`src/game_character.cpp`) computes the jump's
+  dominant-axis direction and calls `SetDirection` — this codebase's
+  `Character#last_move_direction`, the field `Move Forward` reads
+  (`Game::MoveRoute#execute`'s `MOVE_FORWARD` case, `mruby-rpg2k/mrblib/
+  game.rb`) — **unconditionally**, before ever checking whether the jump
+  actually moved anywhere; only the *visible* facing (`SetFacing`, this
+  codebase's `Character#face`) is gated behind `dx != 0 || dy != 0` (and,
+  inside that, `IsFacingLocked`). A same-tile jump's own dominant-axis tie
+  (`dy.abs() >= dx.abs()` when both are 0, `dy >= 0` when `dy` is 0) always
+  resolves to Down, so `SetDirection` silently turns the character to face
+  south internally even though nothing is drawn differently.
+  `Character#jump` (`mruby-rpg2k/mrblib/game.rb`) had the opposite bug: it
+  wrapped *both* `@last_move_direction` and the `#face` call in the same
+  `unless dx == 0 && dy == 0` guard, so a null jump (e.g. a Begin Jump /
+  Move Right / Move Left / End Jump "hop in place" block, a common idiom)
+  left `#last_move_direction` at whatever it was before the jump, and a
+  later Move Forward continued in that stale direction instead of Down —
+  contradicting this codebase's own prior comment on the method ("a jump
+  that ends where it started leaves both the facing and
+  `#last_move_direction` alone"), which turned out not to match the real
+  engine. Fixed by always computing and assigning `@last_move_direction`
+  from the dominant-axis formula, and keeping only the `#face` call (the
+  visible sprite turn, which already respects `#facing_locked`/
+  `#fixed_facing` internally) behind the displacement guard. Covered by a
+  new `scripts/rpg2k_logic_check.rb` check (a character facing/last-moved
+  Left jumps in place, ends up with `last_move_direction` forced to Down
+  while its visible `direction` stays Left, and a follow-up Move Forward
+  walks Down rather than the stale pre-jump direction), confirmed to fail
+  against the pre-fix code before the fix.
 - A move-route "Change Graphic" sub-command (hero, event, or vehicle) is
   **not persistent** — it reverts to the base graphic on save-load or map
   transfer, unlike the dedicated Change Graphic event commands. ✅ **All three

@@ -299,7 +299,26 @@ check 'a jump that lands where it started still counts as a jump' do
         repeat: false).step(c, FakeWorld.new)
   eq [3, 3], [c.x, c.y], 'back where it started'
   eq true, c.jumped
-  eq 8, c.direction, 'and a jump going nowhere leaves the facing alone'
+  eq 8, c.direction, 'and a jump going nowhere leaves the visible facing alone'
+end
+
+check 'a jump that lands where it started still updates last_move_direction to Down' do
+  # Verified against EasyRPG Player's actual C++ source: Game_Character::Jump
+  # (src/game_character.cpp) calls SetDirection unconditionally -- even for a
+  # net-zero (dx == 0 && dy == 0) jump, whose dominant-axis tie-break always
+  # resolves to Down -- and only gates the *visible* facing (SetFacing) behind
+  # `dx != 0 || dy != 0`. A later Move Forward continues Down, regardless of
+  # the direction last recorded before the null jump and regardless of the
+  # (unaffected) displayed facing.
+  c = Game::Character.new(3, 3, 4) # facing/last-moved left
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_LEFT), mc(R::END_JUMP),
+                 mc(R::MOVE_FORWARD)], repeat: false)
+  route.step(c, FakeWorld.new)
+  eq [3, 3], [c.x, c.y], 'back where it started'
+  eq 2, c.last_move_direction, 'a null jump still forces last_move_direction to Down'
+  eq 4, c.direction, 'the visible facing is untouched by the null jump itself'
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [3, 4], [c.x, c.y], 'Move Forward continues Down, not the stale pre-jump direction'
 end
 
 check 'placing a character outright is not a jump' do
