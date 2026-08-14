@@ -188,6 +188,24 @@ if psp
 
     enable_debug
 
+    # enable_debug also appends ` -g` to mrbc's own compile options (default
+    # "-B%{funcname} -o-", see mruby's Command::Mrbc#initialize), which embeds
+    # line-number/local-variable debug tables in every gem's compiled mrblib
+    # bytecode -- the game's own Ruby (mruby-rpg2k, mruby-rgss, mruby-lcf, ...),
+    # not mruby's C core. Unlike the C-level -g3 kept below (native DWARF, never
+    # mapped into RAM -- ELF debug sections sit outside every PT_LOAD segment),
+    # mrb_load_irep parses these Ruby-level tables into live heap structures the
+    # moment the interpreter boots: measured at roughly 240-350 KB of live RAM
+    # for the rpg2k+lcf+rgss mrblib stack alone (docs/adr/0047-psp-memory-budget.md),
+    # against a 4 MB LVGL pool that may have to cover mruby's whole heap too. It
+    # buys nothing on a device with no interactive Ruby debugger attached to it,
+    # so strip it from mrbc the same way -O0 is stripped from cc/cxx below.
+    # (mruby's own mruby-bin-strip gem -- not part of this project's gem set --
+    # removes the same debug tables after the fact and gives byte-identical
+    # output to this, so this is equivalent to stripping post-compile.)
+    conf.mrbc.compile_options =
+      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
+
     # Allegrex ABI. -G0 disables gp-relative small-data addressing (pspsdk links
     # expect this); PSP_BUILD gates the psp.cxx / psp_input_bridge.cxx HAL in the
     # mruby-rgss gem on. Must be identical on compile and link lines so the mruby
