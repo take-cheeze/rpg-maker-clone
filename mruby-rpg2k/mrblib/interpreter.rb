@@ -2954,13 +2954,22 @@ module Game
 
     # Play Memorized BGM: resume the BGM stashed by Memorize BGM, making it the
     # current BGM again. A no-op when nothing was memorised. Playback resumes
-    # from the start — the SDL_mixer backend cannot seek to the stored position.
+    # from the start — the SDL_mixer backend cannot seek to the stored position
+    # — *unless* the memorized file is the one still playing right now: real
+    # RPG_RT's `Game_System::PlayMemorizedBGM` is a bare call to the same
+    # `BgmPlay` every other BGM entry point goes through (Play BGM, and the
+    # battle/vehicle/inn helpers — see `Scene::Map#play_bgm`), so its "same
+    # music: only adjust volume and speed" no-restart rule applies here too,
+    # same idiom as `#play_audio`'s `:bgm` branch just below.
     def do_play_memorized_bgm(_cmd)
       bgm = @state.memorized_bgm
       return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
-      RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+      same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == bgm[:name]
+      unless same_file_already_playing
+        @state.bgm_looped = false
+        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+      end
       @state.current_bgm = bgm.dup
-      @state.bgm_looped = false
     rescue StandardError => e
       $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
       nil
