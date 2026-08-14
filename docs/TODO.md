@@ -2915,16 +2915,37 @@ The work below is roughly ordered by the critical path to a walkable game
   of the screen" fallback, which has no sprite to split — is never offset,
   so every existing caller that never learned a height (and every animation
   that never sets the field away from its schema default of 1) keeps its
-  exact old behaviour. The *direction* is confirmed by the schema's own
-  field comment; the exact split RPG_RT itself draws at is still
-  approximate pending a wine diff, the same status the Message window's own
-  relocation-zone boundary carries above. Covered by new
+  exact old behaviour.
+  ✅ **The exact split is no longer approximate.** Confirmed against
+  EasyRPG's own `CalculateOffset`/`BattleAnimationMap::DrawSingle`/
+  `BattleAnimationBattle::Draw` (`src/battle_animation.cpp`, fetched
+  verbatim): the symmetric half-height split itself was already exactly
+  right (`Position_up` → `-(height / 2)`, `Position_down` → `+(height /
+  2)`, purely vertical, no X component), and the battle-side height (the
+  real battler bitmap's own pixel height, once its graphic has loaded) was
+  already right too. **The map-side height was wrong, though**: EasyRPG
+  does not split by the CharSet frame's actual 32px height there at all --
+  `BattleAnimationMap::DrawSingle` uses a *hardcoded* `const int
+  character_height = 24;`, a magic number local to that one function, with
+  no relationship to `Game::CharSet::HEIGHT` or any other sprite dimension
+  despite reading like it should be the same thing. This engine's own
+  `#start_map_animation` handed `#animation_position_offset` the 32px
+  CharSet frame height directly, splitting Head/Feet by 16px each way
+  instead of RPG_RT's real 12px. Fixed with a new `ANIM_MAP_TARGET_HEIGHT
+  = 24` constant, used only for the map-triggered path (the battle path's
+  own height already matched and is untouched). **Not ported:** EasyRPG's
+  own async-texture-loading fallback (an animation drawn before its
+  battler's own bitmap has finished loading falls back to half the
+  *animation's own* cell size instead, `GetAnimationCellHeight() / 2`) --
+  this codebase's graphic loading is synchronous, so that branch is never
+  reachable here and porting it would be dead code. Covered by
   `scripts/rpg2k_scene_check.rb` checks (the pure offset math for head /
-  center / feet and a missing height; a battle animation's draw position
-  shifting by half the enemy sprite's height for head/feet and staying put
-  for center; a map-triggered animation carrying the player's
-  `Game::CharSet::HEIGHT`), confirmed to fail against the pre-fix code
-  before the fix.
+  center / feet and a missing height, now also asserting the real
+  `ANIM_MAP_TARGET_HEIGHT` value's own halves; a battle animation's draw
+  position shifting by half the enemy sprite's height for head/feet and
+  staying put for center; a map-triggered animation carrying RPG_RT's own
+  24px map-target height, not the CharSet frame's 32px), confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Which fields the games set that the runtime never reads** —
   `ruby scripts/rpg2k_field_audit.rb`. A survey, not a check (it asserts nothing
   and always exits 0): for every scalar database field it counts the rows of the

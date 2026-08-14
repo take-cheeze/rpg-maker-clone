@@ -6500,6 +6500,17 @@ class RPG2k
       ANIM_CELL = 96
       ANIM_SHEET_COLS = 5
 
+      # The sprite height #animation_position_offset's Head/Feet split uses
+      # for a *map*-drawn target (the player, a map event, a vehicle) --
+      # confirmed against EasyRPG's own `BattleAnimationMap::DrawSingle`
+      # (`src/battle_animation.cpp`, fetched verbatim): `const int
+      # character_height = 24;`, a hardcoded constant local to that one
+      # function, unrelated to `Game::CharSet::HEIGHT` (32, the actual
+      # CharSet frame's pixel height) despite reading like it should be the
+      # same thing. Previously used `Game::CharSet::HEIGHT` directly, which
+      # split Head/Feet by 16px each way instead of RPG_RT's real 12px.
+      ANIM_MAP_TARGET_HEIGHT = 24
+
       # Drive a Show Battle Animation (11210) wait for interpreter `it` -- the
       # foreground event, or a parallel process that issued one of its own (both
       # share this one on-screen animation slot, matching yado.tk: only one
@@ -6775,12 +6786,12 @@ class RPG2k
         return nil unless req
         return start_battle_page_animation(req) if req[:battle]
         tx, ty = animation_target_pixel(req[:target])
-        # Every map target -- the player, a map event, a vehicle -- draws from
-        # a CharSet frame of this one fixed size (see #draw_vehicles, which
-        # sizes a vehicle sprite off the same constant), so the sprite bounding
-        # box #animation_position_offset needs is known without asking what
-        # kind of character this actually is.
-        build_animation(req[:animation], tx, ty, target_height: Game::CharSet::HEIGHT,
+        # Every map target -- the player, a map event, a vehicle -- gets the
+        # same fixed height for #animation_position_offset's Head/Feet split
+        # (see ANIM_MAP_TARGET_HEIGHT's own comment for why this is 24, not
+        # the CharSet frame's actual 32px), so the sprite bounding box is
+        # known without asking what kind of character this actually is.
+        build_animation(req[:animation], tx, ty, target_height: ANIM_MAP_TARGET_HEIGHT,
                          flash_target: map_animation_flash_target(req[:target]))
       end
 
