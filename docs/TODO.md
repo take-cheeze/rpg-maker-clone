@@ -7845,3 +7845,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         `'A'`, the way the MV image fixtures are built) and checks the
         unpacked sfnt comes back byte-for-byte identical and rasterises the
         same real ink as the bare original.
+
+## Tooling
+
+- 🚧 Editor with [imgui](https://github.com/ocornut/imgui) — no in-repo
+  level/database editor exists yet; there is no `imgui` submodule under `3rd/`
+  and nothing in `src/`/`include/` references it. Every maker here plays a
+  project authored by that maker's own commercial/official editor

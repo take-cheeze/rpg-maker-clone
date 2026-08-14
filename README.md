@@ -682,10 +682,5 @@ part that explains it). Nothing else is collected.
   `timidity.js` and those packages alongside `index.*`
 
 ## TODO
-- Editor with [imgui](https://github.com/ocornut/imgui)
-- Chipset tile-replacement (Replace Chipset Tiles) and screen-tone tinting of
-  tiles; the map scene already blits real chipset graphics with autotiles and
-  tile animation
-- Battle system and the item/skill/equip/status menu screens
-- Audio pitch/tempo control (SDL_mixer exposes none), and MIDI for SE/BGS, which
-  play as samples rather than through the synthesiser
+
+See [`docs/TODO.md`](docs/TODO.md) for the detailed, per-maker TODO list.
