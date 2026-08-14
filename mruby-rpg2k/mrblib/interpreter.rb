@@ -1544,10 +1544,30 @@ module Game
       when 1 then cur + val
       when 2 then cur - val
       when 3 then cur * val
-      when 4 then val == 0 ? cur : cur / val
-      when 5 then val == 0 ? cur : cur % val
+      when 4 then val == 0 ? cur : trunc_div(cur, val)
+      when 5 then val == 0 ? 0 : trunc_mod(cur, val)
       else cur
       end
+    end
+
+    # Control Variables' divide/modulo operands (op 4/5 above) need C++'s
+    # truncate-toward-zero division, not mruby's native `/`/`%`, which floor
+    # toward negative infinity -- the two only agree when both operands share
+    # a sign. EasyRPG's `Game_Variables::VarDiv`/
+    # `VarMod` (`src/game_variables.cpp`) are plain `n / d` / `n % d` in C++,
+    # so e.g. -7 / 2 is -3 there (truncated) but mruby's `-7 / 2` is -4
+    # (floored); -7 % 2 is -1 in C++ (remainder takes the dividend's sign) but
+    # 1 in mruby (remainder takes the divisor's sign). A divide by zero already
+    # left the variable unchanged above, matching `VarDiv`'s own
+    # `d != 0 ? n / d : n`; `VarMod` differs from that -- `d != 0 ? n % d : 0`
+    # -- so a modulo by zero zeroes the variable instead.
+    def trunc_div(n, d)
+      q = n.abs / d.abs
+      (n < 0) == (d < 0) ? q : -q
+    end
+
+    def trunc_mod(n, d)
+      n - d * trunc_div(n, d)
     end
 
     # Timer: op 0 set (seconds), 1 start, 2 stop. Start carries the RPG2000
