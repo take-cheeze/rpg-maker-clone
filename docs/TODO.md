@@ -2317,6 +2317,22 @@ The work below is roughly ordered by the critical path to a walkable game
   also nudged something else along the way). Needs a second, independently
   reproduced RPG_RT capture of the same actor's Equip screen before acting
   on it either way.
+  **Attempted and abandoned:** getting that second data point turned out not
+  to be safe with the one save this whole survey has been driving both
+  engines from. Editing the save's party-roster field (chunk 109 field 1)
+  to swap in a different, better-equipped actor (ディーヴァ, id 4, level 8,
+  real weapon/armour) in place of デモ用 -- the same targeted-edit technique
+  that worked cleanly for the item bag and skill list elsewhere in this
+  survey -- reliably made genuine `RPG_RT.exe` hang on a black screen right
+  after Continue, on more than one fresh wine launch, rather than opening
+  the map. Reverting the roster edit (back to `[15]`, デモ用 alone) restored
+  the save to its known-good state, confirmed both by this engine loading
+  it cleanly and by a subsequent successful Continue under wine -- so the
+  save itself was not left corrupted, but the specific "just try a
+  different actor" approach is off the table: whatever Nepheshel's save
+  logic expects at this exact story point, it is not merely a valid actor
+  id to resolve, and finding out what would take more than this survey's
+  established edit-and-diff technique. Left for whoever picks this up next.
   ✅ **Continue could silently lose a save's own Save/Teleport/Escape access,
   overridden by whatever the current map's tree happens to say instead.**
   Chasing the Save screen with the fixed crop-region retry (above) turned up
