@@ -1582,14 +1582,28 @@ The work below is roughly ordered by the critical path to a walkable game
   already knew (`Game_Actor::LearnSkill`'s own `IsSkillLearned` guard).
   Fixed by snapshotting each target's skill list right before the change and
   appending one line per newly-learned growth-table skill onto its own
-  level's message page. **Change Class (1008, RPG2003-only) has the identical
-  gap** — EasyRPG's `Game_Actor::ChangeClass` calls the same
-  `LearnLevelSkills(1, new_level, pm)` — but is deliberately left unaddressed
-  here, still open. Covered by two new `scripts/rpg2k_logic_check.rb` checks
-  (a two-level Change Level crossing two learn-table thresholds announces
-  each skill on its own level's page; a skill taught early via Change Skills
-  stays quiet once the level that would have taught it is reached), the
-  first confirmed to fail against the pre-fix code before the fix.
+  level's message page. ✅ **Change Class (1008, RPG2003-only) had the
+  identical gap and is now closed too** — EasyRPG's `Game_Actor::ChangeClass`
+  calls the same `LearnLevelSkills(1, new_level, pm)`.
+  `Game::Interpreter#do_change_class` already pushed a single level-up line
+  when the class swap raised the level or changed the skill mode, but never
+  named a single skill the change taught. Fixed the same way as Change
+  Level/Change EXP: snapshot each target's skill list right before
+  `#change_class` runs and append one `skill_learned_message` line per
+  post-change skill absent from that snapshot onto the level-up page. The
+  show-message trigger itself is now more precise too — it fires on an
+  actual skill diff being non-empty rather than guessing from the skill mode
+  alone, so a RESET/ADD class swap that happens to teach nothing new stays
+  quiet, same as a level that didn't move. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a class swap whose learn table
+  teaches two skills across levels 1 and 3 names both on the level-up page;
+  a skill taught early via an explicit Change Skills stays quiet, naming
+  only the genuinely new one), both confirmed to fail against the pre-fix
+  code before the fix. (The Change Level/Change EXP check list above is
+  unaffected: a two-level Change Level crossing two learn-table thresholds
+  still announces each skill on its own level's page; a skill taught early
+  via Change Skills still stays quiet once the level that would have taught
+  it is reached.)
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`,
   `\_` space). `\n[n]` names the **live** actor out of the roster rather than the

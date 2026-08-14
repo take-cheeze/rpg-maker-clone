@@ -1931,14 +1931,27 @@ module Game
       show_msg = cmd.param(6) != 0
       stat_targets(cmd).each do |a|
         before = a.level
+        before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
         next unless a.change_class(class_id, level_1 ? 1 : a.level,
                                    skill_mode, param_mode)
         # Unlike Change Level (which announces every level crossed) RPG_RT shows
         # a single line here, and shows it whenever the class change taught new
-        # skills even if the level itself did not move (EasyRPG's ChangeClass).
-        next unless show_msg && a.level > 1
-        next unless a.level > before || skill_mode != Game::Actor::CLASS_SKILL_NO_CHANGE
-        @pending_messages.push([level_up_message(a, a.level)])
+        # skills even if the level itself did not move (EasyRPG's ChangeClass,
+        # which calls the identical LearnLevelSkills(1, new_level, pm) Change
+        # Level/Change EXP use -- see queue_level_up_messages's own comment).
+        # The actual skill diff (rather than a skill-mode guess) also decides
+        # whether there is anything to announce at all: a RESET/ADD class swap
+        # that happens to teach nothing the actor didn't already know stays
+        # quiet, matching a level that didn't move.
+        next unless show_msg
+        new_skills = a.respond_to?(:skills) ? a.skills - before_skills : []
+        next unless a.level > 1 && (a.level > before || !new_skills.empty?)
+        lines = [level_up_message(a, a.level)]
+        new_skills.each do |sid|
+          sk = party.db_skill(sid)
+          lines.push(skill_learned_message(a, sk)) if sk
+        end
+        @pending_messages.push(lines)
       end
       return if check_game_over
       show_next_pending_message
