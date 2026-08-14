@@ -142,17 +142,6 @@ only show up in the deployed page. When you touch a codec, reason about the
   real save byte-for-byte and edits+reloads scalar fields through the schema.
   Because unedited chunks (including the undocumented 102/112/200) are copied
   raw, the round-trip is exact without those chunks being documented.
-- Generate a real save headlessly with `./scripts/gen-lcf-save-wine.bash`: it
-  boots a game's EasyRPG Player under wine (Xvfb + `matchbox-window-manager` so
-  the SDL window gets input focus) with `--test-play` and uses the **debug menu**
-  (F9 → Save → slot) to write a genuine `Save<N>.lsd` from anywhere — no
-  playthrough needed, which is how a real **RPG2003** save is obtained despite
-  those games' menu-disabled intros (and Nepheshel's Gate-only saving). It then
-  runs `lcf_save_check.rb`. Defaults to the mtf-meido-action RPG2003 test-bed;
-  pass a game dir + slot for others. Input notes for driving EasyRPG under Xvfb:
-  a window manager is required (no WM → wine never focuses the window → keys are
-  dropped), decision keys must be *held* (keydown/pause/keyup, not a tap), and
-  menu-cursor moves want short taps. See ADR 0017.
 - Top-level chunk map, from a real save (Nepheshel, saved at the town Gate).
   Documented in `SAVE_DATA`: 100 title, 101 system, 103 pictures, 104–107
   hero/boat/ship/airship, 108 party actors, 110 teleport targets, 111 map
