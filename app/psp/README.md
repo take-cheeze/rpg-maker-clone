@@ -25,6 +25,7 @@ What runs today:
 - `app/psp/main.cxx` — a pspsdk sketch (module metadata + HOME-exit callback)
   that draws a status screen and echoes the pressed keys. `main()` owns the loop
   and pumps LVGL once per iteration, mirroring the Emscripten and Wio builds.
+  Its heartbeat also reports free device RAM and LVGL pool usage (see below).
 - `app/psp/lv_conf.h` — a PSP-tuned LVGL config (RGB565, a few-MB heap, no SIMD
   asm).
 
@@ -44,10 +45,16 @@ Run `EBOOT.PBP` under an emulator such as
 `PSP/GAME/rpg2k/EBOOT.PBP` on a Memory Stick (a homebrew-enabled console).
 
 The bring-up writes two markers via `sceIoWrite` — `RPG2K_PSP_BOOT` once at
-startup (a libc-free string literal) and `RPG2K_PSP_BRINGUP frame=N` once a
-second. CI's `psp-smoke` job boots the EBOOT under PPSSPP headless and checks
-that a marker appears, so a regression that links but fails to boot is caught
-automatically. The job is **non-blocking**: PPSSPP only partially implements
+startup (a libc-free string literal) and `RPG2K_PSP_BRINGUP
+frame=N free=N maxfree=N lvgl_used=N lvgl_max=N` once a second, the last four
+fields being `sceKernelTotalFreeMemSize`/`sceKernelMaxFreeMemSize` (the
+device's actual free RAM) and `lv_mem_monitor`'s current/high-water-mark use
+of LVGL's own pool — real numbers for
+[ADR 0047](../../docs/adr/0047-psp-memory-budget.md)'s P1, captured from the
+`psp-smoke` log rather than estimated. CI's `psp-smoke` job boots the EBOOT
+under PPSSPP headless and checks that a marker appears, so a regression that
+links but fails to boot is caught automatically. The job is **non-blocking**:
+PPSSPP only partially implements
 pspsdk's libc stdio (plain `printf` is an unimplemented HLE import there), so
 emulator capture can be fragile — the required build gate is the `psp` job. To
 reproduce locally, run PPSSPP's headless binary with `--log` (needed to surface

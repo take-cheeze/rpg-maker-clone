@@ -191,23 +191,23 @@ unaddressed cost:
 Answer these questions, and capture real numbers, as part of — not after —
 the interpreter-linking slice, in this order:
 
-- **P1 — measure before sizing.** Partially done: Finding 1's ~1.2–1.4 MB and
-  Finding 5's ~240–350 KB figures are real measurements, but only a host
-  x86-64 proxy (via this project's own `3rd/mruby` submodule built to a
-  plain host `mrbc`/`mruby`), not device numbers — still worth having, since
-  they replace pure guesswork, but not a substitute for what's below. Land
-  the interpreter slice with a lightweight memory-reporting hook alongside
-  it: periodically report `sceKernelTotalFreeMemSize`/
-  `sceKernelMaxFreeMemSize` and LVGL's own pool stats (`lv_mem_monitor`),
-  mirroring the `psp-smoke` heartbeat pattern (`RPG2K_PSP_BRINGUP`) already
-  used to prove the bring-up EBOOT is alive. Run it against the RPG2k title
-  screen and one real map before picking any pool size, rather than
-  estimating like this ADR does.
+- **P1 — measure before sizing.** Partially done. Finding 1's ~1.2–1.4 MB and
+  Finding 5's ~240–350 KB figures are a host x86-64 proxy, not device
+  numbers — still worth having over pure guesswork, but not a substitute for
+  the device side. That side is now landed too: the bring-up EBOOT's
+  `RPG2K_PSP_BRINGUP` heartbeat (`app/psp/main.cxx`) reports
+  `sceKernelTotalFreeMemSize`/`sceKernelMaxFreeMemSize` (the device's actual
+  free RAM) and `lv_mem_monitor`'s current-use and `max_used` high-water mark
+  for LVGL's pool, once a second, into the same log CI's `psp-smoke` job
+  already captures — no interpreter needed to start measuring the HAL's own
+  footprint. What's still missing: a real game database and map exercising
+  this (the bring-up never opens mruby), so the *mruby* share of the pool
+  remains unmeasured on-device until the interpreter-linking slice.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
-  either (file size only). This is the one piece of Decision work that
-  shipped as code rather than staying a P-item — see Consequences.
+  either (file size only). This is Decision work that shipped as code rather
+  than staying a P-item — see Consequences.
 - **P2 — decide the allocator split explicitly.** Either accept the default
   (mruby shares `LV_MEM_SIZE` with LVGL, matching desktop) and size that one
   pool generously enough for both from the P1 measurements, or add a PSP
@@ -234,11 +234,13 @@ the interpreter-linking slice, in this order:
 ## Consequences
 
 - Unlike ADR 0007's discipline of agreeing every number before any code
-  lands, this revision ships one small build change (P1a: stripping mrbc's
-  `-g` for the `psp` cross-build) alongside the ADR update, because it's a
-  self-contained, already-measured, zero-tradeoff fix — not a pool-sizing or
-  allocator decision that depends on P1's still-outstanding on-device
-  numbers. The rest of the Decision items remain design record only.
+  lands, this revision ships two small, self-contained changes alongside the
+  ADR update: P1a (stripping mrbc's `-g` for the `psp` cross-build) and half
+  of P1 (the bring-up EBOOT's heartbeat now reports real device memory
+  numbers). Neither is a pool-sizing or allocator decision — those still
+  depend on numbers only the interpreter-linking slice can produce (a real
+  database and map actually loaded) — so the rest of the Decision items
+  remain design record only.
 - ADR 0010's "the full gem set should fit" is narrowed: it holds for gem
   *code* size, but says nothing about per-title asset memory, which Finding 2
   shows can exceed the entire 24 MB budget for an RGSSAD-packed game even
