@@ -5988,25 +5988,56 @@ not yet verified:
   that condition to also cover `:animation`. (A process cut off by a
   *different* one is unaffected either way: that resume happens on the
   *other* process's own turn, via `#drive_map_animation`'s existing cut-off
-  branch, a separate code path from this check.) **Not fully closed**: this
-  codebase still has its own extra, structural one-frame startup latency no
-  fix here touches — `Game::Interpreter#do_show_battle_animation` only arms
-  the `:animation` wait (`@wait_kind`/`@waiting`) when the wait flag is set,
-  deferring the actual `#begin_map_animation` call (and the sprite's first
-  visible frame) to the *next* time `#drive_event`/`#step_parallel` reaches
-  the `:animation` dispatch, rather than starting it synchronously the
-  instant the command executes the way EasyRPG's own `Game_Interpreter_Map::
-  CommandShowBattleAnimation` calls `Game_Screen::ShowBattleAnimation`
-  in-line before ever touching `_state.wait_time` — a materially larger,
-  separate architectural change (this build's request/dispatch split, not
-  its wait-resolution timing) left as still open. Covered by two new
-  `scripts/rpg2k_scene_check.rb` checks (foreground and Common Event
-  Parallel Process alike: two Show Battle Animation calls chained back to
-  back, with a Control Switches marker after each — the marker right after
-  the first now flips the exact same real frame the first animation's
-  sprite goes invisible, not one frame later, and the second animation still
-  plays through to its own trailing marker), both confirmed to fail (`expected
-  N, got N+1`) against the pre-fix code before the fix.
+  branch, a separate code path from this check.) ✅ **The "not fully closed"
+  structural one-frame startup latency flagged here is now fixed too.**
+  `Game::Interpreter#do_show_battle_animation` only ever armed the
+  `:animation` wait (`@wait_kind`/`@waiting`) when the wait flag is set;
+  `Scene::Map#drive_map_animation`, the one place anything actually built the
+  animation (and made the sprite's first frame visible), used to only ever be
+  reached the *next* time `#drive_event`/`#step_parallel` found the
+  interpreter already parked on that wait — deferring the sprite's own frame
+  0 by a full real frame, unlike EasyRPG's own `Game_Interpreter_Map::
+  CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`), which calls
+  `Game_Screen::ShowBattleAnimation` in-line — building the animation —
+  *before* it ever touches `_state.wait_time`. Fixed with a new
+  `#init_map_animation_this_frame` (factored out of `#drive_map_animation`'s
+  own slot-claim/cut-off logic), called immediately once the interpreter is
+  freshly parked on a fresh `:animation` wait, from `#drive_event`'s `else`
+  branch and from `#step_parallel`'s own fallthrough after `it.update`.
+  Deliberately builds the animation only, not that first frame's own
+  *advance* (`#step_map_animation`, which also carries the "stomp an
+  unrelated Screen/Character Flash to nothing" side effect): EasyRPG's
+  `Game_Map::Update` calls `Game_Screen::Update` (the only thing that ever
+  advances a just-built animation) *after* `UpdateCommonEvents`/
+  `UpdateMapEvents` but *before* `UpdateForegroundEvents` each real frame, so
+  a Common Event/map event Parallel Process's own freshly-built animation
+  gets an extra same-frame advance that a foreground-built one does not — the
+  existing "A Character Flash concurrent with a Show Battle Animation... is
+  capped to the current frame" check (a foreground scenario) pinned this
+  distinction: it broke when the fix first called the full
+  `#drive_map_animation` (build + advance) synchronously for the foreground
+  case too, and passed again once that path was narrowed to a build-only
+  call. Covered by two new `scripts/rpg2k_scene_check.rb` checks (a
+  foreground event's and a Common Event Parallel Process's own waited-for
+  Show Battle Animation each show their sprite the exact same real frame the
+  command runs), both confirmed to fail against the pre-fix code before the
+  fix. One side effect on existing coverage: the pre-existing parallel-process
+  "chained calls run back-to-back" check below now needs a different
+  finish-detection technique for the same reason the Character Flash check
+  above briefly did — a Parallel Process's own second (chained) animation now
+  starts before that same frame's own render pass, so the sprite's
+  `visible` flag no longer dips false between the two plays for it to detect;
+  updated to detect the handoff by the underlying frame data changing
+  instead, unaffected for the foreground half of that same check, which still
+  gets its one-frame build/advance split and so still shows the dip. The two
+  chained-calls checks themselves — covering the earlier stutter fix, not
+  this one — are otherwise unchanged: `scripts/rpg2k_scene_check.rb` checks
+  (foreground and Common Event Parallel Process alike: two Show Battle
+  Animation calls chained back to back, with a Control Switches marker after
+  each — the marker right after the first now flips the exact same real
+  frame the first animation finishes, not one frame later, and the second
+  animation still plays through to its own trailing marker), both still
+  passing throughout this fix.
 - ✅ **Show Battle Animation (11210) targeting a vehicle now plays over that
   vehicle's own live position**, instead of silently defaulting to the
   player's. `Scene::Map#animation_target_pixel` (`mruby-rpg2k/mrblib/
