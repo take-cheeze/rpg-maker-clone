@@ -2,10 +2,10 @@ class RPG2k
   module Scene
     # Main menu, opened over the map with the cancel button. Shows party status
     # and a command list. Item, Skill, Equip and Status each push their own
-    # scene (Scene::ItemMenu / SkillMenu / EquipMenu / StatusMenu); Save writes
-    # through the app and End Game returns to the title. Any further command
-    # (there are none left in the built command list today) falls back to a
-    # "not implemented yet" message.
+    # scene (Scene::ItemMenu / SkillMenu / EquipMenu / StatusMenu); Save opens
+    # the file-select screen (Scene::SaveLoad, in :save mode) and End Game
+    # returns to the title. Any further command (there are none left in the
+    # built command list today) falls back to a "not implemented yet" message.
     class Menu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -164,7 +164,7 @@ class RPG2k
           @parent.push Scene::StatusMenu.new(@parent, @state)
         when :save
           if @state.save_access
-            show_message(@parent.save_game(@state) ? "Game saved." : "Save failed.")
+            @parent.push Scene::SaveLoad.new(@parent, @state, :save)
           else
             show_message("You cannot save right now.")
           end
