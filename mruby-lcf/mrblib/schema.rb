@@ -1038,13 +1038,23 @@ module LCF
     # stored name matches the SAVE_TITLE hero_name exactly, which is what
     # confirmed it — and is now modelled, so a Change Actor Name override on a
     # *non*-leader party member round-trips through Save/Continue too (chunk
-    # 100's title only ever carried the leader's). Fields 2/33/34 are single
-    # bytes that are constant in the sampled save, so their meaning is not yet
-    # provable; in particular field 2 is not confirmed to be the actor's title
-    # (Change Actor Title), so that override still does not survive a real
-    # `.lsd` round-trip.
+    # 100's title only ever carried the leader's). Field 2 (the actor's
+    # renamable title, Change Actor Title) was a single byte constant in the
+    # one sampled save, so it was not provable from that save alone; it is now
+    # confirmed against EasyRPG's `liblcf` (`generator/csv/fields.csv`), whose
+    # `SaveActor` struct documents field `0x02` as `title` (`String`) right
+    # next to `0x01` `name` — and every other already-confirmed field in this
+    # table matches liblcf's hex tag decimal-for-decimal (`0x1F`→31 `level`,
+    # `0x20`→32 `exp`, `0x33`→51 `skill_size`, `0x34`→52 `skills`, `0x3D`→61
+    # `equipped`, `0x47`→71 `current_hp`, `0x48`→72 `current_sp`, `0x51`→81
+    # `status` count, `0x52`→82 `status`), so `0x02`→2 `title` follows the same
+    # scheme. The other two single bytes that were constant in the sampled save
+    # are also identified by liblcf as `hp_mod` (`0x21`→33) and `sp_mod`
+    # (`0x22`→34) — unconfirmed stat modifiers, not the title — which is why
+    # they stay undecoded here.
     SAVE_PARTY_ACTOR = {
       1 => { name: :actor_name, type: :string },            # 名前
+      2 => { name: :title, type: :string },                 # 二つ名 (Change Actor Title)
       31 => { name: :level, type: :int, default: 1 },      # レベル
       32 => { name: :exp, type: :int, default: 0 },        # 経験値
       51 => { name: :skill_size, type: :int, default: 0 }, # 『特技』情報のデータ数

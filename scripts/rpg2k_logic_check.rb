@@ -2906,6 +2906,36 @@ check 'to_lsd/from_lsd round-trips a non-leader actor\'s Change Actor Name' do
      "a non-leader's renamed name now round-trips too, via chunk 108 field 1"
 end
 
+check 'to_lsd/from_lsd round-trips a Change Actor Title override' do
+  # Chunk 108 (SAVE_PARTY_ACTOR) field 2 was left undecoded because it stayed
+  # constant in the one sampled real save; it is now confirmed as the title
+  # against liblcf's own SaveActor field table (see schema.rb's comment), so a
+  # Change Actor Title override should survive Save/Continue the same way
+  # Change Actor Name already does.
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  db = FakeActorDB.new(players, [1])
+  party = Game::Party.new(db)
+  party.add_actor(2)
+  st = Game::State.new(party, 1, 0, 0)
+  st.party.leader.title = 'Renamed Title'
+  st.party.actor_by_id(2).title = 'Ally Title'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq 'Renamed Title', round.party.leader.title, "the leader's Change Actor Title round-trips"
+  eq 'Ally Title', round.party.actor_by_id(2).title,
+     "a non-leader's Change Actor Title round-trips too, via chunk 108 field 2"
+
+  # An empty string is a legitimate Change Actor Title (it explicitly clears
+  # the title), unlike an empty Change Actor Name -- so it must round-trip too,
+  # not be treated as "no override" the way actor_name's blank guard does.
+  st.party.leader.title = ''
+  cleared = Game::State.from_lsd(db, st.to_lsd)
+  eq '', cleared.party.leader.title, 'a cleared title round-trips as an empty string, not the database default'
+end
+
 check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
   # docs/TODO.md used to call the game timer the one field the .lsd export
   # "cannot yet carry", guessing it would need "a documented chunk id" of its

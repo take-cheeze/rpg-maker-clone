@@ -9600,9 +9600,9 @@ module Game
     # it. See ADR 0021.
     #
     # Both Timer Operation countdowns and every roster member's Change Actor
-    # Name override round-trip now too (see LCF::Schema::SAVE_INVENTORY's
-    # timer1_*/timer2_* fields and SAVE_PARTY_ACTOR's actor_name), so this is
-    # a near-parity export; Change Actor Title still is not (see docs/TODO.md).
+    # Name and Change Actor Title overrides round-trip now too (see
+    # LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_* fields and
+    # SAVE_PARTY_ACTOR's actor_name/title), so this is a near-parity export.
     def to_lsd(save_count = 1, timestamp = nil)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
@@ -9706,6 +9706,10 @@ module Game
         # member -- not just the leader, who also gets it via chunk 100's
         # title -- survives Save/Continue.
         e[1] = a.name
+        # Field 2 is the actor's current title (renamed or not by Change
+        # Actor Title), confirmed against liblcf's SaveActor field table --
+        # see SAVE_PARTY_ACTOR's comment in schema.rb.
+        e[2] = a.title
         e[31] = a.level
         e[32] = a.exp
         e[51] = a.skills.size
@@ -9806,6 +9810,12 @@ module Game
           # later lookup by name (see the title-chunk leader fixup below).
           nm = sa.actor_name
           actor.name = nm if nm && !nm.empty? && nm != "\x01"
+          # Field 2 (title) has no equivalent "blank means unchanged" rule --
+          # do_change_actor_title explicitly lets an empty string *clear* the
+          # title -- so an empty string is applied, unlike actor_name above;
+          # only the reserve-actor placeholder byte is skipped.
+          tt = sa.title
+          actor.title = tt if tt && tt != "\x01"
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp

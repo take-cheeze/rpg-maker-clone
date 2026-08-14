@@ -2317,9 +2317,7 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::State#to_lsd` writes every roster actor's current name into it (not
   just the leader's), and `.from_lsd` restores it for every actor the chunk
   covers — the leader's chunk-100 restore stays too, as a redundant
-  belt-and-braces source applied last. **Still not modelled: Change Actor
-  *Title***, since fields 2/33/34 stayed constant in the one sampled save and
-  are not provably the title field. Covered by a new `scripts/
+  belt-and-braces source applied last. Covered by a new `scripts/
   rpg2k_logic_check.rb` check (a renamed leader and a renamed non-leader
   roster member both come back correctly named from an in-memory
   `to_lsd`/`from_lsd` round-trip — no bytes serialised, since `Array1D#[]=`
@@ -2329,6 +2327,29 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_save_load_check.rb` already does), confirmed to fail against
   the pre-fix code (the non-leader's name came back as its un-renamed
   database default) before the fix.
+  ✅ **A Change Actor Title override now round-trips through the `.lsd` too.**
+  Chunk 108's field 2 stayed constant in the one sampled real save, so it was
+  not provably the title field from that sample alone; it is now confirmed
+  against EasyRPG's `liblcf` (`generator/csv/fields.csv`), whose `SaveActor`
+  struct documents field `0x02` as `title` (`String`) right next to `0x01`
+  `name` — and every other already-confirmed field in `SAVE_PARTY_ACTOR`
+  matches liblcf's hex tag decimal-for-decimal (`0x1F`→31 `level`, `0x20`→32
+  `exp`, `0x33`→51 `skill_size`, `0x34`→52 `skills`, `0x3D`→61 `equipped`,
+  `0x47`→71 `current_hp`, `0x48`→72 `current_sp`, `0x51`→81 `status` count,
+  `0x52`→82 `status`), so `0x02`→2 `title` follows the same scheme; liblcf also
+  identifies the other two constant bytes as `hp_mod` (`0x21`→33) and `sp_mod`
+  (`0x22`→34), unconfirmed stat modifiers rather than the title, closing the
+  ambiguity. `LCF::Schema::SAVE_PARTY_ACTOR` now decodes it (`title`),
+  `Game::State#to_lsd` writes every roster actor's current title into it, and
+  `.from_lsd` restores it — an empty string is applied as a legitimate
+  cleared title (unlike `actor_name`'s blank-is-unchanged rule, since
+  `do_change_actor_title` explicitly lets an empty command string clear the
+  title), and only the reserve-actor placeholder byte is skipped. Covered by a
+  new `scripts/rpg2k_logic_check.rb` check (a renamed leader and a renamed
+  non-leader roster member both come back with their titles from an in-memory
+  `to_lsd`/`from_lsd` round-trip, plus a cleared title round-trips as an empty
+  string), confirmed to fail against the pre-fix code (the leader's title came
+  back as the database default) before the fix.
   ✅ **A real save/load file-select screen (`Scene::SaveLoad`) now sits between
   the player and every slot.** The main menu's Save command and the title
   screen's Continue entry used to act on a single hardcoded slot; both now
