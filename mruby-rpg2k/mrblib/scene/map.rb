@@ -99,7 +99,17 @@ class RPG2k
         @monster_cache = {}   # Monster/<name> (battler graphics)
         @animation_cache = {} # Battle/<name> (battle animation sheets)
         apply_map_access if apply_access
-        play_map_bgm
+        # Same Continue-only split as #apply_map_access just above: a fresh
+        # map entry (New Game, or any Transfer Player/Teleport, which
+        # #perform_teleport already calls #play_map_bgm for separately)
+        # recomputes BGM from the map tree, but a Continue resumes a state
+        # that already carries its own #current_bgm (restored by
+        # Game::State.load/.from_lsd from the save) -- see #resume_saved_bgm.
+        if apply_access
+          play_map_bgm
+        else
+          resume_saved_bgm
+        end
         @map = state.map
         @chipset = build_chipset
         @chipset_bmp = load_chipset_graphic
@@ -4220,6 +4230,33 @@ class RPG2k
         play_bgm(name: name, volume: music_volume(bgm), tempo: music_tempo(bgm))
       rescue StandardError => e
         $stderr.puts "[RPG2k] map BGM failed: #{e.message}"
+      end
+
+      # Continue's counterpart to #play_map_bgm, called instead of it when
+      # #initialize's apply_access: is false. Verified against EasyRPG
+      # Player's actual C++ source rather than guessed at: Scene_Map::Start
+      # (src/scene_map.cpp) branches on from_save_id -- a fresh map entry
+      # (from_save_id == 0) calls Game_Map::PlayBgm() (the map-tree walk
+      # #play_map_bgm already ports), but resuming a save
+      # (from_save_id > 0) instead does `auto current_music =
+      # game_system->GetCurrentBGM(); game_system->BgmStop();
+      # game_system->BgmPlay(current_music);` -- the save's own remembered
+      # track, not whatever the destination map's tree says, and always
+      # restarted from the top (an explicit stop before the replay) even if
+      # it happens to name the same file. @state.current_bgm already holds
+      # that exact value here -- Game::State.load/.from_lsd populate it
+      # straight from the save before this scene is ever constructed -- so
+      # this calls the native backend directly instead of going through
+      # #play_bgm, whose same-file check would otherwise compare
+      # @state.current_bgm to itself and skip the call outright, leaving
+      # nothing audible after a fresh process start.
+      def resume_saved_bgm
+        bgm = @state.current_bgm
+        return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
+        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+        @state.bgm_looped = false
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] saved BGM resume failed: #{e.message}"
       end
 
       # The backdrop named by the terrain of the tile at (x, y) — the database

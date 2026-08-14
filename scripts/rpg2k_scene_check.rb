@@ -10381,6 +10381,59 @@ check 'Scene::Map does not auto-play the map BGM while the party is boarded' do
      "boarded: the ship's own BGM owns the audio, not the map's default"
 end
 
+check 'Scene::Map resumes the saved BGM on Continue (apply_access: false) ' \
+     'instead of recomputing it from the map tree' do
+  parent = fake_parent(fake_db)
+  parent.map_tree = fake_map_tree(
+    1 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Town', 90, 105), 0)
+  )
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  # A save resumed mid-visit with a Play BGM override still in effect --
+  # different from the destination map's own tree default ('Town' above).
+  state.current_bgm = { name: 'Boss Theme', volume: 70, tempo: 120 }
+  RGSS::Audio.reset_bgm
+  scene = RPG2k::Scene::Map.new(parent, state, apply_access: false)
+  eq [['Boss Theme', 70, 120]], RGSS::Audio.bgm_calls,
+     "Continue replays the save's own current_bgm, not the map's default"
+  eq 'Boss Theme', state.current_bgm[:name], 'and the tracked current BGM is unchanged'
+
+  # Confirms the map-tree default really would have played instead, if this
+  # were an ordinary (non-Continue) map entry -- pinning that the branch
+  # above is Continue-specific, not a change to #play_map_bgm itself.
+  state2 = Game::State.new(fake_party, 1, 0, 0)
+  state2.map = fake_map(1, {})
+  state2.current_bgm = { name: 'Boss Theme', volume: 70, tempo: 120 }
+  RGSS::Audio.reset_bgm
+  RPG2k::Scene::Map.new(parent, state2)
+  eq [['Town', 90, 105]], RGSS::Audio.bgm_calls,
+     'an ordinary (apply_access: true) entry recomputes from the tree instead'
+end
+
+check 'Scene::Map resumes the saved BGM on Continue even while boarded, ' \
+     'and plays nothing when no BGM was playing at save time' do
+  parent = fake_parent(fake_db)
+  parent.map_tree = fake_map_tree(
+    1 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Field', 100, 100), 0)
+  )
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  state.boarded = :ship
+  state.current_bgm = { name: 'Sea Voyage', volume: 60, tempo: 100 }
+  RGSS::Audio.reset_bgm
+  RPG2k::Scene::Map.new(parent, state, apply_access: false)
+  eq [['Sea Voyage', 60, 100]], RGSS::Audio.bgm_calls,
+     "the save's own boat BGM resumes verbatim -- #play_map_bgm's boarded " \
+     'skip does not apply to this, separate, resume path'
+
+  state2 = Game::State.new(fake_party, 1, 0, 0)
+  state2.map = fake_map(1, {})
+  state2.current_bgm = nil
+  RGSS::Audio.reset_bgm
+  RPG2k::Scene::Map.new(parent, state2, apply_access: false)
+  eq [], RGSS::Audio.bgm_calls, 'nothing was playing at save time, so nothing plays now'
+end
+
 check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around' do
   scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@slot_index), 'starts on the first slot'
