@@ -6992,12 +6992,7 @@ above are repeated here)
   bystander in the same fight is unaffected; a 必中 attacker cannot bypass
   it; a second, unrelated state alongside it changes nothing), confirmed to
   fail against the pre-fix code (`expected 0, got 95`) before the fix.
-  **Left open, a separate and more involved feature**: the sibling RPG2003
-  state field `reflect_magic` (skill/magic attacks bounce back onto their
-  caster, `Game_Battler::HasReflectState` /
-  `Game_BattleAlgorithm::Skill::IsReflected` in the same C++ source) — still
-  parsed but unread here, and needing real target-redirection logic rather
-  than a single early-return, unlike this narrower fix. ✅ **The sibling
+  ✅ **The sibling
   `cursed` state field (situation/state field 38) this same bullet flagged
   as "`Game_Actor`'s own separate, unrelated usage" is now implemented
   too — the "no test-bed evidence... left unbuilt rather than guessed at"
@@ -7038,6 +7033,54 @@ above are repeated here)
   alongside it proven inert; the bag-swap methods stay usable through a
   cursed state, the same control the row-flag half already has), both
   confirmed to fail against the pre-fix code before the fix.
+  ✅ **The sibling `reflect_magic` field (skill/magic attacks bounce back onto
+  their caster) is now implemented too, for the single-target case.**
+  Verified against EasyRPG Player's actual C++ source rather than guessed at:
+  `Game_Battler::HasReflectState` (`src/game_battler.cpp`) scans a battler's
+  inflicted states for the flag, exactly like `#evades_all_physical?` above
+  does for `avoid_attacks`; `Game_BattleAlgorithm::Skill::IsReflected`
+  (`src/game_battlealgorithm.cpp`) gates on three things — `!(item ||
+  skill.easyrpg_ignore_reflect)` (a skill cast from an item never reflects;
+  `easyrpg_ignore_reflect` is an EasyRPG-only extension field no vanilla
+  database can set, so it needs no counterpart here), the target actually
+  carrying the state, and caster/target starting on *opposite* sides
+  (`target.GetType() != GetSource()->GetType()`, which is what keeps an
+  ordinary ally/self-scoped skill from ever reaching this at all, since it
+  never targets the opposing side to begin with) — and
+  `Scene_Battle_Rpg2k::ProcessBattleActionAnimationImpl` calls the engine's
+  own `AlgorithmBase::ReflectTargets` right before the action's `Execute()`
+  step, well before any hit-chance/elemental/variance math runs, so a
+  reflected skill still rolls its own accuracy and damage normally
+  afterward, just against the new target. `reflect_magic` (schema field 37)
+  was parsed but never read anywhere in this file before this fix. Fixed
+  with a new `Game::Battle#reflects_magic?(b)` (the identical
+  `state_def`/`state_field` scan `#evades_all_physical?` uses) and
+  `#reflects_skill?(b, target, cmd)`, which ports the three-part
+  `IsReflected` gate — `cmd[:skill_id] && !cmd[:item_id] && side_of(target)
+  != side_of(b) && reflects_magic?(target)` (this codebase's own item-cast
+  effects carry `cmd[:item_id]` instead of `cmd[:skill_id]`, the same split
+  `#apply_command` already threads apart between a real Skill cast and a
+  medicine/special-item use, which is the `item` half of the EasyRPG check
+  for free) — called from `#apply_command` right after the already-fallen
+  fizzle check and before SP is spent, redirecting `target` to the caster
+  itself when it answers true and leaving `#apply_skill_hit` completely
+  unmodified otherwise. Not edition-gated, matching `#evades_all_physical?`'s
+  own "trust the data" precedent (`HasReflectState` carries no
+  `Player::IsRPG2k3()` check either). **Scoped to a single-target Skill
+  only** (`#apply_command`, not `#apply_command_all`): real RPG_RT's own
+  `ReflectTargets` additionally redirects an all-enemies-scope skill onto
+  the caster's *entire* party the instant any one target in the group
+  reflects (`AddTargets(&source->GetParty(), true)`), on top of — not
+  instead of — the remaining un-reflected targets in that same group, a
+  materially different shape left unaddressed here. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a Skill cast at a reflect-warded foe
+  lands on the caster instead, HP/SP-cost accounting unaffected; an
+  unafflicted target in the same fight is unaffected; the same redirect
+  fires symmetrically for an enemy's own Skill cast at a reflect-warded
+  ally; a raw item-cast command and a same-side ally/self-scoped cast never
+  reflect even against an identically warded target), confirmed to fail
+  against the pre-fix code (`expected "Mage", got "Warded Foe"`) before the
+  fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

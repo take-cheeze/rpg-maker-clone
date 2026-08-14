@@ -2739,6 +2739,11 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # same reason again -- nil reads as falsy via
                           # #state_field, matching the schema's own false default.
                           :avoid_attacks,
+                          # ... and the RPG2003 "Reflect Magic" flag (state
+                          # field 37, `reflect_magic`): a Skill cast at a
+                          # battler carrying it bounces back onto its own
+                          # caster. Appended last, same reason again.
+                          :reflect_magic,
                           # ... and the RPG2003 "cursed" flag (state field 38,
                           # `cursed`): a battler carrying it can't change
                           # equipment from the field for as long as it lasts
@@ -2758,7 +2763,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                affect_spirit: false, affect_agility: false,
                hp_change_type: Game::States::CHANGE_TYPE_LOSE,
                sp_change_type: Game::States::CHANGE_TYPE_LOSE,
-               avoid_attacks: false, cursed: false)
+               avoid_attacks: false, reflect_magic: false, cursed: false)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
@@ -2767,7 +2772,8 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                    hp_map_steps, hp_map_val, sp_map_steps, sp_map_val,
                    affect_type, affect_attack, affect_defense,
                    affect_spirit, affect_agility,
-                   hp_change_type, sp_change_type, avoid_attacks, cursed)
+                   hp_change_type, sp_change_type, avoid_attacks, reflect_magic,
+                   cursed)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -9563,6 +9569,67 @@ check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unco
   # Carrying an unrelated, unflagged state alongside it changes nothing.
   dodger.states = [12, 13]
   eq 0, bat.send(:to_hit, attacker, dodger), 'still dodges with a second, unrelated state'
+end
+
+check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its own caster' do
+  # Parsed (mruby-lcf/mrblib/schema.rb state field 37, reflect_magic) but never
+  # read anywhere in Game::Battle before this fix -- EasyRPG's
+  # Game_BattleAlgorithm::Skill::IsReflected (game_battlealgorithm.cpp) redirects
+  # a Skill's target onto its own caster the instant the intended target carries
+  # one, checked by Scene_Battle_Rpg2k::ProcessBattleActionAnimationImpl right
+  # before the action's own Execute() step -- so the skill still rolls its own
+  # damage/accuracy/variance normally afterward, just against the new target.
+  states = { 20 => fake_state(reflect_magic: true), 21 => fake_state }
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  warded_foe = combatant('Warded Foe', 0, 0, 5, 100)
+  warded_foe.states = [20]
+  plain_foe = combatant('Plain Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([mage], [warded_foe, plain_foe], Game::Rng.new(1), states)
+  bat.command_skill(mage, warded_foe, name: 'Fire', cost: 6, hp: -30, skill_id: 7)
+  bat.begin_round
+  e = bat.step_action
+  eq 'Mage', e[:target], 'the hit lands on the caster, not the warded foe'
+  eq 100, warded_foe.hp, 'the warded foe itself takes nothing'
+  eq 70, mage.hp, 'the caster eats its own 30-damage Fire instead'
+  eq 4, mage.mp, 'SP is still spent exactly once, same as an unreflected cast'
+
+  # An unafflicted target is unaffected -- the reflected case above is not a
+  # blanket redirect of every Skill this caster ever casts.
+  mage.hp = 100
+  bat.command_skill(mage, plain_foe, name: 'Fire', cost: 0, hp: -30, skill_id: 7)
+  bat.begin_round
+  e2 = bat.step_action
+  eq 'Plain Foe', e2[:target], 'a foe with no Reflect Magic state takes the hit as normal'
+  eq 70, plain_foe.hp
+
+  # Symmetric across sides: an enemy's own Skill cast at a reflect-warded ally
+  # bounces back onto that enemy itself, not just the player's own casts.
+  warded_ally = combatant('Warded Ally', 0, 0, 1, 100) # slow: acts after the caster below
+  warded_ally.states = [20]
+  caster_foe = combatant_mp('Caster Foe', 0, 0, 20, 100, 10)
+  bat2 = Game::Battle.new([warded_ally], [caster_foe], Game::Rng.new(1), states)
+  bat2.command_skill(caster_foe, warded_ally, name: 'Dark', cost: 6, hp: -25, skill_id: 9)
+  bat2.begin_round
+  e3 = bat2.step_action
+  eq 'Caster Foe', e3[:target], 'the enemy caster eats its own reflected Skill'
+  eq 100, warded_ally.hp
+  eq 75, caster_foe.hp
+
+  # A skill's own reflect check requires a genuine skill cast (cmd[:skill_id]) --
+  # an item-cast effect (EasyRPG's own "item" guard in Skill::IsReflected) never
+  # reflects even against the identical warded target, and neither does a skill
+  # whose target starts on the *same* side as its caster (an ally/self-scoped
+  # skill never legitimately reaches the opposing side to begin with).
+  bare = Game::Battle.new([mage], [warded_foe], Game::Rng.new(1), states)
+  ok !bare.send(:reflects_skill?, mage, warded_foe,
+                 { skill_id: 7, item_id: 3 }), 'an item-cast effect never reflects'
+  ok !bare.send(:reflects_skill?, mage, warded_foe, { item_id: 3 }),
+     'no skill_id at all (a bare item command) never reflects either'
+  ok bare.send(:reflects_skill?, mage, warded_foe, { skill_id: 7 }),
+     'a genuine skill cast at the warded foe does reflect'
+  mage.states = [20] # hypothetically warded itself, for the same-side check below
+  ok !bare.send(:reflects_skill?, mage, mage, { skill_id: 7 }),
+     'a same-side (ally/self-scoped) skill never reflects, warded target or not'
 end
 
 check 'battle: a normal attack can shake a state off its target' do
