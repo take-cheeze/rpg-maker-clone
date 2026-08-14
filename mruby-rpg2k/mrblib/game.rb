@@ -7053,18 +7053,31 @@ module Game
     # below. Parsed but never read anywhere in this file before this fix, so a
     # state built for this exact purpose (RPG2000's closest thing to a
     # guaranteed-dodge "Blink"/intangibility status) did nothing at all.
+    #
+    # Uses #state_flag, not #state_field: the latter's `d.send(name) || 0`
+    # fallback is built for a *numeric* field's "unset -> 0" default (see
+    # #apply_turn_states' own hp/sp reads further down) and hands back the
+    # integer `0` for an unset/false *boolean* field too -- and `0` is truthy
+    # in Ruby, so `.any? { state_field(...) }` answered true for a battler
+    # carrying *any* state at all, avoid_attacks-flagged or not, until this
+    # fix. #skill_sealed? already has the right idiom for a boolean field
+    # (`state_flag`, scanning `restrict_skill`/`restrict_magic` a few methods
+    # down) -- this one just used the wrong helper.
     def evades_all_physical?(b)
-      (b.states || []).any? { |sid| state_field(state_def(sid), :avoid_attacks) }
+      (b.states || []).any? { |sid| state_flag(state_def(sid), :avoid_attacks) }
     end
 
     # Whether any state currently afflicting `b` is flagged "Reflect Magic"
     # (RPG2003 state field 37, `reflect_magic` in `mruby-lcf/mrblib/schema.rb`)
     # -- EasyRPG's `Game_Battler::HasReflectState` (game_battler.cpp), scanned
-    # the same way #evades_all_physical? scans `avoid_attacks`. Parsed but
-    # never read anywhere in this file before this fix -- see #reflects_skill?,
+    # the same way #evades_all_physical? scans `avoid_attacks` (#state_flag,
+    # not #state_field -- see that method's own comment on why: the same
+    # truthy-`0` bug applied here too, reflecting a Skill off *any* afflicted
+    # target rather than only a Reflect-Magic-flagged one). Parsed but never
+    # read anywhere in this file before this fix -- see #reflects_skill?,
     # the one caller that turns this into an actual retarget.
     def reflects_magic?(b)
-      (b.states || []).any? { |sid| state_field(state_def(sid), :reflect_magic) }
+      (b.states || []).any? { |sid| state_flag(state_def(sid), :reflect_magic) }
     end
 
     # Whether a Skill cast at `target` bounces back onto its own caster `b`

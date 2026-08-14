@@ -9555,11 +9555,13 @@ check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unco
   dodger = combatant('Dodger', 0, 0, 1, 100)        # slow, so agi alone would favour a hit
   dodger.states = [12]
   plain = combatant('Plain', 0, 0, 1, 100)
+  plain.states = [13] # carries an ordinary, unflagged state -- not merely none at all
   bat = Game::Battle.new([attacker], [dodger, plain], Game::Rng.new(1), states,
                          false, false, true)          # accuracy on
   eq 0, bat.send(:to_hit, attacker, dodger),
      'the state forces a flat 0% chance, agility and hit rate notwithstanding'
-  ok bat.send(:to_hit, attacker, plain) > 0, 'an unafflicted target is unaffected'
+  ok bat.send(:to_hit, attacker, plain) > 0,
+     'an unrelated, unflagged state does not itself dodge everything (#state_flag, not #state_field)'
 
   # A 必中 (evasion-ignoring) attacker does not bypass this: real RPG_RT checks
   # avoid_attacks before it ever reaches the ignores_evasion branch.
@@ -9584,6 +9586,7 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
   warded_foe = combatant('Warded Foe', 0, 0, 5, 100)
   warded_foe.states = [20]
   plain_foe = combatant('Plain Foe', 0, 0, 5, 100)
+  plain_foe.states = [21] # carries an ordinary, unflagged state -- not merely none at all
   bat = Game::Battle.new([mage], [warded_foe, plain_foe], Game::Rng.new(1), states)
   bat.command_skill(mage, warded_foe, name: 'Fire', cost: 6, hp: -30, skill_id: 7)
   bat.begin_round
@@ -9599,7 +9602,8 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
   bat.command_skill(mage, plain_foe, name: 'Fire', cost: 0, hp: -30, skill_id: 7)
   bat.begin_round
   e2 = bat.step_action
-  eq 'Plain Foe', e2[:target], 'a foe with no Reflect Magic state takes the hit as normal'
+  eq 'Plain Foe', e2[:target],
+     'an unrelated, unflagged state does not itself reflect (#state_flag, not #state_field)'
   eq 70, plain_foe.hp
 
   # Symmetric across sides: an enemy's own Skill cast at a reflect-warded ally

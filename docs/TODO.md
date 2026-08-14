@@ -7103,6 +7103,43 @@ above are repeated here)
   reflect even against an identically warded target), confirmed to fail
   against the pre-fix code (`expected "Mage", got "Warded Foe"`) before the
   fix.
+  ✅ **A latent bug in both `#evades_all_physical?` and `#reflects_magic?`
+  is now fixed: either one answered true for a battler carrying *any* state
+  at all, not only one actually flagged `avoid_attacks`/`reflect_magic`.**
+  Both scanned their target's states via `#state_field`
+  (`d.respond_to?(name) ? (d.send(name) || 0) : 0`), a helper built for a
+  *numeric* field's "unset -> 0" default (`hp_change_val` and friends, a few
+  methods down) — but Ruby's `0` is truthy, so `(b.states || []).any? {
+  |sid| state_field(...) }` returned the integer `0` (truthy) for every
+  state whose `avoid_attacks`/`reflect_magic` value was the ordinary,
+  unflagged `false`, not just the genuinely-flagged one, making `.any?`
+  answer true the instant a battler carried *any* state whatsoever —
+  Poisoned, Blind, Silenced, anything. In practice this meant any afflicted
+  party member or monster dodged every basic attack outright
+  (`#evades_all_physical?`, consumed by `#to_hit`'s very first line) and any
+  Skill cast at an afflicted opposing-side target bounced back onto its own
+  caster (`#reflects_magic?`, via `#reflects_skill?`) — both far more often
+  and far more broadly than either state field was ever meant to trigger.
+  This codebase already has the right helper for a boolean field,
+  `#state_flag` (`d.respond_to?(name) ? (d.send(name) ? true : false) :
+  false`, already used correctly by `#skill_sealed?` for
+  `restrict_skill`/`restrict_magic` a few methods down) — `#evades_all_
+  physical?`/`#reflects_magic?` simply reused the wrong one. Fixed by
+  switching both to `#state_flag`; neither method's own shape changes
+  otherwise. The bug was invisible to both fixes' own original regression
+  coverage above: each one's "an unrelated state changes nothing" case only
+  ever *paired* the flagged state with a second, unflagged one (already
+  true regardless of this bug, since `.any?` only needs one truthy hit) or
+  used a target carrying no states at all (`(b.states || [])` short-circuits
+  to `[]` before the bug's own truthy-`0` block ever runs) — neither
+  isolated a target carrying *only* a genuinely unflagged state, the one
+  case that actually exercises it. Fixed by giving both existing
+  `scripts/rpg2k_logic_check.rb` checks a target/foe carrying exactly that
+  (an ordinary state whose row is otherwise identical to the flagged one's,
+  same table, different id) in place of their old empty-`.states` controls,
+  both confirmed to fail against the pre-fix code before the fix (an
+  unrelated-state target dodging/reflecting exactly like a genuinely flagged
+  one would).
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for
