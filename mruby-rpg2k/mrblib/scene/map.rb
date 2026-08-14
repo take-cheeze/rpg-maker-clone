@@ -5444,7 +5444,19 @@ class RPG2k
       # Display frames each animation frame is held; the fallback length (frames)
       # when the database has no data for the requested animation; and the flash
       # duration a timing fires.
-      ANIM_CELL_FRAMES = 3
+      #
+      # ANIM_CELL_FRAMES is 2, not some other guess: EasyRPG's `BattleAnimation`
+      # (src/battle_animation.{h,cpp}) drives an internal `frame` counter that
+      # ticks once per `Update()` call (once per logical 60fps frame, called from
+      # `Game_Battle::UpdateAnimation` every `Scene_Battle::UpdateBattlers`), with
+      # `num_frames = GetRealFrames() * 2` and `GetRealFrame() { return GetFrame()
+      # / 2; }` -- i.e. every real (LCF) animation frame is held for exactly two
+      # ticks before the displayed cell advances, independent of whether that
+      # frame's own cell list is empty (a "Wait" frame) or not; there is no
+      # separate doubling rule for blank frames specifically. 2 ticks at 60fps is
+      # 1/30s per frame, matching the "1 frame = 1/30s" fact this codebase already
+      # otherwise assumed correctly.
+      ANIM_CELL_FRAMES = 2
       ANIM_FALLBACK_FRAMES = 10
       ANIM_FLASH_FRAMES = 8
       # RPG2000 battle-animation cells: a 96x96 grid, 5 cells across the sheet.

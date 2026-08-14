@@ -4005,13 +4005,44 @@ not yet verified:
   rule between two *concurrent* requests (which interpreter, if any, gets
   bumped) is intentionally left unmodelled — a request arriving while the slot
   is held simply waits its turn — since resolving it needs a real RPG_RT
-  comparison this environment cannot run. The "Wait frame is two 0.0s frames"
-  and "back-to-back calls stutter" claims are likewise still open. Covered by
-  two new `scripts/rpg2k_scene_check.rb` checks (a parallel process's Show
-  Battle Animation holds it, then resumes once the animation finishes; the
-  animation actually renders — sprite shown, screen flash fired — for a
-  parallel-process request, not just a foreground one), both confirmed to
-  fail against the pre-fix code before the fix.
+  comparison this environment cannot run. "Back-to-back calls stutter" is
+  likewise still open. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a parallel process's Show Battle Animation holds it, then resumes
+  once the animation finishes; the animation actually renders — sprite
+  shown, screen flash fired — for a parallel-process request, not just a
+  foreground one), both confirmed to fail against the pre-fix code before
+  the fix.
+- ✅ **The "1 frame = 1/30s" half of the bullet above is now correct, and
+  the "'Wait' frame is internally two consecutive frames" framing turns out
+  to have been a misreading — settled against EasyRPG Player's actual C++
+  source rather than left as a guess.** `Scene::Map::ANIM_CELL_FRAMES` (the
+  number of engine ticks each drawable animation cell is held for, driving
+  `#step_map_animation`'s `ma[:timer]` countdown) was `3`, holding every
+  frame — content or blank — for 1/20s at this codebase's 60fps tick rate,
+  not the claimed 1/30s. EasyRPG's `BattleAnimation` (`src/
+  battle_animation.{h,cpp}`) settles both the exact duration and the "Wait
+  frame" question at once: its constructor sets `num_frames =
+  GetRealFrames() * 2`, `Update()` (called once per logical 60fps tick, from
+  `Game_Battle::UpdateAnimation` via `Scene_Battle::UpdateBattlers`)
+  increments a bare `frame` counter by 1 every call with no per-frame-content
+  branching at all, and `GetRealFrame() { return GetFrame() / 2; }` is the
+  index actually drawn — so *every* real (LCF) animation frame, whether its
+  own cell list is populated or empty, is mechanically held for exactly 2
+  ticks (1/30s at 60fps) before the next one shows. There is no separate
+  "Wait frames get doubled" rule in the real engine at all — the yado.tk
+  finding's "internally two consecutive frames" phrasing was describing this
+  same universal 2-tick hold, just from having only ever isolated it on a
+  blank/Wait frame in practice. Fixed by changing `ANIM_CELL_FRAMES` from
+  `3` to `2`; `ANIM_FALLBACK_FRAMES`/`ANIM_FLASH_FRAMES` (10 and 8 frames
+  respectively, independent constants) are untouched, and the fallback timed
+  wait (`ANIM_FALLBACK_FRAMES * ANIM_CELL_FRAMES`, used when an animation's
+  own sheet/data is missing) shortens to match automatically since it
+  multiplies through the same constant. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check pinning the exact per-frame hold
+  count (still frame 0 after 2 ticks, advances to frame 1 on the 3rd),
+  confirmed to fail against the pre-fix code (`expected 2, got 3`) before
+  the fix. "Back-to-back calls stutter" (the bullet's third, unrelated
+  claim) remains open, as noted above.
 - ✅ **Show Battle Animation (11210) targeting a vehicle now plays over that
   vehicle's own live position**, instead of silently defaulting to the
   player's. `Scene::Map#animation_target_pixel` (`mruby-rpg2k/mrblib/
