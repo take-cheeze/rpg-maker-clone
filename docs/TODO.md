@@ -189,8 +189,40 @@ The work below is roughly ordered by the critical path to a walkable game
   full-screen backdrop, panned across its excess for a larger image. Grounded
   in the real Nepheshel data (all 45 parallax maps' images resolve and every
   offset stays in range across a camera sweep) and pinned by
-  `scripts/rpg2k_render_check.rb`. The scroll *rate* mirrors EasyRPG's formulae
-  but still wants a native/wine visual diff to confirm. The **Change Parallax
+  `scripts/rpg2k_render_check.rb`.
+  ✅ **The scroll formulae are now confirmed against EasyRPG's actual source
+  directly, not left wanting a wine visual diff** (this session's own wine
+  harness stayed broken throughout, a separate, unrelated regression) --
+  two of the three pieces already matched exactly, and the third turned up
+  a real, narrow bug, now fixed. Fetched verbatim from `src/game_map.cpp`:
+  the looping axis's "half the camera rate" is not an approximation but a
+  provable identity (`Parallax::GetX()`'s `/ (TILE_SIZE * 2)` divisor and
+  `SetPositionX`'s own `% (parallax_width * TILE_SIZE * 2)` wrap share that
+  same `* 2`, which is exactly the half-speed factor once the surrounding
+  1/16-pixel fixed-point units cancel out); the autoscroll speed formula
+  (`Parallax::Update`'s `scroll_amt` closure) matches `#autoscroll_px`'s own
+  bit-shift-and-sign convention and `/32` divisor exactly, including its
+  per-frame accumulation being mathematically equivalent to this codebase's
+  closed-form `(frame * amt) / 32` (`w` in `SetPositionX`'s modulus is
+  always an exact multiple of 32, so incremental wrapping and one-shot
+  division-then-modulo agree for every frame count and sign). **The
+  non-looping (anchored) axis had a real gap**, though: EasyRPG's
+  `ResetPositionX` spans the interpolation across `min(map's own scrollable
+  excess, the image's own excess)`, not always the image's full excess the
+  way `#anchored_offset` did before this fix -- invisible whenever an
+  image's excess happens to be no larger than the map's own (every case
+  this file's existing render checks exercised), but a real divergence
+  once a panorama image is wider, relative to its own excess, than the map
+  it sits on has room to scroll: the image would report an offset past
+  what the map's own limited camera range should ever be able to reveal.
+  Fixed with the missing `[cam_max, img_px - screen_px].min` clamp, and
+  confirmed continuous (re-derived from the live camera every frame, not
+  computed once at map load) matches EasyRPG's own `ResetPositionX`, which
+  `Game_Map::Scroll`'s `ScrollRight`/`ScrollDown` call on every camera move,
+  not just at load. Covered by a new `scripts/rpg2k_render_check.rb` check
+  (a small 800px-wide map against a 2000px-wide panorama: the image pans by
+  the map's own 160px scroll room, not its own 1360px excess, and clamps
+  there rather than continuing to stretch past it). The **Change Parallax
   Background** event command (11720) swaps this panorama at runtime — the
   interpreter records a `Game::State#parallax` override (name + loop / autoscroll
   settings, per EasyRPG's `SetParallax`) and flags a one-shot rebuild the scene

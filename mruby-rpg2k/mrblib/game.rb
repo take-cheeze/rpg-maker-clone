@@ -1046,13 +1046,25 @@ module Game
 
     # A non-looping axis: fixed to the screen while the image is no larger than
     # it, otherwise panned across the image's excess as the camera sweeps the
-    # map (0 at the west/north edge, -excess at the east/south edge).
+    # map (0 at the west/north edge, up to -excess at the east/south edge).
+    #
+    # The excess actually panned across is `[cam_max, img_px - screen_px].min`,
+    # not always the image's own full excess -- confirmed against EasyRPG's
+    # `Game_Map::Parallax::ResetPositionX` (`src/game_map.cpp`, fetched
+    # verbatim): `min(w, parallax_width - pan_screen_width)` where `w` is the
+    # map's own scrollable excess. Without this clamp, a panorama image wider
+    # than the map's own scroll range would report an offset past what
+    # `cam_max` worth of scrolling should ever reveal -- unreachable when the
+    # image's excess happens to be no bigger than the map's own (every case
+    # this codebase's own render checks exercised until now), but a real
+    # divergence once it is: a small map with a wide panorama image.
     def self.anchored_offset(cam_px, screen_px, map_px, img_px)
       return 0 if img_px <= screen_px
       cam_max = map_px - screen_px
       return 0 if cam_max <= 0
       cam = Game.clamp(cam_px, 0, cam_max)
-      -((img_px - screen_px) * cam / cam_max)
+      span = [cam_max, img_px - screen_px].min
+      -(span * cam / cam_max)
     end
   end
 
