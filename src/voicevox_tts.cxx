@@ -58,10 +58,10 @@ namespace {
 // any other id fails at synthesis time (logged via check() below) since no
 // other model is loaded -- reaching an entirely different VOICEVOX character
 // needs its own .vvm, which the download script does not fetch.
-constexpr VoicevoxStyleId kZundamonNormalStyleId = 3;  // ノーマル (normal)
-constexpr VoicevoxStyleId kZundamonAmaamaStyleId = 1;  // あまあま (sweet)
+constexpr VoicevoxStyleId kZundamonNormalStyleId = 3;    // ノーマル (normal)
+constexpr VoicevoxStyleId kZundamonAmaamaStyleId = 1;    // あまあま (sweet)
 constexpr VoicevoxStyleId kZundamonTsuntsunStyleId = 7;  // ツンツン (curt)
-constexpr VoicevoxStyleId kZundamonSexyStyleId = 5;  // セクシー (sultry)
+constexpr VoicevoxStyleId kZundamonSexyStyleId = 5;      // セクシー (sultry)
 
 void* g_core = nullptr;
 bool g_init_attempted = false;
