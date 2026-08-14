@@ -8237,10 +8237,8 @@ module Game
     # spent or #apply_skill_hit runs, so the skill's own cost/accuracy/damage
     # math is otherwise completely unaffected by which battler it ends up
     # landing on. Scoped to this single-target path only: an all-enemies-scope
-    # Skill's own reflect handling (#apply_command_all) is a materially
-    # different shape in real RPG_RT -- one reflecting target there redirects
-    # the *whole* group onto the caster's entire side, not just that one hit
-    # -- and is left unaddressed here.
+    # Skill's own reflect handling is a materially different shape in real
+    # RPG_RT -- see #apply_command_all, where it is now implemented too.
     def apply_command(b)
       cmd = b.command
       return apply_command_all(b, cmd) if cmd[:all]
@@ -8251,6 +8249,22 @@ module Game
       apply_skill_hit(b, target, cmd[:hp] || 0, cmd[:mp] || 0, cmd)
     end
 
+    # The first already-computed `{target:, hp:, mp:}` entry in `live` whose
+    # target carries Reflect Magic, or nil -- #apply_command_all's own
+    # counterpart to #reflects_skill?, scanning the *whole* volley (every
+    # target already selected for this Skill, `live`'s own definition order,
+    # matching EasyRPG's `std::find_if(current_target, targets.end(), ...)`
+    # in `AlgorithmBase::ReflectTargets`) rather than just one. Gated the
+    # same way #reflects_skill? is: only a real Skill reflects (never an
+    # Item), and only a volley aimed at the *opposite* side from `b` can ever
+    # hit a Reflect-Magic-warded battler in the first place -- an all-ally
+    # heal's own targets share `b`'s side, so `side_of` already excludes them
+    # without a separate scope check.
+    def reflecting_target_all(b, live, cmd)
+      return nil unless cmd[:skill_id] && !cmd[:item_id]
+      live.find { |t| side_of(t[:target]) != side_of(b) && reflects_magic?(t[:target]) }
+    end
+
     # An all-target Skill (scope 1 all enemies / 4 all allies): spend the SP once,
     # then apply the per-target effect to every living target, returning one log
     # entry per hit (which #step_action surfaces one at a time). Fizzles — nil, no
@@ -8258,9 +8272,31 @@ module Game
     # per-target `dead?` filter as #apply_command, and for the same reason: a
     # downed member of an all-ally heal is skipped rather than topped up back to
     # life (see #apply_command's comment).
+    #
+    # If any originally-selected target carries Reflect Magic
+    # (#reflecting_target_all), the whole volley redirects onto `b`'s own
+    # entire living side instead -- EasyRPG's `AlgorithmBase::ReflectTargets`
+    # calls `AddTargets(&source->GetParty(), true)` for exactly this
+    # `party_target` (all-enemies/all-allies scope) shape, which both adds
+    # the caster's whole party *and* repoints the still-to-execute cursor at
+    # it, so none of the originally-targeted battlers this bullet's own
+    # `live` list built end up hit at all -- replaced outright, not layered
+    # alongside them, the same way a reflected single-target Skill lands
+    # only on `b`, never on both `b` and the original target. Every
+    # redirected hit reuses the reflecting entry's own precomputed `hp`/`mp`
+    # (the #apply_command single-target fix's identical simplification --
+    # the skill's raw magnitude does not vary by which battler it was
+    # queued against), while #apply_skill_hit still recomputes each hit's
+    # own elemental multiplier/variance/absorb fresh against whichever new
+    # target it actually lands on.
     def apply_command_all(b, cmd)
       live = (cmd[:targets] || []).select { |t| t[:target] && !t[:target].dead? }
       return nil if live.empty?
+      reflected = reflecting_target_all(b, live, cmd)
+      if reflected
+        own_side = (side_of(b) == :ally ? @allies : @enemies).reject(&:dead?)
+        live = own_side.map { |t| { target: t, hp: reflected[:hp], mp: reflected[:mp] } }
+      end
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
       entries = live.map { |t| apply_skill_hit(b, t[:target], t[:hp] || 0, t[:mp] || 0, cmd) }
       # An all-ally item is consumed once for the whole volley: keep item_id on
