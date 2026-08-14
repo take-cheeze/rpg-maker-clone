@@ -9525,7 +9525,11 @@ check 'Scene::Menu: choosing Save opens Scene::SaveLoad in :save mode' do
   eq st, pushed.instance_variable_get(:@state), 'carrying the running game state to write out'
 end
 
-check 'Scene::Menu: Save access forbidden still shows the inline message, not the picker' do
+check 'Scene::Menu: Save access forbidden refuses the selection silently, no message' do
+  # Confirmed against EasyRPG's own Scene_Menu::UpdateCommand: a disabled
+  # Save command just refuses the selection (plays a buzzer SE this engine
+  # does not yet model any menu SE for), no message of any kind -- unlike
+  # this screen's old hardcoded English "You cannot save right now.".
   st = wrap_menu_state
   st.save_access = false
   scene = menu_scene(RPG2k::Scene::Menu, st)
@@ -9534,9 +9538,7 @@ check 'Scene::Menu: Save access forbidden still shows the inline message, not th
   scene.update
   RGSS::Input.reset
   ok scene.parent.pushed.empty?, 'no picker opens while save access is off'
-  ok window_texts(scene.instance_variable_get(:@message)[:window])
-       .include?('You cannot save right now.'),
-     'the existing inline "cannot save" message still shows'
+  ok scene.instance_variable_get(:@message).nil?, 'no message shown at all'
 end
 
 def save_load_scene(mode, state = nil, db = fake_db, parent: nil)

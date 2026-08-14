@@ -183,11 +183,16 @@ class RPG2k
         when :status
           @parent.push Scene::StatusMenu.new(@parent, @state)
         when :save
-          if @state.save_access
-            @parent.push Scene::SaveLoad.new(@parent, @state, :save)
-          else
-            show_message("You cannot save right now.")
-          end
+          # A disabled Save command (Change Save Access off) just refuses the
+          # selection outright -- confirmed against EasyRPG's own
+          # Scene_Menu::UpdateCommand, whose disabled-Save branch plays the
+          # buzzer SE and does nothing else, no message of any kind. This
+          # engine drew a hardcoded English "You cannot save right now.",
+          # the same class of gap the Item/Skill empty-list placeholders and
+          # this screen's own bleed-through fix turned out to be, but this
+          # one only needed removing -- there was nothing to source instead,
+          # matching RPG2000's own Term table, which has no slot for it.
+          @parent.push Scene::SaveLoad.new(@parent, @state, :save) if @state.save_access
         when :end_game
           @parent.return_to_title
         else
