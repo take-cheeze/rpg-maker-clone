@@ -3511,6 +3511,65 @@ check 'Change Class stays quiet when the level held and no skills moved' do
   eq true, st.switches[1]
 end
 
+# Same class-1 learn table as class_db (skill 21 at level 1, 22 at level 3),
+# with both skills named in the skill database -- for the Change Class
+# skill-announcement checks below, the "identical gap" to the already-fixed
+# Change Level/Change EXP skill-learned announcement (docs/TODO.md), since
+# EasyRPG's Game_Actor::ChangeClass (src/game_actor.cpp) calls the same
+# LearnLevelSkills(1, new_level, pm) Change Level/Change EXP do.
+def class_db_named_skills(actor_learns = [[10, 1]])
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  players = {
+    1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, 0,
+                        [1, 2, 0, -1, -1, -1, -1]),
+  }
+  jobs = {
+    1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
+  }
+  FakeActorDB.new(players, [1], {},
+                  { 21 => fake_skill(name: 'Slash'), 22 => fake_skill(name: 'Cleave') },
+                  jobs)
+end
+
+check 'Change Class announces each newly-learned skill by name, not just the level' do
+  st = Game::State.new(Game::Party.new(class_db_named_skills), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  # class 1, keep level 3, skills reset, params reset-level, show message on.
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 1, 0, Game::Actor::CLASS_SKILL_RESET,
+                         Game::Actor::CLASS_PARAM_RESET_LEVEL, 1])])
+  it.update
+  eq :message, it.wait_kind
+  eq ['Hero is now level 3!', 'Hero learned Slash!', 'Hero learned Cleave!'],
+     it.message_lines,
+     'both class-table skills newly learnt (levels 1 and 3) are named on the same page'
+  it.resume
+  it.update
+  ok !it.waiting?
+end
+
+check 'Change Class stays quiet about a skill the actor already knew going in' do
+  st = Game::State.new(Game::Party.new(class_db_named_skills), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  # Teach skill 21 (the class's level-1 skill) early, before the class change.
+  it0 = Game::Interpreter.new(st)
+  it0.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 21])])
+  it0.update
+  eq [10, 21], a.skills.sort
+
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 1, 0, Game::Actor::CLASS_SKILL_RESET,
+                         Game::Actor::CLASS_PARAM_RESET_LEVEL, 1])])
+  it.update
+  eq :message, it.wait_kind
+  eq ['Hero is now level 3!', 'Hero learned Cleave!'], it.message_lines,
+     'skill 21 was already known, so only the newly-learned skill 22 is named'
+end
+
 check 'Change Battle Commands adds, removes and clears the command list' do
   st = class_state
   a = st.party.actor_by_id(1)
