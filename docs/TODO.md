@@ -1014,7 +1014,43 @@ The work below is roughly ordered by the critical path to a walkable game
   **flee**: `Battle#attempt_escape` rolls EasyRPG's agility-ratio chance
   (`150 - 100·enemyAgi/partyAgi`, clamped), a preemptive first strike always
   gets away, and a failed attempt forfeits the party's round (every member
-  skips, the enemies still act) while raising the next try by 10 points. Basic
+  skips, the enemies still act) while raising the next try by 10 points.
+  ✅ **That formula summary skipped three details `Scene_Battle::
+  InitEscapeChance()` / `TryEscape()` (`src/scene_battle.cpp`) get right that
+  `Game::Battle#avg_agi` / `#escape_chance` did not.** First, **a fallen
+  battler still counts**: EasyRPG's `Game_Party_Base::GetAverageAgility()`
+  (`src/game_party_base.cpp`) sums over `GetBattlers()` — every member —
+  rather than `GetActiveBattlers()` (the not-dead-or-hidden subset), so a
+  party or troop that has already lost someone still divides by the whole
+  roster and adds the casualty's own agility in; `avg_agi` instead filtered
+  with `side.reject(&:dead?)`, understating the average (or, for a wiped
+  side, reading it as 0 instead of `GetAverageAgility`'s own
+  `battlers.empty() ? 1 : ...`) the moment anyone went down. Second, **the
+  ratio rounds to the nearest percent rather than truncating**:
+  `InitEscapeChance` computes `100.0 * avg_enemy_agi / avg_actor_agi` in
+  `double` and finishes with `Utils::RoundTo<int>` (`std::lrint`, its own
+  comment reading "RPG_RT / Delphi compatible rounding"), while this build
+  did a plain integer divide — a 7-agi party against a 10-agi troop reads
+  escape chance 7 under the real formula (ratio rounds 142.857 → 143) and
+  used to read 8 here (truncated to 142); RPG_RT's own *`to_hit`* agility
+  term truncates instead (`CalcToHitAgiAdjustment`'s `float` return
+  truncates on its implicit int conversion, see the `to_hit` paragraph
+  below), so the two nearby agility-ratio formulas genuinely round
+  differently in the reference itself, not just here. Third, **the chance is
+  fixed once, at battle start, not re-derived on first use**:
+  `Scene_Battle::Start()` calls `InitEscapeChance()` exactly once, before any
+  turn runs, and `TryEscape()` only ever adds +10 to that one starting value
+  on a failure; `escape_chance` was instead a `nil`-until-read memo computed
+  whichever frame the party first chose Flee, which could be turns into the
+  fight — after a stat-halving/doubling state had already changed someone's
+  agility, a change `InitEscapeChance` never sees. `Game::Battle#
+  compute_escape_chance` is now called once from `#initialize` (right beside
+  the Combatant snapshots it reads, matching `Start()`'s own timing), and
+  `#avg_agi` no longer filters by `#dead?`. Covered by three new
+  `scripts/rpg2k_logic_check.rb` checks (a fallen ally still pulling the
+  average down; the 143-vs-142 rounding case; a state applied after
+  construction not moving an already-read `escape_chance`), confirmed to
+  fail against the pre-fix code before the fix. Basic
   attacks can also **miss**: `Battle#to_hit` takes the attacker's base hit rate
   (weapon / unarmed 90, a "miss"-flagged enemy 70) and applies EasyRPG's
   agility-ratio adjustment (`100 - (100 - base)*(srcAgi + tgtAgi)/(2*srcAgi)`),

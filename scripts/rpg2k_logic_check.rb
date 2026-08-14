@@ -6898,6 +6898,52 @@ check 'Battle#escape_chance scales with the agility ratio, clamped 0..100' do
   eq 0,   escape_battle(5, 20).escape_chance,  'a much slower party clamps at 0'
 end
 
+check 'Battle#escape_chance still counts a fallen battler, per GetAverageAgility' do
+  # EasyRPG's Game_Party_Base::GetAverageAgility sums over GetBattlers (every
+  # member) rather than GetActiveBattlers (the not-dead subset), so a party
+  # that has already lost someone still divides by the whole roster and adds
+  # the fallen member's own agility in.
+  hero = combatant('Hero', 0, 0, 20, 10)      # alive, agi 20
+  squire = combatant('Squire', 0, 0, 0, 0)    # already down, agi 0
+  slime = combatant('Slime', 0, 0, 10, 10)    # agi 10
+  b = Game::Battle.new([hero, squire], [slime], Game::Rng.new(1))
+  # partyAgi = (20 + 0) / 2 = 10, enemyAgi = 10 -> ratio 100 -> 150 - 100 = 50.
+  # Filtering the fallen squire out (the old bug) would read partyAgi as the
+  # survivor's own 20, halving the ratio to 50 and clamping escape to 100.
+  eq 50, b.escape_chance, 'the fallen squire still counts toward partyAgi'
+end
+
+check 'Battle#escape_chance rounds the agility ratio to the nearest percent' do
+  # EasyRPG's InitEscapeChance finishes with Utils::RoundTo<int> (std::lrint),
+  # not a truncating integer divide -- unlike this same class's #to_hit
+  # agility term, which RPG_RT computes in `float` and truncates instead.
+  hero = combatant('Hero', 0, 0, 7, 10)
+  slime = combatant('Slime', 0, 0, 10, 10)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  # 100 * 10 / 7 = 142.857..., which rounds to 143 (-> escape 7), not
+  # truncates to 142 (-> escape 8, what the pre-fix integer divide gave).
+  eq 7, b.escape_chance, 'the ratio rounds to 143 before the 150 - x clamp'
+end
+
+check 'Battle#escape_chance is fixed at battle start, not re-derived per attempt' do
+  # EasyRPG calls InitEscapeChance() exactly once, from Scene_Battle::Start;
+  # TryEscape only ever adds +10 to that one starting value on a failure, and
+  # nothing re-reads the agilities once the fight is under way.
+  states = { 1 => fake_state(affect_type: 0, affect_agility: true) } # 0 = halve
+  hero = combatant('Hero', 0, 0, 20, 10)
+  slime = combatant('Slime', 0, 0, 10, 10)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  # Read escape_chance for the first time only *after* a state lands on the
+  # hero mid-fight -- a lazily-memoized "compute on first read" implementation
+  # would see the halved agility right here and read partyAgi 10 (ratio 100,
+  # escape 50); fixed at construction, before the state existed, it reads
+  # partyAgi 20 (ratio 50, escape 100) regardless of when this is called.
+  hero.states = [1]
+  eq 100, b.escape_chance,
+     'fixed at construction -- a first read after the state lands must not ' \
+     "recompute against the now-halved agility"
+end
+
 check 'Battle#attempt_escape flees the fight when the roll succeeds' do
   b = escape_battle(20, 5)                            # 100% chance
   ok b.attempt_escape, 'a 100% chance always flees'
