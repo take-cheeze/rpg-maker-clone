@@ -1,0 +1,40 @@
+# Label pull requests that have auto-merge enabled, so the `auto-merge` review
+# state (see AGENTS.md's "auto-merge counts as approval" rule) is visible
+# without opening the PR.
+#
+# `pull_request_target` so the label lands even when the toggle happens on a
+# fork's PR. Nothing from the pull request is checked out or run here -- gh
+# only reads/writes the PR's labels -- so the write-scoped token never meets
+# the branch's code.
+name: Auto-merge label
+
+on:
+  pull_request_target:
+    types: [ auto_merge_enabled, auto_merge_disabled ]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    # Just a `gh pr edit` call -- no checkout, no build tooling -- so the small
+    # `ubuntu-slim` image (1 CPU, 5 GB RAM, 15-minute cap) covers it at a lower
+    # rate. See `preview-gate` in build.yml for the same reasoning.
+    runs-on: ubuntu-slim
+    steps:
+      - name: Sync the auto-merge label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          if [ "$ACTION" = "auto_merge_enabled" ]; then
+            gh pr edit "$NUMBER" --add-label auto-merge
+          else
+            gh pr edit "$NUMBER" --remove-label auto-merge
+          fi
