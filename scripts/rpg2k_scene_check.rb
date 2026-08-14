@@ -4405,6 +4405,50 @@ check 'a shown picture renders through the scene and its move advances' do
   eq 60, st.pictures[1].y, 'the picture reached its target'
 end
 
+# Unlike the battle screen (a genuinely separate scene whose own backdrop
+# sits *below* @picture_sprite's z, needing an explicit hide -- see "pictures
+# are hidden while the battle screen is up" above) and the Menu screen (an
+# opaque panel painted *above* the picture layer, per Scene::Base
+# #build_field_background), a message window is not a scene push and does not
+# blank the screen -- it is itself a z=300 Window sitting above the z=250
+# picture layer (see the "below the message window" assertion just above).
+# RPG_RT's own Draw() carries no message-window check for pictures either
+# (verified against EasyRPG Player's Sprite_Picture::Draw and Scene_Map --
+# `Priority_PictureOld` sits below `Priority_Window` in src/drawable.h, and
+# neither file gates picture visibility on message state), so an already-shown
+# picture keeps compositing and animating under an open message window exactly
+# like it does under any other window; the window's own z-order is what covers
+# it, the same way it covers the map tiles beneath it.
+check 'a shown picture keeps rendering and moving while a message window is open' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # autostart
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  st.move_picture(1, 160, 60, 200, 128, 100, 100, 100, 100, 6)
+  sprite = scene.instance_variable_get(:@picture_sprite)
+
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'the message window opened'
+  ok sprite.visible, 'the picture layer is not hidden while the message window is up'
+  bmp = scene.instance_variable_get(:@picture_bmp)
+  bmp.clear_stretch_calls
+  scene.update
+  eq 1, bmp.stretch_calls.size, 'the picture still composites every frame under the message window'
+  ok st.pictures_moving?, 'the picture keeps advancing its move while the message window is up'
+
+  # Complete the reveal, then dismiss, the same two-press sequence the
+  # "types out gradually" check above uses.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'the message window closed'
+  ok sprite.visible, 'the picture layer is still visible once the message window closes'
+end
+
 check 'pictures composite in ascending id order, independent of show order' do
   # yado.tk: 50 concurrent picture slots, higher id always draws on top,
   # independent of show order. Shown here in the opposite order (2 then 1) so

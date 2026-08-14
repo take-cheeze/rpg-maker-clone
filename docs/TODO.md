@@ -4232,12 +4232,33 @@ Everything below is unverified against the codebase.
   check (a shown picture draws normally before the encounter, is hidden and
   stops compositing the instant the battle screen is up, and reappears the
   instant the fight ends), confirmed to fail against the pre-fix code
-  before the fix. Still open: halted entirely while a text window is up
-  (separate from the battle/menu case — a message window is not a scene
-  push, so a different mechanism would be needed, and this project's own
-  "Picture commands... suppressed while a message window is open" fix above
-  only stops new Show/Move/Erase Picture *commands* from taking effect, not
-  an already-shown picture's own visibility); **changing maps clears all
+  before the fix. ✅ **Checked and already correct: an already-shown
+  picture does *not* need to be hidden while a text window is up.** This
+  bullet used to list that as still open, reasoning by analogy with the
+  Battle case above — but the analogy doesn't hold: unlike Battle (a
+  genuinely separate rendering path whose backdrop sits *below*
+  `@picture_sprite`'s z, hence the explicit `@battle_ui` gate just
+  described) and Menu (an opaque panel painted *above* the picture layer,
+  per `Scene::Base#build_field_background`), a message window is not a
+  scene push and does not blank the screen at all — it is itself a
+  `Window` at z 300, already sitting above the picture layer's z 250 (see
+  `#setup_pictures`). Verified against EasyRPG Player's own C++
+  source rather than left as an assumption: `Sprite_Picture::Draw`
+  (`src/sprite_picture.cpp`) carries no message-window check, and
+  `src/drawable.h`'s z-order enum puts `Priority_PictureOld` (120) below
+  `Priority_Window` (130) — RPG_RT lets an open picture keep compositing
+  and animating under the message window exactly like it does under any
+  other window, relying on ordinary z-order occlusion rather than an
+  explicit hide. This project's own `#render` already reflects that: the
+  picture layer has no `@message` check and never has, so nothing needed
+  fixing. (The "Picture commands... suppressed while a message window is
+  open" fix mentioned above is a separate, correct behaviour — it only
+  stops new Show/Move/Erase Picture *commands* from taking effect while a
+  message is up, which is unrelated to whether an already-shown picture
+  keeps rendering.) Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (a picture shown and mid-move stays visible, keeps compositing every
+  frame, and keeps advancing its move while a message window is open, then
+  is still visible once the window closes). **changing maps clears all
   Pictures — except via Teleport or Escape (skill/item), which don't clear
   them**; semi-transparent (1-99%) opacity costs noticeably more than fully
   opaque/transparent; Erase Picture is instant (no fade) — a gradual fade
