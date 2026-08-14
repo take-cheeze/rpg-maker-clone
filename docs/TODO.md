@@ -495,8 +495,31 @@ The work below is roughly ordered by the critical path to a walkable game
   **save / battle / win / defeat / escape counts** — running tallies bumped by
   Save and by each Enemy Encounter and its outcome, persisted in the save), a
   **character position** (the hero's or a map event's map id / x / y / facing /
-  **screen x / y** — an event's map id reads 0, matching an RPG_RT 2000 quirk;
-  the screen coordinates are measured against the live camera, which
+  **screen x / y** — an event's map id reads 0, matching an RPG_RT 2000 quirk.
+  ✅ **That quirk is now actually 2000-only, not applied to every database
+  regardless of edition.** This line used to flag a map event's map id as
+  reading 0 unconditionally; EasyRPG's own `ControlVariables::Event` (case 0,
+  `src/game_interpreter_control_variables.cpp`) is explicit that this is "an
+  RPG_RT bug for 2k only" — its guard is `!Player::IsRPG2k() || event_id ==
+  CharPlayer/CharBoat/CharShip/CharAirship`, true (real map id returned) on a
+  genuine RPG2003 project, since `IsRPG2k()` / `IsRPG2k3()` are the mutually
+  exclusive engine flags that `db.rpg2003?` already detects for this build.
+  `Game::Interpreter#event_operand` (`interpreter.rb`) zeroed the map-event
+  branch's `attr == 0` case unconditionally regardless of edition, so a real
+  RPG2003 game reading a map event's own map id (Control Variables operand 6,
+  attribute 0) got the RPG2000 bug it should not have. Fixed by threading a
+  new `Game::Party#rpg2003?` (`game.rb`, mirroring `#db_item`/`#db_skill`'s own
+  `@db` reach-through, so a bare test fixture with no `#rpg2003?` of its own
+  still reads false) into that one case: RPG2000 still reads 0, RPG2003 reads
+  `@state.map_id` — the current map, which is all a `Game_Event`'s own map id
+  can ever be, since (unlike a vehicle) it cannot exist independently of the
+  map it is on (`Game_Event`'s constructor calls `SetMapId(map_id)` with the
+  map it was just built for and nothing ever changes it after). Covered by a
+  new `scripts/rpg2k_logic_check.rb` check (an RPG2003 state reads a map
+  event's real, current map id while its x/y/facing and the hero's own map id
+  stay unaffected), confirmed to fail against the pre-fix code (reading 0
+  instead of the real map id) before the fix.
+  The screen coordinates are measured against the live camera, which
   `Scene::Map#camera_position` now exposes, with RPG_RT's own asymmetric offsets:
   X from the tile's centre, Y from its bottom) and, in a fight, a **monster
   stat** (RPG2003's battle operand — HP / SP / max HP-SP / attack / defence /

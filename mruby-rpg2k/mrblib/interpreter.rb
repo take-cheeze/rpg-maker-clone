@@ -1368,13 +1368,22 @@ module Game
     # the hero / party, 10002-10004 a vehicle (boat/ship/airship), "this event"
     # as 0 / 10005, any other positive id a map event); param6 the value (0 map
     # id, 1 x tile, 2 y tile, 3 facing in RPG2000's 2/4/6/8 numpad convention,
-    # 4 screen x, 5 screen y). Matching a long-standing RPG_RT quirk, a *map
-    # event's* map id reads 0 -- a vehicle's does not, since (unlike a map
-    # event) it is a real piece of state that exists independently of whatever
-    # map is currently loaded (yado.tk: a vehicle's position can be read from a
-    # different map than the one it currently occupies). An unresolvable
-    # reference (no map_info hook, unknown event, "this event" outside a map
-    # event) reads 0.
+    # 4 screen x, 5 screen y). A *map event's* map id reads 0 -- but only on an
+    # RPG2000 database: EasyRPG's `ControlVariables::Event` (case 0) is
+    # explicit that this is "an RPG_RT bug for 2k only" -- its condition is
+    # `!Player::IsRPG2k() || event_id == CharPlayer/CharBoat/CharShip/
+    # CharAirship`, so a genuine RPG2003 project (`IsRPG2k3()`, the mutually
+    # exclusive engine flag `db.rpg2003?` already detects) takes the *true*
+    # branch and reads the event's real map id -- which, for a map event, is
+    # simply whichever map is currently loaded, the same value the hero/party
+    # branch below already returns (`Game_Event`'s own map id is set from the
+    # loaded map at construction and never changes; unlike a vehicle it cannot
+    # exist independently of one). A vehicle's map id reads for real
+    # regardless of edition, since (unlike a map event) it is state that
+    # exists independently of whatever map is currently loaded (yado.tk: a
+    # vehicle's position can be read from a different map than the one it
+    # currently occupies). An unresolvable reference (no map_info hook,
+    # unknown event, "this event" outside a map event) reads 0.
     def event_operand(cmd)
       ref = character_ref(cmd.param(5))
       attr = cmd.param(6)
@@ -1394,10 +1403,11 @@ module Game
         pos = @map_info.event_position(ref)
         return 0 unless pos
         case attr
+        when 0 then @state.party.rpg2003? ? @state.map_id : 0 # the RPG2000-only quirk
         when 1 then pos[:x]
         when 2 then pos[:y]
         when 3 then pos[:direction]
-        else 0 # an event's map id reads 0 (the RPG2000 quirk)
+        else 0
         end
       else
         0

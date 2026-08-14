@@ -2456,6 +2456,15 @@ module Game
       @db.item[id]
     end
 
+    # Whether this party's database is an RPG2003 project (see
+    # `LCF::Schema::Database#rpg2003?`), exposed here the same way `db_item` /
+    # `db_skill` reach into `@db` for other callers -- a bare test fixture with
+    # no `#rpg2003?` of its own reads false, the same answer a genuine RPG2000
+    # database gives.
+    def rpg2003?
+      @db.respond_to?(:rpg2003?) && @db.rpg2003?
+    end
+
     # Whether item `id` can be used from the field (main-menu) item screen: a
     # medicine or switch item the party holds whose "usable in field" occasion is
     # set (a battle-only medicine is hidden here, mirroring #battle_usable?), or a
