@@ -2212,13 +2212,8 @@ The work below is roughly ordered by the critical path to a walkable game
   old (wrong) single-column assumption and is now a grid-boundary test
   instead -- the actor-target list opened from an item is a separate,
   genuinely single-column window and keeps its own wraparound coverage
-  unchanged. **Not yet re-verified against RPG_RT:** `Scene::SkillMenu`
-  almost certainly has the same two-column shape (RPG2000's skill list is
-  drawn by the same kind of window as the item list), but that has not
-  itself been driven under wine with a populated skill list, so it is left
-  single-column rather than assumed. **Tried and inconclusive:** getting a
-  populated skill list under wine to check turned out to need more than a
-  save edit -- Nepheshel's own actor 15 (デモ用, the leader on the test save)
+  unchanged. **Tried and inconclusive (getting a populated skill list under
+  wine):** Nepheshel's own actor 15 (デモ用, the leader on the test save)
   carries no skills in the save's own chunk 108 at all, so three separate
   attempts at editing that field in directly (via the same technique that
   worked for the item bag) each granted a handful of skills this engine's
@@ -2232,17 +2227,49 @@ The work below is roughly ordered by the critical path to a walkable game
   for ordinary, non-switch skills are the likely culprit -- `field_skill?`'s
   own comment already notes they gate switch skills only *in this engine's
   own port*, which this result casts some doubt on as the full RPG_RT
-  picture). Left for whoever picks this up next rather than guessed at
-  further.
-  - The item count's separator glyph differs: RPG_RT draws something
-    resembling a bold "＝" between the name and the count (e.g. "薬草　＝　５"),
-    where this engine draws a plain ASCII ":" (`":#{count}"` in
-    `#build_item_window`). Not chased into a fix -- the exact glyph is small
-    in the captured frame and could be a windowskin-drawn icon rather than a
-    font character at all, which a single wine screenshot cannot
-    distinguish; wants a closer look (a higher-resolution capture, or
-    checking whether EasyRPG's own item-list drawing code names this glyph)
-    before guessing at an implementation.
+  picture).
+  **Confirmed via EasyRPG Player's source instead, once the wine reference
+  runtime itself stopped rendering past Continue this session (see the
+  harness-quirk notes above):** `Window_Skill`'s constructor sets
+  `column_max = 2`, the same two-column shape `Scene::ItemMenu` already
+  ported -- so this genuinely is a gap, not just a guess. Its `DrawItem`
+  also settles the item-count separator glyph question left open below: it
+  draws each row's cost as `fmt::format("{}{:3d}", <separator term, default
+  "-">, cost)`, right-aligned near the row's right edge, with **no MP/SP
+  unit suffix at all** -- quite different from `Scene::SkillMenu`'s current
+  `"#{cost} #{mp_term}"`.
+  **Why this isn't fixed yet despite being confirmed:** `Window_Item`'s own
+  `DrawItem` uses the identical shape (`fmt::format("{}{:3d}", <separator
+  term, default ":">, count)`), and its default separator is `":"` -- which
+  is what `Scene::ItemMenu` already draws, settling the item-count
+  separator glyph question two bullets down as a non-issue rather than a
+  bug (the wine capture that suggested "＝" was almost certainly a
+  misreading of a colon at low zoom). But porting the *skill* row's format
+  surfaced a bigger, entangled question: `Scene::SkillMenu` currently uses
+  LEFT/RIGHT to cycle the caster **inside** the skill screen, and a
+  two-column grid needs LEFT/RIGHT for column navigation instead (the same
+  keys `Scene::ItemMenu`'s own grid fix repurposed) -- the two cannot both
+  live on the same input. Chasing that down through `EasyRPG/Player`'s own
+  source (`scene_skill.cpp`, `scene_skill.h`, `scene_menu.cpp`) found that
+  genuine RPG_RT/EasyRPG does not support switching actors *inside* the
+  Skill screen at all: `Scene_Skill`'s constructor takes a fixed
+  `actor_index` and its `vUpdate()` never changes it, while
+  `Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row` branch
+  (all four, identically) instead hands input focus to the menu's own party
+  list (`menustatus_window`) so the player picks *which actor* there
+  (UP/DOWN) before a specific `Scene_Skill(actors, menustatus_window-
+  >GetIndex())` is even constructed. That means this engine's whole
+  Menu -> Skill (and very possibly Equip/Status too, gated the same way in
+  that switch) entry flow needs an actor-preselection step this codebase
+  does not have yet (`Scene::Menu`'s own party-status panel is a plain
+  display, not a cursor-navigable list) before the grid fix's LEFT/RIGHT
+  repurposing can land without silently deleting the only way to check a
+  non-leader's skills. Left as its own, larger follow-up rather than
+  guessed at or rushed alongside the grid/format fix.
+  - The item count's separator glyph question is settled by the same source
+    read two bullets up (`Window_Item`'s own default is `":"`) -- not a bug,
+    the wine capture that looked like "＝" was almost certainly a colon
+    misread at low zoom, and no fix is needed here.
   ✅ **The Save command's "you cannot save right now" message is gone --
   RPG_RT shows no text at all.** This one was never wine-verified (the
   comparison never reached this exact state on the reference side, and
