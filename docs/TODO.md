@@ -6260,10 +6260,9 @@ not yet verified:
   `3` to `2`; `ANIM_FALLBACK_FRAMES`/`ANIM_FLASH_FRAMES` (10 and 8 frames
   respectively, independent constants) were left untouched by this fix —
   `ANIM_FLASH_FRAMES`'s own 8 turned out to be wrong too, see the ✅ bullet
-  directly below — and the fallback timed
-  wait (`ANIM_FALLBACK_FRAMES * ANIM_CELL_FRAMES`, used when an animation's
-  own sheet/data is missing) shortens to match automatically since it
-  multiplies through the same constant. Covered by a new
+  directly below, and `ANIM_FALLBACK_FRAMES` turned out to be fabricated
+  outright with no real-engine analog at all, see the ✅ bullet further
+  below. Covered by a new
   `scripts/rpg2k_scene_check.rb` check pinning the exact per-frame hold
   count (still frame 0 after 2 ticks, advances to frame 1 on the 3rd),
   confirmed to fail against the pre-fix code (`expected 2, got 3`) before
@@ -6301,6 +6300,31 @@ not yet verified:
   of times to land on `delta_frames` 10 and 11 (11 calls still flashing, the
   12th cleared) independent of the constant's own value, confirmed to fail
   against the pre-fix code (cleared several calls early) before the fix.
+- ✅ **`ANIM_FALLBACK_FRAMES` (the fixed 10-frame/`* ANIM_CELL_FRAMES`-tick
+  wait applied when a Show Battle Animation command names an animation with
+  no drawable frames) is gone — it had no real-engine analog at all.**
+  Checked against EasyRPG Player's actual source rather than left as the
+  guess the two bullets above already flagged it as: neither
+  `Game_Screen::ShowBattleAnimation` (`src/game_screen.cpp`) nor
+  `BattleAnimation`'s own constructor (`src/battle_animation.cpp`) apply any
+  fixed fallback duration for a missing/frameless animation. An invalid
+  animation id, or a database row whose `frames` table is empty, computes a
+  real frame count of 0 and so waits exactly 0 ticks — `Game_Interpreter`'s
+  own `wait_time == 0` case falls straight through to the next command the
+  same tick, with no one-frame floor applied anywhere. A row that does have
+  real frame data but whose `Battle/<name>` graphic sheet fails to load
+  still waits that row's own genuine duration (`frames.size *
+  ANIM_CELL_FRAMES`), since EasyRPG computes the frame count from the
+  database row before it ever attempts the graphic load — a missing sheet
+  changes only what (nothing) actually draws, not the timing. Fixed by
+  removing `ANIM_FALLBACK_FRAMES` and replacing `Scene::Map
+  #begin_map_animation`'s fixed-wait else-branch with
+  `#missing_animation_wait(id)`, which looks the animation row up directly
+  and returns `0` or the row's real `frames.size * ANIM_CELL_FRAMES`.
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks: an invalid
+  animation id waits 0 frames, and a valid row with real frame data waits
+  the row's own real duration regardless of whether its graphic sheet
+  exists.
 - ✅ **A second Show Battle Animation (11210) now forcibly cuts the first
   one's sprite off, instead of the second request quietly waiting its turn
   for the shared slot to free up** — the "only one on screen at a time"

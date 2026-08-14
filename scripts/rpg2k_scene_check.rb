@@ -370,7 +370,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
         pages: nil) },
     # A drawable battle animation (id 8): four frames, with a screen flash timing
     # on frame 1. (Id 7 is intentionally absent so that test exercises the
-    # timed-wait fallback.)
+    # 0-frame invalid-id wait, see #missing_animation_wait.)
     battle_anime: { 8 => OpenStruct.new(
       animation_name: 'Anim', position: 1,
       frames: {
@@ -395,6 +395,17 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
       },
       timings: { 1 => OpenStruct.new(frame: 1, flash_scope: 1, flash_red: 31,
                                      flash_green: 0, flash_blue: 0, flash_power: 20) }
+    ),
+    # A third animation (id 10): real frame data (12 frames, a long real
+    # duration at 2 ticks/frame) under its own animation_name so a test can
+    # poison just its own @animation_cache entry (simulating an unloadable
+    # Battle/<name> sheet) without affecting id 8/9's shared 'Anim' cache
+    # entry. Exercises #missing_animation_wait's "real frame data, sheet
+    # failed to load" branch -- a real duration, not the invalid-id 0-wait.
+    10 => OpenStruct.new(
+      animation_name: 'GhostAnim', position: 1,
+      frames: (1..12).each_with_object({}) { |n, h| h[n] = OpenStruct.new(cells: {}) },
+      timings: {}
     ) },
     # Every tile of the synthetic map is chip 0, which the fake chipset tags as
     # terrain 42 — so this one row decides whether walking hurts, and (for the
@@ -5992,16 +6003,43 @@ end
 check 'Show Battle Animation with the wait flag holds the event then resumes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
+  # animation 10 has real frame data (a real, non-zero #missing_animation_wait
+  # duration) but its own 'GhostAnim' cache entry is poisoned below to
+  # simulate an unloadable Battle/<name> sheet, so this exercises the
+  # timed-wait fallback path without depending on animation id 7's own
+  # (now instant, 0-frame) invalid-id wait.
   auto.event_commands = [
-    ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0), # animation, player, wait
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [10, 10001, 1], indent: 0), # animation, player, wait
     ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
   ]
   scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.instance_variable_get(:@animation_cache)['GhostAnim'] = nil
   st = scene.instance_variable_get(:@state)
   3.times { scene.update }
   ok !st.switches[5], 'the event is held while the animation plays'
   60.times { scene.update } # outlast the fallback animation length
   ok st.switches[5], 'the event resumes once the animation finishes'
+end
+
+# #missing_animation_wait's own two branches, pinned directly (see its own
+# doc comment in mruby-rpg2k/mrblib/scene/map.rb): an invalid/unknown
+# animation id waits 0 real frames -- no one-frame floor, matching
+# EasyRPG's Game_Interpreter wait_time == 0 fallthrough -- while a valid row
+# with real frame data waits that row's own real duration regardless of
+# whether its graphic sheet loads (the sheet is never consulted here at
+# all).
+check "#missing_animation_wait waits 0 for an invalid/unknown animation id" do
+  scene = new_scene({})
+  eq 0, scene.send(:missing_animation_wait, 7), 'animation 7 is absent from the fake db'
+  eq 0, scene.send(:missing_animation_wait, nil), 'a nil animation id is also invalid'
+end
+
+check "#missing_animation_wait waits the row's own real duration for a valid animation, sheet aside" do
+  scene = new_scene({})
+  eq 8, scene.send(:missing_animation_wait, 8),
+     'animation 8 has 4 real frames * ANIM_CELL_FRAMES (2) = 8, whether or not its sheet ever loads'
+  eq 24, scene.send(:missing_animation_wait, 10),
+     'animation 10 has 12 real frames * ANIM_CELL_FRAMES (2) = 24'
 end
 
 check 'Show Battle Animation plays: an animation sprite shows and a flash fires' do
@@ -6374,12 +6412,14 @@ end
 # built or drawn, and the "wait until it finishes" flag did nothing.
 check "a Common Event Parallel Process's Show Battle Animation (wait) actually plays and blocks it" do
   ic = Game::Interpreter::Cmd
-  # animation 7 has no drawable data in the fake db (see the fallback-wait
-  # check above), so this exercises the timed-wait fallback path.
+  # animation 10 has real frame data but its own 'GhostAnim' cache entry is
+  # poisoned below to simulate an unloadable sheet, so this exercises the
+  # timed-wait fallback path (see the fallback-wait check above).
   ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
-                      event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0),
+                      event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [10, 10001, 1], indent: 0),
                               ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
   scene = new_scene({}, common: { 1 => ce })
+  scene.instance_variable_get(:@animation_cache)['GhostAnim'] = nil
   st = scene.instance_variable_get(:@state)
   3.times { scene.update }
   ok !st.switches[5],
@@ -6423,12 +6463,12 @@ end
 # hands mid-flight.
 check 'a second Show Battle Animation forcibly cuts off a still-playing first one' do
   ic = Game::Interpreter::Cmd
-  # CE1's animation 7 has no drawable data in the fake db (see the fallback-
-  # wait checks above), so it parks on the ~20-frame timed-wait fallback --
-  # long enough that CE2's own animation can cut it off well before it would
-  # ever finish naturally.
+  # CE1's animation 10 has real frame data but its own 'GhostAnim' cache
+  # entry is poisoned below to simulate an unloadable sheet, so it parks on
+  # its own real (24-tick) timed-wait fallback -- long enough that CE2's own
+  # animation can cut it off well before it would ever finish naturally.
   ce1 = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
-                       event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0),
+                       event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [10, 10001, 1], indent: 0),
                                ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
   # CE2 waits a moment first (so CE1's animation is already in flight), then
   # fires its own -- animation 8, the fake db's drawable one.
@@ -6437,11 +6477,12 @@ check 'a second Show Battle Animation forcibly cuts off a still-playing first on
                                ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),
                                ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)])
   scene = new_scene({}, common: { 1 => ce1, 2 => ce2 })
+  scene.instance_variable_get(:@animation_cache)['GhostAnim'] = nil
   st = scene.instance_variable_get(:@state)
   3.times { scene.update }
   ok !st.switches[5], 'CE1 is still parked on its own long fallback wait'
   ok scene.instance_variable_get(:@anim_wait), "CE1 has claimed the shared slot (fallback path)"
-  # CE2's own Wait[1] (~6 frames) elapses well before CE1's ~20-frame fallback
+  # CE2's own Wait[1] (~6 frames) elapses well before CE1's ~24-frame fallback
   # would ever finish naturally, so bound the search to comfortably less than
   # that: if the slot is still showing CE1's fallback wait by frame 15, CE2
   # never cut it off at all -- it is still queued behind CE1, the pre-fix bug.
@@ -6451,16 +6492,16 @@ check 'a second Show Battle Animation forcibly cuts off a still-playing first on
   end
   ok scene.instance_variable_get(:@map_animation),
      "the shared slot now shows CE2's own (drawable) animation instead of CE1's fallback wait, " \
-     "well before CE1's own ~20-frame duration could have finished it naturally"
+     "well before CE1's own ~24-frame duration could have finished it naturally"
   ok !st.switches[6], 'CE2 has not resumed yet -- its own animation only just started'
   # CE1 was resumed the instant it was cut off (this same pass), but its own
   # trailing Control Switches command only runs on the *next* step_parallel
   # call for it (only a :wait wait-kind gets the same-frame "spend this
   # frame's own budget immediately" treatment) -- give it one more frame to
-  # actually reach it, well short of the fallback's own ~20-frame duration.
+  # actually reach it, well short of the fallback's own ~24-frame duration.
   scene.update
   ok st.switches[5],
-     "CE1 resumed the instant its animation was cut off, well short of the fallback's own ~20-frame duration"
+     "CE1 resumed the instant its animation was cut off, well short of the fallback's own ~24-frame duration"
   60.times { scene.update }
   ok st.switches[6], 'CE2 resumes once its own animation finishes'
 end
@@ -6480,12 +6521,13 @@ end
 # instead of being cut off.
 check 'a fire-and-forget Show Battle Animation also forcibly cuts off a still-playing first one' do
   ic = Game::Interpreter::Cmd
-  # CE1's animation 7 has no drawable data in the fake db, so it parks on the
-  # ~20-frame timed-wait fallback -- long enough that CE2's own fire-and-
-  # forget animation can cut it off well before it would ever finish
-  # naturally.
+  # CE1's animation 10 has real frame data but its own 'GhostAnim' cache
+  # entry is poisoned below to simulate an unloadable sheet, so it parks on
+  # its own real (24-tick) timed-wait fallback -- long enough that CE2's own
+  # fire-and-forget animation can cut it off well before it would ever
+  # finish naturally.
   ce1 = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
-                       event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0),
+                       event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [10, 10001, 1], indent: 0),
                                ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
   # CE2 waits a moment first (so CE1's animation is already in flight), then
   # fires its own -- animation 8, the fake db's drawable one -- with the
@@ -6496,11 +6538,12 @@ check 'a fire-and-forget Show Battle Animation also forcibly cuts off a still-pl
                                ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 0], indent: 0),
                                ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)])
   scene = new_scene({}, common: { 1 => ce1, 2 => ce2 })
+  scene.instance_variable_get(:@animation_cache)['GhostAnim'] = nil
   st = scene.instance_variable_get(:@state)
   3.times { scene.update }
   ok !st.switches[5], 'CE1 is still parked on its own long fallback wait'
   ok scene.instance_variable_get(:@anim_wait), 'CE1 has claimed the shared slot (fallback path)'
-  # CE2's own Wait[1] (~6 frames) elapses well before CE1's ~20-frame fallback
+  # CE2's own Wait[1] (~6 frames) elapses well before CE1's ~24-frame fallback
   # would ever finish naturally, so bound the search to comfortably less than
   # that: if the slot never shows CE2's own drawable animation by frame 15,
   # CE2's fire-and-forget request was dropped instead of cutting CE1 off --
@@ -6513,17 +6556,17 @@ check 'a fire-and-forget Show Battle Animation also forcibly cuts off a still-pl
   end
   ok scene.instance_variable_get(:@map_animation),
      "the shared slot now shows CE2's own (drawable) animation instead of CE1's fallback wait, " \
-     "well before CE1's own ~20-frame duration could have finished it naturally"
+     "well before CE1's own ~24-frame duration could have finished it naturally"
   ok scene.instance_variable_get(:@map_animation_interp).nil?,
      "CE2's own request is fire-and-forget -- nothing is parked waiting on it"
   # CE1 was resumed the instant it was cut off (this same pass, during CE2's
   # own turn later in the same step_parallels sweep), but its own trailing
   # Control Switches command only runs on the *next* step_parallel call for
   # it -- give it one more frame to actually reach it, well short of the
-  # fallback's own ~20-frame duration (mirrors the waited-for check above).
+  # fallback's own ~24-frame duration (mirrors the waited-for check above).
   scene.update
   ok st.switches[5],
-     "CE1 resumed the instant its animation was cut off, well short of the fallback's own ~20-frame duration"
+     "CE1 resumed the instant its animation was cut off, well short of the fallback's own ~24-frame duration"
   40.times { scene.update }
   ok st.switches[6], "CE2's own command list reached its trailing Control Switches (it was never blocked by its own no-wait animation)"
 end
