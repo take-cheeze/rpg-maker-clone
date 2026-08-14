@@ -20,6 +20,11 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
 
+      # Height of the item-description banner at the very top of the screen
+      # (see #build_desc_window) -- mirrors Scene::EquipMenu's own banner,
+      # which the item list is offset down by.
+      DESC_H = LINE_H + Window::BORDER * 2
+
       def initialize parent, state
         super parent
         @state = state
@@ -30,11 +35,13 @@ class RPG2k
         @teleport_index = 0
         @pending_item = nil
         @message = nil
+        build_desc_window
         build_item_window
       end
 
       def dispose
         close_message
+        @desc_window.dispose if @desc_window
         @item_window.dispose if @item_window
         @target_window.dispose if @target_window
         @teleport_window.dispose if @teleport_window
@@ -102,6 +109,7 @@ class RPG2k
             @mode = :teleport_target
             @teleport_index = 0
             build_teleport_window
+            refresh_desc
           elsif sk && (sk.scope == 2 || sk.scope == 4)
             # Unlike a medicine (whose all-ally scope needs no actor at all --
             # #use_medicine reads the whole party off `@actors`, ignoring the
@@ -128,6 +136,7 @@ class RPG2k
         @mode = :target
         @target_index = 0
         build_target_window
+        refresh_desc
       end
 
       # A switch item turns on its game switch (the menu owns the switch table)
@@ -207,6 +216,7 @@ class RPG2k
           @teleport_window.dispose
           @teleport_window = nil
         end
+        refresh_desc
       end
 
       # The registered teleport destinations as `[map_id, name]` pairs,
@@ -287,6 +297,7 @@ class RPG2k
           @target_window.dispose
           @target_window = nil
         end
+        refresh_desc
       end
 
       # After a successful use, drop back to the item list and rebuild it (the
@@ -300,12 +311,45 @@ class RPG2k
         build_item_window
       end
 
+      # The highlighted item's flavour text, in a one-line banner across the
+      # very top of the screen -- confirmed against genuine RPG_RT under
+      # wine (e.g. "HPを80ポイント程度回復する" for a healing item), the same
+      # gap Scene::EquipMenu had. Tracks the item under the cursor in :items
+      # mode; the :target/:teleport_target pickers keep showing the pending
+      # item's own description, since it is still the one thing on screen a
+      # description could be about.
+      def build_desc_window
+        @desc_window.dispose if @desc_window
+        inner_w = SCREEN_W - Window::BORDER * 2
+        @desc_window = Window.new(0, 0, SCREEN_W, DESC_H)
+        @desc_window.z = 400
+        @desc_window.windowskin = @skin
+        @desc_contents = Bitmap.new(inner_w, LINE_H)
+        @desc_window.contents = @desc_contents
+        refresh_desc
+      end
+
+      def refresh_desc
+        return unless @desc_contents
+        id = if @mode == :items
+               rows = items
+               rows.empty? ? nil : rows[@item_index].first
+             else
+               @pending_item
+             end
+        it = id && id != 0 ? @state.party.db_item(id) : nil
+        text = it ? it.description.to_s : ''
+        @desc_contents.clear
+        @desc_contents.font.color = Color.new(255, 255, 255, 255)
+        @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
+      end
+
       def build_item_window
         @item_window.dispose if @item_window
         rows = items
         inner_w = SCREEN_W - Window::BORDER * 2
         h = [rows.size, 1].max * LINE_H
-        @item_window = Window.new(0, 0, SCREEN_W, h + Window::BORDER * 2)
+        @item_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
         @item_window.z = 400
         @item_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
@@ -333,6 +377,7 @@ class RPG2k
         h = LINE_H
         @item_window.cursor_rect =
           Rect.new(0, @item_index * LINE_H, @item_window.contents.width, h)
+        refresh_desc
       end
 
       def build_target_window

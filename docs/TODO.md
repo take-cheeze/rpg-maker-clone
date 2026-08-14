@@ -2172,14 +2172,44 @@ The work below is roughly ordered by the critical path to a walkable game
   `@status.visible`. Verified against the same reference frame: our Item
   screen now shows only its own window, and backing out with Escape
   correctly restores the command list and status panel.
-  **Left open by the same comparison, not fixed here:**
-  - The Item/Skill list windows stay full-`SCREEN_W` wide even with nothing
-    in them, where RPG_RT's own list window in that state is narrower (looks
-    roughly menu-command-window width, ~300px) -- seen once the cursor became
-    visible again by the fix above, but not cross-checked against a
-    *populated* list on both engines, so it is recorded rather than guessed
-    at: the window may simply always be full-width once real rows are drawn,
-    which an empty list alone cannot tell apart from a genuine layout bug.
+  **The Item list's full-`SCREEN_W` width question above is now settled --
+  cross-checked with a populated bag** (edit a real save's inventory chunk
+  109's `item_ids`/`item_counts`/`item_count` fields directly, then compare
+  under wine): RPG_RT's own Item window is full-width once it holds real
+  rows too, the same as this engine's always was. The empty-list capture
+  that first raised the question was misleading on its own, not a genuine
+  layout bug -- nothing to fix here.
+  ✅ **That same populated-list capture found a real, still-open gap: the
+  Item screen has an item-description banner too, the same one
+  `Scene::EquipMenu` already gained.** RPG_RT showed "HPを80ポイント程度回復する"
+  across the top of the screen for the highlighted 薬草, sourced from the
+  item's own database `description` field; `Scene::ItemMenu` drew none.
+  Fixed the same way as Equip (`build_desc_window`/`refresh_desc`, tracking
+  the highlighted row in the `:items` list and the pending item while a
+  target/teleport picker is open, since it is still the one thing on screen
+  a description could be about), and confirmed the fixed screen's banner
+  text now matches RPG_RT's field-for-field.
+  **Left open by the same populated-list comparison, not fixed here:**
+  - **RPG_RT lays the item list out in a two-column grid, not a
+    single stacked column.** With 薬草×5 and 傷薬×3 held, RPG_RT drew them
+    side by side on the *same* row (薬草 on the left half, 傷薬 on the right
+    half), where this engine stacks every item on its own row regardless of
+    count. This is a bigger structural change than the banner fix above --
+    it touches cursor navigation (UP/DOWN would need to move by one column
+    instead of unconditionally wrapping the whole list), the row/column
+    math, and needs another populated data point (three or more items) to
+    pin down whether RPG_RT always uses exactly two columns or derives the
+    count from window width/item name length -- recorded rather than
+    guessed at.
+  - The item count's separator glyph differs: RPG_RT draws something
+    resembling a bold "＝" between the name and the count (e.g. "薬草　＝　５"),
+    where this engine draws a plain ASCII ":" (`":#{count}"` in
+    `#build_item_window`). Not chased into a fix -- the exact glyph is small
+    in the captured frame and could be a windowskin-drawn icon rather than a
+    font character at all, which a single wine screenshot cannot
+    distinguish; wants a closer look (a higher-resolution capture, or
+    checking whether EasyRPG's own item-list drawing code names this glyph)
+    before guessing at an implementation.
   - The Save command's "you cannot save right now" message (shown when
     `Change Save Access` has turned saving off) is a hardcoded English
     literal, the same class of bug the two placeholders above turned out to
