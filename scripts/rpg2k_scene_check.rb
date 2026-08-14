@@ -929,6 +929,39 @@ check 'a different custom move route restarts from the top on a page switch' do
   eq 0, event_hashes(scene)[1][:route].index, 'a changed route restarts from the top'
 end
 
+check "a fixed-direction event's own explicit Face Direction sub-command still " \
+      'turns its drawn sprite, even though ordinary movement never does' do
+  # yado.tk: "Face Direction always overrides Fixed Direction/Animation Type" --
+  # verified against EasyRPG Player's actual C++ source (see the pure-logic
+  # checks in scripts/rpg2k_logic_check.rb for the exact citations). This is the
+  # full-stack version: Scene::Map#build_event now wires a page's own
+  # Game::EventGraphic.fixed_direction? into Character#fixed_facing, and
+  # Game::EventGraphic.frame reads the character's own live facing instead of
+  # hardcoding the page's base_dir for every fixed-direction anim_type.
+  pg = page(x_move_type: Game::MoveType::CUSTOM, direction: 2, # south
+            animation_type: Game::EventGraphic::FIXED_NON_CONTINUOUS,
+            route: move_route([R::MOVE_RIGHT, R::FACE_UP], repeat: false))
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [5, 4])
+  frame_of = lambda do
+    e = event_hashes(scene)[1]
+    Game::EventGraphic.frame(e[:anim_type], e[:base_dir], e[:base_pattern],
+                              e[:char].direction, e[:anim_phase], e[:moving])
+  end
+
+  # Move Right fires once move_timer (EVENT_MOVE_DELAY[frequency 6] == 6)
+  # elapses; Face Up fires 6 frames after that.
+  8.times { scene.update }
+  ok event_hashes(scene)[1][:char].x > 2, 'the Move Right step landed first'
+  ok !event_hashes(scene)[1][:route].done?, "Face Up hasn't run yet"
+  dir, = frame_of.call
+  eq 2, dir, "ordinary movement never turns a fixed-direction event's sprite"
+
+  10.times { scene.update }
+  ok event_hashes(scene)[1][:route].done?, 'the Face Up step ran too'
+  dir, = frame_of.call
+  eq 8, dir, 'an explicit Face Direction sub-command still turns it, though'
+end
+
 check 'a refresh does not resurrect an erased event' do
   ic = Game::Interpreter::Cmd
   p1 = page(trigger: 3) # auto-start: erase myself

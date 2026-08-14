@@ -932,8 +932,11 @@ module Game
       LCF_DIR_TO_NUMPAD[lcf_dir] || 2
     end
 
-    # Whether the type keeps the sprite's facing pinned to the page direction
-    # (movement does not turn it).
+    # Whether the type keeps the sprite's facing pinned (movement does not
+    # turn it) unless an explicit move-route Face Direction / Turn
+    # sub-command overrides it -- see Character#fixed_facing/#face!, which
+    # is what actually keeps a fixed-direction event's *drawn* facing at
+    # #frame's char_dir equal to its page's base_dir until one runs.
     def self.fixed_direction?(anim_type)
       anim_type == FIXED_NON_CONTINUOUS || anim_type == FIXED_CONTINUOUS ||
         anim_type == FIXED_GRAPHIC
@@ -959,27 +962,41 @@ module Game
     end
 
     # The [direction, column] CharSet frame to draw for an event this render.
-    # `char_dir` is the character's live facing (updated by movement),
-    # `base_dir`/`base_pattern` the page's initial facing/pattern, `phase` the
-    # walk counter and `moving` whether the event is currently stepping. Fixed
-    # graphics stay on their page frame; spinning events derive facing from the
-    # phase but keep the page's own pattern column (a graphic that repurposes
-    # the 3 columns for unrelated frames, like Nepheshel's Crystal Gate save
-    # point -- column 0 lit, column 2 unlit -- would show the wrong one of
-    # those for 3 out of 4 spin frames if the column were forced to a fixed
-    # "standing" index instead); the ordinary types walk (cycling columns)
-    # while moving/continuous and rest on the page pattern when idle.
+    # `char_dir` is the character's live facing (updated by movement, subject
+    # to Character#facing_locked/#fixed_facing -- so it already sits pinned
+    # at the page's own base_dir for a fixed-direction type until an explicit
+    # Face Direction / Turn move-route sub-command, which bypasses both locks
+    # via Character#face!, turns it), `base_pattern` the page's initial
+    # pattern, `phase` the walk counter and `moving` whether the event is
+    # currently stepping.
+    #
+    # `base_dir` is unused here (kept for callers that also need the page's
+    # own starting facing to seed a fresh Character#direction): every
+    # anim_type, fixed-direction ones included, now draws `char_dir`, not a
+    # hardcoded page facing -- real RPG_RT lets an explicit Face command turn
+    # even a "statue" (fixed / never-animating) event's sprite, per EasyRPG's
+    # `Game_Character::ParseMoveRoute`'s Face-command handling, which ends in
+    # an unconditional `SetFacing(GetDirection())` with no `IsFacingLocked()`
+    # check at all -- only ordinary movement's own `UpdateFacing()` respects
+    # the lock. Spinning events derive facing from the phase but keep the
+    # page's own pattern column (a graphic that repurposes the 3 columns for
+    # unrelated frames, like Nepheshel's Crystal Gate save point -- column 0
+    # lit, column 2 unlit -- would show the wrong one of those for 3 out of 4
+    # spin frames if the column were forced to a fixed "standing" index
+    # instead); a fixed graphic never advances its column at all (see
+    # #animated?, which stops #animate_event from ever ticking `phase`, so it
+    # stays base_pattern by construction); the ordinary types walk (cycling
+    # columns) while moving/continuous and rest on the page pattern when idle.
     def self.frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
       case anim_type
       when SPIN
         [spin_direction(phase), base_pattern]
       when FIXED_GRAPHIC
-        [base_dir, base_pattern]
+        [char_dir, base_pattern]
       else
-        dir = fixed_direction?(anim_type) ? base_dir : char_dir
         col = (moving || continuous?(anim_type)) ? pattern_column(phase)
                                                   : base_pattern
-        [dir, col]
+        [char_dir, col]
       end
     end
   end
@@ -3820,6 +3837,17 @@ module Game
     attr_accessor :direction, :move_speed, :move_frequency
     attr_accessor :through, :facing_locked, :animation_stopped, :transparency
     attr_accessor :layer, :overlap_forbidden
+    # Whether this character's own page Animation Type is one of the three
+    # "fixed direction" kinds (Game::EventGraphic.fixed_direction? -- a plain
+    # or continuous walk with facing pinned, or a single never-animating
+    # graphic). Set by Scene::Map#build_event from the page, alongside
+    # #facing_locked (the move-route Direction Fix ON/OFF toggle): the two
+    # are independent *sources* of the same lock, matching EasyRPG's
+    # `SetFacingLocked` (`lock_facing = locked || IsDirectionFixedAnimationType
+    # (anim_type)`) -- an Animation Type lock cannot be turned off by a
+    # Direction Fix OFF sub-command, and unlike #facing_locked it is never
+    # itself toggled by a move-route command.
+    attr_accessor :fixed_facing
     attr_reader :graphic_name, :graphic_index, :x, :y
 
     # The direction actually walked/jumped by the last successful move,
@@ -3849,6 +3877,7 @@ module Game
       @move_frequency = 3
       @through = false          # ignore collision while moving
       @facing_locked = false    # keep facing fixed while moving
+      @fixed_facing = false     # keep facing fixed per the page's Animation Type
       @animation_stopped = false
       @transparency = 0         # 0 opaque .. 7 fully transparent
       @graphic_name = nil
@@ -3875,20 +3904,27 @@ module Game
       Character.step_tile(@x, @y, dir)
     end
 
-    # Turn to face `dir` without moving (a no-op while facing is locked) --
-    # movement-driven facing only (#move, #jump, #move_diagonal). An explicit
-    # Face Direction / Turn move-route sub-command always wins over a prior
-    # Direction Fix ON in the same route (yado.tk); see #face!.
+    # Turn to face `dir` without moving (a no-op while facing is locked, by
+    # either #facing_locked or #fixed_facing) -- movement-driven facing only
+    # (#move, #jump, #move_diagonal). An explicit Face Direction / Turn
+    # move-route sub-command always wins over a prior Direction Fix ON *or*
+    # a fixed-direction Animation Type in the same route (yado.tk); see
+    # #face!.
     def face(dir)
-      @direction = dir unless @facing_locked || dir.nil?
+      @direction = dir unless @facing_locked || @fixed_facing || dir.nil?
     end
 
-    # Turn to face `dir`, ignoring the Direction Fix lock. The move-route
-    # "Face Up/Right/Down/Left/Random/Hero/Away from Hero" sub-commands use
-    # this (Turn Right/Left/180/Random already bypassed the lock by writing
-    # @direction directly) -- Direction Fix only suppresses the facing change
-    # that would otherwise happen from an ordinary move, not an explicit
-    # facing command issued later in the same route.
+    # Turn to face `dir`, ignoring both the Direction Fix lock and a
+    # fixed-direction Animation Type. The move-route "Face Up/Right/Down/
+    # Left/Random/Hero/Away from Hero" sub-commands use this (Turn Right/
+    # Left/180/Random already bypassed both locks by writing @direction
+    # directly) -- neither lock suppresses anything but the facing change
+    # that would otherwise happen from an ordinary move; an explicit facing
+    # command issued later in the same route always wins, and (per EasyRPG's
+    # `Game_Character::UpdateFacing`/its Face-command handler in
+    # `ParseMoveRoute`) so does one on a page whose Animation Type is itself
+    # one of the fixed kinds -- RPG_RT still turns a "statue" NPC's sprite on
+    # an explicit Face command even though it never turns while it walks.
     def face!(dir)
       @direction = dir unless dir.nil?
     end
