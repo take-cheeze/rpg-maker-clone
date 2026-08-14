@@ -68,6 +68,14 @@ mrb_value bgm_volume(mrb_state* M, mrb_value self) {
   return mrb_nil_value();
 }
 
+mrb_value bgm_pan(mrb_state* M, mrb_value self) {
+  mrb_int pan;
+  mrb_get_args(M, "i", &pan);
+  if (g_backend.bgm_pan)
+    g_backend.bgm_pan((int)pan);
+  return mrb_nil_value();
+}
+
 mrb_value bgm_stop(mrb_state* M, mrb_value self) {
   if (g_backend.bgm_stop)
     g_backend.bgm_stop();
@@ -218,6 +226,7 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
                              MRB_ARGS_ARG(1, 2));
   mrb_define_module_function(M, audio, "_bgm_volume", bgm_volume,
                              MRB_ARGS_REQ(1));
+  mrb_define_module_function(M, audio, "_bgm_pan", bgm_pan, MRB_ARGS_REQ(1));
   mrb_define_module_function(M, audio, "_bgm_stop", bgm_stop, MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_bgm_fade", bgm_fade, MRB_ARGS_REQ(1));
   mrb_define_module_function(M, audio, "_bgm_pos", bgm_pos, MRB_ARGS_NONE());

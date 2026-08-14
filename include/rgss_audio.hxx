@@ -42,6 +42,15 @@ struct RgssAudioBackend {
   // There is no live equivalent for pitch: SDL_mixer cannot re-pitch a
   // playing music stream, only a freshly started one.
   void (*bgm_volume)(int volume);
+  // Re-applies stereo balance to the BGM stream already playing, with no
+  // restart -- the same live-update shape as bgm_volume. RPG2000's Play BGM
+  // balance parameter is 0 (full left) through 100 (full right), 50 centred;
+  // pan is 0..100 on that same scale. SDL_mixer has no per-Mix_Music panning
+  // API, so the backend implements this via Mix_SetPanning(MIX_CHANNEL_POST,
+  // ...), which pans the whole final mixed output (BGM, BGS and SE alike) --
+  // see src/sdl_audio.cxx for why that is the only technique that reaches a
+  // playing music stream at all.
+  void (*bgm_pan)(int pan);
   void (*bgm_stop)(void);
   void (*bgm_fade)(int ms);
   // Current playback position of the BGM, in milliseconds (0 if unknown).

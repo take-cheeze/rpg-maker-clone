@@ -1032,6 +1032,14 @@ module RGSS
         _bgm_volume(volume)
       end
 
+      # Re-applies stereo balance to the already-playing BGM stream in place,
+      # with no restart -- the same live-update shape as #bgm_volume. Matches
+      # RPG2000's own Play BGM balance parameter: 0 is full left, 100 is full
+      # right, 50 (the default) is centre.
+      def bgm_pan(pan)
+        _bgm_pan(pan)
+      end
+
       def bgm_stop
         _bgm_stop
       end
