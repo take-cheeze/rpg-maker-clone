@@ -3148,7 +3148,18 @@ class RPG2k
         @player_route_timer = EVENT_MOVE_DELAY[@player_char.move_frequency] || 40
         ox = @player_char.x
         oy = @player_char.y
-        @player_route.step(@player_char, @world) unless @player_route.done?
+        # A boarded party's own Set Move Route commands (Dash, Jump, plain
+        # movement, all alike) must clear the *ridden vehicle's* passability,
+        # not on-foot chipset passability -- EasyRPG's own Game_Player::
+        # MakeWay (src/game_player.cpp) unconditionally delegates to
+        # GetVehicle()->MakeWay whenever IsAboard(), with no separate branch
+        # for move-route-driven movement vs. ordinary input movement, so a
+        # boat/ship/airship's own boat_pass/ship_pass/airship_pass clearance
+        # (or an airship's own event-blind rule) applies here exactly as it
+        # already does for #try_move (the input-driven path, see
+        # @state.boarded? above).
+        world = @state.boarded? ? @vehicle_worlds[@state.boarded] : @world
+        @player_route.step(@player_char, world) unless @player_route.done?
         # Mirror Through Mode out to the standing flag every step (not just when
         # the route ends), so a Halt All Movement mid-route sees whatever the
         # route had set so far rather than the mirror's now-discarded state.

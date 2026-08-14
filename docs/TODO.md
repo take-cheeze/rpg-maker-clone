@@ -3920,9 +3920,16 @@ Everything below is unverified against the codebase.
   turns off mid-run) and re-enabling it resumes exactly where it left off**
   — ✅ the same fact as the fixed "A Common Event's Parallel Process now
   survives a Transfer Player and a save/load" item above, restated.
-- **Move All / Force Complete Move** — blocks Event Content at that command
-  until every targeted character's route finishes; same freeze conditions
-  as Set Move Route above.
+- ✅ **Move All / Force Complete Move** — blocks Event Content at that
+  command until every targeted character's route finishes; same freeze
+  conditions as Set Move Route above (both halves now confirmed there).
+  `Scene::Map#forced_movement_done?` (the same gate Set Move Route's own
+  wait dispatch reads) checks the player route, every event's own
+  `:forced_route`, `@stuck_move_targets`, and every vehicle route at once —
+  Move All's own wait does not resume until all of them are simultaneously
+  clear, matching "every targeted character's route finishes," and a route
+  stuck on an impassable tile leaves its own entry non-empty forever the
+  same way Set Move Route's already-confirmed hang does.
 - **Autorun** — blocks hero control (unlike Parallel Process); runs to
   completion even if its own appearance condition goes false mid-run,
   *including across a map transfer*; only one Autorun engine-wide at a time,
@@ -4157,17 +4164,45 @@ Everything below is unverified against the codebase.
   block-and-retry shape `:message`/`:choice`/`:number` already use) and a
   shown message window's own display priority interacting with an unrelated
   parallel process's battle opening concurrently.
-- **Vehicles** — an unset vehicle defaults to map id 0, (0,0); Small/Large
-  Ship aren't hardcoded to water, their passability follows the terrain
-  table's boat/ship-pass flags like any other vehicle rule; ✅ an airship
-  can't land on a tile a map event currently occupies (now fixed — see the
-  "Party / Actor / Vehicle" section under "Full-site sweep" below); airships
-  get no random encounters by default (**confirmed already correct**, same
-  section); hero-targeted Set Move Route commands (Dash,
-  Jump, etc.) still run normally while mounted and must be manually guarded
-  off; **setting a map event's trigger to Parallel Process and running "Set
-  Vehicle Position" from it crashes RPG_RT** (any other trigger type does
-  not) — an authentic engine crash, probably not worth reproducing; ✅ a
+- **Vehicles** — ✅ an unset vehicle defaults to map id 0, (0,0) (already
+  independently confirmed under "Full-site sweep" below — `Game::Vehicle
+  #initialize` defaults `map_id`/`x`/`y` to 0); ✅ Small/Large Ship aren't
+  hardcoded to water, their passability follows the terrain table's
+  boat/ship-pass flags like any other vehicle rule (`Scene::Map
+  #vehicle_passable?` reads `row.boat_pass`/`row.ship_pass`/
+  `row.airship_pass` straight off the per-tile terrain row, matching
+  EasyRPG's `Game_Map::IsPassableTile`); ✅ an airship can't land on a tile a
+  map event currently occupies (now fixed — see the "Party / Actor /
+  Vehicle" section under "Full-site sweep" below); airships get no random
+  encounters by default (**confirmed already correct**, same section). **A
+  real bug, now fixed: "hero-targeted Set Move Route commands (Dash, Jump,
+  etc.) still run normally while mounted" was true, but for the wrong
+  reason.** The commands weren't refused while boarded (`apply_move_request`'s
+  `MOVE_TARGET_PLAYER` case never checked `@state.boarded?`, matching the
+  claim on its face), but `#step_player_route` then always stepped the
+  route against the plain on-foot `@world` regardless of `@state.boarded?`
+  — never the ridden vehicle's own `boat_pass`/`ship_pass`/`airship_pass`
+  clearance the same command already gets under ordinary input movement
+  (`#try_move` already branches to `#vehicle_passable?` once boarded).
+  EasyRPG's `Game_Player::MakeWay` (`src/game_character.cpp`/
+  `game_player.cpp`) unconditionally delegates to the ridden vehicle's own
+  `MakeWay` whenever `IsAboard()`, with no separate branch for move-route-
+  driven movement vs. ordinary input — so a boarded hero's own Set Move
+  Route (Dash, Jump, plain movement, all alike) was checked against on-foot
+  chipset passability instead, letting a route sail/fly through terrain the
+  ridden vehicle itself could never cross, or stall on terrain it could.
+  Fixed by having `#step_player_route` pick `@vehicle_worlds[@state.boarded]`
+  instead of the unconditional `@world` whenever boarded — the existing
+  `VehicleWorld` (already used by `#force_vehicle_route` for a *vehicle*-
+  targeted Set Move Route) needed no changes, since it already accepts an
+  arbitrary `Game::Character` mirror. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a boarded boat's own hero-targeted
+  Set Move Route on a `boat_pass: false` map stays put instead of sailing
+  through), confirmed to fail against the pre-fix code (`[1, 1]` instead of
+  the correct `[0, 1]`) before the fix. **Setting a map event's trigger to
+  Parallel Process and running "Set Vehicle Position" from it crashes
+  RPG_RT** (any other trigger type does not) — an authentic engine crash,
+  probably not worth reproducing; ✅ a
   vehicle's x/y/screen-x/y can be read via variable ops from a different map
   than it currently occupies — `Game::Interpreter#event_operand`'s Control
   Variables "character position" operand (type 6) recognised the hero (ref
@@ -4209,10 +4244,21 @@ Everything below is unverified against the codebase.
   tile would; one parked on a different map reads nil again; a boarded one
   reports the identical screen position the hero riding it does), confirmed
   to fail against the pre-fix code before the fix.
-- **Battle Event** — separate command set from Map/Common events entirely;
+- ✅ **Battle Event** — separate command set from Map/Common events
+  entirely (`Game::Interpreter`'s battle-only opcodes — `CHANGE_MONSTER_HP`/
+  `MP`/`CONDITION`, `SHOW_HIDDEN_MONSTER`, `FORCE_FLEE`, `TERMINATE_BATTLE`,
+  etc. — are no-ops outside battle, and condition evaluation is its own
+  `Game::BattlePage` module, structurally distinct from `Game::EventPage`);
   ✅ no Pictures on the battle screen (see the fuller writeup under the
-  **Picture** bullet directly below — the same fix); Parallel Process can't
-  run in battle; no further pages run once battle ends.
+  **Picture** bullet directly below — the same fix); ✅ Parallel Process
+  can't run in battle (`@battle_ui`'s mere presence pauses `#step_parallels`
+  for every process except the one that itself opened the fight, kept alive
+  only so it can observe the result — deliberate, extensively commented);
+  ✅ no further pages run once battle ends (`#leave_battle_event_phase`
+  deliberately chains one more matching page *before* checking
+  `battle.finished?`, per its own comment about handing the turn to the
+  result window when the page itself decided the fight — no page runs after
+  the result screen opens).
 - **Picture** — ✅ **none show on Menu/Battle screens — the Menu half was
   already correct, the Battle half was a real gap, now fixed.**
   `Scene::Base#build_field_background` already paints an opaque panel above
@@ -4239,12 +4285,33 @@ Everything below is unverified against the codebase.
   check (a shown picture draws normally before the encounter, is hidden and
   stops compositing the instant the battle screen is up, and reappears the
   instant the fight ends), confirmed to fail against the pre-fix code
-  before the fix. Still open: halted entirely while a text window is up
-  (separate from the battle/menu case — a message window is not a scene
-  push, so a different mechanism would be needed, and this project's own
-  "Picture commands... suppressed while a message window is open" fix above
-  only stops new Show/Move/Erase Picture *commands* from taking effect, not
-  an already-shown picture's own visibility); **changing maps clears all
+  before the fix. ✅ **Checked and already correct: an already-shown
+  picture does *not* need to be hidden while a text window is up.** This
+  bullet used to list that as still open, reasoning by analogy with the
+  Battle case above — but the analogy doesn't hold: unlike Battle (a
+  genuinely separate rendering path whose backdrop sits *below*
+  `@picture_sprite`'s z, hence the explicit `@battle_ui` gate just
+  described) and Menu (an opaque panel painted *above* the picture layer,
+  per `Scene::Base#build_field_background`), a message window is not a
+  scene push and does not blank the screen at all — it is itself a
+  `Window` at z 300, already sitting above the picture layer's z 250 (see
+  `#setup_pictures`). Verified against EasyRPG Player's own C++
+  source rather than left as an assumption: `Sprite_Picture::Draw`
+  (`src/sprite_picture.cpp`) carries no message-window check, and
+  `src/drawable.h`'s z-order enum puts `Priority_PictureOld` (120) below
+  `Priority_Window` (130) — RPG_RT lets an open picture keep compositing
+  and animating under the message window exactly like it does under any
+  other window, relying on ordinary z-order occlusion rather than an
+  explicit hide. This project's own `#render` already reflects that: the
+  picture layer has no `@message` check and never has, so nothing needed
+  fixing. (The "Picture commands... suppressed while a message window is
+  open" fix mentioned above is a separate, correct behaviour — it only
+  stops new Show/Move/Erase Picture *commands* from taking effect while a
+  message is up, which is unrelated to whether an already-shown picture
+  keeps rendering.) Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (a picture shown and mid-move stays visible, keeps compositing every
+  frame, and keeps advancing its move while a message window is open, then
+  is still visible once the window closes). **changing maps clears all
   Pictures — except via Teleport or Escape (skill/item), which don't clear
   them**; semi-transparent (1-99%) opacity costs noticeably more than fully
   opaque/transparent; Erase Picture is instant (no fade) — a gradual fade
@@ -5335,10 +5402,17 @@ not yet verified:
   viewport.
 - Erase Picture is instant; a fade needs Move Picture to the same
   position at 0% opacity over a duration instead.
-- "Hero's screen X/Y" is the **feet position**, not center, and is a
+- ✅ **"Hero's screen X/Y" is the feet position, not center, and is a
   one-shot snapshot at read time, not a live binding — tracking the hero
   with a picture (spotlight, flashlight) requires re-reading and
-  re-issuing Move Picture every tick.
+  re-issuing Move Picture every tick.** `Scene::Map#character_screen_position`
+  returns `x: pixel_x - cam_x + TILE/2` (a half-tile offset, center) but
+  `y: pixel_y - cam_y + TILE` (a *full* tile offset, bottom/feet) — an
+  intentional asymmetry the surrounding code comment already attributes to
+  EasyRPG's own `GetScreenX`/`GetScreenY`. `Interpreter#screen_operand` is
+  only ever reached while executing a Control Variables command — it
+  computes and stores a plain value into the target variable once, with no
+  persistent binding of any kind.
 
 **Screen effects (Flash / Shake / Tone / Erase Screen / Weather)**
 - Screen Flash and Character Flash: only one of each active at a time
@@ -5608,11 +5682,12 @@ not yet verified:
   #do_play_memorized_bgm` — one shared `same_file_already_playing` idiom,
   three call sites, all now re-applying the command's own volume live
   instead of leaving whatever the interrupted track happened to be at
-  alone. Tempo/pan remain out of reach of this backend: SDL_mixer has no
-  live pitch control for a stream already playing (only a freshly started
-  one, `src/sdl_audio.cxx`'s own header comment), and pan/balance was never
-  wired as a Play BGM parameter at all, a separate, larger gap left
-  unaddressed here. Covered by two new `scripts/rpg2k_logic_check.rb`
+  alone. Tempo remains out of reach of this backend: SDL_mixer has no live
+  pitch control for a stream already playing (only a freshly started one,
+  `src/sdl_audio.cxx`'s own header comment); pan/balance was never wired as a
+  Play BGM parameter at all as of this paragraph — see the ✅ addendum at the
+  end of this bullet, where that gap is closed. Covered by two new
+  `scripts/rpg2k_logic_check.rb`
   checks (a same-file Play BGM re-trigger calls `bgm_volume` with the new
   command's volume instead of `bgm_play`; a Play Memorized BGM replaying a
   track that never stopped re-applies the memorized volume, distinguishing
@@ -5649,7 +5724,31 @@ not yet verified:
   `scripts/rpg2k_logic_check.rb` check (Play BGM "town", Memorize BGM, Play
   Memorized BGM with nothing else played in between reaches the backend
   once, not twice), confirmed to fail against the pre-fix code (`["town",
-  "town"]`) before the fix.
+  "town"]`) before the fix. ✅ **Pan/balance is now wired too — the gap
+  flagged above.** `cmd.param(3)` went unread in `#play_audio`'s `:bgm`
+  branch, and `RgssAudioBackend` had no pan slot to read it into at all.
+  SDL_mixer has no per-`Mix_Music` panning API either, but unlike tempo this
+  one has a real documented workaround: `Mix_SetPanning(MIX_CHANNEL_POST,
+  left, right)` registers a postmix effect on the *final* mixed stream, the
+  one place a still-playing music track can be reached at all (at the cost of
+  also panning BGS/SE, since they land in the same final mix — there is no
+  channel-scoped alternative for music). Added a `bgm_pan` slot to
+  `RgssAudioBackend` (`include/rgss_audio.hxx`), implemented in
+  `src/sdl_audio.cxx` on that primitive (RPG2000's own Play BGM balance scale
+  — 0 full left, 50 centre, 100 full right — mapped onto SDL's 0..255 per
+  channel), with a matching `_bgm_pan` forwarder in `mruby-rgss/src/audio.cxx`
+  and a public `RGSS::Audio.bgm_pan(pan)` wrapper in
+  `mruby-rgss/mrblib/lib.rb`, mirroring `bgm_volume`'s shape exactly.
+  `#play_audio`'s `:bgm` branch now reads `cmd.param(3)` (defaulting to 50
+  when the command carries a shorter list) and calls `bgm_pan` on every Play
+  BGM regardless of the same-file-no-restart branch above, since panning has
+  no per-track state to restart in the first place. Covered by a new
+  `mruby-rgss/test/test.rb` check (`_bgm_pan` is a safe no-op with no backend
+  installed, matching every other native Audio primitive) and a new
+  `scripts/rpg2k_logic_check.rb` check (a Play BGM with an explicit balance
+  reaches `bgm_pan` with that value; an omitted balance defaults to 50),
+  confirmed to fail against the pre-fix code (`NoMethodError`/no `bgm_pan`
+  call at all) before the fix.
 - ✅ **A map's own configured BGM now actually auto-plays, on the initial map
   load and every Transfer Player alike — a genuine, previously-undocumented
   gap found while cross-checking this same BGM cluster for anything else the
@@ -5967,8 +6066,14 @@ not yet verified:
   labels has nothing to bleed into; `#append_choice_lines` does not even
   thread a `:speeds` list into the `Game::TextReveal` it builds. No code
   change needed here beyond `\s[]` itself existing.
-- `\>` (instant display) only affects the current line — must be repeated
-  per line for a fully-instant multi-line message.
+- ✅ **`\>` (instant display) only affects the current line — must be
+  repeated per line for a fully-instant multi-line message.**
+  `Scene::Map#open_message` calls `Game::Message.scan` once per line,
+  independently. Inside `Message.scan`, `instant_start` is a local reset to
+  `nil` on every call, and an unclosed `\>` at the point a line's text runs
+  out is closed there and then (`instants << [instant_start, count] if
+  instant_start`) — it never carries an open span into the next line's own
+  independent scan.
 - ✅ **`\<`, `\$`, `\^` each cost one character's worth of display time even
   though they render nothing; `\c[]`/`\s[]` cost none.** `Game::Message.scan`
   (`mruby-rpg2k/mrblib/game.rb`) now advances its `count` reveal-coordinate by
@@ -6975,9 +7080,22 @@ not yet verified:
   battle-event page. Matches Terminate Battle in satisfying neither the
   Win/Escape/Defeat handler branch — an unlabeled third outcome the event
   resumes past.
-- Common events (including Parallel Process ones) **never run during
+- ✅ **Common events (including Parallel Process ones) never run during
   battle**, even if their trigger switch flips mid-battle — execution is
-  deferred until control returns to the map.
+  deferred until control returns to the map. `Scene::Map#parallels_paused?`
+  returns true whenever `@battle_ui` is open, and `#update` gates the
+  per-frame `#step_parallels` call on it — no background Parallel Process
+  common event advances at all while a battle is on screen (the code
+  comment at `#step_battle_owner_parallel` already cites this exact finding
+  by name). "Deferred, not lost" holds too: `#update` calls
+  `#refresh_event_pages` every frame unconditionally, *before* the
+  battle-pause check, so a trigger switch flipped mid-battle is already
+  re-evaluated and ready the instant `#step_parallels` resumes after the
+  fight ends. The one carve-out — the specific parallel process that
+  itself *opened* the battle keeps advancing via
+  `#step_battle_owner_parallel`, needed to drive the fight it launched — is
+  consistent with, not a counterexample to, the rule about *other* common
+  events.
 - ✅ **Bare-hand attacks carry no elemental attribute by default; an
   element's effect-rate at 0% deals exactly zero damage (not healing).**
   Confirmed already correct rather than left as an open claim:
@@ -7165,10 +7283,16 @@ not yet verified:
   the new key.
 
 **Party / Actor / Vehicle**
-- Party is hard-capped at 4; adding a 5th via Change Party Member is a
+- ✅ **Party is hard-capped at 4; adding a 5th via Change Party Member is a
   silent no-op. Removing a member preserves equipment/level/EXP/HP/status;
-  re-adding a KO'd member keeps them KO'd. Only the party **leader's**
-  sprite is ever drawn on the field, regardless of party size.
+  re-adding a KO'd member keeps them KO'd. Only the party leader's sprite
+  is ever drawn on the field, regardless of party size.** Same facts as the
+  already-confirmed "Hero & party" bullet above (`Game::Party::MAX_SIZE =
+  4`, `#add_actor`/`#remove_actor`, `#leader`) plus the cap itself, which
+  `#add_actor` already enforces as a silent no-op past `MAX_SIZE`. A
+  repo-wide check for any `follower`/multi-member field-sprite drawing
+  turns up nothing — the only rendered field sprite is driven off
+  `@state.party.leader`, confirming there is no follower rendering at all.
 - ✅ **Empty party doesn't itself Game Over, but battling with one is instant
   defeat; an all-KO'd party reads as an instant defeat the same way.** (An
   unrecoverable input-blocking *state* lock — every member asleep/paralysed
@@ -7636,7 +7760,7 @@ above are repeated here)
   name, including two certain item drops from a two-member troop; a blank
   database falls back to the composed English for all three), both
   confirmed to fail against the pre-fix code before the fix.
-- **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
+- ✅ **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
   but free if placed in a shop's own buy list — confirmed already
   correct**, all three facts, no code change needed. `Game::Shop#sell_price`
   (`mruby-rpg2k/mrblib/game.rb`) is `price(id) / 2`, plain Integer division
@@ -7941,7 +8065,7 @@ above are repeated here)
   feeds that index straight into the same `draw_system_text` /
   `blend_text` path an ordinary `\c[n]` run uses — one palette, one lookup,
   for both.
-- **Call Event invoked from an Auto-Start parent runs the called content
+- ✅ **Call Event invoked from an Auto-Start parent runs the called content
   under Auto-Start semantics (blocks input) even if the called common
   event's own configured trigger is Parallel Process; Call Event always
   bypasses the target's own condition-switch state entirely — confirmed

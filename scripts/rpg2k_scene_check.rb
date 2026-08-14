@@ -160,6 +160,7 @@ module RGSS
     def self.reset_bgm
       @bgm_calls = []
       @bgm_volume_calls = []
+      @bgm_pan_calls = []
       @bgm_fade_calls = []
       @me_calls = []
       @me_stop_calls = 0
@@ -169,6 +170,11 @@ module RGSS
     # Scene::Map#play_bgm), so the two checks stay distinguishable.
     class << self; attr_accessor :bgm_volume_calls; end
     def self.bgm_volume(v); (@bgm_volume_calls ||= []) << v; end
+    # Recorded separately again: the balance/pan re-apply that now
+    # accompanies every Play BGM command (see
+    # Game::Interpreter#play_audio's :bgm branch).
+    class << self; attr_accessor :bgm_pan_calls; end
+    def self.bgm_pan(v); (@bgm_pan_calls ||= []) << v; end
     # Record bgm_fade calls (the fade-length ms) so a check can assert one
     # fired -- e.g. the End Game confirmation's Game_System::BgmFade(400).
     class << self; attr_accessor :bgm_fade_calls; end
@@ -4419,6 +4425,50 @@ check 'a shown picture renders through the scene and its move advances' do
   eq 60, st.pictures[1].y, 'the picture reached its target'
 end
 
+# Unlike the battle screen (a genuinely separate scene whose own backdrop
+# sits *below* @picture_sprite's z, needing an explicit hide -- see "pictures
+# are hidden while the battle screen is up" above) and the Menu screen (an
+# opaque panel painted *above* the picture layer, per Scene::Base
+# #build_field_background), a message window is not a scene push and does not
+# blank the screen -- it is itself a z=300 Window sitting above the z=250
+# picture layer (see the "below the message window" assertion just above).
+# RPG_RT's own Draw() carries no message-window check for pictures either
+# (verified against EasyRPG Player's Sprite_Picture::Draw and Scene_Map --
+# `Priority_PictureOld` sits below `Priority_Window` in src/drawable.h, and
+# neither file gates picture visibility on message state), so an already-shown
+# picture keeps compositing and animating under an open message window exactly
+# like it does under any other window; the window's own z-order is what covers
+# it, the same way it covers the map tiles beneath it.
+check 'a shown picture keeps rendering and moving while a message window is open' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # autostart
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  st.move_picture(1, 160, 60, 200, 128, 100, 100, 100, 100, 6)
+  sprite = scene.instance_variable_get(:@picture_sprite)
+
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'the message window opened'
+  ok sprite.visible, 'the picture layer is not hidden while the message window is up'
+  bmp = scene.instance_variable_get(:@picture_bmp)
+  bmp.clear_stretch_calls
+  scene.update
+  eq 1, bmp.stretch_calls.size, 'the picture still composites every frame under the message window'
+  ok st.pictures_moving?, 'the picture keeps advancing its move while the message window is up'
+
+  # Complete the reveal, then dismiss, the same two-press sequence the
+  # "types out gradually" check above uses.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'the message window closed'
+  ok sprite.visible, 'the picture layer is still visible once the message window closes'
+end
+
 check 'pictures composite in ascending id order, independent of show order' do
   # yado.tk: 50 concurrent picture slots, higher id always draws on top,
   # independent of show order. Shown here in the opposite order (2 then 1) so
@@ -5883,6 +5933,42 @@ check "a boat's move route is blocked by terrain the same way ordinary sailing i
   boat.y = 1
   20.times { scene.update }
   eq 0, boat.x, 'terrain blocked it before it ever moved'
+end
+
+# EasyRPG's own Game_Player::MakeWay (src/game_player.cpp) unconditionally
+# delegates to the ridden vehicle's own MakeWay whenever IsAboard(), with no
+# separate branch for move-route-driven movement vs. ordinary input
+# movement -- #try_move (the input path) already reads #vehicle_passable?
+# once boarded (see the boat/below-characters-event checks above), but
+# #step_player_route used to always step the player's route mirror against
+# the plain on-foot @world regardless of @state.boarded?, so a boarded
+# hero's own Set Move Route (Dash, Jump, plain movement, all alike) checked
+# on-foot chipset passability instead of the ridden vehicle's own
+# boat_pass/ship_pass/airship_pass clearance.
+check "a boarded hero's own Set Move Route respects the ridden vehicle's " \
+      'passability, not on-foot' do
+  # boat_pass left false (the default): the whole map is unsailable for the
+  # boat, exactly like "a boat's move route is blocked by terrain the same
+  # way ordinary sailing is" above -- but every tile is still ordinarily
+  # walkable on foot, so the pre-fix bug (checking on-foot passability while
+  # boarded) would have let this route sail through anyway.
+  scene = new_scene({}, player: [0, 1])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat in place (same tile)
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat'
+  route = Game::MoveRoute.new([Game::MoveCommand.new(R::MOVE_RIGHT)],
+                              repeat: false, skippable: true)
+  scene.send(:start_player_route, route, 8)
+  20.times { scene.update }
+  eq [0, 1], [st.x, st.y],
+     "the boarded hero's own Set Move Route must not sail where the boat itself " \
+     "can't -- ended at (#{st.x}, #{st.y})"
 end
 
 check 'a Move Route request targeting a currently-ridden vehicle is ignored' do

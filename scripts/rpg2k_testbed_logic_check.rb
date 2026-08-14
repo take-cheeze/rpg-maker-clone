@@ -50,6 +50,7 @@ module RGSS
     class << self
       def bgm_play(*); end
       def bgm_volume(*); end
+      def bgm_pan(*); end
       def bgm_fade(*); end
       def se_play(*); end
     end

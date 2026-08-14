@@ -1098,6 +1098,7 @@ assert "RGSS::Audio primitives are inert without a backend" do
   # executable, src/sdl_audio.cxx), so every native primitive is a safe no-op.
   assert_nil RGSS::Audio._bgm_play("nope", 80, 90)
   assert_nil RGSS::Audio._bgm_volume(50)
+  assert_nil RGSS::Audio._bgm_pan(50)
   assert_nil RGSS::Audio._bgm_stop
   assert_nil RGSS::Audio._bgm_fade(100)
   assert_equal 0, RGSS::Audio._bgm_pos
