@@ -2888,7 +2888,29 @@ class RPG2k
           when :key_input then drive_key_input
           when :inn then drive_inn
           when :shop then drive_shop
-          when :battle then drive_battle
+          when :battle
+            drive_battle
+            # yado.tk 09_bug/016_ikinari_end + 017_heiretu_totyu_end/hei_mukou:
+            # a Battle "Lose: Branch" handler's own recovery (a Full Heal right
+            # after the encounter) races a still-running Parallel Process's own
+            # Game Over check -- #finish_battle already clears @battle_ui (so
+            # #parallels_paused? no longer holds parallel processes back) and
+            # calls #resume_battle *before* this frame's own #step_parallels has
+            # any more chances to run this frame, but #resume_battle only flips
+            # the interpreter off its :battle wait; nothing then drives it any
+            # further until #update's *next* frame -- one whole frame during
+            # which the party sits at 0 HP, unrevived, for the very next
+            # #step_parallels (now unpaused) to observe and fire Game Over from,
+            # before the branch's own Full Heal/Change Condition ever runs.
+            # Matches the :wait branch's own "Wait 0.0 sec costs one frame, not
+            # two" reasoning below: once the interpreter is off the :battle wait,
+            # spend the rest of this frame's own step budget on it immediately,
+            # so a Lose branch with no Wait/Show Text before its recovery reaches
+            # it before this frame's #step_parallels window closes, not after.
+            if @interpreter.running? && !@interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :wait
             # Same implicit-Proceed-With-Movement rule as :message above, for a
             # Wait command: the wait timer does not even start counting down
