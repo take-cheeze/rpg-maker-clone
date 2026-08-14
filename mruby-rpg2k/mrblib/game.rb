@@ -6954,7 +6954,14 @@ module Game
     # `100 - (100 - base) * (srcAgi + tgtAgi) / (2 * srcAgi)` — so a nimbler
     # target dodges more. Clamped to 0..100. Only consulted when the fight has
     # accuracy enabled (see #initialize).
+    #
+    # A target carrying an "Avoid Attacks" (RPG2003) state dodges a basic
+    # attack unconditionally, before any other term -- EasyRPG's
+    # `CalcNormalAttackToHit` (algo.cpp) checks `target.EvadesAllPhysicalAttacks()`
+    # first and returns 0 immediately, ahead of even the restricted-target
+    # "always hits" rule and a 必中 attacker's own evasion-ignoring branch.
     def to_hit(attacker, target)
+      return 0 if evades_all_physical?(target)
       base = attacker.hit_rate || 90
       # 必中: a weapon flagged `ignore_evasion` skips the agility term entirely —
       # RPG_RT's `CalcNormalAttackToHit` returns before it applies evasion for
@@ -6978,6 +6985,17 @@ module Game
           Game.clamp(agi_adjusted, 0, 100)
         end
       raw * hit_modifier(attacker) / 100
+    end
+
+    # Whether any state currently afflicting `b` is flagged "Avoid Attacks"
+    # (RPG2003 state field 36, `avoid_attacks` in `mruby-lcf/mrblib/schema.rb`)
+    # -- EasyRPG's `Game_Battler::EvadesAllPhysicalAttacks` (game_battler.cpp),
+    # scanning every inflicted state the same way `#hit_modifier` does just
+    # below. Parsed but never read anywhere in this file before this fix, so a
+    # state built for this exact purpose (RPG2000's closest thing to a
+    # guaranteed-dodge "Blink"/intangibility status) did nothing at all.
+    def evades_all_physical?(b)
+      (b.states || []).any? { |sid| state_field(state_def(sid), :avoid_attacks) }
     end
 
     # How much the attacker's own statuses cut its accuracy: the **lowest**

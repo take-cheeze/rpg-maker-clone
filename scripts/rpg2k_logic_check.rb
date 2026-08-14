@@ -2713,7 +2713,13 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # nil (every pre-existing positional FakeStateDef.new
                           # call that stops short of here) reads as 0/LOSE via
                           # #state_field, the schema's own default.
-                          :hp_change_type, :sp_change_type)
+                          :hp_change_type, :sp_change_type,
+                          # ... and the RPG2003 "Avoid Attacks" flag (state field
+                          # 36, `avoid_attacks`): a battler carrying it dodges
+                          # every basic attack unconditionally. Appended last,
+                          # same reason again -- nil reads as falsy via
+                          # #state_field, matching the schema's own false default.
+                          :avoid_attacks)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -2726,7 +2732,8 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                affect_type: 2, affect_attack: false, affect_defense: false,
                affect_spirit: false, affect_agility: false,
                hp_change_type: Game::States::CHANGE_TYPE_LOSE,
-               sp_change_type: Game::States::CHANGE_TYPE_LOSE)
+               sp_change_type: Game::States::CHANGE_TYPE_LOSE,
+               avoid_attacks: false)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
@@ -2735,7 +2742,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                    hp_map_steps, hp_map_val, sp_map_steps, sp_map_val,
                    affect_type, affect_attack, affect_defense,
                    affect_spirit, affect_agility,
-                   hp_change_type, sp_change_type)
+                   hp_change_type, sp_change_type, avoid_attacks)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -9474,6 +9481,33 @@ check 'battle: a blinding state cuts its victim\'s accuracy by reduce_hit_ratio'
   # Several states take the *lowest* ratio, not the product of them.
   blind.states = [8, 9]
   eq 18, bat.send(:to_hit, blind, foe), 'the worst state wins (20%, not 50%*20%)'
+end
+
+check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unconditionally' do
+  # Parsed (mruby-lcf/mrblib/schema.rb state field 36, avoid_attacks) but never
+  # read anywhere in Game::Battle before this fix -- EasyRPG's
+  # Game_Battler::EvadesAllPhysicalAttacks (game_battler.cpp) forces
+  # CalcNormalAttackToHit to 0 the instant the target carries one, ahead of
+  # every other term, so the state did nothing at all here.
+  states = { 12 => fake_state(avoid_attacks: true), 13 => fake_state }
+  attacker = combatant('Attacker', 20, 0, 10, 100) # a fast, hard-hitting attacker
+  dodger = combatant('Dodger', 0, 0, 1, 100)        # slow, so agi alone would favour a hit
+  dodger.states = [12]
+  plain = combatant('Plain', 0, 0, 1, 100)
+  bat = Game::Battle.new([attacker], [dodger, plain], Game::Rng.new(1), states,
+                         false, false, true)          # accuracy on
+  eq 0, bat.send(:to_hit, attacker, dodger),
+     'the state forces a flat 0% chance, agility and hit rate notwithstanding'
+  ok bat.send(:to_hit, attacker, plain) > 0, 'an unafflicted target is unaffected'
+
+  # A 必中 (evasion-ignoring) attacker does not bypass this: real RPG_RT checks
+  # avoid_attacks before it ever reaches the ignores_evasion branch.
+  attacker.ignores_evasion = true
+  eq 0, bat.send(:to_hit, attacker, dodger), 'even a 必中 attacker cannot bypass it'
+
+  # Carrying an unrelated, unflagged state alongside it changes nothing.
+  dodger.states = [12, 13]
+  eq 0, bat.send(:to_hit, attacker, dodger), 'still dodges with a second, unrelated state'
 end
 
 check 'battle: a normal attack can shake a state off its target' do
