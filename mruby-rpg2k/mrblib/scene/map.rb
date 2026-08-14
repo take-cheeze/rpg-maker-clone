@@ -3222,6 +3222,30 @@ class RPG2k
         (f && f >= 1 && f <= 8) ? f : nil
       end
 
+      # Whether an unridden boat/ship (always) or airship (only when
+      # `block_airship` is true) is parked on the current map's (x, y) --
+      # verified against EasyRPG Player's actual C++ source rather than
+      # guessed at: `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) blocks
+      # every character type, the player included, on a Boat/Ship's own tile,
+      # but only checks the Airship when `self.GetType() != Game_Character::
+      # Player` -- an unridden airship is a walkable, non-blocking tile for
+      # the party on foot, but still a solid obstacle for every other
+      # character (a map event's autonomous/custom-route movement, or the
+      # player's own forced Set Move Route mirror, `@player_char`). A vehicle
+      # currently being ridden still counts here: it tracks the party's own
+      # tile every frame (`#follow_vehicle`), so this only ever blocks a
+      # *different* character trying to step onto the party's own tile, never
+      # the ridden vehicle's own movement (driven through the entirely
+      # separate `#vehicle_passable?`/`VehicleWorld`, never through this
+      # method or `#char_passable?`/`#passable?`).
+      def vehicle_blocks?(x, y, block_airship:)
+        types = block_airship ? Game::Vehicle::TYPES : %i[boat ship]
+        types.any? do |type|
+          v = @state.vehicle(type)
+          v && v.placed? && v.map_id == @state.map_id && v.x == x && v.y == y
+        end
+      end
+
       # Collision test for an event stepping one tile in `dir`: in bounds,
       # passable per the chipset, and not onto the hero or another event that
       # shares its collision layer. A "through" character ignores all of this.
@@ -3252,6 +3276,7 @@ class RPG2k
         end
         blocker = @event_tiles[[nx, ny]]
         return false if blocker && (blocker[:layer] == character.layer || blocker[:overlap_forbidden])
+        return false if vehicle_blocks?(nx, ny, block_airship: !character.equal?(@player_char))
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(character.x, character.y),
                                  @map.upper(character.x, character.y), dir) &&
@@ -3285,6 +3310,7 @@ class RPG2k
         end
         blocker = @event_tiles[[x, y]]
         return false if blocker && (blocker[:layer] == character.layer || blocker[:overlap_forbidden])
+        return false if vehicle_blocks?(x, y, block_airship: !character.equal?(@player_char))
         return true if @chipset.nil?
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
@@ -7982,6 +8008,11 @@ class RPG2k
         # unless that event's own "doesn't overlap" flag forces the block
         # regardless of layer (LCF page field 35, #overlap_forbidden).
         return false if blocker && (blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden])
+        # An unridden boat/ship blocks the hero on foot exactly like a
+        # same-layer event would (see #vehicle_blocks?); an unridden airship
+        # never does, on foot or otherwise (block_airship: false — the hero
+        # is always "the player" for this rule).
+        return false if vehicle_blocks?(x, y, block_airship: false)
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(@state.x, @state.y),
                                  @map.upper(@state.x, @state.y), dir) &&
