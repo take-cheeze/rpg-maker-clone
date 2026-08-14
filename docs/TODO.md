@@ -2647,8 +2647,42 @@ The work below is roughly ordered by the critical path to a walkable game
   frame by frame confirms the down arrow starts on, flips off at exactly
   the 20th frame, and swaps places with the up arrow once scrolled to the
   last slot.
-
-#### Assets & infrastructure
+  ✅ **The battle command/target/skill/item flow now plays system SE too --
+  the same class of gap the field menu and title screen already had fixed,
+  extended to a much larger interaction surface.** Confirmed against
+  EasyRPG's `Scene_Battle`/`Scene_Battle_Rpg2k` source (`AttackSelected`/
+  `DefendSelected`/`ItemSelected`/`SkillSelected`, `ProcessSceneAction
+  Command`/`EnemyTarget`/`Escape`, plus the already-confirmed generic
+  `Window_Selectable::Update()` for cursor moves, which the battle command/
+  target/skill/item windows all use identically to the field menu's own
+  lists): cursor movement on the command list, enemy-target list, skill
+  list, item list and ally-target list all play Cursor SE; confirming
+  Attack/Defend plays Decision immediately, confirming Skill/Item plays
+  Decision when the list has something to show and Buzzer instead when it
+  would open empty (this engine never opens an empty sub-menu at all, so
+  Buzzer plays at that front-loaded check instead of a later empty-list
+  confirm, same practical outcome); a skill the caster cannot afford plays
+  Buzzer rather than Decision and leaves the player on the list; every B
+  cancel (back a level, or re-commanding the previous actor) plays Cancel;
+  and Escape plays Decision on the attempt itself, a **dedicated** Escape SE
+  (not Decision) right before a successful flee ends the battle, and no SE
+  at all on a failed attempt (matching source exactly -- only the
+  escape_failure message plays there). **A deliberate, pre-existing
+  simplification worth flagging rather than silently porting around:** this
+  engine's B-on-the-first-actor's-command-list directly attempts Escape,
+  where genuine RPG2k instead reopens a separate Fight/Auto Battle/Escape
+  options window this engine has never modelled (`SelectPreviousActor()`'s
+  exact index-0 boundary behavior was not traced by the source read behind
+  this fix, so this is not a confirmed parity gap, just an unconfirmed one
+  worth someone eventually tracing if they pick up that options-window
+  question). Verified with the CRuby host-harness test approach (`RGSS::
+  Audio.se_calls`, the same mechanism the field-menu SE work's own tests
+  use) rather than a screen capture, for the same reliability reason as the
+  save-screen scroll arrows above -- covers the full command → skill →
+  target → cancel chain, an unaffordable-skill Buzzer, an empty-skill-list
+  Buzzer, and both the successful-escape and escape-forbidden paths. Also
+  visually sanity-checked with this engine's own build under Xvfb (no
+  exception, no crash resuming into the map).
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
   `Music/`/`Sound/`/`Audio/*`

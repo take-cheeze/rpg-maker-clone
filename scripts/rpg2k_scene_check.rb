@@ -254,7 +254,10 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                            airship_music: OpenStruct.new(file: 'AirBGM', volume: 80, pitch: 100),
                            cursor_se: OpenStruct.new(file: 'Cursor1', volume: 100, pitch: 100),
                            decision_se: OpenStruct.new(file: 'Decision1', volume: 100, pitch: 100),
-                           # The battle per-hit sounds (Scene::Map::DB_SE_FIELD).
+                           cancel_se: OpenStruct.new(file: 'Cancel1', volume: 100, pitch: 100),
+                           buzzer_se: OpenStruct.new(file: 'Buzzer1', volume: 100, pitch: 100),
+                           escape_se: OpenStruct.new(file: 'Escape1', volume: 100, pitch: 100),
+                           # The battle per-hit sounds (Scene::Base::DB_SE_FIELD).
                            enemy_damaged_se: OpenStruct.new(file: 'EnemyHit', volume: 100, pitch: 100),
                            actor_damaged_se: OpenStruct.new(file: 'ActorHit', volume: 100, pitch: 100),
                            dodge_se: OpenStruct.new(file: 'Dodge1', volume: 100, pitch: 100),
@@ -7275,6 +7278,94 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'ItemUse' }, 'the item SE played too'
 end
 
+# The battle command/target/skill/item flow's own system SE -- confirmed
+# against EasyRPG Player's source the same way the field menu and title
+# screen already were (Scene_Battle::AttackSelected/DefendSelected/
+# ItemSelected/SkillSelected, Window_Selectable::Update() for cursor moves,
+# ProcessSceneActionCommand/EnemyTarget/Escape for Cancel/Buzzer/Escape).
+check 'Enemy Encounter scene: the command/skill/target flow plays cursor, ' \
+      'decision and cancel SE' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleMagicParty.new)
+  ui = battle_to_command(scene)
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  eq 'Cursor1', RGSS::Audio.se_calls.last[0], 'moving the command cursor plays Cursor SE'
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::C) # open the (non-empty) skill list
+  eq :skill, ui[:phase]
+  eq 'Decision1', RGSS::Audio.se_calls.last[0], 'opening a non-empty skill list plays Decision SE'
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::C) # choose Fire (affordable) -> enemy target
+  eq :target, ui[:phase]
+  eq 'Decision1', RGSS::Audio.se_calls.last[0],
+     'choosing an affordable skill plays Decision SE again'
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::B) # cancel the target list
+  eq :skill, ui[:phase]
+  eq 'Cancel1', RGSS::Audio.se_calls.last[0], 'cancelling the target list plays Cancel SE'
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::B) # cancel the skill list
+  eq :command, ui[:phase]
+  eq 'Cancel1', RGSS::Audio.se_calls.last[0], 'cancelling the skill list plays Cancel SE too'
+end
+
+check 'Enemy Encounter scene: confirming an unaffordable skill plays Buzzer, ' \
+      'not Decision, and stays on the list' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  party = BattleMagicParty.new
+  party.actors.first.mp = 0 # Fire costs 3
+  st.instance_variable_set(:@party, party)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  eq :skill, ui[:phase]
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::C) # try Fire, can't afford it
+  eq :skill, ui[:phase], 'an unaffordable skill leaves the player on the list'
+  eq 'Buzzer1', RGSS::Audio.se_calls.last[0], 'and plays Buzzer instead of Decision'
+end
+
+# A party whose Hero knows no battle skill at all, so Skill's own list opens
+# empty -- Buzzer here mirrors real RPG_RT's own Buzzer on a Skill/Item
+# confirm that finds nothing usable (this engine instead never opens an empty
+# list, so the same Buzzer fires at the one point that outcome is known --
+# see #open_battle_skill's comment).
+class BattleNoSkillParty < BattleMagicParty
+  def battle_skills(_actor, _caster); []; end
+end
+
+check 'Enemy Encounter scene: opening Skill with nothing to cast plays Buzzer, ' \
+      'not Decision, and never opens the list' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleNoSkillParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::C)
+  eq :command, ui[:phase], 'no skill list opens'
+  eq 'Buzzer1', RGSS::Audio.se_calls.last[0], 'Buzzer plays instead of Decision'
+end
+
 # A party whose only battle item is a switch (type 10) one -- battle-usability
 # and #use_switch_item's own consumption are Game::Party logic covered by
 # scripts/rpg2k_logic_check.rb; this stub only has to hand the scene something
@@ -8827,7 +8918,8 @@ check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to
      'a blank database term still falls back to the composed English'
 end
 
-check 'Enemy Encounter scene: a successful Flee shows the database escape_success term' do
+check 'Enemy Encounter scene: a successful Flee shows the database escape_success term ' \
+      'and plays the dedicated Escape SE, not Decision' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic, escape_mode: 2)
@@ -8835,6 +8927,7 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   2.times { scene.update }
+  RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::B] # Flee
   scene.update
   RGSS::Input.triggered = []
@@ -8843,6 +8936,32 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
   texts = window_texts(ui[:result_win])
   ok texts.any? { |t| t.include?('Escaped!') },
      'fake_db leaves escape_success blank, so this is the composed English fallback'
+  # Decision plays first (attempting Escape at all is a confirm action), then
+  # the dedicated Escape SE right before the battle actually ends -- see
+  # #try_battle_escape's comment.
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Decision1' }, 'attempting escape plays Decision'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Escape1' },
+     'a successful escape also plays the dedicated Escape SE'
+end
+
+check 'Enemy Encounter scene: Escape forbidden (the default escape_mode 0) plays ' \
+      'Buzzer on B, not Escape, and the battle continues' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic) # default escape_mode: 0 -> allow_escape false
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  2.times { scene.update }
+  ui = scene.instance_variable_get(:@battle_ui)
+  eq :command, ui[:phase]
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :command, ui[:phase], 'the battle is not left -- escape stays refused'
+  eq 'Buzzer1', RGSS::Audio.se_calls.last[0],
+     'a disallowed escape attempt plays Buzzer, matching a disallowed Save/Continue elsewhere'
 end
 
 # Open a battle and run it up to the command phase, answering [scene, ui].
