@@ -5076,15 +5076,74 @@ module Game
   #   the target on the final frame. Applying the tint as an `RGSS::Viewport`
   #   tone is the native (C++) half still to come, so the tint does not yet draw.
   # * **Shake** (Shake Screen, 11050): a horizontal camera offset that oscillates
-  #   while active. `shake` starts a timed shake and `update` advances a float-
-  #   free triangle wave (mruby here has no `Math`), amplitude scaled by power
-  #   and rate by speed — an approximation of RPG_RT's shake. The scene reads
-  #   `shake_offset` and offsets the camera by it, so the shake *is* visible.
+  #   while active. `shake` starts a timed shake and `update` advances it with
+  #   a direct port of EasyRPG Player's own `Shake::NextPosition`/`Shake::Update`
+  #   (`src/shake.h`) rather than an approximation: a sine wave read off a
+  #   precomputed 256-entry table (`SIN256`, since mruby has no `Math` module to
+  #   call `sin` from directly) whose amplitude is `1 + 2 * power` — not just
+  #   `2 * power`, so even a nominal "power 0" shake still moves the view by
+  #   +-1px, one of the two facts this port fixed over the previous triangle-wave
+  #   guess — and whose per-frame *step* is separately capped at
+  #   `(speed * amplitude) / 8 + 1` off the previous frame's own position, the
+  #   other fixed fact (a smoothing clamp with no triangle-wave equivalent,
+  #   the other reason "power 0" no longer reads as flatly inert). The scene
+  #   reads `shake_offset` and offsets the camera by it, so the shake *is*
+  #   visible.
   #
   # `update` (called once per frame by the scene) advances both. Flash will join
   # the class the same way.
   class Screen
     NEUTRAL = 100 # a channel value that leaves the screen unchanged
+
+    # sin(i * PI / 128) for i in 0...256 -- the same 256-step phase wheel
+    # `Shake::NextPosition` (EasyRPG's `src/shake.h`) indexes with
+    # `(time_left * 4 * (speed + 2)) % 256`, precomputed since mruby has no
+    # `Math` module to call `sin` from at runtime.
+    SIN256 = [
+        0, 0.02454122852291229, 0.04906767432741801, 0.07356456359966743, 0.0980171403295606, 0.1224106751992162,
+        0.1467304744553617, 0.1709618887603012, 0.1950903220161282, 0.2191012401568698, 0.2429801799032639, 0.2667127574748984,
+        0.2902846772544623, 0.3136817403988915, 0.3368898533922201, 0.3598950365349881, 0.3826834323650898, 0.4052413140049899,
+        0.4275550934302821, 0.4496113296546065, 0.4713967368259976, 0.492898192229784, 0.5141027441932217, 0.5349976198870972,
+        0.5555702330196022, 0.5758081914178453, 0.5956993044924334, 0.6152315905806268, 0.6343932841636455, 0.6531728429537768,
+        0.6715589548470183, 0.6895405447370668, 0.7071067811865476, 0.7242470829514669, 0.7409511253549591, 0.7572088465064845,
+        0.773010453362737, 0.7883464276266062, 0.8032075314806448, 0.8175848131515837, 0.8314696123025452, 0.844853565249707,
+        0.8577286100002721, 0.8700869911087114, 0.8819212643483549, 0.8932243011955153, 0.9039892931234433, 0.9142097557035307,
+        0.9238795325112867, 0.9329927988347388, 0.9415440651830208, 0.9495281805930367, 0.9569403357322089, 0.9637760657954398,
+        0.970031253194544, 0.9757021300385286, 0.9807852804032304, 0.9852776423889412, 0.9891765099647809, 0.9924795345987101,
+        0.9951847266721969, 0.9972904566786902, 0.9987954562051724, 0.9996988186962042, 1, 0.9996988186962042,
+        0.9987954562051724, 0.9972904566786902, 0.9951847266721969, 0.9924795345987101, 0.9891765099647809, 0.9852776423889412,
+        0.9807852804032304, 0.9757021300385286, 0.970031253194544, 0.9637760657954398, 0.9569403357322089, 0.9495281805930367,
+        0.9415440651830208, 0.9329927988347388, 0.9238795325112867, 0.9142097557035307, 0.9039892931234434, 0.8932243011955152,
+        0.881921264348355, 0.8700869911087115, 0.8577286100002721, 0.8448535652497072, 0.8314696123025455, 0.8175848131515837,
+        0.8032075314806449, 0.7883464276266063, 0.7730104533627371, 0.7572088465064847, 0.7409511253549592, 0.7242470829514669,
+        0.7071067811865476, 0.6895405447370671, 0.6715589548470186, 0.6531728429537766, 0.6343932841636459, 0.6152315905806269,
+        0.5956993044924337, 0.5758081914178456, 0.5555702330196022, 0.534997619887097, 0.5141027441932218, 0.492898192229784,
+        0.4713967368259979, 0.4496113296546069, 0.4275550934302825, 0.4052413140049904, 0.3826834323650903, 0.359895036534988,
+        0.3368898533922206, 0.3136817403988914, 0.2902846772544624, 0.2667127574748985, 0.2429801799032641, 0.2191012401568704,
+        0.1950903220161286, 0.1709618887603018, 0.1467304744553623, 0.122410675199216, 0.09801714032956084, 0.0735645635996675,
+        0.04906767432741821, 0.02454122852291276, 0.0000000000000001224646799147353, -0.02454122852291251, -0.04906767432741797, -0.07356456359966708,
+        -0.09801714032956059, -0.1224106751992157, -0.1467304744553622, -0.1709618887603015, -0.1950903220161283, -0.219101240156869,
+        -0.2429801799032638, -0.2667127574748983, -0.2902846772544621, -0.3136817403988913, -0.3368898533922203, -0.3598950365349878,
+        -0.3826834323650897, -0.4052413140049902, -0.4275550934302819, -0.4496113296546067, -0.4713967368259976, -0.4928981922297839,
+        -0.5141027441932216, -0.5349976198870969, -0.555570233019602, -0.5758081914178453, -0.5956993044924332, -0.6152315905806267,
+        -0.6343932841636456, -0.6531728429537765, -0.6715589548470184, -0.6895405447370668, -0.7071067811865475, -0.7242470829514668,
+        -0.7409511253549589, -0.7572088465064842, -0.7730104533627367, -0.7883464276266059, -0.8032075314806448, -0.8175848131515836,
+        -0.8314696123025452, -0.8448535652497067, -0.857728610000272, -0.8700869911087113, -0.8819212643483549, -0.8932243011955152,
+        -0.9039892931234431, -0.9142097557035305, -0.9238795325112865, -0.9329927988347387, -0.9415440651830208, -0.9495281805930367,
+        -0.9569403357322088, -0.9637760657954398, -0.970031253194544, -0.9757021300385285, -0.9807852804032303, -0.9852776423889412,
+        -0.9891765099647809, -0.9924795345987101, -0.9951847266721969, -0.9972904566786902, -0.9987954562051724, -0.9996988186962042,
+        -1, -0.9996988186962042, -0.9987954562051724, -0.9972904566786902, -0.9951847266721969, -0.9924795345987101,
+        -0.9891765099647809, -0.9852776423889412, -0.9807852804032304, -0.9757021300385286, -0.970031253194544, -0.9637760657954399,
+        -0.9569403357322089, -0.9495281805930368, -0.9415440651830209, -0.932992798834739, -0.9238795325112868, -0.9142097557035309,
+        -0.9039892931234436, -0.8932243011955153, -0.8819212643483551, -0.8700869911087117, -0.8577286100002722, -0.8448535652497073,
+        -0.8314696123025456, -0.8175848131515839, -0.8032075314806453, -0.7883464276266061, -0.7730104533627369, -0.7572088465064851,
+        -0.7409511253549591, -0.7242470829514674, -0.707106781186548, -0.6895405447370672, -0.6715589548470189, -0.6531728429537771,
+        -0.6343932841636459, -0.6152315905806274, -0.5956993044924332, -0.5758081914178452, -0.5555702330196022, -0.5349976198870973,
+        -0.5141027441932219, -0.4928981922297843, -0.4713967368259979, -0.449611329654607, -0.4275550934302825, -0.4052413140049904,
+        -0.3826834323650904, -0.359895036534988, -0.33688985339222, -0.3136817403988915, -0.2902846772544625, -0.2667127574748986,
+        -0.2429801799032642, -0.2191012401568702, -0.1950903220161287, -0.1709618887603018, -0.1467304744553624, -0.122410675199216,
+        -0.09801714032956051, -0.07356456359966741, -0.04906767432741809, -0.02454122852291245,
+    ].freeze
 
     def initialize
       @r = @g = @b = @sat = NEUTRAL
@@ -5093,7 +5152,6 @@ module Game
       @shake_power = 0
       @shake_speed = 1
       @shake_frames = 0 # frames left in the current shake (0 = still)
-      @shake_phase = 0
       @shake_offset = 0
       @flash_r = @flash_g = @flash_b = 0
       @flash_power = 0 # peak strength of the current flash
@@ -5218,7 +5276,6 @@ module Game
     def shake(power, speed, frames)
       @shake_power = Game.clamp(power, 0, 9)
       @shake_speed = Game.clamp(speed, 1, 9)
-      @shake_phase = 0
       if frames <= 0
         @shake_frames = 0
         @shake_offset = 0
@@ -5354,6 +5411,11 @@ module Game
       @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target
     end
 
+    # Port of EasyRPG's `Shake::Update`/`Shake::NextPosition` (`src/shake.h`):
+    # `@shake_frames` is the same role as its `time_left` (already converted
+    # from tenths of a second to frames, see Interpreter#do_shake_screen), so
+    # this mirrors its decrement-then-sample structure exactly rather than
+    # re-deriving the timing separately.
     def update_shake
       if @shake_frames <= 0
         @shake_offset = 0
@@ -5364,8 +5426,15 @@ module Game
         @shake_offset = 0 # settle back to centre when the shake ends
         return
       end
-      @shake_phase += @shake_speed
-      @shake_offset = Screen.triangle_wave(@shake_phase, 16, @shake_power * 2)
+      amplitude = 1 + 2 * @shake_power
+      phase = (@shake_frames * 4 * (@shake_speed + 2)) % 256
+      newpos = (amplitude * SIN256[phase] * -1).to_i
+      # The step off the *previous* frame's own offset is separately capped,
+      # a smoothing rule distinct from the amplitude bound above -- without
+      # it a low-speed, high-power shake could otherwise jump between two far
+      # apart sine samples in a single frame.
+      cutoff = (@shake_speed * amplitude) / 8 + 1
+      @shake_offset = Game.clamp(newpos, @shake_offset - cutoff, @shake_offset + cutoff)
     end
 
     def update_flash
@@ -5392,20 +5461,6 @@ module Game
     # refinement.
     def pan_step_for(speed)
       2**(Game.clamp(speed, 1, 6) - 1)
-    end
-
-    # A symmetric triangle wave in [-amp, amp] over `period` phase units (float-
-    # free, so it runs on the mruby build without Math). 0 amplitude/period -> 0.
-    def self.triangle_wave(phase, period, amp)
-      return 0 if amp <= 0 || period <= 0
-      half = period / 2
-      half = 1 if half <= 0
-      p = phase % period
-      if p < half
-        -amp + (2 * amp * p) / half
-      else
-        amp - (2 * amp * (p - half)) / half
-      end
     end
   end
 
