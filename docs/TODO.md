@@ -4425,7 +4425,9 @@ not yet verified:
   same universal 2-tick hold, just from having only ever isolated it on a
   blank/Wait frame in practice. Fixed by changing `ANIM_CELL_FRAMES` from
   `3` to `2`; `ANIM_FALLBACK_FRAMES`/`ANIM_FLASH_FRAMES` (10 and 8 frames
-  respectively, independent constants) are untouched, and the fallback timed
+  respectively, independent constants) were left untouched by this fix —
+  `ANIM_FLASH_FRAMES`'s own 8 turned out to be wrong too, see the ✅ bullet
+  directly below — and the fallback timed
   wait (`ANIM_FALLBACK_FRAMES * ANIM_CELL_FRAMES`, used when an animation's
   own sheet/data is missing) shortens to match automatically since it
   multiplies through the same constant. Covered by a new
@@ -4434,6 +4436,38 @@ not yet verified:
   confirmed to fail against the pre-fix code (`expected 2, got 3`) before
   the fix. "Back-to-back calls stutter" (the bullet's third, unrelated
   claim) remains open, as noted above.
+- ✅ **`ANIM_FLASH_FRAMES` — how long a Battle Animation's own fired
+  screen/target flash stays visible before the animation forcibly clears it
+  again — is now 11, not 8.** The bullet directly above left this constant
+  "untouched" as one of two "independent constants," alongside
+  `ANIM_FALLBACK_FRAMES`, when `ANIM_CELL_FRAMES` was fixed — an unverified
+  guess that was never itself checked against EasyRPG Player's actual C++
+  source the way `ANIM_CELL_FRAMES` was. `BattleAnimation::UpdateFlashGeneric`
+  (`src/battle_animation.cpp`) computes `delta_frames = GetFrame() -
+  start_frame` (`start_frame = (timing.frame - 1) * 2`, the raw tick a fired
+  timing's own LCF frame begins displaying) and keeps that timing's r/g/b/p
+  alive for `delta_frames <= 10` — 11 raw ticks (0 through 10 inclusive)
+  from the tick it fires — before `UpdateScreenFlash`/`UpdateTargetFlash`
+  fall back to an unconditional all-zero; `GetFrame()` is the same
+  once-per-`Update()`-call raw tick counter (one call per logical 60fps
+  frame) the already-verified `ANIM_CELL_FRAMES` derivation above already
+  relies on, so the two share a tick unit and 11 is directly comparable, not
+  a guess. `Scene::Map#hold_animation_screen_flash`/`#hold_animation_target_flash`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) use `ANIM_FLASH_FRAMES` both as the
+  `frames` duration handed to `Game::Screen#flash`/`Sprite#flash`/the map
+  Character-Flash hash and as the `screen_flash_hold`/`target_flash_hold`
+  per-real-frame countdown that keeps the animation's own just-fired flash
+  from being stomped by its own continuous per-frame reassertion — at 8, a
+  fired flash was force-cleared roughly 3 real ticks (a full 20% of the
+  intended window) early on every single Battle Animation flash timing in
+  either engine's own battle, well short of what `delta_frames <= 10`
+  actually allows. Fixed by changing the constant to `11` and adding a
+  derivation comment mirroring `ANIM_CELL_FRAMES`'s own. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check that hand-drives
+  `#fire_animation_flashes`/`#hold_animation_screen_flash` the exact number
+  of times to land on `delta_frames` 10 and 11 (11 calls still flashing, the
+  12th cleared) independent of the constant's own value, confirmed to fail
+  against the pre-fix code (cleared several calls early) before the fix.
 - ✅ **A second Show Battle Animation (11210) now forcibly cuts the first
   one's sprite off, instead of the second request quietly waiting its turn
   for the shared slot to free up** — the "only one on screen at a time"

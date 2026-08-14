@@ -5800,7 +5800,17 @@ class RPG2k
       # otherwise assumed correctly.
       ANIM_CELL_FRAMES = 2
       ANIM_FALLBACK_FRAMES = 10
-      ANIM_FLASH_FRAMES = 8
+      # ANIM_FLASH_FRAMES is 11, not some other guess: EasyRPG's
+      # `BattleAnimation::UpdateFlashGeneric` (src/battle_animation.cpp) keeps a
+      # fired timing's own colour/power alive for `delta_frames = GetFrame() -
+      # start_frame` from 0 up to and including 10 (`if (delta_frames <= 10)`)
+      # before `UpdateScreenFlash`/`UpdateTargetFlash` fall back to all-zero --
+      # `GetFrame()` is the same raw once-per-`Update()`-call tick counter
+      # `ANIM_CELL_FRAMES`'s own derivation above already relies on, so this is
+      # 11 raw ticks (0..10 inclusive), not 8. Previously an unverified guess,
+      # left untouched by the `ANIM_CELL_FRAMES` fix's own comment ("independent
+      # constants").
+      ANIM_FLASH_FRAMES = 11
       # RPG2000 battle-animation cells: a 96x96 grid, 5 cells across the sheet.
       ANIM_CELL = 96
       ANIM_SHEET_COLS = 5

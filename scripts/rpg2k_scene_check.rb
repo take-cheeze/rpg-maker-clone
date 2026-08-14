@@ -7756,6 +7756,36 @@ check 'a target-scope animation flash pulses the hit enemy, not the screen or a 
   eq nil, spr.flash_color, 'the flash faded out after its duration'
 end
 
+# ANIM_FLASH_FRAMES itself, pinned against EasyRPG's actual C++ source rather
+# than against its own value (the checks above derive their expectations from
+# the constant, so a wrong constant would still "pass" them). EasyRPG's
+# `BattleAnimation::UpdateFlashGeneric` (src/battle_animation.cpp) computes
+# `delta_frames = GetFrame() - start_frame` and keeps a fired timing's own
+# colour/power alive for `delta_frames <= 10` -- 11 raw ticks (0 through 10
+# inclusive) from the tick it fires, not some other guess -- before
+# `UpdateScreenFlash` falls back to an unconditional all-zero. Hand-drives
+# #hold_animation_screen_flash (the per-real-frame reassertion loop
+# `#step_map_animation` calls, once per real tick, right alongside
+# #fire_animation_flashes on the very same tick the timing fires and every
+# tick after) to land on delta_frames 10 and 11 without needing a full fixture
+# animation or 60 real `scene.update` calls.
+check 'a fired animation screen flash stays alive for exactly 11 real frames, matching ' \
+      "EasyRPG's UpdateFlashGeneric delta_frames <= 10" do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  timing = OpenStruct.new(frame: 0, flash_scope: 2, flash_red: 31, flash_green: 0,
+                          flash_blue: 0, flash_power: 20)
+  ma = { frame_i: 0, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma) # delta_frames 0: fires, sets the hold counter
+  # #step_map_animation calls #hold_animation_screen_flash on this exact same
+  # tick too (right after #fire_animation_flashes), so 11 calls here cover
+  # delta_frames 0 through 10 -- the tick that fired plus 10 more.
+  11.times { scene.send(:hold_animation_screen_flash, ma) }
+  ok st.screen.flashing?, 'still alive through delta_frames 10 (still <= 10)'
+  scene.send(:hold_animation_screen_flash, ma) # delta_frames 11
+  ok !st.screen.flashing?, 'cleared at delta_frames 11, matching the C++ falling back to all-zero'
+end
+
 # An ally-targeted entry (RPG2000's battle is front-view: no sprite for a
 # party member, so target_index is nil there -- see #battle_animation_pixel)
 # has nothing to flash; #fire_target_flash must not raise reaching for a
