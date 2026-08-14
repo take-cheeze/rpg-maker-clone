@@ -7292,6 +7292,74 @@ check 'battle: two attributes of the same type keep the strongest rate, not mult
   eq 40, bat.step_action[:damage] # base 20 * 200%, not 200% * 200%
 end
 
+check 'battle: RPG2000 drops a negative-rate attribute instead of healing (yado.tk / ' \
+     'EasyRPG src/attribute.cpp)' do
+  # Rank E (index 4) set to a deliberate -100% -- a plain signed database
+  # field, not something the editor forbids.
+  props = { 1 => RateRow.new(200, 150, 100, 50, -100, 0) } # weapon-type
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]
+  foe = combatant('Foe', 0, 0, 5, 100_000)
+  foe.attr_ranks = { 1 => 4 } # rank E -> -100%
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                         false, false, props) # rpg2003 defaults to false
+  bat.command_attack(hero, foe)
+  bat.begin_round
+  # base atk damage = 40/2 - 0/4 = 20; RPG2000 excludes a negative-only match
+  # from the multiplier entirely, so the attack lands unscaled, not doubled
+  # into a -20 heal the way a blind percentage multiply would.
+  eq 20, bat.step_action[:damage]
+
+  # Mixed: a positive weapon-type rate alongside a negative magic-type one --
+  # only the weapon side (still above the RPG2000 floor) applies; the
+  # negative magic side is dropped rather than folded into the multiply.
+  props2 = { 1 => RateRow.new(200, 150, 100, 50, 0, 0),   # weapon-type
+             2 => RateRow.new(200, 150, 100, 50, -100, 1) } # magic-type
+  hero2 = combatant('Hero', 40, 0, 20, 100)
+  hero2.atk_attrs = [1, 2]
+  foe2 = combatant('Foe', 0, 0, 5, 100_000)
+  foe2.attr_ranks = { 1 => 0, 2 => 4 } # weapon rank A (200%), magic rank E (-100%)
+  bat2 = Game::Battle.new([hero2], [foe2], Game::Rng.new(1), nil, false, false,
+                          false, false, props2)
+  bat2.command_attack(hero2, foe2)
+  bat2.begin_round
+  eq 40, bat2.step_action[:damage] # 20 * 200%, the negative magic side excluded
+end
+
+check 'battle: RPG2003 lets a negative attribute rate scale damage directly, and ' \
+     'falls to the milder rate (not a multiply) when only one side is negative' do
+  # Same single-attribute setup as the RPG2000 check above, but with the
+  # `rpg2003:` flag on: unlike RPG2000, RPG2003 keeps EasyRPG's `INT_MIN`
+  # (no) floor, so the lone negative-rate side still applies directly.
+  props = { 1 => RateRow.new(200, 150, 100, 50, -100, 0) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.atk_attrs = [1]
+  foe = combatant('Foe', 0, 0, 5, 100_000)
+  foe.attr_ranks = { 1 => 4 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false,
+                         false, false, props, nil, rpg2003: true)
+  bat.command_attack(hero, foe)
+  bat.begin_round
+  eq(-20, bat.step_action[:damage]) # 20 * -100% -- a genuine RPG2003 heal-via-attack
+
+  # Mixed, one side negative: RPG2003's own fallback is `dmg * max(physical,
+  # magical) / 100` (the milder of the two), not the ordinary two-percent
+  # multiply the same-sign case above (and the always-multiply pre-fix code)
+  # would apply.
+  props2 = { 1 => RateRow.new(200, 150, 100, 50, 0, 0),    # weapon-type
+             2 => RateRow.new(200, 150, 100, 50, -100, 1) } # magic-type
+  hero2 = combatant('Hero', 40, 0, 20, 100)
+  hero2.atk_attrs = [1, 2]
+  foe2 = combatant('Foe', 0, 0, 5, 100_000)
+  foe2.attr_ranks = { 1 => 0, 2 => 4 } # weapon rank A (200%), magic rank E (-100%)
+  bat2 = Game::Battle.new([hero2], [foe2], Game::Rng.new(1), nil, false, false,
+                          false, false, props2, nil, rpg2003: true)
+  bat2.command_attack(hero2, foe2)
+  bat2.begin_round
+  # max(200, -100) = 200 -> 20 * 200% = 40, not 20 * (200% * -100%) = -40.
+  eq 40, bat2.step_action[:damage]
+end
+
 check "battle: a database state's own rank rate gates the infliction" do
   # A hardy status: state 3 is 0% at *every* rank, so even a fully-susceptible
   # (rank A) target never catches it — the DB rate overrides the 100% default.

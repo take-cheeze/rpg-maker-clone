@@ -5225,7 +5225,48 @@ not yet verified:
   negative" fallback branch (a 2003 `attribute.type` add-on) never applies
   here. Covered by new `scripts/rpg2k_logic_check.rb` checks (both types at
   once multiplying, and two attributes of the *same* type still keeping the
-  strongest rather than multiplying against each other).
+  strongest rather than multiplying against each other). ✅ **The "RPG2000
+  attribute rates never go negative" premise this same bullet opened with was
+  wrong, and the fallback branch it waved off *does* apply — now ported,
+  edition-gated.** A database's own `a_rate`..`e_rate` fields (`#attr_rate`,
+  `mruby-lcf/mrblib/schema.rb`) are plain signed ints with no validation, so a
+  deliberately-negative rank rate (the old "elemental absorb" editor trick) is
+  real, reachable data on an RPG2000 database too, not RPG2003-exclusive
+  content. Fetched EasyRPG Player's actual `Attribute::ApplyAttributeMultiplier`
+  (`src/attribute.cpp`) rather than trust the paraphrase: it guards both the
+  physical and magical bucket-max against `auto limit = Player::IsRPG2k() ?
+  -1 : INT_MIN;` — RPG2000 drops a side whose best rate is negative from
+  consideration *entirely* (the attack passes through unscaled by that side,
+  never healing), where RPG2003 lets a lone negative side scale the damage
+  directly, and falls back to `effect * std::max(physical, magical) / 100`
+  (the milder of the two, not a multiply) once either side is negative and
+  both are present. `Game::Battle#apply_attr_multiplier`
+  (`mruby-rpg2k/mrblib/game.rb`) had no such gate at all — a negative
+  `physical`/`magical` flowed straight into `physical * dmg / 100` (or the
+  ordinary two-percent multiply when both sides were present) exactly like a
+  positive one would, and neither `#deal_attack` nor `#apply_skill_hit` (its
+  two call sites) floor the *result* at zero the way the unrelated base-damage
+  formula does — so a weapon/skill carrying an attribute the target absorbs
+  computed a negative `dmg` that `target.hp -= dmg` then applied as a genuine
+  heal, on every edition, the opposite of RPG2000's real "just don't scale it"
+  behaviour. Fixed by giving `Game::Battle` an `rpg2003:` constructor flag
+  (mirroring `Game::Variables.new(rpg2003)`'s own pattern; `Scene::Map
+  #open_battle` passes `db.respond_to?(:rpg2003?) && db.rpg2003?`) and a new
+  `#above_attr_limit?(v)` helper porting `limit` exactly — `apply_attr_multiplier`
+  now runs each bucket-max through it before deciding which branch applies,
+  reproducing all four of `ApplyAttributeMultiplier`'s outcomes (both above the
+  floor and same-signed: ordinary multiply; both above the floor but either
+  negative: the `max`-based fallback; only one above the floor: that side
+  alone; neither: unchanged). Covered by two new `scripts/rpg2k_logic_check.rb`
+  checks (RPG2000: a lone negative-rate attribute leaves damage unscaled
+  rather than healing, and a positive weapon-type rate alongside a negative
+  magic-type one applies only the weapon side; RPG2003: the same lone
+  negative-rate attribute now does scale directly — a genuine attack-as-heal,
+  matching the edition's own real behaviour — and the same mixed-sign pair
+  takes the milder rate instead of multiplying), both confirmed to fail
+  against the pre-fix code before the fix (a `RuntimeError` on the wrong
+  damage figure for the RPG2000 case, an `ArgumentError` for the RPG2003 one
+  since the `rpg2003:` keyword did not exist yet).
 - Battle Animation: only one on screen at a time (a second forcibly cuts
   off the first); 1 frame = 1/30s, but a "Wait" frame is internally
   **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle
