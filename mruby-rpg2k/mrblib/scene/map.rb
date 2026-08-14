@@ -300,8 +300,15 @@ class RPG2k
         # only a battle or an actively-bursting foreground event is -- see
         # #parallels_paused?). Stepped before the foreground gets a chance to
         # start anything this frame, matching "if both are set to fire the
-        # same frame, parallel process goes first".
-        step_parallels unless parallels_paused?
+        # same frame, parallel process goes first". `paused` is captured once
+        # and reused for both branches below: whichever one runs owns this
+        # frame's only pass over the entry that opened a battle, so the two
+        # can never double-step it (#step_battle_owner_parallel is the only
+        # thing keeping that entry moving once its own fight has paused the
+        # ordinary pass above).
+        paused = parallels_paused?
+        step_parallels unless paused
+        step_battle_owner_parallel if paused
         if event_busy?
           drive_event
           # Message Options' "move other events during message" toggle: other
@@ -1055,7 +1062,17 @@ class RPG2k
       # -- event execution ----------------------------------------------------
 
       def event_busy?
-        @message || @number_input || @interpreter.running? || @interpreter.waiting?
+        @message || @number_input || @interpreter.running? || @interpreter.waiting? ||
+          # A battle a Parallel Process opened (#drive_parallel_wait's :battle
+          # case) is exactly as busy as one the foreground itself opened --
+          # before that fix existed only @interpreter could ever hold
+          # @battle_ui, so @interpreter.waiting? alone already covered this;
+          # now that a Common Event's or a map event's own Parallel Process
+          # can own the single battle slot too, its mere presence has to gate
+          # ordinary player movement/menu/Auto-Start here on its own, the same
+          # way #parallels_paused? already gates every *other* parallel
+          # process on it.
+          !@battle_ui.nil?
       end
 
       # Whether a message window or choice list (Show Message / Show Choices /
@@ -1329,6 +1346,27 @@ class RPG2k
         @parallels.dup.each { |p| step_parallel(p) }
       end
 
+      # Keep a Parallel Process's own battle advancing once it has opened one
+      # (#drive_parallel_wait's :battle case). @battle_ui's mere presence
+      # pauses #step_parallels for every *other* parallel process for the
+      # fight's duration (#parallels_paused?, "Common events never run during
+      # battle") -- but the one that opened it is not a bystander: it still
+      # needs exactly the same per-frame #drive_battle service #drive_event's
+      # own :battle case already gives a foreground-opened fight, or the
+      # fight it opened would never advance past the single frame it opened
+      # on. Called from #update only when #parallels_paused? already skipped
+      # the ordinary #step_parallels pass this same frame (see there), so
+      # this never double-steps the owner's own entry. A no-op once the
+      # battle belongs to the foreground (nothing here to step) or there is
+      # no battle open at all.
+      def step_battle_owner_parallel
+        return unless @battle_ui
+        owner = @battle_ui[:owner]
+        return if owner.nil? || owner.equal?(@interpreter)
+        p = @parallels.find { |pp| pp[:interp].equal?(owner) }
+        step_parallel(p) if p
+      end
+
       def step_parallel(p)
         return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
         it = p[:interp]
@@ -1416,6 +1454,26 @@ class RPG2k
           # silently cleared the wait and let the process carry on with a
           # fully-dead party never reaching the Game Over screen.
           perform_game_over(it)
+        elsif it.wait_kind == :battle
+          # Battle Processing (Enemy Encounter) issued from a Parallel
+          # Process -- a Common Event's or a map event's own -- opens and
+          # drives the same single global battle screen a foreground-issued
+          # one does, the same shared-slot shape already fixed above for
+          # Show Battle Animation's :animation wait (#drive_map_animation /
+          # @map_animation_interp). Before this branch existed this fell
+          # into the generic "background: ignore message/choice/teleport
+          # requests" #resume below: the request sat on `it.battle_request`
+          # unread (#drive_battle used to only ever consult the foreground
+          # @interpreter's own copy), and `it` was resumed unconditionally
+          # the very next frame as though the command had been a no-op --
+          # no battle screen ever appeared, and any [Victory]/[Escape]/
+          # [Defeat] handler right after the command in `it`'s own list
+          # never ran either. #drive_battle itself now takes the interpreter
+          # to drive explicitly (`it` here), and keeps being called back
+          # into on every later frame by #step_battle_owner_parallel, since
+          # @battle_ui's own presence pauses the ordinary #step_parallels
+          # pass this entry would otherwise need for that (#parallels_paused?).
+          drive_battle(it)
         elsif it.wait_kind == :movement
           # Proceed With Movement / Force Complete Move issued from a
           # Parallel Process: block that process until every targeted
@@ -3305,6 +3363,18 @@ class RPG2k
           return
         end
 
+        # A battle opened by a Parallel Process's own Battle Processing
+        # command (#drive_parallel_wait's :battle case) owns the single
+        # @battle_ui slot exactly the way the foreground does when it opens
+        # one itself. While someone else holds it, the foreground must not
+        # keep grinding through its own unrelated commands underneath the
+        # fight -- the same freeze every *other* parallel process already
+        # gets from #parallels_paused? ("Common events never run during
+        # battle"). The message/choice/number dispatch above is left
+        # unblocked either way, since a shown window is a shared resource
+        # independent of who owns the battle.
+        return if @battle_ui && !@battle_ui[:owner].equal?(@interpreter)
+
         if @interpreter.waiting?
           case @interpreter.wait_kind
           when :message
@@ -3877,13 +3947,25 @@ class RPG2k
       # action landing per BATTLE_ANIM_FRAMES, each bannered with its HP tick)
       # until a side falls. B on the first actor flees when the encounter allows
       # it. Dismissing the result resumes the event with the outcome.
-      def drive_battle
-        req = @interpreter.battle_request
-        return @interpreter.resume_battle(:victory) unless req
+      # `it` is whichever interpreter actually raised the :battle wait -- the
+      # foreground event by default, or a Parallel Process's own interpreter
+      # when #drive_parallel_wait dispatches here (see there and
+      # #step_battle_owner_parallel, which keeps calling back in on every
+      # later frame since a battle a Parallel Process opened stops the
+      # ordinary #step_parallels pass from ever reaching it again). Only one
+      # fight can be open at a time: if @battle_ui already belongs to a
+      # *different* interpreter (two Battle Processing commands landing the
+      # same real frame, one from each of two independent interpreters), this
+      # one simply waits its turn and tries again next frame, the same
+      # block-and-retry shape already used for :message/:choice/:number above.
+      def drive_battle(it = @interpreter)
+        req = it.battle_request
+        return it.resume_battle(:victory) unless req
         if @battle_ui.nil?
-          open_battle(req) # opened this frame; take input from the next one
+          open_battle(req, it) # opened this frame; take input from the next one
           return
         end
+        return unless @battle_ui[:owner].equal?(it)
         update_enemy_flashes
         update_enemy_positions
         case @battle_ui[:phase]
@@ -3898,11 +3980,12 @@ class RPG2k
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle failed: #{e.message}"
+        owner = (@battle_ui && @battle_ui[:owner]) || it
         close_battle
-        @interpreter.resume_battle(:victory)
+        owner.resume_battle(:victory)
       end
 
-      def open_battle(req)
+      def open_battle(req, owner = @interpreter)
         play_battle_bgm
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
@@ -3911,7 +3994,7 @@ class RPG2k
         # sleep skip) in battle.
         situations = db.respond_to?(:situation) ? db.situation : nil
         properties = db.respond_to?(:property) ? db.property : nil
-        @battle_ui = { phase: :command, req: req, troop: troop,
+        @battle_ui = { phase: :command, req: req, troop: troop, owner: owner,
                        battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
                                                 situations, true, true, true,
                                                 req[:first_strike] ? true : false,
@@ -3946,8 +4029,10 @@ class RPG2k
                        frame: 0 }
         @battle_ui[:events].battle = @battle_ui[:battle]
         # A battle page can Call Common Event (1005), so it needs the same
-        # resolver the map's events run against.
-        @battle_ui[:events].resolver = @interpreter.resolver
+        # resolver the encounter's own owning interpreter runs against --
+        # the foreground by default, or a Parallel Process's own interpreter
+        # for a fight it opened itself (see `owner` above).
+        @battle_ui[:events].resolver = owner.resolver
         build_battle_sprites
         refresh_battle_status
         # Turn-0 pages fire before the party is asked for its first command —
@@ -5105,7 +5190,11 @@ class RPG2k
       # Close the battle and hand the outcome back to the event. A defeat in an
       # encounter whose defeat mode is "game over" (rather than a [Defeat]
       # handler) ends the game instead of resuming the event; every other outcome
-      # — victory, escape, or a defeat with a custom handler — resumes it.
+      # — victory, escape, or a defeat with a custom handler — resumes it. Hands
+      # the outcome to whichever interpreter actually opened this fight
+      # (`@battle_ui[:owner]` -- the foreground by default, or a Parallel
+      # Process's own interpreter, see #drive_battle), captured before
+      # #close_battle clears @battle_ui out from under it.
       def finish_battle(result)
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
@@ -5114,12 +5203,13 @@ class RPG2k
         # party knocked out ends the game; every other outcome resumes the event.
         game_over = result == :defeat && @battle_ui[:req][:defeat_game_over] &&
                     @state.party.all_dead?
+        owner = @battle_ui[:owner] || @interpreter
         close_battle
         if game_over
-          perform_game_over
+          perform_game_over(owner)
         else
           restore_pre_battle_bgm
-          @interpreter.resume_battle(result)
+          owner.resume_battle(result)
         end
       end
 
