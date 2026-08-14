@@ -1654,23 +1654,55 @@ The work below is roughly ordered by the critical path to a walkable game
   `screen_height / 3 * 2 - 20` (140 at 320x240) instead of its usual top-edge
   slot; `draw_one_timer` now sets `spr.y` from the same `!@battle_ui.nil?`
   flag `#draw_timer` already threads through for the "pause/hide without the
-  battle flag" behaviour. **Still open**: outside of battle, real RPG_RT also
-  slides a timer down to the bottom edge whenever the (sticky,
-  persists-across-messages) message window is currently parked at the top of
-  the screen (`Game_Message::GetWindow()->GetY() < 20`), so the two never
-  overlap — this build has no persistent message-window object to read a
-  sticky position back from (`@message` is a fresh object built per message
-  and torn down when it closes, unlike RPG_RT's one long-lived
-  `Window_Message`), so that half stays unmodelled and a timer sits at the
-  fixed top slot outside of battle regardless of where a message last opened.
-  Covered by six new `scripts/rpg2k_scene_check.rb` checks (the digit cells
+  battle flag" behaviour.
+  ✅ **Now implemented too**: outside of battle, real RPG_RT slides a timer
+  down to the bottom edge whenever the (sticky, persists-across-messages)
+  message window is currently parked at the top of the screen
+  (`Game_Message::GetWindow()->GetY() < 20`), so the two never overlap.
+  Confirmed against EasyRPG's own `Sprite_Timer::Draw`/`Game_Message::
+  GetRealPosition`/`Window_Message::InsertNewPage` (`src/sprite_timer.cpp`,
+  `src/game_message.cpp`, `src/window_message.cpp`, fetched verbatim): the
+  check is against the window's *last resolved* Y, not the raw Message
+  Options preference -- itself downstream of RPG2000's dynamic
+  avoid-the-hero repositioning when the position is not pinned (`Game_
+  Message::GetRealPosition()` calls `game_player->GetScreenY()` exactly the
+  way this build's own `#auto_message_position` already did) -- and that Y
+  is never reset when the message later closes (`Window_Message::
+  FinishMessageProcessing` only starts a close animation, nothing touches
+  `y`), only rebuilt fresh (implicitly starting `>= 20`, i.e. "not top")
+  on a genuine new `Scene_Map::Start` -- a real map entry (Teleport/Transfer
+  Player), not the `Scene_Map::Continue` reuse a mere return from a pushed
+  menu/battle scene gets. This build had no literal persistent
+  `Window_Message` object to read a Y back from (`@message` is a fresh
+  object built per message and torn down when it closes), so `Scene::Map`
+  gains its own sticky `@message_window_top` flag instead, tracking the
+  same "did the last message resolve to the top" outcome directly:
+  `#open_message` sets it the instant a message opens (not when it closes),
+  reading the same `#effective_message_position` helper `#message_window_y`
+  itself now shares (a small extraction with no behaviour change of its
+  own); `#initialize`/`#perform_teleport` reset it to false on every fresh
+  map visit, mirroring EasyRPG's own rebuild. `#draw_one_timer` reads it
+  outside of battle: `SCREEN_H - 20` (220 at 320x240, matching `screen_height
+  - 20 - menu_offset_y` with this build's own zero menu offset) when set,
+  the existing `4` otherwise. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks: the timer drops to the bottom edge
+  the instant a top-resolving message opens (hero positioned low on
+  screen, matching the already-tested `#message_window_y` auto-position
+  logic) and *stays* there once that message closes; and, separately, a
+  bottom-resolving message never sets the flag at all, while a `#perform_
+  teleport` call after manually forcing the flag on confirms a fresh map
+  visit clears it back to the normal top position. Not itself
+  wine-verified (this session's wine harness stayed broken throughout, a
+  separate, unrelated regression), but the EasyRPG source read leaves
+  little ambiguity, unlike some of this file's other open items.
+  The original "six new checks" this bullet already named cover the digit cells
   blitted for a 75s/"1:15" reading, each cell's exact source rect and that
   every one reads from `@windowskin`; the colon cell blinking off exactly on
   a `frames % 60 == 0` boundary and back on at `== 30`; a timer with no
   System graphic loaded never builds a sprite at all even while visible and
   running; the second timer's sprite sitting flush against the right edge;
   the battle-flag pause/hide check extended to also pin the Y drop to the
-  mid-screen battle slot once the fight starts), all six confirmed to fail
+  mid-screen battle slot once the fight starts. All six confirmed to fail
   against the pre-fix code before the fix (either erroring on a `nil`
   `@timer_sprites` array — the old code never built one — or, for the ones
   adapted from pre-existing checks, on the removed `@timer_windows`/

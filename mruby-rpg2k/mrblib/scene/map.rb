@@ -116,6 +116,13 @@ class RPG2k
         @charset = load_charset
         @windowskin = load_windowskin
         @interpreter = Game::Interpreter.new(@state)
+        # Whether the last message window shown on this map visit resolved to
+        # the top position -- what #draw_timer's own bottom-edge-avoidance
+        # reads, sticky until #open_message next changes it or this map visit
+        # ends (see #perform_teleport's identical reset). False on a fresh
+        # visit, matching EasyRPG's own Window_Message starting below the
+        # `GetY() < 20` threshold before any message has opened yet.
+        @message_window_top = false
         @started_auto = {}
         @started_common = {}
         @common = Game::CommonEvent.load(@db)
@@ -7133,6 +7140,13 @@ class RPG2k
         old_bmp = @chipset_bmp
         @chipset_bmp = load_chipset_graphic
         old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
+        # ... nor does the timer's sticky "message was at top" flag: real
+        # RPG_RT rebuilds its own Window_Message fresh on every genuine map
+        # entry (`Scene_Map::Start`, matching a Teleport/Transfer Player, not
+        # `Scene_Map::Continue`'s reuse when merely returning from a pushed
+        # menu/battle scene to the same map) -- see #initialize's identical
+        # reset for the very first visit.
+        @message_window_top = false
         @started_auto = {}
         @started_common = {}
         @active_event = nil
@@ -7318,6 +7332,12 @@ class RPG2k
         text_w = inner_w - text_x - (face_right ? FACE_SIZE + FACE_MARGIN : 0)
         inner_h = MSG_WIN_H - Window::BORDER * 2
         win_h = MSG_WIN_H
+        # The timer's own bottom-edge-avoidance reads this (see #draw_timer's
+        # comment) -- sticky, not reset when this message later closes,
+        # matching EasyRPG's own Window_Message#y, which InsertNewPage sets
+        # afresh every message but FinishMessageProcessing never resets.
+        @message_window_top =
+          effective_message_position(win_h, cfg) == Game::MessageConfig::POS_TOP
         win = Window.new(0, message_window_y(win_h, cfg), MSG_WIN_W, win_h)
         win.z = 300
         win.windowskin = @windowskin
@@ -7412,6 +7432,22 @@ class RPG2k
         set_choice_cursor
       end
 
+      # The display position (top / middle / bottom) a `win_h`-tall message
+      # window actually resolves to right now. When the message is not pinned
+      # (`position_fixed` off, RPG2000's default), this is the position that
+      # keeps clear of the hero (`#auto_message_position`) rather than the
+      # configured one directly -- confirmed against EasyRPG's own
+      # `Game_Message::GetRealPosition()`, which does the identical
+      # pinned-vs-dynamic split. `#open_message` also uses this (not just
+      # `#message_window_y` below) to update the sticky "was the window at
+      # the top" flag the timer's own bottom-edge-avoidance reads, since real
+      # RPG_RT's timer avoidance is downstream of this same per-page resolved
+      # position, not the raw configured preference.
+      def effective_message_position(win_h, cfg)
+        return cfg.position if cfg.position_fixed
+        auto_message_position(win_h)
+      end
+
       # Vertical position of a `win_h`-tall message window for the configured
       # display position (top / middle / bottom). When the message is not pinned
       # (`position_fixed` off, RPG2000's default), the window relocates so it does
@@ -7421,9 +7457,7 @@ class RPG2k
       # zone boundary is approximate pending a wine diff; the direction matches
       # RPG_RT.
       def message_window_y(win_h, cfg)
-        pos = cfg.position
-        pos = auto_message_position(win_h) unless cfg.position_fixed
-        case pos
+        case effective_message_position(win_h, cfg)
         when Game::MessageConfig::POS_TOP    then 0
         when Game::MessageConfig::POS_MIDDLE then (SCREEN_H - win_h) / 2
         else SCREEN_H - win_h
@@ -8246,15 +8280,27 @@ class RPG2k
       # (`Sprite_Timer::Sprite_Timer`'s own `SetX`), and during battle both drop
       # to `screen_height / 3 * 2 - 20` (`Sprite_Timer::Draw`'s
       # `Game_Battle::IsBattleRunning()` branch) rather than sitting at the top
-      # -- both now matched exactly. **Still open**: outside battle, real
-      # RPG_RT also slides a timer to the bottom edge whenever the (sticky,
-      # persists-across-messages) message window is currently parked at the
-      # top of the screen, so the two never overlap
-      # (`Game_Message::GetWindow()->GetY() < 20`); this build has no
-      # persistent message-window object to read a sticky position back from
-      # (`@message` is built fresh per message and torn down when it closes),
-      # so that half stays unmodelled and the timer sits at the fixed top
-      # position outside of battle regardless of where a message last opened.
+      # -- both now matched exactly. **Now also implemented**: outside
+      # battle, real RPG_RT slides a timer to the bottom edge whenever the
+      # (sticky, persists-across-messages) message window is currently
+      # parked at the top of the screen, so the two never overlap
+      # (`Game_Message::GetWindow()->GetY() < 20`) -- confirmed against
+      # EasyRPG's own `Sprite_Timer::Draw`/`Game_Message::GetRealPosition`/
+      # `Window_Message::InsertNewPage` (`src/sprite_timer.cpp`,
+      # `src/game_message.cpp`, `src/window_message.cpp`): the check reads
+      # the message window's own last *resolved* Y (not the raw Message
+      # Options preference), which stays wherever it was last set even after
+      # that message closes, since nothing ever resets it on close, and
+      # which is itself downstream of RPG2000's dynamic avoid-the-hero
+      # repositioning when the position is not pinned. `#open_message`
+      # tracks the same "was it at the top" outcome in `@message_window_top`
+      # (see its own comment) since this build has no long-lived
+      # `Window_Message`-equivalent object to read a literal Y back from;
+      # `#perform_teleport`/`#initialize` reset it on every fresh map visit,
+      # matching a genuine `Scene_Map::Start` rebuilding EasyRPG's own
+      # `Window_Message` from scratch (initial Y below the threshold),
+      # rather than the `Scene_Map::Continue` reuse a mere return from a
+      # pushed menu/battle scene gets.
       def draw_timer
         battle = !@battle_ui.nil?
         @timer_sprites ||= [nil, nil]
@@ -8270,7 +8316,13 @@ class RPG2k
         end
         spr ||= (@timer_sprites[id] = build_timer_sprite)
         spr.x = id == 0 ? 4 : SCREEN_W - TIMER_INNER_W - 4
-        spr.y = battle ? (SCREEN_H * 2 / 3 - 20) : 4
+        spr.y = if battle
+                  SCREEN_H * 2 / 3 - 20
+                elsif @message_window_top
+                  SCREEN_H - 20
+                else
+                  4
+                end
         spr.visible = true
         draw_timer_digits(spr.bitmap, timer)
       end
