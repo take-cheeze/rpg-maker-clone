@@ -4022,6 +4022,42 @@ check 'Enemy Encounter scene: a Change System BGM battle override beats the data
   eq 'CustomBattle', st.current_bgm[:name]
 end
 
+check 'Enemy Encounter scene: a battle BGM matching the already-playing field track ' \
+      'does not restart it, and neither does restoring it back after the fight' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  # The field track already playing is the exact file the database's own
+  # battle_music names ('BattleBGM', see new_scene's system fixture above),
+  # just at different vol/tempo -- the scenario yado.tk's "field and battle
+  # BGM sharing the same file continue seamlessly across the transition"
+  # describes.
+  st.current_bgm = { name: 'BattleBGM', volume: 50, tempo: 90 }
+  RGSS::Audio.reset_bgm
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  eq [], RGSS::Audio.bgm_calls,
+     'entering battle does not break and restart a track that is already playing'
+  eq 'BattleBGM', st.current_bgm[:name]
+  eq 70, st.current_bgm[:volume], "the battle track's own vol/tempo are still tracked " \
+                                   '(RPG_RT re-applies them in place; this build has no ' \
+                                   'native primitive for that, see docs/TODO.md)'
+  eq 110, st.current_bgm[:tempo]
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
+  scene.update
+  RGSS::Input.triggered = []
+  eq [], RGSS::Audio.bgm_calls,
+     'restoring the field BGM after the fight does not restart it either -- ' \
+     'this scene never actually stopped it in the first place'
+  eq 'BattleBGM', st.current_bgm[:name]
+  eq 50, st.current_bgm[:volume], "the restored pre-battle vol/tempo snapshot wins back"
+  eq 90, st.current_bgm[:tempo]
+end
+
 check 'Enemy Encounter scene: victory plays the database battle_end_music over the result screen' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

@@ -1429,6 +1429,35 @@ class RPG2k
         row.airship_land ? true : false
       end
 
+      # Play `music` ({ name:, volume:, tempo: }) as the current BGM, the one
+      # choke point every BGM-switching helper below (vehicle/battle/victory/
+      # inn, play and restore alike) funnels through. RPG_RT's BGM is a
+      # single channel with one real entry point on the native side --
+      # EasyRPG's `Game_System::BgmPlay` (`src/game_system.cpp`) -- and it
+      # special-cases re-selecting the file already playing: "Same music:
+      # Only adjust volume and speed" rather than stopping and restarting it,
+      # for *every* caller, not just the Play BGM event command (battle entry
+      # itself calls the identical `BgmPlay`, per `Scene_Battle::Init` in
+      # `src/scene_battle.cpp`: `BgmPlay(GetSystemBGM(BGM_Battle))`). This
+      # codebase already ported that for the event-command path
+      # (`Game::Interpreter#play_audio`'s `:bgm` branch, same
+      # `same_file_already_playing` idiom) but every helper here still called
+      # `RGSS::Audio.bgm_play` unconditionally, so a battle/vehicle/inn BGM
+      # configured to the exact same file as whatever was already playing
+      # broke and restarted it from the top instead of continuing seamlessly
+      # across the transition — including the asymmetric case of restoring a
+      # field track this scene itself never actually stopped. Volume/tempo/
+      # pan are still not adjusted in place on a same-file call: `RGSS::Audio`
+      # has no such primitive (`bgm_play` always restarts via SDL_mixer), the
+      # same already-documented limitation the event-command path carries.
+      def play_bgm(music)
+        same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == music[:name]
+        unless same_file_already_playing
+          RGSS::Audio.bgm_play(music[:name], music[:volume] || 100, music[:tempo] || 100)
+        end
+        @state.current_bgm = music
+      end
+
       # Play the vehicle's own BGM — a Change System BGM (10660) override for
       # its slot when one is set, else the database System boat / ship /
       # airship music — remembering the BGM that was playing so
@@ -1439,8 +1468,7 @@ class RPG2k
         music = vehicle_bgm(type)
         return unless music
         @pre_vehicle_bgm = @state.current_bgm
-        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
-        @state.current_bgm = music
+        play_bgm(music)
       rescue StandardError => e
         $stderr.puts "[RPG2k] vehicle BGM failed: #{e.message}"
       end
@@ -1451,8 +1479,7 @@ class RPG2k
         bgm = @pre_vehicle_bgm
         @pre_vehicle_bgm = nil
         return unless bgm && bgm[:name] && !bgm[:name].empty?
-        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
-        @state.current_bgm = bgm
+        play_bgm(bgm)
       rescue StandardError => e
         $stderr.puts "[RPG2k] restoring BGM failed: #{e.message}"
       end
@@ -1474,8 +1501,7 @@ class RPG2k
         music = battle_bgm
         return unless music
         @pre_battle_bgm = @state.current_bgm
-        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
-        @state.current_bgm = music
+        play_bgm(music)
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle BGM failed: #{e.message}"
       end
@@ -1511,8 +1537,7 @@ class RPG2k
       def play_victory_bgm
         music = victory_bgm
         return unless music
-        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
-        @state.current_bgm = music
+        play_bgm(music)
       rescue StandardError => e
         $stderr.puts "[RPG2k] victory BGM failed: #{e.message}"
       end
@@ -1543,8 +1568,7 @@ class RPG2k
         bgm = @pre_battle_bgm
         @pre_battle_bgm = nil
         return unless bgm && bgm[:name] && !bgm[:name].empty?
-        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
-        @state.current_bgm = bgm
+        play_bgm(bgm)
       rescue StandardError => e
         $stderr.puts "[RPG2k] restoring BGM after battle failed: #{e.message}"
       end
@@ -1566,8 +1590,7 @@ class RPG2k
         music = inn_bgm
         return unless music
         @pre_inn_bgm = @state.current_bgm
-        RGSS::Audio.bgm_play(music[:name], music[:volume], music[:tempo])
-        @state.current_bgm = music
+        play_bgm(music)
       rescue StandardError => e
         $stderr.puts "[RPG2k] inn BGM failed: #{e.message}"
       end
@@ -1595,8 +1618,7 @@ class RPG2k
         bgm = @pre_inn_bgm
         @pre_inn_bgm = nil
         return unless bgm && bgm[:name] && !bgm[:name].empty?
-        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
-        @state.current_bgm = bgm
+        play_bgm(bgm)
       rescue StandardError => e
         $stderr.puts "[RPG2k] restoring BGM after inn failed: #{e.message}"
       end
