@@ -222,6 +222,37 @@ check 'a blocked skippable move advances past the obstruction' do
   eq [0, 1], [c.x, c.y]
 end
 
+check 'a move blocked specifically by the hero reports :touched_hero, not ' \
+      'plain :blocked, with the same retry rule' do
+  # yado.tk (docs/TODO.md "Running a hero-targeted Parallel-Process Set Move
+  # Route..."): a Set Move Route / page-authored custom route stepping a map
+  # event onto the party's own tile is a move failure like any other
+  # obstacle -- Scene::Map#step_event fires this event's own Event Touch (2)
+  # trigger off exactly this status, mirroring #move_autonomous's identical
+  # check for a Random/Approach/Away-type move. FakeWorld's `blocked:` list
+  # models scenery; `hero:` is a *separate* tile it also refuses, letting a
+  # test tell the two outcomes apart the way #char_passable? actually does
+  # (map-event/hero collision vs. an ordinary obstacle).
+  non_skip = R.new([mc(R::MOVE_RIGHT)], repeat: false, skippable: false)
+  c = Game::Character.new(0, 0)
+  w = FakeWorld.new(blocked: [[1, 0]], hero: [1, 0])
+  eq :touched_hero, non_skip.step(c, w)
+  eq [0, 0], [c.x, c.y] # did not step onto the hero
+  eq 6, c.direction     # but still turned to face it
+  ok !non_skip.done?, 'non-skippable retries a hero collision just like a wall'
+
+  skip = R.new([mc(R::MOVE_RIGHT), mc(R::MOVE_DOWN)],
+              repeat: false, skippable: true)
+  c2 = Game::Character.new(0, 0)
+  eq :touched_hero, skip.step(c2, w)
+  eq :moved, skip.step(c2, w) # skippable advances past it, same as :blocked
+
+  # An ordinary wall the hero does not stand on is still plain :blocked.
+  c3 = Game::Character.new(0, 0)
+  wall_only = FakeWorld.new(blocked: [[1, 0]], hero: [5, 5])
+  eq :blocked, R.new([mc(R::MOVE_RIGHT)], repeat: false).step(c3, wall_only)
+end
+
 # -- Begin Jump / End Jump ----------------------------------------------------
 
 check 'a jump block hops to its accumulated destination in one step' do

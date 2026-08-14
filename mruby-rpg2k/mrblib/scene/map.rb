@@ -1822,8 +1822,9 @@ class RPG2k
         e[:move_timer] = EVENT_MOVE_DELAY[freq] || 40
         ox = ch.x
         oy = ch.y
+        status = nil
         if forced
-          forced.step(ch, @world) unless forced.done?
+          status = forced.step(ch, @world) unless forced.done?
           if forced.done? # revert to page movement
             e[:forced_route] = nil
             # The page's own Move Frequency reasserts itself once the forced
@@ -1833,10 +1834,19 @@ class RPG2k
             ch.move_frequency = page_move_frequency(e[:page])
           end
         elsif e[:route]
-          e[:route].step(ch, @world) unless e[:route].done?
+          status = e[:route].step(ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
           move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
+        end
+        # A Set Move Route (forced) or page-authored custom route stepping
+        # into the hero's own tile fires this event's own Event Touch (2)
+        # trigger too, the same as #move_autonomous's dedicated hero check
+        # already does for a Random/Approach/Away-type move -- see
+        # Game::MoveRoute#do_move's `:touched_hero` status.
+        if allow_trigger && status == :touched_hero &&
+           e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+          start_event(e)
         end
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.

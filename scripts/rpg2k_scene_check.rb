@@ -1199,6 +1199,35 @@ check 'event-touch (trigger 2): an event walking into the player runs it' do
   eq [1, 0], [ch.x, ch.y], 'event stopped adjacent, did not enter the player'
 end
 
+check 'event-touch (trigger 2): a custom-route event stepping into the ' \
+      'player runs it too, not just an autonomous Approach move' do
+  # docs/TODO.md, "Running a hero-targeted Parallel-Process Set Move Route...
+  # can suppress that event's touch trigger" -- the real, broader gap this
+  # surfaced: a Set Move Route / page-authored custom route (Game::MoveRoute,
+  # driven through Game::MoveRoute#do_move) never fired Event Touch at all
+  # when it stepped a map event onto the party's tile, unlike an autonomous
+  # Random/Approach/Away-type move (#move_autonomous's own dedicated check,
+  # already covered by the check just above). Verified against EasyRPG
+  # Player's actual C++ source: `Game_Character::Move`'s
+  # `CheckCollisonOnMoveFailure` starts a Trigger_collision page the same way
+  # regardless of whether a move route is driving the character, with no
+  # `IsMoveRouteOverwritten`-style guard the way the *player's* own touch
+  # check has.
+  ic = Game::Interpreter::Cmd
+  # layer 1 (LAYER_SAME): a below-characters event walks straight through the
+  # party (a separate, already-correct rule -- see #char_passable?), so this
+  # needs the ordinary same-layer NPC priority to actually collide at all.
+  pg = page(x_move_type: Game::MoveType::CUSTOM, trigger: 2, layer: 1,
+           route: move_route([R::MOVE_RIGHT], repeat: false))
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]
+  scene = new_scene({ 1 => event(0, 0, pg) }, player: [1, 0])
+  ch = chars(scene)[1]
+  20.times { scene.update }
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[5], "a custom-route event's own Event Touch trigger ran"
+  eq [0, 0], [ch.x, ch.y], 'the event stayed put, it did not step onto the player'
+end
+
 check 'action (trigger 0) does not fire on mere contact' do
   ic = Game::Interpreter::Cmd
   pg = page(trigger: 0) # needs the action button
