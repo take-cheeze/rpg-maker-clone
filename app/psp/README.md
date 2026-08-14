@@ -72,3 +72,14 @@ The pieces below are scaffolded but **not** part of the bring-up EBOOT:
   project on the stick follows once mruby is linked.
 - **Accelerated rendering.** The bring-up flushes with a CPU `memcpy` into the
   framebuffer. Moving the blit onto the `sceGu` GPU is a later optimisation.
+
+## Memory budget
+
+The bring-up EBOOT never opens mruby, so it has never had to answer how the
+game's live heap, LVGL's pool and decoded assets fit inside the PSP's ~24 MB
+of RAM. [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)
+works through that before the interpreter-linking slice lands, including a
+real risk: mruby 4.0's global allocator hook defaults to sharing LVGL's pool
+(as it does on desktop), so `lv_conf.h`'s 4 MB `LV_MEM_SIZE` may need to cover
+the entire mruby object graph, not just LVGL widgets, unless a PSP-specific
+allocator exception is added.

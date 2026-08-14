@@ -102,3 +102,7 @@ and CI-checked before the interpreter and assets are layered on:
 - Because the PSP has ~24 MB of RAM, the gem-trimming and streaming-asset work
   that ADR 7 needs for the Wio Terminal is not expected to be necessary here; the
   full gem set should fit.
+  This claim is about gem *code* size only — it does not cover per-title asset
+  memory once the interpreter is linked. See ADR 0047 for the memory-budget
+  analysis (and its risks) that the interpreter-linking slice should settle
+  before `LV_MEM_SIZE` and the mruby allocator split are picked for real.
