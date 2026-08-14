@@ -1896,11 +1896,12 @@ class BattleStubActor
   # with an ally already afflicted, without reaching into the built battle's
   # own Combatant list after the fact.
   def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1,
-                 rename_skill: false, skill_name: '', states: [])
+                 rename_skill: false, skill_name: '', states: [], force_ai: false)
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
     @rename_skill = rename_skill; @skill_name = skill_name; @states = states
+    @force_ai = force_ai
   end
   def gain_exp(n); @exp += n; end
   # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
@@ -1922,6 +1923,9 @@ class BattleStubActor
   # the same way a real actor row would.
   def rename_skill?; @rename_skill; end
   def skill_command_name; @skill_name; end
+  # 強制AI -- Game::Actor#force_ai?'s own reader, mirrored here so a scene
+  # check can drive a Forced-AI actor through a real battle command loop.
+  def force_ai?; @force_ai; end
 end
 
 class BattleStubParty
@@ -8173,6 +8177,53 @@ check 'a lone ally under a do-nothing state (asleep) never gets a command prompt
   ok saw_animate || ui[:phase] == :result,
      'the round left :command and started animating on its own -- no player input was ever supplied'
   ok ui[:phase] != :command, 'the sole ally being asleep does not freeze the command phase forever'
+end
+
+# 強制AI (mruby-lcf/mrblib/schema.rb, player/job field 23, force_ai) --
+# parsed but never read anywhere in mruby-rpg2k before this fix. Mirrors the
+# two restricted-actor checks directly above: EasyRPG's own
+# `Scene_Battle_Rpg2k::SelectNextActor` checks `GetAutoBattle()` right after
+# the CanAct()/forced-restriction gates and, if set, queues an action via the
+# default AutoBattle algorithm instead of ever opening `State_SelectCommand`
+# -- see `Game::Battle#choose_auto_battle_command`'s own header comment for
+# the full port. `BattleStubActor#force_ai?` here has no skills at all
+# (`skills: []`, the default), so every check below exercises the "no good
+# skill found, fall back to an automatic plain Attack" branch specifically --
+# `Game::Battle#choose_auto_battle_command`'s own logic-level checks already
+# cover the skill-vs-attack ranking and revive-branch shapes in isolation.
+check 'a lone Forced-AI ally never gets a command prompt -- the round starts on its own with an automatic Attack' do
+  scene, st = battle_scene_with_pages({})
+  st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, force_ai: true)])
+  saw_animate = false
+  ui = nil
+  30.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    saw_animate ||= ui && ui[:phase] == :animate
+    break if ui && ui[:phase] == :result
+  end
+  ok ui, 'the battle opened'
+  ok saw_animate || ui[:phase] == :result,
+     'the round left :command and started animating on its own -- no player input was ever supplied'
+  ok ui[:phase] != :command, 'a lone Forced-AI ally does not freeze the command phase waiting on a prompt'
+end
+
+check 'a Forced-AI ally is skipped straight to the next manually-commandable one, with its own action already queued' do
+  scene, st = battle_scene_with_pages({})
+  st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, force_ai: true),
+                                            BattleStubActor.new(id: 2)])
+  ui = nil
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  ok ui, 'the battle opened'
+  eq :command, ui[:phase], 'the still-manually-commandable second ally is left to open the prompt'
+  eq ui[:allies][1], scene.send(:current_actor),
+     'the Forced-AI ally at index 0 was skipped straight to the manual one at index 1'
+  ok ui[:allies][0].action || ui[:allies][0].command,
+     'the skipped Forced-AI ally already has its own action queued automatically'
 end
 
 check 'a turn-0 battle-event page runs as the fight opens' do

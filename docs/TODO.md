@@ -7228,6 +7228,61 @@ above are repeated here)
   begin with — never redirect even at an identically warded target),
   confirmed to fail against the pre-fix code (`expected ["Ally", "Mage"],
   got ["Plain Foe", "Warded Foe"]`) before the fix.
+- ✅ **強制AI (Forced AI, player/job field 23, `force_ai`) is now implemented —
+  found while re-checking the actor/class row's own trait cluster
+  (`strong_defence`/`double_hand`/`equipment_fixed`, all already wired) for
+  anything else parsed but unused, the same "parsed by the schema, read
+  nowhere in `mruby-rpg2k`" shape as `levitate`/`avoid_attacks`/
+  `reflect_magic` above.** An actor (or RPG2003 class) flagged this way never
+  gets the ordinary Attack/Skill/Defend/Item command menu in battle — the
+  engine picks its action automatically every round — but this codebase
+  always opened the manual prompt for one anyway, exactly like an
+  unafflicted, unrestricted ally. Confirmed against EasyRPG Player's actual
+  C++ source rather than guessed at: `Game_Actor::GetAutoBattle`
+  (`src/game_actor.h`) is a bare `data.auto_battle` passthrough seeded from
+  `dbActor->auto_battle`/`cls->auto_battle` (`src/game_actor.cpp`), the
+  identical row-then-class precedence `Game::Actor#strong_defence?` already
+  follows for every other actor/class-overridable trait; `Scene_Battle_Rpg2k::
+  SelectNextActor` (`src/scene_battle_rpg2k.cpp`) checks it right after the
+  `CanAct()`/forced-attack-ally/attack-enemy restriction gates and, if set,
+  runs the default AutoBattle algorithm instead of ever entering
+  `State_SelectCommand`. Fixed with a new `Game::Actor#force_ai?` (the same
+  class-row-then-player-row lookup as `#strong_defence?`/`#double_hand?`) and
+  a full port of EasyRPG's default `AutoBattle::RpgRtCompat` algorithm
+  (`autobattle.cpp`'s `SelectAutoBattleAction(source, WeaponAll, cond,
+  do_skills: true, attack_variance: false, skill_variance: true, emulate_bugs:
+  true)` — the one real, un-patched RPG_RT always runs; EasyRPG's other two
+  named algorithms, `AttackOnly` and `RpgRtImproved`, are its own optional,
+  non-default customizations and are not modelled here) as
+  `Game::Battle#choose_auto_battle_command` and its own private ranking
+  helpers (`#auto_battle_skill_rank`/`#auto_battle_damage_rank`/
+  `#auto_battle_heal_rank`/`#auto_battle_attack_rank`/
+  `#auto_battle_attack_target_rank`, each citing the exact C++ function it
+  ports in its own comment) — reusing `EnemyAi#skill_command` ->
+  `Game::Party#battle_skill_command`'s already-computed per-target `hp`/`mp`
+  for ranking rather than re-deriving the formula a second time, and a new
+  `EnemyAi#skill_ready?` passthrough to `Game::Party#can_cast?` (matching
+  `Game_Actor::IsSkillUsable`'s own affordability/silence/weapon-Attribute
+  gate exactly). Row-based battle-formation modifiers
+  (`Feature::HasRow()`, present in nearly every formula this ports) are
+  never applicable: this codebase has no row/formation system of any kind,
+  so every such branch in the source is dead code for any database this
+  build can load, not a simplification made on this end. Wired into
+  `Scene::Map#skip_restricted_actors` (extended to also call
+  `#choose_auto_battle_command` for a `force_ai?` ally that isn't otherwise
+  restricted, checked only after the existing restriction gate, matching
+  `SelectNextActor`'s own real check order) and `#prev_commandable_actor_index`
+  (so Cancel can never walk back onto one either). Covered by six new
+  `scripts/rpg2k_logic_check.rb` checks (the bare `force_ai?` reader on a
+  flagged vs. unflagged actor; a lethal-power attack skill outranking a weak
+  Attack regardless of jitter, and the reverse — a near-useless skill losing
+  to Attack; a downed ally's own revive-rank comfortably beating any Attack)
+  and two new `scripts/rpg2k_scene_check.rb` checks (a lone Forced-AI ally
+  never freezes the command phase waiting on a prompt; a Forced-AI ally is
+  skipped straight to the next manually-commandable one with its own action
+  already queued), all confirmed to fail against the pre-fix code (a bare
+  `NoMethodError: undefined method 'force_ai?'`/`'choose_auto_battle_command'`)
+  before the fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

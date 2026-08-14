@@ -2570,7 +2570,10 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # Attack plays with no weapon equipped
                            # (Actor#attack_animation_id). Same reasoning:
                            # appended last, defaults nil (no animation).
-                           :unarmed_animation)
+                           :unarmed_animation,
+                           # 強制AI -- Actor#force_ai?. Same reasoning: appended
+                           # last, defaults nil (never AI-controlled).
+                           :force_ai)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -11411,6 +11414,112 @@ check "an ineffective skill's own high rating still crowds out a lower-rated act
     ok e[:defend].nil?, "the rating-49 guard stays excluded by the cure's own rating (seed #{i + 1})"
     eq 20, e[:damage], 'only the attack ever fires'
   end
+end
+
+# -- Forced AI (強制AI) ---------------------------------------------------------
+
+# A Forced-AI-flagged actor plus a same-shaped ordinary one, sharing one
+# skill table registered both under the party's own database (so
+# Game::Party#can_cast?/#battle_skill_command can resolve it) and under the
+# EnemyAi collaborator (so Game::Battle#choose_auto_battle_command's own
+# lookup can too) -- mirrors #skill_party/#skill_ai's own shapes, combined,
+# since neither alone registers a skill in both places at once.
+def force_ai_state(skills)
+  hero_row = FakePlayerRow.new('Hero', '', 0, 5,
+                               { max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 20, agi: 10 })
+  hero_row.force_ai = true
+  ally_row = FakePlayerRow.new('Ally', '', 0, 3,
+                               { max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6 })
+  db = FakeActorDB.new({ 1 => hero_row, 2 => ally_row }, [1, 2], {}, skills)
+  Game::State.new(Game::Party.new(db), 1, 0, 0)
+end
+
+check 'Game::Actor#force_ai? reads the row (or its RPG2003 class) exactly like #strong_defence?' do
+  st = force_ai_state({})
+  ok st.party.actor_by_id(1).force_ai?, 'the flagged actor reads true'
+  ok !st.party.actor_by_id(2).force_ai?, 'an unflagged actor reads false'
+end
+
+check 'battle: a Forced-AI actor picks a clearly-better Skill over Attack, with no manual command' do
+  # 強制AI (mruby-lcf/mrblib/schema.rb, player/job field 23, force_ai) --
+  # parsed but never read anywhere in mruby-rpg2k before this fix. Ported
+  # from EasyRPG's default AutoBattle::RpgRtCompat algorithm -- see
+  # Game::Battle#choose_auto_battle_command's own header comment for the
+  # full source citations. Fire's power is set high enough to guarantee a
+  # kill (rank 1.0 -> 1.5) so the skill's own worst-case rank still clears
+  # the weak Attack's best-case one regardless of which way the jitter rolls
+  # -- the comparison itself, not a lucky seed, is what this pins.
+  fire = FakeAiSkill.new(name: 'Fire', scope: 0, power: 200, sp_cost: 4,
+                         physical_rate: 0, magical_rate: 10, affect_hp: true)
+  skills = { 1 => fire }
+  st = force_ai_state(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(1)
+  ai = FakeAiEnv.new(skills, st)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1),
+                         nil, false, false, false, false, nil, ai)
+  b = bat.allies.first
+  bat.choose_auto_battle_command(b)
+  ok b.command, 'a command was queued automatically, with no menu ever shown'
+  eq :skill, b.command[:kind]
+  eq 1, b.command[:skill_id]
+  eq 'Foe', b.command[:target].name, 'the only living enemy was targeted'
+
+  # Symmetric: a hopeless skill (a single point of chip damage) never beats
+  # an ordinary Attack, so a Forced-AI actor with nothing worth casting still
+  # falls back to a plain swing rather than wasting its turn.
+  chip = FakeAiSkill.new(name: 'Poke', scope: 0, power: 1, sp_cost: 4,
+                         physical_rate: 0, magical_rate: 1, affect_hp: true)
+  skills2 = { 1 => chip }
+  st2 = force_ai_state(skills2)
+  hero2 = st2.party.actor_by_id(1)
+  hero2.learn_skill(1)
+  ai2 = FakeAiEnv.new(skills2, st2)
+  foe2 = combatant('Foe', 0, 0, 5, 100)
+  bat2 = Game::Battle.new([Game::Battle.from_actor(hero2)], [foe2], Game::Rng.new(1),
+                          nil, false, false, false, false, nil, ai2)
+  b2 = bat2.allies.first
+  bat2.choose_auto_battle_command(b2)
+  ok b2.command.nil?, 'no Skill was queued -- the weak Poke never outranked Attack'
+  eq foe2, b2.action, 'an ordinary Attack was queued instead, aimed at the only living foe'
+end
+
+check 'battle: a Forced-AI actor revives a downed ally instead of attacking' do
+  # The "downed target" half of #auto_battle_heal_rank (EasyRPG's
+  # CalcSkillHealAutoBattleTargetRank checking skill.state_effects[0], state
+  # id 1 == Game::Actor::DEATH_STATE) -- its own `power/1000.0 + 1.0` rank
+  # has no cost penalty or cap, so a revive skill with any real `power` value
+  # comfortably clears an ordinary Attack's own ranking ceiling (well under
+  # 2.0 even at its own best-case jitter roll) regardless of seed.
+  revive = FakeAiSkill.new(name: 'Revive', scope: 3, power: 5000, sp_cost: 6,
+                           affect_hp: true, state_effects: [true])
+  skills = { 1 => revive }
+  st = force_ai_state(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(1)
+  ai = FakeAiEnv.new(skills, st)
+  downed = combatant('Downed', 0, 0, 4, 100)
+  downed.hp = 0
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([Game::Battle.from_actor(hero), downed], [foe], Game::Rng.new(1),
+                         nil, false, false, false, false, nil, ai)
+  b = bat.allies.first
+  bat.choose_auto_battle_command(b)
+  ok b.command, 'a Skill was queued -- the revive clearly outranks any Attack'
+  eq :skill, b.command[:kind]
+  eq 1, b.command[:skill_id]
+  eq 'Downed', b.command[:target].name, 'the downed ally was targeted, not the still-full caster itself'
+  ok b.command[:hp] > 0, 'a positive (recovery) amount, not a negative (attack) one'
+end
+
+check 'battle: a non-Forced-AI actor is completely unaffected by #choose_auto_battle_command wiring' do
+  # force_ai defaults false when the row (or a fixture) never sets it at all
+  # -- #skip_restricted_actors over in Scene::Map never even calls
+  # #choose_auto_battle_command for such an actor, but the reader itself is
+  # pinned here too.
+  st = force_ai_state({})
+  ok !st.party.actor_by_id(2).force_ai?
 end
 
 # -- transformation ------------------------------------------------------------
