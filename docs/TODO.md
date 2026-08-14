@@ -4179,6 +4179,60 @@ not yet verified:
   shown, screen flash fired — for a parallel-process request, not just a
   foreground one), both confirmed to fail against the pre-fix code before
   the fix.
+- ✅ **A map-triggered Show Battle Animation (11210) with its "wait until it
+  finishes" flag *off* now actually plays too**, instead of being recorded
+  and then silently never rendered. Verified against EasyRPG Player's actual
+  C++ source rather than guessed: `Game_Interpreter_Map::
+  CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`) always calls
+  `Game_Screen::ShowBattleAnimation` regardless of the wait flag — the flag
+  only gates whether `_state.wait_time` is then set, pausing the interpreter —
+  so a fire-and-forget play is still expected to render, not merely skip
+  blocking. `Game::Interpreter#do_show_battle_animation`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) recorded `@battle_animation`
+  unconditionally but only entered an `:animation` wait when the flag was
+  set, and `#drive_map_animation` — the *only* place anything ever read
+  `battle_animation` off an interpreter — is reachable exclusively through
+  that wait's own dispatch (`Scene::Map#drive_event`'s and
+  `#drive_parallel_wait`'s `:animation` cases, the fix just above this one
+  included): a fire-and-forget request was recorded and then nothing was
+  ever looking at it. Fixed with a new `@battle_animation_pending` flag (set
+  only on the no-wait branch) and a destructive `#take_battle_animation_
+  request` reader, polled by a new `Scene::Map#apply_battle_animation_request`
+  from `#apply_interpreter_requests` — already called for both the
+  foreground interpreter and every parallel process right after each step,
+  so this covers a Parallel Process's own fire-and-forget play the same way
+  the fix above covers its waited-for one. It starts the shared
+  `@map_animation` slot with no owner when the slot is free (`#start_map_
+  animation`/`#init_map_animation` refactored into `#start_map_animation(req)`/
+  a new shared `#begin_map_animation(req)` so both paths build off the same
+  request hash rather than an interpreter), and drops the request outright
+  when the slot is already busy — matching this build's existing "a second
+  request simply waits its turn" precedent for the waited-for collision case
+  above, not the "cuts off the first" half of this bullet's own opening
+  clause, which is still open either way and has no owner left to keep
+  re-polling for a turn once dropped. A still-open architectural gap this
+  surfaced: nothing was ever advancing `@map_animation` frame-by-frame for a
+  play with no owner — `#drive_map_animation` (the map wait dispatch) and
+  `#drive_battle_animate` (the battle-round phase) are the only two existing
+  callers of `#step_map_animation`, and neither runs for a fire-and-forget
+  play. Fixed with a new `#step_ownerless_map_animation`, called
+  unconditionally every real frame from `#update` alongside `#update_sprite_
+  flashes` and friends, gated on `@map_animation_interp.nil?` (no owner) and
+  `!@map_animation[:battle]` — the latter because `#start_battle_animation`
+  also never sets an owner, so without it a battle-round play would be
+  double-stepped once by this and again by `#drive_battle_animate`'s own
+  explicit call. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
+  no-wait Show Battle Animation both lets the very next command run
+  immediately and still plays the sprite/flash through to completion over
+  the following frames), confirmed to fail against the pre-fix code (the
+  sprite never shown) before the fix. **Still open**: the battle-*page* form
+  of this command (13260) looks structurally different and worse —
+  `Scene::Map#drive_battle_event_wait`'s wait dispatch has no `:animation`
+  case at all, so its generic "a battle page cannot open the map's
+  teleport/shop/menu UI" `else` branch unconditionally `#resume`s it,
+  meaning a battle-page Show Battle Animation may not render even *with*
+  its wait flag set — a separate, not-yet-fixed gap this pass did not
+  touch.
 - ✅ **The "1 frame = 1/30s" half of the bullet above is now correct, and
   the "'Wait' frame is internally two consecutive frames" framing turns out
   to have been a misreading — settled against EasyRPG Player's actual C++

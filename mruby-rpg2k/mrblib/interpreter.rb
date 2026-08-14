@@ -421,6 +421,18 @@ module Game
       reqs
     end
 
+    # Drain the fire-and-forget Show Battle Animation (11210) request queued
+    # since the last call — `battle_animation` itself, only once, the one call
+    # this made with its wait flag off (a waited-for one is driven straight off
+    # the :animation wait instead and never touches this flag; see
+    # #do_show_battle_animation). Returns nil when nothing new fired, so the
+    # owning scene does not replay the same play every frame.
+    def take_battle_animation_request
+      return nil unless @battle_animation_pending
+      @battle_animation_pending = false
+      @battle_animation
+    end
+
     # Drain the Show Hidden Monster (13150) troop-member indices queued since the
     # last call. The scene polls this and builds the sprites for the revealed
     # members. Non-blocking.
@@ -780,6 +792,7 @@ module Game
       @battle_request = nil
       @name_input_request = nil
       @battle_animation = nil
+      @battle_animation_pending = false
     end
 
     def switches;  @state.switches;  end
@@ -2764,16 +2777,26 @@ module Game
     # Show Battle Animation (11210): play battle animation param0 over a target
     # character on the map. param1 is the target id (the player, an event, or
     # this event — the Move Event target scheme) and param2 the "wait until it
-    # finishes" flag. Records the request (which a future map-animation renderer
-    # will draw) and, when the wait flag is set, suspends on an :animation wait so
-    # the owning scene can hold the event for the animation's duration. Drawing
-    # the animation itself is native renderer work still to come.
+    # finishes" flag. EasyRPG's own `Game_Interpreter_Map::
+    # CommandShowBattleAnimation` (src/game_interpreter_map.cpp) always starts the
+    # animation through `Game_Screen::ShowBattleAnimation` regardless of the wait
+    # flag — only whether `_state.wait_time` is then set (pausing the interpreter)
+    # depends on it — so a fire-and-forget play is not merely non-blocking, it is
+    # still expected to render. With the wait flag set, this suspends on an
+    # :animation wait so the owning scene can hold the event for the animation's
+    # duration (#drive_map_animation reads `battle_animation` directly off that
+    # wait); with it unset, `@battle_animation_pending` flags this request for
+    # #take_battle_animation_request instead, since nothing will ever visit an
+    # :animation wait for it otherwise.
     def do_show_battle_animation(cmd)
       @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
                             wait: cmd.param(2) != 0 }
-      return unless cmd.param(2) != 0
-      @wait_kind = :animation
-      @waiting = true
+      if cmd.param(2) != 0
+        @wait_kind = :animation
+        @waiting = true
+      else
+        @battle_animation_pending = true
+      end
     end
 
     # A picture coordinate: the literal param at `idx`, or the value of the
