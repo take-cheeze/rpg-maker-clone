@@ -7134,17 +7134,21 @@ class RPG2k
                      # back at the default (yado.tk: an explicit `\c[0]` is
                      # needed in the text to stop the choices inheriting it).
                      trailing_color: scans.empty? ? 0 : scans.last[:end_color] }
-        speak_message(plain) unless choice
+        speak_message(plain)
         draw_message_contents
         win.contents = contents
         @choice_index = 0
         set_choice_cursor if choice
       end
 
-      # Zundamon (ずんだもん) message-window narration: read a Show Text
-      # page's plain, fully-expanded text aloud (variables and actor names
-      # already substituted, colour/pacing control codes already stripped --
-      # see `plain` in #open_message) as the page opens. A no-op whenever
+      # Zundamon (ずんだもん) message-window narration: read a page's plain,
+      # fully-expanded text aloud (variables and actor names already
+      # substituted, colour/pacing control codes already stripped -- see
+      # `plain` in #open_message/#append_choice_lines) as the page opens.
+      # Covers both Show Text and Show Choices -- a standalone choice window
+      # reads its options through #open_message(lines, true), and one merged
+      # onto a preceding Show Text reads just the appended options through
+      # #append_choice_lines, never the text above it again. A no-op whenever
       # --zundamon_tts was not passed or its VOICEVOX assets are not
       # installed (RGSS::Tts.available? is false either way), so this changes
       # nothing about any other run.
@@ -7184,6 +7188,9 @@ class RPG2k
         reveal = Game::TextReveal.new(plain)
         reveal.reveal_all
         @message[:reveal] = reveal
+        # Only the newly appended options -- the preceding Show Text already
+        # spoke itself from #open_message.
+        speak_message(new_seg_lines.map { |segs| segs.map { |s| s[:text] }.join })
         draw_message_contents
         @choice_index = 0
         set_choice_cursor

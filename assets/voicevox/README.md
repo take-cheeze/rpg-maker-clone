@@ -34,8 +34,24 @@ and the game runs exactly as it would without this feature.
 | `onnxruntime/lib/libvoicevox_onnxruntime.so` | The ONNX Runtime build CORE loads for inference |
 | `onnxruntime/TERMS.txt`            | Its usage terms                                         |
 | `dict/open_jtalk_dic_utf_8-1.11/`  | Open JTalk's UTF-8 dictionary (accent/pronunciation analysis for Japanese text) |
-| `models/0.vvm`                     | Zundamon's "ノーマル" (normal) voice model, style id 3   |
+| `models/0.vvm`                     | Zundamon's voice model — 4 styles, see below            |
 | `models/TERMS.txt`                 | Zundamon's usage terms — see Licensing below            |
+
+`0.vvm` is not one voice: it carries four of Zundamon's styles, selectable at
+run time with `--zundamon_tts_style` (default 3, ノーマル/normal):
+
+| Style id | Name (Japanese / English) |
+| -------- | -------------------------- |
+| 3        | ノーマル / normal (default) |
+| 1        | あまあま / sweet            |
+| 7        | ツンツン / curt              |
+| 5        | セクシー / sultry            |
+
+`--zundamon_tts_speed`/`_pitch`/`_intonation`/`_volume` further tune the
+AudioQuery scale factors VOICEVOX itself exposes (see `docs/adr/0046-…md`);
+these apply on top of whichever style is selected. Reaching an entirely
+different VOICEVOX character (not just another Zundamon style) needs its own
+`.vvm`, which this script does not fetch.
 
 `include/voicevox_core_capi.hxx` is a small, hand-trimmed mirror of
 `core/include/voicevox_core.h` covering only the ~10 declarations

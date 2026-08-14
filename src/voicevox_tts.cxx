@@ -42,6 +42,7 @@
 
 #include <ng-log/logging.h>
 
+#include <cctype>
 #include <cstdio>
 #include <string>
 
@@ -49,15 +50,33 @@
 
 namespace {
 
-// Zundamon's "ノーマル" (normal) style, style id 3 in voicevox_vvm's `0.vvm`
-// -- see assets/voicevox/models/TERMS.txt and the character/style table at
-// https://github.com/VOICEVOX/voicevox_vvm/blob/main/README.md. This is the
-// one style scripts/download-voicevox-zundamon.bash installs.
-constexpr VoicevoxStyleId kZundamonNormalStyleId = 3;
+// scripts/download-voicevox-zundamon.bash installs one voice model,
+// Zundamon's `0.vvm`, which itself carries four styles (see
+// assets/voicevox/models/TERMS.txt and the character/style table at
+// https://github.com/VOICEVOX/voicevox_vvm/blob/main/README.md); --
+// --zundamon_tts_style picks among them, defaulting to "ノーマル". Passing
+// any other id fails at synthesis time (logged via check() below) since no
+// other model is loaded -- reaching an entirely different VOICEVOX character
+// needs its own .vvm, which the download script does not fetch.
+constexpr VoicevoxStyleId kZundamonNormalStyleId = 3;  // ノーマル (normal)
+constexpr VoicevoxStyleId kZundamonAmaamaStyleId = 1;  // あまあま (sweet)
+constexpr VoicevoxStyleId kZundamonTsuntsunStyleId = 7;  // ツンツン (curt)
+constexpr VoicevoxStyleId kZundamonSexyStyleId = 5;  // セクシー (sultry)
 
 void* g_core = nullptr;
 bool g_init_attempted = false;
 bool g_available = false;
+
+// Voice parameters, set once from --zundamon_tts_* by rgss_tts_init() before
+// ensure_init() runs. speed/intonation/volume default to VOICEVOX's own
+// neutral 1.0, pitch to 0.0 -- unset flags therefore reproduce exactly what
+// the plain tts() convenience call (used before this parameterisation was
+// added) always produced.
+VoicevoxStyleId g_style_id = kZundamonNormalStyleId;
+double g_speed_scale = 1.0;
+double g_pitch_scale = 0.0;
+double g_intonation_scale = 1.0;
+double g_volume_scale = 1.0;
 
 VoicevoxMakeDefaultLoadOnnxruntimeOptionsFn
     p_make_default_load_onnxruntime_options = nullptr;
@@ -75,6 +94,12 @@ VoicevoxMakeDefaultLoadVoiceModelOptionsFn
 VoicevoxSynthesizerLoadVoiceModelFn p_synthesizer_load_voice_model = nullptr;
 VoicevoxMakeDefaultTtsOptionsFn p_make_default_tts_options = nullptr;
 VoicevoxSynthesizerTtsFn p_synthesizer_tts = nullptr;
+VoicevoxSynthesizerCreateAudioQueryFn p_synthesizer_create_audio_query =
+    nullptr;
+VoicevoxMakeDefaultSynthesisOptionsFn p_make_default_synthesis_options =
+    nullptr;
+VoicevoxSynthesizerSynthesisFn p_synthesizer_synthesis = nullptr;
+VoicevoxJsonFreeFn p_json_free = nullptr;
 VoicevoxWavFreeFn p_wav_free = nullptr;
 VoicevoxErrorResultToMessageFn p_error_result_to_message = nullptr;
 
@@ -184,6 +209,13 @@ void ensure_init() {
   ok &= load_symbol(g_core, "voicevox_make_default_tts_options",
                     p_make_default_tts_options);
   ok &= load_symbol(g_core, "voicevox_synthesizer_tts", p_synthesizer_tts);
+  ok &= load_symbol(g_core, "voicevox_synthesizer_create_audio_query",
+                    p_synthesizer_create_audio_query);
+  ok &= load_symbol(g_core, "voicevox_make_default_synthesis_options",
+                    p_make_default_synthesis_options);
+  ok &= load_symbol(g_core, "voicevox_synthesizer_synthesis",
+                    p_synthesizer_synthesis);
+  ok &= load_symbol(g_core, "voicevox_json_free", p_json_free);
   ok &= load_symbol(g_core, "voicevox_wav_free", p_wav_free);
   // Best-effort only: used for a nicer log message, nothing depends on it.
   load_symbol(g_core, "voicevox_error_result_to_message",
@@ -244,15 +276,57 @@ int available_fn(void) {
   return g_available ? 1 : 0;
 }
 
+// Rewrites `"field":<number>` in an AudioQuery JSON to carry `value` instead,
+// with a plain substring scan rather than a JSON library: the field is
+// always a bare, unquoted number (CORE's own serde output, never
+// user-controlled), so a full parser buys nothing here that hand-rolling one
+// would not risk more than a copy-paste error. A field CORE did not emit
+// (e.g. an unexpected schema change) is left untouched rather than
+// corrupting the JSON.
+std::string set_json_number(const std::string& json,
+                            const char* field,
+                            double value) {
+  const std::string key = std::string("\"") + field + "\":";
+  size_t start = json.find(key);
+  if (start == std::string::npos)
+    return json;
+  start += key.size();
+  size_t end = start;
+  while (end < json.size() &&
+         (std::isdigit((unsigned char)json[end]) || json[end] == '-' ||
+          json[end] == '+' || json[end] == '.' || json[end] == 'e' ||
+          json[end] == 'E'))
+    ++end;
+  char buf[64];
+  std::snprintf(buf, sizeof(buf), "%.6g", value);
+  return json.substr(0, start) + buf + json.substr(end);
+}
+
 void speak_fn(const char* utf8_text) {
   if (!g_available || !utf8_text || !*utf8_text)
     return;
 
-  VoicevoxTtsOptions opts = p_make_default_tts_options();
+  char* query_json = nullptr;
+  if (!check(p_synthesizer_create_audio_query(g_synthesizer, utf8_text,
+                                              g_style_id, &query_json),
+             "building the audio query"))
+    return;
+  std::string query(query_json);
+  p_json_free(query_json);
+
+  // Applied unconditionally: with every --zundamon_tts_* flag left at its
+  // default, this reproduces VOICEVOX's own neutral values byte-for-byte, so
+  // it changes nothing when the player never asked to tune anything.
+  query = set_json_number(query, "speedScale", g_speed_scale);
+  query = set_json_number(query, "pitchScale", g_pitch_scale);
+  query = set_json_number(query, "intonationScale", g_intonation_scale);
+  query = set_json_number(query, "volumeScale", g_volume_scale);
+
+  VoicevoxSynthesisOptions opts = p_make_default_synthesis_options();
   uintptr_t wav_len = 0;
   uint8_t* wav = nullptr;
-  VoicevoxResultCode code = p_synthesizer_tts(
-      g_synthesizer, utf8_text, kZundamonNormalStyleId, opts, &wav_len, &wav);
+  VoicevoxResultCode code = p_synthesizer_synthesis(
+      g_synthesizer, query.c_str(), g_style_id, opts, &wav_len, &wav);
   if (!check(code, "synthesizing speech"))
     return;
 
@@ -290,11 +364,32 @@ const RgssTtsBackend kBackend = {available_fn, speak_fn, stop_fn};
 // Install the VOICEVOX backend and eagerly load Zundamon's voice model. Only
 // called from src/main.cxx when --zundamon_tts is passed, so a normal run
 // pays no cost at all -- no dlopen, no ONNX Runtime session, nothing.
-extern "C" void rgss_tts_init(void) {
+//
+// style_id selects among the styles bundled in the one voice model this
+// engine loads (kZundamonNormalStyleId and its siblings above); the other
+// four parameters are AudioQuery scale factors applied to every utterance --
+// VOICEVOX's own neutral values (1.0/0.0/1.0/1.0) reproduce the unparameterised
+// tts() call this backend used before speak_fn switched to the audio-query +
+// synthesis path.
+extern "C" void rgss_tts_init(int style_id,
+                              double speed_scale,
+                              double pitch_scale,
+                              double intonation_scale,
+                              double volume_scale) {
 #if defined(RGSS_TTS_HAVE_DLOPEN)
+  g_style_id = (VoicevoxStyleId)style_id;
+  g_speed_scale = speed_scale;
+  g_pitch_scale = pitch_scale;
+  g_intonation_scale = intonation_scale;
+  g_volume_scale = volume_scale;
   rgss_tts_install_backend(&kBackend);
   ensure_init();
 #else
+  (void)style_id;
+  (void)speed_scale;
+  (void)pitch_scale;
+  (void)intonation_scale;
+  (void)volume_scale;
   LOG(WARNING) << "Tts: --zundamon_tts has no backend on this build (VOICEVOX "
                   "CORE integration is desktop-only)";
 #endif

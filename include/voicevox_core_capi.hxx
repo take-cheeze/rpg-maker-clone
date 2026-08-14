@@ -72,6 +72,14 @@ typedef struct VoicevoxTtsOptions {
   bool enable_interrogative_upspeak;
 } VoicevoxTtsOptions;
 
+// Same shape as VoicevoxTtsOptions, but this is
+// voicevox_synthesizer_synthesis's own options type (the AudioQuery-based path
+// used to tune speed/pitch/ intonation/volume -- see set_json_number in
+// src/voicevox_tts.cxx).
+typedef struct VoicevoxSynthesisOptions {
+  bool enable_interrogative_upspeak;
+} VoicevoxSynthesisOptions;
+
 // -- function pointer types, one per dlsym()'d entry point ------------------
 // (voicevox_core.h declares these as plain functions; src/voicevox_tts.cxx
 // dlsym()s each symbol name into a pointer of the matching type below.)
@@ -118,6 +126,26 @@ typedef VoicevoxResultCode (*VoicevoxSynthesizerTtsFn)(
     uintptr_t* output_wav_length,
     uint8_t** output_wav);
 typedef void (*VoicevoxWavFreeFn)(uint8_t* wav);
+
+// The two-step path (AudioQuery JSON -> synthesis), used instead of the plain
+// tts() convenience function whenever speed/pitch/intonation/volume are
+// tuned away from their defaults -- those are AudioQuery fields, not
+// VoicevoxTtsOptions ones, so tts() has no way to carry them.
+typedef VoicevoxResultCode (*VoicevoxSynthesizerCreateAudioQueryFn)(
+    const struct VoicevoxSynthesizer* synthesizer,
+    const char* text,
+    VoicevoxStyleId style_id,
+    char** output_audio_query_json);
+typedef struct VoicevoxSynthesisOptions (
+    *VoicevoxMakeDefaultSynthesisOptionsFn)(void);
+typedef VoicevoxResultCode (*VoicevoxSynthesizerSynthesisFn)(
+    const struct VoicevoxSynthesizer* synthesizer,
+    const char* audio_query_json,
+    VoicevoxStyleId style_id,
+    struct VoicevoxSynthesisOptions options,
+    uintptr_t* output_wav_length,
+    uint8_t** output_wav);
+typedef void (*VoicevoxJsonFreeFn)(char* json);
 
 typedef const char* (*VoicevoxErrorResultToMessageFn)(
     VoicevoxResultCode result_code);

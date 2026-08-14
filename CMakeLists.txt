@@ -277,9 +277,9 @@ if(EMSCRIPTEN)
   add_custom_target(onigmo_clean DEPENDS "${ONIGMO_A}")
 endif()
 
-add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
-                               src/voicevox_tts.cxx src/log_console.cxx
-                               src/error_dump.cxx)
+add_executable(
+  ${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
+                  src/voicevox_tts.cxx src/log_console.cxx src/error_dump.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby
@@ -331,14 +331,13 @@ target_compile_definitions(
   PRIVATE "RGSS_TIMIDITY_CFG_SOURCE=\"${TIMIDITY_ASSET_DIR}/timidity.cfg\"")
 
 # Zundamon (ずんだもん) message-window narration (--zundamon_tts,
-# src/voicevox_tts.cxx): a full offline VOICEVOX CORE synthesis stack --
-# the CORE C API library, its ONNX Runtime, the Open JTalk dictionary and
-# Zundamon's voice model -- dlopen()'d at run time, never a link-time
-# dependency. ~90 MiB, so it is downloaded by
-# scripts/download-voicevox-zundamon.bash rather than committed, the same
-# reasoning as the MIDI patch set above; the path is baked in unconditionally
-# and probed at run time for the same reason (a configure-time EXISTS check
-# would race the download).
+# src/voicevox_tts.cxx): a full offline VOICEVOX CORE synthesis stack -- the
+# CORE C API library, its ONNX Runtime, the Open JTalk dictionary and Zundamon's
+# voice model -- dlopen()'d at run time, never a link-time dependency. ~90 MiB,
+# so it is downloaded by scripts/download-voicevox-zundamon.bash rather than
+# committed, the same reasoning as the MIDI patch set above; the path is baked
+# in unconditionally and probed at run time for the same reason (a
+# configure-time EXISTS check would race the download).
 set(VOICEVOX_ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/voicevox)
 target_compile_definitions(
   ${PROJECT_NAME} PRIVATE "RGSS_VOICEVOX_SOURCE_DIR=\"${VOICEVOX_ASSET_DIR}\"")

@@ -90,10 +90,19 @@ not have.
   That obligation belongs to whoever ships a build with `--zundamon_tts`
   enabled, the same way it would apply to a video made with the reference
   VOICEVOX Engine — the engine does not enforce or automate it.
-- **One voice, one style, no runtime choice.** `kZundamonNormalStyleId = 3`
-  is a compile-time constant in `src/voicevox_tts.cxx`. Supporting another
-  character or style means downloading another `.vvm` and either adding a
-  config knob or a second bundled model; neither exists yet.
+- **Style and voice tuning is runtime-selectable, one character deep.**
+  `--zundamon_tts_style` picks among the four styles Zundamon's one bundled
+  `.vvm` already carries (ノーマル/あまあま/ツンツン/セクシー — style ids
+  3/1/7/5), and `--zundamon_tts_speed`/`_pitch`/`_intonation`/`_volume` tune
+  VOICEVOX's own AudioQuery scale factors (`speak_fn` in
+  `src/voicevox_tts.cxx` builds the query via
+  `voicevox_synthesizer_create_audio_query`, patches those four fields with a
+  plain substring scan rather than a JSON library — CORE's own serde output
+  is always a bare unquoted number there — then calls
+  `voicevox_synthesizer_synthesis` instead of the simpler `tts()`
+  convenience function, which has no way to carry them). Reaching a
+  *different* VOICEVOX character still means downloading another `.vvm` and
+  loading it as a second model; that does not exist yet.
 - **Windows is unsupported**, matching this engine's existing scope (no
   `CMakeLists.txt` branch targets it at all — Windows-under-RPG_RT is only
   ever exercised via wine for render-parity comparisons, never as a native
