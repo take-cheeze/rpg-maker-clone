@@ -8139,6 +8139,61 @@ check 'Scene::ItemMenu: the item list and target cursors wrap around' do
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
 end
 
+# A party whose only item is a switch (type 10) one -- Game::Party's own
+# decision logic (#use_switch_item) is covered by scripts/rpg2k_logic_check.rb;
+# this stub only has to hand the scene something that behaves the same way, so
+# the checks below stay about the RGSS wiring (does using it actually flip the
+# switch, consume one, and close the menu stack?).
+class SwitchItemStubParty < MenuStubParty
+  SWITCH_ID = 60
+  ITEM_SWITCH_ID = 77
+
+  attr_reader :use_switch_item_calls
+
+  def initialize
+    super
+    @use_switch_item_calls = []
+  end
+
+  def field_items(_state = nil); [[SWITCH_ID, 1]]; end
+
+  def db_item(id)
+    return nil unless id == SWITCH_ID
+    OpenStruct.new(name: 'Whistle', type: Game::Party::ITEM_SWITCH, switch_id: ITEM_SWITCH_ID)
+  end
+
+  def use_switch_item(id)
+    return nil unless id == SWITCH_ID
+    @use_switch_item_calls << id
+    ITEM_SWITCH_ID
+  end
+end
+
+check 'Scene::ItemMenu: a switch item flips its switch, consumes one, and closes ' \
+      'the whole menu stack, with no confirmation message' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SwitchItemStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item
+  scene.update
+  RGSS::Input.reset
+  eq [SwitchItemStubParty::SWITCH_ID], state.party.use_switch_item_calls, 'exactly one use, consuming one'
+  ok state.switches[SwitchItemStubParty::ITEM_SWITCH_ID], 'the switch is turned on'
+  ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+  ok scene.instance_variable_get(:@message).nil?, 'no confirmation message, matching Escape/Teleport'
+end
+
+check 'Scene::ItemMenu: a switch item that consumed nothing reports "no effect" and ' \
+      'leaves the menu open' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SwitchItemStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  scene.send(:apply_switch_item, 999) # not a switch item this stub recognises -- #use_switch_item returns nil
+  ok state.party.use_switch_item_calls.empty?, 'nothing consumed'
+  ok !parent.pop_to_map_called, 'the menu stays open'
+  ok !scene.instance_variable_get(:@message).nil?, 'a message is shown'
+end
+
 # A party whose only item is a special (type 9) one invoking an all-ally scope
 # skill -- Game::Party's own decision logic (#use_special_item /
 # #field_usable?) is covered by scripts/rpg2k_logic_check.rb; this stub only
