@@ -2960,12 +2960,15 @@ module Game
     # `BgmPlay` every other BGM entry point goes through (Play BGM, and the
     # battle/vehicle/inn helpers — see `Scene::Map#play_bgm`), so its "same
     # music: only adjust volume and speed" no-restart rule applies here too,
-    # same idiom as `#play_audio`'s `:bgm` branch just below.
+    # same idiom (volume-in-place included) as `#play_audio`'s `:bgm` branch
+    # just below.
     def do_play_memorized_bgm(_cmd)
       bgm = @state.memorized_bgm
       return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
       same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == bgm[:name]
-      unless same_file_already_playing
+      if same_file_already_playing
+        RGSS::Audio.bgm_volume(bgm[:volume] || 100)
+      else
         @state.bgm_looped = false
         RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
       end
@@ -2997,16 +3000,20 @@ module Game
         # BGM has a single channel, and RPG_RT special-cases re-triggering Play
         # BGM with the file that's already current: it does NOT break and
         # restart the track from the top the way any other Play BGM does
-        # (yado.tk). It also re-applies the command's vol/tempo/pan to the
-        # still-playing track, but RGSS::Audio here has no primitive for that
-        # (mruby-rgss/src/audio.cxx's bgm_play is the only vol/pitch entry
-        # point, and it always restarts via SDL_mixer) — that half is
-        # deliberately left unimplemented rather than faked; see docs/TODO.md.
+        # (yado.tk), but it does re-apply the command's own volume to the
+        # still-playing track (`RGSS::Audio.bgm_volume`, backed by
+        # `Mix_VolumeMusic` — see `src/sdl_audio.cxx`, which applies live with
+        # no restart, unlike `bgm_play`'s `Mix_PlayMusic`). Tempo/pan stay
+        # unaddressed: SDL_mixer has no live pitch control for a playing music
+        # stream (only a freshly started one), and pan is not wired as a
+        # Play BGM parameter at all today — see docs/TODO.md.
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name
         # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
         # as the "current system BGM" regardless of whether playback succeeds).
         @state.current_bgm = { name: name, volume: volume, tempo: pitch }
-        unless same_file_already_playing
+        if same_file_already_playing
+          RGSS::Audio.bgm_volume(volume)
+        else
           @state.bgm_looped = false # a fresh track has not looped yet
           RGSS::Audio.bgm_play(name, volume, pitch)
         end

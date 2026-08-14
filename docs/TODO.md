@@ -4054,14 +4054,40 @@ not yet verified:
   each side's own configured values, matching `play_audio`'s existing
   "tracks what should be playing even when the native call is skipped"
   behaviour), confirmed to fail against the pre-fix code (asserting no
-  native replay, getting `[["BattleBGM", 70, 110]]`) before the fix. **The
-  vol/tempo/pan-without-restart half is not addressed**: this build's
-  `RGSS::Audio` exposes no primitive to adjust an already-playing BGM's
-  volume, pitch, or pan in place — `bgm_play` (`mruby-rgss/src/audio.cxx`,
-  backed by `SDL_mixer`) is the only entry point that takes those
-  parameters, and it always starts playback from the top. Implementing
-  this half would need a new native backend primitive (e.g. an
-  `Mix_VolumeMusic`-style setter) that does not exist today. ✅ **"replaying
+  native replay, getting `[["BattleBGM", 70, 110]]`) before the fix. ✅
+  **The volume-without-restart half is now implemented too.** `RGSS::Audio`
+  used to expose no primitive to adjust an already-playing BGM's volume in
+  place — `bgm_play` (`mruby-rgss/src/audio.cxx`, backed by `SDL_mixer`) was
+  the only entry point that took a volume, and it always restarts playback
+  via `Mix_PlayMusic`. Added a new `bgm_volume` slot to `RgssAudioBackend`
+  (`include/rgss_audio.hxx`), implemented in `src/sdl_audio.cxx` as a bare
+  `Mix_VolumeMusic(to_mix_volume(volume))` call — SDL_mixer applies this to
+  the currently-loaded `Mix_Music` stream directly, with no restart, unlike
+  `bgm_play`'s `Mix_PlayMusic` — with a matching `_bgm_volume` forwarder in
+  `mruby-rgss/src/audio.cxx` and a public `RGSS::Audio.bgm_volume(volume)`
+  wrapper in `mruby-rgss/mrblib/lib.rb`, mirroring `bgm_fade`'s existing
+  shape exactly. Every same-file "does not restart" call site now calls it
+  instead of doing nothing: `Game::Interpreter#play_audio`'s `:bgm` branch,
+  `Scene::Map#play_bgm` (the shared helper the battle/vehicle/inn/map-BGM
+  fixes above all route through), and `Game::Interpreter
+  #do_play_memorized_bgm` — one shared `same_file_already_playing` idiom,
+  three call sites, all now re-applying the command's own volume live
+  instead of leaving whatever the interrupted track happened to be at
+  alone. Tempo/pan remain out of reach of this backend: SDL_mixer has no
+  live pitch control for a stream already playing (only a freshly started
+  one, `src/sdl_audio.cxx`'s own header comment), and pan/balance was never
+  wired as a Play BGM parameter at all, a separate, larger gap left
+  unaddressed here. Covered by two new `scripts/rpg2k_logic_check.rb`
+  checks (a same-file Play BGM re-trigger calls `bgm_volume` with the new
+  command's volume instead of `bgm_play`; a Play Memorized BGM replaying a
+  track that never stopped re-applies the memorized volume, distinguishing
+  it from an intervening same-file Play BGM's own live volume change) and a
+  new assertion on the existing `scripts/rpg2k_scene_check.rb` battle-BGM
+  check (entering and leaving a fight whose BGM matches the already-playing
+  field track now calls `bgm_volume` with each side's own volume on top of
+  the existing zero-`bgm_play`-calls assertion), all three confirmed to
+  fail against the pre-fix code (asserting a live `bgm_volume` call,
+  getting none) before the fix. ✅ **"replaying
   always restarts from the top" turns out to be imprecise for Play
   Memorized BGM specifically — it was missing this same same-file skip.**
   Verified against EasyRPG Player's actual C++ source rather than guessed

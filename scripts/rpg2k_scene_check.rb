@@ -150,7 +150,12 @@ module RGSS
     # screen) can assert which track started.
     class << self; attr_accessor :bgm_calls; end
     def self.bgm_play(*a); (@bgm_calls ||= []) << a; end
-    def self.reset_bgm; @bgm_calls = []; end
+    def self.reset_bgm; @bgm_calls = []; @bgm_volume_calls = []; end
+    # Recorded separately from bgm_calls: a same-file Play BGM re-trigger
+    # calls this instead of bgm_play (see Game::Interpreter#play_audio /
+    # Scene::Map#play_bgm), so the two checks stay distinguishable.
+    class << self; attr_accessor :bgm_volume_calls; end
+    def self.bgm_volume(v); (@bgm_volume_calls ||= []) << v; end
     def self.bgm_fade(*); end
     def self.bgm_stop(*); end
     # Scriptable playback position, so the "BGM played once" watcher can be
@@ -4247,10 +4252,10 @@ check 'Enemy Encounter scene: a battle BGM matching the already-playing field tr
   eq [], RGSS::Audio.bgm_calls,
      'entering battle does not break and restart a track that is already playing'
   eq 'BattleBGM', st.current_bgm[:name]
-  eq 70, st.current_bgm[:volume], "the battle track's own vol/tempo are still tracked " \
-                                   '(RPG_RT re-applies them in place; this build has no ' \
-                                   'native primitive for that, see docs/TODO.md)'
+  eq 70, st.current_bgm[:volume], "the battle track's own vol/tempo are still tracked"
   eq 110, st.current_bgm[:tempo]
+  eq [70], RGSS::Audio.bgm_volume_calls,
+     'the still-playing track had its volume re-applied live rather than left alone'
   RGSS::Audio.reset_bgm
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
@@ -4262,6 +4267,8 @@ check 'Enemy Encounter scene: a battle BGM matching the already-playing field tr
   eq 'BattleBGM', st.current_bgm[:name]
   eq 50, st.current_bgm[:volume], "the restored pre-battle vol/tempo snapshot wins back"
   eq 90, st.current_bgm[:tempo]
+  eq [50], RGSS::Audio.bgm_volume_calls,
+     'the restore also re-applied its own volume live, not just the tracked state'
 end
 
 check 'Enemy Encounter scene: victory plays the database battle_end_music over the result screen' do

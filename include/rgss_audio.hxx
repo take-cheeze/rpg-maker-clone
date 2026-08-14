@@ -35,6 +35,13 @@ struct RgssAudioBackend {
   // Background music: a single looping stream. Starting a new one replaces the
   // current music.
   void (*bgm_play)(const char* path, int volume, int pitch);
+  // Re-applies volume to the BGM stream already playing, with no restart --
+  // unlike bgm_play, which always starts its track over. Used when a Play BGM
+  // command re-triggers the file that is already current (RPG_RT re-applies
+  // the command's own volume rather than treating the repeat as a no-op).
+  // There is no live equivalent for pitch: SDL_mixer cannot re-pitch a
+  // playing music stream, only a freshly started one.
+  void (*bgm_volume)(int volume);
   void (*bgm_stop)(void);
   void (*bgm_fade)(int ms);
   // Current playback position of the BGM, in milliseconds (0 if unknown).
