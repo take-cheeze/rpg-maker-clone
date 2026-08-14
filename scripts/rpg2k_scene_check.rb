@@ -69,6 +69,13 @@ module RGSS
     def text_size(_); Rect.new(0, 0, 0, 0); end
     def font; @font ||= OpenStruct.new; end
     def get_pixel(x, y); Color2.new(x % 256, y % 256, 42, 255); end
+    # Records the hue(s) applied, mirroring the real RGSS::Bitmap#hue_change
+    # (mruby-rgss/src/lib.cxx) contract: mutates this bitmap in place, no
+    # return value asserted on. #battler_bitmap (mruby-rpg2k/mrblib/scene/
+    # map.rb) calls this on a freshly decoded, not-yet-cached bitmap only, so
+    # a nonempty log here is only ever this decode's own hue.
+    def hue_change(h); (@hue_calls ||= []) << h; end
+    attr_reader :hue_calls
     def dispose; end
   end
 
@@ -356,7 +363,17 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
              4 => OpenStruct.new(name: 'Ghost', battler_name: 'Ghost',
                                  max_hp: 15, max_sp: 0, attack: 5,
                                  defense: 2, spirit: 2, agility: 6, exp: 3,
-                                 gold: 6, transparent: true) },
+                                 gold: 6, transparent: true),
+             # Battle-graphic hue shift (field 3, `Game::Enemy#battler_hue`)
+             # fixture: reuses Slime's own "Slime" battler file with a
+             # nonzero hue, the way a real game palette-swaps one monster
+             # bitmap into several -- its own lone-member troop (group 4)
+             # keeps it from disturbing the two-Slime troop's own
+             # (un-hue-shifted) battler-cache assertions.
+             5 => OpenStruct.new(name: 'Red Slime', battler_name: 'Slime',
+                                 max_hp: 30, max_sp: 0, attack: 8,
+                                 defense: 4, spirit: 3, agility: 5, exp: 5,
+                                 gold: 10, battler_hue: 120) },
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
       1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
       2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) },
@@ -366,6 +383,9 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
         pages: nil),
       3 => OpenStruct.new(name: 'Ghosts', members: {
         1 => OpenStruct.new(enemy_id: 4, x: 100, y: 80, invisible: false) },
+        pages: nil),
+      4 => OpenStruct.new(name: 'Red Slimes', members: {
+        1 => OpenStruct.new(enemy_id: 5, x: 100, y: 80, invisible: false) },
         pages: nil) },
     # A drawable battle animation (id 8): four frames, with a screen flash timing
     # on frame 1. (Id 7 is intentionally absent so that test exercises the
@@ -7780,6 +7800,54 @@ check 'Enemy Encounter scene: an "Appear Transparent" enemy draws at reduced ' \
   scene.send(:reveal_battle_monster, 0)
   eq 160, ui[:enemy_sprites][0].opacity,
      'Show Hidden Monster also draws it at the reduced opacity'
+end
+
+# The battle-graphic hue shift (field 3, `Game::Enemy#battler_hue`) was parsed
+# by the schema but read nowhere in mruby-rpg2k -- the same "parsed but
+# unused" shape as `levitate`/`transparent` above, so a game reusing one
+# Monster/<name> bitmap for several palette-swapped monsters (a common
+# RPG2000 authoring trick) always drew every one of them in the file's own
+# unshifted colour. Verified against EasyRPG Player's actual C++ source:
+# `Game_Enemy::GetHue` (`src/game_enemy.h`) is a bare `enemy->battler_hue`
+# passthrough, and `Sprite_Enemy::OnMonsterSpriteReady`/`Refresh`
+# (`src/sprite_enemy.cpp`) rotate the decoded bitmap through
+# `Bitmap::HueChangeBlit` whenever it is nonzero and rebuild whenever either
+# the sprite name or the hue changes. Troop 4's lone Red Slime (enemy id 5,
+# reusing Slime's own "Slime" battler file at hue 120) is the dedicated
+# fixture, kept off the two-Slime troop so this never disturbs its own
+# zero-hue battler-cache assertions.
+check 'Enemy Encounter scene: a battle-graphic hue shift rotates the battler ' \
+      'bitmap, keyed separately from a same-named zero-hue battler' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 4)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  member = ui[:troop].members[0]
+  eq 120, member.battler_hue, 'the fixture enemy (id 5, Red Slime) carries the hue'
+  eq [120], ui[:enemy_sprites][0].bitmap.hue_calls,
+     'build_battle_sprites rotates the decoded battler bitmap by the database hue'
+
+  # The plain (hue 0) Slime shares this same scene's @monster_cache and the
+  # very same "Slime" battler file -- its own decode must stay unrotated
+  # rather than being mutated by the Red Slime's #hue_change call above,
+  # since #battler_bitmap keys the cache by name+hue rather than name alone.
+  plain = scene.send(:battler_bitmap, Game::Enemy.new(scene.db, 2))
+  ok plain.hue_calls.nil? || plain.hue_calls.empty?,
+     'a same-file, zero-hue enemy decodes its own unrotated bitmap'
+
+  # A mid-fight transformation redraw (#rebuild_battler_sprite) picks up the
+  # new hue too, matching EasyRPG's `Sprite_Enemy::Refresh` rebuilding on
+  # either the sprite name or the hue changing -- not just the initial build.
+  ui[:foes][0].battler_name = 'Slime'
+  ui[:foes][0].battler_hue = 0
+  ui[:foes][0].name = 'Slime'
+  scene.send(:refresh_battle_sprites)
+  ok ui[:enemy_sprites][0].bitmap.hue_calls.nil? ||
+     ui[:enemy_sprites][0].bitmap.hue_calls.empty?,
+     'transforming into the zero-hue battler redraws with no hue rotation'
 end
 
 check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do

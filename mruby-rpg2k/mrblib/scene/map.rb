@@ -4229,9 +4229,12 @@ class RPG2k
           spr.opacity = battler_opacity(enemy)
           spr
         end
-        # The battler each sprite was drawn from, so a transformation mid-fight
-        # is noticed and redrawn (see #refresh_battle_sprites).
+        # The battler (graphic name + hue) each sprite was drawn from, so a
+        # transformation mid-fight is noticed and redrawn (see
+        # #refresh_battle_sprites) -- matching EasyRPG's own
+        # `Sprite_Enemy::Refresh`, which rebuilds on either changing.
         @battle_ui[:sprite_names] = @battle_ui[:foes].map { |f| f.battler_name }
+        @battle_ui[:sprite_hues] = @battle_ui[:foes].map { |f| f.battler_hue || 0 }
         refresh_battle_sprites
       end
 
@@ -4378,16 +4381,23 @@ class RPG2k
       # The battler graphic for `enemy` (Monster/<battler_name>, colour-keyed), or
       # a solid placeholder block when it has no graphic or the file is missing —
       # the same fallback strategy the map uses for a missing chipset. Cached by
-      # name (see #cached_bitmap) so a monster reused across troop slots, or a
+      # name+hue (see #cached_bitmap) so a monster reused across troop slots, or a
       # transformation that returns to a battler already shown this visit, is
-      # decoded once.
+      # decoded (and hue-rotated) once. The hue rotation (database field 3, see
+      # `Game::Enemy#battler_hue`) is applied to this decode alone, never to a
+      # cached bitmap already shared by a same-named, differently-hued sibling —
+      # `Bitmap#hue_change` (`mruby-rgss/src/lib.cxx`) mutates in place, so the
+      # cache key must fold hue in rather than rotate a shared entry.
       def battler_bitmap(enemy)
         name = enemy.battler_name
-        key = (name && !name.empty?) ? name : nil
+        hue = enemy.respond_to?(:battler_hue) ? (enemy.battler_hue || 0) : 0
+        key = (name && !name.empty?) ? "#{name}\0#{hue}" : nil
         cached_bitmap(@monster_cache, key) do
           if key
             begin
-              Bitmap.new("Monster/#{key}", true)
+              bmp = Bitmap.new("Monster/#{name}", true)
+              bmp.hue_change(hue) if hue != 0
+              bmp
             rescue StandardError => e
               $stderr.puts "[RPG2k] battler load failed for #{enemy.name}: #{e.message}"
               placeholder_battler
@@ -4440,8 +4450,10 @@ class RPG2k
         # combatant no longer wearing the battler its sprite was built from
         # before deciding what is visible.
         names = (@battle_ui[:sprite_names] ||= [])
+        hues = (@battle_ui[:sprite_hues] ||= [])
         @battle_ui[:foes].each_with_index do |foe, i|
-          rebuild_battler_sprite(i, foe) if sprites[i] && names[i] != foe.battler_name
+          changed = names[i] != foe.battler_name || hues[i] != (foe.battler_hue || 0)
+          rebuild_battler_sprite(i, foe) if sprites[i] && changed
         end
         @battle_ui[:foes].each_with_index do |foe, i|
           spr = sprites[i]
@@ -4471,6 +4483,7 @@ class RPG2k
         sprites[i] = spr
         dispose_battle_sprite(old)
         @battle_ui[:sprite_names][i] = foe.battler_name
+        @battle_ui[:sprite_hues][i] = foe.battler_hue || 0
       end
 
       def living_allies; @battle_ui[:allies].reject(&:dead?); end
