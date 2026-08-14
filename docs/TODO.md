@@ -912,6 +912,55 @@ The work below is roughly ordered by the critical path to a walkable game
   blunts a Cure cast on the map afterwards too. Also still unread: the
   RPG2003-only `avoid_attacks` / `reflect_magic`,
   which no state in either test bed sets.
+  ✅ **`hp_change_type`/`sp_change_type` (RPG2003 fields 45/46) are now read
+  too, on both the map and battle slip paths — found while re-checking this
+  same `situation`-table cluster for anything else parsed-but-unused.** Both
+  `Game::States.drain` (the map-step helper just above) and `Game::Battle
+  #apply_turn_states` treated every state's `hp_change_val`/`hp_change_max`/
+  `sp_change_val`/`sp_change_max` as an unconditional **loss**, with no read
+  of the field that actually selects the direction — silently correct for
+  every state either test bed defines (mtf-meido-action's Poison, the one
+  map-slip state either ships, carries no `hp_change_type` value at all,
+  defaulting to 0), but wrong for a state authored as a "regen" (a positive
+  per-turn heal instead of a drain) or explicitly configured to do nothing
+  despite a nonzero amount. Verified against EasyRPG Player's actual C++
+  source rather than guessed at: `lcf::rpg::State::ChangeType` (liblcf's
+  generated `state.h`) is `ChangeType_lose = 0, ChangeType_gain = 1,
+  ChangeType_nothing = 2`, and both `Game_Battler::ApplyConditions`
+  (`src/game_battler.cpp`) and `Game_Party::ApplyStateDamage`
+  (`src/game_party.cpp`, the map-step counterpart) branch on all three
+  explicitly, not a lose/anything-else binary. **A second, more consequential
+  gap surfaced in the same investigation: `apply_turn_states`'s own slip
+  damage could knock a battler out outright**, contradicting
+  `ApplyConditions`'s own `ChangeHp(src_hp, /* lethal = */ false)` call, which
+  floors at 1 HP regardless of the computed magnitude — the exact non-lethal
+  rule the map-side drain already implemented correctly
+  (`Game::Party#apply_map_step_damage`'s own `change_hp(hp, false)`), but the
+  battle-side per-turn tick never did, so a large enough `hp_change_max` (a
+  boss's own poison-percent-of-max attack, say) could end a battler's turn in
+  death from status alone with no attack or skill involved — this codebase's
+  own comment even documented it as intended ("slip damage (which may knock
+  it out)", `Game::Battle#step_action`, now corrected). Fixed with a new
+  `Game::States::CHANGE_TYPE_LOSE`/`GAIN`/`NOTHING` constant trio and a shared
+  `Battle#slip_stat(cur, max, amount, type, floor)` (floor 1 for HP, 0 for SP,
+  matching `ApplyConditions`'s non-lethal-HP/no-floor-SP asymmetry) that both
+  `apply_turn_states`'s HP and SP branches now route through instead of a
+  bare `-=`/`.max`; `Game::States.drain` (map-step) now returns a signed delta
+  (negative lose, positive gain, 0 for nothing or an interval miss) that
+  `Party#apply_map_step_damage` sums and applies through the existing
+  `change_hp`/`change_mp` calls unchanged. Every existing loss-only state —
+  every state in both test beds, since the field is a 2003 addition neither
+  database sets — is unaffected: the schema default (0) is
+  `CHANGE_TYPE_LOSE`, reproducing the prior unconditional-subtraction
+  behaviour exactly, with the one substantive difference being the
+  now-correct HP floor. Covered by new `scripts/rpg2k_logic_check.rb` checks:
+  `States.map_step_drain`/`Party#apply_map_step_damage` with a GAIN-type
+  state heal (clamped to max) and a NOTHING-type state doing neither; a
+  battle GAIN-type state healing per turn the same way, alongside a
+  NOTHING-type control; and — the fail-before proof for the lethality half —
+  a 100%-of-max-HP battle poison tick now floors at 1 HP and leaves the
+  battler alive across two full rounds instead of knocking it out, confirmed
+  to fail against the pre-fix code (`expected 1, got 0`) before the fix.
   **The ground drains it too** — RPG2000's 地形ダメージ, the 地形 row's `damage`
   field (ADR 0034). Stepping onto a tile whose terrain carries one takes that
   much HP off every member who is not already down and is not wearing gear
