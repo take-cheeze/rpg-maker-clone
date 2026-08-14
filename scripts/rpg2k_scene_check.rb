@@ -1433,6 +1433,61 @@ check 'Wait 0.0 sec pauses a foreground event for exactly one frame' do
   ok st.switches[2], 'Wait 0.0 sec costs exactly one frame, not two'
 end
 
+# yado.tk "Untriaged backlog": "Autorun cascading within one frame" -- if the
+# lowest-id eligible Autorun map event's content contains no wait-including
+# command, real RPG_RT lets the next-lowest-id eligible Autorun event start
+# immediately in the same frame. Verified against EasyRPG Player's actual C++
+# source: `Game_Map::UpdateForegroundEvents` drives the shared foreground
+# interpreter inside a `while (!interp.IsRunning() && ...)` loop that rescans
+# for another eligible event the instant one's own command list drains, all
+# within the same real-frame call -- see `Scene::Map#drive_autostart_cascade`.
+check 'a second, distinct auto-start map event starts the same frame the ' \
+      'first one finishes with no Wait (Autorun cascading)' do
+  ic = Game::Interpreter::Cmd
+  p1 = page(trigger: 3) # auto-start, no Wait: just flips switch 1
+  p1.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  p2 = page(trigger: 3) # auto-start: flips switch 2
+  p2.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0])]
+  scene = new_scene({ 1 => event(1, 1, p1), 2 => event(2, 2, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok st.switches[1], 'the first auto-start event ran'
+  ok st.switches[2], 'a second, distinct auto-start event cascaded into the ' \
+                      'very same frame instead of waiting for the next one'
+end
+
+check 'a second auto-start map event does NOT cascade in while the first ' \
+      'one is still parked on its own Wait' do
+  ic = Game::Interpreter::Cmd
+  p1 = page(trigger: 3) # auto-start: flips switch 1, then waits
+  p1.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+                       ECmd.new(ic::WAIT, [2])] # 0.2s = 12 frames
+  p2 = page(trigger: 3) # auto-start: flips switch 2
+  p2.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0])]
+  scene = new_scene({ 1 => event(1, 1, p1), 2 => event(2, 2, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok st.switches[1], 'the first event\'s pre-wait command ran'
+  ok !st.switches[2], 'a still-running (waiting) first event must not let a ' \
+                       'second one cascade in on top of it'
+  20.times { scene.update }
+  ok st.switches[2], 'the second event eventually runs once the first one\'s Wait clears'
+end
+
+check 'a distinct auto-start common event cascades in behind a finishing ' \
+      'auto-start map event within the same frame' do
+  ic = Game::Interpreter::Cmd
+  p1 = page(trigger: 3) # auto-start, no Wait
+  p1.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  ce = OpenStruct.new(start_term: 3, need_flag: false,
+                      event: [ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0])])
+  scene = new_scene({ 1 => event(1, 1, p1) }, player: [0, 0], common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok st.switches[1], 'the auto-start map event ran'
+  ok st.switches[2], 'the auto-start common event cascaded in the same frame'
+end
+
 check 'Wait 0.0 sec doubles a parallel process lap gap to two frames' do
   # A parallel process already gets a free one-frame gap between laps with no
   # explicit wait at all (the check above). Adding a Wait 0.0 stacks one more

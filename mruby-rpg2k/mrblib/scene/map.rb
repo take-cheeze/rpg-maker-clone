@@ -293,7 +293,7 @@ class RPG2k
         else
           start_autostart
           if event_busy?
-            drive_event
+            drive_autostart_cascade
           else
             step_player_route
             step_events
@@ -1024,6 +1024,52 @@ class RPG2k
       # past a single frame's MAX_STEPS budget without hitting a wait).
       def parallels_paused?
         !@battle_ui.nil? || (@interpreter.running? && !@interpreter.waiting?)
+      end
+
+      # Drive the just-started foreground Auto-Start process, then -- yado.tk
+      # "Autorun cascading within one frame" -- keep looking for a *different*,
+      # not-yet-run Auto-Start map/common event to start the instant this one's
+      # own command list fully drains with no Wait/Show Text left pending, all
+      # within this same real frame, rather than waiting for the next one.
+      # Verified against EasyRPG Player's actual C++ source rather than
+      # guessed at: `Game_Map::UpdateForegroundEvents` (src/game_map.cpp)
+      # drives the single shared foreground interpreter inside a `while
+      # (!interp.IsRunning() && !interp.ReachedLoopLimit())` loop -- the
+      # instant a pushed event's own command list empties out
+      # (`IsRunning()` false), that same call immediately rescans every
+      # `IsWaitingForegroundExecution()` map/common event and pushes another
+      # one too, all sharing one `Game_Interpreter::loop_count`/`loop_limit`
+      # (10000) budget rather than ending the frame the first time the
+      # interpreter goes idle. `Scene::Map#update`'s own foreground dispatch
+      # used to call `#start_autostart` exactly once per real frame, so a
+      # second, distinct not-yet-run Auto-Start event on the same map had to
+      # wait for the *next* real frame even when the first one's own script
+      # ended with no Wait at all. Each distinct id can still only ever be
+      # picked up once per visit (`@started_auto`/`@started_common` are
+      # untouched by this), so the loop is naturally bounded by the finite
+      # number of map/common Auto-Start events on the map and stops the
+      # instant nothing new starts, or the interpreter is left running/
+      # waiting (mid-script, or genuinely parked on a Wait/Show Text/etc.) for
+      # a future frame to continue.
+      #
+      # The other half of this same finding -- whether the very *same* event,
+      # once its own script hits its natural end with no Wait, immediately
+      # restarts from the top and keeps consuming this frame's budget (a
+      # documented worked example: a one-line Auto-Start common event
+      # advancing a variable 5000 times within a single frame, 10000 steps / 2
+      # per lap) -- is a separate, much larger question left open, see the
+      # "Autorun (auto-start) events run at most once per map visit, not once
+      # per frame" bullet in docs/TODO.md: changing that would also require
+      # every existing Auto-Start test in this suite to arrange for its own
+      # event to fall out of eligibility once done, which this narrower,
+      # cascade-only fix does not.
+      def drive_autostart_cascade
+        loop do
+          drive_event
+          break if event_busy?
+          start_autostart
+          break unless event_busy?
+        end
       end
 
       # Start the first not-yet-run auto-start process in the foreground: map
