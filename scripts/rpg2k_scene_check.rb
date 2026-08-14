@@ -5869,6 +5869,62 @@ check 'the airship cannot land on a tile a map event occupies unless it has Thro
   eq [0, 0], [st.x, st.y], 'the party stands where the airship touched down'
 end
 
+check 'an unridden boat/ship blocks the hero on foot, but an unridden airship does not' do
+  # Verified against EasyRPG Player's actual C++ source: Game_Map::
+  # CheckOrMakeWayEx blocks every character type (the player included) on a
+  # parked Boat/Ship's own tile, but only checks the Airship when
+  # self.GetType() != Player -- a walking hero passes clean over one.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 1
+  boat.y = 0
+  RGSS::Input.dir_value = 6 # hold right, straight into the parked boat
+  10.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'an unridden boat blocks the hero on foot, same as a same-layer event'
+
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 1
+  RGSS::Input.dir_value = 2 # hold down, straight into the parked airship
+  10.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 1], [st.x, st.y], 'an unridden airship never blocks the hero on foot'
+end
+
+check 'an unridden boat/ship/airship all block a map event\'s own custom-route movement' do
+  # Unlike the hero (checked above), an event's own movement has no Player
+  # exemption for the Airship: EasyRPG's CheckOrMakeWayEx only skips the
+  # Airship check when self.GetType() == Player, so every other mover -- a
+  # map event's autonomous/custom route, and the player's own forced Set
+  # Move Route mirror -- is blocked by all three vehicle types alike.
+  east = event(0, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                          route: move_route([R::MOVE_RIGHT])))
+  scene = new_scene({ 1 => east }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 1
+  boat.y = 1
+  200.times { scene.update }
+  eq 0, chars(scene)[1].x, 'an unridden boat stops the event dead before its first step'
+
+  south = event(2, 0, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_DOWN])))
+  scene2 = new_scene({ 1 => south }, player: [5, 5])
+  st2 = scene2.instance_variable_get(:@state)
+  air = st2.vehicle(:airship)
+  air.map_id = st2.map_id
+  air.x = 2
+  air.y = 1
+  200.times { scene2.update }
+  eq 0, chars(scene2)[1].y,
+     'an unridden airship stops the event too, unlike its hero-on-foot exemption above'
+end
+
 check 'Show Battle Animation with the wait flag holds the event then resumes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

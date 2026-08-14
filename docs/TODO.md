@@ -354,6 +354,46 @@ The work below is roughly ordered by the critical path to a walkable game
   would show, while an unridden vehicle placed on the map keeps its standing
   pose), confirmed to fail against the pre-fix code (a `NoMethodError` for
   the not-yet-extracted `#player_walk_pattern`) before the fix.
+  ✅ **The "hero/event collision with a moving unboarded vehicle" follow-up
+  the first-cut paragraph flagged is now closed too, verified against
+  EasyRPG Player's actual C++ source rather than left a guess.**
+  `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) — the collision test
+  every `MakeWay` call routes through — loops every Boat/Ship on the current
+  map and refuses the step for **any** mover, the player included, when one
+  sits on the target tile; it then separately checks the Airship, but only
+  when `self.GetType() != Game_Character::Player` — an unridden airship is a
+  walkable, non-blocking tile for the party on foot, yet still a solid
+  obstacle for every other mover (a map event's own autonomous/custom-route
+  movement, or the player's own forced Set Move Route mirror, `@player_char`).
+  This codebase's `#char_passable?`/`#char_can_land?` (map events and the
+  player's own forced-route mirror alike, via `MapWorld`) and the hero's own
+  manual-input `#passable?` (`mruby-rpg2k/mrblib/scene/map.rb`) only ever
+  consulted `@event_tiles` — built solely from map events
+  (`#rebuild_event_tiles`) — so a parked boat, ship or airship was fully
+  transparent to every other character: the party and every map event could
+  freely walk onto or through its tile. (`#board_vehicle`'s own asymmetric
+  boarding rule — a boat/ship only boards by facing it from an adjacent
+  tile, an airship only by already standing on it — only makes sense under
+  exactly this real rule, corroborating it from a second angle.) Fixed with
+  a new `#vehicle_blocks?(x, y, block_airship:)`, scanning `Game::Vehicle::
+  TYPES` (boat/ship always, airship only when `block_airship` is true) for
+  a placed vehicle occupying the tile on the currently loaded map, called
+  from all three of the functions above — `block_airship: !character.equal?
+  (@player_char)` in the two `char_*` methods (true for a map event, false
+  for the player's own forced-route mirror), and `block_airship: false`
+  unconditionally in the hero's own `#passable?`. A vehicle currently being
+  ridden is unaffected in practice: it tracks the party's own tile every
+  frame (`#follow_vehicle`), so this only ever blocks a *different*
+  character stepping onto the party's own tile, never the ridden vehicle's
+  own movement (driven entirely separately, through `#vehicle_passable?`/
+  `VehicleWorld`, which this fix leaves untouched — a moving vehicle's own
+  collision against a *different* parked vehicle remains unmodelled, a
+  narrower, rarer edge case than hero/event collision with a parked one).
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (a hero on foot
+  is blocked by a parked boat but walks straight over a parked airship; a
+  map event's own custom-route movement is blocked by both a parked boat
+  and a parked airship, unlike the hero's own airship exemption), both
+  confirmed to fail against the pre-fix code before the fix.
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented
