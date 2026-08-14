@@ -5506,9 +5506,25 @@ not yet verified:
   makes `#drive_message` honour `auto_close?` for a choice window (and,
   for the merged case, makes `#append_choice_lines` thread the scanned
   `:auto_close` into its own `reveal` too) before being reverted.
-- Message Options (window transparency/position) are **sticky global
-  state** — once set, they apply to every subsequent message window for
-  the rest of the game (or until reset), not scoped to the current event.
+- ✅ **Message Options (window transparency/position) are sticky global
+  state -- once set, they apply to every subsequent message window for the
+  rest of the game (or until reset), not scoped to the current event.**
+  Already correct and, unlike the last few confirmed-already-correct
+  findings, already thoroughly tested too -- no fix or new coverage
+  needed, just the missing ✅. `Interpreter#do_message_options`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) writes straight into
+  `@state.message_config`, the single `Game::State` instance that lives
+  for the whole play session (`Scene::Map#perform_teleport` never
+  constructs a new `Game::State` on a map transfer, only swaps the map
+  data underneath the same one) -- so a change from one event reads back
+  from any later one, on any map, with no scoping mechanism to accidentally
+  reset it. `scripts/rpg2k_logic_check.rb` already exercises this from
+  several angles: multiple checks confirm settings set by one Message
+  Options command are still in effect for later, unrelated message
+  commands, and a dedicated save/load round-trip check (`~line 3074`)
+  confirms `transparent`/`position`/`face_name`/`face_index` all survive a
+  full `to_lsd`/`from_lsd` cycle -- a stronger, already-verified form of
+  "sticky for the rest of the game" than the bare claim asked for.
 - ✅ **Text beyond the display-limit line is now genuinely truncated by this
   codebase's own message layout, not just by an accident of bitmap size.**
   `Scene::Map#draw_message_run` (`mruby-rpg2k/mrblib/scene/map.rb`) handed
