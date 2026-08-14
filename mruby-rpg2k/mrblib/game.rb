@@ -3436,21 +3436,32 @@ module Game
     end
 
     # Whether skill `sk` is flagged "attribute defence up/down" (`affect_attr_
-    # defence`, field 45) and, if so, which direction: -1 (up, a rank toward A
-    # / better resistance) or +1 (down, a rank toward E / worse). yado.tk's
-    # note on the feature ("shifts the target's elemental rank by exactly one
-    # step, capped at +-1 from the character's base rank, resets automatically
-    # at battle end") says what it does but not which flag chooses the
-    # direction; this reuses `reverse_state_effect` (field 20) on the
-    # assumption RPG2000's skill editor drives its one "raise/lower" toggle
-    # for both the state-effect list and the attribute-defence list, the same
-    # way it already does for state infliction vs cure (see
-    # #skill_cured_states) -- not confirmed against real RPG_RT or either test
-    # bed, since neither ships a skill with the flag set. nil when the skill
-    # does not touch attribute defence at all.
+    # defence`, field 45) and, if so, which direction: +1 (the rank index
+    # moves toward E, a *smaller* attr_rate% -- better resistance, less
+    # damage taken from that attribute later) or -1 (toward A, a *larger*
+    # attr_rate% -- worse resistance, more damage taken; see #attr_rate's own
+    # 300/200/100/50/0 table, where a lower-lettered rank means a bigger
+    # multiplier). This used to reuse `reverse_state_effect` (field 20) as an
+    # unconfirmed guess; EasyRPG Player's actual C++ source settles it
+    # instead: `Game_BattleAlgorithm::Skill::vExecute` (src/
+    # game_battlealgorithm.cpp) computes `auto shift = IsPositive() ? 1 : -1;`
+    # right where it applies `affect_attr_defence`, and `IsPositive()` was set
+    # a few lines earlier from `Algo::SkillTargetsAllies(skill)` (src/algo.h),
+    # which is simply `!SkillTargetsEnemies(skill)` -- true for every scope
+    # except Scope_enemy(0)/Scope_enemies(1). `reverse_state_effect` plays no
+    # part in this at all (that flag's own state-cure/inflict role is,
+    # per the same function, `IsPositive() ^ (Player::IsRPG2k3() &&
+    # skill.reverse_state_effect)` -- gated behind an RPG2003 check this
+    # runtime does not model either way, a separate, wider question left
+    # untouched here). So the direction is purely the skill's own target
+    # scope: an ally-scoped skill (self/single ally/all allies, the "buff"
+    # shape) always raises resistance, an enemy-scoped one (single/all
+    # enemies, the "curse" shape) always lowers it -- matching
+    # #battle_skill_target's own enemy-scope test (`scope == 0 || scope ==
+    # 1`). nil when the skill does not touch attribute defence at all.
     def skill_attr_shift(sk)
       return nil unless sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence
-      sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect ? 1 : -1
+      sk.scope == 0 || sk.scope == 1 ? -1 : 1
     end
 
     # The command numbers for casting `sk` from `caster` on `target` (both
