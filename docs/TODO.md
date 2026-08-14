@@ -6037,6 +6037,41 @@ above are repeated here)
   the same fight — confirmed to fail (`expected 70, got 90`) against a
   temporarily-neutered `attack_hit_rate` that always returned 90, then
   restored.
+- ✅ **The "Appear Transparent" enemy flag (field 10) — found while re-checking
+  this same `levitate`/`miss` cluster for anything else parsed-but-unused —
+  is now implemented too, drawing the flagged battler's sprite at reduced
+  opacity for the whole fight.** Same "parsed by the schema, read nowhere in
+  `mruby-rpg2k`" shape as the `levitate` gap directly above: `enemy.transparent`
+  (`mruby-lcf/mrblib/schema.rb` field 10) was already decoded off every
+  database, but `Game::Enemy` (`mruby-rpg2k/mrblib/game.rb`) had no field for
+  it at all, and nothing anywhere set an enemy sprite's opacity — every
+  battler drew fully opaque regardless of the flag. Verified against EasyRPG
+  Player's actual C++ source rather than guessed at: `Game_Enemy::IsTransparent`
+  (`src/game_enemy.h`) is a bare `enemy->transparent` passthrough, and
+  `Sprite_Enemy::Draw` (`src/sprite_enemy.cpp`) computes `alpha = 160 * alpha
+  / 255` whenever it is set — 160/255 (~63%) of whatever opacity the sprite
+  would otherwise have (255 outside of the death-fade/explode timer
+  animations this codebase does not model), purely cosmetic with no
+  accuracy/evasion effect of any kind, exactly like `levitate`. Fixed by
+  adding `Game::Enemy#transparent` (mirroring `#levitate`'s own
+  `row.respond_to?(:transparent) ? ... : false` read) and a new
+  `Scene::Map#battler_opacity(member)` (`TRANSPARENT_ENEMY_OPACITY = 160`,
+  `mruby-rpg2k/mrblib/scene/map.rb`), wired into `spr.opacity =` at the same
+  three sites `#battler_y`/the `levitate` fix already threads through —
+  `#build_battle_sprites`, `#rebuild_battler_sprite` (a mid-fight
+  transformation redraw), `#reveal_battle_monster` (Show Hidden Monster) —
+  so a reveal or transformation lands at the correct opacity too, not just
+  the initial build. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  (the bare `Game::Enemy#transparent` reader: true when flagged, false when
+  explicitly unflagged, false when the row omits the field entirely) and a
+  new `scripts/rpg2k_scene_check.rb` check against a dedicated lone-member
+  troop (`enemy_group` 3, a `transparent`-flagged "Ghost", `enemy` 4) that
+  leaves every existing battler-sprite/flying-offset assertion undisturbed —
+  the sprite draws at 160/255 opacity on the initial build, keeps it through
+  a transformation redraw, and again through a Show Hidden Monster reveal,
+  while a plain (unflagged) enemy is pinned at the ordinary 255 — both
+  confirmed to fail against the pre-fix code (`NoMethodError: undefined
+  method 'transparent'`, and `expected 255, got nil`) before the fix.
 - ✅ **Chipset passability — upper-layer override — confirmed already
   correct, no code change needed.** `Game::ChipSet#passable_tile?`
   (`mruby-rpg2k/mrblib/game.rb`) already mirrors EasyRPG's

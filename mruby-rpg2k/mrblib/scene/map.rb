@@ -3893,6 +3893,20 @@ class RPG2k
         member.y - bmp.height / 2 + flying_offset(member)
       end
 
+      # A troop member's sprite opacity: 160/255 (~63%) for one flagged
+      # "Appear Transparent" (`Game::Enemy#transparent`, database field 10),
+      # 255 (fully opaque) for everyone else -- verified against EasyRPG
+      # Player's actual C++ source, `Sprite_Enemy::Draw`'s `alpha = 160 * alpha
+      # / 255` (`src/sprite_enemy.cpp`), with `alpha` at its 255 baseline since
+      # this codebase has no death-fade/explode sprite animation to scale it
+      # from. Purely cosmetic, no accuracy/evasion effect, same as
+      # #flying_offset -- shared by every site that (re)builds an enemy sprite
+      # so all three agree.
+      TRANSPARENT_ENEMY_OPACITY = 160
+      def battler_opacity(member)
+        member.transparent ? TRANSPARENT_ENEMY_OPACITY : 255
+      end
+
       # RPG2000 is a front-view battle: the enemy troop is drawn as sprites over a
       # battle background, while the party is represented by the status window (not
       # sprites). Build the backdrop and one sprite per visible troop member,
@@ -3908,6 +3922,7 @@ class RPG2k
           spr.x = enemy.x - bmp.width / 2
           spr.y = battler_y(enemy, bmp)
           spr.z = battler_z(i)
+          spr.opacity = battler_opacity(enemy)
           spr
         end
         # The battler each sprite was drawn from, so a transformation mid-fight
@@ -4120,6 +4135,7 @@ class RPG2k
         spr.x = member.x - bmp.width / 2
         spr.y = battler_y(member, bmp)
         spr.z = battler_z(i)
+        spr.opacity = battler_opacity(member)
         spr.visible = !foe.out_of_play?
         sprites[i] = spr
         dispose_battle_sprite(old)
@@ -4886,6 +4902,7 @@ class RPG2k
         spr.x = member.x - bmp.width / 2
         spr.y = battler_y(member, bmp)
         spr.z = battler_z(index)
+        spr.opacity = battler_opacity(member)
         dispose_battle_sprite(@battle_ui[:enemy_sprites][index])
         @battle_ui[:enemy_sprites][index] = spr
       end
