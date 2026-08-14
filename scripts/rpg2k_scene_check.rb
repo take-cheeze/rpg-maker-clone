@@ -5473,6 +5473,69 @@ check 'a second Show Battle Animation forcibly cuts off a still-playing first on
   ok st.switches[6], 'CE2 resumes once its own animation finishes'
 end
 
+# The same "second cuts off the first" rule as the check just above, but for
+# the *no-wait* half of Show Battle Animation, verified against EasyRPG's
+# actual C++ source rather than guessed at: `Game_Screen::ShowBattleAnimation`
+# is a bare unconditional `animation.reset(...)` with no branch on the *new*
+# request's own wait flag at all -- only the *issuing* interpreter's resulting
+# wait is conditional on that. `#drive_map_animation`'s own cut-off fix is
+# only ever reachable through the `:animation` wait dispatch, so it only ever
+# ran for a *waited-for* second request; a fire-and-forget one -- routed
+# through `#apply_battle_animation_request` instead, since it never parks on
+# a wait of its own -- used to just check whether the shared slot was free
+# and silently drop itself otherwise, leaving CE1's animation running
+# untouched and CE1 itself stuck waiting out its own fallback naturally
+# instead of being cut off.
+check 'a fire-and-forget Show Battle Animation also forcibly cuts off a still-playing first one' do
+  ic = Game::Interpreter::Cmd
+  # CE1's animation 7 has no drawable data in the fake db, so it parks on the
+  # ~20-frame timed-wait fallback -- long enough that CE2's own fire-and-
+  # forget animation can cut it off well before it would ever finish
+  # naturally.
+  ce1 = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                       event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [7, 10001, 1], indent: 0),
+                               ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
+  # CE2 waits a moment first (so CE1's animation is already in flight), then
+  # fires its own -- animation 8, the fake db's drawable one -- with the
+  # "wait until it finishes" flag *off* (the third SHOW_BATTLE_ANIM parameter
+  # is 0, unlike the waited-for check above).
+  ce2 = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                       event: [ECmd.new(ic::WAIT, [1], indent: 0),
+                               ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 0], indent: 0),
+                               ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce1, 2 => ce2 })
+  st = scene.instance_variable_get(:@state)
+  3.times { scene.update }
+  ok !st.switches[5], 'CE1 is still parked on its own long fallback wait'
+  ok scene.instance_variable_get(:@anim_wait), 'CE1 has claimed the shared slot (fallback path)'
+  # CE2's own Wait[1] (~6 frames) elapses well before CE1's ~20-frame fallback
+  # would ever finish naturally, so bound the search to comfortably less than
+  # that: if the slot never shows CE2's own drawable animation by frame 15,
+  # CE2's fire-and-forget request was dropped instead of cutting CE1 off --
+  # the pre-fix bug (CE2's request is lost forever in that case, not merely
+  # delayed, since nothing keeps retrying it the way a waiting interpreter
+  # implicitly does).
+  15.times do
+    scene.update
+    break if scene.instance_variable_get(:@map_animation)
+  end
+  ok scene.instance_variable_get(:@map_animation),
+     "the shared slot now shows CE2's own (drawable) animation instead of CE1's fallback wait, " \
+     "well before CE1's own ~20-frame duration could have finished it naturally"
+  ok scene.instance_variable_get(:@map_animation_interp).nil?,
+     "CE2's own request is fire-and-forget -- nothing is parked waiting on it"
+  # CE1 was resumed the instant it was cut off (this same pass, during CE2's
+  # own turn later in the same step_parallels sweep), but its own trailing
+  # Control Switches command only runs on the *next* step_parallel call for
+  # it -- give it one more frame to actually reach it, well short of the
+  # fallback's own ~20-frame duration (mirrors the waited-for check above).
+  scene.update
+  ok st.switches[5],
+     "CE1 resumed the instant its animation was cut off, well short of the fallback's own ~20-frame duration"
+  40.times { scene.update }
+  ok st.switches[6], "CE2's own command list reached its trailing Control Switches (it was never blocked by its own no-wait animation)"
+end
+
 # yado.tk: RPG_RT drops straight into Game Over the instant a wipe-triggering
 # command finds the whole party dead outside battle, regardless of which
 # event noticed it -- a Simulated Attack floor trap on a background Parallel

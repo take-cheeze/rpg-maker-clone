@@ -2296,15 +2296,36 @@ class RPG2k
       # No owner: unlike #init_map_animation's waited-for play, nothing is
       # parked on this one to #resume once it finishes (#step_map_animation
       # already treats a nil #@map_animation_interp as "no one to resume").
-      # When the shared on-screen slot is already busy this play is dropped
-      # rather than queued or cutting the running one short — this build does
-      # not model one animation cutting another off (see #drive_map_animation),
-      # and a fire-and-forget request has no owner left to keep retrying for a
-      # turn the way a waiting interpreter implicitly does by asking again next
-      # frame.
+      #
+      # When the shared on-screen slot is already busy, this play now cuts the
+      # running one off instead of being dropped — the missing half of
+      # #drive_map_animation's own "a second Show Battle Animation forcibly
+      # cuts the first off" fix, settled the same way against EasyRPG's actual
+      # C++ source: `Game_Screen::ShowBattleAnimation` (`src/game_screen.cpp`)
+      # is a bare unconditional `animation.reset(new BattleAnimationMap(...))`
+      # with no check on whether the *new* request itself carries a wait flag —
+      # only the *issuing* interpreter's own resulting wait is conditional on
+      # that (`_state.wait_time = frames` only when the flag is set), the
+      # cut-off of whatever was already playing is not. `#drive_map_animation`
+      # only ever claims the slot this unconditional way for a *waited-for* new
+      # request (reachable only through the `:animation` wait dispatch); a
+      # fire-and-forget one — routed here instead, since it never waits on
+      # anything — used to just check whether the slot was free and silently
+      # drop itself otherwise, leaving whichever request already held it (owned
+      # by a waiting interpreter, or itself ownerless) running untouched. A
+      # cut-off interpreter's animation no longer exists, so — exactly like
+      # #drive_map_animation's own cut-off branch — it has nothing left to wait
+      # on and resumes immediately rather than being left to hang on a slot
+      # that no longer holds its request.
       def apply_battle_animation_request(interp)
         req = interp.take_battle_animation_request
-        return if req.nil? || @map_animation || @anim_wait
+        return if req.nil?
+        if @map_animation || @anim_wait
+          cut_off = @map_animation_interp
+          @map_animation = nil
+          @anim_wait = nil
+          cut_off.resume if cut_off
+        end
         @map_animation_interp = nil
         begin_map_animation(req)
       end

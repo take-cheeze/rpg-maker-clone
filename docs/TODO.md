@@ -4483,6 +4483,49 @@ not yet verified:
   resumes rather than hanging forever on a slot it no longer owns),
   confirmed to fail against the pre-fix code (the slot still showing the
   first request 15 frames later) before the fix.
+- ✅ **A fire-and-forget (no-wait) Show Battle Animation now also forcibly
+  cuts off a still-playing first one**, instead of being silently dropped —
+  the missing symmetric half of the "second cuts off the first" fix directly
+  above, which only ever ran for a *waited-for* second request. Re-checking
+  the same EasyRPG C++ source that settled that fix shows the asymmetry was
+  never real in the first place: `Game_Screen::ShowBattleAnimation`
+  (`src/game_screen.cpp`) is a bare unconditional `animation.reset(new
+  BattleAnimationMap(...))` with no branch anywhere on whether the *new*
+  request itself carries a "wait until it finishes" flag — only the
+  *issuing* interpreter's own resulting wait is conditional on that
+  (`Game_Interpreter_Map::CommandShowBattleAnimation`'s `_state.wait_time =
+  frames` runs only when the flag is set), the cut-off of whatever was
+  already playing is not. `Scene::Map#drive_map_animation`'s own
+  `unless @map_animation_interp.equal?(it)` claim only runs through the
+  `:animation` wait dispatch, which a fire-and-forget request never reaches
+  at all (`Game::Interpreter#do_show_battle_animation` only enters that wait
+  when the flag is set); a no-wait play is routed instead through
+  `Scene::Map#apply_battle_animation_request`, called unconditionally after
+  every interpreter step for both the foreground interpreter and every
+  parallel process. That method's own comment even said so explicitly at the
+  time — "this build does not model one animation cutting another off ... a
+  fire-and-forget request has no owner left to keep retrying for a turn" —
+  written before the sibling fix above existed and never revisited once it
+  did: it still just checked whether `@map_animation`/`@anim_wait` was free
+  and returned immediately otherwise, permanently losing the request rather
+  than displacing whichever play (owned by a waiting interpreter, or itself
+  ownerless) already held the slot. Fixed by giving it the identical
+  unconditional-claim shape `#drive_map_animation` already uses: when the
+  slot is busy, whatever currently owns it (`@map_animation_interp`, `nil`
+  for an ownerless holder) is torn down and immediately resumed — its
+  animation no longer exists, so there is nothing left for it to wait on —
+  before the new fire-and-forget request takes the slot over via the
+  existing `#begin_map_animation`. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (mirroring the waited-for check's own
+  two-Common-Event setup, but with the second's Show Battle Animation issued
+  with its wait flag off): the shared slot switches to the second's own
+  drawable animation well before the first's ~20-frame fallback duration
+  could ever have finished it naturally, the first interpreter resumes
+  rather than hanging on a slot it no longer owns, and the second interpreter
+  — never blocked by its own no-wait request — reaches its own trailing
+  command right away regardless, confirmed to fail against the pre-fix code
+  (the slot still showing the first request, the second's own request
+  silently and permanently lost) before the fix.
 - ✅ **Show Battle Animation (11210) targeting a vehicle now plays over that
   vehicle's own live position**, instead of silently defaulting to the
   player's. `Scene::Map#animation_target_pixel` (`mruby-rpg2k/mrblib/
