@@ -4479,18 +4479,58 @@ above are repeated here)
   battle-event command naming a member by number gets silently repointed by
   it) is unverified — a separate question about troop-member identity/
   numbering, not the render-order this PR fixes.
-- The "airborne" enemy display flag **only** changes its Y position on
-  screen — it has no accuracy/hit-related effect. **Still open**: the
-  monster schema's `levitate` field (LCF enemy field 28,
-  `mruby-lcf/mrblib/schema.rb`) is parsed but read nowhere in
-  `mruby-rpg2k`, so this codebase draws every enemy at its plain
-  centred position regardless — but yado.tk's own text names no pixel
-  offset or animation shape for the raise, and both the yado.tk and
-  viprpg-dev wiki mirrors were unreachable this session (`yado.tk`
-  itself 503'd; the viprpg-dev wiki 403'd WebFetch), so implementing this
-  would mean guessing a magnitude with no way to check it — left for a
-  session that can compare against real RPG_RT. ✅ **The "frequent miss"
-  enemy option is confirmed already correct: a hardcoded 90%→70% drop to
+- ✅ **The "airborne" enemy display flag only changes Y position on screen, with
+  no accuracy/hit-related effect** — now implemented, with the crucial fact
+  yado.tk's own text never mentions at all: real RPG2000 does not render it,
+  full stop. The monster schema's `levitate` field (LCF enemy field 28,
+  `mruby-lcf/mrblib/schema.rb`) was parsed but read nowhere in `mruby-rpg2k`,
+  so this codebase used to draw every enemy at its plain centred position
+  regardless — matching real RPG2000 *by omission*, but for the wrong
+  reason, and giving RPG2003 no bob at all where the real engine has one.
+  Confirmed against EasyRPG Player's actual C++ source rather than a magnitude
+  guess (yado.tk itself 503'd and the viprpg-dev wiki mirror 403'd again this
+  session): `Game_Enemy::GetFlyingOffset` (`src/game_enemy.cpp`) is `if
+  (!Player::IsRPG2k3() || !IsFlying()) return 0;` — their own comment reads
+  "2k does not support flying, albeit mentioned in the help file" — so a
+  genuine RPG2000 database's `levitate` flag has always been cosmetically
+  inert in the real engine, and this codebase's prior "read nowhere" gap
+  coincidentally already matched that half. The other half — RPG2003 — draws
+  `round(sin(2*PI*frame/256) * 4)`, a per-battler `frame` counter incremented
+  once per battle-screen frame. Implemented by threading `Game::Enemy#levitate`
+  through from the schema (mirroring the existing `@miss`/`attack_hit_rate`
+  pattern right above it) and a new `Scene::Map#flying_offset(member)`
+  (`mruby-rpg2k/mrblib/scene/map.rb`), gated on `@state.party.rpg2003?` (the
+  same accessor the RPG2003 variable-range-widen and Menu-command-list fixes
+  already key off) **and** the member's own flag, reading a new per-fight
+  `@battle_ui[:frame]` counter (reset to 0 in `#open_battle`, incremented once
+  per `#drive_battle` call — this scene's own once-per-screen-frame cadence,
+  the same one `#update_map_tone`'s `@anim_frame` already uses for water/tile
+  animation) rather than EasyRPG's per-battler-randomized start phase, since
+  neither wiki mirror describes members desyncing from one another. A new
+  `#battler_y(member, bmp)` (`member.y - bmp.height / 2 + flying_offset(member)`)
+  replaces the bare centring math at all three sites that place an enemy
+  sprite — `#build_battle_sprites`, `#rebuild_battler_sprite` (a mid-fight
+  transformation redraw), `#reveal_battle_monster` (Show Hidden Monster) — so
+  a reveal or transformation mid-bob lands at the correct phase instead of
+  resetting to the un-offset centre; a new `#update_enemy_positions`, called
+  from `#drive_battle` alongside the existing `#update_enemy_flashes`, ticks
+  the counter and re-seats every levitating member's sprite every frame after
+  that, since none of the three build sites are what keeps a *continuous* bob
+  advancing frame to frame. A non-levitating member or a plain RPG2000 fight
+  costs nothing beyond the frame increment: `#flying_offset` returns 0 before
+  ever reading `@state.party.rpg2003?` (`member.levitate &&` short-circuits
+  first), so no existing battle fixture needed a `rpg2003?` method added
+  to keep working. Covered by two new `scripts/rpg2k_scene_check.rb` checks
+  against a new lone-member fixture troop (`enemy_group` 2, one `levitate`d
+  "Bat", `enemy` 3) that leaves every existing two-Slime battler-sprite
+  assertion undisturbed: `#flying_offset` at the sine curve's four
+  quarter-period landmarks (0, +4, 0, −4 at frames 0/64/128/192); and an
+  end-to-end drive confirming the sprite's own `y` actually moves as
+  `scene.update` ticks the frame counter in an RPG2003 fight, while the
+  identical troop and flag fought with no `rpg2003?` flag never bobs at all
+  after the same number of frames — both confirmed to fail against the
+  pre-fix code (`NoMethodError: undefined method 'levitate'`). ✅ **The
+  "frequent miss" enemy option is confirmed already correct: a hardcoded 90%→70% drop to
   *normal-attack* accuracy only, skills unaffected.** `Game::Enemy#attack_hit_rate`
   (`mruby-rpg2k/mrblib/game.rb`) already reads the schema's `miss` field
   (LCF enemy field 26) exactly this way — `@miss ? 70 : 90` — and

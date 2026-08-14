@@ -308,14 +308,24 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
             5 => OpenStruct.new(name: 'Herb', price: 40) },
     # An enemy and a troop of two, for the placeholder Enemy Encounter victory.
+    # Enemy 3 (Bat) carries the "airborne" flag (field 28, `levitate`) for the
+    # RPG2003 flying-offset checks; its own troop (group 2) is a lone member
+    # so those checks never disturb enemy_group 1's two-Slime assertions.
     enemy: { 2 => OpenStruct.new(name: 'Slime', battler_name: 'Slime',
                                  max_hp: 30, max_sp: 0, attack: 8,
                                  defense: 4, spirit: 3, agility: 5, exp: 5,
-                                 gold: 10) },
+                                 gold: 10),
+             3 => OpenStruct.new(name: 'Bat', battler_name: 'Bat',
+                                 max_hp: 20, max_sp: 0, attack: 6,
+                                 defense: 2, spirit: 2, agility: 8, exp: 4,
+                                 gold: 8, levitate: true) },
     enemy_group: { 1 => OpenStruct.new(name: 'Slimes', members: {
       1 => OpenStruct.new(enemy_id: 2, x: 100, y: 80, invisible: false),
       2 => OpenStruct.new(enemy_id: 2, x: 200, y: 80, invisible: false) },
-      pages: troop_pages) },
+      pages: troop_pages),
+      2 => OpenStruct.new(name: 'Bats', members: {
+        1 => OpenStruct.new(enemy_id: 3, x: 100, y: 80, invisible: false) },
+        pages: nil) },
     # A drawable battle animation (id 8): four frames, with a screen flash timing
     # on frame 1. (Id 7 is intentionally absent so that test exercises the
     # timed-wait fallback.)
@@ -1649,10 +1659,20 @@ end
 class BattleStubParty
   attr_reader :actors, :gold
   attr_accessor :leader
-  def initialize(actor = BattleStubActor.new); @actors = [actor]; @gold = 0; @leader = nil; end
+  # `rpg2003` stands in for the real `Game::Party#rpg2003?` (`Scene::Map
+  # #flying_offset` reads it off `@state.party`, not the database directly, so
+  # a battle scene check needs its stub party to answer it too) -- false by
+  # default, matching every other check's plain RPG2000 fixture.
+  def initialize(actor = BattleStubActor.new, rpg2003: false)
+    @actors = [actor]
+    @gold = 0
+    @leader = nil
+    @rpg2003 = rpg2003
+  end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
   def all_dead?; !any_alive?; end
+  def rpg2003?; @rpg2003; end
 end
 
 # A party the shop can charge and stock: gold plus an item-count bag, with the
@@ -3810,10 +3830,10 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
 end
 
 # Battle command / result command lists for the encounter tests below.
-def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil)
+def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil, troop_id: 1)
   handler2 = second_switch_code || ic::ESCAPE_HANDLER
   [
-    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, escape_mode, 1, 0], indent: 0),
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, troop_id, 0, escape_mode, 1, 0], indent: 0),
     ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
     ECmd.new(handler2, [], indent: 0),
@@ -5999,6 +6019,75 @@ check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
   ok !sprites[0].visible, 'a monster that fled is taken off the field'
   ok !ui[:foes][0].dead?, 'without counting as a kill'
   ok sprites[1].visible, 'its companion is untouched'
+end
+
+# yado.tk's own text on the "airborne" enemy flag names no pixel offset or
+# animation shape, only that it "changes its Y position on screen" -- but
+# EasyRPG's `Game_Enemy::GetFlyingOffset` supplies both the missing magnitude
+# (+/-4px) and period (256 frames) *and* an edition gate the site never
+# mentions at all: real RPG2000 never renders it ("2k does not support
+# flying, albeit mentioned in the help file" -- their comment), only RPG2003
+# does. Troop 2 (Bats) is the lone-`levitate`-member fixture these exercise;
+# troop 1's two Slimes (neither flagged) are untouched by any of this, which
+# the existing battler-sprite checks above already pin.
+check 'Scene::Map#flying_offset: RPG2003 + levitate is a +/-4px, 256-frame sine bob' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true))
+  ui = battle_to_command(scene)
+  member = ui[:troop].members[0]
+  ok member.levitate, 'the fixture enemy (id 3, Bat) carries the flag'
+
+  ui[:frame] = 0
+  eq 0, scene.send(:flying_offset, member), 'frame 0: sin(0) = 0'
+  ui[:frame] = 64 # a quarter period: sin(pi/2) = 1
+  eq 4, scene.send(:flying_offset, member), 'a quarter period in: the +4px peak'
+  ui[:frame] = 128 # half period: sin(pi) = 0
+  eq 0, scene.send(:flying_offset, member), 'half a period in: back through 0'
+  ui[:frame] = 192 # three-quarter period: sin(3pi/2) = -1
+  eq(-4, scene.send(:flying_offset, member), 'three-quarters in: the -4px trough')
+end
+
+check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the sprite ' \
+      'as frames pass, an RPG2000 one never does' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true))
+  ui = battle_to_command(scene)
+  spr = ui[:enemy_sprites][0]
+  member = ui[:troop].members[0]
+  base_y = member.y - spr.bitmap.height / 2
+  frame_before = ui[:frame]
+  # Drive to the next quarter-period boundary (a multiple of 64 frames) so the
+  # expected offset is an exact, easily-asserted +4 rather than a fraction.
+  target = ((frame_before / 64.0).ceil + 1) * 64
+  (target - frame_before).times { scene.update }
+  eq target, ui[:frame], 'the per-battle frame counter ticks once per scene.update'
+  eq base_y + 4, spr.y, "the sprite's own y actually moved with it, not just " \
+                        '#flying_offset in isolation'
+
+  # The identical troop and flag, fought with no rpg2003? flag on the party,
+  # never bobs at all -- matching EasyRPG's own edition gate, not merely a
+  # missing test.
+  scene2 = new_scene({ 1 => event(2, 2, auto) })
+  st2 = scene2.instance_variable_get(:@state)
+  st2.instance_variable_set(:@party, BattleStubParty.new(rpg2003: false))
+  ui2 = battle_to_command(scene2)
+  spr2 = ui2[:enemy_sprites][0]
+  member2 = ui2[:troop].members[0]
+  ok member2.levitate, 'still the same flagged enemy row'
+  base_y2 = member2.y - spr2.bitmap.height / 2
+  eq base_y2, spr2.y, 'RPG2000: no bob at battle open'
+  target.times { scene2.update }
+  eq base_y2, spr2.y, 'RPG2000: still no bob after the same number of frames ' \
+                      '-- the database flag is parsed but the engine never ' \
+                      'draws it, a real RPG_RT quirk, not a missing feature'
 end
 
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------
