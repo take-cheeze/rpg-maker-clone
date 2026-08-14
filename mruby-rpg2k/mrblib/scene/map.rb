@@ -5599,16 +5599,39 @@ class RPG2k
       # its target, then resume `it`. When the animation's data / sheet is
       # available it advances frame by frame (composited by #draw_map_animation),
       # firing the screen flashes its timings request; otherwise it degrades to a
-      # plain timed wait, so a cutscene paces the same as RPG_RT either way. If
-      # the slot is currently held by a *different* interpreter's animation, `it`
-      # simply waits its turn -- this build does not model one animation cutting
-      # another short, only that they cannot render concurrently.
+      # plain timed wait, so a cutscene paces the same as RPG_RT either way.
+      #
+      # yado.tk: only one battle animation is ever on screen, and a *second*
+      # one forcibly cuts the first off rather than queueing behind it --
+      # confirmed against EasyRPG Player's actual C++ source rather than left
+      # as a guess: `Game_Screen::ShowBattleAnimation` (src/game_screen.cpp)
+      # is a bare `animation.reset(new BattleAnimationMap(...))`, an
+      # unconditional `unique_ptr` replace with no check for whether the
+      # previous one had finished. If the slot is currently held by a
+      # *different* interpreter's animation, that request is torn down here
+      # (rather than left to finish naturally) and `it`'s own takes over
+      # immediately, same frame. The interpreter that just lost the slot has
+      # nothing left on screen to keep waiting on, so it resumes right away --
+      # EasyRPG's own interpreter actually arms an independent, precomputed
+      # frame-count wait at request time (`Game_Interpreter_Map::
+      # CommandShowBattleAnimation`'s `_state.wait_time = frames`) rather than
+      # tying resumption to the shared animation object's lifecycle at all, so
+      # a cut-off request there keeps counting down its own original duration
+      # instead of resuming the instant it is cut off; reproducing that exact
+      # timing would need this build to precompute and track each request's
+      # duration independently too, which is a larger change than the
+      # observable "does the first get cut off" fact this fixes.
       def drive_map_animation(it)
-        if @map_animation.nil? && @anim_wait.nil?
+        unless @map_animation_interp.equal?(it)
+          if @map_animation || @anim_wait
+            cut_off = @map_animation_interp
+            @map_animation = nil
+            @anim_wait = nil
+            cut_off.resume if cut_off
+          end
           @map_animation_interp = it
           init_map_animation(it)
         end
-        return unless @map_animation_interp.equal?(it)
         @map_animation ? step_map_animation : step_animation_wait
       end
 
