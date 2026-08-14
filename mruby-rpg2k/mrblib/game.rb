@@ -1755,6 +1755,32 @@ module Game
       row.respond_to?(:strong_defence) ? (row.strong_defence ? true : false) : false
     end
 
+    # 強制AI — an actor (or RPG2003 class) permanently under AI control in
+    # battle: the ordinary Attack/Skill/Defend/Item command menu never opens
+    # for them, and the engine picks their action automatically every round
+    # the same way an enemy's own 行動パターン does. Same class-row-then-
+    # player-row lookup as #strong_defence?/#double_hand? (liblcf's `job`
+    # table carries the same field id, 23) — parsed by the schema
+    # (`mruby-lcf/mrblib/schema.rb`, `player`/`job` field 23, `force_ai`) but
+    # never read anywhere in `mruby-rpg2k` before this fix. Confirmed against
+    # EasyRPG Player's actual C++ source rather than guessed at:
+    # `Game_Actor::GetAutoBattle` (`src/game_actor.h`) is a bare
+    # `data.auto_battle` passthrough, seeded from `dbActor->auto_battle` (or
+    # `cls->auto_battle` once a class overrides it, `src/game_actor.cpp`) —
+    # the identical row-then-class precedence this reader already follows for
+    # every other actor/class-overridable trait. `Scene_Battle_Rpg2k::
+    # SelectNextActor` (`src/scene_battle_rpg2k.cpp`) checks it right after
+    # the CanAct()/forced-restriction gates and, if set, calls the default
+    # AutoBattle algorithm's `SetAutoBattleAction` instead of ever opening
+    # `State_SelectCommand` — see `Game::Battle#choose_auto_battle_command`,
+    # this codebase's own port of that same algorithm (`AutoBattle::
+    # RpgRtCompat`, the one real, un-patched RPG_RT always runs).
+    def force_ai?
+      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row ||= @db_row
+      row.respond_to?(:force_ai) ? (row.force_ai ? true : false) : false
+    end
+
     # 二刀流 — an actor (or RPG2003 class) trait that turns the *shield* slot
     # into a *second weapon* slot, unlike the item-row #dual_attack? above (a
     # weapon that makes one basic attack swing twice — an unrelated flag that
@@ -6163,6 +6189,21 @@ module Game
       party.skill_helps_troop?(sk, caster, troop)
     end
 
+    # Whether `caster` (a live Game::Actor, not a battle Combatant snapshot —
+    # #choose_auto_battle_command reaches through a Combatant's own `#actor`
+    # to get one) can actually cast skill `sid` right now: reuses
+    # Game::Party's own #can_cast? (affordability, silence and weapon-
+    # Attribute equip-gating) so a Forced-AI actor's own skill eligibility
+    # matches the ordinary field/menu gate exactly, mirroring EasyRPG's
+    # `Game_Actor::IsSkillUsable`, the same function `CalcSkillAutoBattleRank`
+    # gates on. Defaults to "eligible" without a party to ask, matching every
+    # other tolerant accessor here.
+    def skill_ready?(caster, sid)
+      party = @state && @state.respond_to?(:party) ? @state.party : nil
+      return true unless party && party.respond_to?(:can_cast?)
+      party.can_cast?(caster, sid)
+    end
+
     def switch?(id)
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
       sw ? sw[id] : false
@@ -7935,6 +7976,306 @@ module Game
     def enemy_fallback_attack(b)
       target = attack_target(b)
       target ? deal_attack(b, target) : nil
+    end
+
+    # -- forced AI (強制AI) ---------------------------------------------------
+    #
+    # Queues a command on an ally `b` flagged `Game::Actor#force_ai?`
+    # automatically, the way a player's own menu choice would, instead of
+    # ever opening the ordinary Attack/Skill/Defend/Item command window --
+    # called from `Scene::Map`'s command-selection loop in place of drawing
+    # that menu (see the fuller writeup and `docs/TODO.md`'s own entry). A
+    # faithful port of EasyRPG's default `AutoBattle::RpgRtCompat` algorithm
+    # (`autobattle.cpp`'s `SelectAutoBattleActionRpgRtCompat` ->
+    # `SelectAutoBattleAction(source, WeaponAll, cond, do_skills: true,
+    # attack_variance: false, skill_variance: true, emulate_bugs: true)` --
+    # the one real, un-patched RPG_RT always runs; EasyRPG's other two named
+    # algorithms, `AttackOnly` and `RpgRtImproved`, are its own optional,
+    # non-default customizations and are not modelled here). Row-based
+    # battle-formation modifiers (`Feature::HasRow()` in every formula this
+    # ports) are never applicable: this codebase has no row/formation system
+    # of any kind, so every such branch in the source is dead code for any
+    # database this build can load, not a simplification made on our end.
+    def choose_auto_battle_command(b)
+      best_skill = nil
+      best_sid = nil
+      best_skill_rank = 0.0
+      skills = b.actor && b.actor.respond_to?(:skills) ? b.actor.skills : []
+      skills.each do |sid|
+        sk = @ai && @ai.skill(sid)
+        next unless sk
+        r = auto_battle_skill_rank(b, sk, sid)
+        if r > best_skill_rank
+          best_skill_rank = r
+          best_skill = sk
+          best_sid = sid
+        end
+      end
+      attack_rank = auto_battle_attack_rank(b)
+      if best_skill && attack_rank < best_skill_rank
+        queue_auto_battle_skill(b, best_skill, best_sid)
+      else
+        queue_auto_battle_attack(b)
+      end
+    end
+    # Called from Scene::Map's own command-selection loop (see #command_
+    # restricted?, this method's sibling in that same caller), well outside
+    # this otherwise-private section -- exposed the same way #camera_position
+    # is over in Scene::Map itself.
+    public :choose_auto_battle_command
+
+    # EasyRPG's `CalcSkillAutoBattleRank`: `sk` (known by `b`, database id
+    # `sid`) is out of the running entirely (0.0) unless it is an ordinary
+    # HP/SP/state skill (`Game::Party.normal_skill?` — a Teleport/Escape/
+    # Switch skill is never auto-cast) that `b` can actually afford and is
+    # not sealed from casting (`EnemyAi#skill_ready?`, `Game_Actor::
+    # IsSkillUsable`'s exact gate). Otherwise its rank is the max (single-
+    # target scope) or sum (all-target scope) of every possible target's own
+    # rank, plus one final random jitter draw (`Rand::GetRandomNumber(0,99)/
+    # 100.0`, applied once per *skill* here, not per target) so two skills
+    # that would otherwise tie do not always resolve the same way twice.
+    def auto_battle_skill_rank(b, sk, sid)
+      return 0.0 unless Game::Party.normal_skill?(sk)
+      return 0.0 unless @ai && b.actor && @ai.skill_ready?(b.actor, sid)
+      rank =
+        case sk.scope
+        when 3 then @allies.reduce(0.0) { |m, t| [m, auto_battle_heal_rank(b, sk, t)].max }
+        when 4 then @allies.reduce(0.0) { |s, t| s + auto_battle_heal_rank(b, sk, t) }
+        when 0 then @enemies.reduce(0.0) { |m, t| [m, auto_battle_damage_rank(b, sk, t)].max }
+        when 1 then @enemies.reduce(0.0) { |s, t| s + auto_battle_damage_rank(b, sk, t) }
+        when 2 then auto_battle_heal_rank(b, sk, b)
+        else 0.0
+        end
+      rank += @rng.random(100) / 100.0 if rank > 0.0
+      rank
+    end
+
+    # EasyRPG's `CalcSkillDmgAutoBattleTargetRank`: how good `sk` (an enemy-
+    # scope skill, cast by `b`) would be against a single `target`, reusing
+    # `EnemyAi#skill_command` -> `Game::Party#battle_skill_command`'s own
+    # already-computed `hp` (already `-(base - target's defence, floored at
+    # 0)`, the identical figure `Algo::CalcSkillEffect` builds before its own
+    # attribute-multiplier/variance steps) rather than re-deriving it, so
+    # this can never drift from what the skill would actually deal if cast
+    # for real. 0.0 for a dead/hidden target, or a fully-resisted swing (the
+    # `min(dmg, tgt_hp)` term never letting an overkill inflate the rank past
+    # what the target could actually lose) — 1.5 exactly at a guaranteed kill
+    # (`rank == 1.0`), then a flat SP-cost penalty (the *raw*, half-SP-cost-
+    # gear-ignoring cost — `#auto_battle_raw_cost`, matching `Calc
+    # SkillCostAutoBattle`'s own "ignores half sp cost modifier" comment) and
+    # a `*1.5+0.5` bonus reserved for the very first still-living enemy in
+    # troop order specifically (never any other member, matching the site
+    # exactly — this is what nudges a Forced-AI actor toward finishing off
+    # the front-most target rather than spreading damage around).
+    def auto_battle_damage_rank(b, sk, target)
+      return 0.0 unless target && !target.out_of_play?
+      cmd = @ai && @ai.skill_command(sk, b, target)
+      return 0.0 unless cmd
+      dmg = -(cmd[:hp] || 0)
+      dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
+      dmg = varied(dmg, sk.respond_to?(:variance) ? (sk.variance || 0) : 0)
+      tgt_hp = target.hp
+      return 0.0 if tgt_hp <= 0
+      rank = [dmg, tgt_hp].min.to_f / tgt_hp
+      rank = 1.5 if rank == 1.0
+      src_max_sp = b.max_mp || 0
+      if src_max_sp > 0
+        rank -= auto_battle_raw_cost(sk, b).to_f / src_max_sp / 4.0
+        rank = 0.0 if rank < 0
+      end
+      first = @enemies.find { |e| !e.out_of_play? }
+      rank = rank * 1.5 + 0.5 if first && first.equal?(target)
+      rank
+    end
+
+    # EasyRPG's `CalcSkillHealAutoBattleTargetRank`: how good `sk` (an ally/
+    # self-scope skill, cast by `b`) would be for a single `target`. A living
+    # target ranks the raw heal reused from `#skill_command` (positive `hp`,
+    # no target-defence term) against how much headroom it actually has left
+    # (`min(base, max_hp - hp) / max_hp` — healing a nearly-full ally for a
+    # lot ranks the same as topping off a nearly-empty one for a little), less
+    # the same raw-SP-cost penalty `#auto_battle_damage_rank` charges. A
+    # downed target (`hp <= 0`) instead checks whether `sk` could revive it
+    # at all — its own `state_effects` list naming Knockout (state id 1,
+    # `Game::Actor::DEATH_STATE`) as the very first entry — and, if so, ranks
+    # it by the skill's own `power` field alone, deliberately **not**
+    # checking `reverse_state_effect` first (`emulate_bugs: true`
+    # reproduces the genuine RPG_RT bug EasyRPG's own comment names outright:
+    # "RPG_RT does not check the reverse_state_effect flag to skip skills
+    # which would kill party members" — a Berserk-on-self skill flagged to
+    # *inflict* Knockout via the reverse flag still reads as a viable revive
+    # here, exactly like real RPG_RT).
+    def auto_battle_heal_rank(b, sk, target)
+      if target.hp > 0
+        return 0.0 unless sk.respond_to?(:affect_hp) && sk.affect_hp
+        cmd = @ai && @ai.skill_command(sk, b, target)
+        return 0.0 unless cmd
+        base = cmd[:hp] || 0
+        return 0.0 if base <= 0
+        base = apply_attr_multiplier(base, cmd[:attributes], target)
+        base = varied(base, sk.respond_to?(:variance) ? (sk.variance || 0) : 0)
+        tgt_max_hp = target.max_hp || 0
+        return 0.0 if tgt_max_hp <= 0
+        max_effect = [base, tgt_max_hp - target.hp].min
+        rank = max_effect.to_f / tgt_max_hp
+        src_max_sp = b.max_mp || 0
+        if src_max_sp > 0
+          rank -= auto_battle_raw_cost(sk, b).to_f / src_max_sp / 8.0
+          rank = 0.0 if rank < 0
+        end
+        rank
+      else
+        ids = sk.respond_to?(:state_effects) ? sk.state_effects : nil
+        return 0.0 unless ids && ids[0] && ids[0] != 0
+        (sk.respond_to?(:power) ? (sk.power || 0) : 0) / 1000.0 + 1.0
+      end
+    end
+
+    # `sk`'s SP cost with `caster`'s own half-SP-cost gear deliberately
+    # ignored -- EasyRPG's `CalcSkillCostAutoBattle` under `emulate_bugs:
+    # true` (`Algo::CalcSkillCost(skill, max_sp, half_sp_cost: false)`), the
+    # ranking-only cost term `#auto_battle_damage_rank`/`#auto_battle_heal_
+    # rank` both charge -- distinct from `Game::Party#skill_cost`, which
+    # *does* apply the discount and is what `EnemyAi#skill_command`'s own
+    # `cost:` (the amount actually spent once the action is queued) already
+    # reuses unchanged.
+    def auto_battle_raw_cost(sk, caster)
+      if sk.respond_to?(:sp_type) && sk.sp_type == 1
+        (caster.max_mp || 0) * (sk.respond_to?(:sp_percent) ? (sk.sp_percent || 0) : 0) / 100
+      else
+        sk.respond_to?(:sp_cost) ? (sk.sp_cost || 0) : 0
+      end
+    end
+
+    # EasyRPG's `CalcNormalAttackAutoBattleTargetRank`, `apply_variance:
+    # false` (RpgRtCompat's own `attack_variance` flag) -- the base swing
+    # (`Battle.attack_damage`, the same `atk/2 - def/4` formula #deal_attack
+    # itself hits with) is never spread by variance here, only scaled by the
+    # attacker's own weapon-Attribute multiplier. `emulate_bugs: true` skips
+    # the dual-wield swing-count multiplier entirely -- real RPG_RT's own
+    # documented bug, "Dual Attack is ignored" for ranking purposes, even
+    # though the swing itself still lands twice once actually thrown (see
+    # `Combatant#strike_count`, untouched by this). The `*1.5+0.5` first-
+    # enemy bonus and the final jitter-plus-`*1.5` reshaping both mirror
+    # `#auto_battle_damage_rank`'s and this function's own C++ counterpart
+    # exactly -- note the jitter step here runs unconditionally whenever
+    # `target` exists and this rank is positive, stacking with (not
+    # replacing) the first-enemy bonus above it, matching the source's own
+    # two independent `rank = rank*1.5+...` lines rather than folding them
+    # into one.
+    def auto_battle_attack_target_rank(b, target)
+      return 0.0 unless target && !target.out_of_play?
+      dmg = Battle.attack_damage(b.atk || 0, target.def || 0)
+      dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
+      tgt_hp = target.hp
+      return 0.0 if tgt_hp <= 0
+      rank = [dmg, tgt_hp].min.to_f / tgt_hp
+      rank = 1.5 if rank == 1.0
+      first = @enemies.find { |e| !e.out_of_play? }
+      rank = rank * 1.5 + 0.5 if first && first.equal?(target)
+      rank > 0.0 ? @rng.random(100) / 100.0 + rank * 1.5 : rank
+    end
+
+    # EasyRPG's `CalcNormalAttackAutoBattleRank`: under `emulate_bugs: true`
+    # this always takes the *max* over every living enemy's own target rank,
+    # never the sum -- even for an `attack_all` weapon, whose own separate
+    # bonus (spreading the swing across the whole side once actually thrown)
+    # this ranking pass never sees, the second half of the same "Dual Attack
+    # ignored" family of RPG_RT quirks `#auto_battle_attack_target_rank`
+    # already documents.
+    def auto_battle_attack_rank(b)
+      @enemies.reduce(0.0) { |m, t| [m, auto_battle_attack_target_rank(b, t)].max }
+    end
+
+    # Queues `sk` (database id `sid`) on `b`, re-deriving its actual target(s)
+    # by scope exactly the way the field/battle menus already do (#command_
+    # skill / #command_skill_all, `Scene::Map#apply_pending_skill`/`#apply_
+    # pending_skill_all`'s own shape, reused here instead of duplicated) --
+    # a single-target scope (0 enemy / 3 ally) re-ranks every candidate
+    # target fresh (a second, independent set of variance/jitter draws from
+    # the ones #auto_battle_skill_rank already spent deciding *whether* to
+    # cast this skill at all, matching `SelectAutoBattleAction`'s own second,
+    # separate target-selection loop in the C++ source) and falls back to
+    # `#command_skip` -- the same "acts, but does nothing" outcome
+    # `Game_BattleAlgorithm::None` produces -- on the vanishingly rare chance
+    # every candidate ranks at or below zero. Self/all-target scopes need no
+    # such search.
+    def queue_auto_battle_skill(b, sk, sid)
+      case sk.scope
+      when 1 # all enemies
+        queue_auto_battle_group_skill(b, sk, sid, @enemies.reject(&:out_of_play?))
+      when 4 # all allies
+        queue_auto_battle_group_skill(b, sk, sid, @allies.reject(&:dead?))
+      when 0 # single enemy
+        best = auto_battle_best_target(@enemies) { |t| auto_battle_damage_rank(b, sk, t) }
+        best ? queue_single_auto_battle_skill(b, sk, sid, best) : command_skip(b)
+      when 3 # single ally
+        best = auto_battle_best_target(@allies) { |t| auto_battle_heal_rank(b, sk, t) }
+        best ? queue_single_auto_battle_skill(b, sk, sid, best) : command_skip(b)
+      when 2 # self
+        queue_single_auto_battle_skill(b, sk, sid, b)
+      else
+        command_skip(b)
+      end
+    end
+
+    # The member of `targets` with the strictly-highest block-yielded rank, or
+    # nil when none scores above 0.0 -- `SelectAutoBattleAction`'s own
+    # `best_target_rank` starts at exactly 0.0 too, so a rank that only ever
+    # reaches 0.0 (every candidate already resisting/full/out of reach) never
+    # wins by matching it.
+    def auto_battle_best_target(targets)
+      best = nil
+      best_rank = 0.0
+      targets.each do |t|
+        r = yield t
+        if r > best_rank
+          best_rank = r
+          best = t
+        end
+      end
+      best
+    end
+
+    def queue_single_auto_battle_skill(b, sk, sid, target)
+      cmd = @ai.skill_command(sk, b, target)
+      return command_skip(b) unless cmd
+      b.command = skill_command_hash(sk, cmd, target)
+      b.command[:skill_id] = sid
+    end
+
+    def queue_auto_battle_group_skill(b, sk, sid, targets)
+      return command_skip(b) if targets.empty?
+      meta = @ai.skill_command(sk, b, targets.first)
+      return command_skip(b) unless meta
+      effects = targets.map do |t|
+        c = @ai.skill_command(sk, b, t)
+        c ? { target: t, hp: c[:hp] || 0, mp: c[:mp] || 0 } : nil
+      end.compact
+      command_skill_all(b, effects, name: skill_name_of(sk), skill_id: sid,
+                        absorb: meta[:absorb] ? true : false, attack: meta[:attack],
+                        cost: meta[:cost], inflict: meta[:inflict], chance: meta[:chance],
+                        variance: meta[:variance] || 0, attributes: meta[:attributes],
+                        attr_shift: meta[:attr_shift], attr_ids: meta[:attr_ids],
+                        stat_mod_keys: meta[:stat_mod_keys], stat_effect: meta[:stat_effect] || 0,
+                        cured: meta[:cured])
+    end
+
+    # `SelectAutoBattleAction`'s own closing half: an `attack_all` weapon
+    # always spreads the swing across the whole enemy side regardless of
+    # ranking (leaving `b.action` unset so `#attack_target`/`#strike`'s
+    # existing `b.attack_all` dispatch resolves it, the same path an ordinary
+    # manually-commanded attack_all Attack already takes); otherwise the
+    # single best-ranked living enemy is targeted explicitly, or the actor's
+    # turn is forfeited outright (`#command_skip`) on the same vanishingly
+    # rare all-zero chance `#queue_auto_battle_skill`'s own fallback covers.
+    def queue_auto_battle_attack(b)
+      if b.attack_all
+        command_attack(b, nil)
+        return
+      end
+      best = auto_battle_best_target(@enemies) { |t| auto_battle_attack_target_rank(b, t) }
+      best ? command_attack(b, best) : command_skip(b)
     end
 
     # `b` lands a basic attack on `target`: the base damage (scaled by the

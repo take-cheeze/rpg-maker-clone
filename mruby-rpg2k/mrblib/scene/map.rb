@@ -4839,12 +4839,34 @@ class RPG2k
         end
       end
 
+      # Also auto-commands (rather than merely skipping) a 強制AI-flagged ally
+      # that isn't otherwise restricted: `Game::Actor#force_ai?` -- checked
+      # only once `#command_restricted?` has already answered false, matching
+      # `Scene_Battle_Rpg2k::SelectNextActor`'s own real check order (CanAct
+      # -> forced attack-ally/attack-enemy restriction -> auto_battle) -- gets
+      # `Game::Battle#choose_auto_battle_command` to queue its action right
+      # here instead of ever drawing the manual command window for it.
       def skip_restricted_actors
         battle = @battle_ui[:battle]
         allies = living_allies
         i = @battle_ui[:actor_i]
-        i += 1 while allies[i] && battle.command_restricted?(allies[i])
+        loop do
+          a = allies[i]
+          break unless a
+          if battle.command_restricted?(a)
+            i += 1
+          elsif force_ai_actor?(a)
+            battle.choose_auto_battle_command(a)
+            i += 1
+          else
+            break
+          end
+        end
         @battle_ui[:actor_i] = i
+      end
+
+      def force_ai_actor?(combatant)
+        combatant.actor && combatant.actor.respond_to?(:force_ai?) && combatant.actor.force_ai?
       end
 
       # The index of the previous living ally free to receive a manual
@@ -4858,7 +4880,7 @@ class RPG2k
         battle = @battle_ui[:battle]
         allies = living_allies
         i = @battle_ui[:actor_i] - 1
-        i -= 1 while i >= 0 && battle.command_restricted?(allies[i])
+        i -= 1 while i >= 0 && (battle.command_restricted?(allies[i]) || force_ai_actor?(allies[i]))
         i >= 0 ? i : nil
       end
 
