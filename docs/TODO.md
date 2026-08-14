@@ -2503,9 +2503,50 @@ following this paragraph as the original record.
 - `017_heiretu_totyu_end/hei_mukou.htm` — (a) a Parallel Process's appearance
   condition going false mid-execution isn't observed until the process
   naturally hits a Wait/yield point, not instantly (may already follow from
-  how `step_parallel` is structured — unverified); (b) Set Move Route +
-  "wait for completion" targeting a permanently-impassable tile without
-  "Ignore if can't move" stalls a parallel process forever.
+  how `step_parallel` is structured — unverified). ✅ (b) **Set Move Route +
+  "wait for completion" (Proceed With Movement) issued from a Parallel
+  Process now actually blocks that process**, instead of the command reading
+  as a fire-and-forget no-op regardless of "wait for completion" — including
+  the documented permanently-impassable/hidden-event freeze. This was a real,
+  reachable gap broader than the one case this bullet names: `Scene::Map#
+  drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`), the dispatch
+  `#step_parallel` uses for whichever wait kind a parallel-process interpreter
+  is parked on, had cases for `:wait`/`:key_input`/`:animation`/`:game_over`
+  but none for `:movement` — the wait kind `Game::Interpreter#
+  do_proceed_with_movement` (`mruby-rpg2k/mrblib/interpreter.rb`) sets — so it
+  fell into the generic `else` branch (`it.resume # background: ignore
+  message/choice/teleport requests`) and resumed unconditionally on the very
+  next tick, never consulting `#forced_movement_done?` at all. The
+  foreground's own `#drive_event` already had the matching case (`when
+  :movement then @interpreter.resume if step_forced_movement`), so an
+  Autorun's Proceed With Movement always blocked correctly; only a Parallel
+  Process's own use of the identical command was affected. Fixed by adding a
+  `:movement` case to `#drive_parallel_wait` that resumes only once `#
+  forced_movement_done?` answers true — deliberately calling that pure
+  predicate rather than `#step_forced_movement` (which actually advances
+  every pending route): the routes are already stepped exactly once per frame
+  elsewhere, either by the ordinary `#step_events`/`#step_player_route`/`#
+  step_vehicle_routes` pass in `#update`'s not-busy branch (the common case,
+  since a Parallel Process runs independently of the foreground) or by the
+  foreground's own `#step_forced_movement` call when it happens to be parked
+  on `:message`/`:wait`/`:movement` itself — calling it a second time here
+  would double-advance every forced route on any frame both a parallel
+  process and the foreground are waiting on movement at once. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check (a Common Event Parallel Process's
+  Move Event + Proceed With Movement holds its own `CONTROL_SWITCHES`
+  follow-up command until the forced 3-tile route actually lands, not on the
+  next tick), confirmed to fail against the pre-fix code before the fix (the
+  unfixed build overshot the route's own endpoint within 10 frames, since the
+  unblocked interpreter kept re-looping the Parallel Process's command list
+  and re-issuing fresh Move Event routes on top of the still-running one —
+  worse than a single early resume). The stuck-forever half of the original
+  claim (a permanently-impassable or hidden target) is exercised by the same
+  fix, since `#forced_movement_done?` is the identical predicate the
+  already-fixed foreground "Set Move Route targeting a currently-hidden map
+  event freezes Proceed With Movement" check (`docs/TODO.md`'s `015_shujinkou_idou_huka`
+  entry above) relies on — no separate `@stuck_move_targets` handling was
+  needed for the parallel-process case. Part (a) of this same bullet remains
+  open.
 - `015_shujinkou_idou_huka/` — catalogue of hero-can't-move causes; most
   already covered by existing passability/move-route logic. ✅ **"Force Move
   All" targeting a currently-hidden (appearance-conditions-unmet) map event
