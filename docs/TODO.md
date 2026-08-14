@@ -2496,10 +2496,14 @@ following this paragraph as the original record.
   Save access resets with Teleport/Escape and Menu access does not.
 
 #### Untriaged backlog, from `2k/09_bug/` (bugs/errors pages read so far)
-- `016_ikinari_end/` — a Parallel Process can observe an all-KO'd party and
-  fire Game Over *before* a concurrent Battle "On Lose" recovery branch gets
-  to run its full-heal, even though the recovery would have prevented it.
-  Ordering/race between the game-over check and parallel-process ticking.
+- ✅ `016_ikinari_end/` — **a Parallel Process could observe an all-KO'd party
+  and fire Game Over *before* a concurrent Battle "Lose: Branch" recovery
+  branch got to run its full-heal, even though the recovery would have
+  prevented it, on a genuinely reachable one-frame window in this codebase's
+  own round-robin scheduler** — not merely a real-RPG_RT-only race. See the
+  fuller writeup under the "Documented race condition" bullet, "Full-site
+  sweep" section below, where this is fixed (`Scene::Map#drive_event`'s
+  `:battle` case, `mruby-rpg2k/mrblib/scene/map.rb`).
 - `017_heiretu_totyu_end/hei_mukou.htm` — (a) a Parallel Process's appearance
   condition going false mid-execution isn't observed until the process
   naturally hits a Wait/yield point, not instantly (may already follow from
@@ -2753,10 +2757,11 @@ Everything below is unverified against the codebase.
   Transfer Player command inside one lets subsequent commands run while the
   new map is still loading (needs a Wait:0.0s after it) — for a **map**
   event specifically, a Wait right there instead ends that event outright
-  since its context is gone post-transfer; "On Loss: Handle Separately" +
-  an immediate recovery branch can still lose to Game Over if *any*
-  Parallel Process is still running (must stop them all first) — same
-  family as the `016_ikinari_end` race above; ✅ **setting a map event's
+  since its context is gone post-transfer; ✅ **"On Loss: Handle Separately" +
+  an immediate recovery branch racing Game Over against a still-running
+  Parallel Process is now fixed** — same family as the `016_ikinari_end`
+  race above, see the fuller writeup under the "Documented race condition"
+  bullet, "Full-site sweep" section below; ✅ **setting a map event's
   trigger to Parallel Process also fires it on hero contact** — instantly
   on overlap for below/above-characters priority, repeatedly while a
   direction key is held against a same-as-characters (blocking) one. This
@@ -4299,14 +4304,61 @@ not yet verified:
   still running, never after it has already settled into `:result`; a second
   reveal of an already-visible member is confirmed to be a sprite-rebuild
   no-op), confirmed to fail if the battler-boundary check is disabled.
-- **Documented race condition**: a Battle Processing "Lose: Branch"
-  that revives the party can still lose to an erroneous instant Game Over
-  if a Parallel Process is running concurrently — the parallel process's
-  own game-over check can fire before the Lose-branch's revive commands
-  execute. Corroborated by many independent sources as one of the site's
-  most emphasized gotchas; the documented mitigation is manually stopping
-  all parallel processes immediately before entering such a battle and
-  restarting them from both the Win and Lose branches.
+- ✅ **Documented race condition, now fixed for real (not merely
+  RPG_RT-quirk-modelled): a Battle Processing "Lose: Branch" that revives
+  the party could still lose to an erroneous instant Game Over if a
+  Parallel Process was running concurrently** — the parallel process's own
+  game-over check could fire before the Lose-branch's revive commands ever
+  executed. Corroborated by many independent sources (this bullet,
+  `09_bug/016_ikinari_end`, and `017_heiretu_totyu_end/hei_mukou.htm`'s own
+  part (a)) as one of the site's most emphasized gotchas, with a documented
+  in-editor mitigation (stop every Parallel Process before the fight,
+  restart them from both the Win and Lose branches) — but this codebase's
+  own architecture made the race genuinely reachable on its own terms, not
+  just as an RPG_RT implementation detail to reproduce: `Scene::Map#update`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) calls `#step_parallels` once, at the
+  very top of every frame, strictly *before* `#event_busy?`/`#drive_event`
+  gets a chance to run the foreground interpreter that frame. `#finish_battle`
+  clears `@battle_ui` (so `#parallels_paused?`, gated on `!@battle_ui.nil?`,
+  stops holding Parallel Processes back) and calls
+  `Game::Interpreter#resume_battle` — which only flips the interpreter off
+  its `:battle` wait (`@waiting = false` via `#reset_waits`) and does
+  *nothing* to actually drive it into the Defeat handler's own commands —
+  *before* `drive_event`'s `when :battle` case (the caller of
+  `#finish_battle`, via `#drive_battle`) returned for the frame. So a defeat
+  with a custom `[Defeat]` handler (`defeat_game_over: false`, per
+  `Game::Interpreter#do_enemy_encounter`'s `cmd.param(4) == 0` check) left a
+  full frame — with the party still sitting at 0 HP, `@battle_ui` already
+  `nil` — before anything drove the interpreter into the handler's own
+  recovery commands at all: the very next frame's `#step_parallels` (now
+  unpaused) got first crack, and a Parallel Process reaching any command that
+  calls `Game::Interpreter#check_game_over` (Change HP/MP, Change Condition,
+  Full Recovery, ...) during that window raised `:game_over` on *its own*
+  interpreter and reached `Scene::Map#perform_game_over` via
+  `#drive_parallel_wait`'s `:game_over` case, strictly before the
+  foreground's own Defeat handler ever ran. Fixed by driving the interpreter
+  one step further immediately once `#drive_battle` leaves it off the
+  `:battle` wait — `Scene::Map#drive_event`'s `when :battle` case now calls
+  `@interpreter.update`/`#apply_interpreter_requests` right there when
+  `@interpreter.running? && !@interpreter.waiting?` reads true afterward,
+  the same "spend this frame's own step budget immediately" idiom the
+  `when :wait` case right below it already uses for "Wait 0.0 sec costs one
+  frame, not two" — so a Defeat handler with no Wait/Show Text ahead of its
+  own recovery (a Change HP/Full Recovery command) reaches it before this
+  same frame ends, well before the next frame's `#step_parallels` window
+  ever opens. A defeat resolving into `perform_game_over` directly (no
+  custom handler) is unaffected: `Game::Interpreter#stop` (called by
+  `#perform_game_over`) leaves `@running` false, so the new post-`drive_battle`
+  check's `@interpreter.running?` guard is already false and the extra pump
+  is a no-op. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
+  custom-Defeat-handler encounter whose branch heals the party back up races
+  a Common Event Parallel Process armed with nothing but a harmless
+  `Change HP +0` — enough to reach `#check_game_over` on whichever frame it
+  next runs — confirming the branch's own recovery, and the rest of its
+  commands after it, land within the very same frame the result screen is
+  dismissed, and that the racing Parallel Process never wins Game Over
+  afterward), confirmed to fail against the pre-fix code (the recovery not
+  yet applied one frame later) before the fix.
 - A **map event with Parallel Process trigger** executing "Set Vehicle
   Location" **crashes RPG_RT** with a module-address access-violation
   error; the identical command from any other trigger type, or from a

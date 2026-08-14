@@ -1649,6 +1649,15 @@ class BattleStubActor
   # HP absolutely; the stub has no state model, so just clamp to [0, max].
   def set_hp(value); @hp = value < 0 ? 0 : (value > @max_hp ? @max_hp : value); end
   def dead?; @hp <= 0; end
+  # Change HP (Game::Interpreter#do_change_hp), so a "Lose: Branch" recovery
+  # command (see the "Battle Lose: Branch" race check below) can revive this
+  # stub the same way it would a real Game::Actor.
+  def change_hp(amount, allow_death = true)
+    @hp += amount
+    floor = allow_death ? 0 : 1
+    @hp = floor if @hp < floor
+    @hp = @max_hp if @hp > @max_hp
+  end
   # Mirrors Game::Actor's own RPG2000 "custom battle command" interface
   # (database fields 66/67), so a stub battle can drive the Skill-label rename
   # the same way a real actor row would.
@@ -4029,6 +4038,64 @@ check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   eq 0, st.party.actors.first.exp, 'no EXP on a loss'
   ok !st.switches[1], 'the Victory handler was skipped'
   ok st.switches[3], 'the Defeat handler ran'
+end
+
+# viprpg-dev wiki (200X共通/基本的な仕様, 09_bug/016_ikinari_end,
+# 017_heiretu_totyu_end/hei_mukou): a Battle "Lose: Branch" handler's own
+# recovery (a Full Heal / Change HP right after the encounter) races a
+# still-running Parallel Process's own Game Over check. #finish_battle
+# (mruby-rpg2k/mrblib/scene/map.rb) already clears @battle_ui *before*
+# resuming the event into the Defeat handler -- so #parallels_paused? no
+# longer holds a Parallel Process back -- but nothing used to drive the
+# handler's own commands any further this same frame: #drive_event's `:battle`
+# case just called #drive_battle and returned, leaving the interpreter merely
+# off its `:battle` wait until *next* frame's ordinary "not waiting" branch
+# happened to reach it. #step_parallels runs before that at the top of
+# #update, so a Parallel Process gets exactly one whole frame -- with the
+# party still sitting at 0 HP and unrevived -- to notice the wipe and raise
+# Game Over first. Fixed by driving the interpreter one step further
+# immediately once it comes off the `:battle` wait, the same "spend this
+# frame's own step budget immediately" idiom the `:wait` branch already uses
+# right below for "Wait 0.0 sec costs one frame, not two".
+check 'Enemy Encounter scene: a Lose-branch recovery beats a racing ' \
+      "Parallel Process's Game Over check" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 1, 0], indent: 0), # troop 1, custom Defeat handler
+    ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
+    ECmd.new(ic::DEFEAT_HANDLER, [], indent: 0),
+    # The "Lose: Branch" recovery: heal the whole party back up...
+    ECmd.new(ic::CHANGE_HP, [0, 0, 0, 0, 999, 1], indent: 1),
+    # ...then prove the rest of the branch still ran too, not just the heal.
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 1),
+    ECmd.new(ic::END_BATTLE, [], indent: 0)
+  ]
+  # A Common Event Parallel Process that pokes a harmless Change HP +0 every
+  # lap it gets to run -- its only purpose is to reach
+  # Game::Interpreter#check_game_over on whichever frame it is next allowed
+  # to run, exactly the way a real game's own HP-regen/status-tick parallel
+  # process would incidentally do.
+  ce = OpenStruct.new(start_term: 4, need_flag: false,
+                      event: [ECmd.new(ic::CHANGE_HP, [0, 0, 0, 0, 0, 1], indent: 0)])
+  scene = new_scene({ 1 => event(2, 2, auto) }, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  # A frail hero the two Slimes overwhelm.
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  parent = scene.instance_variable_get(:@parent)
+  scene.update
+  battle_attack_to_end(scene)
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the defeat result -> finish_battle
+  scene.update
+  RGSS::Input.triggered = []
+  ok st.switches[3],
+     "the Defeat handler's recovery must run this same frame, not a frame later"
+  ok !st.party.all_dead?, 'the party was revived by the Defeat handler before anything else ran'
+  ok !parent.game_over_shown, 'no Game Over yet -- the branch already revived the party'
+  2.times { scene.update } # give the racing Parallel Process every chance to run
+  ok !parent.game_over_shown,
+     "the Parallel Process's own Game Over check must never win this race"
 end
 
 check 'Enemy Encounter scene: a game-over defeat returns to the title' do
