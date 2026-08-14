@@ -1256,8 +1256,35 @@ class RPG2k
           # both a parallel process and the foreground happen to be waiting
           # on movement at once.
           it.resume if forced_movement_done?
+        elsif it.wait_kind == :teleport
+          # Transfer Player / Recall to Location issued from a Parallel
+          # Process (yado.tk: "a Transfer Player command inside one [a
+          # Parallel Process] lets subsequent commands run while the new map
+          # is still loading"). Before this branch existed this fell into the
+          # generic "background: ignore ... teleport requests" #resume below,
+          # so a Parallel Process's own warp silently never happened at all --
+          # not merely mistimed. #perform_teleport itself resumes the
+          # *foreground* @interpreter at its end (mirroring #drive_event's own
+          # :teleport dispatch above), so `it` -- this parallel interpreter,
+          # always a distinct object from @interpreter -- still needs its own
+          # explicit #resume once the map has actually changed.
+          # #build_parallels (run inside #perform_teleport) already keys a
+          # Common Event's own parallel process off its common_event_id and
+          # reuses the very same interpreter object across the rebuild
+          # (`previous_common`, unconditionally -- unlike a map event's own
+          # parallel process, which is only carried over under
+          # `preserve_map_events:`, a keyword #perform_teleport never passes),
+          # so `p`/`it` themselves are unaffected by the rebuild here and can
+          # simply resume afterward, continuing the rest of the process's own
+          # command list on the new map. A *map* event's own Parallel Process
+          # has no such reuse for a genuine map change, so it naturally drops
+          # out of the rebuilt @parallels and this #resume call is its last --
+          # matching the separately-documented "for a map event specifically,
+          # its context is gone post-transfer".
+          perform_teleport(it.teleport)
+          it.resume
         else
-          it.resume # background: ignore message/choice/teleport requests
+          it.resume # background: ignore message/choice requests
         end
       end
 

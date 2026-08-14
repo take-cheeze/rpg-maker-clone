@@ -2778,11 +2778,46 @@ Everything below is unverified against the codebase.
   colour-index validation.
 - **Parallel Process** — yields to others during its own Wait/Show-Text
   pause; appearance condition going false mid-run only stops at the next
-  yield point, not instantly (same fact as the `09_bug` item above); a
-  Transfer Player command inside one lets subsequent commands run while the
-  new map is still loading (needs a Wait:0.0s after it) — for a **map**
-  event specifically, a Wait right there instead ends that event outright
-  since its context is gone post-transfer; ✅ **"On Loss: Handle Separately" +
+  yield point, not instantly (same fact as the `09_bug` item above); ✅ **a
+  Transfer Player command issued from a Parallel Process now actually warps
+  the party**, instead of being silently dropped outright — a much larger
+  gap than the bullet's own "needs a Wait:0.0s after it" wording implies.
+  `Scene::Map#drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`) had no
+  case for the `:teleport` wait kind `Game::Interpreter#do_teleport` sets —
+  every other wait kind reachable from a Parallel Process (`:wait`,
+  `:key_input`, `:animation`, `:game_over`, `:movement`) had already earned
+  its own dispatch over earlier rounds of this same fix, but `:teleport`
+  fell all the way through to the generic `else` branch (`it.resume #
+  background: ignore message/choice/teleport requests`) and just cleared the
+  wait without ever calling `#perform_teleport` at all — the warp itself
+  never happened, for either a Common Event's or a map event's own Parallel
+  Process, not merely at the wrong time. Fixed by adding a `:teleport` case
+  that calls `#perform_teleport(it.teleport)` and then explicitly resumes
+  `it` — the parallel interpreter, always a distinct object from the
+  foreground `@interpreter` that `#perform_teleport` itself resumes at its
+  own end, mirroring `#drive_event`'s identical `:teleport` dispatch for the
+  foreground. A **Common Event's** own Parallel Process keeps running
+  afterward on the new map with zero extra plumbing: `#build_parallels`
+  (which `#perform_teleport` calls to rebuild `@parallels`) already reuses a
+  Common Event's parallel-process interpreter object unconditionally, keyed
+  by its `common_event_id` — the exact mechanism the "Common Event Parallel
+  Process survives a Transfer Player" fix above relies on — so the very same
+  `it` this branch resumes is still the one `@parallels` loops next frame,
+  letting subsequent commands run on the new map exactly as this bullet's
+  claim describes. A **map** event's own Parallel Process has no such reuse
+  across a genuine map change (`#build_parallels` only carries one forward
+  under `preserve_map_events:`, a keyword `#perform_teleport` never passes),
+  so it drops out of the rebuilt `@parallels` the instant this branch
+  resumes it — happening to match "its context is gone post-transfer" for
+  that half of the claim, though the more specific "a Wait right there
+  instead ends that event outright" wording is not separately modelled.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a Common Event
+  Parallel Process running marker A, a Transfer Player to a second map, then
+  marker B: the map actually changes and the same interpreter reaches
+  marker B on the new map), confirmed to fail against the pre-fix code
+  before the fix (the map id never changed and marker B never ran). The
+  `Wait:0.0s`-after-it timing nuance and the map-event "Wait ends it"
+  wording remain unverified. ✅ **"On Loss: Handle Separately" +
   an immediate recovery branch racing Game Over against a still-running
   Parallel Process is now fixed** — same family as the `016_ikinari_end`
   race above, see the fuller writeup under the "Documented race condition"
@@ -2806,9 +2841,10 @@ Everything below is unverified against the codebase.
   event opens a message window through the foreground touch path the moment
   the party walks into it, distinguishing the two runs by a Show Message a
   background interpreter's own request is silently dropped, per
-  `#drive_parallel_wait`'s "background: ignore message/choice/teleport
-  requests" branch), confirmed to fail against the pre-fix code before the
-  fix.
+  `#drive_parallel_wait`'s "background: ignore message/choice requests"
+  branch — `:teleport` no longer falls into it, see the "a Transfer Player
+  command issued from a Parallel Process..." fix just above), confirmed to
+  fail against the pre-fix code before the fix.
 - **Vehicles** — an unset vehicle defaults to map id 0, (0,0); Small/Large
   Ship aren't hardcoded to water, their passability follows the terrain
   table's boat/ship-pass flags like any other vehicle rule; ✅ an airship

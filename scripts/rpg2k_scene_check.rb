@@ -1494,6 +1494,36 @@ check "Transfer Player reuses a common event's Parallel Process interpreter " \
      "the rebuilt map event's parallel process starts over at the top"
 end
 
+check "a common event's Parallel Process's own Transfer Player command " \
+      'actually warps the party, then keeps running on the new map' do
+  ic = Game::Interpreter::Cmd
+  # Marker A, a Transfer Player to map 2, marker B: before this fix,
+  # #drive_parallel_wait had no :teleport case, so a Parallel Process's own
+  # Transfer Player fell into the generic "background: ignore ... teleport
+  # requests" #resume branch -- the warp itself never happened at all (not
+  # merely mistimed), and the process looped straight back to marker A
+  # instead of ever reaching marker B. yado.tk (01_shoshin/011_siyou,
+  # "Parallel Process"): "a Transfer Player command inside one lets
+  # subsequent commands run while the new map is still loading." A Parallel
+  # Process's own command list loops forever once it reaches the end (by
+  # design, unrelated to this fix), so this only checks the first pass --
+  # three frames is exactly enough for marker A, the teleport landing, and
+  # marker B to each take effect one frame apart.
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::TELEPORT, [2, 0, 0, 0]),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  eq 1, st.map_id, 'starts on map 1'
+
+  3.times { scene.update }
+  eq 1, st.variables[3], "marker A ran once, on the process's first pass"
+  eq 2, st.map_id, "the process's own Transfer Player actually warped the party"
+  eq 1, st.variables[4],
+     "the SAME Parallel Process interpreter kept running past the teleport " \
+     'and reached marker B on the new map'
+end
+
 check "an unrelated event's page change does not restart another event's " \
       'own Parallel Process' do
   ic = Game::Interpreter::Cmd
