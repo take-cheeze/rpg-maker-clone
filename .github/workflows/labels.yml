@@ -31,7 +31,10 @@ concurrency:
 
 jobs:
   sync:
-    runs-on: ubuntu-24.04
+    # Just a checkout and a Ruby script driving `gh`, no build tooling -- so
+    # the small `ubuntu-slim` image (1 CPU, 5 GB RAM, 15-minute cap) covers it
+    # at a lower rate. See `preview-gate` in build.yml for the same reasoning.
+    runs-on: ubuntu-slim
     steps:
       - uses: actions/checkout@v7
         with:
