@@ -7108,13 +7108,8 @@ above are repeated here)
   itself when it answers true and leaving `#apply_skill_hit` completely
   unmodified otherwise. Not edition-gated, matching `#evades_all_physical?`'s
   own "trust the data" precedent (`HasReflectState` carries no
-  `Player::IsRPG2k3()` check either). **Scoped to a single-target Skill
-  only** (`#apply_command`, not `#apply_command_all`): real RPG_RT's own
-  `ReflectTargets` additionally redirects an all-enemies-scope skill onto
-  the caster's *entire* party the instant any one target in the group
-  reflects (`AddTargets(&source->GetParty(), true)`), on top of — not
-  instead of — the remaining un-reflected targets in that same group, a
-  materially different shape left unaddressed here. Covered by a new
+  `Player::IsRPG2k3()` check either). Scoped to a single-target Skill only
+  at the time (`#apply_command`, not `#apply_command_all`). Covered by a new
   `scripts/rpg2k_logic_check.rb` check (a Skill cast at a reflect-warded foe
   lands on the caster instead, HP/SP-cost accounting unaffected; an
   unafflicted target in the same fight is unaffected; the same redirect
@@ -7160,6 +7155,54 @@ above are repeated here)
   both confirmed to fail against the pre-fix code before the fix (an
   unrelated-state target dodging/reflecting exactly like a genuinely flagged
   one would).
+  ✅ **The all-enemies/all-allies-scope half is now implemented too,
+  verified against EasyRPG Player's actual C++ source rather than the
+  "on top of, not instead of" guess this entry originally carried — which
+  the source shows is backwards.** `AlgorithmBase::ReflectTargets`
+  (`src/game_battlealgorithm.cpp`) is called exactly once per action, before
+  its first target is ever hit (`Scene_Battle_Rpg2k::
+  ProcessBattleActionAnimationImpl`'s dispatch to it happens once per
+  action; `ProcessBattleActionFinished`'s own `TargetNext()` continuation
+  jumps straight to `BattleActionState_Execute` for every later target in
+  the same volley, skipping the Animation state — and thus this check —
+  entirely), and it scans forward from the *current* target
+  (`std::find_if(current_target, targets.end(), ...)`, i.e. every target
+  still to be hit, not merely the first) for the first one flagged Reflect
+  Magic. For a `party_target` action (`AlgorithmBase`'s
+  `Game_Party_Base*`-taking constructor — exactly RPG2000's all-enemies/
+  all-allies skill scope, this codebase's own `#apply_command_all`
+  counterpart) finding one calls `AddTargets(&source->GetParty(), true)`,
+  which both appends every member of the *caster's* own party to `targets`
+  and — the `true`/`set_current` argument — repoints `current_target` at
+  the first newly-appended entry. Since nothing removes the original,
+  not-yet-hit entries from the vector and a forward-only cursor can never
+  reach them again once it has jumped past their position to the new tail,
+  every originally-targeted battler this volley had not already hit goes
+  permanently unvisited — replaced outright by the caster's own side, not
+  layered alongside it. Fixed with a new `#reflecting_target_all(b, live,
+  cmd)` (`mruby-rpg2k/mrblib/game.rb`) — `#apply_command_all`'s own
+  `live`-scanning counterpart to `#reflects_skill?`, gated the identical way
+  (`cmd[:skill_id] && !cmd[:item_id]`, `side_of(target) != side_of(b)`) —
+  called right after the existing `dead?` filter builds `live`; when it
+  finds a reflecting entry, `live` is rebuilt from every *living* member of
+  `side_of(b)`'s own party instead, each one reusing the reflecting entry's
+  own already-computed `hp`/`mp` (the established simplification the
+  single-target fix above already committed to — the skill's raw magnitude
+  does not vary by which battler it was originally queued against), while
+  `#apply_skill_hit` still recomputes each hit's own elemental multiplier,
+  variance and absorb fresh against whichever new target it actually lands
+  on, unmodified. SP is charged exactly once either way, since `cmd[:cost]`
+  is spent (unconditionally, once) after the `live` list is finalized, the
+  same ordering the un-redirected path already had. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check exercising `#apply_command` directly
+  (an all-enemy Meteor with one warded and one unwarded foe redirects onto
+  the caster's whole living party instead of hitting either original foe,
+  each ally taking the reflecting foe's own precomputed damage, SP spent
+  once; a dead ally is excluded from the redirected side; an all-target Item
+  and an all-*ally* Skill — whose targets share the caster's own side to
+  begin with — never redirect even at an identically warded target),
+  confirmed to fail against the pre-fix code (`expected ["Ally", "Mage"],
+  got ["Plain Foe", "Warded Foe"]`) before the fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

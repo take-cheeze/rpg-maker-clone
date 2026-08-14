@@ -9636,6 +9636,73 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
      'a same-side (ally/self-scoped) skill never reflects, warded target or not'
 end
 
+check "battle: an all-enemy Skill's own reflect redirects the whole volley onto the caster's entire party" do
+  # EasyRPG's AlgorithmBase::ReflectTargets (game_battlealgorithm.cpp), for the
+  # `party_target` (all-enemies/all-allies scope) shape the single-target
+  # reflect fix's own comment names as a "materially different shape" left
+  # unaddressed: `AddTargets(&source->GetParty(), true)` both adds every
+  # member of the caster's own party as new targets *and* repoints the
+  # still-to-execute cursor there, so none of the volley's originally-selected
+  # enemies (this build's own cmd[:targets]) end up hit at all once any one of
+  # them carries Reflect Magic -- the caster's whole living side does, in
+  # their place, not merely the one foe that reflected.
+  # #apply_command is exercised directly (as #reflects_skill?'s own checks
+  # above do), sidestepping #step_action's round machinery entirely -- an
+  # enemy combatant with no 行動パターン and no queued command would
+  # otherwise take its own default swing at a random ally on its turn,
+  # noise this check has no interest in filtering back out.
+  states = { 20 => fake_state(reflect_magic: true) }
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  ally = combatant('Ally', 0, 0, 5, 100)
+  warded_foe = combatant('Warded Foe', 0, 0, 5, 100)
+  warded_foe.states = [20]
+  plain_foe = combatant('Plain Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([mage, ally], [warded_foe, plain_foe], Game::Rng.new(1), states)
+  bat.command_skill_all(mage, [{ target: warded_foe, hp: -30 }, { target: plain_foe, hp: -30 }],
+                        name: 'Meteor', cost: 6, skill_id: 7)
+  entries = bat.send(:apply_command, mage)
+  eq ['Ally', 'Mage'], entries.map { |e| e[:target] }.sort,
+     "the whole volley lands on the caster's own party, not the two original foes"
+  eq [70, 70], [mage.hp, ally.hp], 'each ally eats the same -30 the reflecting foe would have taken'
+  eq 100, warded_foe.hp, 'the warded foe itself takes nothing'
+  eq 100, plain_foe.hp, 'the unwarded foe is untouched too -- the whole group redirects, not just the warded one'
+  eq 4, mage.mp, 'SP is still spent exactly once for the whole volley, reflected or not'
+
+  # A dead ally is skipped from the redirected side too, the same #dead?
+  # filter the un-reflected path already applies to its own targets.
+  dead_ally = combatant('Dead Ally', 0, 0, 5, 0)
+  mage2 = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  warded_foe2 = combatant('Warded Foe', 0, 0, 5, 100)
+  warded_foe2.states = [20]
+  plain_foe2 = combatant('Plain Foe', 0, 0, 5, 100)
+  bat2 = Game::Battle.new([mage2, dead_ally], [warded_foe2, plain_foe2], Game::Rng.new(1), states)
+  bat2.command_skill_all(mage2, [{ target: warded_foe2, hp: -30 }, { target: plain_foe2, hp: -30 }],
+                         name: 'Meteor', cost: 6, skill_id: 7)
+  entries2 = bat2.send(:apply_command, mage2)
+  eq ['Mage'], entries2.map { |e| e[:target] },
+     'only the one living party member -- the caster itself -- is hit, the dead ally never joins'
+
+  # Neither an all-target Item nor an all-*ally* Skill (never reaching the
+  # opposing side to begin with) ever redirects, even at an identically
+  # warded target.
+  mage3 = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  warded_foe3 = combatant('Warded Foe', 0, 0, 5, 100)
+  warded_foe3.states = [20]
+  bat3 = Game::Battle.new([mage3], [warded_foe3], Game::Rng.new(1), states)
+  bat3.command_item_all(mage3, [{ target: warded_foe3, hp: -30 }], item_id: 5, name: 'Bomb')
+  entries3 = bat3.send(:apply_command, mage3)
+  eq 'Warded Foe', entries3.first[:target], 'an all-target item never reflects, even at a warded foe'
+
+  healer = combatant_mp('Healer', 0, 0, 20, 100, 10)
+  mate = combatant('Mate', 0, 0, 5, 100); mate.hp = 60
+  mate.states = [20] # hypothetically warded -- irrelevant, same side as the caster
+  bat4 = Game::Battle.new([healer, mate], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1), states)
+  bat4.command_skill_all(healer, [{ target: mate, hp: 20 }], name: 'Heal', cost: 4, skill_id: 8)
+  entries4 = bat4.send(:apply_command, healer)
+  eq 'Mate', entries4.first[:target], "an all-ally heal never redirects -- its target shares the caster's own side"
+  eq 80, mate.hp
+end
+
 check 'battle: a normal attack can shake a state off its target' do
   states = { 10 => fake_state(release_by_attack: 100),  # always
              11 => fake_state(release_by_attack: 0) }   # never
