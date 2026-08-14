@@ -2037,13 +2037,18 @@ The work below is roughly ordered by the critical path to a walkable game
   including overwriting an occupied one, with no separate confirmation
   (matching RPG_RT); Continue only offers occupied slots, and the title
   screen's Continue entry is enabled as soon as *any* slot holds a save
-  (`RPG2k#any_save_exists?`) rather than only slot 1. The `--rpg2k_continue`
-  headless flag and RPG2003's Open Load Menu event command both still resume
-  slot 1 directly with no picker — see ADR 0045. **Not done yet:** the party
-  face thumbnails a real save-select screen shows (`Game::State#to_lsd`'s
-  title chunk already exports the FaceSets specifically for this), and
-  routing the Open Save Menu / Open Load Menu event commands through the same
-  picker instead of straight to slot 1.
+  (`RPG2k#any_save_exists?`) rather than only slot 1. **RPG2003's Open Save
+  Menu (11910) and Open Load Menu (5001) event commands now open the same
+  picker too** (`Scene::Map#perform_event_save` / `#perform_event_load`,
+  matching Open Main Menu's own push-then-wait-for-it-to-close shape via a
+  parallel `@event_save_load` flag), rather than acting on slot 1 directly —
+  Open Load Menu's cancel path now resumes the triggering event (RPG_RT's own
+  behaviour) instead of the old unconditional `@interpreter.stop`. Only the
+  `--rpg2k_continue` headless flag still resumes slot 1 directly, since it has
+  no input loop of its own to drive a second screen. See ADR 0045. **Not done
+  yet:** the party face thumbnails a real save-select screen shows
+  (`Game::State#to_lsd`'s title chunk already exports the FaceSets
+  specifically for this).
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done

@@ -135,8 +135,9 @@
   (keep / reset / add, keep / halve / reset); **Change Battle Commands** (1009)
   edits an actor's battle-command list; **Force Flee** (1006), **Enable Combo**
   (1007) and **Call Common Event** (1005) act inside a battle-event page; and the
-  English-release **Open Load Menu** (5001) / **Exit Game** (5002) leave the map
-  for the loader or quit
+  English-release **Open Load Menu** (5001) opens the same save/load
+  file-select screen the field menu's Save command and the title's Continue
+  use, and **Exit Game** (5002) quits
 - Message text reveals gradually (a typewriter effect; a button press completes
   it, then dismisses), expands the common control codes (`\v[n]` variable,
   `\n[n]` actor name, `\\`) and draws `\c[n]` colour changes
@@ -147,11 +148,11 @@
   RPG2003's second, each with its own on-screen window, read back by Control
   Variables and Conditional Branch, and pausing for a battle unless the start
   command said otherwise
-- Press the cancel button to open a menu (party status, Save, End Game); Save
-  and the title's "Continue" both open a real save/load file-select screen
-  listing all 15 slots — each showing the leader, level, HP, gold and current
-  map, or "No Data" for an empty one — instead of acting on a single
-  hardcoded slot
+- Press the cancel button to open a menu (party status, Save, End Game); Save,
+  the title's "Continue", and the RPG2003 Open Save Menu / Open Load Menu
+  event commands all open the same real save/load file-select screen listing
+  all 15 slots — each showing the leader, level, HP, gold and current map, or
+  "No Data" for an empty one — instead of acting on a single hardcoded slot
 
 ### RPG Maker XP
 

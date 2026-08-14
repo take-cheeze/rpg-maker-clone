@@ -55,25 +55,44 @@ purpose. The database also already carries the vocabulary such a screen needs
     (picker included) and enters the map -- Continue's existing transition,
     now aimed at the chosen slot instead of a hardcoded one.
 - **`continue_game`** takes an explicit `slot` (default 1, unchanged). The
-  default matters for two callers this ADR does not touch: the
-  `--rpg2k_continue` headless flag (Scene::Title's `auto_select?` path has no
-  input loop to drive a second screen, so it keeps resuming slot 1 directly --
-  see `scripts/compare-nepheshel-wine.bash`, which watches stderr for the
-  `[RPG2k-MAP]` marker only `continue_game` emits) and RPG2003's Open Load
-  Menu event command (`Scene::Map#perform_event_load`), which likewise writes/
-  reads slot 1 directly with no picker of its own; a real RPG_RT's Open Save
-  Menu / Open Load Menu event commands do open a file-select screen, but
-  wiring the interpreter's pause/resume through a pushed UI scene the way the
-  existing Open Main Menu command already does is a separate, riskier change
-  left for follow-up work (see docs/TODO.md).
+  default now matters for exactly one caller: the `--rpg2k_continue` headless
+  flag (Scene::Title's `auto_select?` path has no input loop to drive a second
+  screen, so it keeps resuming slot 1 directly -- see
+  `scripts/compare-nepheshel-wine.bash`, which watches stderr for the
+  `[RPG2k-MAP]` marker only `continue_game` emits).
+- **RPG2003's Open Save Menu (11910) and Open Load Menu (5001) event
+  commands** (`Scene::Map#perform_event_save` / `#perform_event_load`) now
+  open the same `Scene::SaveLoad` picker too, rather than acting on slot 1
+  directly -- matching real RPG_RT, and reusing Open Main Menu's own
+  push-then-wait-for-it-to-close shape (`Scene::Map#perform_event_menu`'s
+  `@event_menu` flag) via a parallel `@event_save_load` flag: the first visit
+  pushes the picker (in `:save` mode with the running state, or `:load` mode),
+  the second -- once the picker has popped back off the stack -- resumes the
+  interpreter. Change Save Access is still checked *before* the picker opens,
+  same as before. Open Load Menu's cancel path is a genuine behaviour change:
+  the old single-slot version unconditionally called `@interpreter.stop`
+  (ending the triggering event outright, the same shape as Return to Title,
+  since there was no cancel to distinguish from "no save data"), where a
+  cancelled picker now `@interpreter.resume`s instead, letting the event
+  continue past Open Load Menu the way RPG_RT does -- the "second visit"
+  branch only runs after a cancel to begin with, since a *successful* load
+  replaces the whole scene stack (this Scene::Map instance included) and so
+  never reaches it. A parallel process (Common Event or map event) raising
+  either wait is unaffected either way -- `step_parallel`'s
+  `drive_parallel_wait` has no branch for `:save_menu`/`:load_menu`/`:menu`
+  and silently resumes them all the same as before, a pre-existing gap this
+  ADR does not close (Open Main Menu has always had it too).
 - `scripts/rpg2k_scene_check.rb`'s `TitleParent` fixture gained
   `any_save_exists?`, `load_save_state` and `push`; its Continue checks now
   assert that the selection key opens `Scene::SaveLoad` in `:load` mode
   (available) or nothing at all (unavailable) rather than calling
   `continue_game` directly. `FakeParent` gained matching `pop`,
   `load_save_state`/`save_states`, `continue_game`/`continue_calls` and a
-  slot-aware `save_game`, and ten new checks cover the picker itself (empty
-  vs. occupied rows, confirm/cancel in both modes, scrolling/wraparound).
+  slot-aware `save_game`. Sixteen new checks cover the picker itself (empty
+  vs. occupied rows, confirm/cancel in both modes, scrolling/wraparound) and
+  the two event commands driving it (push timing, Change Save Access denial,
+  a real save/continue through the pushed picker, and Open Load Menu's
+  cancel-resumes-the-event behaviour).
 
 ## Consequences
 

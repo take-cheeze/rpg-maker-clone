@@ -6768,29 +6768,6 @@ check 'Open Main Menu pushes the field menu and resumes when it closes' do
   eq 1, st.variables[6], 'the event resumed after the menu closed'
 end
 
-check 'Open Save Menu saves through the parent and resumes the event' do
-  cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(7)]
-  scene = new_scene({}, player: [0, 0])
-  parent = scene.instance_variable_get(:@parent)
-  st = scene.instance_variable_get(:@state)
-  scene.instance_variable_get(:@interpreter).start(cmds)
-  3.times { scene.update }
-  eq 1, parent.saved.length, 'the save went through the app'
-  eq 1, st.variables[7], 'the event continued afterwards'
-end
-
-check 'Open Save Menu honours a Change Save Access lock' do
-  cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(8)]
-  scene = new_scene({}, player: [0, 0])
-  parent = scene.instance_variable_get(:@parent)
-  st = scene.instance_variable_get(:@state)
-  st.save_access = false
-  scene.instance_variable_get(:@interpreter).start(cmds)
-  3.times { scene.update }
-  eq 0, parent.saved.length, 'saving was disabled, so nothing was written'
-  eq 1, st.variables[8], 'the event still continues past the locked save'
-end
-
 check 'a BGM position that jumps backwards counts as one play-through' do
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
@@ -8225,6 +8202,133 @@ check 'Scene::SaveLoad: cancelling (B) pops back without touching the parent app
   eq 1, parent.pop_called, 'B pops the screen'
   eq 0, parent.pushed.size, 'and never pushes another scene'
   eq [], parent.continue_calls, 'or resumes anything'
+end
+
+# -- Open Save Menu / Open Load Menu (event commands) driving the same picker --
+#
+# RPG2003's Open Save Menu (11910) and Open Load Menu (5001) event commands
+# open this same Scene::SaveLoad picker rather than acting on a single slot
+# directly, mirroring Open Main Menu's own push-and-wait-for-it-to-close shape
+# (Scene::Map#perform_event_menu, `@event_menu`) via a matching
+# `@event_save_load` flag -- see the two checks named "... pushes the field
+# menu and resumes when it closes" above for the twin of this pattern. Timing
+# note: opening the picker costs two frames (one to raise the wait, one for
+# #drive_event to dispatch it and push the scene) and resuming costs two more
+# (one to see the picker already open and resume, one for the interpreter to
+# actually run the command after Open Save/Load Menu) -- four `scene.update`
+# calls end to end, with the picker's own interaction happening in between (it
+# runs independently of `scene`'s own frame count in this fixture, since
+# FakeParent#push only records the pushed Scene::SaveLoad instance rather than
+# modelling a real, shared scene stack).
+
+check 'Open Save Menu pushes Scene::SaveLoad in :save mode and resumes the event ' \
+      'once it closes' do
+  cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(7)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update # runs the command and raises the :save_menu wait
+  scene.update # the wait opens the picker
+  eq 1, parent.pushed.length, 'the save/load picker was pushed exactly once'
+  pushed = parent.pushed.first
+  ok pushed.is_a?(RPG2k::Scene::SaveLoad), "pushed Scene::SaveLoad, got #{pushed.class}"
+  eq :save, pushed.instance_variable_get(:@mode), 'opened in :save mode'
+  eq st, pushed.instance_variable_get(:@state), 'carrying the running game state to write out'
+  eq 0, st.variables[7], 'the event is paused while the picker is open'
+  scene.update # back from the picker: the wait is released...
+  scene.update # ...and the next frame runs the rest of the event
+  eq 1, st.variables[7], 'the event resumed after the picker closed'
+end
+
+check 'Open Save Menu: confirming a slot in the pushed picker really saves through ' \
+      'the app' do
+  cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(7)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  2.times { scene.update } # raises the :save_menu wait, then opens the picker
+  picker = parent.pushed.first
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm slot 1
+  picker.update
+  RGSS::Input.reset
+  eq [[st, 1]], parent.saved, 'RPG2k#save_game was called for slot 1 with the running state'
+  ok window_texts(picker.instance_variable_get(:@message)[:window]).include?('Game saved.'),
+     'the picker shows its own confirmation banner'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the banner
+  picker.update
+  RGSS::Input.reset
+  eq 1, parent.pop_called, 'the picker popped itself once dismissed'
+end
+
+check 'Open Save Menu honours a Change Save Access lock -- no picker opens at all' do
+  # Unlike a successful open, this path resolves synchronously in a single
+  # #perform_event_save call (no picker, so no two-visit wait) -- same
+  # three-frame shape (raise / resolve+resume / run the next command) the
+  # unconditional version had before the picker existed.
+  cmds = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(8)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  st.save_access = false
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  3.times { scene.update }
+  eq 0, parent.pushed.length, 'saving was disabled, so the picker never opens'
+  eq 0, parent.saved.length, 'and nothing was written'
+  eq 1, st.variables[8], 'the event still continues past the locked save'
+end
+
+check 'Open Load Menu pushes Scene::SaveLoad in :load mode' do
+  cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update # raises the :load_menu wait
+  scene.update # opens the picker
+  eq 1, parent.pushed.length, 'the save/load picker was pushed exactly once'
+  pushed = parent.pushed.first
+  ok pushed.is_a?(RPG2k::Scene::SaveLoad), "pushed Scene::SaveLoad, got #{pushed.class}"
+  eq :load, pushed.instance_variable_get(:@mode), 'opened in :load mode'
+  eq 0, st.variables[9], 'the event is paused while the picker is open'
+end
+
+check 'Open Load Menu: cancelling the picker resumes the event -- unlike the old ' \
+      'single-slot version, a cancelled load does not abandon it' do
+  cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  2.times { scene.update } # raises the wait, then opens the picker
+  picker = parent.pushed.first
+  RGSS::Input.triggered = [RGSS::Input::B]
+  picker.update
+  RGSS::Input.reset
+  eq 1, parent.pop_called, 'the picker popped itself on cancel'
+  eq [], parent.continue_calls, 'nothing was loaded'
+  # Same two frames "opening" took: one for #drive_event to see the picker
+  # already up and resume, one more for the interpreter to actually run the
+  # command after Open Load Menu.
+  2.times { scene.update }
+  eq 1, st.variables[9], 'the event resumed rather than being abandoned'
+end
+
+check 'Open Load Menu: confirming an occupied slot resumes the app through continue_game' do
+  cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
+  scene = new_scene({}, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  parent.save_states[3] = menu_state
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  2.times { scene.update } # raises the wait, then opens the picker
+  picker = parent.pushed.first
+  # Slot 3 has data (the other 14 are empty); move the cursor onto it and confirm.
+  picker.instance_variable_set(:@index, 2)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  picker.update
+  RGSS::Input.reset
+  eq [3], parent.continue_calls, 'RPG2k#continue_game was called for the confirmed slot'
 end
 
 check 'the item / skill target list shows who is afflicted' do

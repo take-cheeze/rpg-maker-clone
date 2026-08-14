@@ -2312,40 +2312,58 @@ class RPG2k
         @flash_out_buffer ||= Bitmap.new(Game::CharSet::WIDTH, Game::CharSet::HEIGHT)
       end
 
-      # -- Open Save Menu / Open Main Menu -------------------------------------
+      # -- Open Save Menu / Open Load Menu / Open Main Menu --------------------
 
-      # Open Save Menu (11910): save the game on the event's behalf and report
-      # the outcome, then let the event continue. Unlike Scene::Menu's own Save
-      # command (which opens Scene::SaveLoad's file-select list), this writes
-      # slot 1 directly with no picker -- the event has already decided *that*
-      # a save happens, and there is no UI wait state here for the player to
-      # pick a slot with, only the command's own pause/resume of the
-      # interpreter. A Change Save Access that forbade saving is honoured, as
-      # in RPG_RT.
+      # Open Save Menu (11910): open the same file-select screen
+      # (Scene::SaveLoad, in :save mode) Scene::Menu's own Save command opens,
+      # then resume the event once the player closes it again -- whether they
+      # actually saved or backed out with no picker of its own to distinguish,
+      # the event just continues either way, matching RPG_RT. `@event_save_load`
+      # marks that this scene is waiting on its own picker, the same one-visit
+      # guard #perform_event_menu uses for Open Main Menu, so the event stays
+      # paused for exactly one visit instead of reopening the picker every
+      # frame. A Change Save Access that forbade saving is honoured *before*
+      # ever opening the picker, as in RPG_RT.
       def perform_event_save
-        if @state.save_access
-          saved = @parent.save_game(@state)
-          $stderr.puts "[RPG2k] Open Save Menu: #{saved ? 'saved' : 'save failed'}"
+        if @event_save_load
+          @event_save_load = false
+          @interpreter.resume
+        elsif @state.save_access
+          @event_save_load = true
+          @parent.push Scene::SaveLoad.new(@parent, @state, :save)
         else
           $stderr.puts '[RPG2k] Open Save Menu: saving is disabled'
+          @interpreter.resume
         end
-        @interpreter.resume
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Save Menu failed: #{e.message}"
+        @event_save_load = false
         @interpreter.resume
       end
 
-      # Open Load Menu (5001, RPG2003): hand the game back to the loader, which
-      # replaces this scene with the loaded save's map. Nothing resumes here, so
-      # the interpreter is stopped rather than released — the same shape as
-      # Return to Title. A failed load leaves the player on this map, so the
-      # event is only stopped, never silently resumed into a discarded scene.
+      # Open Load Menu (5001, RPG2003): open Scene::SaveLoad in :load mode, the
+      # same one-visit-guarded shape as Open Save Menu above. Confirming an
+      # occupied slot calls RPG2k#continue_game, which tears down the whole
+      # scene stack -- this Scene::Map instance included -- and enters the
+      # loaded map; that means the "second visit" branch below only ever runs
+      # after a *cancel* (a successful load simply stops this instance from
+      # ever receiving another #update, picker included), which is exactly
+      # when resuming the interpreter is right: nothing loaded, so the event
+      # that opened the screen carries on from the next command, rather than
+      # being abandoned the way the old single-slot version's unconditional
+      # #stop did.
       def perform_event_load
-        @interpreter.stop
-        @parent.continue_game
+        if @event_save_load
+          @event_save_load = false
+          @interpreter.resume
+        else
+          @event_save_load = true
+          @parent.push Scene::SaveLoad.new(@parent, nil, :load)
+        end
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Load Menu failed: #{e.message}"
-        @interpreter.stop
+        @event_save_load = false
+        @interpreter.resume
       end
 
       # Exit Game (5002, RPG2003): quit, the way the title screen's Shutdown
