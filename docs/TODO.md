@@ -1788,7 +1788,10 @@ The work below is roughly ordered by the critical path to a walkable game
   A **switch item** (type **10**, not 9 — see below) is field-usable too:
   `Game::Party#use_switch_item` consumes one and returns the game switch it turns
   on, which the item menu then sets (matching EasyRPG, where the scene owns the
-  switch table). A **special item** (type 9, 特殊) invokes the skill named in its
+  switch table) before closing the whole menu stack at once — the same as a
+  special item invoking Escape or Teleport, with no confirmation message,
+  rather than dropping back to the (rebuilt) item list the way a medicine,
+  skill book or seed does. A **special item** (type 9, 特殊) invokes the skill named in its
   `skill_id`, with the item standing in for the SP cost — the user pays nothing
   and need not have learnt it, which is what Nepheshel's whole thrown-bomb line
   is. ✅ **A self/all-ally scope special item is castable from the item menu

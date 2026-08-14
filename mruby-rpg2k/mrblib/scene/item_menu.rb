@@ -5,12 +5,13 @@ class RPG2k
     # whole party (an all-ally item) or asks which ally to use it on (a
     # single-target item). Using an item consumes one and refreshes the list; an
     # item that would have no effect (everyone already full) is reported and not
-    # consumed. A special item invoking an Escape or Teleport skill warps the
+    # consumed. A switch item instead flips its game switch and closes the
+    # whole menu stack outright, with no "Used on ..." message -- the same as
+    # a special item invoking an Escape or Teleport skill, which warps the
     # party instead, the same as Scene::SkillMenu's own Escape/Teleport skills:
     # Escape jumps straight to its one registered target, Teleport opens a
-    # picker of every registered destination, and either closes the whole menu
-    # stack rather than showing a "Used on ..." message. All decision logic
-    # lives in Game::Party (field_items / use_item / item_effective? /
+    # picker of every registered destination. All decision logic lives in
+    # Game::Party (field_items / use_item / use_switch_item / item_effective? /
     # use_special_escape_item / use_special_teleport_item), which the host
     # harnesses test; this class is the RGSS UI over it, mirroring
     # Scene::Menu's window/cursor/message helpers.
@@ -129,12 +130,22 @@ class RPG2k
         build_target_window
       end
 
-      # A switch item turns on its game switch (the party consumes one); the menu
-      # owns the switch table.
+      # A switch item turns on its game switch (the menu owns the switch table)
+      # and consumes one -- then closes the whole menu stack at once, the same
+      # as a special item invoking Escape or Teleport (RPG_RT never leaves a
+      # switch item's user sitting in the item list afterwards, since flipping
+      # a switch is typically what a waiting map event is watching for). No
+      # confirmation message on success, matching that same Escape/Teleport
+      # precedent; a use that consumed nothing (not actually a held switch
+      # item) reports "It had no effect." and stays put instead.
       def apply_switch_item(id)
         sid = @state.party.use_switch_item(id)
-        @state.switches[sid] = true if sid
-        show_message(sid ? "Switch turned on." : "It had no effect.", :used)
+        if sid
+          @state.switches[sid] = true
+          @parent.pop_to_map
+        else
+          show_message("It had no effect.")
+        end
       end
 
       # A special item invoking an Escape-type skill: cast from the party
