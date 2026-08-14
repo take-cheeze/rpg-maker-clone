@@ -8,10 +8,11 @@
   power` (a 1px base amplitude even at power 0 — a "power 0" shake is not
   flatly inert), samples a genuine sine wave, and separately caps each
   frame's *step* off the previous frame's own offset
-  (`(speed * amplitude) / 8 + 1`). Ported with a new 256-entry `SIN256`
-  lookup table (mruby has no `Math` module to call `sin` from at runtime).
-  Covered by new `scripts/rpg2k_logic_check.rb` checks, including one that
-  independently re-derives EasyRPG's formula with plain Ruby `Math.sin` and
-  compares it frame-by-frame against the engine's own output; two
+  (`(speed * amplitude) / 8 + 1`). Ported using `Math.sin` directly
+  (`mruby-math` is already in this build's gem set, and `Scene::Map`'s
+  enemy-levitate flying offset already calls it the same way). Covered by
+  new `scripts/rpg2k_logic_check.rb` checks, including one that
+  independently re-derives EasyRPG's formula and compares it frame-by-frame
+  against the engine's own output; two
   pre-existing checks that had baked in the old, incorrect amplitude/
   zero-power assumptions are corrected alongside it.

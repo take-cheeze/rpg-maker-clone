@@ -4090,13 +4090,16 @@ not yet verified:
   `ShakeOnce`), the exact same unit `Interpreter#do_shake_screen`'s own
   `FRAMES_PER_TENTH` conversion already puts `@shake_frames` in — so the port
   needed no separate timing-unit reconciliation, only the position formula
-  itself. Implemented with a new `Game::Screen::SIN256` (a 256-entry
-  `sin(i * PI / 128)` lookup table, since mruby has no `Math` module to call
-  `sin` from at runtime — the same constraint the old triangle-wave comment
-  already named, now solved with a table instead of avoiding trig
-  altogether) that `#update_shake` indexes by the exact same `(time_left * 4
-  * (speed + 2)) % 256` phase EasyRPG computes, then truncates
-  `amplitude * SIN256[phase] * -1` toward zero (`Float#to_i`, matching C++'s
+  itself. `#update_shake` now calls `Math.sin` directly — the old
+  triangle-wave comment's premise ("mruby here has no `Math`") does not hold
+  for this build: `mruby-math` is already in `build_config.rb`'s shared gem
+  set, and `Scene::Map`'s enemy-levitate flying offset (`mruby-rpg2k/mrblib/
+  scene/map.rb`) already calls `Math.sin`/`Math::PI` the same way, so this
+  fix follows that existing precedent rather than inventing a lookup-table
+  workaround for a constraint that turned out not to apply. `#update_shake`
+  computes `Math.sin(phase * Math::PI / 128)` for the exact same
+  `(time_left * 4 * (speed + 2)) % 256` phase EasyRPG computes, then
+  truncates `amplitude * sin * -1` toward zero (`Float#to_i`, matching C++'s
   implicit double-to-int truncation) and clamps it against the previous
   offset with `Game.clamp`, mirroring `Utils::Clamp<int>` exactly. The
   now-unused hand-rolled `Screen.triangle_wave` helper was removed rather

@@ -879,12 +879,10 @@ check 'Screen zero-power shake still has a +/-1px amplitude, never more' do
 end
 
 # Direct port of EasyRPG's `Shake::NextPosition`/`Shake::Update` (src/shake.h),
-# computed independently here (this script runs under plain Ruby, which has
-# `Math`, unlike the mruby build `Game::Screen` itself has to avoid it in) and
-# compared frame-by-frame against `Game::Screen#update`'s own SIN256-table
-# port. Confirmed to fail against the pre-fix triangle-wave approximation
-# before this fix (wrong amplitude, wrong waveform shape, no per-frame cutoff
-# clamp at all).
+# re-derived independently here and compared frame-by-frame against
+# `Game::Screen#update`'s own `Math.sin`-based port. Confirmed to fail against
+# the pre-fix triangle-wave approximation before this fix (wrong amplitude,
+# wrong waveform shape, no per-frame cutoff clamp at all).
 check "Screen shake's per-frame offset matches EasyRPG's Shake::NextPosition exactly" do
   power, speed, frames = 6, 3, 40
   s = Game::Screen.new
