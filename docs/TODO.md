@@ -2243,15 +2243,22 @@ The work below is roughly ordered by the critical path to a walkable game
     distinguish; wants a closer look (a higher-resolution capture, or
     checking whether EasyRPG's own item-list drawing code names this glyph)
     before guessing at an implementation.
-  - The Save command's "you cannot save right now" message (shown when
-    `Change Save Access` has turned saving off) is a hardcoded English
-    literal, the same class of bug the two placeholders above turned out to
-    be -- but unlike those, this one is *not* wine-verified: the comparison
-    never reached this exact state on the reference side (input lag stacked
-    up over the menu's earlier steps), and RPG2000's Term table has no
-    obvious dedicated slot for this message to source from, so whether RPG_RT
-    shows *any* text here at all is still an open question rather than an
-    assumed one.
+  ✅ **The Save command's "you cannot save right now" message is gone --
+  RPG_RT shows no text at all.** This one was never wine-verified (the
+  comparison never reached this exact state on the reference side, and
+  RPG2000's Term table has no obvious slot for such a message), so rather
+  than keep guessing, this got checked against EasyRPG Player's own
+  `Scene_Menu::UpdateCommand` source directly: its disabled-Save branch
+  plays the buzzer SE (`SFX_Buzzer`) and does nothing else -- no message,
+  no scene push, the menu simply stays where it is. `Scene::Menu`'s Save
+  branch now does the same: `@parent.push Scene::SaveLoad.new(...) if
+  @state.save_access`, no `else`. **Not modelled:** the buzzer SE itself --
+  none of the field-menu scenes (`Scene::Menu`, `Scene::ItemMenu`,
+  `Scene::SkillMenu`, `Scene::EquipMenu`) play *any* system SE yet
+  (cursor-move, decision, cancel, buzzer), unlike `Scene::Title`, which
+  already has its own `#play_cursor_se`. Adding menu-wide SE playback is a
+  bigger, separate piece of work than this one hardcoded-message fix, left
+  for its own pass.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
@@ -2307,8 +2314,21 @@ The work below is roughly ordered by the critical path to a walkable game
   about a display-mode negotiation specific to entering the map scene --
   but this was not chased to a root cause or a workaround; recorded so
   whoever hits it next does not re-derive the same ruled-out list from
-  scratch. Swapping to a fresh `WINEPREFIX` (untried, since it would lose
-  this session's whole configured setup) is the next thing to try.
+  scratch. **A fresh `WINEPREFIX` (`wineboot --init` into a brand new
+  directory) does not fix it either** -- the same fresh-title,
+  fresh-file-select, black-after-Continue pattern reproduced there too,
+  ruling out prefix-local corruption entirely. Whatever this is lives
+  either in the `Nepheshel206beta` game directory itself (unlikely --
+  only `Save01.lsd` has been touched this whole survey, and its own
+  `.ldb`/`.lmt`/`.lmu` files are read-only inputs no script here writes),
+  in some shared, non-prefix wine/X state this session has not identified,
+  or is a genuine RPG_RT behaviour under this specific
+  wine+Xvfb+llvmpipe stack that the many *earlier*, successful Continue
+  captures in this same session (menu/item/equip/save-screen comparisons)
+  happened not to trigger. Left for whoever picks this up next with a
+  clean slate -- re-downloading a pristine `Nepheshel206beta` copy and
+  diffing it against the one in `data/` would be the next thing to rule
+  out.
   ✅ **A whole-frame pixel diff was itself the bug in that "smarter
   automation loop."** Cropping the retry's change-check down to just the
   menu command-list's own region, rather than diffing the entire frame,
