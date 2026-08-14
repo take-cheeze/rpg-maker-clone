@@ -3307,7 +3307,33 @@ not yet verified:
   division/modulo (no fractional values ever) — the standard workaround
   for `×1.5` etc. is `×15÷10` in that order, since multiplying first can
   silently overflow the ±999999 range with no error (wrong output, not a
-  crash).
+  crash). ✅ **Control Variables' Divide/Modulo now truncate toward zero
+  like real RPG_RT's C++ math, instead of mruby's native `/`/`%`, which
+  floor toward negative infinity** — the two only ever agreed when both
+  operands shared a sign, and variables can hold negatives (`Variables::MIN`
+  is −999999, the "±999999 range" clamp fixed above, and the random operand
+  explicitly "accepts negative ranges," a fact recorded a few lines up).
+  `Game::Interpreter#apply` (`mruby-rpg2k/mrblib/interpreter.rb`) computed
+  Divide/Modulo (op 4/5) as plain `cur / val` / `cur % val`; EasyRPG's
+  `Game_Variables::VarDiv`/`VarMod` (`src/game_variables.cpp`) are bare C++
+  `n / d` / `n % d`, which truncate toward zero, so e.g. `-7 / 2` is −3 there
+  but mruby's floored `/` gives −4, and `-7 % 2` is −1 there (the remainder
+  takes the *dividend's* sign) but mruby's `%` gives 1 (the divisor's sign) —
+  a real divergence for any game whose Control Variables math ever goes
+  negative, not a cosmetic one. Fixed with two new helpers, `#trunc_div`/
+  `#trunc_mod`, computing `n.abs / d.abs` and negating only when the operands'
+  signs differ, the same truncating idiom this codebase already uses
+  elsewhere for a different C++-vs-mruby division gap
+  (`Scene::Map.tone_channel`'s `n < 0 ? -(-n / 100) : n / 100`, `scene/
+  map.rb`). Divide-by-zero was already correct and is untouched (`val == 0 ?
+  cur : …`, matching `VarDiv`'s own `d != 0 ? n / d : n`) — but **modulo by
+  zero now zeroes the variable instead of leaving it unchanged**, matching
+  `VarMod`'s own `d != 0 ? n % d : 0`, which disagrees with `VarDiv`'s
+  behaviour on this exact point rather than mirroring it. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (negative-operand divide/modulo in
+  both operand-sign combinations, plus an unaffected same-sign control case;
+  divide-by-zero leaves the variable unchanged while modulo-by-zero zeroes
+  it), confirmed to fail against the pre-fix code before the fix.
 - **Indirect ("pointer") addressing** — `V[n]`, where the *value* of
   variable n becomes the actual target/operand variable's index — is a
   distinct third addressing mode from a literal variable number or a

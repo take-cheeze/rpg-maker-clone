@@ -4404,6 +4404,58 @@ check 'a variable clamps to +-999999 instead of overflowing' do
   eq 999_999, st.variables[3], 'an add that overflows the range clamps at the max'
 end
 
+check 'Control Variables divide/modulo truncate toward zero like real RPG_RT, not mruby\'s floor' do
+  # EasyRPG's Game_Variables::VarDiv/VarMod (src/game_variables.cpp) are plain
+  # C++ `n / d` / `n % d`, which truncate toward zero -- mruby's native `/`/`%`
+  # floor toward negative infinity instead, and the two only agree when both
+  # operands share a sign. -7 / 2 is -3 in C++ (truncated) but -4 in mruby
+  # (floored); -7 % 2 is -1 in C++ (remainder takes the dividend's sign) but 1
+  # in mruby (remainder takes the divisor's sign).
+  st = new_state
+  st.variables[1] = -7
+  st.variables[2] = -7
+  st.variables[3] = 7
+  st.variables[4] = 7
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 4, 0, 2]),   # var 1 /= 2  (-7 / 2)
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 5, 0, 2]),   # var 2 %= 2  (-7 % 2)
+    FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 4, 0, -2]),  # var 3 /= -2 (7 / -2)
+    FakeCmd.new(IC::CONTROL_VARS, [0, 4, 4, 5, 0, -2]),  # var 4 %= -2 (7 % -2)
+  ])
+  it.update
+  eq(-3, st.variables[1], '-7 / 2 truncates to -3, not floors to -4')
+  eq(-1, st.variables[2], '-7 % 2 takes the dividend\'s sign (-1), not the divisor\'s (1)')
+  eq(-3, st.variables[3], '7 / -2 truncates to -3, not floors to -4')
+  eq 1, st.variables[4], '7 % -2 takes the dividend\'s sign (1), not the divisor\'s (-1)'
+
+  # Same-sign operands already agreed with mruby's native math -- confirm the
+  # fix did not disturb the ordinary case.
+  st.variables[5] = 7
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CONTROL_VARS, [0, 5, 5, 4, 0, 2])]) # var 5 /= 2
+  it2.update
+  eq 3, st.variables[5], 'an ordinary same-sign divide is unaffected'
+end
+
+check 'Control Variables modulo by zero zeroes the variable, matching EasyRPG; divide by zero leaves it unchanged' do
+  # EasyRPG's VarDiv is `d != 0 ? n / d : n` (unchanged) but VarMod is
+  # `d != 0 ? n % d : 0` (zeroed) -- the two operations disagree with each
+  # other on a zero divisor, not just with mruby's native `/`/`%` (which raise
+  # ZeroDivisionError).
+  st = new_state
+  st.variables[1] = 42
+  st.variables[2] = 42
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 4, 0, 0]), # var 1 /= 0
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 5, 0, 0]), # var 2 %= 0
+  ])
+  it.update
+  eq 42, st.variables[1], 'a divide by zero leaves the variable unchanged'
+  eq 0, st.variables[2], 'a modulo by zero zeroes the variable'
+end
+
 check 'a descending batch range silently no-ops for both Switches and Variables' do
   # yado.tk: a batch (range) Control Switches/Variables whose high end is
   # below its low end does nothing at all, no error. range(cmd) returns the
