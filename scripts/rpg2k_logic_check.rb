@@ -10894,6 +10894,78 @@ check 'an unknown map, missing field or missing tree defaults teleport/escape to
   eq true, Game::MapAccess.escape_allowed?(1, { 1 => bare })
 end
 
+# -- map auto-BGM resolution (map tree bgm_type/bgm fields 11, 12) -----------
+#
+# The identical tri-state walk as Save/Teleport/Escape above, but the middle
+# value means "none" (leave whatever is playing alone) rather than "allow" --
+# see Game::MapBgm's own comment for the EasyRPG Game_Map::PlayBgm citation.
+
+FakeBgmChunk = Struct.new(:file, :volume, :pitch)
+
+class FakeBgmNode
+  attr_accessor :bgm_type, :bgm, :parent_map_id
+  def initialize(type, file = '', parent = 0)
+    @bgm_type = type
+    @bgm = FakeBgmChunk.new(file, 80, 110)
+    @parent_map_id = parent
+  end
+end
+
+check 'bgm type 2 plays the map own file' do
+  props = { 1 => FakeBgmNode.new(2, 'Town') }
+  chunk = Game::MapBgm.chunk_for(1, props)
+  eq 'Town', chunk.file
+  eq 80, chunk.volume
+  eq 110, chunk.pitch
+end
+
+check 'bgm type 1 (none) leaves the current track alone, even with a stray file name' do
+  props = { 1 => FakeBgmNode.new(1, 'leftover authored data') }
+  eq nil, Game::MapBgm.chunk_for(1, props)
+end
+
+check 'bgm type 2 with an empty file name also plays nothing' do
+  props = { 1 => FakeBgmNode.new(2, '') }
+  eq nil, Game::MapBgm.chunk_for(1, props)
+end
+
+check 'bgm type 0 inherits from the parent map' do
+  props = { 1 => FakeBgmNode.new(2, 'Cave'),
+            2 => FakeBgmNode.new(0, '', 1) }
+  eq 'Cave', Game::MapBgm.chunk_for(2, props).file, 'the parent pins a file'
+end
+
+check 'bgm inheritance walks more than one level' do
+  props = { 1 => FakeBgmNode.new(2, 'Boss'),
+            2 => FakeBgmNode.new(0, '', 1),
+            3 => FakeBgmNode.new(0, '', 2) }
+  eq 'Boss', Game::MapBgm.chunk_for(3, props).file
+end
+
+check 'an inherited none type resolves to nothing, not the parent file' do
+  props = { 1 => FakeBgmNode.new(1, 'unused'),
+            2 => FakeBgmNode.new(0, '', 1) }
+  eq nil, Game::MapBgm.chunk_for(2, props)
+end
+
+check 'a map inheriting from the root, an unknown map id, or a missing tree resolves to nothing' do
+  eq nil, Game::MapBgm.chunk_for(1, { 1 => FakeBgmNode.new(0, '', 0) })   # parent 0 = the tree root
+  eq nil, Game::MapBgm.chunk_for(7, { 1 => FakeBgmNode.new(2, 'x') })
+  eq nil, Game::MapBgm.chunk_for(1, nil), 'and so does having no tree'
+end
+
+check 'a looping or self-parenting map tree ends at nothing instead of hanging' do
+  props = { 1 => FakeBgmNode.new(0, '', 2),
+            2 => FakeBgmNode.new(0, '', 1) }   # 1 -> 2 -> 1 -> ...
+  eq nil, Game::MapBgm.chunk_for(1, props)
+  eq nil, Game::MapBgm.chunk_for(1, { 1 => FakeBgmNode.new(0, '', 1) })
+end
+
+check 'a node missing its bgm fields is treated as inheriting' do
+  bare = Struct.new(:nothing).new(0)
+  eq nil, Game::MapBgm.chunk_for(1, { 1 => bare })
+end
+
 # -- battle log terms (Game::States::BattleText) ------------------------------
 
 BT = Game::States::BattleText

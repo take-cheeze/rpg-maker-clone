@@ -9304,6 +9304,54 @@ check 'Scene::Map re-derives Save/Teleport/Escape access from the map tree ' \
      'Menu access is not re-derived from the tree; it persists across the transfer'
 end
 
+# One map-tree node's BGM settings (Game::MapBgm, fields 11 bgm_type / 12 bgm).
+FakeBgmChunk = Struct.new(:file, :volume, :pitch)
+FakeBgmTreeNode = Struct.new(:bgm_type, :bgm, :parent_map_id)
+
+check 'Scene::Map auto-plays the map own BGM on load and on Teleport' do
+  parent = fake_parent(fake_db)
+  parent.map_tree = fake_map_tree(
+    1 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Town', 90, 105), 0),
+    2 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Cave', 80, 95), 0),
+    3 => FakeBgmTreeNode.new(1, FakeBgmChunk.new('unused', 0, 0), 0) # none
+  )
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  RGSS::Audio.reset_bgm
+  scene = RPG2k::Scene::Map.new(parent, state)
+  eq [['Town', 90, 105]], RGSS::Audio.bgm_calls, 'map 1 own BGM played on load'
+  eq 'Town', state.current_bgm[:name]
+
+  RGSS::Audio.reset_bgm
+  scene.send(:perform_teleport, [2, 0, 0, 0])
+  eq [['Cave', 80, 95]], RGSS::Audio.bgm_calls, 'map 2 own BGM played on Teleport'
+
+  RGSS::Audio.reset_bgm
+  scene.send(:perform_teleport, [1, 0, 0, 0])
+  eq [['Town', 90, 105]], RGSS::Audio.bgm_calls,
+     'and teleporting back to map 1 plays it again (a fresh Setup, not a same-visit no-op)'
+
+  RGSS::Audio.reset_bgm
+  scene.send(:perform_teleport, [3, 0, 0, 0])
+  eq [], RGSS::Audio.bgm_calls,
+     'map 3 is type 1 (none): the still-playing map-1 track is left alone, nothing restarts'
+  eq 'Town', state.current_bgm[:name], 'so the tracked current BGM is untouched too'
+end
+
+check 'Scene::Map does not auto-play the map BGM while the party is boarded' do
+  parent = fake_parent(fake_db)
+  parent.map_tree = fake_map_tree(
+    1 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Field', 100, 100), 0)
+  )
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  state.boarded = :ship
+  RGSS::Audio.reset_bgm
+  RPG2k::Scene::Map.new(parent, state)
+  eq [], RGSS::Audio.bgm_calls,
+     "boarded: the ship's own BGM owns the audio, not the map's default"
+end
+
 check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around' do
   scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@slot_index), 'starts on the first slot'

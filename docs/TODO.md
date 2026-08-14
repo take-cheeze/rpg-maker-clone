@@ -3985,6 +3985,74 @@ not yet verified:
   Memorized BGM with nothing else played in between reaches the backend
   once, not twice), confirmed to fail against the pre-fix code (`["town",
   "town"]`) before the fix.
+- ✅ **A map's own configured BGM now actually auto-plays, on the initial map
+  load and every Transfer Player alike — a genuine, previously-undocumented
+  gap found while cross-checking this same BGM cluster for anything else the
+  `#play_bgm` same-file-no-restart work above might have missed.** The map
+  tree's `map_properties` table (`RPG_RT.lmt`, LCF fields 11 `bgm_type`, 12
+  `bgm`) was already fully parsed by `mruby-lcf/mrblib/schema.rb`, and this
+  same tree already drives three sibling per-map tri-state walks this
+  codebase gets right — `Game::Backdrop.name_for` (`backdrop_type`, field 21)
+  and `Game::MapAccess`'s Save/Teleport/Escape walk (fields 31-33) — but
+  nothing in `mruby-rpg2k` ever read `bgm_type`/`bgm` at all: a map's own
+  configured music sat parsed and unused, so no field RPG2000 game here ever
+  had its background music start on its own; every track only ever played
+  because some event script issued an explicit Play BGM command. Verified
+  against EasyRPG Player's actual C++ source rather than guessed at:
+  `Game_Map::PlayBgm` (`src/game_map.cpp`) walks `music_type == 0` ("同じ",
+  same as parent) nodes up the tree exactly like `Backdrop`/`MapAccess`
+  already do here, then — once landed on a non-inheriting node — only calls
+  `Game_System::BgmPlay` when that node's own `music.name` is non-empty *and*
+  its type is not 1; type 1 is a no-op that leaves whatever is currently
+  playing alone rather than silencing it, the opposite of what the shared
+  `BGMType` enum's identically-numbered middle value means for `backdrop_type`
+  (there it is "terrain-designated" — liblcf reuses one enum for two fields
+  with different per-value meanings, confirmed by reading both call sites,
+  not assumed from the shared type name). `Game_Player::MoveTo` calls
+  `Game_Map::Setup()` immediately followed by `Game_Map::PlayBgm()`
+  unconditionally, on every map transition — the initial map (via
+  `SetupPlayerSpawn`) and every Transfer Player alike. Implemented with a new
+  `Game::MapBgm` module (`mruby-rpg2k/mrblib/game.rb`), the same
+  walk-with-a-`seen`-guard shape as `Backdrop`/`MapAccess`, returning the
+  resolved node's raw BGM chunk (or nil for an unconfigured/type-1/looping/
+  unknown-map/no-tree resolution) — and a new `Scene::Map#play_map_bgm`
+  (`mruby-rpg2k/mrblib/scene/map.rb`), called right alongside the existing
+  `#apply_map_access` at both of its own call sites (`#initialize`,
+  `#perform_teleport`), routed through the already-same-file-aware `#play_bgm`
+  helper so a Transfer Player back onto the same map (or between two maps
+  sharing a track) does not restart it, matching the fix immediately above.
+  Skipped entirely while boarded on a vehicle (`@state.boarded?`): the
+  vehicle's own BGM (`#play_vehicle_bgm`) owns the audio then, and
+  `#restore_pre_vehicle_bgm` already resumes whatever this would have played
+  once the party disembarks, so nothing here needed to special-case that
+  interaction beyond not firing into it. **Left open**: whether loading a
+  save (Continue) instead resumes the exact previously-playing track from the
+  save's own `current_music` field (which could differ from the destination
+  map's own default if a Play BGM override was mid-flight at save time)
+  rather than recomputing fresh from the map tree — the EasyRPG evidence
+  found this session confirms the recompute-from-tree behaviour for
+  `Game_Player::MoveTo` (new game and every Transfer Player) but not for
+  `Game_Map::SetupFromSave`'s own load path, which was not traced far enough
+  to settle it either way; this fix applies the same recompute-from-tree
+  logic uniformly to `#initialize` (covering both New Game and Continue,
+  since `main.rb` constructs `Scene::Map` identically for both), which is the
+  best-supported reading available but not confirmed for Continue
+  specifically. Covered by nine new `scripts/rpg2k_logic_check.rb` checks
+  pinning `Game::MapBgm.chunk_for`'s walk (type 2 plays the map's own file
+  with its volume/pitch; type 1 leaves the current track alone even with a
+  stray leftover file name; an empty type-2 file name also plays nothing;
+  type 0 inherits one and several levels up; an inherited type-1 resolves to
+  nothing rather than the parent's file; inheriting from the root, an unknown
+  map id and a missing tree all resolve to nothing; a looping or
+  self-parenting tree ends at nothing instead of hanging; a node missing its
+  BGM fields is treated as inheriting) and two new
+  `scripts/rpg2k_scene_check.rb` checks (a three-map fixture tree proving
+  `Scene::Map` actually reaches `Game::MapBgm` — not just that the module
+  answers correctly in isolation — on both `#initialize` and
+  `#perform_teleport`, including the same-file no-restart case and the
+  type-1 leave-alone case; a boarded party gets no map-BGM call at all), the
+  first logic check and the first scene check each confirmed to fail against
+  the pre-fix code before the fix.
 - SE is truly polyphonic (unlike BGM); ✅ **SE "OFF" now stops all playing
   SEs at once**, instead of silently doing nothing. `Game::Interpreter
   #play_audio` (`mruby-rpg2k/mrblib/interpreter.rb`) returned immediately on

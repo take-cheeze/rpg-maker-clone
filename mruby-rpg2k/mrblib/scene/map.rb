@@ -84,6 +84,7 @@ class RPG2k
         @monster_cache = {}   # Monster/<name> (battler graphics)
         @animation_cache = {} # Battle/<name> (battle animation sheets)
         apply_map_access
+        play_map_bgm
         @map = state.map
         @chipset = build_chipset
         @chipset_bmp = load_chipset_graphic
@@ -3776,6 +3777,27 @@ class RPG2k
         @state.escape_access = Game::MapAccess.escape_allowed?(@state.map_id, props)
       end
 
+      # Auto-play the current map's own configured BGM (Game::MapBgm), on the
+      # initial map load and every Transfer Player, same as RPG_RT's
+      # `Game_Player::MoveTo` calling `Game_Map::PlayBgm()` right after every
+      # `Game_Map::Setup` -- a map with nothing configured, or explicitly set
+      # to "none" (type 1), leaves whatever is already playing alone, and
+      # #play_bgm's own same-file check keeps a Transfer Player back onto the
+      # same map (or between maps sharing a track) from restarting it.
+      # Skipped while boarded: the vehicle's own BGM (#play_vehicle_bgm) owns
+      # the audio then, and #restore_pre_vehicle_bgm resumes whatever this
+      # would have played once the party disembarks.
+      def play_map_bgm
+        return if @state.boarded?
+        bgm = Game::MapBgm.chunk_for(@state.map_id, map_properties)
+        return unless bgm
+        name = music_name(bgm)
+        return if name.nil? || name.empty?
+        play_bgm(name: name, volume: music_volume(bgm), tempo: music_tempo(bgm))
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] map BGM failed: #{e.message}"
+      end
+
       # The backdrop named by the terrain of the tile at (x, y) — the database
       # terrain row's `background_name` (field 4). '' when the tile, the terrain
       # table or the field is missing.
@@ -6391,6 +6413,7 @@ class RPG2k
         @state.map = @map
         @state.map_id = map_id
         apply_map_access
+        play_map_bgm
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
