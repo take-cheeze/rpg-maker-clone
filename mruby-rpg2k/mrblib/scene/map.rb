@@ -1415,6 +1415,12 @@ class RPG2k
           it.event_id = p[:event] && p[:event][:id]
           it.update
         end
+        # Same "starts on the same real frame the command runs" fix as
+        # #drive_event's own mirrored spot above, for a Parallel Process's own
+        # waited-for Show Battle Animation -- #drive_parallel_wait's :animation
+        # case (drive_map_animation) used to only ever be reached the *next*
+        # time this method found `it` already parked on that wait.
+        drive_parallel_wait(p, it) if it.waiting? && it.wait_kind == :animation
         apply_interpreter_requests(it, p[:event])
         record_parallel_progress(p)
       rescue StandardError
@@ -3514,6 +3520,32 @@ class RPG2k
         else
           @interpreter.update
           apply_interpreter_requests(@interpreter, @active_event)
+          # A Show Battle Animation with its wait flag set builds its animation
+          # object synchronously in real RPG_RT -- EasyRPG's own
+          # Game_Interpreter_Map::CommandShowBattleAnimation
+          # (src/game_interpreter_map.cpp) calls Game_Screen::ShowBattleAnimation
+          # in-line *before* it ever touches its own wait_time -- so the sprite's
+          # frame-0 content is visible the very same real frame the command
+          # runs, not one frame later. #do_show_battle_animation only arms the
+          # :animation wait itself (see its own comment); #drive_map_animation,
+          # the one place anything actually builds the animation, used to only
+          # ever be reached the *next* time this method found the interpreter
+          # already parked on that wait -- so a waited-for play always missed
+          # its own frame 0 by a full frame. Fixed by building it immediately
+          # once #interpreter.update leaves the interpreter freshly parked here
+          # (#init_map_animation_this_frame, not the full #drive_map_animation):
+          # only the *build* moves up, not that first frame's own *step* --
+          # EasyRPG's Game_Map::Update calls Game_Screen::Update (the only thing
+          # that ever advances an animation once built, including the "stomp an
+          # unrelated Screen/Character Flash to nothing" side effect riding
+          # along with it) *before* UpdateForegroundEvents each real frame, so a
+          # foreground command building an animation this frame does not also
+          # get an extra, same-frame Update() call on it -- that first advance
+          # still waits for this event's own next real-frame :animation
+          # dispatch, same as before this fix. Scoped to :animation only,
+          # matching this project's own previously "still open" note on this
+          # exact gap.
+          init_map_animation_this_frame(@interpreter) if @interpreter.waiting? && @interpreter.wait_kind == :animation
         end
       end
 
@@ -6477,17 +6509,31 @@ class RPG2k
       # duration independently too, which is a larger change than the
       # observable "does the first get cut off" fact this fixes.
       def drive_map_animation(it)
-        unless @map_animation_interp.equal?(it)
-          if @map_animation || @anim_wait
-            cut_off = @map_animation_interp
-            @map_animation = nil
-            @anim_wait = nil
-            cut_off.resume if cut_off
-          end
-          @map_animation_interp = it
-          init_map_animation(it)
-        end
+        init_map_animation_this_frame(it)
         @map_animation ? step_map_animation : step_animation_wait
+      end
+
+      # Claim the shared animation slot for `it` and build its animation (or
+      # arm the timed fallback) if it does not already hold it -- the "only
+      # one at a time, a second forcibly cuts off the first" precedence rule
+      # (#drive_map_animation's own comment), factored out so a freshly-armed
+      # :animation wait can be built the instant it is armed, before its own
+      # first per-frame #step_map_animation/#step_animation_wait advance is
+      # due (see #drive_event's `else` branch, which calls this directly
+      # rather than the full #drive_map_animation -- see its own comment for
+      # why only the *build* moves up, not that first advance). A no-op when
+      # `it` already owns the slot (mid-play, or already claimed this same
+      # frame).
+      def init_map_animation_this_frame(it)
+        return if @map_animation_interp.equal?(it)
+        if @map_animation || @anim_wait
+          cut_off = @map_animation_interp
+          @map_animation = nil
+          @anim_wait = nil
+          cut_off.resume if cut_off
+        end
+        @map_animation_interp = it
+        init_map_animation(it)
       end
 
       # Advance a fire-and-forget Show Battle Animation (#apply_battle_animation_
