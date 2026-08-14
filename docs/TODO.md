@@ -5814,7 +5814,59 @@ not yet verified:
   animation arms that event's own flash and never the player's;
   `#map_animation_flash_target`'s own vehicle / unknown-id / "this event"
   decoding), confirmed to fail against the pre-fix code (two `RuntimeError`s
-  and a `NoMethodError`) before the fix.
+  and a `NoMethodError`) before the fix. ✅ **The vehicle exception this same
+  fix carved out is now closed too — it was a real, reachable gap, not a
+  case real RPG_RT exempts.** Verified against EasyRPG Player's actual C++
+  source rather than assumed unsupported: `Game_Character::GetCharacter`
+  (`src/game_character.cpp`) resolves `CharBoat`/`CharShip`/`CharAirship`
+  straight to the live `Game_Vehicle` object — a `Game_Character` subclass,
+  same as the player or a map event — so `BattleAnimationMap::FlashTargets`'s
+  `target->Flash(r, g, b, p, 0)` call (`src/battle_animation.cpp`) reaches a
+  vehicle exactly like it reaches any other character; nothing in the
+  original engine exempts it. This build's own `#map_animation_flash_target`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) returned a bare `nil` for
+  `MOVE_TARGET_BOAT`/`SHIP`/`AIRSHIP`, reasoning that a vehicle has no
+  CharSet-tone flash mechanism to hook the way `@player_flash`/an `@events`
+  entry's `[:flash]` do — true of that *specific* mechanism, but not the
+  same as "cannot flash at all": a vehicle already draws through a real
+  `Sprite` (`@vehicle_sprites[type]`, built and drawn every frame by
+  `#draw_vehicles`), so it can be flashed directly with the native RGSS
+  `Sprite#flash` primitive `#fire_target_flash` already uses for a battle
+  enemy sprite, no CharSet tint needed. Fixed by having
+  `#map_animation_flash_target` return the target's own `Game::Vehicle::TYPES`
+  symbol (`:boat`/`:ship`/`:airship`, via the same
+  `Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]` idiom
+  `#animation_target_pixel` already uses to place the animation itself)
+  instead of `nil`, and by giving `#fire_map_target_flash`/
+  `#clear_map_target_flash` a vehicle branch that calls
+  `@vehicle_sprites[type].flash(color, ANIM_FLASH_FRAMES)` /
+  `.flash(nil, 0)` directly, mirroring `#fire_target_flash`/
+  `#clear_target_flash`'s own enemy-sprite idiom exactly rather than
+  extending the CharSet-tint mechanism. A second, previously-invisible gap
+  surfaced once a vehicle could be armed this way: the real native
+  `Sprite#flash` primitive only decays (and its rendered intensity only
+  fades) when driven by an explicit `#update` every frame
+  (`mruby-rgss/src/lib.cxx`'s `spr_flash`/`spr_update`) — the exact contract
+  `#update_enemy_flashes` already exists to drive for the battle-only enemy
+  sprites — and nothing anywhere in this codebase ever called `#update` on a
+  vehicle sprite at all, so a vehicle's flash would have stayed at full
+  intensity forever in the real renderer once armed. Fixed with a new
+  `#update_vehicle_flashes`, the map-side counterpart of
+  `#update_enemy_flashes`, called unconditionally every real frame from
+  `#update` (not gated on `@battle_ui`, since a vehicle can be flashed by a
+  map-triggered Show Battle Animation with no fight running at all).
+  Covered by three new `scripts/rpg2k_scene_check.rb` checks (`
+  #map_animation_flash_target` resolving a vehicle target to its own
+  `Game::Vehicle::TYPES` symbol rather than `nil` — updating the pre-existing
+  check that had pinned the old, now-wrong `nil` behaviour;
+  `#fire_map_target_flash`/`#update_vehicle_flashes` arming and then decaying
+  a targeted vehicle sprite's flash directly, leaving a bystander vehicle
+  untouched; the same timing driven through the full event/animation
+  pipeline, confirming the two pieces are actually wired together), all
+  three confirmed to fail against the pre-fix code before the fix (`nil`
+  where `:boat` was expected, a `NoMethodError` from the old
+  Hash-`[]=`-on-a-Symbol dispatch, and the full-pipeline sprite never being
+  flashed at all).
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a

@@ -287,6 +287,7 @@ class RPG2k
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
+        update_vehicle_flashes # a vehicle's own map-triggered animation flash decays too
         step_ownerless_map_animation # a fire-and-forget Show Battle Animation plays on, unattended
         update_closing_windows # a closed message keeps shrinking in the background
         watch_bgm_loop # so the "BGM played once" branch can be answered
@@ -2737,6 +2738,19 @@ class RPG2k
         return nil if flash.nil?
         flash[:frames] -= 1
         flash[:frames] > 0 ? flash : nil
+      end
+
+      # Decay any in-flight #fire_map_target_flash pulse on a vehicle sprite by
+      # one frame -- the same "native Sprite#flash only decays when driven by an
+      # explicit #update each frame" contract #update_enemy_flashes already
+      # drives for the battle-only enemy sprites (mruby-rgss/src/lib.cxx's
+      # spr_flash/spr_update). Called unconditionally every real frame from
+      # #update, not gated on @battle_ui, since a vehicle can be flashed by a
+      # map-triggered Show Battle Animation with no fight running at all. A
+      # sprite with no flash in flight costs nothing here (native #update
+      # no-ops).
+      def update_vehicle_flashes
+        (@vehicle_sprites || {}).each_value { |s| s.update if s }
       end
 
       # The RGSS tone that paints `flash` over a CharSet frame: the flash colour
@@ -6492,12 +6506,18 @@ class RPG2k
       # The map-triggered half: drop @player_flash / an @events entry's own
       # [:flash] back to nil, the same "no flash in flight" state #tick_flash's
       # own decay already leaves behind, mirroring #fire_map_target_flash's own
-      # arm call. A nil target (a vehicle, or an id no live event matches --
-      # see #map_animation_flash_target) is a no-op, since there is nothing to
+      # arm call. A vehicle target clears the native RGSS flash
+      # #fire_map_target_flash armed on `@vehicle_sprites[type]` directly,
+      # mirroring #clear_target_flash's own `spr.flash(nil, 0)` idiom for an
+      # enemy sprite. A nil target (an id no live event matches -- see
+      # #map_animation_flash_target) is a no-op, since there is nothing to
       # clear.
       def clear_map_target_flash(target)
         return if target.nil?
-        if target == :player
+        if Game::Vehicle::TYPES.include?(target)
+          spr = @vehicle_sprites && @vehicle_sprites[target]
+          spr.flash(nil, 0) if spr
+        elsif target == :player
           @last_frame = nil if @player_flash
           @player_flash = nil
         else
@@ -6559,19 +6579,21 @@ class RPG2k
 
       # The character a map-triggered flash_scope-1 timing (see
       # #fire_map_target_flash) should pulse: `:player`, a specific `@events`
-      # entry (this event / a named map event id), or nil when the target has
-      # no CharSet-tone flash mechanism to hook (a vehicle -- #draw_vehicles
-      # has no counterpart to #flash_tone -- or an id no live event matches).
-      # Mirrors #animation_target_pixel's own target-id decoding exactly,
-      # including its "this event" -> player fallback when there is no active
-      # event (a common event Parallel Process's own Show Battle Animation).
+      # entry (this event / a named map event id), a `Game::Vehicle::TYPES`
+      # symbol (`:boat`/`:ship`/`:airship`) for a vehicle slot, or nil when
+      # the target id names nothing (a stale/invalid event id no live event
+      # matches). Mirrors #animation_target_pixel's own target-id decoding
+      # exactly, including its "this event" -> player fallback when there is
+      # no active event (a common event Parallel Process's own Show Battle
+      # Animation) and its `Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]`
+      # idiom for a vehicle slot.
       def map_animation_flash_target(target)
         case target
         when MOVE_TARGET_PLAYER then :player
         when 0, MOVE_TARGET_THIS
           @active_event || :player
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
-          nil
+          Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]
         else
           @events.find { |e| e[:id] == target }
         end
@@ -6707,19 +6729,39 @@ class RPG2k
       # timing on a Show Battle Animation (11210) played over a map character
       # now actually pulses that character, instead of being silently dropped
       # (#fire_animation_flashes only ever reached #fire_target_flash's
-      # battle-only enemy-sprite mechanism before this). There is no separate
-      # "battle animation flash" primitive for a map character -- the Flash
-      # Sprite command (11320) already tones one, via the very same decaying
+      # battle-only enemy-sprite mechanism before this). A player/map-event
+      # target reuses the Flash Sprite command's (11320) own CharSet-tone
+      # mechanism, via the very same decaying
       # {red:, green:, blue:, power:, frames:, total:} hash #apply_sprite_flash
       # builds and #flash_tone/#update_sprite_flashes already drive every frame
-      # (see the "Flash Sprite" section above), so this reuses that mechanism
-      # rather than inventing a second one: `target` (from
+      # (see the "Flash Sprite" section above): `target` (from
       # #map_animation_flash_target) is either `:player` (-> @player_flash) or
-      # an `@events` entry (-> its `[:flash]`), nil when the animated target
-      # has no such sprite (a vehicle, or an unresolved event id) -- a silent
-      # no-op, matching #fire_target_flash's own missing-sprite case.
+      # an `@events` entry (-> its `[:flash]`). A vehicle target (one of
+      # `Game::Vehicle::TYPES`) instead pulses `@vehicle_sprites[type]`
+      # directly with the native RGSS `Sprite#flash` primitive #fire_target_flash
+      # already uses for an enemy sprite -- unlike the player/event case, a
+      # vehicle already draws through a real `Sprite` (#draw_vehicles), so it
+      # needs no CharSet-tint mechanism of its own. Verified against EasyRPG
+      # Player's actual C++ source rather than assumed unsupported:
+      # `Game_Character::GetCharacter` (src/game_character.cpp) resolves
+      # CharBoat/CharShip/CharAirship straight to the live `Game_Vehicle`
+      # object -- a `Game_Character` subclass -- so `BattleAnimationMap::
+      # FlashTargets`'s `target->Flash(...)` call (src/battle_animation.cpp)
+      # reaches a vehicle exactly like it reaches the player or a map event;
+      # nothing in real RPG_RT exempts it. nil (an unresolved event id) is a
+      # silent no-op either way, matching #fire_target_flash's own
+      # missing-sprite case.
       def fire_map_target_flash(target, t)
         return if target.nil?
+        if Game::Vehicle::TYPES.include?(target)
+          spr = @vehicle_sprites && @vehicle_sprites[target]
+          if spr
+            spr.flash(Color.new((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
+                                 (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8),
+                      ANIM_FLASH_FRAMES)
+          end
+          return
+        end
         flash = { red: (t.flash_red || 0) * 8, green: (t.flash_green || 0) * 8,
                   blue: (t.flash_blue || 0) * 8, power: (t.flash_power || 0) * 8,
                   frames: ANIM_FLASH_FRAMES, total: ANIM_FLASH_FRAMES }
