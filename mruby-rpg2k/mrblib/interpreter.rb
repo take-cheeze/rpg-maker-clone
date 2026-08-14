@@ -1350,10 +1350,47 @@ module Game
       # A random operand (type 3) rolls independently for each variable in the
       # range, matching RPG_RT -- a batch "Var[1..5] = random 1~6" is five
       # separate dice, not one roll broadcast to all five. Every other operand
-      # type is evaluated once up front, as before.
+      # type is evaluated once up front, as before -- except a direct-variable
+      # operand (type 1) applied to a genuine multi-id range, which needs its
+      # own split below (a variable-A-ops-B batch reading its own operand out
+      # of the same range it writes).
       random = cmd.param(4) == 3
+      return do_control_vars_range_variable(cmd, a, b, op) if !random && cmd.param(4) == 1 && a < b
       val = operand_value(cmd) unless random
       (a..b).each { |id| variables[id] = apply(op, variables[id], random ? operand_value(cmd) : val) }
+    end
+
+    # A batch (range) Control Variables write whose operand is itself a plain
+    # variable read (type 1, "Var A ops B") and whose source id `src` falls
+    # inside the destination range `a..b` is *not* a single value broadcast to
+    # every id the way an out-of-range source (or any other operand type) is.
+    # EasyRPG's `Game_Variables::WriteRangeVariable`
+    # (`src/game_variables.cpp`) -- the direct-variable-lookup range path
+    # `Game_Interpreter::CommandControlVariables`
+    # (`src/game_interpreter.cpp`) dispatches to whenever the target
+    # evaluation mode is a genuine multi-id range -- splits the write into two
+    # passes right at `src`: ids `a..src` are written first, from `src`'s
+    # value *before* this command touched anything; then, only once that
+    # first pass has run (and, for anything but a plain Set, has therefore
+    # already changed `src`'s own stored value), ids `src+1..b` are written
+    # from `src`'s value *now* -- i.e. the just-updated one, not the original.
+    # For Set this is unobservable (`src` written back to its own unchanged
+    # value), but for Add/Sub/Mult/Div/Mod it means every id *after* `src` in
+    # the range ends up combining the operation with itself twice while every
+    # id at or before `src` only sees it once. A source outside `a..b`
+    # entirely skips this split and degenerates to the ordinary single
+    # up-front read every other operand type already uses.
+    def do_control_vars_range_variable(cmd, a, b, op)
+      src = cmd.param(5)
+      unless src >= a && src <= b
+        val = variables[src]
+        (a..b).each { |id| variables[id] = apply(op, variables[id], val) }
+        return
+      end
+      before = variables[src]
+      (a..src).each { |id| variables[id] = apply(op, variables[id], before) }
+      after = variables[src]
+      ((src + 1)..b).each { |id| variables[id] = apply(op, variables[id], after) }
     end
 
     def operand_value(cmd)
