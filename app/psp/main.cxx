@@ -4,7 +4,12 @@
 // mruby interpreter: it stands up the LVGL display (psp_display_create), scans
 // the pad (psp_input_scan), and draws a small status screen that echoes the
 // pressed keys. main() owns the loop and pumps LVGL once per iteration -- the
-// same "host owns the loop" shape the Emscripten and Wio builds use.
+// same "host owns the loop" shape the Emscripten and Wio builds use. Its
+// per-second heartbeat also reports real free-memory and LVGL-pool numbers
+// (see the RPG2K_PSP_BRINGUP marker below), which is ADR 0047's P1: this
+// bring-up EBOOT never opens mruby, but it can still measure the device's
+// actual RAM and how much of LVGL's pool the HAL alone uses, ahead of the
+// interpreter-linking slice that will need to size that pool for real.
 //
 // The mruby interpreter, the real RPG2k scene tree and Memory-Stick asset
 // loading are wired in the following slices (see app/psp/README.md and
@@ -16,6 +21,7 @@
 #include <lvgl.h>
 #include <pspiofilemgr.h>
 #include <pspkernel.h>
+#include <pspsysmem.h>
 
 #include "psp.hxx"
 
@@ -124,14 +130,29 @@ int main(void) {
   // The loop runs ~200 iterations/second (5 ms delay); emit a heartbeat line
   // roughly once a second. The CI smoke test asserts this marker appears,
   // proving the EBOOT not only boots but keeps pumping frames (see the
-  // psp-smoke job in .github/workflows/build.yml).
+  // psp-smoke job in .github/workflows/build.yml). It also carries real
+  // memory numbers -- ADR 0047's P1 -- so the memory-budget estimates there
+  // get replaced with device measurements instead of staying host-proxy
+  // guesses: sceKernelTotalFreeMemSize/sceKernelMaxFreeMemSize (pspsysmem.h)
+  // for the PSP's ~24 MB user partition, and lv_mem_monitor for LVGL's own
+  // pool (app/psp/lv_conf.h's 4 MB LV_MEM_SIZE) -- currently used and the
+  // max_used high-water mark, which is the number that actually matters for
+  // sizing that pool once the interpreter is linked.
   for (uint32_t frame = 0;; ++frame) {
     show_keys(psp_input_scan());
     lv_timer_handler();
     if (frame % 200 == 0) {
-      char buf[48];
-      const int n = std::snprintf(buf, sizeof(buf),
-                                  "RPG2K_PSP_BRINGUP frame=%u\n", frame);
+      lv_mem_monitor_t mon;
+      lv_mem_monitor(&mon);
+      char buf[128];
+      const int n = std::snprintf(
+          buf, sizeof(buf),
+          "RPG2K_PSP_BRINGUP frame=%u free=%u maxfree=%u lvgl_used=%u "
+          "lvgl_max=%u\n",
+          frame, static_cast<unsigned>(sceKernelTotalFreeMemSize()),
+          static_cast<unsigned>(sceKernelMaxFreeMemSize()),
+          static_cast<unsigned>(mon.total_size - mon.free_size),
+          static_cast<unsigned>(mon.max_used));
       if (n > 0)
         psp_write(buf, n);
     }
