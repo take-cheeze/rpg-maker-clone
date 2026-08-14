@@ -9653,17 +9653,34 @@ check 'the item / skill target list shows who is afflicted' do
   end
 end
 
-check 'Scene::ItemMenu: the item list and target cursors wrap around' do
+check 'Scene::ItemMenu: the item grid cursor does not wrap, the target cursor does' do
   scene = menu_scene(RPG2k::Scene::ItemMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@item_index), 'starts on the first item'
+  # The item list is a two-column grid (confirmed against genuine RPG_RT
+  # under wine, see Scene::ItemMenu::COLUMN_MAX): with only two items, both
+  # sit in the same row, so UP/DOWN have no cell to move to and RPG_RT
+  # leaves the cursor put rather than wrapping -- unlike the flat
+  # actor-target list below, which does wrap.
   RGSS::Input.triggered = [RGSS::Input::UP]
   scene.update
   RGSS::Input.reset
-  eq 1, scene.instance_variable_get(:@item_index), 'Up from the first item wraps to the last (2 items)'
+  eq 0, scene.instance_variable_get(:@item_index), 'Up from the first item is a no-op (nothing above it)'
   RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
-  eq 0, scene.instance_variable_get(:@item_index), 'Down from the last item wraps to the first'
+  eq 0, scene.instance_variable_get(:@item_index), 'Down from the first item is a no-op (nothing below it)'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index), 'Right moves onto the second item, same row'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index), 'Right again is a no-op (row edge)'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@item_index), 'Left moves back onto the first item'
 
   # Enter target mode (a two-actor party) and wrap that cursor too.
   scene.send(:prompt_item_target, 1)
@@ -9861,7 +9878,10 @@ check 'Scene::ItemMenu: a special item invoking Teleport opens a destination ' \
   parent = fake_parent(fake_db)
   state = escape_teleport_item_state
   scene = RPG2k::Scene::ItemMenu.new(parent, state)
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the Teleport item (row 2)
+  # The item list is a two-column grid (confirmed against genuine RPG_RT
+  # under wine): with only two items, the second sits beside the first in
+  # the same row, reached by RIGHT rather than DOWN.
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the Teleport item
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
@@ -9886,7 +9906,7 @@ check 'Scene::ItemMenu: cancelling the Teleport destination list returns to the 
   parent = fake_parent(fake_db)
   state = escape_teleport_item_state
   scene = RPG2k::Scene::ItemMenu.new(parent, state)
-  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the Teleport item (see the grid test above)
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]
