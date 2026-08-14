@@ -2315,9 +2315,13 @@ class RPG2k
       # -- Open Save Menu / Open Main Menu -------------------------------------
 
       # Open Save Menu (11910): save the game on the event's behalf and report
-      # the outcome, then let the event continue. The clone has a single save
-      # slot (Scene::Menu's Save entry writes it), so there is no slot picker to
-      # show; a Change Save Access that forbade saving is honoured, as in RPG_RT.
+      # the outcome, then let the event continue. Unlike Scene::Menu's own Save
+      # command (which opens Scene::SaveLoad's file-select list), this writes
+      # slot 1 directly with no picker -- the event has already decided *that*
+      # a save happens, and there is no UI wait state here for the player to
+      # pick a slot with, only the command's own pause/resume of the
+      # interpreter. A Change Save Access that forbade saving is honoured, as
+      # in RPG_RT.
       def perform_event_save
         if @state.save_access
           saved = @parent.save_game(@state)

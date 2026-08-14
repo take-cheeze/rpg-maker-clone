@@ -37,8 +37,10 @@ class RPG2k
         @selected_index = 0
 
         # RPG_RT grays out and skips over Continue when there is no save to
-        # resume. `save_exists?` (main.rb) covers both our own Marshal saves
-        # and a genuine editor Save<N>.lsd dropped into the game dir.
+        # resume. `any_save_exists?` (main.rb) covers both our own Marshal
+        # saves and a genuine editor Save<N>.lsd dropped into the game dir,
+        # across every one of the MAX_SAVE_SLOTS slots -- which one, if any,
+        # is now Scene::SaveLoad's own question to ask once Continue opens it.
         @continue_available = continue_available?
 
         # RPG_RT sizes the window to the widest label plus one border on each
@@ -99,13 +101,20 @@ class RPG2k
           # Continue is grayed out with nothing to resume: the selection key
           # is ignored rather than landing on parent.continue_game's own
           # "no save data" stub.
-        elsif confirmed || auto_select?
+        elsif confirmed || (auto = auto_select?)
           Audio.bgm_stop
           case @selected_index
           when 0  # New Game
             parent.start_new_game
           when 1  # Continue
-            parent.continue_game
+            # A real player picks the slot themselves on the file-select list
+            # (Scene::SaveLoad) Continue now opens. --rpg2k_continue has no
+            # input loop to drive a second screen, so it keeps resuming slot 1
+            # directly instead -- the same single-slot behaviour Continue had
+            # before this screen existed, which is all
+            # scripts/compare-nepheshel-wine.bash (watching stderr for the
+            # [RPG2k-MAP] marker only #continue_game emits) needs.
+            auto ? parent.continue_game : parent.push(Scene::SaveLoad.new(parent, nil, :load))
           when 2  # Shutdown
             exit
           end
@@ -169,12 +178,12 @@ class RPG2k
         false
       end
 
-      # Whether Continue has a save to resume, per `RPG2k#save_exists?`.
+      # Whether Continue has anything to resume, per `RPG2k#any_save_exists?`.
       # Guarded the same way as `hide_title?` above: a bare instance built
       # without a real parent (see scripts/rpg2k_scene_check.rb's
       # title_selector) answers false rather than raising.
       def continue_available?
-        parent.save_exists?
+        parent.any_save_exists?
       rescue StandardError
         false
       end

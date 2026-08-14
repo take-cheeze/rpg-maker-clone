@@ -2027,6 +2027,23 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_save_load_check.rb` already does), confirmed to fail against
   the pre-fix code (the non-leader's name came back as its un-renamed
   database default) before the fix.
+  ✅ **A real save/load file-select screen (`Scene::SaveLoad`) now sits between
+  the player and every slot.** The main menu's Save command and the title
+  screen's Continue entry used to act on a single hardcoded slot; both now
+  open a scrollable list of all `MAX_SAVE_SLOTS` (15) slots, each showing the
+  leader's name/level/HP, the party's gold and the current map (read back
+  through a new `RPG2k#load_save_state(slot)`, shared with `continue_game`),
+  or a "No Data" placeholder for an empty one. Saving can target any slot,
+  including overwriting an occupied one, with no separate confirmation
+  (matching RPG_RT); Continue only offers occupied slots, and the title
+  screen's Continue entry is enabled as soon as *any* slot holds a save
+  (`RPG2k#any_save_exists?`) rather than only slot 1. The `--rpg2k_continue`
+  headless flag and RPG2003's Open Load Menu event command both still resume
+  slot 1 directly with no picker — see ADR 0045. **Not done yet:** the party
+  face thumbnails a real save-select screen shows (`Game::State#to_lsd`'s
+  title chunk already exports the FaceSets specifically for this), and
+  routing the Open Save Menu / Open Load Menu event commands through the same
+  picker instead of straight to slot 1.
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done

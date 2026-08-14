@@ -499,6 +499,12 @@ class RPG2k
   WIDTH = 320
   HEIGHT = 240
 
+  # RPG2000's save-select screen offers exactly 15 file slots -- the editor's
+  # own Database has no setting to change it, and RPG_RT.exe hardcodes the
+  # figure throughout (the file list, the Save<N>.lsd naming). Scene::SaveLoad
+  # (the file-select UI) and every slot-path helper below share this constant
+  # rather than repeating the literal.
+  MAX_SAVE_SLOTS = 15
 
   attr_reader :db, :map_tree, :test_play
   # Whether the title screen's background picture and command-window position
@@ -637,21 +643,27 @@ class RPG2k
     "#{GAME_DIR}/Save#{n}.lsd"
   end
 
-  # The lowest-numbered editor save that exists (RPG2000 uses slots 1..15), or
-  # nil when there is none.
-  def existing_lsd
-    (1..15).each do |slot|
-      p = lsd_path(slot)
-      return p if File.exist?(p)
-    end
-    nil
-  end
-
+  # Whether slot `slot` itself (not any other slot) holds a save, our own
+  # Marshal `.mrb` or a genuine editor `Save<N>.lsd` either one. Scene::Title's
+  # Continue used to check only slot 1 here (the only slot anything could ever
+  # write to before the file-select screen existed); now that Scene::SaveLoad
+  # lists all MAX_SAVE_SLOTS individually, each row asks about its own slot
+  # through this same check -- see #any_save_exists? for "is there anything to
+  # resume at all".
   def save_exists? slot = 1
-    File.exist?(save_path(slot)) || !existing_lsd.nil?
+    File.exist?(save_path(slot)) || File.exist?(lsd_path(slot))
   rescue StandardError => e
     $stderr.puts "[RPG2k] save-slot check failed for slot #{slot}: #{e.message}"
     false
+  end
+
+  # Whether *any* of the MAX_SAVE_SLOTS slots holds a save -- what gates the
+  # title screen's Continue entry (Scene::Title#continue_available?). Continue
+  # opens the same Scene::SaveLoad file-select list New Game's sibling Save
+  # command does, so it no longer matters *which* slot has the data, only that
+  # at least one does.
+  def any_save_exists?
+    (1..MAX_SAVE_SLOTS).any? { |slot| save_exists?(slot) }
   end
 
   # Persist the running game state to a slot. Our own portable Marshal dump is
@@ -679,20 +691,41 @@ class RPG2k
     $stderr.puts "[RPG2k] .lsd export failed for slot #{slot}: #{e.message}"
   end
 
-  # Continue: resume a saved game and switch to its map. Our own Marshal save is
-  # preferred when present -- it is the full-fidelity record we wrote (save_game
-  # also exports a near-parity Save<slot>.lsd beside it, which would still drop
-  # the timer and non-leader actor name/title overrides if loaded instead). A
-  # genuine editor Save<N>.lsd is the fallback, so a real save dropped into the
-  # game dir (with no Marshal save) still resumes through the LCF save schema.
-  # Warns and stays on the title when there is nothing to load.
-  def continue_game
-    if File.exist?(save_path)
-      data = File.open(save_path, "rb") { |f| f.read }
-      state = Game::State.load(@db, Marshal.load(data))
-    elsif (lsd = existing_lsd)
-      state = Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd, "rb")))
-    else
+  # Build a Game::State from a save slot, or nil when the slot is empty. Our
+  # own Marshal save is preferred when present -- it is the full-fidelity
+  # record save_game wrote (save_game also exports a near-parity Save<slot>.lsd
+  # beside it, which would still drop the timer and non-leader actor
+  # name/title overrides if loaded instead). A genuine editor Save<N>.lsd is
+  # the fallback, so a real save dropped straight into the game dir (with no
+  # Marshal save) still resumes/previews through the modelled LCF save schema.
+  #
+  # Shared by #continue_game (which needs the one slot the player picked, or
+  # slot 1 for the event-triggered Open Load Menu -- see Scene::Map
+  # #perform_event_load) and Scene::SaveLoad (which builds one of these per
+  # slot up front to show what each row's Continue/overwrite target actually
+  # holds). Errors are logged and swallowed rather than raised: a slot a
+  # caller merely wants to *preview* should degrade to "empty" rather than
+  # crash the file-select screen over one unreadable file.
+  def load_save_state slot = 1
+    if File.exist?(save_path(slot))
+      data = File.open(save_path(slot), "rb") { |f| f.read }
+      Game::State.load(@db, Marshal.load(data))
+    elsif File.exist?(lsd_path(slot))
+      Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd_path(slot), "rb")))
+    end
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] save slot #{slot} unreadable: #{e.message}"
+    nil
+  end
+
+  # Continue: resume slot `slot`'s saved game and switch to its map. Defaults
+  # to slot 1 for the event-triggered Open Load Menu (RPG2003's 5001, see
+  # Scene::Map#perform_event_load), which -- unlike the title screen's own
+  # Continue, routed through Scene::SaveLoad's file-select list -- targets a
+  # single slot directly. Warns and stays put when the slot is empty.
+  def continue_game slot = 1
+    state = load_save_state(slot)
+    unless state
       RGSS.warn_stub "Continue (no save data found)"
       return
     end

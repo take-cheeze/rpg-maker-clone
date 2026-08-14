@@ -451,6 +451,11 @@ class FakeParent
   def load_map(id); @map_maker.call(id); end
   # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
   def push(scene); @pushed << scene; end
+  # Scene::SaveLoad (and every field submenu) pops itself on cancel / once its
+  # save confirmation banner is dismissed; count the calls rather than
+  # modelling a real scene stack here.
+  attr_reader :pop_called
+  def pop; @pop_called = (pop_called || 0) + 1; end
   # An Escape / Teleport field skill closes the whole menu stack at once;
   # record that it fired rather than modelling a real scene stack here.
   attr_reader :pop_to_map_called
@@ -467,9 +472,27 @@ class FakeParent
     @game_over_shown = true
     @game_over_state = state
   end
-  # Open Save Menu (11910) saves through the app; record the calls.
+  # Open Save Menu (11910) saves through the app; record the calls. Also what
+  # Scene::SaveLoad calls (with an explicit slot) once a :save confirm picks
+  # one -- `save_ok` lets a check force a failed save without faking a broken
+  # state.
+  attr_accessor :save_ok
   def saved; @saved ||= []; end
-  def save_game(state); saved << state; true; end
+  def save_game(state, slot = 1)
+    saved << [state, slot]
+    @save_ok.nil? ? true : @save_ok
+  end
+  # Scene::SaveLoad reads one of these per slot to build its file-select list
+  # (RPG2k#load_save_state); a check sets `save_states[slot]` to a
+  # Game::State to have that row show as occupied, or leaves a slot unset for
+  # "no data" (the default -- most checks want an all-empty list to start
+  # from).
+  def save_states; @save_states ||= {}; end
+  def load_save_state(slot = 1); save_states[slot]; end
+  # Scene::SaveLoad's :load mode resumes a confirmed occupied slot through
+  # this; record which slots were asked for.
+  def continue_calls; @continue_calls ||= []; end
+  def continue_game(slot = 1); continue_calls << slot; end
 end
 
 def fake_parent(db)
@@ -6349,11 +6372,22 @@ end
 # docking it near where the picture would have sat. A full Scene::Title can be
 # built here (unlike RPG2k itself, which needs a real RPG_RT.ldb/.lmt) with a
 # minimal stand-in parent that only answers what Scene::Title reads.
-TitleParent = Struct.new(:db, :map_tree, :hide_title_flag, :save_exists_flag) do
+TitleParent = Struct.new(:db, :map_tree, :hide_title_flag, :any_save_flag) do
   def hide_title?; hide_title_flag; end
-  def save_exists?; save_exists_flag; end
+  def any_save_exists?; any_save_flag; end
+  # Scene::SaveLoad reads one of these per slot when Continue opens it; every
+  # slot answers empty here since these checks only care whether Continue
+  # opens the picker at all, not what it shows once open (Scene::SaveLoad has
+  # its own checks for that, built through fake_parent like the rest of the
+  # menu scenes).
+  def load_save_state(_slot = 1); nil; end
+  def pushed; @pushed ||= []; end
+  def push(scene); pushed << scene; end
+  # Kept for parity with the real RPG2k#continue_game the --rpg2k_continue
+  # headless flag still calls directly (Scene::Title#update), even though no
+  # check here drives that path through a TitleParent.
   def continue_calls; @continue_calls || 0; end
-  def continue_game; @continue_calls = continue_calls + 1; end
+  def continue_game(_slot = 1); @continue_calls = continue_calls + 1; end
 end
 
 check 'HideTitle hides the title picture and centres the command window' do
@@ -6381,9 +6415,10 @@ end
 # -- Continue disabled without save data --------------------------------------
 #
 # RPG_RT grays out Continue on the title screen when there is no save to
-# resume; `save_exists?` (main.rb) is the source of truth, routed through
-# Scene::Title's own `continue_available?` (ADR 0012). The cursor can still
-# reach the grayed-out entry -- only its selection key is ignored.
+# resume; `any_save_exists?` (main.rb) is the source of truth, routed through
+# Scene::Title's own `continue_available?` (ADR 0012, extended by ADR 0045 to
+# cover every slot rather than just slot 1). The cursor can still reach the
+# grayed-out entry -- only its selection key is ignored.
 
 check 'no save data: Continue is flagged unavailable and reachable by the cursor' do
   parent = TitleParent.new(fake_db, nil, false, false)
@@ -6401,12 +6436,17 @@ check 'no save data: pressing the selection key on Continue does nothing' do
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  eq 0, parent.continue_calls,
-     'a grayed-out Continue never reaches parent.continue_game'
+  eq 0, parent.pushed.size,
+     'a grayed-out Continue never opens the save/load file-select screen'
   eq 1, scene.instance_variable_get(:@selected_index), 'the selection is left untouched'
 end
 
-check 'a save exists: Continue is flagged available and its selection key resumes it' do
+check 'a save exists: Continue is flagged available and its selection key opens ' \
+      'the file-select screen' do
+  # Continue used to call parent.continue_game straight from the title screen
+  # (ADR 0012); it now opens Scene::SaveLoad in :load mode instead, so the
+  # player picks which of the MAX_SAVE_SLOTS slots to resume rather than
+  # always landing on slot 1 (ADR 0045).
   parent = TitleParent.new(fake_db, nil, false, true)
   scene = RPG2k::Scene::Title.new(parent)
   ok scene.instance_variable_get(:@continue_available), 'Continue is flagged available'
@@ -6414,7 +6454,10 @@ check 'a save exists: Continue is flagged available and its selection key resume
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  eq 1, parent.continue_calls, 'pressing the selection key on Continue calls parent.continue_game'
+  eq 1, parent.pushed.size, 'pressing the selection key on Continue opens exactly one screen'
+  pushed = parent.pushed.first
+  ok pushed.is_a?(RPG2k::Scene::SaveLoad), "the pushed scene is Scene::SaveLoad, got #{pushed.class}"
+  eq :load, pushed.instance_variable_get(:@mode), 'opened in :load mode'
 end
 
 # -- screen fade / flash overlays ---------------------------------------------
@@ -8048,6 +8091,140 @@ check 'Scene::Menu: RPG2003 System.menu_commands can reorder and omit commands' 
   RGSS::Input.reset
   ok scene.parent.pushed.last.is_a?(RPG2k::Scene::StatusMenu),
      'selecting the reordered Status command actually opens Scene::StatusMenu'
+end
+
+# -- Scene::SaveLoad: the save/load file-select screen -------------------------
+#
+# Scene::Menu's Save command and Scene::Title's Continue entry both used to
+# act on a single hardcoded slot directly; they now push this screen (in
+# :save / :load mode respectively) so the player picks from all
+# RPG2k::MAX_SAVE_SLOTS slots instead (ADR 0045). See the Continue checks
+# above for the title-screen half of this wiring.
+
+check 'Scene::Menu: choosing Save opens Scene::SaveLoad in :save mode' do
+  st = wrap_menu_state
+  scene = menu_scene(RPG2k::Scene::Menu, st)
+  scene.instance_variable_set(:@index, 3) # Save, in RPG2K_COMMAND_KEYS order
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  pushed = scene.parent.pushed.last
+  ok pushed.is_a?(RPG2k::Scene::SaveLoad), "Save pushes Scene::SaveLoad, got #{pushed.class}"
+  eq :save, pushed.instance_variable_get(:@mode), 'opened in :save mode'
+  eq st, pushed.instance_variable_get(:@state), 'carrying the running game state to write out'
+end
+
+check 'Scene::Menu: Save access forbidden still shows the inline message, not the picker' do
+  st = wrap_menu_state
+  st.save_access = false
+  scene = menu_scene(RPG2k::Scene::Menu, st)
+  scene.instance_variable_set(:@index, 3)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok scene.parent.pushed.empty?, 'no picker opens while save access is off'
+  ok window_texts(scene.instance_variable_get(:@message)[:window])
+       .include?('You cannot save right now.'),
+     'the existing inline "cannot save" message still shows'
+end
+
+def save_load_scene(mode, state = nil, db = fake_db, parent: nil)
+  parent ||= fake_parent(db)
+  [RPG2k::Scene::SaveLoad.new(parent, state, mode), parent]
+end
+
+check 'Scene::SaveLoad: an empty slot shows the "No Data" placeholder' do
+  scene, = save_load_scene(:load)
+  texts = window_texts(scene.instance_variable_get(:@list_window))
+  ok texts.include?('File 01'), 'slot 1 is labelled, zero-padded'
+  ok texts.include?('-- No Data --'), 'and shown as empty'
+end
+
+check 'Scene::SaveLoad: an occupied slot shows the leader, level, HP and gold' do
+  st = menu_state
+  st.party.leader = st.party.actors.first # Hero, Lv5, 80/120 HP (MenuStubActor)
+  st.party.instance_variable_set(:@gold, 250)
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  texts = window_texts(scene.instance_variable_get(:@list_window))
+  ok texts.any? { |t| t.include?('Hero') && t.include?('Lv5') }, 'name and level on the first line'
+  ok texts.any? { |t| t.include?('HP 80/120') && t.include?('250G') },
+     'current/max HP and gold on the second line'
+end
+
+check 'Scene::SaveLoad :save mode: confirming a slot saves through the parent, shows a ' \
+      'message, and returns to the menu once dismissed' do
+  st = wrap_menu_state
+  scene, parent = save_load_scene(:save, st)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm slot 1
+  scene.update
+  RGSS::Input.reset
+  eq [[st, 1]], parent.saved, 'RPG2k#save_game was called for slot 1 with the running state'
+  ok window_texts(scene.instance_variable_get(:@message)[:window]).include?('Game saved.'),
+     'the confirmation banner shows'
+  ok parent.pop_called.nil?, 'the screen has not popped back to the menu yet -- the ' \
+                             'banner is still up'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the banner
+  scene.update
+  RGSS::Input.reset
+  eq 1, parent.pop_called, 'dismissing the banner pops back to the menu'
+end
+
+check 'Scene::SaveLoad :save mode: a failed save shows "Save failed." instead' do
+  st = wrap_menu_state
+  parent = fake_parent(fake_db)
+  parent.save_ok = false
+  scene, = save_load_scene(:save, st, fake_db, parent: parent)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok window_texts(scene.instance_variable_get(:@message)[:window]).include?('Save failed.'),
+     'the failure banner shows instead of the success one'
+end
+
+check 'Scene::SaveLoad :load mode: an empty slot ignores the selection key' do
+  scene, parent = save_load_scene(:load)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq 0, parent.continue_calls.length, 'no continue_game call for an empty slot'
+end
+
+check 'Scene::SaveLoad :load mode: confirming an occupied slot resumes it' do
+  st = menu_state
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq [1], parent.continue_calls, 'RPG2k#continue_game was called for the confirmed slot'
+end
+
+check 'Scene::SaveLoad: Down/Up move and wrap across all MAX_SAVE_SLOTS' do
+  scene, = save_load_scene(:load)
+  RPG2k::MAX_SAVE_SLOTS.times do
+    RGSS::Input.triggered = [RGSS::Input::DOWN]
+    scene.update
+    RGSS::Input.reset
+  end
+  eq 0, scene.instance_variable_get(:@index), 'DOWN pressed MAX_SAVE_SLOTS times wraps back to 0'
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq RPG2k::MAX_SAVE_SLOTS - 1, scene.instance_variable_get(:@index),
+     'UP from slot 1 wraps to the last slot'
+end
+
+check 'Scene::SaveLoad: cancelling (B) pops back without touching the parent app' do
+  scene, parent = save_load_scene(:load)
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq 1, parent.pop_called, 'B pops the screen'
+  eq 0, parent.pushed.size, 'and never pushes another scene'
+  eq [], parent.continue_calls, 'or resumes anything'
 end
 
 check 'the item / skill target list shows who is afflicted' do

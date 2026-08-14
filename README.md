@@ -147,8 +147,11 @@
   RPG2003's second, each with its own on-screen window, read back by Control
   Variables and Conditional Branch, and pausing for a battle unless the start
   command said otherwise
-- Press the cancel button to open a menu (party status, Save, End Game); "New
-  Game" state can be saved and reloaded from the title's "Continue"
+- Press the cancel button to open a menu (party status, Save, End Game); Save
+  and the title's "Continue" both open a real save/load file-select screen
+  listing all 15 slots — each showing the leader, level, HP, gold and current
+  map, or "No Data" for an empty one — instead of acting on a single
+  hardcoded slot
 
 ### RPG Maker XP
 
