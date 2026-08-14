@@ -7057,6 +7057,43 @@ module Game
       (b.states || []).any? { |sid| state_field(state_def(sid), :avoid_attacks) }
     end
 
+    # Whether any state currently afflicting `b` is flagged "Reflect Magic"
+    # (RPG2003 state field 37, `reflect_magic` in `mruby-lcf/mrblib/schema.rb`)
+    # -- EasyRPG's `Game_Battler::HasReflectState` (game_battler.cpp), scanned
+    # the same way #evades_all_physical? scans `avoid_attacks`. Parsed but
+    # never read anywhere in this file before this fix -- see #reflects_skill?,
+    # the one caller that turns this into an actual retarget.
+    def reflects_magic?(b)
+      (b.states || []).any? { |sid| state_field(state_def(sid), :reflect_magic) }
+    end
+
+    # Whether a Skill cast at `target` bounces back onto its own caster `b`
+    # instead, per `cmd` (the command hash #battle_skill_command built).
+    # Ported from EasyRPG's `Game_BattleAlgorithm::Skill::IsReflected`
+    # (game_battlealgorithm.cpp): `if (item || skill.easyrpg_ignore_reflect)
+    # return false; return IsTargetValid(target) && target.HasReflectState() &&
+    # target.GetType() != GetSource()->GetType()`. `item` there is "this skill
+    # effect was cast from a special item, not chosen from the caster's own
+    # skill list" -- this codebase's own item-cast effects carry `cmd[:item_id]`
+    # instead of `cmd[:skill_id]` (#apply_command already threads the two
+    # apart; see #skill_command_hash / #battle_item_command), so checking for a
+    # real `skill_id` is the same gate. `easyrpg_ignore_reflect` is an
+    # EasyRPG-only extension field no vanilla RPG2000/2003 database ever sets,
+    # so it needs no counterpart here. The opposite-side check
+    # (`GetType() != GetSource()->GetType()`) is what keeps an ordinary ally/
+    # self-scoped skill from ever reaching this at all -- it never targets the
+    # opposing side to begin with. `Scene_Battle_Rpg2k::
+    # ProcessBattleActionAnimationImpl` calls the real engine's own
+    # `ReflectTargets` right before the action's `Execute()` step, well before
+    # any hit-chance/elemental/variance math runs -- so a reflected skill still
+    # rolls its own accuracy and damage normally afterward, just against the
+    # new target, which is exactly what redirecting `target` here and letting
+    # #apply_skill_hit run unmodified on the result achieves.
+    def reflects_skill?(b, target, cmd)
+      cmd[:skill_id] && !cmd[:item_id] && side_of(target) != side_of(b) &&
+        reflects_magic?(target)
+    end
+
     # How much the attacker's own statuses cut its accuracy: the **lowest**
     # `reduce_hit_ratio` among the states afflicting it, not the product of them
     # (EasyRPG's `Game_Battler::GetHitChanceModifierFromStates` takes a running
@@ -8178,11 +8215,25 @@ module Game
     # Recovery, a revive item/skill) is the only thing modelled here that can
     # stand a combatant back up, and it does so by writing HP directly rather
     # than through this command path.
+    #
+    # A single-target Skill whose target carries Reflect Magic bounces back
+    # onto `b` itself (#reflects_skill?) -- checked against the originally
+    # queued target, after the already-fallen fizzle check above (a fizzled
+    # action never reflects either, matching real RPG_RT never reaching
+    # `ReflectTargets` for an action that never starts) and before SP is
+    # spent or #apply_skill_hit runs, so the skill's own cost/accuracy/damage
+    # math is otherwise completely unaffected by which battler it ends up
+    # landing on. Scoped to this single-target path only: an all-enemies-scope
+    # Skill's own reflect handling (#apply_command_all) is a materially
+    # different shape in real RPG_RT -- one reflecting target there redirects
+    # the *whole* group onto the caster's entire side, not just that one hit
+    # -- and is left unaddressed here.
     def apply_command(b)
       cmd = b.command
       return apply_command_all(b, cmd) if cmd[:all]
       target = cmd[:target]
       return nil if target.nil? || target.dead?
+      target = b if reflects_skill?(b, target, cmd)
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
       apply_skill_hit(b, target, cmd[:hp] || 0, cmd[:mp] || 0, cmd)
     end
