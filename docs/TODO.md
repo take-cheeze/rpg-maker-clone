@@ -3417,8 +3417,20 @@ Everything below is unverified against the codebase.
 
 - **Items & equipment** — counts silently cap at 99 (not clamped, just
   ignored past it); Change Equipment creates/returns inventory copies
-  implicitly; item list always sorts by database id, never acquisition
-  order; "equipped item No." reads 0 when empty, and the 2nd weapon slot
+  implicitly; ✅ **item list always sorts by database id, never acquisition
+  order** -- already correct and already tested: `Game::Party#field_items`/
+  `#battle_items` (`mruby-rpg2k/mrblib/game.rb`) both build their list off
+  `@items.keys.sort`, and `rpg2k_logic_check.rb`'s own "field_items lists
+  only held medicines, in id order with counts" check already proves the
+  *order*, not just the presence, of the fix: it gains item 9 before item 5
+  and still asserts the list comes back `[[5, 1], [9, 2]]`, id-ascending
+  despite the reverse acquisition order. `Game::Party#gain_item`'s own
+  `c = 99 if c > 99` also already matches this same bullet's 99-cap claim
+  functionally (a gain past 99 clamps rather than overflowing or erroring),
+  though that specific claim is so far only indirectly exercised (the Shop
+  `max_buy` cap checks), not asserted head-on the way the sort order now
+  is -- left as-is rather than claiming a rigor it does not have yet.
+  "equipped item No." reads 0 when empty, and the 2nd weapon slot
   reads through the *Shield* No. operand for dual-wield; "item possession
   count" excludes equipped copies (must sum both for the true total —
   already true of the Control Variables item operand); no inventory is
