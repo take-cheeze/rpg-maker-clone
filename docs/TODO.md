@@ -2209,6 +2209,36 @@ The work below is roughly ordered by the critical path to a walkable game
   (e.g. OCR/template-matching the captured frame itself to confirm the
   screen actually changed, rather than trusting either a fixed retry count
   or a naive pixel diff).
+  ✅ **A whole-frame pixel diff was itself the bug in that "smarter
+  automation loop."** Cropping the retry's change-check down to just the
+  menu command-list's own region, rather than diffing the entire frame,
+  fixed it -- a whole-frame diff had been false-positiving on the *cursor
+  itself moving between menu rows* (an expected, harmless difference) as
+  often as on the screen genuinely changing, which is exactly backwards from
+  what a "did Equip open yet" check needs. With that fixed, a clean,
+  freshly-opened Equip frame finally came through, and it found a real gap:
+  **RPG_RT draws the highlighted item's own database `description` in a
+  one-line banner across the very top of the Equip screen**
+  (`[斬光風龍神]イリスの想いを宿す時の剣` for a weapon named
+  エターナルメモリー) -- `Scene::EquipMenu` drew no such banner at all. Fixed
+  (`build_desc_window`/`refresh_desc`, tracking either the slot's equipped
+  item or the highlighted candidate depending on mode), and the fixed
+  screen's banner text now matches RPG_RT's field-for-field.
+  **Left open, found by the same clean capture:** the four combat stats
+  RPG_RT showed on that Equip screen (870/407/868/880 for
+  atk/def/spi/agi) do not match what either engine's own
+  level-curve-plus-equipment-bonus formula computes for this actor (484/531/
+  352/380 -- independently re-derived straight from the database's growth
+  curve and each equipped item's `atk_points1`/`def_points1`/`spi_points1`/
+  `agi_points1` fields, and it lands on exactly what this engine already
+  displays). Not fixed, on purpose: a single ambiguous data point isn't
+  enough to tell "RPG_RT applies some additional modifier this engine
+  doesn't read" apart from "this specific frame was mid-cascade from the
+  same blind-retry input queue that made Equip's reachability flaky in the
+  first place" (the retries that reach Equip cannot be trusted not to have
+  also nudged something else along the way). Needs a second, independently
+  reproduced RPG_RT capture of the same actor's Equip screen before acting
+  on it either way.
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an

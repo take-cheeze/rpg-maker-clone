@@ -15,6 +15,11 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
 
+      # Height of the item-description banner at the very top of the screen
+      # (see #build_desc_window) -- the stats/slot/candidate windows below it
+      # are all offset down by this much.
+      DESC_H = LINE_H + Window::BORDER * 2
+
       def initialize parent, state
         super parent
         @state = state
@@ -27,11 +32,13 @@ class RPG2k
           term(:weapon, "Weapon"), term(:shield, "Shield"), term(:armor, "Armor"),
           term(:helmet, "Helmet"), term(:accessory, "Accessory")
         ]
+        build_desc_window
         build_stats_window
         build_slot_window
       end
 
       def dispose
+        @desc_window.dispose if @desc_window
         @stats_window.dispose if @stats_window
         @slot_window.dispose if @slot_window
         @cand_window.dispose if @cand_window
@@ -129,6 +136,7 @@ class RPG2k
           @cand_window.dispose
           @cand_window = nil
         end
+        refresh_desc
       end
 
       def rebuild_for_actor
@@ -137,11 +145,41 @@ class RPG2k
         build_slot_window
       end
 
+      # The highlighted item's flavour text, in a one-line banner across the
+      # very top of the screen -- confirmed against genuine RPG_RT under
+      # wine, which shows the database item's own `description` field there
+      # (e.g. a weapon's "[斬光風龍神]イリスの想いを宿す時の剣"); this scene
+      # drew no such banner at all. Tracks whichever item is currently under
+      # the cursor: the slot's own equipped item in :slots mode, or the
+      # highlighted candidate in :items mode (blank for the leading Remove
+      # entry and for an empty slot, matching there being no item to
+      # describe).
+      def build_desc_window
+        @desc_window.dispose if @desc_window
+        inner_w = SCREEN_W - Window::BORDER * 2
+        @desc_window = Window.new(0, 0, SCREEN_W, DESC_H)
+        @desc_window.z = 400
+        @desc_window.windowskin = @skin
+        @desc_contents = Bitmap.new(inner_w, LINE_H)
+        @desc_window.contents = @desc_contents
+        refresh_desc
+      end
+
+      def refresh_desc
+        return unless @desc_contents
+        id = @mode == :items ? candidates[@cand_index].first : actor.equipment[@slot_index]
+        it = id && id != 0 ? @state.party.db_item(id) : nil
+        text = it ? it.description.to_s : ''
+        @desc_contents.clear
+        @desc_contents.font.color = Color.new(255, 255, 255, 255)
+        @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
+      end
+
       def build_stats_window
         @stats_window.dispose if @stats_window
         inner_w = SCREEN_W - Window::BORDER * 2
         h = LINE_H * 3
-        @stats_window = Window.new(0, 0, SCREEN_W, h + Window::BORDER * 2)
+        @stats_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
         @stats_window.z = 400
         @stats_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
@@ -161,7 +199,7 @@ class RPG2k
         @slot_window.dispose if @slot_window
         inner_w = SCREEN_W - Window::BORDER * 2
         h = @slots.size * LINE_H
-        y = LINE_H * 3 + Window::BORDER * 2
+        y = DESC_H + LINE_H * 3 + Window::BORDER * 2
         @slot_window = Window.new(0, y, SCREEN_W, h + Window::BORDER * 2)
         @slot_window.z = 400
         @slot_window.windowskin = @skin
@@ -180,6 +218,7 @@ class RPG2k
         return unless @slot_window
         @slot_window.cursor_rect =
           Rect.new(0, @slot_index * LINE_H, @slot_window.contents.width, LINE_H)
+        refresh_desc
       end
 
       # yado.tk: the equip-list comparison arrow is the *sum* of all four
@@ -243,6 +282,7 @@ class RPG2k
         return unless @cand_window
         @cand_window.cursor_rect =
           Rect.new(0, @cand_index * LINE_H, @cand_window.contents.width, LINE_H)
+        refresh_desc
       end
     end
 
