@@ -3557,7 +3557,7 @@ class RPG2k
         # Turn-0 pages fire before the party is asked for its first command —
         # this is where a troop's opening dialogue lives.
         return if run_battle_events
-        settle_already_finished_battle || draw_battle_command
+        settle_already_finished_battle || open_next_command
       end
 
       # An encounter can start already decided — an empty party (every member
@@ -3928,10 +3928,11 @@ class RPG2k
         elsif Input.trigger?(Input::C)
           select_battle_command
         elsif Input.trigger?(Input::B)
-          if @battle_ui[:actor_i].zero?
+          prev_i = prev_commandable_actor_index
+          if prev_i.nil?
             try_battle_escape if @battle_ui[:req][:allow_escape]
           else
-            @battle_ui[:actor_i] -= 1 # re-command the previous member
+            @battle_ui[:actor_i] = prev_i # re-command the previous commandable member
             @battle_ui[:cmd] = 0
             draw_battle_command
           end
@@ -4244,11 +4245,52 @@ class RPG2k
       def advance_actor
         @battle_ui[:actor_i] += 1
         @battle_ui[:cmd] = 0
+        open_next_command
+      end
+
+      # Advance `actor_i` past any living ally the round already decides
+      # for automatically -- a "do nothing" or forced attack-ally/
+      # attack-enemy restriction, see `Game::Battle#command_restricted?` --
+      # then either open the next actually-commandable ally's menu or, if
+      # every remaining living ally is restricted, start the round right
+      # away exactly as running out of allies after the last command
+      # already does. Without this, an asleep/paralysed/confused/berserk
+      # ally still got the ordinary Attack/Skill/Defend/Item prompt, and a
+      # party entirely under such states (e.g. everyone put to sleep by an
+      # enemy's spell) froze the command phase forever waiting on choices
+      # that could never change the outcome -- the "unrecoverable
+      # input-blocking state lock" case flagged as still open next to the
+      # empty/all-KO'd-party fix above.
+      def open_next_command
+        skip_restricted_actors
         if @battle_ui[:actor_i] >= living_allies.length
           start_round_animation
         else
           draw_battle_command
         end
+      end
+
+      def skip_restricted_actors
+        battle = @battle_ui[:battle]
+        allies = living_allies
+        i = @battle_ui[:actor_i]
+        i += 1 while allies[i] && battle.command_restricted?(allies[i])
+        @battle_ui[:actor_i] = i
+      end
+
+      # The index of the previous living ally free to receive a manual
+      # command, walking backward from just before the current one and
+      # skipping any restricted ally the same way `#skip_restricted_actors`
+      # does going forward -- nil once nothing earlier is left to
+      # re-command, matching EasyRPG's `SelectPreviousActor` recursing back
+      # to the Fight/Auto/Escape menu once it would land on the very first
+      # ally.
+      def prev_commandable_actor_index
+        battle = @battle_ui[:battle]
+        allies = living_allies
+        i = @battle_ui[:actor_i] - 1
+        i -= 1 while i >= 0 && battle.command_restricted?(allies[i])
+        i >= 0 ? i : nil
       end
 
       # Frames each attack of the round lingers on screen before the next lands —
@@ -4388,7 +4430,7 @@ class RPG2k
           # A new turn re-arms every page: RPG2000 fires a battle page once per
           # turn in which its condition holds, not once per battle.
           @battle_ui[:pages_run] = {}
-          draw_battle_command unless run_battle_events
+          open_next_command unless run_battle_events
         end
       end
 
@@ -4570,7 +4612,7 @@ class RPG2k
           @battle_ui[:phase] = :animate
         else
           @battle_ui[:phase] = :command
-          draw_battle_command
+          open_next_command
         end
       end
 
