@@ -730,7 +730,12 @@ class RPG2k
       return
     end
     state.map = load_map state.map_id
-    scene = Scene::Map.new(self, state)
+    # apply_access: false -- a resumed save already carries its own
+    # save/teleport/escape access (restored by Game::State.load / .from_lsd
+    # from whatever a prior Change Save/Teleport/Escape Access command left
+    # it as), which re-deriving from the current map's tree here would
+    # silently discard. See Scene::Map#initialize's own comment.
+    scene = Scene::Map.new(self, state, apply_access: false)
     @scenes.last.dispose
     @scenes = [scene]
     # Same marker start_new_game emits, so a headless run resuming a save (see

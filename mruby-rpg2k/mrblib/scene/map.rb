@@ -68,7 +68,22 @@ class RPG2k
       MOVE_TARGET_AIRSHIP = 10004
       MOVE_TARGET_THIS    = 10005
 
-      def initialize parent, state
+      # `apply_access:` is false only for a Continue resume (see main.rb's
+      # continue_game) -- every other caller (a fresh New Game, and every
+      # ordinary map load besides) wants the default true. Re-deriving
+      # save/teleport/escape access from the map tree here unconditionally
+      # was wrong for Continue specifically: verified under wine against a
+      # genuine RPG_RT.exe, whose Save command opened the real file-select
+      # screen on a map the tree itself flags Save-forbidden, because the
+      # save being resumed had that access explicitly granted (chunk 101's
+      # save_allowed) by a prior Change Save Access command -- exactly the
+      # "an event command override persists for the rest of that map's
+      # visit" case #apply_map_access's own comment already describes, which
+      # a Continue is still inside the middle of, not a fresh entry to. Every
+      # other call site *is* a fresh entry (New Game's first map, and every
+      # Transfer Player / Teleport via #perform_teleport's own separate call)
+      # and keeps re-deriving as before.
+      def initialize parent, state, apply_access: true
         super parent
         @state = state
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
@@ -83,7 +98,7 @@ class RPG2k
         @backdrop_cache = {}  # Backdrop/<name> (battle background)
         @monster_cache = {}   # Monster/<name> (battler graphics)
         @animation_cache = {} # Battle/<name> (battle animation sheets)
-        apply_map_access
+        apply_map_access if apply_access
         play_map_bgm
         @map = state.map
         @chipset = build_chipset
