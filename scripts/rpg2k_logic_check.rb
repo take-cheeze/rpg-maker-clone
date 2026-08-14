@@ -934,14 +934,15 @@ end
 # commands the checks below drive (gold/items).
 class FakeParty
   attr_reader :gold, :items
-  def initialize; @gold = 0; @items = {}; end
+  def initialize(rpg2003: false); @gold = 0; @items = {}; @rpg2003 = rpg2003; end
   def gain_gold(n); @gold += n; end
   def gain_item(id, n); @items[id] = (@items[id] || 0) + n; end
   def has_item?(id); (@items[id] || 0) > 0; end
+  def rpg2003?; @rpg2003; end
 end
 
-def new_state
-  Game::State.new(FakeParty.new, 1, 0, 0)
+def new_state(rpg2003: false)
+  Game::State.new(FakeParty.new(rpg2003: rpg2003), 1, 0, 0)
 end
 
 IC = Game::Interpreter::Cmd
@@ -4544,6 +4545,21 @@ check 'Control Variables reads a map event position (operand type 6)' do
   eq 6, st.variables[3]
   eq 0, st.variables[4]                                          # a map event's map id reads 0
   eq 0, st.variables[5]                                          # unknown event reads 0
+end
+
+check 'Control Variables: a map event\'s map id is the RPG2000-only quirk -- an ' \
+      'RPG2003 database reads the real (current) map id instead' do
+  st = new_state(rpg2003: true)
+  st.map_id = 12
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new                                  # event 7 at (2,3) dir 6
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 7, 0]),   # event 7 map id
+            FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 6, 7, 1]),   # event 7 x still resolves
+            FakeCmd.new(IC::CONTROL_VARS, [0, 3, 3, 0, 6, 10001, 0])]) # the hero's own map id
+  it.update
+  eq 12, st.variables[1], 'RPG2003: a map event\'s own map id is the currently loaded one'
+  eq 2, st.variables[2], 'RPG2003 does not disturb the event\'s x/y/facing'
+  eq 12, st.variables[3], 'the hero branch is unaffected by the edition check'
 end
 
 check 'Control Variables reads a vehicle position (operand 6, ref 10002-10004)' do
