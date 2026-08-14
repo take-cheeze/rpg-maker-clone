@@ -2200,10 +2200,24 @@ The work below is roughly ordered by the critical path to a walkable game
   "an event bypasses the general access flag" precedent Open Main Menu already
   set for Change Main Menu Access. Only the
   `--rpg2k_continue` headless flag still resumes slot 1 directly, since it has
-  no input loop of its own to drive a second screen. See ADR 0045. **Not done
-  yet:** the party face thumbnails a real save-select screen shows
-  (`Game::State#to_lsd`'s title chunk already exports the FaceSets
-  specifically for this).
+  no input loop of its own to drive a second screen. See ADR 0045. ✅ **The
+  party face thumbnails a real save-select screen shows are now drawn too**
+  (`Game::State#to_lsd`'s title chunk already exported the FaceSets
+  specifically for this, unread until now). Verified against EasyRPG
+  Player's actual C++ source rather than guessed at: `Window_Base::DrawFace`
+  crops a plain 48x48 FaceSet cell with no scaling and never mirrors it on
+  this screen specifically, and `Window_SaveFile` lays up to four of them
+  out in a row at a 56px pitch. `Scene::SaveLoad#draw_slot_box` used to draw
+  only the label/leader-name/level+HP text; a new `#draw_slot_faces` (plus
+  `#load_face_bitmap`/`#build_face_cell`, mirroring `Scene::Map`'s own
+  message-face helpers) now draws each of the slot's party members
+  (`state.party.actors[0..3]`, the same seat order `#to_lsd` writes them
+  in) right-anchored in the box at that same 56px pitch, skipping any
+  member with no FaceSet set. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (two distinct members' faces crop
+  from their own FaceSet cell at the right position/pitch; a blank-named
+  member and a 5th-and-beyond member both draw nothing), both confirmed to
+  fail against the pre-fix code before the fix.
   ✅ **Continue could resume with the wrong actor leading the party.**
   Found by comparing against a genuine `RPG_RT.exe` under wine on a real
   Nepheshel save: chunk 109's party list (field 1) named actor 1 ("リト"),

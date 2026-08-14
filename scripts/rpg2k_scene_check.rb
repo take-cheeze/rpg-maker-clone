@@ -9484,12 +9484,14 @@ end
 class MenuStubActor
   attr_reader :name, :title, :level, :hp, :max_hp, :mp, :max_mp,
               :atk, :def, :int, :agi, :exp, :states, :equipment
+  attr_accessor :faceset_name, :faceset_index
   def initialize
     @name = 'Hero'; @title = 'Wanderer'; @level = 5
     @hp = 80; @max_hp = 120; @mp = 10; @max_mp = 30
     @atk = 20; @def = 12; @int = 9; @agi = 14; @exp = 300
     @states = []
     @equipment = [0, 0, 0, 0, 0]
+    @faceset_name = ''; @faceset_index = 0
   end
   def exp_to_next; 120; end
   def add_state(id); @states.push(id) unless @states.include?(id); end
@@ -9802,6 +9804,59 @@ check 'Scene::SaveLoad: an occupied slot shows the leader, level and HP -- no go
      'level and current HP together on the third line'
   ok !texts.any? { |t| t.include?('250G') }, 'no gold shown -- confirmed absent from the ' \
                                               'reference capture, unlike this screen\'s old layout'
+end
+
+check 'Scene::SaveLoad: an occupied slot draws each party member\'s own face thumbnail, ' \
+      'right-anchored in seat order' do
+  # Game::State#to_lsd already exports up to four faceset_name/faceset_index
+  # pairs into the save's title chunk for a real RPG_RT to show (see
+  # docs/TODO.md); this screen used to read none of it back.
+  st = wrap_menu_state # WrapMenuParty: two MenuStubActor members
+  st.party.actors[0].faceset_name = 'Faces1'
+  st.party.actors[0].faceset_index = 2 # third cell: x=96, y=0
+  st.party.actors[1].faceset_name = 'Faces2'
+  st.party.actors[1].faceset_index = 5 # sixth cell: x=48, y=48
+  st.party.leader = st.party.actors.first
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  contents = scene.instance_variable_get(:@slot_windows)[0].contents
+  calls = contents.blt_calls
+  eq 2, calls.length, 'one face thumbnail blitted per party member'
+
+  x0, y0, cell0, rect0 = calls[0]
+  eq [80, 0, 0, 0, 48, 48], [x0, y0, rect0.x, rect0.y, rect0.width, rect0.height],
+     'first member lands at the box\'s own right-anchored start (304 - 4*56)'
+  eq [[0, 0, 96, 0, 48, 48]],
+     cell0.blt_calls.map { |cx, cy, _s, r| [cx, cy, r.x, r.y, r.width, r.height] },
+     'cropped straight from Faces1 cell 2 (x=96,y=0), no scaling'
+
+  x1, y1, cell1, rect1 = calls[1]
+  eq [136, 0, 0, 0, 48, 48], [x1, y1, rect1.x, rect1.y, rect1.width, rect1.height],
+     'second member sits one 56px pitch to the right of the first'
+  eq [[0, 0, 48, 48, 48, 48]],
+     cell1.blt_calls.map { |cx, cy, _s, r| [cx, cy, r.x, r.y, r.width, r.height] },
+     'cropped from Faces2 cell 5 (x=48,y=48), the sheet\'s second row'
+end
+
+check 'Scene::SaveLoad: a member with no FaceSet draws no thumbnail; only the first four ' \
+      'members ever draw one' do
+  st = wrap_menu_state
+  st.party.actors[0].faceset_name = '' # blank name -- no face set for this member
+  st.party.actors[1].faceset_name = 'Faces2'
+  st.party.actors[1].faceset_index = 0
+  3.times { st.party.actors << MenuStubActor.new } # 5 members total
+  st.party.actors[2].faceset_name = 'Faces3'
+  st.party.actors[3].faceset_name = 'Faces4'
+  st.party.actors[4].faceset_name = 'Faces5' # a 5th member, never drawn
+  st.party.leader = st.party.actors.first
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  contents = scene.instance_variable_get(:@slot_windows)[0].contents
+  eq 3, contents.blt_calls.length,
+     'the blank-named first member is skipped, and a 5th member never gets a slot -- ' \
+     'only members 2/3/4 (of 5) draw a face'
 end
 
 check 'Scene::SaveLoad :save mode: confirming a slot saves through the parent, shows a ' \
