@@ -3740,22 +3740,89 @@ Everything below is unverified against the codebase.
   effects (Flash / Shake / Tone / Erase Screen / Weather)" above (the
   `#hold_animation_screen_flash`/`#hold_animation_target_flash` fix), which
   settles this exact claim against EasyRPG Player's actual C++ source.
-- **Set Move Route / Character movement** — route commands don't apply
-  until Move-All/Show-Text/Wait/event-end; only one pending route per
-  character (issuing two back-to-back discards the first entirely, not
-  just supersedes visually); moving onto an impassable tile without
-  "Ignore If Can't Move" hangs at that command until unblocked; Through
-  Mode must be explicitly ended or it never turns back off; "Face
-  Direction" always overrides Fixed Direction/Animation Type; "One Step
-  Forward" after Fixed-Direction movement uses the last direction actually
-  moved, not the displayed facing; Jump needs both Begin/End (no move
-  between = vertical hop in place), speed/direction fixed for its duration;
-  hero-targeted Set Move Route suppresses random encounters during the
-  move; running it from a Parallel Process during a hero/event tile overlap
-  can suppress that event's touch trigger; ✅ targeting a currently-hidden map
-  event with Move-All freezes (same family as the `015_shujinkou_idou_huka`
-  item above — now fixed there, see the "Untriaged backlog, from
-  `2k/09_bug/`" section above for the full writeup).
+- **Set Move Route / Character movement** — ✅ route commands don't apply
+  until Move-All/Show-Text/Wait/event-end (`Interpreter#do_move_event` only
+  ever queues into `@move_route_requests`, `mruby-rpg2k/mrblib/
+  interpreter.rb`; `Scene::Map` only drains that queue via
+  `#apply_move_requests` at those same flush points, `scene/map.rb`); ✅
+  only one pending route per character (issuing two back-to-back discards
+  the first entirely, not just supersedes visually); ✅ moving onto an
+  impassable tile without "Ignore If Can't Move" hangs at that command
+  until unblocked (`MoveRoute#do_move`/`#step`, `mruby-rpg2k/mrblib/
+  game.rb` — a blocked, non-skippable move leaves `@index` unchanged, so
+  every later step retries the same command); ✅ Through Mode must be
+  explicitly ended or it never turns back off (`THROUGH_ON`/`OFF` are the
+  only things that ever touch `character.through`, and the player's own
+  route-issuing path explicitly carries it forward across a fresh route);
+  ✅ "Face Direction" always overrides Fixed Direction/Animation Type
+  (`Character#face!` bypasses both `facing_locked` and `fixed_facing`); ✅
+  "One Step Forward" after Fixed-Direction movement uses the last direction
+  actually moved, not the displayed facing (`MOVE_FORWARD` reads
+  `character.last_move_direction`, only ever updated by actual
+  moves/jumps, never by a Face-Direction command); ✅ Jump needs both
+  Begin/End (no move between = vertical hop in place), and direction is
+  fixed for its duration — all confirmed correct, cross-referenced against
+  EasyRPG's own `BeginMoveRouteJump`. **"...speed ... fixed for its
+  duration" is not confirmable as stated: Move Speed itself is dead code
+  engine-wide in this codebase's rpg2k `Scene::Map`, a distinct, real,
+  still-open bug — see the dedicated bullet below.** ✅ hero-targeted Set
+  Move Route suppresses random encounters during the move
+  (`#check_random_encounter`'s own comment: it is only ever called from
+  ordinary player-input movement, never from a forced-route step). Running
+  it from a Parallel Process during a hero/event tile overlap suppressing
+  that event's touch trigger was not independently re-chased this pass. ✅
+  targeting a currently-hidden map event with Move-All freezes (same family
+  as the `015_shujinkou_idou_huka` item above — now fixed there, see the
+  "Untriaged backlog, from `2k/09_bug/`" section above for the full
+  writeup).
+- **Move Speed is dead code engine-wide in this codebase's rpg2k
+  `Scene::Map` — a real, well-evidenced, deliberately still-open bug, not a
+  stale doc note.** `Scene::Map::SPEED = 2` (px/frame, `mruby-rpg2k/mrblib/
+  scene/map.rb`) is hardcoded, and every slide — ordinary player walking
+  (`#advance_player_slide`), autonomous/forced event movement
+  (`e[:move_count] += SPEED`), and jumps alike — always advances by this
+  fixed constant across `TILE = 16` px (`mruby-rpg2k/mrblib/game.rb`), i.e.
+  always exactly 8 frames/tile regardless of configuration.
+  `Character#move_speed` (set from a page's own Move Speed field, and
+  mutated 1..6 by the `SET_MOVE_ROUTE` `SPEED_UP`/`SPEED_DOWN`
+  sub-commands, `game.rb`) is written in three places and read in zero,
+  verified by grepping the whole of `mrblib/` — nothing ever consults it.
+  EasyRPG's real C++ source (`src/game_character.cpp`) confirms the
+  intended formula: normal movement advances `1 << (1 + GetMoveSpeed())`
+  units/frame against a 256-unit-per-tile counter (speed 1..6 → 4, 8, 16,
+  32, 64, 128 units/frame → 64, 32, 16, 8, 4, 2 frames/tile), while jumping
+  uses a *separate* table, `jump_speed[] = {8, 12, 16, 24, 32, 64}`. The two
+  tables coincide only at speed 4 ("Normal"), where both give 8 frames/tile
+  — precisely this codebase's hardcoded value — so the current
+  implementation only happens to look right at the default speed and
+  silently ignores every other setting for both walking and jumping.
+  Concretely broken in-game: `SPEED_UP`/`SPEED_DOWN` move-route commands
+  have zero observable effect, and any NPC page whose Move Speed isn't
+  "4/Normal" (a slow patrol at 2, a fast dash at 6) walks at the same pace
+  as everything else. (The orthogonal *frequency* axis, `EVENT_MOVE_DELAY`
+  keyed by `move_frequency`, is correctly wired — only the *speed* axis is
+  dead.) **Deliberately not fixed this session**: this codebase's own
+  default `move_speed` (`3`, both `Character#initialize` and
+  `#page_move_speed`'s fallback) does not itself obviously correspond to
+  editor speed "4/Normal" the way the hardcoded 8-frames/tile baseline
+  does, so wiring the real formula through naively risks silently changing
+  the baseline speed of literally every character in every existing test
+  the moment `move_speed` starts being read at all — the exact same
+  "cannot safely re-baseline the existing suite in one surgical pass" risk
+  already documented for the Autorun one-shot bug above. A correct fix
+  needs, in order: (1) settling what a freshly-authored event page's Move
+  Speed really defaults to at the LCF/database level (editor label vs. raw
+  stored byte, since the `3` here may already be a 0-indexed raw value
+  rather than editor label "3/1-2 speed") before touching the default at
+  all; (2) a jump-specific speed table separate from the walking one; (3)
+  since several speeds (1/8, 1/4, 1/2) need sub-whole-pixel-per-frame
+  advancement to hit their real `frames/tile` exactly against this
+  codebase's plain-pixel (not 256-unit subpixel) movement model, either a
+  genuine subpixel accumulator or an equivalent "advance 1px every N
+  frames" scheme at the ~3 call sites (`scene/map.rb`'s player slide,
+  autonomous/forced event movement, and the vehicle-route equivalent).
+  Left open, now with a precise citation trail and fix shape for whoever
+  picks it up next.
 - **Repeat/Loop** — loops forever without an explicit Break Loop.
 - **Common Event** — can't display map graphics or use touch-style
   triggers, can't run during battle or with the menu open; "This Event" as
@@ -3770,9 +3837,16 @@ Everything below is unverified against the codebase.
 - **Autorun** — blocks hero control (unlike Parallel Process); runs to
   completion even if its own appearance condition goes false mid-run,
   *including across a map transfer*; only one Autorun engine-wide at a time,
-  and none can start while any non-parallel event is already running; a
+  and none can start while any non-parallel event is already running; ✅ a
   self-targeted Set Move Route with a real movement command can let hero
-  control through during an Autorun. **Bug**: an "event touches hero" event
+  control through during an Autorun. `event_busy?` (`Scene::Map`) gates
+  player input on the foreground interpreter's own running/waiting state;
+  `do_move_event` only queues the request (non-blocking), so when it is an
+  Autorun page's last command the interpreter goes idle the same frame the
+  queued route is drained onto the target's own independent
+  `e[:forced_route]` path — decoupled from the interpreter — so player
+  control resumes while the event is still visibly walking, exactly as
+  claimed. **Bug**: an "event touches hero" event
   approaching via "Approach Hero" that simultaneously triggers a Common
   Event Autorun can permanently freeze that map event (fixes: touch it
   again, toggle its appearance switch, or issue any move-route command at it
