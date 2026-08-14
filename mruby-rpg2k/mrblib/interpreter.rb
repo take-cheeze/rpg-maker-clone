@@ -1708,8 +1708,9 @@ module Game
       show_msg = cmd.param(5) != 0
       stat_targets(cmd).each do |a|
         before = a.level
+        before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
         a.gain_exp(amount)
-        queue_level_up_messages(a, before, a.level) if show_msg
+        queue_level_up_messages(a, before, a.level, before_skills) if show_msg
       end
       # RPG_RT asks about the wipe first: a level change that killed the party
       # goes to Game Over instead of announcing the level-up.
@@ -1728,8 +1729,9 @@ module Game
       show_msg = cmd.param(5) != 0
       stat_targets(cmd).each do |a|
         before = a.level
+        before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
         a.change_level_by(amount)
-        queue_level_up_messages(a, before, a.level) if show_msg
+        queue_level_up_messages(a, before, a.level, before_skills) if show_msg
       end
       return if check_game_over
       show_next_pending_message
@@ -1738,10 +1740,38 @@ module Game
     # Queue one level-up message per level `actor` gained going from `old_level`
     # to `new_level` (nothing when the level did not rise). RPG_RT phrases these
     # from the database terms; this build uses a plain English line for now.
-    def queue_level_up_messages(actor, old_level, new_level)
+    #
+    # Also queues one line per skill the growth/class table teaches at that
+    # exact level, appended onto the same page as the level's own line -- the
+    # missing half of this feature. EasyRPG's Game_Actor::ChangeLevel
+    # (`src/game_actor.cpp`) calls LearnLevelSkills(old_level+1, new_level, pm)
+    # right after pushing the level-up line and before PushPageEnd, and
+    # LearnSkill only pushes ActorMessage::GetLearningMessage (the
+    # `skill_learned` database term glued onto the skill's own name) for a
+    # skill not already IsSkillLearned -- both are only reachable from
+    # #do_change_exp/#do_change_level, which already call #set_level (and so
+    # Actor#learn_level_skills) before this runs, so `before_skills` -- the
+    # actor's own skill list snapshotted before that happened -- is what tells
+    # a *newly* taught skill apart from one the actor already knew (an earlier
+    # explicit Change Skill teach), matching EasyRPG's own IsSkillLearned guard
+    # without re-deriving it. `before_skills` is an empty array when the
+    # caller's own show-message flag was off (nothing here runs then anyway)
+    # or `actor` is a minimal stub with no #skills of its own (a handful of
+    # scene-level fixtures exercise only the level line, never the skill
+    # table) -- `actor.respond_to?(:learn_table)` guards the same stub case
+    # for the skill lookup below.
+    def queue_level_up_messages(actor, old_level, new_level, before_skills)
       return unless new_level > old_level
       ((old_level + 1)..new_level).each do |lv|
-        @pending_messages.push([level_up_message(actor, lv)])
+        lines = [level_up_message(actor, lv)]
+        if actor.respond_to?(:learn_table)
+          actor.learn_table.each do |sid, at|
+            next unless at == lv && !before_skills.include?(sid)
+            sk = party.db_skill(sid)
+            lines.push(skill_learned_message(actor, sk)) if sk
+          end
+        end
+        @pending_messages.push(lines)
       end
     end
 
@@ -1749,6 +1779,15 @@ module Game
     # terms; this build uses a plain English line for now.
     def level_up_message(actor, level)
       "#{actor.name} is now level #{level}!"
+    end
+
+    # The one line a newly-learned skill announces, immediately following its
+    # level's own level-up line. RPG_RT glues the skill's own name onto the
+    # `skill_learned` database term (EasyRPG's ActorMessage::GetLearningMessage,
+    # `src/game_message_terms.cpp`); this build uses a plain English line for
+    # now, matching #level_up_message's own documented simplification.
+    def skill_learned_message(actor, sk)
+      "#{actor.name} learned #{sk.name}!"
     end
 
     # Enter the next queued level-up message as a :message wait; returns false
