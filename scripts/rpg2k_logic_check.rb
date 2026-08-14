@@ -3000,15 +3000,18 @@ check 'Actor base stats scale with level from the growth curve' do
 end
 
 check 'Actor equipment adds item bonuses to the effective stats' do
+  # id 12's mhp: 50 must NOT reach max_hp while equipped -- see the next check;
+  # kept here at 0 so this check's own +50 arithmetic on the four combat stats
+  # is not shadowed by that separate assertion.
   items = { 10 => fake_item(atk: 20), 11 => fake_item(dfn: 8, agi: -3),
-            12 => fake_item(mhp: 50) }
+            12 => fake_item(spi: 6) }
   # base at L1: maxhp10 maxmp5 atk3 def2 int1 agi4
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) },
                        [1], items)
   a = Game::Party.new(db).leader
-  eq [3, 2, 4, 10], [a.atk, a.def, a.agi, a.max_hp]   # nothing equipped
+  eq [3, 2, 4, 1], [a.atk, a.def, a.agi, a.int]       # nothing equipped
   a.equip([10, 11, 12, 0, 0])
-  eq [23, 10, 1, 60], [a.atk, a.def, a.agi, a.max_hp] # +20 atk, +8 def-3 agi, +50 hp
+  eq [23, 10, 1, 7], [a.atk, a.def, a.agi, a.int]     # +20 atk, +8 def-3 agi, +6 int
   eq true, a.equipped?(11)
   eq false, a.equipped?(99)
   # Change Parameters lands on the base stat; the equipment bonus stays on top.
@@ -3016,7 +3019,30 @@ check 'Actor equipment adds item bonuses to the effective stats' do
   eq 28, a.atk                                        # 8 + 20
   # Unequipping removes the bonus.
   a.equip([0, 0, 0, 0, 0])
-  eq [8, 2, 4, 10], [a.atk, a.def, a.agi, a.max_hp]
+  eq [8, 2, 4, 1], [a.atk, a.def, a.agi, a.int]
+end
+
+check 'Actor equipment never adds max_hp_points/max_sp_points to max HP/MP' do
+  # Verified against EasyRPG's actual C++ source: Game_Actor::GetMaxHp/GetMaxSp
+  # resolve to GetBaseMaxHp/GetBaseMaxSp with no per-equipment summation at all
+  # (src/game_actor.cpp), unlike GetAtk/GetDef/GetSpi/GetAgi, which each walk
+  # every equipped item's own *_points1 field via ForEachEquipment. An item's
+  # max_hp_points/max_sp_points fields are read only from UseItem's Material
+  # (Seed) branch -- a one-time, on-consumption stat-up (Actor#seed_boosts) --
+  # never from equipping. A weapon/armour/shield/helmet/accessory row can
+  # still carry a nonzero max_hp_points/max_sp_points value (the LCF schema
+  # does not split fields by item type, and a hand-edited or type-reassigned
+  # database row could leave one behind), but it must have zero effect while
+  # merely worn.
+  items = { 20 => fake_item(mhp: 500, msp: 500, atk: 7, type: 1) } # a "cursed" weapon row
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) },
+                       [1], items)
+  a = Game::Party.new(db).leader
+  eq [10, 5, 3], [a.max_hp, a.max_mp, a.atk]          # nothing equipped
+  a.equip([20, 0, 0, 0, 0])
+  eq [10, 5, 10], [a.max_hp, a.max_mp, a.atk]         # max HP/MP untouched; +7 atk still lands
+  a.equip([0, 0, 0, 0, 0])
+  eq [10, 5, 3], [a.max_hp, a.max_mp, a.atk]          # unequipping is likewise a no-op on HP/MP
 end
 
 check 'Change Parameters tracks an unclamped total under the displayed clamp' do
