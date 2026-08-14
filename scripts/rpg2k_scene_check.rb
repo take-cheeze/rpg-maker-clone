@@ -6182,7 +6182,12 @@ end
 # #draw_vehicles sizing a vehicle sprite off the same constant -- so
 # #start_map_animation can hand #animation_position_offset a real height
 # unconditionally, unlike the battle path's ally-side "no sprite" fallback.
-check "a map-triggered Show Battle Animation carries the target's CharSet height" do
+# That height is ANIM_MAP_TARGET_HEIGHT (24), not Game::CharSet::HEIGHT
+# (32) -- confirmed against EasyRPG's own BattleAnimationMap::DrawSingle
+# (`const int character_height = 24;`, src/battle_animation.cpp), a
+# hardcoded constant unrelated to the actual CharSet frame's pixel height
+# despite reading like it should be the same thing.
+check "a map-triggered Show Battle Animation carries RPG_RT's own 24px map-target height" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = [
@@ -6197,8 +6202,9 @@ check "a map-triggered Show Battle Animation carries the target's CharSet height
     break if anim
   end
   ok anim, 'the animation actually started'
-  eq Game::CharSet::HEIGHT, anim[:target_height],
-     "the player's own CharSet sprite height, not the battle-only nil fallback"
+  eq RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT, anim[:target_height],
+     "RPG_RT's own hardcoded 24px map-target height, not the CharSet frame's 32px " \
+     'or the battle-only nil fallback'
 end
 
 # A map-triggered Show Battle Animation's flash_scope-1 timing used to be
@@ -9481,6 +9487,13 @@ check 'animation_position_offset splits head/center/feet around the target sprit
      'feet sink half the sprite height below centre'
   eq 0, scene.send(:animation_position_offset, { position: 0, target_height: nil }),
      'no known height (the ally-side screen-centre fallback) is never offset'
+  # The real map-target value every #start_map_animation caller actually
+  # hands this (ANIM_MAP_TARGET_HEIGHT, 24 -- RPG_RT's own hardcoded
+  # constant, not the 32px CharSet frame), split at its own halves.
+  eq(-12, scene.send(:animation_position_offset,
+                     { position: 0, target_height: RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT }))
+  eq 12, scene.send(:animation_position_offset,
+                    { position: 2, target_height: RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT })
 end
 
 check 'a head/feet Show Battle Animation position offsets where it draws over the enemy sprite' do
