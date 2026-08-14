@@ -4635,19 +4635,53 @@ not yet verified:
   `@message` already does (`#event_busy?`), while other Parallel Processes
   keep ticking independently of it exactly as an open message never pauses
   them (`#parallels_paused?` only checks `@battle_ui`/a bursting foreground).
-  **Left open**: Input Number (`:number`) issued from a Parallel Process is
-  still silently dropped — `#open_number_input`'s standalone panel and its
-  merged-into-`@message` follow-up are both foreground-only machinery today,
-  a narrower, separate gap this fix does not close. Covered by three new
-  `scripts/rpg2k_scene_check.rb` checks (a Common Event Parallel Process's own
-  Show Text opens the window, blocks the command after it, then resumes once
-  dismissed; a map event Parallel Process's own Show Choices opens, and the
-  picked branch — not the other one — runs once resumed; a Parallel Process's
-  own Show Text blocks for the whole time the foreground's own message stays
-  open, then opens its own and resumes *itself*, not the foreground, proving
-  the tracked `interp:` owner is threaded through correctly rather than
-  hardcoded), all three confirmed to fail against the pre-fix code (the
-  window never opening, or opening on the wrong first attempt).
+  Covered by three new `scripts/rpg2k_scene_check.rb` checks (a Common Event
+  Parallel Process's own Show Text opens the window, blocks the command
+  after it, then resumes once dismissed; a map event Parallel Process's own
+  Show Choices opens, and the picked branch — not the other one — runs once
+  resumed; a Parallel Process's own Show Text blocks for the whole time the
+  foreground's own message stays open, then opens its own and resumes
+  *itself*, not the foreground, proving the tracked `interp:` owner is
+  threaded through correctly rather than hardcoded), all three confirmed to
+  fail against the pre-fix code (the window never opening, or opening on
+  the wrong first attempt). ✅ **Input Number (`:number`) issued from a
+  Parallel Process — this same bullet's own "left open" half — is now
+  fixed too, standalone panel and merged-into-`@message` follow-up alike.**
+  `#drive_parallel_wait` had no `:number` case at all (unlike the `:message`/
+  `:choice` cases just fixed above), so it fell into the generic
+  "background: ignore..." `#resume` branch and the request was silently
+  dropped outright — the widget never appeared, and the command right after
+  Input Number ran on the very next tick as if it had been a no-op. Fixed by
+  giving `#open_number_input` (`mruby-rpg2k/mrblib/scene/map.rb`) an
+  `interp:` keyword mirroring `#open_message`'s own (default the foreground
+  `@interpreter`, recorded on the new `@number_input[:interp]`),
+  `#drive_number_input`'s confirm handler reading it back (`ni[:interp] ||
+  @interpreter`) instead of always resuming `@interpreter`, and a new
+  `:number` case in `#drive_parallel_wait` that opens the widget through the
+  existing `#open_number_input`. The merged-follow-up shape needed one more
+  piece beyond a bare `:number` case, though, and it turned out the already-
+  landed `:choice` case above shared the identical gap: both guarded only on
+  `@message.nil?`, which is false for a process's *own* still-open window
+  awaiting its own follow-up (`@message[:awaiting_followup]`, set by
+  `#drive_text_message` once the preceding Show Text finishes typing but
+  before the interpreter has actually reached the Choice/Number command) —
+  so a Show Text immediately followed by Show Choices or Input Number from a
+  Parallel Process left that process parked forever the instant its own
+  window finished typing, never reaching the follow-up at all, worse than
+  the "silently dropped" a standalone request got. Both cases now read
+  `@message.nil? || @message[:interp].equal?(it)`, letting a process
+  recognise its own already-open window's follow-up (which `#open_message`/
+  `#open_number_input` were already able to merge into — see the `awaiting_
+  followup` check inside each — just never reached from this side) while a
+  genuinely different, unrelated request still waits its turn until whichever
+  window is currently up closes. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (a Common Event Parallel Process's
+  standalone Input Number opens its own compact panel, blocks the command
+  after it, and resumes with the entered value once confirmed; a map event
+  Parallel Process's Show Text immediately followed by Input Number merges
+  into the same still-open window, `@number_input[:embedded]` true, and
+  closes both the widget and the message together on confirm), both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A Face Graphic setting persists through the rest of the current event's
   execution content (not just the next message) and is auto-cleared when
   the event ends, but not before** — it must be explicitly "erased" to stop
