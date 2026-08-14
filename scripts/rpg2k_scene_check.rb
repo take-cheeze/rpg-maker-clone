@@ -7225,6 +7225,98 @@ check 'Change Battle Background from a page rebuilds the backdrop sprite' do
   ok !ui[:back_sprite].equal?(before), 'and it was rebuilt for the new name'
 end
 
+# Show Battle Animation (13260), the battle-page form of 11210 (see
+# do_show_battle_animation_b in interpreter.rb): drive_battle_event_wait's
+# dispatch used to have no :animation case at all, so a battle page's own
+# Show Battle Animation -- wait flag on or off -- fell into the generic
+# "release the request, resume unconditionally" else branch on the very
+# next frame: never built, never drawn, never actually waited on, the exact
+# same silently-ignored shape the already-fixed Common Event Parallel
+# Process gap had for the map-level command (11210). Fixed by adding an
+# :animation case that reuses #drive_map_animation, generalized (see
+# #start_battle_page_animation and #step_map_animation's finish check) to
+# also build a battle-round-styled animation -- keyed by troop *member
+# index*, per this command's own param1, not a map target id -- for a
+# request carrying the `battle:` flag do_show_battle_animation_b sets.
+check "a battle page's Show Battle Animation actually holds the page, not resuming immediately" do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [8, 0, 1], indent: 0), # anim 8, member 0, wait
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 21, 21, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  # Drive until the page's interpreter is actually parked on the :animation
+  # wait the command sets (rather than counting frames blindly, since the
+  # battle itself takes a few frames to open first).
+  it = nil
+  60.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    it = ui && ui[:events]
+    break if it && it.waiting? && it.wait_kind == :animation
+  end
+  ok it && it.wait_kind == :animation, 'the page reached the :animation wait'
+  ok !st.switches[21], 'the trailing Control Switches has not run yet'
+  # The pre-fix bug resumed unconditionally the very next frame regardless of
+  # the wait it just set (drive_battle_event_wait's missing :animation case
+  # fell into the generic else branch), landing the trailing Control
+  # Switches within two frames of this point -- well short of animation 8's
+  # own ~8-frame play (4 frames * ANIM_CELL_FRAMES 2).
+  2.times { scene.update }
+  ok !st.switches[21], 'still held two frames later: not resumed unconditionally on the next tick'
+  40.times { scene.update }
+  ok st.switches[21], 'the page ran on once the animation actually finished'
+end
+
+check "a battle page's Show Battle Animation draws over the targeted troop member's own sprite position" do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [8, 1, 1], indent: 0), # anim 8, member 1, wait
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 22, 22, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  spr_shown = false
+  ma_seen = nil
+  40.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    anim_spr = scene.instance_variable_get(:@animation_sprite)
+    spr_shown ||= anim_spr && anim_spr.visible
+    ma = scene.instance_variable_get(:@map_animation)
+    ma_seen ||= ma
+    break if st.switches[22]
+  end
+  ok spr_shown, 'the animation sprite actually drew'
+  ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
+  ok ma_seen[:battle], 'positioned in screen space, like a battle-round animation'
+  ui = scene.instance_variable_get(:@battle_ui)
+  spr = ui[:enemy_sprites][1]
+  eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
+     [ma_seen[:tx], ma_seen[:ty]], "centred on troop member 1's sprite, the command's own target param"
+  ok st.switches[22], 'and the page still ran on once it finished'
+end
+
+check "a battle page's Show Battle Animation target-scope flash pulses the named troop member, not a bystander" do
+  ic = Game::Interpreter::Cmd
+  # Animation 9 carries a flash_scope-1 ("target") timing on frame 0 -- see
+  # fake_db -- rather than 8's flash_scope-2 (screen) one. Targets troop
+  # member 0; member 1 is the untargeted bystander.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [9, 0, 1], indent: 0),
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 23, 23, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  ui = nil
+  target_flashed = false
+  bystander_flashed = false
+  40.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    next unless ui && ui[:enemy_sprites]
+    target_flashed ||= !!ui[:enemy_sprites][0].flash_color
+    bystander_flashed ||= !!ui[:enemy_sprites][1].flash_color
+    break if st.switches[23]
+  end
+  ok target_flashed, 'the targeted troop member (index 0) was flashed at some point during the play'
+  ok !bystander_flashed, 'the untargeted troop member (index 1) was never flashed'
+  ok !st.screen.flashing?, 'a flash_scope-1 timing never touches the screen flash'
+  ok st.switches[23], 'and the page still ran on once the animation finished'
+end
+
 check 'a battle page shows its message in a battle panel and waits for a key' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'It appears!'),

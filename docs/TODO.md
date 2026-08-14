@@ -4231,8 +4231,61 @@ not yet verified:
   case at all, so its generic "a battle page cannot open the map's
   teleport/shop/menu UI" `else` branch unconditionally `#resume`s it,
   meaning a battle-page Show Battle Animation may not render even *with*
-  its wait flag set — a separate, not-yet-fixed gap this pass did not
-  touch.
+  its wait flag set — fixed separately below.
+- ✅ **The battle-*page*'s own Show Battle Animation (13260,
+  `Game::Interpreter#do_show_battle_animation_b`) now actually plays too —
+  the same silently-ignored shape as the Parallel Process gap above, closed
+  the same way.** `Scene::Map#drive_battle_event_wait`'s dispatch (the wait
+  driver `#drive_battle_event` calls whenever a running battle-event page's
+  interpreter is parked) had no `:animation` case at all, so a page's Show
+  Battle Animation with the wait flag **on** fell into the generic "a battle
+  page cannot open the map's teleport/shop/menu UI" `else` branch and was
+  `#resume`d unconditionally the very next frame — never built, never drawn,
+  never actually waited on, regardless of the wait flag the command itself
+  set. Fixed by adding `when :animation then drive_map_animation(it)`,
+  reusing the exact same shared renderer the map command and the Parallel
+  Process fix above already drive. That renderer needed generalizing further
+  still: `#start_map_animation` always read a request's `target` the *map*
+  way (`#animation_target_pixel` — the player, "this event," a map event id,
+  a vehicle), but `do_show_battle_animation_b`'s own `target` is a **troop
+  member index** (param1, "the target troop member," not a map target id at
+  all) — reusing the map decoding for it would misplace the animation and
+  arm the wrong flash mechanism outright. Fixed with a new
+  `#start_battle_page_animation`, dispatched by `#start_map_animation`
+  whenever the request carries the `battle: true` flag
+  `do_show_battle_animation_b` already sets: it reads the target's live
+  screen position through `#battle_animation_pixel` (the same enemy-sprite
+  lookup `#start_battle_animation`'s own battle-round path already uses) and
+  builds through `#build_animation`'s `battle`/`target_index` args, so the
+  animation lands on the named troop member's actual sprite and its own
+  flash_scope-1 timing pulses that same sprite via the existing
+  `#fire_target_flash` battle-round mechanism, not a map character's
+  CharSet-tone one. This surfaced one more latent bug in code the Parallel
+  Process fix above had left untested on this exact combination:
+  `#step_map_animation`'s finish branch used to read `ma[:battle]` itself as
+  a proxy for "no interpreter is waiting on this" (`owner.resume unless
+  ma[:battle] || owner.nil?`), true only by coincidence for every *existing*
+  caller of `ma[:battle] = true` — `#start_battle_animation`'s own
+  battle-round animations, which never set `@map_animation_interp` at all,
+  so `owner` was always already `nil` there regardless of the flag. A
+  battle-page's own animation breaks that coincidence on purpose: it needs
+  `ma[:battle]` true for its screen-space pixel and enemy-sprite flash
+  target, *and* a real owning interpreter (the battle-event interpreter
+  parked on the wait) that must actually resume once the animation finishes.
+  Fixed by reading the real owner instead of the flag: `owner.resume if
+  owner` — unaffected for the battle-round path, where `owner` is `nil` by
+  construction either way. Covered by three new `scripts/rpg2k_scene_check.rb`
+  checks (the page's interpreter is confirmed to actually reach and hold on
+  the `:animation` wait, and its trailing Control Switches command is still
+  unrun two frames past that point — short of animation 8's own ~8-frame
+  play, unlike the pre-fix unconditional next-frame resume — before finally
+  landing once the animation genuinely finishes; the animation sprite draws
+  centred on the named troop member's own sprite position, not the
+  screen-centre ally fallback or a map character; a flash_scope-1 timing
+  pulses only the named troop member's sprite, leaving a bystander member
+  and the screen flash untouched), the first and third confirmed to fail
+  against the pre-fix code before the fix (the second failing on the sprite
+  never having drawn at all).
 - ✅ **The "1 frame = 1/30s" half of the bullet above is now correct, and
   the "'Wait' frame is internally two consecutive frames" framing turns out
   to have been a misreading — settled against EasyRPG Player's actual C++
