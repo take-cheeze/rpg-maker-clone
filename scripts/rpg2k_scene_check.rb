@@ -7202,6 +7202,60 @@ check "RPG2003's second timer draws in its own sprite, at the screen's right edg
      'sits flush against the right edge, the way RPG_RT parks it'
 end
 
+check 'the timer drops to the bottom edge once a message resolves to the ' \
+      'top, and it stays there after the message closes' do
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).set(30)
+  st.timer(0).start(true)
+  scene.update
+  spr = scene.instance_variable_get(:@timer_sprites)[0]
+  eq 4, spr.y, 'nothing has opened a message yet -- normal top position'
+  # Hero low on screen -> the (unpinned, RPG2000's default) message resolves
+  # to the top, matching #message_window_y's own already-tested logic.
+  st.y = 28
+  scene.send(:open_message, ['Hi'], false)
+  ok scene.instance_variable_get(:@message_window_top),
+     'the sticky flag is set the instant the message opens, not when it closes'
+  scene.update
+  eq RPG2k::Scene::Map::SCREEN_H - 20, spr.y,
+     'the timer slides down to keep clear of the top-parked message'
+  # Closing the message does not undo it -- EasyRPG's own Window_Message#y
+  # is never reset on FinishMessageProcessing either.
+  scene.send(:close_message, animate: false)
+  scene.update
+  eq RPG2k::Scene::Map::SCREEN_H - 20, spr.y,
+     'still at the bottom edge after the message that caused it has closed'
+end
+
+check 'the timer stays at the top when the last message resolved elsewhere, ' \
+      'and a fresh map visit resets the sticky flag' do
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).set(30)
+  st.timer(0).start(true)
+  # Hero high on screen -> the message resolves to the bottom, not the top.
+  st.y = 0
+  scene.send(:open_message, ['Hi'], false)
+  ok !scene.instance_variable_get(:@message_window_top),
+     'a bottom-resolved message never sets the sticky flag'
+  scene.update
+  spr = scene.instance_variable_get(:@timer_sprites)[0]
+  eq 4, spr.y, 'the timer stays at its normal top position'
+  scene.send(:close_message, animate: false)
+  # Force the sticky flag on directly (as a top-resolved message would), then
+  # confirm a fresh map visit clears it -- matching a genuine RPG_RT
+  # `Scene_Map::Start` rebuilding `Window_Message` from scratch, unlike
+  # `Scene_Map::Continue`'s reuse when merely returning from a pushed scene.
+  scene.instance_variable_set(:@message_window_top, true)
+  scene.send(:perform_teleport, [1, 0, 0, 0])
+  scene.update
+  eq 4, scene.instance_variable_get(:@timer_sprites)[0].y,
+     'a Teleport to a fresh map resets the sticky flag back to the normal top position'
+end
+
 check 'a timer without the battle flag pauses and hides for the fight, and drops to the mid-screen battle position' do
   scene = new_scene({})
   scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
