@@ -3261,7 +3261,45 @@ not yet verified:
 - Multiple simultaneous parallel processes are **not concurrent** — the
   engine advances one command block at a time, round-robin, yielding at a
   blocking command (Wait/Show Text/Show Picture), in definition/event-ID
-  order.
+  order. ✅ **The precise cross-group ordering half of this claim — where a
+  parallel *common* event's own advance falls relative to a parallel *map*
+  event's — is now settled and fixed, verified against EasyRPG Player's
+  actual C++ source rather than guessed at.** `Game_Map::Update`
+  (`src/game_map.cpp`) always calls `UpdateCommonEvents()` before
+  `UpdateMapEvents()`, every real frame, with no interleaving by id across the
+  two groups; `Game_CommonEvent`'s constructor (`src/game_commonevent.cpp`)
+  only ever builds an interpreter when the common event's own trigger is
+  Parallel, so `UpdateCommonEvents` is this engine's exact counterpart to
+  `Scene::Map#step_parallels`' common-event half, and `UpdateMapEvents` (which
+  iterates every `Game_Event`, not filtered by trigger the same way) the
+  counterpart to its map-event half. `Scene::Map#build_parallels`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — which decides what order
+  `#step_parallels`/`#step_parallel` walk `@parallels` in, since they simply
+  iterate it start to end with no per-entry ordering key of their own — used
+  to push every live map event's own parallel process first (looping
+  `@events`), *then* every parallel common event after (looping `@common`),
+  the opposite of real RPG_RT's fixed frame order. In practice this meant a
+  common event's write this frame (a gate switch another process's page
+  condition depends on, a shared variable, anything) was not visible to a map
+  event's own parallel process reading it until the *next* frame, one tick
+  later than the real engine, whenever both processes' scripts happened to
+  reach that read/write on the same real frame. Fixed by swapping the two
+  loops' order in `#build_parallels`: the common-event loop (unchanged
+  internally — still `@common`'s own definition order, i.e. ascending id) now
+  runs first and is pushed into `@parallels` first, followed by the map-event
+  loop (also internally unchanged, `@events`' own ascending-id order, itself
+  already confirmed correct — see the "Processing order" bullet above) and
+  its bystander-preservation pass; neither loop's own internal ordering rule
+  changed, only which group goes first. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a common event's Parallel Process
+  turns a switch on with no intervening Wait, and a map event's own Parallel
+  Process — checking that same switch — observes it already on within the
+  very same first `#step_parallels` sweep, not merely by the following
+  frame), confirmed to fail against the pre-fix code before the fix (the map
+  event's own check ran first, saw the switch still off, and never re-checked
+  after parking on its own trailing Wait). The rest of this bullet — within
+  one group, one command block at a time, round-robin, yielding at a blocking
+  command, ascending-id order — was already correct and needed no change.
 - A parallel process reaching its own loop end and restarting always costs
   ~1/60s (an implicit one-frame gap), independent of any explicit Wait.
 - "Hero Touch" (trigger 1) does **not** fire in three specific cases

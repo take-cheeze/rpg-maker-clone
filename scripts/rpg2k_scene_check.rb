@@ -1418,6 +1418,54 @@ check 'parallel common event runs only while its switch gate is on' do
   ok st.variables[3] > 0, 'it should run once the gate switch is on'
 end
 
+# yado.tk "Full-site sweep": "Multiple simultaneous parallel processes are not
+# concurrent -- the engine advances one command block at a time, round-robin,
+# ... in definition/event-ID order." Settled precisely against EasyRPG
+# Player's actual C++ source rather than guessed at: `Game_Map::Update`
+# (src/game_map.cpp) always calls `UpdateCommonEvents()` before
+# `UpdateMapEvents()`, every real frame, with no interleaving by id across the
+# two groups -- `Game_CommonEvent` (src/game_commonevent.cpp) only ever builds
+# an interpreter for a Parallel-trigger common event, so `UpdateCommonEvents`
+# is this engine's exact counterpart to `#step_parallels`' common-event half.
+# `Scene::Map#build_parallels` (mruby-rpg2k/mrblib/scene/map.rb) used to push
+# every *map* event's own parallel process into `@parallels` before any
+# *common* event's, the opposite order -- `#step_parallels`/`#step_parallel`
+# simply walk `@parallels` in array order, so a common event's write this
+# frame (a gate switch, a shared variable) was not visible to a map event's
+# own parallel process reading it until the *next* frame, one tick later than
+# real RPG_RT. Fixed by pushing the common-event loop first in
+# `#build_parallels`, ahead of the map-event loop, with no other change to
+# either loop's own internal (ascending id) ordering.
+check "a common event's Parallel Process write is visible to a map event's " \
+      'own Parallel Process the very same frame it happens (yado.tk)' do
+  ic = Game::Interpreter::Cmd
+  # Common event 1: turns switch 10 on, then parks on a long Wait -- one
+  # non-blocking command, so it fully executes (switch write included) the
+  # instant #step_parallel first drives it, well before parking.
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::CONTROL_SWITCHES, [0, 10, 10, 0], indent: 0),
+                              ECmd.new(ic::WAIT, [60], indent: 0)])
+  # Map event 2 (Parallel Process): checks switch 10 exactly once, sets switch
+  # 20 on if it is already on, then also parks on a long Wait -- it never
+  # loops back to re-check, so this only ever catches a same-frame write, not
+  # one that merely lands a frame or two later.
+  pg = page(trigger: 4)
+  pg.event_commands = [
+    ECmd.new(ic::CONDITIONAL, [0, 10, 0], indent: 0), # switch 10 == on ?
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 20, 20, 0], indent: 1),
+    ECmd.new(ic::END_BRANCH, [], indent: 0),
+    ECmd.new(ic::WAIT, [60], indent: 0),
+  ]
+  scene = new_scene({ 2 => event(3, 3, pg) }, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok st.switches[10], "the common event's own switch write must land this same frame"
+  ok st.switches[20],
+     "the map event's Parallel Process must observe switch 10 already on within " \
+     'this same #step_parallels sweep -- common events run first, matching ' \
+     "Game_Map::Update's UpdateCommonEvents-before-UpdateMapEvents order"
+end
+
 # yado.tk (01_shoshin/011_siyou, "Call Event"): a Call Event always bypasses
 # the target common event's own condition-switch state entirely, regardless
 # of whether the common event is configured Parallel Process, Auto-Start, or

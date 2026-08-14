@@ -1023,10 +1023,11 @@ class RPG2k
         @state.switches[c[:switch_id]]
       end
 
-      # Build the background (parallel-process) interpreters: map events with a
-      # parallel trigger plus parallel common events. Each gets its own
-      # Game::Interpreter, looped by #step_parallels; a common event that needs a
-      # flag carries its gate switch so it only runs while that switch is on.
+      # Build the background (parallel-process) interpreters: parallel common
+      # events plus map events with a parallel trigger, in that order (see the
+      # order comment inside, below). Each gets its own Game::Interpreter,
+      # looped by #step_parallels; a common event that needs a flag carries
+      # its gate switch so it only runs while that switch is on.
       #
       # A Common Event's own parallel process, unlike a Map Event's, keeps its
       # interpreter position across a Transfer Player: called again by
@@ -1078,6 +1079,25 @@ class RPG2k
           end
         end
         @parallels = []
+        # Common events are pushed before map events, matching real RPG_RT's
+        # own fixed frame order: `Game_Map::Update` (src/game_map.cpp) always
+        # calls `UpdateCommonEvents()` before `UpdateMapEvents()`, with no
+        # interleaving by id across the two groups -- `Game_CommonEvent`
+        # (src/game_commonevent.cpp) only ever builds an interpreter for a
+        # Parallel-trigger common event, so that call is this engine's exact
+        # counterpart to #step_parallels' common-event half. A common event's
+        # write this same real frame (e.g. a gate switch, or a value another
+        # process reads) is therefore visible to a map event's own parallel
+        # process reading it later in the same #step_parallels sweep, never
+        # the other way around -- #step_parallels/#step_parallel walk
+        # @parallels in array order, so the order they are pushed in here is
+        # the order they run in.
+        @common.each do |c|
+          next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
+          gate = c[:need_flag] ? c[:switch_id] : nil
+          @parallels.push(previous_common[c[:id]] ||
+                           new_parallel(c[:commands], gate, nil, c[:id]))
+        end
         live_map_ids = {}
         @events.each do |e|
           next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
@@ -1112,12 +1132,6 @@ class RPG2k
           previous_map.each do |id, prior|
             @parallels.push(prior) unless live_map_ids[id]
           end
-        end
-        @common.each do |c|
-          next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
-          gate = c[:need_flag] ? c[:switch_id] : nil
-          @parallels.push(previous_common[c[:id]] ||
-                           new_parallel(c[:commands], gate, nil, c[:id]))
         end
       rescue StandardError
         @parallels = []
