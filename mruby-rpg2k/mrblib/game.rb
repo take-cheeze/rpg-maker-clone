@@ -2502,6 +2502,25 @@ module Game
       @revision += 1 unless @actors.size == before
     end
 
+    # Make an already-rostered actor the leader (party slot 0). If they are
+    # already a member elsewhere in the party, they are moved to the front
+    # (everyone else's membership is untouched); otherwise they replace
+    # whoever is currently in slot 0, since a mismatch here means chunk 109's
+    # party list named the wrong actor for that slot, not that the party
+    # grew an extra member. Used by State.from_lsd when a save's party list
+    # disagrees with the title chunk's cached leader (see the comment
+    # there). A no-op if +actor+ is nil or already leading.
+    def promote_to_leader(actor)
+      return unless actor && @actors.first != actor
+      @actors.delete(actor)
+      if @actors.empty?
+        @actors.push(actor)
+      else
+        @actors[0] = actor
+      end
+      @revision += 1
+    end
+
     def item_count(id); @items[id] || 0; end
 
     # RPG_RT's item-possession test (Conditional Branch's item condition and an
@@ -8930,8 +8949,17 @@ module Game
           actor.skills = sa.skills if sa.skills
           actor.states = sa.states if sa.states
           # A Change Actor Name override on *any* roster member, not just the
-          # leader (whose name chunk 100's title also carries below).
-          actor.name = sa.actor_name if sa.actor_name && !sa.actor_name.empty?
+          # leader (whose name chunk 100's title also carries below). ADR
+          # 0014 already flagged this field's other case when it was first
+          # decoded: "reserve actors store only a placeholder" -- an actor
+          # with no real override writes a single 0x01 byte here rather than
+          # an empty string, matched against a genuine save under wine (every
+          # roster actor other than the true leader carries exactly this
+          # placeholder). Applying it verbatim overwrites the actor's correct
+          # database name with a control character, which then defeats any
+          # later lookup by name (see the title-chunk leader fixup below).
+          nm = sa.actor_name
+          actor.name = nm if nm && !nm.empty? && nm != "\x01"
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
@@ -8993,14 +9021,29 @@ module Game
       sg = sys.system_graphic
       state.system_graphic = sg unless sg.nil? || sg.empty?
       state.font_id = sys.font || 0
-      # The leader's display name from the file-screen title chunk. Redundant
-      # with chunk 108 field 1 above (both hold the same live name in a
-      # genuine save, and in our own #to_lsd output) but applied last so it
-      # still wins for a foreign save that sets one and not the other.
+      # The leader's display name from the file-screen title chunk. This used
+      # to be treated as always redundant with chunk 109's own party list
+      # (field 1: "both hold the same live name in a genuine save"), so a
+      # mismatch was "fixed" by just relabelling whoever chunk 109 put first
+      # -- right name, wrong actor underneath. Verified wrong under wine
+      # against a genuine RPG_RT.exe on a real Nepheshel save: chunk 109's
+      # party list names actor 1 ("リト"), but RPG_RT's own menu shows actor
+      # 15 ("デモ用", level 50/600HP) throughout, matching the title chunk's
+      # hero_name/hero_level/hero_hp exactly. Chunk 108 already instantiated
+      # every actor id the save mentions (the loop above), so when the names
+      # disagree the real leader can be found in the roster by the title's
+      # cached name and promoted, rather than cosmetically relabelled.
       title = save[100]
       if title && party.leader
         nm = title.hero_name
-        party.leader.name = nm if nm && !nm.empty?
+        if nm && !nm.empty? && nm != party.leader.name
+          real_leader = party.roster.all.find { |a| a.name == nm }
+          if real_leader
+            party.promote_to_leader(real_leader)
+          else
+            party.leader.name = nm
+          end
+        end
       end
       restore_pictures(state, save[103])
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a

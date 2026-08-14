@@ -2059,6 +2059,32 @@ The work below is roughly ordered by the critical path to a walkable game
   yet:** the party face thumbnails a real save-select screen shows
   (`Game::State#to_lsd`'s title chunk already exports the FaceSets
   specifically for this).
+  ✅ **Continue could resume with the wrong actor leading the party.**
+  Found by comparing against a genuine `RPG_RT.exe` under wine on a real
+  Nepheshel save: chunk 109's party list (field 1) named actor 1 ("リト"),
+  but RPG_RT's own field menu showed actor 15 ("デモ用", level 50/600HP)
+  throughout, matching the title chunk's `hero_name`/`hero_level`/`hero_hp`
+  exactly. `Game::State.from_lsd` used to trust chunk 109's list outright and
+  only cosmetically relabel a disagreeing leader with the title chunk's
+  name — right name, wrong actor's level/HP/equipment/skills underneath. It
+  now looks the real leader up in the roster by that name and promotes them
+  (`Party#promote_to_leader`). A contributing bug: an actor with no genuine
+  Change Actor Name override encodes that in chunk 108 as a single `0x01`
+  byte, not an empty string (ADR 0014 already flagged this — "reserve actors
+  store only a placeholder" — when the field was first decoded, but a later
+  change applied it unconditionally anyway), which was overwriting every
+  such actor's correct database name with a control character and defeating
+  the name-based lookup above.
+  **Left open:** that same wine comparison showed genuine RPG_RT displaying
+  デモ用's HP/MP as a clean 600/600 at level 50, where this engine's own
+  growth-curve computation for that actor caps at 245/254 — current
+  genuinely exceeding computed max here rather than test-data noise, so
+  either RPG_RT's growth-curve extrapolation past the curve's own rows
+  differs from this engine's, or the status panels should display
+  `max(current, computed_max)` rather than the raw computed max. Not chased
+  further since it needs another actor's data point to tell the two apart;
+  `scripts/rpg2k_save_load_check.rb` skips its hp/mp-within-max assertion for
+  this one actor rather than asserting either guess.
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done
