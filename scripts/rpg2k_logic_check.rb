@@ -23,6 +23,7 @@ module RGSS
       attr_accessor :log
       def bgm_play(*a); (@log ||= []) << [:bgm, *a]; end
       def bgm_volume(*a); (@log ||= []) << [:bgm_volume, *a]; end
+      def bgm_pan(*a); (@log ||= []) << [:bgm_pan, *a]; end
       def bgm_fade(*a); (@log ||= []) << [:bgm_fade, *a]; end
       def se_play(*a);  (@log ||= []) << [:se, *a];  end
       def se_stop(*a);  (@log ||= []) << [:se_stop, *a]; end
@@ -2591,6 +2592,48 @@ check 'Play BGM with a different file still restarts (or starts) playback' do
   it.update
   names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
   eq %w[town field], names, 'a different file always reaches the backend'
+end
+
+check 'Play BGM with an explicit balance parameter forwards it as pan' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # PlayBGM parameters: [fade_in, volume, tempo, balance] -- param(3) is
+  # balance, here full left (0) then full right (100).
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100, 0], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100, 100], string: 'field'),
+  ])
+  it.update
+  pans = RGSS::Audio.log.select { |e| e[0] == :bgm_pan }.map { |e| e[1] }
+  eq [0, 100], pans, 'each Play BGM re-applies its own balance parameter'
+end
+
+check 'Play BGM with no balance parameter defaults pan to centre (50)' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Only [fade_in, volume, tempo] -- no 4th (balance) element at all.
+  it.start([FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town')])
+  it.update
+  pans = RGSS::Audio.log.select { |e| e[0] == :bgm_pan }.map { |e| e[1] }
+  eq [50], pans, 'an omitted balance parameter defaults to centre'
+end
+
+check 'Play BGM re-applies pan on a same-file re-trigger, not just a fresh start' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # Same file re-triggered with a different balance: unlike bgm_play (skipped
+  # on a same-file match, see above), bgm_pan has no per-track state to
+  # restart, so it must still fire every time.
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100, 20], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100, 80], string: 'town'),
+  ])
+  it.update
+  pans = RGSS::Audio.log.select { |e| e[0] == :bgm_pan }.map { |e| e[1] }
+  eq [20, 80], pans, 'pan is re-applied on the same-file branch too'
 end
 
 # -- Play SE "(OFF)" ----------------------------------------------------------

@@ -5594,11 +5594,12 @@ not yet verified:
   #do_play_memorized_bgm` — one shared `same_file_already_playing` idiom,
   three call sites, all now re-applying the command's own volume live
   instead of leaving whatever the interrupted track happened to be at
-  alone. Tempo/pan remain out of reach of this backend: SDL_mixer has no
-  live pitch control for a stream already playing (only a freshly started
-  one, `src/sdl_audio.cxx`'s own header comment), and pan/balance was never
-  wired as a Play BGM parameter at all, a separate, larger gap left
-  unaddressed here. Covered by two new `scripts/rpg2k_logic_check.rb`
+  alone. Tempo remains out of reach of this backend: SDL_mixer has no live
+  pitch control for a stream already playing (only a freshly started one,
+  `src/sdl_audio.cxx`'s own header comment); pan/balance was never wired as a
+  Play BGM parameter at all as of this paragraph — see the ✅ addendum at the
+  end of this bullet, where that gap is closed. Covered by two new
+  `scripts/rpg2k_logic_check.rb`
   checks (a same-file Play BGM re-trigger calls `bgm_volume` with the new
   command's volume instead of `bgm_play`; a Play Memorized BGM replaying a
   track that never stopped re-applies the memorized volume, distinguishing
@@ -5635,7 +5636,31 @@ not yet verified:
   `scripts/rpg2k_logic_check.rb` check (Play BGM "town", Memorize BGM, Play
   Memorized BGM with nothing else played in between reaches the backend
   once, not twice), confirmed to fail against the pre-fix code (`["town",
-  "town"]`) before the fix.
+  "town"]`) before the fix. ✅ **Pan/balance is now wired too — the gap
+  flagged above.** `cmd.param(3)` went unread in `#play_audio`'s `:bgm`
+  branch, and `RgssAudioBackend` had no pan slot to read it into at all.
+  SDL_mixer has no per-`Mix_Music` panning API either, but unlike tempo this
+  one has a real documented workaround: `Mix_SetPanning(MIX_CHANNEL_POST,
+  left, right)` registers a postmix effect on the *final* mixed stream, the
+  one place a still-playing music track can be reached at all (at the cost of
+  also panning BGS/SE, since they land in the same final mix — there is no
+  channel-scoped alternative for music). Added a `bgm_pan` slot to
+  `RgssAudioBackend` (`include/rgss_audio.hxx`), implemented in
+  `src/sdl_audio.cxx` on that primitive (RPG2000's own Play BGM balance scale
+  — 0 full left, 50 centre, 100 full right — mapped onto SDL's 0..255 per
+  channel), with a matching `_bgm_pan` forwarder in `mruby-rgss/src/audio.cxx`
+  and a public `RGSS::Audio.bgm_pan(pan)` wrapper in
+  `mruby-rgss/mrblib/lib.rb`, mirroring `bgm_volume`'s shape exactly.
+  `#play_audio`'s `:bgm` branch now reads `cmd.param(3)` (defaulting to 50
+  when the command carries a shorter list) and calls `bgm_pan` on every Play
+  BGM regardless of the same-file-no-restart branch above, since panning has
+  no per-track state to restart in the first place. Covered by a new
+  `mruby-rgss/test/test.rb` check (`_bgm_pan` is a safe no-op with no backend
+  installed, matching every other native Audio primitive) and a new
+  `scripts/rpg2k_logic_check.rb` check (a Play BGM with an explicit balance
+  reaches `bgm_pan` with that value; an omitted balance defaults to 50),
+  confirmed to fail against the pre-fix code (`NoMethodError`/no `bgm_pan`
+  call at all) before the fix.
 - ✅ **A map's own configured BGM now actually auto-plays, on the initial map
   load and every Transfer Player alike — a genuine, previously-undocumented
   gap found while cross-checking this same BGM cluster for anything else the

@@ -157,12 +157,17 @@ module RGSS
     # screen) can assert which track started.
     class << self; attr_accessor :bgm_calls; end
     def self.bgm_play(*a); (@bgm_calls ||= []) << a; end
-    def self.reset_bgm; @bgm_calls = []; @bgm_volume_calls = []; @bgm_fade_calls = []; end
+    def self.reset_bgm; @bgm_calls = []; @bgm_volume_calls = []; @bgm_pan_calls = []; @bgm_fade_calls = []; end
     # Recorded separately from bgm_calls: a same-file Play BGM re-trigger
     # calls this instead of bgm_play (see Game::Interpreter#play_audio /
     # Scene::Map#play_bgm), so the two checks stay distinguishable.
     class << self; attr_accessor :bgm_volume_calls; end
     def self.bgm_volume(v); (@bgm_volume_calls ||= []) << v; end
+    # Recorded separately again: the balance/pan re-apply that now
+    # accompanies every Play BGM command (see
+    # Game::Interpreter#play_audio's :bgm branch).
+    class << self; attr_accessor :bgm_pan_calls; end
+    def self.bgm_pan(v); (@bgm_pan_calls ||= []) << v; end
     # Record bgm_fade calls (the fade-length ms) so a check can assert one
     # fired -- e.g. the End Game confirmation's Game_System::BgmFade(400).
     class << self; attr_accessor :bgm_fade_calls; end

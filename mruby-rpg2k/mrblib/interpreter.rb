@@ -3083,19 +3083,25 @@ module Game
       end
       if kind == :bgm
         # PlayBGM parameters: [fade_in, volume, tempo, balance]. Volume/tempo
-        # default to 100 when the command carries a shorter list.
+        # default to 100, balance to 50 (centre), when the command carries a
+        # shorter list.
         volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
         pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
+        balance = cmd.parameters.size > 3 ? cmd.param(3) : 50
         # BGM has a single channel, and RPG_RT special-cases re-triggering Play
         # BGM with the file that's already current: it does NOT break and
         # restart the track from the top the way any other Play BGM does
         # (yado.tk), but it does re-apply the command's own volume to the
         # still-playing track (`RGSS::Audio.bgm_volume`, backed by
         # `Mix_VolumeMusic` — see `src/sdl_audio.cxx`, which applies live with
-        # no restart, unlike `bgm_play`'s `Mix_PlayMusic`). Tempo/pan stay
+        # no restart, unlike `bgm_play`'s `Mix_PlayMusic`). Tempo stays
         # unaddressed: SDL_mixer has no live pitch control for a playing music
-        # stream (only a freshly started one), and pan is not wired as a
-        # Play BGM parameter at all today — see docs/TODO.md.
+        # stream (only a freshly started one). Balance/pan is wired the same
+        # live-update way via `RGSS::Audio.bgm_pan` (backed by
+        # `Mix_SetPanning(MIX_CHANNEL_POST, ...)` — the only technique that
+        # reaches a Mix_Music stream at all, see `src/sdl_audio.cxx`), applied
+        # on every Play BGM regardless of same-file-or-not since it has no
+        # per-track state to restart.
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name
         # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
         # as the "current system BGM" regardless of whether playback succeeds).
@@ -3106,6 +3112,7 @@ module Game
           @state.bgm_looped = false # a fresh track has not looped yet
           RGSS::Audio.bgm_play(name, volume, pitch)
         end
+        RGSS::Audio.bgm_pan(balance)
       else
         # PlaySE parameters: [volume, tempo, balance].
         volume = cmd.parameters.size > 0 ? cmd.param(0) : 100

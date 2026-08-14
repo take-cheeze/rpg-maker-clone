@@ -357,6 +357,28 @@ void bgm_volume(int volume) {
   Mix_VolumeMusic(to_mix_volume(volume));
 }
 
+// Live stereo-balance change for the BGM, with no restart -- the same shape
+// as bgm_volume. SDL_mixer's Mix_SetPanning only works on Mix_Chunk mixer
+// channels (0..N), never on the Mix_Music stream BGM/ME actually play
+// through; the one documented way to reach the music at all is to register it
+// as a postmix effect on MIX_CHANNEL_POST, which pans the *final* mixed
+// output -- so this also pans BGS and SE, since there is no channel-scoped
+// alternative for music (see the doc comment on Mix_SetPanning in
+// SDL_mixer.h: "the panning will be done to the final mixed stream"). pan is
+// RPG2000's own Play BGM balance scale: 0 full left, 50 centre, 100 full
+// right. "True panning" per that same doc comment is Mix_SetPanning(chan,
+// left, 255 - left), so right alone (0..255) is derived from pan and left is
+// its complement.
+void bgm_pan(int pan) {
+  if (pan < 0)
+    pan = 0;
+  if (pan > 100)
+    pan = 100;
+  Uint8 right = (Uint8)(pan * 255 / 100);
+  Uint8 left = (Uint8)(255 - right);
+  Mix_SetPanning(MIX_CHANNEL_POST, left, right);
+}
+
 void bgm_play_mem(const char* name,
                   const void* data,
                   int size,
@@ -522,10 +544,11 @@ void update(void) {
 }
 
 const RgssAudioBackend kBackend = {
-    bgm_play,     bgm_volume,   bgm_stop,    bgm_fade,    bgm_pos,
-    bgs_play,     bgs_stop,     bgs_fade,    bgs_pos,     me_play,
-    me_stop,      me_fade,      se_play,     se_stop,     update,
-    bgm_play_mem, bgs_play_mem, me_play_mem, se_play_mem, midi_available,
+    bgm_play,       bgm_volume,   bgm_pan,      bgm_stop,    bgm_fade,
+    bgm_pos,        bgs_play,     bgs_stop,     bgs_fade,    bgs_pos,
+    me_play,        me_stop,      me_fade,      se_play,     se_stop,
+    update,         bgm_play_mem, bgs_play_mem, me_play_mem, se_play_mem,
+    midi_available,
 };
 
 }  // namespace
