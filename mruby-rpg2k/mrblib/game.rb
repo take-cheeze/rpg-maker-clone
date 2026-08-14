@@ -3617,8 +3617,15 @@ module Game
       inflict_ids = heals_states ? [] : state_ids
       if enemy_scope # an attack skill
         dmg = base - skill_defence_term(sk, target)
-        dmg = 1 if dmg < 1
-        { cost: cost, hp: -dmg, mp: 0,
+        # Floored at 0, not 1: EasyRPG's `Algo::CalcSkillEffect` clamps with
+        # `effect = std::max<int>(0, effect)`, letting a heavily-defended
+        # target take a genuine zero-damage hit rather than guaranteeing a
+        # minimum scratch. `#apply_skill_hit` used to tell this branch apart
+        # from a recovery skill purely by the sign of `hp` (negative = attack),
+        # which broke exactly at this boundary once `dmg` could reach 0 --
+        # `attack: true` below now says so explicitly instead.
+        dmg = 0 if dmg < 0
+        { cost: cost, hp: -dmg, mp: 0, attack: true,
           inflict: inflict_ids, chance: skill_hit(sk),
           variance: skill_variance(sk), attributes: skill_attributes(sk),
           # 吸収 — the caster takes what the target loses. RPG_RT reads the flag
@@ -6332,10 +6339,17 @@ module Game
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
-    # the defender's defence, floored at 1 so a fight always terminates.
+    # the defender's defence, floored at 0 -- not 1 -- matching EasyRPG's
+    # `Algo::CalcNormalAttackEffect` (`auto dmg = std::max(0, atk / 2 - def / 4);`).
+    # A heavily-armoured target can shrug off a weak attacker's blow entirely
+    # (a genuine "no damage" hit, not a guaranteed minimum scratch); `#deal_attack`
+    # already builds an ordinary attack-shaped log entry regardless of the
+    # resulting damage value, and `#battle_result_line` (`scene/map.rb`) already
+    # renders a 0 as the "undamaged" term line rather than a damage number, so
+    # this needed no companion change beyond the floor itself.
     def self.attack_damage(atk, dfn)
       d = atk / 2 - dfn / 4
-      d < 1 ? 1 : d
+      d < 0 ? 0 : d
     end
 
     MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
@@ -6862,13 +6876,19 @@ module Game
     # attack skill, an ally / the caster for a recovery skill), spending `cost`
     # SP and applying the signed HP / SP deltas (negative HP = damage, positive =
     # recovery) computed by Game::Party#battle_skill_command. Resolved in agility
-    # order by #apply_command when the round runs.
+    # order by #apply_command when the round runs. `attack:` is
+    # #battle_skill_command's own explicit attack-vs-recovery flag, carried
+    # through so #apply_skill_hit does not have to re-derive it from the sign
+    # of `hp` alone -- which is ambiguous exactly at a 0-damage hit. Left `nil`
+    # (rather than defaulted `false`) when the caller does not pass it, so
+    # #apply_skill_hit still falls back to the sign of `hp` for a command built
+    # by hand with a negative `hp` and no explicit `attack:`.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
                       absorb: false, attr_shift: nil, attr_ids: nil,
-                      stat_mod_keys: nil, stat_effect: 0, cured: nil)
+                      stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil)
       ally.command = { kind: :skill, target: target, name: name,
-                       skill_id: skill_id, absorb: absorb,
+                       skill_id: skill_id, absorb: absorb, attack: attack,
                        cost: cost, hp: hp, mp: mp,
                        inflict: inflict || [], chance: chance, variance: variance,
                        attributes: attributes || [],
@@ -6891,9 +6911,10 @@ module Game
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
                           variance: 0, attributes: nil, skill_id: nil,
                           absorb: false, attr_shift: nil, attr_ids: nil,
-                          stat_mod_keys: nil, stat_effect: 0, cured: nil)
+                          stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
-                       skill_id: skill_id, absorb: absorb, cost: cost, inflict: inflict || [], chance: chance,
+                       skill_id: skill_id, absorb: absorb, attack: attack, cost: cost,
+                       inflict: inflict || [], chance: chance,
                        variance: variance, attributes: attributes || [],
                        attr_shift: attr_shift, attr_ids: attr_ids || [],
                        stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect,
@@ -7433,7 +7454,7 @@ module Game
     # Wrap the party's cast numbers in the command hash #apply_command consumes.
     def skill_command_hash(sk, cmd, target)
       { kind: :skill, target: target, name: skill_name_of(sk),
-        absorb: cmd[:absorb] ? true : false,
+        absorb: cmd[:absorb] ? true : false, attack: cmd[:attack] ? true : false,
         cost: cmd[:cost] || 0, hp: cmd[:hp] || 0, mp: cmd[:mp] || 0,
         inflict: cmd[:inflict] || [], chance: cmd[:chance] || 100,
         variance: cmd[:variance] || 0, attributes: cmd[:attributes] || [],
@@ -7785,13 +7806,22 @@ module Game
       entries
     end
 
-    # Apply one skill / item effect from `b` to `target`: a negative `hp` is an
-    # attack (elemental scaling, variance, then state infliction, reading as a
-    # `skill:` hit), a non-negative one restores HP / SP and cures states (reading
-    # as a `recover`). Returns the log entry. Shared by single- and all-target
-    # commands.
+    # Apply one skill / item effect from `b` to `target`: an attack (elemental
+    # scaling, variance, then state infliction, reading as a `skill:` hit) or a
+    # restore of HP / SP that also cures states (reading as a `recover`).
+    # Returns the log entry. Shared by single- and all-target commands.
+    #
+    # Which branch runs is `cmd[:attack]` when the caller set it explicitly --
+    # #battle_skill_command always does, so real skill/item play is unambiguous
+    # -- falling back to the sign of `hp` (the old, only rule) when it did not.
+    # The explicit flag matters because the sign alone is ambiguous exactly at
+    # a 0-damage hit: an attack skill's damage can genuinely compute to 0
+    # against a heavily-defended target (see #battle_skill_command's own
+    # floor-at-0 fix), and `-0 == 0` reads the same as an ordinary non-negative
+    # recovery amount.
     def apply_skill_hit(b, target, hp, mp, cmd)
-      if hp < 0
+      attack = cmd[:attack].nil? ? hp < 0 : cmd[:attack]
+      if attack
         dmg = -hp
         # An elemental skill scales its damage by the target's resistance first
         # (EasyRPG's ApplyAttributeSkillMultiplier), then spreads by variance.

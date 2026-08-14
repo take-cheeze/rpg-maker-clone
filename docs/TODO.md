@@ -2234,10 +2234,60 @@ The work below is roughly ordered by the critical path to a walkable game
   see, so a plated knight resisted fire with his plate. `ignore_defense` (防御無視,
   13 and 7 skills) is read at the same time and skips the **whole** subtraction,
   not just the physical half. A missing stat absorbs nothing rather than raising,
-  and a skill costed against no target takes the full effect. Left alone: the
-  `dmg = 1 if dmg < 1` floor, where RPG_RT floors the effect at 0 and lets a 0
-  land as a "no damage" line — a separate divergence, visible in the log rather
-  than the formula, and folding it in would have hidden this change inside it.
+  and a skill costed against no target takes the full effect. ✅ **The
+  `dmg = 1 if dmg < 1` floor left alone by this same entry is now fixed too,
+  and turned out to have a real RPG2000 twin in the normal-attack formula.**
+  Verified against EasyRPG Player's actual C++ source rather than left as a
+  guess: `Algo::CalcSkillEffect` (`src/algo.cpp`) ends in `effect =
+  std::max<int>(0, effect)`, and `Algo::CalcNormalAttackEffect` (the same
+  file) computes its base term as `auto dmg = std::max(0, atk / 2 - def /
+  4)` — both floor at **0**, not 1, letting a heavily-defended target take a
+  genuine zero-damage hit rather than a guaranteed minimum scratch.
+  `Game::Party#battle_skill_command`'s `dmg = 1 if dmg < 1`
+  (`mruby-rpg2k/mrblib/game.rb`) and `Game::Battle.attack_damage`'s
+  identically-shaped `d < 1 ? 1 : d` both had the wrong floor — the latter
+  confirmed as a real, independently-reachable divergence rather than a
+  hypothetical, since this codebase's own `#enemy_autodestruct` (a third,
+  structurally identical `atk − def/2` formula, `CalcSelfDestructEffect`'s
+  own `std::max<int>(0, effect)`) already floored at 0 correctly, making the
+  other two an inconsistency within the same file rather than a uniform
+  design choice. Fixing the floor alone was not enough for the skill path,
+  though: `Game::Battle#apply_skill_hit` used to tell an attack skill apart
+  from a recovery one purely by the **sign** of the `hp` argument (negative
+  = attack) — the one place this "no damage" case was genuinely new,
+  since `-0 == 0` reads exactly like an ordinary non-negative recovery
+  amount, which would have silently misrouted a 0-damage attack into the
+  recovery branch (wrong caster/target field names on the log entry, no
+  `damage:`/`skill:` key). Fixed by giving `#battle_skill_command`'s
+  enemy-scope branch an explicit `attack: true` field, threaded through
+  `#command_skill`/`#command_skill_all` (`attack: nil` by default, so a
+  command built by hand with a negative `hp` and no explicit `attack:` — as
+  several pre-existing checks and the enemy AI's own `#skill_command_hash`
+  effectively do — still falls back to the old sign-of-`hp` rule
+  unaffected) and `Scene::Map#apply_pending_skill`/`#apply_pending_skill_all`
+  (`mruby-rpg2k/mrblib/scene/map.rb`, passing `c[:attack]` through
+  unconverted so a stub `battle_skill_command` in the test suite that omits
+  the key still reaches the fallback), consumed by `#apply_skill_hit` as
+  `attack = cmd[:attack].nil? ? hp < 0 : cmd[:attack]`. The rendering side
+  needed no change at all: `Scene::Map#battle_result_line` already treats
+  `damage: 0` as the "undamaged" term line rather than a number
+  (`return bt.damage(...) if e[:damage] > 0; bt.undamaged(...)`), the same
+  branch an ordinary 0-damage normal attack already took, and
+  `#play_battle_action_se` already gates the hit sound on `damage > 0` —
+  both pre-existing, just previously unreachable for a skill. Regression
+  coverage: `scripts/rpg2k_logic_check.rb` gained a direct
+  `Battle.attack_damage(2, 40)` boundary check (0, not 1), an end-to-end
+  check driving a doubled-spirit target's `battle_skill_command` +
+  `command_skill` + `step_action` through a full round to confirm the
+  resulting log entry still reads `skill: 'Fire'`/`damage: 0` rather than
+  `recover: true`, and several pre-existing fixed-outcome checks (a weak
+  enemy's own attack against an armoured hero, a state that doubles a
+  target's DEF/spirit) were updated from their old "floored to 1" expectation
+  to the correct 0 — all confirmed to fail against the pre-fix code (via a
+  `git stash` of `game.rb`/`scene/map.rb` alone) before the fix, including an
+  `ArgumentError: unknown keyword: :attack` on the new end-to-end check,
+  confirming it genuinely exercises the new code path rather than passing
+  vacuously.
 - ✅ **両手持ち weapons** (the item row's `two_handed`) — unread, so a claymore
   and a shield could be worn together and both bonuses counted. Not a rare flag:
   **35 of Nepheshel's 104 weapons** and **14 of mtf's 26**, more than half that

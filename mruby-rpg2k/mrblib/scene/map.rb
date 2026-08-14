@@ -4181,6 +4181,14 @@ class RPG2k
         @battle_ui[:battle].command_skill(current_actor, target,
                                           name: sk.name, skill_id: sid,
                                           absorb: c[:absorb] ? true : false,
+                                          # Left as `c[:attack]` verbatim (not coerced to a
+                                          # boolean): a stub `battle_skill_command` in the test
+                                          # suite that omits the key entirely needs `nil` to
+                                          # reach #apply_skill_hit so its own sign-of-hp
+                                          # fallback still applies, matching this build's real
+                                          # Game::Party#battle_skill_command before this key
+                                          # existed at all.
+                                          attack: c[:attack],
                                           cost: c[:cost],
                                           hp: c[:hp], mp: c[:mp],
                                           inflict: c[:inflict], chance: c[:chance],
@@ -4212,6 +4220,7 @@ class RPG2k
         @battle_ui[:battle].command_skill_all(current_actor, effects,
                                               name: sk.name, skill_id: sid,
                                               absorb: meta[:absorb] ? true : false,
+                                              attack: meta[:attack], # see #apply_pending_skill's comment
                                               cost: meta[:cost],
                                               inflict: meta[:inflict], chance: meta[:chance],
                                               variance: meta[:variance] || 0,
