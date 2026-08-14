@@ -2239,6 +2239,38 @@ The work below is roughly ordered by the critical path to a walkable game
   also nudged something else along the way). Needs a second, independently
   reproduced RPG_RT capture of the same actor's Equip screen before acting
   on it either way.
+  ✅ **Continue could silently lose a save's own Save/Teleport/Escape access,
+  overridden by whatever the current map's tree happens to say instead.**
+  Chasing the Save screen with the fixed crop-region retry (above) turned up
+  a correctness bug, not just a UI one: `Scene::Map#initialize`
+  unconditionally called `#apply_map_access`, which re-derives all three
+  access flags from the *current map's* tree property -- right for a fresh
+  map entry (a New Game, or any Transfer Player / Teleport, which
+  `#perform_teleport` already calls it for separately), wrong for a
+  Continue, which resumes a state that already carries its own values
+  (restored by `Game::State.load`/`.from_lsd` from whatever a prior Change
+  Save/Teleport/Escape Access command left them as -- exactly the "an event
+  command override persists for the rest of that map's visit" case
+  `#apply_map_access`'s own comment already described, which a Continue is
+  still inside the middle of, not a fresh entry to). Verified under wine:
+  the field-menu Save command on genuine `RPG_RT.exe` opened the real
+  file-select screen on a save whose own `save_allowed` flag was on, on a
+  map the tree itself flags Save-forbidden -- proof RPG_RT does not
+  re-derive on Continue either. `Scene::Map.new` gained an `apply_access:`
+  keyword (default true, so every other caller is unchanged) and
+  `RPG2k#continue_game` passes `apply_access: false`; both the headless
+  `--rpg2k_continue` path and the in-game Continue/Load screen
+  (`Scene::SaveLoad`, which calls the same `#continue_game`) go through it.
+  **Left open by the same fixed capture:** RPG_RT's save-file-select screen
+  shows one taller box per slot with just the leader's name/level/HP and
+  only 3 of 15 slots visible per screen (presumably scrolling); this
+  engine's own screen packs more per slot (gold and the current map name
+  too, matching the README's own description of what it shows) and fits 6
+  slots without scrolling. A real layout/format difference, not chased into
+  a fix here -- unlike the access-flag bug above it is not a correctness
+  question, and picking which of RPG_RT's specific choices (box height,
+  slots-per-screen, which fields to show) to match wants its own pass
+  rather than folding into this one.
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
