@@ -3995,7 +3995,7 @@ class RPG2k
         situations = db.respond_to?(:situation) ? db.situation : nil
         properties = db.respond_to?(:property) ? db.property : nil
         @battle_ui = { phase: :command, req: req, troop: troop, owner: owner,
-                       battle: Game::Battle.new(allies, foes, Game::Rng.new(0x2000),
+                       battle: Game::Battle.new(allies, foes, @rng,
                                                 situations, true, true, true,
                                                 req[:first_strike] ? true : false,
                                                 properties,

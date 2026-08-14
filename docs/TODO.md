@@ -4179,7 +4179,48 @@ not yet verified:
   independently per variable, not once for the whole group, used to be a
   real gap here — now fixed, see below.)
 - The built-in random-number operand is a genuine non-seeded RNG (two New
-  Games produce different sequences) and accepts negative ranges.
+  Games produce different sequences) and accepts negative ranges. **The
+  negative-range half is confirmed already correct**: `Game::Interpreter
+  #random_operand` (`mruby-rpg2k/mrblib/interpreter.rb`) computes
+  `lo + @rng.random(hi - lo + 1)` off the command's two raw operands with no
+  `lo >= 0` assumption anywhere, so a range like -10..10 already resolves
+  correctly. ✅ **A distinct, narrower bug in the same neighbourhood is now
+  fixed: real RPG_RT's own PRNG is a single stream that keeps advancing for
+  the whole game session and is never reseeded mid-game, but this codebase's
+  battle math restarted from the exact same fixed point every single fight.**
+  `Scene::Map#open_battle` (`mruby-rpg2k/mrblib/scene/map.rb`) built every
+  `Game::Battle`'s combat RNG (hit/miss, critical, damage variance, enemy AI
+  weighted-draw, escape chance, item drops — everything `Game::Battle#rng`
+  feeds) from a brand-new `Game::Rng.new(0x2000)`, discarding the scene's own
+  already-advancing `@rng` — the identical stream random-encounter checks and
+  NPC wandering already draw from every step (`#check_random_encounter`,
+  `MapWorld`/`VehicleWorld`) — so a fight's very first roll was always
+  whatever seed 0x2000's first draw is, regardless of how many other rolls
+  the playthrough had already consumed, and two battles against the same
+  troop with the same player inputs played out byte-identical no matter how
+  far apart in the game they happened. This is a different, more concrete
+  claim than "two New Games differ": within a *single* game two separate
+  fights already diverged from real RPG_RT's single-stream behaviour, not
+  just across restarts. `Scene::Map`'s own dedicated, intentionally-seeded
+  RNGs (its own `@rng`, and `Game::Interpreter#@rng` for the Control
+  Variables random operand — see each class's own "seeded like the map
+  scene's own RNG" / "these runs are diffed against the genuine runtime"
+  comments) are deliberately kept deterministic for the wine-diff regression
+  methodology (`scripts/compare-nepheshel-wine.bash`) and are untouched by
+  this fix; only `open_battle`'s own disposable, uncommented `Rng.new(0x2000)`
+  — which had no such rationale attached and matched no reference-diffing
+  need — was the bug. Fixed by threading the scene's own `@rng` straight
+  into `Game::Battle.new` in place of the fresh instance, mirroring how the
+  same object already backs every other per-scene roll; `Game::Battle`'s own
+  `rng = nil` default (`rng || Rng.new(0x2000)`, `mruby-rpg2k/mrblib/game.rb`)
+  is untouched, since every `rpg2k_logic_check.rb` fixture that constructs a
+  `Game::Battle` directly still passes its own explicit controlled seed.
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (the `Game::Battle`
+  a scripted Enemy Encounter opens carries the exact same `@rng` object,
+  `equal?`, as the scene's own; a second, otherwise-identical scene with a
+  handful of `@rng` draws already spent before the same fight is triggered
+  plays out a different hit/miss/damage log than one reached with none
+  spent), both confirmed to fail against the pre-fix code before the fix.
 - ✅ **`\N[]`/`\V[]` control codes now accept a nested `\V[n]` as their own
   argument** (`\N[\V[1]]` names the actor whose id is variable 1's *value*;
   `\V[\V[1]]` displays variable 1's value indirectly) — this build has no
