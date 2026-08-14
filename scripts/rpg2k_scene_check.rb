@@ -257,6 +257,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                            cancel_se: OpenStruct.new(file: 'Cancel1', volume: 100, pitch: 100),
                            buzzer_se: OpenStruct.new(file: 'Buzzer1', volume: 100, pitch: 100),
                            escape_se: OpenStruct.new(file: 'Escape1', volume: 100, pitch: 100),
+                           battle_se: OpenStruct.new(file: 'BattleStart1', volume: 100, pitch: 100),
                            # The battle per-hit sounds (Scene::Base::DB_SE_FIELD).
                            enemy_damaged_se: OpenStruct.new(file: 'EnemyHit', volume: 100, pitch: 100),
                            actor_damaged_se: OpenStruct.new(file: 'ActorHit', volume: 100, pitch: 100),
@@ -4728,6 +4729,54 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   3.times { scene.update }
   ok st.switches[1], 'the Victory handler ran'
   ok !st.switches[2], 'the Escape handler was skipped'
+end
+
+# RPG_RT's own `Scene_Battle` constructor (src/scene_battle.cpp) plays the
+# database's Battle Start system SE (`SFX_BeginBattle`) as its very first act,
+# unconditionally, before even swapping to the battle BGM -- `Scene::Map
+# #open_battle` (mruby-rpg2k/mrblib/scene/map.rb) already had every other
+# system-SE slot wired up (cursor/decision/cancel/buzzer, escape, the per-hit
+# sounds) but never called `#play_system_se(SFX_BATTLE)` at all, so the
+# database's own Battle Start sound never played on any encounter -- a
+# foreground Enemy Encounter command, one issued from a Parallel Process, or a
+# random/wandering-monster encounter alike, since they all share this one
+# entry point.
+check 'Enemy Encounter scene: opening a battle plays the database Battle Start SE' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  RGSS::Audio.reset_se
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'BattleStart1' },
+     'the database Battle Start SE played the instant the fight opened'
+end
+
+check 'Enemy Encounter scene: a Change System SFX battle-start override wins over the database default' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  # System SFX slot 4 is Battle Start (Scene::Base::SFX_BATTLE).
+  st.system_sfx[4] = { name: 'CustomBattleStart', volume: 60, tempo: 120 }
+  RGSS::Audio.reset_se
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'CustomBattleStart' },
+     'the override plays instead of the database BattleStart1'
+  ok !RGSS::Audio.se_calls.any? { |c| c[0] == 'BattleStart1' },
+     'the database default is fully superseded, not layered alongside it'
 end
 
 # yado.tk: "the built-in random-number operand is a genuine non-seeded RNG --

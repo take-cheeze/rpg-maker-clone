@@ -4068,6 +4068,20 @@ class RPG2k
       end
 
       def open_battle(req, owner = @interpreter)
+        # RPG_RT's own `Scene_Battle` constructor (src/scene_battle.cpp) plays
+        # the database's Battle Start system SE (`SFX_BeginBattle`) as its very
+        # first act, unconditionally and before even the battle BGM swap --
+        # `#play_system_se`/`SFX_BATTLE` already exist (Scene::Base's shared
+        # system-SE table, `DB_SE_FIELD`), but nothing here ever called them for
+        # this slot: Escape/dodge/damage/death/item all already fire at their
+        # own moments (SFX_ESCAPE/SFX_DODGE/SFX_ENEMY_DAMAGE/SFX_ACTOR_DAMAGE/
+        # SFX_ENEMY_DEATH/SFX_ITEM), only the battle-open moment itself was
+        # silent.
+        # Fires for every encounter this scene ever opens through -- a foreground
+        # Enemy Encounter command, one issued from a Parallel Process, and a
+        # random/wandering-monster encounter -- since #open_battle is their one
+        # shared entry point.
+        play_system_se(SFX_BATTLE)
         play_battle_bgm
         troop = Game::Troop.new(db, req[:troop_id])
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
