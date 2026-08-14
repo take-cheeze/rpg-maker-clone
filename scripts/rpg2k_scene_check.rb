@@ -4796,6 +4796,44 @@ check 'Show Battle Animation plays: an animation sprite shows and a flash fires'
   ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
+# yado.tk (corroborated independently against EasyRPG's own C++ source, see
+# #hold_animation_screen_flash's comment): Screen Flash is capped to 1/30s of
+# display while a Battle Animation is playing, since the animation
+# continuously re-asserts its own per-frame flash state -- overwriting an
+# unrelated, still-ticking Screen Flash the very next real frame, regardless
+# of that flash's own configured duration. Fired here with wait off (so the
+# event moves straight on to the animation instead of blocking on the flash's
+# own long duration) and a 20-tenths-of-a-second (120-frame) duration --
+# animation 8's own frame 0 carries no timing at all (its one flash_scope-2
+# timing is on frame 1), so the very first real frames the animation drives
+# have nothing of their own to show and must be stomping the unrelated flash
+# to nothing on their own.
+check 'A Screen Flash concurrent with a Show Battle Animation is capped to the current frame' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::FLASH_SCREEN, [31, 31, 31, 20, 20, 0], indent: 0), # r g b power duration wait=0
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0),       # animation, player, wait=1
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  stomped_at_frame_0 = false
+  saw_the_flash_at_all = false
+  40.times do
+    scene.update
+    saw_the_flash_at_all ||= st.screen.flashing?
+    anim = scene.instance_variable_get(:@map_animation)
+    stomped_at_frame_0 ||= (anim && anim[:frame_i] == 0 && !st.screen.flashing?)
+    break if st.switches[6]
+  end
+  ok saw_the_flash_at_all, 'the independently-fired Flash Screen command did take effect at some point'
+  ok stomped_at_frame_0, "the battle animation's own per-frame state stomps the unrelated flash to " \
+                         "nothing during its own timing-less opening frames, capping it well short of " \
+                         'its own configured 120-frame duration'
+  ok st.switches[6], 'the event resumed after the animation'
+end
+
 # yado.tk: Show Battle Animation targeting a Vehicle position reads that
 # vehicle's real, currently-live x/y (the same source the Control Variables
 # vehicle-position fix reads), not the player's or the triggering event's own

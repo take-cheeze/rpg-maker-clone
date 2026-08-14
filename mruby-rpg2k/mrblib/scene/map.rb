@@ -5467,6 +5467,7 @@ class RPG2k
         ma = @map_animation
         if ma[:timer] > 0
           ma[:timer] -= 1
+          hold_animation_screen_flash(ma)
           return
         end
         ma[:frame_i] += 1
@@ -5486,6 +5487,45 @@ class RPG2k
         end
         fire_animation_flashes(ma)
         ma[:timer] = ANIM_CELL_FRAMES
+        hold_animation_screen_flash(ma)
+      end
+
+      # yado.tk: Screen Flash / Character Flash are both capped to 1/30s of
+      # display while a Battle Animation is playing, because the animation
+      # continuously re-asserts its own per-frame flash state for its whole
+      # duration -- corroborated independently by EasyRPG's own C++ source:
+      # `BattleAnimation::Update` (src/battle_animation.cpp) calls
+      # `UpdateScreenFlash` on *every* real frame the animation is on screen,
+      # not just frames with their own flash_scope-2 timing, and
+      # `UpdateScreenFlash` always ends in `Game_Screen::FlashOnce(r, g, b, p,
+      # 0)` -- r/g/b/p taken from the most recently fired timing's own
+      # decaying value (`UpdateFlashGeneric`/`CalculateFlashPower`), or all
+      # zero when none has fired yet this play. Either way, any *other*
+      # in-flight screen flash -- one an unrelated Flash Screen command set
+      # ticking before or during this animation -- gets silently overwritten
+      # the very next real frame, regardless of its own configured duration.
+      # `#fire_animation_flashes`'s own `@state.screen.flash` call (fired only
+      # on a frame carrying a flash_scope-2 timing) already reproduces the
+      # timing's own decaying flash correctly; what was missing is this
+      # continuous per-*real*-frame reassertion for every frame in between --
+      # `#step_map_animation` only ever touched the screen flash on the
+      # throttled animation-frame ticks that actually carry a timing, so an
+      # unrelated flash concurrent with an otherwise-silent stretch of the
+      # animation (including its opening frames, before any timing has fired
+      # at all) played out its own full duration untouched. `ma[:screen_flash_hold]`
+      # tracks how many more real frames the *animation's own* most recent
+      # flash_scope-2 fire still owns the screen flash for (set to
+      # ANIM_FLASH_FRAMES by #fire_animation_flashes, ticking down here); once
+      # it reaches zero the animation forcibly zeroes the screen flash again
+      # every real frame, capping any concurrent, unrelated flash to at most
+      # the one frame between two calls here.
+      def hold_animation_screen_flash(ma)
+        hold = ma[:screen_flash_hold]
+        if hold && hold > 0
+          ma[:screen_flash_hold] = hold - 1
+        else
+          @state.screen.flash(0, 0, 0, 0, 0)
+        end
       end
 
       def step_animation_wait
@@ -5623,6 +5663,10 @@ class RPG2k
             @state.screen.flash((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
                                 (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8,
                                 ANIM_FLASH_FRAMES)
+            # #hold_animation_screen_flash keeps re-asserting this fire (and,
+            # once it lapses, zeroing the screen flash outright) every real
+            # frame for as long as the animation itself owns the slot.
+            ma[:screen_flash_hold] = ANIM_FLASH_FRAMES
           when 1
             ma[:battle] ? fire_target_flash(ma[:target_index], t) : fire_map_target_flash(ma[:flash_target], t)
           end
