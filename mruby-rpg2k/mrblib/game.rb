@@ -3464,10 +3464,10 @@ module Game
     # except Scope_enemy(0)/Scope_enemies(1). `reverse_state_effect` plays no
     # part in this at all (that flag's own state-cure/inflict role is,
     # per the same function, `IsPositive() ^ (Player::IsRPG2k3() &&
-    # skill.reverse_state_effect)` -- gated behind an RPG2003 check this
-    # runtime does not model either way, a separate, wider question left
-    # untouched here). So the direction is purely the skill's own target
-    # scope: an ally-scoped skill (self/single ally/all allies, the "buff"
+    # skill.reverse_state_effect)` -- see #battle_skill_command's own
+    # `heals_states`, which implements exactly that formula, gate and all).
+    # So the direction is purely the skill's own target scope: an ally-scoped
+    # skill (self/single ally/all allies, the "buff"
     # shape) always raises resistance, an enemy-scoped one (single/all
     # enemies, the "curse" shape) always lowers it -- matching
     # #battle_skill_target's own enemy-scope test (`scope == 0 || scope ==
@@ -3524,18 +3524,36 @@ module Game
       shift = skill_attr_shift(sk)
       shift_ids = shift ? skill_attributes(sk) : []
       stat_keys = skill_stat_mod_keys(sk)
-      if sk.scope == 0 || sk.scope == 1 # single or all enemies: an attack skill
+      enemy_scope = sk.scope == 0 || sk.scope == 1 # single or all enemies
+      # A skill's own `state_effects` list normally cures on an ally/self scope
+      # and inflicts on an enemy scope -- EasyRPG's `Game_BattleAlgorithm::
+      # Skill::vExecute` computes `heals_states = IsPositive() ^
+      # (Player::IsRPG2k3() && skill.reverse_state_effect)`, where `IsPositive()`
+      # is simply "this skill targets allies". Under RPG2000 the XOR's
+      # right-hand term is always false, so this collapses to exactly that
+      # plain scope rule (matching #skill_attr_shift's own already-settled
+      # reading of the identical formula) -- but an RPG2003 database with
+      # `reverse_state_effect` set flips it either way: an ally-scoped skill
+      # inflicts its listed states instead of curing them (a self-scoped
+      # Berserk that confuses its own caster, say), and an enemy-scoped one
+      # cures its target's states instead of inflicting new ones.
+      reverse = sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      heals_states = !enemy_scope ^ (rpg2003? && reverse)
+      state_ids = skill_state_ids(sk)
+      cure_ids = heals_states ? state_ids : []
+      inflict_ids = heals_states ? [] : state_ids
+      if enemy_scope # an attack skill
         dmg = base - skill_defence_term(sk, target)
         dmg = 1 if dmg < 1
         { cost: cost, hp: -dmg, mp: 0,
-          inflict: skill_state_ids(sk), chance: skill_hit(sk),
+          inflict: inflict_ids, chance: skill_hit(sk),
           variance: skill_variance(sk), attributes: skill_attributes(sk),
           # 吸収 — the caster takes what the target loses. RPG_RT reads the flag
           # only on an *offensive* skill (EasyRPG's `skill.absorb_damage &&
           # !IsPositive()`), so it rides only on this branch: a healing skill
           # that sets it drains nothing.
           absorb: skill_absorbs?(sk), attr_shift: shift, attr_ids: shift_ids,
-          stat_mod_keys: stat_keys }
+          stat_mod_keys: stat_keys, cured: cure_ids }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0,
           variance: skill_variance(sk), attr_shift: shift, attr_ids: shift_ids,
@@ -3546,21 +3564,11 @@ module Game
           # regardless, off the same `base` EasyRPG's one shared `effect`
           # local would carry into every affect_* branch alike.
           stat_effect: base,
-          # A self/ally-scoped skill's own `state_effects` list -- EasyRPG's
-          # `Game_BattleAlgorithm::Skill::vExecute` computes `heals_states =
-          # IsPositive() ^ (Player::IsRPG2k3() && skill.reverse_state_effect)`,
-          # and `IsPositive()` is simply "this skill targets allies" (true for
-          # every scope reaching this branch) -- so in battle, unlike on the
-          # field (`#skill_cured_states`), `reverse_state_effect` plays no part
-          # at all under the RPG2000-only rule this runtime models (matching
-          # #skill_attr_shift's own already-settled reading of the identical
-          # formula): an ally/self-scoped skill's flagged states are always
-          # cured here, never inflicted. Reuses `Game::Battle#apply_skill_hit`'s
-          # existing `cmd[:cured]` machinery unconditionally, exactly like a
-          # battle medicine's own state cure -- no separate accuracy roll,
-          # since only the *inflict* direction (the enemy-scope branch above)
-          # is ever gated by `chance`.
-          cured: skill_state_ids(sk) }
+          # Reuses `Game::Battle#apply_skill_hit`'s existing `cmd[:cured]`
+          # machinery when curing (no roll, matching a battle medicine's own
+          # state cure) and its `cmd[:inflict]`/`cmd[:chance]` roll when the
+          # RPG2003 reverse case above turns this into an inflict instead.
+          cured: cure_ids, inflict: inflict_ids, chance: skill_hit(sk) }
       end
     end
 
@@ -7711,21 +7719,25 @@ module Game
         end
         target.hp -= dmg
         b.hp = [b.hp + absorbed, b.max_hp].min if absorbed > 0
-        # An attack skill may inflict its states -- and shift attribute
-        # defence ranks -- on a surviving target, each rolled/applied only if
-        # it lived through the damage.
+        # An attack skill may inflict its states -- or, under the RPG2003
+        # reverse_state_effect flip #battle_skill_command's own `heals_states`
+        # already resolved, cure them instead -- and shift attribute defence
+        # ranks, each rolled/applied only if the target lived through the
+        # damage.
         if target.dead?
-          inflicted = already = shifted = []
+          inflicted = already = cured = shifted = []
           stat_changed = {}
         else
           inflicted, already = roll_inflict(target, cmd)
+          cured = (cmd[:cured] || []).select { |s| target.state?(s) }
+          target.states = (target.states || []) - cured unless cured.empty?
           shifted = apply_attr_shift(target, cmd)
           stat_changed = apply_stat_mods(target, cmd[:stat_mod_keys], stat_amount)
         end
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          inflicted: inflicted, already: already, attr_shifted: shifted,
-          stat_changed: stat_changed,
+          inflicted: inflicted, already: already, cured: cured,
+          attr_shifted: shifted, stat_changed: stat_changed,
           target_ally: ally?(target), skill: cmd[:name],
           skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed }
@@ -7763,13 +7775,20 @@ module Game
         # unconditionally, matching the field item cure.
         cured = (cmd[:cured] || []).select { |s| target.state?(s) }
         target.states = (target.states || []) - cured unless cured.empty?
+        # An RPG2003 reverse_state_effect ally/self-scoped skill flips
+        # #battle_skill_command's own `cmd[:inflict]` on instead of `cmd[:cured]`
+        # (see its comment) -- roll it here the same way an attack skill does,
+        # so e.g. a self-scoped Berserk can confuse its own caster rather than
+        # only ever curing states on this branch.
+        inflicted, already = target.dead? ? [[], []] : roll_inflict(target, cmd)
         shifted = target.dead? ? [] : apply_attr_shift(target, cmd)
         stat_changed = target.dead? ? {} : apply_stat_mods(target, cmd[:stat_mod_keys], stat_amount)
         { recover: true, actor: b.name, source: cmd[:name],
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target: target.name,
           target_index: @enemies.index(target),
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
-          cured: cured, target_ally: ally?(target), attr_shifted: shifted,
+          cured: cured, inflicted: inflicted, already: already,
+          target_ally: ally?(target), attr_shifted: shifted,
           stat_changed: stat_changed, switch_id: cmd[:switch_id],
           target_hp: target.hp, target_mp: target.mp }
       end

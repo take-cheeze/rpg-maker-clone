@@ -3849,14 +3849,15 @@ end
 
 # A two-actor party (Hero atk 10 / spirit 12 / max SP 30, Ally max HP 50) plus
 # the given skill table, for the field-skill checks.
-def skill_party(skills, items = {})
+def skill_party(skills, items = {}, rpg2003: false)
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
     2 => FakePlayerRow.new('Ally', '', 0, 3,
                            max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6),
   }
-  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items, skills)), 1, 0, 0)
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items, skills,
+                                                   rpg2003: rpg2003)), 1, 0, 0)
 end
 
 check 'an RPG2003 subskill category behaves as an ordinary skill' do
@@ -7634,14 +7635,14 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   # all with its armour: 32 - (0*8/40 + 40*16/80) = 32 - 8 = 24.
   eq({ cost: 6, hp: -24, mp: 0, inflict: [], chance: 100, variance: 4,
        attributes: [], absorb: false, attr_shift: nil, attr_ids: [],
-       stat_mod_keys: [] },
+       stat_mod_keys: [], cured: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [],
-       stat_mod_keys: [], stat_effect: 32, cured: [] },
+       stat_mod_keys: [], stat_effect: 32, cured: [], inflict: [], chance: 100 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
   # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
   eq({ cost: 4, hp: 22, mp: 22, variance: 4, attr_shift: nil, attr_ids: [],
-       stat_mod_keys: [], stat_effect: 22, cured: [] },
+       stat_mod_keys: [], stat_effect: 22, cured: [], inflict: [], chance: 100 },
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
 end
 
@@ -7724,16 +7725,18 @@ check 'a skill flagged "attribute defence up/down" picks direction from ' \
      'enemy scope (all enemies), reverse_state_effect ON -> still -1, the flag is irrelevant')
 end
 
-check 'a self/ally-scoped skill\'s own state_effects cure in battle, ' \
-      'ignoring reverse_state_effect (an enemy-scoped one still inflicts)' do
+check 'on an RPG2000 database, a self/ally-scoped skill\'s own state_effects ' \
+      'cure in battle, ignoring reverse_state_effect (an enemy-scoped one ' \
+      'still inflicts)' do
   # EasyRPG's Game_BattleAlgorithm::Skill::vExecute: `heals_states =
   # IsPositive() ^ (Player::IsRPG2k3() && skill.reverse_state_effect)`, and
   # `IsPositive()` is `Algo::SkillTargetsAllies(skill)` -- true for every scope
-  # but Scope_enemy(0)/Scope_enemies(1). Under the RPG2000-only reading this
-  # runtime models (no RPG2003 gate), reverse_state_effect therefore never
-  # enters into it here either, matching #skill_attr_shift's own already-
-  # settled reading of the identical formula: only scope decides cure vs.
-  # inflict. state_effects index i -> state id i+1.
+  # but Scope_enemy(0)/Scope_enemies(1). On an RPG2000 database the XOR's
+  # right-hand term is always false (`Player::IsRPG2k3()` false), so
+  # reverse_state_effect never enters into it here, matching #skill_attr_shift's
+  # own already-settled reading of the identical formula: only scope decides
+  # cure vs. inflict. See the RPG2003 check just below for the flag actually
+  # mattering. state_effects index i -> state id i+1.
   cure_single = fake_skill(name: 'Antidote (ally)', scope: 3, sp_cost: 0, power: 0,
                             state_effects: [0, 1], reverse_state: false)
   cure_all_reversed = fake_skill(name: 'Antidote (all allies, reverse flag set)',
@@ -7755,8 +7758,52 @@ check 'a self/ally-scoped skill\'s own state_effects cure in battle, ' \
   eq [2], st.party.battle_skill_command(st.party.db_skill(9), caster, foe)[:cured],
      'self scope -> cures too'
   c = st.party.battle_skill_command(st.party.db_skill(10), caster, foe)
-  ok !c.key?(:cured), 'enemy scope carries no :cured key at all -- it inflicts instead'
+  eq [], c[:cured], 'enemy scope cures nothing -- it inflicts instead'
   eq [2], c[:inflict], 'the same flagged state, on the attack branch, is an inflict roll'
+end
+
+check 'on an RPG2003 database, reverse_state_effect flips a skill\'s own ' \
+      'state_effects between curing and inflicting' do
+  # The gap this closes: #battle_skill_command used to apply the plain
+  # scope-only rule (ally cures / enemy inflicts) unconditionally, the same
+  # simplification #skill_attr_shift's own sibling formula settled for good
+  # reason -- but unlike attribute-defence direction, EasyRPG's `heals_states`
+  # line does gate on `Player::IsRPG2k3()`, so a real RPG2003 database with
+  # `reverse_state_effect` set can invert either scope: an ally/self skill
+  # inflicts its listed states on its own side (a self-scoped Berserk that
+  # confuses its own caster), and an enemy skill cures its target's states
+  # instead of adding new ones.
+  ally_reversed = fake_skill(name: 'Berserk (self, reverse flag set)', scope: 2,
+                              sp_cost: 0, power: 0, state_effects: [0, 1],
+                              reverse_state: true)
+  enemy_reversed = fake_skill(name: 'Cleanse Curse (enemy, reverse flag set)',
+                               scope: 0, sp_cost: 0, power: 0,
+                               state_effects: [0, 1], reverse_state: true)
+  # A control pair on the same RPG2003 database with the flag off, proving
+  # the plain scope rule still holds when reverse_state_effect isn't set.
+  ally_plain = fake_skill(name: 'Focus (self)', scope: 2, sp_cost: 0, power: 0,
+                           state_effects: [0, 1], reverse_state: false)
+  enemy_plain = fake_skill(name: 'Poison Sting (enemy)', scope: 0, sp_cost: 0,
+                            power: 0, state_effects: [0, 1], reverse_state: false)
+  skills = { 7 => ally_reversed, 8 => enemy_reversed,
+             9 => ally_plain, 10 => enemy_plain }
+  st = skill_party(skills, rpg2003: true)
+  ok st.party.rpg2003?, 'the fixture database is flagged RPG2003'
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+
+  c = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq [], c[:cured], 'self scope, reverse ON, RPG2003 -> no longer cures...'
+  eq [2], c[:inflict], '...inflicts the flagged state on the caster\'s own side instead'
+
+  c = st.party.battle_skill_command(st.party.db_skill(8), caster, foe)
+  eq [2], c[:cured], 'enemy scope, reverse ON, RPG2003 -> cures the target instead...'
+  eq [], c[:inflict], '...of inflicting a new state on it'
+
+  eq [2], st.party.battle_skill_command(st.party.db_skill(9), caster, foe)[:cured],
+     'control: self scope, reverse OFF, RPG2003 -> still cures, matching RPG2000'
+  eq [2], st.party.battle_skill_command(st.party.db_skill(10), caster, foe)[:inflict],
+     'control: enemy scope, reverse OFF, RPG2003 -> still inflicts, matching RPG2000'
 end
 
 check 'a self/ally-scoped skill cures its own state_effects states in battle' do
@@ -7769,7 +7816,7 @@ check 'a self/ally-scoped skill cures its own state_effects states in battle' do
   # items), the skill side just never fed it.
   cure = fake_skill(name: 'Antidote', scope: 3, sp_cost: 0, power: 0,
                     state_effects: [0, 1]) # index 1 -> state id 2
-  st = skill_party(7 => cure)
+  st = skill_party({ 7 => cure })
   caster = Game::Battle.from_actor(st.party.actor_by_id(1))
   ally = combatant('Ally', 0, 0, 5, 100)
   ally.states = [2]
