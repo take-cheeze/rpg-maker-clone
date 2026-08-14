@@ -7445,17 +7445,13 @@ class RPG2k
       # position, not the raw configured preference.
       def effective_message_position(win_h, cfg)
         return cfg.position if cfg.position_fixed
-        auto_message_position(win_h)
+        auto_message_position(cfg.position)
       end
 
       # Vertical position of a `win_h`-tall message window for the configured
       # display position (top / middle / bottom). When the message is not pinned
       # (`position_fixed` off, RPG2000's default), the window relocates so it does
-      # not cover the hero: if the hero is standing in the lower half of the
-      # screen the window jumps to the top, and vice-versa (so talking to
-      # something at the bottom edge of a map shows the text up top). The exact
-      # zone boundary is approximate pending a wine diff; the direction matches
-      # RPG_RT.
+      # not cover the hero.
       def message_window_y(win_h, cfg)
         case effective_message_position(win_h, cfg)
         when Game::MessageConfig::POS_TOP    then 0
@@ -7464,22 +7460,59 @@ class RPG2k
         end
       end
 
-      # Pick the message position that keeps clear of the hero: top when the hero
-      # is in the lower half of the screen, bottom otherwise.
-      def auto_message_position(_win_h)
-        if hero_screen_y >= SCREEN_H / 2
-          Game::MessageConfig::POS_TOP
+      # RPG2000's own "avoid hiding the hero" auto-relocation, unpinned
+      # (`position_fixed` off, the default) -- confirmed against EasyRPG's
+      # own `Game_Message::GetRealPosition()`, fetched verbatim, which keys
+      # a three-way switch off the *configured* Message Options preference
+      # (`configured`) rather than always choosing top-or-bottom regardless
+      # of it. Zone thresholds are the exact 112px / 160px (7 and 10 map
+      # tiles at RPG2000's real 16px tile size, `16 * 7` / `16 * 10` in
+      # EasyRPG's own source) rather than the earlier `SCREEN_H / 2` (120px)
+      # approximation this build used before a source read pinned the real
+      # figures down:
+      #   configured Up:     hero above 112px -> Top,    else Bottom
+      #   configured Center: hero above 160px -> Top, below 112px -> Bottom,
+      #                      else Middle
+      #   configured Down (RPG2000's own default): hero above 160px -> Top,
+      #                      else Bottom
+      def auto_message_position(configured)
+        disp = hero_screen_y
+        case configured
+        when Game::MessageConfig::POS_TOP
+          disp > 16 * 7 ? Game::MessageConfig::POS_TOP : Game::MessageConfig::POS_BOTTOM
+        when Game::MessageConfig::POS_MIDDLE
+          if disp <= 16 * 7
+            Game::MessageConfig::POS_BOTTOM
+          elsif disp >= 16 * 10
+            Game::MessageConfig::POS_TOP
+          else
+            Game::MessageConfig::POS_MIDDLE
+          end
         else
-          Game::MessageConfig::POS_BOTTOM
+          disp >= 16 * 10 ? Game::MessageConfig::POS_TOP : Game::MessageConfig::POS_BOTTOM
         end
       end
 
-      # The hero tile's centre in screen pixels, from the edge-clamped follow
-      # camera (ignoring transient pan / shake offsets).
+      # The hero's feet in screen pixels (the bottom edge of its tile), from
+      # the edge-clamped follow camera (ignoring transient pan / shake
+      # offsets) -- confirmed against EasyRPG's own `Game_Character::
+      # GetScreenY()` (`Main_Data::game_player->GetScreenY()` is what
+      # `Game_Message::GetRealPosition()` actually compares its thresholds
+      # against): `GetSpriteY() / TILE_SIZE - display_y / TILE_SIZE +
+      # TILE_SIZE` is the tile's own top edge (`GetY() * SCREEN_TILE_SIZE`,
+      # converted to pixels) plus one *full* tile, landing on the tile's
+      # bottom edge -- not a half-tile centre the way `GetScreenX()`
+      # deliberately does for its own, horizontal, centring (`x -=
+      # TILE_SIZE / 2`). The sprite's own draw origin is pinned to the
+      # bottom of its frame (`Sprite_Character`'s `SetOy(chara_height)`)
+      # for the identical reason. Previously computed the tile's centre
+      # (`+ TILE / 2`) instead, which is what the message-position
+      # thresholds above would have been comparing against if left
+      # unfixed alongside them.
       def hero_screen_y
         _px, py = player_pixel
-        cam_y = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
-        (py + TILE / 2) - cam_y
+        cam_y = Game.camera_offset(py + TILE, SCREEN_H, @map.height * TILE)
+        (py + TILE) - cam_y
       end
 
       # Load the FaceSet graphic named by the message config, or nil when no face
