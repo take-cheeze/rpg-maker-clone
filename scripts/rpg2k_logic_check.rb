@@ -1508,6 +1508,33 @@ check 'a single update spends its 10000-step budget at the documented per-comman
   eq 5000, it2.resolver.calls, '10000 steps / 2 per Call Event round trip'
 end
 
+# A "body-less" Repeat/Loop or Conditional Branch, as the editor shows it, is
+# not actually empty in the LCF-parsed command list: the editor's own blank
+# inner line is a real row (opcode 0 or 10) that #execute's default arm
+# ("blank editor lines (codes 0 / 10) and RPG2003-only commands") already
+# no-ops, and #step_cost's own default arm (1, the same as any ordinary
+# command) already charges for it -- confirmed against this codebase's own
+# real-game command-frequency audit (docs/rpg2000-sample-analysis.md), which
+# finds 168 such blank-line rows among a real save's common events. This
+# check isolates that one extra step directly: adding a single blank-line
+# row into an otherwise-identical loop body costs exactly one more step per
+# iteration than the bare-CONTROL_VARS loop above (3 -> 4), landing on a
+# different, smaller iteration count for the same 10000-step budget.
+check 'a body-less command block (a blank editor line) still spends its own step' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::LOOP, [], indent: 0),
+    FakeCmd.new(0, [], indent: 0), # a blank editor line -- code 0
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 1, 0, 1], indent: 0), # variable 1 += 1
+    FakeCmd.new(IC::END_LOOP, [], indent: 0),
+  ])
+  it.update
+  eq 2500, st.variables[1],
+     '10000 steps / (1 for the blank line + 1 for the add + 2 for the loop-back) per ' \
+     'iteration -- one more per lap than the otherwise-identical 3333-iteration check above'
+end
+
 check 'a Conditional Branch costs one step when matched, two when not' do
   # Per the event command spec, a Conditional Branch evaluation is one step
   # when it matches (falling through into the true body) and two when it does

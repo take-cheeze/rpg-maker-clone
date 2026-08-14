@@ -8215,18 +8215,31 @@ codebase yet):
   cascades into a distinct auto-start *common* event within the same frame),
   the first and third confirmed to fail against the pre-fix code (the second
   event's switch not yet set) before the fix.
-- **A body-less command block still spends a step.** The wiki's own
+- ✅ **A body-less command block still spends a step — already correct, now
+  confirmed against this codebase's own code and its own real-game command-
+  frequency audit rather than left as a wiki restatement.** The wiki's own
   worked example: a `◆繰り返し処理` / (blank inner line) / `：以上繰り返し`
   loop, and the empty branches of a `◆条件分岐`, each spend 1 step per
   visit to their blank line, in addition to whatever `End Loop`/`End
-  Branch` itself costs. Worth confirming the LCF-parsed command list
-  actually carries a real entry for an empty loop/branch body (rather than
-  the parser collapsing/omitting it) and that `Interpreter#step_cost`
-  charges for it — `mruby-rpg2k/mrblib/interpreter.rb:495` already
-  differentiates `END_LOOP`/`CALL_EVENT`/`CALL_COMMON_EVENT`/`END_BRANCH`
-  (cost 2) and a taken/untaken `CONDITIONAL` (1 or 2), which lines up with
-  the wiki's "most commands cost 1, a few vary," but the empty-line case
-  specifically wasn't checked this session.
+  Branch` itself costs. The LCF parser (`mruby-lcf/mrblib/lcf.rb`'s
+  `parse_event_commands`) is a flat, byte-faithful decode with no block-
+  length prefix and no filtering — an editor's blank inner line is a real
+  command-list row (opcode 0 or 10), never collapsed or omitted, and
+  `docs/rpg2000-sample-analysis.md`'s own real-game audit confirms this
+  empirically: one sample's common events (built from switch/variable state
+  machines using exactly `ControlVars`/`ConditionalBranch`/`Loop`/
+  `CallEvent`) carry 168 such blank-line rows out of 1919 total commands.
+  `Interpreter#execute`'s default dispatch arm already no-ops these rows
+  ("blank editor lines (codes 0 / 10) and RPG2003-only commands") and
+  `#step_cost`'s own default arm already charges the ordinary 1-step cost
+  for them, same as any other unweighted command — nothing in the dispatch
+  loop skips a row without also stepping it. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check that isolates the one extra step
+  directly: adding a single blank-line row into an otherwise-identical loop
+  body (next to the existing bare-`CONTROL_VARS` loop check just above)
+  costs exactly one more step per iteration (3 → 4), landing on a smaller,
+  precisely different iteration count (3333 → 2500) for the same 10000-step
+  budget.
 - **Party wipe during "Show Text" freezes or crashes real RPG_RT** (also
   reachable via "Damage Processing," not just "HP change"). Worked repros
   given for both a blocking Autorun HP-drain-to-0-during-a-message and a
