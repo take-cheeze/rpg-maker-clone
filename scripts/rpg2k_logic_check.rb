@@ -2306,6 +2306,26 @@ check 'Play Memorized BGM with nothing memorized does nothing' do
   eq nil, st.memorized_bgm
 end
 
+check 'Play Memorized BGM does not restart a track that never stopped playing' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # "town" is still the current track (nothing else played in between), so
+  # replaying the memorized BGM must not break and restart it, matching real
+  # RPG_RT's PlayMemorizedBGM -> BgmPlay same-file rule (see Play BGM's own
+  # "does not restart it" check just below).
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town], names, 'the still-playing town track was not broken and restarted'
+  eq 'town', st.current_bgm[:name]
+  eq 80, st.current_bgm[:volume], 'state still tracks the memorized volume'
+end
+
 check 'Play BGM with the file already playing does not restart it' do
   RGSS::Audio.log = []
   st = new_state

@@ -3780,7 +3780,34 @@ not yet verified:
   backed by `SDL_mixer`) is the only entry point that takes those
   parameters, and it always starts playback from the top. Implementing
   this half would need a new native backend primitive (e.g. an
-  `Mix_VolumeMusic`-style setter) that does not exist today.
+  `Mix_VolumeMusic`-style setter) that does not exist today. ✅ **"replaying
+  always restarts from the top" turns out to be imprecise for Play
+  Memorized BGM specifically — it was missing this same same-file skip.**
+  Verified against EasyRPG Player's actual C++ source rather than guessed
+  at: `Game_Interpreter::CommandPlayMemorizedBGM` (`src/game_interpreter.cpp`)
+  is a bare `Main_Data::game_system->PlayMemorizedBGM()`, and
+  `Game_System::PlayMemorizedBGM` (`src/game_system.h`) is itself just
+  `BgmPlay(data.stored_music)` — the identical `Game_System::BgmPlay` every
+  other BGM entry point goes through, same-file check included, not some
+  lower-level call that bypasses it. `Game::Interpreter#do_play_memorized_bgm`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) called `RGSS::Audio.bgm_play`
+  unconditionally, so restoring a memorized track that had, in fact, never
+  stopped playing (e.g. Memorize BGM taken with nothing else played in
+  between, or a duck-and-return where the ducked track happened to share
+  its filename) wrongly broke and restarted it — the same class of bug the
+  battle/vehicle/inn helpers above were fixed for, just missed on this one
+  remaining call site. Fixed with the identical `@state.current_bgm &&
+  @state.current_bgm[:name] == bgm[:name]` idiom `#play_audio`'s `:bgm`
+  branch already uses: the native call (and the `bgm_looped` reset) is
+  skipped on a match, while `@state.current_bgm` still updates to the
+  memorized track's own vol/tempo unconditionally, matching the "uses the
+  vol/tempo/pan settings active at memorize time" half of this bullet
+  exactly. The genuinely-restarts-from-the-top case (a different file, or no
+  BGM currently playing at all) is unaffected. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (Play BGM "town", Memorize BGM, Play
+  Memorized BGM with nothing else played in between reaches the backend
+  once, not twice), confirmed to fail against the pre-fix code (`["town",
+  "town"]`) before the fix.
 - SE is truly polyphonic (unlike BGM); ✅ **SE "OFF" now stops all playing
   SEs at once**, instead of silently doing nothing. `Game::Interpreter
   #play_audio` (`mruby-rpg2k/mrblib/interpreter.rb`) returned immediately on
