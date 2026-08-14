@@ -1997,16 +1997,25 @@ class BattleStubParty
   # #flying_offset` reads it off `@state.party`, not the database directly, so
   # a battle scene check needs its stub party to answer it too) -- false by
   # default, matching every other check's plain RPG2000 fixture.
-  def initialize(actor = BattleStubActor.new, rpg2003: false)
+  def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil)
     @actors = [actor]
     @gold = 0
     @leader = nil
     @rpg2003 = rpg2003
+    @items = {}
+    @item_db = item_db
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
   def all_dead?; !any_alive?; end
   def rpg2003?; @rpg2003; end
+  # A troop victory drop (Game::Troop#drops -> Scene::Map#battle_result_lines)
+  # both grants the item and names it in the result window -- mirrors
+  # ShopStubParty's own #gain_item, plus a #db_item lookup against whatever
+  # item table `item_db` (typically the scene's own fake_db.item) was given.
+  attr_reader :items
+  def gain_item(id, n = 1); @items[id] = (@items[id] || 0) + n; end
+  def db_item(id); @item_db && @item_db[id]; end
 end
 
 # A party the shop can charge and stock: gold plus an item-count bag, with the
@@ -9294,6 +9303,55 @@ check 'Enemy Encounter scene: the result window shows the database Victory term'
   texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
   ok texts.any? { |t| t.include?('戦いに勝利した！') }, 'the database term is shown'
   ok !texts.any? { |t| t.include?('Victory!') }, 'not the composed English fallback'
+end
+
+check 'Enemy Encounter scene: the result window composes the database EXP/gold/item ' \
+      'received terms around the granted numbers/names, not hardcoded English' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.exp_received = 'の経験値を得た！'
+  db.term.gold_received_a = '仲間は'
+  db.term.gold = 'ゴールド'
+  db.term.gold_received_b = 'を手に入れた！'
+  db.term.item_received = 'を手に入れた！'
+  # Both Slimes in fake_db's own two-member troop now carry a certain drop.
+  db.enemy[2].drop_id = 3   # Potion, fake_db's own item table
+  db.enemy[2].drop_prob = 100
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, BattleStubParty.new(item_db: db.item))
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  ok texts.any? { |t| t.include?('10の経験値を得た！') },
+     'the EXP term is composed as amount-then-term (GetExperienceGainedMessage)'
+  ok texts.any? { |t| t.include?('仲間は 20ゴールドを手に入れた！') },
+     'the two-part gold term sandwiches the amount and the gold unit (GetGoldReceivedMessage)'
+  ok texts.count { |t| t.include?('Potionを手に入れた！') } == 2,
+     'both dead Slimes roll their certain drop, each named by the database item term'
+end
+
+check 'Enemy Encounter scene: blank database EXP/gold/item received terms fall back to ' \
+      'composed English' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db # leaves exp_received/gold_received_a/_b/item_received blank
+  db.enemy[2].drop_id = 3
+  db.enemy[2].drop_prob = 100
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, BattleStubParty.new(item_db: db.item))
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  ok texts.any? { |t| t.include?('10 EXP gained.') }, 'a blank exp_received term falls back'
+  ok texts.any? { |t| t.include?('Found 20G.') }, 'blank gold_received_a/gold/gold_received_b fall back'
+  ok texts.count { |t| t.include?('Potion obtained.') } == 2, 'a blank item_received term falls back'
 end
 
 check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to English' do

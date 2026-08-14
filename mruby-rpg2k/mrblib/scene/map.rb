@@ -5723,16 +5723,21 @@ class RPG2k
       # map. The headline is the database's own wording -- the 用語 table's
       # `victory` / `defeat` fields, the same table (and the same "falls back to
       # composed English when the database leaves it blank" rule)
-      # Game::States::BattleText already reads every per-action line from, just
-      # two fields that table never touches. The two previously-hardcoded
-      # English sentences are now exactly that fallback rather than the only
-      # wording a game ever showed. The EXP / gold / item lines stay composed:
-      # their own terms (`exp_received`, the `gold_received_a` / `_b` pair,
-      # `item_received`) are two- or three-part sentences with the number or
-      # name sandwiched between literal halves, and nothing here confirms which
-      # half is which without a real database to check against -- left declared
-      # rather than guessed at, the same call this project already makes for a
-      # handful of other under-specified 用語 fields.
+      # Game::States::BattleText already reads every per-action line from.
+      # The EXP / gold / item lines are composed from their own terms too now
+      # (`exp_received`, the `gold_received_a` / `_b` pair, `item_received`),
+      # confirmed against EasyRPG Player's actual C++ source rather than
+      # guessed at: `PartyMessage::GetExperienceGainedMessage` /
+      # `GetGoldReceivedMessage` / `GetItemReceivedMessage`
+      # (`src/game_message_terms.cpp`), stock-RPG2000 (non-`Feature::
+      # HasPlaceholders`, non-Maniac-Patch) branch -- `exp << terms.
+      # exp_received` (no separating space outside the RPG2k3-English
+      # release), `terms.gold_recieved_a << " " << money << terms.gold <<
+      # terms.gold_recieved_b`, `item_name << terms.item_recieved`. These
+      # three term fields were parsed by the schema and never read anywhere
+      # in `mruby-rpg2k` before now, so a game that customised them (a
+      # translation, a non-English original) showed this codebase's
+      # hardcoded English regardless.
       def battle_result_lines(result, troop)
         return [term(:escape_success, 'Escaped!')] if result == :escape
         return [term(:defeat, 'The party was defeated...')] unless result == :victory
@@ -5741,14 +5746,18 @@ class RPG2k
         @state.party.actors.each { |a| a.gain_exp(exp) }
         @state.party.gain_gold(gold)
         lines = [term(:victory, 'Victory!')]
-        lines << "Gained #{exp} EXP." if exp > 0
-        lines << "Found #{gold} gold." if gold > 0
+        lines << "#{exp}#{term(:exp_received, ' EXP gained.')}" if exp > 0
+        if gold > 0
+          lines << "#{term(:gold_received_a, 'Found')} #{gold}#{term(:gold, 'G')}" \
+                   "#{term(:gold_received_b, '.')}"
+        end
         # Each defeated enemy may drop its treasure item (rolled on the battle's
         # own RNG); grant it to the bag and name it in the result window.
         troop.drops(@battle_ui[:battle].rng).each do |iid|
           @state.party.gain_item(iid, 1)
           it = @state.party.db_item(iid)
-          lines << "Found #{it ? it.name : "item #{iid}"}."
+          name = it ? it.name : "item #{iid}"
+          lines << "#{name}#{term(:item_received, ' obtained.')}"
         end
         lines
       end

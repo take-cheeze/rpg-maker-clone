@@ -7435,6 +7435,38 @@ level-up).
 **Database field semantics** (from the `11_db/` sweep, 48 findings — the
 single densest source in this pass; only the ones not already listed
 above are repeated here)
+- ✅ **A battle victory's EXP/gold/item-drop lines now read the database's own
+  `exp_received`/`gold_received_a`/`gold_received_b`/`item_received` terms**,
+  found by a manual sweep of the LCF `term` chunk schema against
+  `mruby-rpg2k` (the same technique `scripts/rpg2k_field_audit.rb` automates,
+  run here against the schema directly rather than a real game's row counts,
+  since no test-bed `.ldb` is available in this environment) — these four
+  fields (LCF `term` chunk fields 7-10) were parsed and never named anywhere
+  in the runtime; `Scene::Map#battle_result_lines`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) always showed hardcoded English
+  ("Gained 10 EXP.", "Found 20 gold.", "Found Potion.") regardless of what a
+  game's own database configured, even though the sibling `victory`/`defeat`
+  terms right next to them in the same method were already read correctly.
+  The method's own prior comment explained why: "nothing here confirms which
+  half is which without a real database to check against — left declared
+  rather than guessed at." Confirmed against EasyRPG Player's actual C++
+  source rather than guessed at: `PartyMessage::GetExperienceGainedMessage`/
+  `GetGoldReceivedMessage`/`GetItemReceivedMessage`
+  (`src/game_message_terms.cpp`), the stock-RPG2000 branch (not
+  `Feature::HasPlaceholders`, which only applies to the RPG2kE Steam release
+  or a 2k3 project opting into RPG2kE-style strings, and not the Maniac
+  Patch's own extra term), compose `"{exp}{exp_received}"` (no separating
+  space outside the RPG2k3-English release), `"{gold_received_a} {money}
+  {gold}{gold_received_b}"` and `"{item_name}{item_received}"` exactly.
+  `#battle_result_lines` now composes these three shapes, falling back to
+  composed English (`"{n} EXP gained."`, `"Found {n}G."`,
+  `"{item} obtained."`) when the database leaves a term blank, the same
+  "falls back to English" rule already covering `victory`/`defeat`. Covered
+  by two new `scripts/rpg2k_scene_check.rb` checks (a database setting all
+  four terms shows the composed sentences around the granted EXP/gold/item
+  name, including two certain item drops from a two-member troop; a blank
+  database falls back to the composed English for all three), both
+  confirmed to fail against the pre-fix code before the fix.
 - **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
   but free if placed in a shop's own buy list — confirmed already
   correct**, all three facts, no code change needed. `Game::Shop#sell_price`
