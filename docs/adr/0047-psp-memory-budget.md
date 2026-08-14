@@ -46,7 +46,9 @@ own terms: `include/lv_conf.h`'s desktop `LV_MEM_SIZE` is 64 MB today, not
 16 MB — a sign this number was set once, early, and not revisited.) The PSP's
 current pool is 4 MB. If the shared-pool default holds, 4 MB has to cover
 every live LVGL widget *and* the entire mruby object graph for a running game
-— almost certainly too small once a real database and map are loaded.
+— almost certainly too small once a real database and map are loaded. Decoded
+bitmaps are *not* part of that 4 MB, for reasons that turned out to matter
+enough to be their own finding — see Finding 3.
 
 **Host-side proxy measurement (not a device number, see the caveat below):**
 built this repo's own `3rd/mruby` submodule into a plain host `mrbc`/`mruby`,
@@ -125,14 +127,47 @@ least one of them can still blow the budget outright:
   code, whereas the unpack is not — so it is only worth it if Memory Stick
   space (not RAM) turns out to be the binding constraint for a given release.
 
-### Finding 3 — decoded bitmaps and the image cache
+### Finding 3 — decoded bitmaps live in a third pool, not "LVGL's image cache"
 
-`mruby-rgss/src/lib.cxx`'s bitmap loader reads a whole image file
-(`read_whole_file`, ~line 1229) and decodes it via stb_image into a raw pixel
-buffer that stays resident for the sprite's lifetime. RPG2k assets (charsets,
-tilesets) are modest; XP/VX assets (a 640×480 background) decode to much
-larger buffers. `app/psp/lv_conf.h` does not bound LVGL's image cache, so
-nothing currently caps how many decoded bitmaps can be pinned at once.
+Corrected from an earlier pass at this ADR, which described this as an LVGL
+image-cache sizing problem. It isn't — there is no LVGL image cache in play
+here at all, checked directly against how a decoded bitmap actually reaches
+the screen:
+
+- `Bitmap::buffer` (`mruby-rgss/src/lib.cxx:167-181`) is a plain
+  `std::vector<uint8_t>`, sized `width * height * bytes-per-pixel` and
+  allocated the moment a `Bitmap` is constructed. `bmp_decode_into`
+  (`lib.cxx:1254-1315`) decodes the source image via stb_image into a
+  `std::shared_ptr` scratch buffer (freed via its `stbi_image_free` deleter
+  the moment the function returns — confirmed not a leak) and `memcpy`s the
+  result into that `Bitmap::buffer`, which then stays resident for the
+  sprite's lifetime, same as the original finding said.
+- What the original finding got wrong is *where* that memory comes from.
+  Every call site (`lv_canvas_set_buffer(obj, bmp.buffer.data(), w, h,
+  format)`, e.g. `lib.cxx:3158/3555/4034/4692`) hands LVGL's canvas widget a
+  raw pointer into memory `Bitmap` already owns — LVGL never allocates,
+  caches, or frees that buffer itself. `std::vector`'s backing storage comes
+  from the plain C++ global allocator (`operator new`), and neither this
+  project nor stb_image (`STBI_MALLOC` is never redefined, confirmed
+  by grep) overrides it to route through `lv_malloc`. So decoded bitmap
+  pixels — likely the single largest category of "asset memory" in this
+  ADR's Context — **never touch `LV_MEM_SIZE` at all.** They come out of the
+  plain C runtime heap (newlib `malloc` on the PSP), a third pool alongside
+  LVGL's pool (Finding 1: LVGL objects, and mruby's whole object graph if the
+  shared-allocator default holds) and the stack/statics (Finding 4).
+- This cuts both ways. It's good news for Finding 1's pool-sizing question —
+  bitmaps don't compete with mruby's live objects for the same 4 MB — but
+  it means this third pool currently has **no cap of its own at all**, only
+  whatever's left of the PSP's ~24 MB after everything else. RPG2k assets
+  (charsets, tilesets) are modest; XP/VX assets (a 640×480 background) decode
+  to much larger buffers, and nothing currently limits how many can be live
+  at once.
+- The P1 heartbeat (`app/psp/main.cxx`) already has visibility into this
+  without further instrumentation: `sceKernelTotalFreeMemSize` reports
+  *actual* free RAM, so once mruby is linked and real bitmaps are loaded, the
+  gap between that number and `lv_mem_monitor`'s LVGL-pool figures *is* this
+  third pool's consumption — no new code needed to observe it, just correct
+  expectations about what it's showing.
 
 ### Finding 4 — main-thread stack is still bring-up-sized
 
@@ -229,8 +264,17 @@ the interpreter-linking slice, in this order:
   unpacker never touches or deletes the archive itself. A streaming `RGSSAD`
   reader remains the fallback if Memory Stick space, not RAM, turns out to be
   the constraint for a release that can't afford the doubled storage.
-- **P4 — bound the LVGL image cache** and confirm decoded-bitmap sizes for
-  the target games' resolutions fit inside whatever pool P2 settles on.
+- **P4 — corrected; not an LVGL-cache problem.** There is no LVGL image
+  cache to bound for RGSS bitmaps (Finding 3) — they live in the plain C
+  runtime heap via `Bitmap::buffer`, a third pool `LV_MEM_SIZE` never
+  touches. Nothing to implement here that isn't already covered: once the
+  interpreter is linked and real bitmaps are loaded, P1's heartbeat already
+  surfaces this pool's consumption as the gap between
+  `sceKernelTotalFreeMemSize` and `lv_mem_monitor`'s LVGL-only figures. What
+  remains is confirming decoded-bitmap sizes for the target games'
+  resolutions actually fit in what's left of the ~24 MB after `LV_MEM_SIZE`
+  and the stack/statics — a measurement to take once P1's device numbers
+  exist for a real game, not a code change.
 - **P5 — size and verify the main-thread stack** against measured mruby
   init/interpreter recursion depth, with a high-water-mark check rather than
   a guessed constant.
