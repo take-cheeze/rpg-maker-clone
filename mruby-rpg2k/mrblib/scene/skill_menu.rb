@@ -1,21 +1,41 @@
 class RPG2k
   module Scene
     # The field skill screen (main menu -> Skill). Lists one party member's known
-    # field-usable skills with their SP cost; LEFT/RIGHT cycle the caster. Casting
-    # a single-ally skill (scope 3) asks who to use it on, while a self (2) or
-    # all-ally (4) skill applies at once, spending SP and restoring HP/SP. An
-    # Escape skill warps straight to the registered escape target with no
-    # prompt; a Teleport skill opens a third list of every registered
-    # destination (by map name) to choose from. Either warp closes the whole
-    # menu stack and queues the jump for Scene::Map to perform (see
-    # Game::State#pending_teleport) rather than applying anything here. All the
-    # decision logic is on Game::Party (field_skills / skill_cost / can_cast? /
-    # skill_effect / cast_skill / cast_escape_skill / cast_teleport_skill),
-    # host-tested; this is the RGSS UI over it.
+    # field-usable skills with their SP cost. Casting a single-ally skill
+    # (scope 3) asks who to use it on, while a self (2) or all-ally (4) skill
+    # applies at once, spending SP and restoring HP/SP. An Escape skill warps
+    # straight to the registered escape target with no prompt; a Teleport
+    # skill opens a third list of every registered destination (by map name)
+    # to choose from. Either warp closes the whole menu stack and queues the
+    # jump for Scene::Map to perform (see Game::State#pending_teleport)
+    # rather than applying anything here. All the decision logic is on
+    # Game::Party (field_skills / skill_cost / can_cast? / skill_effect /
+    # cast_skill / cast_escape_skill / cast_teleport_skill), host-tested;
+    # this is the RGSS UI over it.
+    #
+    # There is no way to switch caster once this screen is open --
+    # confirmed against EasyRPG Player's own source (`scene_skill.h`'s
+    # `actor_index` is a constructor parameter `Scene_Skill::vUpdate` never
+    # changes, unlike `Scene_Equip`'s own LEFT/RIGHT actor-switch). Real
+    # RPG_RT instead hands input focus to the *menu's own party list* when
+    # Skill is selected there, letting the player pick which actor first
+    # (`Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row`
+    # branch); this engine has no such picker yet (see docs/TODO.md), so
+    # this screen always shows the party leader, same as it always could
+    # reach without that picker anyway -- unlike the LEFT/RIGHT in-screen
+    # switching this class used to have, which real RPG_RT's Skill screen
+    # never had to begin with.
     class SkillMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
+
+      # The skill list is a two-column grid, the same shape and cursor math
+      # as Scene::ItemMenu's own (see its COLUMN_MAX comment) -- confirmed
+      # via EasyRPG's `Window_Skill` constructor, which sets `column_max =
+      # 2`. LEFT/RIGHT move within a row now that they are not needed for
+      # caster-switching (see the class comment above).
+      COLUMN_MAX = 2
 
       def initialize parent, state
         super parent
@@ -64,34 +84,30 @@ class RPG2k
       end
 
       def update_skills
-        party = @state.party.actors
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN) && !skills.empty?
-          @skill_index += 1
-          @skill_index %= skills.size
-          refresh_skill_cursor
-        elsif Input.trigger?(Input::UP) && !skills.empty?
-          @skill_index -= 1
-          @skill_index %= skills.size
-          refresh_skill_cursor
+        elsif Input.trigger?(Input::DOWN)
+          move_skill_cursor(COLUMN_MAX)
+        elsif Input.trigger?(Input::UP)
+          move_skill_cursor(-COLUMN_MAX)
         elsif Input.trigger?(Input::RIGHT)
-          @caster_index += 1
-          @caster_index %= party.size
-          switch_caster
+          move_skill_cursor(1) if (@skill_index + 1) % COLUMN_MAX != 0
         elsif Input.trigger?(Input::LEFT)
-          @caster_index -= 1
-          @caster_index %= party.size
-          switch_caster
+          move_skill_cursor(-1) if @skill_index % COLUMN_MAX != 0
         elsif Input.trigger?(Input::C)
           choose_skill
         end
       end
 
-      def switch_caster
-        @skills = nil
-        @skill_index = 0
-        build_skill_window
+      # Move the skill cursor by `delta` cells (a row for +-COLUMN_MAX, a
+      # column for +-1), ignored if that cell is off the grid -- see
+      # Scene::ItemMenu#move_item_cursor, which this mirrors exactly.
+      def move_skill_cursor(delta)
+        return if skills.empty?
+        target = @skill_index + delta
+        return if target < 0 || target >= skills.size
+        @skill_index = target
+        refresh_skill_cursor
       end
 
       def choose_skill
@@ -238,12 +254,19 @@ class RPG2k
         build_skill_window
       end
 
+      # Column width for the skill grid (see Scene::ItemMenu#item_col_w,
+      # which this mirrors).
+      def skill_col_w
+        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+      end
+
       def build_skill_window
         @skill_window.dispose if @skill_window
         rows = skills
         inner_w = SCREEN_W - Window::BORDER * 2
         head_h = LINE_H
-        h = head_h + [rows.size, 1].max * LINE_H
+        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
+        h = head_h + grid_rows * LINE_H
         @skill_window = Window.new(0, 0, SCREEN_W, h + Window::BORDER * 2)
         @skill_window.z = 400
         @skill_window.windowskin = @skin
@@ -256,10 +279,16 @@ class RPG2k
         # for the analogous Item screen (see item_menu.rb), confirmed there
         # against genuine RPG_RT under wine: a blank list row with a visible,
         # empty cursor box (see #refresh_skill_cursor) rather than a message.
+        col_w = skill_col_w
         rows.each_with_index do |(sid, cost), i|
-          y = head_h + i * LINE_H
-          c.draw_text 0, y, inner_w - 40, LINE_H, skill_name(sid)
-          c.draw_text inner_w - 40, y, 40, LINE_H, "#{cost} #{mp_term}"
+          x = (i % COLUMN_MAX) * col_w
+          y = head_h + (i / COLUMN_MAX) * LINE_H
+          c.draw_text x, y, col_w - 40, LINE_H, skill_name(sid)
+          # "-  5"-style: a separator (a plain hyphen -- confirmed via
+          # EasyRPG's own Window_Skill::DrawItem, which formats this as
+          # `"{separator}{cost:3d}"` with a hyphen default) then the cost
+          # right-aligned in a 3-character field, no MP/SP unit suffix.
+          c.draw_text x + col_w - 40, y, 40, LINE_H, "-%3d" % cost
         end
         @skill_window.contents = c
         refresh_skill_cursor
@@ -268,10 +297,11 @@ class RPG2k
       def refresh_skill_cursor
         return unless @skill_window
         # The cursor box stays visible on the empty row even with no skills
-        # -- see item_menu.rb's analogous fix.
-        h = LINE_H
-        @skill_window.cursor_rect =
-          Rect.new(0, LINE_H + @skill_index * LINE_H, @skill_window.contents.width, h)
+        # -- see item_menu.rb's analogous fix. Highlights just the one grid
+        # cell, not the full row -- see Scene::ItemMenu#refresh_item_cursor.
+        x = (@skill_index % COLUMN_MAX) * skill_col_w
+        y = LINE_H + (@skill_index / COLUMN_MAX) * LINE_H
+        @skill_window.cursor_rect = Rect.new(x, y, skill_col_w, LINE_H)
       end
 
       def build_target_window
