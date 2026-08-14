@@ -6136,19 +6136,24 @@ check "a map-triggered Show Battle Animation's target-scope flash pulses the nam
 end
 
 # #map_animation_flash_target's own target-id decoding, isolated from the
-# full event pipeline above: a vehicle has no Flash Sprite-style CharSet tone
-# to hook (unlike a player/event target), an id no live event matches resolves
-# to nothing, and "this event" (0 / MOVE_TARGET_THIS) mirrors
-# #animation_target_pixel's own fallback to the player when there is no active
-# event (a common event Parallel Process's own Show Battle Animation has none).
+# full event pipeline above: a vehicle resolves to its own Game::Vehicle::TYPES
+# symbol (see #fire_map_target_flash / #clear_map_target_flash below -- this
+# used to be a bare nil, "a vehicle has no CharSet-tone flash mechanism to
+# hook," which was true of the player/event mechanism specifically but wrongly
+# treated as "no mechanism at all": a vehicle already draws through a real
+# Sprite, which #fire_map_target_flash now pulses directly instead), an id no
+# live event matches resolves to nothing, and "this event" (0 / MOVE_TARGET_THIS)
+# mirrors #animation_target_pixel's own fallback to the player when there is no
+# active event (a common event Parallel Process's own Show Battle Animation has
+# none).
 check '#map_animation_flash_target resolves vehicle, unknown-id and "this event" targets' do
   scene = new_scene({ 3 => event(1, 1, page) })
   mt = RPG2k::Scene::Map
   eq :player, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_PLAYER)
-  eq nil, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_BOAT),
-     'a vehicle has no CharSet-tone flash mechanism to hook'
-  eq nil, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_SHIP)
-  eq nil, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_AIRSHIP)
+  eq :boat, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_BOAT),
+     "a vehicle target resolves to its own Game::Vehicle::TYPES symbol, not nil"
+  eq :ship, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_SHIP)
+  eq :airship, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_AIRSHIP)
   eq nil, scene.send(:map_animation_flash_target, 999), 'an id no live event matches'
   eq :player, scene.send(:map_animation_flash_target, 0),
      '"this event" with no active event (a common event Parallel Process) falls back to the player'
@@ -6156,6 +6161,78 @@ check '#map_animation_flash_target resolves vehicle, unknown-id and "this event"
   scene.instance_variable_set(:@active_event, ev3)
   eq ev3, scene.send(:map_animation_flash_target, mt::MOVE_TARGET_THIS),
      '"this event" with an active event resolves to it'
+end
+
+# A map-triggered Show Battle Animation's flash_scope-1 timing aimed at a
+# vehicle now actually pulses that vehicle's own on-screen sprite, instead of
+# being silently dropped as an "unsupported target." Verified against EasyRPG
+# Player's actual C++ source rather than assumed unsupported:
+# Game_Character::GetCharacter (src/game_character.cpp) resolves
+# CharBoat/CharShip/CharAirship straight to the live Game_Vehicle object -- a
+# Game_Character subclass -- so BattleAnimationMap::FlashTargets's own
+# target->Flash(...) call (src/battle_animation.cpp) reaches a vehicle exactly
+# like it reaches the player or a map event; nothing in real RPG_RT exempts
+# it. Unlike the player/event case (a CharSet tint mixed into the drawn
+# frame), a vehicle already draws through a real Sprite (#draw_vehicles), so
+# #fire_map_target_flash reaches @vehicle_sprites[:boat] directly with the
+# native RGSS Sprite#flash primitive #fire_target_flash already uses for a
+# battle enemy sprite -- exercised directly here (mirroring the battle-side
+# "a target-scope animation flash pulses the hit enemy" check above), isolated
+# from the full animation/event pipeline the player/event checks above cover.
+check '#fire_map_target_flash/#update_vehicle_flashes pulse a targeted vehicle sprite and decay it' do
+  scene = new_scene({})
+  sprites = scene.instance_variable_get(:@vehicle_sprites)
+  spr = sprites[:boat]
+  bystander = sprites[:ship]
+  timing = OpenStruct.new(flash_red: 31, flash_green: 0, flash_blue: 0, flash_power: 20)
+  scene.send(:fire_map_target_flash, :boat, timing)
+  ok spr.flash_color, 'the targeted vehicle sprite was flashed'
+  eq [248, 0, 0, 160],
+     [spr.flash_color.red, spr.flash_color.green, spr.flash_color.blue, spr.flash_color.alpha],
+     'scaled from the LCF 0..31 fixture fields the same *8 way the player/enemy flash already is'
+  anim_flash_frames = RPG2k::Scene::Map::ANIM_FLASH_FRAMES
+  eq anim_flash_frames, spr.flash_calls.last[1],
+     'held for the same duration a battle-side target flash gets'
+  eq nil, bystander.flash_color, 'a different, untargeted vehicle is untouched'
+  # Before this fix nothing ever called Sprite#update on a vehicle sprite at
+  # all -- the real native Sprite#flash only decays (and its visible
+  # intensity only fades) when driven by an explicit #update each frame
+  # (mruby-rgss/src/lib.cxx's spr_flash/spr_update, the same contract
+  # #update_enemy_flashes already drives for battle-only enemy sprites), so a
+  # vehicle's flash would have stayed at full intensity forever in the real
+  # renderer. #update_vehicle_flashes closes that gap, called unconditionally
+  # every real frame from #update.
+  anim_flash_frames.times { scene.send(:update_vehicle_flashes) }
+  eq nil, spr.flash_color, 'the flash faded out after its duration'
+end
+
+# The same timing, driven through the full event/animation pipeline this time
+# (mirroring "a map-triggered Show Battle Animation's target-scope flash
+# pulses the player" above), confirming #map_animation_flash_target's new
+# vehicle resolution and #fire_map_target_flash's new vehicle dispatch are
+# actually wired together end to end, not just individually correct.
+check "a map-triggered Show Battle Animation's target-scope flash pulses a targeted vehicle" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [9, 10002, 1], indent: 0), # animation, boat, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.vehicle(:boat).map_id = st.map_id
+  st.vehicle(:boat).x = 5
+  st.vehicle(:boat).y = 7
+  spr = scene.instance_variable_get(:@vehicle_sprites)[:boat]
+  seen = false
+  40.times do
+    scene.update
+    seen ||= (spr.flash_color && spr.flash_color.red == 248 && spr.flash_color.green == 0 &&
+              spr.flash_color.blue == 0)
+    break if st.switches[6]
+  end
+  ok seen, "the boat's own sprite was flashed via the full event pipeline"
+  ok st.switches[6], 'the event resumed after the animation'
 end
 
 # yado.tk: only one Battle Animation is ever on screen at once -- true of the
