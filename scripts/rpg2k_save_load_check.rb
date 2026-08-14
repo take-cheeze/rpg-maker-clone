@@ -42,6 +42,7 @@ module RGSS
   module Audio
     class << self
       def bgm_play(*); end
+      def bgm_volume(*); end
       def se_play(*); end
     end
   end
