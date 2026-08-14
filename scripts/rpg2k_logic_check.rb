@@ -7617,11 +7617,11 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
        stat_mod_keys: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [],
-       stat_mod_keys: [], stat_effect: 32 },
+       stat_mod_keys: [], stat_effect: 32, cured: [] },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
   # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
   eq({ cost: 4, hp: 22, mp: 22, variance: 4, attr_shift: nil, attr_ids: [],
-       stat_mod_keys: [], stat_effect: 22 },
+       stat_mod_keys: [], stat_effect: 22, cured: [] },
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
 end
 
@@ -7702,6 +7702,66 @@ check 'a skill flagged "attribute defence up/down" picks direction from ' \
      'enemy scope (single enemy) -> -1 (down/worse) regardless of reverse_state_effect')
   eq(-1, st.party.battle_skill_command(st.party.db_skill(10), caster, foe)[:attr_shift],
      'enemy scope (all enemies), reverse_state_effect ON -> still -1, the flag is irrelevant')
+end
+
+check 'a self/ally-scoped skill\'s own state_effects cure in battle, ' \
+      'ignoring reverse_state_effect (an enemy-scoped one still inflicts)' do
+  # EasyRPG's Game_BattleAlgorithm::Skill::vExecute: `heals_states =
+  # IsPositive() ^ (Player::IsRPG2k3() && skill.reverse_state_effect)`, and
+  # `IsPositive()` is `Algo::SkillTargetsAllies(skill)` -- true for every scope
+  # but Scope_enemy(0)/Scope_enemies(1). Under the RPG2000-only reading this
+  # runtime models (no RPG2003 gate), reverse_state_effect therefore never
+  # enters into it here either, matching #skill_attr_shift's own already-
+  # settled reading of the identical formula: only scope decides cure vs.
+  # inflict. state_effects index i -> state id i+1.
+  cure_single = fake_skill(name: 'Antidote (ally)', scope: 3, sp_cost: 0, power: 0,
+                            state_effects: [0, 1], reverse_state: false)
+  cure_all_reversed = fake_skill(name: 'Antidote (all allies, reverse flag set)',
+                                  scope: 4, sp_cost: 0, power: 0,
+                                  state_effects: [0, 1], reverse_state: true)
+  cure_self = fake_skill(name: 'Focus (self)', scope: 2, sp_cost: 0, power: 0,
+                          state_effects: [0, 1], reverse_state: false)
+  attack = fake_skill(name: 'Poison Sting (enemy)', scope: 0, sp_cost: 0, power: 0,
+                       state_effects: [0, 1])
+  skills = { 7 => cure_single, 8 => cure_all_reversed, 9 => cure_self, 10 => attack }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+
+  eq [2], st.party.battle_skill_command(st.party.db_skill(7), caster, foe)[:cured],
+     'ally scope (single ally) -> cures state 2, reverse_state_effect off'
+  eq [2], st.party.battle_skill_command(st.party.db_skill(8), caster, foe)[:cured],
+     'ally scope (all allies), reverse_state_effect ON -> still cures, the flag is irrelevant'
+  eq [2], st.party.battle_skill_command(st.party.db_skill(9), caster, foe)[:cured],
+     'self scope -> cures too'
+  c = st.party.battle_skill_command(st.party.db_skill(10), caster, foe)
+  ok !c.key?(:cured), 'enemy scope carries no :cured key at all -- it inflicts instead'
+  eq [2], c[:inflict], 'the same flagged state, on the attack branch, is an inflict roll'
+end
+
+check 'a self/ally-scoped skill cures its own state_effects states in battle' do
+  # The gap this closes: Game::Party#battle_skill_command's self/ally-scope
+  # branch never carried a skill's own state_effects into the command at all,
+  # so a "Cure Poison"-style *skill* (as opposed to an item, which already had
+  # its own `cured:` wired via Game::Party#command_item) silently did nothing
+  # about a target's status in battle -- Game::Battle#apply_skill_hit's
+  # recovery branch already had the machinery (`cmd[:cured]`, shared with
+  # items), the skill side just never fed it.
+  cure = fake_skill(name: 'Antidote', scope: 3, sp_cost: 0, power: 0,
+                    state_effects: [0, 1]) # index 1 -> state id 2
+  st = skill_party(7 => cure)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  ally = combatant('Ally', 0, 0, 5, 100)
+  ally.states = [2]
+  foe = combatant('Foe', 0, 0, 1, 10)
+  bat = Game::Battle.new([caster, ally], [foe], Game::Rng.new(1))
+
+  c = st.party.battle_skill_command(st.party.db_skill(7), caster, ally)
+  eq [2], c[:cured]
+  bat.command_skill(caster, ally, name: 'Antidote', cost: c[:cost],
+                    hp: c[:hp], mp: c[:mp], cured: c[:cured])
+  bat.run_round
+  eq [], ally.states, 'the poisoned ally is cured'
 end
 
 check 'attribute defence shift applies to the target rank, capped at ' \
@@ -10365,6 +10425,29 @@ check 'an enemy heals a fellow monster with an ally-scoped skill' do
   e = b.step_action                            # the medic casts
   eq true, e[:recover], 'a recovery, not an attack'
   ok e[:recover_hp] > 0, 'HP restored to a monster'
+end
+
+check "an enemy's self-scoped skill cures its own status — enemy-cast cure" do
+  # The enemy-cast counterpart of "a self/ally-scoped skill cures its own
+  # state_effects states in battle" above: Game::Battle#skill_command_hash
+  # (the command shape #enemy_skill_action builds for an AI-chosen skill)
+  # never carried :cured either, so a monster's own "Cure" action was just as
+  # silently inert as the player-menu path was before that fix.
+  ai = skill_ai(1 => FakeAiSkill.new(name: 'Focus', scope: 2, power: 0,
+                                     affect_hp: false, state_effects: [0, 1]))
+  hero = combatant('Hero', 40, 0, 30, 500)
+  medic = combatant_mp('Medic', 10, 0, 5, 500, 100)
+  medic.states = [2]
+  medic.actions = [enemy_action(kind: 1, skill_id: 1)]
+  [hero, medic].each { |c| c.spi ||= 0 }
+  b = Game::Battle.new([hero], [medic], Game::Rng.new(1), nil, false,
+                       false, false, false, nil, ai)
+  b.begin_round
+  b.step_action                                # the hero swings
+  e = b.step_action                            # the monster casts on itself
+  eq true, e[:recover], 'a recovery, not an attack'
+  eq [2], e[:cured], 'the afflicted monster cures its own status'
+  ok !medic.state?(2), 'and no longer carries the state'
 end
 
 check 'an all-enemies skill hits every party member at once' do
