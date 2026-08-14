@@ -772,6 +772,20 @@ check 'Message.scan records \> \< instant spans (and an unclosed one to EOL)' do
   eq [[2, 4]], s2[:instants]
 end
 
+check 'Message.scan records \s[n] speed changes, clamped to RPG_RT\'s 1..20' do
+  vars = Object.new
+  def vars.[](_i); 0; end
+  names = ->(_i) { '' }
+  s = Game::Message.scan('ab\s[3]cd\s[99]ef', vars, names)
+  eq [{ at: 2, speed: 3 }, { at: 4, speed: 20 }], s[:speeds],
+     '\s[99] clamps down to RPG_RT\'s max of 20 (EasyRPG Player\'s ' \
+     'window_message.cpp: Utils::Clamp(pres.value, 1, 20))'
+  eq 6, s[:length], '\s[] produces no characters and burns no tick, like \c[]'
+  # An empty or missing bracket falls back to full speed (1), the same
+  # nil/empty-string handling \c[]'s own default colour uses.
+  eq [{ at: 1, speed: 1 }], Game::Message.scan('a\s[]b', vars, names)[:speeds]
+end
+
 check '\^, \$ and the closing \< each delay what follows by one reveal tick' do
   vars = Object.new
   def vars.[](_i); 0; end
@@ -810,6 +824,35 @@ check 'an instant span still stops at a pause inside it' do
   r.release_pause
   r.advance(1)                          # 3 -> 4, still inside the span -> jump to 5
   eq 5, r.revealed, 'the rest of the span reveals once released'
+end
+
+check 'TextReveal.speed_at reports the \s[n] in effect at a position, defaulting to 1' do
+  r = Game::TextReveal.new(['abcdef'], 0, [], false, [],
+                            [{ at: 2, speed: 5 }, { at: 4, speed: 1 }])
+  eq 1, r.speed_at(0), 'full speed before the first \s[] change'
+  eq 1, r.speed_at(1)
+  eq 5, r.speed_at(2), 'the change applies from its own position onward'
+  eq 5, r.speed_at(3)
+  eq 1, r.speed_at(4), 'a later \s[1] resets back to full speed'
+end
+
+check 'TextReveal varies its reveal rate across a \s[n] speed span' do
+  # "ab" at full speed (1), then a \s[3] change at position 2 slows the rest
+  # ("cdef") to a third of the per-frame budget.
+  speeds = [{ at: 2, speed: 3 }]
+  r = Game::TextReveal.new(['abcdef'], 0, [], false, [], speeds)
+  r.advance(2)
+  eq 2, r.revealed, 'full speed reveals the whole first budget in one frame'
+  # From here, a budget of 2/frame banked at speed 3 lands one whole
+  # character roughly every 1.5 frames instead of every frame: frame 1 banks
+  # 2/3 of a character (0 revealed), frame 2 banks 4/3 (1 revealed, 1/3
+  # left over), frame 3 banks 3/3 (1 more revealed).
+  r.advance(2)
+  eq 2, r.revealed, 'a slow \s[3] span does not reveal a character every frame'
+  r.advance(2)
+  eq 3, r.revealed
+  r.advance(2)
+  eq 4, r.revealed
 end
 
 # -- Screen (tint state machine) ---------------------------------------------
