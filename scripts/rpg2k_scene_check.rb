@@ -766,6 +766,16 @@ check 'the map layers composite in a fixed order, under the overlays' do
     ok z > top, "#{i} (z=#{z}) must draw over the map (top z=#{top})"
   end
 
+  # A previously "still open" question, now settled directly rather than only
+  # transitively through the two checks above: a map's Show Battle Animation
+  # (@animation_sprite) must draw *under* the picture layer, not over it.
+  # EasyRPG Player's own Priority enum (src/drawable.h) puts
+  # Priority_PictureOld (120) above Priority_BattleAnimation (110) for every
+  # standard RPG2000/RPG2003 database -- see the citation next to
+  # @animation_sprite.z in Scene::Map#setup_sprites.
+  ok sprite_z(scene, :@animation_sprite) < sprite_z(scene, :@picture_sprite),
+     'a map animation draws under the picture layer, not over it'
+
   # The three vehicles sit between the shadow and the hero.
   vs = scene.instance_variable_get(:@vehicle_sprites)
   vs.each_value do |s|

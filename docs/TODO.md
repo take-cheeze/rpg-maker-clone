@@ -4065,10 +4065,36 @@ not yet verified:
   (`@picture_sprite.z = 250`, the message window's `z = 300`), already
   covered by an existing check. Covered by a new
   `scripts/rpg2k_scene_check.rb` check (two pictures shown out of id order,
-  asserting the composite draws the lower id first). Still open: Battle
-  Animation drawing above the picture layer specifically, and "map/
-  characters always draw below all pictures" as its own assertion. (Not the
-  same question as "no Pictures on the battle screen" — ✅ fixed, see the
+  asserting the composite draws the lower id first). ✅ **The two "still
+  open" z-order questions this bullet used to leave dangling — a map's Show
+  Battle Animation drawing above the picture layer specifically, and "map/
+  characters always draw below all pictures" as its own assertion — are now
+  both settled, confirmed already correct, verified against EasyRPG Player's
+  actual C++ source rather than guessed at.** `Drawable::Priority`
+  (`src/drawable.h`) orders `Priority_PictureOld = 120 << z_offset` *above*
+  `Priority_BattleAnimation = 110 << z_offset`, and `Sprite_Picture`'s
+  constructor (`src/sprite_picture.cpp`) seeds every picture at
+  `Priority_PictureOld + pic_id` unconditionally — only overridden by the
+  *lower* `Priority_PictureNew` (100, below BattleAnimation) when
+  `feature_priority_layers` (`Player::IsMajorUpdatedVersion()`) detects the
+  "RPG2000 Value!" English re-release or a specifically patched RPG2003
+  English runtime (`ultimate_rt_eb.dll` on disk) — a file/version signal this
+  project's plain `.ldb`/`.lmt`/`.lmu` triple has no way to observe and no
+  test-bed game exercises, so it is out of scope rather than a gap. For every
+  ordinary RPG2000/RPG2003 database this runtime reads, a picture belongs
+  *over* a map animation, and `Scene::Map#setup_sprites`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) already places `@animation_sprite` at
+  z 150, below `@picture_sprite`'s z 250 — confirmed correct, not merely
+  by construction (both already sat on the right sides of the "map layers
+  composite in a fixed order, under the overlays" check's `top` boundary,
+  z 150 < top 200 < z 250) but now pinned by name: a new direct assertion in
+  that same `scripts/rpg2k_scene_check.rb` check compares
+  `@animation_sprite`'s z to `@picture_sprite`'s z rather than relying on the
+  transitive relationship alone. The "characters always draw below all
+  pictures" half needed no separate assertion: `@player_sprite` (z 100) is
+  already one of the `MAP_LAYER_IVARS` the same check sorts beneath `top`,
+  which sits below every `ABOVE_MAP_IVARS` entry including the picture layer.
+  (Not the same question as "no Pictures on the battle screen" — ✅ fixed, see the
   **Picture** bullet under "Untriaged backlog, from `2k/01_shoshin/
   011_siyou/`" above — which is about the picture layer being hidden
   outright while a fight is running, not about its z-order relative to the
