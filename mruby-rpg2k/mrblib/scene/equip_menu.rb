@@ -20,11 +20,19 @@ class RPG2k
       # are all offset down by this much.
       DESC_H = LINE_H + Window::BORDER * 2
 
-      def initialize parent, state
+      # `actor_index` is which party member the screen opens on -- the one
+      # `Scene::Menu#enter_actor_selection` preselected from the menu's own
+      # party list (confirmed against EasyRPG's `Scene_Equip` constructor,
+      # which takes the same parameter), defaulting to 0 (the leader) for
+      # callers that never had a picker to begin with, e.g. the host test
+      # harnesses. LEFT/RIGHT still cycle from there once inside, unlike
+      # Scene::SkillMenu -- EasyRPG's own `Scene_Equip::UpdateEquipSelection`
+      # does the same, unlike `Scene_Skill`.
+      def initialize parent, state, actor_index = 0
         super parent
         @state = state
         @skin = make_windowskin
-        @actor_index = 0
+        @actor_index = actor_index
         @slot_index = 0
         @cand_index = 0
         @mode = :slots          # :slots list, or :items candidate pick

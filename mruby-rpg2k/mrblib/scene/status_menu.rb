@@ -15,11 +15,18 @@ class RPG2k
       STATE_LABEL = "State".freeze
       STATE_VALUE_X = 48
 
-      def initialize parent, state
+      # `actor_index` is which party member the screen opens on -- the one
+      # `Scene::Menu#enter_actor_selection` preselected from the menu's own
+      # party list (confirmed against EasyRPG's `Scene_Status` constructor,
+      # which takes the same parameter), defaulting to 0 (the leader) for
+      # callers that never had a picker to begin with, e.g. the host test
+      # harnesses. LEFT/RIGHT still cycle from there once inside -- EasyRPG's
+      # own `Scene_Status::vUpdate` does the same.
+      def initialize parent, state, actor_index = 0
         super parent
         @state = state
         @skin = make_windowskin
-        @actor_index = 0
+        @actor_index = actor_index
         @slots = [
           term(:weapon, "Weapon"), term(:shield, "Shield"), term(:armor, "Armor"),
           term(:helmet, "Helmet"), term(:accessory, "Accessory")
