@@ -7791,7 +7791,9 @@ end
 # resume; `any_save_exists?` (main.rb) is the source of truth, routed through
 # Scene::Title's own `continue_available?` (ADR 0012, extended by ADR 0045 to
 # cover every slot rather than just slot 1). The cursor can still reach the
-# grayed-out entry -- only its selection key is ignored.
+# grayed-out entry, and confirming it is not silent -- it plays Buzzer
+# (confirmed against EasyRPG's own Scene_Title::CommandContinue) rather than
+# doing nothing at all, but still never opens the file-select screen.
 
 check 'no save data: Continue is flagged unavailable and reachable by the cursor' do
   parent = TitleParent.new(fake_db, nil, false, false)
@@ -7802,7 +7804,7 @@ check 'no save data: Continue is flagged unavailable and reachable by the cursor
      'moving down from New Game still lands on Continue'
 end
 
-check 'no save data: pressing the selection key on Continue does nothing' do
+check 'no save data: pressing the selection key on Continue plays Buzzer and opens nothing' do
   parent = TitleParent.new(fake_db, nil, false, false)
   scene = RPG2k::Scene::Title.new(parent)
   scene.instance_variable_set(:@selected_index, 1)
