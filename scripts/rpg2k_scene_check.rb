@@ -3637,6 +3637,87 @@ check "a wandered map event's position and facing survive a save/load, but " \
      'placement, unlike a genuine save/load'
 end
 
+check "a page's own custom move route resumes at its saved cursor across a save/load, not from the top" do
+  # docs/TODO.md's "Save / Load persistence -- consolidated master list": "a
+  # map event's move route/execution point if paused mid-way" is documented
+  # to survive a save/load -- Game::State#map_event_positions' own comment
+  # explicitly flagged the move-route index as "this codebase does not
+  # attempt to round-trip yet" even after the position/facing half was
+  # fixed. Scene::Map#build_event always built a fresh Game::MoveRoute at
+  # index 0 from the page's own move_route field, with no override path at
+  # all, so a save taken mid-way through a non-repeating custom route
+  # restarted it from the very first command on Continue instead of
+  # resuming where it actually left off.
+  ic = Game::Interpreter::Cmd
+  ev = event(0, 1, page(x_move_type: Game::MoveType::CUSTOM,
+                        route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT,
+                                           R::MOVE_RIGHT, R::MOVE_RIGHT],
+                                          repeat: false)))
+  db = fake_db
+  events = { 1 => ev }
+  state = Game::State.new(fake_party, 1, 5, 5)
+  state.map = fake_map(1, events)
+  parent = FakeParent.new(db) { |id| fake_map(id, events) }
+  scene = RPG2k::Scene::Map.new(parent, state)
+
+  15.times { scene.update } # partway through the 4-tile route
+  e = scene.instance_variable_get(:@events).first
+  c = e[:char]
+  ok c.x > 0 && c.x < 4, "expected partial progress into the route, got x=#{c.x}"
+  ok !e[:route].done?, 'the route has not finished yet'
+  saved_index = e[:route].index
+
+  restored = Game::State.load(db, Marshal.load(Marshal.dump(state.to_h)))
+  restored.map = fake_map(1, events)
+  fresh = RPG2k::Scene::Map.new(FakeParent.new(db) { |id| fake_map(id, events) },
+                                restored)
+  re = fresh.instance_variable_get(:@events).first
+  eq saved_index, re[:route].index,
+     'the restored route resumes at the exact command it was on, not index 0'
+  eq c.x, re[:char].x, 'the character position agrees (the already-fixed position half)'
+
+  # Driving the restored scene onward finishes only the *remaining* distance,
+  # not the full 4-tile route replayed from scratch.
+  40.times { fresh.update }
+  fc = fresh.instance_variable_get(:@events).first[:char]
+  eq 4, fc.x, 'the route completes to its actual endpoint from the resumed cursor'
+end
+
+check "a page's own custom-route index does not leak onto an unrelated page's " \
+      'different route during a live, in-place page reselection' do
+  # The save/load restore above must not also fire during Scene::Map's own
+  # *live* rebuild (#rebuild_events_preserving_positions, triggered whenever
+  # any event's page selection changes mid-visit): that path already
+  # restores a bystander event's own *unchanged* route with full live
+  # fidelity a few lines further down in the very same method (the real
+  # running Game::MoveRoute object, not a coarser saved index), and a route
+  # that genuinely changed this rebuild -- a different page entirely -- must
+  # restart at its own index 0, not seek into Game::State
+  # #map_event_route_index's most recently recorded index for the event id,
+  # which still describes the *old* page's route, not the new one.
+  page1 = page(x_move_type: Game::MoveType::CUSTOM,
+              route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT,
+                                 R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false))
+  page2 = page(x_move_type: Game::MoveType::CUSTOM,
+              route: move_route([R::MOVE_LEFT], repeat: true))
+  ev = two_page_event(0, 1, 5, page1, page2)
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  st = scene.instance_variable_get(:@state)
+
+  20.times { scene.update } # partway through page 1's own route
+  e = scene.instance_variable_get(:@events).first
+  ok e[:route].index > 0, "expected partial progress into page 1's route, got index #{e[:route].index}"
+
+  st.switches[5] = true
+  scene.update # page 2's condition now holds: an in-place page reselection runs
+
+  e2 = scene.instance_variable_get(:@events).first
+  ok !e2[:page].equal?(e[:page]), 'page 2 is now the active page'
+  eq 0, e2[:route].index,
+     "page 2's own different route starts at its own index 0, not a stale " \
+     "index carried over from page 1's unrelated route"
+end
+
 check "Proceed With Movement blocks a Parallel Process's own interpreter, not just the foreground's" do
   # docs/TODO.md, `2k/09_bug/017_heiretu_totyu_end/hei_mukou.htm`: Set Move
   # Route + "wait for completion" is documented to block whichever event's

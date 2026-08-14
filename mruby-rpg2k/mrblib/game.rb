@@ -4145,6 +4145,30 @@ module Game
     def repeat?; @repeat; end
     def skippable?; @skippable; end
 
+    # Resume this route's cursor at a saved index (Scene::Map#build_event
+    # restoring a Save/Continue taken mid-route -- see Game::State
+    # #map_event_route_index / #record_map_event_positions). `i` is whatever
+    # raw #index a still-running route last snapshotted, including the
+    # `@commands.size` sentinel #advance_cursor leaves behind on a *finished*
+    # non-repeating route (@index left one past the last command, @done set
+    # true) -- reproduced here rather than clamped into the last command, or
+    # a save taken the instant such a route naturally finished would silently
+    # re-run its final step on load. A mid-repeat-loop index (always
+    # in-bounds, since #advance_cursor wraps a repeating route back to 0
+    # itself rather than ever leaving it at the sentinel) resumes exactly
+    # where it left off. Out-of-range in the other direction (a negative or
+    # stale index from a shorter/edited route) clamps to the start instead of
+    # raising.
+    def resume_at(i)
+      return if @commands.empty?
+      if i >= @commands.size
+        @index = @commands.size
+        @done = true
+      else
+        @index = [i, 0].max
+      end
+    end
+
     # Build a MoveRoute from an event page's parsed `move_route` field (an
     # LCF::Array1D exposing commands/repeat/skippable), or nil when the page
     # carries no custom route.
@@ -8600,6 +8624,20 @@ module Game
     # across one, the same "resets on leaving-and-returning" family as
     # #encounter_rate/#parallax just above.
     attr_accessor :map_event_positions
+    # The current map's own live custom-move-route (page move_type CUSTOM)
+    # cursor, event id => Game::MoveRoute#index, snapshotted alongside
+    # #map_event_positions -- the "move-route index this codebase does not
+    # attempt to round-trip yet" gap #map_event_positions' own comment above
+    # used to flag. A map event mid-way through its page's own custom route
+    # when a Save/Continue is taken now resumes at the exact same command
+    # instead of restarting the route from the top, matching real RPG_RT's
+    # SaveMapEvent chunk (still opaque here, see LCF::Schema::SAVE_MOVABLE --
+    # this is Marshal-save-only, same as #common_event_progress). Scoped
+    # identically to #map_event_positions in every other way: per-map, reset
+    # on #perform_teleport, and only ever consulted for a page whose move_type
+    # is CUSTOM (Scene::Map#build_event's `e[:route]`) -- a page with no
+    # custom route of its own leaves a stale entry here unread and harmless.
+    attr_accessor :map_event_route_index
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -8637,6 +8675,7 @@ module Game
       @escape_target = nil
       @common_event_progress = {}
       @map_event_positions = {}
+      @map_event_route_index = {}
       @system_bgm = {}
       @system_sfx = {}
       # nil = "not configured yet"; #seed_screen_transitions fills each slot in
@@ -8852,6 +8891,7 @@ module Game
         teleport_targets: @teleport_targets,
         common_event_progress: @common_event_progress,
         map_event_positions: @map_event_positions,
+        map_event_route_index: @map_event_route_index,
         steps: @steps,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
@@ -9299,6 +9339,7 @@ module Game
       state.teleport_targets = h[:teleport_targets] || {}
       state.common_event_progress = h[:common_event_progress] || {}
       state.map_event_positions = h[:map_event_positions] || {}
+      state.map_event_route_index = h[:map_event_route_index] || {}
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}

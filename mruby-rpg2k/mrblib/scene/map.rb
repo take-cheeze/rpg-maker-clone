@@ -845,7 +845,18 @@ class RPG2k
       # Game::Character, tagged with its trigger, command list and how it moves
       # (autonomous move type, or a custom Game::MoveRoute). @event_tiles caches
       # the tiles events occupy, for collision and markers.
-      def build_events
+      # `restore_route_index:` gates whether a fresh page-CUSTOM route's cursor
+      # consults Game::State#map_event_route_index at all (see #build_event) --
+      # true only for the very first build for this scene (a brand new
+      # Scene::Map, i.e. genuinely resuming a save rather than continuing live
+      # play), matching #new_parallel's identical "only the first build" scoping
+      # for a Common Event's own saved progress. #rebuild_events_preserving_positions
+      # passes false: its own follow-up copy loop already restores a bystander's
+      # *unchanged* route with full live fidelity (the actual running object,
+      # not a saved index), and a route that legitimately changed this rebuild
+      # must restart at 0, not seek into an unrelated saved index left over from
+      # whatever this same event id's route was doing before the rebuild.
+      def build_events(restore_route_index: true)
         @events = []
         @event_tiles = {}
         evs = @map.unit.events
@@ -861,7 +872,7 @@ class RPG2k
                                             @state.variables, @state.party)
           next unless selected
           page = selected[1]
-          @events.push(build_event(id, ev, page))
+          @events.push(build_event(id, ev, page, restore_route_index: restore_route_index))
         end
         rebuild_event_tiles
       rescue StandardError => e
@@ -870,7 +881,7 @@ class RPG2k
         @event_tiles = {}
       end
 
-      def build_event(id, ev, page)
+      def build_event(id, ev, page, restore_route_index: true)
         dir = Game::EventGraphic.numpad_direction(page_direction(page))
         x, y = ev.x, ev.y
         # A saved wandered position (see #record_map_event_positions) wins over
@@ -905,6 +916,23 @@ class RPG2k
         move_type = page_move_type(page)
         route = move_type == Game::MoveType::CUSTOM ?
                 Game::MoveRoute.from_page(page_move_route(page)) : nil
+        # A saved mid-route cursor (see #record_map_event_positions) resumes a
+        # page's own custom route at the exact command it was on rather than
+        # restarting from the top -- the "move-route index" half of the saved-
+        # position restore just above, previously left unmodelled (see Game::
+        # State#map_event_route_index). Harmless when this page has no custom
+        # route of its own (route is nil) or nothing was ever saved for this
+        # id; `restore_route_index` is false only for
+        # #rebuild_events_preserving_positions' in-place, live rebuild, where
+        # applying a saved index here would be wrong twice over -- a bystander
+        # whose route didn't change gets the actual running object back
+        # wholesale a few lines below in that method (full fidelity, not a
+        # coarser index), and one whose route genuinely did change must
+        # restart at 0, not seek into an index that belonged to a different
+        # route entirely.
+        if restore_route_index && route && (saved_index = @state.map_event_route_index[id])
+          route.resume_at(saved_index)
+        end
         # `page` is kept so a refresh can tell whether the conditions still pick
         # the same one (see #pages_changed?).
         { id: id, char: ch, page: page, trigger: page_trigger(page),
@@ -932,11 +960,16 @@ class RPG2k
       # current map's own event ids, which #perform_teleport clears before a
       # genuine map change (see there) -- an ordinary map re-visit (leave and
       # return, no save involved) still resets every event, matching the
-      # "Save / Load persistence" list in docs/TODO.md.
+      # "Save / Load persistence" list in docs/TODO.md. Also snapshots a
+      # currently-running page-custom move route's own cursor (e[:route], only
+      # ever non-nil for a page whose move_type is CUSTOM -- see #build_event)
+      # into Game::State#map_event_route_index, so the same restore resumes an
+      # in-progress custom route at its exact command rather than the top.
       def record_map_event_positions
         @events.each do |e|
           ch = e[:char]
           @state.map_event_positions[e[:id]] = [ch.x, ch.y, ch.direction]
+          @state.map_event_route_index[e[:id]] = e[:route].index if e[:route]
           # Also keeps @event_last_position current for #event_id_at's hidden-
           # event fallback -- see #build_events' seeding comment.
           @event_last_position[e[:id]] = [ch.x, ch.y, ch.direction]
@@ -2276,7 +2309,9 @@ class RPG2k
       def rebuild_events_preserving_positions
         placed = {}
         @events.each { |e| placed[e[:id]] = e }
-        build_events
+        # false: this is a live, in-place page reselection, not a save/load
+        # restore -- see #build_event's own comment on `restore_route_index`.
+        build_events(restore_route_index: false)
         @events.each do |e|
           old = placed[e[:id]]
           next unless old
@@ -6722,8 +6757,13 @@ class RPG2k
         # stale entry to an unrelated event on the destination map. Dropped
         # here, before the destination's own events are built, so every one of
         # them falls back to its own page's default placement, matching an
-        # ordinary map re-visit (see #record_map_event_positions).
+        # ordinary map re-visit (see #record_map_event_positions). The same
+        # applies to a saved custom-route cursor: dropped alongside so a
+        # destination event beginning its own page's route starts at the top,
+        # not part-way through wherever a same-numbered event on the map being
+        # left happened to be.
         @state.map_event_positions = {}
+        @state.map_event_route_index = {}
         @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
