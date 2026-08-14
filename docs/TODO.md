@@ -3021,8 +3021,40 @@ following this paragraph as the original record.
   separate dice, not one roll broadcast to all five. The random case is now
   re-evaluated per id inside the loop; every other operand type keeps its
   existing once-up-front evaluation, since nothing establishes RPG_RT
-  re-reads a *non-random* source per id (a self-referential range reading a
-  variable inside its own write range is a different, unverified question).
+  re-reads a *non-random* source per id. ✅ **The self-referential-range
+  question this same bullet left open is now settled and fixed too, verified
+  against EasyRPG Player's actual C++ source rather than left unverified.** A
+  direct-variable operand (type 1, "Var A ops B") applied to a genuine
+  multi-id range whose own source id falls *inside* the destination range is
+  not one value read up front and broadcast to the whole range the way this
+  codebase (and every other operand type, source-outside-range included)
+  already treats it. `Game_Interpreter::CommandControlVariables`
+  (`src/game_interpreter.cpp`) dispatches a direct-variable range write to
+  `Game_Variables::SetRangeVariable`/`AddRangeVariable`/etc.
+  (`src/game_variables.cpp`), all thin wrappers over
+  `Game_Variables::WriteRangeVariable`: when the source id falls in
+  `[first_id, last_id]`, it splits into two passes right at the source —
+  `first_id..src` is written first from `src`'s value *before* this command
+  touched anything, then (only once that first pass has actually run, and
+  therefore already updated `src`'s own stored value for anything but a
+  plain Set) `src+1..last_id` is written from `src`'s value *now*, not its
+  original one. A source outside the range skips the split entirely and
+  degenerates to the single up-front read this codebase already had, so the
+  gap was invisible outside this one specific case. Fixed with a new
+  `Game::Interpreter#do_control_vars_range_variable`, called from
+  `#do_control_vars` only for operand type 1 over a genuine multi-id range
+  (`a < b`), porting `WriteRangeVariable`'s two-pass split exactly (a source
+  outside `a..b` falls back to the same single-read-and-broadcast the
+  generic path already used, so nothing changes there); every other operand
+  type (including random) is untouched. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a self-referential `+=` range splits
+  at the source exactly as EasyRPG's algorithm predicts — ids after the
+  source combine with its post-first-pass value, not its original one; a
+  source outside the range still broadcasts a single value, unaffected; a
+  self-referential `=` is confirmed unobservably identical either way, since
+  writing the source back onto itself never changes what the second pass
+  re-reads), the first case confirmed to fail against the pre-fix code
+  (`expected [20, 20, 20, 30, 30], got [20, 20, 20, 20, 20]`) before the fix.
   Covered by a new `scripts/rpg2k_logic_check.rb` check (a wide-range batch
   assign must not produce the same value in every variable).
 - ✅ **Indirect ("pointer") target addressing now no-ops on a resolved id

@@ -4723,6 +4723,55 @@ check 'Control Variables batch random-assign rolls independently per variable' d
   ok vals.uniq.size > 1, "every variable in the batch got the same roll: #{vals}"
 end
 
+check 'Control Variables batch operand reading its own destination range splits at the source, not one broadcast read' do
+  # EasyRPG's Game_Variables::WriteRangeVariable (src/game_variables.cpp),
+  # reached from Game_Interpreter::CommandControlVariables's direct-variable
+  # range dispatch (src/game_interpreter.cpp) whenever the source id falls
+  # inside the destination range: ids at or before the source combine with
+  # its *original* value, then (only once that first pass ran) ids after the
+  # source combine with whatever the first pass just left there -- not one
+  # value read up front and broadcast to the whole range the way every other
+  # operand type (and a source outside the range) already works.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  (1..5).each { |id| st.variables[id] = 10 }
+  # mode 1 (range): ids 1..5, op 1 (+=), operand type 1 (plain variable), src = 3.
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [1, 1, 5, 1, 1, 3])])
+  it.update
+  # var[3]'s own original value (10) is added to ids 1..3 first (-> 20 each,
+  # var[3] included), then var[3]'s *now-updated* value (20) is added to ids
+  # 4..5 (-> 30 each) -- not the original 10 a single up-front read would use.
+  eq [20, 20, 20, 30, 30], (1..5).map { |id| st.variables[id] },
+     'ids after the source should see its post-first-pass value, not its original one'
+
+  # Control: the identical batch with the source *outside* the destination
+  # range degenerates to the ordinary single up-front read, unaffected by
+  # this fix -- every id gets the same, unsplit value.
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  (1..5).each { |id| st2.variables[id] = 10 }
+  st2.variables[9] = 7
+  it2.start([FakeCmd.new(IC::CONTROL_VARS, [1, 1, 5, 1, 1, 9])])
+  it2.update
+  eq [17, 17, 17, 17, 17], (1..5).map { |id| st2.variables[id] },
+     'a source outside the destination range still broadcasts a single value to the whole batch'
+
+  # Control: a Set (rather than Add) through a self-referential range is
+  # unobservable either way, since writing the source back onto itself never
+  # changes the value the second pass re-reads.
+  st3 = new_state
+  it3 = Game::Interpreter.new(st3)
+  st3.variables[1] = 1
+  st3.variables[2] = 2
+  st3.variables[3] = 99
+  st3.variables[4] = 4
+  st3.variables[5] = 5
+  it3.start([FakeCmd.new(IC::CONTROL_VARS, [1, 1, 5, 0, 1, 3])])
+  it3.update
+  eq [99, 99, 99, 99, 99], (1..5).map { |id| st3.variables[id] },
+     'a self-referential Set still broadcasts the source value to the whole range'
+end
+
 check 'a variable clamps to +-999999 instead of overflowing' do
   # RPG_RT never lets a variable's stored value leave +-999999 in RPG2000
   # (+-9999999 in RPG2003, LCF.var_max/var_min) -- a Control Variables write
