@@ -6649,6 +6649,43 @@ def battle_scene_with_pages(pages)
   [scene, st]
 end
 
+# yado.tk / 01_shoshin's 011_siyou: "Empty party doesn't itself Game Over, but
+# battling with one is instant defeat; all-KO'd ... is instant Game Over the
+# same way." #draw_battle_command's current_actor (living_allies[actor_i]) is
+# nil for both an empty party and an all-KO'd one -- it already declines to
+# open a command window rather than crash (`return unless actor`) -- but
+# nothing then advanced the battle: a round only ever starts once the player
+# picks a command for *someone*, so the command phase sat frozen forever
+# (never reaching the `battle.finished?` check every other round settles
+# through) instead of resolving as a defeat.
+check 'entering a battle with an empty party is instant defeat, not a frozen command menu' do
+  scene, st = battle_scene_with_pages({})
+  st.party.instance_variable_set(:@actors, [])
+  12.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :result
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, 'the battle is open'
+  eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
+  eq :defeat, ui[:result], 'an empty party reads the same as a wipeout'
+end
+
+check 'entering a battle with an all-KO\'d party is instant defeat too' do
+  scene, st = battle_scene_with_pages({})
+  st.party.instance_variable_set(:@actors, [BattleStubActor.new(hp: 0)])
+  12.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :result
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, 'the battle is open'
+  eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
+  eq :defeat, ui[:result]
+end
+
 check 'a turn-0 battle-event page runs as the fight opens' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 12, 12, 0])]) }

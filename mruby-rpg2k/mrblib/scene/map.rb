@@ -3478,7 +3478,34 @@ class RPG2k
         refresh_battle_status
         # Turn-0 pages fire before the party is asked for its first command —
         # this is where a troop's opening dialogue lives.
-        draw_battle_command unless run_battle_events
+        return if run_battle_events
+        settle_already_finished_battle || draw_battle_command
+      end
+
+      # An encounter can start already decided — an empty party (every member
+      # removed via Change Party Member) or one left all-KO'd from a prior
+      # fight, with no revive in between, both read as no living ally at all.
+      # `#draw_battle_command`'s `current_actor` (`living_allies[actor_i]`) is
+      # nil either way, so it already declines to open a command window
+      # (`return unless actor`) rather than crash — but nothing then moved the
+      # battle on, since a round only ever starts once the player picks a
+      # command for *some* actor. The command phase sat frozen forever, never
+      # reaching the `battle.finished?` check `#finish_round_animation`/
+      # `#leave_battle_event_phase` run after every other round, instead of
+      # yado.tk's documented "battling with an empty party is instant defeat"
+      # (worded the same way for an all-KO'd one). `Game::Battle#end_round`
+      # is what actually computes `#result` (`alive?(@allies) ? :victory :
+      # :defeat`); calling it here settles the same way an ordinary round
+      # ending would, with nothing to clear (`@allies.each` no-ops on an empty
+      # or already-KO'd roster). Returns whether it fired, so `#open_battle`
+      # only falls back to the normal command window when there is actually
+      # someone to command.
+      def settle_already_finished_battle
+        battle = @battle_ui[:battle]
+        return false unless battle.finished?
+        battle.end_round
+        enter_battle_result(battle.result)
+        true
       end
 
       # A troop member's sprite depth for its add-order index `i` (0-based).
