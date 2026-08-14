@@ -8169,9 +8169,10 @@ module Game
     # a time until only the title chunk failed, then one field at a time within
     # it. See ADR 0021.
     #
-    # The only live-state fields still dropped versus #to_h are the game timer
-    # (which liblcf's SaveSystem has no field for) and per-actor name/title
-    # overrides for non-leader members, so this is now a near-parity export.
+    # Both Timer Operation countdowns and every roster member's Change Actor
+    # Name override round-trip now too (see LCF::Schema::SAVE_INVENTORY's
+    # timer1_*/timer2_* fields and SAVE_PARTY_ACTOR's actor_name), so this is
+    # a near-parity export; Change Actor Title still is not (see docs/TODO.md).
     def to_lsd(save_count = 1, timestamp = nil)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
@@ -8297,6 +8298,15 @@ module Game
       inv[12] = item_ids
       inv[13] = item_ids.map { |i| @party.items[i] }
       inv[21] = @party.gold
+      t1, t2 = @timers[0], @timers[1]
+      inv[23] = t1.frames
+      inv[24] = t1.running
+      inv[25] = t1.visible
+      inv[26] = t1.in_battle
+      inv[27] = t2.frames
+      inv[28] = t2.running
+      inv[29] = t2.visible
+      inv[30] = t2.in_battle
       save[109] = inv
 
       save
@@ -8428,6 +8438,17 @@ module Game
         party.leader.name = nm if nm && !nm.empty?
       end
       restore_pictures(state, save[103])
+      # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
+      # save written before this landed simply omits them, leaving the fresh
+      # `Timer.new` defaults #initialize already seeded in place.
+      state.timer(0).frames = inv.timer1_frames unless inv.timer1_frames.nil?
+      state.timer(0).running = inv.timer1_active unless inv.timer1_active.nil?
+      state.timer(0).visible = inv.timer1_visible unless inv.timer1_visible.nil?
+      state.timer(0).in_battle = inv.timer1_battle unless inv.timer1_battle.nil?
+      state.timer(1).frames = inv.timer2_frames unless inv.timer2_frames.nil?
+      state.timer(1).running = inv.timer2_active unless inv.timer2_active.nil?
+      state.timer(1).visible = inv.timer2_visible unless inv.timer2_visible.nil?
+      state.timer(1).in_battle = inv.timer2_battle unless inv.timer2_battle.nil?
       state
     end
 

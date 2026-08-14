@@ -2641,6 +2641,43 @@ check 'to_lsd/from_lsd round-trips a non-leader actor\'s Change Actor Name' do
      "a non-leader's renamed name now round-trips too, via chunk 108 field 1"
 end
 
+check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
+  # docs/TODO.md used to call the game timer the one field the .lsd export
+  # "cannot yet carry", guessing it would need "a documented chunk id" of its
+  # own in liblcf's SaveSystem (chunk 101). It already has one: liblcf's own
+  # `ChunkSaveInventory` enum documents timer1_frames..timer2_battle at ids
+  # 0x17..0x1E (23..30), filed under the inventory chunk (109) next to gold,
+  # not the system chunk -- and the "value is seconds*60+59" semantics its own
+  # doc comment gives for timer1_frames/timer2_frames match Game::Timer#set
+  # exactly, so no guessing was needed for the encoding either.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.timer(0).set(30); st.timer(0).start(true, true)
+  st.timer(1).set(90); st.timer(1).start(false, false)
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq 30, round.timer(0).seconds, 'the first timer\'s remaining time round-trips'
+  eq true, round.timer(0).running, 'and whether it is running'
+  eq true, round.timer(0).visible, 'and whether it is drawn'
+  eq true, round.timer(0).in_battle, 'and whether it keeps running in battle'
+  eq 90, round.timer(1).seconds, 'the second timer round-trips independently of the first'
+  eq false, round.timer(1).visible, 'started without the visible flag'
+  eq false, round.timer(1).in_battle
+
+  # A save written before this landed simply omits all eight fields; from_lsd
+  # must leave the freshly-constructed State's Timer.new defaults (stopped,
+  # hidden, zero) alone rather than crash reading an absent field.
+  legacy = st.to_lsd
+  inv = legacy[109]
+  [23, 24, 25, 26, 27, 28, 29, 30].each { |idx| inv.delete(idx) }
+  old = Game::State.from_lsd(db, legacy)
+  eq 0, old.timer(0).seconds, 'an old save without the timer fields keeps the default first timer'
+  eq false, old.timer(0).running
+  eq 0, old.timer(1).seconds, 'and the default second timer'
+  eq false, old.timer(1).running
+end
+
 # -- the permanent actor roster (Game::Actors) --------------------------------
 #
 # Nepheshel drives its whole party mechanic through Change Party Member: it adds

@@ -1887,9 +1887,27 @@ The work below is roughly ordered by the critical path to a walkable game
   on-map CharSet override (hero chunk 104) and the **title chunk (100)** — the
   `:double` timestamp (via the new `LCF.pack_double`), the leader's
   name/level/HP and the party FaceSets — so a real RPG_RT/EasyRPG file-select
-  screen shows the party. Still keeping the Marshal save *primary* (so Continue
-  prefers it) is one field the `.lsd` cannot yet carry: the **game timer**
-  (liblcf's SaveSystem has no field for it — needs a documented chunk id). Both
+  screen shows the party. ✅ **Both Timer Operation countdowns now round-trip
+  through the `.lsd` too.** This line used to call the game timer the one
+  field the export "cannot yet carry", guessing it would "need a documented
+  chunk id" of its own in liblcf's SaveSystem (chunk 101) — it already had
+  one, just filed elsewhere: liblcf's own `ChunkSaveInventory` enum documents
+  `timer1_frames`..`timer2_battle` at ids 0x17-0x1E (23-30), under the
+  inventory chunk (109) next to gold, not the system chunk, and its
+  "value is seconds\*60+59" doc comment for the frame fields matches
+  `Game::Timer#set`'s own encoding exactly — no guessing needed for the
+  layout either. `LCF::Schema::SAVE_INVENTORY` now decodes the eight fields
+  (frames/active/visible/battle per timer, deliberately with no `default:`,
+  matching SaveSystem's own access-flag fields, so an absent field reads back
+  nil rather than a false zero — the way `.from_lsd` tells "not in this save"
+  from "explicitly stopped" everywhere else); `Game::State#to_lsd` writes
+  both `Game::Timer`s into them and `.from_lsd` restores them, leaving a
+  legacy save's fresh `Timer.new` defaults (stopped, hidden, zero) untouched
+  when the fields are absent. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (both timers round-trip independently through an in-memory
+  `to_lsd`/`from_lsd`; an old save missing all eight fields keeps the default
+  timers), confirmed to fail against the pre-fix code (the first timer
+  reading back at 0 seconds) before the fix. Both
   save paths carry the **whole actor roster**, not just the current party:
   chunk 108 holds one entry per actor the party has ever held (which is what a
   genuine RPG_RT save holds), so a companion who is out of the party when the

@@ -1116,8 +1116,12 @@ module LCF
     # and 導きの書 (item 451) ×1, after the gate crystal had been spent. Item ids
     # are int16; counts and per-item use-counts are one byte each. Field 1 is the
     # party roster (actor ids); the sole entry `[1]` is actor 1, whose database
-    # charset matches the saved hero. The step/turn counters are left out until
-    # confirmed.
+    # charset matches the saved hero. The step/turn counters (fields 0x29/0x2A)
+    # are left out until confirmed. Fields 23-30 (0x17-0x1E) are the two Timer
+    # Operation countdowns -- ids and "value is seconds*60+59" both confirmed
+    # against liblcf's own `ChunkSaveInventory` enum, which documents them
+    # under this chunk rather than the system chunk (101) `docs/TODO.md` used
+    # to guess they would need a new id in.
     SAVE_INVENTORY = {
       1 => { name: :party, type: :int8_array },
       11 => { name: :item_count, type: :int, default: 0 },
@@ -1125,6 +1129,18 @@ module LCF
       13 => { name: :item_counts, type: :int8_array },
       14 => { name: :item_usage, type: :int8_array },
       21 => { name: :gold, type: :int, default: 0 },
+      # No `default:` on these eight (matching e.g. SAVE_SYSTEM's
+      # teleport_allowed) so an absent field reads back as nil rather than a
+      # concrete value -- #from_lsd tells "not in this save" from "explicitly
+      # false/zero" the same way it already does for the access flags.
+      23 => { name: :timer1_frames, type: :int },
+      24 => { name: :timer1_active, type: :bool },
+      25 => { name: :timer1_visible, type: :bool },
+      26 => { name: :timer1_battle, type: :bool },
+      27 => { name: :timer2_frames, type: :int },
+      28 => { name: :timer2_active, type: :bool },
+      29 => { name: :timer2_visible, type: :bool },
+      30 => { name: :timer2_battle, type: :bool },
     }
 
     # Saved common-event execution state (chunk 114): an Array2D indexed by
