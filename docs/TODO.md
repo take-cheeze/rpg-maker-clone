@@ -3430,13 +3430,49 @@ Everything below is unverified against the codebase.
   though that specific claim is so far only indirectly exercised (the Shop
   `max_buy` cap checks), not asserted head-on the way the sort order now
   is -- left as-is rather than claiming a rigor it does not have yet.
-  "equipped item No." reads 0 when empty, and the 2nd weapon slot
-  reads through the *Shield* No. operand for dual-wield; "item possession
-  count" excludes equipped copies (must sum both for the true total —
-  already true of the Control Variables item operand); no inventory is
-  per-hero, always party-shared. ("hero equips X" — the Conditional Branch
-  actor sub-condition — already reads `actor.equipped?` directly and was
-  fine; "has item X" was the actual gap, now fixed, see above.)
+  ✅ **"Equipped item No." reads 0 when empty, and the 2nd weapon slot reads
+  through the *Shield* No. operand for dual-wield -- both already correct
+  and already tested too.** `Interpreter#actor_operand`'s equip-slot cases
+  (attrs 10..14) are a flat `actor.equipment[attr - 10] || 0` off the same
+  array every other equipment read uses -- no separate "is this slot empty"
+  branch to get wrong, so an empty slot (which `Game::Actor#equipment`
+  stores as `0`, per `equip_from_bag`/`unequip_to_bag`) already reads 0
+  through the operand for free, and `rpg2k_logic_check.rb`'s "Control
+  Variables reads an equipped item id (operand 5, attr 10..14)" check
+  already asserts exactly that for the shield slot. Dual-wield needs no
+  separate handling either, for the identical reason: a 二刀流 actor's
+  second weapon is stored in `equipment[1]` -- the ordinary shield-slot
+  index -- confirmed by `rpg2k_logic_check.rb`'s "equipping a second
+  weapon from the bag lands it in the shield slot" check, which asserts
+  `hero.equipment[0, 2] == [1, 2]` (both weapon ids, one per slot) after
+  equipping. Since the operand and every other equipment reader share that
+  one array with no dual-wield-aware branching anywhere, reading attr 11
+  (Shield) on such an actor already returns the second weapon's id, not a
+  literal shield's, with nothing further needed.
+  ✅ **"Item possession count" excludes equipped copies (must sum both for
+  the true total) -- also already correct and already tested.**
+  `Item#item_operand`'s two branches read `party.item_count(id)` (bag-only)
+  or, when `param6 == 1`, `party.actors.reduce(0) { |n, a| n +
+  a.equipment.count(id) }` (equipped-only) -- confirmed disjoint, per the
+  comment right above it ("matching RPG_RT's own split between the two
+  reads"), and `rpg2k_logic_check.rb`'s "Control Variables reads item count
+  and equipped count (operand type 4)" check proves it numerically: 3 of an
+  item held in the bag plus 2 more equipped across two different actors
+  read back as `3` and `2` separately, not `5` from either operand alone.
+  ✅ **No inventory is per-hero, always party-shared -- trivially and
+  completely true by construction**, not something that needed checking
+  against a reference so much as confirming there is no competing
+  structure to contradict it: the bag (`@items`) lives only on
+  `Game::Party`, a single hash keyed by item id with no per-`Game::Actor`
+  counterpart anywhere in this codebase, so there is nothing else it could
+  mean. ("hero equips X" — the Conditional Branch actor sub-condition —
+  already reads `actor.equipped?` directly and was fine; "has item X" was
+  the actual gap, now fixed, see above.)
+  **Still genuinely open in this bullet:** "counts silently cap at 99" (see
+  the caveat two paragraphs up -- functionally matched but not yet asserted
+  head-on) and "Change Equipment creates/returns inventory copies
+  implicitly" (not yet checked against this engine's own
+  `equip_from_bag`/`unequip_to_bag`).
 - **Call Event** — doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself
   once the callee finishes/cancels; calling a bad event/page id raises
