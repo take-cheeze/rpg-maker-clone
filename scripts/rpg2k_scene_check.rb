@@ -5015,6 +5015,41 @@ check 'Show Battle Animation plays: an animation sprite shows and a flash fires'
   ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
+# EasyRPG's own Game_Interpreter_Map::CommandShowBattleAnimation
+# (src/game_interpreter_map.cpp) always starts the animation through
+# Game_Screen::ShowBattleAnimation regardless of the wait flag -- the flag only
+# gates whether the interpreter's own wait_time is set afterwards. This
+# codebase used to only ever start an animation from the :animation wait
+# dispatch (#drive_map_animation), which a non-waiting command never reaches
+# at all, so a "wait until it finishes" flag left unchecked silently dropped
+# the play instead of firing it in the background.
+check 'Show Battle Animation with the wait flag off still plays, without blocking the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # animation 8 (the same drawable one the wait=1 check above uses) on the
+  # player, wait flag OFF this time.
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 0], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@animation_sprite)
+  shown = false
+  flashed = false
+  not_blocked = nil
+  40.times do |i|
+    scene.update
+    shown ||= spr.visible
+    flashed ||= st.screen.flashing?
+    not_blocked = st.switches[6] if i == 2
+  end
+  ok not_blocked, 'the event is not held by a fire-and-forget Show Battle Animation'
+  ok shown, 'the animation sprite was shown even though the wait flag was off'
+  ok flashed, 'a screen-flash timing fired during the fire-and-forget animation'
+  ok !spr.visible, 'the animation sprite is hidden once it finishes'
+end
+
 # yado.tk (corroborated independently against EasyRPG's own C++ source, see
 # #hold_animation_screen_flash's comment): Screen Flash is capped to 1/30s of
 # display while a Battle Animation is playing, since the animation

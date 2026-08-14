@@ -264,6 +264,7 @@ class RPG2k
         @state.screen.update # screen tint progresses every frame, even in events
         @state.update_pictures # picture moves progress every frame too
         update_sprite_flashes # Flash Sprite decays during events too
+        step_ownerless_map_animation # a fire-and-forget Show Battle Animation plays on, unattended
         update_closing_windows # a closed message keeps shrinking in the background
         watch_bgm_loop # so the "BGM played once" branch can be answered
         @anim_frame += 1 # water / animated tiles cycle even during events
@@ -2227,6 +2228,38 @@ class RPG2k
                      "#{req[:width]}x#{req[:height]}: video playback is not supported"
       end
 
+      # -- Show Battle Animation (fire-and-forget) ------------------------------
+
+      # Start a Show Battle Animation (11210) that was issued with its "wait
+      # until it finishes" flag off. EasyRPG's own `Game_Interpreter_Map::
+      # CommandShowBattleAnimation` always calls `Game_Screen::
+      # ShowBattleAnimation` regardless of that flag — it only gates whether the
+      # interpreter's own wait_time is then set — so a fire-and-forget play is
+      # still expected to render, not merely skip blocking. This codebase used to
+      # only ever start one from the :animation wait dispatch
+      # (#drive_map_animation), which a non-waiting call never reaches at all —
+      # #do_show_battle_animation records the request either way but nothing
+      # then picked it up, so it silently never played. Polled here instead,
+      # right alongside every other request this interpreter queued this step
+      # (Move Event, Flash Sprite, ...), for both the foreground interpreter and
+      # every parallel process (#apply_interpreter_requests runs for both).
+      #
+      # No owner: unlike #init_map_animation's waited-for play, nothing is
+      # parked on this one to #resume once it finishes (#step_map_animation
+      # already treats a nil #@map_animation_interp as "no one to resume").
+      # When the shared on-screen slot is already busy this play is dropped
+      # rather than queued or cutting the running one short — this build does
+      # not model one animation cutting another off (see #drive_map_animation),
+      # and a fire-and-forget request has no owner left to keep retrying for a
+      # turn the way a waiting interpreter implicitly does by asking again next
+      # frame.
+      def apply_battle_animation_request(interp)
+        req = interp.take_battle_animation_request
+        return if req.nil? || @map_animation || @anim_wait
+        @map_animation_interp = nil
+        begin_map_animation(req)
+      end
+
       # -- Flash Sprite --------------------------------------------------------
 
       # Start the character flashes an interpreter queued this step (11320). The
@@ -2961,6 +2994,7 @@ class RPG2k
         apply_sprite_flash_requests(interp, this_event)
         apply_vehicle_toggle(interp)
         apply_movie_request(interp)
+        apply_battle_animation_request(interp)
       end
 
       # Maps the interpreter's accepted-key symbols onto RGSS input buttons.
@@ -5612,11 +5646,42 @@ class RPG2k
         @map_animation ? step_map_animation : step_animation_wait
       end
 
+      # Advance a fire-and-forget Show Battle Animation (#apply_battle_animation_
+      # request) once per real frame. A waited-for play (map or battle-round
+      # alike) always has *something* re-visiting it every frame on its own --
+      # #drive_map_animation for the map :animation wait, #drive_battle_animate's
+      # own explicit #step_map_animation call for a battle round -- but a
+      # fire-and-forget one has no interpreter parked on it at all, so without
+      # this it would show its first frame once and then freeze there forever
+      # instead of playing through. Gated on @map_animation_interp being nil (no
+      # owner) so an owned map play is left to #drive_map_animation untouched,
+      # and on `!@map_animation[:battle]` so a battle-round play -- which also
+      # leaves @map_animation_interp nil, since #start_battle_animation never
+      # sets an owner either -- is left entirely to #drive_battle_animate's own
+      # call instead of being stepped twice a frame.
+      def step_ownerless_map_animation
+        return unless @map_animation_interp.nil?
+        if @map_animation
+          step_map_animation unless @map_animation[:battle]
+        elsif @anim_wait
+          step_animation_wait
+        end
+      end
+
       # Begin the animation: build the frame-by-frame player from `it`'s
       # request, or arm the timed-wait fallback when there is no drawable
       # animation.
       def init_map_animation(it)
-        @map_animation = start_map_animation(it)
+        begin_map_animation(it.battle_animation)
+      end
+
+      # Shared by #init_map_animation (a waited-for play, owned by `it`) and
+      # #apply_battle_animation_request (a fire-and-forget one, no owner):
+      # build the frame-by-frame player from a raw `battle_animation` request
+      # hash, or arm the timed-wait fallback when there is no drawable
+      # animation.
+      def begin_map_animation(req)
+        @map_animation = start_map_animation(req)
         if @map_animation
           fire_animation_flashes(@map_animation) # frame 0 flashes
         else
@@ -5771,10 +5836,11 @@ class RPG2k
         end
       end
 
-      # Build the animation player, or nil when the animation is unknown or its
-      # Battle/<name> sheet is missing (then the timed-wait fallback runs).
-      def start_map_animation(it)
-        req = it.battle_animation
+      # Build the animation player from a raw `battle_animation` request hash
+      # (`{ animation:, target:, ... }`), or nil when there is no request, the
+      # animation is unknown, or its Battle/<name> sheet is missing (then the
+      # timed-wait fallback runs).
+      def start_map_animation(req)
         return nil unless req
         tx, ty = animation_target_pixel(req[:target])
         # Every map target -- the player, a map event, a vehicle -- draws from
