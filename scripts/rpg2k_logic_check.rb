@@ -2487,16 +2487,28 @@ FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost
                        # by one step; direction is the skill's own scope
                        # (ally-scoped raises resistance, enemy-scoped lowers
                        # it) -- see Game::Party#skill_attr_shift.
-                       :affect_attr_defence)
+                       :affect_attr_defence,
+                       # Ability-value change (schema fields 33-36): raises or
+                       # lowers the target's per-battle ATK/DEF/SPI/AGI
+                       # modifier by the same signed effect affect_hp/
+                       # affect_sp already carry, direction by scope like
+                       # affect_attr_defence above -- see
+                       # Game::Party#skill_stat_mod_keys / Game::Battle#
+                       # apply_stat_mods. Appended last, for the same reason.
+                       :affect_attack, :affect_defense, :affect_spirit,
+                       :affect_agility)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
                occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
                variance: 4, attribute_effects: nil, switch_id: 1,
-               ignore_defense: false, affect_attr_defence: false)
+               ignore_defense: false, affect_attr_defence: false,
+               affect_attack: false, affect_defense: false,
+               affect_spirit: false, affect_agility: false)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
                 variance, attribute_effects, switch_id, ignore_defense,
-                affect_attr_defence)
+                affect_attr_defence, affect_attack, affect_defense,
+                affect_spirit, affect_agility)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
@@ -7564,12 +7576,15 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   # magical_rate 40), so RPG_RT blunts it with the target's *spirit* and not at
   # all with its armour: 32 - (0*8/40 + 40*16/80) = 32 - 8 = 24.
   eq({ cost: 6, hp: -24, mp: 0, inflict: [], chance: 100, variance: 4,
-       attributes: [], absorb: false, attr_shift: nil, attr_ids: [] },
+       attributes: [], absorb: false, attr_shift: nil, attr_ids: [],
+       stat_mod_keys: [] },
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
-  eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [] },
+  eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [],
+       stat_mod_keys: [], stat_effect: 32 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
   # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
-  eq({ cost: 4, hp: 22, mp: 22, variance: 4, attr_shift: nil, attr_ids: [] },
+  eq({ cost: 4, hp: 22, mp: 22, variance: 4, attr_shift: nil, attr_ids: [],
+       stat_mod_keys: [], stat_effect: 22 },
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
 end
 
@@ -7697,6 +7712,118 @@ check 'attribute defence shift applies to the target rank, capped at ' \
     bat.run_round
   end
   eq 3, foe.attr_ranks[1], 'capped one step better than base (C -> D)'
+end
+
+# -- Ability-value change (schema fields 33-36: affect_attack/defense/spirit/
+# agility) -- a skill's own per-battle ATK/DEF/SPI/AGI modifier, distinct from
+# both attribute-defence rank shifting (above) and a *state*'s halve/double
+# (Game::Battle#stat_mode / #adjust_stat, "stat-halving state" checks nearby).
+# Ported from EasyRPG's Game_Battler::atk_modifier and CanChangeAtkModifier
+# (and its DEF/SPI/AGI siblings) -- this codebase used to parse these four
+# skill flags into FakeSkill/the LCF schema and then read none of them
+# anywhere, so a "raise/lower ATK/DEF/SPI/AGI" skill silently did nothing at
+# all beyond whatever incidental affect_hp/affect_sp damage/heal it also
+# carried.
+
+check 'skill_stat_mod_keys reads a skill\'s own affect_attack/defense/spirit/' \
+      'agility flags' do
+  atk_only = fake_skill(affect_attack: true)
+  all_four = fake_skill(affect_attack: true, affect_defense: true,
+                         affect_spirit: true, affect_agility: true)
+  none = fake_skill
+  st = skill_party({ 7 => atk_only, 8 => all_four, 9 => none })
+  eq [:atk], st.party.skill_stat_mod_keys(st.party.db_skill(7))
+  eq [:atk, :def, :spi, :agi], st.party.skill_stat_mod_keys(st.party.db_skill(8))
+  eq [], st.party.skill_stat_mod_keys(st.party.db_skill(9))
+end
+
+check 'an affect_attack attack skill lowers the target\'s per-battle ATK ' \
+      'modifier, clamped at -(base/2), and Battle#effective_atk reflects it' do
+  weaken = fake_skill(name: 'Weaken', scope: 0, sp_cost: 0, power: 4, prate: 0,
+                      mrate: 0, affect_attack: true)
+  st = skill_party({ 7 => weaken })
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 20, 0, 5, 1000)
+
+  c = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq [:atk], c[:stat_mod_keys]
+
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1)) # variance off
+  cast = lambda do
+    bat.command_skill(caster, foe, name: 'Weaken', cost: c[:cost], hp: c[:hp],
+                      mp: c[:mp], stat_mod_keys: c[:stat_mod_keys])
+    bat.run_round
+  end
+
+  cast.call
+  eq(-4, foe.atk_mod, 'first cast: -4 (flat power, no defence term)')
+  eq 16, bat.effective_atk(foe), 'base 20 - 4'
+
+  cast.call
+  eq(-8, foe.atk_mod, 'second cast stacks: -8')
+
+  # A third cast would request a running total of -12, past the -(20/2) = -10
+  # floor -- clamps there instead of overshooting.
+  cast.call
+  eq(-10, foe.atk_mod, 'clamped at -(base/2)')
+  eq 10, bat.effective_atk(foe)
+
+  # A further cast is a pure no-op once already pinned at the cap.
+  cast.call
+  eq(-10, foe.atk_mod, 'still -10, no further movement once capped')
+end
+
+check 'ability-value decrease rounds toward zero (up) on an odd base, not ' \
+      'a Ruby-style floor' do
+  # -(5 / 2) truncates toward zero to -2 in both this Ruby code (dividing the
+  # positive base first, then negating) and EasyRPG's C++ `-base / 2` -- a
+  # floor-toward-negative-infinity reading (Ruby's own `-base / 2`, base
+  # negated first) would instead land one step lower, at -3.
+  weaken = fake_skill(name: 'Weaken', scope: 0, sp_cost: 0, power: 100, prate: 0,
+                      mrate: 0, affect_attack: true)
+  st = skill_party({ 7 => weaken })
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 5, 0, 5, 1000)
+  c = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  bat.command_skill(caster, foe, name: 'Weaken', cost: c[:cost], hp: c[:hp],
+                    mp: c[:mp], stat_mod_keys: c[:stat_mod_keys])
+  bat.run_round
+  eq(-2, foe.atk_mod, '-(5/2) rounds up (toward zero) to -2, not floor\'s -3')
+end
+
+check 'an affect_defense buff-only skill (affect_hp clear) still raises the ' \
+      'target\'s DEF modifier, capped at +base (a full double)' do
+  ward = fake_skill(name: 'Iron Skin', scope: 3, sp_cost: 0, power: 100, prate: 0,
+                    mrate: 0, affect_defense: true) # hp: false (default) -- buff-only
+  st = skill_party({ 7 => ward })
+  caster = combatant('Buddy', 5, 10, 5, 100)
+  caster.spi = 0 # skill_effect's magical_rate term needs a non-nil spirit even at rate 0
+  foe = combatant('Foe', 0, 0, 5, 1000)
+
+  c = st.party.battle_skill_command(st.party.db_skill(7), caster, caster)
+  eq [:def], c[:stat_mod_keys]
+  eq 0, c[:hp], 'affect_hp is not set, so hp stays 0 even though affect_defense is'
+  eq 100, c[:stat_effect], 'the raw, un-gated effect a buff-only skill still needs'
+
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  bat.command_skill(caster, caster, name: 'Iron Skin', cost: c[:cost], hp: c[:hp],
+                    mp: c[:mp], stat_mod_keys: c[:stat_mod_keys],
+                    stat_effect: c[:stat_effect])
+  bat.run_round
+  eq 10, caster.def_mod, 'capped at +base (10), even though the requested delta was 100'
+  eq 20, bat.effective_def(caster), 'base 10 doubled'
+end
+
+check 'Battle#effective_atk clamps base+modifier before a stat-halving ' \
+      'state doubles/halves it, not the other way around' do
+  # base 20 + modifier 6 -> 26, *then* halved (floored) by the state -> 13.
+  states = { 1 => fake_state(affect_type: 0, affect_attack: true) } # 0 = halve
+  foe = combatant('Foe', 20, 0, 5, 100)
+  foe.atk_mod = 6
+  foe.states = [1]
+  bat = Game::Battle.new([], [foe], Game::Rng.new(1), states)
+  eq 13, bat.effective_atk(foe)
 end
 
 check 'a battle attack skill inflicts its state_effects on a surviving enemy' do

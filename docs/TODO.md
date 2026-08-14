@@ -4634,10 +4634,70 @@ codebase yet):
   and can un-clamp back into view after a later change** (e.g. lower Attack
   by more than the display can show, then raise it partway back — the
   displayed value stays pinned at its old clamp until the raise actually
-  pushes the real total back above it) — now fixed, see below; a special
-  skill's ability-value *decrease* rounds up on ÷2, a status effect's own
-  halving rounds *down*; dual-wielding's off-hand attack animation is
-  offset by a few frames from the main hand's. **Change Parameters' hidden
+  pushes the real total back above it) — now fixed, see below; ✅ **a special
+  skill's ability-value change is now modelled at all.** RPG2000's skill
+  `affect_attack`/`affect_defense`/`affect_spirit`/`affect_agility` flags
+  (LCF skill schema fields 33-36, `mruby-lcf/mrblib/schema.rb`) were parsed
+  but read nowhere in `mruby-rpg2k`, so a "raise/lower ATK/DEF/SPI/AGI" skill
+  (a buff like Focus or a debuff like Weaken) silently did nothing beyond
+  whatever incidental `affect_hp`/`affect_sp` damage/heal it also carried —
+  `Game::Battle`'s own `stat_mode`/`adjust_stat` (the state halve/double
+  code, ported from EasyRPG's `Game_Battler::AdjustParam`) even said so in
+  its own comment ("minus its `mod` term: that is a battle-only ATK/DEF/
+  SPI/AGI offset this runtime has no equivalent of"). Confirmed against
+  EasyRPG Player's actual C++ source (`src/game_battlealgorithm.cpp`'s
+  `Game_BattleAlgorithm::Skill::vExecute`, `src/game_battler.cpp`'s
+  `Game_Battler::CanChangeAtkModifier`/`ChangeAtkModifier` and its DEF/SPI/
+  AGI siblings): each flag rolls independently against the skill's own
+  `effect` — the identical signed, post-attribute-scaling, post-variance,
+  post-`MaxDamageValue`-cap number `affect_hp`/`affect_sp` already use for
+  the same hit — and adds it to a per-battle `atk_modifier`/`def_modifier`/
+  `spi_modifier`/`agi_modifier`, clamped to `-(base/2)..+base` (`base` the
+  battler's own raw stat), reset to 0 every fresh fight (`ResetBattle`).
+  `Game::Battle::Combatant` (`mruby-rpg2k/mrblib/game.rb`) now carries
+  `atk_mod`/`def_mod`/`spi_mod`/`agi_mod` fields — needing no explicit
+  reset, since (like the sibling `attr_ranks`/`attr_base_ranks` fields for
+  attribute-defence shifting) a fresh `Combatant` is built once per fight
+  and never written back to the actor. `Game::Party#skill_stat_mod_keys`
+  reads the four skill flags; `battle_skill_command` threads the keys plus
+  — for a buff-only skill with `affect_hp` clear — the raw, un-gated effect
+  through `cmd[:stat_mod_keys]`/`cmd[:stat_effect]`; `Game::Battle#
+  apply_stat_mods` (mirroring `CanChangeAtkModifier`) clamps and applies the
+  delta from `apply_skill_hit`, on both the attack and heal/buff branches,
+  matching how `apply_attr_shift` already rides both; `#command_skill`/
+  `#command_skill_all` and the two `Scene::Map#apply_pending_skill(_all)`
+  call sites (`mruby-rpg2k/mrblib/scene/map.rb`) thread the two new fields
+  through the actual battle-menu UI path the same way `attr_shift`/
+  `attr_ids` already do (enemy AI casts are left unwired, matching that same
+  attribute-shift fix's own scope: `Game::Battle#skill_command_hash` never
+  carried `attr_shift`/`attr_ids` either). `Game::Battle#effective_atk`/
+  `#effective_def`/`#effective_spi`/`#effective_agi` now read `Combatant#
+  atk_mod` and friends, clamped to a new `MAX_STAT_BATTLE_VALUE = 9999`
+  (EasyRPG's `MaxStatBattleValue`) *before* a state's own halve/double is
+  applied on top — matching `AdjustParam`'s own ordering. **The
+  rounding-direction half of this same claim is confirmed correct too, and
+  is the reason the clamp's lower bound is written `-(base / 2)` rather than
+  the more natural-looking `-base / 2`**: EasyRPG's C++ `-base / 2`
+  truncates toward zero (rounds *up*/less-negative for the floor — base 5 →
+  -2, not -3), while Ruby's own `/` on a *negated* numerator floors toward
+  -infinity instead (`-5 / 2` = -3 in Ruby) — dividing the positive `base`
+  first and negating only the quotient reproduces C++'s truncation exactly,
+  contrasted with a status effect's own halving (`adjust_stat`'s
+  `value / 2`, always on a positive stat value, where "toward zero" and
+  "floor" already coincide, so no similar care is needed there). Covered by
+  five new `scripts/rpg2k_logic_check.rb` checks: `skill_stat_mod_keys`
+  reading the four flags; an enemy-scoped Weaken skill lowering a target's
+  ATK modifier across repeat casts, capping at `-(base/2)` and no further; the
+  odd-base rounding case specifically (base 5 clamps at -2, not a floor's
+  -3); a buff-only (`affect_hp` clear) skill still raising a target's DEF
+  modifier, capped at `+base` (a full double); and `effective_atk` clamping
+  base+modifier before a halving state is applied on top — the first four
+  confirmed to fail against the pre-fix code (a `NoMethodError` / a `nil`
+  result, since neither the reader method nor the `Combatant` fields
+  existed), the last a pure ordering pin. Dual-wielding's off-hand attack
+  animation is offset by a few frames from the main hand's remains
+  unverified, a presentation-only question outside this fix's scope.
+  **Change Parameters' hidden
   unclamped total is now tracked.** `Game::Actor#change_param`
   (`mruby-rpg2k/mrblib/game.rb`) clamped and overwrote `@base[type]` on
   every call, permanently discarding how far past the 1..999 (1..9999 for

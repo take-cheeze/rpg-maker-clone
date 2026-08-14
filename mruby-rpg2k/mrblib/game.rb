@@ -3464,6 +3464,35 @@ module Game
       sk.scope == 0 || sk.scope == 1 ? -1 : 1
     end
 
+    # The (skill field name -> Combatant ability-value key) pairs
+    # #skill_stat_mod_keys checks; distinct from `affect_attr_defence`
+    # (#skill_attr_shift), which shifts a resistance *rank* rather than a raw
+    # ATK/DEF/SPI/AGI value. EasyRPG's `Game_BattleAlgorithm::Skill::vExecute`
+    # rolls each of `affect_attack`/`affect_defense`/`affect_spirit`/
+    # `affect_agility` independently, alongside `affect_hp`/`affect_sp`, all
+    # against the *same* signed effect value -- this runtime already applies
+    # `affect_hp`/`affect_sp` unconditionally (no roll; see the field-cast
+    # `#skill_state_ids` comment on `hit` being state-infliction-only), so
+    # these four follow suit for consistency, rather than introducing a
+    # per-stat accuracy roll nothing else in this class models.
+    SKILL_STAT_MOD_FLAGS = { atk: :affect_attack, def: :affect_defense,
+                              spi: :affect_spirit, agi: :affect_agility }.freeze
+
+    # Which of `{atk:, def:, spi:, agi:}` skill `sk` touches, per its own
+    # affect_attack/affect_defense/affect_spirit/affect_agility flags (schema
+    # fields 33-36). `[]` when the skill touches none of the four. The actual
+    # signed magnitude is not decided here: `Game::Battle#apply_skill_hit`
+    # feeds whichever of these keys are present the exact same final signed
+    # effect number (post elemental-attribute scaling, variance, and the
+    # damage/recovery cap) it applies to HP/SP for the same hit, matching
+    # EasyRPG reading one shared `effect` local for every one of hp/sp/atk/
+    # def/spi/agi rather than a separately-computed figure per stat. Applied
+    # through `Game::Battle#apply_stat_mods`, which clamps the delta against
+    # the target's own cap before it lands.
+    def skill_stat_mod_keys(sk)
+      SKILL_STAT_MOD_FLAGS.keys.select { |key| sk.respond_to?(SKILL_STAT_MOD_FLAGS[key]) && sk.send(SKILL_STAT_MOD_FLAGS[key]) }
+    end
+
     # The command numbers for casting `sk` from `caster` on `target` (both
     # Combatant snapshots): the caster's SP `cost`, and the signed HP / SP deltas
     # to the target — negative HP for an attack skill (base effect less a quarter
@@ -3481,6 +3510,7 @@ module Game
       # branches below rather than only the attack one.
       shift = skill_attr_shift(sk)
       shift_ids = shift ? skill_attributes(sk) : []
+      stat_keys = skill_stat_mod_keys(sk)
       if sk.scope == 0 || sk.scope == 1 # single or all enemies: an attack skill
         dmg = base - skill_defence_term(sk, target)
         dmg = 1 if dmg < 1
@@ -3491,10 +3521,18 @@ module Game
           # only on an *offensive* skill (EasyRPG's `skill.absorb_damage &&
           # !IsPositive()`), so it rides only on this branch: a healing skill
           # that sets it drains nothing.
-          absorb: skill_absorbs?(sk), attr_shift: shift, attr_ids: shift_ids }
+          absorb: skill_absorbs?(sk), attr_shift: shift, attr_ids: shift_ids,
+          stat_mod_keys: stat_keys }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0,
-          variance: skill_variance(sk), attr_shift: shift, attr_ids: shift_ids }
+          variance: skill_variance(sk), attr_shift: shift, attr_ids: shift_ids,
+          stat_mod_keys: stat_keys,
+          # The raw, un-gated effect a buff-only skill (affect_hp clear,
+          # affect_attack/defense/spirit/agility set) still needs: `hp` above
+          # is 0 for such a skill, but the ATK/DEF/SPI/AGI modifier applies
+          # regardless, off the same `base` EasyRPG's one shared `effect`
+          # local would carry into every affect_* branch alike.
+          stat_effect: base }
       end
     end
 
@@ -6030,7 +6068,19 @@ module Game
                            # one) and #apply_to_party never writes it back to
                            # the actor, a shift is battle-scoped for free: it
                            # dies with the Combatant, no separate reset needed.
-                           :attr_base_ranks) do
+                           :attr_base_ranks,
+                           # Per-battle ATK/DEF/SPI/AGI offsets a skill's own
+                           # affect_attack/affect_defense/affect_spirit/
+                           # affect_agility flags accumulate onto (see
+                           # Battle#apply_stat_mods) -- EasyRPG's
+                           # Game_Battler::atk_modifier and friends, reset to 0
+                           # by ResetBattle at battle start there. This class
+                           # needs no equivalent reset: exactly like
+                           # #attr_ranks above, a fresh Combatant is built once
+                           # per fight and never written back to the actor, so
+                           # nil (read as 0 by #effective_atk and friends)
+                           # every construction is the reset for free.
+                           :atk_mod, :def_mod, :spi_mod, :agi_mod) do
       def dead?; hp <= 0; end
 
       # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
@@ -6540,9 +6590,12 @@ module Game
     # the schema's own default) alongside four independent flags naming which
     # stat(s) it touches (`affect_attack` / `affect_defense` / `affect_spirit`
     # / `affect_agility`). Ported from EasyRPG's `Game_Battler::AdjustParam`,
-    # minus its `mod` term: that is a battle-only ATK/DEF/SPI/AGI offset this
-    # runtime has no equivalent of (the closest thing, an attribute-defence
-    # shift skill, moves #attr_ranks instead of a raw stat).
+    # **now including its `mod` term too** (`Combatant#atk_mod` and friends,
+    # the battle-only ATK/DEF/SPI/AGI offset a *skill's* own same-named
+    # affect_attack/affect_defense/affect_spirit/affect_agility flags
+    # accumulate onto -- see #apply_stat_mods -- distinct from an
+    # attribute-defence shift skill, which moves #attr_ranks instead of a raw
+    # stat).
     #
     # #deal_attack / #enemy_autodestruct (basic-attack and self-destruct
     # damage), #to_hit / #avg_agi (accuracy and escape chance) and #turn_order
@@ -6551,7 +6604,9 @@ module Game
     # through its own copy of this same logic (`Game::Party#stat_mode` and
     # friends) rather than this one, since a skill's caster/target is
     # sometimes a bare `Game::Actor` with no `Battle` -- and no `@states` --
-    # behind it at all (field/menu skill use).
+    # behind it at all (field/menu skill use); that copy has no `mod` term
+    # either, since a bare `Game::Actor` has no `Combatant#atk_mod` to read --
+    # matching #skill_attr_shift's own battle-only scope.
 
     # :half, :double or :normal for `stat_flag` (:affect_attack and friends)
     # on `b` right now. A battler carrying both a halving and a doubling state
@@ -6583,10 +6638,76 @@ module Game
       end
     end
 
-    def effective_atk(b); adjust_stat(b.atk, stat_mode(b, :affect_attack)); end
-    def effective_def(b); adjust_stat(b.def, stat_mode(b, :affect_defense)); end
-    def effective_spi(b); adjust_stat(b.spi, stat_mode(b, :affect_spirit)); end
-    def effective_agi(b); adjust_stat(b.agi, stat_mode(b, :affect_agility)); end
+    # RPG_RT's own ceiling on a *modified* ATK/DEF/SPI/AGI (EasyRPG's
+    # `MaxStatBattleValue`, 9999 by default) -- looser than the 1..999 a raw
+    # base stat is clamped to (`Actor#change_param`'s own cap), so a stacked
+    # buff has room to climb well past what the base stat alone could reach.
+    MAX_STAT_BATTLE_VALUE = 9999
+
+    # `b`'s base stat plus its own #atk_mod/#def_mod/#spi_mod/#agi_mod offset
+    # (see #apply_stat_mods), clamped to 1..#MAX_STAT_BATTLE_VALUE the same
+    # way EasyRPG's `AdjustParam(base, mod, ...)` does before states get a say.
+    def modified_stat(base, mod)
+      Game.clamp(base + (mod || 0), 1, MAX_STAT_BATTLE_VALUE)
+    end
+
+    def effective_atk(b)
+      adjust_stat(modified_stat(b.atk, b.atk_mod), stat_mode(b, :affect_attack))
+    end
+
+    def effective_def(b)
+      adjust_stat(modified_stat(b.def, b.def_mod), stat_mode(b, :affect_defense))
+    end
+
+    def effective_spi(b)
+      adjust_stat(modified_stat(b.spi, b.spi_mod), stat_mode(b, :affect_spirit))
+    end
+
+    def effective_agi(b)
+      adjust_stat(modified_stat(b.agi, b.agi_mod), stat_mode(b, :affect_agility))
+    end
+
+    # The Combatant field (Combatant#atk_mod and friends) each ability-value
+    # key names.
+    STAT_MOD_FIELD = { atk: :atk_mod, def: :def_mod, spi: :spi_mod, agi: :agi_mod }.freeze
+
+    # Apply `amount` -- the exact same final signed effect a skill hit just
+    # applied to HP/SP (post elemental-attribute scaling, variance, and the
+    # damage/recovery cap; see the call sites in #apply_skill_hit) -- to
+    # `target`'s per-battle ATK/DEF/SPI/AGI modifier, for each key in `keys`
+    # (`cmd[:stat_mod_keys]`, see Game::Party#skill_stat_mod_keys). Ported
+    # from EasyRPG's `Game_Battler::CanChangeAtkModifier` and its DEF/SPI/AGI
+    # siblings: the *running total* (existing modifier + this delta) is
+    # clamped to -(base/2)..+base, where `base` is the target's own raw,
+    # unmodified stat -- an asymmetric band that lets a buff double a stat but
+    # never lets a debuff zero it out entirely. `-(base / 2)` deliberately
+    # divides the positive `base` *before* negating, matching C++'s own
+    # truncating `-base / 2` (which rounds toward zero, i.e. **up**, for the
+    # negative result) rather than Ruby's `-base / 2`, which would floor
+    # toward -infinity instead and round the floor *down* one further for an
+    # odd base -- the viprpg-dev wiki's "a special skill's ability-value
+    # decrease rounds up on ÷2" (contrasted there with a status effect's own
+    # halving, #adjust_stat's `value / 2`, which rounds down -- both stats
+    # being positive there, "toward zero" and "down" coincide, so no similar
+    # care is needed in that method). Returns the `{atk:, def:, spi:, agi:}`
+    # deltas actually applied -- possibly smaller than `amount` once clamped,
+    # or absent for a stat already pinned at its cap -- for the log entry.
+    def apply_stat_mods(target, keys, amount)
+      return {} unless keys && !keys.empty? && amount != 0
+      applied = {}
+      keys.each do |key|
+        field = STAT_MOD_FIELD[key]
+        next unless field
+        base = target.respond_to?(key) ? (target.send(key) || 0) : 0
+        cur = target.send(field) || 0
+        new_mod = Game.clamp(cur + amount, -(base / 2), base)
+        d = new_mod - cur
+        next if d == 0
+        target.send("#{field}=", new_mod)
+        applied[key] = d
+      end
+      applied
+    end
 
     # Queue a single-target Skill for `ally`: cast on `target` (an enemy for an
     # attack skill, an ally / the caster for a recovery skill), spending `cost`
@@ -6595,13 +6716,15 @@ module Game
     # order by #apply_command when the round runs.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
-                      absorb: false, attr_shift: nil, attr_ids: nil)
+                      absorb: false, attr_shift: nil, attr_ids: nil,
+                      stat_mod_keys: nil, stat_effect: 0)
       ally.command = { kind: :skill, target: target, name: name,
                        skill_id: skill_id, absorb: absorb,
                        cost: cost, hp: hp, mp: mp,
                        inflict: inflict || [], chance: chance, variance: variance,
                        attributes: attributes || [],
-                       attr_shift: attr_shift, attr_ids: attr_ids || [] }
+                       attr_shift: attr_shift, attr_ids: attr_ids || [],
+                       stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect }
       ally.action = nil; ally.defending = false
     end
 
@@ -6617,11 +6740,13 @@ module Game
     # #step_action.
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
                           variance: 0, attributes: nil, skill_id: nil,
-                          absorb: false, attr_shift: nil, attr_ids: nil)
+                          absorb: false, attr_shift: nil, attr_ids: nil,
+                          stat_mod_keys: nil, stat_effect: 0)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
                        skill_id: skill_id, absorb: absorb, cost: cost, inflict: inflict || [], chance: chance,
                        variance: variance, attributes: attributes || [],
-                       attr_shift: attr_shift, attr_ids: attr_ids || [] }
+                       attr_shift: attr_shift, attr_ids: attr_ids || [],
+                       stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect }
       ally.action = nil; ally.defending = false
     end
 
@@ -7501,6 +7626,13 @@ module Game
         # Same 999 hard-cap as a normal attack (#deal_attack), applied before
         # absorption so a drain skill can't smuggle a bigger hit past it either.
         dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
+        # The ATK/DEF/SPI/AGI modifier delta (see #apply_stat_mods) shares
+        # this same post-attribute-scaling, post-variance, post-cap figure --
+        # captured here, before 吸収 trims `dmg` further below, since EasyRPG
+        # reads its one shared `effect` local for every one of hp/atk/def/spi/
+        # agi and has no stat-absorbing counterpart to HP's own (vanilla
+        # RPG2000/2003 never sets `easyrpg_enable_stat_absorbing`).
+        stat_amount = -dmg
         # 吸収: the caster takes what the target loses, and can take no more than
         # the target has. EasyRPG clamps the effect to the target's current HP
         # *before* applying it ("Only absorb the hp that were left"), so a
@@ -7518,13 +7650,16 @@ module Game
         # it lived through the damage.
         if target.dead?
           inflicted = already = shifted = []
+          stat_changed = {}
         else
           inflicted, already = roll_inflict(target, cmd)
           shifted = apply_attr_shift(target, cmd)
+          stat_changed = apply_stat_mods(target, cmd[:stat_mod_keys], stat_amount)
         end
         { attacker: b.name, target: target.name, damage: dmg,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already, attr_shifted: shifted,
+          stat_changed: stat_changed,
           target_ally: ally?(target), skill: cmd[:name],
           skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed }
@@ -7541,13 +7676,21 @@ module Game
         # no-op there; a 0 (or absent) `hp`/`mp` clears #varied's own `base >
         # 0` guard, so a skill that only restores one of the two leaves the
         # other alone.
+        # The ATK/DEF/SPI/AGI modifier delta rides the identical variance roll
+        # as HP/SP (see the comment above), off `cmd[:stat_effect]` rather
+        # than `hp` itself: a buff-only skill (affect_hp clear) leaves `hp` at
+        # 0 throughout, but the modifier still applies off the skill's own
+        # base effect.
+        stat_amount = cmd[:stat_effect] || 0
         if @variance && cmd[:variance] && cmd[:variance] > 0
           hp = varied(hp, cmd[:variance])
           mp = varied(mp, cmd[:variance])
+          stat_amount = varied(stat_amount, cmd[:variance])
         end
         before_hp = target.hp
         before_mp = target.mp || 0
         hp = RECOVER_CAP if hp > RECOVER_CAP
+        stat_amount = RECOVER_CAP if stat_amount > RECOVER_CAP
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
         # Cure the item's status conditions from the target (an antidote / herb),
@@ -7555,11 +7698,13 @@ module Game
         cured = (cmd[:cured] || []).select { |s| target.state?(s) }
         target.states = (target.states || []) - cured unless cured.empty?
         shifted = target.dead? ? [] : apply_attr_shift(target, cmd)
+        stat_changed = target.dead? ? {} : apply_stat_mods(target, cmd[:stat_mod_keys], stat_amount)
         { recover: true, actor: b.name, source: cmd[:name],
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target: target.name,
           target_index: @enemies.index(target),
           recover_hp: target.hp - before_hp, recover_mp: (target.mp || 0) - before_mp,
           cured: cured, target_ally: ally?(target), attr_shifted: shifted,
+          stat_changed: stat_changed,
           target_hp: target.hp, target_mp: target.mp }
       end
     end
