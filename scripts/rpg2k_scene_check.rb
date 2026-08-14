@@ -11794,6 +11794,48 @@ check 'a vehicle Change Graphic overrides its sprite without persisting to Game:
      'Transfer Player drops the mirror, reverting the override'
 end
 
+# EasyRPG Player's actual C++ source: Game_Vehicle::Game_Vehicle
+# (src/game_vehicle.cpp) seeds a fresh vehicle with
+# `SetSpriteGraphic(ToString(lcf::Data::system.boat_name), lcf::Data::system.
+# boat_index)` (and the ship_/airship_ equivalents) -- the database's System
+# boat_index/ship_index/airship_index seed the on-map CharSet cell exactly
+# like their _name counterparts seed the graphic file, until Change Vehicle
+# Graphic (or Set Move Route's own override) says otherwise. A vehicle whose
+# graphic was never customized must draw that cell, not always cell 0.
+check 'an uncustomized vehicle draws the database System boat/ship/airship_index, not always cell 0' do
+  scene = new_scene({}, player: [5, 5], boat_pass: true, ship_pass: true)
+  scene.db.system.boat_index = 4
+  scene.db.system.ship_index = 7
+  scene.db.system.airship_index = 2
+  st = scene.instance_variable_get(:@state)
+
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x, boat.y = 0, 1
+  eq 4, scene.send(:vehicle_charset_index, boat),
+     "an unset boat graphic falls back to System's boat_index"
+
+  ship = st.vehicle(:ship)
+  ship.map_id = st.map_id
+  ship.x, ship.y = 0, 2
+  eq 7, scene.send(:vehicle_charset_index, ship),
+     "an unset ship graphic falls back to System's ship_index"
+
+  airship = st.vehicle(:airship)
+  airship.map_id = st.map_id
+  airship.x, airship.y = 0, 3
+  eq 2, scene.send(:vehicle_charset_index, airship),
+     "an unset airship graphic falls back to System's airship_index"
+
+  # Change Vehicle Graphic writes both charset_name and charset_index
+  # together; once the vehicle has its own graphic, the database default no
+  # longer applies -- even when the chosen index is 0.
+  boat.charset_name = 'CustomBoat'
+  boat.charset_index = 0
+  eq 0, scene.send(:vehicle_charset_index, boat),
+     'an explicit Change Vehicle Graphic keeps its own index, even index 0'
+end
+
 check 'a teleport lands the party on its tile, not mid-slide' do
   # A teleport can land while a forced route has a step in flight: the route
   # advances between events, and an auto-start page can fire on the very next

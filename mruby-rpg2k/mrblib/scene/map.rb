@@ -8512,10 +8512,26 @@ class RPG2k
       end
 
       # The CharSet cell index to go with #vehicle_charset, from the same
-      # mirror-first source.
+      # mirror-first source. Mirrors #vehicle_charset's own name fallback: an
+      # unset `v.charset_index` (never touched by Change Vehicle Graphic) must
+      # fall back to the database's System boat_index/ship_index/airship_index,
+      # not silently draw cell 0. Verified against EasyRPG Player's actual C++
+      # source: Game_Vehicle::Game_Vehicle (src/game_vehicle.cpp) seeds a fresh
+      # vehicle's sprite with `SetSpriteGraphic(ToString(lcf::Data::system.
+      # boat_name), lcf::Data::system.boat_index)` (and the ship_/airship_
+      # equivalents) -- name and index come from the same database fields
+      # together, never index-0-regardless-of-database. Gated on the same
+      # empty-charset_name test as #vehicle_charset, since RPG_RT ties both to
+      # whether Change Vehicle Graphic / Set Vehicle Location's own graphic
+      # slot has ever been written; a mirror override (Set Move Route's own
+      # "Change Graphic") already returns above and never reaches this.
       def vehicle_charset_index(v)
         mirror = @vehicle_chars[v.type]
         return mirror.graphic_index if mirror && mirror.graphic_name
+        if v.charset_name.nil? || v.charset_name.empty?
+          field = "#{v.type}_index"
+          return @db.system.send(field) if @db.system.respond_to?(field)
+        end
         v.charset_index
       end
 
