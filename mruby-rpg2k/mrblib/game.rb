@@ -2056,6 +2056,23 @@ module Game
       @battle_combo = { command_id: command_id, multiple: multiple }
     end
 
+    # Whether this actor uses the RPG2000 "custom battle command" name
+    # (独自戦闘コマンド有効, database field 66) instead of the database's
+    # generic Skill term. A class change never touches this — EasyRPG's own
+    # `GetSkillName` reads it off the actor's own database row
+    # (`lcf::Data::actors[id]`), which has no class-row counterpart at all
+    # (only the RPG2003 `battle_commands` list, field 80, is defined on both
+    # Actor and Class).
+    def rename_skill?
+      @db_row.respond_to?(:custom_battle_command) ? !!@db_row.custom_battle_command : false
+    end
+
+    # The renamed label itself (独自戦闘コマンド名称, field 67), read only when
+    # #rename_skill? is set.
+    def skill_command_name
+      @db_row.respond_to?(:custom_battle_command_name) ? (@db_row.custom_battle_command_name || '') : ''
+    end
+
     private
 
     # The battle-command list the actor's current class (or, class-less, its

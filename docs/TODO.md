@@ -762,8 +762,39 @@ The work below is roughly ordered by the critical path to a walkable game
   `command_defend` / `command_skill` / `command_item` / `run_round`) alongside
   the headless `run`. The round now **animates action by action** (agility order,
   one hit per `BATTLE_ANIM_FRAMES`, HP/SP ticking and each blow bannered); the
-  per-actor menu is **Attack / Skill / Item / Defend** (single-target skills and
-  battle medicines reuse the field formulas); the enemy troop is **drawn as
+  per-actor menu is **Attack / Skill / Defend / Item** (single-target skills and
+  battle medicines reuse the field formulas) —
+  ✅ **corrected from this line's own former claim of Item ahead of Defend**,
+  which was backwards: EasyRPG's `Scene_Battle_Rpg2k::CreateBattleCommandWindow`
+  builds its four labels as `{command_attack, command_skill, command_defend,
+  command_item}`, and `Scene::Map#battle_commands` / `#select_battle_command`
+  had them as Attack/Skill/Item/Defend instead, so every battle showed two
+  commands swapped and confirming the third row committed **Item**'s sub-menu
+  where RPG_RT's own third row is the one-shot **Defend**. Fixed by reordering
+  both the label array and the `select_battle_command` case labels to match.
+  **An actor's own Skill-command rename is read now too** — RPG2000's Actor
+  sheet has a "custom battle command" checkbox + name field (database fields
+  66/67, `custom_battle_command` / `custom_battle_command_name`), parsed by
+  the schema and never read anywhere in `mruby-rpg2k` before this, so a game
+  that renamed Skill to e.g. "Magic" for an actor showed the generic term
+  regardless. `Game::Actor#rename_skill?` / `#skill_command_name` expose the
+  two fields and `Scene::Map#skill_command_label` substitutes the custom name
+  for the acting actor's own turn, porting EasyRPG's `Game_Actor::GetSkillName`
+  (`rename_skill ? skill_name : Data::terms.command_skill`) — the label is
+  recomputed per actor rather than cached once for the whole battle, since it
+  can differ member to member. RPG2003's own further customization of this
+  list (`Game::Actor#battle_commands`, edited by Change Battle Commands (1009)
+  or a class change, both already modelled in `game.rb`) still is not consumed
+  by this menu — a separate, still-open gap, the same "reported, not silently
+  invented" answer Toggle ATB Mode and the field-menu command list above give
+  for the same unmodelled RPG2003 battle-command customization. Covered by new
+  `scripts/rpg2k_scene_check.rb` checks (the drawn label order; cmd row 2
+  committing Defend rather than opening Item; an actor with the rename flag
+  showing its custom name; an actor without it keeping the database "Skill"
+  term), plus three existing checks that assumed the old order updated to
+  match, confirmed to fail against the pre-fix code before the fix. See
+  `changelog.d/battle-command-order-and-skill-rename.fixed.md`.
+  The enemy troop is **drawn as
   battler sprites** (`Monster/<battler_name>`, placeholder block fallback, hidden
   on death) over a plain battle field. **Post-battle HP now persists to the
   party** — `Battle#apply_to_party` writes each survivor's final HP back through

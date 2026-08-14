@@ -1627,16 +1627,23 @@ class BattleStubActor
   attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
   # a defeat test passes weaker stats.
-  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1)
+  def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1,
+                 rename_skill: false, skill_name: '')
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
+    @rename_skill = rename_skill; @skill_name = skill_name
   end
   def gain_exp(n); @exp += n; end
   # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
   # HP absolutely; the stub has no state model, so just clamp to [0, max].
   def set_hp(value); @hp = value < 0 ? 0 : (value > @max_hp ? @max_hp : value); end
   def dead?; @hp <= 0; end
+  # Mirrors Game::Actor's own RPG2000 "custom battle command" interface
+  # (database fields 66/67), so a stub battle can drive the Skill-label rename
+  # the same way a real actor row would.
+  def rename_skill?; @rename_skill; end
+  def skill_command_name; @skill_name; end
 end
 
 class BattleStubParty
@@ -5635,8 +5642,9 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   ui = battle_to_command(scene)
 
   press_key(scene, RGSS::Input::DOWN)   # Attack -> Skill
-  press_key(scene, RGSS::Input::DOWN)   # Skill -> Item
-  eq 2, ui[:cmd]
+  press_key(scene, RGSS::Input::DOWN)   # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN)   # Defend -> Item
+  eq 3, ui[:cmd]
   press_key(scene, RGSS::Input::C)      # open the item list
   eq :item, ui[:phase]
   press_key(scene, RGSS::Input::C)      # choose Potion -> ally target
@@ -5663,9 +5671,9 @@ check 'Enemy Encounter scene: the command and target cursors wrap around' do
   ui = battle_to_command(scene)
   eq 0, ui[:cmd], 'starts on Attack'
   press_key(scene, RGSS::Input::UP)
-  eq 3, ui[:cmd], 'Up from Attack wraps to Defend (the last of the four commands)'
+  eq 3, ui[:cmd], 'Up from Attack wraps to Item (the last of the four commands)'
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:cmd], 'Down from Defend wraps back to Attack'
+  eq 0, ui[:cmd], 'Down from Item wraps back to Attack'
 
   press_key(scene, RGSS::Input::C) # open the enemy target list (2 Slimes)
   eq :target, ui[:phase]
@@ -5674,6 +5682,63 @@ check 'Enemy Encounter scene: the command and target cursors wrap around' do
   eq 1, ui[:target_i], 'Up from the first foe wraps to the last (2 Slimes)'
   press_key(scene, RGSS::Input::DOWN)
   eq 0, ui[:target_i], 'Down from the last foe wraps to the first'
+end
+
+check 'Enemy Encounter scene: the command menu is drawn Attack / Skill / Defend / Item' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[Attack Skill Defend Item], labels,
+     "EasyRPG's own CreateBattleCommandWindow order, not Item ahead of Defend"
+end
+
+check 'Enemy Encounter scene: cmd 2 commits Defend at once (not the Item list)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  eq 2, ui[:cmd]
+  press_key(scene, RGSS::Input::C)    # Defend commits at once, no sub-menu
+  # The lone actor's only command; committing it advances straight past the
+  # command phase into the round (Defend never opens a list the way Item does).
+  eq :animate, ui[:phase],
+     'Defend at cmd 2 committed and started the round instead of opening Item'
+end
+
+check "Enemy Encounter scene: an actor's RPG2000 custom battle command name replaces Skill" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party,
+    BattleStubParty.new(BattleStubActor.new(rename_skill: true, skill_name: 'Magic')))
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[Attack Magic Defend Item], labels,
+     'database field 66/67 (custom_battle_command / _name) renames just the Skill slot'
+end
+
+check 'Enemy Encounter scene: an actor without the custom name keeps the Skill term' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq 'Skill', labels[1], 'no rename set (the default) falls back to the database term'
 end
 
 # A hero with two battle skills, so the skill-list cursor has more than one row
@@ -5724,7 +5789,8 @@ check 'Enemy Encounter scene: the item list cursor wraps around' do
   st.instance_variable_set(:@party, BattleTwoItemParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
-  press_key(scene, RGSS::Input::DOWN) # Skill -> Item
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   eq :item, ui[:phase]
   eq 0, ui[:item_i], 'starts on the first item'
@@ -5753,7 +5819,8 @@ check 'Enemy Encounter scene: the ally target cursor wraps around' do
   st.instance_variable_set(:@party, BattleTwoAllyParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
-  press_key(scene, RGSS::Input::DOWN) # Skill -> Item
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
   eq :ally_target, ui[:phase]
@@ -5787,7 +5854,8 @@ check "Enemy Encounter scene: a restricted item's ally-target picker skips the a
   st.instance_variable_set(:@party, BattleRestrictedItemParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
-  press_key(scene, RGSS::Input::DOWN) # Skill -> Item
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
   eq :ally_target, ui[:phase]
