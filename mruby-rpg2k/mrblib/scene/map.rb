@@ -7134,10 +7134,24 @@ class RPG2k
                      # back at the default (yado.tk: an explicit `\c[0]` is
                      # needed in the text to stop the choices inheriting it).
                      trailing_color: scans.empty? ? 0 : scans.last[:end_color] }
+        speak_message(plain) unless choice
         draw_message_contents
         win.contents = contents
         @choice_index = 0
         set_choice_cursor if choice
+      end
+
+      # Zundamon (ずんだもん) message-window narration: read a Show Text
+      # page's plain, fully-expanded text aloud (variables and actor names
+      # already substituted, colour/pacing control codes already stripped --
+      # see `plain` in #open_message) as the page opens. A no-op whenever
+      # --zundamon_tts was not passed or its VOICEVOX assets are not
+      # installed (RGSS::Tts.available? is false either way), so this changes
+      # nothing about any other run.
+      def speak_message(plain_lines)
+        return unless RGSS::Tts.available?
+        text = plain_lines.join("\n")
+        RGSS::Tts.speak(text) unless text.strip.empty?
       end
 
       # Append a Show Choices block's labels to the still-open message window

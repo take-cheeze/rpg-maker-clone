@@ -72,6 +72,10 @@ extern "C" int rgss_mouse_pressed(void);
 void rgss_audio_define(mrb_state* M, RClass* rgss);
 extern "C" void rgss_audio_frame(void);
 
+// Defined in tts.cxx (same gem). Registers the native RGSS::Tts methods (a
+// no-op backend when --zundamon_tts was not passed).
+void rgss_tts_define(mrb_state* M, RClass* rgss);
+
 #if defined(WIO_TERMINAL)
 // Defined in wio_input_bridge.cxx; scans the board's buttons/5-way switch and
 // forwards press/release edges to RGSS::Input.  Guarded so the desktop/wasm
@@ -6210,6 +6214,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   profiler_init(M);
 
   rgss_audio_define(M, m);
+  rgss_tts_define(M, m);
 
   define_rect(M, m);
 }

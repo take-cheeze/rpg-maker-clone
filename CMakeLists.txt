@@ -278,7 +278,8 @@ if(EMSCRIPTEN)
 endif()
 
 add_executable(${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
-                               src/log_console.cxx src/error_dump.cxx)
+                               src/voicevox_tts.cxx src/log_console.cxx
+                               src/error_dump.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby
@@ -289,6 +290,7 @@ target_link_libraries(
   gflags
   uni-algo::uni-algo
   qjs
+  ${CMAKE_DL_LIBS}
   ${GL_LIBS})
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
@@ -327,6 +329,19 @@ set(TIMIDITY_ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/timidity)
 target_compile_definitions(
   ${PROJECT_NAME}
   PRIVATE "RGSS_TIMIDITY_CFG_SOURCE=\"${TIMIDITY_ASSET_DIR}/timidity.cfg\"")
+
+# Zundamon (ずんだもん) message-window narration (--zundamon_tts,
+# src/voicevox_tts.cxx): a full offline VOICEVOX CORE synthesis stack --
+# the CORE C API library, its ONNX Runtime, the Open JTalk dictionary and
+# Zundamon's voice model -- dlopen()'d at run time, never a link-time
+# dependency. ~90 MiB, so it is downloaded by
+# scripts/download-voicevox-zundamon.bash rather than committed, the same
+# reasoning as the MIDI patch set above; the path is baked in unconditionally
+# and probed at run time for the same reason (a configure-time EXISTS check
+# would race the download).
+set(VOICEVOX_ASSET_DIR ${CMAKE_CURRENT_SOURCE_DIR}/assets/voicevox)
+target_compile_definitions(
+  ${PROJECT_NAME} PRIVATE "RGSS_VOICEVOX_SOURCE_DIR=\"${VOICEVOX_ASSET_DIR}\"")
 
 # The default UI font, used when a project ships no font of its own -- otherwise
 # its windows draw with the fixed 12px shinonome bitmap font whatever size they
