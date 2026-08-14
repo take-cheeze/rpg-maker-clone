@@ -3129,6 +3129,50 @@ check 'Proceed With Movement holds the interpreter until a forced route finishes
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check 'Set Move Route targeting a currently-hidden map event freezes Proceed With Movement (yado.tk)' do
+  ic = Game::Interpreter::Cmd
+  hidden = page(trigger: 0)
+  hidden.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [2, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, hidden) },
+                    player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  ok event_hashes(scene)[2].nil?, "event 2's own page never satisfies its condition"
+
+  300.times { scene.update } # far more than the freq-4 route would ever need
+  ok !st.switches[1],
+     'Proceed With Movement never resumes -- the target never existed to move'
+
+  st.switches[5] = true # the event's own condition becomes true too late to help
+  scene.send(:refresh_event_pages)
+  50.times { scene.update }
+  ok !st.switches[1],
+     'the freeze does not clear once the event later appears -- the request was dropped, not queued'
+end
+
+check 'Set Move Route targeting a genuinely nonexistent event id does not freeze' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::MOVE_EVENT,
+             [99, 4, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+
+  20.times { scene.update }
+  ok st.switches[1],
+     'a Move Event with no matching event id at all is a plain no-op, not the hidden-event freeze'
+end
+
 check "Proceed With Movement also waits on a vehicle's forced route" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

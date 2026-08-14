@@ -164,6 +164,10 @@ class RPG2k
         @vehicle_chars = {}
         @vehicle_routes = {}
         @vehicle_route_timers = {}
+        # Move Event targets that resolved to a currently-hidden map event
+        # (see #apply_move_request) -- once stuck, permanently so, matching a
+        # freeze that never clears on its own.
+        @stuck_move_targets = []
 
         # Player pixel position and step state. `player_jumping` marks the slide
         # as a hop, which is lifted along an arc (see player_jump_offset).
@@ -2368,7 +2372,24 @@ class RPG2k
           force_vehicle_route(type, route, r[:frequency])
         else
           ev = @events.find { |e| e[:id] == r[:target] }
-          force_event_route(ev, route, r[:frequency]) if ev
+          if ev
+            force_event_route(ev, route, r[:frequency])
+          elsif (@map.unit.events || {})[r[:target]]
+            # A real event on this map, just currently hidden because no page's
+            # conditions are satisfied (#build_events never gave it a
+            # Game::Character) -- yado.tk: targeting one with Set Move Route
+            # hard-freezes real RPG_RT rather than erroring or silently
+            # skipping, the same "control-lock until the obstruction clears"
+            # family as an impassable-tile target, except this one has no
+            # obstruction that can ever clear. Recorded here (rather than just
+            # dropped) so #forced_movement_done? keeps Proceed With Movement
+            # -- and the implicit auto-run a Wait/Show Text triggers, see
+            # #step_forced_movement -- waiting forever, matching the freeze.
+            # A genuinely nonexistent event id is a different, unmodelled
+            # error-dialog case (see the "Concrete runtime error catalog" TODO
+            # entry) and does not land here.
+            @stuck_move_targets << r[:target]
+          end
         end
       end
 
@@ -2667,6 +2688,7 @@ class RPG2k
       def forced_movement_done?
         return false if @player_route
         return false if @events.any? { |e| e[:forced_route] }
+        return false unless @stuck_move_targets.empty?
         !@vehicle_routes.values.any? { |route| route }
       end
 
@@ -5834,6 +5856,7 @@ class RPG2k
         @vehicle_chars = {}
         @vehicle_routes = {}
         @vehicle_route_timers = {}
+        @stuck_move_targets = [] # a stuck target was on the map being left
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.
         @erased_events = {}
