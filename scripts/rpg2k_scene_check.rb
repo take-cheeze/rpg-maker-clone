@@ -9890,6 +9890,39 @@ check 'Scene::SaveLoad: cancelling (B) pops back without touching the parent app
   eq [], parent.continue_calls, 'or resumes anything'
 end
 
+# The scroll indicator: two independent blinking arrow sprites, not a
+# scrollbar -- see the class comment above Scene::SaveLoad::VISIBLE_SLOTS.
+# Confirmed against EasyRPG's own Scene_File (MakeArrowSprite/UpdateArrows).
+check 'Scene::SaveLoad: at the top of the list, only the down arrow can show, ' \
+      'blinking on a 20-frame cycle' do
+  scene, = save_load_scene(:load)
+  up = scene.instance_variable_get(:@up_arrow)
+  down = scene.instance_variable_get(:@down_arrow)
+  ok !up.visible, 'no slot is hidden above the first, so the up arrow starts hidden'
+  ok down.visible, 'more slots are hidden below, so the down arrow starts on'
+  19.times { RGSS::Input.triggered = []; scene.update }
+  ok down.visible, 'still on 19 frames into the 20-frame "on" half'
+  RGSS::Input.triggered = []
+  scene.update
+  ok !down.visible, 'the 20th frame flips it to the "off" half of the blink'
+  ok !up.visible, 'the up arrow never turns on while still at the top'
+end
+
+check 'Scene::SaveLoad: scrolled to the bottom, only the up arrow can show' do
+  scene, = save_load_scene(:load)
+  (RPG2k::MAX_SAVE_SLOTS - 1).times do
+    RGSS::Input.triggered = [RGSS::Input::DOWN]
+    scene.update
+    RGSS::Input.reset
+  end
+  up = scene.instance_variable_get(:@up_arrow)
+  down = scene.instance_variable_get(:@down_arrow)
+  eq RPG2k::MAX_SAVE_SLOTS - 1, scene.instance_variable_get(:@index),
+     'moved all the way down to the last slot'
+  ok up.visible, 'slots are hidden above the now-scrolled viewport'
+  ok !down.visible, 'the last slot is on screen, nothing hidden below'
+end
+
 # -- Open Save Menu / Open Load Menu (event commands) driving the same picker --
 #
 # RPG2003's Open Save Menu (11910) and Open Load Menu (5001) event commands

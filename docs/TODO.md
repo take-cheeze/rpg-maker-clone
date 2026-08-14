@@ -2610,11 +2610,43 @@ The work below is roughly ordered by the critical path to a walkable game
   zero-padding, and sizes each slot's cursor to its own label text via
   `Bitmap#text_size`. Verified against the same reference frame field-for-
   field, on both the header state (File 1 selected, occupied) and after
-  pressing Down onto the empty File 2 slot. **Not chased further:** the
-  16px strip below the third box that a scroll indicator arrow presumably
-  occupies once there is more than one screenful -- the reference capture
-  used here never scrolled, so there is no confirmed glyph/position for it
-  yet.
+  pressing Down onto the empty File 2 slot. **Not chased further, at the
+  time:** the 16px strip below the third box that a scroll indicator arrow
+  presumably occupies once there is more than one screenful -- the
+  reference capture used here never scrolled, so there was no confirmed
+  glyph/position for it yet.
+  ✅ **Now implemented, sourced without needing a wine capture at all.**
+  Confirmed against EasyRPG's own `Scene_File` (`src/scene_file.cpp`,
+  fetched verbatim): it is a pair of independent, blinking arrow sprites --
+  not a scrollbar/track, which does not exist anywhere in RPG_RT/EasyRPG
+  (confirmed by a zero-hit search for any scrollbar-drawing function) --
+  built and driven entirely by `Scene_File` itself (`MakeArrowSprite`/
+  `UpdateArrows`), outside `Window_SaveFile` (which has no scroll logic of
+  its own) and outside the generic `Window_Selectable::UpdateArrows()`
+  every ordinary list window uses instead. It reuses the identical
+  windowskin cells and 20-frame on/off blink this engine's own `Window`
+  class already had for its "waiting for input" pause arrow
+  (`Window::ARROW_SRC_X`/`ARROW_H`/`ARROW_W`/`ARROW_BLINK_FRAMES`, added a
+  session ago porting the same EasyRPG source) -- RPG_RT draws the pause
+  arrow and this screen's own down arrow from the exact same cell, one row
+  up is the (previously unused in this codebase) up-arrow cell.
+  `Scene::SaveLoad` gains two `Sprite`s built in `#build_arrow_sprites`,
+  pinned at the very top (`y = HEADER_H`, right below the header -- this
+  engine's `HEADER_H` (32) already matches EasyRPG's own fixed `y=32` for
+  its up arrow exactly) and very bottom (`y = SCREEN_H - ARROW_H`) of the
+  slot viewport, centred horizontally, each shown only while blinking "on"
+  *and* a slot is hidden in that direction (`@top > 0` for up, `@top <
+  SLOT_COUNT - VISIBLE_SLOTS` for down -- the same shape as EasyRPG's own
+  `top_index < max_index - 2` generalised past its fixed 3-visible layout).
+  A windowskin-less fallback (a solid triangle, mirroring `Window`'s own
+  fallback shape but built in either direction) covers the no-skin case the
+  rest of this engine's UI already degrades to elsewhere. Verified with a
+  deterministic frame-by-frame host-harness test (not a screen capture,
+  which proved too flaky under this sandbox's software-rendered Xvfb to
+  reliably catch a specific blink phase): stepping `Scene::SaveLoad#update`
+  frame by frame confirms the down arrow starts on, flips off at exactly
+  the 20th frame, and swaps places with the up arrow once scrolled to the
+  last slot.
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
