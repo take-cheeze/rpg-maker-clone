@@ -5388,10 +5388,17 @@ not yet verified:
   viewport.
 - Erase Picture is instant; a fade needs Move Picture to the same
   position at 0% opacity over a duration instead.
-- "Hero's screen X/Y" is the **feet position**, not center, and is a
+- ✅ **"Hero's screen X/Y" is the feet position, not center, and is a
   one-shot snapshot at read time, not a live binding — tracking the hero
   with a picture (spotlight, flashlight) requires re-reading and
-  re-issuing Move Picture every tick.
+  re-issuing Move Picture every tick.** `Scene::Map#character_screen_position`
+  returns `x: pixel_x - cam_x + TILE/2` (a half-tile offset, center) but
+  `y: pixel_y - cam_y + TILE` (a *full* tile offset, bottom/feet) — an
+  intentional asymmetry the surrounding code comment already attributes to
+  EasyRPG's own `GetScreenX`/`GetScreenY`. `Interpreter#screen_operand` is
+  only ever reached while executing a Control Variables command — it
+  computes and stores a plain value into the target variable once, with no
+  persistent binding of any kind.
 
 **Screen effects (Flash / Shake / Tone / Erase Screen / Weather)**
 - Screen Flash and Character Flash: only one of each active at a time
@@ -6045,8 +6052,14 @@ not yet verified:
   labels has nothing to bleed into; `#append_choice_lines` does not even
   thread a `:speeds` list into the `Game::TextReveal` it builds. No code
   change needed here beyond `\s[]` itself existing.
-- `\>` (instant display) only affects the current line — must be repeated
-  per line for a fully-instant multi-line message.
+- ✅ **`\>` (instant display) only affects the current line — must be
+  repeated per line for a fully-instant multi-line message.**
+  `Scene::Map#open_message` calls `Game::Message.scan` once per line,
+  independently. Inside `Message.scan`, `instant_start` is a local reset to
+  `nil` on every call, and an unclosed `\>` at the point a line's text runs
+  out is closed there and then (`instants << [instant_start, count] if
+  instant_start`) — it never carries an open span into the next line's own
+  independent scan.
 - ✅ **`\<`, `\$`, `\^` each cost one character's worth of display time even
   though they render nothing; `\c[]`/`\s[]` cost none.** `Game::Message.scan`
   (`mruby-rpg2k/mrblib/game.rb`) now advances its `count` reveal-coordinate by
@@ -7053,9 +7066,22 @@ not yet verified:
   battle-event page. Matches Terminate Battle in satisfying neither the
   Win/Escape/Defeat handler branch — an unlabeled third outcome the event
   resumes past.
-- Common events (including Parallel Process ones) **never run during
+- ✅ **Common events (including Parallel Process ones) never run during
   battle**, even if their trigger switch flips mid-battle — execution is
-  deferred until control returns to the map.
+  deferred until control returns to the map. `Scene::Map#parallels_paused?`
+  returns true whenever `@battle_ui` is open, and `#update` gates the
+  per-frame `#step_parallels` call on it — no background Parallel Process
+  common event advances at all while a battle is on screen (the code
+  comment at `#step_battle_owner_parallel` already cites this exact finding
+  by name). "Deferred, not lost" holds too: `#update` calls
+  `#refresh_event_pages` every frame unconditionally, *before* the
+  battle-pause check, so a trigger switch flipped mid-battle is already
+  re-evaluated and ready the instant `#step_parallels` resumes after the
+  fight ends. The one carve-out — the specific parallel process that
+  itself *opened* the battle keeps advancing via
+  `#step_battle_owner_parallel`, needed to drive the fight it launched — is
+  consistent with, not a counterexample to, the rule about *other* common
+  events.
 - ✅ **Bare-hand attacks carry no elemental attribute by default; an
   element's effect-rate at 0% deals exactly zero damage (not healing).**
   Confirmed already correct rather than left as an open claim:
@@ -7243,10 +7269,16 @@ not yet verified:
   the new key.
 
 **Party / Actor / Vehicle**
-- Party is hard-capped at 4; adding a 5th via Change Party Member is a
+- ✅ **Party is hard-capped at 4; adding a 5th via Change Party Member is a
   silent no-op. Removing a member preserves equipment/level/EXP/HP/status;
-  re-adding a KO'd member keeps them KO'd. Only the party **leader's**
-  sprite is ever drawn on the field, regardless of party size.
+  re-adding a KO'd member keeps them KO'd. Only the party leader's sprite
+  is ever drawn on the field, regardless of party size.** Same facts as the
+  already-confirmed "Hero & party" bullet above (`Game::Party::MAX_SIZE =
+  4`, `#add_actor`/`#remove_actor`, `#leader`) plus the cap itself, which
+  `#add_actor` already enforces as a silent no-op past `MAX_SIZE`. A
+  repo-wide check for any `follower`/multi-member field-sprite drawing
+  turns up nothing — the only rendered field sprite is driven off
+  `@state.party.leader`, confirming there is no follower rendering at all.
 - ✅ **Empty party doesn't itself Game Over, but battling with one is instant
   defeat; an all-KO'd party reads as an instant defeat the same way.** (An
   unrecoverable input-blocking *state* lock — every member asleep/paralysed
