@@ -3045,6 +3045,48 @@ check 'Actor equipment never adds max_hp_points/max_sp_points to max HP/MP' do
   eq [10, 5, 3], [a.max_hp, a.max_mp, a.atk]          # unequipping is likewise a no-op on HP/MP
 end
 
+check '#recompute_stats clamps the effective max HP/MP and the four combat ' \
+      'stats to RPG_RT\'s own ceilings, equipment bonus included' do
+  # "Display stat clamping is cosmetic only, the underlying stored value is
+  # not clamped" turns out to be wrong once checked against EasyRPG Player's
+  # actual C++ source: Game_Actor::GetBaseAtk/GetBaseDef/GetBaseSpi/GetBaseAgi
+  # (src/game_actor.cpp) sum the level curve, the Change-Parameters *_mod
+  # shadow, AND every equipped item's own *_points1 bonus, THEN clamp the
+  # total to Utils::Clamp(n, 1, MaxStatBaseValue()) -- 999 by default, not
+  # edition-gated -- so an equip bonus can't push the effective stat past 999
+  # either, only the unequipped base value was ever floored/ceilinged before
+  # this fix (#change_param's own 1..999 clamp on @base, still correct and
+  # untouched). GetBaseMaxHp/GetBaseMaxSp clamp the same way, to
+  # MaxActorHpValue() (999 RPG2000 / 9999 RPG2003) / MaxActorSpValue() (999
+  # either edition) -- and neither one needs an equip bonus to demonstrate
+  # the gap, since the level curve alone already reached #recompute_stats
+  # with no clamp of its own before this fix (#change_param's floor only ever
+  # applied to a live Change Parameters delta, never to the initial
+  # #set_level assignment).
+  items = { 30 => fake_item(atk: 50) }
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 970, 2, 1, 4]) },
+                       [1], items)
+  a = Game::Party.new(db).leader
+  eq 970, a.atk                      # unequipped base sits under the ceiling
+  a.equip([30, 0, 0, 0, 0])
+  eq 999, a.atk                      # +50 would be 1020; clamps to 999, not 1020
+
+  # A level curve alone (no equipment involved) that already exceeds the
+  # ceiling clamps too, and the reclamp drags current HP/MP down with it.
+  hp_db_2k = FakeActorDB.new({ 1 => CurveRow.new('Tank', '', 0, 1, [5000, 5000, 3, 2, 1, 4]) }, [1])
+  a2k = Game::Party.new(hp_db_2k).leader
+  eq 999, a2k.max_hp                 # RPG2000: capped at 999, not the raw 5000
+  eq 999, a2k.max_mp                 # MP/SP caps at 999 in both editions
+  eq 999, a2k.hp                     # current HP reclamps to the new max, not left at 5000
+  eq 999, a2k.mp
+
+  hp_db_2k3 = FakeActorDB.new({ 1 => CurveRow.new('Tank', '', 0, 1, [5000, 5000, 3, 2, 1, 4]) },
+                              [1], {}, {}, {}, nil, nil, rpg2003: true)
+  a2k3 = Game::Party.new(hp_db_2k3).leader
+  eq 5000, a2k3.max_hp               # RPG2003 widens the HP ceiling to 9999; 5000 fits
+  eq 999, a2k3.max_mp                # ... but MP/SP still caps at 999, no RPG2003 widening
+end
+
 check 'Change Parameters tracks an unclamped total under the displayed clamp' do
   # yado.tk `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
   # 1..999 (1..9999 for HP/MP), but RPG_RT keeps accumulating the *real*
@@ -9423,8 +9465,13 @@ end
 # command's own damage too -- it shares no code path with any of those four,
 # so it needed its own clamp.
 check 'Simulated Attack hard-caps damage at 999, matching the battle damage cap' do
+  # max_hp: 5000 needs an RPG2003 fixture database now that #recompute_stats
+  # itself clamps effective max HP to 999/9999 by edition (see "#recompute_
+  # stats clamps the effective max HP..." below) -- an RPG2000 actor could
+  # never actually reach 5000 max HP to survive this hit and show the
+  # leftover HP this check asserts.
   players = { 1 => FakePlayerRow.new('Tank', '', 0, 5, max_hp: 5000, max_mp: 0, atk: 0, def: 0) }
-  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1])), 1, 0, 0)
+  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, rpg2003: true)), 1, 0, 0)
   it = Game::Interpreter.new(st)
   # scope 1, actor 1, atk 5000, def-weight 0, spi-weight 0, variance 0,
   # store-damage flag 1 -> var 1.
