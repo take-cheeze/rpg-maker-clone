@@ -4889,18 +4889,18 @@ not yet verified:
   vehicle's own BGM (`#play_vehicle_bgm`) owns the audio then, and
   `#restore_pre_vehicle_bgm` already resumes whatever this would have played
   once the party disembarks, so nothing here needed to special-case that
-  interaction beyond not firing into it. **Left open**: whether loading a
-  save (Continue) instead resumes the exact previously-playing track from the
-  save's own `current_music` field (which could differ from the destination
-  map's own default if a Play BGM override was mid-flight at save time)
-  rather than recomputing fresh from the map tree — the EasyRPG evidence
-  found this session confirms the recompute-from-tree behaviour for
-  `Game_Player::MoveTo` (new game and every Transfer Player) but not for
+  interaction beyond not firing into it. **Left open** (at the time): whether
+  loading a save (Continue) instead resumes the exact previously-playing
+  track from the save's own `current_music` field (which could differ from
+  the destination map's own default if a Play BGM override was mid-flight at
+  save time) rather than recomputing fresh from the map tree — the EasyRPG
+  evidence found in that session confirmed the recompute-from-tree behaviour
+  for `Game_Player::MoveTo` (new game and every Transfer Player) but not for
   `Game_Map::SetupFromSave`'s own load path, which was not traced far enough
-  to settle it either way; this fix applies the same recompute-from-tree
+  to settle it either way; that fix applied the same recompute-from-tree
   logic uniformly to `#initialize` (covering both New Game and Continue,
-  since `main.rb` constructs `Scene::Map` identically for both), which is the
-  best-supported reading available but not confirmed for Continue
+  since `main.rb` constructs `Scene::Map` identically for both), which was
+  the best-supported reading available but not confirmed for Continue
   specifically. Covered by nine new `scripts/rpg2k_logic_check.rb` checks
   pinning `Game::MapBgm.chunk_for`'s walk (type 2 plays the map's own file
   with its volume/pitch; type 1 leaves the current track alone even with a
@@ -4916,7 +4916,59 @@ not yet verified:
   `#perform_teleport`, including the same-file no-restart case and the
   type-1 leave-alone case; a boarded party gets no map-BGM call at all), the
   first logic check and the first scene check each confirmed to fail against
-  the pre-fix code before the fix.
+  the pre-fix code before the fix. ✅ **The "left open" Continue question
+  above is now settled and fixed, verified against EasyRPG Player's actual
+  C++ source rather than left as the "best-supported reading available" the
+  original fix admitted it was guessing at.** `Scene_Map::Start`
+  (`src/scene_map.cpp`) branches on `from_save_id`: a fresh map entry
+  (`from_save_id == 0`) calls `Game_Map::PlayBgm()` — the map-tree walk
+  `#play_map_bgm` above already ports — but resuming a save (`from_save_id >
+  0`) takes a completely different path instead: `auto current_music =
+  game_system->GetCurrentBGM(); game_system->BgmStop();
+  game_system->BgmPlay(current_music);` — the save's own remembered track
+  verbatim, not whatever the destination map's tree says, and always
+  restarted from the top (an explicit stop precedes the replay) even when it
+  happens to name the same file already "playing" at a fresh process start.
+  `Scene::Map#initialize` called `#play_map_bgm` unconditionally regardless
+  of `apply_access:` (the same keyword `main.rb`'s `RPG2k#continue_game`
+  already passes `false` for the analogous Save/Teleport/Escape-access gap,
+  see the "Continue could silently lose a save's own Save/Teleport/Escape
+  access" fix above), so a Continue whose save had a Play BGM override
+  mid-flight (a boss theme still playing over a field map whose own tree
+  default is an ordinary town track, say) wrongly snapped back to the map's
+  configured default the instant the scene was built, discarding
+  `@state.current_bgm` — already correctly restored from the save by
+  `Game::State.load`/`.from_lsd` — before it was ever heard. Fixed with a new
+  `Scene::Map#resume_saved_bgm`, called from `#initialize` in place of
+  `#play_map_bgm` exactly when `apply_access:` is false: it plays
+  `@state.current_bgm` directly through `RGSS::Audio.bgm_play`, bypassing
+  `#play_bgm`'s own same-file skip on purpose — that check would otherwise
+  compare `@state.current_bgm` to itself (it already *is* the target value,
+  restored before this scene exists) and conclude nothing needs to change,
+  leaving the native audio backend never actually told to play anything after
+  a fresh process start, the opposite of "always restarted from the top."
+  No boarded-vehicle special case is needed here (unlike `#play_map_bgm`,
+  which defers to `#play_vehicle_bgm`): `Scene_Map::Start`'s `from_save_id`
+  branch has no such check either, since `@state.current_bgm` already holds
+  whatever was actually playing at save time — the vehicle's own track
+  included, if that's what was live — so resuming it verbatim is correct
+  regardless of `@state.boarded?`. A save with nothing playing
+  (`current_bgm` nil, or an empty filename) plays nothing, matching the
+  ordinary "ends up not calling the backend" case elsewhere in this file.
+  `#play_map_bgm` itself, and every other caller (New Game, every Transfer
+  Player via `#perform_teleport`), is completely unaffected — the
+  recompute-from-tree behaviour that earlier fix already implemented for
+  those two cases was correct all along, confirmed by the same
+  `Scene_Map::Start` source that settles the Continue half. Covered by two
+  new `scripts/rpg2k_scene_check.rb` checks (a Continue resume replays the
+  save's own tracked BGM instead of the destination map's tree default, with
+  a control case on the same fixture proving an ordinary, non-Continue entry
+  really would have played the map's default instead, pinning the branch as
+  Continue-specific; a Continue resumes correctly even while
+  `@state.boarded?` is true, and a Continue with no BGM playing at save time
+  plays nothing), both confirmed to fail against the pre-fix code (`expected
+  [["Boss Theme", 70, 120]], got [["Town", 90, 105]]`, and no boat BGM call
+  at all) before the fix.
 - SE is truly polyphonic (unlike BGM); ✅ **SE "OFF" now stops all playing
   SEs at once**, instead of silently doing nothing. `Game::Interpreter
   #play_audio` (`mruby-rpg2k/mrblib/interpreter.rb`) returned immediately on
