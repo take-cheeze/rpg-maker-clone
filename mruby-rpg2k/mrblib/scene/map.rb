@@ -153,9 +153,9 @@ class RPG2k
         # #drive_map_animation, so the right one gets #resume'd, not always
         # the foreground @interpreter.
         @map_animation_interp = nil
-        # One window per timer (RPG2003 has two); built lazily when first shown.
-        @timer_windows = [nil, nil]
-        @timer_texts = [nil, nil]
+        # One digit-cell sprite per timer (RPG2003 has two); built lazily when
+        # first shown (see #draw_timer).
+        @timer_sprites = [nil, nil]
         @pre_vehicle_bgm = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
@@ -234,7 +234,7 @@ class RPG2k
           s.dispose if s
         end
         (@vehicle_sprites || {}).each_value { |s| s.dispose if s }
-        (@timer_windows || []).each { |w| w.dispose if w }
+        (@timer_sprites || []).each { |s| s.dispose if s }
         @airship_shadow.dispose if @airship_shadow
         @animation_sprite.dispose if @animation_sprite
         # After the sprites they hold, so nothing is orphaned inside them.
@@ -8068,57 +8068,89 @@ class RPG2k
         draw_timer
       end
 
-      # RPG2000 timer: a small window in the top centre showing the remaining
-      # time as M:SS while the timer is visible. Visibility (the Start command's
-      # "show timer" flag) is independent of whether it is still counting, so a
-      # stopped timer stays on screen frozen; it hides only when never shown.
-      # The window and its contents are built once, and the text is redrawn only
-      # when the displayed second changes (not every frame).
+      # RPG2000 timer: five 8x16 digit/colon cells (M M : S S) cut straight out
+      # of the System graphic, not a bordered window with drawn text -- verified
+      # against EasyRPG Player's actual C++ source rather than left as the
+      # "rendering-parity job of its own" this comment used to defer.
+      # `Sprite_Timer::Draw` (src/sprite_timer.cpp) blits `digits[i]` (a
+      # `Rect(32 + 8*digit, 32, 8, 16)` into the System graphic; the colon cell
+      # is the same rect at `32 + 8*10`) at `i*8, 0` into a bare 40x16 sprite,
+      # with **no** window/border of any kind -- and it never draws at all when
+      # there is no System graphic to cut from
+      # (`if (!system) return;`), unlike this build's old windowed text, which
+      # only lost its windowskin *decoration* on a missing graphic and kept
+      # showing the digits anyway. Visibility (the Start command's "show timer"
+      # flag) is independent of whether it is still counting, so a stopped
+      # timer stays on screen frozen; it hides only when never shown (or with
+      # no System graphic loaded).
       TIMER_INNER_W = 40
       TIMER_INNER_H = 16
+      TIMER_DIGIT_W = 8
+      TIMER_DIGIT_H = 16
+      TIMER_DIGIT_SRC_X = 32
+      TIMER_DIGIT_SRC_Y = 32
+      TIMER_COLON_SRC_X = TIMER_DIGIT_SRC_X + TIMER_DIGIT_W * 10
 
-      # Both timers are drawn the same way; RPG_RT puts the first at the screen's
-      # left edge and the second at its right, so the two are laid out that way
-      # here too (drawing them as digit sprites off the System graphic, the way
-      # RPG_RT actually does, is a rendering-parity job of its own).
+      # Both timers are drawn the same way; RPG_RT puts the first at the
+      # screen's left edge and the second at its right
+      # (`Sprite_Timer::Sprite_Timer`'s own `SetX`), and during battle both drop
+      # to `screen_height / 3 * 2 - 20` (`Sprite_Timer::Draw`'s
+      # `Game_Battle::IsBattleRunning()` branch) rather than sitting at the top
+      # -- both now matched exactly. **Still open**: outside battle, real
+      # RPG_RT also slides a timer to the bottom edge whenever the (sticky,
+      # persists-across-messages) message window is currently parked at the
+      # top of the screen, so the two never overlap
+      # (`Game_Message::GetWindow()->GetY() < 20`); this build has no
+      # persistent message-window object to read a sticky position back from
+      # (`@message` is built fresh per message and torn down when it closes),
+      # so that half stays unmodelled and the timer sits at the fixed top
+      # position outside of battle regardless of where a message last opened.
       def draw_timer
         battle = !@battle_ui.nil?
-        @timer_windows ||= [nil, nil]
-        @timer_texts ||= [nil, nil]
+        @timer_sprites ||= [nil, nil]
         2.times { |id| draw_one_timer(id, battle) }
       end
 
       def draw_one_timer(id, battle)
         timer = @state.timer(id)
-        unless timer.drawn?(battle)
-          w = @timer_windows[id]
-          w.visible = false if w
+        spr = @timer_sprites[id]
+        unless timer.drawn?(battle) && @windowskin
+          spr.visible = false if spr
           return
         end
-        @timer_windows[id] ||= build_timer_window(id)
-        win = @timer_windows[id]
-        win.visible = true
-        text = timer.display_text
-        return if text == @timer_texts[id]
-
-        @timer_texts[id] = text
-        c = win.contents
-        c.clear
-        c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, c.width, c.height, text, 1 # centre-aligned
+        spr ||= (@timer_sprites[id] = build_timer_sprite)
+        spr.x = id == 0 ? 4 : SCREEN_W - TIMER_INNER_W - 4
+        spr.y = battle ? (SCREEN_H * 2 / 3 - 20) : 4
+        spr.visible = true
+        draw_timer_digits(spr.bitmap, timer)
       end
 
-      def build_timer_window(id)
-        ow = TIMER_INNER_W + Window::BORDER * 2
-        oh = TIMER_INNER_H + Window::BORDER * 2
-        # Timer 1 sits left of centre and timer 2 right of it, mirroring the
-        # edges RPG_RT parks them at while keeping this build's centred window.
-        x = id == 0 ? (SCREEN_W - ow) / 2 : SCREEN_W - ow - 4
-        win = Window.new(x, 4, ow, oh)
-        win.z = 250 # above the map, below the message / menu windows (z 300+)
-        win.windowskin = @windowskin
-        win.contents = Bitmap.new(TIMER_INNER_W, TIMER_INNER_H)
-        win
+      def build_timer_sprite
+        spr = Sprite.new
+        spr.z = 250 # above the map, below the message / menu windows (z 300+)
+        spr.bitmap = Bitmap.new(TIMER_INNER_W, TIMER_INNER_H)
+        spr
+      end
+
+      # Blit `timer`'s current M:SS reading's five cells into `bmp`. The colon
+      # cell blinks: `Sprite_Timer::Draw` skips it outright (leaving that 8px
+      # column blank) whenever `frames % DEFAULT_FPS < DEFAULT_FPS / 2` --
+      # off for the first half of every real second, on for the second half --
+      # independent of the four digit cells either side of it, which always
+      # draw regardless of the blink.
+      def draw_timer_digits(bmp, timer)
+        s = timer.seconds
+        mins = s / 60
+        secs = s % 60
+        cells = [mins / 10, mins % 10, nil, secs / 10, secs % 10]
+        bmp.clear
+        blink_off = (timer.frames % Game::Timer::FPS) < Game::Timer::FPS / 2
+        cells.each_with_index do |digit, i|
+          next if digit.nil? && blink_off # the colon cell, mid-blink-off
+          src_x = digit.nil? ? TIMER_COLON_SRC_X : TIMER_DIGIT_SRC_X + TIMER_DIGIT_W * digit
+          bmp.blt i * TIMER_DIGIT_W, 0, @windowskin,
+                  Rect.new(src_x, TIMER_DIGIT_SRC_Y, TIMER_DIGIT_W, TIMER_DIGIT_H)
+        end
       end
 
       # Position and draw each vehicle placed on the current map. A parked vehicle

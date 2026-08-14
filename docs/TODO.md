@@ -1573,12 +1573,68 @@ The work below is roughly ordered by the critical path to a walkable game
   later refinement
 - 🚧 Screen effects — the game **timer** works (Timer Operation command +
   `Game::Timer`) and is **drawn**: the start operation's "show timer" flag makes
-  `Scene::Map` show a small window counting down as `M:SS`. There are **two**
+  `Scene::Map` show it counting down as `M:SS`. There are **two**
   timers — RPG2003 adds a second, selected by the command's sixth parameter, read
   back by Control Variables selector 9 and by Conditional Branch type 10, and
-  drawn in its own window to the right of the first (RPG_RT parks the pair at the
-  screen's left and right edges as digit sprites off the System graphic; drawing
-  them that way is a rendering-parity job of its own). The start operation's
+  drawn to the right of the first. ✅ **The timer is now drawn as five raw
+  digit-sprite cells cut from the System graphic, matching RPG_RT's actual
+  rendering, instead of a bordered window with `draw_text`'d `M:SS`** — the
+  "rendering-parity job of its own" this line used to defer. Verified against
+  EasyRPG Player's actual C++ source: `Sprite_Timer::Draw`
+  (`src/sprite_timer.cpp`) blits five `Rect(32 + 8*digit, 32, 8, 16)` cells (a
+  colon at digit slot 10, i.e. `x = 112`) out of the System graphic into a bare
+  40x16 sprite at `i*8, 0` each — no window, no border, no drawn text at all —
+  and returns without drawing anything the instant `Cache::System()` is null
+  ("RPG_RT never displays timers if there is no system graphic"). This
+  codebase's old `build_timer_window`/`draw_one_timer`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) instead built an RGSS `Window` with a
+  windowskin border and `draw_text`'d the M:SS string centred inside it, and
+  kept showing that text even with no System graphic loaded (`@windowskin`
+  nil) — only the border decoration silently vanished, not the digits
+  themselves, the opposite of the real engine's all-or-nothing rule. Fixed
+  with a new `build_timer_sprite`/`draw_timer_digits` pair: a plain `Sprite`
+  (no `Window`, matching the "raw digit sprites" shape) whose bitmap is
+  rebuilt every frame from `@state.timer(id)`'s current minutes/seconds,
+  gated on `@windowskin` being present (mirroring `Cache::System()`'s own
+  null-check) alongside the pre-existing `timer.drawn?(battle)` visibility
+  gate. **The colon blink is implemented too**: `Sprite_Timer::Draw` skips
+  its own colon cell whenever `frame % DEFAULT_FPS < DEFAULT_FPS / 2` (blank
+  for the first half of every real second, drawn for the second half); ported
+  as the identical `(timer.frames % Game::Timer::FPS) < Game::Timer::FPS / 2`
+  check against this build's own already-existing frame counter, so no new
+  clock was needed. **X position is now exact too**: `Sprite_Timer`'s own
+  constructor parks timer 1 at `menu_offset_x + 4` (this build has no
+  widescreen offset, so plain `4`) and timer 2 at
+  `screen_width - 8*5 - 4 - menu_offset_x` (`SCREEN_W - TIMER_INNER_W - 4`,
+  320 − 40 − 4 = 276) — the screen's left/right edges the old centred-window
+  layout only approximated ("mirroring the edges RPG_RT parks them at while
+  keeping this build's centred window"). **The battle-only Y reposition is
+  now implemented too**: `Sprite_Timer::Draw`'s
+  `Game_Battle::IsBattleRunning()` branch drops the sprite to
+  `screen_height / 3 * 2 - 20` (140 at 320x240) instead of its usual top-edge
+  slot; `draw_one_timer` now sets `spr.y` from the same `!@battle_ui.nil?`
+  flag `#draw_timer` already threads through for the "pause/hide without the
+  battle flag" behaviour. **Still open**: outside of battle, real RPG_RT also
+  slides a timer down to the bottom edge whenever the (sticky,
+  persists-across-messages) message window is currently parked at the top of
+  the screen (`Game_Message::GetWindow()->GetY() < 20`), so the two never
+  overlap — this build has no persistent message-window object to read a
+  sticky position back from (`@message` is a fresh object built per message
+  and torn down when it closes, unlike RPG_RT's one long-lived
+  `Window_Message`), so that half stays unmodelled and a timer sits at the
+  fixed top slot outside of battle regardless of where a message last opened.
+  Covered by six new `scripts/rpg2k_scene_check.rb` checks (the digit cells
+  blitted for a 75s/"1:15" reading, each cell's exact source rect and that
+  every one reads from `@windowskin`; the colon cell blinking off exactly on
+  a `frames % 60 == 0` boundary and back on at `== 30`; a timer with no
+  System graphic loaded never builds a sprite at all even while visible and
+  running; the second timer's sprite sitting flush against the right edge;
+  the battle-flag pause/hide check extended to also pin the Y drop to the
+  mid-screen battle slot once the fight starts), all six confirmed to fail
+  against the pre-fix code before the fix (either erroring on a `nil`
+  `@timer_sprites` array — the old code never built one — or, for the ones
+  adapted from pre-existing checks, on the removed `@timer_windows`/
+  `draw_text` shape). The start operation's
   second flag — **keep running in battle** — is honoured: without it a timer
   pauses *and* hides for the duration of a fight rather than being stopped. Two
   RPG_RT details this used to get wrong are fixed from EasyRPG's
