@@ -24,6 +24,16 @@
 /assets/fonts/*
 !/assets/fonts/README.md
 
+# The offline VOICEVOX synthesis stack behind --zundamon_tts (~90 MiB: the
+# CORE C API library, its ONNX Runtime, the Open JTalk dictionary and
+# Zundamon's voice model) is fetched by
+# scripts/download-voicevox-zundamon.bash rather than committed, the same way.
+# Keep the checked-in README that explains what belongs there and how to get
+# it.
+/assets/.voicevox
+/assets/voicevox/*
+!/assets/voicevox/README.md
+
 # Runtime save artifacts written by the MV/websave (localStorage) shim.
 /save
 

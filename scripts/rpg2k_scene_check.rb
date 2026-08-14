@@ -168,6 +168,18 @@ module RGSS
     def self.reset_se; @se_calls = []; end
   end
 
+  # Zundamon message-window narration (Scene::Map#speak_message). available?
+  # false is the real "no --zundamon_tts / no backend installed" state, so
+  # this matches production with the flag off -- speak is never actually
+  # called by the stub, but is recorded (and made callable) so a future check
+  # can flip `available` on and assert what got spoken.
+  module Tts
+    class << self; attr_accessor :available, :speak_calls; end
+    def self.available?; !!@available; end
+    def self.speak(*a); (@speak_calls ||= []) << a; end
+    def self.reset; @available = false; @speak_calls = []; end
+  end
+
   def self.warn_stub(*); end
   class Timeout < StandardError; end
 end

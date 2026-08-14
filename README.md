@@ -680,6 +680,33 @@ part that explains it). Nothing else is collected.
   Pages' 25 MiB per-file limit so PR previews can deploy
   (`scripts/pack-timidity-data.py`, ADR 0031). Serving the page means serving
   `timidity.js` and those packages alongside `index.*`
+- **RPG2000/2003's message window can read itself aloud**, in Zundamon's
+  (ずんだもん) voice, opt-in via `--zundamon_tts`: each Show Text/Show Choices
+  page's plain text (control codes already expanded — actor names, variables)
+  is spoken as the page opens, through a bundled offline [VOICEVOX
+  CORE](https://github.com/VOICEVOX/voicevox_core) synthesis stack
+  (`RGSS::Tts`) rather than a separate VOICEVOX Engine process or any network
+  access at play time. The stack (~90 MiB: VOICEVOX CORE, its ONNX Runtime,
+  the Open JTalk dictionary and Zundamon's voice model) is downloaded rather
+  than committed:
+
+  ```sh
+  ./scripts/download-voicevox-zundamon.bash
+  ./rpg_maker_clone --zundamon_tts --game_dir path/to/game
+  ```
+
+  `--zundamon_tts_style` picks among Zundamon's four bundled styles (3
+  ノーマル/normal — the default, 1 あまあま/sweet, 7 ツンツン/curt, 5
+  セクシー/sultry); `--zundamon_tts_speed`/`_pitch`/`_intonation`/`_volume`
+  tune the AudioQuery scale factors VOICEVOX itself exposes, each defaulting
+  to VOICEVOX's own neutral value. Reaching an entirely different VOICEVOX
+  character needs its own downloaded voice model, which the download script
+  above does not fetch. With nothing downloaded (or on a build this feature
+  does not cover —
+  desktop native only; see `docs/adr/0046-zundamon-message-narration.md`) the
+  flag logs why and the game runs exactly as it would without it
+  (`RGSS::Tts.available?`). Audio generated this way must be credited
+  "VOICEVOX:ずんだもん" — see `assets/voicevox/README.md`
 
 ## TODO
 

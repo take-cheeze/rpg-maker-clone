@@ -361,6 +361,42 @@ DEFINE_bool(
     "--error_dump file must hold the same text that was printed. Exits 0 only "
     "then. Needs no game; run as the error_dump ctest — a report that silently "
     "lost half its content is worse than no report at all");
+DEFINE_bool(
+    zundamon_tts,
+    false,
+    "Read the rpg2k message window's text aloud in Zundamon (ずんだもん)'s "
+    "voice as each Show Text/Show Choices page opens, via a bundled offline "
+    "VOICEVOX CORE synthesis stack (RGSS::Tts, src/voicevox_tts.cxx). Off by "
+    "default: the stack is ~90 MiB and not committed, so run "
+    "scripts/download-voicevox-zundamon.bash first -- with no assets/voicevox "
+    "installed this flag logs why and the game runs silently, same as "
+    "--zundamon_tts on a build with no VOICEVOX CORE backend at all (see "
+    "RGSS::Tts.available?)");
+DEFINE_int32(
+    zundamon_tts_style,
+    3,
+    "Which of Zundamon's four bundled styles --zundamon_tts speaks in: 3 "
+    "ノーマル/normal (default), 1 あまあま/sweet, 7 ツンツン/curt, 5 "
+    "セクシー/sultry. Reaching a different VOICEVOX character entirely needs "
+    "its own downloaded voice model, which scripts/download-voicevox-"
+    "zundamon.bash does not fetch.");
+DEFINE_double(zundamon_tts_speed,
+              1.0,
+              "--zundamon_tts speech rate. VOICEVOX's own neutral value is "
+              "1.0; roughly 0.5-2.0 stays intelligible.");
+DEFINE_double(zundamon_tts_pitch,
+              0.0,
+              "--zundamon_tts pitch shift. VOICEVOX's own neutral value is "
+              "0.0; roughly -0.15-0.15 stays intelligible.");
+DEFINE_double(
+    zundamon_tts_intonation,
+    1.0,
+    "--zundamon_tts intonation (pitch variation) strength. VOICEVOX's own "
+    "neutral value is 1.0; 0 is flat/monotone, higher is more exaggerated.");
+DEFINE_double(zundamon_tts_volume,
+              1.0,
+              "--zundamon_tts loudness, independent of the SE/BGM volumes "
+              "Play SE/Play BGM set. VOICEVOX's own neutral value is 1.0.");
 DEFINE_bool(sixel,
             false,
             "Render to the terminal using the sixel protocol instead of "
@@ -652,6 +688,21 @@ extern "C" void rgss_sdl_input_init(void);
 // shutdown tears it down on the native exit path.
 extern "C" void rgss_audio_init(void);
 extern "C" void rgss_audio_shutdown(void);
+
+// Loads the VOICEVOX CORE synthesis stack and installs the RGSS::Tts backend
+// for Zundamon message-window narration (src/voicevox_tts.cxx). Only called
+// when --zundamon_tts is passed; a no-op (RGSS::Tts.available? stays false)
+// if the assets are missing or this build has no backend at all. Always safe
+// to call rgss_tts_shutdown, even when init was never called. style_id
+// chooses among Zundamon's bundled styles; the four scales tune speed,
+// pitch, intonation and volume (VOICEVOX's own neutral values: 1.0, 0.0,
+// 1.0, 1.0) -- see --zundamon_tts_style/_speed/_pitch/_intonation/_volume.
+extern "C" void rgss_tts_init(int style_id,
+                              double speed_scale,
+                              double pitch_scale,
+                              double intonation_scale,
+                              double volume_scale);
+extern "C" void rgss_tts_shutdown(void);
 
 // Whether the pending mruby exception is the game ending on purpose rather than
 // failing: `exit` raises SystemExit, which mruby tags with MRB_EXC_EXIT. Both
@@ -1105,6 +1156,15 @@ int main(int argc, char** argv) {
   // subsystem itself, so this works under the terminal backends too).
   rgss_audio_init();
 
+  // Zundamon message-window narration, opt-in: loading the VOICEVOX CORE
+  // stack costs real disk IO and an ONNX Runtime session, so it only happens
+  // when actually asked for. Needs rgss_audio_init above to have opened the
+  // SDL_mixer device first -- src/voicevox_tts.cxx plays through it.
+  if (FLAGS_zundamon_tts)
+    rgss_tts_init(FLAGS_zundamon_tts_style, FLAGS_zundamon_tts_speed,
+                  FLAGS_zundamon_tts_pitch, FLAGS_zundamon_tts_intonation,
+                  FLAGS_zundamon_tts_volume);
+
   // Before any game runs, so the first window drawn already has its font.
   init_default_font(launch_dir);
 
@@ -1337,6 +1397,7 @@ int main(int argc, char** argv) {
   // through the real reporting path and reads the report back itself.
   if (FLAGS_error_dump_probe) {
     const int rc = error_dump_run_probe(M);
+    rgss_tts_shutdown();
     rgss_audio_shutdown();
     gflags::ShutDownCommandLineFlags();
     return rc;
@@ -1352,6 +1413,7 @@ int main(int argc, char** argv) {
     const mrb_value ok =
         mrb_funcall(M, mrb_obj_value(mrb_module_get(M, "RGSS")), probe, 0);
     CHECK_NO_EXC(M);
+    rgss_tts_shutdown();
     rgss_audio_shutdown();
     gflags::ShutDownCommandLineFlags();
     return mrb_test(ok) ? EXIT_SUCCESS : EXIT_FAILURE;
@@ -1414,16 +1476,19 @@ int main(int argc, char** argv) {
     int status = EXIT_SUCCESS;
     if (pending_exit(M, &status)) {
       M->exc = nullptr;
+      rgss_tts_shutdown();
       rgss_audio_shutdown();
       gflags::ShutDownCommandLineFlags();
       return status;
     }
     error_dump_report(M, "the running game");
+    rgss_tts_shutdown();
     rgss_audio_shutdown();
     gflags::ShutDownCommandLineFlags();
     return EXIT_FAILURE;
   }
 
+  rgss_tts_shutdown();
   rgss_audio_shutdown();
   gflags::ShutDownCommandLineFlags();
 
