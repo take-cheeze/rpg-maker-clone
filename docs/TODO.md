@@ -3721,10 +3721,17 @@ Everything below is unverified against the codebase.
   `event_id_at` reads back; nothing sorts by draw order or picks the
   lowest/topmost. Covered by a new `scripts/rpg2k_scene_check.rb` check
   (two events sharing a tile, `Store Event ID` resolves to the higher one).
-- **Battle Animation** — only one can display at once (second supersedes);
-  each frame is exactly 1/30s; ✅ **targeting a Vehicle position now reads
-  that vehicle's live x/y even from a different map than the one shown** —
-  see the fuller writeup under "Full-site sweep" below.
+- ✅ **Battle Animation** — only one can display at once (second supersedes);
+  each frame is exactly 1/30s. **Both halves of this claim are now confirmed
+  correct and fixed too** — "only one at once, second supersedes" by the
+  "A second Show Battle Animation (11210) now forcibly cuts the first one's
+  sprite off" fix (and its fire-and-forget counterpart) further below, "each
+  frame is exactly 1/30s" by the `ANIM_CELL_FRAMES` fix ("The '1 frame =
+  1/30s' half of the bullet above is now correct...") also further below —
+  both settled against EasyRPG Player's actual C++ source rather than left
+  as this bullet's own unverified restatement. ✅ **targeting a Vehicle
+  position now reads that vehicle's live x/y even from a different map than
+  the one shown** — see the fuller writeup under "Full-site sweep" below.
 - **Material data** — an imported asset takes priority over a same-named RTP
   one; dropping files directly into asset folders bypasses size/transparent-
   colour-index validation.
