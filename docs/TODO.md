@@ -3574,7 +3574,61 @@ not yet verified:
   priority-type/collision work.
 - Running a hero-targeted Parallel-Process Set Move Route while the hero
   is mid-transition onto an event's tile can suppress that event's "Hero
-  Touch" trigger for that step.
+  Touch" trigger for that step — **confirmed already correct**, verified
+  against EasyRPG Player's actual C++ source rather than guessed at.
+  `Game_Player::UpdateMovement` (`src/game_player.cpp`) only calls
+  `CheckEventTriggerHere({Trigger_touched, Trigger_collision}, false)` when
+  `!IsMoveRouteOverwritten() && IsStopping()` — a forced move route grabbing
+  the player mid-step sets exactly that flag, so the touch check for
+  whichever tile the player was walking onto never runs for that step, real
+  RPG_RT included. `Scene::Map#step_movement` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) already mirrors this precisely: its own touch-trigger check
+  (`event_at`/`touch_trigger?`) bails out immediately via `return if
+  @player_route` before ever reaching it, and `#step_player_route`/
+  `#start_player_slide` (which actually drive a forced route once one is
+  set) never consult it either — so a hero-targeted Set Move Route
+  categorically never fires a touch trigger for its own steps, matching
+  `IsMoveRouteOverwritten()`'s effect exactly, no code change needed. ✅
+  **A closely related, genuinely broken case this same investigation
+  surfaced — not itself a named backlog bullet — is now fixed: a *map
+  event's* own Set Move Route / page-authored custom route stepping onto
+  the party's tile never fired that event's own Event Touch (trigger 2)
+  page**, the opposite asymmetry from the player's own case above. Also
+  verified against EasyRPG Player's actual C++ source: unlike
+  `Game_Player`, `Game_Event`'s own move failure handling
+  (`Game_Character::Move` → `CheckCollisonOnMoveFailure`,
+  `src/game_event.cpp`/`src/game_character.cpp`) starts a `Trigger_collision`
+  page whenever the blocked tile is the player's, with **no**
+  `IsMoveRouteOverwritten`-style guard at all — a forced/custom route fires
+  it exactly like an ordinary autonomous move does. This codebase already
+  modelled the autonomous half correctly (`Scene::Map#move_autonomous`'s own
+  dedicated `nx == @state.x && ny == @state.y` check, starting the event
+  when its trigger is `TRIGGER_EVENT_TOUCH`), but `Game::MoveRoute#do_move`
+  (`mruby-rpg2k/mrblib/game.rb`) — the move-command engine both a Set Move
+  Route (`e[:forced_route]`) and a page's own Custom move-type route
+  (`e[:route]`) share, per `Scene::Map#step_event` — just called
+  `world.passable?`/turned to face the obstacle on any block, with nothing
+  distinguishing "blocked by the party" from "blocked by a wall." Fixed by
+  reclassifying an already-refused move as a new `:touched_hero` status
+  exactly when the blocked tile is `world.hero_position` — a pure
+  re-classification of an outcome `world.passable?` had already decided (a
+  map event's own layer/overlap-forbidden collision with the party, per the
+  pre-existing `Scene::Map#char_passable?`), so it changes nothing about
+  *whether* a move succeeds, and, since a vehicle's own `vehicle_passable?`
+  never blocks on the party's tile at all, this never reclassifies (or
+  otherwise touches) a vehicle route's own step either. `Scene::Map
+  #step_event` now starts the event when its own step reports
+  `:touched_hero` and its current page's trigger is `TRIGGER_EVENT_TOUCH`,
+  the identical gate `#move_autonomous` already uses. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (`Game::MoveRoute#do_move` reports
+  `:touched_hero`, not plain `:blocked`, for a move refused specifically by
+  the hero's tile, with the same skippable/non-skippable retry rule either
+  way; an ordinary wall the hero does not stand on still reports plain
+  `:blocked`) and a new `scripts/rpg2k_scene_check.rb` check (a same-layer,
+  Event-Touch-triggered map event on a one-tile Custom move-type route
+  toward the party fires its own page instead of silently walking onto the
+  party's tile), both confirmed to fail against the pre-fix code before the
+  fix.
 - ✅ **"Display stat clamping is cosmetic only" turns out to be backwards —
   verified against EasyRPG Player's actual C++ source rather than taken on
   faith, the clamp is real and applies to the *effective* stat itself,

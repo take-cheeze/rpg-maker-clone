@@ -4167,6 +4167,25 @@ module Game
 
     # Attempt a one-tile move in `dir`. Returns [status, advance?]: a blocked
     # move on a non-skippable route returns advance == false so it is retried.
+    #
+    # A block caused specifically by the hero's own tile is reported as
+    # `:touched_hero` rather than plain `:blocked` (same skippable/non-
+    # skippable retry rule either way) -- purely a re-classification of an
+    # outcome `world.passable?` already refused (a map event's own layer/
+    # overlap-forbidden collision with the hero, `Scene::Map#char_passable?`;
+    # a vehicle's own `vehicle_passable?` never blocks on the hero at all, so
+    # this never reclassifies a vehicle route's own step), not a new
+    # obstruction -- so it changes nothing about *whether* a move succeeds,
+    # only what the caller does with a failure that was already going to
+    # happen. `Scene::Map#step_event` turns it into this map event's own
+    # Event Touch (2) trigger, mirroring `#move_autonomous`'s identical
+    # dedicated hero check for a Random/Approach/Away-type move: EasyRPG's
+    # `Game_Character::Move` calls `CheckCollisonOnMoveFailure`, which starts
+    # an Event Touch (`Trigger_collision`) page right here with no
+    # `IsMoveRouteOverwritten` guard (unlike the player's own touch check,
+    # gated on exactly that flag in `Game_Player::UpdateMovement`) -- so a Set
+    # Move Route/page-authored custom route walking a map event onto the
+    # party fires it exactly like an autonomous move already does.
     def do_move(character, world, dir)
       return [:turned, true] if dir.nil?
       if character.through || world.passable?(character, dir)
@@ -4174,7 +4193,9 @@ module Game
         [:moved, true]
       else
         character.face(dir) # an obstructed move still turns to face it
-        @skippable ? [:blocked, true] : [:blocked, false]
+        nx, ny = Character.step_tile(character.x, character.y, dir)
+        status = world.hero_position == [nx, ny] ? :touched_hero : :blocked
+        @skippable ? [status, true] : [status, false]
       end
     end
 
