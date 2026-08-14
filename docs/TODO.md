@@ -2125,27 +2125,41 @@ The work below is roughly ordered by the critical path to a walkable game
     obvious dedicated slot for this message to source from, so whether RPG_RT
     shows *any* text here at all is still an open question rather than an
     assumed one.
-  **A harness reachability wall, worth recording for whoever extends this
+  **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
-  then confirming is unreliable past the *second* cursor position. Escape
-  (open the menu) and a bare confirm from the freshly-opened menu (position
-  0, Item) work every time; one Down then a confirm (position 1, Skill)
-  eventually lands if the confirm key is retried several times a second
-  apart; two Downs then a confirm (position 2, Equip, and by extension
-  position 3, Save) never lands, across every combination tried -- longer
-  per-key settle (up to 2.5s), re-resolving and re-activating the window
-  before every single key, an explicit numeric window id (RPG_RT opens
-  *two* `HWND`s both titled "Nepheshel Ver2.04b"; pinning either one made no
-  difference), swapping the confirm key from Return to Z, and retrying the
-  confirm up to 6 times with a pixel-diff check to stop as soon as the frame
-  actually changes. The Down presses themselves are never in doubt -- the
-  menu cursor visibly moves to the right row every time -- only the
-  following confirm is the problem, and only two-or-more-Downs deep. Ruled
-  out as an explanation: `equipment_fixed` on the actor (false), and the
-  equipped items resolving to invalid database ids (all five resolve
-  cleanly). This reads as an Xvfb/wine/xdotool input-queue quirk rather than
-  anything about the engine being compared, but it blocked getting genuine
-  RPG_RT frames for the Equip and Save screens in this pass.
+  then confirming gets unreliable past the *second* cursor position, but it
+  is a flaky race, not a hard wall -- worth the distinction, since the two
+  read very differently to someone picking this up later. Escape (open the
+  menu) and a bare confirm from the freshly-opened menu (position 0, Item)
+  work every time; one Down then a confirm (position 1, Skill) reliably lands
+  within a handful of retries a second or so apart. Two Downs then a confirm
+  (position 2, Equip; by extension position 3, Save) *did* eventually land,
+  proof positive: a genuine RPG_RT frame deep in the Equip flow (the weapon
+  slot's item picker, "エターナルメモリー : 1", stat-change arrows on the
+  left panel) was captured this way -- but "eventually" is doing real work
+  in that sentence. The exact same blind-retry recipe (a fixed idle wait,
+  then up to 20 confirm presses a second and a half apart, sending every one
+  regardless of what's on screen) opened Equip in six tries on one run and
+  never opened Save at all after the full twenty on the very next run with
+  nothing else changed. A pixel-diff early-exit (stop retrying as soon as
+  the frame differs from a baseline) made things *worse*, not better --
+  captures taken right after an early exit were indistinguishable from the
+  stuck menu, meaning the diff was firing on a transient (a torn `xwd`
+  frame, a cursor blink) rather than the real screen change, and abandoning
+  the retry loop right when it was about to succeed. Running the reference
+  runtime *alone*, without this engine's own process competing for the same
+  CPU, did not make the flakiness go away either. Ruled out as an
+  explanation: `equipment_fixed` on the actor (false), and the equipped
+  items resolving to invalid database ids (all five resolve cleanly). This
+  reads as a genuine Xvfb/wine/xdotool input-queue race under virtualised,
+  software-rendered X11 rather than anything about the engine being
+  compared -- but the practical upshot is the same: getting a *clean*,
+  freshly-opened-and-nothing-else genuine RPG_RT frame for the Equip or Save
+  screens needs either a steadier reproduction environment (a real X server,
+  not Xvfb) or a smarter automation loop than blind or diff-gated retries
+  (e.g. OCR/template-matching the captured frame itself to confirm the
+  screen actually changed, rather than trusting either a fixed retry count
+  or a naive pixel diff).
 
 #### Assets & infrastructure
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
