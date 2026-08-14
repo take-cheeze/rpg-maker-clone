@@ -3350,7 +3350,28 @@ not yet verified:
   is a separate, unconfirmed question left open. Regression coverage added
   to `scripts/rpg2k_logic_check.rb`: a recovery skill computing a raw 5000
   HP heal against a high-max-HP target clamps at 999, confirmed to fail
-  against the pre-fix code.
+  against the pre-fix code. ✅ **The field-menu item-use path is now settled
+  too, confirmed already correct — no code change needed.** Verified against
+  EasyRPG Player's actual C++ source rather than left as a guess:
+  `Scene_ActorTarget` (`src/scene_actortarget.cpp`, the field Item screen's
+  target picker) applies a medicine through `Game_Party::UseItem` ->
+  `Game_Actor::UseItem` and ends in a bare `status_window->Refresh()` — no
+  popup of any kind, unlike a battle round's own floating damage/heal number
+  — and the HP itself is clamped only by `Game_Actor::ClampMaxHpMod`, which
+  reads the actor's own `MaxHpValue()`, never a fixed digit constant; there is
+  no equivalent of `MaxDamageValue`/a 999 popup cap anywhere in this call
+  chain. This codebase's `Game::Party#use_item`/`#use_medicine`
+  (`mruby-rpg2k/mrblib/game.rb`) already matches that exactly: it applies
+  `#item_recovery`'s raw amount straight through `Actor#change_hp`, which
+  clamps to `[floor, max_hp]` and nothing tighter — no `RECOVER_CAP`-style
+  constant is threaded through this path at all, unlike
+  `Game::Battle#apply_skill_hit`'s battle-cast recovery branch just above.
+  Pinned by a new `scripts/rpg2k_logic_check.rb` check on an RPG2003 fixture
+  (needed since an RPG2000 actor's own `max_hp` is itself capped at 999 via
+  `MAX_EFFECTIVE_HP_2K`, which would make "clamped only by max_hp"
+  indistinguishable from a 999 popup cap by coincidence): a raw 9999 HP heal
+  against a 9999-max-HP target sitting at 1 HP lands at the full 9999, not
+  1 + 999 = 1000 the way the already-fixed battle-cast equivalent clamps.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control

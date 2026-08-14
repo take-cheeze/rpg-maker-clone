@@ -3916,6 +3916,42 @@ check 'use_item on an already-full target has no effect and consumes nothing' do
   eq 2, st.party.item_count(5)                 # not consumed
 end
 
+check "the field-menu medicine path has no 999 cap, unlike the battle skill/item path (yado.tk, docs/TODO.md's " \
+      "\"Special-skill HP recovery is capped at 999 per use\" bullet)" do
+  # Game::Battle::RECOVER_CAP=999 exists purely because real RPG_RT's in-battle
+  # heal amount pops up in a fixed 3-digit widget over the target's sprite --
+  # confirmed against EasyRPG Player's actual C++ source rather than guessed
+  # at: Scene_ActorTarget (the field Item screen's target picker) applies a
+  # medicine via Game_Party::UseItem -> Game_Actor::UseItem with no popup of
+  # any kind (just a bare status_window->Refresh() of the HP/SP numbers), and
+  # the HP itself is clamped only by Game_Actor::ClampMaxHpMod, which reads the
+  # actor's own MaxHpValue(), never a fixed digit constant. This codebase's
+  # Game::Party#use_item/#use_medicine already matches that: it applies
+  # #item_recovery's raw amount straight through Actor#change_hp, which clamps
+  # to [0, max_hp] and nothing tighter -- no RECOVER_CAP-style constant is
+  # threaded through this path at all, unlike Game::Battle#apply_skill_hit's
+  # battle-cast recovery branch a few sections below.
+  #
+  # An RPG2000-flagged actor's own max_hp is itself capped at
+  # MAX_EFFECTIVE_HP_2K (999, see Game::Actor#max_hp_cap), which would make
+  # "clamped only by max_hp" indistinguishable from a 999 popup cap by
+  # coincidence -- so this needs an RPG2003 fixture (MAX_EFFECTIVE_HP_2K3 =
+  # 9999) to actually separate the two: a raw heal of 9999 (rhp_rate 100% of a
+  # 9999 max_hp actor) against a target sitting at 1 HP lands at the full
+  # 9999, not 1 + 999 = 1000 the way a battle-cast equivalent would clamp.
+  items = { 5 => fake_item(type: 6, rhp_rate: 100) }
+  players = { 1 => FakePlayerRow.new('Titan', '', 0, 5, max_hp: 9_999, max_mp: 30) }
+  db2003 = FakeActorDB.new(players, [1], items, {}, {}, nil, nil, rpg2003: true)
+  st = Game::State.new(Game::Party.new(db2003), 1, 0, 0)
+  st.party.gain_item(5, 1)
+  hero = st.party.leader
+  eq 9_999, hero.max_hp, 'the RPG2003 fixture actually reaches past 999 max HP'
+  hero.change_hp(-9_998)                        # 9999 -> 1
+  affected = st.party.use_item(5, hero)
+  eq [hero], affected
+  eq 9_999, hero.hp, 'the full uncapped heal lands, not clamped to 1 + 999'
+end
+
 check 'an all-ally medicine heals the whole party and consumes one' do
   items = { 8 => fake_item(type: 6, scope: 1, rhp_rate: 100) } # full HP heal
   st = item_party(items)
