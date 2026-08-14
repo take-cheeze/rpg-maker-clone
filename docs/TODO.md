@@ -1531,7 +1531,27 @@ The work below is roughly ordered by the critical path to a walkable game
   the configured transition" now reads; and **Game
   Over** (12520) returns to the title — all handled. **Vehicle locations** (boat /
   ship / airship) also persist in the save (`Game::Vehicle`, `.lsd` chunks
-  105–107 / the Marshal save).
+  105–107 / the Marshal save). ✅ **Change Level / Change EXP now also announce
+  a skill the level-up itself teaches, not just the level number** — found via
+  a field audit of the database's `skill_learned` `term` chunk field
+  (`scripts/rpg2k_field_audit.rb`), which nothing in the runtime named.
+  `Game::Interpreter#queue_level_up_messages` already queued one message per
+  level gained but never consulted the growth-table learn list at all, unlike
+  EasyRPG's `Game_Actor::ChangeLevel` (`src/game_actor.cpp`), which pushes the
+  level-up line and then `LearnLevelSkills(old_level + 1, new_level, pm)` —
+  each newly-taught skill gets its own `ActorMessage::GetLearningMessage`
+  line (`src/game_message_terms.cpp`), skipped only for a skill the actor
+  already knew (`Game_Actor::LearnSkill`'s own `IsSkillLearned` guard).
+  Fixed by snapshotting each target's skill list right before the change and
+  appending one line per newly-learned growth-table skill onto its own
+  level's message page. **Change Class (1008, RPG2003-only) has the identical
+  gap** — EasyRPG's `Game_Actor::ChangeClass` calls the same
+  `LearnLevelSkills(1, new_level, pm)` — but is deliberately left unaddressed
+  here, still open. Covered by two new `scripts/rpg2k_logic_check.rb` checks
+  (a two-level Change Level crossing two learn-table thresholds announces
+  each skill on its own level's page; a skill taught early via Change Skills
+  stays quiet once the level that would have taught it is reached), the
+  first confirmed to fail against the pre-fix code before the fix.
 - 🚧 Message window — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`,
   `\_` space). `\n[n]` names the **live** actor out of the roster rather than the

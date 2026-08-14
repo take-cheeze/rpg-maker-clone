@@ -3808,6 +3808,66 @@ check 'Change EXP with the show-message flag announces a level-up' do
   ok !it.waiting?, 'a single level gained -> a single message'
 end
 
+# A three-level growth curve with a learn table, for the skill-learned-message
+# checks: skill 201 at level 2, skill 202 at level 3.
+def skill_level_db(learns = [[201, 2], [202, 3]])
+  FakeActorDB.new(
+    { 1 => SkillRow.new('Hero', '', 0, 1,
+                        [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8, 30, 15, 9, 6, 3, 12],
+                        learns) },
+    [1], {},
+    { 201 => fake_skill(name: 'Fireball'), 202 => fake_skill(name: 'Iceball') })
+end
+
+# EasyRPG's Game_Actor::ChangeLevel (src/game_actor.cpp) calls
+# LearnLevelSkills(old_level+1, new_level, pm) right after the level-up line and
+# before PushPageEnd, and LearnSkill only pushes
+# ActorMessage::GetLearningMessage (src/game_message_terms.cpp) for a skill not
+# already IsSkillLearned -- so a level gained across a learn-table threshold
+# announces the new skill alongside the level, and a skill the actor already
+# knew going in stays silent.
+check 'Change Level queues a skill-learned line alongside the level that teaches it' do
+  st = Game::State.new(Game::Party.new(skill_level_db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, add, const, amount 2 (1 -> 3), show-message flag on.
+  it.start([FakeCmd.new(IC::CHANGE_LEVEL, [1, 1, 0, 0, 2, 1])])
+  it.update
+  eq 3, a.level, 'gained two levels'
+  eq [201, 202], a.skills.sort, 'both level-gated skills are learnt'
+  eq :message, it.wait_kind
+  eq ['Hero is now level 2!', 'Hero learned Fireball!'], it.message_lines,
+     "the level-2 page carries its own newly-taught skill's line"
+  it.resume
+  eq :message, it.wait_kind, 'the second level queues a second page'
+  eq ['Hero is now level 3!', 'Hero learned Iceball!'], it.message_lines,
+     "the level-3 page carries its own newly-taught skill's line"
+  it.resume
+  it.update
+  ok !it.waiting?
+end
+
+check 'Change EXP stays quiet about a skill the actor already knew going in' do
+  st = Game::State.new(Game::Party.new(skill_level_db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  # Teach skill 201 (the level-2 skill) early, via an explicit Change Skills,
+  # before the actor ever reaches level 2 the normal way.
+  it0 = Game::Interpreter.new(st)
+  it0.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 201])])
+  it0.update
+  eq [201], a.skills
+  need = a.exp_to_next # exactly enough EXP to reach level 2
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_EXP, [1, 1, 0, 0, need, 1])])
+  it.update
+  eq 2, a.level, 'crossed the level-2 threshold'
+  eq :message, it.wait_kind
+  eq ['Hero is now level 2!'], it.message_lines,
+     'skill 201 was already known, so no skill-learned line repeats it'
+  it.resume
+  ok !it.waiting?
+end
+
 check 'Change Equipment command equips into the type slot and removes' do
   items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
             8 => fake_item(dfn: 9, type: 3) }    # armour -> slot 2
