@@ -2529,6 +2529,35 @@ The work below is roughly ordered by the critical path to a walkable game
   @state.save_access`, no `else`. This buzzer, and the rest of the field
   menu's system SE playback, is now modelled too -- see the ✅ bullet just
   below.
+  ✅ **End Game now opens a Yes/No confirmation instead of quitting the game
+  outright on the first press.** This engine's `Scene::Menu#select_command`
+  played the Decision SE and called `@parent.return_to_title` directly --
+  found via the LCF field audit (`scripts/rpg2k_field_audit.rb`), which
+  flagged `term.end_game_confirm` (Term chunk 21 field 151) as parsed by the
+  schema and never read anywhere in `mruby-rpg2k`. Confirmed against
+  EasyRPG Player's actual C++ source: `Scene_Menu::UpdateCommand`'s `case
+  Quit:` (`src/scene_menu.cpp`) plays the Decision SE and pushes
+  `Scene_End`, never touching the title directly; `Scene_End::vUpdate`
+  (`src/scene_end.cpp`) plays Decision on *either* option and only "Yes"
+  (`BgmFade(400)` then `ReturnToTitleScene`) goes anywhere, while "No" and
+  Cancel both just `Scene::Pop()` back to the menu; `Scene_End::
+  CreateCommandWindow` defaults the cursor to index 1 ("No"), and
+  `CreateHelpWindow` draws the prompt from `terms.exit_game_message` (this
+  schema's `term.end_game_confirm`), falling back to "Do you really want to
+  quit?" when the database leaves it blank. `Scene::Menu` now opens an
+  in-scene Yes/No prompt (`@focus = :end_game_confirm`, cursor defaulting to
+  "No") built from `term(:end_game_confirm, ...)` / `term(:yes, ...)` /
+  `term(:no, ...)`; confirming "Yes" calls `RGSS::Audio.bgm_fade(400)` before
+  `@parent.return_to_title`, while "No" and Cancel both just close the
+  prompt back to the command list. Covered by new
+  `scripts/rpg2k_scene_check.rb` checks (selecting End Game opens the prompt
+  without touching the title, cursor starts on "No"; confirming "No" and
+  cancelling both leave the title alone and return focus to the command
+  list; confirming "Yes" fades the BGM and returns to the title), confirmed
+  to fail against the pre-fix code (the old test asserted the *opposite*,
+  that End Game "hands control back to the app immediately, with no
+  confirmation message to dismiss first" -- now replaced). See
+  `changelog.d/menu-end-game-confirmation.fixed.md`.
   ✅ **The field menu screens now play RPG2000's four system sound effects
   (cursor-move, decision, cancel, buzzer), the "bigger, separate piece of
   work" the disabled-Save fix above left open.** Confirmed against three

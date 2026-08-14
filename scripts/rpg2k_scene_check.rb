@@ -157,13 +157,16 @@ module RGSS
     # screen) can assert which track started.
     class << self; attr_accessor :bgm_calls; end
     def self.bgm_play(*a); (@bgm_calls ||= []) << a; end
-    def self.reset_bgm; @bgm_calls = []; @bgm_volume_calls = []; end
+    def self.reset_bgm; @bgm_calls = []; @bgm_volume_calls = []; @bgm_fade_calls = []; end
     # Recorded separately from bgm_calls: a same-file Play BGM re-trigger
     # calls this instead of bgm_play (see Game::Interpreter#play_audio /
     # Scene::Map#play_bgm), so the two checks stay distinguishable.
     class << self; attr_accessor :bgm_volume_calls; end
     def self.bgm_volume(v); (@bgm_volume_calls ||= []) << v; end
-    def self.bgm_fade(*); end
+    # Record bgm_fade calls (the fade-length ms) so a check can assert one
+    # fired -- e.g. the End Game confirmation's Game_System::BgmFade(400).
+    class << self; attr_accessor :bgm_fade_calls; end
+    def self.bgm_fade(*a); (@bgm_fade_calls ||= []) << a; end
     def self.bgm_stop(*); end
     # Scriptable playback position, so the "BGM played once" watcher can be
     # driven: a value that jumps backwards is how SDL_mixer reports a loop.
@@ -10199,16 +10202,77 @@ check 'Scene::Menu: a restricted actor cannot be given the Skill command, ' \
      'Equip has no CanAct gate, so the restricted actor still opens it'
 end
 
-check 'Scene::Menu: End Game returns to the title on the first press, like F12 and ' \
-      'the Return to Title Screen event command' do
+check 'Scene::Menu: End Game opens a Yes/No confirmation instead of quitting ' \
+      'outright' do
+  # Confirmed against EasyRPG's own Scene_Menu::UpdateCommand (`case Quit:`
+  # plays the Decision SE and pushes Scene_End, never touching the title
+  # directly) and Scene_End::CreateCommandWindow (cursor defaults to index
+  # 1, "No" -- a stray confirm press must not quit the game).
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
   scene.instance_variable_set(:@index, 4)  # End Game, last of RPG2K_COMMAND_KEYS
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
+  ok !scene.parent.returned_to_title,
+     'selecting End Game alone must not hand control back to the app'
+  eq :end_game_confirm, scene.instance_variable_get(:@focus),
+     'a Yes/No prompt opens instead'
+  eq 1, scene.instance_variable_get(:@confirm_index),
+     'the cursor starts on "No" (index 1), matching Scene_End::CreateCommandWindow'
+end
+
+check 'Scene::Menu: confirming "No" on the End Game prompt returns to the ' \
+      'command list, not the title' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 4)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update                                    # open the prompt (cursor on No)
+  RGSS::Input.reset
+  RGSS::Audio.reset_bgm
+  RGSS::Input.triggered = [RGSS::Input::C]         # confirm "No"
+  scene.update
+  RGSS::Input.reset
+  ok !scene.parent.returned_to_title, '"No" must not quit the game'
+  eq [], RGSS::Audio.bgm_fade_calls, 'and must not fade the BGM either'
+  eq :command, scene.instance_variable_get(:@focus),
+     'focus is back on the command list'
+end
+
+check 'Scene::Menu: cancelling the End Game prompt also returns to the ' \
+      'command list, not the title' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 4)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::B]         # Cancel, same as Scene_End's own Input::CANCEL
+  scene.update
+  RGSS::Input.reset
+  ok !scene.parent.returned_to_title, 'Cancel must not quit the game'
+  eq :command, scene.instance_variable_get(:@focus)
+end
+
+check 'Scene::Menu: confirming "Yes" on the End Game prompt fades the BGM ' \
+      'and returns to the title' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 4)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update                                    # open the prompt (cursor on No)
+  RGSS::Input.reset
+  RGSS::Audio.reset_bgm
+
+  RGSS::Input.triggered = [RGSS::Input::UP]        # move the cursor to "Yes"
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@confirm_index)
+
+  RGSS::Input.triggered = [RGSS::Input::C]         # confirm "Yes"
+  scene.update
+  RGSS::Input.reset
   ok scene.parent.returned_to_title,
-     'End Game hands control back to the app immediately, with no confirmation ' \
-     'message to dismiss first'
+     '"Yes" hands control back to the app, same as before this prompt existed'
+  eq [[400]], RGSS::Audio.bgm_fade_calls,
+     'Game_System::BgmFade(400) runs before the handoff'
 end
 
 check 'Scene::Menu: RPG2000 (no rpg2003? flag) never offers Status at all' do

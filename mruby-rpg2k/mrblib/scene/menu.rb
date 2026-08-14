@@ -9,9 +9,11 @@ class RPG2k
     # `Scene_Menu::UpdateCommand`/`UpdateActorSelection` (`Skill`/
     # `Equipment`/`Status`/`Row` all share this shape; RPG2003's Row, the
     # battle front/back toggle, is not modelled here). Cancelling back out
-    # of actor selection returns focus to the command list. End Game
-    # returns to the title. Any further command (there are none left in the
-    # built command list today) falls back to a "not implemented yet" message.
+    # of actor selection returns focus to the command list. End Game opens a
+    # Yes/No confirmation (see #open_end_game_confirm); only confirming
+    # "Yes" there returns to the title. Any further command (there are none
+    # left in the built command list today) falls back to a "not implemented
+    # yet" message.
     class Menu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -80,6 +82,8 @@ class RPG2k
 
       def dispose
         close_message
+        @confirm_help.dispose if @confirm_help
+        @confirm_command.dispose if @confirm_command
         @background.dispose if @background
         @command.dispose if @command
         @status.dispose if @status
@@ -107,7 +111,11 @@ class RPG2k
 
       def update
         return drive_message if @message
-        @focus == :actors ? update_actor_selection : update_command
+        case @focus
+        when :actors then update_actor_selection
+        when :end_game_confirm then update_end_game_confirm
+        else update_command
+        end
       end
 
       private
@@ -306,10 +314,105 @@ class RPG2k
           end
         when :end_game
           play_system_se(SFX_DECISION)
-          @parent.return_to_title
+          open_end_game_confirm
         else
           show_message("#{label} is not implemented yet.")
         end
+      end
+
+      # End Game never quits outright -- it opens a Yes/No confirmation on
+      # top of the command list, matching EasyRPG's own `Scene_End` (pushed
+      # by `Scene_Menu::UpdateCommand`'s `case Quit`, right after the
+      # Decision SE #select_command already plays above). `Scene_End::
+      # CreateCommandWindow` defaults the cursor to "No" (index 1) -- a
+      # stray confirm press does not quit the game.
+      END_GAME_YES = 0
+      END_GAME_NO = 1
+
+      def open_end_game_confirm
+        @focus = :end_game_confirm
+        @confirm_index = END_GAME_NO
+        @command.active = false
+        build_end_game_confirm_windows
+      end
+
+      # The prompt text is the Term table's own end_game_confirm
+      # (`Scene_End::CreateHelpWindow`'s `exit_game_message`), falling back
+      # to RPG_RT's own English default when the database leaves it blank,
+      # same as every other #term lookup in this scene. Sized to its own
+      # text the way Scene::Title sizes its command window (#initialize's
+      # own `measure.text_size` -- Scene_End::CreateHelpWindow does the same
+      # off Text::GetSize), rather than a fixed width.
+      def build_end_game_confirm_windows
+        measure = Bitmap.new 1, 1
+        text = term(:end_game_confirm, 'Do you really want to quit?')
+        text_w = measure.text_size(text).width
+
+        help_w = text_w + Window::BORDER * 2
+        help_h = LINE_H + Window::BORDER * 2
+        help_x = (SCREEN_W - help_w) / 2
+        help_y = (SCREEN_H - help_h - (2 * LINE_H + Window::BORDER * 2)) / 2
+        @confirm_help = Window.new(help_x, help_y, help_w, help_h)
+        @confirm_help.z = 500
+        @confirm_help.windowskin = @skin
+        hc = Bitmap.new(help_w - Window::BORDER * 2, LINE_H)
+        hc.font.color = Color.new(255, 255, 255, 255)
+        hc.draw_text 0, 0, hc.width, LINE_H, text
+        @confirm_help.contents = hc
+
+        labels = [term(:yes, 'Yes'), term(:no, 'No')]
+        label_w = labels.map { |l| measure.text_size(l).width }.max
+        cmd_w = label_w + Window::BORDER * 2
+        cmd_h = labels.size * LINE_H + Window::BORDER * 2
+        cmd_x = (SCREEN_W - cmd_w) / 2
+        cmd_y = help_y + help_h
+        @confirm_command = Window.new(cmd_x, cmd_y, cmd_w, cmd_h)
+        @confirm_command.z = 500
+        @confirm_command.windowskin = @skin
+        cc = Bitmap.new(cmd_w - Window::BORDER * 2, cmd_h - Window::BORDER * 2)
+        cc.font.color = Color.new(255, 255, 255, 255)
+        labels.each_with_index { |l, i| cc.draw_text 0, i * LINE_H, cc.width, LINE_H, l }
+        @confirm_command.contents = cc
+        refresh_end_game_cursor
+      end
+
+      def refresh_end_game_cursor
+        @confirm_command.cursor_rect =
+          Rect.new(0, @confirm_index * LINE_H, @confirm_command.contents.width, LINE_H)
+      end
+
+      # Matches `Scene_End::vUpdate`: Decision plays the Decision SE on
+      # *either* option and only "Yes" goes anywhere -- fading the current
+      # BGM over 400ms (`Game_System::BgmFade(400)`) before handing off to
+      # the title, the same call `interpreter.rb`'s Fade Out BGM (11710)
+      # uses. "No" and Cancel are otherwise identical: both just close the
+      # prompt back to the command list, no title, no BGM fade.
+      def update_end_game_confirm
+        if Input.trigger?(Input::DOWN) || Input.trigger?(Input::UP)
+          @confirm_index = (@confirm_index == END_GAME_YES) ? END_GAME_NO : END_GAME_YES
+          refresh_end_game_cursor
+          play_system_se(SFX_CURSOR)
+        elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
+          close_end_game_confirm
+        elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
+          if @confirm_index == END_GAME_YES
+            RGSS::Audio.bgm_fade(400)
+            @parent.return_to_title
+          else
+            close_end_game_confirm
+          end
+        end
+      end
+
+      def close_end_game_confirm
+        @confirm_help.dispose if @confirm_help
+        @confirm_command.dispose if @confirm_command
+        @confirm_help = nil
+        @confirm_command = nil
+        @focus = :command
+        @command.active = true if @command
       end
 
       def drive_message
