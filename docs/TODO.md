@@ -5380,6 +5380,65 @@ above are repeated here)
   switch is off for the whole run; its content still executes), confirmed to
   fail when `build_resolver` is temporarily made to honour the gate switch,
   restored before finalizing since nothing here needed to change.
+- ✅ **An equipped item's `max_hp_points`/`max_sp_points` fields never raised
+  max HP/MP — confirmed as a genuine, previously-undocumented gap in the
+  opposite direction from most entries here: this codebase was *wrongly
+  applying* two fields real RPG_RT never treats as an equipment bonus at
+  all.** Found while cross-checking the already-fixed "a seed permanently
+  raises the target's stats (points2 set)" entry above (`Game::Party
+  #use_seed`/`Actor#seed_boosts`) against `Game::Actor::EQUIP_BONUS_FIELD`
+  (`mruby-rpg2k/mrblib/game.rb`), which listed `:max_hp_points`/
+  `:max_sp_points` at indices 0/1 (max HP/MP) alongside the four combat
+  stats' own `atk_points1`/`def_points1`/`spi_points1`/`agi_points1` — summed
+  live over every equipped slot on every `#recompute_stats` call
+  (`@max_hp = @base[0] + equip_bonus(0)`), the identical mechanism the four
+  combat stats correctly use for their own equip bonus. But
+  `max_hp_points`/`max_sp_points` are not part of that "points1" equip-bonus
+  family at all: they are LCF item fields 41/42, numerically and
+  semantically grouped with fields 43-46 (`atk_points2`/`def_points2`/
+  `spi_points2`/`agi_points2`, `mruby-lcf/mrblib/schema.rb`) — the six-field
+  set a Seed-type (database item type 8) item spends on a one-time,
+  permanent stat-up when *consumed*, never while merely worn — exactly the
+  set `Actor#seed_boosts` already reads correctly for that separate,
+  already-working feature. Confirmed against EasyRPG Player's actual C++
+  source rather than guessed at: `Game_Actor::GetMaxHp`/`GetMaxSp`
+  (`src/game_battler.cpp`/`src/game_actor.cpp`) resolve to
+  `GetBaseMaxHp`/`GetBaseMaxSp` with no per-equipment summation anywhere in
+  the call chain, unlike `GetAtk`/`GetDef`/`GetSpi`/`GetAgi`, each of which
+  walks every equipped item via `ForEachEquipment` reading exactly its own
+  `*_points1` field (`src/game_actor.cpp`); `max_hp_points`/`max_sp_points`
+  are read nowhere in that equip-time path, only inside `Game_Actor::UseItem`'s
+  Material (Seed) branch alongside `atk_points2`..`agi_points2` — RPG2000's
+  editor simply has no "+Max HP"/"+Max SP" equip-bonus field for
+  weapon/shield/armour/helmet/accessory items at all, only the four combat
+  stats. (Corroborating evidence already sat in this same codebase:
+  `Scene::EquipMenu`'s comparison-arrow fix above deliberately sums only the
+  four `*_points1` fields, its own comment already calling them "the combat
+  quarter... max HP/SP have no comparison arrow" — a fact recorded once but
+  never propagated back to `#recompute_stats`.) In practice this stayed
+  silent for both test-bed databases — a scripted scan of
+  `data/mtf-meido-action/Debug/RPG_RT.ldb` found zero weapon/shield/armour/
+  helmet/accessory rows with a nonzero `max_hp_points`/`max_sp_points` (the
+  editor never exposes those fields for an equip-type item, so no legitimate
+  authoring path sets them there) — but the LCF schema does not partition
+  fields by item type, so a hand-edited database, or one whose item
+  type was reassigned in the editor without clearing every field the old
+  type used, could carry a stray nonzero value straight into a live,
+  per-frame equip-bonus sum. Fixed by making `EQUIP_BONUS_FIELD[0]`/`[1]`
+  `nil` (max HP/MP have no field at all) and `#equip_bonus` return 0
+  immediately for a `nil` field, before ever touching `@equipment`; indices
+  2-5 (atk/def/spi/agi) are completely unchanged. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a weapon carrying both a combat-stat
+  bonus and a large `max_hp_points`/`max_sp_points` value raises only the
+  combat stat when equipped, leaves max HP/MP untouched both equipped and
+  unequipped), confirmed to fail against the pre-fix code (`[510, 505, 10]`
+  instead of `[10, 5, 10]`); the pre-existing "Actor equipment adds item
+  bonuses to the effective stats" check's own `mhp: 50` equip-bonus
+  assertion — itself asserting the bug — is corrected to a fourth combat
+  stat (`spi:`) instead. `Party#use_seed`/`#seed_boosts`'s own already-passing
+  coverage is unaffected, since a Seed item is never equippable in the first
+  place (`Actor#equip_slot_for`/`#equip_item` gate on item `type` 1-5, Seed
+  is type 8).
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

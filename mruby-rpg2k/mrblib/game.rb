@@ -1165,10 +1165,33 @@ module Game
     # The six base stats in database parameter-curve order (chunk 31 stores six
     # shorts -- maxHP, maxSP, atk, def, int, agi -- per level).
     STAT_NAMES = [:max_hp, :max_mp, :atk, :def, :int, :agi].freeze
-    # The item field carrying each stat's equipment bonus, in STAT_NAMES order.
-    # RPG2000 keeps every equipped weapon/armour bonus in the "points1" set plus
-    # the max HP/SP points, whatever the slot.
-    EQUIP_BONUS_FIELD = [:max_hp_points, :max_sp_points, :atk_points1,
+    # The item field carrying each stat's equipment bonus, in STAT_NAMES order,
+    # nil for the two stats no equipped item can ever raise. RPG2000's editor
+    # only offers an equip-bonus field for the four combat stats -- Attack,
+    # Defence, Mind (Spirit), Agility -- stored in each item's "points1" set
+    # (`atk_points1`/`def_points1`/`spi_points1`/`agi_points1`) and summed live
+    # over every equipped slot every time gear changes; a weapon/armour/shield/
+    # helmet/accessory has no "+Max HP"/"+Max SP" field to set at all. The
+    # `max_hp_points`/`max_sp_points` fields exist on every item row (the LCF
+    # schema does not split fields by item type), but they are semantically
+    # part of a *different* six-field set together with `atk_points2`/
+    # `def_points2`/`spi_points2`/`agi_points2` -- a Seed-type (材料, database
+    # item type 8) item's own one-time, permanent stat-up amount, applied only
+    # when the item is *consumed* (`Actor#seed_boosts`/`Party#use_seed`, via
+    # `Actor#change_param`), never while merely worn. Confirmed against
+    # EasyRPG's actual C++ source: `Game_Actor::GetMaxHp`/`GetMaxSp` resolve to
+    # `GetBaseMaxHp`/`GetBaseMaxSp` with no per-equipment summation at all
+    # (`src/game_actor.cpp`), unlike `GetAtk`/`GetDef`/`GetSpi`/`GetAgi`, which
+    # each walk every equipped item via `ForEachEquipment` reading exactly the
+    # matching `*_points1` field; `max_hp_points`/`max_sp_points` are read
+    # nowhere in that equip-time path, only inside `UseItem`'s Material branch
+    # alongside `atk_points2`..`agi_points2`, the exact fields
+    # `Game::Actor#seed_boosts` (`use_seed`, `Scene::ItemMenu`'s Seed handling
+    # above) already reads for the one-time consumable boost. So indices 0/1
+    # (max_hp/max_mp) carry no field here at all -- #equip_bonus returns 0 for
+    # them unconditionally, regardless of what an item's own `max_hp_points`/
+    # `max_sp_points` happen to hold.
+    EQUIP_BONUS_FIELD = [nil, nil, :atk_points1,
                          :def_points1, :spi_points1, :agi_points1].freeze
     # Equipment slots, in save/database order: weapon, shield, armour, helmet,
     # accessory.
@@ -1476,11 +1499,15 @@ module Game
     end
 
     # Total equipment bonus for stat index `i` (see EQUIP_BONUS_FIELD): the sum
-    # over equipped items of that item's bonus field. A database that exposes no
-    # item table (the test fixtures) contributes nothing.
+    # over equipped items of that item's bonus field. Always 0 for max HP/MP
+    # (index 0/1, `EQUIP_BONUS_FIELD[i]` nil there -- see its own comment): no
+    # equipped item ever raises those two, only a consumed Seed does. A
+    # database that exposes no item table (the test fixtures) contributes
+    # nothing either.
     def equip_bonus(i)
-      return 0 unless @db.respond_to?(:item)
       field = EQUIP_BONUS_FIELD[i]
+      return 0 unless field
+      return 0 unless @db.respond_to?(:item)
       total = 0
       @equipment.each do |iid|
         next if iid.nil? || iid == 0
