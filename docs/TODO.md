@@ -3487,11 +3487,63 @@ not yet verified:
 - Running a hero-targeted Parallel-Process Set Move Route while the hero
   is mid-transition onto an event's tile can suppress that event's "Hero
   Touch" trigger for that step.
-- Display stat clamping (e.g. displayed max HP capped 1-999) is **cosmetic
-  only** — the underlying stored value is not clamped, so it can go
-  negative or over 999 internally and a later +/- operates on the real
-  (unclamped) value, producing results that look wrong if you assume the
-  displayed number was the true one.
+- ✅ **"Display stat clamping is cosmetic only" turns out to be backwards —
+  verified against EasyRPG Player's actual C++ source rather than taken on
+  faith, the clamp is real and applies to the *effective* stat itself,
+  equipment bonus included, not merely to what gets drawn on screen.**
+  `Game_Actor::GetBaseAtk`/`GetBaseDef`/`GetBaseSpi`/`GetBaseAgi`
+  (`src/game_actor.cpp`) each sum the level curve, the Change-Parameters
+  `*_mod` shadow total, *and* every equipped item's own `*_points1` bonus,
+  then clamp the combined total to `Utils::Clamp(n, 1, MaxStatBaseValue())`
+  — `Game_Constants::MaxStatBaseValue` (`src/game_constants.cpp`) defaults to
+  999 for both RPG2000 and RPG2003, no edition split — so an equip bonus
+  cannot push the effective stat past 999 either, contrary to the claim.
+  `GetBaseMaxHp`/`GetBaseMaxSp` clamp the same way, to `MaxActorHpValue()`/
+  `MaxActorSpValue()`: HP is edition-gated (`Player::IsRPG2k() ? 999 :
+  9999`), SP stays 999 in both editions with no such split.
+  `Game::Actor#recompute_stats` (`mruby-rpg2k/mrblib/game.rb`) computed
+  `@max_hp`/`@max_mp`/`@atk`/`@def`/`@int`/`@agi` as a bare `@base[i] +
+  equip_bonus(i)` with no ceiling at all — the codebase's own existing
+  `#change_param`/`#base_param_limit` clamp (1..999 for the four combat
+  stats, 1..9999 for HP/MP — itself pre-existing, correct for the *base*
+  value alone, and left untouched by this fix) only ever applied to a live
+  Change Parameters delta on `@base`, never to the combined equip-inclusive
+  total `#recompute_stats` derives from it, and never to the *initial*
+  `@base` a level-curve/status-hash assignment (`#set_level`) hands
+  `#recompute_stats` fresh with no clamp of its own either. So a levelling
+  curve or a stray large equip bonus could already carry an actor's
+  effective max HP/MP/ATK/DEF/SPI/AGI arbitrarily far past what real RPG_RT
+  would ever let it reach, silently, before any command even ran. Fixed by
+  clamping each of the six sums in `#recompute_stats` itself: `MAX_EFFECTIVE_
+  STAT = 999` for the four combat stats (uniform, no edition check, matching
+  `MaxStatBaseValue`'s own unconditional default); `MAX_EFFECTIVE_MP = 999`
+  for max MP/SP (also uniform); and a new `#max_hp_cap`/`#rpg2003?` pair —
+  the latter duplicating `Game::Party#rpg2003?`'s own `@db.respond_to?(:rpg2003?)
+  && @db.rpg2003?` test, since an `Actor` only ever holds `@db` directly, not
+  a `Party` back-reference — picking `MAX_EFFECTIVE_HP_2K3 = 9999` on an
+  RPG2003 database and `MAX_EFFECTIVE_HP_2K = 999` otherwise for max HP, the
+  same detection path the RPG2003 variable-range-widen and enemy-levitate
+  fixes already key off. Current HP/MP still reclamp to the freshly-lowered
+  maxima exactly as before (`@hp = @max_hp if @hp && @hp > @max_hp`), now
+  running against the newly-capped ceiling rather than an unbounded one. The
+  codebase's own separate, pre-existing "1..9999 for max HP/MP" reading baked
+  into `#base_param_limit` (the Change Parameters shadow-total clamp) is only
+  correct for HP on an RPG2003 database — real MP/SP was never 9999 in either
+  edition per `MaxActorSpValue`'s own unconditional 999 default — left as-is
+  here since it only ever over-widens a ceiling nothing before this fix
+  re-applied on top of it anyway, a separate, narrower pre-existing mismatch
+  outside this fix's scope. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (an item bonus that would push Attack from 970 to 1020 clamps at
+  999; a level-curve status hash of 5000 max HP/MP with no equipment
+  involved at all clamps to 999/999 on an RPG2000 database — with current HP
+  dragged down to the new max too — and to 5000/999 on an RPG2003 one, since
+  9999 comfortably fits 5000 while MP still caps at 999), confirmed to fail
+  against the pre-fix code (`expected 999, got 1020`) before the fix; a
+  pre-existing Simulated Attack damage-cap check that relied on an
+  RPG2000-fixture actor holding an unclamped 5000 max HP to demonstrate
+  "999 damage against a high-max-HP target leaves it alive" was updated to
+  an RPG2003 fixture (9999 ceiling, still comfortably above 5000), since a
+  genuine RPG2000 actor can no longer reach that total either.
 
 **Variables & Switches**
 - Switches/variables cap at 5000 each (configurable up to that hard max),

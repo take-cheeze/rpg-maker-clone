@@ -1485,17 +1485,59 @@ module Game
       STAT_NAMES.map { |k| st[k] || 0 }
     end
 
+    # Real RPG_RT's "displayed max HP capped 1-999" is not cosmetic -- the
+    # clamp applies to the *effective* stat itself, equipment bonus included,
+    # not just to the level-curve baseline #change_param's own 1..999/1..9999
+    # floor (`#base_param_limit`, just below) already respects. Confirmed
+    # against EasyRPG Player's actual C++ source: `Game_Actor::GetBaseAtk`/
+    # `GetBaseDef`/`GetBaseSpi`/`GetBaseAgi` (`src/game_actor.cpp`) each sum
+    # the level curve, the Change-Parameters `*_mod` shadow, and every
+    # equipped item's own `*_points1` bonus, THEN clamp the total to
+    # `Utils::Clamp(n, 1, MaxStatBaseValue())` -- `Game_Constants::
+    # MaxStatBaseValue` defaults to 999 for both RPG2000 and RPG2003, no
+    # edition split -- so the equip bonus sits *inside* the same ceiling the
+    # base value alone already respects, not stacked unclamped on top of it.
+    # `GetBaseMaxHp`/`GetBaseMaxSp` clamp the same way to `MaxActorHpValue()`/
+    # `MaxActorSpValue()`: HP is edition-gated (`Player::IsRPG2k() ? 999 :
+    # 9999`, matching the existing `#rpg2003?` accessor other RPG2003-widened
+    # limits already key off), SP stays 999 in both editions with no such
+    # split (RPG2000's own "9999 for max HP/MP" reading, baked into
+    # `#base_param_limit` below, is only correct for HP on an RPG2003
+    # database -- MP was never 9999 in either edition, a separate,
+    # pre-existing mismatch left as-is here since it only ever over-widens a
+    # ceiling nothing before this fix re-applied anyway).
+    MAX_EFFECTIVE_STAT = 999
+    MAX_EFFECTIVE_MP = 999
+    MAX_EFFECTIVE_HP_2K = 999
+    MAX_EFFECTIVE_HP_2K3 = 9999
+
     # Recompute the six effective stats (base + equipment) into their readers and
     # re-clamp current HP/MP to the refreshed maxima.
     def recompute_stats
-      @max_hp = @base[0] + equip_bonus(0)
-      @max_mp = @base[1] + equip_bonus(1)
-      @atk = @base[2] + equip_bonus(2)
-      @def = @base[3] + equip_bonus(3)
-      @int = @base[4] + equip_bonus(4)
-      @agi = @base[5] + equip_bonus(5)
+      @max_hp = Game.clamp(@base[0] + equip_bonus(0), 1, max_hp_cap)
+      @max_mp = Game.clamp(@base[1] + equip_bonus(1), 0, MAX_EFFECTIVE_MP)
+      @atk = Game.clamp(@base[2] + equip_bonus(2), 1, MAX_EFFECTIVE_STAT)
+      @def = Game.clamp(@base[3] + equip_bonus(3), 1, MAX_EFFECTIVE_STAT)
+      @int = Game.clamp(@base[4] + equip_bonus(4), 1, MAX_EFFECTIVE_STAT)
+      @agi = Game.clamp(@base[5] + equip_bonus(5), 1, MAX_EFFECTIVE_STAT)
       @hp = @max_hp if @hp && @hp > @max_hp
       @mp = @max_mp if @mp && @mp > @max_mp
+    end
+
+    # Whether this actor's database is an RPG2003 project -- the same
+    # `@db.respond_to?(:rpg2003?) && @db.rpg2003?` test `Game::Party#rpg2003?`
+    # already exposes, duplicated here since an `Actor` only ever holds `@db`
+    # directly, not a `Party` back-reference; a bare test double with no
+    # `#rpg2003?` of its own reads false, matching a genuine RPG2000 database.
+    def rpg2003?
+      @db.respond_to?(:rpg2003?) && @db.rpg2003?
+    end
+
+    # The effective max HP ceiling #recompute_stats clamps against --
+    # `MAX_EFFECTIVE_HP_2K3` on an RPG2003 database, `MAX_EFFECTIVE_HP_2K`
+    # otherwise.
+    def max_hp_cap
+      rpg2003? ? MAX_EFFECTIVE_HP_2K3 : MAX_EFFECTIVE_HP_2K
     end
 
     # Total equipment bonus for stat index `i` (see EQUIP_BONUS_FIELD): the sum
