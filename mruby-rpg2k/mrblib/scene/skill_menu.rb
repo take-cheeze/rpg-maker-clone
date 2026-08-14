@@ -29,6 +29,12 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
 
+      # Height of the skill-description banner at the very top of the screen
+      # (see #build_desc_window) -- the same gap Scene::ItemMenu/EquipMenu
+      # both already closed for their own description text; Scene::SkillMenu
+      # never grew the equivalent Window_Help.
+      DESC_H = LINE_H + Window::BORDER * 2
+
       # The skill list is a two-column grid, the same shape and cursor math
       # as Scene::ItemMenu's own (see its COLUMN_MAX comment) -- confirmed
       # via EasyRPG's `Window_Skill` constructor, which sets `column_max =
@@ -47,11 +53,13 @@ class RPG2k
         @pending_skill = nil
         @mode = :skills          # :skills list, :target selection, or :teleport_target
         @message = nil
+        build_desc_window
         build_skill_window
       end
 
       def dispose
         close_message
+        @desc_window.dispose if @desc_window
         @skill_window.dispose if @skill_window
         @target_window.dispose if @target_window
         @teleport_window.dispose if @teleport_window
@@ -132,6 +140,7 @@ class RPG2k
           @mode = :teleport_target
           @teleport_index = 0
           build_teleport_window
+          refresh_desc
         elsif sk && (sk.scope == 2 || sk.scope == 4)
           apply_skill(sid, nil)
         else
@@ -139,6 +148,7 @@ class RPG2k
           @mode = :target
           @target_index = 0
           build_target_window
+          refresh_desc
         end
       end
 
@@ -196,6 +206,7 @@ class RPG2k
           @target_window.dispose
           @target_window = nil
         end
+        refresh_desc
       end
 
       def update_teleport_target
@@ -261,6 +272,7 @@ class RPG2k
           @teleport_window.dispose
           @teleport_window = nil
         end
+        refresh_desc
       end
 
       # After a successful cast, drop back to the skill list and rebuild it (SP
@@ -279,6 +291,39 @@ class RPG2k
         (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
       end
 
+      # The highlighted skill's flavour text, in a one-line banner across the
+      # very top of the screen -- see Scene::ItemMenu#build_desc_window,
+      # which this mirrors exactly (the same gap, in the Skill screen
+      # instead). Tracks the skill under the cursor in :skills mode; the
+      # :target/:teleport_target pickers keep showing the pending skill's own
+      # description, since it is still the one thing on screen a description
+      # could be about.
+      def build_desc_window
+        @desc_window.dispose if @desc_window
+        inner_w = SCREEN_W - Window::BORDER * 2
+        @desc_window = Window.new(0, 0, SCREEN_W, DESC_H)
+        @desc_window.z = 400
+        @desc_window.windowskin = @skin
+        @desc_contents = Bitmap.new(inner_w, LINE_H)
+        @desc_window.contents = @desc_contents
+        refresh_desc
+      end
+
+      def refresh_desc
+        return unless @desc_contents
+        sid = if @mode == :skills
+                rows = skills
+                rows.empty? ? nil : rows[@skill_index].first
+              else
+                @pending_skill
+              end
+        sk = sid ? @state.party.db_skill(sid) : nil
+        text = sk ? sk.description.to_s : ''
+        @desc_contents.clear
+        @desc_contents.font.color = Color.new(255, 255, 255, 255)
+        @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
+      end
+
       def build_skill_window
         @skill_window.dispose if @skill_window
         rows = skills
@@ -286,7 +331,7 @@ class RPG2k
         head_h = LINE_H
         grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
         h = head_h + grid_rows * LINE_H
-        @skill_window = Window.new(0, 0, SCREEN_W, h + Window::BORDER * 2)
+        @skill_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
         @skill_window.z = 400
         @skill_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
@@ -321,6 +366,7 @@ class RPG2k
         x = (@skill_index % COLUMN_MAX) * skill_col_w
         y = LINE_H + (@skill_index / COLUMN_MAX) * LINE_H
         @skill_window.cursor_rect = Rect.new(x, y, skill_col_w, LINE_H)
+        refresh_desc
       end
 
       def build_target_window

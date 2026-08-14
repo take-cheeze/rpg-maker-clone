@@ -10049,7 +10049,7 @@ class WrapMenuParty < MenuStubParty
   def field_items(_state = nil); [[1, 3], [2, 1]]; end
   def field_skills(_actor, _state = nil); [[10, 2], [11, 4]]; end
   def db_item(id); OpenStruct.new(name: "Item#{id}"); end
-  def db_skill(id); OpenStruct.new(name: "Skill#{id}"); end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}", description: "Description of skill #{id}."); end
   def equip_candidates(_slot, _actor = nil); [[7, 2], [8, 1]]; end
 end
 
@@ -11054,6 +11054,34 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   eq :skills, scene.instance_variable_get(:@mode)
   ok state.pending_teleport.nil?
   ok !parent.pop_to_map_called
+end
+
+# EasyRPG's Window_Skill::UpdateHelp (src/window_skill.cpp) feeds the
+# database skill's own `description` straight to Scene_Skill's Window_Help
+# banner every time the selection changes -- the exact mechanism
+# Scene::ItemMenu/EquipMenu already reproduce for their own item description
+# banner. Scene::SkillMenu never grew the equivalent: the field's own
+# skill.description was parsed by the schema and never read anywhere in
+# mruby-rpg2k (confirmed with scripts/rpg2k_field_audit.rb against a real
+# game's database), so the Skill screen showed no flavour text at all.
+check 'Scene::SkillMenu: the description banner shows the highlighted skill\'s own text, ' \
+      'follows the cursor, and keeps the pending skill\'s text in target mode' do
+  scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
+  ok window_texts(scene.instance_variable_get(:@desc_window)).include?('Description of skill 10.'),
+     'starts on the first skill (id 10)'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second skill (id 11)
+  scene.update
+  RGSS::Input.reset
+  ok window_texts(scene.instance_variable_get(:@desc_window)).include?('Description of skill 11.'),
+     'the banner follows the cursor onto the second skill'
+
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm skill 11 (scope defaults to single-ally)
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+  ok window_texts(scene.instance_variable_get(:@desc_window)).include?('Description of skill 11.'),
+     'the pending skill\'s own description is still shown while picking a target'
 end
 
 check 'Scene::Map: a pending teleport queued by the field skill menu is applied' do
