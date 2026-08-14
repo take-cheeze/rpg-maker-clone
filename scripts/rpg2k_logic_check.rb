@@ -2581,7 +2581,7 @@ end
 class FakeActorDB
   attr_reader :player, :system, :item, :skill, :job, :situation, :property
   def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
-                 property = nil)
+                 property = nil, rpg2003: false)
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
@@ -2589,7 +2589,12 @@ class FakeActorDB
     @job = jobs
     @situation = situation
     @property = property
+    @rpg2003 = rpg2003
   end
+
+  # Mirrors LCF::Schema::Database#rpg2003? (Classes-chunk presence) for tests
+  # that need to distinguish the two editions' own numeric ranges/caps.
+  def rpg2003?; @rpg2003; end
 end
 
 def party_state
@@ -4456,6 +4461,38 @@ check 'Control Variables modulo by zero zeroes the variable, matching EasyRPG; d
   it.update
   eq 42, st.variables[1], 'a divide by zero leaves the variable unchanged'
   eq 0, st.variables[2], 'a modulo by zero zeroes the variable'
+end
+
+check 'an RPG2003 database widens a variable\'s clamp to +-9999999' do
+  # LCF.var_max/var_min widen RPG2000's +-999999 to +-9999999 under MODE ==
+  # 2003; Game::Variables now reads the same distinction from the party's own
+  # database (LCF::Schema::Database#rpg2003?, the Classes-chunk-presence
+  # check `Scene::Menu#build_commands` already reads elsewhere) at
+  # Game::State construction, instead of always applying RPG2000's narrower
+  # bound.
+  db2003 = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                           [1], {}, {}, {}, nil, nil, rpg2003: true)
+  st = Game::State.new(Game::Party.new(db2003), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 15_000_000]),   # var 1 = 15000000
+    FakeCmd.new(IC::CONTROL_VARS, [0, 2, 2, 0, 0, -15_000_000]),  # var 2 = -15000000
+  ])
+  it.update
+  eq 9_999_999, st.variables[1], 'an RPG2003 over-range constant assign clamps at the wider max'
+  eq(-9_999_999, st.variables[2], 'an RPG2003 under-range constant assign clamps at the wider min')
+
+  # A value past RPG2000's own ceiling but still within RPG2003's survives
+  # untouched -- confirming the whole range widened, not just the display.
+  st.variables[3] = 2_000_000
+  eq 2_000_000, st.variables[3], 'a value between the two editions\' ceilings is unaffected under RPG2003'
+
+  # An RPG2000 database (no rpg2003? flag set, matching every existing
+  # FakeActorDB-backed check above) keeps the narrower +-999999 clamp.
+  db2000 = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1])
+  st2 = Game::State.new(Game::Party.new(db2000), 1, 0, 0)
+  st2.variables[4] = 15_000_000
+  eq 999_999, st2.variables[4], 'an RPG2000 database keeps the narrower clamp'
 end
 
 check 'a descending batch range silently no-ops for both Switches and Variables' do
