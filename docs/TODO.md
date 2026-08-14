@@ -2189,18 +2189,34 @@ The work below is roughly ordered by the critical path to a walkable game
   target/teleport picker is open, since it is still the one thing on screen
   a description could be about), and confirmed the fixed screen's banner
   text now matches RPG_RT's field-for-field.
-  **Left open by the same populated-list comparison, not fixed here:**
-  - **RPG_RT lays the item list out in a two-column grid, not a
-    single stacked column.** With 薬草×5 and 傷薬×3 held, RPG_RT drew them
-    side by side on the *same* row (薬草 on the left half, 傷薬 on the right
-    half), where this engine stacks every item on its own row regardless of
-    count. This is a bigger structural change than the banner fix above --
-    it touches cursor navigation (UP/DOWN would need to move by one column
-    instead of unconditionally wrapping the whole list), the row/column
-    math, and needs another populated data point (three or more items) to
-    pin down whether RPG_RT always uses exactly two columns or derives the
-    count from window width/item name length -- recorded rather than
-    guessed at.
+  ✅ **RPG_RT lays the item list out in a two-column grid, not a single
+  stacked column.** With 薬草×5 and 傷薬×3 held, RPG_RT drew them side by
+  side on the *same* row; this engine used to stack every item on its own
+  row regardless of count. A follow-up five-item comparison (薬草/傷薬/癒油/
+  常世の雫/魔法石の欠片, filling two full rows plus one) pinned the shape down
+  precisely: row-major fill (item 0 top-left, item 1 top-right, item 2
+  second row left, ...), an incomplete last row's second cell left blank
+  rather than reflowing, and grid-aware, non-wrapping cursor movement --
+  EasyRPG's own `Window_Selectable::CursorDown/Up/Right/Left` shape with
+  `cycle` off: DOWN/UP move by two (the column count) and do nothing at a
+  missing cell (confirmed by pressing DOWN off the grid's last, partial row
+  -- the cursor simply stayed, not wrapping to the top as the *old*
+  single-column code did), RIGHT/LEFT move by one and do nothing at a row's
+  own edge. `Scene::ItemMenu` gained a `COLUMN_MAX = 2` constant, grid-aware
+  drawing (`#build_item_window`, `#item_col_w`) and cursor math
+  (`#move_item_cursor`, replacing the old modulo-wraparound UP/DOWN
+  handling and adding RIGHT/LEFT, which the scene never handled before at
+  all), confirmed against the same five-item reference frames field-for-
+  field, including the exact cell the cursor stops on after each key.
+  `scripts/rpg2k_scene_check.rb`'s own two-item wraparound test encoded the
+  old (wrong) single-column assumption and is now a grid-boundary test
+  instead -- the actor-target list opened from an item is a separate,
+  genuinely single-column window and keeps its own wraparound coverage
+  unchanged. **Not yet re-verified against RPG_RT:** `Scene::SkillMenu`
+  almost certainly has the same two-column shape (RPG2000's skill list is
+  drawn by the same kind of window as the item list), but that has not
+  itself been driven under wine with a populated skill list, so it is left
+  single-column rather than assumed.
   - The item count's separator glyph differs: RPG_RT draws something
     resembling a bold "＝" between the name and the count (e.g. "薬草　＝　５"),
     where this engine draws a plain ASCII ":" (`":#{count}"` in

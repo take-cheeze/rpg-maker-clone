@@ -25,6 +25,18 @@ class RPG2k
       # which the item list is offset down by.
       DESC_H = LINE_H + Window::BORDER * 2
 
+      # The item list is a two-column grid, not a single stacked column --
+      # confirmed against genuine RPG_RT under wine with a five-item bag,
+      # which filled row-major (item 0 top-left, item 1 top-right, item 2
+      # second row left, ...) and left an incomplete last row's second cell
+      # blank rather than reflowing. Cursor movement is grid-aware and does
+      # not wrap at an edge (EasyRPG's own Window_Selectable::CursorDown/Up/
+      # Right/Left shape, `cycle` off): DOWN/UP move by COLUMN_MAX and are a
+      # no-op with no cell below/above (tried pressing DOWN off the last,
+      # partial row -- the cursor simply stayed), RIGHT/LEFT move by one and
+      # are a no-op at the row's own edge.
+      COLUMN_MAX = 2
+
       def initialize parent, state
         super parent
         @state = state
@@ -72,17 +84,29 @@ class RPG2k
       def update_items
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN) && !items.empty?
-          @item_index += 1
-          @item_index %= items.size
-          refresh_item_cursor
-        elsif Input.trigger?(Input::UP) && !items.empty?
-          @item_index -= 1
-          @item_index %= items.size
-          refresh_item_cursor
+        elsif Input.trigger?(Input::DOWN)
+          move_item_cursor(COLUMN_MAX)
+        elsif Input.trigger?(Input::UP)
+          move_item_cursor(-COLUMN_MAX)
+        elsif Input.trigger?(Input::RIGHT)
+          move_item_cursor(1) if (@item_index + 1) % COLUMN_MAX != 0
+        elsif Input.trigger?(Input::LEFT)
+          move_item_cursor(-1) if @item_index % COLUMN_MAX != 0
         elsif Input.trigger?(Input::C)
           choose_item
         end
+      end
+
+      # Move the item cursor by `delta` cells (a row for +-COLUMN_MAX, a
+      # column for +-1), ignored if that cell is off the grid -- confirmed
+      # against genuine RPG_RT under wine, which leaves the cursor put
+      # rather than wrapping (see the COLUMN_MAX comment above).
+      def move_item_cursor(delta)
+        return if items.empty?
+        target = @item_index + delta
+        return if target < 0 || target >= items.size
+        @item_index = target
+        refresh_item_cursor
       end
 
       def choose_item
@@ -344,16 +368,23 @@ class RPG2k
         @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
       end
 
+      # Column width for the item grid (see the COLUMN_MAX comment above).
+      def item_col_w
+        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+      end
+
       def build_item_window
         @item_window.dispose if @item_window
         rows = items
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = [rows.size, 1].max * LINE_H
+        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
+        h = grid_rows * LINE_H
         @item_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
         @item_window.z = 400
         @item_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
+        col_w = item_col_w
         # An empty bag draws no placeholder text -- confirmed against genuine
         # RPG_RT under wine, which shows a blank list row (still with a
         # visible, empty cursor box; see #refresh_item_cursor) rather than
@@ -362,8 +393,10 @@ class RPG2k
           it = @state.party.db_item(id)
           name = (it && it.name.to_s)
           name = "Item #{id}" if name.nil? || name.empty?
-          c.draw_text 0, i * LINE_H + 2, inner_w - 40, LINE_H, name
-          c.draw_text inner_w - 40, i * LINE_H + 2, 40, LINE_H, ":#{count}"
+          x = (i % COLUMN_MAX) * col_w
+          y = (i / COLUMN_MAX) * LINE_H
+          c.draw_text x, y + 2, col_w - 40, LINE_H, name
+          c.draw_text x + col_w - 40, y + 2, 40, LINE_H, ":#{count}"
         end
         @item_window.contents = c
         refresh_item_cursor
@@ -373,10 +406,12 @@ class RPG2k
         return unless @item_window
         # The cursor box stays visible on the empty row even with no items --
         # matched against genuine RPG_RT under wine, which highlights the
-        # blank slot rather than hiding the cursor.
-        h = LINE_H
-        @item_window.cursor_rect =
-          Rect.new(0, @item_index * LINE_H, @item_window.contents.width, h)
+        # blank slot rather than hiding the cursor. It highlights just the
+        # one grid cell, not the full row -- confirmed by the same captures
+        # that found the grid layout itself (see the COLUMN_MAX comment).
+        x = (@item_index % COLUMN_MAX) * item_col_w
+        y = (@item_index / COLUMN_MAX) * LINE_H
+        @item_window.cursor_rect = Rect.new(x, y, item_col_w, LINE_H)
         refresh_desc
       end
 
