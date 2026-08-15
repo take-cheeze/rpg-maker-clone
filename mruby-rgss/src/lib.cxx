@@ -1850,6 +1850,97 @@ mrb_value bmp_blt(mrb_state* M, V self) {
   return self;
 }
 
+// Bitmap#copy_blt(x, y, src, src_rect) -- put src_rect down at (x, y),
+// *replacing* the destination pixels (alpha included) instead of compositing
+// over them the way #blt does.
+//
+// This is not a new blending rule, it is the one case where blending is
+// provably a no-op: blend_over() against a fully transparent destination
+// returns the source pixel unchanged (dw = 0, out_a = sa), and #blt's own
+// alpha>=255 path is already a plain overwrite. So onto a *cleared*
+// destination the two show the same picture -- identical alpha everywhere and
+// identical colour on every pixel that is visible at all.
+//
+// They part company on exactly one thing, and it is not observable: for a
+// fully transparent source pixel #blt bails out and leaves the cleared black,
+// while this copies the source's colour channels over. Nothing can see the
+// difference -- blend_over weights the destination by its own alpha, so a
+// da == 0 pixel contributes nothing to any later composite, and a fully
+// transparent pixel does not render. The mruby-rgss tests assert both halves
+// of this over every alpha.
+//
+// It exists because that case is the map renderer's hot path. Scene::Map#
+// draw_layers copies its whole cached tile grid into the frame buffer every
+// frame, 336x256 pixels twice, and through #blt's per-pixel read/blend/write
+// that measured ~5ms per frame -- a third of the engine's entire 16.67ms
+// budget spent blending pixels onto transparency. Row-wise, it is a memcpy.
+mrb_value bmp_copy_blt(mrb_state* M, V self) {
+  mrb_int x, y;
+  Bitmap* src;
+  V srect;
+  mrb_get_args(M, "iido", &x, &y, &src, &DataType<Bitmap>::data_type, &srect);
+  Bitmap& dst = bmp_self(M, self);
+  Bitmap& sb = bmp_require(M, src);
+  Rect& rc = DataType<Rect>::get(M, srect);
+
+  mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
+  // Clip against the source's origin, carrying the destination along so the
+  // two stay in step, then against the destination's, then both extents.
+  if (sx < 0) {
+    w += sx;
+    x -= sx;
+    sx = 0;
+  }
+  if (sy < 0) {
+    h += sy;
+    y -= sy;
+    sy = 0;
+  }
+  if (x < 0) {
+    w += x;
+    sx -= x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    sy -= y;
+    y = 0;
+  }
+  if (sx + w > sb.width)
+    w = sb.width - sx;
+  if (sy + h > sb.height)
+    h = sb.height - sy;
+  if (x + w > dst.width)
+    w = dst.width - x;
+  if (y + h > dst.height)
+    h = dst.height - y;
+  if (w <= 0 || h <= 0)
+    return self;
+
+  if (dst.format == sb.format) {
+    const unsigned bpp = lv_color_format_get_size(dst.format);
+    for (mrb_int row = 0; row < h; ++row) {
+      const uint8_t* s =
+          sb.buffer.data() + ((size_t)(sy + row) * sb.width + sx) * bpp;
+      uint8_t* d =
+          dst.buffer.data() + ((size_t)(y + row) * dst.width + x) * bpp;
+      std::memcpy(d, s, (size_t)w * bpp);
+    }
+  } else {
+    // Different pixel formats have no shared byte layout to copy, so go
+    // through the accessors -- still a replace, just not a memcpy.
+    for (mrb_int row = 0; row < h; ++row) {
+      for (mrb_int col = 0; col < w; ++col) {
+        int r, g, bl, a;
+        bmp_read(sb, sx + col, sy + row, r, g, bl, a);
+        bmp_put(dst, x + col, y + row, r, g, bl, a);
+      }
+    }
+  }
+  dst.dirty = true;
+  return self;
+}
+
 // Copy src_rect from `src` into dest_rect of self, scaling with nearest
 // neighbour sampling. Mirrors RGSS's Bitmap#stretch_blt and is used to stretch
 // the small windowskin pieces (32x32 background, 16x8/8x16 border edges) over
@@ -6253,6 +6344,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "copy_blt", bmp_copy_blt, MRB_ARGS_REQ(4));
   mrb_define_method(M, bmp, "tone_blt", bmp_tone_blt, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
