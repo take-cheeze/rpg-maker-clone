@@ -5124,35 +5124,39 @@ check 'Open Shop scene: the quantity counter opens on a chosen good' do
   eq 5, shop[:quantity][:max], '500 gold buys five at 100'
 end
 
-check 'Open Shop scene: the counter steps by one and clamps to its bounds' do
+check 'Open Shop scene: the counter steps by one on the horizontal axis and ' \
+      'clamps to its bounds' do
   scene, _st = shop_quantity_scene(500)
   shop = scene.instance_variable_get(:@shop)
-  press(scene, RGSS::Input::UP)
+  press(scene, RGSS::Input::RIGHT)
   eq 2, shop[:quantity][:count]
-  press(scene, RGSS::Input::DOWN)
+  press(scene, RGSS::Input::LEFT)
   eq 1, shop[:quantity][:count]
-  press(scene, RGSS::Input::DOWN)
+  press(scene, RGSS::Input::LEFT)
   eq 1, shop[:quantity][:count], 'never below one'
-  5.times { press(scene, RGSS::Input::UP) }
+  5.times { press(scene, RGSS::Input::RIGHT) }
   eq 5, shop[:quantity][:count], 'never past what the party can afford'
 end
 
-check 'Open Shop scene: the counter steps by ten on the horizontal axis' do
+check 'Open Shop scene: the counter steps by ten on the vertical axis' do
+  # Confirmed against EasyRPG's Window_ShopNumber::Update
+  # (src/window_shopnumber.cpp): RIGHT/LEFT step by one, UP/DOWN by ten -- the
+  # tens step is vertical, not horizontal.
   scene, _st = shop_quantity_scene(999_999)
   shop = scene.instance_variable_get(:@shop)
   eq 99, shop[:quantity][:max], 'rich enough to hit the item cap'
-  press(scene, RGSS::Input::RIGHT)
+  press(scene, RGSS::Input::UP)
   eq 11, shop[:quantity][:count], '1 + 10'
-  press(scene, RGSS::Input::LEFT)
+  press(scene, RGSS::Input::DOWN)
   eq 1, shop[:quantity][:count]
-  20.times { press(scene, RGSS::Input::RIGHT) }
+  20.times { press(scene, RGSS::Input::UP) }
   eq 99, shop[:quantity][:count], 'clamped at the cap'
 end
 
 check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   scene, st = shop_quantity_scene(500)
-  press(scene, RGSS::Input::UP)
-  press(scene, RGSS::Input::UP)   # three
+  press(scene, RGSS::Input::RIGHT)
+  press(scene, RGSS::Input::RIGHT)   # three
   press(scene, RGSS::Input::C)
   eq 200, st.party.gold, '500 - 3*100'
   eq 3, st.party.item_count(3), 'three bought in one confirm'
@@ -5165,7 +5169,7 @@ end
 
 check 'Open Shop scene: cancelling the counter buys nothing' do
   scene, st = shop_quantity_scene(500)
-  press(scene, RGSS::Input::UP)
+  press(scene, RGSS::Input::RIGHT)
   press(scene, RGSS::Input::B)
   eq 500, st.party.gold, 'no gold spent'
   eq 0, st.party.item_count(3)
@@ -5191,8 +5195,8 @@ check 'Open Shop scene: the counter sells a whole stack too' do
   eq :quantity, shop[:screen]
   eq :sell, shop[:quantity][:mode], 'selling, not buying'
   eq 5, shop[:quantity][:max], 'bounded by what is held'
-  press(scene, RGSS::Input::UP)
-  press(scene, RGSS::Input::UP)         # three
+  press(scene, RGSS::Input::RIGHT)
+  press(scene, RGSS::Input::RIGHT)      # three
   press(scene, RGSS::Input::C)
   eq 150, st.party.gold, '3 * half of 100'
   eq 2, st.party.item_count(3)
