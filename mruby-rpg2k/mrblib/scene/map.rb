@@ -3361,6 +3361,21 @@ class RPG2k
         @player_forced_step = true
       end
 
+      # The party's own per-frame slide rate: SPEED on foot, in a Boat, or in a
+      # Ship (EasyRPG's Game_Vehicle constructor, src/game_vehicle.cpp, gives
+      # both `MoveSpeed_normal`, identical to the player's own default), but
+      # doubled while aboard the Airship (`MoveSpeed_double`). Boarding stashes
+      # no separate "preboard speed" the way EasyRPG's Game_Player does --
+      # unlike EasyRPG, this engine has no general per-character move-speed
+      # model to save and restore (Speed Up/Down move-route commands only
+      # ever touch an NPC/forced-route Character mirror, never the player's
+      # own walking rate), so the airship's speedup is derived straight from
+      # `@state.boarded` each frame instead, reverting for free the instant
+      # #disembark_vehicle clears it.
+      def player_slide_speed
+        @state.boarded == :airship ? SPEED * 2 : SPEED
+      end
+
       # Advance the party's pixel slide by one frame, landing it on the
       # destination tile when the slide completes. Returns true while a slide is
       # still in progress.
@@ -3371,7 +3386,7 @@ class RPG2k
       # for a landing that never came.
       def advance_player_slide
         return false unless @moving
-        @move_count += SPEED
+        @move_count += player_slide_speed
         if @move_count >= TILE
           @state.x = @dest_x
           @state.y = @dest_y
