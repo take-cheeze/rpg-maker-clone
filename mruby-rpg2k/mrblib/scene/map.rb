@@ -4341,6 +4341,7 @@ class RPG2k
         update_enemy_flashes
         update_enemy_positions
         case @battle_ui[:phase]
+        when :battle_options then drive_battle_options
         when :command     then drive_battle_command
         when :target      then drive_battle_target
         when :skill       then drive_battle_skill
@@ -4381,6 +4382,12 @@ class RPG2k
         situations = db.respond_to?(:situation) ? db.situation : nil
         properties = db.respond_to?(:property) ? db.property : nil
         @battle_ui = { phase: :command, req: req, troop: troop, owner: owner,
+                       # Whether the Battle/Auto Battle/Escape options window
+                       # has already shown its once-per-battle automatic
+                       # appearance (see #enter_command_phase) -- distinct
+                       # from `opt`, the cursor row inside it whenever it is
+                       # open (set fresh by #open_battle_options each time).
+                       options_shown: false, opt: 0,
                        battle: Game::Battle.new(allies, foes, @rng,
                                                 situations, true, true, true,
                                                 req[:first_strike] ? true : false,
@@ -4429,7 +4436,7 @@ class RPG2k
         # Turn-0 pages fire before the party is asked for its first command —
         # this is where a troop's opening dialogue lives.
         return if run_battle_events
-        settle_already_finished_battle || open_next_command
+        settle_already_finished_battle || enter_command_phase
       end
 
       # An encounter can start already decided — an empty party (every member
@@ -4932,31 +4939,154 @@ class RPG2k
         elsif Input.trigger?(Input::C)
           select_battle_command
         elsif Input.trigger?(Input::B)
+          # `ProcessSceneActionCommand`'s own B/Cancel branch plays Cancel
+          # unconditionally, *before* deciding where it lands: `...Cancel...;
+          # --actor_index; SelectPreviousActor();`. `SelectPreviousActor()`
+          # itself is what branches on whether an earlier commandable ally
+          # is left to re-command.
+          play_system_se(SFX_CANCEL)
           prev_i = prev_commandable_actor_index
           if prev_i.nil?
-            # Real RPG2k's B here reopens a Fight/Auto Battle/Escape options
-            # window this engine never modelled (Escape is instead a direct
-            # B-press on the first actor, a deliberate simplification) --
-            # confirmed against EasyRPG's own ProcessSceneActionCommand's
-            # Escape branch, whose disallowed case plays Buzzer rather than
-            # nothing at all: `case Escape: if (!IsEscapeAllowed()) {
-            # ...Buzzer... } else { ...Decision...; SetState(State_Escape) }`.
-            if @battle_ui[:req][:allow_escape]
-              play_system_se(SFX_DECISION)
-              try_battle_escape
-            else
-              play_system_se(SFX_BUZZER)
-            end
+            # `SelectPreviousActor()`'s `allies[0] == active_actor` branch:
+            # the actor whose command list is open is already the first
+            # commandable member, so this reopens the Battle/Auto Battle/
+            # Escape options window (`SetState(State_SelectOption)`) rather
+            # than attempting Escape directly.
+            open_battle_options
           else
-            # Re-commanding the previous actor is a plain Cancel, matching
-            # `ProcessSceneActionCommand`'s own B branch exactly: `...Cancel...;
-            # --actor_index; SelectPreviousActor();`.
-            play_system_se(SFX_CANCEL)
+            # Re-commanding the previous actor is the ordinary case.
             @battle_ui[:actor_i] = prev_i # re-command the previous commandable member
             @battle_ui[:cmd] = 0
             draw_battle_command
           end
         end
+      end
+
+      # The Battle/Auto Battle/Escape options window's own menu rows, in
+      # display order (top to bottom, matching real RPG2k's
+      # `battle_options`/`Window_Command` build). `battle_fight`/
+      # `battle_auto`/`battle_escape` are the database's Term fields
+      # 101/102/103 -- decoded by the schema but never read before this.
+      def battle_option_rows
+        [
+          { label: term(:battle_fight, 'Fight'), action: :battle },
+          { label: term(:battle_auto, 'Auto Battle'), action: :auto_battle },
+          { label: term(:battle_escape, 'Escape'), action: :escape }
+        ]
+      end
+
+      # Whether any living ally could actually be handed a manual command
+      # this round -- EasyRPG's own `IsAnyControllable()` guard inside
+      # `ProcessSceneActionFightAutoEscape`, which skips the options window
+      # entirely (straight to actor selection) when the whole party is
+      # asleep/paralysed/similarly restricted or already flagged for auto
+      # battle, since neither Battle nor Auto Battle would have anything left
+      # to act on. `Game_Actor::IsControllable()` is exactly this pair of
+      # checks: `GetSignificantRestriction() == Restriction_normal &&
+      # !GetAutoBattle()`.
+      def any_commandable_ally?
+        battle = @battle_ui[:battle]
+        living_allies.any? { |a| !battle.command_restricted?(a) && !force_ai_actor?(a) }
+      end
+
+      # The command phase's first entry for this battle only -- opens the
+      # options window once, automatically, the way `ProcessSceneActionStart`'s
+      # final substate does unconditionally after the encounter/turn-0-event
+      # messages resolve (`battle_message_window->Clear();
+      # SetState(State_SelectOption);`). Every later re-entry into the command
+      # phase this battle (round 2+, back from a between-rounds battle event
+      # page) goes straight to the ordinary per-actor command window instead --
+      # the window's *other* trigger, B/Cancel on the first commandable actor,
+      # is wired separately in #drive_battle_command and is not gated by this
+      # flag, matching `SelectPreviousActor()`'s own unconditional re-entry.
+      def enter_command_phase
+        if @battle_ui[:options_shown] || !any_commandable_ally?
+          @battle_ui[:options_shown] = true
+          open_next_command
+        else
+          @battle_ui[:options_shown] = true
+          open_battle_options
+        end
+      end
+
+      def open_battle_options
+        @battle_ui[:phase] = :battle_options
+        @battle_ui[:opt] = 0
+        draw_battle_options
+      end
+
+      # The options window's cursor menu -- Up/Down move the cursor, C
+      # confirms the highlighted row. B/Cancel is a deliberate no-op: this is
+      # the state machine's own root here (matching
+      # `ProcessSceneActionFightAutoEscape`'s `eWaitForInput` substate, which
+      # has no cancel handling at all -- there is no parent state to cancel
+      # back to).
+      def drive_battle_options
+        rows = battle_option_rows
+        if Input.trigger?(Input::DOWN)
+          @battle_ui[:opt] += 1
+          @battle_ui[:opt] %= rows.length
+          draw_battle_options
+          play_system_se(SFX_CURSOR)
+        elsif Input.trigger?(Input::UP)
+          @battle_ui[:opt] -= 1
+          @battle_ui[:opt] %= rows.length
+          draw_battle_options
+          play_system_se(SFX_CURSOR)
+        elsif Input.trigger?(Input::C)
+          select_battle_option
+        end
+      end
+
+      # Act on the highlighted options-window row. Battle dismisses the
+      # window and falls through to the ordinary per-actor command menu,
+      # exactly where the battle already was before the window opened. Auto
+      # Battle hands the whole round to `#queue_auto_battle_round`. Escape
+      # reuses `#try_battle_escape` verbatim -- the same Decision-vs-Buzzer
+      # gate on `allow_escape` this engine's old direct-B-press shortcut
+      # already had, just triggered from the window instead.
+      def select_battle_option
+        case battle_option_rows[@battle_ui[:opt]][:action]
+        when :battle
+          play_system_se(SFX_DECISION)
+          @battle_ui[:phase] = :command
+          # `open_next_command`, not a direct `draw_battle_command` -- the
+          # window opening never advanced `actor_i` past a restricted/
+          # Forced-AI leading actor (matching real RPG_RT's own
+          # `SelectNextActor` doing that skip itself once `State_SelectActor`
+          # is entered from here, not before).
+          open_next_command
+        when :auto_battle
+          play_system_se(SFX_DECISION)
+          queue_auto_battle_round
+        when :escape
+          if @battle_ui[:req][:allow_escape]
+            play_system_se(SFX_DECISION)
+            try_battle_escape
+          else
+            play_system_se(SFX_BUZZER)
+          end
+        end
+      end
+
+      # "Auto Battle": every commandable living ally gets
+      # `Game::Battle#choose_auto_battle_command`'s AI pick queued for the
+      # round instead of the manual per-actor command menu -- the same
+      # engine `#skip_restricted_actors` already calls per-actor for a
+      # 強制AI-flagged ally (see `#force_ai_actor?`), just applied to the
+      # whole party at once rather than one actor. A restricted ally
+      # (asleep/paralysed/forced) is left alone exactly as the ordinary
+      # command phase already leaves it -- its round action is decided
+      # elsewhere, not by a queued command.
+      def queue_auto_battle_round
+        battle = @battle_ui[:battle]
+        living_allies.each do |a|
+          next if battle.command_restricted?(a)
+          battle.choose_auto_battle_command(a)
+        end
+        @battle_ui[:actor_i] = living_allies.length
+        @battle_ui[:phase] = :command
+        open_next_command
       end
 
       # Escape command (cancel on the first actor's menu): roll the party's
@@ -5748,7 +5878,7 @@ class RPG2k
           @battle_ui[:phase] = :animate
         else
           @battle_ui[:phase] = :command
-          open_next_command
+          enter_command_phase
         end
       end
 
@@ -6233,7 +6363,11 @@ class RPG2k
       def refresh_battle_status
         @battle_ui[:status_win].dispose if @battle_ui[:status_win]
         rows = @battle_ui[:allies].map { |a| battle_status_row(a) }
-        idx = @battle_ui[:allies].index(current_actor)
+        # No row highlighted while the options window is open -- matching
+        # `status_window->SetIndex(-1)` in `ProcessSceneActionFightAutoEscape`'s
+        # own `eMoveWindow` substate; nobody is "the acting actor" until
+        # Battle or Auto Battle is chosen.
+        idx = @battle_ui[:phase] == :battle_options ? nil : @battle_ui[:allies].index(current_actor)
         @battle_ui[:status_win] = battle_status_window(rows, idx)
       end
 
@@ -6279,6 +6413,29 @@ class RPG2k
         win.contents = c
         win.cursor_rect =
           Rect.new(0, @battle_ui[:cmd] * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
+        @battle_ui[:cmd_win] = win
+        refresh_battle_status
+      end
+
+      # The Battle/Auto Battle/Escape options window -- the same panel and
+      # rect the per-actor command window uses (only one of the two is ever
+      # on screen at a time), just with `#battle_option_rows`' three entries
+      # instead of the usual four.
+      def draw_battle_options
+        @battle_ui[:cmd_win].dispose if @battle_ui[:cmd_win]
+        labels = battle_option_rows.map { |r| r[:label] }
+        win = Window.new(BATTLE_STATUS_W, BATTLE_PANEL_Y, BATTLE_CMD_W, BATTLE_PANEL_H)
+        win.z = 320
+        win.windowskin = @windowskin
+        inner_w = BATTLE_CMD_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
+        c.font.color = Color.new(255, 255, 255, 255)
+        labels.each_with_index do |label, i|
+          c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
+        end
+        win.contents = c
+        win.cursor_rect =
+          Rect.new(0, @battle_ui[:opt] * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
         @battle_ui[:cmd_win] = win
         refresh_battle_status
       end
