@@ -412,6 +412,75 @@ assert "RGSS::Bitmap blt" do
   assert_equal 0.0, dst.get_pixel(0, 0).alpha # untouched
 end
 
+assert "RGSS::Bitmap copy_blt matches blt onto a cleared destination" do
+  # The justification for #copy_blt is that onto a *cleared* destination it
+  # shows the same picture as #blt -- that is what lets the map renderer swap
+  # one for the other and stay pixel-identical. Assert it over every alpha,
+  # since a partial alpha is where a blend could diverge from a copy.
+  #
+  # "Same picture" is exact on alpha everywhere, and exact on colour wherever
+  # the pixel is visible at all. The one place the two genuinely differ is the
+  # colour channels of a *fully transparent* pixel: #blt skips it and leaves
+  # the cleared black behind, #copy_blt copies the source's channels across.
+  # Neither is observable -- blend_over weights the destination by its alpha,
+  # so a da == 0 pixel contributes nothing to any later composite, and nothing
+  # renders it either.
+  [0, 1, 64, 128, 254, 255].each do |a|
+    src = RGSS::Bitmap.new(2, 2)
+    src.fill_rect(0, 0, 2, 2, RGSS::Color.new(10, 200, 30, a))
+
+    blted = RGSS::Bitmap.new(4, 4)
+    blted.clear
+    blted.blt(1, 1, src, RGSS::Rect.new(0, 0, 2, 2))
+
+    copied = RGSS::Bitmap.new(4, 4)
+    copied.clear
+    copied.copy_blt(1, 1, src, RGSS::Rect.new(0, 0, 2, 2))
+
+    4.times do |y|
+      4.times do |x|
+        want = blted.get_pixel(x, y)
+        got = copied.get_pixel(x, y)
+        assert_equal want.alpha, got.alpha
+        next if want.alpha == 0.0
+        assert_equal want.red, got.red
+        assert_equal want.green, got.green
+        assert_equal want.blue, got.blue
+      end
+    end
+  end
+end
+
+assert "RGSS::Bitmap copy_blt replaces rather than composites" do
+  # Unlike #blt, it overwrites what is already there -- including replacing an
+  # opaque pixel with a transparent one, which is what makes it a copy.
+  src = RGSS::Bitmap.new(2, 2)
+  src.fill_rect(0, 0, 2, 2, RGSS::Color.new(0, 0, 0, 0))
+  dst = RGSS::Bitmap.new(2, 2)
+  dst.fill_rect(0, 0, 2, 2, RGSS::Color.new(255, 0, 0, 255))
+  dst.copy_blt(0, 0, src, RGSS::Rect.new(0, 0, 2, 2))
+  assert_equal 0.0, dst.get_pixel(0, 0).alpha
+  # ... where #blt would have left the opaque red untouched.
+  other = RGSS::Bitmap.new(2, 2)
+  other.fill_rect(0, 0, 2, 2, RGSS::Color.new(255, 0, 0, 255))
+  other.blt(0, 0, src, RGSS::Rect.new(0, 0, 2, 2))
+  assert_equal 255.0, other.get_pixel(0, 0).alpha
+end
+
+assert "RGSS::Bitmap copy_blt clips out-of-range rects" do
+  src = RGSS::Bitmap.new(4, 4)
+  src.fill_rect(0, 0, 4, 4, RGSS::Color.new(0, 128, 0, 255))
+  dst = RGSS::Bitmap.new(4, 4)
+  # Straddling both origins at once, so the source and destination clips have
+  # to stay in step or the copied region lands at the wrong offset.
+  dst.copy_blt(-2, -2, src, RGSS::Rect.new(-1, -1, 4, 4))
+  assert_equal 128.0, dst.get_pixel(0, 0).green
+  # Entirely off the destination: a no-op, not a crash.
+  dst2 = RGSS::Bitmap.new(4, 4)
+  dst2.copy_blt(99, 99, src, RGSS::Rect.new(0, 0, 4, 4))
+  assert_equal 0.0, dst2.get_pixel(0, 0).alpha
+end
+
 assert "RGSS::Bitmap tone_blt" do
   src = RGSS::Bitmap.new(2, 2)
   src.fill_rect(0, 0, 2, 2, RGSS::Color.new(100, 150, 200, 255))

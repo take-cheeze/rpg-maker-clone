@@ -833,14 +833,62 @@ module Game
     # quarters. An absent tile and out-of-range ids return []; id 0 is water, not
     # empty (see .block). `abf` / `cf` are the current animation columns/frames
     # from #anim_ab / #anim_c.
+    # Memoised on (id, abf, cf), which is the whole of the input: the result is
+    # pure geometry, the same six numbers per quad every time. Uncached this was
+    # the single largest source of allocation in the engine -- the map renderer
+    # calls it once per visible tile per layer (~670 times a frame), and an
+    # autotile answers with five fresh arrays -- which measured as ~350k mruby
+    # allocations/second on Nepheshel. The distinct key count is bounded by the
+    # chipset (a few thousand tile ids x 4 animation columns x 3 frames) and
+    # each entry is a handful of small arrays, so the table settles quickly
+    # rather than growing with play time.
+    #
+    # The returned arrays are shared between callers and must not be mutated;
+    # every caller only reads them (see Scene::Map#draw_tile).
     def self.quads(id, abf = 0, cf = 0)
+      # Resolving the block first does double duty. It answers the inputs that
+      # have no quads at all -- `nil` (Game::Map#lower/#upper out of bounds,
+      # which the renderer hits on every map edge), a negative id, and an id
+      # past the last block -- before anything does arithmetic on them. And it
+      # is what bounds the key below: past this guard `id` is under
+      # BLOCK_F + BLOCK_F_TILES, so `id << 16` stays well inside a signed 32-bit
+      # mrb_int and cannot silently become a bignum on the Emscripten / PSP /
+      # Wio builds (see AGENTS.md on 32-bit mrb_int).
+      b = block(id)
+      return [] if b.nil?
+      # abf is 0..2 and cf is 0..3 (see .anim_ab / .anim_c), so eight bits each
+      # is room to spare and the three pack without overlapping.
+      @quads_cache ||= {}
+      key = (id << 16) | (abf << 8) | cf
+      cached = @quads_cache[key]
+      return cached if cached
+      @quads_cache[key] = uncached_quads(b, id, abf, cf)
+    end
+
+    # Which of the two animation inputs a tile id's quads actually move with:
+    # :abf for the block A/B autotiles (every quarter takes its chipset column
+    # from it -- see .water_quads), :cf for the block C animated chips, or nil
+    # for a tile that never changes on its own.
+    #
+    # This is what lets the map renderer tell an animation step that changes
+    # its picture from one that does not. The two inputs run at different
+    # rates and .anim_c is the fast one (every 6 frames, against 12 or 24 for
+    # .anim_ab), so a grid holding no block C tile at all -- which is most
+    # maps -- would otherwise be rebuilt ten times a second for nothing.
+    def self.anim_input(id)
       case block(id)
+      when :water then :abf
+      when :animated then :cf
+      end
+    end
+
+    def self.uncached_quads(b, id, abf, cf)
+      case b
       when :water    then water_quads(id, abf)
       when :animated then [full(3 + (id - BLOCK_C) / 50, 4 + cf)]
       when :terrain  then terrain_quads(id)
       when :lower    then [lower_quad(id - BLOCK_E)]
-      when :upper    then [upper_quad(id - BLOCK_F)]
-      else []
+      else                [upper_quad(id - BLOCK_F)]
       end
     end
 
@@ -4358,7 +4406,16 @@ module Game
   class Map
     attr_reader :id, :unit, :width, :height, :chipset_id
 
+    # Bumped whenever a lookup through #lower / #upper could answer differently
+    # than it did before, which today means only Tile Substitution -- the layer
+    # arrays themselves are set once here and never written again. The map
+    # renderer caches its composed tile layer and watches this to know when that
+    # cache is stale (see Scene::Map#tile_cache_valid?), so anything that starts
+    # rewriting tiles must bump it or the change will not reach the screen.
+    attr_reader :revision
+
     def initialize(id, unit)
+      @revision = 0
       @id = id
       @unit = unit
       @width = unit.width
@@ -4392,6 +4449,7 @@ module Game
       else
         table[old_id] = new_id
       end
+      @revision += 1
     end
 
     # Whether any tile on either layer is currently rewritten.

@@ -30,73 +30,121 @@ by wall-clock instead folds in the fps-cap sleep and understates every section.
 
 ## Baseline: RPG2000 / Nepheshel, map scene
 
-489 frames over 24.8s, `RelWithDebInfo` (the project default), 320x240,
+1364 frames over 24.8s, `RelWithDebInfo` (the project default), 320x240,
 software rendering under Xvfb. Percentages are of **CPU work**, not wall clock.
 
 | section | calls | avg ms | max ms | % work |
 | --- | ---: | ---: | ---: | ---: |
-| `scene.update` | 490 | 25.93 | 537.22 | 76.1% |
-| ` map.render` | 489 | 23.63 | 50.52 | 69.2% |
-| ` map.layers` | 490 | **22.66** | 49.56 | **66.5%** |
-| `gfx.lvgl` | 489 | 7.94 | 34.27 | 23.3% |
-| ` map.pictures` | 490 | 0.78 | 1.13 | 2.3% |
-| ` map.refresh_pages` | 489 | 0.10 | 0.23 | 0.3% |
-| `audio.music_load` | 1 | 29.61 | 29.61 | 0.2% |
-| `input.update` | 490 | 0.05 | 0.12 | 0.2% |
-| ` map.overlay` | 490 | 0.05 | 0.11 | 0.1% |
-| ` map.chars` | 490 | 0.02 | 0.05 | 0.1% |
-| `gfx.invalidate` | 489 | 0.02 | 0.06 | 0.1% |
-| ` map.animate_events` | 489 | 0.01 | 0.08 | 0.0% |
-| ` map.animation` | 490 | 0.004 | 0.03 | 0.0% |
-| ` map.parallax` | 490 | 0.003 | 0.03 | 0.0% |
-| `audio.sample_load` | 1 | 0.60 | 0.60 | 0.0% |
-| `audio.resolve` | 2 | 0.20 | 0.20 | 0.0% |
-| `audio.update` | 490 | 0.0002 | 0.0004 | 0.0% |
+| `scene.update` | 1365 | 5.00 | 563.35 | 55.3% |
+| `gfx.lvgl` | 1364 | 3.80 | 29.64 | 41.9% |
+| ` map.render` | 1364 | 3.39 | 29.28 | 37.4% |
+| ` map.layers` | 1365 | 2.47 | 28.33 | 27.3% |
+| ` map.pictures` | 1365 | 0.76 | 0.92 | 8.4% |
+| ` map.refresh_pages` | 1364 | 0.10 | 9.50 | 1.1% |
+| `input.update` | 1365 | 0.05 | 0.17 | 0.6% |
+| ` map.overlay` | 1365 | 0.04 | 0.18 | 0.4% |
+| `audio.music_load` | 1 | 34.32 | 34.32 | 0.3% |
+| ` map.chars` | 1365 | 0.02 | 0.19 | 0.2% |
+| `gfx.invalidate` | 1364 | 0.02 | 0.12 | 0.2% |
+| ` map.animate_events` | 1364 | 0.01 | 0.13 | 0.2% |
+| `audio.update` | 1365 | 0.0002 | 0.0004 | 0.0% |
 
-Headline: **34.1ms of work per frame against a 16.67ms budget** — 2x over, so
-the run sits at 20fps with every frame counted as a drop. Allocation churn is
-~350,000 mruby allocations/second.
+Headline: **9.1ms of work per frame against a 16.67ms budget**, running at
+55fps. Allocation churn is ~30,000 mruby allocations/second.
+
+This is the state *after* the map-layer work described below. The same run
+before it sat at **20fps and 34.1ms a frame** — over budget on every single
+frame — with `map.layers` alone at 22.7ms (66.5% of work) and ~350,000
+allocations/second. Those are the numbers the rest of this page reasons about,
+and they are what the tile cache and `Bitmap#copy_blt` removed.
 
 Note that `map.layers` and `map.chars` are inside the `if @battle_ui` gate in
 `#render`, so they stop being recorded during a fight — the map is not drawn
 there at all. A profile of a battle-heavy run will show a different shape.
 
-### The bottleneck is `map.layers`
+### What `map.layers` used to cost, and why
 
-Two thirds of the frame is one loop, `Scene::Map#draw_layers`. Every frame it
-clears both chip-layer bitmaps and re-blits the whole visible grid — 21x16 =
+Two thirds of the frame was one loop, `Scene::Map#draw_layers`. Every frame it
+cleared both chip-layer bitmaps and re-blitted the whole visible grid — 21x16 =
 336 tiles, each up to two layers, each tile going through
-`Game::ChipsetLayout.quads`, which returns a freshly allocated array (four
-8x8 quarters for an autotile) that is then blitted quad by quad.
+`Game::ChipsetLayout.quads`, which returned a freshly allocated array (four
+8x8 quarters for an autotile) that was then blitted quad by quad.
 
-Nothing about that is conditional. The map is redrawn from scratch whether or
+Nothing about that was conditional. The map was redrawn from scratch whether or
 not the camera moved, whether or not any tile animated, and whether or not
-anything on screen changed at all. That is also where the allocation churn
-comes from: `quads` is a pure function of `(id, abf, cf)` and is called
-~670 times per frame, allocating every time.
+anything on screen changed at all. That was also where the allocation churn
+came from: `quads` is a pure function of `(id, abf, cf)` and was called ~670
+times per frame, allocating every time.
 
-Two independent things are therefore being paid for every frame:
+So two independent things were being paid for on every frame:
 
 1. **Recomputing tile geometry** that depends only on `(id, abf, cf)`.
 2. **Re-blitting static scenery** that did not change since the last frame.
 
-(1) is the cheaper fix and was measured as a one-off experiment (against a
-baseline reading 22.3ms / 33.5ms, a hair under the table above): memoizing
-`quads` on `(id, abf, cf)` took `map.layers` from 22.3ms to 12.9ms and frame
-work from 33.5ms to 22.8ms (20.0 -> 25.4fps), with allocation churn dropping
-from ~350k to ~225k/s. That is a
-~30% frame-time win from a cache, and it is *not* committed here — this page
-records the measurement, not the change. Note the guard it needs: `quads` is
-called with `nil` ids, so a naive key computation raises.
+Both are now avoided.
 
-(1) alone does not reach 60fps — 22.8ms is still over budget, and the residual
-12.9ms is the per-tile blit loop itself. Getting under 16.67ms means attacking
-(2): cache the composed layer and redraw only on camera movement or an actual
-animation step, or move the inner loop out of mruby.
+**(1) `quads` is memoised** on `(id, abf, cf)`. Alone this took `map.layers`
+from 22.3ms to 12.9ms and frame work from 33.5ms to 22.8ms (20 → 25fps), with
+allocation churn dropping from ~350k to ~225k/s. Two things it needs, both of
+which bit during development: `quads` is called with `nil` ids (the renderer
+draws the map edge every frame), and the key has to stay inside a signed
+32-bit `mrb_int` or it becomes a bignum on the Emscripten / PSP / Wio builds.
+Resolving the tile's block first answers both.
 
-`gfx.lvgl` (7.7ms, the LVGL render and flush) is the second cost and is
-largely a consequence of the first — the full-surface invalidation that a
-from-scratch tile redraw implies.
+**(2) The grid is cached.** `#rebuild_tile_cache` builds the visible tiles into
+a pair of buffers on whole-tile boundaries, and each frame `#draw_layers` copies
+those into the frame buffers at the sub-tile scroll offset. The rebuild only
+re-runs when `#tile_cache_valid?` says something it depends on changed: the
+camera crossing a tile, an animation input *the visible tiles actually follow*,
+a Tile Substitution (via `Game::Map#revision`), a tileset swap, or a new map.
+The events cannot be cached — they move every frame and composite into these
+same buffers — which is why the cache is separate from the frame buffers rather
+than being drawn to directly.
+
+That last qualifier matters more than it looks. `Game::ChipsetLayout.anim_c`
+steps every 6 frames but only drives the block C animated chips; keying the
+cache on it unconditionally rebuilt 18% of frames instead of 4%, for an input
+most maps have nothing on screen that reads. `.anim_input` is what tells the
+two apart.
+
+**The per-frame copy then became the cost.** Through `#blt` those two
+336x256 copies measured ~5ms a frame — a third of the whole budget spent
+alpha-blending onto a surface that had just been cleared. `Bitmap#copy_blt`
+does the same job as a row-wise `memcpy`, taking the copy path to ~1.8ms.
+
+Net: `map.layers` 22.7ms → 2.5ms, frame work 34.1ms → 9.1ms, 20fps → 55fps,
+and 96% of frames now skip the rebuild entirely.
+
+`gfx.lvgl` (3.8ms, the LVGL render and flush) is now the largest single cost
+after `map.layers`. It has not changed in absolute terms — the layer surfaces
+are still fully invalidated every frame, because the events drawn over them
+change every frame.
+
+#### Checking it still draws the same thing
+
+This is a renderer with pixel-parity commitments (ADR 0021), so the change was
+diffed rather than argued. Two mechanical facts carry it:
+
+- The coordinate mapping is unchanged. Taking the source from `(ox, oy)` maps
+  cache pixel `rx*TILE + i` to destination `rx*TILE + i - ox`, which is exactly
+  where the old per-tile loop drew it, and both ends clip the same way.
+- `#copy_blt` onto a cleared destination equals `#blt` onto one, because
+  `blend_over` against a fully transparent pixel returns the source unchanged.
+  The mruby-rgss tests assert this over every alpha. The one genuine difference
+  is invisible and worth knowing about: for a *fully transparent* source pixel
+  `#blt` bails out and leaves cleared black where `#copy_blt` copies the colour
+  channels across. Nothing can observe it — a `da == 0` pixel contributes
+  nothing to any later composite and does not render — but a byte-for-byte
+  comparison of the two buffers would show it.
+
+End to end, frames were captured from a build before and after the change,
+driven to the same input-gated point in Nepheshel's opening (`--no_render_wait`
+so the frame-driven waits do not desynchronise two builds running at different
+frame rates). **The map region is pixel-identical — zero differing pixels over
+640x435**, tile layers, autotiles, furniture and character sprites included.
+`scripts/rpg2k_scene_check.rb` covers the invalidation directly: a frame that
+changed nothing must not re-blit a single tile, and a tile crossing, a Tile
+Substitution and an animation step the visible tiles follow each must rebuild.
 
 ## Audio: what is already off the main thread
 
@@ -121,8 +169,8 @@ the profile prices it at essentially nothing:
 - `Mix_PlayMusic` / `Mix_PlayChannel`: 0.02ms.
 
 So moving "audio processing" to a worker thread would move work that is
-already elsewhere, and would buy ~0.0002ms/frame. It is not where the 34.1ms
-goes.
+already elsewhere, and would buy ~0.0002ms/frame. It was never where the frame
+went — not at the 34.1ms this page originally measured, and still not at 9.1ms.
 
 ### The part that *is* worth moving: asset load
 

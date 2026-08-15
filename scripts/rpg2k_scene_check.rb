@@ -78,6 +78,13 @@ module RGSS
     def blt(*a); (@blt_calls ||= []) << a; end
     attr_reader :blt_calls
     def clear_blt_calls; @blt_calls = []; end
+    # The non-blending copy the map renderer moves its cached tile grid with
+    # (see Bitmap#copy_blt in mruby-rgss/src/lib.cxx). Recorded apart from
+    # #blt_calls so a check counting *tile* draws is not confused by the one
+    # whole-grid copy per frame.
+    def copy_blt(*a); (@copy_blt_calls ||= []) << a; end
+    attr_reader :copy_blt_calls
+    def clear_copy_blt_calls; @copy_blt_calls = []; end
     # Recorded so the picture layering check can assert *which order* sources
     # were composited in, not only that drawing happened.
     def stretch_blt(*a); (@stretch_calls ||= []) << a; end
@@ -10223,7 +10230,10 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
     # behaviour. The fight's own hide/show below is checked exactly instead.
     ok vp.visible != false, 'the map view draws normally before any fight opens'
     ok upper.visible != false, 'and so does the above-character layer'
-    ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers do composite'
+    # The tile layers reach the frame buffer as the cached grid's #copy_blt
+    # (see Scene::Map#draw_layers), so that -- not #blt, which now only carries
+    # the events drawn over it -- is what says compositing happened at all.
+    ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers do composite'
   end
   ui = scene.instance_variable_get(:@battle_ui)
   ok ui, 'the battle opened'
@@ -10233,9 +10243,12 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq false, vp.visible, 'so the map view is hidden the instant the battle screen is up'
   eq false, upper.visible, 'and so is the above-character layer'
   lower_bmp.clear_blt_calls
+  lower_bmp.clear_copy_blt_calls
   scene.update
-  eq 0, (lower_bmp.blt_calls || []).size,
+  eq 0, (lower_bmp.copy_blt_calls || []).size,
      'and the tile layers stop compositing entirely while the fight runs'
+  eq 0, (lower_bmp.blt_calls || []).size,
+     'and nothing draws over them either'
 
   20.times do
     scene.update
@@ -10244,7 +10257,7 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
   eq true, vp.visible, 'the map view reappears the instant the fight ends'
   eq true, upper.visible, 'and so does the above-character layer'
-  ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers composite again'
+  ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers composite again'
 end
 
 # yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the
@@ -13786,22 +13799,95 @@ check 'draw_layers routes an unstarred upper tile behind the player, a starred o
                                               lower_layer: Array.new(w * h, 0),
                                               upper_layer: upper, events: {}))
   scene = RPG2k::Scene::Map.new(fake_parent(db), state)
-  lower = scene.instance_variable_get(:@lower_bmp)
-  upper_bmp = scene.instance_variable_get(:@upper_bmp)
+  # The tiles are blitted into the *cached* grids, which #draw_layers then
+  # copies into @lower_bmp / @upper_bmp at the sub-tile scroll offset. The
+  # routing under test (Game::ChipSet#elevated? picking the grid) happens on
+  # the way into these, so this is where it is observable; @lower_bmp only ever
+  # sees the one whole-grid copy plus whatever events draw over it.
+  lower = scene.instance_variable_get(:@lower_tiles)
+  upper_bmp = scene.instance_variable_get(:@upper_tiles)
   lower.clear_blt_calls
   upper_bmp.clear_blt_calls
+  scene.send(:invalidate_tile_cache)
   scene.send(:draw_layers, 0, 0)
   tile = RPG2k::Scene::Map::TILE
   at = ->(calls, x, y) { calls.count { |c| c[0] == x && c[1] == y } }
   # (0, 0) always gets one blit for its own (plain, id 0) lower tile; the
   # unstarred upper tile at the same spot is a *second* blit into the same
-  # buffer, not one into the upper buffer.
+  # grid, not one into the upper grid.
   eq 2, at.call(lower.blt_calls, 0, 0),
      'the plain floor and the unstarred upper tile both land in the lower buffer'
   eq 0, at.call(upper_bmp.blt_calls, 0, 0), 'the unstarred tile never reaches the upper buffer'
   # (TILE, 0) also gets its own plain lower tile, but the starred upper tile
   # there is the one that must reach the upper (above-player) buffer.
   eq 1, at.call(upper_bmp.blt_calls, tile, 0), 'the starred tile lands in the upper buffer'
+end
+
+# The tile grid is cached across frames (see Scene::Map#tile_cache_valid?), so
+# what needs pinning down is not that a tile is drawn but *when* it is redrawn:
+# too eager and the cache buys nothing, too lazy and a change never reaches the
+# screen. Each case below counts blits into the cached grid across a second
+# #draw_layers, which is zero exactly when the cache was reused.
+def tile_cache_probe(map: nil, &change)
+  w = 8; h = 8
+  db = fake_db
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = map || Game::Map.new(1, OpenStruct.new(
+    width: w, height: h, chipset_id: 1,
+    lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+    events: {}))
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  scene.send(:draw_layers, 0, 0) # prime the cache
+  grid = scene.instance_variable_get(:@lower_tiles)
+  grid.clear_blt_calls
+  cam = change ? change.call(scene, state) : [0, 0]
+  scene.send(:draw_layers, cam[0], cam[1])
+  grid.blt_calls.size
+end
+
+check 'a frame that changed nothing reuses the cached tile grid' do
+  eq 0, tile_cache_probe, 'an identical frame must not re-blit a single tile'
+end
+
+check 'scrolling within a tile reuses the cache, crossing a tile rebuilds it' do
+  # A sub-tile scroll is applied when the cached grid is copied out, so the grid
+  # itself is untouched; stepping onto the next tile changes which tiles it holds.
+  eq 0, tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE - 1, 0] }
+  ok tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE, 0] } > 0,
+     'crossing a tile boundary must rebuild the grid'
+end
+
+check 'a Tile Substitution rebuilds the cached tile grid' do
+  # The map answers lookups differently from now on, and Game::Map#revision is
+  # what tells the cache so -- without that bump the swap would never be drawn.
+  ok(tile_cache_probe do |_s, st|
+    st.map.substitute_tile(0, 0, Game::ChipsetLayout::BLOCK_E)
+    [0, 0]
+  end > 0, 'a substituted tile must reach the screen')
+end
+
+check 'stepping the tile animation rebuilds the cached tile grid' do
+  # Water and the block-C animated tiles cycle off @anim_frame, so a frame that
+  # advances the animation column is a different picture even standing still.
+  # The probe map is all tile id 0, a block A/B autotile, so it moves with
+  # .anim_ab -- frame 24 is that input's first step at the default speed. Note
+  # a *cycle* is not a step: .anim_ab(96) is back to 0, so a probe there would
+  # see, correctly, no rebuild at all.
+  ok(tile_cache_probe do |s, _st|
+    s.instance_variable_set(:@anim_frame, 24)
+    [0, 0]
+  end > 0, 'an animation step must reach the screen')
+end
+
+check 'an animation step the visible tiles do not follow leaves the cache alone' do
+  # .anim_c steps every 6 frames but drives only the block C animated chips. A
+  # grid holding none of them -- all id 0 here, which is block A/B -- is the
+  # same picture either way, and rebuilding it ten times a second for an input
+  # nothing on screen reads was most of the cache's remaining cost.
+  eq 0, tile_cache_probe { |s, _st|
+    s.instance_variable_set(:@anim_frame, 6)
+    [0, 0]
+  }, 'a grid with no block C tile must not rebuild for .anim_c'
 end
 
 check 'a clear member walks the same ground untouched' do
