@@ -3513,17 +3513,26 @@ module Game
       !actor.dead?
     end
 
-    # 使用可能キャラ (`actor_set`, item field 62): whether item `it` names
-    # `actor_id` among the specific characters allowed to use or equip it at
-    # all. The one restriction list gates both uses (EasyRPG's
-    # `Game_Actor::IsItemUsable`, read by `Game_Party::IsItemUsable`'s
-    # per-target overload for using an item and by `ChangeEquipment` for
-    # equipping one) — a book, seed, medicine or piece of gear can all be
-    # limited to a named cast member this way, not just weapons/armour. An
+    # 使用可能キャラ (`actor_set`, item field 62) / RPG2003's 使用可能クラス
+    # (`class_set`, item field 73): whether item `it` may be used or equipped
+    # by `actor_id` at all. EasyRPG's `Game_Actor::IsItemUsable`
+    # (src/game_actor.cpp) reads exactly one of the two restriction lists per
+    # item, chosen by a single *global*, database-wide RPG2003 toggle --
+    # `System#equipment_setting` (LDB chunk 22 field 97) -- never both at
+    # once and never per item: a database configured "by Class" ignores
+    # actor_set entirely and checks class_set instead; RPG2000 (no classes
+    # exist at all) and an RPG2003 database left on the default "by Actor"
+    # setting both keep the ordinary actor_set behavior. This is the one
+    # choke-point every item-usability check in this codebase funnels
+    # through (equip-candidate listing, equip-from-bag, medicine/special/
+    # switch items, ko_only revive gating, ...), matching EasyRPG's own
+    # `Game_Party::IsItemUsable`, which is likewise the single funnel every
+    # item-use path checks before ever looking at the item's own type. An
     # actor id the array is too short to reach defaults to allowed, the same
     # "missing entry reads as the field's default" rule this runtime's other
-    # bit-array fields (terrain_set, class_set-adjacent ones) already follow.
+    # bit-array fields already follow.
     def item_usable_by?(it, actor_id)
+      return item_usable_by_class?(it, actor_id) if equip_by_class?
       return true unless it.respond_to?(:actor_set) && it.actor_set
       return true if actor_id.nil?
       set = it.actor_set
@@ -3532,24 +3541,40 @@ module Game
       set[idx] ? true : false
     end
 
-    # `class_set` (item field 73), `use_skill`'s companion restriction list:
-    # whether `actor`'s RPG2003 class (Actor#class_id) is among the classes
-    # allowed to trigger this item's skill, when the item actually restricts by
-    # class (a non-empty `class_set`, i.e. `class_set_size` field 72 > 0).
-    # Mirrors EasyRPG's `Game_Actor::IsItemUsable` class_set arm and follows
-    # #item_usable_by?'s own "empty/short array reads as allowed" convention
-    # for this bit-array field pair (the `_size` field itself is never read --
-    # the array's own length already carries it, as for actor_set/state_set/
-    # attribute_set). An actor with no class (RPG2000 has none) is always
-    # allowed.
-    def item_usable_by_class?(it, actor)
+    # Whether this database is RPG2003 and configured for its "使用可能キャラ
+    # -> by Class" global toggle rather than the default per-Actor one
+    # (`System#equipment_setting == 1`, `Player::IsRPG2k3()` in EasyRPG). A
+    # bare test fixture whose `db.system` does not answer `equipment_setting`
+    # at all reads as "by Actor", the same default the field itself has in a
+    # genuine database. Rescued the same defensive way
+    # `#seed_screen_transitions` already reads other `db.system` fields: a raw
+    # `LCF::Database` driven through the pure-Ruby test-bed harness (not the
+    # compiled engine) resolves `db.system` through `Kernel#system` before
+    # ever reaching its own field lookup, so any error there — not just a
+    # missing field — degrades to the ordinary "by Actor" default rather than
+    # raising.
+    def equip_by_class?
+      rpg2003? && @db.respond_to?(:system) && @db.system.respond_to?(:equipment_setting) &&
+        @db.system.equipment_setting == 1
+    rescue StandardError
+      false
+    end
+
+    # The class_set half of #item_usable_by?, used in place of actor_set once
+    # #equip_by_class? is on. Indexed by the actor's own class id *directly*
+    # (EasyRPG: `cls ? cls->ID : 0`) — not `class_id - 1` the way actor_set's
+    # bit array is — since liblcf reserves class_set index 0 for "no class"
+    # rather than naming a real row; the first real class is index 1. An
+    # actor with no class at all (RPG2000 has none, and an RPG2003 actor can
+    # simply start unclassed) reads index 0.
+    def item_usable_by_class?(it, actor_id)
       return true unless it.respond_to?(:class_set) && it.class_set
+      return true if actor_id.nil?
+      actor = @roster[actor_id]
       class_id = actor && actor.respond_to?(:class_id) ? (actor.class_id || 0) : 0
-      return true if class_id <= 0
       set = it.class_set
-      idx = class_id - 1
-      return true if idx < 0 || set.size <= idx
-      set[idx] ? true : false
+      return true if set.size <= class_id
+      set[class_id] ? true : false
     end
 
     # Whether using item `id` on `actor` would change anything, so the menu can
@@ -3685,9 +3710,13 @@ module Game
 
     # A weapon/shield/armour/helmet/accessory item flagged `use_skill` invokes
     # its `skill_id` skill directly, without being equipped -- the same free
-    # cast #use_special_item gives a type-9 special item, gated additionally by
-    # `class_set` (#item_usable_by_class?), the restriction list a use_skill
-    # equipment item carries that a special item does not.
+    # cast #use_special_item gives a type-9 special item. `#item_usable_by?`
+    # alone already covers whatever restriction this item carries, actor_set
+    # or class_set alike (see its own doc) -- this used to additionally AND
+    # in `#item_usable_by_class?` here, as if a use_skill equipment item were
+    # the one place class_set applied; it is not a use_skill-specific rule at
+    # all, just the ordinary database-wide "by Class" toggle every item type
+    # is equally subject to.
     #
     # The weapon itself is **not** consumed, however often it is used: RPG_RT
     # returns from `ConsumeItemUse` on the five equipment types before it ever
@@ -3696,7 +3725,7 @@ module Game
     # through #consume_item_use is what gets that right -- this used to spend
     # the weapon on its first use and leave the party without it.
     def use_equip_skill_item(it, id, actor)
-      return [] unless actor && item_usable_by?(it, actor.id) && item_usable_by_class?(it, actor)
+      return [] unless actor && item_usable_by?(it, actor.id)
       affected = cast_skill(actor, it.skill_id, actor, true)
       consume_item_use(id) unless affected.empty?
       affected

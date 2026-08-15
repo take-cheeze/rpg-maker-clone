@@ -6696,6 +6696,56 @@ not yet verified:
   and a new `scripts/rpg2k_scene_check.rb` check (the boarded party visibly
   rides along with a relocated boat), all four confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **RPG2003's global "使用可能キャラ → by Class" equipment setting is now
+  honoured — item/equipment usability was always decided per-Actor, even on
+  a database explicitly configured to decide it per-Class instead.**
+  Confirmed against EasyRPG's actual C++ source: `Game_Actor::IsItemUsable`
+  (`src/game_actor.cpp`) reads exactly one of two restriction lists per item
+  — `actor_set` or `class_set` — chosen by a single, database-wide toggle,
+  `System#equipment_setting` (LDB chunk 22 field 97, liblcf: "Whether
+  equipment usage is by Actor or by Class. This is a global setting in
+  RM2k3!"): `if (Player::IsRPG2k3() && lcf::Data::system.equipment_setting
+  == EquipmentSetting_class) { query_idx = cls ? cls->ID : 0; query_set =
+  &item->class_set; }` — not per item, and never both at once.
+  `mruby-lcf/mrblib/schema.rb`'s System-chunk element table declared field 96
+  and jumped straight to 99; field 97 was never even parsed out of the .ldb
+  data at all, so `db.system.equipment_setting` did not exist to read.
+  `Game::Party#item_usable_by?` (`mruby-rpg2k/mrblib/game.rb`), the single
+  choke-point every item-usability check in this codebase funnels through
+  (equip-candidate listing, equip-from-bag, medicine/special/switch items,
+  ko_only revive gating, ...) — mirroring EasyRPG's own `Game_Party::
+  IsItemUsable`, the identical single funnel on that side — checked only
+  `actor_set`, unconditionally. The one place `class_set` *was* read,
+  `#use_equip_skill_item`'s free-cast gate for a `use_skill`-flagged
+  equipment item, treated it as an extra restriction layered on top of
+  `actor_set` rather than the global toggle's replacement for it, and
+  indexed it `class_id - 1` — liblcf reserves class_set index 0 for "no
+  class" (the first real class is index 1), so every genuine class lookup
+  landed one slot short of its intended row. Concretely: an RPG2003 database
+  set to "by Class" with an item whose `class_set` allows only its Mage
+  class, `actor_set` left at the designer's now-irrelevant default (all
+  false) since they configured the class grid instead — before this fix,
+  every actor could equip/use the item regardless of class, because
+  `item_usable_by?` never looked at `class_set` or the global toggle at all
+  and an empty `actor_set` reads as unrestricted. Fixed by declaring field 97
+  in `schema.rb`; adding `Game::Party#equip_by_class?` (RPG2003 and
+  `equipment_setting == 1`, defensively rescued the same way
+  `#seed_screen_transitions` already reads other `db.system` fields, since a
+  raw `LCF::Database` driven through the pure-Ruby test-bed harness resolves
+  `db.system` through `Kernel#system` before its own field lookup); having
+  `#item_usable_by?` dispatch to the class_set branch first when that toggle
+  is on, RPG2000 and the default "by Actor" RPG2003 setting both keeping the
+  unchanged actor_set path; correcting `#item_usable_by_class?`'s indexing to
+  the actor's class id directly, no `- 1`; and dropping the now-redundant,
+  wrongly-scoped extra AND in `#use_equip_skill_item`, matching EasyRPG's
+  single-funnel shape. Covered by three new `scripts/rpg2k_logic_check.rb`
+  checks (the corrected class-set gating on a use_skill equipment item and
+  on an ordinary medicine alike, and that the default "by Actor" setting
+  still ignores class_set entirely even on an RPG2003 database with
+  classes), two of which are confirmed to fail against the pre-fix code
+  before the fix (the third is a same-behaviour-either-way regression
+  check). `ninja -C build test` (mruby-lcf's own suite, since schema.rb
+  changed) still passes.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

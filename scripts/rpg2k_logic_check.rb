@@ -3048,7 +3048,10 @@ class SkillRow < CurveRow
 
   def skills; FakeLearnTable.new(@learns); end
 end
-FakeActorSystem = Struct.new(:party)
+# `equipment_setting` mirrors System field 97 (Game::Party#equip_by_class?'s
+# own source) -- nil, the default, reads as "by Actor" the same way a
+# genuine database's own field default (0) does.
+FakeActorSystem = Struct.new(:party, :equipment_setting)
 # A database item row exposing the equipment-bonus fields Game::Actor reads plus
 # the medicine recovery/scope fields Game::Party#use_item reads.
 # The occasion fields are named the way the real item row names them:
@@ -3098,11 +3101,14 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       # special item, without being equipped
                       # (Game::Party#use_equip_skill_item).
                       :use_skill,
-                      # 使用可能職業 (field 73): `use_skill`'s companion --
-                      # the RPG2003 class ids (0-based index, bool per class)
-                      # allowed to trigger it this way
-                      # (Game::Party#item_usable_by_class?). Appended last,
-                      # same positional-safety reasoning as every field above.
+                      # 使用可能職業 (field 73): the RPG2003 class ids allowed
+                      # to use/equip this item, read in place of actor_set
+                      # once the database's global equipment_setting is "by
+                      # Class" (Game::Party#item_usable_by_class?). Index 0 is
+                      # reserved for "no class"; the first real class is
+                      # index 1, unlike actor_set's own 0-based indexing.
+                      # Appended last, same positional-safety reasoning as
+                      # every field above.
                       :class_set,
                       # 使用回数 (field 6): how many times one copy may be used
                       # before it is spent, 0 meaning 無制限
@@ -3301,9 +3307,10 @@ class FakeActorDB
   # Actor#battler_animation_id's resolved id to name a real entry.
   def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
                  property = nil, rpg2003: false, battlecommands: nil,
-                 enemy_group: Hash.new(true), battleranimations: nil)
+                 enemy_group: Hash.new(true), battleranimations: nil,
+                 equipment_setting: nil)
     @player = players
-    @system = FakeActorSystem.new(party_ids)
+    @system = FakeActorSystem.new(party_ids, equipment_setting)
     @item = items
     @skill = skills
     @job = jobs
@@ -5630,7 +5637,8 @@ check 'a use_skill-flagged equipment item invokes its skill directly, free ' \
 end
 
 check 'a use_skill equipment item restricted by class_set is only usable by ' \
-      'an actor in one of its listed classes' do
+      'an actor in one of its listed classes, under the RPG2003 "by Class" ' \
+      'equipment setting' do
   actor_curve = []
   3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
   job1 = []
@@ -5638,10 +5646,11 @@ check 'a use_skill equipment item restricted by class_set is only usable by ' \
   job2 = []
   3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
   skills = { 8 => fake_skill(name: 'Elixir', scope: 3, sp_cost: 99, power: 40, hp: true) }
-  # class_set index 0 (class 1) false, index 1 (class 2) true: only class 2 may
-  # trigger it.
+  # class_set index 0 is EasyRPG's reserved "no class" slot, never a real
+  # class -- the first real class is index 1. Index 1 (class 1) false,
+  # index 2 (class 2) true: only class 2 may trigger it.
   items = { 4 => fake_item(type: 1, skill_id: 8, use_skill: true,
-                           class_set: [false, true], name: 'Class Rune') }
+                           class_set: [false, false, true], name: 'Class Rune') }
   players = {
     1 => ClassedRow.new('Warrior', '', 0, 3, actor_curve, [], 1, nil),
     2 => ClassedRow.new('Mage', '', 0, 3, actor_curve, [], 2, nil),
@@ -5650,7 +5659,8 @@ check 'a use_skill equipment item restricted by class_set is only usable by ' \
     1 => JobRow.new('Fighter', job1),
     2 => JobRow.new('Mage', job2),
   }
-  db = FakeActorDB.new(players, [1, 2], items, skills, jobs)
+  db = FakeActorDB.new(players, [1, 2], items, skills, jobs,
+                       rpg2003: true, equipment_setting: 1)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   warrior = st.party.actor_by_id(1)
   mage = st.party.actor_by_id(2)
@@ -5665,6 +5675,55 @@ check 'a use_skill equipment item restricted by class_set is only usable by ' \
   # Equipment is never consumed by being used this way, whatever its class_set
   # says -- see the use_skill check above and Game::Party#consume_item_use.
   eq 2, st.party.item_count(4), 'and the rune itself is not consumed'
+end
+
+# EasyRPG's Game_Actor::IsItemUsable (src/game_actor.cpp): the "by Class"
+# System#equipment_setting toggle is a single global switch every item type
+# is equally subject to, not a use_skill-equipment-only rule -- an ordinary
+# medicine with a class_set is gated the exact same way.
+check 'an ordinary medicine is gated by class_set too, under "by Class"' do
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  job2 = []
+  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
+  items = { 4 => fake_item(type: 6, rhp: 40, class_set: [false, false, true],
+                           name: 'Mage Draught') }
+  players = {
+    1 => ClassedRow.new('Warrior', '', 0, 3, actor_curve, [], 1, nil),
+    2 => ClassedRow.new('Mage', '', 0, 3, actor_curve, [], 2, nil),
+  }
+  jobs = { 1 => JobRow.new('Fighter', job1), 2 => JobRow.new('Mage', job2) }
+  db = FakeActorDB.new(players, [1, 2], items, {}, jobs,
+                       rpg2003: true, equipment_setting: 1)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  warrior = st.party.actor_by_id(1)
+  mage = st.party.actor_by_id(2)
+  eq 1, warrior.class_id
+  eq 2, mage.class_id
+  eq false, st.party.item_usable_by?(items[4], warrior.id), 'class 1 excluded'
+  eq true, st.party.item_usable_by?(items[4], mage.id), 'class 2 listed'
+end
+
+# Under the *default* "by Actor" setting (equipment_setting left at 0, or a
+# fixture that never sets it at all), class_set is ignored entirely and
+# actor_set decides, even in an RPG2003 database with classes -- matching
+# EasyRPG's own `if` branch, which only switches to class_set once
+# `equipment_setting == EquipmentSetting_class`.
+check 'class_set is ignored under the default "by Actor" equipment setting' do
+  items = { 4 => fake_item(type: 6, rhp: 40, actor_set: [true, false],
+                           class_set: [false, false, false], name: 'Hero Draught') }
+  players = {
+    1 => ClassedRow.new('Warrior', '', 0, 3, [], [], 1, nil),
+    2 => ClassedRow.new('Mage', '', 0, 3, [], [], 2, nil),
+  }
+  db = FakeActorDB.new(players, [1, 2], items, {}, {}, rpg2003: true)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq true, st.party.item_usable_by?(items[4], 1), 'actor_set allows actor 1'
+  eq false, st.party.item_usable_by?(items[4], 2),
+     "actor_set excludes actor 2, even though class_set (all false) would " \
+     "have excluded both"
 end
 
 check 'a special item invoking an Escape skill is hidden with no runtime ' \

@@ -724,6 +724,11 @@ module LCF
             95 => { name: :battle_test_formation, type: :int, default: 0 },
             96 => { name: :battle_test_condition, type: :int, default: 0 },
 
+            # Whether 使用可能キャラ item/equipment restriction is decided per
+            # Actor (0, the default) or per Class (1) -- a single global
+            # RPG2003 toggle (Game::Party#item_usable_by?'s own source).
+            97 => { name: :equipment_setting, type: :int, default: 0 },
+
             # Decorative window (2003)
             99 => { name: :show_frame, type: :bool, default: false },
             100 => { name: :frame_name, type: :string, default: '' },
