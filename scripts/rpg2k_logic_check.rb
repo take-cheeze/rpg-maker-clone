@@ -11656,6 +11656,34 @@ check 'Simulated Attack hard-caps damage at the battle damage cap, by edition' d
   eq 9999, st2k3.variables[1], 'RPG2003: capped at 9999, not the uncapped 15000'
 end
 
+check "Simulated Attack's variance uses RPG_RT's real spread, not a coarser percent model" do
+  # EasyRPG's CommandSimulatedAttack rolls Algo::VarianceAdjustEffect(result,
+  # var) -- the exact same formula Game::Battle#varied already applies to a
+  # normal attack/skill/self-destruct's own damage. A prior version of this
+  # method modelled the spread as a flat +/-(var*5) *percent* of the base
+  # instead (its own doc comment incorrectly attributed that to EasyRPG's
+  # source): the two formulas' outer bounds happen to coincide (base +/-
+  # base*var/20 either way), but the percent model's granularity is coarser
+  # by a factor of base/100 -- at base 500, var 5, the percent model can only
+  # ever land on a multiple of 5, where the real formula draws from every
+  # integer across the identical range. Sampling many draws and finding a
+  # non-multiple-of-5 value proves the fix, since the old model could never
+  # produce one.
+  st = party_state
+  it = Game::Interpreter.new(st)
+  results = (1..60).map { it.send(:simulated_attack_variance, 500, 5) }
+  ok results.any? { |d| d % 5 != 0 },
+     "expected a non-multiple-of-5 result at least once in 60 draws " \
+     "(got #{results.uniq.sort.inspect})"
+end
+
+check 'Simulated Attack#simulated_attack_variance skips the roll at zero variance or zero base' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  eq 500, it.send(:simulated_attack_variance, 500, 0), 'variance 0 never spreads'
+  eq 0, it.send(:simulated_attack_variance, 0, 5), 'a zero base never spreads either'
+end
+
 check 'Change Actor Face overrides the actor FaceSet' do
   st = party_state
   it = Game::Interpreter.new(st)

@@ -1996,11 +1996,13 @@ module Game
     # attacker — the event supplies the attack power itself. param0/param1 pick
     # the targets (the shared scope layout); param2 is the attack strength,
     # param3 how much the target's defence counts and param4 how much its spirit
-    # counts, each as a permille-style divisor, and param5 the damage spread.
-    # When param6 is set the damage dealt is also written into variable param7.
-    # The formula is EasyRPG Player's CommandSimulatedAttack, which mirrors
-    # RPG_RT: `atk - def * p_def / 400 - spi * p_spi / 800`, then spread by
-    # +/- (param5 * 5) percent and floored at 0. The hit can be lethal.
+    # counts, each as a permille-style divisor, and param5 the damage spread (the
+    # database's own 0-10 variance scale, the same one a skill's own `variance`
+    # field uses). When param6 is set the damage dealt is also written into
+    # variable param7. The formula is EasyRPG Player's CommandSimulatedAttack,
+    # which mirrors RPG_RT: `atk - def * p_def / 400 - spi * p_spi / 800`, floored
+    # at 0, then spread by `Algo::VarianceAdjustEffect` and floored at 0 again.
+    # The hit can be lethal.
     #
     # RPG_RT's damage popup is a fixed-width widget (the same reasoning behind
     # `Game::Battle#damage_cap` on the normal-attack/skill/self-destruct/
@@ -2013,7 +2015,8 @@ module Game
       cap = @state.party.rpg2003? ? Battle::DAMAGE_CAP_2K3 : Battle::DAMAGE_CAP_2K
       stat_targets(cmd).each do |a|
         damage = atk - (a.def * cmd.param(3)) / 400 - (a.int * cmd.param(4)) / 800
-        damage += damage * simulated_attack_spread(cmd.param(5)) / 100
+        damage = 0 if damage < 0
+        damage = simulated_attack_variance(damage, cmd.param(5))
         damage = 0 if damage < 0
         damage = cap if damage > cap
         a.change_hp(-damage, true)
@@ -2022,12 +2025,30 @@ module Game
       check_game_over
     end
 
-    # A Simulated Attack's random damage spread, as a percentage in
-    # -(variance * 5) .. +(variance * 5). A variance of 0 never spreads.
-    def simulated_attack_spread(variance)
-      return 0 if variance.nil? || variance <= 0
-      span = variance * 5
-      @rng.random(span * 2 + 1) - span
+    # A Simulated Attack's random damage spread. Port of EasyRPG's
+    # `Algo::VarianceAdjustEffect` -- the exact same formula
+    # `Game::Battle#varied` already applies to a normal attack/skill/
+    # self-destruct's own damage -- reimplemented here rather than shared
+    # across classes, since `#varied` lives on `Battle`, not `Interpreter`.
+    #
+    # A prior version of this method modelled the spread as a flat +/-
+    # (variance * 5) *percent* of `base` instead, which the doc comment above
+    # incorrectly attributed to EasyRPG's own source. The two formulas'
+    # outer bounds happen to coincide (`base +/- base*var/20` either way),
+    # but the percent model's granularity is coarser by a factor of `100 /
+    # base` -- e.g. at `base` 500, `var` 5, the percent model can only ever
+    # land on one of 51 values, all multiples of 5, where the real formula
+    # (`adj = max(1, var*base/10)`, `base + rand(0, adj) - adj/2`) draws
+    # uniformly from 251 consecutive integers over the identical [375, 625]
+    # range. #varied's own floor of (at least) 1 does not apply here: a
+    # Simulated Attack's own real clamp is `std::max(0, result)`, applied
+    # both before and after the variance call, so this can land on a
+    # genuine 0 the way #varied's callers never do.
+    def simulated_attack_variance(base, var)
+      return base unless var && var > 0 && base > 0
+      adj = var * base / 10
+      adj = 1 if adj < 1
+      base + @rng.random(adj + 1) - adj / 2
     end
 
     # Change Condition: inflict or cure a status condition on the target actors.

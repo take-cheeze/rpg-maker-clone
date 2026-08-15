@@ -5420,6 +5420,37 @@ not yet verified:
   rolling it at all; and a missed attack skill never rolling the shake-off
   either, matching the shared accuracy gate), each confirmed to fail against
   the pre-fix code before the fix.
+- ✅ **Simulated Attack's damage spread now uses RPG_RT's real variance
+  formula, not a coarser stand-in this method's own comment misattributed to
+  EasyRPG's source.** `Interpreter#do_simulated_attack` modelled its damage
+  spread as a flat `+/- (param5 * 5)` *percent* of the base damage. Checked
+  directly against EasyRPG's `CommandSimulatedAttack`
+  (`src/game_interpreter.cpp`) rather than that comment's own claim: it rolls
+  `Algo::VarianceAdjustEffect(result, var)` — the *exact same* function
+  `Game::Battle#varied` already ports correctly for a normal attack/skill/
+  self-destruct's own damage (`adj = max(1, var*base/10)`, `base + rand(0,
+  adj) - adj/2`), not a percent-based model at all. The two formulas'
+  outer bounds happen to coincide algebraically (`base +/- base*var/20`
+  either way), which is presumably how the mistake went undetected, but the
+  percent model's *granularity* is coarser by a factor of `base/100`: at
+  `atk` 500 and variance 5, the percent model can only ever land on one of
+  51 values, all multiples of 5, where the real formula draws uniformly from
+  251 consecutive integers across the identical `[375, 625]` range —
+  visibly "rounder" damage numbers than genuine RPG_RT produces, worsening
+  as the event's own Attack Power parameter grows. Fixed with a new
+  `Interpreter#simulated_attack_variance`, reimplementing
+  `Algo::VarianceAdjustEffect` directly (`#varied` lives on `Battle`, not
+  `Interpreter`) — floored at 0 rather than `#varied`'s own floor of 1,
+  matching `CommandSimulatedAttack`'s own `std::max(0, result)` clamp
+  (applied both before and after the variance call in the real source; a
+  redundant-but-source-faithful floor now sits before the roll too, since
+  `#simulated_attack_variance`'s own `base > 0` guard already passes a
+  non-positive base through unrolled either way). Covered by two
+  new `scripts/rpg2k_logic_check.rb` checks (sampling many draws at `atk`
+  500 / variance 5 and confirming at least one result is not a multiple of
+  5, which the old percent model could never produce; and the zero-variance/
+  zero-base passthrough cases), confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
