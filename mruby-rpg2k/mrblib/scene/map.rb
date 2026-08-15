@@ -1829,6 +1829,24 @@ class RPG2k
           if (@name_ui.nil? || @name_ui[:interp].equal?(it)) && @message.nil?
             drive_name_input(it)
           end
+        elsif it.wait_kind == :shop
+          # Open Shop issued from a Parallel Process: EasyRPG's
+          # `Game_Interpreter_Map::CommandOpenShop`
+          # (src/game_interpreter_map.cpp) is the very same method for the
+          # foreground and every parallel process's own interpreter, gated
+          # only on `Game_Message::IsMessageActive()` -- there is no
+          # "foreground only" restriction. Before this branch existed this
+          # fell into the generic #resume below, so a Parallel Process's own
+          # Open Shop silently never opened the screen at all -- the command
+          # read as a no-op. The single shop screen is shared the same way
+          # the message window and name-entry widget are (`@shop[:interp]`
+          # mirrors `@name_ui[:interp]` / `@message[:interp]`, see
+          # #drive_shop / #leave_shop): block until whichever message
+          # window, name-entry screen, or shop screen is currently up
+          # closes, then drive this one.
+          if (@shop.nil? || @shop[:interp].equal?(it)) && @message.nil? && @name_ui.nil?
+            drive_shop(it)
+          end
         else
           # :message, :choice and :number are all handled above now.
           it.resume
@@ -4169,11 +4187,19 @@ class RPG2k
       # control returns to the list; leaving resumes the interpreter with
       # whether anything was traded (which picks the [Transaction] /
       # [No Transaction] branch).
-      def drive_shop
-        req = @interpreter.shop_request
-        return @interpreter.resume_shop(false) unless req
+      #
+      # `it` defaults to the foreground @interpreter, but #drive_parallel_wait
+      # passes its own parallel interpreter here too -- see its :shop case for
+      # why, mirroring #drive_name_input's own `it` idiom (`@shop[:interp]`
+      # mirrors `@name_ui[:interp]` / `@message[:interp]`) for the same
+      # "which interpreter actually asked for this shared, singleton screen"
+      # tracking. `@shop[:interp]` is what #leave_shop resumes once the
+      # player leaves.
+      def drive_shop(it = @interpreter)
+        req = it.shop_request
+        return it.resume_shop(false) unless req
         if @shop.nil?
-          open_shop(req) # opened this frame; take input from the next one
+          open_shop(req, it) # opened this frame; take input from the next one
           return
         end
         case @shop[:screen]
@@ -4184,14 +4210,14 @@ class RPG2k
         end
       end
 
-      def open_shop(req)
+      def open_shop(req, it = @interpreter)
         model = Game::Shop.new(db, @state.party, req[:goods],
                                req[:allow_buy], req[:allow_sell])
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
                   window: nil, gold: build_shop_gold_window, status: nil,
-                  terms: shop_terms(req[:type]), browsed: false }
+                  terms: shop_terms(req[:type]), browsed: false, interp: it }
         draw_shop
       end
 
@@ -4507,8 +4533,9 @@ class RPG2k
 
       def leave_shop
         transacted = @shop[:model].did_transaction
+        interp = @shop[:interp]
         close_shop
-        @interpreter.resume_shop(transacted)
+        interp.resume_shop(transacted)
       end
 
       def close_shop
