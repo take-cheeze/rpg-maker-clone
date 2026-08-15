@@ -932,10 +932,18 @@ module LCF
       8 => { name: :timer_sec, type: :int, default: 0 },
       # RPG2003-only: a second timer condition (flags bit 0x40, gated on
       # Player::IsRPG2k3Commands() in EasyRPG) and the variable comparison
-      # operator (0 = >=). The RPG2000 runtime always compares with >=, so these
-      # are carried for schema completeness rather than consumed by EventPage.
+      # operator, both now read by Game::EventPage -- see its own TIMER2 /
+      # compare_operator handling there.
       9 => { name: :timer2_sec, type: :int, default: 0 },
-      10 => { name: :compare_operator, type: :int, default: 0 },
+      # 0 == 1 >= 2 <= 3 > 4 < 5 != (liblcf's EventPageCondition::Comparison
+      # enum). Default 1 (>=), not 0 (==): liblcf's generated
+      # eventpagecondition.h declares `int32_t compare_operator = 1;`, and an
+      # absent chunk field reads as its schema default -- an RPG2000 database
+      # (which never writes this RPG2003-only field at all) or an RPG2003
+      # page whose editor dropdown was left at its own default both need the
+      # ordinary ">=" reading, not "==", once EventPage actually consults
+      # this field.
+      10 => { name: :compare_operator, type: :int, default: 1 },
     }
 
     MOVE_ROUTE = {
