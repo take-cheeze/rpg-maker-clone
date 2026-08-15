@@ -65,8 +65,6 @@ NOT_OURS = {
                   'attacker; both test beds fill both fields with the same two ' \
                   'strings, so the data cannot settle it (ADR 0036)',
   enemy_critical: 'see actor_critical',
-  footstep: 'RPG2003 only — EasyRPG plays it from Game_Player::BeginMove ' \
-            'behind an IsRPG2k3() gate',
   hp_change_type: 'RPG2003 only — the schema marks it so, and RPG2000 has one ' \
                   'flat/percentage reading rather than a selector',
   sp_change_type: 'see hp_change_type',
