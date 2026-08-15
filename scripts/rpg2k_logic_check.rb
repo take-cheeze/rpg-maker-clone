@@ -7227,12 +7227,32 @@ check 'Key Input Proc (RPG2003 Numbers/Operators layout) decodes the two flags' 
   eq false, acc[:cancel]
   [:down, :left, :right, :up].each { |k| eq true, acc[k], "#{k} on (single arrows-all flag)" }
   eq false, acc[:shift], 'this layout has no individual Shift, unlike RPG2000 1.50+'
-  # Numbers/Operators are accepted but the input layer has no keys mapped to
-  # them (see Scene::Map::KEY_INPUT_BUTTONS), so the scene can never place
-  # them in the active-key list; key_input_result must not resolve them even
-  # if asked to.
+  # :numbers/:operators are the whole-group accept flags `do_key_input` sets,
+  # not real per-key symbols -- key_input_result only ever receives one of the
+  # concrete keys a group covers (:n0.."n9", :plus.."period", from
+  # Scene::Map::NUMBER_KEY_BUTTONS/OPERATOR_KEY_BUTTONS), so passing the group
+  # symbols themselves as "active" never resolves anything.
   eq 0, it.key_input_result([:numbers, :operators])
   eq 5, it.key_input_result([:decision, :numbers]), 'Decision still resolves alongside them'
+  # The concrete per-key symbols do resolve once Numbers/Operators is
+  # accepted, per KEY_INPUT_GROUPS -- see Scene::Map::NUMBER_KEY_BUTTONS /
+  # OPERATOR_KEY_BUTTONS for where a real key press produces them (SDL
+  # backend only today).
+  eq 10, it.key_input_result([:n0]), 'digit 0 -> code 10'
+  eq 19, it.key_input_result([:n9]), 'digit 9 -> code 19'
+  eq 20, it.key_input_result([:plus]), 'Plus -> code 20 (lowest-priority operator)'
+  eq 24, it.key_input_result([:period]), 'Period -> code 24 (highest-priority operator)'
+  eq 24, it.key_input_result([:period, :n5]), 'Operators outrank Numbers when both fire'
+end
+
+check 'Key Input Proc (RPG2003) key_input_result ignores a digit when Numbers is not accepted' do
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  # 9-param layout: Decision only, Numbers/Operators both off.
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 0, 0, 0])])
+  it.update
+  eq 0, it.key_input_result([:n3]), 'Numbers was never accepted, so :n3 must not resolve'
+  eq 5, it.key_input_result([:decision]), 'Decision still resolves on its own'
 end
 
 check 'Key Input Proc (RPG2003, 10 params) is the imported RPG2000 1.50+ layout, not Numbers/Operators' do

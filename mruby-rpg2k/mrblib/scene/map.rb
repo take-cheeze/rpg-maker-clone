@@ -3739,8 +3739,35 @@ class RPG2k
         up: Input::UP, decision: Input::C, cancel: Input::B, shift: Input::SHIFT
       }.freeze
 
+      # RPG2003's Numbers/Operators flags (see Game::Interpreter#do_key_input)
+      # each accept a whole group of keys rather than one button, so unlike
+      # KEY_INPUT_BUTTONS these map every digit / operator symbol its own
+      # entry — #resolve_key_input samples each individually and hands the
+      # interpreter whichever specific symbols (:n3, :period, ...) actually
+      # fired; Game::Interpreter::KEY_INPUT_GROUPS maps them back onto the
+      # :numbers/:operators accept flag. Real key backing for
+      # RGSS::Input::N0..PERIOD exists only on the SDL desktop backend today
+      # (src/sdl_input.cxx) — on every other native backend (PSP, Wio
+      # Terminal, terminal/sixel) these ids are simply never pressed, the same
+      # way this build already leaves F5-F12 unbound there.
+      NUMBER_KEY_BUTTONS = {
+        n0: Input::N0, n1: Input::N1, n2: Input::N2, n3: Input::N3, n4: Input::N4,
+        n5: Input::N5, n6: Input::N6, n7: Input::N7, n8: Input::N8, n9: Input::N9
+      }.freeze
+      OPERATOR_KEY_BUTTONS = {
+        plus: Input::PLUS, minus: Input::MINUS, multiply: Input::MULTIPLY,
+        divide: Input::DIVIDE, period: Input::PERIOD
+      }.freeze
+
       def drive_key_input
         resolve_key_input(@interpreter)
+      end
+
+      # True if `btn` is down (no-wait proc) or was just pressed (waiting
+      # proc) this frame, per the sampling rule #resolve_key_input applies to
+      # every accepted button.
+      def key_input_hit?(btn, wait)
+        wait ? Input.trigger?(btn) : Input.press?(btn)
       end
 
       # Drive a Key Input Processing wait for interpreter `it` (the foreground
@@ -3756,8 +3783,17 @@ class RPG2k
         active = []
         KEY_INPUT_BUTTONS.each do |sym, btn|
           next unless accepted[sym]
-          hit = req[:wait] ? Input.trigger?(btn) : Input.press?(btn)
-          active << sym if hit
+          active << sym if key_input_hit?(btn, req[:wait])
+        end
+        if accepted[:numbers]
+          NUMBER_KEY_BUTTONS.each do |sym, btn|
+            active << sym if key_input_hit?(btn, req[:wait])
+          end
+        end
+        if accepted[:operators]
+          OPERATOR_KEY_BUTTONS.each do |sym, btn|
+            active << sym if key_input_hit?(btn, req[:wait])
+          end
         end
         code = it.key_input_result(active)
         if req[:wait]

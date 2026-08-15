@@ -766,13 +766,36 @@ module Game
       nil
     end
 
-    # RPG2000 key-input result codes in priority order (highest first). When more
-    # than one accepted button is active RPG_RT returns the largest code:
-    # Shift > Cancel > Decision > Up > Right > Left > Down.
+    # RPG2000/2003 key-input result codes in priority order (highest first).
+    # When more than one accepted button is active RPG_RT returns the largest
+    # code: Period > Divide > Multiply > Minus > Plus > N9..N0 > Shift >
+    # Cancel > Decision > Up > Right > Left > Down. The Numbers/Operators
+    # block (10-24) matches EasyRPG Player's
+    # Game_Interpreter::KeyInputState::CheckInput (src/game_interpreter.cpp),
+    # the documented reference this codebase already leans on for RPG2000/2003
+    # runtime behaviour that RPG_RT itself never published — Numbers is a
+    # digit's own value plus 10 (N0 -> 10 .. N9 -> 19), Operators are
+    # Plus/Minus/Multiply/Divide/Period at 20-24.
     KEY_INPUT_CODES = [
+      [:period, 24], [:divide, 23], [:multiply, 22], [:minus, 21], [:plus, 20],
+      [:n9, 19], [:n8, 18], [:n7, 17], [:n6, 16], [:n5, 15],
+      [:n4, 14], [:n3, 13], [:n2, 12], [:n1, 11], [:n0, 10],
       [:shift, 7], [:cancel, 6], [:decision, 5],
       [:up, 4], [:right, 3], [:left, 2], [:down, 1]
     ].freeze
+
+    # `accepted` (see #do_key_input) only carries whole-group flags for
+    # Numbers/Operators, not one flag per digit/operator — this maps each of
+    # KEY_INPUT_CODES' per-key symbols back onto the group flag that accepts
+    # it, so #key_input_result can look up "was this key's group requested?"
+    # for :n3 the same way it looks up acc[:decision] for :decision. A symbol
+    # absent here (e.g. :decision) is its own group, i.e. `accepted` carries a
+    # flag with that exact name.
+    KEY_INPUT_GROUPS = { n0: :numbers, n1: :numbers, n2: :numbers, n3: :numbers,
+                          n4: :numbers, n5: :numbers, n6: :numbers, n7: :numbers,
+                          n8: :numbers, n9: :numbers,
+                          plus: :operators, minus: :operators, multiply: :operators,
+                          divide: :operators, period: :operators }.freeze
 
     # Given the set of currently-active key symbols (an array like [:decision]),
     # return the RPG2000 code of the highest-priority key the pending request
@@ -782,7 +805,8 @@ module Game
       acc = @key_input_request && @key_input_request[:accepted]
       return 0 unless acc
       KEY_INPUT_CODES.each do |sym, code|
-        return code if acc[sym] && active.include?(sym)
+        group = KEY_INPUT_GROUPS[sym] || sym
+        return code if acc[group] && active.include?(sym)
       end
       0
     end
@@ -1215,11 +1239,14 @@ module Game
     # The interpreter only records the request and suspends on a :key_input
     # wait; the owning scene samples real input (triggered edges when waiting,
     # held state otherwise) and calls resume_key_input with the resulting code.
-    # Numbers/Operators are decoded into `accepted` but not yet actionable: the
-    # input layer (RGSS::Input) models a fixed console/keyboard button set with
-    # no numeric-keypad or operator keys to sample, so a request that accepts
-    # only Numbers/Operators can never resolve — same as the mouse (Maniac),
-    # which stays fully unmodelled.
+    # Numbers/Operators decoded into `accepted` are sampled by
+    # Scene::Map::NUMBER_KEY_BUTTONS/OPERATOR_KEY_BUTTONS (RGSS::Input::N0..N9
+    # / PLUS..PERIOD, see #key_input_result's KEY_INPUT_GROUPS), which today
+    # have real key backing only on the SDL desktop window backend
+    # (src/sdl_input.cxx) — the other native backends (PSP, Wio Terminal,
+    # terminal/sixel) never press those ids, so a Numbers/Operators-only
+    # request there resolves the same as before this: never. 🚧 The mouse
+    # (Maniac) stays fully unmodelled everywhere.
     def do_key_input(cmd)
       var_id = cmd.param(0)
       wait = cmd.param(1) != 0

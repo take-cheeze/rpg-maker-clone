@@ -1492,7 +1492,7 @@ assert "RGSS::Input accepts RGSS2/RGSS3 symbol keys" do
 
     # Every RGSS3 key name maps, and an unknown one reads as unpressed instead
     # of raising out of the game loop.
-    assert_equal 21, RGSS::Input::SYMBOL_KEYS.size
+    assert_equal 36, RGSS::Input::SYMBOL_KEYS.size
     RGSS::Input::SYMBOL_KEYS.each do |name, index|
       assert_equal index, RGSS::Input.key_index(name), "key #{name} maps wrong"
     end
@@ -1501,6 +1501,34 @@ assert "RGSS::Input accepts RGSS2/RGSS3 symbol keys" do
   ensure
     RGSS::Input.release(:UP)
     RGSS::Input.release(:C)
+  end
+end
+
+assert "RGSS::Input::N0..N9/PLUS..PERIOD are distinct ids continuing past F12" do
+  # RPG2003's Key Input Processing Numbers/Operators groups (see
+  # mruby-rpg2k's Scene::Map::NUMBER_KEY_BUTTONS/OPERATOR_KEY_BUTTONS): every
+  # id must be its own slot so pressing one digit/operator never reads back
+  # as another.
+  digit_keys = [RGSS::Input::N0, RGSS::Input::N1, RGSS::Input::N2, RGSS::Input::N3,
+                RGSS::Input::N4, RGSS::Input::N5, RGSS::Input::N6, RGSS::Input::N7,
+                RGSS::Input::N8, RGSS::Input::N9]
+  operator_keys = [RGSS::Input::PLUS, RGSS::Input::MINUS, RGSS::Input::MULTIPLY,
+                    RGSS::Input::DIVIDE, RGSS::Input::PERIOD]
+  all_keys = digit_keys + operator_keys
+  assert_equal all_keys.uniq.size, all_keys.size, "every id must be distinct"
+  assert_equal RGSS::Input::F12 + 1, RGSS::Input::N0, "ids continue right after F12"
+
+  begin
+    RGSS::Input.press(RGSS::Input::N3)
+    assert_true RGSS::Input.press?(RGSS::Input::N3)
+    assert_false RGSS::Input.press?(RGSS::Input::N4), "a different digit must stay unpressed"
+    assert_false RGSS::Input.press?(RGSS::Input::PLUS), "an operator must stay unpressed"
+
+    RGSS::Input.press(RGSS::Input::PERIOD)
+    assert_true RGSS::Input.press?(:PERIOD), "the symbol spelling must reach the same id"
+  ensure
+    RGSS::Input.release(RGSS::Input::N3)
+    RGSS::Input.release(RGSS::Input::PERIOD)
   end
 end
 

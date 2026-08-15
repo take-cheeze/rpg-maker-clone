@@ -16,6 +16,11 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # mrbgems" note. wave_blt itself is pure C++ (mruby-rgss/src/lib.cxx), so
   # this is only needed for the test.
   add_test_dependency 'mruby-math'
+  # The RGSS::Input::N0..PERIOD id test uses Array#uniq to prove every new key
+  # id is distinct. Same story as mruby-math above: Array#uniq lives in
+  # mruby-array-ext (build_config.rb's rpg_maker_gems has it for the full
+  # game), so the standalone mrbtest build needs it declared here too.
+  add_test_dependency 'mruby-array-ext'
 
   cxx.include_paths <<
     "#{dir}/../3rd/uni-algo/include" <<
