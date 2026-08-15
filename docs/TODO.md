@@ -5916,6 +5916,38 @@ not yet verified:
   new `scripts/rpg2k_scene_check.rb` check pinning a `\s[20]\.` pause to
   exactly 20 frames (16 + 4, the maximum stretch), confirmed to fail against
   the pre-fix code before the fix (`expected 20, got 16`).
+- ✅ **A blocked Move Route step on a *skippable* ("Ignore If Can't Move")
+  route no longer leaves the character visibly turned toward the
+  obstruction — the failed turn now reverts entirely before the route
+  advances, matching a *non*-skippable route (which still turns, since it
+  keeps retrying the same step facing the obstacle).** Confirmed against
+  EasyRPG's actual C++ source: `Game_Character::UpdateMoveRoute`
+  (`src/game_character.cpp`) turns toward the attempted direction
+  unconditionally, but once the move fails and `current_route.skippable` is
+  set, it calls `SetDirection(prev_direction); SetFacing(prev_facing);`
+  before moving on to the next command — a skipped step has no visible
+  effect at all, not even a flinch toward the wall. `Game::MoveRoute#do_move`
+  (`mruby-rpg2k/mrblib/game.rb`) called `character.face(dir)`
+  unconditionally on a blocked move and never reverted it, so a skippable
+  route's character stayed turned toward every obstacle its route ever
+  brushed past, even ones it visibly walked around — directly observable
+  (sprite orientation) and capable of skewing a later `MOVE_FORWARD` or a
+  page condition's own direction check. `#do_diagonal` had the identical gap
+  for a blocked diagonal step. `#do_jump`/`#land_jump` needed no equivalent
+  fix: unlike EasyRPG's jump-block scan (which turns the character as it
+  walks the block's own face/move sub-commands before the landing check),
+  this port's jump-block scan only accumulates a local direction/offset and
+  never touches the character's own facing until a *successful* landing
+  (`Character#jump`), so a blocked jump already left the character
+  untouched, the same end state EasyRPG's revert achieves by a different
+  route. Fixed by saving the pre-turn direction in both `#do_move` and
+  `#do_diagonal` and restoring it (`character.direction = prev_dir`) in the
+  skippable-blocked branch only. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks — a blocked skippable cardinal move
+  reverting to its starting direction (contrasted with a non-skippable move
+  on the identical setup, which still turns) and a blocked skippable
+  diagonal doing the same — both confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

@@ -235,6 +235,27 @@ check 'a blocked skippable move advances past the obstruction' do
   eq [0, 1], [c.x, c.y]
 end
 
+check 'a blocked skippable move reverts the turn it made; a non-skippable ' \
+      'one keeps facing the obstacle' do
+  # Confirmed against EasyRPG's actual C++ source: Game_Character::
+  # UpdateMoveRoute (src/game_character.cpp) turns toward the attempted
+  # direction unconditionally, but on a *skippable* route a failed move
+  # reverts that turn entirely (`SetDirection(prev_direction);
+  # SetFacing(prev_facing);`) before advancing -- the skipped step leaves no
+  # visible flinch toward the obstacle. A non-skippable route's own turn
+  # stands, since the same command retries next frame still facing it.
+  skip = R.new([mc(R::MOVE_RIGHT)], repeat: false, skippable: true)
+  c = Game::Character.new(0, 0, 2) # starts facing Down
+  w = FakeWorld.new(blocked: [[1, 0]])
+  eq :blocked, skip.step(c, w)
+  eq 2, c.direction, 'reverted to Down, not left turned toward the wall (6)'
+
+  non_skip = R.new([mc(R::MOVE_RIGHT)], repeat: false, skippable: false)
+  c2 = Game::Character.new(0, 0, 2)
+  eq :blocked, non_skip.step(c2, w)
+  eq 6, c2.direction, 'still turns to face the obstacle it keeps retrying'
+end
+
 check 'a move blocked specifically by the hero reports :touched_hero, not ' \
       'plain :blocked, with the same retry rule' do
   # yado.tk (docs/TODO.md "Running a hero-targeted Parallel-Process Set Move
@@ -467,6 +488,14 @@ check 'diagonal move needs both cardinals and faces vertical' do
   c2 = Game::Character.new(2, 2)
   eq :blocked, route2.step(c2, FakeWorld.new(blocked: [[3, 2]])) # east blocked
   eq [2, 2], [c2.x, c2.y]
+  eq 8, c2.direction, 'non-skippable still turns to face the vertical component'
+
+  # Skippable reverts that turn entirely, the same rule an ordinary blocked
+  # move follows (see #do_move's own revert check above).
+  route3 = R.new([mc(R::MOVE_UPRIGHT)], skippable: true)
+  c3 = Game::Character.new(2, 2, 2) # starts facing Down
+  eq :blocked, route3.step(c3, FakeWorld.new(blocked: [[3, 2]]))
+  eq 2, c3.direction, 'reverted to Down, not left turned toward the wall (8)'
 end
 
 check 'move forward steps in the current facing' do
