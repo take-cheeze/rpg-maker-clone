@@ -1812,6 +1812,23 @@ class RPG2k
           # Flash Sprite's own wait flag, the parallel-process equivalent of
           # the :screen/:picture cases just above.
           it.resume unless sprite_flashing?
+        elsif it.wait_kind == :name_input
+          # Enter Hero Name issued from a Parallel Process: EasyRPG's
+          # `Game_Interpreter_Map::CommandEnterHeroName`
+          # (src/game_interpreter_map.cpp) is the very same method for the
+          # foreground and every parallel process's own interpreter, gated
+          # only on `Game_Message::IsMessageActive()` -- there is no
+          # "foreground only" restriction. Before this branch existed this
+          # fell into the generic #resume below, so a Parallel Process's own
+          # Enter Hero Name silently never opened the screen at all -- the
+          # command read as a no-op. The single name-entry widget is shared
+          # the same way the message window is (`@name_ui[:interp]` mirrors
+          # `@message[:interp]`, see #drive_name_input): block until
+          # whichever message window or name-entry screen is currently up
+          # closes, then drive this one.
+          if (@name_ui.nil? || @name_ui[:interp].equal?(it)) && @message.nil?
+            drive_name_input(it)
+          end
         else
           # :message, :choice and :number are all handled above now.
           it.resume
@@ -4763,19 +4780,26 @@ class RPG2k
       # kana grid on the matching page. Either way the widget is seeded with
       # the actor's current name when the command asked for it, and commits to
       # the actor and resumes the event when confirmed.
-      def drive_name_input
-        req = @interpreter.name_input_request
-        return @interpreter.resume_name_input('') unless req
+      #
+      # `it` defaults to the foreground @interpreter, but #drive_parallel_wait
+      # passes its own parallel interpreter here too -- see its :name_input
+      # case for why, mirroring #open_message's own `interp:` idiom
+      # (@message[:interp]) for the same "which interpreter actually asked
+      # for this shared, singleton widget" tracking. `@name_ui[:interp]` is
+      # what #commit_name_input resumes once the actor's name is confirmed.
+      def drive_name_input(it = @interpreter)
+        req = it.name_input_request
+        return it.resume_name_input('') unless req
         if @name_ui.nil?
           background = build_field_background(@windowskin)
           if req[:charset] == 2
             @name_ui = { name: req[:seed] || '', sel: 0, win: nil, kana: false,
-                         background: background }
+                         background: background, interp: it }
             draw_name_input
           else
             @name_ui = { name: req[:seed] || '', sel: 0, kana: true,
                          page: req[:charset] == 1 ? :katakana : :hiragana,
-                         actor_id: req[:actor_id], background: background }
+                         actor_id: req[:actor_id], background: background, interp: it }
             draw_kana_name_input
           end
           return
@@ -4835,8 +4859,9 @@ class RPG2k
 
       def commit_name_input
         name = @name_ui[:name]
+        interp = @name_ui[:interp]
         close_name_input
-        @interpreter.resume_name_input(name)
+        interp.resume_name_input(name)
       end
 
       def draw_name_input
