@@ -6810,6 +6810,41 @@ not yet verified:
   absent"), all four confirmed to fail against the pre-fix code before the
   fix. `ninja -C build test` (mruby-lcf's own suite, since schema.rb
   changed) still passes.
+- ✅ **A Change Actor Sprite / Change Vehicle Graphic override's *index* now
+  round-trips through `.lsd` at the correct liblcf tag — it was being
+  written to, and read from, the wrong field of the save's hero/vehicle
+  record.** ADR 0020 mapped `SAVE_MOVABLE`'s `charset_index` to tag 75,
+  citing "liblcf's `RPG::SaveSystem`" — but `SaveSystem`'s own fields 73-75
+  (`generator/csv/fields.csv`) are `battle_end_music`/`inn_music`/
+  `current_music`, nothing to do with a character graphic; the struct chunk
+  104 (hero) and 105-107 (vehicles) actually use is `SaveMapEventBase`
+  (already correctly named two fields up, for `move_route_index`'s own
+  citation), whose `sprite_id` is tag **74** (`0x4A`). Tag 75 (`0x4B`) there
+  is `processed`, an unrelated per-frame flag ("has this event already
+  taken its movement step this frame") liblcf documents on every movable
+  record, hero included. Confirmed against the repo's own real save fixture
+  (Nepheshel `Save01.lsd`'s hero record, decoded past the schema to see
+  every raw tag present): tag 75 is present with a plausible `processed`
+  byte while tags 73 (`sprite_name`) and 74 (`sprite_id`) are both entirely
+  absent — exactly what "no sprite override, saved mid-frame" looks like,
+  not what a genuine `sprite_id` co-occurring without its paired
+  `sprite_name` would ever produce. The bug was self-masking: `Game::State
+  #to_lsd`/`.from_lsd` (`mruby-rpg2k/mrblib/game.rb`) both consistently used
+  the same wrong tag, so this engine's own Save→Continue round-trip (and
+  `scripts/rpg2k_save_load_check.rb`'s guard, which only re-reads what this
+  engine itself wrote) never disagreed with itself — it only manifests
+  against a genuine third-party `.lsd` (misreading the real `processed`
+  flag as a bogus sprite index) or when a `.lsd` this engine exports is
+  opened in real RPG_RT/EasyRPG (the real sprite index landing on
+  `processed` instead). Fixed by moving `SAVE_MOVABLE`'s `charset_index`
+  from tag 75 to 74 and the two `#to_lsd` write sites (leader, and each
+  placed vehicle) to match; no read-site changes needed, since both already
+  go through the schema-driven `.charset_index` accessor. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check that inspects the actual raw tag
+  `#to_lsd` writes to (not merely a same-engine round-trip, which — being
+  internally self-consistent either way — could never have caught this),
+  confirmed to fail against the pre-fix code before the fix (the field
+  simply didn't exist under the corrected tag number yet).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

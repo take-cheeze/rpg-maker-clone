@@ -11608,7 +11608,7 @@ module Game
       hero[22] = @direction || 2
       if leader
         hero[73] = leader.charset_name || ''
-        hero[75] = leader.charset_index || 0
+        hero[74] = leader.charset_index || 0
       end
       save[104] = hero
 
@@ -11624,7 +11624,7 @@ module Game
         mv[13] = v.y
         mv[22] = v.direction
         mv[73] = v.charset_name || ''
-        mv[75] = v.charset_index || 0
+        mv[74] = v.charset_index || 0
         save[chunk] = mv
       end
 
