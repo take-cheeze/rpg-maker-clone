@@ -1708,6 +1708,51 @@ module Game
       ids.uniq
     end
 
+    # The status conditions the actor's equipped weapon(s) carry into a basic
+    # Attack -- item fields `state_set` (63/64, a flag per state) and
+    # `state_chance` (67, a flat percent applied to every state the weapon
+    # flags) -- split by whether the weapon inflicts or (RPG2003 only)
+    # *heals* them, per `Game::Battle#deal_attack`'s own use.
+    #
+    # EasyRPG's `Game_BattleAlgorithm::Normal::vExecute` (`weapons` block)
+    # is the port target: a weapon with no `state_chance` (or none flagged in
+    # `state_set`) contributes nothing, and a 二刀流 actor's second weapon
+    # (`#weapon_attributes`' own `type == 1` filter already reaches the
+    # shield slot when it holds a weapon, same as here) can name a *different*
+    # state, or the same one at a different chance -- EasyRPG takes the
+    # higher chance when both weapons flag the same state ("we take the max
+    # probability as RPG_RT does"), which is what the `< chance` compare
+    # below does per state id. `reverse_state_effect` (field 20) flips a
+    # weapon's own states from inflicting to curing, but **only on RPG2003**
+    # (`is2k3 && w->reverse_state_effect`) -- on RPG2000 the field has no
+    # effect here, matching the flag's own item-menu/skill-menu handling
+    # elsewhere in this file (`#item_inflicted_states`, `#skill_state_ids`).
+    #
+    # No item table (a fixture) or an unarmed actor carries none of either.
+    def weapon_states
+      inflict = {}
+      heal = {}
+      return { inflict: inflict, heal: heal } unless @db.respond_to?(:item)
+      heals_flip = rpg2003?
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next unless it && it.respond_to?(:type) && it.type == 1 # weapon slot only
+        set = it.respond_to?(:state_set) ? it.state_set : nil
+        next unless set
+        chance = it.respond_to?(:state_chance) ? (it.state_chance || 0) : 0
+        next unless chance > 0
+        heals = heals_flip && it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+        bucket = heals ? heal : inflict
+        set.each_index do |i|
+          next unless set[i] && set[i] != 0
+          sid = i + 1
+          bucket[sid] = chance if (bucket[sid] || 0) < chance
+        end
+      end
+      { inflict: inflict, heal: heal }
+    end
+
     # The actor's basic-attack base hit rate (percent): the highest `hit` among
     # the equipped weapons (item field 17), or the RPG2000 unarmed default of 90
     # when nothing is equipped or the row omits it. Feeds the battle's to-hit
@@ -7060,7 +7105,15 @@ module Game
                            # per fight and never written back to the actor, so
                            # nil (read as 0 by #effective_atk and friends)
                            # every construction is the reset for free.
-                           :atk_mod, :def_mod, :spi_mod, :agi_mod) do
+                           :atk_mod, :def_mod, :spi_mod, :agi_mod,
+                           # The status conditions this battler's equipped
+                           # weapon(s) carry into a basic Attack -- see
+                           # Game::Actor#weapon_states, whose `{ inflict:,
+                           # heal: }` shape this mirrors exactly. An enemy
+                           # Combatant leaves it nil (read as empty by
+                           # #atk_states -- monsters equip nothing in real
+                           # RPG_RT either).
+                           :atk_states) do
       def dead?; hp <= 0; end
 
       # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
@@ -7069,6 +7122,10 @@ module Game
       # Whether this battler's gear halves what a skill costs (Party#skill_cost
       # asks whatever it is handed, actor or snapshot).
       def half_sp_cost?; half_sp_cost ? true : false; end
+      # The weapon-granted state chances this battler's basic Attack carries,
+      # normalised to `{ inflict: {}, heal: {} }` for a Combatant that never
+      # had any set (an enemy, or an actor built before this field existed).
+      def atk_states; self[:atk_states] || { inflict: {}, heal: {} }; end
 
       # RPG2003 counts turns per battler as well as per battle: this is how many
       # turns *this* battler has taken, which the troop pages' turn_enemy /
@@ -7112,6 +7169,11 @@ module Game
     # weapon's attribute_set); [] for an enemy or an unarmed / fixture attacker.
     def self.atk_attrs_of(b); b.respond_to?(:weapon_attributes) ? b.weapon_attributes : []; end
 
+    # The status conditions a battler's basic attack carries via its equipped
+    # weapon(s) (`Game::Actor#weapon_states`); nil (read as empty by
+    # Combatant#atk_states) for an enemy or an unarmed / fixture attacker.
+    def self.atk_states_of(b); b.respond_to?(:weapon_states) ? b.weapon_states : nil; end
+
     # A battler's basic-attack base hit rate (percent), or 90 (the RPG2000
     # default) when the source (a bare fixture) doesn't model one.
     def self.hit_rate_of(b); b.respond_to?(:attack_hit_rate) ? b.attack_hit_rate : 90; end
@@ -7134,6 +7196,7 @@ module Game
       c.half_sp_cost = flag_of(a, :half_sp_cost?)
       c.evasion_up = flag_of(a, :physical_evasion_up?)
       c.attr_base_ranks = c.attr_ranks.dup
+      c.atk_states = atk_states_of(a)
       c
     end
 
@@ -8839,12 +8902,24 @@ module Game
       cap = damage_cap
       dmg = cap if dmg > cap
       target.hp -= dmg
-      woke = target.dead? ? [] : shake_off_states(target)
+      if target.dead?
+        woke = []
+        inflicted = []
+        cured = []
+      else
+        woke = shake_off_states(target)
+        # A weapon's own state_set/state_chance (二刀流 or otherwise) --
+        # EasyRPG's Normal::vExecute weapon block, skipped like the rest of
+        # this section once the blow already felled the target.
+        inflicted, cured = roll_weapon_states(b, target)
+      end
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
                 charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
                 defeated: target.dead?, target_ally: ally?(target),
                 attack_animation_id: anim, target_index: target_index }
       entry[:woke] = woke unless woke.empty?
+      entry[:inflicted] = inflicted unless inflicted.empty?
+      entry[:cured] = cured unless cured.empty?
       entry
     end
 
@@ -9361,6 +9436,41 @@ module Game
         inflicted << sid
       end
       [inflicted, already]
+    end
+
+    # A basic Attack's own weapon-granted states (`b.atk_states`, see
+    # Game::Actor#weapon_states), rolled the same way #roll_inflict rolls a
+    # skill's: each inflict-side state scaled by the target's own
+    # susceptibility, each heal-side state (RPG2003's `reverse_state_effect`
+    # weapons only) an unscaled roll against the weapon's own chance --
+    # EasyRPG's weapon block never calls `GetStateProbability` for the heal
+    # side, only the inflict side.
+    #
+    # Unlike a skill (#roll_inflict's `already`), a weapon that flags a state
+    # the target already carries does **nothing** and reports nothing --
+    # EasyRPG's own comment: "Unlike skills, weapons do not try to reinflict
+    # states already present." No `already` list here for that reason.
+    #
+    # Returns `[inflicted, healed]`.
+    def roll_weapon_states(b, target)
+      states = b.respond_to?(:atk_states) ? b.atk_states : nil
+      return [[], []] unless states
+      inflicted = []
+      (states[:inflict] || {}).each do |sid, chance|
+        next if target.state?(sid)
+        prob = chance * state_susceptibility(target, sid) / 100
+        next unless @rng.random(100) < prob
+        target.states = Game::States.prune((target.states || []) + [sid], @states)
+        inflicted << sid
+      end
+      healed = []
+      (states[:heal] || {}).each do |sid, chance|
+        next unless target.state?(sid)
+        next unless @rng.random(100) < chance
+        target.states = (target.states || []) - [sid]
+        healed << sid
+      end
+      [inflicted, healed]
     end
   end
 

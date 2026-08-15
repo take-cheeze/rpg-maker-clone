@@ -57,8 +57,6 @@ NOT_OURS = {
   levitate: 'RPG2003 only — EasyRPG\'s Game_Enemy::GetFlyingOffset returns 0 ' \
             'outside 2k3: "2k does not support flying, albeit mentioned in ' \
             'the help file"',
-  state_chance: 'RPG2003 only — an RPG2000 item cures its state_set ' \
-                'unconditionally (see Party#item_cured_states)',
   message_affected: 'no known trigger — EasyRPG defines ' \
                     'GetStateAffectedMessage and never calls it from either ' \
                     'battle scene, so nothing pins when RPG_RT prints it',
@@ -80,10 +78,19 @@ NOT_OURS = {
 # single most common reason a high-ranked row turns out not to be work.
 #
 # It is a filter, not a proof, in either direction. An RPG2000 editor still
-# writes fields RPG_RT ignores — `levitate` and `state_chance` in NOT_OURS above
-# are both set by Nepheshel and both 2k3-only — so an unmarked field can still be
+# writes fields RPG_RT ignores — `levitate` in NOT_OURS above is set by
+# Nepheshel despite being 2k3-only — so an unmarked field can still be
 # 2k3-only, and a marked one can still be a real RPG2000 feature the 2000 test
 # bed simply never used.
+#
+# `state_chance` used to sit in NOT_OURS on the same "2k3-only" reasoning,
+# checked only against Item::vExecute's *medicine* branch (which really does
+# ignore it, unconditionally, on both editions). It was never checked against
+# Normal::vExecute's *weapon* branch, which reads a weapon's own state_chance
+# unconditionally on both editions — and Nepheshel (RPG2000) sets it on
+# several real weapons (e.g. item #30, アサシンダガー). Now that
+# Game::Actor#weapon_states reads it, this substring search finds the field on
+# its own and the entry is gone rather than stale.
 def maker_of(db)
   v = db[22] && db[22].maker_version
   v == 2003 ? :rpg2k3 : :rpg2k
@@ -195,7 +202,7 @@ if mixed
               'RPG2000 one does — check whether RPG_RT reads it on RPG2000 at', n)
   puts '   all before building it. A filter, not a proof, in either direction:'
   puts '   an RPG2000 editor still writes fields RPG_RT ignores, so a field both'
-  puts '   makers set can be 2k3-only too (levitate and state_chance below are).'
+  puts '   makers set can be 2k3-only too (levitate below is).'
 end
 
 unless known.empty?
