@@ -5338,6 +5338,57 @@ not yet verified:
   attack and confirming at least one resulting damage value is *not* a
   multiple of 3, which the pre-fix order could never produce), each
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A self-destruct now applies the same `AdjustDamageForDefend`
+  double-halving a basic attack does, and both a self-destruct and an
+  offensive skill can now shake a survivor's status loose the same way a
+  basic attack already could — three related gaps in `EasyRPG`'s shared
+  `AlgorithmBase`/damage-effect machinery this codebase had only ever wired
+  up for `#deal_attack`.**
+  1. **強力防御 (strong defence) never halved a self-destruct blow a second
+     time.** `Game::Battle#enemy_autodestruct` only ever applied Defend's
+     ordinary halving (`dmg = [dmg/2,1].max if t.defending`), never the
+     second halving `#deal_attack` already applies for a `strong_defence`
+     target. EasyRPG's `SelfDestruct::vExecute` calls the exact same
+     `Algo::AdjustDamageForDefend` a basic attack's `Normal::vExecute` does
+     — not a self-destruct-specific rule — which explicitly halves twice for
+     `target.HasStrongDefense()`. A self-destruct against a defending,
+     strong-defence party member (7 of Nepheshel's 50 actors, including its
+     hero) dealt roughly double the correct damage.
+  2. **Neither a self-destruct nor an offensive skill ever shook a
+     survivor's status loose**, only a basic attack did. This codebase's own
+     `#shake_off_states` comment claimed EasyRPG calls `BattlePhysicalStateHeal`
+     "from `Normal::vExecute` and from nowhere else" — checked directly
+     against EasyRPG's actual `game_battlealgorithm.cpp` rather than that
+     assumption: it is called from **three** places, not one —
+     `Normal::vExecute` (a basic attack, rate 100, already ported),
+     `SelfDestruct::vExecute` (also rate 100, unported), and `Skill::vExecute`
+     (`skill.physical_rate * 10`, an attack skill's own 0-10 field scaled to
+     a percent — 0 for a purely magical skill, unported). A blinded or
+     poisoned target that survived a monster's self-destruct, or a
+     party/enemy attack skill built around a weapon-like physical hit,
+     stayed afflicted no matter how hard the blow landed, where a plain
+     basic attack for the same damage would have had a real shot at curing
+     it.
+  Fixed by generalising `#shake_off_states(target)` into
+  `#shake_off_states(target, rate)` (`release_by_attack * rate / 100`,
+  matching `BattlePhysicalStateHeal`'s own scaling exactly), updating
+  `#deal_attack`'s existing call to pass `100` explicitly, adding an
+  identical `100`-rate call to `#enemy_autodestruct` (gated on the target
+  surviving, same as a basic attack), and a new `physical_rate` field on
+  `Game::Party#battle_skill_command`'s attack-branch `cmd` hash
+  (`(sk.physical_rate || 0) * 10`) that `Game::Battle#apply_skill_hit`'s own
+  new call reads — nested behind the *same* accuracy roll the HP change
+  itself uses, matching EasyRPG's `Skill::vExecute` structure, where
+  `BattlePhysicalStateHeal` for a skill sits inside the identical
+  `affect_hp && Rand::PercentChance(to_hit)` block the damage application is
+  in, not a separate roll. Covered by five new
+  `scripts/rpg2k_logic_check.rb` checks (a self-destruct halving twice for a
+  defending, strong-defence target; a self-destruct shaking loose a
+  survivor's 100%-`release_by_attack` status; a fully-physical attack skill
+  doing the same; a purely-magical skill's `physical_rate` of 0 never
+  rolling it at all; and a missed attack skill never rolling the shake-off
+  either, matching the shared accuracy gate), each confirmed to fail against
+  the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
