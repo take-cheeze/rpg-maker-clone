@@ -7006,6 +7006,44 @@ not yet verified:
   existing check exercising type 10's actual matching logic was updated to
   construct an explicit RPG2003 state so the new edition gate does not mask
   what it tests.
+- ✅ **RPG2003 Shake Screen's Begin/End continuous-strobe mode (param4 = 1 / 2)
+  is now implemented — a Begin command used to silently no-op instead of
+  starting an indefinite shake.** `do_shake_screen`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) never read the command's 5th
+  parameter at all, so a Begin call (`[strength, speed, tenths=0, wait=0,
+  mode=1]`, where `tenths` is meaningless in Begin mode) fell through to the
+  plain timed-shake path with `frames = 0 * FRAMES_PER_TENTH = 0`, and
+  `Game::Screen#shake` (`mruby-rpg2k/mrblib/game.rb`) treats `frames <= 0` as
+  "stop immediately" — the screen never shook at all. Confirmed against
+  EasyRPG's actual C++ source (`src/game_interpreter.cpp`
+  `CommandShakeScreen`, code 11050): a `shake_cmd` byte read from
+  `com.parameters[4]` only `if (com.parameters.size() > 4 &&
+  Player::IsRPG2k3Commands())`, dispatching to `ShakeOnce` (mode 0, the
+  existing behaviour), `ShakeBegin(strength, speed)` (mode 1 — note real
+  RPG_RT's Begin ignores `tenths` too, taking only strength/speed), or
+  `ShakeEnd()` (mode 2). `src/game_screen.cpp`'s `ShakeBegin` sets
+  `shake_time_left` to `Shake::kShakeContinuousTimeStart` (65535, `src/
+  shake.h`) and `shake_continuous = true`; `src/shake.h`'s `Shake::Update`
+  re-arms `time_left` back to that same sentinel every time it counts down
+  to 0 while `continuous` holds, instead of settling — an indefinite strobe
+  until `ShakeEnd()` (or a fresh one-shot shake, which `ShakeOnce` always
+  clears `continuous` for) stops it. Exactly the same gap already fixed for
+  Flash Screen's own Begin/End mode. Fixed by mirroring that precedent:
+  `do_shake_screen` now dispatches on `cmd.param(4)` gated by
+  `@state.party.rpg2003? && cmd.parameters.size > 4`; `Game::Screen` gained
+  `#shake_begin`/`#shake_end` and a `SHAKE_CONTINUOUS_FRAMES = 65535`
+  sentinel, `#shake` now clears `@shake_continuous` on its own one-shot path
+  (matching `ShakeOnce`, so a plain shake after an earlier Begin settles for
+  good instead of inheriting the re-arm), and `#update_shake` re-arms to the
+  sentinel instead of settling to 0 when `@shake_continuous` is set. Covered
+  by four new `scripts/rpg2k_logic_check.rb` checks — Begin starts a shake
+  that never pauses the interpreter and re-arms instead of settling at the
+  end of a forced-short period, End stops a Begin strobe immediately, a
+  non-RPG2003 or short-parameter command always falls back to plain mode 0,
+  and a one-shot shake started after a Begin strobe settles for good instead
+  of re-arming — three of the four confirmed to fail against the pre-fix
+  code before the fix (the fallback check already passed, since the
+  pre-fix code always behaved as mode 0 regardless).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

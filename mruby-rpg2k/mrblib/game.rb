@@ -6578,6 +6578,13 @@ module Game
   class Screen
     NEUTRAL = 100 # a channel value that leaves the screen unchanged
 
+    # `Shake::kShakeContinuousTimeStart` (src/shake.h): the frame count a
+    # RPG2003 Shake Screen Begin strobe re-arms to every time it counts down
+    # to 0, rather than settling -- EasyRPG's own comment on the constant
+    # notes it deliberately avoids a real RPG_RT bug where a naive "forever"
+    # sentinel let a continuous shake actually stop after 18m12s.
+    SHAKE_CONTINUOUS_FRAMES = 65535
+
     def initialize
       @r = @g = @b = @sat = NEUTRAL
       @tr = @tg = @tb = @tsat = NEUTRAL
@@ -6586,6 +6593,7 @@ module Game
       @shake_speed = 1
       @shake_frames = 0 # frames left in the current shake (0 = still)
       @shake_offset = 0
+      @shake_continuous = false # RPG2003 Begin/End strobe: re-arms at 0 instead of settling
       @flash_r = @flash_g = @flash_b = 0
       @flash_power = 0 # peak strength of the current flash
       @flash_strength = 0 # current strength, fading to 0 over the duration
@@ -6718,8 +6726,32 @@ module Game
         @shake_frames = 0
         @shake_offset = 0
       else
+        @shake_continuous = false
         @shake_frames = frames
       end
+    end
+
+    # RPG2003 Shake Screen mode 1: begin an indefinite strobe at the given
+    # strength/speed that re-arms every time it counts down instead of
+    # settling -- matches `Game_Screen::ShakeBegin`, which (unlike #shake)
+    # takes no duration at all: only #shake_end (or a fresh one-shot #shake)
+    # stops it. Shake position is deliberately left alone, same as #shake,
+    # so an interrupting shake flows smoothly instead of snapping to centre.
+    def shake_begin(power, speed)
+      @shake_power = Game.clamp(power, 0, 9)
+      @shake_speed = Game.clamp(speed, 1, 9)
+      @shake_continuous = true
+      @shake_frames = SHAKE_CONTINUOUS_FRAMES
+    end
+
+    # RPG2003 Shake Screen mode 2: stop a #shake_begin strobe immediately,
+    # settled back to centre -- matches `Game_Screen::ShakeEnd`. Real RPG_RT
+    # does not clear the continuous flag here (only a fresh one-shot/Begin
+    # call does), though with @shake_frames at 0 it has no effect until
+    # something else sets a shake running again.
+    def shake_end
+      @shake_offset = 0
+      @shake_frames = 0
     end
 
     # Begin a flash of colour (r, g, b) at peak strength `power`, fading linearly
@@ -6880,6 +6912,12 @@ module Game
         return
       end
       @shake_frames -= 1
+      if @shake_frames <= 0 && @shake_continuous
+        # A Begin strobe never settles: re-arm for another full duration
+        # instead of stopping, matching `Shake::Update`'s own continuous
+        # re-arm.
+        @shake_frames = SHAKE_CONTINUOUS_FRAMES
+      end
       if @shake_frames <= 0
         @shake_offset = 0 # settle back to centre when the shake ends
         return
