@@ -5506,6 +5506,57 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
   ok st.switches[2], 'the No Transaction branch ran'
 end
 
+# EasyRPG's `Game_Interpreter_Map::CommandOpenShop`
+# (src/game_interpreter_map.cpp) is the exact same method for the foreground
+# and every Parallel Process's own interpreter -- gated only on
+# `Game_Message::IsMessageActive()`, no "foreground only" restriction. Before
+# this fix, `Scene::Map#drive_parallel_wait` had no `:shop` branch at all, so
+# a Parallel Process's own Open Shop silently never opened the screen -- the
+# command fell into the generic "background: resume" default and read as a
+# complete no-op, the same defect Enter Hero Name (10740) had before its own
+# fix.
+check 'Open Shop issued from a Parallel Process opens the shop screen too' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4) # Parallel Process
+  par.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0), # buy-only, goods 3/5
+    ECmd.new(ic::SHOP_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::SHOP_NO_TRANSACTION, [], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  shop = nil
+  6.times { scene.update; shop = scene.instance_variable_get(:@shop); break if shop }
+  ok shop, 'the shop screen opened for a Parallel-Process-issued command'
+  ok !st.switches[1] && !st.switches[2], 'still shopping'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # select the first good (id 3 @ 100)
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  eq 500, st.party.gold, 'nothing is spent just by opening the counter'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the default quantity of 1
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  eq 400, st.party.gold, 'one Potion bought'
+  eq 1, st.party.item_count(3)
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the "purchased" confirmation
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
+  scene.update
+  scene.update
+  eq nil, scene.instance_variable_get(:@shop), 'the shop screen closed'
+  ok st.switches[1], 'the parallel process resumed into its Transaction branch, not stuck forever'
+  ok !st.switches[2], 'the No Transaction branch was skipped'
+end
+
 # Battle command / result command lists for the encounter tests below.
 def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil, troop_id: 1,
                           first_strike: false)

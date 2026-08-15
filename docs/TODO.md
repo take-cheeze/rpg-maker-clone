@@ -6418,6 +6418,36 @@ not yet verified:
   a Parallel-Process caller specifically (it *skips* the message-active
   check rather than honouring it) — both left open for a future, separately
   well-scoped fix rather than folded into this one.
+- ✅ **Open Shop (10720) issued from a Parallel Process now actually opens the
+  shop screen, instead of silently doing nothing.** The exact sibling defect
+  to the Enter Hero Name fix just above, now closed the same way. Confirmed
+  against EasyRPG's actual C++ source: `Game_Interpreter_Map::CommandOpenShop`
+  (`src/game_interpreter_map.cpp`) is the very same method for the foreground
+  and every Parallel Process's own interpreter, gated only on
+  `Game_Message::IsMessageActive()` — no `main_flag`/foreground-only
+  restriction (unlike Show Inn's own documented nuance, see above). This
+  build's `Interpreter#do_shop` (`mruby-rpg2k/mrblib/interpreter.rb`) already
+  correctly recorded the request and suspended on a `:shop` wait regardless of
+  which interpreter ran it, but `Scene::Map#drive_parallel_wait`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) had no `:shop` branch at all — it fell
+  into the final generic `else` branch, which unconditionally calls
+  `it.resume`, clearing the wait and letting the parallel process's command
+  list continue as though Open Shop had been a no-op, the request object
+  discarded unread. `#drive_shop` and `#open_shop` were also both hardcoded to
+  read/resume `@interpreter` specifically, so even reaching them from a
+  parallel interpreter would have resumed the wrong one. Fixed by threading
+  the owning interpreter through `#drive_shop(it = @interpreter)` and
+  `#open_shop(req, it = @interpreter)` (mirroring `#drive_name_input`'s own
+  `it` idiom), storing it as `@shop[:interp]` (mirroring `@name_ui[:interp]` /
+  `@message[:interp]`) so `#leave_shop` resumes the correct owner, and adding
+  the missing `:shop` branch to `#drive_parallel_wait`, blocking until any
+  open message window, name-entry widget, or shop screen clears, then driving
+  this one — the same block-and-retry shape already used for
+  `:message`/`:choice`/`:number`/`:name_input`. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check driving a full Parallel-Process-issued
+  Open Shop through open → buy → confirm → leave → resume into its
+  [Transaction] branch, confirmed to fail against the pre-fix code (the shop
+  screen never opened at all) before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
