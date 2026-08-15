@@ -7,12 +7,17 @@ set -eu -o pipefail
 # suite, tens of thousands of files that nothing in this build uses.
 #
 # git already skips it: quickjs-ng pins the entry with `update = none`, so a
-# recursive checkout leaves the directory absent. Nix does not — every job that
-# runs `nix develop` or `nix build` fetches this flake with
-# `self.submodules = true` (flake.nix), and that walks every entry of every
-# nested `.gitmodules`, including this one, which fails on the missing
-# directory. The previous fix cloned test262 (shallow) purely to satisfy that
-# walk; dropping the entry instead keeps the walk happy for free.
+# recursive checkout leaves the directory absent. Nix does not — a call that
+# fetches this flake with submodules walks every entry of every nested
+# `.gitmodules`, including this one, which fails on the missing directory. The
+# previous fix cloned test262 (shallow) purely to satisfy that walk; dropping
+# the entry instead keeps the walk happy for free.
+#
+# Only `nix build '.?submodules=1#build'` (the `flake` CI job) asks for that
+# walk now — flake.nix no longer declares `self.submodules = true`, so
+# `nix develop` skips it, and the dev-shell jobs no longer run this at all.
+# Still worth running by hand before any `?submodules=1` command on a checkout
+# that has the entry registered.
 #
 # Both the `.gitmodules` section and the gitlink go: an index entry with no
 # `.gitmodules` mapping is an orphan that `git submodule status` itself errors
