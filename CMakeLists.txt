@@ -349,7 +349,22 @@ if(EMSCRIPTEN)
     # corruption early instead of as an opaque trap.
     "-sEXCEPTION_STACK_TRACES=1"
     "-sASSERTIONS=2"
-    "-sSAFE_HEAP=1"
+    # SAFE_HEAP=2, not 1: mode 2 keeps the out-of-bounds and null heap-access
+    # checks and downgrades the alignment check to a one-shot warning. Mode 1
+    # aborts on it, and that killed the page at startup -- "Aborted(alignment
+    # fault)" out of JS_CallInternal, before any game code ran. The unaligned
+    # access is quickjs's: a JSFunctionBytecode's constant pool is laid out
+    # directly behind the struct (cpool_offset = sizeof(*b)), and that struct is
+    # 92 bytes on wasm32 -- 4-byte aligned, being all 32-bit fields -- so the
+    # JSValue array behind it starts 4 bytes off its natural 8-byte alignment.
+    # Every OP_fclosure/OP_push_const load from it trips the check, so any
+    # script holding a nested function does, our own host preamble
+    # (mruby-mvjs/src/mvjs.cxx) included. Only mode 1's strictness is lost:
+    # unaligned accesses are legal in wasm, and mode 1 rejects them so that a
+    # build stays valid through wasm2js as well, which this page never uses. A
+    # single "warning: alignment fault" line in a page log is that check, and is
+    # expected rather than a symptom.
+    "-sSAFE_HEAP=2"
     "-sSTACK_OVERFLOW_CHECK=2"
     # The shell page needs FS + ccall for the runtime loader, and its two
     # KEEPALIVE entry points kept in the JS exports past dead-code elimination:
