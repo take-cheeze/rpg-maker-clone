@@ -1245,6 +1245,9 @@ check 'a random-mover roams but stays in bounds and off the player tile' do
 end
 
 check 'two events do not stack on the same tile' do
+  # Two events collide whenever their layers match exactly (see the LAYER_*
+  # comment in map.rb) -- #page's own default (LAYER_BELOW for both) already
+  # satisfies that, so no explicit layer is needed here.
   a = event(2, 2, page(x_move_type: Game::MoveType::CUSTOM,
                        route: move_route([R::MOVE_RIGHT])))
   b = event(4, 2, page(x_move_type: Game::MoveType::CUSTOM,
@@ -1296,8 +1299,11 @@ end
 
 check 'events on different layers pass through each other via Move Route' do
   # A below-layer event sits at (3,2); an above-layer event runs a custom
-  # route straight through its column. Only a matching layer collides (see
-  # #char_passable?), so the mover reaches the far side instead of stopping.
+  # route straight through its column. #char_passable? gates layer on an
+  # *exact* match between the mover's own layer and the blocker's
+  # (matching EasyRPG Player's `WouldCollide`, `src/game_map.cpp`:
+  # `self.GetLayer() == other.GetLayer()`), so a below-layer blocker never
+  # stops an above-layer mover -- the layers simply don't match.
   below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
   mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
                            route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
@@ -1309,16 +1315,93 @@ check 'events on different layers pass through each other via Move Route' do
      "an above-layer mover should cross a below-layer event, got #{[ch.x, ch.y]}"
 end
 
-check 'a below-characters event with overlap_forbidden still blocks the hero' do
-  # The "doesn't overlap" page flag (LCF field 35) is a second, independent
-  # collision axis: it forces the block even though the layer alone would not.
+check 'a below-layer mover passes through a same-layer event via Move Route' do
+  # The flip side of the check above: #char_passable?'s layer gate is an
+  # exact match on both sides (`self.GetLayer() == other.GetLayer()`, see
+  # its comment) -- not "the blocker is LAYER_SAME" alone -- so a
+  # below-layer mover crosses a same-layer blocker's tile freely, the
+  # layers not matching, the same way it crosses an above-layer one.
+  blocker = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_SAME))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => blocker, 2 => mover }, player: [0, 0])
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [3, 2], [ch.x, ch.y],
+     "a below-layer mover should cross a same-layer event, got #{[ch.x, ch.y]}"
+end
+
+check 'two below-layer events collide with each other via Move Route' do
+  # Both sides share LAYER_BELOW, an exact match, so #char_passable?'s
+  # layer gate fires the same way it would for two same-layer events --
+  # "only LAYER_SAME is ever solid" describes the hero specifically (whose
+  # own layer is always effectively LAYER_SAME), not the general
+  # event-vs-event rule, which is an exact match on whatever layer either
+  # side happens to carry (see the comment on #char_passable?).
+  below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => below, 2 => mover }, player: [0, 0])
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [2, 2], [ch.x, ch.y],
+     "two below-layer events should still collide with each other, got #{[ch.x, ch.y]}"
+end
+
+check 'overlap_forbidden does not block the hero on an ordinary step' do
+  # The "doesn't overlap" page flag (LCF field 35) only ever fires between
+  # two map events in real RPG_RT (`WouldCollide`, `src/game_map.cpp`:
+  # `self.GetType() == Event && other.GetType() == Event && (self.
+  # IsOverlapForbidden() || other.IsOverlapForbidden())`) -- the party's own
+  # GetType() is Player, never Event, so the flag can never be what blocks
+  # the hero, regardless of the mismatched layer. See the check below for
+  # confirmation it still blocks a same-layer *event*.
   pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW, overlap_forbidden: true)
   scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   RGSS::Input.dir_value = 6 # hold right, toward the event at (1,0)
   12.times { scene.update }
   RGSS::Input.dir_value = 0
-  eq [0, 0], [st.x, st.y], 'overlap_forbidden blocks the hero despite the mismatched layer'
+  ok st.x >= 1, "overlap_forbidden should not stop the hero, stuck at x=#{st.x}"
+end
+
+check 'overlap_forbidden does not stop a below-layer event from walking onto the hero' do
+  # The mirror image of the check above, on #char_passable?'s own
+  # "stepping onto the hero's tile" branch: a below-layer mover with
+  # overlap_forbidden set still walks straight onto/through the party, the
+  # same as if the flag were not set at all -- overlap_forbidden and the
+  # hero's Player type are mutually exclusive in real RPG_RT, whichever
+  # side of the collision the party is on.
+  mover = event(0, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_BELOW, overlap_forbidden: true))
+  scene = new_scene({ 1 => mover }, player: [2, 2])
+  ch = chars(scene)[1]
+  40.times { scene.update }
+  eq [2, 2], [ch.x, ch.y],
+     "a below-layer overlap_forbidden mover should cross the hero's own tile, got #{[ch.x, ch.y]}"
+end
+
+check 'overlap_forbidden does not block the hero while under a forced Set Move Route' do
+  # The check above drives the hero through ordinary input, which always
+  # goes through #passable? and always honours overlap_forbidden. A Set
+  # Move Route targeting the player instead drives `@player_char` through
+  # #char_passable?, which exempts the hero specifically from
+  # overlap_forbidden gating (see #char_passable?'s comment) -- so the same
+  # blocker that stops ordinary walking does not stop a forced route.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: force the player right, twice
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
+                                  [RPG2k::Scene::Map::MOVE_TARGET_PLAYER, 8, 0, 1,
+                                   R::MOVE_RIGHT, R::MOVE_RIGHT])]
+  blocker = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW, overlap_forbidden: true)
+  scene = new_scene({ 1 => event(5, 5, auto), 2 => event(1, 0, blocker) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  30.times { scene.update }
+  eq [2, 0], [st.x, st.y],
+     "the forced route should have crossed the overlap_forbidden blocker, got #{[st.x, st.y]}"
 end
 
 check 'events on different layers no longer pass through when overlap_forbidden is set' do
@@ -1333,6 +1416,47 @@ check 'events on different layers no longer pass through when overlap_forbidden 
   40.times { scene.update }
   eq [2, 2], [ch.x, ch.y],
      "overlap_forbidden should stop the mover short of the blocker, got #{[ch.x, ch.y]}"
+end
+
+check 'a same-layer blocker stacked under a below-layer decal still blocks the hero' do
+  # Two events can legitimately share a tile in RPG2000 when their priority
+  # types differ -- a below-characters decal drawn under a same-as-characters
+  # NPC, say. Collision used to cache only one event per tile (last write
+  # wins), so whichever of the two got indexed last silently decided the
+  # whole tile's blocking answer; here that used to be the decal (layer
+  # BELOW, id 2), which masked the NPC (layer SAME, id 1) underneath it and
+  # let the hero walk straight through. #blockers_at now asks every event on
+  # the tile, so the same-layer one still blocks regardless of build order.
+  blocker = event(1, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME))
+  decal   = event(1, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => blocker, 2 => decal }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right, toward the shared tile at (1, 0)
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y],
+     "the same-layer event should still block despite the stacked decal, got #{[st.x, st.y]}"
+end
+
+check 'a below-layer event moving off a shared tile leaves the same-layer event still blocking' do
+  # The same stacked start as above, but the below-layer half of the pair now
+  # wanders away on a custom route. Its own #reoccupy used to overwrite the
+  # single-event cache with itself, dropping the stationary same-layer event
+  # from the tile it never left; deindex/index now keep both companions'
+  # entries in @event_tiles_by_pos independent, so the stationary one keeps
+  # blocking after the other one moves off.
+  blocker = event(2, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME))
+  mover   = event(2, 0, page(x_move_type: Game::MoveType::CUSTOM,
+                             route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                             layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => blocker, 2 => mover }, player: [1, 0])
+  st = scene.instance_variable_get(:@state)
+  40.times { scene.update } # let the below-layer event finish wandering off
+  RGSS::Input.dir_value = 6 # hold right, toward the blocker at (2, 0)
+  30.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [1, 0], [st.x, st.y],
+     "the hero should still be blocked by the same-layer event, got #{[st.x, st.y]}"
 end
 
 # Each tile's four passability bits mark whether *that tile's own* north/

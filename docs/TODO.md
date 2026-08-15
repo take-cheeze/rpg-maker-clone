@@ -3977,6 +3977,54 @@ following this paragraph as the original record.
   Covered by two new `scripts/rpg2k_scene_check.rb` checks (a below-characters
   blocker with the flag set still stops the hero; two events on different
   layers no longer pass through each other when the blocker sets it).
+- ✅ **A same-as-characters event stacked with a below/above-characters event
+  on the same tile could stop blocking the hero.** Two events legitimately
+  share a tile when their priority types differ (a below-characters floor
+  decal under a same-as-characters NPC), but `Scene::Map`'s occupied-tile
+  cache (`@event_tiles`) kept only one event per tile — the last one indexed
+  — so whichever tile-mate was built or moved last silently decided the
+  whole tile's collision answer, masking the other one entirely. `passable?`,
+  `char_passable?`, `char_can_land?`, `vehicle_passable?` and
+  `airship_landable?` now consult every live event on a tile through a new
+  `blockers_at`/`@event_tiles_by_pos` index instead of the single
+  last-write-wins entry; `@event_tiles` itself is untouched and still
+  answers the "pick one event here" queries (`event_at`, the action/touch
+  triggers, encounter suppression, `event_id_at`'s highest-id tiebreak).
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (a same-layer
+  blocker stacked under a below-layer decal still blocks; the below-layer
+  half wandering off a shared tile leaves the same-layer half still
+  blocking).
+- ✅ **`overlap_forbidden` (LCF page field 35, "doesn't overlap another
+  event") used to block the hero, which real RPG_RT never does.** Checked
+  against EasyRPG Player's actual C++ source (`WouldCollide`,
+  `src/game_map.cpp`) rather than assumed: the flag only ever collides two
+  *map events* — `self.GetType() == Event && other.GetType() == Event &&
+  (self.IsOverlapForbidden() || other.IsOverlapForbidden())` — the party's
+  own type is `Player`, never `Event`, so it can never be what blocks the
+  hero, on either side, regardless of layer. Layer itself gates collision on
+  an *exact* match between both sides' priority type
+  (`self.GetLayer() == other.GetLayer()`), not on either side being
+  `LAYER_SAME` specifically: two below-characters events collide with each
+  other exactly as two same-characters ones do, and only a mismatched pair
+  passes through. The hero's own layer is always effectively `LAYER_SAME`
+  (`Game_Player` never overrides `GetLayer`), so that same exact-match rule
+  already yields "only a same-as-characters event blocks the hero" with no
+  special-casing. `passable?` (the hero's own step), `char_passable?` and
+  `char_can_land?` (an event's own movement, or the party's forced Set Move
+  Route mirror) now match this precisely: `overlap_forbidden` is checked on
+  *either* side (`character.overlap_forbidden || b[:overlap_forbidden]`) but
+  only between two events; layer collision is an exact match on both sides'
+  `layer`; and the hero is never blocked by `overlap_forbidden` at all,
+  walking ordinarily or under a forced route alike. (An earlier pass at this
+  fix briefly narrowed event-vs-event layer collision to "only a
+  same-as-characters blocker is ever solid" — also wrong, since it dropped
+  the below-vs-below/above-vs-above collision real RPG_RT does have; this is
+  the corrected, source-verified rule.) Covered by
+  `scripts/rpg2k_scene_check.rb` checks for every corner: two
+  below-characters events still collide with each other; a below-layer
+  mover crosses a same-layer blocker; `overlap_forbidden` does not stop the
+  hero on an ordinary step or from a below-layer event walking onto the
+  hero's own tile, while it still stops a mismatched-layer event.
 - ✅ **The active party caps at four members.** `Game::Party#add_actor` had no
   size check at all, so a Change Party Member "Add" past the fourth slot grew
   `@actors` unbounded instead of no-op'ing the way RPG_RT does (the editor
