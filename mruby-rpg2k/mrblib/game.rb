@@ -8128,6 +8128,14 @@ module Game
     RESTRICTION_ATTACK_ENEMY = 2
     RESTRICTION_ATTACK_ALLY  = 3
 
+    # A state's own `type` field (situation table element 2): 0 (the schema
+    # default) is battle-only, cleared at battle end; 1 also persists onto
+    # the map. Matches liblcf's `Persistence` enum (`Persistence_ends` = 0,
+    # `Persistence_persists` = 1) verified against its generated state.h --
+    # EasyRPG's Game_Battler::RemoveBattleStates (State::RemoveAllBattle),
+    # called from Game_Battle::Quit(), strips exactly the `ends` states.
+    STATE_PERSISTS_ON_MAP = 1
+
     # True once one side has been wiped out, or the party has fled — the battle
     # is decided.
     def finished?; @escaped || !alive?(@allies) || !alive?(@enemies); end
@@ -8260,10 +8268,19 @@ module Game
     # combatant reduced to 0 comes out knocked out (戦闘不能). Combatants without a
     # source actor -- enemies, or bare test snapshots -- are skipped. States are
     # written before HP so `set_hp` gets the last word on the death state.
+    #
+    # A battle-only state (situation.type 0, the default -- see
+    # STATE_PERSISTS_ON_MAP) never makes it into that write-back: EasyRPG
+    # strips those at battle end (Game_Battler::RemoveBattleStates) before the
+    # map ever sees them, so carrying one through here would let a status the
+    # player could not have cured outside battle sit on the field party
+    # indefinitely. A state whose row can't be found is dropped the same way
+    # rather than guessed at, matching this file's usual dangling-reference
+    # handling.
     def apply_to_party
       @allies.each do |c|
         next unless c.actor
-        c.actor.states = c.states if c.states && c.actor.respond_to?(:states=)
+        c.actor.states = surviving_states(c.states) if c.states && c.actor.respond_to?(:states=)
         c.actor.set_hp(c.hp)
         c.actor.mp = Game.clamp(c.mp, 0, c.actor.max_mp) if c.mp
       end
@@ -8879,6 +8896,12 @@ module Game
 
     # The state definition for `id` from the lookup, or nil (no lookup / unknown).
     def state_def(id); @states ? @states[id] : nil; end
+
+    # `ids` filtered down to the ones that outlive battle -- see
+    # STATE_PERSISTS_ON_MAP and #apply_to_party's own comment.
+    def surviving_states(ids)
+      (ids || []).select { |id| state_field(state_def(id), :type) == STATE_PERSISTS_ON_MAP }
+    end
 
     # Which side a combatant is on. Only a party member carries the live
     # Game::Actor it was snapshotted from, so that is the test. Recorded on a log

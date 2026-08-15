@@ -3131,7 +3131,14 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # equipment from the field for as long as it lasts
                           # (Game::Actor#equipment_fixed?/#state_cursed?).
                           # Appended last, same reason again.
-                          :cursed)
+                          :cursed,
+                          # ... and the situation table's own `type` field
+                          # (element 2): 0 (the schema default) is battle-only,
+                          # cleared at battle end by Battle#apply_to_party; 1
+                          # also persists onto the map. Appended last, same
+                          # reason again -- nil reads as 0/battle-only via
+                          # #state_field, the schema's own default.
+                          :type)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -3145,7 +3152,8 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                affect_spirit: false, affect_agility: false,
                hp_change_type: Game::States::CHANGE_TYPE_LOSE,
                sp_change_type: Game::States::CHANGE_TYPE_LOSE,
-               avoid_attacks: false, reflect_magic: false, cursed: false)
+               avoid_attacks: false, reflect_magic: false, cursed: false,
+               type: 0)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
@@ -3155,7 +3163,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                    affect_type, affect_attack, affect_defense,
                    affect_spirit, affect_agility,
                    hp_change_type, sp_change_type, avoid_attacks, reflect_magic,
-                   cursed)
+                   cursed, type)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -11028,7 +11036,11 @@ check 'a battle item cures the target status; states carry out via apply_to_part
   ally.add_state(3); ally.add_state(9)         # afflicted entering the fight
   c = Game::Battle.from_actor(ally)
   eq true, c.state?(3)                          # the status walked into battle
-  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  # State 9 flagged `type: 1` (persists on the map) so it's still there to
+  # assert on after #apply_to_party -- state 3 doesn't need a row since it's
+  # cured mid-battle, well before write-back ever looks at it.
+  states = { 9 => fake_state(type: 1) }
+  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1), states)
   bat.command_item(c, c, item_id: 5, name: 'Antidote',
                    **st.party.battle_item_command(st.party.db_item(5), c))
   bat.run_round
@@ -11046,12 +11058,46 @@ check 'battle carries an actor status through unchanged when nothing cures it' d
   hc = Game::Battle.from_actor(hero)
   eq true, hc.state?(5)
   hc.hp = 40                                    # took some damage on the way
-  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  states = { 5 => fake_state(type: 1) }         # flagged to persist on the map
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1), states)
   bat.apply_to_party
   eq 40, hero.hp
   eq true, hero.state?(5)                       # the status survived the battle
 end
 
+check 'Battle#apply_to_party drops a battle-only state (type 0, the default)' do
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hc = Game::Battle.from_actor(hero)
+  hc.states = [3] # inflicted mid-fight, never on the actor before this
+  states = { 3 => fake_state(type: 0) } # 0 == battle only, the schema default
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1), states)
+  bat.apply_to_party
+  eq false, hero.state?(3), 'a battle-only state never carries onto the field party'
+end
+
+check 'Battle#apply_to_party keeps a state explicitly flagged type 1 (persists)' do
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hc = Game::Battle.from_actor(hero)
+  hc.states = [3]
+  states = { 3 => fake_state(type: 1) } # 1 == also persists on the map
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1), states)
+  bat.apply_to_party
+  eq true, hero.state?(3), 'a state flagged to persist carries onto the field party'
+end
+
+check 'Battle#apply_to_party drops a state whose row is missing rather than guessing' do
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hc = Game::Battle.from_actor(hero)
+  hc.states = [3, 99] # 99: dangling id, no row in the lookup table at all
+  states = { 3 => fake_state(type: 1) }
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1), states)
+  bat.apply_to_party
+  eq true, hero.state?(3)
+  eq false, hero.state?(99), 'the dangling id is dropped silently, not guessed at'
+end
 
 check 'battle poison slips HP each turn (fixed val + percent of max)' do
   states = { 2 => FakeStateDef.new(0, 5, 10, 0, 0) } # 5 + 10% of max HP / turn
