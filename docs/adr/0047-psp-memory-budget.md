@@ -235,9 +235,14 @@ the interpreter-linking slice, in this order:
   free RAM) and `lv_mem_monitor`'s current-use and `max_used` high-water mark
   for LVGL's pool, once a second, into the same log CI's `psp-smoke` job
   already captures — no interpreter needed to start measuring the HAL's own
-  footprint. What's still missing: a real game database and map exercising
-  this (the bring-up never opens mruby), so the *mruby* share of the pool
-  remains unmeasured on-device until the interpreter-linking slice.
+  footprint. The interpreter-linking and scene-tree slices have since landed
+  too (`RPG2K_PSP_MRUBY_OPEN`, `RPG2K_PSP_GAME_START`) — `app/psp/main.cxx`
+  constructs `RPG2k` and drives it when a project is present at its fixed
+  `kGameDir` (see `app/psp/README.md`). What's still missing: CI's
+  `psp-smoke` job has no project there, so it only ever exercises the idle
+  path — the *mruby* share of the pool remains unmeasured on-device until a
+  real game database and map actually runs there, on real hardware or an
+  emulator with a Memory Stick image.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
