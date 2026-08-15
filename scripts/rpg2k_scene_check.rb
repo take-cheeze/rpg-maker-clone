@@ -5374,7 +5374,11 @@ end
 # the first target). The budget is generous: between command phases each round
 # now animates action by action (BATTLE_ANIM_FRAMES per hit), so a multi-round
 # fight spans a few hundred frames.
-def battle_attack_to_end(scene, max = 600)
+# Budgeted for a several-round fight at BATTLE_ANIM_FRAMES=90 (each
+# no-animation action) plus the encounter banner's BATTLE_ENCOUNTER_MSG_FRAMES
+# hold -- both slower than this file's old defaults, so a fight that used to
+# finish well inside 600 frames can now run past it.
+def battle_attack_to_end(scene, max = 2000)
   max.times do
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :result
@@ -5390,8 +5394,11 @@ end
 # Run `scene` until its battle UI's phase becomes `phase`, budgeted to `max`
 # frames -- used by the options-window checks below, which need to catch the
 # battle right when a phase first appears rather than run it through to a
-# later one the way #battle_attack_to_end does.
-def battle_until_phase(scene, phase, max = 15)
+# later one the way #battle_attack_to_end does. `:battle_options` (every
+# call site's actual target) only opens once the encounter banner's own
+# BATTLE_ENCOUNTER_MSG_FRAMES hold has run out, so the default budget needs
+# enough room for that hold plus the frames battle-open itself takes.
+def battle_until_phase(scene, phase, max = 90)
   ui = nil
   max.times do
     scene.update
@@ -8522,7 +8529,7 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
   # dismissing the once-per-battle automatic options window (C on its default
   # cursor row 0, "Battle") along the way.
   ui = nil
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -8606,10 +8613,12 @@ end
 
 # Open a battle and step to the per-actor command menu, dismissing the
 # once-per-battle automatic Battle/Auto Battle/Escape options window along
-# the way (a C press on its default cursor row 0, "Battle").
+# the way (a C press on its default cursor row 0, "Battle"). Budgeted past
+# the encounter banner's own BATTLE_ENCOUNTER_MSG_FRAMES hold, which runs in
+# full before :battle_options ever opens.
 def battle_to_command(scene)
   ui = nil
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -8708,7 +8717,7 @@ check 'Enemy Encounter scene: the enemy-attack SE plays for an enemy Attack, ' \
   # The Slime survives the Hero's hit (19 damage against 30 HP), so it is
   # still alive to take its own turn next and swing back.
   RGSS::Audio.reset_se
-  40.times do
+  120.times do
     scene.update
     break if ui[:battle].log.length >= 2
   end
@@ -10195,7 +10204,7 @@ end
 check 'entering a battle with an empty party is instant defeat, not a frozen command menu' do
   scene, st = battle_scene_with_pages({})
   st.party.instance_variable_set(:@actors, [])
-  12.times do
+  90.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :result
@@ -10209,7 +10218,7 @@ end
 check 'entering a battle with an all-KO\'d party is instant defeat too' do
   scene, st = battle_scene_with_pages({})
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(hp: 0)])
-  12.times do
+  90.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :result
@@ -10235,7 +10244,7 @@ check 'an asleep ally is skipped straight to the next commandable one, no comman
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, states: [4]),
                                             BattleStubActor.new(id: 2)])
   ui = nil
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10254,7 +10263,7 @@ check 'a lone ally under a do-nothing state (asleep) never gets a command prompt
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, states: [4])])
   saw_animate = false
   ui = nil
-  30.times do
+  200.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     saw_animate ||= ui && ui[:phase] == :animate
@@ -10283,7 +10292,7 @@ check 'a lone Forced-AI ally never gets a command prompt -- the round starts on 
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, force_ai: true)])
   saw_animate = false
   ui = nil
-  30.times do
+  200.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     saw_animate ||= ui && ui[:phase] == :animate
@@ -10300,7 +10309,7 @@ check 'a Forced-AI ally is skipped straight to the next manually-commandable one
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, force_ai: true),
                                             BattleStubActor.new(id: 2)])
   ui = nil
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10320,7 +10329,7 @@ check 'a turn-0 battle-event page runs as the fight opens' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 12, 12, 0])]) }
   scene, st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     scene.update
     break if st.switches[12]
   end
@@ -10369,7 +10378,7 @@ check 'a battle page conditioned on enemy HP fires mid-round, before the round s
                             Game::BattlePage::ENEMY_HP, enemy_hp_max: 50) }
   scene, st = battle_scene_with_pages(pages)
   phase_when_fired = nil
-  60.times do
+  300.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui[:phase])
     scene.update
@@ -10404,7 +10413,7 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
   pages = { 1 => troop_page([ECmd.new(ic::SHOW_HIDDEN_MONSTER, [1])],
                             Game::BattlePage::ENEMY_HP, enemy_id: 0, enemy_hp_max: 0) }
   scene, st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10461,7 +10470,10 @@ end
 # (nil) before the battle has opened as it does after it has cleanly closed,
 # so a naive loop can "pass" by breaking on frame 0, before any battle-event
 # page -- Terminate Battle included -- ever actually ran.
-def open_then_close_battle(scene, open_budget: 10, close_budget: 20)
+# A turn-0 battle page (Terminate Battle included) only runs once the
+# encounter banner's own BATTLE_ENCOUNTER_MSG_FRAMES hold has run out, so
+# close_budget needs enough room for that hold plus the page's own work.
+def open_then_close_battle(scene, open_budget: 10, close_budget: 100)
   open_budget.times do
     scene.update
     break if scene.instance_variable_get(:@battle_ui)
@@ -10507,7 +10519,7 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
   scene.update
   eq 0, bmp.stretch_calls.size, 'and stops compositing pictures entirely while the fight runs'
 
-  20.times do
+  100.times do
     scene.update
     break if scene.instance_variable_get(:@battle_ui).nil?
   end
@@ -10559,7 +10571,7 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq 0, (lower_bmp.blt_calls || []).size,
      'and nothing draws over them either'
 
-  20.times do
+  100.times do
     scene.update
     break if scene.instance_variable_get(:@battle_ui).nil?
   end
@@ -10613,7 +10625,7 @@ check 'a page can wound a monster through Change Monster HP' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 7, 1])]) }
   scene, _st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10631,7 +10643,7 @@ check 'Change Battle Background from a page rebuilds the backdrop sprite' do
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_BATTLE_BG, [], string: 'Cave')]) }
   scene, _st = battle_scene_with_pages(pages)
   before = nil
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     before ||= ui && ui[:back_sprite]
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
@@ -10667,7 +10679,7 @@ check "a battle page's Show Battle Animation actually holds the page, not resumi
   # wait the command sets (rather than counting frames blindly, since the
   # battle itself takes a few frames to open first).
   it = nil
-  60.times do
+  150.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     it = ui && ui[:events]
@@ -10693,7 +10705,7 @@ check "a battle page's Show Battle Animation draws over the targeted troop membe
   scene, st = battle_scene_with_pages(pages)
   spr_shown = false
   ma_seen = nil
-  40.times do
+  150.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     anim_spr = scene.instance_variable_get(:@animation_sprite)
@@ -10723,7 +10735,7 @@ check "a battle page's Show Battle Animation target-scope flash pulses the named
   ui = nil
   target_flashed = false
   bystander_flashed = false
-  40.times do
+  150.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     next unless ui && ui[:enemy_sprites]
@@ -10742,7 +10754,7 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
   pages = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'It appears!'),
                              ECmd.new(ic::CONTROL_SWITCHES, [0, 15, 15, 0])]) }
   scene, st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:event_win]
@@ -10761,7 +10773,7 @@ end
 
 check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -11148,7 +11160,7 @@ end
 def battle_at_command(pages = nil, party: BattleStubParty.new, battleranimations: nil)
   scene, = battle_scene_with_pages(pages, party: party, battleranimations: battleranimations)
   ui = nil
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -11887,7 +11899,7 @@ check 'a Change Party Member remove on a battle page disposes only that ' \
   hero_sprite, ally_sprite, third_sprite = ui[:actor_sprites]
   ok hero_sprite && ally_sprite && third_sprite, 'all three built a sprite up front'
 
-  30.times do
+  150.times do
     RGSS::Input.triggered = [RGSS::Input::C] if ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
@@ -11928,7 +11940,7 @@ check 'a Change Party Member add reaches the gauge-card status panel ' \
   scene.db.system.system2_name = 'BattleStatus'
 
   ui = nil
-  30.times do
+  150.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -15063,7 +15075,7 @@ end
 
 check 'a transformed monster is redrawn with its new battler graphic' do
   scene, _st = battle_scene_with_pages(nil)
-  10.times do
+  90.times do
     ui = scene.instance_variable_get(:@battle_ui)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
