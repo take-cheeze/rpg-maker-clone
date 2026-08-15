@@ -125,6 +125,10 @@ module RGSS
   # only has to exist so the boot shell's registration can be asserted.
   class << self
     attr_accessor :asset_archive
+    # The window caption is native too (mruby-rgss/src/window_title.cxx puts it
+    # on the SDL window). Here it only has to be settable and readable back, so
+    # the boot's "name the window after the game" step can be asserted.
+    attr_accessor :window_title
   end
 
   # The default UI font is native too: mruby-rgss/src/default_font.cxx locates
@@ -1172,6 +1176,7 @@ class Checker
     # the shell must load the database, report the pending built-in flow and
     # return — not run anything, and not hang.
     ENV["RGSS_SCRIPT_HOST"] = "0"
+    RGSS.window_title = nil
     with_game_dir(dir) do
       game = RPGVX.new([])
       expect(game.db.is_a?(RPGVX::RGSSData), "boot: no database without the script host")
@@ -1190,6 +1195,11 @@ class Checker
              "boot: shell title #{game.title.inspect}, expected #{title.inspect}")
       game.start
     end
+    # The window is named after the loaded game, not left as the engine's own
+    # caption (mruby-rpgvx/mrblib/lib.rb, include/terminal.hxx's window title
+    # bridge).
+    expect(RGSS.window_title == title,
+           "boot: window title #{RGSS.window_title.inspect}, expected #{title.inspect}")
     expect($rgss_sample_booted == true, "boot: the bundled Main section did not run")
     expect($rgss_sample_title == title,
            "boot: Kernel#load_data returned #{$rgss_sample_title.inspect} " \

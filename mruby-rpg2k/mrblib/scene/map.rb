@@ -318,7 +318,7 @@ class RPG2k
         @anim_frame += 1 # water / animated tiles cycle even during events
         # An event page's conditions may have just stopped (or started) holding;
         # re-select before anything reads a trigger or a graphic this frame.
-        refresh_event_pages
+        RGSS::Profiler.section("map.refresh_pages") { refresh_event_pages }
         # Parallel processes run every frame on their own schedule, independent
         # of whatever the foreground is doing (yado.tk: a message window or a
         # foreground event parked on a blocking wait is not a pause condition,
@@ -369,8 +369,8 @@ class RPG2k
           end
         end
         record_map_event_positions
-        animate_events
-        render
+        RGSS::Profiler.section("map.animate_events") { animate_events }
+        RGSS::Profiler.section("map.render") { render }
       end
 
       private
@@ -4259,9 +4259,10 @@ class RPG2k
         draw_shop
       end
 
-      # How far LEFT / RIGHT jump the quantity cursor — RPG_RT's shop counter
-      # moves in tens on the horizontal axis so a stack of 99 is a few presses
-      # away rather than ninety-nine.
+      # How far UP / DOWN jump the quantity cursor — RPG_RT's shop counter
+      # moves in tens on the vertical axis (confirmed against EasyRPG's
+      # Window_ShopNumber::Update, src/window_shopnumber.cpp) so a stack of 99
+      # is a few presses away rather than ninety-nine.
       SHOP_QUANTITY_STEP = 10
 
       # Picking an item opens the quantity counter rather than transacting one
@@ -4277,7 +4278,7 @@ class RPG2k
         draw_shop
       end
 
-      # Drive the quantity counter: UP / DOWN by one, RIGHT / LEFT by ten (both
+      # Drive the quantity counter: RIGHT / LEFT by one, UP / DOWN by ten (both
       # clamped to 1..max), C commits the whole stack in one transaction and B
       # goes back to the list having bought nothing.
       def drive_shop_quantity
@@ -4299,13 +4300,13 @@ class RPG2k
       # Apply one frame of quantity input; returns whether the count changed.
       def shop_quantity_move(q)
         before = q[:count]
-        if Input.trigger?(Input::UP)
+        if Input.trigger?(Input::RIGHT)
           q[:count] += 1
-        elsif Input.trigger?(Input::DOWN)
-          q[:count] -= 1
-        elsif Input.trigger?(Input::RIGHT)
-          q[:count] += SHOP_QUANTITY_STEP
         elsif Input.trigger?(Input::LEFT)
+          q[:count] -= 1
+        elsif Input.trigger?(Input::UP)
+          q[:count] += SHOP_QUANTITY_STEP
+        elsif Input.trigger?(Input::DOWN)
           q[:count] -= SHOP_QUANTITY_STEP
         else
           return false
@@ -4764,6 +4765,35 @@ class RPG2k
       rescue StandardError => e
         $stderr.puts "[RPG2k] terrain backdrop lookup failed: #{e.message}"
         ''
+      end
+
+      # Show or hide the whole map view -- both tile layers, the parallax, the
+      # hero, the events and the vehicles, all of which live inside
+      # @map_viewport (z 100) or @upper_viewport (z 200).
+      #
+      # RPG2000's battle screen is a scene of its own in RPG_RT: `Scene_Battle`
+      # replaces `Scene_Map` outright, so no part of the map is on screen while
+      # a fight runs, and the chosen Backdrop/<name> image is all there is
+      # behind the troop. This port instead runs the fight inline on Scene::Map
+      # (gated on @battle_ui), and #render kept compositing the map every frame
+      # underneath it -- which put the map *over* the battle background, since
+      # the backdrop sprite's z 5 (EasyRPG Player's own `Priority_Background`,
+      # `src/drawable.h`, correct there precisely because no map is ever drawn
+      # beside it) is outranked by both map viewports, and the lower tile layer
+      # is opaque. The backdrop was resolved correctly (`Game::Backdrop`, the
+      # map-tree walk) and then drawn entirely behind the map graphics: every
+      # fight was fought over whatever chip layer the party happened to be
+      # standing on.
+      #
+      # Hidden for the fight's whole duration, and #render skips the tile /
+      # parallax / character compositing outright rather than leaving a stale
+      # frame hidden underneath -- the same treatment the picture layer already
+      # gets there. Both un-hide and redraw on the first frame after @battle_ui
+      # clears; the hero frame's own @last_frame cache is untouched by the
+      # skipped frames, so an unchanged pose is not needlessly rebuilt then.
+      def set_map_layers_visible(visible)
+        @map_viewport.visible = visible if @map_viewport
+        @upper_viewport.visible = visible if @upper_viewport
       end
 
       def build_battle_back(name = nil)
@@ -5722,12 +5752,15 @@ class RPG2k
         end
         entry = @battle_ui[:battle].step_action
         if entry
-          # An Item action consumes one from the real bag when it lands (so
-          # backing out during the command phase never spends it). A switch
-          # item flips its switch at the same moment -- the state table is
-          # the scene's, same as the field menu's own Scene::ItemMenu, and
+          # An Item action spends one *use* from the real bag when it lands (so
+          # backing out during the command phase never spends it), which only
+          # costs a copy once the item's 使用回数 runs out -- the same
+          # Game::Party#consume_item_use the field menu goes through, so a
+          # multi-use bomb or a 特殊効果 weapon behaves identically in a fight.
+          # A switch item flips its switch at the same moment -- the state table
+          # is the scene's, same as the field menu's own Scene::ItemMenu, and
           # this is the only place a queued switch-item action ever reaches it.
-          @state.party.lose_item(entry[:item_id], 1) if entry[:item_id]
+          @state.party.consume_item_use(entry[:item_id]) if entry[:item_id]
           @state.switches[entry[:switch_id]] = true if entry[:switch_id]
           log_round([entry])
           refresh_battle_status
@@ -7662,11 +7695,28 @@ class RPG2k
       # Animation command can replay the same animation many times over a
       # visit, and previously this reloaded and redecoded the sheet from disk
       # on every single play.
+      #
+      # Loaded **colour-keyed** (`Bitmap.new`'s second argument, which maps
+      # palette index 0 to transparent -- `mruby-rgss/src/lib.cxx`'s
+      # `load_xyz_mem`/`load_png_tolerant_mem` `trans` flag), like every other
+      # RPG2000 sprite sheet this runtime loads. `Battle/` was the one sheet
+      # directory that asked for an opaque decode, and it is the one directory
+      # where that is never right: an animation sheet is a 5-column grid of
+      # 96x96 cells whose *entire* background is the transparent colour, so
+      # every cell #blit_animation_cell laid down painted an opaque 96x96
+      # rectangle of that background over the target -- a solid block sitting
+      # on the enemy for the animation's whole duration, not a spell. Confirmed
+      # against EasyRPG's own material table (`src/cache.cpp`, fetched
+      # verbatim), whose `Spec::transparent` column is true for `Battle` (and
+      # for CharSet / ChipSet / FaceSet / Monster / Picture / System, matching
+      # every other loader here) and false only for the four full-screen
+      # backdrops -- `Backdrop`, `Panorama`, `Title`, `GameOver` -- which this
+      # runtime already loads opaque.
       def animation_sheet(name)
         return nil if name.nil? || name.empty?
         cached_bitmap(@animation_cache, name) do
           begin
-            Bitmap.new "Battle/#{name}"
+            Bitmap.new "Battle/#{name}", true
           rescue StandardError => e
             $stderr.puts "[RPG2k] battle animation '#{name}' load failed: #{e.message}"
             nil
@@ -7813,8 +7863,9 @@ class RPG2k
       # Composite the animation's current frame over its target. Runs in the
       # render pass (the camera is known here): each visible cell of the frame is
       # blitted from the sheet's 96x96 grid to the target's screen position plus
-      # the cell's offset. Zoom / tone / per-cell transparency are approximated as
-      # a plain blit for now.
+      # the cell's offset, at that cell's own transparency
+      # (#animation_cell_opacity). Zoom / tone are still approximated as a plain
+      # blit.
       def draw_map_animation(cam_x, cam_y)
         return unless @animation_sprite
         ma = @map_animation
@@ -7867,13 +7918,47 @@ class RPG2k
         end
       end
 
+      # The blit opacity a cell's own `transparency` field asks for (LCF
+      # `battle_anime` chunk 19's per-cell field 10, decoded in
+      # mruby-lcf/mrblib/schema.rb; liblcf's `rpg::AnimationCellData::
+      # transparency`, an `int32_t` defaulting to 0). It is a *percentage of
+      # transparency*, 0 fully opaque .. 100 fully invisible, and it converts to
+      # RGSS's 0..255 opacity exactly the way EasyRPG's own
+      # `BattleAnimation::DrawAt` does (src/battle_animation.cpp, fetched
+      # verbatim): `SetOpacity(255 * (100 - cell.transparency) / 100)` — integer
+      # division, so 0 -> 255 and 100 -> 0, with the same truncation in between.
+      #
+      # Every drawable cell went down fully opaque before this: an animation
+      # whose author faded a cell in or out (or layered a translucent glow over
+      # a solid one) drew every one of its frames at full strength, which is a
+      # visibly different animation, not a subtler one. The field is decoded off
+      # the real database and was simply never read.
+      #
+      # A cell with no `transparency` at all — a bare test double, or an
+      # Array2D entry the schema left defaulted — reads as 0 (opaque), the same
+      # "absent means the schema default" shape #draw_map_animation's own
+      # `visible` guard uses. Clamped both ways so a database carrying an
+      # out-of-range value cannot ask for a negative or over-255 opacity.
+      def animation_cell_opacity(cell)
+        t = cell.respond_to?(:transparency) ? cell.transparency : nil
+        t = 0 if t.nil?
+        t = 0 if t < 0
+        t = 100 if t > 100
+        255 * (100 - t) / 100
+      end
+
       def blit_animation_cell(sheet, cell, cx, cy)
+        opacity = animation_cell_opacity(cell)
+        # A fully transparent cell contributes nothing; skipping it spares the
+        # blit's own 96x96 per-pixel loop (Bitmap#blt would drop every pixel on
+        # its `alpha <= 0` test anyway, one at a time).
+        return if opacity <= 0
         cid = cell.cell_id || 0
         sx = (cid % ANIM_SHEET_COLS) * ANIM_CELL
         sy = (cid / ANIM_SHEET_COLS) * ANIM_CELL
         dx = cx + (cell.x || 0) - ANIM_CELL / 2
         dy = cy + (cell.y || 0) - ANIM_CELL / 2
-        @animation_bmp.blt dx, dy, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL)
+        @animation_bmp.blt dx, dy, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL), opacity
       rescue StandardError
         nil
       end
@@ -9139,18 +9224,32 @@ class RPG2k
         px, py = player_pixel
         cam_x, cam_y = camera_position
 
-        draw_parallax cam_x, cam_y
-        draw_layers cam_x, cam_y
+        # The map itself never shows on the battle screen -- see
+        # #set_map_layers_visible, which explains why the backdrop needs it gone
+        # rather than merely sitting above it.
+        if @battle_ui
+          set_map_layers_visible false
+        else
+          set_map_layers_visible true
+          RGSS::Profiler.section("map.parallax") { draw_parallax cam_x, cam_y }
+          RGSS::Profiler.section("map.layers") { draw_layers cam_x, cam_y }
 
-        @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
-        @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
-                           player_jump_offset
-        # Reflect the Set Transparent Flag command (and any leader graphic flag)
-        # every frame so the hero hides/shows as events toggle it.
-        @player_sprite.visible = !player_hidden?
-        draw_player_frame
-        draw_vehicles cam_x, cam_y, px, py
-        draw_map_animation cam_x, cam_y
+          @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+          @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
+                             player_jump_offset
+          # Reflect the Set Transparent Flag command (and any leader graphic flag)
+          # every frame so the hero hides/shows as events toggle it.
+          @player_sprite.visible = !player_hidden?
+          RGSS::Profiler.section("map.chars") do
+            draw_player_frame
+            draw_vehicles cam_x, cam_y, px, py
+          end
+        end
+        # Not gated: @animation_sprite is a top-level sprite (z 150, above the
+        # battlers) and #draw_map_animation drives the in-battle Show Battle
+        # Animation through the very same path as the map one -- see its own
+        # `ma[:battle]` branch.
+        RGSS::Profiler.section("map.animation") { draw_map_animation cam_x, cam_y }
 
         # Pictures never show on the battle screen (yado.tk / 01_shoshin's
         # 011_siyou: "none show on Menu/Battle screens") -- unlike the Menu
@@ -9167,9 +9266,9 @@ class RPG2k
           @picture_sprite.visible = false
         else
           @picture_sprite.visible = true
-          draw_pictures cam_x, cam_y
+          RGSS::Profiler.section("map.pictures") { draw_pictures cam_x, cam_y }
         end
-        update_screen_overlay
+        RGSS::Profiler.section("map.overlay") { update_screen_overlay }
         draw_timer
       end
 

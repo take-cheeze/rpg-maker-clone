@@ -148,6 +148,22 @@ assert "LCF::Database battle-commands table (chunk 29 -- name + type)" do
   assert_equal 2, db.battlecommands.commands[2].type
 end
 
+assert "LCF::Database battle-commands table decodes battle_type (chunk 29 field 7)" do
+  # BattleType picks RPG2003's alternate sprite/gauge battle-screen
+  # presentation over RPG2000's status-window-only one -- 0 traditional, 1
+  # alternative, 2 gauge (lcf::rpg::BattleCommands::BattleType). A database
+  # that never sets field 7 at all (every RPG2000 file) defaults to 0.
+  gauge = lcf_array1d([lcf_int_field(7, 2)])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(29, gauge)])))
+  assert_equal 2, db.battlecommands.battle_type
+
+  bare = lcf_array1d([lcf_field(10, lcf_array2d([]))])
+  db2 = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(29, bare)])))
+  assert_equal 0, db2.battlecommands.battle_type
+end
+
 assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
   row = LCF::Array1D.new(lcf_array1d([lcf_int_field(1, 5), lcf_int_field(3, 0)]),
                          { elements: { 1 => { name: :a, type: :int },
@@ -229,22 +245,42 @@ assert "LCF::Database skill switch/occasion chunks (13, 16, 18, 19)" do
   assert_false db.skill[1].occasion_battle
 end
 
-assert "LCF::Database battle_anime2 attack motion and pose object lists (chunks 2, 10, 11)" do
-  base = lcf_array1d([lcf_str_field(1, "Swing"), lcf_str_field(2, "Sword"),
-                      lcf_int_field(3, 1), lcf_int_field(4, 6)])
+assert "LCF::Database battleranimations speed and weapon_data pose lists (chunk 32, fields 2, 11)" do
   weapon = lcf_array1d([lcf_str_field(1, "Blade"), lcf_str_field(2, "WpnGfx"),
                         lcf_int_field(3, 2)])
   anim = lcf_array1d([lcf_str_field(1, "Fighter"), lcf_int_field(2, 3),
-                      lcf_field(10, lcf_array2d([[1, base]])),
                       lcf_field(11, lcf_array2d([[1, weapon]]))])
   db = LCF::Database.new(lcf_file("LcfDataBase",
-    lcf_array1d([lcf_field(32, lcf_array2d([[1, anim]]))]))) # battle_anime2 = chunk 32
-  assert_equal "Fighter", db.battle_anime2[1].name
-  assert_equal 3, db.battle_anime2[1].attack_motion
-  b = db.battle_anime2[1].base_data[1]
-  assert_equal "Sword", b.battler_name
-  assert_equal 6, b.animation_id
-  assert_equal "WpnGfx", db.battle_anime2[1].weapon_data[1].battler_name
+    lcf_array1d([lcf_field(32, lcf_array2d([[1, anim]]))]))) # battleranimations = chunk 32
+  assert_equal "Fighter", db.battleranimations[1].name
+  assert_equal 3, db.battleranimations[1].speed
+  assert_equal "WpnGfx", db.battleranimations[1].weapon_data[1].battler_name
+end
+
+assert "LCF::Database battleranimations poses (chunk 32 field 10) round-trip, id-keyed by Pose" do
+  # `poses` is keyed by lcf::rpg::BattlerAnimation::Pose, not densely packed
+  # -- an entry may define anywhere from 0 to 12 of the 12 poses. Build one
+  # with only Idle (0) and Victory (10) present and confirm both resolve at
+  # their own Pose id while the gap (e.g. AttackRight, 1) stays absent.
+  idle = lcf_array1d([lcf_str_field(1, "Idle Pose"), lcf_str_field(2, "Hero"),
+                      lcf_int_field(3, 1), lcf_int_field(4, 1),
+                      lcf_int_field(5, 4)])
+  victory = lcf_array1d([lcf_str_field(2, "HeroWin"), lcf_int_field(4, 0),
+                         lcf_int_field(5, 7)])
+  anim = lcf_array1d([lcf_str_field(1, "Fighter"),
+                      lcf_field(10, lcf_array2d([[0, idle], [10, victory]]))])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(32, lcf_array2d([[1, anim]]))])))
+  poses = db.battleranimations[1].poses
+  assert_equal "Idle Pose", poses[0].name
+  assert_equal "Hero", poses[0].battler_name
+  assert_equal 1, poses[0].battler_index
+  assert_equal 1, poses[0].animation_type
+  assert_equal 4, poses[0].battle_animation_id
+  assert_equal "HeroWin", poses[10].battler_name
+  assert_equal 0, poses[10].animation_type
+  assert_equal 7, poses[10].battle_animation_id
+  assert_nil poses[1]
 end
 
 assert "LCF decodes boolean chunks (1 byte 0/1)" do

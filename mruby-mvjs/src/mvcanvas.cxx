@@ -1023,6 +1023,26 @@ JSValue js_put_data(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// __mv_setWindowTitle(title) -- what `document.title = ...` reaches (see the
+// accessor installed in the preamble below). In a browser that names the tab;
+// here it names the SDL window, through the same bridge every other maker's
+// boot uses (include/terminal.hxx's "Window title bridge"). MV's and MZ's own
+// Scene_Boot assigns $dataSystem.gameTitle to document.title, so a game — and
+// any plugin that retitles the page — names the window itself.
+JSValue js_set_window_title(JSContext* ctx,
+                            JSValueConst,
+                            int argc,
+                            JSValueConst* argv) {
+  if (argc < 1)
+    return JS_UNDEFINED;
+  const char* title = JS_ToCString(ctx, argv[0]);
+  if (!title)
+    return JS_UNDEFINED;
+  window_title_set(title);
+  JS_FreeCString(ctx, title);
+  return JS_UNDEFINED;
+}
+
 // __mv_imageLoad(path) -> a canvas handle holding the decoded image (0 on
 // failure). MV's Bitmap loads PNGs through `new Image()`; we decode them with
 // stb_image (RGBA8) straight into a canvas so the result can be used as a
@@ -1591,6 +1611,19 @@ const char* kCanvasPreamble = R"MVJS(
     fonts: fontFaceSet,
   };
 
+  // document.title: Scene_Boot assigns $dataSystem.gameTitle to it once the
+  // database is loaded, which is how an MV/MZ game names the browser tab. Make
+  // it a real accessor so that assignment reaches the host and names the game
+  // window instead, and so a plugin reading it back gets what it wrote.
+  var docTitle = '';
+  Object.defineProperty(g.document, 'title', {
+    get: function () { return docTitle; },
+    set: function (v) {
+      docTitle = v === undefined || v === null ? '' : '' + v;
+      g.__mv_setWindowTitle(docTitle);
+    },
+  });
+
   // Image: MV's Bitmap loads PNGs with `new Image()` + `.src = url`. We decode
   // synchronously (stb_image, via __mv_imageLoad) into a canvas handle, but fire
   // onload/onerror on the next host frame (via requestAnimationFrame) to match
@@ -1748,6 +1781,7 @@ void mv_install_canvas(JSContext* ctx) {
   install(ctx, global, "__mv_canvasFillPattern", js_fill_pattern, 13);
   install(ctx, global, "__mv_canvasFillPolygon", js_fill_polygon, 8);
   install(ctx, global, "__mv_fontMeasure", js_measure_text, 2);
+  install(ctx, global, "__mv_setWindowTitle", js_set_window_title, 1);
   install(ctx, global, "__mv_imageLoad", js_image_load, 1);
   install(ctx, global, "__mv_imageLoadBytes", js_image_load_bytes, 1);
   JS_FreeValue(ctx, global);

@@ -27,6 +27,7 @@
 #include "profiler.hxx"
 #include "sixel.hxx"
 #include "terminal.hxx"
+#include "window_title.hxx"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -1164,6 +1165,10 @@ int main(int argc, char** argv) {
 #ifndef __EMSCRIPTEN__
     lv_sdl_window_set_zoom(display.get(), FLAGS_width >= 640 ? 1.f : 2.f);
 #endif
+    // Name the window: this one titles it for the run, and every maker's boot
+    // replaces that with the loaded game's own title through
+    // RGSS.window_title= (see include/terminal.hxx's "Window title bridge").
+    window_title_install(display.get());
     // SDL is initialised by lv_sdl_window_create above; install the keyboard
     // watch now so key events reach RGSS::Input.
     rgss_sdl_input_init();
