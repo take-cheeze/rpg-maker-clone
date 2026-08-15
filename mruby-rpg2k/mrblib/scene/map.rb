@@ -4026,7 +4026,7 @@ class RPG2k
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
-                  window: nil, gold: build_shop_gold_window,
+                  window: nil, gold: build_shop_gold_window, status: nil,
                   terms: shop_terms(req[:type]), browsed: false }
         draw_shop
       end
@@ -4150,6 +4150,7 @@ class RPG2k
         end
         @shop[:window] = win
         draw_shop_gold
+        draw_shop_status(lines)
       end
 
       def draw_shop_gold
@@ -4159,6 +4160,55 @@ class RPG2k
         c.draw_text 0, 0, c.width, SHOP_LINE_H,
                     "#{@state.party.gold}#{shop_gold_term}"
         @shop[:gold].contents = c
+      end
+
+      # Panel dimensions mirror EasyRPG's Window_ShopStatus (136x48 at
+      # RPG2000's own 320x240 resolution): two rows tall enough for one
+      # SHOP_LINE_H label line each, plus the ordinary window border.
+      SHOP_STATUS_W = 136
+
+      # The item id the status panel should describe: whichever row the
+      # cursor sits on in the buy or sell list. The command menu, the
+      # quantity counter and the purchase/sale confirmation don't highlight
+      # a single item, so there is nothing for the panel to show there.
+      def shop_status_item_id(lines)
+        return nil unless @shop[:screen] == :buy || @shop[:screen] == :sell
+        return nil if lines.nil? || lines.empty?
+        lines[@shop[:index]][1]
+      end
+
+      # The status panel beside the buy/sell list: the `possessed_items` /
+      # `equipped_items` database terms with their counts for the currently
+      # highlighted item right-aligned beside them -- EasyRPG's
+      # Window_ShopStatus, refreshed the same way its own SetItemId call is,
+      # from the list's own cursor. `possessed` is the bag only
+      # (Party#item_count, matching the sell list's own x-count suffix);
+      # `equipped` sums every slot on every party member holding the item
+      # (Party#equipped_item_count) -- a copy currently equipped no longer
+      # counts toward the bag, so the two rows can both be nonzero at once.
+      def draw_shop_status(lines)
+        id = shop_status_item_id(lines)
+        if id.nil?
+          @shop[:status].dispose if @shop[:status]
+          @shop[:status] = nil
+          return
+        end
+        win = @shop[:status]
+        unless win
+          win = Window.new(6, 6, SHOP_STATUS_W, SHOP_LINE_H * 2 + Window::BORDER * 2)
+          win.z = 300
+          win.windowskin = @windowskin
+          @shop[:status] = win
+        end
+        inner_w = SHOP_STATUS_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, SHOP_LINE_H * 2)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, nonblank(db.term.possessed_items, 'Possessed')
+        c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H, nonblank(db.term.equipped_items, 'Equipped')
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, @state.party.item_count(id).to_s, 2
+        c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H,
+                    @state.party.equipped_item_count(id).to_s, 2
+        win.contents = c
       end
 
       def drive_shop_command
@@ -4300,6 +4350,7 @@ class RPG2k
         return unless @shop
         @shop[:window].dispose if @shop[:window]
         @shop[:gold].dispose if @shop[:gold]
+        @shop[:status].dispose if @shop[:status]
         @shop = nil
       end
 

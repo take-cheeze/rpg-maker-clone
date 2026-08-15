@@ -1640,11 +1640,7 @@ module Game
     # (each slot equipping it counts). Matches EasyRPG's ControlVariables::Item.
     def item_operand(cmd)
       id = cmd.param(5)
-      if cmd.param(6) == 1
-        party.actors.reduce(0) { |n, a| n + a.equipment.count(id) }
-      else
-        party.item_count(id)
-      end
+      cmd.param(6) == 1 ? party.equipped_item_count(id) : party.item_count(id)
     end
 
     # Operand type 3: a random integer in [param5, param6] inclusive (the bounds

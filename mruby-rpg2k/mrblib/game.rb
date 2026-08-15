@@ -2795,6 +2795,18 @@ module Game
       item_count(id) > 0 || @actors.any? { |a| a.equipment.include?(id) }
     end
 
+    # How many of `id` sit equipped across the whole party right now -- every
+    # slot on every member that holds it, so an id equipped in two slots at
+    # once (nothing stops the same shield id filling both an off-hand and a
+    # main-hand slot) counts twice. Matches EasyRPG's
+    # Game_Party::GetEquippedItemCount / Game_Actor::GetItemCount (a slot
+    # equality scan) and backs both the Control Variables item-operand's
+    # equipped mode (Interpreter#item_operand) and the shop status panel
+    # (Scene::Map#draw_shop_status).
+    def equipped_item_count(id)
+      @actors.reduce(0) { |n, a| n + a.equipment.count(id) }
+    end
+
     def gain_item(id, n = 1)
       c = item_count(id) + n
       c = 0 if c < 0
