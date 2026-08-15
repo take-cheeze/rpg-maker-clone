@@ -9092,12 +9092,14 @@ check 'to_lsd/from_lsd round-trips a map event\'s custom-route index' do
   # fields (12/13/22) chunk 111 already covers.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  st.map_event_positions = { 3 => [5, 7, 1] }
+  # 6 = numpad right, a real direction value (not the wire's own 0..3 --
+  # see the field-22 encoding check below for that distinction).
+  st.map_event_positions = { 3 => [5, 7, 6] }
   st.map_event_route_index = { 3 => 4 }
 
   saved = st.to_lsd
   round = Game::State.from_lsd(db, saved)
-  eq [5, 7, 1], round.map_event_positions[3], 'the event\'s position round-trips'
+  eq [5, 7, 6], round.map_event_positions[3], 'the event\'s position round-trips'
   eq 4, round.map_event_route_index[3], 'the mid-route cursor round-trips'
 
   # A save written before this field existed (or one taken before this event
@@ -9108,8 +9110,36 @@ check 'to_lsd/from_lsd round-trips a map event\'s custom-route index' do
   legacy = st.to_lsd
   legacy[111].events[3].delete(43)
   old = Game::State.from_lsd(db, legacy)
-  eq [5, 7, 1], old.map_event_positions[3], 'position still round-trips without a route index'
+  eq [5, 7, 6], old.map_event_positions[3], 'position still round-trips without a route index'
   eq nil, old.map_event_route_index[3], 'no saved cursor means the route restarts at 0'
+end
+
+# liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
+# 0=up/1=right/2=down/3=left (Game_Character::Direction's own enum order),
+# not this runtime's numpad convention (2/4/6/8) -- the two schemes only
+# coincide for "down" (2 either way), which is exactly how this bug hid
+# undetected in a same-engine round-trip. Confirmed against the repo's own
+# real save fixture: Nepheshel Save01.lsd's hero record decodes raw field 22
+# as 2 (down, coincidentally identical either way) -- this check instead
+# proves the actual wire value for a non-down facing, which the coincidence
+# can't mask.
+check 'to_lsd encodes a character\'s facing in liblcf\'s 0..3 convention, ' \
+      'not raw numpad' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.direction = 6 # numpad right
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 1; boat.y = 1
+  boat.direction = 4 # numpad left
+
+  saved = st.to_lsd
+  eq 1, saved[104][22], "numpad right (6) -> liblcf's right (1)"
+  eq 3, saved[105][22], "numpad left (4) -> liblcf's left (3)"
+
+  round = Game::State.from_lsd(db, saved)
+  eq 6, round.direction, 'and it converts back to numpad right on read'
+  eq 4, round.vehicle(:boat).direction, 'and the boat reads back numpad left too'
 end
 
 # EasyRPG models an actor's and an enemy's own "state id the target's

@@ -6878,6 +6878,44 @@ not yet verified:
   round-trip (which explicitly exercised the now-removed field 55) was
   updated to match, and gained its own from-scratch check for the corrected
   `SAVE_MOVABLE` field. `ninja -C build test` still passes.
+- ✅ **A hero's, vehicle's or map event's saved facing is now decoded (and
+  encoded) correctly — this build used to read/write liblcf's raw wire value
+  for the field as if it were already this runtime's own numpad convention,
+  with no conversion at all, silently mis-restoring any facing other than
+  "down".** `SaveMapEventBase.facing` (`generator/csv/fields.csv`, `0x16` ==
+  22) is `0` up / `1` right / `2` down / `3` left — `Game_Character::
+  Direction`'s own enum order (`src/game_character.h`) — not RPG2000's
+  numpad scheme (2/4/6/8) this runtime's own `@direction` uses everywhere
+  else. `SAVE_MOVABLE`'s field-22 comment claimed "0 = down, 1 = right, 2 =
+  up, 3 = left" with no citation at all — itself wrong on both counts (not
+  liblcf's order, and not this runtime's numpad order either). This codebase
+  already solved the identical problem for the *database*-side event-page
+  facing field (`Game::EventGraphic::LCF_DIR_TO_NUMPAD`, used by `Scene::Map
+  #page_direction`) but the save-side field never got the same treatment.
+  Because the two schemes coincide exactly for "down" (`2` either way), and
+  a hero standing on their own save tile more often than not faces down or
+  was never turned since spawning, the bug hid behind that coincidence in
+  every same-engine round-trip and in the repo's own real save fixture
+  (`Save01.lsd`'s hero record happens to read down, `2`, both ways) — only a
+  save where the character actually faces right, up or left exposes it.
+  Fixed by threading the existing `EventGraphic.numpad_direction` (decode)
+  and `Game::CharSet::DIR_ROW` (encode — numerically the same up/right/down/
+  left table, already used to pick a CharSet sprite row) through every
+  `SAVE_MOVABLE` read/write site: the hero and each vehicle in `#to_lsd`/
+  `.from_lsd`, `Game::Vehicle#load_movable`, and chunk 111's per-map-event
+  position table both ways. Also corrected the stale, uncited schema.rb
+  comment to cite the real source. Two pre-existing tests
+  (`scripts/rpg2k_logic_check.rb`'s map-event custom-route round-trip and
+  `scripts/rpg2k_save_load_check.rb`'s vehicle-location round-trip) used
+  direction `1` as a placeholder — not a valid numpad direction under either
+  the old or the new code, just an arbitrary passthrough value — and needed
+  updating to a real numpad direction (`6`, right) to keep asserting
+  something meaningful; both were confirmed to still pass under the
+  corrected semantics. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  that inspects the actual raw wire value `#to_lsd` writes for a non-down
+  facing on both the hero and a vehicle, and confirms it decodes back to the
+  correct numpad direction, confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

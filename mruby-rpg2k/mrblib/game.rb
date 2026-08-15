@@ -11015,7 +11015,11 @@ module Game
       @map_id = m.map_id || 0
       @x = m.x || 0
       @y = m.y || 0
-      @direction = m.direction || 2
+      # liblcf's own 0..3 (up/right/down/left) convention on the wire --
+      # #numpad_direction is the same conversion Change Event Location's own
+      # facing sub-parameter and the database-side event-page facing field
+      # already go through (EventGraphic::LCF_DIR_TO_NUMPAD).
+      @direction = EventGraphic.numpad_direction(m.direction)
       @charset_name = m.charset_name || ''
       @charset_index = m.charset_index || 0
     end
@@ -11605,7 +11609,12 @@ module Game
       hero[11] = @map_id
       hero[12] = @x
       hero[13] = @y
-      hero[22] = @direction || 2
+      # @direction is RPG2000's own numpad convention (2/4/6/8); the wire
+      # format is liblcf's 0..3 (up/right/down/left) -- CharSet::DIR_ROW is
+      # the same numpad -> 0..3 table the renderer already uses to pick a
+      # CharSet row, which is numerically identical to liblcf's own facing
+      # enum (both walk up/right/down/left in that order).
+      hero[22] = CharSet::DIR_ROW[@direction] || 2
       # Set Transparent Flag's own override (Player Visibility, 11310) --
       # liblcf's own "0 or 3" convention for this field (see schema.rb's
       # SAVE_MOVABLE comment on why it lives here, on the hero's own movable
@@ -11627,7 +11636,7 @@ module Game
         mv[11] = v.map_id
         mv[12] = v.x
         mv[13] = v.y
-        mv[22] = v.direction
+        mv[22] = CharSet::DIR_ROW[v.direction] || 2
         mv[73] = v.charset_name || ''
         mv[74] = v.charset_index || 0
         save[chunk] = mv
@@ -11776,7 +11785,7 @@ module Game
           e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
           e[12] = x
           e[13] = y
-          e[22] = direction
+          e[22] = CharSet::DIR_ROW[direction] || 2
           idx = @map_event_route_index[id]
           e[43] = idx if idx
           events[id] = e
@@ -11919,7 +11928,11 @@ module Game
       party.load_state(items: items, item_usage: usage, gold: inv.gold,
                        hp: hp, mp: mp)
       state = new(party, hero.map_id, hero.x, hero.y)
-      state.direction = hero.direction || 2
+      # liblcf's own 0..3 (up/right/down/left) convention on the wire; see
+      # #to_lsd's own citation for why this needs the same conversion
+      # EventGraphic::LCF_DIR_TO_NUMPAD already applies to the identically-
+      # encoded database-side event-page facing field.
+      state.direction = EventGraphic.numpad_direction(hero.direction)
       # Set Transparent Flag's own override (Player Visibility, 11310):
       # liblcf's "0 or 3" convention on the hero's own movable record (see
       # #to_lsd's own citation on why this lives here, not the system chunk).
@@ -12056,7 +12069,7 @@ module Game
         route_index = {}
         saved_events.each do |id, mv|
           next unless mv.x && mv.y
-          positions[id] = [mv.x, mv.y, mv.direction || 2]
+          positions[id] = [mv.x, mv.y, EventGraphic.numpad_direction(mv.direction)]
           idx = mv.move_route_index
           route_index[id] = idx unless idx.nil?
         end

@@ -1061,7 +1061,14 @@ module LCF
       11 => { name: :map_id, type: :int },
       12 => { name: :x, type: :int },
       13 => { name: :y, type: :int },
-      # 0 = down, 1 = right, 2 = up, 3 = left.
+      # liblcf's `SaveMapEventBase.facing` (generator/csv/fields.csv, 0x16 ==
+      # 22): 0 = up, 1 = right, 2 = down, 3 = left, matching `Game_Character::
+      # Direction`'s own enum order (src/game_character.h) -- *not* this
+      # runtime's numpad convention (2/4/6/8). `Game::CharSet::DIR_ROW`
+      # (numpad -> row index) is numerically the same up/right/down/left
+      # table, so it doubles as the encoder here; `EventGraphic.
+      # numpad_direction` is the decoder, the same conversion the database-
+      # side event-page facing field already needs.
       22 => { name: :direction, type: :int },
       # liblcf's `SaveMapEventBase.transparency` (generator/csv/fields.csv,
       # 0x18 == 24): "0 or 3 - Transparency level of the current event page".

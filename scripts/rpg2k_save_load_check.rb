@@ -249,7 +249,7 @@ def check_game(dir)
   state.vehicle(:boat).map_id = 12
   state.vehicle(:boat).x = 9
   state.vehicle(:boat).y = 4
-  state.vehicle(:boat).direction = 1
+  state.vehicle(:boat).direction = 6 # numpad right
   state.vehicle(:airship).map_id = 3
   state.vehicle(:airship).x = 15
   state.vehicle(:airship).y = 7
@@ -285,7 +285,7 @@ def check_game(dir)
   end
   # Parked vehicles (chunks 105 boat / 107 airship) survive; the untouched ship
   # (chunk 106) is absent and stays unplaced.
-  eq [12, 9, 4, 1], [round.vehicle(:boat).map_id, round.vehicle(:boat).x,
+  eq [12, 9, 4, 6], [round.vehicle(:boat).map_id, round.vehicle(:boat).x,
                      round.vehicle(:boat).y, round.vehicle(:boat).direction],
      'to_lsd: boat location'
   eq [3, 15, 7], [round.vehicle(:airship).map_id, round.vehicle(:airship).x,
