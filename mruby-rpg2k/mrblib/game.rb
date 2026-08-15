@@ -6963,6 +6963,22 @@ module Game
         action(terms, target_name, ally ? :actor_undamaged : :enemy_undamaged)
       end
 
+      # 「会心の一撃！！」 / 「痛恨の一撃！！」 — the extra line RPG_RT inserts
+      # between the start line and the damage line on a critical hit
+      # (`Scene_Battle_Rpg2k::ProcessBattleActionCritical`, which runs before
+      # `ProcessBattleActionApply`). No battler name goes in front of it: the
+      # 2k branch of EasyRPG's own `GetCriticalHitMessage` returns the bare term.
+      #
+      # ADR 0036 left this term unwired because which side keys it was
+      # ambiguous from the test-bed data alone. Reading EasyRPG's actual source
+      # (`GetCriticalHitMessage`, src/game_message_terms.cpp) settles it: `(target.
+      # GetType() == Type_Ally) ? terms.actor_critical : terms.enemy_critical` —
+      # keyed on the **target** taking the crit, the same way `actor_damaged` /
+      # `enemy_damaged` are, not on which side dealt it.
+      def self.critical(terms, target_ally)
+        term(terms, target_ally ? :actor_critical : :enemy_critical)
+      end
+
       # A miss. RPG2000 words it from the target's side ("...は身をかわした！"),
       # which is why one term serves both sides.
       def self.dodge(terms, target_name)

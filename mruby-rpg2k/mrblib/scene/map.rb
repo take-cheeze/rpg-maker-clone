@@ -5981,15 +5981,23 @@ class RPG2k
         t = db.respond_to?(:term) ? db.term : nil
         want_start = battle_start_field(e)
         want_result = battle_result_wanted?(e)
+        want_crit = e[:critical] ? true : false
         start = want_start && battle_start_line(t, e, want_start)
         result = want_result && battle_result_line(t, e)
+        crit = want_crit &&
+               Game::States::BattleText.critical(t, e[:target_ally] ? true : false)
         # All or nothing per entry: a half-translated line ("スライムの攻撃！"
         # with no damage sentence under it) reads worse than the composed
-        # English, so a blank term drops the whole entry back to the fallback.
+        # English, so a blank term drops the whole entry back to the fallback
+        # — which already carries the crit note itself (`battle_action_line`'s
+        # ' (critical!)' suffix), so a blank `actor_critical` / `enemy_critical`
+        # loses nothing by falling back whole.
         return [battle_action_line(e)] if (want_start && !start) ||
-                                          (want_result && !result)
+                                          (want_result && !result) ||
+                                          (want_crit && !crit)
         lines = []
         lines << start if start
+        lines << crit if crit
         lines << result if result
         lines.empty? ? [battle_action_line(e)] : lines
       end
