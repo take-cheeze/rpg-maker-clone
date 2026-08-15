@@ -7577,6 +7577,29 @@ def combatant_mp(name, atk, dfn, agi, hp, mp)
   c
 end
 
+# EasyRPG models an actor's and an enemy's own "state id the target's
+# state_ranks array doesn't cover" case (routine -- liblcf/RPG_RT truncate
+# trailing default bytes off it) as two distinct functions with two distinct
+# defaults: Game_Actor::GetStateProbability defaults to C (rank 2, 60%),
+# Game_Enemy::GetStateProbability to B (rank 1, 80%) -- not one shared
+# default. #ally? (a live Combatant#actor vs nil) is the same tell Battle
+# already uses elsewhere to distinguish the two.
+check "an enemy's own missing state-rank entry defaults to B (80%), an actor's to C (60%)" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = Object.new # a live actor -- #ally? true
+  hero.state_ranks = { 2 => 0 } # only state 2 is explicitly ranked (A)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  slime.state_ranks = { 2 => 0 } # actor is nil (the default) -- #ally? false
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  eq 60, bat.send(:state_susceptibility, hero, 5),
+     "state 5 isn't in the actor's own state_ranks -- defaults to C/60%"
+  eq 80, bat.send(:state_susceptibility, slime, 5),
+     "state 5 isn't in the enemy's own state_ranks -- defaults to B/80%, not the actor's C/60%"
+  # A state that *is* explicitly ranked is unaffected by the default either way.
+  eq 100, bat.send(:state_susceptibility, hero, 2), "state 2 is explicitly rank A (100%) for the actor"
+  eq 100, bat.send(:state_susceptibility, slime, 2), "state 2 is explicitly rank A (100%) for the enemy too"
+end
+
 check 'Battle.attack_damage is half attack less a quarter defence, floored at 0' do
   eq 18, Game::Battle.attack_damage(40, 8),  '20 - 2'
   eq 0,  Game::Battle.attack_damage(2, 40),  'floored at 0, not 1 (a genuine no-damage hit)'
