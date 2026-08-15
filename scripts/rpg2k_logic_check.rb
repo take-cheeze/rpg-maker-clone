@@ -5799,6 +5799,52 @@ check "can_cast?: a weapon-type Attribute skill needs a weapon carrying it equip
   eq true, st.party.can_cast?(hero, 8)
 end
 
+# Ports EasyRPG's `Game_Actor::GetBaseAttributeRate` (src/game_actor.cpp): a
+# shield/armor/helmet/accessory that flags an attribute in its own
+# `attribute_set` grants the wearer a flat +1 defensive rank for that
+# element, OR'd across every matching piece worn (not stacked per item),
+# clamped at E (4, immune) -- the defensive counterpart of
+# `#weapon_attributes`, which reads the very same field off the weapon slot
+# only, for the opposite (offensive) purpose.
+check "Actor#attribute_ranks: equipped defensive gear grants a flat +1 resistance rank" do
+  items = {
+    10 => fake_item(type: 1, name: 'Flame Sword', attribute_set: [true]),  # weapon, attr 1
+    11 => fake_item(type: 3, name: 'Flame Armor', attribute_set: [true]),  # armour, attr 1
+    12 => fake_item(type: 5, name: 'Fire Charm', attribute_set: [true]),   # accessory, attr 1 too
+  }
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1], items)), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  eq({}, hero.attribute_ranks, 'nothing equipped, no database ranks -- no entries at all')
+
+  hero.equip([10, 0, 0, 0, 0]) # the Flame Sword, weapon slot
+  eq({}, hero.attribute_ranks, "a weapon's own attribute_set grants no defensive resistance")
+
+  hero.equip([0, 0, 11, 0, 0]) # the Flame Armor, armour slot
+  eq({ 1 => 3 }, hero.attribute_ranks, 'base default C(2) + the armour boost = D(3)')
+
+  hero.equip([0, 0, 11, 0, 12]) # armour + accessory, both flagging attribute 1
+  eq({ 1 => 3 }, hero.attribute_ranks, 'two matching pieces OR together, not stack, to +1 total')
+end
+
+check 'battle: equipped defensive gear reduces elemental damage taken, on top of the ' \
+      "target's own rank" do
+  items = { 11 => fake_item(type: 3, name: 'Flame Armor', attribute_set: [true]) } # armour, attr 1
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  bare = Game::Battle.from_actor(a)
+  foe = Game::Battle::Combatant.new('Foe', 0, 0, 5, 999, 999)
+  bat = Game::Battle.new([bare], [foe], Game::Rng.new(1))
+  eq 100, bat.send(:apply_attr_multiplier, 100, [1], bare),
+     'no armour yet -- default rank C (100%)'
+
+  a.equip([0, 0, 11, 0, 0])
+  worn = Game::Battle.from_actor(a)
+  eq 50, bat.send(:apply_attr_multiplier, 100, [1], worn),
+     'rank C(2) + the armour boost = D(3) -- 50% of the RPG2000 default table'
+end
+
 check 'an all-ally heal skill heals the whole party (caster included) and spends SP' do
   skills = { 5 => fake_skill(scope: 4, sp_cost: 8, power: 30, hp: true) }
   st = skill_party(skills)

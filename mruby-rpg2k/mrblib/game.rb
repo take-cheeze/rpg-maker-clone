@@ -1797,13 +1797,47 @@ module Game
     # The actor's per-attribute defence ranks as `{ attribute_id => rank }`, read
     # from the database row's `attribute_ranks` byte array (rank 0 = A, most
     # vulnerable .. 4 = E, immune). An attribute the row omits defaults to C
-    # (100%) at the battle layer. A fixture row without the field yields {}.
+    # (100%) at the battle layer. A fixture row without the field, and no
+    # resistance gear equipped either, yields {}.
+    #
+    # Equipped shield/armor/helmet/accessory gear (never a weapon) that flags
+    # an attribute in its own `attribute_set` grants a flat +1 to that
+    # attribute's defence rank -- ports EasyRPG's `Game_Actor
+    # ::GetBaseAttributeRate` (src/game_actor.cpp): every matching piece worn
+    # is OR'd into a single one-step boost, not stacked per item, clamped at
+    # E (4, immune). This is why the boost is baked in here rather than left
+    # to the battle layer's own default: an attribute an actor's database row
+    # never lists (no explicit rank) still resists once a matching item is
+    # equipped, exactly as `GetBaseAttributeRate` computes `rate = 2` before
+    # ever consulting equipment.
     def attribute_ranks
       ranks = {}
       arr = @db_row.respond_to?(:attribute_ranks) ? @db_row.attribute_ranks : nil
-      return ranks unless arr
-      arr.each_with_index { |v, i| ranks[i + 1] = v }
+      arr.each_with_index { |v, i| ranks[i + 1] = v } if arr
+      defensive_attribute_ids.each do |aid|
+        ranks[aid] = [(ranks[aid] || 2) + 1, 4].min
+      end
       ranks
+    end
+
+    # The attribute ids an equipped shield/armor/helmet/accessory (never a
+    # weapon) flags in its own `attribute_set` -- the defensive counterpart of
+    # #weapon_attributes, which reads the same field off the weapon slot only,
+    # for the opposite (offensive) purpose.
+    def defensive_attribute_ids
+      ids = []
+      return ids unless @db.respond_to?(:item)
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next unless it && it.respond_to?(:type) &&
+                    [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
+                     Party::ITEM_ACCESSORY].include?(it.type)
+        set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
+        next unless set
+        set.each_index { |i| ids << (i + 1) if set[i] && set[i] != 0 }
+      end
+      ids.uniq
     end
 
     # The actor's per-state susceptibility ranks as `{ state_id => rank }`, read
