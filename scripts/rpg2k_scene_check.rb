@@ -2216,7 +2216,8 @@ class BattleStubActor
                  rename_skill: false, skill_name: '', states: [], force_ai: false,
                  battle_commands: nil, battle_command_table: {},
                  level: 1, level_up_at: nil, learn_table: [],
-                 battler_animation_id: nil, battle_x: 0, battle_y: 0)
+                 battler_animation_id: nil, battle_x: 0, battle_y: 0,
+                 faceset_name: nil, faceset_index: 0)
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
@@ -2227,8 +2228,13 @@ class BattleStubActor
     @level = level; @level_up_at = level_up_at; @learn_table = learn_table
     @battler_animation_id = battler_animation_id
     @battle_x = battle_x; @battle_y = battle_y
+    @faceset_name = faceset_name; @faceset_index = faceset_index
   end
   attr_reader :battler_animation_id, :battle_x, :battle_y
+  # RPG2003 gauge-card status panel fixture (#draw_battle_gauge_face,
+  # Scene::Map): a nil `faceset_name` (the default) draws no face, the same
+  # answer a real Game::Actor with no faceset row gives.
+  attr_reader :faceset_name, :faceset_index
   # Mirrors Game::Actor's own RPG2003 battle-command-customization interface
   # (`#battle_commands` / `#battle_command_row`), so a stub battle can drive
   # `Scene::Map#custom_battle_commands` the same way a real actor row would.
@@ -2287,10 +2293,13 @@ class BattleStubParty
   # #automatic_battle_placement?, both keyed off `db.battlecommands` there) --
   # false by default, matching every other check's plain RPG2000 fixture and
   # (for `respond_to?` gating) every check predating the alternate-battle-
-  # sprite renderer, which never set either.
+  # sprite renderer, which never set either. `gauge_layout` mirrors
+  # #gauge_battle_layout? the same way -- distinct from `alternate_layout`,
+  # which is also true for the plain sprite-only layout (battle_type 1); a
+  # check exercising the gauge card status panel sets this one instead/as well.
   def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil,
                  enemy_group: Hash.new(true), alternate_layout: false,
-                 automatic_placement: false)
+                 automatic_placement: false, gauge_layout: false)
     @actors = [actor]
     @gold = 0
     @leader = nil
@@ -2301,6 +2310,7 @@ class BattleStubParty
     @enemy_group = enemy_group
     @alternate_layout = alternate_layout
     @automatic_placement = automatic_placement
+    @gauge_layout = gauge_layout
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
@@ -2308,6 +2318,7 @@ class BattleStubParty
   def rpg2003?; @rpg2003; end
   def alternate_battle_layout?; @alternate_layout; end
   def automatic_battle_placement?; @automatic_placement; end
+  def gauge_battle_layout?; @gauge_layout; end
   # A troop victory drop (Game::Troop#drops -> Scene::Map#battle_result_lines)
   # both grants the item and names it in the result window -- mirrors
   # ShopStubParty's own #gain_item, plus a #db_item lookup against whatever
@@ -9996,14 +10007,17 @@ def troop_page(cmds, flags = Game::BattlePage::TURN, opts = {})
 end
 
 # Open a battle whose troop carries `pages`, running frames until the fight is
-# up. Returns [scene, state].
-def battle_scene_with_pages(pages)
+# up. Returns [scene, state]. `party` defaults to the plain fixture every
+# check predating the gauge-card status panel used; a check exercising a
+# non-default battle-screen presentation (BattleStubParty's `gauge_layout:`)
+# passes its own instead.
+def battle_scene_with_pages(pages, party: BattleStubParty.new)
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) }, troop_pages: pages)
   st = scene.instance_variable_get(:@state)
-  st.instance_variable_set(:@party, BattleStubParty.new)
+  st.instance_variable_set(:@party, party)
   [scene, st]
 end
 
@@ -10963,8 +10977,8 @@ end
 # Open a battle and run it up to the command phase, answering [scene, ui].
 # Dismisses the once-per-battle automatic options window (a C press on its
 # default cursor row 0, "Battle") along the way -- see #battle_to_command.
-def battle_at_command(pages = nil)
-  scene, = battle_scene_with_pages(pages)
+def battle_at_command(pages = nil, party: BattleStubParty.new)
+  scene, = battle_scene_with_pages(pages, party: party)
   ui = nil
   10.times do
     ui = scene.instance_variable_get(:@battle_ui)
@@ -11424,6 +11438,151 @@ check 'Change Monster Condition on a battle page updates the troop, off-panel' d
   # either, only the battle log's own wording when a state lands.
   ok !window_texts(ui[:status_win]).include?('Poison'),
      'the troop never reaches the party-only status window'
+end
+
+# -- the RPG2003 gauge card status panel (battle_type 2) -----------------------
+#
+# `Game::Party#gauge_battle_layout?`/`BattleStubParty#gauge_layout` is true
+# specifically for battle_type 2, distinct from `#alternate_battle_layout?`
+# (true for both 1 and 2) -- see #refresh_battle_status's own comment,
+# scene/map.rb. These checks exercise the dispatch and the card's own
+# drawing, ported from EasyRPG's real `Window_BattleStatus::Refresh`/
+# `RefreshGauge`/`DrawGaugeSystem2`/`DrawNumberSystem2`.
+
+check 'battle_type 0 (no gauge layout) still draws the plain text status row' do
+  scene, ui = battle_at_command
+  ok !scene.send(:gauge_battle_layout?), 'the plain fixture answers false'
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Hero'), 'the text status row is unchanged'
+  eq [], ui[:status_win].contents.blt_calls || [],
+     'and nothing else touched its contents via #blt (no gauge card drawing)'
+end
+
+check 'battle_type 1 (alternative) keeps the unchanged text status row too, ' \
+      'even when the database also carries a System2 graphic' do
+  actor = BattleStubActor.new
+  party = BattleStubParty.new(actor, alternate_layout: true, gauge_layout: false)
+  scene, ui = battle_at_command(nil, party: party)
+  scene.db.system.system2_name = 'BattleStatus'
+  scene.send(:refresh_battle_status)
+  ok !scene.send(:gauge_battle_layout?),
+     'battle_type 1 answers false to #gauge_battle_layout? -- only 2 does'
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Hero'), 'the text status row is still what battle_type 1 draws'
+end
+
+check 'battle_type 2 (gauge) with no System2 graphic falls back to the text ' \
+      'status row instead of crashing' do
+  actor = BattleStubActor.new
+  party = BattleStubParty.new(actor, gauge_layout: true)
+  scene, ui = battle_at_command(nil, party: party)
+  ok scene.send(:gauge_battle_layout?), 'the fixture asks for the gauge layout'
+  ok !scene.db.system.respond_to?(:system2_name), 'and the database names no System2 graphic'
+  scene.send(:refresh_battle_status)
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Hero'), 'falls back to the plain text row rather than an empty/crashed panel'
+end
+
+check 'battle_type 2 (gauge) draws the gauge card: face, HP/SP bars, digit numbers' do
+  actor = BattleStubActor.new(hp: 200, mp: 20, faceset_name: 'HeroFace', faceset_index: 2)
+  party = BattleStubParty.new(actor, gauge_layout: true)
+  scene, ui = battle_at_command(nil, party: party)
+  scene.db.system.system2_name = 'BattleStatus'
+  # A non-full HP (so this same window also exercises the normal, not
+  # "full", fill tile) alongside SP's still-full 20/20.
+  ui[:allies][0].hp = 100
+  scene.send(:refresh_battle_status)
+  win = ui[:status_win]
+
+  ok window_texts(win).empty?,
+     'the gauge card never calls draw_text/blend_text -- it fully replaces the text row'
+  eq 0, win.cursor_rect.width,
+     'never gets a cursor rect, even on the acting actor -- matching UpdateCursorRect' \
+     "'s unconditional empty rect for this battle_type"
+
+  c = win.contents
+  face_call = c.blt_calls[0]
+  eq [0, 24], face_call[0, 2], 'the face lands at column 0, actor_face_height (24)'
+  eq 'FaceSet/HeroFace', face_call[2].load_name, 'loaded from the actor faceset_name'
+  eq [96, 0, 48, 48], [face_call[3].x, face_call[3].y, face_call[3].width, face_call[3].height],
+     'cropped at faceset_index 2 -- (2 % 4) * 48, (2 / 4) * 48'
+
+  left_cap, right_cap = c.blt_calls[1, 2]
+  eq [32, 24], left_cap[0, 2], 'left bar cap at x = 32 + 80*i'
+  eq [0, 32, 16, 48], [left_cap[3].x, left_cap[3].y, left_cap[3].width, left_cap[3].height]
+  eq [73, 24], right_cap[0, 2], 'right bar cap at 32 + 16 (cap) + 25 (centre) = 73'
+  eq [32, 32, 16, 48], [right_cap[3].x, right_cap[3].y, right_cap[3].width, right_cap[3].height]
+
+  eq 3, c.stretch_calls.size, 'one bar-centre stretch, plus one fill each for HP and SP'
+  center, hp_fill, sp_fill = c.stretch_calls
+  eq [48, 24, 25, 48], [center[0].x, center[0].y, center[0].width, center[0].height],
+     'the bar centre stretches to fill the full 25px slot between the caps'
+  eq [48, 24, 12, 16], [hp_fill[0].x, hp_fill[0].y, hp_fill[0].width, hp_fill[0].height],
+     'HP fill: 25 * 100 / 200 = 12px wide -- the normal tile, since 100 != max 200'
+  eq [48, 32, 16, 16], [hp_fill[2].x, hp_fill[2].y, hp_fill[2].width, hp_fill[2].height],
+     'reading the normal (gauge_x 0) HP fill tile'
+  eq [48, 40, 25, 16], [sp_fill[0].x, sp_fill[0].y, sp_fill[0].width, sp_fill[0].height],
+     'SP fill: exactly full (20/20) still stretches to the maximum 25px'
+  eq [64, 48, 16, 16], [sp_fill[2].x, sp_fill[2].y, sp_fill[2].width, sp_fill[2].height],
+     'an exactly-full gauge reads the distinct "full" tile (gauge_x 16), on the SP row (y+16)'
+
+  # Numbers: HP "100" draws all three digit cells (hundreds carries a real,
+  # nonzero digit), SP "20" draws only its own two.
+  hp_digits = c.blt_calls[3, 3].map { |call| [call[0], call[3].x / 8] }
+  eq [[48, 1], [56, 0], [64, 0]], hp_digits, 'HP 100 -> hundreds=1, tens=0, ones=0'
+  sp_digits = c.blt_calls[6, 2].map { |call| [call[0], call[3].x / 8] }
+  eq [[56, 2], [64, 0]], sp_digits, 'SP 20 -> tens=2, ones=0, no hundreds/thousands cell'
+end
+
+check 'DrawGaugeSystem2 stretches the fill by 25 * cur / max, and reads the ' \
+      'distinct "full" tile only when cur == max' do
+  scene = new_scene({})
+  system2 = RGSS::Bitmap.new(80, 96)
+  c = RGSS::Bitmap.new(64, 16)
+  draw = lambda do |cur, max, which|
+    c.clear_stretch_calls
+    scene.send(:draw_gauge_system2, c, system2, 100, 200, cur, max, which)
+    c.stretch_calls.last
+  end
+
+  call = draw.call(100, 200, 0)
+  eq [100, 200, 12, 16], [call[0].x, call[0].y, call[0].width, call[0].height],
+     'width is 25 * cur / max, truncated -- 25 * 100 / 200 = 12.5 -> 12'
+  eq [48, 32, 16, 16], [call[2].x, call[2].y, call[2].width, call[2].height],
+     'the normal (gauge_x 0) fill tile, which=0 -> HP row'
+
+  call = draw.call(200, 200, 0)
+  eq 25, call[0].width, 'an exactly-full gauge still stretches to the maximum 25px width'
+  eq [64, 32], [call[2].x, call[2].y], 'but reads the "full" tile, 16px over (gauge_x 16)'
+
+  call = draw.call(0, 200, 0)
+  eq 0, call[0].width, 'zero current value stretches to 0 width'
+
+  call = draw.call(20, 20, 1)
+  eq [64, 48], [call[2].x, call[2].y],
+     'which=1 (SP) reads its own row, 16px down -- still the "full" tile at cur == max'
+
+  c.clear_stretch_calls
+  scene.send(:draw_gauge_system2, c, system2, 100, 200, 5, 0, 0)
+  eq nil, c.stretch_calls.last, 'max == 0 draws nothing at all, matching the real max_value guard'
+end
+
+check 'DrawNumberSystem2 leading-zero cascade matches EasyRPG exactly (7, 42, 100, 999)' do
+  scene = new_scene({})
+  system2 = RGSS::Bitmap.new(80, 96)
+  c = RGSS::Bitmap.new(64, 16)
+  glyphs = lambda do |value|
+    c.clear_blt_calls
+    scene.send(:draw_number_system2, c, system2, 0, 0, value)
+    c.blt_calls.map { |call| [call[0], call[3].x / 8] }
+  end
+
+  eq [[24, 7]], glyphs.call(7),
+     '7 draws only the ones cell -- the hundreds/tens cells stay blank, never a drawn "0"'
+  eq [[16, 4], [24, 2]], glyphs.call(42), '42 draws tens+ones only, no hundreds/thousands cell'
+  eq [[8, 1], [16, 0], [24, 0]], glyphs.call(100),
+     'a hundreds digit that carries down still draws its own zero tens/ones cells'
+  eq [[8, 9], [16, 9], [24, 9]], glyphs.call(999), 'three 9s, still no (blank) thousands cell'
 end
 
 # -- the battle log in the game's own words ------------------------------------

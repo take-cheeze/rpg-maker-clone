@@ -99,6 +99,7 @@ class RPG2k
         @monster_cache = {}   # Monster/<name> (battler graphics)
         @animation_cache = {} # Battle/<name> (battle animation sheets)
         @battlecharset_cache = {} # BattleCharSet/<name> (RPG2003 actor battler sprites)
+        @system2_cache = {}   # System2/<name> (RPG2003 gauge card sprite sheet)
         apply_map_access if apply_access
         # Same Continue-only split as #apply_map_access just above: a fresh
         # map entry (New Game, or any Transfer Player/Teleport, which
@@ -833,8 +834,9 @@ class RPG2k
       # redrawn every frame -- and without this they would hit the decoder
       # again on every request. `cache` is the material's own hash (one of
       # @charset_cache, @picture_cache, @backdrop_cache, @monster_cache,
-      # @animation_cache, @battlecharset_cache), so a name is only ever looked up among graphics of
-      # its own kind. The block's result is cached as-is, including a
+      # @animation_cache, @battlecharset_cache, @system2_cache), so a name is
+      # only ever looked up among graphics of its own kind. The block's
+      # result is cached as-is, including a
       # nil/fallback for a failed load, so the caller's own rescue logs the
       # error once and every later call reuses that outcome instead of
       # retrying the disk.
@@ -6650,15 +6652,39 @@ class RPG2k
       # sprites and, when targeted, by the target window's name list. The row
       # of whichever actor is currently being commanded gets the cursor,
       # mirroring `status_window->SetIndex` in EasyRPG's `SelectNextActor`.
+      #
+      # `battle_type` 2 (gauge, `#gauge_battle_layout?`) replaces this whole
+      # panel with RPG2003's face/bar "gauge card" layout instead
+      # (`#battle_status_gauge_window`) -- `battle_type` 1 (alternative) is
+      # unchanged, and still builds the same text rows this always has, since
+      # only 2 asks for the card presentation (EasyRPG's own
+      # `Window_BattleStatus::Refresh`/`RefreshGauge` branch the same way, on
+      # `battle_type == BattleType_gauge` specifically, not on "not
+      # traditional"). Falls back to the text rows when the gauge window
+      # cannot be built (no System2 graphic, or a failed load) rather than
+      # leaving the panel blank.
       def refresh_battle_status
         @battle_ui[:status_win].dispose if @battle_ui[:status_win]
-        rows = @battle_ui[:allies].map { |a| battle_status_row(a) }
-        # No row highlighted while the options window is open -- matching
-        # `status_window->SetIndex(-1)` in `ProcessSceneActionFightAutoEscape`'s
-        # own `eMoveWindow` substate; nobody is "the acting actor" until
-        # Battle or Auto Battle is chosen.
-        idx = @battle_ui[:phase] == :battle_options ? nil : @battle_ui[:allies].index(current_actor)
-        @battle_ui[:status_win] = battle_status_window(rows, idx)
+        win = battle_status_gauge_window(@battle_ui[:allies]) if gauge_battle_layout?
+        @battle_ui[:status_win] = win || begin
+          rows = @battle_ui[:allies].map { |a| battle_status_row(a) }
+          # No row highlighted while the options window is open -- matching
+          # `status_window->SetIndex(-1)` in `ProcessSceneActionFightAutoEscape`'s
+          # own `eMoveWindow` substate; nobody is "the acting actor" until
+          # Battle or Auto Battle is chosen.
+          idx = @battle_ui[:phase] == :battle_options ? nil : @battle_ui[:allies].index(current_actor)
+          battle_status_window(rows, idx)
+        end
+      end
+
+      # Whether the database's `battlecommands.battle_type` is specifically 2
+      # (gauge) -- distinct from `Game::Party#alternate_battle_layout?`, which
+      # is also true for the plain sprite-only layout (1) and still uses the
+      # unchanged text status window for that case. A bare test fixture (or
+      # any database `#alternate_battle_layout?` itself already reads false
+      # for) reads false here too.
+      def gauge_battle_layout?
+        @state.party.respond_to?(:gauge_battle_layout?) && @state.party.gauge_battle_layout?
       end
 
       # One party member's row as [text, x, colour index] segments: name,
@@ -6675,6 +6701,158 @@ class RPG2k
       def battle_state_segment(b)
         text, color = state_display(b.states)
         [text, STATUS_STATE_X, color]
+      end
+
+      # `Window_BattleStatus`'s own default `actor_face_height` (24) -- the
+      # small-window variant (14) is `battlecommands.window_size`, which
+      # schema.rb has not decoded yet (see this change's changelog entry), so
+      # every gauge card always uses the large-window offset.
+      ACTOR_FACE_HEIGHT = 24
+
+      # The gauge card layout (`battle_type` 2): one 80px-wide card per party
+      # member -- face, HP/SP bars and digit-glyph numbers, drawn straight
+      # from the database's own System2 graphic -- ported column-for-column
+      # from EasyRPG's real `Window_BattleStatus::Refresh`/`RefreshGauge`
+      # (the `!enemy && battle_type == BattleType_gauge` branch of each).
+      # Borderless like RPG_RT's own gauge window (`Window#transparent=` --
+      # EasyRPG's constructor sets `border_x = border_y = 0` and
+      # `SetOpacity(0)` for this same case, "simulate a borderless window...
+      # makes the implementation on scene-side easier"), and never gets a
+      # cursor rect: `UpdateCursorRect` returns an empty rect unconditionally
+      # for this battle_type, so no row is ever highlighted here, unlike the
+      # text status window's acting-actor cursor. The ATB/wait gauge row
+      # `RefreshGauge` also draws (`DrawGaugeSystem2(..., GetAtbGauge,
+      # GetMaxAtbGauge, 2)`) is skipped -- this runtime has no ATB/wait-timer
+      # subsystem to read a value from. Returns nil (so `#refresh_battle_status`
+      # falls back to the plain text rows) when the database names no System2
+      # graphic, or names one that fails to load -- there is no sensible
+      # placeholder gauge sprite sheet the way there's a placeholder colour
+      # block for a missing battler graphic.
+      def battle_status_gauge_window(allies)
+        system2 = battle_system2_bitmap
+        return nil unless system2
+        inner_w = BATTLE_STATUS_W - Window::BORDER * 2
+        inner_h = BATTLE_PANEL_H - Window::BORDER * 2
+        win = Window.new(0, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
+        win.z = 300
+        win.transparent = true
+        c = Bitmap.new(inner_w, inner_h)
+        allies.each_with_index { |ally, i| draw_battle_gauge_card(c, system2, ally, i) }
+        win.contents = c
+        win
+      end
+
+      # One party member's gauge card at column `i`. `ally` is a
+      # `Game::Battle::Combatant` (`Game::Battle.from_actor`) -- its `.actor`
+      # is the underlying `Game::Actor`, the only place `faceset_name`/
+      # `faceset_index` (chunk 11 fields 15/16, including any Change Actor
+      # Face override) live. Ported from `RefreshGauge`'s own gauge-card
+      # block: the face, then the bar's left cap / stretched centre / right
+      # cap at `System2` (0,32,16,48)/(16,32,16,48)/(32,32,16,48), then the
+      # HP row (`which` 0) and SP row (`which` 1) fills and numbers -- the
+      # exact x/y arithmetic (`32 + 80*i`, `40 + 80*i`, `y + 12 + 4`) is
+      # copied from the real source rather than re-derived.
+      def draw_battle_gauge_card(c, system2, ally, i)
+        draw_battle_gauge_face(c, ally.actor, i)
+        x = 32 + i * 80
+        y = ACTOR_FACE_HEIGHT
+        c.blt x, y, system2, Rect.new(0, 32, 16, 48)
+        x += 16
+        fill_x = x
+        c.stretch_blt Rect.new(x, y, 25, 48), system2, Rect.new(16, 32, 16, 48)
+        x += 25
+        c.blt x, y, system2, Rect.new(32, 32, 16, 48)
+        hp = ally.hp < 0 ? 0 : ally.hp
+        draw_gauge_system2(c, system2, fill_x, y, hp, ally.max_hp, 0)
+        draw_gauge_system2(c, system2, fill_x, y + 16, ally.mp, ally.max_mp, 1)
+        num_x = 40 + 80 * i
+        draw_number_system2(c, system2, num_x, y, hp)
+        draw_number_system2(c, system2, num_x, y + 12 + 4, ally.mp)
+      end
+
+      # The card's face portrait -- the same 48x48 FaceSet crop
+      # `#load_face_bitmap`/`FACE_SIZE` already draw for the name-entry and
+      # message-face screens, just placed at this card's column instead of
+      # its own window. Draws nothing (leaving the card's bars/numbers alone)
+      # for an actor with no faceset set, or a faceset file that fails to
+      # load, the same "a missing portrait shows nothing" rule
+      # `#load_face`/`#draw_kana_face` already use -- and, matching every
+      # other optional actor field this screen reads (`battler_animation_id`,
+      # `battle_x`/`battle_y`), `#respond_to?`-guarded so a bare test fixture
+      # actor with no faceset fields at all still draws the rest of the card.
+      def draw_battle_gauge_face(c, actor, i)
+        return unless actor && actor.respond_to?(:faceset_name)
+        face = load_face_bitmap(actor.faceset_name)
+        return unless face
+        index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
+        src = Rect.new((index % 4) * FACE_SIZE, (index / 4) * FACE_SIZE, FACE_SIZE, FACE_SIZE)
+        c.blt 80 * i, ACTOR_FACE_HEIGHT, face, src
+      end
+
+      # The HP (`which` 0) or SP (`which` 1) bar fill: a `25 * cur / max`
+      # wide stretch of the fill tile at `System2` `(48, 32 + 16*which, 16,
+      # 16)` -- except an exactly-full gauge (`cur == max`) reads the
+      # visually distinct "full" fill tile 16px over, at `(64, ...)`,
+      # instead of the normal partial-fill one. Ported from
+      # `Window_BattleStatus::DrawGaugeSystem2` exactly, including its
+      # `max == 0` no-draw guard (a stat with no pool at all, e.g. an actor
+      # with 0 max SP, draws no fill for that row).
+      def draw_gauge_system2(c, system2, x, y, cur, max, which)
+        return if max == 0
+        gauge_x = cur == max ? 16 : 0
+        width = 25 * cur / max
+        c.stretch_blt Rect.new(x, y, width, 16), system2,
+                     Rect.new(48 + gauge_x, 32 + 16 * which, 16, 16)
+      end
+
+      # Right-aligned up-to-4-digit number in 8x16 glyph cells (`System2`
+      # `(digit * 8, 80, 8, 16)`), leading zeros suppressed rather than drawn
+      # -- ported from `Window_BattleStatus::DrawNumberSystem2` exactly,
+      # including its exact leading-zero cascade: a thousands (or hundreds)
+      # digit that comes out to 0 still lets the *next* digit down draw via
+      # its own `handle_zero` carry, so 100 draws all three digits ("100")
+      # while 7 draws only the ones cell (three blank cells then "7") and 42
+      # draws the tens+ones cells ("42", blank above).
+      def draw_number_system2(c, system2, x, y, value)
+        handle_zero = false
+        if value >= 1000
+          c.blt x, y, system2, Rect.new((value / 1000) * 8, 80, 8, 16)
+          value %= 1000
+          handle_zero = true if value < 100
+        end
+        if handle_zero || value >= 100
+          handle_zero = false
+          c.blt x + 8, y, system2, Rect.new((value / 100) * 8, 80, 8, 16)
+          value %= 100
+          handle_zero = true if value < 10
+        end
+        if handle_zero || value >= 10
+          c.blt x + 16, y, system2, Rect.new((value / 10) * 8, 80, 8, 16)
+          value %= 10
+        end
+        c.blt x + 24, y, system2, Rect.new(value * 8, 80, 8, 16)
+      end
+
+      # The RPG2003 System2 graphic (gauge fill/caps and the digit glyphs the
+      # gauge card draws numbers with) -- one cache entry, keyed by name like
+      # every other named battle graphic (`#cached_bitmap`), since a project
+      # only ever declares the one in `system.system2_name` (chunk 22 field
+      # 20, schema.rb). A blank name or a failed load returns nil (and logs,
+      # for the latter) so `#battle_status_gauge_window` falls back to the
+      # plain text status row instead of crashing -- unlike
+      # `#battler_bitmap`/`#actor_battlecharset_bitmap`, there is no sensible
+      # placeholder gauge sprite sheet to draw in its place.
+      def battle_system2_bitmap
+        name = db.system.respond_to?(:system2_name) ? db.system.system2_name : nil
+        return nil unless name && !name.empty?
+        cached_bitmap(@system2_cache, name) do
+          begin
+            Bitmap.new("System2/#{name}", true)
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] System2 graphic '#{name}' load failed: #{e.message}"
+            nil
+          end
+        end
       end
 
       # The current actor's command menu — Attack / Skill / Defend / Item, with
