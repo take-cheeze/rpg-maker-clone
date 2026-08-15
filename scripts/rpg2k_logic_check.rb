@@ -1026,14 +1026,28 @@ check 'Screen pan scrolls the offset toward its target and lands exactly' do
   s = Game::Screen.new
   eq [0, 0], s.pan_offset
   ok !s.panning?
-  s.pan(1, 2, 3) # pan right 2 tiles (32 px) at speed 3 -> 4 px/frame
+  s.pan(1, 2, 6) # pan right 2 tiles (32 px) at speed 6 -> 8 px/frame
   ok s.panning?
   ok s.busy?, 'a pan in progress makes the screen busy'
-  s.update; eq [4, 0], s.pan_offset
   s.update; eq [8, 0], s.pan_offset
-  6.times { s.update } # 32 px total reached (and clamped)
+  s.update; eq [16, 0], s.pan_offset
+  2.times { s.update } # 32 px total reached (and clamped)
   eq [32, 0], s.pan_offset
   ok !s.panning?, 'settles exactly on the target'
+end
+
+# EasyRPG's own Game_Player::StartPan (src/game_player.cpp) sets `pan_speed =
+# 2 << speed`, a value in RPG_RT's own 1/16-pixel subpixel space (game_map.h's
+# SCREEN_TILE_SIZE = 256, sixteen per this codebase's own real TILE = 16px) --
+# so speed 1's real rate is (2 << 1) / 16.0 = 0.25 px/frame, sub-whole-pixel.
+check 'Screen pan at the slowest speed accumulates sub-pixel progress, landing exactly' do
+  s = Game::Screen.new
+  s.pan(1, 1, 1) # pan right 1 tile (16 px) at speed 1 -> 0.25 px/frame
+  4.times { s.update } # 4 * 0.25 = 1.0 px accumulated
+  eq [1, 0], s.pan_offset, 'a full pixel of progress after 4 frames at the slowest speed'
+  60.times { s.update } # 64 frames total * 0.25 = 16 px, the full tile
+  eq [16, 0], s.pan_offset
+  ok !s.panning?, 'settles exactly on the target despite the fractional per-frame rate'
 end
 
 check 'Screen pan directions move the offset the right way' do
@@ -6736,8 +6750,8 @@ check 'Screen pan/lock round-trips through the save; other effects stay transien
   }
   db = FakeActorDB.new(players, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  st.screen.pan(1, 2, 3) # pan right 2 tiles (32px) at speed 3 -> 4px/frame
-  2.times { st.screen.update } # in-flight (8px), short of the 32px target
+  st.screen.pan(1, 2, 6) # pan right 2 tiles (32px) at speed 6 -> 8px/frame
+  2.times { st.screen.update } # in-flight (16px), short of the 32px target
   st.screen.pan_lock
   # Deliberately-transient effects, armed too, to prove they do NOT survive.
   st.screen.tint_to(200, 100, 100, 100, 10)
@@ -6752,7 +6766,7 @@ check 'Screen pan/lock round-trips through the save; other effects stay transien
   eq before_offset, loaded.screen.pan_offset,
      'the in-progress pan offset survives at whatever point it had scrolled to'
   ok loaded.screen.panning?, 'the still-unfinished scroll toward its target survives too'
-  6.times { loaded.screen.update } # remaining 24px at 4px/frame lands on the 32px target
+  2.times { loaded.screen.update } # remaining 16px at 8px/frame lands on the 32px target
   eq [32, 0], loaded.screen.pan_offset, 'the scroll resumes toward its original target'
   ok !loaded.screen.tinting?, 'tint transitions stay transient, unlike pan'
   ok !loaded.screen.shaking?, 'shake stays transient, unlike pan'

@@ -813,7 +813,7 @@ The work below is roughly ordered by the critical path to a walkable game
   party, and either outcome routes into the command's optional `[Stay]` /
   `[No Stay]` handler branches (structured and skipped like Show Choices).
   `Game::Interpreter` owns the gameplay and suspends on an `:inn` wait that
-  `Scene::Map` drives; the inn **fade** is presentation still to come.
+  `Scene::Map` drives.
   ✅ **The inn now plays its own BGM.** `Scene::Map#drive_inn` never touched
   the music at all — staying at an inn played in total silence, or just let
   the field track keep looping, no matter what `db.system.inn_music` named,
@@ -834,6 +834,33 @@ The work below is roughly ordered by the critical path to a walkable game
   field BGM resumes after a prompted stay; a Change System BGM override for
   slot 2 beats the database default; a free stay plays and restores the BGM
   too), confirmed to fail against the pre-fix code before the fix.
+  ✅ **The inn now fades the screen too.** `#drive_inn` never touched
+  `Game::Screen` at all — accepting a stay used to cut straight from the
+  prompt to the healed party with no transition, where real RPG_RT (EasyRPG's
+  `Scene_Map::UpdateInn` / `FinishInn`, reached through the accepted-stay
+  `AsyncOp::eCallInn` continuation `Game_Interpreter_Map::CommandShowInn`
+  returns) fades the screen to black the instant a stay is accepted — before
+  the heal, not after — holds it there while the party is healed, then starts
+  fading back in the same beat, all in the plain FADE_OUT / FADE_IN styles
+  Erase / Show Screen already use at their own default length
+  (`Game::Transition.default_frames`, 35 frames each way), not some
+  inn-specific duration. New `#start_inn_fade_out` erases the screen
+  (`@state.screen.erase(Game::Transition::FADE_OUT)`) the moment Accept is
+  confirmed — or a free (price 0) stay auto-accepts, since it reaches the same
+  `AsyncOp::eCallInn` path in real RPG_RT and fades exactly like a prompted
+  one — and parks `#drive_inn` on a new `@inn_fading_out` sub-state until the
+  erase settles; `#finish_inn` then charges gold, heals the party and starts
+  the fade back in (`@state.screen.show(Game::Transition::FADE_IN)`) before
+  resuming the interpreter, reusing the same overlay sprite Erase/Show Screen
+  already draws through rather than a bespoke fade of its own. Cancel and the
+  insufficient-funds no-op skip `#start_inn_fade_out` entirely and go straight
+  to `#finish_inn(false)`, matching real RPG_RT: a declined or unaffordable
+  prompt never reaches `AsyncOp::eCallInn`, so it never fades. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check pinning the exact 35-frame fade-out /
+  fade-in timing around an accepted stay (fading starts before the gold is
+  charged, holds through the heal, then fades back in), plus fade assertions
+  added to the existing cancel and unaffordable-Accept checks confirming
+  neither ever starts a fade.
   **Open Shop** (10720) is a playable game-mode too: a `Game::Shop` holds the
   goods and buy / sell rules and performs the transactions (buy at the database
   price, sell at half, party 99-item / gold caps enforced), tracking whether
@@ -1938,6 +1965,30 @@ The work below is roughly ordered by the critical path to a walkable game
   (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) held
   erased until a Show, drawn by the same screen-sized sprite mechanism as the
   flash. All share the `:screen` wait, so event timing around them is correct.
+  ✅ **Pan Screen's own per-speed pixel rate is now RPG_RT's real value, not a
+  flat doubling that was 4x too fast at every setting.** `Game::Screen
+  #pan_step_for` (`mruby-rpg2k/mrblib/game.rb`) was `2**(speed-1)` — 1, 2, 4,
+  8, 16, 32 px/frame for speed 1..6, a plain doubling starting at a whole
+  pixel, self-flagged in its own comment as "An approximation — the exact
+  subpixel rate is a native refinement." EasyRPG Player's own
+  `Game_Player::StartPan`/`ResetPan` (`src/game_player.cpp`) set `pan_speed
+  = 2 << speed`, a value that lives in RPG_RT's own 1/16-pixel subpixel
+  space (`SCREEN_TILE_SIZE = 256`, sixteen per this codebase's own real
+  `Game::TILE = 16` px) — so the real whole-pixel rate is `(2 << speed) /
+  16.0`: 0.25, 0.5, 1, 2, 4, 8 px/frame for speed 1..6, exactly a quarter of
+  what this codebase used at every setting, so a Pan Screen command used to
+  finish in a quarter of the real frame count and visibly raced rather than
+  glided. Fixed by correcting the formula and having `@pan_x`/`@pan_y`
+  accumulate the (possibly sub-whole-pixel) real rate exactly — 0.25 and
+  0.5 are both exact powers of two in binary floating point, so the two
+  slowest speeds never drift and still land precisely on the whole-pixel
+  target once a pan finishes — with `#pan_offset` (the only way `Scene::Map`
+  ever reads this) rounding to a whole pixel at the point of consumption,
+  the same way RPG_RT's own subpixel position is only ever rounded for
+  display. Covered by tightening an existing `scripts/rpg2k_logic_check.rb`
+  check to the real per-frame values and adding a new one pinning the
+  sub-pixel accumulation at the slowest speed, both confirmed to fail
+  against the pre-fix code before the fix.
   **Show Picture** now renders (see the interpreter bullet above).
 
   Those two commands now run their **actual transition style** rather than one
