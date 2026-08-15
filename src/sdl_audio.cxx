@@ -35,6 +35,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "profiler.hxx"
 #include "rgss_audio.hxx"
 
 namespace {
@@ -195,6 +196,11 @@ Mix_Chunk* load_chunk(const std::string& path) {
   auto it = g_chunks.find(path);
   if (it != g_chunks.end())
     return it->second;
+  // Only the cache *miss* is timed: the hit above is the common per-frame case
+  // and costs a hash lookup, while this decodes the whole sample on the calling
+  // (game-loop) thread. Keeping them apart is what makes the section's `n`
+  // count actual decodes -- see the audio-threading note in docs/profiling.md.
+  ProfilerScope _scope("audio.sample_load");
   Mix_Chunk* chunk = Mix_LoadWAV(path.c_str());
   if (!chunk && has_midi_extension(path)) {
     // SE/BGS play as mixer samples, and SDL_mixer only synthesises MIDI on the
@@ -219,6 +225,7 @@ Mix_Chunk* load_chunk_mem(const std::string& name, const void* data, int size) {
   auto it = g_chunks.find(name);
   if (it != g_chunks.end())
     return it->second;
+  ProfilerScope _scope("audio.sample_load");
   Mix_Chunk* chunk = nullptr;
   SDL_RWops* rw = SDL_RWFromConstMem(data, size);
   if (rw) {
@@ -293,7 +300,13 @@ void log_music_load_failure(const std::string& what, int size = -1) {
 // (loops = -1 loops forever, 1 plays once). Returns false on load failure.
 bool play_music(const std::string& path, int volume, int loops) {
   free_music();
-  g_music = Mix_LoadMUS(path.c_str());
+  {
+    // The music stream is opened on the game-loop thread. For MIDI this is the
+    // TiMidity synth spinning up over the patch set, which is the single most
+    // expensive audio call in the engine -- the reason this section exists.
+    ProfilerScope _scope("audio.music_load");
+    g_music = Mix_LoadMUS(path.c_str());
+  }
   if (!g_music) {
     log_music_load_failure(path);
     return false;
@@ -320,7 +333,10 @@ bool play_music_mem(const std::string& name,
     g_music_bytes.clear();
     return false;
   }
-  g_music = Mix_LoadMUS_RW(rw, 1);  // 1: SDL_mixer closes the RWops
+  {
+    ProfilerScope _scope("audio.music_load");
+    g_music = Mix_LoadMUS_RW(rw, 1);  // 1: SDL_mixer closes the RWops
+  }
   if (!g_music) {
     log_music_load_failure(name, size);
     g_music_bytes.clear();
@@ -535,6 +551,7 @@ void se_stop(void) {
 // -- per-frame --------------------------------------------------------------
 
 void update(void) {
+  ProfilerScope _scope("audio.update");
   // Resume the BGM once a music effect has finished (or faded out).
   if (g_me_active && !Mix_PlayingMusic()) {
     g_me_active = false;

@@ -318,7 +318,7 @@ class RPG2k
         @anim_frame += 1 # water / animated tiles cycle even during events
         # An event page's conditions may have just stopped (or started) holding;
         # re-select before anything reads a trigger or a graphic this frame.
-        refresh_event_pages
+        RGSS::Profiler.section("map.refresh_pages") { refresh_event_pages }
         # Parallel processes run every frame on their own schedule, independent
         # of whatever the foreground is doing (yado.tk: a message window or a
         # foreground event parked on a blocking wait is not a pause condition,
@@ -369,8 +369,8 @@ class RPG2k
           end
         end
         record_map_event_positions
-        animate_events
-        render
+        RGSS::Profiler.section("map.animate_events") { animate_events }
+        RGSS::Profiler.section("map.render") { render }
       end
 
       private
@@ -9139,8 +9139,8 @@ class RPG2k
         px, py = player_pixel
         cam_x, cam_y = camera_position
 
-        draw_parallax cam_x, cam_y
-        draw_layers cam_x, cam_y
+        RGSS::Profiler.section("map.parallax") { draw_parallax cam_x, cam_y }
+        RGSS::Profiler.section("map.layers") { draw_layers cam_x, cam_y }
 
         @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
@@ -9148,9 +9148,11 @@ class RPG2k
         # Reflect the Set Transparent Flag command (and any leader graphic flag)
         # every frame so the hero hides/shows as events toggle it.
         @player_sprite.visible = !player_hidden?
-        draw_player_frame
-        draw_vehicles cam_x, cam_y, px, py
-        draw_map_animation cam_x, cam_y
+        RGSS::Profiler.section("map.chars") do
+          draw_player_frame
+          draw_vehicles cam_x, cam_y, px, py
+          draw_map_animation cam_x, cam_y
+        end
 
         # Pictures never show on the battle screen (yado.tk / 01_shoshin's
         # 011_siyou: "none show on Menu/Battle screens") -- unlike the Menu
@@ -9167,9 +9169,9 @@ class RPG2k
           @picture_sprite.visible = false
         else
           @picture_sprite.visible = true
-          draw_pictures cam_x, cam_y
+          RGSS::Profiler.section("map.pictures") { draw_pictures cam_x, cam_y }
         end
-        update_screen_overlay
+        RGSS::Profiler.section("map.overlay") { update_screen_overlay }
         draw_timer
       end
 
