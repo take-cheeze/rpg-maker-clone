@@ -1625,15 +1625,32 @@ module Game
     MAX_EFFECTIVE_HP_2K = 999
     MAX_EFFECTIVE_HP_2K3 = 9999
 
-    # Recompute the six effective stats (base + equipment) into their readers and
-    # re-clamp current HP/MP to the refreshed maxima.
+    # Recompute the six effective stats (curve + Change-Parameters shadow +
+    # equipment, one combined clamp) into their readers, and re-clamp current
+    # HP/MP to the refreshed maxima.
+    #
+    # Reads `@base_raw` (the unclamped curve+mod shadow), not `@base` (the
+    # pre-equipment clamped snapshot #change_param also derives) -- a prior
+    # version summed `@base[i] + equip_bonus(i)`, clamping the curve+mod part
+    # *before* equipment ever entered the formula, where EasyRPG's own
+    # `GetBaseAtk` et al. sum curve + mod + equip and clamp the combined
+    # total exactly once. The two only disagree once `@base_raw` has actually
+    # been pushed outside 1..999/1..9999 (a heavy Change Parameters debuff or
+    # buff) and equipment changes afterward: e.g. Attack debuffed by 100 (base
+    # 50 -> raw -50, clamped display 1), then a +30-Attack weapon equipped --
+    # this method used to compute `clamp(1 + 30, 1, 999) = 31`, letting the
+    # weapon's whole bonus land on top of an already-bottomed-out stat that
+    # real RPG_RT still reads as `clamp(-50 + 30, 1, 999) = 1`, the debuff
+    # still fully in effect. `@base` itself is unaffected by this fix --
+    # #change_param and #restore_base still maintain it as their own clamped
+    # snapshot, just no longer the one #recompute_stats reads.
     def recompute_stats
-      @max_hp = Game.clamp(@base[0] + equip_bonus(0), 1, max_hp_cap)
-      @max_mp = Game.clamp(@base[1] + equip_bonus(1), 0, MAX_EFFECTIVE_MP)
-      @atk = Game.clamp(@base[2] + equip_bonus(2), 1, MAX_EFFECTIVE_STAT)
-      @def = Game.clamp(@base[3] + equip_bonus(3), 1, MAX_EFFECTIVE_STAT)
-      @int = Game.clamp(@base[4] + equip_bonus(4), 1, MAX_EFFECTIVE_STAT)
-      @agi = Game.clamp(@base[5] + equip_bonus(5), 1, MAX_EFFECTIVE_STAT)
+      @max_hp = Game.clamp(@base_raw[0] + equip_bonus(0), 1, max_hp_cap)
+      @max_mp = Game.clamp(@base_raw[1] + equip_bonus(1), 0, MAX_EFFECTIVE_MP)
+      @atk = Game.clamp(@base_raw[2] + equip_bonus(2), 1, MAX_EFFECTIVE_STAT)
+      @def = Game.clamp(@base_raw[3] + equip_bonus(3), 1, MAX_EFFECTIVE_STAT)
+      @int = Game.clamp(@base_raw[4] + equip_bonus(4), 1, MAX_EFFECTIVE_STAT)
+      @agi = Game.clamp(@base_raw[5] + equip_bonus(5), 1, MAX_EFFECTIVE_STAT)
       @hp = @max_hp if @hp && @hp > @max_hp
       @mp = @max_mp if @mp && @mp > @max_mp
     end

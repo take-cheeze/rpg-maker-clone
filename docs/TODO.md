@@ -5609,6 +5609,32 @@ not yet verified:
   way either direction, silently passing under both the old buggy code and
   the fix alike). Both confirmed to fail against the pre-fix code before the
   fix.
+- ✅ **`Game::Actor#recompute_stats` now clamps curve + Change-Parameters mod +
+  equipment together as one combined total, instead of clamping the
+  curve+mod part alone and then clamping a second time after adding
+  equipment.** EasyRPG's `Game_Actor::GetBaseAtk`/`GetBaseDef`/`GetBaseSpi`/
+  `GetBaseAgi`/`GetBaseMaxHp`/`GetBaseMaxSp` (`src/game_actor.cpp`) each sum
+  the level curve, the Change Parameters `*_mod` shadow, and every equipped
+  item's own bonus in one expression, then clamp that combined raw total to
+  `Utils::Clamp(n, 1, MaxStatBaseValue())` exactly once. This method instead
+  summed `@base[i]` — the *already-clamped* curve+mod snapshot
+  `#change_param`/`#restore_base` maintain with no equipment involved — with
+  `equip_bonus(i)`, then clamped the sum again: a double clamp that let
+  equipment bypass an active floor/ceiling instead of adding to the real
+  unclamped total underneath it. Concretely, an actor debuffed by Change
+  Parameters far enough to floor a stat's display at 1 (raw deep negative)
+  who then equips a strong item saw the item's *entire* bonus land on top of
+  the floored value (`clamp(1 + 30, 1, 999) = 31`) instead of on top of the
+  real negative total the debuff left behind (`clamp(-50 + 30, 1, 999) = 1`,
+  still fully floored) — silently undoing part or all of an active debuff
+  just by re-equipping. Fixed by switching all six `recompute_stats` lines to
+  read `@base_raw[i]` (the unclamped curve+mod shadow, already tracked and
+  already the read `#change_param`'s own clamp-crossing logic relies on)
+  instead of `@base[i]`; `@base` itself is untouched and still maintained by
+  `#change_param`/`#restore_base`/`#set_level`/`#change_class` for their own
+  purposes. Covered by a new `scripts/rpg2k_logic_check.rb` check pinning the
+  concrete debuff-then-equip trace above, confirmed to fail against the
+  pre-fix code before the fix (`expected 1, got 31`).
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
