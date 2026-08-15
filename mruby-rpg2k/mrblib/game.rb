@@ -1881,6 +1881,37 @@ module Game
       { inflict: inflict, heal: heal }
     end
 
+    # The strongest defensive resistance the actor's equipped shield / armor /
+    # helmet / accessory (never a weapon) offers against state `sid` landing,
+    # as a percent multiplier (100 = no resistance). Ports EasyRPG's
+    # `Game_Actor::GetStateProbability` (`src/game_actor.cpp`): an item that
+    # flags `sid` in its own `state_set` contributes `100 - state_chance`, and
+    # the *lowest* (strongest) contribution across every equipped defensive
+    # item wins -- "takes the armor of the character with the most resistance
+    # for that particular state", not a sum of every piece worn. An RPG2003
+    # item with `reverse_state_effect` set plays no part here (that flag turns
+    # a *weapon's* own states into cures, per #weapon_states -- it has no
+    # meaning on defensive gear's state_set), matching EasyRPG's own
+    # `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard.
+    def state_resist_mul(sid)
+      mul = 100
+      return mul unless @db.respond_to?(:item)
+      is2k3 = rpg2003?
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next unless it && it.respond_to?(:type) &&
+                    [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
+                     Party::ITEM_ACCESSORY].include?(it.type)
+        next if is2k3 && it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+        set = it.respond_to?(:state_set) ? it.state_set : nil
+        next unless set && set[sid - 1] && set[sid - 1] != 0
+        chance = it.respond_to?(:state_chance) ? (it.state_chance || 0) : 0
+        mul = 100 - chance if 100 - chance < mul
+      end
+      mul
+    end
+
     # The actor's basic-attack base hit rate (percent): the highest `hit` among
     # the equipped weapons (item field 17), or the RPG2000 unarmed default of 90
     # when nothing is equipped or the row omits it. Feeds the battle's to-hit
@@ -10572,15 +10603,28 @@ module Game
     # directly (RPG2000 has no separate instant-death mechanic), and yado.tk
     # documents its infliction chance as governed solely by the skill's own
     # occurrence-rate operand, never reduced by the target's A-E resistance rank.
+    # An ally's own defensive equipment can scale the A-E result down further
+    # still -- see Actor#state_resist_mul.
     def state_susceptibility(target, sid)
       return 100 if sid == Game::Actor::DEATH_STATE
       ranks = target.state_ranks
       return 100 if ranks.nil? || ranks.empty?
-      default_rank = ally?(target) ? 2 : 1
+      is_ally = ally?(target)
+      default_rank = is_ally ? 2 : 1
       rank = ranks[sid] || default_rank
       rank = 0 if rank < 0
       rank = 4 if rank > 4
-      state_rate(sid, rank)
+      pct = state_rate(sid, rank)
+      # An ally's equipped shield/armor/helmet/accessory can further resist a
+      # state landing on top of its A-E rank -- see Actor#state_resist_mul.
+      # Enemies equip nothing, matching Game_Enemy::GetStateProbability's own
+      # rank-only formula (no equipment scan at all). `respond_to?` tolerates
+      # a bare test double standing in for `actor` (#ally? only cares that the
+      # field is non-nil), read as full resistance (100, a no-op multiplier).
+      if is_ally && target.actor.respond_to?(:state_resist_mul)
+        pct = pct * target.actor.state_resist_mul(sid) / 100
+      end
+      pct
     end
 
     # Inflict a skill command's `inflict` states on `target`, each landing only if

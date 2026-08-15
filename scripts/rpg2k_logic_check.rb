@@ -8742,6 +8742,77 @@ check "an enemy's own missing state-rank entry defaults to B (80%), an actor's t
   eq 100, bat.send(:state_susceptibility, slime, 2), "state 2 is explicitly rank A (100%) for the enemy too"
 end
 
+# Ports EasyRPG's `Game_Actor::GetStateProbability` (src/game_actor.cpp): a
+# shield/armor/helmet/accessory that flags a state in its own `state_set`
+# resists it landing at all, by `100 - state_chance` percent, on top of the
+# target's A-E rank. `Game_Enemy::GetStateProbability` never scans equipment
+# at all (monsters equip nothing), so only an ally is affected.
+check "an ally's defensive equipment resists a state landing, on top of its A-E rank" do
+  items = { 5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50) } # accessory
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  bare = Game::Battle.from_actor(a)
+  bare.state_ranks = { 99 => 0 } # a fixture row models no ranks -- force the non-empty path
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([bare], [foe], Game::Rng.new(1))
+  eq 60, bat.send(:state_susceptibility, bare, 3),
+     'no resist gear equipped yet -- the plain rank-C default (60%)'
+
+  a.equip([0, 0, 0, 0, 5]) # the accessory, in the accessory slot
+  worn = Game::Battle.from_actor(a)
+  worn.state_ranks = { 99 => 0 }
+  bat2 = Game::Battle.new([worn], [foe], Game::Rng.new(1))
+  eq 30, bat2.send(:state_susceptibility, worn, 3),
+     '60% rank-C base * (100 - 50)% resist = 30%'
+end
+
+check "the strongest of several equipped resistances wins, not their sum or the weakest" do
+  items = {
+    5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50), # accessory, 50% resist
+    6 => fake_item(type: 4, state_set: [0, 0, 1], state_chance: 90), # helmet, 90% resist (stronger)
+  }
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  a.equip([0, 0, 0, 6, 5])
+  hero = Game::Battle.from_actor(a)
+  hero.state_ranks = { 99 => 0 }
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  eq 6, bat.send(:state_susceptibility, hero, 3),
+     '60% rank-C base * (100 - 90)% -- the strongest single piece, not 50+90 stacked'
+end
+
+check "a weapon's own state_set/state_chance is offense only -- it grants no resistance" do
+  items = { 5 => fake_item(type: 1, state_set: [0, 0, 1], state_chance: 90) } # weapon
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  a.equip([5, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  hero.state_ranks = { 99 => 0 }
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  eq 60, bat.send(:state_susceptibility, hero, 3),
+     "a weapon's own state_set never counts toward the wearer's own resistance"
+end
+
+check "on RPG2003, a defensive item's reverse_state_effect flag grants no resistance either" do
+  # reverse_state_effect only ever means something on a *weapon's own* states
+  # (flips inflict to heal, #weapon_states) or a curative item; it has no
+  # meaning on defensive gear's state_set, matching EasyRPG's own
+  # `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard excluding it.
+  items = { 5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50,
+                            reverse_state: true) }
+  st = skill_party({}, items, rpg2003: true)
+  a = st.party.actor_by_id(1)
+  a.equip([0, 0, 0, 0, 5])
+  hero = Game::Battle.from_actor(a)
+  hero.state_ranks = { 99 => 0 }
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  eq 60, bat.send(:state_susceptibility, hero, 3),
+     'reverse_state_effect on defensive gear is not a resistance flip'
+end
+
 check 'Battle.attack_damage is half attack less a quarter defence, floored at 0' do
   eq 18, Game::Battle.attack_damage(40, 8),  '20 - 2'
   eq 0,  Game::Battle.attack_damage(2, 40),  'floored at 0, not 1 (a genuine no-damage hit)'
