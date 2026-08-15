@@ -134,3 +134,11 @@ void log_bridge_set_hook(log_bridge_hook_fn hook);
 // Forward one already-buffered line (no trailing newline) to the installed
 // hook, if any.  Safe to call unconditionally.
 void log_bridge_write(const char* msg, size_t len);
+
+// Convenience for the native (non-Ruby) diagnostics in mruby-rgss/mruby-mvjs
+// that used to be a bare `fprintf(stderr, ...)`: writes `msg` to the real
+// stderr unconditionally -- so mrbtest, PSP and Wio Terminal, which never
+// install a hook, keep exactly the visibility they had before -- and also
+// forwards it through log_bridge_write.  `msg` must be NUL-terminated and
+// have no trailing newline; one is added to the stderr copy.
+void log_bridge_write_stderr(const char* msg);

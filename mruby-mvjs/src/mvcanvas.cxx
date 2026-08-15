@@ -37,6 +37,9 @@
 
 // The engine's fallback font, for projects that ship none (also mruby-rgss).
 #include "default_font.hxx"
+// log_bridge_write_stderr (mruby-rgss/src/log_bridge.cxx), so the font-load
+// warnings below also reach ng-log; see include/terminal.hxx.
+#include "terminal.hxx"
 
 namespace {
 
@@ -225,11 +228,12 @@ GameFont& game_font() {
       // drawing no text — blank windows with no explanation is exactly how the
       // missing .woff support hid for so long.
       if (f.data.size() >= 4 && std::memcmp(f.data.data(), "wOF2", 4) == 0) {
-        std::fprintf(stderr,
-                     "[MV] font %s is WOFF2, which is not supported (it needs "
-                     "Brotli and a transformed glyf table); text will not "
-                     "draw. Ship a .ttf/.otf or WOFF 1.0 instead.\n",
-                     path.c_str());
+        log_bridge_write_stderr(
+            ("[MV] font " + path +
+             " is WOFF2, which is not supported (it needs Brotli and a "
+             "transformed glyf table); text will not draw. Ship a .ttf/.otf "
+             "or WOFF 1.0 instead.")
+                .c_str());
         f.data.clear();
       } else if (f.data.size() >= 4 &&
                  std::memcmp(f.data.data(), "wOFF", 4) == 0) {
@@ -237,8 +241,8 @@ GameFont& game_font() {
         if (woff_to_sfnt(f.data, sfnt)) {
           f.data.swap(sfnt);
         } else {
-          std::fprintf(stderr, "[MV] font %s: could not unpack the WOFF\n",
-                       path.c_str());
+          log_bridge_write_stderr(
+              ("[MV] font " + path + ": could not unpack the WOFF").c_str());
           f.data.clear();
         }
       }
@@ -247,8 +251,8 @@ GameFont& game_font() {
         if (off >= 0 && stbtt_InitFont(&f.info, f.data.data(), off))
           f.ok = true;
         else
-          std::fprintf(stderr, "[MV] font %s: stb_truetype rejected it\n",
-                       path.c_str());
+          log_bridge_write_stderr(
+              ("[MV] font " + path + ": stb_truetype rejected it").c_str());
       }
     }
   }

@@ -81,6 +81,10 @@ void rgss_tts_define(mrb_state* M, RClass* rgss);
 // Wio Terminal, which never install one -- see include/terminal.hxx's
 // "Stderr log bridge" section, docs/adr/0005).
 void log_bridge_write(const char* msg, size_t len);
+// Also defined in log_bridge.cxx: writes to the real stderr (unconditionally)
+// and forwards through log_bridge_write. Used by the native (non-Ruby)
+// diagnostics below that used to be a bare fprintf(stderr, ...).
+void log_bridge_write_stderr(const char* msg);
 
 #if defined(WIO_TERMINAL)
 // Defined in wio_input_bridge.cxx; scans the board's buttons/5-way switch and
@@ -2076,8 +2080,10 @@ std::shared_ptr<TtfFont> load_ttf(const std::string& path) {
     }
   }
   std::fclose(fp);
-  if (!f->ok)
-    std::fprintf(stderr, "[RGSS] failed to load font file: %s\n", path.c_str());
+  if (!f->ok) {
+    const std::string msg = "[RGSS] failed to load font file: " + path;
+    log_bridge_write_stderr(msg.c_str());
+  }
   return f;
 }
 

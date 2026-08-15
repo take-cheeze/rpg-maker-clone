@@ -32,6 +32,10 @@
 #include <string>
 #include <vector>
 
+// log_bridge_write_stderr (mruby-rgss/src/log_bridge.cxx), so warn() below
+// also reaches ng-log; see include/terminal.hxx.
+#include "terminal.hxx"
+
 // ES3 renderbuffer/attachment enums the base <GLES2/gl2.h> may not declare. The
 // llvmpipe context we create is ES3-capable, so these are valid at runtime;
 // define them defensively for builds whose GLES2 header predates ES3.
@@ -60,8 +64,9 @@ namespace {
 
 // Log a one-line reason to stderr, tagged like the rest of the maker runtime.
 void warn(const char* what, const char* detail) {
-  std::fprintf(stderr, "[MZ-GL] %s%s%s\n", what, detail ? ": " : "",
-               detail ? detail : "");
+  const std::string msg = std::string("[MZ-GL] ") + what +
+                          (detail ? ": " : "") + (detail ? detail : "");
+  log_bridge_write_stderr(msg.c_str());
 }
 
 // Pin EGL/GLES to the pure-software surfaceless path for the duration of an EGL
@@ -563,10 +568,12 @@ bool smoke_test(std::uint8_t out_rgba[4]) {
       ok = px[1] > 200 && px[0] < 60 && px[2] < 60;
       if (ok && out_rgba)
         std::memcpy(out_rgba, px, 4);
-      if (!ok)
-        std::fprintf(stderr,
-                     "[MZ-GL] smoke_test unexpected centre pixel %d,%d,%d,%d\n",
-                     px[0], px[1], px[2], px[3]);
+      if (!ok) {
+        char detail[64];
+        std::snprintf(detail, sizeof(detail), "%d,%d,%d,%d", px[0], px[1],
+                      px[2], px[3]);
+        warn("smoke_test unexpected centre pixel", detail);
+      }
     }
   }
 
