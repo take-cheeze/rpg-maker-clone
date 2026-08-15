@@ -13808,11 +13808,11 @@ end
 # A battle whose allies carry a source actor id, so the actor-keyed conditions
 # and the battle Conditional Branch can find them.
 FakeSourceActor = Struct.new(:id)
-def battle_with(ally_hp: 100, foe_hp: 100, foe_mp: 8)
+def battle_with(ally_hp: 100, foe_hp: 100, foe_mp: 8, rpg2003: false)
   hero = combatant('Hero', 10, 0, 10, ally_hp)
   hero.actor = FakeSourceActor.new(1)
   foe = combatant_mp('Slime', 5, 0, 5, foe_hp, foe_mp)
-  Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  Game::Battle.new([hero], [foe], Game::Rng.new(1), rpg2003: rpg2003)
 end
 
 check 'battle-event opcodes match the LCF Code enum' do
@@ -13909,14 +13909,45 @@ check 'BattlePage.active? fails a condition the runtime cannot answer' do
   # pages with a null source; only the separate 2k3 ATB scene ever passes a
   # real one) -- so this is not a stand-in for a future acting-battler
   # context, it is RPG2000's own battle system never satisfying the
-  # condition either.
+  # condition either. Unlike turn_enemy/turn_actor/fatigue below,
+  # command_actor is tested on every edition (EasyRPG's own
+  # AreConditionsMet still gates it on IsRPG2k3Commands(), but that gate is
+  # moot here since #actor_command always answers nil regardless).
   eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
                                    command_id: 1), st.switches, st.variables, b)
-  # Nor may one keyed to a battler that is not in this fight.
+  # Nor may one keyed to a battler that is not in this fight -- on an
+  # RPG2003 battle, where turn_enemy/turn_actor actually apply (see below).
+  b2003 = battle_with(rpg2003: true)
   eq false, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 9),
-                       st.switches, st.variables, b)
+                       st.switches, st.variables, b2003)
   eq false, BP.active?(battle_cond(BP::TURN_ACTOR, turn_actor_id: 99),
-                       st.switches, st.variables, b)
+                       st.switches, st.variables, b2003)
+end
+
+# turn_enemy / turn_actor / fatigue are RPG2003-only page conditions --
+# EasyRPG's own Game_Interpreter_Battle::AreConditionsMet
+# (src/game_interpreter_battle.cpp) gates all three behind
+# Player::IsRPG2k3Commands(), the same way Game::EventPage.active? already
+# gates a map event page's TIMER2 condition on rpg2003?. An RPG2000 database
+# has no editor control for any of these three condition types at all, so a
+# genuine .lmt should never set the bits -- but an unguarded flag reads as
+# "always true" the instant one is set, silently turning a page meant to be
+# conditional into one that always fires.
+check "BattlePage.active? ignores turn_enemy / turn_actor / fatigue on a " \
+      "non-RPG2003 battle" do
+  b = battle_with # RPG2000 (rpg2003: false, the default)
+  st = new_state
+  # A condition that would clearly fail if evaluated (turn 5 required, no
+  # battler has acted at all yet; fatigue 50-100 required, party untouched)
+  # must still read as active, since RPG2000 never even looks at these bits.
+  eq true, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 0,
+                                  turn_enemy_b: 5, turn_enemy_a: 0),
+                      st.switches, st.variables, b)
+  eq true, BP.active?(battle_cond(BP::TURN_ACTOR, turn_actor_id: 1,
+                                  turn_actor_b: 5, turn_actor_a: 0),
+                      st.switches, st.variables, b)
+  eq true, BP.active?(battle_cond(BP::FATIGUE, fatigue_min: 50, fatigue_max: 100),
+                      st.switches, st.variables, b)
 end
 
 # -- RPG2003 per-battler turn counters and party fatigue ----------------------
@@ -13947,7 +13978,7 @@ check 'turn_enemy / turn_actor read the per-battler counters' do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.actor = FakeSourceActor.new(1)
   slime = combatant('Slime', 5, 0, 5, 999)
-  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), rpg2003: true)
   st = new_state
   # Turn 0 for everyone before anyone has acted.
   eq true, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 0,
@@ -14004,7 +14035,8 @@ end
 
 check 'the fatigue page condition tests the window' do
   hero = combatant_mp('Hero', 10, 0, 10, 100, 50)
-  b = Game::Battle.new([hero], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1))
+  b = Game::Battle.new([hero], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1),
+                       rpg2003: true)
   st = new_state
   # "at least half worn down" fires only once the party is.
   cond = battle_cond(BP::FATIGUE, fatigue_min: 50, fatigue_max: 100)
