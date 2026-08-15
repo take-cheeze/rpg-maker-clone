@@ -10492,8 +10492,6 @@ check 'Enter/Exit Vehicle boards the vehicle the party stands on' do
 end
 
 check 'Open Main Menu pushes the field menu and resumes when it closes' do
-  # A foreground event, not a parallel one: a background process resumes every
-  # UI wait itself, and Open Main Menu is a UI wait.
   cmds = [ECmd.new(IC2::OPEN_MAIN_MENU, []), add_var_cmd(6)]
   scene = new_scene({}, player: [0, 0])
   parent = scene.instance_variable_get(:@parent)
@@ -10506,6 +10504,26 @@ check 'Open Main Menu pushes the field menu and resumes when it closes' do
   scene.update # back from the menu: the wait is released...
   scene.update # ...and the next frame runs the rest of the event
   eq 1, st.variables[6], 'the event resumed after the menu closed'
+end
+
+# EasyRPG's `Game_Interpreter_Map::CommandOpenMainMenu`
+# (src/game_interpreter_map.cpp) is gated only on
+# `Game_Message::IsMessageActive()`, no `main_flag` restriction, so a
+# Parallel Process can trigger it exactly like the foreground can. Before
+# this fix, `Scene::Map#drive_parallel_wait` had no `:menu` branch, so it
+# fell into the generic "background: resume" default and a Parallel
+# Process's own Open Main Menu silently never opened the menu at all.
+check 'Open Main Menu issued from a Parallel Process also pushes the field menu' do
+  par = page(trigger: 4) # Parallel Process
+  par.event_commands = [ECmd.new(IC2::OPEN_MAIN_MENU, []), add_var_cmd(6)]
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  2.times { scene.update } # raises the :menu wait, then opens the menu
+  eq 1, parent.pushed.length, 'the menu scene was pushed for a Parallel-Process-issued command'
+  eq 0, st.variables[6], 'the process is paused while the menu is open'
+  2.times { scene.update } # back from the menu: the wait releases, then the process continues
+  eq 1, st.variables[6], 'the process resumed after the menu closed'
 end
 
 check 'Open Main Menu ignores a Change Main Menu Access lock -- unlike the ' \
@@ -13584,6 +13602,30 @@ check 'Open Save Menu pushes Scene::SaveLoad in :save mode and resumes the event
   scene.update # back from the picker: the wait is released...
   scene.update # ...and the next frame runs the rest of the event
   eq 1, st.variables[7], 'the event resumed after the picker closed'
+end
+
+# EasyRPG's `Game_Interpreter_Map::CommandOpenSaveMenu`
+# (src/game_interpreter_map.cpp) is gated only on
+# `Game_Message::IsMessageActive()`, no `main_flag` restriction, so a
+# Parallel Process can trigger it exactly like the foreground can. Before
+# this fix, `Scene::Map#drive_parallel_wait` had no `:save_menu` branch, so
+# it fell into the generic "background: resume" default and a Parallel
+# Process's own Open Save Menu silently never opened the picker at all.
+check 'Open Save Menu issued from a Parallel Process also pushes the save picker' do
+  par = page(trigger: 4) # Parallel Process
+  par.event_commands = [ECmd.new(IC2::OPEN_SAVE_MENU, []), add_var_cmd(7)]
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  st = scene.instance_variable_get(:@state)
+  2.times { scene.update } # raises the :save_menu wait, then opens the picker
+  eq 1, parent.pushed.length,
+     'the save/load picker was pushed for a Parallel-Process-issued command'
+  pushed = parent.pushed.first
+  ok pushed.is_a?(RPG2k::Scene::SaveLoad), "pushed Scene::SaveLoad, got #{pushed.class}"
+  eq :save, pushed.instance_variable_get(:@mode), 'opened in :save mode'
+  eq 0, st.variables[7], 'the process is paused while the picker is open'
+  2.times { scene.update } # back from the picker: the wait releases, then the process continues
+  eq 1, st.variables[7], 'the process resumed after the picker closed'
 end
 
 check 'Open Save Menu: confirming a slot in the pushed picker really saves through ' \
