@@ -8149,7 +8149,12 @@ module Game
         # BattlePage.check_turns, which documents why it reads backwards).
         BattlePage.check_turns(turn, a.condition_param2, a.condition_param1)
       when EnemyAction::COND_ACTORS
-        n = @allies.reject(&:out_of_play?).size
+        # "Enemies" in the editor's own condition list -- how many of this
+        # monster's own troop-mates are still standing, not the player
+        # party's headcount. EasyRPG's IsActionValid reads
+        # game_enemyparty's own GetActiveBattlers here (src/enemyai.cpp),
+        # never game_party.
+        n = @enemies.reject(&:out_of_play?).size
         n >= a.condition_param1 && n <= a.condition_param2
       when EnemyAction::COND_HP
         within_percent?(b.hp, b.max_hp, a)

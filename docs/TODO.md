@@ -6917,6 +6917,28 @@ not yet verified:
   ineffective rating-60 skill's own rating even though the skill itself
   never fires), all three confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **An action pattern's "Enemies" condition (`condition_type` 3,
+  `COND_ACTORS`) now ranges over the acting monster's own living
+  troop-mates, not the player party's headcount — a straight side-swap,
+  now fixed.** `Game::Battle#enemy_action_valid?`'s `COND_ACTORS` branch
+  (`mruby-rpg2k/mrblib/game.rb`) counted `@allies.reject(&:out_of_play?)
+  .size` — the number of living *party* members — where EasyRPG Player's
+  own `IsActionValid` (`src/enemyai.cpp`) reads `Main_Data::
+  game_enemyparty`'s own `GetActiveBattlers`, the monster *troop's* own
+  headcount, never `game_party`. Any action pattern using this condition
+  (a boss escalating once its escorts are down, a support minion firing
+  only while several troop-mates remain) evaluated against the wrong
+  side's population entirely — in a typical fixed-size party this made
+  the condition permanently static for the whole fight instead of
+  reacting to the troop actually thinning out. Fixed by reading
+  `@enemies` instead of `@allies`. An existing
+  `scripts/rpg2k_logic_check.rb` check ("an actor-count action ranges
+  over the living party") had itself encoded this same bug rather than
+  independently deriving the real behaviour — replaced with a
+  three-enemy-troop check pinning the condition against the *troop's*
+  own headcount (fires with all three troop-mates alive, stops firing
+  once two are killed off, regardless of the untouched one-hero party),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An HP-increase cannot revive a downed (0 HP) combatant**, checked
   across all three paths that can raise HP. The **field actor** path
   (`Game::Actor#change_hp`, `mruby-rpg2k/mrblib/game.rb`) was already
