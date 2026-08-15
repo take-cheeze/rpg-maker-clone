@@ -82,6 +82,17 @@ def ok(cond, msg = 'expected truthy')
   raise msg unless cond
 end
 
+# Runs the block with $stderr redirected to a StringIO and returns everything
+# written to it, for checks that assert on a "[RPG2k] ..." diagnostic line.
+def capture_stderr
+  old_stderr = $stderr
+  $stderr = StringIO.new
+  yield
+  $stderr.string
+ensure
+  $stderr = old_stderr
+end
+
 # -- fakes --------------------------------------------------------------------
 
 # A grid world implementing the MoveRoute/MoveType `world` protocol. Passability
@@ -1419,6 +1430,17 @@ check 'a missing Call Event target is a no-op and the caller continues' do
   ok !it.running?
 end
 
+check 'a missing Call Event common-event target is reported, not silent' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: {}) # id 5 not defined
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0])])
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: common event 5 not found'), out
+end
+
 check 'a face set inside a Call Event survives back into the caller and clears only once the caller finishes too' do
   st = new_state
   cfg = st.message_config
@@ -1724,6 +1746,56 @@ check 'Call Event on "this event" from a common event is a no-op' do
   it.update
   eq false, st.switches[9], 'there is no "this event" to call'
   eq true, st.switches[1], 'and the caller carries on'
+end
+
+check 'Call Event on "this event" from a common event reports the unresolved target' do
+  st = new_state
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [1, 10005, 2])]) # no event is running it
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: "this event" has no map event to refer to'), out
+end
+
+check 'Call Event targeting a stale map event id or page is reported, not silent' do
+  st = new_state
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [1, 8, 2])]) # event 8 does not exist
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: map event 8 page 2 not found'), out
+
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  it2.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  out2 = capture_stderr do
+    it2.start([FakeCmd.new(IC::CALL_EVENT, [1, 7, 3])]) # event 7 has no page 3
+    it2.update
+  end
+  ok out2.include?('[RPG2k] Call Event: map event 7 page 3 not found'), out2
+end
+
+check 'a Call Event resolver failure is reported instead of swallowed' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  failing_resolver = Object.new
+  def failing_resolver.common_event_commands(_id)
+    raise 'resolver exploded'
+  end
+  it.resolver = failing_resolver
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
+              FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: failed to resolve target: resolver exploded'), out
+  eq true, st.switches[1], 'the caller still continues after the failed call'
 end
 
 check 'Call Event has no indirect mode for a common event id (target 0 stays literal)' do

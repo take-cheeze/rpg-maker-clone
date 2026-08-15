@@ -3794,13 +3794,16 @@ Everything below is unverified against the codebase.
   already independently confirmed elsewhere in this doc. `MAX_CALL_DEPTH =
   1000` matches "nesting caps at 1000" exactly, and "caller resumes right
   after itself" is the natural consequence of the call-stack push/pop.
-  Calling a bad event/page id's specific Windows error dialogs, the heavy-
-  load freeze and its `Wait:0.0s` workaround (a timing/performance edge
-  case), and "Battle Events can't use Call Event through the normal editor"
-  (an editor-authoring limitation with no runtime analog) remain
-  unverifiable in this environment and are not modelled. ("A variable can't
-  pick the called common-event id directly" is confirmed already correct —
-  see below.)
+  Calling a bad event/page id no longer resolves to nothing untraceably —
+  `#resolve_call`/`#map_event_call` now log a `[RPG2k] Call Event: ...`
+  diagnostic for an unresolved target instead (see the "Concrete runtime
+  error catalog" entry below) — but the specific Windows error dialogs
+  themselves, the heavy-load freeze and its `Wait:0.0s` workaround (a
+  timing/performance edge case), and "Battle Events can't use Call Event
+  through the normal editor" (an editor-authoring limitation with no
+  runtime analog) remain unverifiable in this environment and are not
+  modelled. ("A variable can't pick the called common-event id directly" is
+  confirmed already correct — see below.)
 - **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
   above).
@@ -7662,6 +7665,29 @@ specific stale tile, invalid battle animation only when it would actually
 display, invalid skill only when a skill-select screen opens (or, if the
 dangling ref is in a hero's learned-skill list, at the moment of
 level-up).
+✅ **Call Event no longer swallows three of the four "invalid event ID"
+causes above, plus the separate "invalid event page" case** — this codebase
+has no error-dialog UI to show real RPG_RT's popup, but the target now
+gets a logged `[RPG2k] Call Event: ...` diagnostic (the same
+reported-not-invented pattern Toggle Fullscreen and Call Common Event
+already use) instead of resolving to nothing with no trace. `Interpreter
+#resolve_call` (`mruby-rpg2k/mrblib/interpreter.rb`) reports an unresolved
+common-event target (mode 0) and any exception raised while resolving a
+target; `#map_event_call` reports "This Event" used with no map-event
+context (mode 1/2 from inside a common event, `#character_ref` returning
+`nil`) and a map-event target whose id or page number doesn't resolve
+(mode 1/2, covering both the "common event referencing a map-event ID
+absent on the current map" cause and "a variable-driven Call Event
+resolving to no match", plus invalid-event-page as a distinct message from
+invalid-event-id). The remaining "invalid event ID" cause — a stale
+Variable-Op/Move-Route target — is a different command family, not part
+of Call Event, and is still open. **Store Event ID has no analogous gap**:
+unlike Call Event it never targets an event *by id*, only by tile position
+(`#do_store_event_id`), and "no event on this tile" (stored as `0`) is a
+genuine, correctly-modelled answer rather than a stale reference — nothing
+there was silently failing. Covered by four new
+`scripts/rpg2k_logic_check.rb` checks (one per new diagnostic path),
+each asserting on the exact captured `$stderr` line.
 
 **Map/Event ID assignment & tile occupancy**
 - Event IDs (and separately, Map IDs) are assigned by **creation order**
