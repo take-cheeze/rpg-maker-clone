@@ -10717,6 +10717,49 @@ check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unco
   eq 0, bat.send(:to_hit, attacker, dodger), 'still dodges with a second, unrelated state'
 end
 
+check 'battle: a "do nothing"-restricted target always gets hit' do
+  # EasyRPG's CalcNormalAttackToHit: `if (!target.CanAct()) return 100;` --
+  # the next term down from avoid_attacks, ahead of every ordinary accuracy
+  # roll. An asleep/paralysed target (state restriction 1) was previously
+  # rolled through the normal hit-rate/agility math like anyone else.
+  states = { 5 => fake_state(restriction: Game::Battle::RESTRICTION_DO_NOTHING) }
+  # A slow, low-hit-rate attacker against a fast target: agility alone would
+  # push this well under 100 if the restriction were not consulted first.
+  attacker = combatant('Weak', 0, 0, 1, 100)
+  attacker.hit_rate = 10
+  target = combatant('Sleeper', 0, 0, 99, 100)
+  bat = Game::Battle.new([attacker], [target], Game::Rng.new(1), states,
+                         false, false, true)          # accuracy on
+  eq 0, bat.send(:to_hit, attacker, target), "unafflicted: the attacker's own poor odds, floored at 0"
+
+  target.states = [5]
+  eq 100, bat.send(:to_hit, attacker, target), "afflicted: sleep overrides the attacker's own poor odds"
+
+  awake = combatant('Awake', 0, 0, 99, 100)
+  ok bat.send(:to_hit, attacker, awake) < 100,
+     'an unafflicted target of the same agility is not swept up in the same rule'
+end
+
+check "battle: a state's reduce_hit_ratio folds into the base hit rate before " \
+      'the agility term, not after' do
+  # EasyRPG: `to_hit = to_hit * GetHitChanceModifierFromStates() / 100;` runs
+  # *before* `CalcToHitAgiAdjustment`, so the AGI term's own nonlinear
+  # `100 - (100 - to_hit) * (src + tgt) / (2 * src)` shape is applied to the
+  # already-blinded hit rate, not to the unblinded base with the state
+  # discount multiplied on afterward -- the two orders disagree whenever
+  # attacker and target have unequal agility, since the AGI adjustment isn't
+  # linear in its input.
+  states = { 8 => fake_state(reduce_hit_ratio: 50) }
+  blind = combatant('Blind', 0, 0, 20, 100)   # faster than its target
+  blind.hit_rate = 90
+  blind.states = [8]
+  foe = combatant('Foe', 0, 0, 10, 100)
+  bat = Game::Battle.new([blind], [foe], Game::Rng.new(1), states,
+                         false, false, true)          # accuracy on
+  eq 59, bat.send(:to_hit, blind, foe),
+     '90*50/100=45 scaled by the state first, then 100-(100-45)*30/40=59 by agility'
+end
+
 check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its own caster' do
   # Parsed (mruby-lcf/mrblib/schema.rb state field 37, reflect_magic) but never
   # read anywhere in Game::Battle before this fix -- EasyRPG's
