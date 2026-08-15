@@ -7373,7 +7373,21 @@ class RPG2k
       # map change.
       def perform_teleport(t, keep_pictures: false)
         map_id, x, y, dir = t
-        @map = @parent.load_map(map_id)
+        begin
+          @map = @parent.load_map(map_id)
+        rescue StandardError => e
+          # Transfer Player / Recall to Location naming a map id whose .lmu no
+          # longer exists (a deleted map, or a stale id left behind by one) --
+          # docs/TODO.md's runtime error catalog "invalid map": real RPG_RT
+          # shows an error dialog naming the missing file rather than crashing.
+          # This codebase has no error-dialog UI, so it reports the same detail
+          # to $stderr, matching Call Event's own diagnostic-not-crash pattern,
+          # and leaves the party on the map they were already on -- @map/@state
+          # are still untouched at this point, so there is nothing to revert.
+          $stderr.puts "[RPG2k] Teleport: destination map ##{map_id} failed to load: #{e.message}"
+          @interpreter.stop
+          return
+        end
         @state.map = @map
         @state.map_id = map_id
         apply_map_access

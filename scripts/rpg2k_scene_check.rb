@@ -15,6 +15,7 @@
 # Usage: ruby scripts/rpg2k_scene_check.rb   (exits non-zero on any failure)
 
 require 'ostruct'
+require 'stringio'
 
 # -- RGSS stubs (just enough for Scene::Map to build, render and tick) --------
 
@@ -239,6 +240,17 @@ def ok(cond, msg = 'expected truthy'); raise msg unless cond; end
 def eq(exp, act, msg = nil)
   return if exp == act
   raise "expected #{exp.inspect}, got #{act.inspect}#{msg ? " (#{msg})" : ''}"
+end
+
+# Runs the block with $stderr redirected to a StringIO and returns everything
+# written to it, for checks that assert on a "[RPG2k] ..." diagnostic line.
+def capture_stderr
+  old_stderr = $stderr
+  $stderr = StringIO.new
+  yield
+  $stderr.string
+ensure
+  $stderr = old_stderr
 end
 
 # -- synthetic database / map -------------------------------------------------
@@ -3506,6 +3518,56 @@ check 'a Change Encounter Rate override does not survive a teleport' do
      'Panorama/Tile Replacement -- an override does not survive any map change'
   eq 25, scene.send(:current_encounter_steps),
      "current_encounter_steps falls back to the map tree node's own setting again"
+end
+
+# A parent whose load_map raises for one specific "deleted" map id (mirroring
+# RPG2k#load_map's bare File.open against a stale/removed Map####.lmu) and
+# otherwise behaves like fake_parent's normal empty-map stub.
+def missing_map_parent(db, missing_id)
+  FakeParent.new(db) do |id|
+    if id == missing_id
+      raise Errno::ENOENT, "Map#{format('%04d', missing_id)}.lmu"
+    else
+      fake_map(id, {})
+    end
+  end
+end
+
+check 'a Transfer Player naming a deleted map reports a diagnostic and stays put' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::TELEPORT, [999, 4, 3])]
+  db = fake_db(nil, nil, 0, 0)
+  state = Game::State.new(fake_party([]), 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  parent = missing_map_parent(db, 999)
+  scene = RPG2k::Scene::Map.new(parent, state)
+  out = capture_stderr { 20.times { scene.update } }
+  ok out.include?('[RPG2k] Teleport:') && out.include?('Map0999.lmu'),
+     "expected a [RPG2k] Teleport diagnostic naming the missing file, got: #{out.inspect}"
+  eq 1, state.map_id, 'the party never left the map it was already on'
+  eq [0, 0], [state.x, state.y], 'the player position is untouched by the failed teleport'
+end
+
+check 'Recall to Location naming a deleted map reports a diagnostic and stays put' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 0, 999]), # var1 = the deleted map id
+    ECmd.new(ic::CONTROL_VARS, [0, 2, 2, 0, 0, 4]),   # var2 = x 4
+    ECmd.new(ic::CONTROL_VARS, [0, 3, 3, 0, 0, 3]),   # var3 = y 3
+    ECmd.new(ic::RECALL_LOCATION, [1, 2, 3]),
+  ]
+  db = fake_db(nil, nil, 0, 0)
+  state = Game::State.new(fake_party([]), 1, 5, 6)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  parent = missing_map_parent(db, 999)
+  scene = RPG2k::Scene::Map.new(parent, state)
+  out = capture_stderr { 20.times { scene.update } }
+  ok out.include?('[RPG2k] Teleport:') && out.include?('Map0999.lmu'),
+     "expected a [RPG2k] Teleport diagnostic naming the missing file, got: #{out.inspect}"
+  eq 1, state.map_id, 'the party never left the map it was already on'
+  eq [5, 6], [state.x, state.y], 'the player position is untouched by the failed recall'
 end
 
 check 'the menu opens on cancel only when menu access is allowed' do

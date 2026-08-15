@@ -7740,7 +7740,8 @@ resolving to no match); invalid event *page* (event exists, page number
 doesn't — a **separate** error from invalid event, i.e. RPG_RT validates
 event-id-existence and page-existence as two distinct checks); invalid
 map (Transfer Player / Teleport-to-Remembered-Location targeting a
-nonexistent map id — error text includes the literal missing filename);
+nonexistent map id — error text includes the literal missing filename;
+fixed, see the ✅ below);
 invalid hero, skill, item, enemy, enemy group, battle animation, terrain,
 chipset, common event (all: a database shrink leaves a dangling id
 reference somewhere, shown as "?" in the editor); event-call recursion
@@ -7774,6 +7775,32 @@ genuine, correctly-modelled answer rather than a stale reference — nothing
 there was silently failing. Covered by four new
 `scripts/rpg2k_logic_check.rb` checks (one per new diagnostic path),
 each asserting on the exact captured `$stderr` line.
+✅ **"invalid map" (Transfer Player / Recall to Location naming a
+nonexistent map id) no longer crashes the interpreter** — `Scene::Map
+#perform_teleport` (`mruby-rpg2k/mrblib/scene/map.rb`) called
+`@parent.load_map(map_id)` (`RPG2k#load_map`, `mruby-rpg2k/mrblib/main.rb`,
+a bare `File.open` against `Map####.lmu`) with nothing guarding it
+anywhere in the call chain, so a stale/deleted map id raised
+`Errno::ENOENT` straight out of the running event and killed the whole
+process. The map-load call is now wrapped in its own rescue — narrower
+than catching over the whole method, per this repo's own error-handling
+rule — that logs a `[RPG2k] Teleport: destination map #<id> failed to
+load: <message>` diagnostic (the underlying `e.message` already carries
+the literal missing filename, matching real RPG_RT's own error dialog
+text) and aborts just the teleport: `@interpreter.stop` unwinds the
+requesting event's own command list and the method returns before
+touching `@map`/`@state`, so the party stays exactly where it already
+was. Both routes that can name a bad map id — Transfer Player (the
+`TELEPORT` command) and Recall to Location (`RECALL_LOCATION`, which
+resolves its target from three variables and routes through the very
+same `:teleport` wait/dispatch) — go through this one method, along with
+every other `#perform_teleport` caller (a Teleport/Escape field skill's
+`pending_teleport`, and a Common Event Parallel Process's own teleport
+request), so all of them are covered by the same fix. Verified with two
+new `scripts/rpg2k_scene_check.rb` checks, each targeting a `FakeParent`
+whose `load_map` raises `Errno::ENOENT` for one specific id and asserting
+the `$stderr` diagnostic fires while `state.map_id`/`state.x`/`state.y`
+stay exactly as they were before the failed command ran.
 
 **Map/Event ID assignment & tile occupancy**
 - Event IDs (and separately, Map IDs) are assigned by **creation order**
