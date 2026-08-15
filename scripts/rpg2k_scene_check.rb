@@ -1968,6 +1968,11 @@ end
 
 # A party the placeholder battle grants rewards to: gold plus actors that bank
 # EXP, with the leader Scene::Map reads while rendering.
+# A database-wide Battle Command entry (chunk 29's `commands` table --
+# `Game::Actor#battle_command_row`'s own return shape): just the two fields
+# `#custom_battle_commands` (Scene::Map) reads, `name` and `type`.
+BattleCommandDef = Struct.new(:name, :type)
+
 class BattleStubActor
   attr_accessor :exp, :hp, :mp
   attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills, :states
@@ -1978,13 +1983,23 @@ class BattleStubActor
   # with an ally already afflicted, without reaching into the built battle's
   # own Combatant list after the fact.
   def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1,
-                 rename_skill: false, skill_name: '', states: [], force_ai: false)
+                 rename_skill: false, skill_name: '', states: [], force_ai: false,
+                 battle_commands: nil, battle_command_table: {})
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
     @rename_skill = rename_skill; @skill_name = skill_name; @states = states
     @force_ai = force_ai
+    @battle_commands = battle_commands
+    @battle_command_table = battle_command_table
   end
+  # Mirrors Game::Actor's own RPG2003 battle-command-customization interface
+  # (`#battle_commands` / `#battle_command_row`), so a stub battle can drive
+  # `Scene::Map#custom_battle_commands` the same way a real actor row would.
+  # nil (the default) means "no customization", same as an actor whose class
+  # sets no such list.
+  attr_reader :battle_commands
+  def battle_command_row(id); @battle_command_table[id]; end
   def gain_exp(n); @exp += n; end
   # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
   # HP absolutely; the stub has no state model beyond the starting `states`
@@ -7667,6 +7682,18 @@ class BattleMagicParty
   def switch_item?(_id); false; end
 end
 
+# BattleMagicParty built around a caller-supplied actor instead of always
+# constructing its own -- lets a check outfit the lone actor with a
+# customized RPG2003 battle-command list while keeping the Skill/Item
+# sub-menu backing (`battle_skills` / `db_skill` / `battle_items` / `db_item`)
+# those commands need to actually open.
+class BattleCustomCommandParty < BattleMagicParty
+  def initialize(actor)
+    super()
+    @actors = [actor]
+  end
+end
+
 # Open a battle and step to the per-actor command menu.
 def battle_to_command(scene)
   ui = nil
@@ -7956,6 +7983,81 @@ check 'Enemy Encounter scene: an actor without the custom name keeps the Skill t
   ui = battle_to_command(scene)
   labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
   eq 'Skill', labels[1], 'no rename set (the default) falls back to the database term'
+end
+
+check "Enemy Encounter scene: an actor's RPG2003 skill-only battle-command list drives the menu" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  actor = BattleStubActor.new(atk: 40, agi: 20, mp: 10, skills: [1],
+    battle_commands: [10, 0, -1, -1, -1, -1, -1],
+    battle_command_table: { 10 => BattleCommandDef.new('Cast Magic', Game::Actor::BATTLE_COMMAND_SUBSKILL) })
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq ['Cast Magic'], labels,
+     "a customized list of just one Subskill entry (plus Row, still unimplemented) " \
+     'shows that one row alone, not the fixed four'
+  press_key(scene, RGSS::Input::C) # the only row, cmd 0, is a Skill-type command
+  eq :skill, ui[:phase], 'a Subskill entry opens the Skill list the same as the generic Skill command'
+end
+
+check "Enemy Encounter scene: an actor's shortened, reordered battle-command list draws in its own order" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  actor = BattleStubActor.new(
+    battle_commands: [4, 3, 0, -1, -1, -1, -1],
+    battle_command_table: {
+      4 => BattleCommandDef.new('Bag', Game::Actor::BATTLE_COMMAND_ITEM),
+      3 => BattleCommandDef.new('Guard', Game::Actor::BATTLE_COMMAND_DEFENSE)
+    })
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[Bag Guard], labels, 'Item first then Defense, the database order, not Attack/Skill/Defend/Item'
+  press_key(scene, RGSS::Input::C) # cmd 0 here is the Item-type command
+  eq :item, ui[:phase], 'the reordered list still opens the Item sub-menu, not Attack'
+end
+
+check "Enemy Encounter scene: a reordered Defense command still commits at once, not just at cmd 2" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  actor = BattleStubActor.new(
+    battle_commands: [4, 3, 0, -1, -1, -1, -1],
+    battle_command_table: {
+      4 => BattleCommandDef.new('Bag', Game::Actor::BATTLE_COMMAND_ITEM),
+      3 => BattleCommandDef.new('Guard', Game::Actor::BATTLE_COMMAND_DEFENSE)
+    })
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Bag (cmd 0) -> Guard (cmd 1)
+  eq 1, ui[:cmd]
+  press_key(scene, RGSS::Input::C)    # Defense commits at once, no sub-menu, despite sitting at cmd 1
+  eq :animate, ui[:phase],
+     "cmd 1's own action (:defend) drove this, not the fixed four's cmd-2-is-Defend rule"
+end
+
+check "Enemy Encounter scene: a battle-command list of Row alone falls back to the fixed four" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party,
+    BattleStubParty.new(BattleStubActor.new(battle_commands: [0, -1, -1, -1, -1, -1, -1])))
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[Attack Skill Defend Item], labels,
+     'Row alone (the same shape an actor with no customization at all reads from the database) ' \
+     'is not a usable list on its own, so this falls back to the fixed four'
 end
 
 # A hero with two battle skills, so the skill-list cursor has more than one row

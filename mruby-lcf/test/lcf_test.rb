@@ -133,6 +133,21 @@ assert "LCF::Database item armour option flags (chunks 25-28) and equip animatio
   assert_equal 4, a.speed
 end
 
+assert "LCF::Database battle-commands table (chunk 29 -- name + type)" do
+  # RPG2003's database-wide Battle Commands list: a singleton struct (not a
+  # table) whose own field 10 holds the actual name+type entries an actor's
+  # or class's `battle_commands` ids (field 80) index into.
+  cmd1 = lcf_array1d([lcf_str_field(1, "Attack"), lcf_int_field(2, 0)])
+  cmd2 = lcf_array1d([lcf_str_field(1, "Cast Fire"), lcf_int_field(2, 2)])
+  battlecommands = lcf_array1d([lcf_field(10, lcf_array2d([[1, cmd1], [2, cmd2]]))])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(29, battlecommands)])))
+  assert_equal "Attack", db.battlecommands.commands[1].name
+  assert_equal 0, db.battlecommands.commands[1].type
+  assert_equal "Cast Fire", db.battlecommands.commands[2].name
+  assert_equal 2, db.battlecommands.commands[2].type
+end
+
 assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
   row = LCF::Array1D.new(lcf_array1d([lcf_int_field(1, 5), lcf_int_field(3, 0)]),
                          { elements: { 1 => { name: :a, type: :int },

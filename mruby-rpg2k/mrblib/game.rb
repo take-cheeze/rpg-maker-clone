@@ -2227,6 +2227,31 @@ module Game
       @battle_commands ||= class_battle_commands
     end
 
+    # `BattleCommand#type` (database chunk 0x1D, field 2) -- the kind of
+    # action a database-wide Battle Command entry performs. A positive id in
+    # `#battle_commands` refers to one of these by index; 0 (Row) and -1
+    # (an empty slot) never do, and are never looked up here.
+    BATTLE_COMMAND_ATTACK   = 0
+    BATTLE_COMMAND_SKILL    = 1
+    BATTLE_COMMAND_SUBSKILL = 2 # a single named skill, used as its own shortcut command
+    BATTLE_COMMAND_DEFENSE  = 3
+    BATTLE_COMMAND_ITEM     = 4
+    BATTLE_COMMAND_ESCAPE   = 5
+    BATTLE_COMMAND_SPECIAL  = 6
+
+    # The database-wide Battle Command entry `cmd_id` (a positive value from
+    # `#battle_commands`) refers to -- an object with `#name` and `#type`, the
+    # RPG2003 database table `#battle_commands`' own ids index into. nil when
+    # this database carries no such table at all (every RPG2000 file, and any
+    # fixture that predates this chunk) or `cmd_id` names no entry in it.
+    def battle_command_row(cmd_id)
+      return nil unless @db.respond_to?(:battlecommands)
+      table = @db.battlecommands
+      return nil unless table
+      cmds = table.commands
+      cmds && cmds[cmd_id]
+    end
+
     # Change Battle Commands (event command 1009). `add` inserts command `id`
     # ahead of the Row entry; otherwise it is removed, and id 0 clears the whole
     # list back to Row alone. Ported from EasyRPG's
