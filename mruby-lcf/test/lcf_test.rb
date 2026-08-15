@@ -148,6 +148,22 @@ assert "LCF::Database battle-commands table (chunk 29 -- name + type)" do
   assert_equal 2, db.battlecommands.commands[2].type
 end
 
+assert "LCF::Database battle-commands table decodes battle_type (chunk 29 field 7)" do
+  # BattleType picks RPG2003's alternate sprite/gauge battle-screen
+  # presentation over RPG2000's status-window-only one -- 0 traditional, 1
+  # alternative, 2 gauge (lcf::rpg::BattleCommands::BattleType). A database
+  # that never sets field 7 at all (every RPG2000 file) defaults to 0.
+  gauge = lcf_array1d([lcf_int_field(7, 2)])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(29, gauge)])))
+  assert_equal 2, db.battlecommands.battle_type
+
+  bare = lcf_array1d([lcf_field(10, lcf_array2d([]))])
+  db2 = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(29, bare)])))
+  assert_equal 0, db2.battlecommands.battle_type
+end
+
 assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
   row = LCF::Array1D.new(lcf_array1d([lcf_int_field(1, 5), lcf_int_field(3, 0)]),
                          { elements: { 1 => { name: :a, type: :int },
