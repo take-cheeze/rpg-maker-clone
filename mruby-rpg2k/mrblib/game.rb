@@ -1892,11 +1892,63 @@ module Game
     # individual weapon is itself flagged 二刀流, the common case for a
     # dual-wield setup built from two ordinary weapons.
     def strike_count
-      return dual_attack? ? 2 : 1 unless @db.respond_to?(:item)
-      weapons = @equipment.map { |iid| iid && iid != 0 ? @db.item[iid] : nil }
-                          .select { |it| it && it.respond_to?(:type) && it.type == ITEM_WEAPON }
+      weapons = equipped_weapons
       return dual_attack? ? 2 : 1 unless weapons.size >= 2
       weapons[0, 2].reduce(0) { |s, it| s + (it.respond_to?(:dual_attack) && it.dual_attack ? 2 : 1) }
+    end
+
+    # The equipped weapon-type items, in slot order (the weapon slot first,
+    # then the shield slot if it holds a weapon rather than a shield -- only
+    # possible for a `#double_hand?` actor). Shared by `#strike_count` and
+    # `#swing_weapon_data`.
+    def equipped_weapons
+      return [] unless @db.respond_to?(:item)
+      @equipment.map { |iid| iid && iid != 0 ? @db.item[iid] : nil }
+               .select { |it| it && it.respond_to?(:type) && it.type == ITEM_WEAPON }
+    end
+
+    # Which weapon governs swing index `i` (0-based) of a two-weapon actor's
+    # basic Attack -- EasyRPG's `Normal::GetWeapon`/`weapon_style`
+    # (`src/game_battlealgorithm.cpp`): the primary (weapon-slot) weapon's
+    # own hit count worth of swings, then the secondary (shield-slot)
+    # weapon's, each contributing *its own* hit rate / elemental attributes /
+    # weapon states / crit bonus rather than the merged max/union
+    # `#attack_hit_rate`/`#weapon_attributes`/`#weapon_states`/
+    # `#weapon_crit_bonus` compute across every equipped weapon-type item
+    # (correct for the ordinary single-weapon case, wrong once a second,
+    # *different* weapon governs a later swing). `Battle#deal_attack` reads
+    # this per swing; nil when fewer than two weapons are equipped, so it
+    # falls back to the ordinary merged Combatant fields.
+    def swing_weapon_data(i)
+      weapons = equipped_weapons
+      return nil unless weapons.size >= 2
+      w1, w2 = weapons[0, 2]
+      w1_hits = w1.respond_to?(:dual_attack) && w1.dual_attack ? 2 : 1
+      weapon_roll_data(i < w1_hits ? w1 : w2)
+    end
+
+    # The hit rate / elemental attributes / weapon states / crit chance a
+    # single equipped weapon item contributes on its own -- what
+    # `#swing_weapon_data` hands a specific weapon-governed swing, as
+    # opposed to `#attack_hit_rate`/`#weapon_attributes`/`#weapon_states`/
+    # `#crit_chance`'s own merge across every equipped weapon-type item.
+    def weapon_roll_data(it)
+      hit = it.respond_to?(:hit) && it.hit && it.hit > 0 ? it.hit : 90
+      attrs = []
+      set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
+      set.each_with_index { |on, i| attrs << (i + 1) if on } if set
+      inflict = {}
+      heal = {}
+      sset = it.respond_to?(:state_set) ? it.state_set : nil
+      chance = it.respond_to?(:state_chance) ? (it.state_chance || 0) : 0
+      if sset && chance > 0
+        heals = rpg2003? && it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+        bucket = heals ? heal : inflict
+        sset.each_index { |i| bucket[i + 1] = chance if sset[i] && sset[i] != 0 }
+      end
+      crit = it.respond_to?(:critical_hit) ? (it.critical_hit || 0) : 0
+      { hit_rate: hit, atk_attrs: attrs, atk_states: { inflict: inflict, heal: heal },
+        crit_chance: weapon_crit_chance(crit) }
     end
 
     # 必中 — an equipped weapon whose attack cannot be evaded. RPG_RT's
@@ -2206,7 +2258,15 @@ module Game
     # -- a plain 1-in-30 actor crit 3.33% of the time here against RPG_RT's
     # flat 3%, an eleven percent relative inflation.
     def crit_chance
-      pct = weapon_crit_bonus
+      weapon_crit_chance(weapon_crit_bonus)
+    end
+
+    # `#crit_chance`'s own bonus-plus-base-rate formula, but taking the
+    # weapon bonus as a parameter rather than always `#weapon_crit_bonus`'s
+    # merged max -- shared with `#weapon_roll_data`, which needs the same
+    # composition for one specific weapon's own `critical_hit` bonus.
+    def weapon_crit_chance(bonus)
+      pct = bonus
       if @db_row.respond_to?(:has_critical_rate) && @db_row.has_critical_rate
         n = @db_row.respond_to?(:critical_rate) ? @db_row.critical_rate : 0
         pct += (100.0 / n).to_i if n && n > 0
@@ -9396,18 +9456,54 @@ module Game
     # critical hit, then halved (min 1) if the target defends. A target immune to
     # the weapon's element (0% rate) takes no damage. The crit note rides on the
     # log entry.
-    # One basic attack, which a 二刀流 weapon makes land **twice** (EasyRPG's
-    # `GetNumberOfAttacks`). Returns a single log entry for the ordinary case and
-    # an array when the weapon swings again, so the log reads the same as the
-    # enemy's own dual-attack action — whose "the second swing only lands if the
-    # first did not fell the target" rule this follows too.
+    # One basic attack, which a 二刀流 weapon (or a two-weapon actor -- see
+    # `Actor#strike_count`, which can total more than two swings once one of
+    # the two equipped weapons is itself 二刀流) makes land more than once
+    # (EasyRPG's `GetNumberOfAttacks`/`Normal::Init`'s summed repeat count).
+    # Returns a single log entry for the ordinary one-swing case and an array
+    # for every other count, so the log reads the same as the enemy's own
+    # dual-attack action — whose "a later swing only lands if an earlier one
+    # did not fell the target" rule this follows too. Each swing index is
+    # handed to `#deal_attack`, which resolves a two-weapon actor's specific
+    # governing weapon for that swing (`Actor#swing_weapon_data`) rather than
+    # reusing the same merged hit/attribute/state/crit data for every swing.
     def swing(b, target)
-      first = deal_attack(b, target)
-      return first if b.strike_count < 2 || target.dead?
-      [first, deal_attack(b, target)]
+      entries = []
+      b.strike_count.times do |i|
+        entries << deal_attack(b, target, i)
+        break if target.dead?
+      end
+      entries.size == 1 ? entries.first : entries
     end
 
-    def deal_attack(b, target)
+    # `swing_index` (0-based) is which swing of the current basic Attack this
+    # is. For a two-weapon actor (`Actor#swing_weapon_data`), it resolves
+    # which of the two equipped weapons governs *this* swing and temporarily
+    # substitutes that weapon's own hit rate / elemental attributes / weapon
+    # states / crit chance for `b`'s ordinary merged Combatant fields --
+    # EasyRPG's `Normal::GetWeapon` resolves each swing to exactly one
+    # weapon's own data, never a merge across both (`ForEachEquipment`'s own
+    # `weapon != slot+1` exclusion). Restored before returning either way, so
+    # a later swing (or an unrelated read of `b`) sees the ordinary merged
+    # values again. Every other Combatant (an enemy, or an actor with at
+    # most one equipped weapon) has no override to make, so this is a no-op
+    # for them -- the merged fields already correctly describe their one
+    # weapon.
+    def deal_attack(b, target, swing_index = 0)
+      wdata = b.respond_to?(:actor) && b.actor.respond_to?(:swing_weapon_data) ? b.actor.swing_weapon_data(swing_index) : nil
+      saved = wdata ? [b.hit_rate, b.atk_attrs, b.atk_states, b.crit_chance] : nil
+      if wdata
+        b.hit_rate = wdata[:hit_rate]
+        b.atk_attrs = wdata[:atk_attrs]
+        b.atk_states = wdata[:atk_states]
+        b.crit_chance = wdata[:crit_chance]
+      end
+      deal_attack_with_current_weapon(b, target)
+    ensure
+      b.hit_rate, b.atk_attrs, b.atk_states, b.crit_chance = saved if saved
+    end
+
+    def deal_attack_with_current_weapon(b, target)
       # `attacker_ally` (unlike `target_ally`, which every hit already carries)
       # only appears on a plain Attack's own entry -- it is how
       # Scene::Map#play_battle_action_se tells a normal swing apart from a

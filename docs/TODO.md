@@ -5826,6 +5826,48 @@ not yet verified:
   weapon plus one ordinary weapon summing to 3, not 2 — all three
   confirmed to fail against the pre-fix code before the fix (`#strike_count`
   did not exist at all).
+- ✅ **A two-weapon actor's individual swings now each roll their own
+  weapon's hit rate / elemental attributes / weapon states / crit chance,
+  instead of every swing reusing the same value merged (max/union) across
+  both equipped weapons; and `Battle#swing` no longer caps a basic Attack at
+  two swings.** Confirmed against EasyRPG's actual C++ source:
+  `Game_BattleAlgorithm::Normal::GetWeapon` (`src/game_battlealgorithm.cpp`)
+  resolves each swing to exactly *one* weapon — the primary weapon's own hit
+  count worth of swings, then the secondary's — and
+  `Game_Actor::GetHitChance`/`GetCriticalHitChance`'s own `ForEachEquipment`
+  (`src/game_actor.cpp`), `Attribute::ApplyAttributeNormalAttackMultiplier`
+  (`src/attribute.cpp`), and the weapon-state block of `Normal::vExecute`
+  all exclude the *other* weapon's slot outright for that swing — never a
+  merge across both. This engine's `#attack_hit_rate`/`#weapon_attributes`/
+  `#weapon_states`/`#weapon_crit_bonus` are each computed **once** per
+  `Combatant` (at construction time) and reused verbatim for every swing, so
+  a two-weapon actor with two genuinely different weapons (say, 80%-hit fire
+  sword and 60%-hit ice dagger with its own poison chance) had *both*
+  swings read the merged 80%-hit/[fire,ice]/poison-flagged blend, instead of
+  swing one being the sword's own 80%/fire/no-poison and swing two the
+  dagger's own 60%/ice/poison. Separately, `#swing` capped a basic Attack at
+  two `#deal_attack` calls no matter what `#strike_count` reported — a limit
+  that happened to match every value `#strike_count` could ever produce
+  before its own two-weapon fix above (1 or 2), so it went unnoticed until a
+  two-weapon actor with one `dual_attack` weapon could report 3 (or 4);
+  EasyRPG's own `SetRepeat` takes the summed hit count as-is, with no cap.
+  Fixed with `Actor#swing_weapon_data(i)` (backed by a new
+  `#weapon_roll_data`/`#weapon_crit_chance`, the latter shared with
+  `#crit_chance`'s own bonus-plus-base-rate composition), which resolves
+  swing index `i`'s specific weapon and its own roll data; `Battle
+  #deal_attack` now takes a `swing_index`, temporarily substitutes that
+  weapon's data onto the `Combatant` for the call (restored in an `ensure`
+  clause so a later swing, or the enemy/single-weapon/fixture cases with no
+  override to make, see the ordinary merged fields again), and `#swing` now
+  loops `#strike_count` times rather than at most twice. Covered by three
+  new `scripts/rpg2k_logic_check.rb` battle-level checks — per-swing to-hit
+  (a 100%-hit weapon always lands, a low-hit weapon against a much nimbler
+  target clamps to a guaranteed miss, both on the *same* actor), per-swing
+  elemental attribute and weapon state (one swing's element is immune on the
+  target while the other's is unscaled, and each swing inflicts only its
+  own weapon's state, never both), and an actual three-swing basic Attack
+  landing all three hits rather than being capped at two — all three
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
