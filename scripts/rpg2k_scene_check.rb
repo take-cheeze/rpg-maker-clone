@@ -5072,6 +5072,32 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   ok !st.switches[2], 'the Escape handler was skipped'
 end
 
+# `Game::Battle` already tracks the fight's own round count live (`@rounds`,
+# `#turn`), but nothing captured it before `#close_battle` discarded the
+# `Battle` object once the fight ended -- see docs/TODO.md's "turns passed in
+# latest battle" entry. `#finish_battle` (mruby-rpg2k/mrblib/scene/map.rb) now
+# reads `@battle_ui[:battle].turn` onto `Game::State#last_battle_turns` right
+# alongside the existing `apply_to_party` call, so it survives past
+# `close_battle` for the `.lsd`'s inventory chunk 109 `turns` field (41) to
+# round-trip (see the `to_lsd`/`from_lsd` check in rpg2k_logic_check.rb).
+check 'Enemy Encounter scene: finish_battle captures the round count as last_battle_turns' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  eq nil, st.last_battle_turns, 'no battle has ever finished yet'
+  scene.update # opens the per-actor command menu (Attack / Defend)
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result -> finish_battle
+  scene.update
+  RGSS::Input.triggered = []
+  ok st.last_battle_turns && st.last_battle_turns > 0,
+     "finish_battle captured the fought battle's own round count " \
+     "(got #{st.last_battle_turns.inspect})"
+end
+
 # RPG_RT's own `Scene_Battle` constructor (src/scene_battle.cpp) plays the
 # database's Battle Start system SE (`SFX_BeginBattle`) as its very first act,
 # unconditionally, before even swapping to the battle BGM -- `Scene::Map
