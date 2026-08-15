@@ -2123,17 +2123,21 @@ end
 
 check 'Erase Screen records the transition style and ramps the level' do
   st = new_state
-  # Setting 17 is Mosaic, still one of the styles a black mask cannot express
-  # (per-pixel resampling), so it runs as a fade of the same length.
+  # Setting 17 is Mosaic: a black mask cannot express it (per-pixel
+  # resampling), so it composites from a captured screen like scroll /
+  # combine / division / zoom rather than drawing a plain fade -- see
+  # Game::Transition::CAPTURED / #mosaic?.
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::ERASE_SCREEN, [17])])
   it.update
   eq Game::Transition::MOSAIC_OUT, st.screen.fade_transition
-  ok st.screen.transition.uniform?, 'an unported style falls back to the fade'
-  eq 41, st.screen.transition.frames, 'but keeps its own length'
+  ok st.screen.transition.captured?, 'mosaic composites from a captured screen'
+  ok st.screen.transition.mosaic?
+  ok !st.screen.transition.uniform?, 'not drawn as a plain fade'
+  eq 41, st.screen.transition.frames, 'and keeps its own length'
   before = st.screen.fade_level
   st.screen.update
-  ok st.screen.fade_level > before, 'the level eases toward black'
+  ok st.screen.fade_level > before, 'the fallback level still eases toward black'
   ok st.screen.fade_level < 255, 'over time, not instantly'
 end
 
@@ -2333,6 +2337,61 @@ check 'random blocks down/up bias the reveal order towards one edge' do
   up = TR.new(TR::RANDOM_BLOCKS_UP, 41, 320, 240, false)
   rows = up.new_block_rects.map { |_x, y, _w, _h| y / 4 }
   ok rows.min >= 60 / 2, 'up reveals rows near the bottom of the screen first'
+end
+
+check 'mosaic/wave are captured styles with their own native-resample params' do
+  # Both ride the CAPTURED snapshot machinery (see Game::Transition::CAPTURED)
+  # but resample through a native Bitmap#mosaic_blt/#wave_blt call instead of
+  # #capture_ops's blt/stretch_blt geometry list.
+  [TR::MOSAIC_IN, TR::MOSAIC_OUT, TR::WAVE_IN, TR::WAVE_OUT].each do |style|
+    tr = TR.new(style, 41, 320, 240, true)
+    ok tr.captured?, "#{style} is captured"
+    eq [], tr.capture_ops, "#{style} has no capture_ops geometry of its own"
+  end
+
+  ok TR.new(TR::MOSAIC_IN, 41, 320, 240, false).mosaic?
+  ok TR.new(TR::MOSAIC_OUT, 41, 320, 240, true).mosaic?
+  ok !TR.new(TR::WAVE_IN, 41, 320, 240, false).mosaic?
+  ok TR.new(TR::WAVE_IN, 41, 320, 240, false).wave?
+  ok TR.new(TR::WAVE_OUT, 41, 320, 240, true).wave?
+  ok !TR.new(TR::MOSAIC_OUT, 41, 320, 240, true).wave?
+end
+
+check 'mosaic block size ramps between sharp and fully chunky, confirmed against EasyRPG' do
+  # src/transition.cpp's TransitionMosaicIn/Out case: `m_size = total_frames -
+  # current_frame` for In, `current_frame + 1` for Out.
+  into = TR.new(TR::MOSAIC_IN, 41, 320, 240, false)
+  eq 41, into.mosaic_block_size, "a show starts fully mosaic'd"
+  40.times { into.advance }
+  eq 1, into.mosaic_block_size, 'and sharpens all the way down by the last frame'
+
+  out = TR.new(TR::MOSAIC_OUT, 41, 320, 240, true)
+  eq 1, out.mosaic_block_size, 'an erase starts sharp'
+  40.times { out.advance }
+  eq 41, out.mosaic_block_size, 'and gets as chunky as it ever gets by the last frame'
+end
+
+check 'wave depth/phase ramp the same way mosaic block size does, confirmed against EasyRPG' do
+  # src/transition.cpp's TransitionWaveIn/Out case: `p` is the same In/Out
+  # ramp mosaic's `m_size` uses, and `phase = p * 5 * PI / tf_off + PI`
+  # (`tf_off` == #span, here 40 for a 41-frame transition).
+  into = TR.new(TR::WAVE_IN, 41, 320, 240, false)
+  depth, phase = into.wave_params
+  eq 41, depth
+  eq 41 * 5 * Math::PI / 40 + Math::PI, phase
+  40.times { into.advance }
+  depth, phase = into.wave_params
+  eq 1, depth
+  eq 1 * 5 * Math::PI / 40 + Math::PI, phase
+
+  out = TR.new(TR::WAVE_OUT, 41, 320, 240, true)
+  depth, phase = out.wave_params
+  eq 1, depth
+  eq 1 * 5 * Math::PI / 40 + Math::PI, phase
+  40.times { out.advance }
+  depth, phase = out.wave_params
+  eq 41, depth
+  eq 41 * 5 * Math::PI / 40 + Math::PI, phase
 end
 
 check 'conditional branch on the timer' do

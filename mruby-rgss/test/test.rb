@@ -447,6 +447,60 @@ assert "RGSS::Bitmap stretch_blt" do
   assert_equal 0.0, dst.get_pixel(6, 6).alpha
 end
 
+assert "RGSS::Bitmap mosaic_blt" do
+  # An 8-wide source, one colour per column, so each column's red channel
+  # names the column it came from (col*10) and the resample is checkable
+  # without guessing where a block boundary falls.
+  src = RGSS::Bitmap.new(8, 1)
+  8.times { |c| src.fill_rect(c, 0, 1, 1, RGSS::Color.new(c * 10, 0, 0, 255)) }
+
+  # block_size 1 is the identity -- every pixel samples itself.
+  identity = RGSS::Bitmap.new(8, 1)
+  identity.mosaic_blt(src, 1)
+  8.times { |c| assert_equal(c * 10.0, identity.get_pixel(c, 0).red) }
+
+  # block_size 4 resamples each pixel from the pixel nearest the centre of
+  # its 4px block (EasyRPG's own `off = block_size / 2` centring, ported
+  # verbatim in mruby-rgss/src/lib.cxx's bmp_mosaic_blt) -- columns 2..5 all
+  # land on the same centred block and read column 2's colour, the
+  # pixelation RPG_RT's Mosaic transition applies to the whole screen.
+  dst = RGSS::Bitmap.new(8, 1)
+  dst.mosaic_blt(src, 4)
+  [0, 1].each { |c| assert_equal 0.0, dst.get_pixel(c, 0).red }
+  [2, 3, 4, 5].each { |c| assert_equal 20.0, dst.get_pixel(c, 0).red }
+  [6, 7].each { |c| assert_equal 60.0, dst.get_pixel(c, 0).red }
+
+  # Same size required, matching tone_blt/stretch_blt's own contract.
+  small = RGSS::Bitmap.new(2, 2)
+  assert_raise(RGSS::RGSSError) { dst.mosaic_blt(small, 2) }
+end
+
+assert "RGSS::Bitmap wave_blt" do
+  src = RGSS::Bitmap.new(4, 4)
+  src.fill_rect(0, 0, 4, 4, RGSS::Color.new(0, 128, 0, 255))
+
+  # depth 0 draws every row unshifted -- a no-op wave.
+  flat = RGSS::Bitmap.new(4, 4)
+  flat.wave_blt(src, 0, 0.0)
+  assert_equal 128.0, flat.get_pixel(0, 0).green
+  assert_equal 128.0, flat.get_pixel(3, 3).green
+
+  # A row whose offset pushes it fully off the destination leaves the
+  # destination untouched there -- here still transparent, since it was
+  # never filled first (the caller is expected to fill black beforehand,
+  # matching how RPG_RT clears before drawing the wave -- see the Erase/Show
+  # Screen Wave styles' capture draw in mruby-rpg2k/mrblib/scene/map.rb).
+  # depth 10 at phase PI/2 offsets row 0 by roughly +20px, comfortably past
+  # the 4px-wide destination's right edge regardless of sin's rounding.
+  dst = RGSS::Bitmap.new(4, 4)
+  dst.wave_blt(src, 10, Math::PI / 2)
+  assert_equal 0.0, dst.get_pixel(0, 0).alpha, 'row 0 shifted fully off-screen'
+
+  # Same size required, matching tone_blt/stretch_blt's own contract.
+  small = RGSS::Bitmap.new(2, 2)
+  assert_raise(RGSS::RGSSError) { flat.wave_blt(small, 1, 0.0) }
+end
+
 assert "RGSS::Bitmap gradient_fill_rect" do
   red = RGSS::Color.new(255, 0, 0, 255)
   blue = RGSS::Color.new(0, 0, 255, 255)

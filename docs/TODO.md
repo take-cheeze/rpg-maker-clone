@@ -1981,10 +1981,9 @@ The work below is roughly ordered by the critical path to a walkable game
   screen being left against the screen being arrived at (one of the two is always
   solid black). That draws the blinds, the vertical / horizontal stripes and the
   border-to-centre / centre-to-border windows for real, and — see below —
-  random blocks too. Remaining: the styles a black mask cannot express — the
-  scrolls, the combine / division pairs and zoom slide or resample the live
-  scene itself, and mosaic / wave resample it too — which run as a fade of the
-  right length and the right end state for now.
+  random blocks too. The styles a black mask cannot express — the scrolls,
+  the combine / division pairs and zoom slide or resample the live scene
+  itself, and mosaic / wave resample it too — are also done, see below.
 
   **That remainder was written up as blocked on a screen capture the renderer
   does not have. It is not: `RGSS::Graphics.snap_to_bitmap` exists, is tested
@@ -2012,9 +2011,36 @@ The work below is roughly ordered by the critical path to a walkable game
     revealed each frame — rather than through `#visible_rects`'s
     full-cumulative-mask-every-frame shape, which is what made this style
     expensive enough to be left unbuilt. See the writeup below.
-  - **Mosaic (17) / wave (18)**: per-pixel resampling. `get_pixel`/`set_pixel`
-    exist but a full-screen loop per frame in Ruby is far too slow, so these are
-    the only two that genuinely want a native pass.
+  - ✅ **Mosaic (17) / wave (18)**: per-pixel resampling. `get_pixel`/`set_pixel`
+    exist but a full-screen loop per frame in Ruby is far too slow, so these
+    were the only two that genuinely wanted a native pass — now built as
+    `mruby-rgss`'s `Bitmap#mosaic_blt`/`#wave_blt` (`mruby-rgss/src/lib.cxx`),
+    the same shape as the existing `#tone_blt`/`#stretch_blt` primitives.
+    Ported from EasyRPG's real source (`src/transition.cpp`'s
+    `TransitionMosaicIn`/`Out` and `TransitionWaveIn`/`Out` cases, fetched
+    verbatim): **mosaic** resamples each pixel from the nearest-centre pixel
+    of a `block_size`x`block_size` block (`off = block_size / 2`), the block
+    size ramping `@frames..1` for the "in" (Show) style and `1..@frames` the
+    other way for "out" (Erase) — so a show sharpens out of a mosaic and an
+    erase dissolves into one, never through black. RPG_RT also nudges the
+    sampling window by a small per-frame random offset
+    (`mosaic_random_offset`); this port omits that jitter for a
+    deterministic, unit-testable block centre, the same kind of reasoned
+    simplification the random-blocks Down/Up bias and cross combine/
+    division's quadrant motion already are elsewhere in this class. **Wave**
+    displaces each captured scanline horizontally by
+    `trunc(2 * depth * sin(phase + row * 2*pi / 32))` (EasyRPG's
+    `Bitmap::WaverBlit`, `src/bitmap.cpp`, called at 1:1 scale), with
+    `depth`/`phase` driven by the same `@frames..1` / `1..@frames` ramp
+    mosaic's block size uses and `phase = p * 5 * PI / tf_off + PI`. Both
+    ride the CAPTURED snapshot machinery scroll/combine/zoom already use
+    (`Game::Transition#mosaic?`/`#wave?`/`#mosaic_block_size`/`#wave_params`,
+    `Scene::Map#draw_captured_transition`), rather than #capture_ops's
+    blt/stretch_blt geometry list. Covered by new checks in
+    `scripts/rpg2k_logic_check.rb` (the block-size/depth/phase ramps) and
+    `scripts/rpg2k_scene_check.rb` (the native calls reached with the right
+    per-frame parameters), plus `mruby-rgss/test/test.rb` for the native
+    primitives themselves.
 
   One wrinkle a Show Screen has and an Erase does not: its capture is of the
   screen being arrived at, and `snap_to_bitmap` grabs the rendered screen
@@ -2026,7 +2052,8 @@ The work below is roughly ordered by the critical path to a walkable game
   which is what makes the family worth finishing (`ruby scripts/analyze_game.rb
   --params --code 11010 data/mtf-meido-action/Debug`).
 
-  **Scroll, combine / division, zoom and random blocks are done.**
+  **Scroll, combine / division, zoom, mosaic, wave and random blocks are all
+  done.**
   `Game::Transition#capture_ops`
   computes, per style, where each piece of a captured screen goes this frame
   (a plain offset for the four scroll directions; two sliding pieces for
@@ -2102,7 +2129,13 @@ The work below is roughly ordered by the critical path to a walkable game
   this class. Covered by new checks in `scripts/rpg2k_logic_check.rb`
   (block-grid geometry, cumulative no-repeat coverage, the Down/Up row bias)
   and `scripts/rpg2k_scene_check.rb` (the incremental overlay paint).
-  Mosaic/wave alone is still unbuilt, per the per-style breakdown above.
+
+  ✅ **Mosaic (17) / wave (18) are done too**, the native per-pixel resample
+  pass the per-style breakdown above used to flag as the only two styles left
+  — see that bullet for the full writeup (`mruby-rgss`'s
+  `Bitmap#mosaic_blt`/`#wave_blt`, `Game::Transition#mosaic_block_size`/
+  `#wave_params`). With this, every Erase / Show Screen setting (0–19) now
+  paints for real; setting 20 ("no transition") always was a no-op.
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already

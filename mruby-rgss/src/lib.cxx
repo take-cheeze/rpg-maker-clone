@@ -1882,6 +1882,118 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
   return self;
 }
 
+// RGSS-adjacent Bitmap#mosaic_blt(src, block_size): copy `src` into this
+// bitmap, same size, resampled into `block_size`x`block_size` pixel blocks
+// (nearest-neighbour, one sample per block) -- the Erase/Show Screen Mosaic
+// styles' per-frame resample.
+//
+// This is a native pass, not a Ruby one, because RPG2000's own Mosaic
+// dissolves the *whole* screen every frame: a get_pixel/set_pixel loop over
+// 76800 pixels in Ruby is far too slow to run once per frame, let alone once
+// per block-size step across a 41-frame transition (see docs/TODO.md's
+// "Screen effects" entry).
+//
+// Ported from EasyRPG Player's `Transition::Draw` (`src/transition.cpp`),
+// `TransitionMosaicIn`/`TransitionMosaicOut` case: each output pixel samples
+// the pixel nearest the centre of its `block_size`x`block_size` block --
+// `off = block_size / 2`, `src = clamp(((pos + off) / block_size) *
+// block_size - off, 0, len - 1)` on each axis -- rather than a block average,
+// which is why a 1px block is the identity (`off` is 0, `src == pos`). RPG_RT
+// also nudges the sampling window by a small per-frame random offset (its own
+// `mosaic_random_offset`, resized and filled once per transition from
+// `Rand::GetRandomNumber(0, i)`); this port omits that jitter, sampling the
+// same block centre deterministically every time, which keeps the geometry
+// (`Game::Transition#mosaic_block_size`, mruby-rpg2k/mrblib/game.rb) pure and
+// unit-testable without threading RNG state through it -- the same kind of
+// reasoned simplification the random-blocks Down/Up bias and the cross
+// combine/division quadrant motion already are elsewhere in that class.
+mrb_value bmp_mosaic_blt(mrb_state* M, V self) {
+  Bitmap& dst = bmp_self(M, self);
+  V src_v;
+  mrb_int size;
+  mrb_get_args(M, "oi", &src_v, &size);
+  Bitmap& src = DataType<Bitmap>::get(M, src_v);
+
+  if (src.width != dst.width || src.height != dst.height) {
+    RClass* mod = mrb_module_get(M, "RGSS");
+    RClass* err = mrb_class_get_under(M, mod, "RGSSError");
+    mrb_raisef(M, err, "mosaic_blt: size mismatch (self %dx%d, src %dx%d)",
+               dst.width, dst.height, src.width, src.height);
+  }
+  const int32_t blk = size < 1 ? 1 : static_cast<int32_t>(size);
+  const int32_t off = blk / 2;
+  // The pixel nearest the centre of the block `pos` falls in, clamped onto
+  // the bitmap -- see the port note above for the RPG_RT jitter this omits.
+  auto block_centre = [&](int32_t pos, int32_t len) {
+    return std::clamp(((pos + off) / blk) * blk - off, 0, len - 1);
+  };
+  for (int32_t y = 0; y < src.height; ++y) {
+    const int32_t sy = block_centre(y, src.height);
+    for (int32_t x = 0; x < src.width; ++x) {
+      const int32_t sx = block_centre(x, src.width);
+      int r, g, bl, a;
+      bmp_read(src, sx, sy, r, g, bl, a);
+      bmp_put(dst, x, y, r, g, bl, a);
+    }
+  }
+  dst.dirty = true;
+  return self;
+}
+
+// RGSS-adjacent Bitmap#wave_blt(src, depth, phase): blit `src` into this
+// bitmap, same size, each scanline displaced horizontally by a sine wave --
+// the Erase/Show Screen Wave styles' per-frame resample. Pixels a shifted row
+// no longer covers are left as whatever is already in `self` (the caller
+// fills black first, matching RPG_RT drawing the wave over a cleared frame).
+//
+// Ported from EasyRPG Player's `Bitmap::WaverBlit` (`src/bitmap.cpp`) as
+// called from `Transition::Draw`'s `TransitionWaveIn`/`TransitionWaveOut`
+// case with no scale (`zoom_x = zoom_y = 1`): row `y`'s offset is
+// `trunc(2 * depth * sin(phase + y * 2*pi / 32))`, `depth`/`phase` supplied
+// per frame by `Game::Transition#wave_params` (mruby-rpg2k/mrblib/game.rb),
+// itself the same `p * 5 * pi / tf_off + pi` ramp EasyRPG's own transition
+// code computes.
+mrb_value bmp_wave_blt(mrb_state* M, V self) {
+  Bitmap& dst = bmp_self(M, self);
+  V src_v;
+  mrb_int depth;
+  mrb_float phase;
+  mrb_get_args(M, "oif", &src_v, &depth, &phase);
+  Bitmap& src = DataType<Bitmap>::get(M, src_v);
+
+  if (src.width != dst.width || src.height != dst.height) {
+    RClass* mod = mrb_module_get(M, "RGSS");
+    RClass* err = mrb_class_get_under(M, mod, "RGSSError");
+    mrb_raisef(M, err, "wave_blt: size mismatch (self %dx%d, src %dx%d)",
+               dst.width, dst.height, src.width, src.height);
+  }
+
+  constexpr double two_pi = 2.0 * 3.14159265358979323846;
+  for (int32_t y = 0; y < src.height; ++y) {
+    const double sy = y * two_pi / 32.0;
+    const int32_t offset = static_cast<int32_t>(
+        2.0 * static_cast<double>(depth) * std::sin(phase + sy));
+    for (int32_t x = 0; x < src.width; ++x) {
+      const int32_t dx = x + offset;
+      if (dx < 0 || dx >= dst.width)
+        continue;
+      int r, g, bl, a;
+      bmp_read(src, x, y, r, g, bl, a);
+      if (a <= 0)
+        continue;
+      if (a >= 255) {
+        bmp_put(dst, dx, y, r, g, bl, 255);
+        continue;
+      }
+      int dr, dg, db, da;
+      bmp_read(dst, dx, y, dr, dg, db, da);
+      blend_over(dst, dx, y, r, g, bl, a, dr, dg, db, da);
+    }
+  }
+  dst.dirty = true;
+  return self;
+}
+
 auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
   auto i = std::lower_bound(g, g + g_len, c, [](const auto& e, char32_t v) {
     return e.codepoint < v;
@@ -6082,6 +6194,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "tone_blt", bmp_tone_blt, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "mosaic_blt", bmp_mosaic_blt, MRB_ARGS_REQ(2));
+  mrb_define_method(M, bmp, "wave_blt", bmp_wave_blt, MRB_ARGS_REQ(3));
   // Both RGSS forms: (x, y, width, height, str[, align]) and (rect, str[,
   // align]).
   mrb_define_method(M, bmp, "draw_text", bmp_draw_text,
