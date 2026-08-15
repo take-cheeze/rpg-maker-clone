@@ -2603,6 +2603,41 @@ The work below is roughly ordered by the critical path to a walkable game
   time or leaves the screen with none picked; Confirm applies the picked
   order to the party and closes; Redo clears every pick without touching the
   party)
+  ✅ **A weapon/shield/armour/helmet/accessory item flagged `use_skill`
+  (schema field 71) is now usable directly from the field and battle Item
+  menus too, invoking its `skill_id` skill without being equipped.** The
+  schema has carried `use_skill` and its `class_set` restriction list (field
+  73, RPG2003 classes allowed to trigger it) since the Item struct was
+  written, but nothing in `mruby-rpg2k/mrblib` ever read either field —
+  `#field_usable?`/`#battle_usable?`/`#use_item` only `case`d on
+  `it.type`, and no equipment type (1-5) was ever a reachable branch there,
+  so such an item sat in the bag forever, `use_skill` or not. Confirmed
+  against EasyRPG Player's real source rather than guessed:
+  `Game_Party::UseItem`'s `do_skill` computation is `item->type ==
+  Type_special || (item->use_skill && item->type is one of
+  weapon/shield/armor/helmet/accessory)` — the same "item triggers a skill"
+  shape a type-9 special item already gets here, just gated on a flag
+  instead of a dedicated type. `#field_usable?`/`#battle_usable?` gained a
+  matching `it.type` branch (weapon(1)/shield(2)/armor(3)/helmet(4)/
+  accessory(5)) that defers to `#field_skill?`/`#battle_skill?` on the same
+  `skill_id` exactly like the special-item branch, and a new
+  `Game::Party#use_equip_skill_item` casts it for free through `#cast_skill`
+  the same way `#use_special_item` does, additionally gated on a new
+  `#item_usable_by_class?` — `class_set`'s own restriction check, read the
+  same "empty/short array reads as allowed" way `#item_usable_by?` already
+  reads `actor_set` for every other item kind, indexed by the acting actor's
+  RPG2003 `class_id` rather than actor id. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks: an unflagged weapon stays ordinary
+  gear (not menu-usable) while the same item flagged `use_skill` behaves
+  exactly like an equivalent type-9 special item across all five equipment
+  types, and a `class_set`-restricted item triggers for an actor in a listed
+  class but not one outside it. `Scene::ItemMenu#choose_item`'s own dispatch
+  is untouched, so a use_skill equipment item always takes the generic
+  "prompt for a target" branch every other single-ally item takes -- correct
+  for the ordinary case, but not yet special-cased the way a type-9 special
+  item is for a self/all-ally-scope or Escape/Teleport-type attached skill
+  (see the special-item field/battle fixes above); left for whenever such an
+  item shows up in a real game.
 - 🚧 Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. **Reading** the real
