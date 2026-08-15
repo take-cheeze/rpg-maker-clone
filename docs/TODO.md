@@ -7044,6 +7044,39 @@ not yet verified:
   of re-arming — three of the four confirmed to fail against the pre-fix
   code before the fix (the fallback check already passed, since the
   pre-fix code always behaved as mode 0 regardless).
+- ✅ **A troop battle-event page's Show Battle Animation now honours RPG2003's
+  Ally/Enemy target-type flag instead of always indexing the enemy troop —
+  an "Ally #1" target used to play over the troop's own *second* monster in
+  any troop with 2+ members, not any party member at all.** Confirmed
+  against EasyRPG's actual C++ source: `Game_Interpreter_Battle::
+  CommandShowBattleAnimation` (`src/game_interpreter_battle.cpp`) reads
+  `allies = com.parameters[3] != 0` only `if (Player::IsRPG2k3() &&
+  com.parameters.size() > 3)` — the same trailing-RPG2003-parameter gate
+  already used for Flash/Shake Screen — and, when `allies` is set, resolves
+  the target as `(*Main_Data::game_party)[target - 1]` (party members
+  counted from 1) instead of indexing the enemy troop.
+  `Interpreter#do_show_battle_animation_b`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) never read a 4th parameter at all,
+  so `@battle_animation[:target]` was always resolved against
+  `@ui[:enemy_sprites]` in `Scene::Battle#start_battle_page_animation`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) regardless of which side the
+  editor's own Ally/Enemy radio button actually picked. Fixed by carrying
+  a new `allies` flag through the request; when set,
+  `start_battle_page_animation` now uses the same ally-side screen-centre
+  fallback (and no `target_index`, so no enemy sprite is ever flashed or
+  shaken) every ordinary ally-targeted battle-round entry already uses —
+  RPG2000's front-view battle draws no on-screen ally sprite to position
+  over or point a `target_index`-keyed flash/shake at. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (the flag parses correctly off
+  param3, and is ignored outside RPG2003 or a short parameter list) and a
+  new `scripts/rpg2k_scene_check.rb` check (an ally-targeted animation
+  lands at screen centre with no enemy sprite ever flashed, instead of
+  hitting the troop's second member), three checks total confirmed to fail
+  against the pre-fix code before the fix. The `target < 0` "whole side"
+  case EasyRPG's own function also handles (playing one animation over
+  every living ally or enemy at once) stays out of scope — this codebase's
+  animation player only ever tracks a single `target_index`, and extending
+  it to a full battler list is a separate, larger change.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

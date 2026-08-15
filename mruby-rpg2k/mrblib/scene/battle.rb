@@ -1746,9 +1746,24 @@ class RPG2k
       # rather than inheriting it from whichever action just landed. Called
       # from Scene::Map#start_map_animation, which every battle-page-issued
       # Show Battle Animation request (`req[:battle]`) dispatches to.
+      #
+      # `req[:allies]` is RPG2003's own Ally/Enemy target-type flag
+      # (Interpreter#do_show_battle_animation_b) -- an ally-targeted
+      # animation gets no `target_index` at all, the same convention every
+      # ally-targeted battle-round entry already uses (`@enemies.index` in
+      # Game::Battle returns nil for a party member), which in turn is why
+      # #battle_animation_pixel's own nil-sprite branch already falls back to
+      # screen-centre: RPG2000's battle draws no on-screen ally sprite to
+      # target at all.
       def start_battle_page_animation(req)
-        tx, ty, height = battle_animation_pixel(target_index: req[:target])
-        @map.build_animation(req[:animation], tx, ty, true, target_index: req[:target],
+        tx, ty, height =
+          if req[:allies]
+            [SCREEN_W / 2, SCREEN_H / 2, nil]
+          else
+            battle_animation_pixel(target_index: req[:target])
+          end
+        target_index = req[:allies] ? nil : req[:target]
+        @map.build_animation(req[:animation], tx, ty, true, target_index: target_index,
                              target_height: height)
       end
 
