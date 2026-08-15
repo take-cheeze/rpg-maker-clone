@@ -6153,6 +6153,32 @@ not yet verified:
   transforming a 950-HP/40-SP monster into a 100-max-HP/10-max-SP form and
   asserting both current values survive exactly, confirmed to fail against
   the pre-fix code (`expected 950, got 100`) before the fix.
+- ✅ **A KO'd party member no longer earns EXP from a battle victory.**
+  Confirmed against EasyRPG's actual C++ source: `Scene_Battle_Rpg2k
+  ::ProcessSceneActionVictory` (`src/scene_battle_rpg2k.cpp`) grants the
+  troop's EXP by looping `ally_battlers`, populated via
+  `Game_Party_Base::GetActiveBattlers` (`src/game_party_base.cpp`) — not the
+  raw party roster — which only collects a battler passing
+  `Game_Battler::Exists()` (`src/game_battler.h`:
+  `!IsHidden() && !IsDead() && IsInParty()`). `Scene::Map#battle_result_lines`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) instead iterated
+  `@state.party.actors` — the plain roster, no alive/dead filter at all —
+  calling `#gain_exp` on every member unconditionally. This is reachable in
+  practice because victory only requires *one* ally still standing
+  (`Game::Battle#end_round`'s `alive?(@allies)`), so a fight can legitimately
+  end in victory with one or more party members dead. Concretely: Alice
+  (alive) and Bob (KO'd, still enrolled) win a fight worth 50 EXP — real
+  RPG_RT/EasyRPG credits only Alice; this build credited both, and could
+  even level Bob up (and teach him a growth-table skill, announced in the
+  result window) purely from a fight he never regained consciousness in.
+  Fixed by skipping `a.dead?` before `#gain_exp` in the loop, mirroring
+  `Exists()`'s `!IsDead()` half (`Game::Actor#dead?` already exists and is
+  the right predicate; this build has no per-actor "hidden" concept to mirror
+  the other half). Covered by a new `scripts/rpg2k_scene_check.rb` check
+  driving a real two-party-member Enemy Encounter (one already KO'd going
+  in) to victory and asserting only the survivor's EXP total rises,
+  confirmed to fail against the pre-fix code (`expected 0, got 10`) before
+  the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
