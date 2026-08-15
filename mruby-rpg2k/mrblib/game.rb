@@ -3288,10 +3288,24 @@ module Game
     # `state` is optional and only read for the Escape / Teleport types below —
     # every other caller (the host-side fixture checks included) can omit it and
     # gets the old scope/occasion-only behaviour.
+    #
+    # A database shrink can leave a learned skill id with no matching row
+    # (docs/TODO.md's runtime error catalog) -- `db_skill` degrades that to a
+    # silent `nil`, and `#field_skill?`'s `return false unless sk` would drop
+    # the skill from the menu with no trace. Logged here, at the one place
+    # that knows the gap came from a *caster's own* skill list rather than
+    # from some other `db_skill` call with no menu behind it.
     def field_skills(caster, state = nil)
       return [] unless caster
-      caster.skills.sort.select { |sid| field_skill?(db_skill(sid), state) }
-            .map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
+      caster.skills.sort.select do |sid|
+        sk = db_skill(sid)
+        if sk.nil?
+          $stderr.puts "[RPG2k] Skill menu: caster's learned skill ##{sid} " \
+                       'has no matching database row, excluding from field menu'
+          next false
+        end
+        field_skill?(sk, state)
+      end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
     end
 
     # Whether skill row `sk` belongs in the field menu.
