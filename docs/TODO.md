@@ -5635,6 +5635,36 @@ not yet verified:
   purposes. Covered by a new `scripts/rpg2k_logic_check.rb` check pinning the
   concrete debuff-then-equip trace above, confirmed to fail against the
   pre-fix code before the fix (`expected 1, got 31`).
+- ✅ **An ordinary level change (battle EXP, the Change EXP command, or the
+  Change Level command) no longer discards a live Change Parameters
+  adjustment.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Actor::SetLevel` (`src/game_actor.cpp`) only clamps `data.level` and
+  re-clamps current HP/SP — it never touches `data.attack_mod`/
+  `defense_mod`/`spirit_mod`/`agility_mod`/`hp_mod`/`sp_mod`. Those `*_mod`
+  fields are zeroed only inside `Game_Actor::ChangeClass`, never by an
+  ordinary level-up. `#set_level` instead unconditionally rebuilt both
+  `@base` and `@base_raw` from the bare level curve on *every* call,
+  silently discarding any live `#change_param` delta the instant the actor's
+  level changed by any means: an actor with a Change-Parameters Attack bonus
+  who then leveled up in the very next battle saw the entire bonus vanish,
+  replaced by the bare curve value for the new level, with no message or
+  indication anything had reverted. Fixed by giving `#set_level` a
+  `preserve_mod:` keyword (default `true`) that re-derives the mod by
+  diffing `@base_raw` against the curve at the level/class in force before
+  the call, then re-applies that same mod on top of the new level's curve —
+  mirroring how EasyRPG's separate `*_mod` fields ride unchanged through a
+  level change. `#change_class` passes `preserve_mod: false`, matching
+  `ChangeClass`'s own unconditional mod-zeroing before it reapplies the new
+  class's curve; without this, the reset-to-new-level `CLASS_PARAM_RESET_LEVEL`
+  mode (the one mode that never re-derives a mod afterward) would leak the
+  old mod through instead of producing the bare new-class curve it's meant
+  to. Covered by two new `scripts/rpg2k_logic_check.rb` checks — one pinning
+  a level-up carrying a live Attack adjustment forward onto the new level's
+  curve, one pinning Change Class's reset-to-new-level mode dropping that
+  same adjustment instead of inheriting it — both confirmed to fail against
+  the pre-fix code before the fix (`expected 72, got 52`; and, in a manual
+  check with the `change_class` guard alone reverted, `expected 70, got
+  170`, which also broke three pre-existing Change Class checks).
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
