@@ -802,22 +802,31 @@ class RPG2k
 
       def living_allies; @ui[:allies].reject(&:dead?); end
 
-      # Living allies selectable as a manually-chosen Battle Item target right
-      # now: `#living_allies` narrowed by the pending item's own 使用可能キャラ
-      # (`actor_set`) restriction when there is one -- the same per-recipient
-      # gate `Game::Party#use_medicine` already applies in the field menu
-      # (`Game::Party#item_usable_by?`), which this picker had never
-      # consulted at all, so a party member the item cannot affect used to be
-      # offered as a choice anyway rather than not appearing in the first
-      # place. A pending skill is untouched -- actor_set only gates
-      # equipment/items, never skills. `@state.party` not answering
-      # `item_usable_by?` (a battle test's stub party, which never models
-      # equipment restrictions) degrades to "unrestricted", the same default
-      # the real method itself falls back to for an item with no actor_set at
-      # all.
+      # Allies selectable as a manually-chosen Battle Item target right now.
+      # Unlike a skill target (still `#living_allies` below -- EasyRPG's own
+      # `Skill::vExecute` dead-target handling is a materially larger state
+      # machine this fix does not touch), an item target is drawn from the
+      # *whole* roster, dead members included: EasyRPG's `Scene_Battle::
+      # ItemSelected`/`AssignSkill` both put the status window into
+      # `Window_BattleStatus::ChoiceMode_All` for a single-target medicine or
+      # an ally-scope skill, and `IsChoiceValid`'s `ChoiceMode_All` case is an
+      # unconditional `return true` (src/window_battlestatus.cpp) -- nothing
+      # there excludes a KO'd party member. This picker used to start from
+      # `#living_allies` instead, so a 蘇生専用 (`ko_only`) revive item could
+      # never even be aimed at the ally it was meant to revive. Then narrowed
+      # by the pending item's own 使用可能キャラ (`actor_set`) restriction
+      # when there is one -- the same per-recipient gate `Game::Party#
+      # use_medicine` already applies in the field menu (`Game::Party#
+      # item_usable_by?`), which this picker had never consulted at all, so a
+      # party member the item cannot affect used to be offered as a choice
+      # anyway rather than not appearing in the first place. `@state.party`
+      # not answering `item_usable_by?` (a battle test's stub party, which
+      # never models equipment restrictions) degrades to "unrestricted", the
+      # same default the real method itself falls back to for an item with no
+      # actor_set at all.
       def battle_ally_targets
-        allies = living_allies
-        return allies unless pending_kind == :item
+        return living_allies unless pending_kind == :item
+        allies = @ui[:allies]
         return allies unless @state.party.respond_to?(:item_usable_by?)
         it = @ui[:pending] && @ui[:pending][:it]
         return allies unless it
@@ -1381,7 +1390,12 @@ class RPG2k
           if @state.party.switch_item?(item_id)
             apply_pending_switch_item
           elsif @state.party.item_all_allies?(it)
-            apply_pending_item_all(living_allies)
+            # The whole roster, dead included -- EasyRPG's own entire_party
+            # branch (`Scene_Battle::ItemSelected`) targets `Main_Data::
+            # game_party.get()` itself, not a living-only subset, which is
+            # what lets an all-party 蘇生専用 item revive every KO'd member
+            # in one cast.
+            apply_pending_item_all(@ui[:allies])
           else
             @ui[:ally_i] = 0
             @ui[:phase] = :ally_target

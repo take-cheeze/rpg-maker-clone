@@ -11393,6 +11393,31 @@ check 'battle_items lists battle medicines; battle_item_command recovers' do
      st.party.battle_item_command(st.party.db_item(5), target))
 end
 
+# A 蘇生専用 (`ko_only`) item cast from the battle Item menu: EasyRPG's
+# `Game_BattleAlgorithm::Item::vExecute` returns before either the HP/SP
+# recovery or the state cure is ever computed once `item.ko_only &&
+# !GetTarget()->IsDead()`, so a revive item aimed at a target still standing
+# does nothing at all -- not even the percentage HP restore or the cure. The
+# field-menu path (`#use_medicine`) already honoured this; `#battle_item_
+# command` had not.
+check 'battle_item_command does nothing for a ko_only item on a standing target' do
+  items = { 4 => fake_item(type: 6, rhp_rate: 25, state_set: [1], ko_only: true) }
+  st = item_party(items)
+  target = combatant('T', 0, 0, 5, 100)
+  eq({ hp: 0, mp: 0, cured: [] },
+     st.party.battle_item_command(st.party.db_item(4), target))
+end
+
+check 'battle_item_command revives a downed target, HP and cure both landing' do
+  items = { 4 => fake_item(type: 6, rhp_rate: 25, state_set: [1], ko_only: true) }
+  st = item_party(items)
+  target = combatant('T', 0, 0, 5, 100)
+  target.max_mp = 30
+  target.hp = 0
+  eq({ hp: 25, mp: 0, cured: [1] },
+     st.party.battle_item_command(st.party.db_item(4), target))
+end
+
 check 'a battle item cures the target status; states carry out via apply_to_party' do
   # An antidote (a medicine curing state 3) used in battle on a poisoned ally.
   items = { 5 => fake_item(type: 6, state_set: [0, 0, 1]) }
