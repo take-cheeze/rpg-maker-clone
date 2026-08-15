@@ -3208,6 +3208,24 @@ check 'Return to Title Screen hands control back to the app' do
   ok parent.returned_to_title, 'the app was told to return to the title screen'
 end
 
+# EasyRPG's `Game_Interpreter::CommandReturnToTitleScreen`
+# (src/game_interpreter.cpp) is a plain `Game_Interpreter` method with no
+# `main_flag` gate at all, so every interpreter -- foreground or a Parallel
+# Process's own -- reaches it identically. Before this fix,
+# `Scene::Map#drive_parallel_wait` had no `:return_title` branch, so it fell
+# into the generic "background: resume" default and a Parallel Process's own
+# Return to Title Screen silently never happened at all.
+check 'Return to Title Screen issued from a Parallel Process also hands control back' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4) # Parallel Process
+  par.event_commands = [ECmd.new(ic::RETURN_TO_TITLE, [])]
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [0, 0])
+  parent = scene.instance_variable_get(:@parent)
+  5.times { scene.update }
+  ok parent.returned_to_title,
+     'the app was told to return to the title screen from a Parallel Process too'
+end
+
 check 'Change Event Location snaps another event to a tile' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3) # auto-start: place event 2 at (5, 3)
