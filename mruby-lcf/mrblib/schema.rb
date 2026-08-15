@@ -110,7 +110,7 @@ module LCF
             57 => { name: :class_id, type: :int, default: 0 },               # 職業ID (2003)
             59 => { name: :battle_x, type: :int, default: 0 },               # 手動配置X (2003)
             60 => { name: :battle_y, type: :int, default: 0 },               # 手動配置Y (2003)
-            62 => { name: :battler_animation, type: :int, default: 0 },      # 戦闘アニメ (2003)
+            62 => { name: :battler_animation, type: :int, default: 0 },      # id into chunk 32's battleranimations (2003)
             63 => { name: :skills, type: :Array2D, elements: LEARNING },     # 習得する特殊技能
             66 => { name: :custom_battle_command, type: :bool, default: false }, # 独自戦闘コマンド有効 (2000)
             67 => { name: :custom_battle_command_name, type: :string },      # 独自戦闘コマンド名称 (2000)
@@ -789,7 +789,7 @@ module LCF
             41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
             42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
             43 => { name: :exp_correction, type: :int, default: 0 },
-            62 => { name: :battler_animation, type: :int, default: 1 },
+            62 => { name: :battler_animation, type: :int, default: 1 },      # id into chunk 32's battleranimations
             63 => { name: :skills, type: :Array2D, elements: LEARNING },
             71 => { name: :state_ranks_size, type: :int, default: 0 },
             72 => { name: :state_ranks, type: :int8_array },
@@ -799,26 +799,45 @@ module LCF
           }
         },
         32 => {
+          # RPG2003's database-wide "Battler Animation" table (0x20 on
+          # liblcf's ChunkDatabase, `rpg::BattlerAnimation`) -- a named set of
+          # up to 12 poses an actor's battle sprite can show, one entry per
+          # Pose (lcf::rpg::BattlerAnimation::Pose): 0 idle, 1 attack right, 2
+          # attack left, 3 skill, 4 dead, 5 damage, 6 dazed, 7 defend, 8 walk
+          # left, 9 walk right, 10 victory, 11 item. `player.battler_animation`
+          # (chunk 11 field 62) and `job.battler_animation` (chunk 30 field
+          # 62) hold ids into this table -- 1-based, matching every other
+          # database table id in this format. This entry used to be
+          # transcribed from the VIPRPG wiki's "戦闘アニメ２" page under the
+          # name `battle_anime2` with several field names guessed wrong
+          # (confirmed against liblcf's own generator/csv/fields.csv and
+          # generated/lcf/ldb/chunks.h instead): field 2 is `speed`, not
+          # `attack_motion`, and within each pose entry field 5 is
+          # `battle_animation_id` (an id into chunk 31's `battle_animation`
+          # table), not an unexplained `extension`.
+          #
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%88%A6%E9%97%98%E3%82%A2%E3%83%8B%E3%83%A1%EF%BC%92
-          name: :battle_anime2, type: :Array2D,
+          name: :battleranimations, type: :Array2D,
           elements: {
             1 => { name: :name, type: :string, default: '' },
-            2 => { name: :attack_motion, type: :int, default: 0 },     # 攻撃モーション (2003)
+            2 => { name: :speed, type: :int, default: 20 },
             10 => {
-              # 基本と拡張 — object list, 33 elements by default (2003).
-              name: :base_data, type: :Array2D,
+              # Id-keyed by Pose (see above), not a densely-packed list -- a
+              # given entry may define anywhere from 0 to 12 of the 12 poses.
+              name: :poses, type: :Array2D,
               elements: {
                 1 => { name: :name, type: :string, default: '' },
                 2 => { name: :battler_name, type: :string, default: '' },   # 戦闘(武器)グラフィック
-                3 => { name: :battler_position, type: :int, default: 0 },   # グラフィック/位置
-                # 戦闘アニメ. The wiki table's type/default cells are garbled
-                # (形式 "0" / 省略時 "空文字列"); it holds the battle-animation id.
-                4 => { name: :animation_id, type: :int, default: 0 },
-                5 => { name: :extension, type: :int, default: 1 },          # 拡張
+                3 => { name: :battler_index, type: :int, default: 0 },      # グラフィック/位置
+                # 0 character (a normal 4-direction charset sheet), 1 battle
+                # (a CBA-style battle sheet).
+                4 => { name: :animation_type, type: :int, default: 0 },
+                5 => { name: :battle_animation_id, type: :int, default: 1 },
               }
             },
             11 => {
-              # 武器 — object list, 33 elements by default (2003).
+              # Per-weapon pose overrides -- out of scope for now, not needed
+              # for base pose rendering; left as originally transcribed.
               name: :weapon_data, type: :Array2D,
               elements: {
                 1 => { name: :name, type: :string, default: '' },
