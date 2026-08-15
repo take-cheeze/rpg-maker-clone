@@ -807,7 +807,7 @@ def check_equipment(dir)
       crit_weapons.each do |iid|
         a = Game::Actor.new(db, aid)
         a.equip([iid, 0, 0, 0, 0])
-        eq base + items[iid].critical_hit * Game::CRIT_PERCENT, a.crit_chance,
+        eq base + items[iid].critical_hit, a.crit_chance,
            "item ##{iid} (#{items[iid].name}) adds #{items[iid].critical_hit}%"
         ok a.crit_chance > base, 'and the weapon really moves the rate'
       end
