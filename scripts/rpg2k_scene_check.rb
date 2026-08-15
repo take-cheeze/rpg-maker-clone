@@ -9506,6 +9506,46 @@ check "Enemy Encounter scene: a restricted item's ally-target picker skips the a
      'the queued Item command targets actor 1, never the restricted actor 2'
 end
 
+# A second actor already down (hp 0) when the fight starts -- exactly the
+# combatant a 蘇生専用 (`ko_only`) revive item exists to target.
+class BattleDownedAllyParty < BattleMagicParty
+  def initialize(hurt: false)
+    super(hurt: hurt)
+    @hero2 = BattleStubActor.new(atk: 10, agi: 5, mp: 5, hp: 150, id: 2)
+    @hero2.hp = 0
+    @actors = [@hero, @hero2]
+  end
+end
+
+check "Enemy Encounter scene: a downed ally is offered as a Battle Item target, not skipped" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleDownedAllyParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
+  eq :ally_target, ui[:phase]
+  targets = scene.instance_variable_get(:@battle).send(:battle_ally_targets)
+  eq 2, targets.length, 'the downed ally is still offered, not excluded from the picker'
+  ok targets.any?(&:dead?), 'one of the offered targets is the downed ally'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 1, ui[:ally_i], 'the cursor can reach the downed ally, which used to be unreachable'
+  press_key(scene, RGSS::Input::C) # confirm on the downed ally
+  # The only other roster slot is the downed ally itself, which never gets a
+  # command of its own, so the round starts right away rather than moving to
+  # a second actor's command phase (unlike the restricted-item check above,
+  # whose second actor is merely restricted, not dead, and still gets a turn).
+  eq :animate, ui[:phase]
+  eq ui[:allies][1], ui[:allies][0].command[:target],
+     'the queued Item command targets the downed ally, not just the living one'
+end
+
 check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

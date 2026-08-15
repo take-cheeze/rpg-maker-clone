@@ -6561,6 +6561,46 @@ not yet verified:
   no-op cases, and the already-invisible-member-is-skipped case — all four
   confirmed to fail against the pre-fix code (`ArgumentError`, since
   `Troop.new` didn't even accept a third argument yet) before the fix.
+- ✅ **A downed ally can now be aimed at with a Battle Item, and a 蘇生専用
+  (`ko_only`) revive item cast in battle actually revives them — both were
+  broken.** Confirmed against EasyRPG's actual C++ source, both sides.
+  `Scene_Battle::ItemSelected`/`AssignSkill` (`src/scene_battle.cpp`) put the
+  status window into `Window_BattleStatus::ChoiceMode_All` for a
+  single-target medicine, and `IsChoiceValid`'s `ChoiceMode_All` case
+  (`src/window_battlestatus.cpp`) is an unconditional `return true` — nothing
+  excludes a KO'd party member from being offered as a target. This build's
+  `Scene::Battle#battle_ally_targets` (`mruby-rpg2k/mrblib/scene/battle.rb`)
+  started from `#living_allies` instead, so a KO'd ally never even appeared
+  in the ally-target picker in the first place — the item meant to revive
+  them had no way to be aimed at them at all. Separately,
+  `Game_BattleAlgorithm::Item::vExecute` (`src/game_battlealgorithm.cpp`)
+  returns before *either* the state cure or the HP/SP recovery is computed
+  once `item.ko_only && !GetTarget()->IsDead()`; `Game::Party#battle_item_
+  command` (`mruby-rpg2k/mrblib/game.rb`) had no such gate at all, unlike its
+  field-menu sibling `#use_medicine` (already fixed, see `#ko_only_blocked?`
+  above) — so even on the rare occasion a battle test build did target a
+  downed ally by other means, a revive item aimed at a *living* one instead
+  quietly worked as a free full heal rather than doing nothing. Concretely:
+  Nepheshel's ドラゴンハート (`ko_only`, restores 100% max HP) with 3 of 4
+  party members down — before this fix, the Battle Item ally picker offered
+  only the one standing member, and using it there landed a full heal on
+  someone who was never in danger; the three actually-KO'd allies it exists
+  to revive could never be selected at all. Fixed by widening
+  `#battle_ally_targets`'s item branch (only the item branch — a pending
+  skill still starts from `#living_allies`, since EasyRPG's own dead-target
+  handling for `Scope_ally` skills, `Game_BattleAlgorithm::Skill::vExecute`,
+  is a materially larger state machine left for its own fix) to the whole
+  roster, dead members included, still narrowed by the same 使用可能キャラ
+  (`actor_set`) gate as before; widening `#apply_pending_item_all`'s target
+  list the same way, matching EasyRPG's entire-party medicine branch
+  targeting the whole `Game_Party` rather than a living subset; and adding
+  the missing `ko_only_blocked?` gate to `#battle_item_command`. Covered by
+  two new `scripts/rpg2k_logic_check.rb` checks (a `ko_only` item on a
+  standing target now returns no HP/MP/cure at all, and on a downed one
+  returns both) and a new `scripts/rpg2k_scene_check.rb` check (a downed
+  ally now appears in the battle Item ally-target picker and can be
+  selected and queued as the command's target), all three confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

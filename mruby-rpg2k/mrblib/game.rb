@@ -4748,7 +4748,17 @@ module Game
     # which target may be *offered* at all, not of what this formula computes
     # once one legitimately is — see `Scene::Map#battle_ally_targets`, which is
     # where that gate actually lives for a battle-cast item.
+    #
+    # A 蘇生専用 (`ko_only`) item on a target who is not down does nothing at
+    # all, not even the state cure -- EasyRPG's `Game_BattleAlgorithm::Item::
+    # vExecute` returns before state removal *and* HP/SP recovery are ever
+    # computed once `item.ko_only && !GetTarget()->IsDead()` (game_
+    # battlealgorithm.cpp). `#use_medicine` already applies this on the field
+    # menu path (`ko_only_blocked?`); the battle path had never checked it,
+    # so a revive item cast on a still-standing ally quietly worked as a free
+    # full heal instead of doing nothing.
     def battle_item_command(it, target)
+      return { hp: 0, mp: 0, cured: [] } if ko_only_blocked?(it, target)
       hp, mp = item_recovery(it, target)
       { hp: hp, mp: mp, cured: item_cured_states(it) }
     end
