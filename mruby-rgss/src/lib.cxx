@@ -1925,7 +1925,7 @@ mrb_value bmp_mosaic_blt(mrb_state* M, V self) {
   // The pixel nearest the centre of the block `pos` falls in, clamped onto
   // the bitmap -- see the port note above for the RPG_RT jitter this omits.
   auto block_centre = [&](int32_t pos, int32_t len) {
-    return std::clamp(((pos + off) / blk) * blk - off, 0, len - 1);
+    return std::clamp<int32_t>(((pos + off) / blk) * blk - off, 0, len - 1);
   };
   for (int32_t y = 0; y < src.height; ++y) {
     const int32_t sy = block_centre(y, src.height);
