@@ -3627,9 +3627,16 @@ class RPG2k
       # the field map only (not while an event holds the interpreter) and only
       # during Test Play -- a released game (RPG2k#test_play false) never sees
       # F9 open anything, same as every other test-play-gated tool (see
-      # changelog.d/test-play-gated-debug-tooling.added.md).
+      # changelog.d/test-play-gated-debug-tooling.added.md). A battle does NOT
+      # block it, per community RPG_RT trivia (@2000_battle_bot /
+      # デフォ戦bot): "テストプレイ中にＦ９キーを押せば スイッチ・変数の値を
+      # 好きに変えられる。これは戦闘中でも行える。" -- so `@battle_ui` alone is
+      # excluded from the busy check here (see #drive_battle's own call),
+      # while every other #event_busy? condition (a message window, an
+      # interpreter mid-wait) still gates the ordinary field-map case exactly
+      # as before.
       def try_open_debug_menu
-        return if event_busy?
+        return if event_busy? && @battle_ui.nil?
         return unless @parent.test_play
         return unless Input.trigger?(Input::F9)
         @parent.push Scene::DebugMenu.new(@parent, @state)
@@ -4444,6 +4451,11 @@ class RPG2k
         when :result      then drive_battle_result
         when :event       then drive_battle_event
         end
+        # F9 opens the debug menu mid-fight too (see #try_open_debug_menu) --
+        # the ordinary field-map call site only ever runs once #event_busy? is
+        # fully clear, which a battle never is, so this is the one place that
+        # reaches the check while @battle_ui is up.
+        try_open_debug_menu
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle failed: #{e.message}"
         owner = (@battle_ui && @battle_ui[:owner]) || it
