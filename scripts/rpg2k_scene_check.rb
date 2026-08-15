@@ -3240,6 +3240,20 @@ check 'Change Event Location snaps another event to a tile' do
   ok !tiles[[1, 1]], 'its old tile was released'
 end
 
+check "Change Event Location's RPG2003 facing sub-parameter snaps another " \
+      'event to face too' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3) # auto-start: place event 2 at (5, 3), facing down
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [2, 0, 5, 3, 3])]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(1, 1, page) },
+                    player: [5, 5])
+  c = chars(scene)[2]
+  c.direction = 8 # start facing up, so a no-op would be obvious
+  5.times { scene.update }
+  eq [5, 3], [c.x, c.y], 'the event was moved to the target tile'
+  eq 2, c.direction, 'and snapped to face down (facing param 3 -> numpad 2)'
+end
+
 check 'Change Event Location with "this event" moves the runner itself' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

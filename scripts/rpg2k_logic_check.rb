@@ -7573,9 +7573,30 @@ check 'Change Event Location queues a :set request (constant and variable modes)
   eq true, st.switches[1]
   reqs = it.take_location_requests
   eq 2, reqs.size
-  eq({ op: :set, target: 3, x: 5, y: 6 }, reqs[0])
-  eq({ op: :set, target: 3, x: 4, y: 9 }, reqs[1], 'variable mode resolves x/y')
+  eq({ op: :set, target: 3, x: 5, y: 6, dir: 0 }, reqs[0],
+     'no 5th param -- reads as 0, "keep the current facing"')
+  eq({ op: :set, target: 3, x: 4, y: 9, dir: 0 }, reqs[1],
+     'variable mode resolves x/y and never applies a facing')
   eq [], it.take_location_requests, 'the queue clears after draining'
+end
+
+# EasyRPG's own CommandChangeEventLocation (src/game_interpreter.cpp): "RPG2k3
+# feature" -- param4 is a 1-based up/right/down/left facing, applied only "for
+# the constant case, not for variables". #teleport_facing (already proven by
+# the Teleport tests above) is what converts that same 1-based encoding into
+# this runtime's own numpad direction, reused verbatim here.
+check 'Change Event Location carries the RPG2003 facing sub-parameter, constant mode only' do
+  st = party_state
+  st.variables[7] = 4
+  st.variables[8] = 9
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 0, 5, 6, 3]),  # constant, face down
+            FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 1, 7, 8, 3])]) # variable, facing ignored
+  it.update
+  reqs = it.take_location_requests
+  eq 2, reqs.size
+  eq 2, reqs[0][:dir], 'constant mode: param4=3 (down) -> numpad 2'
+  eq 0, reqs[1][:dir], 'variable mode never applies the facing param at all'
 end
 
 check 'Trade Event Locations queues a :swap request' do
