@@ -7768,6 +7768,43 @@ above are repeated here)
   name, including two certain item drops from a two-member troop; a blank
   database falls back to the composed English for all three), both
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **The battle victory result screen now announces a level-up and any
+  skill it teaches, the same way Change EXP/Change Level already do** —
+  `#battle_result_lines`'s own `a.gain_exp(exp)` call (the line right above
+  the EXP/gold/item fix above) granted EXP with zero level-up/skill
+  messaging, unlike `Game::Interpreter#do_change_exp`/`#do_change_level`
+  (`mrblib/interpreter.rb`), which already snapshot each target's
+  level/skills before their own `#gain_exp`/`#change_level_by` and queue one
+  `#level_up_message` per level gained plus one `#skill_learned_message` per
+  growth-table skill it teaches (`#queue_level_up_messages`). EasyRPG's own
+  victory sequence confirms the same shape belongs here too:
+  `Scene_Battle_Rpg2k::ProcessSceneActionVictory` (`src/scene_battle_rpg2k.cpp`)
+  builds the EXP/gold/item summary as one page, then calls
+  `Game_Actor::ChangeExp` once per active ally right after it, and that is
+  exactly where the level-up/skill-learned lines it pushes come from. Fixed
+  by snapshotting each actor's level/skills right before its own
+  `#gain_exp` in `#battle_result_lines`, the same as the interpreter path,
+  appending the resulting lines after the EXP/gold/item lines (this screen
+  has no per-page window like RPG_RT's, only one flat line list for the
+  whole result, so the per-actor page break becomes an in-order append
+  instead). Unlike the interpreter path — still `#level_up_message`/
+  `#skill_learned_message`'s own documented "plain English line for now"
+  simplification, left untouched here — this screen already reads real
+  database terms for every other line, so its `#battle_level_up_message`/
+  `#battle_skill_learned_message` do too now, confirmed against EasyRPG's
+  `ActorMessage::GetLevelUpMessage`/`GetLearningMessage`
+  (`src/game_message_terms.cpp`), stock-RPG2000/CP932 branch: `name << "は"
+  << terms.level << " " << new_level << " " << terms.level_up` and
+  `skill.name << terms.skill_learned` (no actor name — it always trails
+  that actor's own level-up line). Falls back to composed English
+  (matching `#level_up_message`/`#skill_learned_message`'s own wording)
+  when the database leaves `level_up`/`skill_learned` blank, the same rule
+  as every other line here. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a database setting `level`/`level_up`/`skill_learned` shows the
+  composed level-up line and the skill it names, from a stub actor whose one
+  EXP threshold and one learn-table entry line up with the two-Slime troop's
+  10 total EXP; a blank database falls back to the composed English for
+  both), both confirmed to fail against the pre-fix code before the fix.
 - ✅ **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
   but free if placed in a shop's own buy list — confirmed already
   correct**, all three facts, no code change needed. `Game::Shop#sell_price`
