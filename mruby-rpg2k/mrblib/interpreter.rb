@@ -1563,7 +1563,11 @@ module Game
       ref = character_ref(cmd.param(5))
       attr = cmd.param(6)
       return screen_operand(ref, attr) if attr == 4 || attr == 5
-      return 0 if ref.nil?
+      if ref.nil?
+        $stderr.puts '[RPG2k] Control Variables: "this event" has no map ' \
+                     'event to refer to (running inside a common event)'
+        return 0
+      end
       if ref == CHAR_PLAYER # the hero / party leader
         case attr
         when 0 then @state.map_id
@@ -1576,7 +1580,10 @@ module Game
         vehicle_operand(ref, attr)
       elsif ref > 0 && ref < 10000 && @map_info.respond_to?(:event_position)
         pos = @map_info.event_position(ref)
-        return 0 unless pos
+        unless pos
+          $stderr.puts "[RPG2k] Control Variables: map event #{ref} not found"
+          return 0
+        end
         case attr
         when 0 then @state.party.rpg2003? ? @state.map_id : 0 # the RPG2000-only quirk
         when 1 then pos[:x]
@@ -1613,10 +1620,18 @@ module Game
     # battle page) there is no view to measure against, so it reads 0. `ref` has
     # already been through #character_ref, so "this event" arrives as a real id.
     def screen_operand(ref, attr)
-      return 0 if ref.nil?
+      if ref.nil?
+        $stderr.puts '[RPG2k] Control Variables: "this event" has no map ' \
+                     'event to refer to (running inside a common event)'
+        return 0
+      end
       return 0 unless @map_info.respond_to?(:character_screen_position)
       pos = @map_info.character_screen_position(ref)
-      return 0 unless pos
+      unless pos
+        $stderr.puts "[RPG2k] Control Variables: character #{ref} has no " \
+                     'screen position (not on the current map)'
+        return 0
+      end
       attr == 4 ? pos[:x] : pos[:y]
     end
 

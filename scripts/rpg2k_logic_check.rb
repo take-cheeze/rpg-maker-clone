@@ -5721,6 +5721,18 @@ check 'Control Variables reads a map event position (operand type 6)' do
   eq 0, st.variables[5]                                          # unknown event reads 0
 end
 
+check 'Control Variables targeting a stale map event id is reported, not silent' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new # event 7 at (2,3) dir 6; event 9 does not exist
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 9, 1])])
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: map event 9 not found'), out
+end
+
 check 'Control Variables: a map event\'s map id is the RPG2000-only quirk -- an ' \
       'RPG2003 database reads the real (current) map id instead' do
   st = new_state(rpg2003: true)
@@ -5791,6 +5803,30 @@ check 'Control Variables "this event" reads 0 without a running map event' do
   eq 0, st.variables[2]
 end
 
+check '"this event" with no running map event is reported (event_operand: x/y/direction)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 1])]) # this event's x
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: "this event" has no map event to refer to'), out
+end
+
+check '"this event" with no running map event is reported (screen_operand: screen x/y)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 4])]) # this event's screen x
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: "this event" has no map event to refer to'), out
+end
+
 check 'Control Variables reads an actor stat (operand type 5)' do
   st = party_state
   a = st.party.actor_by_id(1) # atk 10, max_hp 100
@@ -5820,6 +5856,18 @@ check 'Control Variables reads a character screen position (operand 6, attr 4/5)
   eq 120, st.variables[2]
   eq 40, st.variables[3]
   eq 0, st.variables[4]
+end
+
+check 'a character with no screen position (not on this map) is reported, not silent' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new # event 9 has no screen position
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 9, 4])])
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: character 9 has no screen position'), out
 end
 
 check 'a screen position with no camera to measure against reads 0' do
