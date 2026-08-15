@@ -5868,6 +5868,35 @@ not yet verified:
   own weapon's state, never both), and an actual three-swing basic Attack
   landing all three hits rather than being capped at two — all three
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A terrain row's negative `damage` field now heals the party each step
+  instead of doing nothing, and bypasses 地形ダメージ無効 gear entirely while
+  doing it.** RPG2000/2003 terrain rows carry one plain signed `damage`
+  field with no separate heal flag. Confirmed against EasyRPG's actual C++
+  source: `Game_Player::Move`'s terrain block (`src/game_player.cpp`) guards
+  its per-actor loop with `terrain->damage < 0 ||
+  !hero->PreventsTerrainDamage()` — a negative value applies to *every*
+  party member unconditionally — then calls `ChangeHp(-terrain->damage,
+  ...)` either way, so `-(-3) = +3` heals. `red_flash` is only set for
+  *positive* damage (`if (terrain->damage > 0) red_flash = true`), so a heal
+  never flashes the screen or counts as "damaged" for the RPG2003 footstep
+  SE's `on_damage_se` gate. `Game::Party#apply_terrain_damage` instead
+  returned `[]` immediately for any non-positive amount, and even a version
+  that removed that early return would still have wrongly gated a heal on
+  the immunity flag — so a "recovery floor" terrain did nothing to anyone,
+  gear or no gear. A real definition exists in this data: Nepheshel's own
+  database defines terrain #8 "回復床" (Recovery floor, `damage = -1`),
+  though — like the original 2000-era 地形ダメージ terrains ADR 0034 fixed —
+  it goes unplaced on every one of Nepheshel's maps, the same "authored,
+  never shipped" pattern. Fixed by changing `#apply_terrain_damage`'s early
+  return to `amount != 0` and its immunity check to `amount > 0 &&
+  actor.prevents_terrain_damage?`, and by having `Scene::Map#note_party_step`
+  gate the screen flash and the footstep SE's "damaged" flag on the
+  terrain's `damage` sign rather than merely on whether anyone was touched.
+  Covered by three new `scripts/rpg2k_scene_check.rb` checks — a negative-
+  damage terrain healing every tile walked, that healing bypassing
+  `no_terrain_damage` gear that blocks ordinary damage, and a healing tile
+  never flashing the screen — the first two confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
