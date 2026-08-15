@@ -5738,6 +5738,43 @@ not yet verified:
   the pre-fix code before the fix (`expected 72, got 52`; and, in a manual
   check with the `change_class` guard alone reverted, `expected 70, got
   170`, which also broke three pre-existing Change Class checks).
+- ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
+  only once it has been used that many times, `0` means 無制限 (never
+  consumed), and the five equipment types are never consumed by use at all.**
+  The field has been parsed since the schema was written (`LCF::Schema`'s item
+  chunk 13, field 6, default 1) and no runtime code had ever read it: every one
+  of the eight consumption sites — `#use_medicine`, `#use_skill_book`,
+  `#use_seed`, `#use_special_item`, `#use_equip_skill_item`,
+  `#use_special_escape_item`, `#use_special_teleport_item`, `#use_switch_item`
+  and the battle screen's own Item action (`Scene::Map#drive_battle_animate`) —
+  called a bare `lose_item(id, 1)`, so *every* item vanished on its first use.
+  Three separate behaviours were missing, all from EasyRPG's
+  `Game_Party::ConsumeItemUse` (`src/game_party.cpp`), which
+  `Game_Party::UseItem` calls once an item is known to have done something:
+  a **type gate** (`Type_normal` and the five equipment types return before the
+  use count is ever looked at, so a 特殊効果 `use_skill` weapon casting its
+  skill from the Item menu is a *reusable tool* — this build destroyed the
+  weapon on its first use), **`uses == 0` meaning unlimited**, and the
+  **partial-use tally** itself (`item_usage[idx]++`, and only on reaching
+  `uses` is a copy removed and the tally reset). The tally is per item id, not
+  per copy, matching the save format: chunk 109's `item_usage` (field 14) runs
+  parallel to `item_ids`/`item_counts` and was already decoded but unused.
+  Modelled as `Game::Party#item_usage` (id → uses spent on the copy in hand)
+  behind one new `#consume_item_use` that every site now calls; `#gain_item`
+  carries the other half of the rule — EasyRPG's `AddItem` resets the tally
+  whenever a copy *leaves* the bag and never when one is added, so selling a
+  half-used item and buying it back refills its uses while topping the stack up
+  does not. The tally survives Save/Continue both ways: through
+  `Party#to_h`/`#load_state` for this runtime's own Marshal saves (an older
+  save with no tally simply reads as "nothing spent") and through chunk 109
+  field 14 in `State#to_lsd`/`.from_lsd` for a genuine `Save<N>.lsd`. Covered
+  by six new `scripts/rpg2k_logic_check.rb` checks (the N-uses-per-copy walk,
+  `uses == 0`, the schema default, the gain/lose reset asymmetry, the
+  Save/Continue round-trip and the `.lsd` round-trip) plus a data-driven
+  `scripts/rpg2k_testbed_logic_check.rb` check that walks every real switch
+  item whose 使用回数 is not the default; the two existing `use_skill`
+  equipment checks now assert the weapon is *not* consumed, which is what they
+  had been pinning the old bug as correct.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
