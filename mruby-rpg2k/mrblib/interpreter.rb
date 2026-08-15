@@ -3015,12 +3015,13 @@ module Game
     # param0. The remaining fields carry a Music struct: string = file name,
     # param1 fade-in, param2 volume, param3 tempo, param4 balance. Stashed in
     # a Game::State slot table; Scene::Map's #battle_bgm reads slot 0 (battle),
-    # #victory_bgm reads slot 1 (the "Victory!" result screen) and #vehicle_bgm
-    # reads slots 3-5 (boat/ship/airship) back out ahead of the database
-    # default, the same override-then-default idiom Change System SFX already
-    # gets; Scene::GameOver#gameover_bgm_override does the same for slot 6.
-    # Inn (2) still only round-trips through the save, since nothing plays it
-    # yet (no inn / lodging screen exists in this build).
+    # #victory_bgm reads slot 1 (the "Victory!" result screen), #inn_bgm reads
+    # slot 2 and #vehicle_bgm reads slots 3-5 (boat/ship/airship) back out
+    # ahead of the database default, the same override-then-default idiom
+    # Change System SFX already gets; Scene::GameOver#gameover_bgm_override
+    # does the same for slot 6. All seven slots round-trip through a real
+    # .lsd Save/Continue now too (Game::State#to_lsd/.from_lsd, SAVE_SYSTEM
+    # fields 72-74/79-82), not just the portable Marshal save.
     def do_change_system_bgm(cmd)
       @state.system_bgm[cmd.param(0)] = {
         name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),
@@ -3033,7 +3034,9 @@ module Game
     # string = file name, param1 volume, param2 tempo, param3 balance. The map
     # scene (Scene::Map::DB_SE_FIELD) already plays most of these slots at the
     # moments they name; a slot beyond the ones it plays is still stored for
-    # save fidelity, matching the system BGM.
+    # save fidelity, matching the system BGM -- all twelve slots round-trip
+    # through a real .lsd Save/Continue now too (SAVE_SYSTEM fields 91-102),
+    # not just the portable Marshal save.
     def do_change_system_sfx(cmd)
       @state.system_sfx[cmd.param(0)] = {
         name: cmd.string, volume: cmd.param(1),

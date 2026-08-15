@@ -2464,6 +2464,25 @@ The work below is roughly ordered by the critical path to a walkable game
   further since it needs another actor's data point to tell the two apart;
   `scripts/rpg2k_save_load_check.rb` skips its hp/mp-within-max assertion for
   this one actor rather than asserting either guess.
+  ✅ **Change System BGM (10660) / Change System SFX (10670) overrides now
+  round-trip through the `.lsd` too**, not just the portable `Marshal` save.
+  `Game::State#system_bgm`/`#system_sfx` (populated by
+  `Interpreter#do_change_system_bgm`/`#do_change_system_sfx`) used to stay
+  Marshal-only even though `LCF::Schema::SAVE_SYSTEM` already decoded every
+  slot's field (BGM: `title_bgm`(71, no Change System BGM slot maps to it —
+  RPG_RT never lets that command override the title screen's own music) /
+  `battle_bgm`(72) / `battle_end_bgm`(73) / `inn_bgm`(74) / `boat_bgm`(79) /
+  `ship_bgm`(80) / `airship_bgm`(81) / `gameover_bgm`(82); SFX: `cursor_se`(91)
+  through `item_se`(102)). `Game::State#to_lsd` now writes every populated
+  slot into its field (a new `SYSTEM_BGM_SAVE_FIELD`/`SYSTEM_SFX_SAVE_FIELD`
+  slot → field map, matching EasyRPG's `Game_System::sys_bgm` enum for BGM
+  and `Scene::Base::DB_SE_FIELD`'s slot order for SFX, reusing `#bgm_chunk`
+  and a new `#se_chunk`), and `.from_lsd` reads them back (`.bgm_from_chunk`
+  and a new `.se_from_chunk`). Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (a battle-slot and a game-over-slot BGM override, plus a cursor-slot
+  and a battle-start-slot SFX override, all round-trip through an in-memory
+  `to_lsd`/`from_lsd`; an untouched slot comes back absent rather than a
+  spurious empty override).
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done

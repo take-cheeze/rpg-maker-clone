@@ -3022,6 +3022,37 @@ check 'to_lsd/from_lsd round-trips a Change Actor Title override' do
   eq '', cleared.party.leader.title, 'a cleared title round-trips as an empty string, not the database default'
 end
 
+check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
+  # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
+  # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots
+  # Scene::Map's #battle_bgm/#victory_bgm/#vehicle_bgm and
+  # Scene::GameOver#gameover_bgm_override, plus Scene::Base#system_se, read
+  # back out. These used to round-trip only through the portable Marshal
+  # save (Game::State#to_h/.load); #to_lsd/.from_lsd now write/read every
+  # slot too, via SAVE_SYSTEM's BGM fields 72-74/79-82 and SE fields 91-102.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.system_bgm[0] = { name: 'Battle1', fadein: 500, volume: 90, tempo: 110, balance: 50 }
+  st.system_bgm[6] = { name: 'GameOver1', fadein: 0, volume: 80, tempo: 100, balance: 50 }
+  st.system_sfx[0] = { name: 'Cursor1', volume: 95, tempo: 105, balance: 50 }
+  st.system_sfx[4] = { name: 'BattleStart1', volume: 85, tempo: 95, balance: 50 }
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq 'Battle1', round.system_bgm[0][:name], 'Change System BGM slot 0 (battle) round-trips'
+  eq 90, round.system_bgm[0][:volume]
+  eq 110, round.system_bgm[0][:tempo]
+  eq 'GameOver1', round.system_bgm[6][:name], 'Change System BGM slot 6 (game over) round-trips'
+  eq 'Cursor1', round.system_sfx[0][:name], 'Change System SFX slot 0 (cursor) round-trips'
+  eq 95, round.system_sfx[0][:volume]
+  eq 105, round.system_sfx[0][:tempo]
+  eq 'BattleStart1', round.system_sfx[4][:name], 'Change System SFX slot 4 (battle start) round-trips'
+
+  # A slot never touched by Change System BGM/SFX stays absent, not a
+  # spurious empty-string override.
+  eq nil, round.system_bgm[1], 'an untouched BGM slot round-trips as absent, not an empty override'
+  eq nil, round.system_sfx[1], 'an untouched SFX slot round-trips as absent, not an empty override'
+end
+
 check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
   # docs/TODO.md used to call the game timer the one field the .lsd export
   # "cannot yet carry", guessing it would need "a documented chunk id" of its

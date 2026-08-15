@@ -9724,6 +9724,17 @@ module Game
       sys[55] = @player_transparent ? true : false
       sys[75] = bgm_chunk(@current_bgm) if @current_bgm
       sys[78] = bgm_chunk(@memorized_bgm) if @memorized_bgm
+      # Change System BGM (10660) / Change System SFX (10670) overrides, one
+      # save field per populated slot (see SYSTEM_BGM_SAVE_FIELD /
+      # SYSTEM_SFX_SAVE_FIELD above).
+      SYSTEM_BGM_SAVE_FIELD.each do |slot, field|
+        bgm = @system_bgm[slot]
+        sys[field] = bgm_chunk(bgm) if bgm
+      end
+      SYSTEM_SFX_SAVE_FIELD.each do |slot, field|
+        se = @system_sfx[slot]
+        sys[field] = se_chunk(se) if se
+      end
       sys[121] = @teleport_access ? true : false
       sys[122] = @escape_access ? true : false
       sys[123] = @save_access ? true : false
@@ -9790,7 +9801,8 @@ module Game
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
     # `{ name:, volume:, tempo: }` hash: file (1), volume (3) and pitch (4). Used
-    # for the system chunk's current-BGM (75) and stored-BGM (78) slots.
+    # for the system chunk's current-BGM (75) and stored-BGM (78) slots, and
+    # (below) every Change System BGM override slot.
     def bgm_chunk(bgm)
       b = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
       b[1] = bgm[:name] || ''
@@ -9798,6 +9810,37 @@ module Game
       b[4] = bgm[:tempo] || 100
       b
     end
+
+    # Build an SE chunk (an LCF::Array1D over the SE schema) from our stored
+    # `{ name:, volume:, tempo: }` hash: file (1), volume (3) and pitch (4).
+    # #bgm_chunk's SE counterpart, used for every Change System SFX override
+    # slot.
+    def se_chunk(se)
+      s = LCF::Array1D.new('', { elements: LCF::Schema::SE })
+      s[1] = se[:name] || ''
+      s[3] = se[:volume] || 100
+      s[4] = se[:tempo] || 100
+      s
+    end
+
+    # Change System BGM (10660) slot -> LCF::Schema::SAVE_SYSTEM field id,
+    # matching EasyRPG's Game_System::sys_bgm enum (Battle 0, Victory/
+    # BattleEnd 1, Inn 2, Boat 3, Ship 4, Airship 5, GameOver 6) against the
+    # save's title_bgm(71)/battle_bgm(72)/battle_end_bgm(73)/inn_bgm(74)/
+    # current_bgm(75)/stored_bgm(78)/boat_bgm(79)/ship_bgm(80)/airship_bgm(81)/
+    # gameover_bgm(82) fields. Field 71 (title_bgm) has no Change System BGM
+    # slot -- RPG_RT never lets that command override the title screen's own
+    # music -- so it is intentionally absent here.
+    SYSTEM_BGM_SAVE_FIELD = {
+      0 => 72, 1 => 73, 2 => 74, 3 => 79, 4 => 80, 5 => 81, 6 => 82
+    }.freeze
+
+    # Change System SFX (10670) slot -> LCF::Schema::SAVE_SYSTEM field id.
+    # Slot N is always field 91+N -- the save's cursor_se(91)..item_se(102)
+    # run keeps the exact same order as Scene::Base::DB_SE_FIELD's slots 0..11
+    # (cursor, decision, cancel, buzzer, battle/escape, the six per-hit
+    # sounds), just renamed and renumbered for the save chunk.
+    SYSTEM_SFX_SAVE_FIELD = (0..11).each_with_object({}) { |slot, h| h[slot] = 91 + slot }.freeze
 
     # Rebuild a State from a parsed LCF::SaveData -- a real Save<N>.lsd written
     # by an actual editor, rather than our own Marshal hash. The modelled fields
@@ -9896,6 +9939,22 @@ module Game
       # Overridden BGM playback state; an empty file name means "none".
       state.current_bgm = bgm_from_chunk(sys.current_bgm)
       state.memorized_bgm = bgm_from_chunk(sys.stored_bgm)
+      # Change System BGM (10660) / Change System SFX (10670) overrides, read
+      # back by the same slot -> field map #to_lsd wrote them with. A slot the
+      # save left un-overridden is simply absent from the hash, matching
+      # do_change_system_bgm/_sfx's own "unset slot" state.
+      system_bgm = {}
+      SYSTEM_BGM_SAVE_FIELD.each do |slot, field|
+        bgm = bgm_from_chunk(sys[field])
+        system_bgm[slot] = bgm if bgm
+      end
+      state.system_bgm = system_bgm
+      system_sfx = {}
+      SYSTEM_SFX_SAVE_FIELD.each do |slot, field|
+        se = se_from_chunk(sys[field])
+        system_sfx[slot] = se if se
+      end
+      state.system_sfx = system_sfx
       # Access flags: only an explicitly-stored value overrides the constructor
       # default (so a foreign save that omits them keeps our defaults).
       state.teleport_access = sys.teleport_allowed unless sys.teleport_allowed.nil?
@@ -10008,6 +10067,15 @@ module Game
     # (an LCF::Array1D over the BGM schema). Returns nil for an absent chunk or an
     # empty file name (the "use the database value" sentinel).
     def self.bgm_from_chunk(chunk)
+      return nil unless chunk
+      name = chunk.file
+      return nil if name.nil? || name.empty?
+      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100 }
+    end
+
+    # #bgm_from_chunk's SE counterpart: rebuild our `{ name:, volume:, tempo: }`
+    # SE hash from a parsed SE chunk (an LCF::Array1D over the SE schema).
+    def self.se_from_chunk(chunk)
       return nil unless chunk
       name = chunk.file
       return nil if name.nil? || name.empty?
