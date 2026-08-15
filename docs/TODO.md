@@ -3942,7 +3942,11 @@ Everything below is unverified against the codebase.
   autonomous/forced event movement, and the vehicle-route equivalent).
   Left open, now with a precise citation trail and fix shape for whoever
   picks it up next.
-- **Repeat/Loop** — loops forever without an explicit Break Loop.
+- ✅ **Repeat/Loop** — loops forever without an explicit Break Loop.
+  `Interpreter#do_end_loop` unconditionally scans back to the matching
+  `Loop` marker and jumps `@index` there every single time it is reached —
+  no termination condition of its own at all — so only the separate,
+  explicit `Break Loop` command (`#do_break_loop`) can ever escape one.
 - **Common Event** — ✅ can't display map graphics or use touch-style
   triggers (`Game::CommonEvent` defines only `AUTO_START`/`PARALLEL` —
   no charset field, no touch-trigger constant exists in the data model at
