@@ -8761,11 +8761,30 @@ above are repeated here)
   that inverts the index (`100 + (members.size - 1 - i)`), so member 0 gets
   the highest z of the group. Covered by a new assertion on the existing
   `scripts/rpg2k_scene_check.rb` two-Slime battler-sprite check, confirmed to
-  fail against the pre-fix code. **Still open**: whether deleting a middle
-  member shifts every later member's number down by one (and whether a
-  battle-event command naming a member by number gets silently repointed by
-  it) is unverified — a separate question about troop-member identity/
-  numbering, not the render-order this PR fixes.
+  fail against the pre-fix code. ✅ **Whether killing or hiding a middle
+  member shifts every later member's number down by one (silently
+  repointing a battle-event command that names a member by number)**: it
+  does not. `Game::Battle`'s `@enemies` (`mruby-rpg2k/mrblib/game.rb`) is
+  built once at battle start and never reassigned or resized afterward —
+  every "living only" use (`.reject(&:out_of_play?)`) builds a throwaway
+  filtered copy rather than mutating the array — so `#enemy(index)`
+  (`@enemies[index]`) always resolves the same troop slot to the same
+  combatant, dead or hidden or not, for the life of the fight. Confirmed
+  against EasyRPG's `Game_EnemyParty` (`src/game_enemyparty.cpp`):
+  `ResetBattle` clears and rebuilds its own `std::vector<Game_Enemy>
+  enemies` only once per fight (`enemies.clear()` then one `emplace_back`
+  per troop member), and `GetEnemy(idx)` is a bare `&enemies[idx]` — no
+  removal function touches the vector mid-battle; death and hide are both
+  in-place flags (`IsDead()`/`IsHidden()`) on the same slot, exactly
+  matching this codebase's `dead?`/`hidden` on `Game::Battle::Combatant`.
+  Locked in by a new `scripts/rpg2k_logic_check.rb` check: a 3-enemy troop
+  has its middle member (index 1) killed via Change Monster HP, then
+  confirms `#enemy(0)`/`#enemy(2)` still resolve to the exact same
+  combatant objects as before (`equal?`), that a Change Monster HP and a
+  battle Conditional Branch enemy-present check naming index 2 still land
+  on the untouched member 2, and that hiding member 0 afterward leaves
+  indices 0 and 2 unmoved too — confirmed to fail against a renumbering
+  (`@enemies.reject(&:dead?)`-style) implementation.
 - ✅ **The "airborne" enemy display flag only changes Y position on screen, with
   no accuracy/hit-related effect** — now implemented, with the crucial fact
   yado.tk's own text never mentions at all: real RPG2000 does not render it,
