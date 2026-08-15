@@ -5819,6 +5819,35 @@ check "can_cast?: a weapon-type Attribute skill needs a weapon carrying it equip
   eq true, st.party.can_cast?(hero, 8)
 end
 
+check 'a special item invoking a weapon-Attribute-gated skill bypasses the ' \
+      'equip gate entirely' do
+  # デフォ戦bot: an ally *casting* a weapon-Attribute skill needs the matching
+  # weapon equipped, but triggering the identical skill through an item does
+  # not -- the item pays for the cast instead, the same way #cast_skill's
+  # `free:` already skips the rest of #can_cast? for an item-triggered cast
+  # (see "a special item invokes its skill, free of SP..." above). No weapon
+  # equipped at all here, matching #can_cast?'s own "no weapon at all -- the
+  # attribute is unmet" refusal above.
+  props = { 1 => AttrTypeRow.new(0) } # attribute 1 is weapon-type
+  skills = { 7 => fake_skill(name: 'Aura Slash', scope: 3, sp_cost: 5, power: 40,
+                             hp: true, attribute_effects: [true]) }
+  items = { 3 => fake_item(type: 9, skill_id: 7, name: 'Vial') }
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  st = Game::State.new(
+    Game::Party.new(FakeActorDB.new(players, [1], items, skills, {}, nil, props)), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(7)
+  hero.change_hp(-50)
+  eq false, st.party.can_cast?(hero, 7), 'casting it directly is refused: no weapon equipped'
+
+  st.party.gain_item(3, 1)
+  affected = st.party.use_item(3, hero)
+  eq [hero], affected, 'the item-triggered cast lands with no weapon equipped at all'
+  eq 90, hero.hp, 'the skill effect actually applied'
+  eq 0, st.party.item_count(3), 'consumed -- the item paid for it, not a weapon'
+end
+
 # Ports EasyRPG's `Game_Actor::GetBaseAttributeRate` (src/game_actor.cpp): a
 # shield/armor/helmet/accessory that flags an attribute in its own
 # `attribute_set` grants the wearer a flat +1 defensive rank for that
