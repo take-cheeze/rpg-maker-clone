@@ -299,6 +299,37 @@ class RPG2k
         '-'
       end
 
+      # The other hand's own current item id when browsing the weapon (0) or
+      # shield (1) slot -- the only two slots a 両手持ち weapon can force off
+      # -- or nil for any other slot. Mirrors `Actor#free_two_handed_slot`'s
+      # own `slot == WEAPON_SLOT || slot == SHIELD_SLOT` gate.
+      def other_hand_item
+        case @slot_index
+        when Game::Actor::WEAPON_SLOT then actor.equipment[Game::Actor::SHIELD_SLOT]
+        when Game::Actor::SHIELD_SLOT then actor.equipment[Game::Actor::WEAPON_SLOT]
+        end
+      end
+
+      # The candidate's real net stat-point delta against what is equipped
+      # now -- not just the two items landing in *this* slot. Confirmed
+      # against EasyRPG's actual C++ source: `Scene_Equip::
+      # UpdateStatusWindow` (`src/scene_equip.cpp`) also subtracts the
+      # *other* hand's item when either it or the candidate is a 両手持ち
+      # weapon (`Actor#two_handed?`), since equipping either one forces the
+      # opposite slot empty -- the exact side effect `Actor#equip_item` /
+      # `#free_two_handed_slot` already applies for real, which this preview
+      # ignored (id 0, "Remove", never triggers it either way, matching
+      # EasyRPG's own `current_item &&` guard -- removing an item never
+      # forces anything off the other hand).
+      def equip_delta(id)
+        delta = item_stat_sum(id) - item_stat_sum(actor.equipment[@slot_index])
+        other = other_hand_item
+        if id != 0 && other && (actor.two_handed?(other) || actor.two_handed?(id))
+          delta -= item_stat_sum(other)
+        end
+        delta
+      end
+
       def build_cand_window
         @cand_window.dispose if @cand_window
         rows = candidates
@@ -310,14 +341,13 @@ class RPG2k
         @cand_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
-        equipped_sum = item_stat_sum(actor.equipment[@slot_index])
         rows.each_with_index do |(id, count), i|
           if id == 0
             c.draw_text 0, i * LINE_H, inner_w, LINE_H, "(Remove)"
           else
             c.draw_text 0, i * LINE_H, inner_w - 80, LINE_H, item_name(id)
             c.draw_text inner_w - 80, i * LINE_H, 40, LINE_H,
-                        equip_compare_arrow(item_stat_sum(id) - equipped_sum)
+                        equip_compare_arrow(equip_delta(id))
             c.draw_text inner_w - 40, i * LINE_H, 40, LINE_H, ":#{count}"
           end
         end
