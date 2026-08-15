@@ -10798,6 +10798,7 @@ class MenuStubParty
   end
   def field_items(_state = nil); []; end
   def field_skills(_actor, _state = nil); []; end
+  def reorder(new_order); @actors = new_order.map { |i| @actors[i] }; end
 end
 
 def menu_scene(klass, state, db = fake_db)
@@ -10826,6 +10827,27 @@ end
 
 def wrap_menu_state
   Game::State.new(WrapMenuParty.new, 1, 0, 0)
+end
+
+# A two-actor party with distinct names (WrapMenuParty's two MenuStubActors are
+# both unavoidably named "Hero") -- what the Scene::Order checks need in order
+# to tell the left/right columns' rows apart by name rather than only by index.
+class OrderStubActor < MenuStubActor
+  def initialize(name)
+    super()
+    @name = name
+  end
+end
+
+class OrderStubParty < MenuStubParty
+  def initialize
+    super
+    @actors = [OrderStubActor.new('Hero'), OrderStubActor.new('Ally')]
+  end
+end
+
+def order_state
+  Game::State.new(OrderStubParty.new, 1, 0, 0)
 end
 
 check 'the menu party list shows each member condition' do
@@ -11052,18 +11074,19 @@ check 'Scene::Menu: RPG2000 (no rpg2003? flag) never offers Status at all' do
 end
 
 check 'Scene::Menu: an RPG2003 database drives the command list from ' \
-      'System.menu_commands, Status included' do
+      'System.menu_commands, Status and Order included' do
   # mtf-meido-action's own array, id-for-id (confirmed by loading its real
   # RPG_RT.ldb): every one of RPG2003's eight customizable ids, in ascending
-  # order. Row (6) / Order (7) / Wait (8) are RPG2003 battle-system features
-  # this runtime does not model (the same reported-gap precedent as Toggle ATB
-  # Mode, 5003) and are silently skipped; End Game is appended unconditionally,
-  # matching EasyRPG's own unconditional Quit push outside the customized loop.
+  # order. Row (6) and Wait (8) are RPG2003 battle-system features this
+  # runtime does not model (the same reported-gap precedent as Toggle ATB
+  # Mode, 5003) and are silently skipped; Order (7) has no such dependency and
+  # is offered, same as Status; End Game is appended unconditionally, matching
+  # EasyRPG's own unconditional Quit push outside the customized loop.
   db = fake_db(rpg2003: true, menu_commands: [1, 2, 3, 4, 5, 6, 7, 8])
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
   keys = scene.instance_variable_get(:@commands).map(&:first)
-  eq [:item, :skill, :equip, :save, :status, :end_game], keys,
-     'Status (id 5) is offered, and Row/Order/Wait are dropped rather than crashing'
+  eq [:item, :skill, :equip, :save, :status, :order, :end_game], keys,
+     'Status (id 5) and Order (id 7) are offered, Row/Wait (6/8) are dropped rather than crashing'
 end
 
 check 'Scene::Menu: RPG2003 System.menu_commands can reorder and omit commands' do
@@ -11084,6 +11107,165 @@ check 'Scene::Menu: RPG2003 System.menu_commands can reorder and omit commands' 
   RGSS::Input.reset
   ok scene.parent.pushed.last.is_a?(RPG2k::Scene::StatusMenu),
      'selecting the reordered Status command actually opens Scene::StatusMenu'
+end
+
+check 'Scene::Menu: choosing Order pushes Scene::Order directly, no actor-' \
+      'selection step' do
+  # Unlike Skill/Equip/Status, Order acts on the whole party at once --
+  # confirmed against EasyRPG's own Scene_Menu::UpdateCommand, whose `case
+  # Order:` pushes Scene_Order straight away, the same shape as Item/Save,
+  # not the Skill/Equipment/Status/Row actor-selection branch.
+  db = fake_db(rpg2003: true, menu_commands: [1, 7])
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
+  eq [:item, :order, :end_game], scene.instance_variable_get(:@commands).map(&:first)
+  scene.instance_variable_set(:@index, 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  pushed = scene.parent.pushed.last
+  ok pushed.is_a?(RPG2k::Scene::Order), "Order pushes a live Scene::Order, got #{pushed.class}"
+  eq :command, scene.instance_variable_get(:@focus),
+     'no actor-selection focus change, unlike Skill/Equip/Status'
+end
+
+check 'Scene::Menu: Order refuses a single-member party with the buzzer, ' \
+      'no scene pushed' do
+  # Confirmed against EasyRPG's own Scene_Menu::UpdateCommand's `Order`
+  # branch, which gates on `GetActors().size() <= 1` rather than the plain
+  # empty-party check every other command here uses -- reordering a single
+  # member is meaningless.
+  db = fake_db(rpg2003: true, menu_commands: [7])
+  scene = menu_scene(RPG2k::Scene::Menu, menu_state, db) # menu_state: one actor
+  scene.instance_variable_set(:@index, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok scene.parent.pushed.empty?, 'nothing pushed for a one-member party'
+end
+
+# -- Scene::Order: RPG2003's party-reordering screen --------------------------
+#
+# Confirmed against EasyRPG Player's own `Scene_Order::UpdateOrder`/
+# `UpdateConfirm`/`Redo`/`Confirm`: the player picks party members one at a
+# time from a left column (building a right column in the picked order), then
+# confirms or redoes the whole pick from a two-option prompt. This is *not* a
+# swap or drag-drop -- see mruby-rpg2k/mrblib/scene/order.rb's own class
+# comment.
+
+def order_scene(state = order_state, db = fake_db)
+  [RPG2k::Scene::Order.new(fake_parent(db), state), state]
+end
+
+check 'Scene::Order: picking a member moves them from the left column to ' \
+      'the next right-column slot' do
+  scene, = order_scene
+  eq [nil, nil], scene.instance_variable_get(:@picked), 'nobody picked yet'
+  RGSS::Input.triggered = [RGSS::Input::C] # pick cursor row 0 (Hero)
+  scene.update
+  RGSS::Input.reset
+  eq [0, nil], scene.instance_variable_get(:@picked), 'index 0 picked into the first slot'
+  eq 1, scene.instance_variable_get(:@counter)
+  left_texts = window_texts(scene.instance_variable_get(:@left_window))
+  ok !left_texts.include?('Hero'), 'the picked member\'s name disappears from the left column'
+  ok left_texts.include?('Ally'), 'an unpicked member is still listed there'
+  ok window_texts(scene.instance_variable_get(:@right_window)).include?('Hero'),
+     'and appears in the right column'
+end
+
+check 'Scene::Order: re-picking an already-picked slot is rejected with ' \
+      'the Cancel SE, not Decision' do
+  scene, = order_scene
+  RGSS::Input.triggered = [RGSS::Input::C] # pick row 0
+  scene.update
+  RGSS::Input.reset
+  scene.instance_variable_set(:@cursor_index, 0) # land back on the now-picked row
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@counter), 'the duplicate pick did not register'
+  eq 'Cancel1', RGSS::Audio.se_calls.last[0],
+     'Scene_Order::UpdateOrder\'s own duplicate guard plays the Cancel SE'
+end
+
+check 'Scene::Order: Cancel undoes the most recent pick, one at a time' do
+  scene, = order_scene
+  RGSS::Input.triggered = [RGSS::Input::C] # pick row 0
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq [nil, nil], scene.instance_variable_get(:@picked), 'the pick was undone'
+  eq 0, scene.instance_variable_get(:@counter)
+  ok window_texts(scene.instance_variable_get(:@left_window)).include?('Hero'),
+     'the undone member\'s name is back in the left column'
+  ok scene.parent.pushed.empty? && !scene.parent.pop_called, 'still on this screen'
+end
+
+check 'Scene::Order: Cancel with nothing picked leaves the screen' do
+  scene, = order_scene
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  ok scene.parent.pop_called, 'popped with no picks made yet'
+end
+
+check 'Scene::Order: picking every member opens the Confirm/Redo prompt, ' \
+      'Confirm applies the new order to Game::Party#reorder and closes' do
+  scene, state = order_scene
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto the second (last) actor
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 1 first
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::UP] # back onto index 0
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 0 second
+  scene.update
+  RGSS::Input.reset
+  eq :confirm, scene.instance_variable_get(:@focus), 'both picked -- prompt opens'
+  eq 0, scene.instance_variable_get(:@confirm_index), 'defaults to Confirm'
+
+  before = state.party.actors.map(&:object_id)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm
+  scene.update
+  RGSS::Input.reset
+  eq before.reverse, state.party.actors.map(&:object_id),
+     'the party was reordered to the picked order (second actor first)'
+  ok scene.parent.pop_called, 'the screen closes on Confirm'
+end
+
+check 'Scene::Order: Redo clears every pick and returns to the left column, ' \
+      'without touching the party' do
+  scene, state = order_scene
+  original_order = state.party.actors.map(&:object_id)
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 0
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto the only unpicked row
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 1 -- both picked, prompt opens
+  scene.update
+  RGSS::Input.reset
+  eq :confirm, scene.instance_variable_get(:@focus)
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto "Redo"
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@confirm_index)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+
+  eq :left, scene.instance_variable_get(:@focus), 'back to picking'
+  eq [nil, nil], scene.instance_variable_get(:@picked), 'every pick cleared'
+  eq 0, scene.instance_variable_get(:@counter)
+  ok scene.parent.pushed.empty? && !scene.parent.pop_called, 'still on this screen'
+  eq original_order, state.party.actors.map(&:object_id), 'the party is untouched'
 end
 
 # -- Scene::SaveLoad: the save/load file-select screen -------------------------

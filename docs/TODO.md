@@ -2216,8 +2216,8 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Menus, save, battle
 - 🚧 Menu scene — opens over the map (cancel button); shows party status and a
-  command list. Save, End Game, **Item**, **Skill**, **Equip** and **Status** all
-  work.
+  command list. Save, End Game, **Item**, **Skill**, **Equip**, **Status** and
+  **Order** all work.
   ✅ **The command list itself now matches the editor that wrote the game**,
   rather than always showing the same fixed six. This line used to claim
   Item/Skill/Equip/Status/Save/End Game was simply "the full main-menu set,"
@@ -2243,10 +2243,10 @@ The work below is roughly ordered by the critical path to a walkable game
   (`mruby-rpg2k/mrblib/scene/menu.rb`) now branches on `db.rpg2003?` (ADR
   0013's edition detector): RPG2000 gets the fixed
   `RPG2K_COMMAND_KEYS` five, RPG2003 filters its own `menu_commands` array
-  through `RPG2K3_COMMAND_IDS` — a small id→command table that has **no**
-  entry for Row (battle front/back rank), Order (party reordering) or Wait
-  (the ATB toggle), so a 2003 game listing them simply does not offer them,
-  the identical reported-gap precedent the Toggle ATB Mode (5003) event
+  through `RPG2K3_COMMAND_IDS` — a small id→command table that (at the time)
+  had **no** entry for Row (battle front/back rank), Order (party reordering)
+  or Wait (the ATB toggle), so a 2003 game listing them simply did not offer
+  them, the identical reported-gap precedent the Toggle ATB Mode (5003) event
   command entry above already establishes for the same unmodelled RPG2003
   battle system — rather than crashing or inventing a screen. Covered by new
   `scripts/rpg2k_scene_check.rb` checks (a non-2003 fixture never offers
@@ -2255,8 +2255,12 @@ The work below is roughly ordered by the critical path to a walkable game
   end to end, including actually opening the reordered Status screen),
   confirmed to fail against the pre-fix code (Status always offered
   regardless of edition; a 2003 reorder/omission silently ignored) before the
-  fix. See `changelog.d/menu-command-list-2003-rpg2k-status.fixed.md`. The
-  **Item** command opens
+  fix. See `changelog.d/menu-command-list-2003-rpg2k-status.fixed.md`.
+  ✅ **Order (id 7) has since gained its own entry too** — unlike Row and
+  Wait it turned out to have no battle-system dependency at all, just party
+  reordering; see the `Order` paragraph further down for the follow-up.
+  Row and Wait remain genuinely blocked on the unmodelled RPG2003 battle
+  system. The **Item** command opens
   `Scene::ItemMenu`: it lists the party's usable **medicines** (database item type
   6), **skill books** (type 7) and **seeds** (type 8) with their held counts. A
   medicine heals its target — a single-target item a chosen ally, an all-ally item
@@ -2463,7 +2467,45 @@ The work below is roughly ordered by the critical path to a walkable game
   **Change Main Menu Access** (11960) and **Change Save Access** (11930) gate it:
   the menu will not open while menu access is forbidden, and the Save command
   reports that saving is disallowed while save access is off (both flags default
-  on and persist in the save)
+  on and persist in the save).
+  ✅ **Order (RPG2003 `menu_commands` id 7, party reordering) is implemented.**
+  Of the three ids `RPG2K3_COMMAND_IDS` used to skip wholesale (Row, Order,
+  Wait), Order turned out to have no dependency on the unmodelled battle
+  system at all — it is pure party-array reordering, so it was pulled out and
+  built standalone while Row (battle front/back rank) and Wait (the ATB
+  toggle) stay genuinely blocked on that gap. The interaction model was
+  confirmed against EasyRPG Player's own `Scene_Order` rather than guessed:
+  it is a **pick-and-place build, not a swap or drag-drop** — the player picks
+  party members one at a time from a left column (`UpdateOrder`'s
+  `window_left`), each pick appended to a right column in the order picked
+  (`window_right`), until every member has been placed; a Confirm/Redo prompt
+  then either applies the picked order or clears every pick and starts over
+  (`UpdateConfirm`/`Redo`). Cancel undoes the most recent pick one at a time,
+  or leaves the screen once nothing is picked yet; re-picking an already-
+  picked slot (the row stays selectable even once its name is blanked) is
+  rejected with the Cancel SE, matching `UpdateOrder`'s own duplicate guard.
+  New `Game::Party#reorder(new_order)` takes a permutation of the current
+  member indices and rebuilds `@actors` in that order — the net effect of
+  EasyRPG's `Confirm()` (which removes every member then re-adds them in the
+  picked order) without replaying the remove/re-add dance — and bumps
+  `@revision` the same as the existing `#promote_to_leader`, since
+  reordering can change the party leader outright (`#leader` is simply
+  `@actors.first`). New `Scene::Order` (`mruby-rpg2k/mrblib/scene/order.rb`)
+  is the RGSS UI over it. `Scene::Menu` dispatches Order the same way it
+  already dispatches Item/Save — pushed directly on confirm, no actor-
+  selection step, since Order acts on the whole party at once rather than one
+  member — gated on the party holding more than one member (a buzzer refusal
+  otherwise), matching `Scene_Menu::UpdateCommand`'s own `Order` branch
+  rather than the plain empty-party check every other command here uses.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check (`#reorder` applies a
+  picked permutation and changes the leader) and new
+  `scripts/rpg2k_scene_check.rb` checks (Order dispatches directly with no
+  actor-selection focus change; a one-member party is refused with the
+  buzzer; picking moves a member from the left column to the right; a
+  duplicate pick is rejected with the Cancel SE; Cancel undoes one pick at a
+  time or leaves the screen with none picked; Confirm applies the picked
+  order to the party and closes; Redo clears every pick without touching the
+  party)
 - 🚧 Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. **Reading** the real

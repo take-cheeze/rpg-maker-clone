@@ -1,19 +1,21 @@
 class RPG2k
   module Scene
     # Main menu, opened over the map with the cancel button. Shows party status
-    # and a command list. Item and Save act immediately; Skill, Equip and
-    # Status instead hand input focus to the party-status panel so the
+    # and a command list. Item, Save and Order act immediately; Skill, Equip
+    # and Status instead hand input focus to the party-status panel so the
     # player picks *which actor* first (UP/DOWN, confirmed with C) before
     # the corresponding scene (Scene::SkillMenu / EquipMenu / StatusMenu)
     # opens for that one -- confirmed against EasyRPG's own
     # `Scene_Menu::UpdateCommand`/`UpdateActorSelection` (`Skill`/
     # `Equipment`/`Status`/`Row` all share this shape; RPG2003's Row, the
-    # battle front/back toggle, is not modelled here). Cancelling back out
-    # of actor selection returns focus to the command list. End Game opens a
-    # Yes/No confirmation (see #open_end_game_confirm); only confirming
-    # "Yes" there returns to the title. Any further command (there are none
-    # left in the built command list today) falls back to a "not implemented
-    # yet" message.
+    # battle front/back toggle, is not modelled here, but Order -- which acts
+    # on the whole party at once, not one actor -- pushes Scene::Order
+    # directly, the same `UpdateCommand` shape Item/Save already use).
+    # Cancelling back out of actor selection returns focus to the command
+    # list. End Game opens a Yes/No confirmation (see #open_end_game_confirm);
+    # only confirming "Yes" there returns to the title. Any further command
+    # (there are none left in the built command list today) falls back to a
+    # "not implemented yet" message.
     class Menu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -42,22 +44,26 @@ class RPG2k
       # Skill=2, Equipment=3, Save=4, Status=5, Row=6, Order=7, Wait=8; Quit=9
       # is never itself in the list -- `Scene_Menu` appends it unconditionally
       # after the loop, which #build_commands mirrors below). Row (battle
-      # front/back rank), Order (party reordering) and Wait (the ATB toggle)
-      # have no entry here and are silently skipped: they are RPG2003
-      # battle-system features this runtime does not model, the same
-      # reported-gap precedent the Toggle ATB Mode (5003) event command
-      # entry already establishes elsewhere. A real RPG2003 game's array
-      # (mtf-meido-action's is `[1, 2, 3, 4, 5, 6, 7, 8]`, confirmed by
-      # `db.rpg2003?` and reading chunk 22 by id under the CRuby host
-      # harness, where `db.system` itself collides with Kernel#system) can
-      # both omit a command (hiding it, e.g. a game with no Save on principle)
-      # and reorder the survivors, both of which #build_commands honours.
+      # front/back rank) and Wait (the ATB toggle) have no entry here and are
+      # silently skipped: they are RPG2003 battle-system features this runtime
+      # does not model, the same reported-gap precedent the Toggle ATB Mode
+      # (5003) event command entry already establishes elsewhere. Order
+      # (party reordering, id 7) *is* modelled -- unlike Row/Wait it has no
+      # battle-system dependency at all, just Game::Party#reorder and
+      # Scene::Order (see #select_command's :order branch). A real RPG2003
+      # game's array (mtf-meido-action's is `[1, 2, 3, 4, 5, 6, 7, 8]`,
+      # confirmed by `db.rpg2003?` and reading chunk 22 by id under the CRuby
+      # host harness, where `db.system` itself collides with Kernel#system)
+      # can both omit a command (hiding it, e.g. a game with no Save on
+      # principle) and reorder the survivors, both of which #build_commands
+      # honours.
       RPG2K3_COMMAND_IDS = {
         1 => [:item, :battle_item, "Item"],
         2 => [:skill, :battle_skill, "Skill"],
         3 => [:equip, :battle_equipment, "Equip"],
         4 => [:save, :battle_save, "Save"],
-        5 => [:status, :status, "Status"]
+        5 => [:status, :status, "Status"],
+        7 => [:order, :order, "Order"]
       }.freeze
 
       def initialize parent, state
@@ -295,6 +301,17 @@ class RPG2k
           else
             play_system_se(SFX_DECISION)
             enter_actor_selection(key)
+          end
+        when :order
+          # Reordering a single-member (or empty) party is meaningless --
+          # confirmed against EasyRPG's own `Scene_Menu::UpdateCommand`'s
+          # `Order` branch, which gates on `GetActors().size() <= 1` rather
+          # than the plain-empty check every other command here uses.
+          if @state.party.actors.size <= 1
+            play_system_se(SFX_BUZZER)
+          else
+            play_system_se(SFX_DECISION)
+            @parent.push Scene::Order.new(@parent, @state)
           end
         when :save
           # A disabled Save command (Change Save Access off) just refuses the
