@@ -6576,6 +6576,12 @@ class RPG2k
       # SFX_EnemyDamage / SFX_AllyDamage and, on top of a kill, SFX_EnemyKill,
       # as separate calls rather than one replacing another).
       def play_battle_action_se(entry)
+        # `attacker_ally` only rides on a plain Attack's own entry (never a
+        # skill/item hit -- see Battle#deal_attack), and is `false` rather
+        # than absent for an enemy's swing, so this fires before the hit's
+        # own resolution SE, matching RPG_RT playing it at the very start of
+        # the action.
+        play_system_se(SFX_ENEMY_ATTACK) if entry[:attacker_ally] == false
         play_system_se(SFX_DODGE) if entry[:missed]
         if entry[:damage] && entry[:damage] > 0
           play_system_se(entry[:target_ally] ? SFX_ACTOR_DAMAGE : SFX_ENEMY_DAMAGE)

@@ -8518,7 +8518,14 @@ module Game
         first = deal_attack(b, target)
         # The second swing only lands if the first did not fell the target.
         return [first] if target.dead?
-        [first, deal_attack(b, target)]
+        second = deal_attack(b, target)
+        # RPG_RT's enemy-attack SE plays once per action (at its very start),
+        # not once per swing -- EasyRPG's ProcessBattleActionUsage calls
+        # GetStartSe only before the first Execute, a repeat re-enters at
+        # Execute directly. Clearing the second swing's `attacker_ally`
+        # keeps #play_battle_action_se from re-triggering it.
+        second[:attacker_ally] = nil
+        [first, second]
       when EnemyAction::BASIC_DEFEND
         b.defending = true
         { attacker: b.name, defend: true }
@@ -8976,6 +8983,10 @@ module Game
     end
 
     def deal_attack(b, target)
+      # `attacker_ally` (unlike `target_ally`, which every hit already carries)
+      # only appears on a plain Attack's own entry -- it is how
+      # Scene::Map#play_battle_action_se tells a normal swing apart from a
+      # skill/item hit and gates SFX_ENEMY_ATTACK to an enemy's own Attack.
       # A plain attack's own battle animation -- the attacking actor's current
       # gear (Actor#attack_animation_id), or nil for an enemy (b.actor is nil;
       # see #attack_animation_id's own doc comment for why enemies have none
@@ -8995,8 +9006,8 @@ module Game
       if @accuracy && !hits?(b, target)
         return { attacker: b.name, target: target.name, damage: 0, missed: true,
                  critical: false, target_hp: target.hp < 0 ? 0 : target.hp,
-                 defeated: false, target_ally: ally?(target), attack_animation_id: anim,
-                 target_index: target_index }
+                 defeated: false, target_ally: ally?(target), attacker_ally: ally?(b),
+                 attack_animation_id: anim, target_index: target_index }
       end
       dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
       # An elemental weapon scales its damage by the target's resistance before
@@ -9053,7 +9064,8 @@ module Game
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
                 charged: charged, target_hp: target.hp < 0 ? 0 : target.hp,
                 defeated: target.dead?, target_ally: ally?(target),
-                attack_animation_id: anim, target_index: target_index }
+                attacker_ally: ally?(b), attack_animation_id: anim,
+                target_index: target_index }
       entry[:woke] = woke unless woke.empty?
       entry[:inflicted] = inflicted unless inflicted.empty?
       entry[:cured] = cured unless cured.empty?

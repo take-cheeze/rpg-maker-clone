@@ -315,6 +315,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                            escape_se: OpenStruct.new(file: 'Escape1', volume: 100, pitch: 100),
                            battle_se: OpenStruct.new(file: 'BattleStart1', volume: 100, pitch: 100),
                            # The battle per-hit sounds (Scene::Base::DB_SE_FIELD).
+                           enemy_attack_se: OpenStruct.new(file: 'EnemyAttack', volume: 100, pitch: 100),
                            enemy_damaged_se: OpenStruct.new(file: 'EnemyHit', volume: 100, pitch: 100),
                            actor_damaged_se: OpenStruct.new(file: 'ActorHit', volume: 100, pitch: 100),
                            dodge_se: OpenStruct.new(file: 'Dodge1', volume: 100, pitch: 100),
@@ -8313,6 +8314,44 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   eq 1, st.party.item_count(5), 'one potion consumed when the item action landed'
   eq 20, ui[:allies].first.hp - hp_before, 'the Hero was healed 20 HP'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'ItemUse' }, 'the item SE played too'
+end
+
+# SFX_ENEMY_ATTACK (Scene::Base::DB_SE_FIELD slot 6): confirmed against
+# EasyRPG Player's source (scene_battle_rpg2k.cpp's ProcessBattleActionUsage)
+# to fire once, at the very start of an *enemy's* plain Attack action, never
+# for a skill/item hit or for an ally's own Attack -- see the doc comment on
+# `SFX_ENEMY_ATTACK` in mruby-rpg2k/mrblib/scene/base.rb.
+check 'Enemy Encounter scene: the enemy-attack SE plays for an enemy Attack, ' \
+      'not an ally one' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+
+  2.times { press_key(scene, RGSS::Input::C) } # Attack -> the first Slime -> animate
+  eq :animate, ui[:phase]
+
+  RGSS::Audio.reset_se
+  scene.update # the (faster) Hero's own attack lands first
+  eq 1, ui[:battle].log.length
+  ok !RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyAttack' },
+     "an ally's own Attack does not play the enemy-attack SE"
+
+  # The Slime survives the Hero's hit (19 damage against 30 HP), so it is
+  # still alive to take its own turn next and swing back.
+  RGSS::Audio.reset_se
+  40.times do
+    scene.update
+    break if ui[:battle].log.length >= 2
+  end
+  eq 2, ui[:battle].log.length, "the Slime's counter-attack landed"
+  entry = ui[:battle].log.last
+  eq false, entry[:attacker_ally], 'the attacker is the enemy, not an ally'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyAttack' },
+     "and the enemy's own Attack plays the enemy-attack SE"
 end
 
 # The battle command/target/skill/item flow's own system SE -- confirmed
