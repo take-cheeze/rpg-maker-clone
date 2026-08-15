@@ -159,6 +159,7 @@ class RPG2k
         @message = nil
         @inn_window = nil
         @inn_bgm_started = false
+        @inn_fading_out = false
         @shop = nil
         @battle_ui = nil
         @name_ui = nil
@@ -3711,15 +3712,26 @@ class RPG2k
       # interpreter charges gold and heals the party in resume_inn. The inn's
       # own BGM (#play_inn_bgm) starts the first frame a request is seen and
       # #restore_pre_inn_bgm brings the prior track back once the stay resolves
-      # -- either path, prompted or free.
+      # -- either path, prompted or free. An accepted stay (prompted or free)
+      # additionally fades the screen to black before the heal and back in
+      # after -- see #start_inn_fade_out; Cancel and the insufficient-funds
+      # no-op leave the screen alone, matching real RPG_RT (its inn fade only
+      # runs down the accepted-stay `AsyncOp::eCallInn` path -- a cancelled
+      # prompt never reaches it).
       def drive_inn
         req = @interpreter.inn_request
         return @interpreter.resume_inn(false) unless req
+        if @inn_fading_out
+          return if @state.screen.fading?
+          @inn_fading_out = false
+          finish_inn(true)
+          return
+        end
         unless @inn_bgm_started
           play_inn_bgm
           @inn_bgm_started = true
         end
-        return finish_inn(true) unless req[:prompt]
+        return start_inn_fade_out unless req[:prompt]
 
         if @inn_window.nil?
           open_inn_window(req) # opened this frame; take input from the next one
@@ -3738,7 +3750,7 @@ class RPG2k
             # Accept: only honoured when the party can pay; otherwise ignored.
             if req[:can_afford]
               close_inn_window
-              finish_inn(true)
+              start_inn_fade_out
             end
           else
             close_inn_window
@@ -3750,11 +3762,33 @@ class RPG2k
         end
       end
 
+      # Begin the accepted-stay fade to black (Erase Screen's own FADE_OUT
+      # style, its default 35-frame length) and park in the :inn wait until it
+      # settles -- #drive_inn's `@inn_fading_out` branch above resumes it and
+      # calls #finish_inn once the screen is fully black. A screen already
+      # erased (e.g. an event faded to black right before the Show Inn command)
+      # is a no-op transition, per #Game::Screen#erase, so it resolves at once
+      # exactly like Erase Screen onto Erase Screen does.
+      def start_inn_fade_out
+        @state.screen.erase(Game::Transition::FADE_OUT)
+        if @state.screen.fading?
+          @inn_fading_out = true
+        else
+          finish_inn(true)
+        end
+      end
+
       # Restore the pre-inn BGM and resume the interpreter with the player's
       # stay/no-stay decision -- the common tail of every #drive_inn exit path.
+      # An accepted stay also starts the fade back in (Show Screen's FADE_IN
+      # style) here, the same frame the heal happens in resume_inn -- like real
+      # RPG_RT's FinishInn, the fade-in only starts, it does not block: the
+      # interpreter resumes immediately below and the screen brightens over the
+      # following frames while the game keeps running.
       def finish_inn(stayed)
         @inn_bgm_started = false
         restore_pre_inn_bgm
+        @state.screen.show(Game::Transition::FADE_IN) if stayed
         @interpreter.resume_inn(stayed)
       end
 
