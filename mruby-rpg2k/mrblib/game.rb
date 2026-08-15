@@ -1949,10 +1949,20 @@ module Game
       EQUIP_ORDER.each_index.map { |i| ids[i] || 0 }
     end
 
-    # RPG2000 caps: total EXP maxes at 999_999; the EXP-curve fields default to
-    # 30 when a database row does not carry them (e.g. a test fixture).
-    EXP_MAX = 999_999
+    # Total EXP ceiling: 999_999 on an RPG2000 database, 9_999_999 on RPG2003
+    # (`Game_Constants::MaxExpValue`, `src/game_constants.cpp` -- the same
+    # edition split `#max_hp_cap`/`MAX_EFFECTIVE_HP_2K`/`_2K3` above already
+    # applies to HP). The EXP-curve fields default to 30 when a database row
+    # does not carry them (e.g. a test fixture).
+    EXP_MAX_2K = 999_999
+    EXP_MAX_2K3 = 9_999_999
     EXP_DEFAULT = 30
+
+    # The effective total-EXP ceiling -- `EXP_MAX_2K3` on an RPG2003
+    # database, `EXP_MAX_2K` otherwise. Mirrors `#max_hp_cap` exactly.
+    def exp_max
+      rpg2003? ? EXP_MAX_2K3 : EXP_MAX_2K
+    end
 
     # The actor's maximum level (from the database row; 50 by RPG2000 default).
     def max_level
@@ -1968,13 +1978,13 @@ module Game
       calc_exp(level - 1)
     end
 
-    # Set total EXP (clamped to 0..EXP_MAX) and re-derive the level from the curve
-    # thresholds, recomputing the base stats via #set_level when the level
+    # Set total EXP (clamped to 0..#exp_max) and re-derive the level from the
+    # curve thresholds, recomputing the base stats via #set_level when the level
     # changes. Mirrors EasyRPG's Game_Actor::ChangeExp: raising EXP climbs while
     # the next level's threshold is reached; lowering it drops while below the
     # current level's threshold.
     def set_exp(new_exp)
-      new_exp = Game.clamp(new_exp, 0, EXP_MAX)
+      new_exp = Game.clamp(new_exp, 0, exp_max)
       new_level = @level
       if new_exp > @exp
         while new_level < max_level && exp_for_level(new_level + 1) <= new_exp
@@ -2023,7 +2033,7 @@ module Game
       if new_level > old
         @exp = base if @exp < base
       elsif new_level < old
-        nxt = new_level < max_level ? exp_for_level(new_level + 1) : EXP_MAX + 1
+        nxt = new_level < max_level ? exp_for_level(new_level + 1) : exp_max + 1
         @exp = base if @exp >= nxt
       end
     end
@@ -2342,7 +2352,7 @@ module Game
 
     # EasyRPG's CalculateExp(n): the RPG2000 standard EXP curve summed over n
     # steps. Float arithmetic mirrors RPG_RT; the running total truncates toward
-    # zero each step (C's (int) cast) and the whole result caps at EXP_MAX.
+    # zero each step (C's (int) cast) and the whole result caps at #exp_max.
     def calc_exp(n)
       base = db_exp_param(:exp_basic).to_f
       inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
@@ -2353,7 +2363,8 @@ module Game
         base *= inflation
         inflation = ((n + 1) * 0.002 + 0.8) * (inflation - 1) + 1
       end
-      result > EXP_MAX ? EXP_MAX : result
+      cap = exp_max
+      result > cap ? cap : result
     end
 
     # Read a numeric EXP-curve field from the database row, defaulting when the

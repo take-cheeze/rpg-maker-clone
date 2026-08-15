@@ -5662,6 +5662,30 @@ not yet verified:
   "999 damage against a high-max-HP target leaves it alive" was updated to
   an RPG2003 fixture (9999 ceiling, still comfortably above 5000), since a
   genuine RPG2000 actor can no longer reach that total either.
+- ✅ **The total-EXP ceiling now widens to RPG2003's real 9,999,999 too,
+  mirroring the max-HP edition split directly above rather than staying a
+  bare RPG2000-only 999,999.** `Game::Actor::EXP_MAX` (`mruby-rpg2k/mrblib/
+  game.rb`) was a single, edition-blind `999_999`, consulted by `#set_exp`'s
+  clamp, `#change_level_by`'s max-level EXP sentinel, and `#calc_exp`'s own
+  running-total cap — even though `Actor` already had a working `#rpg2003?`
+  helper used for exactly this pattern (`#max_hp_cap`) a few lines away.
+  EasyRPG's `Game_Constants::MaxExpValue` (`src/game_constants.cpp`) widens
+  the real ceiling to `9'999'999` on an RPG2003 database — matching
+  `MaxStatBaseValue`'s own 999/9999 HP split and every other edition-gated
+  constant this file already keys off `Player::IsRPG2k()`. On an RPG2003
+  database (whose own default max level is 99, not RPG2000's 50, making six-
+  digit-plus EXP totals realistic) an actor's total EXP was silently
+  truncated at a tenth of the real cap. Fixed by splitting the constant into
+  `EXP_MAX_2K`/`EXP_MAX_2K3` and a new `#exp_max` method mirroring
+  `#max_hp_cap` exactly, with all three call sites reading it instead of the
+  old bare constant. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  (an RPG2003 database's `#set_exp` clamps at the wider 9,999,999 instead of
+  999,999; a value between the two editions' ceilings survives untouched,
+  confirming the whole range widened rather than just the display; and a
+  database whose own curve alone would exceed the ceiling still stops at the
+  RPG2003 cap via `#calc_exp`'s own clamp, not just `#set_exp`'s), confirmed
+  to fail against the pre-fix code (`expected 9999999, got 999999`) before
+  the fix.
 
 **Variables & Switches**
 - Switches/variables cap at 5000 each (configurable up to that hard max),
