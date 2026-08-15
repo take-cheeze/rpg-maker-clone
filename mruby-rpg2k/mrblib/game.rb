@@ -2642,18 +2642,53 @@ module Game
     # Put the actor back into class `id` without any of Change Class's side
     # effects (Continue restoring a saved class): the curves are re-read at the
     # current level, but equipment, EXP and skills are restored separately from
-    # the save and must not be reset here.
+    # the save and must not be reset here. `@class_changed` is set the same
+    # way #change_class itself sets it -- a restored non-default class is, by
+    # definition, one a live Change Class already changed at some point in the
+    # session that got saved, so #battler_animation_id's own "only once
+    # Change Class has actually run" gate must see it as changed too.
+    #
+    # `preserve_mod: false`, matching #change_class's own call: #set_level's
+    # default carries the *previous* base_raw forward as a delta from the
+    # *new* class's curve, which is exactly backwards here -- it would
+    # reproduce the pre-restore (wrong-class) numbers verbatim rather than
+    # the new class's own baseline. The caller (Party#load_state /
+    # State.from_lsd) re-applies the actual saved base_raw afterward
+    # regardless, via #restore_base -- this only has to leave a sane
+    # intermediate value for a caller that has none to restore.
     def restore_class(id)
       set_class_id(id)
-      set_level(@level)
+      set_level(@level, preserve_mod: false)
       @battle_commands = nil
+      @class_changed = true
     end
+
+    # Whether a Change Class (or a restored one, see #restore_class) has ever
+    # run this session -- EasyRPG's own distinction between an actor's
+    # database-declared starting class and one actually switched at runtime
+    # (see #battler_animation_id's citation of `Game_Actor::ChangeClass`'s
+    # comment). Exposed for #to_lsd, which only needs to persist a class
+    # override that is genuinely a change, not every actor's inert starting
+    # class id.
+    def class_changed?; @class_changed; end
 
     # Replace the battle-command list (Continue restoring a saved one). nil keeps
     # whatever the database / class defines.
     def battle_commands=(ids)
       @battle_commands = ids && !ids.empty? ? ids.dup : nil
     end
+
+    # Whether #battle_commands has ever been materialized -- by a live Change
+    # Class/Change Battle Commands, or by restoring a save that carried
+    # either -- rather than still lazily deferring to the database/class
+    # default. Mirrors EasyRPG's `changed_battle_commands` flag (`Game_Actor::
+    # ChangeClass`/`ChangeBattleCommands` both set it unconditionally, the
+    # same way #change_class/#change_battle_commands here always leave
+    # `@battle_commands` non-nil once either has run). Reading the public
+    # #battle_commands accessor instead would always answer true, since it
+    # memoizes the class/database default into `@battle_commands` on first
+    # read -- this checks the raw ivar before any such memoization.
+    def battle_commands_changed?; !@battle_commands.nil?; end
 
     # The RPG2003 battle combo an Enable Combo (1007) armed: the battle command
     # to repeat and how many times. nil until a battle page arms one.
@@ -11671,6 +11706,20 @@ module Game
           e[81] = a.states.size
           e[82] = a.states
         end
+        # A live Change Class survives Save/Continue too, not just the name/
+        # title/sprite overrides above -- only once #change_class (or a
+        # restored one) has actually run, matching EasyRPG's own
+        # `class_id != -1` "changed at all" sentinel (liblcf's own field
+        # default), not merely "class_id > 0" -- Change Class to "no class"
+        # (id 0) is itself a real, persisted change.
+        e[90] = a.class_id if a.class_changed?
+        # Same for a live Change Battle Commands (or a Change Class, which
+        # also materializes the list): EasyRPG's `changed_battle_commands`
+        # flag, mirrored by #battle_commands_changed?'s own raw-ivar check.
+        if a.battle_commands_changed?
+          e[80] = a.battle_commands
+          e[83] = true
+        end
         actors[a.id] = e
       end
       save[108] = actors
@@ -11823,11 +11872,24 @@ module Game
       (save[108] || []).each do |aid, sa|
         actor = party.roster[aid]
         if actor
+          # The class comes back first, mirroring Party#load_state's own
+          # ordering comment: it decides which growth/EXP curves the level
+          # and exp restored just below are read against. -1 (liblcf's own
+          # field default) means "never changed", not "class 0" -- Change
+          # Class to "no class" is itself a real, persisted change.
+          cid = sa.class_id
+          actor.restore_class(cid) if cid && cid != -1
           actor.set_level(sa.level) if sa.level
           actor.exp = sa.exp if sa.exp
           actor.equip(sa.equipment) if sa.equipment
           actor.skills = sa.skills if sa.skills
           actor.states = sa.states if sa.states
+          # A live Change Battle Commands (or a Change Class, which also
+          # materializes the list) -- gated on `changed_battle_commands` the
+          # same way EasyRPG's own read does, not merely "the field is
+          # present", since an empty list is schema.rb's own declared
+          # default rather than a real Change Battle Commands to nothing.
+          actor.battle_commands = sa.battle_commands if sa.changed_battle_commands
           # A Change Actor Name override on *any* roster member, not just the
           # leader (whose name chunk 100's title also carries below). ADR
           # 0014 already flagged this field's other case when it was first

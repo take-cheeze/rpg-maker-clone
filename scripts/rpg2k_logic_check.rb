@@ -3436,6 +3436,99 @@ check 'to_lsd/from_lsd round-trips a Change Actor Title override' do
   eq '', cleared.party.leader.title, 'a cleared title round-trips as an empty string, not the database default'
 end
 
+# RPG2003's Change Class and Change Battle Commands are permanent edits, the
+# same as Change Actor Name/Title above -- but chunk 108 (SAVE_PARTY_ACTOR)
+# never carried class_id (field 90) or battle_commands/changed_battle_commands
+# (fields 80/83) at all, so a live class change or command-list edit silently
+# reverted to the database default the moment a real .lsd was written and
+# read back (Game::Party.from_lsd rebuilds every actor from the database row,
+# which always re-seeds class_id from there).
+check 'to_lsd/from_lsd round-trips a live Change Class, and the battle ' \
+      'commands it materializes' do
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, nil) }
+  jobs = { 1 => JobRow.new('Mage', job1) }
+  db = FakeActorDB.new(players, [1], {}, {}, jobs)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+  eq 0, hero.class_id, 'no starting class'
+  eq false, hero.class_changed?
+
+  hero.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                    Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  eq 1, hero.class_id
+  ok hero.class_changed?
+  new_max_hp = hero.max_hp
+  new_commands = hero.battle_commands
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.party.leader
+  eq 1, restored.class_id, 'Change Class survives Save/Continue via .lsd'
+  eq new_max_hp, restored.max_hp,
+     "restored via the new class's own curve, not reverted to the pre-change one"
+  eq new_commands, restored.battle_commands,
+     "Change Class's own materialized battle-command list round-trips too"
+end
+
+check 'to_lsd/from_lsd round-trips a Change Battle Commands edit with no ' \
+      'Change Class involved' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+  eq false, hero.battle_commands_changed?
+  hero.change_battle_commands(true, 7)
+  ok hero.battle_commands_changed?
+  eq 0, hero.class_id, 'no class involved at all'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.party.leader
+  eq hero.battle_commands, restored.battle_commands,
+     'the edited command list round-trips even with no Change Class'
+  eq false, restored.class_changed?, 'and no spurious class change was recorded'
+end
+
+check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
+      'as it was' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.party.leader
+  eq 0, restored.class_id
+  eq false, restored.class_changed?
+  eq false, restored.battle_commands_changed?
+end
+
+check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 1, nil) }
+  jobs = { 1 => JobRow.new('Mage', job1) }
+  db = FakeActorDB.new(players, [1], {}, {}, jobs)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+  eq 1, hero.class_id, 'starts classed'
+
+  hero.change_class(0, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                    Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  eq 0, hero.class_id, 'explicitly reverted to no class'
+  ok hero.class_changed?
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.party.leader
+  eq 0, restored.class_id,
+     'class id 0 is a real, persisted change -- not "field absent"'
+  ok restored.class_changed?
+end
+
 check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
   # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
   # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots
