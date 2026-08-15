@@ -75,8 +75,17 @@ not in the dev shell. See ADR 0049 for that trade-off.
 ## In CI
 
 The `ruby-checks` job runs the report after its check group and publishes it
-two ways: a per-gem Markdown table in the job summary, and a `ruby-coverage`
-artifact holding `lcov.info` and `coverage.json`. The **number** is report-only
+two ways.
+
+On the run's **summary page** (`$GITHUB_STEP_SUMMARY`): the headline
+percentage and the per-gem table, then two collapsed sections — the least
+covered files, and every check with its result and duration (including the
+ones that skipped, and why). No log-digging to see the number.
+
+As a **`ruby-coverage` artifact**: `lcov.info` and `coverage.json`, the whole
+per-file picture, for `genhtml` or a coverage service.
+
+The **number** is report-only
 — no floor is enforced, so coverage moving does not fail a build. The step
 itself is an ordinary one: a broken reporter, or a check that fails only under
 the coverage re-run, fails the job rather than silently producing no report.

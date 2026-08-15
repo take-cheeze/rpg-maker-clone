@@ -292,6 +292,11 @@ def bar(percent, width = 24)
   ('#' * filled) + ('.' * (width - filled))
 end
 
+# The tail is where the next test belongs, so it is what both the terminal and
+# the CI summary lead with. Files with nothing to cover are not interesting
+# either way.
+lowest = files.reject { |f| f[:lines].zero? }.sort_by { |f| [f[:rate], -f[:lines]] }.first(10)
+
 puts
 puts 'Ruby line coverage'
 puts
@@ -310,9 +315,6 @@ if options[:per_file]
                 entry[:hit], entry[:lines])
   end
 else
-  # The tail is where the next test belongs, so show it by default. Files with
-  # nothing to cover are not interesting either way.
-  lowest = files.reject { |f| f[:lines].zero? }.sort_by { |f| [f[:rate], -f[:lines]] }.first(10)
   puts '  Least covered files (--per-file for all):'
   lowest.each do |entry|
     puts format('    %-46s %6.1f%%  %6d / %d', entry[:file], entry[:rate],
@@ -326,6 +328,11 @@ puts "  json: #{json_path.sub("#{ROOT}/", '')}"
 skipped = results.select(&:skipped_because)
 failed = results.reject { |r| r.skipped_because || r.status.zero? }
 
+# The CI job summary (the run's front page). The headline number and the
+# per-gem split are laid out flat; the two lists a reader only sometimes wants
+# — where the gaps are, and what was actually run — go in <details> blocks so
+# the summary stays one screen. Appended, never truncated: other steps write
+# their own sections to the same file.
 if (summary_path = ENV['GITHUB_STEP_SUMMARY']) && !summary_path.empty?
   File.open(summary_path, 'a') do |io|
     io.puts '## Ruby line coverage'
@@ -340,15 +347,44 @@ if (summary_path = ENV['GITHUB_STEP_SUMMARY']) && !summary_path.empty?
                      group[:lines])
     end
     io.puts format('| **total** | **%.1f%%** | %d | %d |', total[:rate], total[:hit], total[:lines])
-    unless skipped.empty?
+
+    unless lowest.empty?
       io.puts
-      io.puts "Skipped: #{skipped.map { |r| "`#{r.check[:name]}`" }.join(', ')} " \
-              '(test-bed data not downloaded).'
-    end
-    unless failed.empty?
+      io.puts '<details><summary>Least covered files</summary>'
       io.puts
-      io.puts "Failed: #{failed.map { |r| "`#{r.check[:name]}`" }.join(', ')}."
+      io.puts '| File | Coverage | Covered | Lines |'
+      io.puts '| --- | ---: | ---: | ---: |'
+      lowest.each do |entry|
+        io.puts format('| `%s` | %.1f%% | %d | %d |', entry[:file], entry[:rate], entry[:hit],
+                       entry[:lines])
+      end
+      io.puts
+      io.puts '</details>'
     end
+
+    io.puts
+    io.puts '<details><summary>Checks measured</summary>'
+    io.puts
+    io.puts '| Check | Result | Time |'
+    io.puts '| --- | --- | ---: |'
+    results.sort_by { |r| r.check[:name] }.each do |result|
+      state = if result.skipped_because
+                "skipped — needs #{result.skipped_because}"
+              elsif result.status.zero?
+                'ok'
+              else
+                "**failed** (exit #{result.status})"
+              end
+      io.puts format('| `%s` | %s | %.1fs |', result.check[:name], state, result.seconds)
+    end
+    io.puts
+    io.puts '</details>'
+
+    io.puts
+    io.puts 'Covered by the CRuby harnesses only — `mruby_test` and the native smoke tests ' \
+            'run inside mruby, where there is no `Coverage`, so this is a floor. ' \
+            'Full report in the `ruby-coverage` artifact (`lcov.info`, `coverage.json`); ' \
+            'see `docs/coverage.md`.'
   end
 end
 
