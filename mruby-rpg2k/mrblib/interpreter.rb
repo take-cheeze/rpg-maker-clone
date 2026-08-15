@@ -2203,8 +2203,23 @@ module Game
     # vehicle; param1 the operand mode (0 the values are literal, 1 they are
     # variable ids), and param2/param3/param4 the map id, x and y (like Change
     # Event Location's designation). A no-op for an out-of-range vehicle.
+    #
+    # EasyRPG's own `CommandSetVehicleLocation` (`src/game_interpreter.cpp`):
+    # "Check if the party is in the current vehicle and transfer the party
+    # together with it" — when the party is currently boarded on the vehicle
+    # this command targets *and* the destination is the map they are already
+    # on, `Game_Player::MoveTo` runs alongside the vehicle's own move. A
+    # cross-map destination goes through a materially different "quick
+    # teleport" path (an async map switch with no transition) that this fix
+    # deliberately leaves alone — only the same-map case is ported here.
+    # Without this, relocating the vehicle the party is riding did nothing
+    # visible at all: rendering while boarded follows the *player's* position,
+    # not the vehicle's, and the party's own `@state.x`/`@state.y` were never
+    # touched, so the very next completed step's `#follow_vehicle` silently
+    # overwrote the vehicle back to the party's still-unmoved tile.
     def do_set_vehicle_location(cmd)
-      v = vehicle_target(cmd)
+      type = Vehicle::TYPES[cmd.param(0)]
+      v = type && @state.vehicle(type)
       return unless v
       map_id = cmd.param(2)
       x = cmd.param(3)
@@ -2217,6 +2232,8 @@ module Game
       v.map_id = map_id
       v.x = x
       v.y = y
+      return unless @state.boarded == type && map_id == @state.map_id
+      @location_requests.push({ op: :set, target: CHAR_PLAYER, x: x, y: y })
     end
 
     # Change Vehicle Graphic (10650): give a vehicle a new CharSet graphic — the

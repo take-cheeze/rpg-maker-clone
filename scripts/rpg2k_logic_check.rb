@@ -7473,6 +7473,55 @@ check 'Set Vehicle Location places a vehicle (constant and variable modes)' do
   eq [7, 3, 4], [ship.map_id, ship.x, ship.y]
 end
 
+# EasyRPG's own CommandSetVehicleLocation (src/game_interpreter.cpp): "Check
+# if the party is in the current vehicle and transfer the party together with
+# it" -- when the destination is the map the party is already on,
+# Game_Player::MoveTo runs alongside the vehicle's own move. A cross-map
+# destination goes through a materially different async "quick teleport"
+# this fix deliberately leaves untouched -- only the same-map case is ported.
+check 'Set Vehicle Location moves the boarded party too, on the same map' do
+  st = party_state
+  st.boarded = :boat
+  st.x = 3
+  st.y = 3
+  it = Game::Interpreter.new(st)
+  # boat (0), literal mode: map 1 (the party's current map), x 10, y 12.
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 1, 10, 12])])
+  it.update
+  boat = st.vehicle(:boat)
+  eq [1, 10, 12], [boat.map_id, boat.x, boat.y], 'the vehicle itself still moves'
+  eq [{ op: :set, target: 10001, x: 10, y: 12 }], it.take_location_requests,
+     'and the party riding it is queued to move to the same tile'
+end
+
+check 'Set Vehicle Location leaves an unboarded party alone' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 1, 10, 12])])
+  it.update
+  eq [], it.take_location_requests
+end
+
+check "Set Vehicle Location leaves the party alone when it isn't the " \
+      "vehicle they're riding" do
+  st = party_state
+  st.boarded = :ship
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 1, 10, 12])]) # targets the boat
+  it.update
+  eq [], it.take_location_requests
+end
+
+check 'Set Vehicle Location leaves the party alone when the destination is ' \
+      'a different map (the cross-map "quick teleport" case stays out of scope)' do
+  st = party_state
+  st.boarded = :boat
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SET_VEHICLE_LOCATION, [0, 0, 9, 10, 12])]) # a different map
+  it.update
+  eq [], it.take_location_requests
+end
+
 check 'Change Vehicle Graphic sets the vehicle charset' do
   st = party_state
   it = Game::Interpreter.new(st)

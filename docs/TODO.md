@@ -6657,6 +6657,45 @@ not yet verified:
   reads as `0`/no facing change) and a new `scripts/rpg2k_scene_check.rb`
   check (a targeted event snaps to face down on arrival), all three
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **Set Vehicle Location now moves the party along with the vehicle they
+  are currently riding, on the same map — it used to reposition only the
+  vehicle model, leaving the party (and everything the screen actually
+  draws) behind.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Interpreter::CommandSetVehicleLocation` (code 10850, `src/
+  game_interpreter.cpp`) — "Check if the party is in the current vehicle and
+  transfer the party together with it" — when `Main_Data::game_player->
+  GetVehicle() == vehicle` and the destination map equals the current one,
+  it calls `Main_Data::game_player->MoveTo(map_id, x, y)` alongside the
+  vehicle's own `MoveTo`. `Interpreter#do_set_vehicle_location`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) only ever wrote the vehicle model's
+  own `map_id`/`x`/`y`; `@state.x`/`@state.y` (the party's own position)
+  were never touched. That is worse than merely invisible: rendering while
+  boarded already follows the *player's* live position rather than the
+  vehicle's (`Scene::Map#follow_vehicle`, the same mechanism the ridden-
+  vehicle Move Event fix above relies on), so the command had no on-screen
+  effect at all, and the party's still-unmoved tile got copied straight back
+  onto the vehicle on the very next completed step by that same
+  `#follow_vehicle` — silently erasing the command's effect entirely rather
+  than merely delaying it. A cross-map destination while boarded is a
+  materially different case in EasyRPG (an async "quick teleport" that swaps
+  maps with no transition, `AsyncOp::MakeQuickTeleport`) implemented through
+  this codebase's ordinary map-reload teleport machinery, not a same-map
+  reposition — deliberately left as an out-of-scope follow-up rather than
+  folded into this fix. Fixed by threading the target vehicle's own type
+  symbol through `#do_set_vehicle_location` and, when it matches
+  `@state.boarded` and the destination map matches the party's current one,
+  queuing the same `:set` location request `#do_change_event_location`
+  already uses for the player target — reusing `Scene::Map#
+  set_char_location`'s existing `move_player_to` path rather than writing
+  `@state.x`/`@state.y` directly, since only the scene tracks the
+  in-progress-step state (`@moving`/`@dest_x`/`@dest_y`) a raw write would
+  leave stale. Covered by three new `scripts/rpg2k_logic_check.rb` checks
+  (the same-map boarded case queues the player move; an unboarded party and
+  a boarded-on-a-different-vehicle party are both left alone; a different
+  destination map is also left alone, since that case stays out of scope)
+  and a new `scripts/rpg2k_scene_check.rb` check (the boarded party visibly
+  rides along with a relocated boat), all four confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
