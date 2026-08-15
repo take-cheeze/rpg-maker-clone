@@ -3141,16 +3141,24 @@ module Game
       @state.weather.set(cmd.param(0), cmd.param(1))
     end
 
-    # Fade Out BGM (11520): fade the music to silence over param0 tenths of a
-    # second, then leave nothing playing. Clears the current-BGM record so a
-    # Memorize BGM taken afterwards memorises silence, as RPG_RT does.
-    # Non-blocking — the event runs on while the music fades.
-    MS_PER_TENTH = 100
-
+    # Fade Out BGM (11520): fade the music to silence over param0
+    # milliseconds, then leave nothing playing. Clears the current-BGM
+    # record so a Memorize BGM taken afterwards memorises silence, as
+    # RPG_RT does. Non-blocking — the event runs on while the music fades.
+    #
+    # param0 is already milliseconds, not tenths of a second: EasyRPG's
+    # `CommandFadeOutBGM` (src/game_interpreter.cpp) passes
+    # `com.parameters[0]` straight through to `Game_System::BgmFade`, whose
+    # own doc comment (src/game_system.h) reads "duration Duration in ms" --
+    # confirmed by every other real `BgmFade(...)` call site in EasyRPG
+    # (player.cpp, scene_end.cpp, scene_map.cpp), all bare millisecond
+    # literals (400/800) with no scaling. This codebase's own
+    # `RGSS::Audio.bgm_fade` already expects milliseconds too --
+    # `Scene::Menu`'s own End Game call passes `bgm_fade(400)` directly.
     def do_fadeout_bgm(cmd)
       @state.current_bgm = nil
       @state.bgm_looped = false
-      RGSS::Audio.bgm_fade(cmd.param(0) * MS_PER_TENTH)
+      RGSS::Audio.bgm_fade(cmd.param(0))
     rescue StandardError => e
       $stderr.puts "[RPG2k] BGM fade-out failed: #{e.message}"
       nil

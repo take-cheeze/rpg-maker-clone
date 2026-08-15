@@ -6275,6 +6275,31 @@ not yet verified:
   a new `scripts/rpg2k_logic_check.rb` check driving a type-11 Conditional
   Branch through a full true/else pair and asserting the else branch ran,
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **Fade Out BGM (11520) no longer fades the music over a duration 100x too
+  long.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Interpreter::CommandFadeOutBGM` (`src/game_interpreter.cpp`) passes
+  `com.parameters[0]` straight through to `Game_System::BgmFade` with no
+  scaling at all, and `BgmFade`'s own doc comment (`src/game_system.h`)
+  reads "duration Duration in ms" — corroborated by every other real
+  `BgmFade(...)` call site in EasyRPG (`player.cpp`, `scene_end.cpp`,
+  `scene_map.cpp`), all bare millisecond literals (`400`/`800`) with no
+  conversion. `Interpreter#do_fadeout_bgm`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) instead treated the parameter as
+  *tenths of a second* and multiplied by a `MS_PER_TENTH = 100` constant
+  before calling `RGSS::Audio.bgm_fade` — a unit this codebase's own other
+  `bgm_fade` call site (`Scene::Menu`'s End Game handler,
+  `bgm_fade(400)`) never uses, confirming `RGSS::Audio.bgm_fade` itself
+  already expects milliseconds. Concretely: a designer sets the field to
+  RPG_RT's own common default, `800` — real RPG_RT/EasyRPG fades over
+  800ms (0.8 seconds); this build computed `800 * 100 = 80,000`ms, an
+  80-second fade for what should be under a second. Fixed by removing the
+  `* MS_PER_TENTH` multiplication entirely — the parameter now passes
+  straight through, matching EasyRPG exactly. The pre-existing
+  `scripts/rpg2k_logic_check.rb` "Fade Out BGM" check had baked the wrong
+  `param 20 → 2000ms` conversion directly into its own assertion (masking
+  the bug rather than catching it); its expected value is corrected to the
+  pass-through relationship (`param 2000 → 2000ms`), confirmed to fail
+  against the pre-fix code (`expected 2000, got 200000`) before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
