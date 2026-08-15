@@ -2062,6 +2062,68 @@ check 'Shake Screen with a wait pauses until the shake ends' do
   eq true, st.switches[2], 'resumed once the shake finished'
 end
 
+check 'RPG2003 Shake Screen mode 1 (Begin) strobes indefinitely and never pauses' do
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  # power 5, speed 4; tenths/wait play no part in Begin, mode 1.
+  it.start([FakeCmd.new(IC::SHAKE_SCREEN, [5, 4, 0, 0, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Begin never pauses the interpreter'
+  eq true, st.switches[1], 'the command after Begin still ran'
+  ok st.screen.shaking?, 'a shake is in progress'
+  # Force the strobe down to its last frame instead of looping the real
+  # 65535-frame period, then confirm it re-arms rather than settling.
+  st.screen.instance_variable_set(:@shake_frames, 1)
+  st.screen.update
+  eq Game::Screen::SHAKE_CONTINUOUS_FRAMES, st.screen.instance_variable_get(:@shake_frames),
+     're-armed to the continuous sentinel instead of settling at 0'
+  ok st.screen.shaking?, 'still strobing after one full period'
+end
+
+check 'RPG2003 Shake Screen mode 2 (End) stops a Begin strobe immediately' do
+  st = new_state(rpg2003: true)
+  st.screen.shake_begin(5, 4)
+  ok st.screen.shaking?
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHAKE_SCREEN, [0, 0, 0, 0, 2]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'End never pauses the interpreter'
+  eq true, st.switches[1], 'the command after End still ran'
+  ok !st.screen.shaking?, 'End stops the strobe'
+  eq 0, st.screen.shake_offset
+  st.screen.update # further updates are a no-op once ended
+  ok !st.screen.shaking?
+end
+
+check 'A pre-RPG2003 or short-parameter Shake Screen command always falls back to mode 0' do
+  st = new_state(rpg2003: false)
+  it = Game::Interpreter.new(st)
+  # A 5-parameter command list, but not an RPG2003 project: param4's "1"
+  # (Begin) is ignored and this behaves as a plain timed shake instead.
+  it.start([FakeCmd.new(IC::SHAKE_SCREEN, [5, 4, 1, 0, 1])]) # 6 frames
+  it.update
+  ok st.screen.shaking?
+  st.screen.instance_variable_set(:@shake_frames, 1)
+  st.screen.update
+  ok !st.screen.shaking?, 'settled, not re-armed -- mode 0, not Begin'
+end
+
+check 'a one-shot Shake Screen after a Begin strobe stops re-arming once it ends' do
+  # Matches `Game_Screen::ShakeOnce` always clearing the continuous flag: a
+  # plain timed shake started after a Begin strobe must settle for good once
+  # its own duration elapses, not keep re-arming from the earlier Begin.
+  st = new_state(rpg2003: true)
+  st.screen.shake_begin(5, 4)
+  ok st.screen.shaking?
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::SHAKE_SCREEN, [3, 2, 1, 0])]) # mode 0, 6 frames
+  it.update
+  6.times { st.screen.update }
+  ok !st.screen.shaking?, 'the one-shot settled instead of re-arming from the earlier Begin'
+end
+
 check 'Flash Screen without a wait starts a flash and does not pause' do
   st = new_state
   it = Game::Interpreter.new(st)

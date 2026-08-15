@@ -3058,12 +3058,26 @@ module Game
     # param1 for param2 tenths of a second. When param3 (the wait flag) is set,
     # pause until it finishes — the owning scene advances Game::Screen each frame
     # and resumes us once no screen effect is animating.
+    # RPG2003 extends the command with a param4 mode byte (0 one-shot / 1 begin a
+    # repeating strobe / 2 end one), matching EasyRPG's `CommandShakeScreen`
+    # (src/game_interpreter.cpp): a command list carrying no 5th parameter (an
+    # RPG2000 project, or an RPG2003 one never given the extended layout) always
+    # falls back to a plain one-shot shake, mode 0. Only mode 0 ever waits — Begin
+    # and End never suspend the interpreter, since the strobe runs indefinitely.
     def do_shake_screen(cmd)
-      frames = cmd.param(2) * FRAMES_PER_TENTH
-      @state.screen.shake(cmd.param(0), cmd.param(1), frames)
-      return unless cmd.param(3) != 0 && @state.screen.shaking?
-      @wait_kind = :screen
-      @waiting = true
+      mode = @state.party.rpg2003? && cmd.parameters.size > 4 ? cmd.param(4) : 0
+      case mode
+      when 1
+        @state.screen.shake_begin(cmd.param(0), cmd.param(1))
+      when 2
+        @state.screen.shake_end
+      else
+        frames = cmd.param(2) * FRAMES_PER_TENTH
+        @state.screen.shake(cmd.param(0), cmd.param(1), frames)
+        return unless cmd.param(3) != 0 && @state.screen.shaking?
+        @wait_kind = :screen
+        @waiting = true
+      end
     end
 
     # Whether Show/Move/Erase Picture must no-op this call: per yado.tk, real
