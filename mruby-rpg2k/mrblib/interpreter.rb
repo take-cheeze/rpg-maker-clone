@@ -2569,7 +2569,13 @@ module Game
       when 9 # the BGM has played through at least once
         @state.bgm_looped ? true : false
       when 10 # RPG2003's second timer, laid out exactly like type 2
-        timer_condition(cmd, 1)
+        # EasyRPG's own CommandConditionalBranch (src/game_interpreter.cpp)
+        # only evaluates this case at all `if (Player::IsRPG2k3Commands())`
+        # -- on an RPG2000 database `result` is left at its initial `false`,
+        # the same "unhandled type" answer the `else` arm below already
+        # gives, not a live comparison against Timer2 (which RPG2000 has no
+        # editor control to even set up a Conditional Branch against).
+        party.rpg2003? && timer_condition(cmd, 1)
       else
         # An unhandled/unsupported branch type (RPG2003 v1.11's own type 11
         # "EX" conditions -- savestate available, Test Play, ATB-wait,
