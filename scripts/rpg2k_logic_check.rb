@@ -11725,6 +11725,63 @@ check 'the battle Conditional Branch tests switches, variables and battlers' do
   eq 2, st.variables[1], 'an actor not in the fight fails'
 end
 
+check 'troop-member numbering stays stable when a middle member dies or is hidden' do
+  # docs/TODO.md's render-order fix left this "still open": does killing or
+  # hiding troop member 1 (the middle of three) shift member 2 down into
+  # slot 1, silently repointing anything that names it by its original
+  # index? Confirmed against EasyRPG's Game_EnemyParty::ResetBattle /
+  # GetEnemy (src/game_enemyparty.cpp) that it does not -- `@enemies` here
+  # mirrors its fixed-size `enemies` vector exactly: built once, never
+  # erased or resized mid-battle, with `dead?`/`hidden` in-place flags on
+  # each entry rather than removal.
+  foe0 = combatant('Foe0', 5, 0, 5, 50)
+  foe1 = combatant('Foe1', 5, 0, 5, 50)
+  foe2 = combatant('Foe2', 5, 0, 5, 50)
+  hero = combatant('Hero', 10, 0, 10, 100)
+  b = Game::Battle.new([hero], [foe0, foe1, foe2], Game::Rng.new(1))
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+
+  # Kill troop member 1 the way a battle event would: Change Monster HP,
+  # lethal damage.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [1, 1, 0, 999, 1])])
+  it.update
+  ok b.enemy(1).dead?, 'member 1 was killed'
+
+  # #enemy(index) must still resolve every index to the exact same
+  # combatant it did before member 1 died -- no shift, no renumbering.
+  ok foe0.equal?(b.enemy(0)), 'member 0 unaffected by member 1 dying'
+  ok foe1.equal?(b.enemy(1)), 'the dead member stays at its own index'
+  ok foe2.equal?(b.enemy(2)), 'member 2 does not shift down into slot 1'
+  eq 'Foe2', b.enemy(2).name
+
+  # A later command naming member 2 by its original index must still land
+  # on Foe2, not on whatever would have shifted into slot 2 under a
+  # renumbering scheme.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [2, 1, 0, 20, 1])])
+  it.update
+  eq 30, foe2.hp, 'Change Monster HP on index 2 still targets Foe2'
+  eq 50, foe0.hp, 'and leaves member 0 untouched'
+
+  # A battle Conditional Branch "troop member present" check (type 3) on
+  # index 2 also keeps addressing Foe2.
+  it.start([FakeCmd.new(IC::CONDITIONAL_B, [3, 2, 0], indent: 0),
+            FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+            FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+            FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+            FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)])
+  it.update
+  eq 1, st.variables[1], 'member 2 (Foe2) still reads as present at index 2'
+
+  # Hiding is the other way a monster goes "out of play" mid-fight
+  # (Game::Battle::Combatant#out_of_play?): also in-place, never a removal.
+  foe0.hidden = true
+  ok foe0.equal?(b.enemy(0))
+  ok foe2.equal?(b.enemy(2))
+  eq 'Foe2', b.enemy(2).name
+end
+
 check 'battle-only commands are no-ops outside a battle' do
   st = new_state
   it = Game::Interpreter.new(st) # no #battle set: a map/common event
