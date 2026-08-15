@@ -8490,9 +8490,10 @@ event-id-existence and page-existence as two distinct checks); invalid
 map (Transfer Player / Teleport-to-Remembered-Location targeting a
 nonexistent map id — error text includes the literal missing filename;
 fixed, see the ✅ below);
-invalid hero, skill, item, enemy, enemy group, battle animation, terrain
-(fixed, see the ✅ below), chipset, common event (all: a database shrink
-leaves a dangling id reference somewhere, shown as "?" in the editor);
+invalid hero, skill, item, enemy, enemy group, battle animation, terrain,
+chipset, common event (skill/enemy/enemy-group/battle-animation/terrain/
+chipset fixed, see the ✅ entries below; all: a database shrink leaves a
+dangling id reference somewhere, shown as "?" in the editor);
 event-call recursion past 1000. Several of these errors are **deferred**
 until the stale reference is actually exercised at runtime rather than
 raised at load time — e.g. invalid terrain only errors when the player
@@ -8687,6 +8688,28 @@ behaviour itself is unchanged, this is diagnostics only. Covered by a new
 alongside the unchanged blank name/graphic and default-passable/terrain
 behaviour, plus that an existing id, id `0`, a `nil` id and a chipset-less
 bare fixture all stay silent.
+✅ **A dangling battle-animation id no longer draws nothing with no trace** —
+the "battle animation" case from the "invalid hero, skill, item, enemy,
+enemy group, battle animation, terrain, chipset, common event" list above.
+`Scene::Map#animation_row` (`mruby-rpg2k/mrblib/scene/map.rb`) is the single
+choke point every battle-animation lookup goes through — a Show Battle
+Animation command and a skill/item's own animation (`#start_battle_animation`,
+`#start_map_animation`, `#start_battle_page_animation`, all via
+`#build_animation`) — and used to swallow a miss with a bare
+`rescue StandardError; nil`, so a database shrink leaving a Show Battle
+Animation, or a skill/item's own animation, naming a deleted `battle_anime`
+row simply drew nothing with no trace. It now logs a `[RPG2k] battle
+animation #<id> not found in database, nothing drawn` diagnostic when `id` is
+a positive, resolvable-looking reference that simply misses, `respond_to?`/
+nil-guarded the same way `terrain_row_at`/`db_item` are so a bare test
+fixture with no `battle_anime` table at all stays quiet. This already matches
+the "deferred until exercised" framing above for free: the lookup only ever
+runs when the animation would actually play. Behaviour is otherwise
+unchanged — the lookup still returns `nil` and every caller still draws
+nothing. Covered by new `scripts/rpg2k_scene_check.rb` checks asserting the
+captured `$stderr` line for a dangling id, silence for a valid id/`nil`/`0`/a
+`battle_anime`-less bare fixture, and that a skill naming a since-deleted
+animation still plays nothing through `#start_battle_animation`.
 
 **Map/Event ID assignment & tile occupancy**
 - ✅ **Not applicable: Event ID (and, separately, Map ID) assignment by
