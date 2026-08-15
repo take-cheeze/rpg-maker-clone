@@ -9501,10 +9501,17 @@ module Game
     # it so far -- the encounter system that would share it is not built. It
     # persists in both the Marshal save and the `.lsd` (inventory chunk 109
     # field 42, see LCF::Schema::SAVE_INVENTORY), so a resumed real save
-    # continues its count rather than restarting from 0. The chunk's `turns`
-    # field (41, "turns passed in latest battle") stays deliberately undecoded
-    # -- there is no per-battle turn tracker on the Ruby side to source it from.
+    # continues its count rather than restarting from 0.
     attr_accessor :steps
+    # How many rounds the most recently finished battle ran for -- RPG2000's
+    # "turns passed in latest battle" (inventory chunk 109 field 41, `turns`).
+    # Nil until a battle has ever finished (matching the chunk's own
+    # undefaulted read); `Scene::Map#finish_battle` sets it from
+    # `Game::Battle#turn` (its live `@rounds` counter) right before the fought
+    # `Battle` object is discarded, since nothing else keeps that count once
+    # the fight ends. Persists in both the Marshal save and the `.lsd`, same
+    # as `#steps`.
+    attr_accessor :last_battle_turns
     # Running tallies RPG2000 keeps and exposes through the Control Variables
     # "Other" operand: how many times the game was saved, and how many battles
     # were fought / won / lost / escaped. All persist in the Marshal save; the
@@ -9608,6 +9615,7 @@ module Game
       @encounter_rate = nil
       @encounter_total = 0
       @steps = 0
+      @last_battle_turns = nil
       @save_count = 0
       @battle_count = 0
       @win_count = 0
@@ -9834,7 +9842,7 @@ module Game
         common_event_progress: @common_event_progress,
         map_event_positions: @map_event_positions,
         map_event_route_index: @map_event_route_index,
-        steps: @steps,
+        steps: @steps, last_battle_turns: @last_battle_turns,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
         escape_count: @escape_count,
@@ -9860,7 +9868,8 @@ module Game
     #     Change Sprite override survives);
     #   * actors (108): the per-actor level/exp/equipment/skills/HP/MP table;
     #   * inventory (109): the party roster / gold / item bag / both timers /
-    #     the step counter and battle win/defeat/escape/victory tallies.
+    #     the step counter / battle win/defeat/escape/victory tallies / the
+    #     latest battle's round count.
     #
     # Switch and variable ids are 1-indexed in-game but 0-indexed in the save, so
     # they shift down by one; unset entries default to false / 0. +save_count+
@@ -9875,11 +9884,12 @@ module Game
     # a time until only the title chunk failed, then one field at a time within
     # it. See ADR 0021.
     #
-    # Both Timer Operation countdowns, the step counter, the battle tallies and
-    # every roster member's Change Actor Name and Change Actor Title overrides
-    # round-trip now too (see LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
-    # battles/defeats/escapes/victories/steps fields and SAVE_PARTY_ACTOR's
-    # actor_name/title), so this is a near-parity export.
+    # Both Timer Operation countdowns, the step counter, the battle tallies,
+    # the latest battle's round count and every roster member's Change Actor
+    # Name and Change Actor Title overrides round-trip now too (see
+    # LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
+    # battles/defeats/escapes/victories/steps/turns fields and
+    # SAVE_PARTY_ACTOR's actor_name/title), so this is a near-parity export.
     def to_lsd(save_count = 1, timestamp = nil)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
@@ -10034,6 +10044,9 @@ module Game
       inv[34] = @escape_count
       inv[35] = @win_count
       inv[42] = @steps
+      # Undefaulted, like the other counters -- absent until a battle has ever
+      # finished (see #last_battle_turns).
+      inv[41] = @last_battle_turns if @last_battle_turns
       save[109] = inv
 
       save
@@ -10262,6 +10275,9 @@ module Game
       state.escape_count = inv.escapes unless inv.escapes.nil?
       state.win_count = inv.victories unless inv.victories.nil?
       state.steps = inv.steps unless inv.steps.nil?
+      # "Turns passed in latest battle" (field 41); absent on a save written
+      # before this landed, or one taken before any battle ever finished.
+      state.last_battle_turns = inv.turns unless inv.turns.nil?
       state
     end
 
@@ -10381,6 +10397,7 @@ module Game
       state.encounter_rate = h[:encounter_rate]
       state.encounter_total = h[:encounter_total] || 0
       state.steps = h[:steps] || 0
+      state.last_battle_turns = h[:last_battle_turns]
       state.save_count = h[:save_count] || 0
       state.battle_count = h[:battle_count] || 0
       state.win_count = h[:win_count] || 0

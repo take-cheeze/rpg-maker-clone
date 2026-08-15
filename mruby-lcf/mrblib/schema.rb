@@ -1150,8 +1150,8 @@ module LCF
     # and 導きの書 (item 451) ×1, after the gate crystal had been spent. Item ids
     # are int16; counts and per-item use-counts are one byte each. Field 1 is the
     # party roster (actor ids); the sole entry `[1]` is actor 1, whose database
-    # charset matches the saved hero. The step/turn counters (fields 0x29/0x2A)
-    # are left out until confirmed. Fields 23-30 (0x17-0x1E) are the two Timer
+    # charset matches the saved hero. The turn/step counters (fields 0x29/0x2A)
+    # are now decoded too, below. Fields 23-30 (0x17-0x1E) are the two Timer
     # Operation countdowns -- ids and "value is seconds*60+59" both confirmed
     # against liblcf's own `ChunkSaveInventory` enum, which documents them
     # under this chunk rather than the system chunk (101) `docs/TODO.md` used
@@ -1175,16 +1175,18 @@ module LCF
       28 => { name: :timer2_active, type: :bool },
       29 => { name: :timer2_visible, type: :bool },
       30 => { name: :timer2_battle, type: :bool },
-      # Battle tallies and the field step counter, likewise undefaulted --
-      # confirmed against liblcf's SaveInventory struct (all plain int32_t,
-      # like gold). Field 41 (`turns`, "turns passed in latest battle") is
-      # deliberately left out: there is no Ruby-side per-battle turn tracker
-      # to source it from yet, so decoding it here would have nothing to
-      # round-trip.
+      # Battle tallies, the "turns passed in latest battle" counter and the
+      # field step counter, likewise undefaulted -- confirmed against
+      # liblcf's SaveInventory struct (all plain int32_t, like gold). Field
+      # 41 (`turns`) is sourced from `Game::Battle#turn` (its live `@rounds`
+      # counter), captured onto `Game::State#last_battle_turns` by
+      # `Scene::Map#finish_battle` right before the fought `Battle` object is
+      # discarded.
       32 => { name: :battles, type: :int },
       33 => { name: :defeats, type: :int },
       34 => { name: :escapes, type: :int },
       35 => { name: :victories, type: :int },
+      41 => { name: :turns, type: :int },
       42 => { name: :steps, type: :int },
     }
 

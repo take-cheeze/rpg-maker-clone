@@ -3262,8 +3262,8 @@ check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
   # only decoded the two timers. Confirmed against liblcf's SaveInventory
   # struct (every field here is a plain int32_t, like gold):
   # battles/defeats/escapes/victories/steps at ids 32/33/34/35/42. Field 41
-  # ("turns passed in latest battle") stays deliberately undecoded -- there
-  # is no per-battle turn tracker on the Ruby side to source it from.
+  # ("turns passed in latest battle") is covered separately below, once
+  # Game::Battle's own round counter is captured onto it.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.steps = 1234
@@ -7744,6 +7744,42 @@ def combatant_mp(name, atk, dfn, agi, hp, mp)
   c.mp = mp
   c.max_mp = mp
   c
+end
+
+check 'to_lsd/from_lsd round-trips the latest battle\'s turn count' do
+  # Field 41 ("turns passed in latest battle") used to stay deliberately
+  # undecoded: there was no per-battle turn tracker on the Ruby side to
+  # source it from (see the step-counter-and-battle-tallies check above).
+  # There is now -- Game::Battle already counts its own rounds live
+  # (@rounds, exposed by #turn); Scene::Map#finish_battle (scene/map.rb)
+  # captures it onto Game::State#last_battle_turns right before the fought
+  # Battle object is discarded. This exercises that capture + round-trip
+  # without going through the scene layer: run a fight for a fixed number of
+  # rounds, read #turn the way #finish_battle does, then round-trip it
+  # through to_lsd/from_lsd like the sibling counters do.
+  hero = combatant('Hero', 40, 0, 20, 10_000)
+  slime = combatant('Slime', 0, 0, 5, 10_000) # tanky on both sides: nobody dies mid-loop
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  5.times { bat.run_round }
+  eq 5, bat.turn, 'the battle itself ran exactly 5 rounds'
+
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, st.last_battle_turns, 'no battle has ever finished yet'
+  st.last_battle_turns = bat.turn # what #finish_battle does with @battle_ui[:battle].turn
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq 5, round.last_battle_turns, 'the latest battle\'s round count round-trips'
+
+  # A save written before this landed simply omits the field; from_lsd must
+  # leave a freshly-constructed State's nil default alone rather than crash
+  # reading an absent field.
+  legacy = st.to_lsd
+  legacy[109].delete(41)
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.last_battle_turns,
+     'an old save without the field keeps the default (no battle ever captured)'
 end
 
 # EasyRPG models an actor's and an enemy's own "state id the target's

@@ -1045,8 +1045,11 @@ The work below is roughly ordered by the critical path to a walkable game
   through the `.lsd` too: the inventory chunk (109)'s `steps` field (42) is
   decoded and written by `Game::State#to_lsd` / `.from_lsd`, so a resumed real
   save continues its count instead of starting from 0. The chunk's `turns`
-  field (41, "turns passed in latest battle") stays deliberately undecoded —
-  there is no per-battle turn tracker on the Ruby side to source it from yet.
+  field (41, "turns passed in latest battle") is now decoded too:
+  `Game::Battle#turn` (its live `@rounds` counter) is captured onto
+  `Game::State#last_battle_turns` by `Scene::Map#finish_battle` right before
+  the fought `Battle` object is discarded, and round-trips through the same
+  `to_lsd`/`from_lsd` (and Marshal `to_h`/`.load`) pair as `steps`.
   mtf-meido-action's Poison (1 HP every 4 steps) is the only state in either test
   bed that carries the field, and `rpg2k_testbed_logic_check.rb` walks the real
   party through the real interval against it. **`affect_type` stat
@@ -2695,11 +2698,29 @@ The work below is roughly ordered by the critical path to a walkable game
   `nil`; `Game::State#to_lsd` writes the five live counters into them and
   `.from_lsd` restores them, leaving a legacy save's zeroed `State.new`
   defaults in place when the fields are absent. Chunk 109's `turns` field (41,
-  "turns passed in latest battle") stays deliberately undecoded — there is no
-  per-battle turn tracker on the Ruby side to source it from, and building one
-  is a separate, larger feature. Covered by a new `scripts/
+  "turns passed in latest battle") was left deliberately undecoded at the
+  time — there was no per-battle turn tracker on the Ruby side to source it
+  from — and is now wired up too, see below. Covered by a new `scripts/
   rpg2k_logic_check.rb` check (a non-zero step count and battle tallies both
   round-trip through an in-memory `to_lsd`/`from_lsd`).
+  ✅ **Chunk 109's `turns` field (41, "turns passed in latest battle") now
+  round-trips through the `.lsd` too**, the one field the step/battle-tally
+  entry above deliberately left out for lack of a source value.
+  `Game::Battle` already tracks the fight's own round count live (`@rounds`,
+  incremented once per `#run_round` up to `MAX_ROUNDS`; `#turn` simply
+  returns it) — it just never survived past the fight, since
+  `Scene::Map#finish_battle` discards the `Battle` object once it hands the
+  outcome back to the event. A new `Game::State#last_battle_turns`
+  (Marshal-persisted like `#steps`, nil until a battle has ever finished) is
+  now set from `@battle_ui[:battle].turn` right there, alongside the existing
+  `apply_to_party` call. `LCF::Schema::SAVE_INVENTORY` decodes field 41 as a
+  plain undefaulted `:int`, matching its neighbours; `Game::State#to_lsd`
+  writes it (only when set, so a save taken before any battle leaves the
+  field genuinely absent, not a spurious 0) and `.from_lsd` restores it.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check (a multi-round battle,
+  `finish_battle` capturing the round count, then an in-memory
+  `to_lsd`/`from_lsd` round-trip; a legacy save with the field absent stays at
+  the `nil` default).
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done

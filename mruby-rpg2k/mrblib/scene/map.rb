@@ -5654,6 +5654,11 @@ class RPG2k
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
         @battle_ui[:battle].apply_to_party
+        # Capture the fight's own round count (Game::Battle#turn, its live
+        # @rounds counter) before #close_battle discards the Battle object --
+        # this is RPG2000's "turns passed in latest battle" (Game::State
+        # #last_battle_turns, LCF inventory chunk 109 field 41).
+        @state.last_battle_turns = @battle_ui[:battle].turn
         # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
         # party knocked out ends the game; every other outcome resumes the event.
         game_over = result == :defeat && @battle_ui[:req][:defeat_game_over] &&
