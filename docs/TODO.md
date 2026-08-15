@@ -1949,11 +1949,11 @@ The work below is roughly ordered by the critical path to a walkable game
   back out of it with `fill_rect`, which is exactly how RPG_RT composites the
   screen being left against the screen being arrived at (one of the two is always
   solid black). That draws the blinds, the vertical / horizontal stripes and the
-  border-to-centre / centre-to-border windows for real. Remaining: the styles a
-  black mask cannot express — the scrolls, the combine / division pairs and zoom
-  slide or resample the live scene itself, mosaic / wave resample it too, and
-  random blocks wants thousands of block blits a frame — which run as a fade of
-  the right length and the right end state for now.
+  border-to-centre / centre-to-border windows for real, and — see below —
+  random blocks too. Remaining: the styles a black mask cannot express — the
+  scrolls, the combine / division pairs and zoom slide or resample the live
+  scene itself, and mosaic / wave resample it too — which run as a fade of the
+  right length and the right end state for now.
 
   **That remainder was written up as blocked on a screen capture the renderer
   does not have. It is not: `RGSS::Graphics.snap_to_bitmap` exists, is tested
@@ -1962,8 +1962,8 @@ The work below is roughly ordered by the critical path to a walkable game
   and it answers nil there), and the **RPG Maker XP scene already uses it**
   (`mruby-rpgxp/mrblib/scene.rb`) for exactly this — its own transitions.** The
   same mistake as the fade/flash note below: a capability assumed missing that
-  was already there. What was left per style (scroll, combine / division and
-  zoom are now done — see below):
+  was already there. What was left per style (scroll, combine / division,
+  zoom and random blocks are now done — see below):
 
   - ✅ **Scroll (settings 9–12)** and **combine / division (13–15)**: capture the
     outgoing screen once when the transition starts, then each frame paint the
@@ -1976,12 +1976,14 @@ The work below is roughly ordered by the critical path to a walkable game
     shrinks toward (an Erase) or grows from (a Show) the screen centre, so
     stretching that shrinking/growing crop over the whole screen is what reads
     as zooming in.
+  - ✅ **Random blocks (1–3)**: a mask like the blinds / stripes / window
+    styles above, but painted *incrementally* — only the blocks newly
+    revealed each frame — rather than through `#visible_rects`'s
+    full-cumulative-mask-every-frame shape, which is what made this style
+    expensive enough to be left unbuilt. See the writeup below.
   - **Mosaic (17) / wave (18)**: per-pixel resampling. `get_pixel`/`set_pixel`
     exist but a full-screen loop per frame in Ruby is far too slow, so these are
     the only two that genuinely want a native pass.
-  - **Random blocks (1–3)**: expressible as a mask already; it needs the
-    *incremental* paint RPG_RT uses (only the newly-covered blocks each frame,
-    ~120 of 4800) rather than repainting every block, which is why it was left.
 
   One wrinkle a Show Screen has and an Erase does not: its capture is of the
   screen being arrived at, and `snap_to_bitmap` grabs the rendered screen
@@ -1993,7 +1995,8 @@ The work below is roughly ordered by the critical path to a walkable game
   which is what makes the family worth finishing (`ruby scripts/analyze_game.rb
   --params --code 11010 data/mtf-meido-action/Debug`).
 
-  **Scroll, combine / division and zoom are done.** `Game::Transition#capture_ops`
+  **Scroll, combine / division, zoom and random blocks are done.**
+  `Game::Transition#capture_ops`
   computes, per style, where each piece of a captured screen goes this frame
   (a plain offset for the four scroll directions; two sliding pieces for
   vertical/horizontal combine and division; four for cross; one resampled crop
@@ -2031,8 +2034,44 @@ The work below is roughly ordered by the critical path to a walkable game
   parameters confirm setting 16 (zoom) is real, in-use data, not a corner case:
   `ruby scripts/analyze_game.rb --params --code 11010 data/mtf-meido-action/Debug`
   and `--code 11020` each show one use of param0 `16` among their mode tables.
-  Covered by new checks in `scripts/rpg2k_scene_check.rb`. Mosaic/wave and
-  random blocks are still unbuilt, per the per-style breakdown above.
+  Covered by new checks in `scripts/rpg2k_scene_check.rb`.
+
+  ✅ **Random blocks (1–3) are done too.** Confirmed against EasyRPG's real
+  source rather than guessed: `size_random_blocks = 4` in `src/transition.h`
+  (a 4×4-pixel block, so 320×240 is an 80×60 grid, 4800 blocks total) and
+  `src/transition.cpp`'s `Draw` (`blocks_to_print = random_blocks.size() *
+  (current_frame + 1) / tf_off`, the same linear cumulative-reveal ramp this
+  port uses) — this doc's own earlier "~120 of 4800" estimate holds exactly
+  (4800 blocks / 40 = 120). `Game::Transition#new_block_rects` returns only
+  the blocks newly revealed *this* frame — not the cumulative mask
+  `#visible_rects`'s other shaped styles return — computed from a full
+  permutation of every block index (`#block_order`) sliced by
+  `#block_count_through`: deterministic and RNG-state-free, so replaying the
+  same frame twice returns the same rects, unlike EasyRPG's own
+  `std::shuffle`-plus-running-counter approach.
+  `Scene::Map#draw_random_blocks_transition` paints it the way RPG_RT
+  actually does: the overlay goes solid black once, the first frame a given
+  transition instance is drawn (identity-tracked, the same trick
+  `#draw_captured_transition` uses for its snapshot) — punching every block
+  `#revealed_block_rects` says is due by that frame, cumulative from block 0,
+  since the frame counter can already be past 0 the first time a transition
+  is drawn — and every frame after only punches that frame's `#new_
+  block_rects` delta out of it — never re-filling the whole 4800-block mask
+  from scratch, which is the "incremental paint... rather than repainting
+  every block" this doc used to flag as the reason the style was left. The
+  plain style shuffles every block into one random
+  order; **Down**/**Up** bias that order by row (top-to-bottom for Down,
+  bottom-to-top for Up) rather than EasyRPG's own windowed per-row
+  `std::shuffle` + `std::partial_sort` (same source,
+  `SetAttributesTransitions`) — reproducing that exact wave would mean
+  replaying the same Mersenne Twister stream EasyRPG's RNG produces, which
+  is not meaningful to match without matching its RNG too, so this is a
+  reasoned simplification of the same kind cross combine/division's
+  quadrant motion and zoom's screen-centre anchor already are elsewhere in
+  this class. Covered by new checks in `scripts/rpg2k_logic_check.rb`
+  (block-grid geometry, cumulative no-repeat coverage, the Down/Up row bias)
+  and `scripts/rpg2k_scene_check.rb` (the incremental overlay paint).
+  Mosaic/wave alone is still unbuilt, per the per-style breakdown above.
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already

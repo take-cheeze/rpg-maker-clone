@@ -500,6 +500,12 @@ class RPG2k
         # transition reuses it instead of re-snapshotting every frame.
         @transition_capture = nil
         @captured_transition = nil
+        # The random-blocks transition (see Game::Transition::RANDOM_BLOCKS_
+        # STYLES) currently painting into the overlay incrementally, or nil --
+        # tracked by identity the same way, so #draw_random_blocks_transition
+        # knows when to (re)paint the overlay solid black versus just punching
+        # this frame's new blocks out of what is already there.
+        @random_blocks_transition = nil
 
         @flash_sprite = Sprite.new
         @flash_sprite.z = 450
@@ -556,11 +562,17 @@ class RPG2k
       # punched back out to fully transparent. `fill_rect` overwrites alpha, so
       # the holes really are holes. A *captured* transition (scroll, combine /
       # division) paints real pixels instead of holes -- see
-      # #draw_captured_transition.
+      # #draw_captured_transition. Random blocks is a shaped mask too, but an
+      # *incremental* one -- see #draw_random_blocks_transition.
       def draw_transition_mask(screen)
         tr = screen.transition
-        return draw_captured_transition(tr) if tr && tr.captured?
+        if tr && tr.captured?
+          release_random_blocks_transition
+          return draw_captured_transition(tr)
+        end
         release_transition_capture
+        return draw_random_blocks_transition(tr) if tr && tr.random_blocks?
+        release_random_blocks_transition
         if tr.nil? || tr.uniform?
           reset_fade_bitmap if @fade_masked
           @fade_sprite.opacity = screen.fade_level
@@ -625,6 +637,44 @@ class RPG2k
         @transition_capture.dispose
         @transition_capture = nil
         @captured_transition = nil
+      end
+
+      # Paint a random-blocks-style transition incrementally: the overlay is
+      # filled opaque black once, the first frame this particular
+      # Game::Transition instance is drawn (identity, not value, so a
+      # same-style transition right after it still restarts from solid
+      # black) -- and that first paint punches every block #revealed_
+      # block_rects says is due by the current frame, not just this frame's
+      # own #new_block_rects delta, since the frame counter can already be
+      # past 0 by the time a transition is first drawn (see
+      # Game::Transition#revealed_block_rects). Every frame after that only
+      # punches the incremental #new_block_rects delta -- never re-filling
+      # the whole overlay is the point, see
+      # Game::Transition::RANDOM_BLOCKS_STYLES's comment on why the generic
+      # #visible_rects path (a full black fill plus the entire cumulative
+      # mask, every frame) is the wrong shape for ~4800 blocks.
+      def draw_random_blocks_transition(tr)
+        if @random_blocks_transition.equal?(tr)
+          rects = tr.new_block_rects
+        else
+          @fade_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, OPAQUE_BLACK
+          @random_blocks_transition = tr
+          rects = tr.revealed_block_rects
+        end
+        rects.each { |x, y, w, h| @fade_bmp.fill_rect x, y, w, h, CLEAR }
+        @fade_masked = true
+        @fade_sprite.opacity = 255
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] screen transition block draw failed: #{e.message}"
+        @fade_sprite.opacity = tr.black_alpha
+      end
+
+      # Drop the identity marker once no random-blocks transition needs it --
+      # otherwise a later same-style transition (a new Game::Transition
+      # object) would look like a continuation of a finished one and never
+      # get the fresh solid-black overlay it needs.
+      def release_random_blocks_transition
+        @random_blocks_transition = nil
       end
 
       # Restore the overlay to solid black after a shaped transition, so the

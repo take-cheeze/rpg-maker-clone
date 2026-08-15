@@ -2109,12 +2109,12 @@ end
 
 check 'Erase Screen records the transition style and ramps the level' do
   st = new_state
-  # Setting 2 is Random Blocks Down, one of the styles a black mask cannot
-  # express, so it runs as a fade of the same length.
+  # Setting 17 is Mosaic, still one of the styles a black mask cannot express
+  # (per-pixel resampling), so it runs as a fade of the same length.
   it = Game::Interpreter.new(st)
-  it.start([FakeCmd.new(IC::ERASE_SCREEN, [2])])
+  it.start([FakeCmd.new(IC::ERASE_SCREEN, [17])])
   it.update
-  eq Game::Transition::RANDOM_BLOCKS_DOWN, st.screen.fade_transition
+  eq Game::Transition::MOSAIC_OUT, st.screen.fade_transition
   ok st.screen.transition.uniform?, 'an unported style falls back to the fade'
   eq 41, st.screen.transition.frames, 'but keeps its own length'
   before = st.screen.fade_level
@@ -2264,6 +2264,61 @@ check 'the window transitions shrink, grow, and invert for the other direction' 
   grow = TR.new(TR::CENTER_TO_BORDER_IN, 41, 320, 240, false)
   20.times { grow.advance }
   eq [[80, 60, 160, 120]], grow.visible_rects
+end
+
+check 'random blocks tile the screen into a 4px grid, confirmed against EasyRPG' do
+  # src/transition.h's `size_random_blocks = 4`: 320x240 / (4x4) is an 80x60
+  # grid, 4800 blocks -- where docs/TODO.md's "~120 of 4800" per frame comes
+  # from.
+  eq [80, 60], TR.block_grid(320, 240)
+end
+
+check 'random blocks reveal cumulatively, never repeat, and cover the grid' do
+  # src/transition.cpp's Draw: `blocks_to_print = random_blocks.size() *
+  # (current_frame + 1) / tf_off` -- frame 0 of a 41-frame transition already
+  # reveals 4800 * 1 / 40 = 120 blocks.
+  tr = TR.new(TR::RANDOM_BLOCKS, 41, 320, 240, true)
+  first = tr.new_block_rects
+  eq 120, first.size, 'frame 0 already reveals its first ~120 blocks'
+  first.each do |x, y, w, h|
+    eq 4, w, 'blocks are 4px square'
+    eq 4, h, 'blocks are 4px square'
+    eq 0, x % 4, 'blocks sit on the 4px grid'
+    eq 0, y % 4, 'blocks sit on the 4px grid'
+  end
+
+  seen = first.map { |x, y, _w, _h| [x, y] }
+  39.times do
+    tr.advance
+    batch = tr.new_block_rects
+    batch.each { |x, y, _w, _h| seen.push [x, y] }
+  end
+  eq seen.uniq.size, seen.size, 'no block is ever revealed twice'
+  eq 4800, seen.size, 'every block is revealed by the time the transition ends'
+
+  # Replaying an already-drawn frame (no #advance in between) returns the
+  # exact same rects -- #new_block_rects holds no shuffle-progress state of
+  # its own, unlike EasyRPG's `current_blocks_print` counter.
+  replay = TR.new(TR::RANDOM_BLOCKS, 41, 320, 240, true)
+  4.times { replay.advance }
+  a = replay.new_block_rects
+  b = replay.new_block_rects
+  eq a, b, 'the same frame replayed twice reveals the same blocks'
+end
+
+check 'random blocks down/up bias the reveal order towards one edge' do
+  # Confirmed against EasyRPG's src/transition.cpp: Down/Up do not shuffle
+  # uniformly like the plain style, they bias the order by row (a per-row
+  # windowed shuffle + partial_sort there; a row-then-shuffle sort here, the
+  # same kind of reasoned simplification #cross_split_ops's quadrant motion
+  # and #zoom_rect's screen-centre anchor already document for other styles).
+  down = TR.new(TR::RANDOM_BLOCKS_DOWN, 41, 320, 240, true)
+  rows = down.new_block_rects.map { |_x, y, _w, _h| y / 4 }
+  ok rows.max < 60 / 2, 'down reveals rows near the top of the screen first'
+
+  up = TR.new(TR::RANDOM_BLOCKS_UP, 41, 320, 240, false)
+  rows = up.new_block_rects.map { |_x, y, _w, _h| y / 4 }
+  ok rows.min >= 60 / 2, 'up reveals rows near the bottom of the screen first'
 end
 
 check 'conditional branch on the timer' do
