@@ -341,6 +341,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                          enemy_undamaged: 'にダメージを与えられない！',
                          actor_undamaged: 'はダメージを受けていない！',
                          dodge: 'は身をかわした！',
+                         actor_critical: '痛恨の一撃！！', enemy_critical: '会心の一撃！！',
                          skill_failure_a: 'には効かなかった！',
                          skill_failure_b: 'は平気だった！',
                          skill_failure_c: 'は眠らなかった！',
@@ -10753,6 +10754,36 @@ check 'a blow that gets through for nothing says so' do
                      { attacker: 'Hero', target: 'Slime', damage: 0,
                        target_ally: false })
   eq ['Heroの攻撃！', 'Slimeにダメージを与えられない！'], lines
+end
+
+# A critical hit inserts the game's own 会心/痛恨 line between the attack and
+# the damage (Scene_Battle_Rpg2k::ProcessBattleActionCritical runs before
+# ProcessBattleActionApply), keyed on the target taking the crit like the
+# damage predicates themselves, not on which side dealt it.
+check 'a critical hit adds the game\'s own line between the attack and the damage' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Hero', target: 'Slime', damage: 42,
+                       critical: true, target_ally: false })
+  eq ['Heroの攻撃！', '会心の一撃！！', 'Slimeに 42 のダメージを与えた！'], lines
+end
+
+check 'and from the other side, the term keyed on the party member taking it' do
+  scene, = battle_at_command
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Slime', target: 'Hero', damage: 7,
+                       critical: true, target_ally: true })
+  eq ['Slimeの攻撃！', '痛恨の一撃！！', 'Heroは 7 のダメージを受けた！'], lines
+end
+
+check 'a blank critical term drops the whole entry back to the composed ' \
+      'wording, "(critical!)" included' do
+  scene, = battle_at_command
+  scene.db.term.enemy_critical = ''
+  lines = scene.send(:battle_action_lines,
+                     { attacker: 'Hero', target: 'Slime', damage: 42,
+                       critical: true, target_ally: false })
+  eq ['Hero hits Slime for 42 (critical!)'], lines
 end
 
 check 'the basic actions with no target are one line each' do

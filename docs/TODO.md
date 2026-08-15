@@ -1375,11 +1375,24 @@ The work below is roughly ordered by the critical path to a walkable game
   filling both pools says so once per pool. An item that did nothing keeps the
   composed wording, since unlike a skill it has no `failure_message` to pick a
   sentence with.
-  Still held back on purpose: the **critical** line is left alone
-  because which side keys `actor_critical` / `enemy_critical` is genuinely
-  unclear — EasyRPG picks `actor_critical` when the *target* is an ally, while
-  会心 / 痛恨 read as the *attacker's* side, and both games fill both fields with
-  the same two strings so the data cannot settle it.
+  **The critical-hit line is wired in now too.** ADR 0036 held `actor_critical` /
+  `enemy_critical` (「会心の一撃！！」 / 「痛恨の一撃！！」) back because which side
+  keys them was genuinely unclear from the test-bed data alone — both games fill
+  both fields with the same two strings. Reading EasyRPG's actual source settles
+  it: `GetCriticalHitMessage` (`src/game_message_terms.cpp`) keys on the
+  **target** taking the crit — `target.GetType() == Type_Ally ? actor_critical :
+  enemy_critical` — the same rule `actor_damaged` / `enemy_damaged` already
+  follow, not the attacker's side the words themselves suggest.
+  `Game::States::BattleText.critical` (`game.rb`) returns the bare term with no
+  battler name in front of it, unlike every other predicate here, and
+  `battle_action_body` (`scene/map.rb`) slots it in between the start line and
+  the damage line — matching where RPG_RT's own
+  `Scene_Battle_Rpg2k::ProcessBattleActionCritical` runs, before
+  `ProcessBattleActionApply`: 「スライムの攻撃！」, 「会心の一撃！！」, 「リトは 21
+  のダメージを受けた！」. A blank term is all-or-nothing with the rest of the
+  entry, same as every other field here — the composed English fallback already
+  carried its own `' (critical!)'` suffix (`battle_action_line`), so nothing is
+  lost by falling back whole.
   The **field windows show a condition too** — the menu party list, the item and
   skill target lists and the status screen (a labelled row of its own), which are
   the three RPG_RT draws one in (`Window_MenuStatus`, `Window_ActorTarget`,

@@ -13193,7 +13193,8 @@ BT = Game::States::BattleText
 FakeTerms = Struct.new(:attacking, :defending, :observing, :focus,
                        :autodestruction, :enemy_escape, :enemy_transform,
                        :enemy_damaged, :actor_damaged,
-                       :enemy_undamaged, :actor_undamaged, :dodge)
+                       :enemy_undamaged, :actor_undamaged, :dodge,
+                       :actor_critical, :enemy_critical)
 
 def fake_terms
   FakeTerms.new('の攻撃！', 'は身を守っている', 'は様子を見ている・・・',
@@ -13201,7 +13202,8 @@ def fake_terms
                 'は別のモンスターに変身した！',
                 'のダメージを与えた！', 'のダメージを受けた！',
                 'にダメージを与えられない！', 'はダメージを受けていない！',
-                'は身をかわした！')
+                'は身をかわした！',
+                '会心の一撃！！', '痛恨の一撃！！')
 end
 
 check 'an action line is the battler name and the term, nothing else' do
@@ -13235,14 +13237,28 @@ check 'a miss is worded from the target side, one term for both' do
   eq 'リトは身をかわした！', BT.dodge(t, 'リト')
 end
 
+# The critical-hit line is a bare term with no battler name in front — unlike
+# every predicate above, it stands alone the same way `using_message2` does —
+# and which term speaks is keyed on the *target* taking the crit, matching
+# `actor_damaged` / `enemy_damaged`'s own side rule (EasyRPG's
+# GetCriticalHitMessage: `target.GetType() == Type_Ally ? actor_critical :
+# enemy_critical`), not on which side dealt the blow.
+check 'a critical-hit line is the bare term, keyed on the target taking it' do
+  t = fake_terms
+  eq '会心の一撃！！', BT.critical(t, true), 'a party member took the crit'
+  eq '痛恨の一撃！！', BT.critical(t, false), 'an enemy took the crit'
+end
+
 # A database that leaves a battle term blank (an English release often does)
 # must not produce a half-sentence — the caller keeps its own wording instead.
 check 'a blank or missing term yields nil rather than a bare name' do
-  blank = FakeTerms.new('', '', '', '', '', '', '', '', '', '', '', '')
+  blank = FakeTerms.new('', '', '', '', '', '', '', '', '', '', '', '', '', '')
   eq nil, BT.action(blank, 'リト', :attacking)
   eq nil, BT.damage(blank, 'リト', 42, true)
   eq nil, BT.undamaged(blank, 'リト', true)
   eq nil, BT.dodge(blank, 'リト')
+  eq nil, BT.critical(blank, true)
+  eq nil, BT.critical(blank, false)
   eq nil, BT.action(nil, 'リト', :attacking), 'no term table at all'
   eq nil, BT.action(Struct.new(:nothing).new(0), 'リト', :attacking),
      'a table without the field'

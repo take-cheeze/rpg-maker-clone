@@ -1177,6 +1177,14 @@ def check_terms(dir)
     ok foe.start_with?('スライムに '), 'a foe takes に'
     ok ally.start_with?('リトは '), 'one of yours takes は'
   end
+
+  return unless bt.term(terms, :actor_critical) && bt.term(terms, :enemy_critical)
+  check "#{name}: the critical-hit line is a bare term, keyed on the target" do
+    foe = bt.critical(terms, false)
+    ally = bt.critical(terms, true)
+    eq terms.enemy_critical, foe, 'an enemy taking the crit reads its own term'
+    eq terms.actor_critical, ally, 'a party member taking the crit reads its own term'
+  end
 end
 
 # Every skill and item names a battle animation, and until now none of them

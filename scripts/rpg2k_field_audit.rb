@@ -60,11 +60,6 @@ NOT_OURS = {
   message_affected: 'no known trigger — EasyRPG defines ' \
                     'GetStateAffectedMessage and never calls it from either ' \
                     'battle scene, so nothing pins when RPG_RT prints it',
-  actor_critical: 'side-keying unresolved — EasyRPG picks it when the ' \
-                  '*target* is an ally, while 会心 / 痛恨 read as keyed on the ' \
-                  'attacker; both test beds fill both fields with the same two ' \
-                  'strings, so the data cannot settle it (ADR 0036)',
-  enemy_critical: 'see actor_critical',
   footstep: 'RPG2003 only — EasyRPG plays it from Game_Player::BeginMove ' \
             'behind an IsRPG2k3() gate',
   hp_change_type: 'RPG2003 only — the schema marks it so, and RPG2000 has one ' \

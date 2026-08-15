@@ -185,3 +185,53 @@ that filled both, an item that restored HP, one that only cured — where the st
 sentence carries it — and one that did nothing) and by
 `scripts/rpg2k_testbed_logic_check.rb`, which builds both lines out of each real
 term table.
+
+## Addendum: the critical-hit line
+
+Date: 2026-08-15
+
+The base decision held `actor_critical` / `enemy_critical` back because which
+side keys them looked unsettleable from the test-bed data: both games fill both
+fields with the same two strings, so no fixture could distinguish "keyed on the
+target" from "keyed on the attacker."
+
+Reading EasyRPG's actual source resolves it. `BattleMessage::GetCriticalHitMessage`
+(`src/game_message_terms.cpp`, called from
+`Scene_Battle_Rpg2k::ProcessBattleActionCritical`) reads:
+
+```cpp
+std::string_view message = (target.GetType() == Game_Battler::Type_Ally)
+    ? std::string_view(lcf::Data::terms.actor_critical)
+    : std::string_view(lcf::Data::terms.enemy_critical);
+```
+
+Keyed on the **target** taking the crit — `actor_critical` when a party member
+is on the receiving end, `enemy_critical` when an enemy is — the same rule
+`actor_damaged` / `enemy_damaged` already follow in this file. The 会心 / 痛恨
+naming reads backwards from that (会心 as "your" blow, 痛恨 as one landing on
+you), which is exactly the trap the base decision declined to guess through.
+
+The message itself is a bare term: the CP932 (non-placeholder) branch of
+`GetCriticalHitMessage` returns the field with no battler name in front of it,
+the one predicate in this whole table that stands alone rather than following a
+name. `Scene_Battle_Rpg2k::ProcessBattleActionCritical` also runs before
+`ProcessBattleActionApply`, so RPG_RT prints it *between* the start line and the
+damage line: 「スライムの攻撃！」, 「会心の一撃！！」, 「リトは 21 のダメージを受け
+た！」.
+
+`Game::States::BattleText.critical(terms, target_ally)` (`game.rb`) returns that
+bare term or nil, and `battle_action_body` (`scene/map.rb`) folds it into the
+same all-or-nothing shape as `start` / `result`: a blank `actor_critical` /
+`enemy_critical` drops the whole entry back to the composed English, which
+already carries its own `' (critical!)'` suffix (`battle_action_line`), so a
+blank term loses nothing.
+
+`actor_critical` / `enemy_critical` are dropped from `rpg2k_field_audit.rb`'s
+`NOT_OURS` table now that they are read.
+
+Covered by `scripts/rpg2k_logic_check.rb` (`BT.critical` keyed on the target,
+nil on a blank term), by `scripts/rpg2k_scene_check.rb` (a critical from each
+side reading the game's own line between the attack and the damage, and a blank
+critical term falling back to the composed English with its `(critical!)` note)
+and by `scripts/rpg2k_testbed_logic_check.rb`, which reads `actor_critical` /
+`enemy_critical` from each real term table.
