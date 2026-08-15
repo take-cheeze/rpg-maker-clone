@@ -8041,6 +8041,41 @@ check 'Weather Effects sets the weather type and strength, non-blocking' do
   eq true, st.switches[1], 'the command after it still ran'
 end
 
+# Ports EasyRPG's own `Game_Interpreter::CommandWeatherEffects`
+# (src/game_interpreter.cpp): `if (!Player::IsRPG2k3Commands() && type > 2)
+# type = 0;` -- the RPG2000 editor's own Weather Effects dialog offers no
+# type past Snow (2) at all, so a stray higher value in the raw command
+# bytes (a hex-edited event, a converted project) should clamp back to none
+# rather than linger.
+check 'Weather Effects clamps an RPG2003-only weather type back to none on RPG2000' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::WEATHER_EFFECTS, [3, 2])]) # a 2003-only type
+  it.update
+  eq 0, st.weather.type, 'forced back to none on a non-RPG2003 database'
+  ok st.weather.none?
+end
+
+check 'Weather Effects keeps an RPG2003-only weather type on an RPG2003 database' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], rpg2003: true)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::WEATHER_EFFECTS, [3, 2])])
+  it.update
+  eq 3, st.weather.type, 'an RPG2003 database keeps the higher type'
+end
+
+# `int strength = std::min(str, 2);` in the same EasyRPG function, applied
+# unconditionally on every edition.
+check 'Weather Effects clamps strength to at most 2 on any edition' do
+  st = party_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::WEATHER_EFFECTS, [1, 9])]) # rain, an out-of-range strength
+  it.update
+  eq 2, st.weather.strength, 'clamped to the strongest defined level'
+end
+
 check 'Weather round-trips through the save' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
