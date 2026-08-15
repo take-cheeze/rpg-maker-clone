@@ -6854,6 +6854,64 @@ check 'the airship lands in place where the terrain allows it' do
   eq [0, 0], [air.x, air.y], 'the airship stayed where it landed'
 end
 
+check 'boarding the airship doubles the party\'s per-frame slide speed; boat/ship do not' do
+  # Confirmed against EasyRPG's actual C++ source: Game_Vehicle's constructor
+  # (src/game_vehicle.cpp) gives Boat/Ship `MoveSpeed_normal` -- identical to
+  # the player's own on-foot default -- but the Airship `MoveSpeed_double`,
+  # twice the per-frame step. #player_slide_speed is the port target.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  speed = RPG2k::Scene::Map::SPEED
+  eq speed, scene.send(:player_slide_speed), 'on foot: the ordinary speed'
+  st.boarded = :boat
+  eq speed, scene.send(:player_slide_speed), 'boat: the ordinary speed too'
+  st.boarded = :ship
+  eq speed, scene.send(:player_slide_speed), 'ship: the ordinary speed too'
+  st.boarded = :airship
+  eq speed * 2, scene.send(:player_slide_speed), 'airship: double the ordinary speed'
+end
+
+check 'the airship crosses a tile in half the frames walking on foot takes' do
+  on_foot = new_scene({}, player: [0, 0])
+  RGSS::Input.dir_value = 6 # east
+  frames_on_foot = 0
+  st_foot = on_foot.instance_variable_get(:@state)
+  until st_foot.x == 1
+    on_foot.update
+    frames_on_foot += 1
+    break if frames_on_foot > 30
+  end
+  RGSS::Input.dir_value = 0
+  ok st_foot.x == 1, 'walked the tile'
+
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded
+
+  RGSS::Input.dir_value = 6
+  frames_flying = 0
+  until st.x == 1
+    scene.update
+    frames_flying += 1
+    break if frames_flying > 30
+  end
+  RGSS::Input.dir_value = 0
+  ok st.x == 1, 'flew the tile'
+  # One frame registers the input and starts the slide (the same on foot or
+  # flying -- this fixed frame doesn't scale with speed); the remaining
+  # frames cover the tile's 16px at SPEED px/frame walking, or 2*SPEED
+  # flying, so the *slide* portion halves even though the totals don't.
+  eq 1 + (frames_on_foot - 1) / 2, frames_flying,
+     "the airship's slide is exactly half the length of the on-foot one"
+end
+
 check 'the airship cannot land on a tile a map event occupies unless it has Through Mode on' do
   # yado.tk: an airship can never land on a tile a map event occupies,
   # regardless of terrain. Flying itself ignores events entirely

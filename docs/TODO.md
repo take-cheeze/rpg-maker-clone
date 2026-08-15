@@ -5948,6 +5948,33 @@ not yet verified:
   on the identical setup, which still turns) and a blocked skippable
   diagonal doing the same — both confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **Boarding the Airship now doubles the party's per-frame walking speed,
+  instead of moving at the same rate as on foot (or in a Boat/Ship, which
+  are correctly unchanged).** Confirmed against EasyRPG's actual C++ source:
+  `Game_Vehicle`'s constructor (`src/game_vehicle.cpp`) gives Boat and Ship
+  `MoveSpeed_normal` — identical to the player's own on-foot default — but
+  the Airship `MoveSpeed_double`, twice the per-frame step;
+  `Game_Player::GetOnVehicle`/`GetOffVehicle` (`src/game_player.cpp`) stash
+  and restore the player's pre-board speed around whichever value applies.
+  `Scene::Map#advance_player_slide` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  instead advanced the party's pixel slide by a flat `SPEED` constant every
+  frame with zero reference to `@state.boarded` — an Airship ride crossed
+  the map at exactly walking pace, when real RPG2003 makes it noticeably
+  faster. This engine has no general per-character move-speed model to save
+  and restore the way EasyRPG's `preboard_move_speed` does — the Speed
+  Up/Down move-route commands only ever touch an NPC/forced-route
+  `Character` mirror, never the player's own walking rate — so rebuilding
+  that whole mechanism was out of scope; instead, a new
+  `#player_slide_speed` derives the doubled rate straight from
+  `@state.boarded` each frame (`SPEED * 2` only while `:airship`, plain
+  `SPEED` for on-foot/Boat/Ship alike), reverting for free the instant
+  `#disembark_vehicle` clears the flag, with the same practical effect as
+  EasyRPG's stash-and-restore for the one vehicle where it's actually
+  observable. Covered by two new `scripts/rpg2k_scene_check.rb` checks — a
+  direct check of `#player_slide_speed` across all four riding states, and
+  an end-to-end frame count showing the Airship's own tile-crossing slide is
+  exactly half the length of the on-foot one — both confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
