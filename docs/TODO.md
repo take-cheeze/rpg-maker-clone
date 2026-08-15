@@ -5193,16 +5193,24 @@ not yet verified:
   both operand-sign combinations, plus an unaffected same-sign control case;
   divide-by-zero leaves the variable unchanged while modulo-by-zero zeroes
   it), confirmed to fail against the pre-fix code before the fix.
-- **Indirect ("pointer") addressing** — `V[n]`, where the *value* of
+- ✅ **Indirect ("pointer") addressing** — `V[n]`, where the *value* of
   variable n becomes the actual target/operand variable's index — is a
   distinct third addressing mode from a literal variable number or a
   direct-copy-of-another-variable's-value, and it can reach indices well
   past the configured max (used deliberately, though the site warns large
   indices measurably slow opening the Save screen — corroborated by an
   entire `09_bug/` page on the topic). Indirect addressing's failure mode
-  on an index ≤0 differs by role: the **operand** form already resolved to
-  0 (`Variables`/`Switches`' own default for a missing key); the **target**
-  form is fixed now too, see below.
+  on an index ≤0 differs by role, and both halves are now confirmed
+  correct: the **operand** form already resolved to 0
+  (`Game::Interpreter#operand_value`'s indirect case reads
+  `variables[variables[cmd.param(5)]]`, and `Variables#[]`/`Switches#[]`
+  default any missing key — including index ≤0 — to 0/false, matching
+  EasyRPG's own `Game_Variables::Get` returning 0 for `variable_id <= 0`);
+  the **target** form is a genuine no-op rather than a stray write to slot
+  0 (`Game::Interpreter#range`'s mode-2 branch returns an empty range for
+  an index ≤0, so the caller's `(a..b).each` iterates zero times, matching
+  EasyRPG's own `Game_Switches::Set`/`Game_Variables::SetOp`, both of which
+  refuse an id ≤0 outright) — fixed now too, see below.
 - ✅ **Batch (range) operations requiring ascending order or silently no-op is
   confirmed already correct.** `Game::Interpreter#range` returns a batch's
   two ends verbatim with no ordering check, and Ruby's `(a..b).each` on a
