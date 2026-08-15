@@ -506,6 +506,20 @@ module Game
     # End Loop marker looping back), a Call Event round trip, and a Conditional
     # Branch evaluation that falls through to its else/end (an unmatched
     # condition, or an End Branch reached after a matched one).
+    #
+    # Deliberately NOT "corrected" to a flat 1-per-command cost to match
+    # EasyRPG Player's own `Game_Interpreter::Update` (`src/game_interpreter.
+    # cpp`), whose `for (; loop_count < loop_limit; ++loop_count)` increments
+    # once per `ExecuteCommand()` call with no per-command weighting at all --
+    # re-checked directly against that source and confirmed genuinely flat
+    # there. That is not evidence this codebase's weighting is wrong: this
+    # specific 2x-cost claim is sourced from real RPG_RT's own timing
+    # measurements (the community "event command spec" reference the tests
+    # below cite), an internal-implementation timing quirk EasyRPG's own
+    # from-scratch loop counter never claimed to reproduce -- this project's
+    # own stance (see `#do_break_loop`'s identical reasoning) is to model
+    # genuine RPG_RT behaviour over a cleaner-looking EasyRPG simplification
+    # whenever the two disagree and a real-RPG_RT source settles it.
     def step_cost(code)
       case code
       when Cmd::END_LOOP, Cmd::CALL_EVENT, Cmd::CALL_COMMON_EVENT, Cmd::END_BRANCH

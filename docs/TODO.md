@@ -8912,6 +8912,27 @@ codebase yet):
   costs exactly one more step per iteration (3 → 4), landing on a smaller,
   precisely different iteration count (3333 → 2500) for the same 10000-step
   budget.
+- ✅ **`#step_cost`'s 2x weighting for `End Loop`/`Call Event`/`Call Common
+  Event`/an unmatched Conditional Branch is intentional, not a bug —
+  re-investigated this session after a candidate false lead and confirmed
+  correct as-is.** A numeric-constant audit flagged this weighting as
+  diverging from EasyRPG Player's own `Game_Interpreter::Update`
+  (`src/game_interpreter.cpp`), whose `for (; loop_count < loop_limit;
+  ++loop_count)` increments once per `ExecuteCommand()` call with no per-
+  command weighting at all. Checked directly against that source and
+  confirmed genuinely flat there — but that is not evidence this
+  codebase's weighting is wrong: the 2x-cost claim was always sourced from
+  real RPG_RT's own timing measurements (the community "event command
+  spec" this file's own tests already cite), an internal-implementation
+  timing quirk EasyRPG's own from-scratch loop counter never claimed to
+  reproduce. This project's own established stance (`#do_break_loop`'s
+  identical reasoning, "reproducing the bug rather than 'fixing' it into
+  the sane behaviour... modelling RPG_RT's own quirks over a better-
+  behaved reading of the spec") is to prefer a genuine real-RPG_RT source
+  over a cleaner-looking EasyRPG simplification whenever the two disagree.
+  Left unchanged; the code comment now explicitly notes this discrepancy
+  and its resolution so a future pass does not re-flag the same false
+  lead.
 - **Party wipe during "Show Text" freezes or crashes real RPG_RT** (also
   reachable via "Damage Processing," not just "HP change"). Worked repros
   given for both a blocking Autorun HP-drain-to-0-during-a-message and a
