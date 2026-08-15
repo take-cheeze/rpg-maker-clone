@@ -3534,11 +3534,16 @@ class RPG2k
       # shares its collision layer. A "through" character ignores all of this.
       #
       # Layer gates the occupancy half the same way RPG_RT's priority type
-      # does: the hero is always a "normal character", so a below/above-
-      # characters event (LAYER_BELOW / LAYER_ABOVE) walks straight through it
-      # and vice versa; two events only collide when they share the same
-      # layer (below blocks below, above blocks above, same blocks same) —
-      # different layers pass through each other too.
+      # does: only a LAYER_SAME blocker is ever solid, regardless of the
+      # mover's own layer -- a below/above-characters blocker (LAYER_BELOW /
+      # LAYER_ABOVE) is a decoration everyone, same-layer movers included,
+      # walks straight through, matching the "below/above events never
+      # block, period" rule #passable? already applies for the hero (see the
+      # LAYER_* comment). `overlap_forbidden` blocks any non-hero mover
+      # regardless of layer, same as before; the hero's own forced Set Move
+      # Route mirror (`@player_char`) is exempt from it here -- see
+      # #passable? for the hero's own overlap_forbidden gating on an
+      # ordinary step.
       #
       # The chipset half asks **both** tiles at the boundary, each from its
       # own side, as RPG2000's per-direction passability does: the tile a
@@ -3557,8 +3562,9 @@ class RPG2k
         if nx == @state.x && ny == @state.y
           return false if character.layer == LAYER_SAME || character.overlap_forbidden
         end
-        return false if blockers_at(nx, ny).any? { |b| b[:layer] == character.layer || b[:overlap_forbidden] }
-        return false if vehicle_blocks?(nx, ny, block_airship: !character.equal?(@player_char))
+        hero = character.equal?(@player_char)
+        return false if blockers_at(nx, ny).any? { |b| b[:layer] == LAYER_SAME || (!hero && b[:overlap_forbidden]) }
+        return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(character.x, character.y),
                                  @map.upper(character.x, character.y), dir) &&
@@ -3590,8 +3596,9 @@ class RPG2k
         if x == @state.x && y == @state.y
           return false if character.layer == LAYER_SAME || character.overlap_forbidden
         end
-        return false if blockers_at(x, y).any? { |b| b[:layer] == character.layer || b[:overlap_forbidden] }
-        return false if vehicle_blocks?(x, y, block_airship: !character.equal?(@player_char))
+        hero = character.equal?(@player_char)
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME || (!hero && b[:overlap_forbidden]) }
+        return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
