@@ -5665,6 +5665,29 @@ not yet verified:
   the pre-fix code before the fix (`expected 72, got 52`; and, in a manual
   check with the `change_class` guard alone reverted, `expected 70, got
   170`, which also broke three pre-existing Change Class checks).
+- ✅ **The shop quantity counter's tens-step is on the vertical axis, not the
+  horizontal one.** Confirmed against EasyRPG's actual C++ source:
+  `Window_ShopNumber::Update` (`src/window_shopnumber.cpp`) moves the count
+  by one on RIGHT/LEFT and by ten on UP/DOWN (`number = min(number + 10,
+  item_max)` / `max(number - 10, 1)`), not the reverse. `Scene::Map`'s
+  `shop_quantity_move` had the two axes swapped — UP/DOWN stepped by one,
+  RIGHT/LEFT by `SHOP_QUANTITY_STEP` (10) — with a doc comment that
+  confidently, incorrectly, attributed the swapped mapping to RPG_RT itself.
+  A concrete divergence: opening the counter for a stack with room for 50
+  and pressing UP once landed on 2 in this engine but 11 in real RPG_RT;
+  pressing RIGHT once did the reverse (11 here, 2 there) — every quantity
+  players could reach with a given number of presses differed between the
+  two engines, and which key could reach a low max (say 5) in a single
+  press was inverted too. Fixed by swapping which axis increments/decrements
+  by one vs by `SHOP_QUANTITY_STEP` in `shop_quantity_move`
+  (`mruby-rpg2k/mrblib/scene/map.rb`), and correcting the two doc comments
+  that described the (wrong) horizontal-tens mapping as RPG_RT's own
+  behavior. Four existing `scripts/rpg2k_scene_check.rb` checks assumed the
+  old axis mapping and were rewritten to the corrected one (stepping by one
+  on RIGHT/LEFT, mirroring EasyRPG's own axis exactly, including the
+  buy/sell-a-stack-of-three checks that used to press UP twice and now press
+  RIGHT twice), all four confirmed to fail against the pre-fix code before
+  the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control

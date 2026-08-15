@@ -4259,9 +4259,10 @@ class RPG2k
         draw_shop
       end
 
-      # How far LEFT / RIGHT jump the quantity cursor — RPG_RT's shop counter
-      # moves in tens on the horizontal axis so a stack of 99 is a few presses
-      # away rather than ninety-nine.
+      # How far UP / DOWN jump the quantity cursor — RPG_RT's shop counter
+      # moves in tens on the vertical axis (confirmed against EasyRPG's
+      # Window_ShopNumber::Update, src/window_shopnumber.cpp) so a stack of 99
+      # is a few presses away rather than ninety-nine.
       SHOP_QUANTITY_STEP = 10
 
       # Picking an item opens the quantity counter rather than transacting one
@@ -4277,7 +4278,7 @@ class RPG2k
         draw_shop
       end
 
-      # Drive the quantity counter: UP / DOWN by one, RIGHT / LEFT by ten (both
+      # Drive the quantity counter: RIGHT / LEFT by one, UP / DOWN by ten (both
       # clamped to 1..max), C commits the whole stack in one transaction and B
       # goes back to the list having bought nothing.
       def drive_shop_quantity
@@ -4299,13 +4300,13 @@ class RPG2k
       # Apply one frame of quantity input; returns whether the count changed.
       def shop_quantity_move(q)
         before = q[:count]
-        if Input.trigger?(Input::UP)
+        if Input.trigger?(Input::RIGHT)
           q[:count] += 1
-        elsif Input.trigger?(Input::DOWN)
-          q[:count] -= 1
-        elsif Input.trigger?(Input::RIGHT)
-          q[:count] += SHOP_QUANTITY_STEP
         elsif Input.trigger?(Input::LEFT)
+          q[:count] -= 1
+        elsif Input.trigger?(Input::UP)
+          q[:count] += SHOP_QUANTITY_STEP
+        elsif Input.trigger?(Input::DOWN)
           q[:count] -= SHOP_QUANTITY_STEP
         else
           return false
