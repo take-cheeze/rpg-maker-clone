@@ -36,6 +36,7 @@ class RPG2k
         @slot_index = 0
         @cand_index = 0
         @mode = :slots          # :slots list, or :items candidate pick
+        @warned_missing_item_ids = {}
         @slots = [
           term(:weapon, "Weapon"), term(:shield, "Shield"), term(:armor, "Armor"),
           term(:helmet, "Helmet"), term(:accessory, "Accessory")
@@ -65,8 +66,30 @@ class RPG2k
       def item_name(id)
         return "-" if id.nil? || id == 0
         it = @state.party.db_item(id)
-        n = it && it.name.to_s
-        n.nil? || n.empty? ? "Item #{id}" : n
+        if it.nil?
+          warn_missing_item(id)
+          return "Item #{id}"
+        end
+        n = it.name.to_s
+        n.empty? ? "Item #{id}" : n
+      end
+
+      # #item_name's diagnostic for an equipped slot whose item id has no
+      # database row -- the "item" case from docs/TODO.md's runtime error
+      # catalog's dangling-id list (a database shrink leaving a stale
+      # reference behind), on this screen's equipped-slot *display* path
+      # rather than the field/battle Item-menu's inventory-*list*-filtering
+      # one (a separate fix). The placeholder label is unchanged; this is
+      # diagnostics only. Deduped per id for the scene's lifetime --
+      # #item_name reruns every time the slot/candidate windows rebuild
+      # (every LEFT/RIGHT actor switch), and logging each of those for an
+      # id that never resolves would spam the console for as long as the
+      # screen stays open.
+      def warn_missing_item(id)
+        return if @warned_missing_item_ids[id]
+        @warned_missing_item_ids[id] = true
+        $stderr.puts "[RPG2k] Equip screen: item ##{id} not found in the " \
+                     "database, showing a placeholder label"
       end
 
       def update_slots
