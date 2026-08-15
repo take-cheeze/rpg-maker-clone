@@ -12309,6 +12309,10 @@ class MenuStubActor
   def equipment_fixed?; !!@equipment_fixed_flag; end
   attr_accessor :cursed_slot
   def slot_cursed?(slot); @cursed_slot == slot; end
+  # No item in this bare fixture is ever 両手持ち (two-handed) -- a check
+  # exercising that needs its own richer stub, same as the item/skill tables
+  # below.
+  def two_handed?(_item_id); false; end
 end
 
 class MenuStubParty
@@ -14003,6 +14007,82 @@ check 'Scene::EquipMenu: the candidate arrow sums all four stat deltas against t
   eq '^', texts[2], 'a candidate with strictly more combined points draws Up'
   eq 'v', texts[5], 'one with strictly fewer draws Down'
   eq '-', texts[8], 'an exact match draws Same, not counted per-stat'
+end
+
+# An actor whose weapon-slot Claymore (id 2) is 両手持ち; MenuStubActor's own
+# stub always answers false, so a check exercising the forced-unequip side
+# effect needs this richer one instead.
+class TwoHandedActor < MenuStubActor
+  TWO_HANDED_IDS = [2].freeze
+  def two_handed?(item_id); TWO_HANDED_IDS.include?(item_id); end
+end
+
+class TwoHandedEquipParty < MenuStubParty
+  ITEMS = {
+    1 => OpenStruct.new(name: 'Sword', atk_points1: 20),    # worn, weapon slot
+    2 => OpenStruct.new(name: 'Claymore', atk_points1: 40), # 両手持ち candidate
+    5 => OpenStruct.new(name: 'Shield', def_points1: 25)    # worn, shield slot
+  }.freeze
+  def initialize
+    super
+    @actors = [TwoHandedActor.new]
+  end
+  def db_item(id); ITEMS[id]; end
+  def equip_candidates(_slot, _actor = nil); [[2, 1]]; end
+end
+
+check 'Scene::EquipMenu: a 両手持ち candidate also drops the other hand\'s ' \
+      'stat bonus from the preview, matching what actually equipping it does' do
+  # Confirmed against EasyRPG's actual C++ source: Scene_Equip::
+  # UpdateStatusWindow (src/scene_equip.cpp) also subtracts the *other*
+  # hand's item when either it or the candidate is 両手持ち, since equipping
+  # either one forces the opposite slot empty -- the exact side effect
+  # Actor#equip_item / #free_two_handed_slot already applies for real. A
+  # preview that only diffs the two items landing in the browsed slot would
+  # show the Claymore's own +20 Atk (40 - 20) and draw Up, even though the
+  # true net (+20 Atk, -25 Def from the forced-off Shield) is -5.
+  state = Game::State.new(TwoHandedEquipParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  actor.equipment[0] = 1 # weapon slot: Sword, atk 20
+  actor.equipment[1] = 5 # shield slot: Shield, def 25
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+  texts = window_texts(scene.instance_variable_get(:@cand_window))
+  # Row 0 is "(Remove)"; the one candidate (Claymore) follows it, arrow at 2.
+  eq 'v', texts[2],
+     'net -5 (claymore +40 atk, sword -20 atk, forced-off shield -25 def), ' \
+     'not a naive +20 that ignores the shield the claymore forces off'
+end
+
+check "Scene::EquipMenu: browsing the shield slot with a 両手持ち weapon " \
+      'already worn shows the same forced-unequip side effect' do
+  # Symmetric case: any candidate landing in the shield slot forces the
+  # weapon slot's own 両手持ち weapon off, even an ordinary (non-two-handed)
+  # shield candidate -- EasyRPG's guard is `other_old_item->two_handed ||
+  # current_item->two_handed`, either side qualifies.
+  state = Game::State.new(TwoHandedEquipParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  actor.equipment[0] = 2 # weapon slot: Claymore (two-handed), atk 40
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  scene.instance_variable_set(:@slot_index, Game::Actor::SHIELD_SLOT)
+  scene.instance_variable_set(:@mode, :items)
+  # An ordinary (non-two-handed) shield candidate landing in the shield slot.
+  eq(-15, scene.send(:equip_delta, 5),
+     'the shield itself (+25 def) against nothing (empty slot), minus the ' \
+     "forced-off claymore's own -40 atk: 25 - 0 - 40 = -15")
+end
+
+check "Scene::EquipMenu: Remove never triggers the 両手持ち forced-unequip " \
+      'side effect' do
+  # EasyRPG's own guard is `current_item && ...` -- id 0 (Remove) has no
+  # candidate item at all, so the other hand is never touched by removing
+  # this slot's own item.
+  state = Game::State.new(TwoHandedEquipParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  actor.equipment[0] = 2 # weapon slot: Claymore (two-handed), atk 40
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  eq(-40, scene.send(:equip_delta, 0), 'just the claymore\'s own -40 atk, no extra subtraction')
 end
 
 # A party whose weapon slot equips a dangling item id (a database shrink

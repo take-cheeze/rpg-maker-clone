@@ -6015,6 +6015,40 @@ not yet verified:
   the RPG2003 `compare_operator` read for both `==`/`>` against RPG2000's
   unconditional `>=` — the first two confirmed to fail against the pre-fix
   code before the fix.
+- ✅ **The Equip menu's candidate stat-comparison arrow now accounts for a
+  両手持ち (two-handed) weapon's forced-unequip side effect on the other
+  hand, instead of only diffing the two items landing in the browsed slot.**
+  Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
+  UpdateStatusWindow` (`src/scene_equip.cpp`) builds the projected full stat
+  totals, then subtracts the *other* hand's own item too whenever either it
+  or the candidate is 両手持ち (`other_old_item->two_handed ||
+  current_item->two_handed`) — since equipping either one forces the
+  opposite slot empty, exactly the side effect `Actor#equip_item`/
+  `#free_two_handed_slot` (fixed earlier this session) already applies when
+  the swap actually happens. `Scene::EquipMenu#build_cand_window`
+  (`mruby-rpg2k/mrblib/scene/equip_menu.rb`) instead diffed only
+  `item_stat_sum(candidate) - item_stat_sum(currently_worn)` for the one
+  slot being browsed, with no reference to the other hand at all — the
+  preview and the actual equip application had quietly diverged into two
+  different formulas. Concretely: weapon slot holds a Sword (Atk +20),
+  shield slot a Shield (Def +25); browsing the weapon slot's candidates with
+  a Claymore (Atk +40, 両手持ち) highlighted, the *true* net change is +40
+  Atk − 20 Atk − 25 Def = **−5** (the shield gets knocked off), which should
+  draw the Down arrow — the old preview computed a naive 40 − 20 = **+20**
+  and drew Up, the directionally wrong verdict, not merely an imprecise
+  number. Fixed with a new `#equip_delta(id)` (subsuming the old inline
+  `item_stat_sum(id) - equipped_sum` at the one call site) that also
+  subtracts the other hand's `item_stat_sum` whenever `Actor#two_handed?`
+  says either side is 両手持ち, gated on `id != 0` since EasyRPG's own
+  `current_item &&` guard means Remove never triggers the side effect
+  (dropping this slot's item never forces anything off the *other* hand).
+  Only the weapon/shield pair can ever trigger it (`#other_hand_item` mirrors
+  `#free_two_handed_slot`'s own slot gate); armor/helmet/accessory previews
+  are unaffected. Covered by three new `scripts/rpg2k_scene_check.rb`
+  checks — the weapon-slot Claymore trace above (Up → Down once the side
+  effect is included), the symmetric shield-slot case, and Remove's own
+  no-side-effect exemption — the first two confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
