@@ -9,12 +9,12 @@ This is additive to and independent of the desktop CMake build — building the
 EBOOT does not touch the desktop/wasm builds, and vice versa. The design is in
 [`docs/adr/0010-psp-port.md`](../../docs/adr/0010-psp-port.md).
 
-## Status: HAL bring-up
+## Status: HAL bring-up + interpreter boot
 
 This CMake project builds a **hardware bring-up EBOOT**: it stands up the LVGL
-display over the LCD and reads the pad, without the mruby interpreter. It is the
-first slice of the roadmap in the ADR and exists to prove the HAL compiles and
-runs on the console (and to get real EBOOT size numbers from CI).
+display over the LCD, reads the pad, and opens an mruby interpreter — without
+starting a game. It exists to prove the HAL and libmruby.a compile, link and
+run on the console (and to get real EBOOT size numbers from CI).
 
 What runs today:
 
@@ -22,10 +22,17 @@ What runs today:
   mode flushing to the 480×272 framebuffer via `sceDisplay` (accounting for the
   512-pixel line stride); the LVGL tick/delay source from the pspsdk system
   timer; and a scan of the D-pad, analog stick and ✕○△□ buttons into a bitmask.
+  Built as part of `libmruby.a` (the `psp` mruby cross-build compiles the whole
+  `mruby-rgss` gem, self-guarded on `PSP_BUILD`), not compiled into the EBOOT
+  directly — `app/psp/CMakeLists.txt` links the archive in instead.
 - `app/psp/main.cxx` — a pspsdk sketch (module metadata + HOME-exit callback)
-  that draws a status screen and echoes the pressed keys. `main()` owns the loop
-  and pumps LVGL once per iteration, mirroring the Emscripten and Wio builds.
-  Its heartbeat also reports free device RAM and LVGL pool usage (see below).
+  that draws a status screen, echoes the pressed keys, and opens the
+  interpreter (`mrb_open`, reported via the `RPG2K_PSP_MRUBY_OPEN` marker
+  below). `main()` owns the loop and pumps LVGL once per iteration, mirroring
+  the Emscripten and Wio builds. Its heartbeat also reports free device RAM
+  and LVGL pool usage (see below). No RGSS methods are registered and no game
+  is started yet — the interpreter opens with mruby's own default allocator
+  (plain `malloc`) and then just sits there.
 - `app/psp/lv_conf.h` — a PSP-tuned LVGL config (RGB565, a few-MB heap, no SIMD
   asm).
 
@@ -44,8 +51,9 @@ Run `EBOOT.PBP` under an emulator such as
 [PPSSPP](https://www.ppsspp.org/), or copy it to
 `PSP/GAME/rpg2k/EBOOT.PBP` on a Memory Stick (a homebrew-enabled console).
 
-The bring-up writes two markers via `sceIoWrite` — `RPG2K_PSP_BOOT` once at
-startup (a libc-free string literal) and `RPG2K_PSP_BRINGUP
+The bring-up writes three markers via `sceIoWrite` — `RPG2K_PSP_BOOT` once at
+startup (a libc-free string literal), `RPG2K_PSP_MRUBY_OPEN ok` (or `FAILED`)
+right after `mrb_open()`, and `RPG2K_PSP_BRINGUP
 frame=N free=N maxfree=N lvgl_used=N lvgl_max=N` once a second, the last four
 fields being `sceKernelTotalFreeMemSize`/`sceKernelMaxFreeMemSize` (the
 device's actual free RAM) and `lv_mem_monitor`'s current/high-water-mark use
@@ -68,59 +76,41 @@ PPSSPPHeadless --log --graphics=software --timeout=15 EBOOT.PBP
 
 The pieces below are scaffolded but **not** part of the bring-up EBOOT:
 
-- **mruby interpreter + game.** `mruby-rgss/src/psp_input_bridge.cxx` already
-  translates the pad bitmask into `RGSS::Input` press/release events
-  (`rgss_psp_poll`, called from `Graphics.update`), and `build_config.rb` has a
-  `psp` mruby MIPS cross-build (`MRUBY_TARGET=psp`). Wiring `libmruby.a` into the
-  EBOOT link and starting the real `RPG2k` scene tree is the next slice.
-
-  Three prerequisite blockers the `psp` cross-build hit the moment it was
-  actually exercised (found while scoping this slice, before any of it
-  compiled against real pspdev headers — none of this was caught by CI, since
-  the `psp` cross-build had never pulled `mruby-rgss` in before):
-  - `mruby-rgss/src/terminal.cxx` (the sixel/iTerm2 backends) used POSIX
-    `termios.h`/`sys/ioctl.h` and a `std::thread` writer unconditionally at
-    file scope — unlike `psp.cxx`/`wio.cxx`, it was never self-guarded to be
-    a no-op off its own target, so it would not have compiled against
-    pspdev's newlib. Now guarded the same way (`#if !defined(PSP_BUILD) &&
-    !defined(WIO_TERMINAL)`), with a stub for the one symbol
-    (`rgss_terminal_poll`) called unconditionally elsewhere in the gem.
-  - `mrbgem.rake` unconditionally linked `pthread`, needed only by that same
-    `std::thread` writer. Now conditional on the *build's own* name (`psp`/
-    `wio`), not on `MRUBY_TARGET` — that env var is also set while the
-    native host build (which still needs pthread, to produce `mrbc`) runs
-    in the same cross-compile session.
-  - `mruby-mvjs` (RPG Maker MV/MZ via embedded QuickJS) links against `qjs`
-    and optionally EGL/GLESv2, neither of which exists for MIPS/pspdev or is
-    built by `app/psp`'s CMake project. MV/MZ was never in scope for this
-    port, so `rpg_maker_gems(conf, include_mvjs: false)` drops it for `psp`
-    specifically rather than porting QuickJS and a software GL stack as a
-    side effect.
-
-  Still ahead: building `uni-algo` for the `app/psp` CMake project (currently
-  only LVGL is added as a subdirectory there; `mruby-rgss`/`mruby-lcf` both
-  link it), actually invoking the `psp` mruby cross-build from
-  `app/psp/CMakeLists.txt` and linking `libmruby.a` in (dropping the
-  now-redundant direct `psp.cxx` compilation once the gem supplies it),
-  deciding the `GAME_DIR` Memory-Stick path convention, and — per ADR
-  0047's P2 — the mruby/LVGL allocator split.
-- **Memory-Stick assets.** Game data is opened by path through mruby-io /
-  `std::fopen`; on the PSP these resolve to newlib syscalls backed by the
-  Memory Stick, which pspsdk's `stdio` already routes. Pointing `GAME_DIR` at a
-  project on the stick follows once mruby is linked.
+- **The real `RPG2k` scene tree.** `mruby-rgss/src/psp_input_bridge.cxx`
+  already translates the pad bitmask into `RGSS::Input` press/release events
+  (`rgss_psp_poll`, called from `Graphics.update`), and `libmruby.a` (the
+  `psp` mruby cross-build, `MRUBY_TARGET=psp`) is now linked into the EBOOT
+  and opens successfully (`RPG2K_PSP_MRUBY_OPEN ok`). What's not wired yet:
+  registering the RGSS native methods and actually instantiating `RPG2k.new`
+  against a real game directory — `app/psp/main.cxx` opens the interpreter
+  and stops there.
+- **Memory-Stick assets / `GAME_DIR`.** Game data is opened by path through
+  mruby-io / `std::fopen`; on the PSP these resolve to newlib syscalls backed
+  by the Memory Stick, which pspsdk's `stdio` already routes. What's missing
+  is deciding and setting the `GAME_DIR` Memory-Stick path convention itself
+  (e.g. relative to the EBOOT's own directory) — needed before `RPG2k.new`
+  can find anything.
+- **ADR 0047's P2 (the mruby/LVGL allocator split).** `main.cxx` currently
+  opens mruby with its own default allocator (plain `malloc`), not routed
+  through `lv_malloc` the way the desktop build's `mrb_basic_alloc_func`
+  override does. Proving the interpreter boots didn't require deciding this;
+  starting a real game — where the pool size actually matters — does.
 - **Accelerated rendering.** The bring-up flushes with a CPU `memcpy` into the
   framebuffer. Moving the blit onto the `sceGu` GPU is a later optimisation.
 
 ## Memory budget
 
-The bring-up EBOOT never opens mruby, so it has never had to answer how the
-game's live heap, LVGL's pool and decoded assets fit inside the PSP's ~24 MB
-of RAM. [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)
-works through that before the interpreter-linking slice lands, including a
-real risk: mruby 4.0's global allocator hook defaults to sharing LVGL's pool
-(as it does on desktop), so `lv_conf.h`'s 4 MB `LV_MEM_SIZE` may need to cover
-the entire mruby object graph, not just LVGL widgets, unless a PSP-specific
-allocator exception is added.
+The bring-up EBOOT opens mruby but starts no game, so it has not yet had to
+answer how the game's live heap, LVGL's pool and decoded assets fit inside
+the PSP's ~24 MB of RAM.
+[`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)
+works through that before a real game is started, including a real risk:
+mruby 4.0's global allocator hook defaults to sharing LVGL's pool (as it does
+on desktop) if `main.cxx` ever installs that override the way the desktop
+build's `mrb_basic_alloc_func` does — which it does not yet (see "Not yet
+wired" above) — so `lv_conf.h`'s 4 MB `LV_MEM_SIZE` may need to cover the
+entire mruby object graph, not just LVGL widgets, unless a PSP-specific
+allocator exception is added instead.
 
 For a packed RPG Maker XP/VX/VX Ace title,
 [`scripts/rgssad_unpack.rb`](../../scripts/rgssad_unpack.rb) unpacks
