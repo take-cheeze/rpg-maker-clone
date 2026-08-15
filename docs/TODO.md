@@ -5032,6 +5032,26 @@ not yet verified:
   companion to the existing "recovery skill hard-caps at 999" check for an
   RPG2003 fight's own wider 9999 ceiling, both confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **The F9 debug menu's variable-value editor now widens to 7 digits on
+  an RPG2003 database, instead of staying a flat 6 digits on every
+  database.** `Scene::DebugMenu` (`mruby-rpg2k/mrblib/scene/debug_menu.rb`)
+  hardcoded `EDITOR_DIGITS = 6`, even though the `Game::Variables` range it
+  edits already splits `MAX`/`RPG2003_MAX` by edition (999,999 vs.
+  9,999,999 — see the variable-clamp fix directly below). EasyRPG's own
+  `Game_Variables::GetMaxDigits` (`src/scene_debug.cpp`) derives its debug
+  menu's `Window_NumberInput` width from this same edition-gated range: 6
+  digits on RPG2000, 7 on RPG2003. A flat 6-digit editor could not enter or
+  even display an RPG2003 variable's own top decade — the cursor had no
+  cell to land on past the sixth digit. Fixed by splitting the constant
+  into `EDITOR_DIGITS_2K`/`EDITOR_DIGITS_2K3` and adding a guarded
+  `#editor_digits` method (mirroring `Game::Actor#rpg2003?`'s own
+  `respond_to?` guard, so a bare test double without `#rpg2003?` still
+  reads as RPG2000), with the digit array, editor window width, and cursor
+  cell count all reading the method instead of the bare constant. Covered
+  by a new `scripts/rpg2k_scene_check.rb` check that opens the editor on an
+  RPG2003 database, walks the cursor onto the RPG2003-only millions-place
+  digit cell, and confirms the value it produces is only reachable with the
+  wider editor, confirmed to fail against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
