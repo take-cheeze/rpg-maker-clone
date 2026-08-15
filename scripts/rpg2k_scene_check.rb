@@ -8904,6 +8904,36 @@ ensure
   RGSS::Graphics.snapshot = nil
 end
 
+check 'random blocks paint incrementally: solid black once, then only new blocks' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+
+  st.screen.erase(Game::Transition::RANDOM_BLOCKS)
+  fade.bitmap.fill_calls.clear if fade.bitmap.fill_calls
+  scene.update
+  eq 255, fade.opacity, 'the mask itself carries the shape, not the opacity'
+  # #update already advanced once before this first draw (same "frame 1 is
+  # the first rendered frame" quirk the capture tests above rely on), so the
+  # very first paint has to catch up on everything due by frame 1, not just
+  # frame 1's own delta -- Game::Transition#revealed_block_rects, not
+  # #new_block_rects. 4800 * 2 / 40 = 240 blocks due by frame 1.
+  fills = fade.bitmap.fill_calls || []
+  eq 241, fills.length, 'one full-screen black fill, then every block due by frame 1'
+  eq [0, 0, 320, 240], fills.first[0, 4], 'blacked out first'
+  fills.drop(1).each { |f| eq [4, 4], f[2, 2], 'every punched block is 4x4' }
+
+  # The next frame only punches its own newly revealed blocks -- no repeat
+  # full-screen fill, and nothing already punched is painted again.
+  fade.bitmap.fill_calls.clear
+  scene.update
+  fills = fade.bitmap.fill_calls || []
+  ok fills.none? { |f| f[0, 4] == [0, 0, 320, 240] },
+     'no repeat full-screen fill once the overlay has already started black'
+  eq 120, fills.length, "one frame's worth of newly revealed blocks"
+end
+
 check 'Flash Screen drives the flash layer, and refills only on a colour change' do
   scene = new_scene({}, player: [5, 5])
   _, flash = overlay(scene)

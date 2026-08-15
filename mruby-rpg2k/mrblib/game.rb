@@ -4959,15 +4959,26 @@ module Game
                 HORIZONTAL_COMBINE, HORIZONTAL_DIVISION, CROSS_COMBINE,
                 CROSS_DIVISION, ZOOM_IN, ZOOM_OUT].freeze
 
+    # The random-blocks styles: a mask like BLIND_*/*_STRIPES_*/the window
+    # pair above, but painted *incrementally* -- RPG_RT (and this port, see
+    # #new_block_rects) only punches the blocks newly revealed this frame
+    # rather than recomputing and repainting the whole cumulative mask every
+    # frame, which is what the other mask styles' #visible_rects does and
+    # what made this style expensive enough to be left unbuilt (~4800 blocks
+    # by the last frame of a 320x240 screen). Scene::Map paints these via a
+    # separate, identity-tracked path (#draw_random_blocks_transition)
+    # instead of #visible_rects for exactly that reason.
+    RANDOM_BLOCKS_STYLES = [RANDOM_BLOCKS, RANDOM_BLOCKS_DOWN,
+                             RANDOM_BLOCKS_UP].freeze
+
     # Styles this build paints for real. Mosaic / wave still fall through to a
     # plain fade -- they want a native per-pixel resample, which is not built
-    # yet. Random blocks wants RPG_RT's incremental per-frame block paint,
-    # which a mask can express but this does not do yet either.
+    # yet.
     DRAWN = [FADE_IN, FADE_OUT, BLIND_OPEN, BLIND_CLOSE, VERTICAL_STRIPES_IN,
              VERTICAL_STRIPES_OUT, HORIZONTAL_STRIPES_IN,
              HORIZONTAL_STRIPES_OUT, BORDER_TO_CENTER_IN, BORDER_TO_CENTER_OUT,
              CENTER_TO_BORDER_IN, CENTER_TO_BORDER_OUT, CUT_IN, CUT_OUT,
-             NONE, *CAPTURED].freeze
+             NONE, *CAPTURED, *RANDOM_BLOCKS_STYLES].freeze
 
     # The highest setting index the numbering defines (20 = "no transition").
     MAX_SETTING = 20
@@ -5007,6 +5018,17 @@ module Game
       when NONE              then 0
       else 41
       end
+    end
+
+    # The random-blocks grid for a `width`x`height` screen: `[cols, rows]` of
+    # BLOCK_SIZE-pixel blocks. Confirmed against EasyRPG's src/transition.h
+    # (`size_random_blocks = 4`) -- 320x240 is 80x60, 4800 blocks total, which
+    # is where docs/TODO.md's "~120 of 4800" comes from (4800 blocks over the
+    # 41-frame default length).
+    BLOCK_SIZE = 4
+
+    def self.block_grid(width, height)
+      [width / BLOCK_SIZE, height / BLOCK_SIZE]
     end
 
     attr_reader :style, :frames, :frame
@@ -5104,7 +5126,60 @@ module Game
       end
     end
 
+    # Whether this style is one of the random-blocks family (see
+    # RANDOM_BLOCKS_STYLES) -- Scene::Map paints these through
+    # #new_block_rects instead of #visible_rects.
+    def random_blocks?
+      RANDOM_BLOCKS_STYLES.include?(@style)
+    end
+
+    # The blocks newly revealed *this* frame only -- not the cumulative mask
+    # #visible_rects's callers get from the other shaped styles. Each block is
+    # `[x, y, BLOCK_SIZE, BLOCK_SIZE]`; painting only these over an overlay
+    # that started (and stays) opaque black is RPG_RT's own incremental
+    # paint, confirmed against EasyRPG's src/transition.cpp: `blocks_to_print
+    # = random_blocks.size() * (current_frame + 1) / tf_off` there is
+    # `#block_count_through(@frame)` here, and its `current_blocks_print`
+    # (the count already painted as of the previous frame) is
+    # `#block_count_through(@frame - 1)`.
+    #
+    # #block_order (below) stands in for EasyRPG's own `random_blocks` vector
+    # -- a full permutation of every block index, sliced by count rather than
+    # walked one at a time, so calling this again for a frame already drawn
+    # (replaying, or a test asserting on frame 5 after frame 3) returns the
+    # exact same rects rather than depending on how many times it was called
+    # before. That is a deliberate difference from EasyRPG's own
+    # `std::shuffle` + `current_blocks_print`-tracking approach: this class
+    # holds no Graphics access and no RNG state, only the two ints every
+    # other style already carries (@frame, @frames), per the "pure logic,
+    # unit-testable" precedent #capture_ops and #visible_rects set.
+    def new_block_rects
+      block_rects(block_count_through(@frame - 1), block_count_through(@frame))
+    end
+
+    # Every block revealed by (and including) this frame -- the full
+    # cumulative mask, unlike #new_block_rects's this-frame-only delta.
+    # Scene::Map uses this once, the first frame it paints a given
+    # transition instance, to catch the overlay up in a single pass even
+    # when that first paint lands after frame 0 (the frame counter has
+    # already advanced once before the very first #update/render pass in
+    # some call orders -- see the vertical-division capture test's own "frame
+    # 1 is the first rendered frame" note in scripts/rpg2k_scene_check.rb):
+    # #new_block_rects alone would only punch the delta since frame 0 and
+    # silently leave frame 0's own blocks unrevealed forever in that case.
+    def revealed_block_rects
+      block_rects(0, block_count_through(@frame))
+    end
+
     private
+
+    # Pixel rects for block indices `[from, to)` in reveal order.
+    def block_rects(from, to)
+      cols = block_grid_cols
+      block_order[from...to].map do |i|
+        [(i % cols) * BLOCK_SIZE, (i / cols) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE]
+      end
+    end
 
     # The frame index the geometry is drawn at, and the span it runs over —
     # EasyRPG's `current_frame` and `total_frames - 1`.
@@ -5341,6 +5416,77 @@ module Game
         out.push [x2, y2, w2, h2] if w2 > 0 && h2 > 0
       end
       out
+    end
+
+    # This instance's block grid, in columns -- see .block_grid.
+    def block_grid_cols
+      @width / BLOCK_SIZE
+    end
+
+    # How many blocks are revealed by (and including) `frame`, clamped to the
+    # block total -- EasyRPG's own `blocks_to_print`. A negative `frame`
+    # (#new_block_rects asking for the count *before* frame 0) is nothing
+    # revealed yet.
+    def block_count_through(frame)
+      return 0 if frame < 0
+      total = block_order.size
+      d = span
+      return total if d <= 0
+      n = total * (frame + 1) / d
+      n > total ? total : n
+    end
+
+    # A deterministic scramble of `index` into `0...total`, standing in for
+    # `std::shuffle`'s randomness (see #new_block_rects) -- a multiplicative
+    # hash mod the block count. BLOCK_SHUFFLE_STRIDE is prime and far smaller
+    # than any screen's block total this build reaches, so the map stays a
+    # bijection (a full reshuffle, not a lossy hash) for every grid actually
+    # in use.
+    BLOCK_SHUFFLE_STRIDE = 2749
+
+    def block_shuffle_rank(index, total)
+      (index * BLOCK_SHUFFLE_STRIDE) % total
+    end
+
+    # The reveal order for this transition's block grid: `order[k]` is the
+    # block index (row-major, matching #new_block_rects's own `i % cols` /
+    # `i / cols`) revealed at cumulative position `k`. Memoized -- @style /
+    # @width / @height never change after #initialize, so this is the same
+    # array on every call, computed once regardless of how many frames are
+    # drawn.
+    #
+    # RANDOM_BLOCKS shuffles every block into one random order, matching
+    # EasyRPG's own `std::shuffle(random_blocks.begin(), random_blocks.end(),
+    # ...)`. RANDOM_BLOCKS_DOWN/UP bias that order by row (top rows first for
+    # Down, bottom rows first for Up) rather than shuffling uniformly --
+    # EasyRPG's own version of that bias is a windowed per-row `std::shuffle`
+    # + `std::partial_sort` (src/transition.cpp's SetAttributesTransitions)
+    # that this class does not attempt to port bit-for-bit: it depends on
+    # replaying the same Mersenne Twister stream EasyRPG's `Rand::GetRNG()`
+    # would produce, which is not meaningful to match without matching its
+    # RNG too, and this class carries no RNG state at all (see
+    # #new_block_rects). Sorting every block by `[row, shuffle rank]` (or
+    # `[-row, shuffle rank]` for Up) keeps the same reasoned-simplification
+    # policy #cross_split_ops's quadrant motion and #zoom_rect's screen-centre
+    # anchor already use elsewhere in this class: reproduce the *behaviour* a
+    # real style reads as (a top-to-bottom or bottom-to-top wave, shuffled
+    # within it) rather than an unmatchable RNG trace.
+    def compute_block_order
+      cols = block_grid_cols
+      total = cols * (@height / BLOCK_SIZE)
+      indices = (0...total).to_a
+      case @style
+      when RANDOM_BLOCKS_DOWN
+        indices.sort_by { |i| [i / cols, block_shuffle_rank(i, total)] }
+      when RANDOM_BLOCKS_UP
+        indices.sort_by { |i| [-(i / cols), block_shuffle_rank(i, total)] }
+      else
+        indices.sort_by { |i| block_shuffle_rank(i, total) }
+      end
+    end
+
+    def block_order
+      @block_order ||= compute_block_order
     end
   end
 
