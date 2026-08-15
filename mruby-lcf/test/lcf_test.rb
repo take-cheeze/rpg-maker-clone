@@ -673,7 +673,6 @@ assert 'SaveData title chunk + system message/bgm/access fields round-trip from 
   sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
   sys[41] = 1; sys[42] = 0; sys[43] = false
   sys[51] = "MsgFace"; sys[52] = 4; sys[53] = 1; sys[54] = true
-  sys[55] = true
   cur = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
   cur[1] = "Field"; cur[3] = 80; cur[4] = 120
   sys[75] = cur
@@ -696,7 +695,6 @@ assert 'SaveData title chunk + system message/bgm/access fields round-trip from 
   assert_equal 4, s.face_index
   assert_equal 1, s.face_right_position
   assert_true s.face_flip
-  assert_true s.transparent
   assert_equal "Field", s.current_bgm.file
   assert_equal 80, s.current_bgm.volume
   assert_equal 120, s.current_bgm.pitch
@@ -704,6 +702,16 @@ assert 'SaveData title chunk + system message/bgm/access fields round-trip from 
   assert_false s.escape_allowed
   assert_false s.save_allowed
   assert_true s.menu_allowed
+end
+
+assert 'SAVE_MOVABLE transparency (Set Transparent Flag on the hero record, ' \
+       'field 24 -- not SAVE_SYSTEM field 55) round-trips from scratch' do
+  hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+  hero[11] = 3; hero[12] = 5; hero[13] = 7
+  hero[24] = 3 # liblcf's own "0 or 3" convention
+  reread = LCF::Array1D.new(hero.to_lcf, { elements: LCF::Schema::SAVE_MOVABLE })
+  assert_equal 3, reread.map_id
+  assert_equal 3, reread.transparency
 end
 
 assert 'Array2D built from scratch serialises and reads back' do

@@ -6845,6 +6845,39 @@ not yet verified:
   internally self-consistent either way — could never have caught this),
   confirmed to fail against the pre-fix code before the fix (the field
   simply didn't exist under the corrected tag number yet).
+- ✅ **Set Transparent Flag's saved state now lives at the correct `.lsd`
+  field — a genuine RPG_RT save could make the hero permanently, silently
+  invisible on Continue, since this engine used to read an unrelated flag
+  as the player-hidden override.** ADR 0020 mapped `player_transparent` to
+  `SAVE_SYSTEM` field 55, citing no source for the claim; liblcf actually
+  names that field `event_message_active`
+  (`generator/csv/fields.csv`: "A flag set by RPG_RT when a message is
+  spawned by ShowMessage; ShowChoices; or ShowNumberInput and cleared when
+  message spawned for any other reason") — entirely unrelated to visibility.
+  The real home for Set Transparent Flag's (Player Visibility, 11310)
+  runtime override is `SaveMapEventBase.transparency` (`0x18` = field 24,
+  "0 or 3"), on the *hero's own* movable record (chunk 104) — a field
+  `SAVE_MOVABLE` never declared at all. Confirmed against the repo's own
+  real save fixture: `Save01.lsd`'s `event_message_active` (55) decodes
+  `true`, exactly the state a save taken with a message on screen leaves —
+  loading that genuine save through this engine's old code set `@state.
+  player_transparent = true` and hid the hero sprite outright
+  (`Scene::Map#player_hidden?`), a directly observable regression on common,
+  unremarkable third-party saves, not merely a naming slip. Self-masking for
+  the usual reason: `#to_lsd`/`.from_lsd` both consistently used field 55,
+  so this engine's own Save→Continue round-trip never disagreed with
+  itself. Fixed by declaring `SAVE_MOVABLE` field 24 (`:transparency`,
+  liblcf's own name), writing `hero[24] = @player_transparent ? 3 : 0` in
+  `#to_lsd` and reading it back the same way in `.from_lsd`, and removing
+  the wrong claim on `SAVE_SYSTEM` field 55 entirely (nothing in this engine
+  needs `event_message_active` modelled). Covered by a new
+  `scripts/rpg2k_logic_check.rb` check that inspects the actual raw tag
+  `#to_lsd` writes the flag to and confirms `SAVE_SYSTEM` no longer claims
+  field 55 at all, confirmed to fail against the pre-fix code before the
+  fix. `mruby-lcf/test/lcf_test.rb`'s own from-scratch system-chunk
+  round-trip (which explicitly exercised the now-removed field 55) was
+  updated to match, and gained its own from-scratch check for the corrected
+  `SAVE_MOVABLE` field. `ninja -C build test` still passes.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

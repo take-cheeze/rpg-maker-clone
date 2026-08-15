@@ -7427,6 +7427,38 @@ check 'player_transparent round-trips through the save' do
   eq false, Game::State.load(db, legacy).player_transparent
 end
 
+# ADR 0020 mapped player_transparent to SAVE_SYSTEM's own field 55, citing no
+# source -- but liblcf actually names that field `event_message_active`
+# (ShowMessage/ShowChoices/ShowNumberInput bookkeeping, generator/csv/
+# fields.csv), unrelated to transparency. The real home is SAVE_MOVABLE field
+# 24 (`SaveMapEventBase.transparency`) on the hero's own record (chunk 104).
+# The wrong mapping was self-masking: this engine's own to_lsd/from_lsd both
+# used field 55 consistently, so its own round-trip never caught it -- only
+# a genuine save (or inspecting the actual on-disk tag) would, since a real
+# save's field 55 (event_message_active) is often true on its own, unrelated
+# to whether the player is hidden, and would have made Continue permanently
+# hide the hero after any save taken with a message on screen.
+check 'to_lsd writes player_transparent to the hero record (SAVE_MOVABLE ' \
+      'field 24), not SAVE_SYSTEM field 55' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.player_transparent = true
+  saved = st.to_lsd
+  eq 3, saved[104][24], "liblcf's own 0-or-3 convention for transparency"
+  round = Game::State.from_lsd(db, saved)
+  eq true, round.player_transparent, 'and it round-trips back correctly'
+
+  # SAVE_SYSTEM no longer declares field 55 as :transparent at all, so a
+  # genuine save's own event_message_active (unrelated to visibility) has no
+  # code path left that could ever misread it as one.
+  ok !LCF::Schema::SAVE_SYSTEM.key?(55),
+     'field 55 is no longer claimed as player-transparent'
+end
+
 check 'common_event_progress (a Parallel Process interpreter checkpoint) round-trips through the save' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,

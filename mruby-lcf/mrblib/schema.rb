@@ -1063,6 +1063,24 @@ module LCF
       13 => { name: :y, type: :int },
       # 0 = down, 1 = right, 2 = up, 3 = left.
       22 => { name: :direction, type: :int },
+      # liblcf's `SaveMapEventBase.transparency` (generator/csv/fields.csv,
+      # 0x18 == 24): "0 or 3 - Transparency level of the current event page".
+      # On the *hero's* own record (chunk 104) this is Set Transparent Flag's
+      # (Player Visibility, 11310) runtime override -- Game::State
+      # #player_transparent. It used to be smuggled into SAVE_SYSTEM's own
+      # field 55 instead, which liblcf actually names `event_message_active`
+      # (a flag ShowMessage/ShowChoices/ShowNumberInput set, unrelated to
+      # transparency at all) -- ADR 0020 declared it `:transparent` with no
+      # citation for the claim. Confirmed against the repo's own real save
+      # fixture: `event_message_active` (55) decodes true on Nepheshel
+      # Save01.lsd, which would have made Continue permanently hide the hero
+      # on any save taken with a message on screen -- a real, severe
+      # regression a genuine RPG_RT save can trigger, not merely a naming
+      # slip. The vehicle chunks (105-107) never used field 55 for anything,
+      # so this field is otherwise new to them too -- vehicles have no
+      # runtime "hidden" state to persist, so their own #load_movable simply
+      # never reads it.
+      24 => { name: :transparency, type: :int, default: 0 },
       35 => { name: :animation_type, type: :int },
       37 => { name: :move_speed, type: :int },
       # SaveMapEventBase's own move-route cursor: how far into a page's
@@ -1323,7 +1341,11 @@ module LCF
       52 => { name: :face_index, type: :int, default: 0 },
       53 => { name: :face_right_position, type: :int, default: 0 },
       54 => { name: :face_flip, type: :bool, default: false },
-      55 => { name: :transparent, type: :bool, default: false },
+      # NOT field 55: that is liblcf's own `event_message_active`
+      # (ShowMessage/ShowChoices/ShowNumberInput bookkeeping, unrelated to
+      # transparency), not a player-visibility override -- see SAVE_MOVABLE's
+      # field 24 for where Set Transparent Flag's state actually lives, and
+      # why it was wrongly modelled here before.
       # Overridden BGM/SE playback state. An empty file name means "use the
       # database value".
       71 => { name: :title_bgm, type: :Array1D, elements: BGM },
