@@ -5219,14 +5219,27 @@ module Game
     # party fires it exactly like an autonomous move already does.
     def do_move(character, world, dir)
       return [:turned, true] if dir.nil?
+      prev_dir = character.direction
       if character.through || world.passable?(character, dir)
         character.move(dir)
         [:moved, true]
       else
-        character.face(dir) # an obstructed move still turns to face it
+        character.face(dir) # an obstructed move still turns to face it --
         nx, ny = Character.step_tile(character.x, character.y, dir)
         status = world.hero_position == [nx, ny] ? :touched_hero : :blocked
-        @skippable ? [status, true] : [status, false]
+        if @skippable
+          # ...unless the route can skip past the block, in which case
+          # EasyRPG's UpdateMoveRoute (src/game_character.cpp) reverts the
+          # turn entirely (`SetDirection(prev_direction);
+          # SetFacing(prev_facing);`) before advancing to the next command --
+          # a skipped step has no visible effect at all, not even a flinch
+          # toward the obstacle. A non-skippable route keeps the turn (the
+          # same command retries next frame, still facing the obstacle).
+          character.direction = prev_dir
+          [status, true]
+        else
+          [status, false]
+        end
       end
     end
 
@@ -5331,6 +5344,7 @@ module Game
 
     def do_diagonal(character, world, id)
       horizontal, vertical = DIAGONAL[id]
+      prev_dir = character.direction
       character.face(vertical)
       passable = character.through ||
                  (world.passable?(character, horizontal) &&
@@ -5338,8 +5352,13 @@ module Game
       if passable
         character.move_diagonal(horizontal, vertical)
         [:moved, true]
+      elsif @skippable
+        # Same skippable-block reversion #do_move applies -- a diagonal that
+        # can't move leaves no visible turn behind on a skippable route.
+        character.direction = prev_dir
+        [:blocked, true]
       else
-        @skippable ? [:blocked, true] : [:blocked, false]
+        [:blocked, false]
       end
     end
 
