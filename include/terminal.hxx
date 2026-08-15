@@ -106,3 +106,31 @@ void terminal_console_push(int severity,
 // console is disabled.  The block is a fixed height so the game image never
 // shifts as messages arrive; missing rows are drawn blank.
 void terminal_append_console(std::string& s);
+
+// ---------------------------------------------------------------------------
+// Stderr log bridge
+// ---------------------------------------------------------------------------
+// Routes Ruby's $stderr writes into ng-log -- the opposite direction from the
+// log console above.  RGSS::ErrorReport already buffers every $stderr write
+// into whole lines (mruby-rgss/mrblib/error_report.rb); each line reaches
+// log_bridge_write (mruby-rgss/src/log_bridge.cxx) through RGSS's
+// __log_bridge_write binding.  That just calls an optional hook the
+// executable installs at start-up with log_bridge_set_hook (src/log_bridge.cxx
+// calls LOG(WARNING) there, matching AGENTS.md's "log a recovered error to
+// $stderr" convention).  Keeping the gem's half a bare function pointer,
+// rather than a direct call into ng-log, is what keeps mruby-rgss free of a
+// compile-time dependency on it -- the same reason the log console above is
+// split this way (see docs/adr/0005).  Builds that never install a hook --
+// mrbtest, the PSP and Wio Terminal targets -- leave it null, so the forward
+// is a harmless no-op and $stderr keeps behaving exactly as before there.
+
+using log_bridge_hook_fn = void (*)(const char* msg, size_t len);
+
+// Install (or clear, with nullptr) the hook every forwarded line reaches.
+// Called once at start-up, before the mruby interpreter runs any Ruby code;
+// not synchronized against later writers.
+void log_bridge_set_hook(log_bridge_hook_fn hook);
+
+// Forward one already-buffered line (no trailing newline) to the installed
+// hook, if any.  Safe to call unconditionally.
+void log_bridge_write(const char* msg, size_t len);

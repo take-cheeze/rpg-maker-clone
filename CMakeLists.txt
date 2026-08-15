@@ -225,7 +225,8 @@ endif()
 
 add_executable(
   ${PROJECT_NAME} src/main.cxx src/sdl_input.cxx src/sdl_audio.cxx
-                  src/voicevox_tts.cxx src/log_console.cxx src/error_dump.cxx)
+                  src/voicevox_tts.cxx src/log_console.cxx src/log_bridge.cxx
+                  src/error_dump.cxx)
 target_link_libraries(
   ${PROJECT_NAME}
   mruby

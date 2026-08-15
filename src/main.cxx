@@ -22,6 +22,7 @@
 #include "default_font.hxx"
 #include "error_dump.hxx"
 #include "iterm.hxx"
+#include "log_bridge.hxx"
 #include "log_console.hxx"
 #include "profiler.hxx"
 #include "sixel.hxx"
@@ -972,6 +973,10 @@ int main(int argc, char** argv) {
       FLAGS_game_dir = absolute.lexically_normal().string();
   }
   nglog::InitializeLogging(argv[0]);
+  // Before error_dump_install below tees $stderr through RGSS::ErrorReport,
+  // so the very first buffered line already reaches ng-log too. See
+  // include/terminal.hxx's "Stderr log bridge" section.
+  log_bridge_install();
 
   // Whether this run is a Test Play launch: either the project's own
   // Game.ini says so (the RPG Maker editors' own signal, for 2000/2003, XP
