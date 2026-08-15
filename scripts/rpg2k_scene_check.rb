@@ -5178,10 +5178,12 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
 end
 
 # Battle command / result command lists for the encounter tests below.
-def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil, troop_id: 1)
+def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil, troop_id: 1,
+                          first_strike: false)
   handler2 = second_switch_code || ic::ESCAPE_HANDLER
   [
-    ECmd.new(ic::ENEMY_ENCOUNTER, [0, troop_id, 0, escape_mode, 1, 0], indent: 0),
+    ECmd.new(ic::ENEMY_ENCOUNTER,
+             [0, troop_id, 0, escape_mode, 1, first_strike ? 1 : 0], indent: 0),
     ECmd.new(ic::VICTORY_HANDLER, [], indent: 0),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
     ECmd.new(handler2, [], indent: 0),
@@ -5221,6 +5223,15 @@ def battle_until_phase(scene, phase, max = 15)
     break if ui && ui[:phase] == phase
   end
   ui
+end
+
+# Every string a window's contents had drawn into it, whichever path drew it:
+# `draw_text(x, y, w, h, text, align)` and `blend_text(x, y, w, h, text, skin,
+# ...)` both carry the text at index 4.
+def window_texts(win)
+  c = win && win.contents
+  return [] unless c
+  ((c.draw_calls || []) + (c.blend_calls || [])).map { |a| a[4] }
 end
 
 check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Victory' do
@@ -5319,6 +5330,70 @@ check 'Enemy Encounter scene: a Change System SFX battle-start override wins ove
      'the override plays instead of the database BattleStart1'
   ok !RGSS::Audio.se_calls.any? { |c| c[0] == 'BattleStart1' },
      'the database default is fully superseded, not layered alongside it'
+end
+
+# EasyRPG Player's `Scene_Battle_Rpg2k::ProcessSceneActionStart`
+# (`src/scene_battle_rpg2k.cpp`) narrates the encounter before the party is
+# ever asked for a command: `GetActiveBattlers` (not dead or hidden) feeds one
+# `PushWithSubject(terms.encounter, enemy->GetName())` per visible member --
+# stock RPG2000's `PushWithSubject` concatenates `subject + message`, no
+# placeholder -- and `Scene::Map#open_battle` used to skip straight past this
+# into `phase: :command` with no message at all.
+check 'Enemy Encounter scene: opening a battle narrates each visible enemy with ' \
+      'the database encounter term before any command menu shows' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.db.term.encounter = 'があらわれた！'
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_until_phase(scene, :encounter_message)
+  ok ui, 'the encounter-message phase was reached'
+  eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'], window_texts(ui[:action_win]),
+     'both troop members are named, once each, using the database term'
+end
+
+# `ProcessSceneActionStart`'s `eFirstStrike` substate pushes `terms.
+# special_combat` (no subject, a fixed line) *after* every per-enemy
+# `encounter` line, only when the encounter is a first-strike ambush -- it is
+# appended to the same narration, not a replacement for it.
+check 'Enemy Encounter scene: a first-strike encounter appends the special_combat ' \
+      'line after the per-enemy encounter lines' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, first_strike: true)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.db.term.encounter = 'があらわれた！'
+  scene.db.term.special_combat = '先制攻撃！'
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_until_phase(scene, :encounter_message)
+  ok ui, 'the encounter-message phase was reached'
+  eq ['Slimeがあらわれた！', 'Slimeがあらわれた！', '先制攻撃！'],
+     window_texts(ui[:action_win]),
+     'special_combat trails the per-enemy lines rather than replacing them, ' \
+     "matching EasyRPG Player's own ordering"
+end
+
+# `GetActiveBattlers` is the "not dead or hidden" subset (`Game_Battler::
+# Exists`) -- a troop member the editor placed but flagged invisible
+# (`Game::Enemy#hidden`, the same flag Show Hidden Monster clears) never gets
+# an arrival line, matching the sprite-build skip in #build_battle_sprites.
+check 'Enemy Encounter scene: a hidden troop member gets no encounter line' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.db.term.encounter = 'があらわれた！'
+  scene.db.enemy_group[1].members[2].invisible = true # the second Slime starts hidden
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_until_phase(scene, :encounter_message)
+  ok ui, 'the encounter-message phase was reached'
+  eq ['Slimeがあらわれた！'], window_texts(ui[:action_win]),
+     'only the still-visible Slime is narrated'
+  ok ui[:troop].members[1].hidden, 'and the troop model agrees the second member is hidden'
 end
 
 # yado.tk: "the built-in random-number operand is a genuine non-seeded RNG --
@@ -10281,15 +10356,6 @@ check 'a hidden troop member is not targetable until it is revealed' do
   ok !ui[:foes][1].hidden, 'revealing clears the combatant flag, not just the sprite'
   eq 2, scene.send(:living_foes).length, 'and it becomes targetable'
   ok ui[:enemy_sprites][1], 'with a sprite built for it'
-end
-
-# Every string a window's contents had drawn into it, whichever path drew it:
-# `draw_text(x, y, w, h, text, align)` and `blend_text(x, y, w, h, text, skin,
-# ...)` both carry the text at index 4.
-def window_texts(win)
-  c = win && win.contents
-  return [] unless c
-  ((c.draw_calls || []) + (c.blend_calls || [])).map { |a| a[4] }
 end
 
 check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each screen prompt' do

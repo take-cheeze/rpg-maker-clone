@@ -3374,6 +3374,38 @@ The work below is roughly ordered by the critical path to a walkable game
   Battle/Escape each dispatching correctly (including the Escape-forbidden
   Buzzer, which now leaves the window open rather than the old command
   menu), and B/Cancel's no-op while it is open.
+- ✅ **The encounter/monster-appear messages flagged above are now shown
+  too** — the other half of `ProcessSceneActionStart()` the options-window
+  writeup traced but left open: `Scene::Map#open_battle` used to jump
+  straight from the Battle Start SE/BGM into the options window (or the
+  ordinary command menu) with no message at all. It now narrates the
+  encounter first, exactly as EasyRPG's source builds it:
+  `GetActiveBattlers` (not dead or hidden — the same subset `Game::Enemy
+  #hidden`/Show Hidden Monster already models) feeds one `terms.encounter`
+  line per visible troop member, each built by concatenating the enemy's own
+  name in front of the term (`PushWithSubject`'s stock, non-Maniac-Patch
+  branch: `subject + message`, no placeholder — the same convention this
+  screen's `victory`/`level_up`/`item_received` lines already follow), and
+  then, only for a first-strike ambush (`req[:first_strike]`, already
+  threaded through for the actual mechanic), a final fixed `terms.
+  special_combat` line with no name substitution. **Confirmed against the
+  real source rather than assumed:** `special_combat` is pushed *in addition
+  to*, not instead of, the per-enemy lines — `ProcessSceneActionStart`'s
+  `eFirstStrike` substate runs strictly after `eDisplayMonsters` clears.
+  Nothing shows when every troop member is hidden and the fight is not a
+  first strike, matching `if (!visible_enemies.empty()) SetWait(...)`
+  gating the whole substate there. This screen has no per-page message
+  window (see `#battle_result_lines`'s own comment on the same
+  simplification), so the whole narration — every line at once — reuses the
+  existing action-banner mechanism (`#show_battle_banner`/
+  `#battle_panel_window`, the same one a landed hit banners) rather than a
+  new window, held for a new `:encounter_message` sub-state's own short
+  fixed beat (`BATTLE_ENCOUNTER_MSG_FRAMES`) instead of RPG_RT's per-line
+  wordwrap/wait-timer pacing. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks: a normal encounter narrates every
+  visible troop member by name, a first-strike encounter appends
+  `special_combat` after those same per-enemy lines rather than replacing
+  them, and a troop member flagged invisible gets no arrival line at all.
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
   `Music/`/`Sound/`/`Audio/*`
