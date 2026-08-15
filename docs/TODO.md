@@ -2616,7 +2616,28 @@ The work below is roughly ordered by the critical path to a walkable game
   missing cell (confirmed by pressing DOWN off the grid's last, partial row
   -- the cursor simply stayed, not wrapping to the top as the *old*
   single-column code did), RIGHT/LEFT move by one and do nothing at a row's
-  own edge. `Scene::ItemMenu` gained a `COLUMN_MAX = 2` constant, grid-aware
+  own edge. **This RIGHT/LEFT half needs a real re-check, flagged this
+  session rather than changed outright.** `Window_Selectable` has no method
+  actually named `CursorRight`/`CursorLeft` in EasyRPG Player's current
+  source (checked verbatim against `src/window_selectable.cpp`) — its real
+  `Update()` RIGHT/LEFT branches are a flat `index ± 1`, bounded only by the
+  list's own absolute start/end (`index > 0` / `index < item_max - 1`), with
+  **no row-boundary check at all**, structurally unlike DOWN/UP (genuinely
+  column-locked there, `index < item_max - column_max`) — so on the real
+  grid, RIGHT off a row's last cell should flow into the next row's first
+  cell instead of stopping. Whether the "does nothing at a row's own edge"
+  half of this bullet was itself independently wine-confirmed (as the DOWN
+  case explicitly was, parenthetically) or inferred by analogy from DOWN/UP
+  and attributed to a EasyRPG method that turns out not to exist is not
+  possible to settle from this entry's own wording alone, and wine is
+  unusable this session (see the harness-quirk notes elsewhere) to re-check
+  directly. `#move_item_cursor`/`#move_skill_cursor`
+  (`mruby-rpg2k/mrblib/scene/item_menu.rb`, `skill_menu.rb`) currently gate
+  RIGHT/LEFT on `(@item_index ± 1) % COLUMN_MAX`, matching this bullet's
+  claim as coded — left unchanged pending a real wine re-test (or a fresh
+  EasyRPG source re-read someone is more confident settles it) rather than
+  risk a blind revert of a claimed direct observation. `Scene::ItemMenu`
+  gained a `COLUMN_MAX = 2` constant, grid-aware
   drawing (`#build_item_window`, `#item_col_w`) and cursor math
   (`#move_item_cursor`, replacing the old modulo-wraparound UP/DOWN
   handling and adding RIGHT/LEFT, which the scene never handled before at
