@@ -813,7 +813,7 @@ The work below is roughly ordered by the critical path to a walkable game
   party, and either outcome routes into the command's optional `[Stay]` /
   `[No Stay]` handler branches (structured and skipped like Show Choices).
   `Game::Interpreter` owns the gameplay and suspends on an `:inn` wait that
-  `Scene::Map` drives; the inn **fade** is presentation still to come.
+  `Scene::Map` drives.
   ✅ **The inn now plays its own BGM.** `Scene::Map#drive_inn` never touched
   the music at all — staying at an inn played in total silence, or just let
   the field track keep looping, no matter what `db.system.inn_music` named,
@@ -834,6 +834,33 @@ The work below is roughly ordered by the critical path to a walkable game
   field BGM resumes after a prompted stay; a Change System BGM override for
   slot 2 beats the database default; a free stay plays and restores the BGM
   too), confirmed to fail against the pre-fix code before the fix.
+  ✅ **The inn now fades the screen too.** `#drive_inn` never touched
+  `Game::Screen` at all — accepting a stay used to cut straight from the
+  prompt to the healed party with no transition, where real RPG_RT (EasyRPG's
+  `Scene_Map::UpdateInn` / `FinishInn`, reached through the accepted-stay
+  `AsyncOp::eCallInn` continuation `Game_Interpreter_Map::CommandShowInn`
+  returns) fades the screen to black the instant a stay is accepted — before
+  the heal, not after — holds it there while the party is healed, then starts
+  fading back in the same beat, all in the plain FADE_OUT / FADE_IN styles
+  Erase / Show Screen already use at their own default length
+  (`Game::Transition.default_frames`, 35 frames each way), not some
+  inn-specific duration. New `#start_inn_fade_out` erases the screen
+  (`@state.screen.erase(Game::Transition::FADE_OUT)`) the moment Accept is
+  confirmed — or a free (price 0) stay auto-accepts, since it reaches the same
+  `AsyncOp::eCallInn` path in real RPG_RT and fades exactly like a prompted
+  one — and parks `#drive_inn` on a new `@inn_fading_out` sub-state until the
+  erase settles; `#finish_inn` then charges gold, heals the party and starts
+  the fade back in (`@state.screen.show(Game::Transition::FADE_IN)`) before
+  resuming the interpreter, reusing the same overlay sprite Erase/Show Screen
+  already draws through rather than a bespoke fade of its own. Cancel and the
+  insufficient-funds no-op skip `#start_inn_fade_out` entirely and go straight
+  to `#finish_inn(false)`, matching real RPG_RT: a declined or unaffordable
+  prompt never reaches `AsyncOp::eCallInn`, so it never fades. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check pinning the exact 35-frame fade-out /
+  fade-in timing around an accepted stay (fading starts before the gold is
+  charged, holds through the heal, then fades back in), plus fade assertions
+  added to the existing cancel and unaffordable-Accept checks confirming
+  neither ever starts a fade.
   **Open Shop** (10720) is a playable game-mode too: a `Game::Shop` holds the
   goods and buy / sell rules and performs the transactions (buy at the database
   price, sell at half, party 99-item / gold caps enforced), tracking whether

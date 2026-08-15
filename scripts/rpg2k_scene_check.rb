@@ -2150,19 +2150,57 @@ check 'Show Inn scene: accepting heals the party, spends gold, runs Stay branch'
   5.times { scene.update } # inn command runs; the greeting prompt opens
   ok !st.switches[1] && !st.switches[2], 'still waiting on the prompt'
   RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
-  scene.update # resumes with a stay
-  scene.update # runs the Stay branch
-  eq 900, st.party.gold, 'the price was deducted'
+  scene.update # accept: fades the screen to black instead of resuming at once
+  ok st.screen.fading?, 'the accepted stay fades out before the heal'
+  eq 1000, st.party.gold, 'not charged yet -- the heal waits for the fade to land'
+  40.times { scene.update } # drain the fade-out (35 frames) and the Stay branch after
+  eq 900, st.party.gold, 'the price was deducted once the screen went black'
   eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'party healed'
   ok st.switches[1], 'the Stay branch ran'
   ok !st.switches[2], 'the No Stay branch was skipped'
 end
 
-check 'Show Inn scene: cancelling with B spends nothing and runs No Stay' do
+check 'Show Inn scene: an accepted stay fades to black, holds through the heal, ' \
+      'then fades back in over the RPG_RT default 35 frames' do
+  # Real RPG_RT (EasyRPG's Scene_Map::UpdateInn / FinishInn, the async
+  # eCallInn path CommandShowInn's accepted-stay continuation triggers) fades
+  # out the instant a stay is accepted -- before the heal, not after -- holds
+  # black while the party is healed, then starts the fade back in the same
+  # beat, all in the plain FADE_OUT / FADE_IN styles Erase/Show Screen use at
+  # their own default length (Game::Transition.default_frames), not some
+  # inn-specific duration.
+  eq 35, Game::Transition.default_frames(Game::Transition::FADE_OUT)
+  eq 35, Game::Transition.default_frames(Game::Transition::FADE_IN)
+
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
+  scene.update # accept: the fade-out starts this same frame, not an immediate resume
+  ok st.screen.fading?, 'fading out the instant the stay is accepted'
+  eq 1000, st.party.gold, 'not charged yet -- the heal waits for the fade to land'
+  34.times { scene.update } # the remaining fade-out frames (35 total)
+  ok st.screen.fading?, 'one frame short of the fade-out landing, still holding'
+  eq 1000, st.party.gold, 'still not charged -- the screen has not gone fully black yet'
+  scene.update # the 35th fade-out frame: lands fully black, heals, starts the fade back in
+  eq 900, st.party.gold, 'charged the moment the screen went fully black'
+  eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'healed the same frame'
+  ok st.screen.fading?, 'the fade back in starts immediately, not a separate wait'
+  34.times { scene.update } # the fade-in's own remaining frames (35 total)
+  ok st.screen.fading?, 'one frame short of the fade-in landing'
+  scene.update # the fade-in's 35th frame lands fully visible again
+  ok !st.screen.fading?, 'the fade-in has landed'
+  eq 0, st.screen.fade_level, 'screen fully visible again'
+end
+
+check 'Show Inn scene: cancelling with B spends nothing, runs No Stay, and never fades' do
   scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
   5.times { scene.update }
+  eq 0, st.screen.fade_level, 'screen fully visible while the prompt is up'
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update # resumes with no stay
+  ok !st.screen.fading?, 'a cancelled stay never starts a fade -- real RPG_RT never reaches ' \
+                         'its eCallInn path when the prompt is declined'
+  eq 0, st.screen.fade_level, 'still fully visible'
   scene.update # runs the No Stay branch
   eq 1000, st.party.gold, 'no gold spent on cancel'
   eq 1, st.party.actors.first.hp, 'no healing on cancel'
@@ -2180,6 +2218,7 @@ check 'Show Inn scene: an unaffordable Accept is ignored' do
   3.times { scene.update }
   ok !st.switches[1] && !st.switches[2], 'Accept is inert while unaffordable'
   eq 50, st.party.gold, 'no gold spent'
+  ok !st.screen.fading?, 'an ignored Accept never starts a fade either'
   # Cancel still works.
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
@@ -2211,9 +2250,10 @@ check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' d
   eq 'InnBGM', st.current_bgm[:name], 'and is now the tracked current BGM'
   RGSS::Audio.reset_bgm
   RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
-  scene.update # resumes with a stay
+  scene.update # accept: starts the fade-out, the BGM swap waits for it to land
+  35.times { scene.update } # drain the 35-frame fade-out
   eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
-     'the field BGM that was playing before the stay replays once it resolves'
+     'the field BGM that was playing before the stay replays once the fade lands'
   eq 'Field', st.current_bgm[:name]
 end
 
@@ -2233,12 +2273,17 @@ check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BG
   scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 0)) # price 0 skips the prompt
   st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
   RGSS::Audio.reset_bgm
-  # No greeting window opens for a free stay, so this reaches both the BGM
-  # swap and the resolved Stay branch in a few frames of ordinary event
-  # processing (unlike the priced-prompt tests, no player input is needed).
+  # No greeting window opens for a free stay, so this reaches the inn BGM in a
+  # couple of frames of ordinary event processing (unlike the priced-prompt
+  # tests, no player input is needed) -- but a free stay still auto-accepts,
+  # so it still fades to black (35 frames) before the field BGM restores and
+  # the resolved Stay branch runs, same as a prompted Accept.
   3.times { scene.update }
+  eq [['InnBGM', 75, 105]], RGSS::Audio.bgm_calls, 'the inn BGM played'
+  ok st.screen.fading?, 'a free stay auto-accepts, so it fades out too'
+  40.times { scene.update } # drain the fade-out (35 frames) and the Stay branch after
   eq [['InnBGM', 75, 105], ['Field', 100, 100]], RGSS::Audio.bgm_calls,
-     'the inn BGM played, then the field BGM was restored, in the same beat'
+     'the field BGM was restored once the fade landed'
   eq 'Field', st.current_bgm[:name]
   ok st.switches[1], 'the Stay branch ran (a free stay always stays)'
 end
