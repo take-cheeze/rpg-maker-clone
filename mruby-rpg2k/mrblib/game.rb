@@ -9531,17 +9531,28 @@ module Game
     end
 
     # A transformation (kind 2): the monster becomes another database enemy,
-    # taking on its name, stats and battle graphic (and its action pattern) while
-    # keeping its place in the fight. Current HP / SP carry over clamped to the
-    # new maxima, matching RPG_RT's Game_Enemy::Transform.
+    # taking on its name, stats and battle graphic (and its action pattern)
+    # while keeping its place in the fight. Current HP / SP carry over
+    # completely unchanged, *not* reclamped to the new maxima -- EasyRPG's
+    # `Game_Enemy::Transform` (`src/game_enemy.cpp`) only ever repoints the
+    # `enemy` database row and refreshes the sprite; it never touches `hp`/
+    # `sp` at all (those are set to the max only once, in the constructor, on
+    # the enemy's very first spawn). `Transform`'s own battle-algorithm
+    # (`Game_BattleAlgorithm::Transform::ApplyCustomEffect`,
+    # `src/game_battlealgorithm.cpp`) never calls `SetAffectedHp`/
+    # `SetAffectedSp` either, so the generic post-effect `ApplyHpEffect`/
+    # `ApplySpEffect` pass skip it outright (`GetAffectedHp() == 0` is a
+    # no-op). A boss can therefore legitimately carry HP above a later,
+    # lower-max "true form" until something else changes it -- a classic
+    # "damage carries across a transformation" design this build's own
+    # clamp made impossible by silently full-healing every downward
+    # transform.
     def enemy_transform_action(b, act)
       into = @ai && @ai.enemy(act.enemy_id)
       return enemy_fallback_attack(b) unless into
       b.name = into.name
       b.atk = into.atk; b.def = into.def; b.agi = into.agi; b.spi = into.spi
       b.max_hp = into.max_hp; b.max_mp = into.max_sp
-      b.hp = b.hp > into.max_hp ? into.max_hp : b.hp
-      b.mp = (b.mp || 0) > into.max_sp ? into.max_sp : b.mp
       b.crit_chance = Battle.crit_chance_of(into)
       b.attr_ranks = Battle.attr_ranks_of(into)
       b.state_ranks = Battle.state_ranks_of(into)

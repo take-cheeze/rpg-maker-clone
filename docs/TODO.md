@@ -6123,6 +6123,36 @@ not yet verified:
   wearer, and RPG2003 `reverse_state_effect` on defensive gear carrying no
   resistance meaning — the first two confirmed to fail against the pre-fix
   code before the fix.
+- ✅ **An enemy Transformation (action kind 2) no longer clamps its current
+  HP/SP down to the new form's maximum — they now carry over completely
+  unchanged, as real RPG_RT does.** Confirmed against EasyRPG's actual C++
+  source: `Game_Enemy::Transform` (`src/game_enemy.cpp`) only ever repoints
+  the `enemy` database row and refreshes the battle sprite — `hp`/`sp` are
+  set to their max exactly once, in the constructor, on the enemy's very
+  first spawn (`Game_Enemy::Game_Enemy`), never again inside `Transform`
+  itself. `Game_BattleAlgorithm::Transform::ApplyCustomEffect`
+  (`src/game_battlealgorithm.cpp`) calls `Game_Enemy::Transform` and nothing
+  else — it never calls `SetAffectedHp`/`SetAffectedSp`, so the generic
+  post-effect `ApplyHpEffect`/`ApplySpEffect` pass every action runs through
+  afterward is a no-op for it (`GetAffectedHp() == 0` short-circuits before
+  `ChangeHp`/`SetHp`, the only place that ever clamps to `GetMaxHp()`, is
+  reached). `Game::Battle#enemy_transform_action`
+  (`mruby-rpg2k/mrblib/game.rb`) instead force-clamped `b.hp`/`b.mp` down to
+  the new form's max whenever the prior value exceeded it — the comment
+  above it even claimed this matched `Game_Enemy::Transform`, which the
+  actual source contradicts outright. This breaks the classic "damage
+  carries across a phase transformation" boss design: a monster with
+  `max_hp = 1000` sitting at 950 HP that transforms into a "true form" with
+  `max_hp = 100` should still take 950 cumulative damage to finish off (its
+  `GetHp()` legitimately exceeding its own `GetMaxHp()` until something else
+  changes it) — this build instead silently full-healed it down to the new
+  100 cap, making the "true form" reveal trivially one-shot-able. Fixed by
+  simply removing the two clamp lines; `max_hp`/`max_mp` still update to the
+  new form's values exactly as before, only the current `hp`/`mp` fields are
+  left untouched. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  transforming a 950-HP/40-SP monster into a 100-max-HP/10-max-SP form and
+  asserting both current values survive exactly, confirmed to fail against
+  the pre-fix code (`expected 950, got 100`) before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
