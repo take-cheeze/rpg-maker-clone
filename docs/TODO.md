@@ -5796,6 +5796,36 @@ not yet verified:
   agility tie resolving deterministically were switched from a real (if
   seeded) RNG to `FixedRng.new(0)`, which zeroes the jitter term and
   restores the pure-Agility ordering they actually mean to exercise.
+- ✅ **A 二刀流 (`double_hand?`) actor with a weapon in both the weapon and
+  shield slots now swings at least twice per basic Attack, even when
+  *neither* individual weapon carries its own 二刀流 "attacks twice"
+  (`dual_attack`) flag.** Confirmed against EasyRPG's actual C++ source:
+  `Game_BattleAlgorithm::Normal::Init` (`src/game_battlealgorithm.cpp`)
+  sums each weapon's own hit count (`GetNumberOfAttacks`) once
+  `GetWeapon() && Get2ndWeapon()` both hold a real weapon — a genuinely
+  different rule from the ordinary single-weapon case
+  (`Game_Actor::GetNumberOfAttacks`'s own max-over-equipment), which the
+  engine already had right via `Actor#dual_attack?`. `Battle::Combatant
+  .from_actor` fed `#dual_attack?`'s plain 2-or-1 straight into
+  `c.strikes` and never consulted `#double_hand?` at all — so a two-weapon
+  actor built from two ordinary weapons (the common case; most 二刀流
+  setups don't additionally flag either weapon `dual_attack`) attacked
+  exactly **once** a round, the same as an unarmed actor, instead of the
+  two independent swings (two independent to-hit/damage/crit rolls, via
+  `Battle#swing`'s existing per-strike loop) real RPG_RT gives them. Fixed
+  by adding `Actor#strike_count`: when both the weapon and shield slots
+  hold a weapon-type item (only possible for a `double_hand?` actor), it
+  sums each one's own `dual_attack`-derived hit count instead of the
+  existing `dual_attack?` scan's implicit max; otherwise it falls back to
+  the already-correct `dual_attack? ? 2 : 1`. `Combatant.from_actor` now
+  reads `#strike_count` (via a new `self.strike_count_of` class helper,
+  matching the file's `self.hit_rate_of`/`self.crit_chance_of` style)
+  instead of `#dual_attack?` directly. Covered by three new
+  `scripts/rpg2k_logic_check.rb` checks — two ordinary weapons summing to
+  2, a single equipped weapon still swinging once, and one `dual_attack`
+  weapon plus one ordinary weapon summing to 3, not 2 — all three
+  confirmed to fail against the pre-fix code before the fix (`#strike_count`
+  did not exist at all).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

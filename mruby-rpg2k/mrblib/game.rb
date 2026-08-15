@@ -1878,6 +1878,27 @@ module Game
     # gives 13 of its weapons this.
     def dual_attack?; equipment_flag?(:dual_attack, true); end
 
+    # A basic Attack's total swing count. Ordinarily this is just
+    # `#dual_attack?`'s 2-or-1 (the higher of whatever weapon-type items are
+    # equipped, which collapses to one item's own flag for a single weapon).
+    # But a `#double_hand?` actor with a weapon in *both* the weapon and
+    # shield slots is a genuinely different case: EasyRPG's
+    # `Game_BattleAlgorithm::Normal::Init` (`src/game_battlealgorithm.cpp`,
+    # the `Style_MultiHit` style RPG2003 uses by default whenever
+    # `GetWeapon() && Get2ndWeapon()` both hold a real weapon) sums each
+    # weapon's own hit count instead of taking the higher of the two the way
+    # `Game_Actor::GetNumberOfAttacks`'s ordinary single-weapon max does --
+    # so a two-weapon actor swings **at least twice** even when *neither*
+    # individual weapon is itself flagged 二刀流, the common case for a
+    # dual-wield setup built from two ordinary weapons.
+    def strike_count
+      return dual_attack? ? 2 : 1 unless @db.respond_to?(:item)
+      weapons = @equipment.map { |iid| iid && iid != 0 ? @db.item[iid] : nil }
+                          .select { |it| it && it.respond_to?(:type) && it.type == ITEM_WEAPON }
+      return dual_attack? ? 2 : 1 unless weapons.size >= 2
+      weapons[0, 2].reduce(0) { |s, it| s + (it.respond_to?(:dual_attack) && it.dual_attack ? 2 : 1) }
+    end
+
     # 必中 — an equipped weapon whose attack cannot be evaded. RPG_RT's
     # `CalcNormalAttackToHit` returns before it applies the agility / evasion
     # term for such a weapon. 13 of Nepheshel's weapons carry it.
@@ -7631,13 +7652,21 @@ module Game
     # {} when the source (a bare fixture) doesn't model them.
     def self.state_ranks_of(b); b.respond_to?(:state_ranks) ? b.state_ranks : {}; end
 
+    # A battler's basic-attack swing count (`Actor#strike_count`, which
+    # folds in the plain `#dual_attack?` case too); 1 for an enemy or a bare
+    # fixture that models neither.
+    def self.strike_count_of(b)
+      return b.strike_count if b.respond_to?(:strike_count)
+      flag_of(b, :dual_attack?) ? 2 : 1
+    end
+
     def self.from_actor(a)
       c = Combatant.new(a.name, a.atk, a.def, a.agi, a.hp, a.max_hp,
                     nil, false, a.mp, a.max_mp, a.int, nil, a, actor_states(a),
                     nil, crit_chance_of(a), prevents_crit_of(a),
                     attr_ranks_of(a), atk_attrs_of(a), nil, hit_rate_of(a),
                     state_ranks_of(a))
-      c.strikes = flag_of(a, :dual_attack?) ? 2 : 1
+      c.strikes = strike_count_of(a)
       c.ignores_evasion = flag_of(a, :ignores_evasion?)
       c.attack_all = flag_of(a, :attack_all?)
       c.preemptive = flag_of(a, :preemptive?)

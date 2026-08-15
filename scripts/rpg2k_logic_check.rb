@@ -14496,6 +14496,39 @@ check 'equipping a second weapon from the bag lands it in the shield slot' do
   eq 95, hero.attack_hit_rate, 'the better of the two weapons\' hit rates'
   eq 20, hero.weapon_crit_bonus, 'the dagger\'s crit bonus, the sword carrying none'
   eq 10 + 20 + 15, hero.atk, 'both weapons\' attack bonuses are summed in, like any slot'
+  # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
+  # Normal::Init (src/game_battlealgorithm.cpp) sums each weapon's own hit
+  # count (GetNumberOfAttacks) once both GetWeapon() and Get2ndWeapon() hold
+  # a real weapon, rather than taking the higher of the two the way the
+  # single-weapon case (Game_Actor::GetNumberOfAttacks's own max-over-
+  # equipment) does -- so a 二刀流 actor swings *twice* even though *neither*
+  # the sword nor the dagger is itself flagged 二刀流 (attacks twice).
+  eq 2, hero.strike_count, 'two ordinary weapons still add up to two swings'
+end
+
+check 'a single weapon (no second hand filled) still swings once unless it is ' \
+      'itself 二刀流' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  ok st.party.equip_from_bag(hero, 1, Game::Actor::WEAPON_SLOT)
+  eq 1, hero.strike_count, 'only one weapon equipped -- the ordinary single-weapon case'
+end
+
+check 'a 二刀流 actor with one dual_attack weapon sums 2 + 1, not just 2' do
+  items = { 1 => fake_item(type: 1, atk: 20, hit: 95, dual_attack: true), # 二刀流 sword: 2 swings
+            2 => fake_item(type: 1, atk: 15, hit: 85) }                  # ordinary dagger: 1 swing
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 8 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(hero, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(hero, 2, Game::Actor::SHIELD_SLOT)
+  eq 3, hero.strike_count, "the dual_attack sword's 2 swings plus the dagger's 1"
 end
 
 check 'a shield is rejected for a 二刀流 actor\'s shield slot even named directly' do
