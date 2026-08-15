@@ -4597,6 +4597,17 @@ module Game
           physical_rate: (sk.physical_rate || 0) * 10 }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0,
+          # EasyRPG's `Algo::CalcSkillEffect` runs `Attribute::
+          # ApplyAttributeSkillMultiplier` unconditionally -- there is no
+          # heal-vs-damage branch gating it -- so a recovery skill tagged
+          # with an elemental attribute scales by the target's resistance
+          # exactly like an attack skill's `attributes:` above. This is what
+          # lets a database tag a heal with a custom attribute and set a
+          # character's own resistance to it to make them harder/easier to
+          # heal, or build a caster-excluding MP-restore via 0% self-resistance
+          # (confirmed against algo.cpp directly and independently by
+          # @2000_battle_bot/デフォ戦bot trivia on this exact trick).
+          attributes: skill_attributes(sk),
           variance: skill_variance(sk), attr_shift: shift, attr_ids: shift_ids,
           stat_mod_keys: stat_keys,
           # The raw, un-gated effect a buff-only skill (affect_hp clear,
@@ -10361,6 +10372,12 @@ module Game
         # 0 throughout, but the modifier still applies off the skill's own
         # base effect.
         stat_amount = cmd[:stat_effect] || 0
+        # Elemental scaling applies to a recovery's own effect exactly the way
+        # it applies to an attack's (see #battle_skill_command's ally branch
+        # comment above) -- EasyRPG's `CalcSkillEffect` order is attribute
+        # multiplier first, then variance last, for either sign of effect.
+        hp = apply_attr_multiplier(hp, cmd[:attributes], target)
+        mp = apply_attr_multiplier(mp, cmd[:attributes], target)
         if @variance && cmd[:variance] && cmd[:variance] > 0
           hp = varied(hp, cmd[:variance])
           mp = varied(mp, cmd[:variance])
