@@ -3319,7 +3319,7 @@ module Game
     # `#alternate_battle_layout?` above, which is also true for the plain
     # sprite-only layout (1). The party status panel reads this to know when
     # to replace its text status window with the gauge card layout (see
-    # scene/map.rb's `#refresh_battle_status`); an alternative-layout (1)
+    # scene/battle.rb's `#refresh_battle_status`); an alternative-layout (1)
     # database, or one with no `#battlecommands` table at all, reads false.
     def gauge_battle_layout?
       return false unless @db.respond_to?(:battlecommands)
@@ -3331,7 +3331,7 @@ module Game
     # chunk 29 field 2 -- 0 manual, 1 automatic; see schema.rb). Manual is
     # `Game::Actor#battle_x`/`#battle_y` read as literal screen coordinates;
     # automatic computes a grid formula this runtime does not implement yet
-    # (see the alternate-battle-sprite renderer in scene/map.rb), so callers
+    # (see the alternate-battle-sprite renderer in scene/battle.rb), so callers
     # use this to know when to fall back to the raw coordinates and log a
     # diagnostic instead of guessing at the formula. A bare test fixture with
     # no `#battlecommands` table, or an RPG2000 database (which never sets
@@ -4897,6 +4897,14 @@ module Game
     attr_accessor :direction, :move_speed, :move_frequency
     attr_accessor :through, :facing_locked, :animation_stopped, :transparency
     attr_accessor :layer, :overlap_forbidden
+    # The map event id this character mirrors (Scene::Map#build_event), or
+    # Scene::Map::MOVE_TARGET_PLAYER (10001) for the party's own forced
+    # Set Move Route mirror (Scene::Map#start_player_route) -- an id-based
+    # "is this the hero" test for #char_passable?/#char_can_land? that does
+    # not depend on still holding the exact same object reference a route
+    # started with. nil for a character built without either (a vehicle
+    # mirror, which never reaches those two methods -- see VehicleWorld).
+    attr_accessor :event_id
     # Whether this character's own page Animation Type is one of the three
     # "fixed direction" kinds (Game::EventGraphic.fixed_direction? -- a plain
     # or continuous walk with facing pinned, or a single never-animating
@@ -4945,6 +4953,7 @@ module Game
       @jumped = false
       @layer = 1                # priority type: same as normal characters
       @overlap_forbidden = false # LCF page field 35: collide regardless of layer
+      @event_id = nil            # set by Scene::Map once it knows what this mirrors
     end
 
     def set_graphic(name, index)
@@ -8164,7 +8173,7 @@ module Game
     # A heavily-armoured target can shrug off a weak attacker's blow entirely
     # (a genuine "no damage" hit, not a guaranteed minimum scratch); `#deal_attack`
     # already builds an ordinary attack-shaped log entry regardless of the
-    # resulting damage value, and `#battle_result_line` (`scene/map.rb`) already
+    # resulting damage value, and `#battle_result_line` (`scene/battle.rb`) already
     # renders a 0 as the "undamaged" term line rather than a damage number, so
     # this needed no companion change beyond the floor itself.
     def self.attack_damage(atk, dfn)

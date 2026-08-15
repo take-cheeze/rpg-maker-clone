@@ -58,7 +58,7 @@ frame — with `map.layers` alone at 22.7ms (66.5% of work) and ~350,000
 allocations/second. Those are the numbers the rest of this page reasons about,
 and they are what the tile cache and `Bitmap#copy_blt` removed.
 
-Note that `map.layers` and `map.chars` are inside the `if @battle_ui` gate in
+Note that `map.layers` and `map.chars` are inside the `if @battle` gate in
 `#render`, so they stop being recorded during a fight — the map is not drawn
 there at all. A profile of a battle-heavy run will show a different shape.
 
