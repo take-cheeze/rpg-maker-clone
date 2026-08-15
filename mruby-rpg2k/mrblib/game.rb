@@ -9856,7 +9856,16 @@ module Game
     # `cost:` (the amount actually spent once the action is queued) already
     # reuses unchanged.
     def auto_battle_raw_cost(sk, caster)
-      if sk.respond_to?(:sp_type) && sk.sp_type == 1
+      # The percent-cost branch is RPG2003-only, exactly like
+      # Game::Party#skill_cost's own `rpg2003? && sk.sp_type == 1` gate --
+      # ported from the same edition check EasyRPG's `Algo::CalcSkillCost`
+      # applies (`Player::IsRPG2k3() && skill.sp_type == SpType_percent`).
+      # Without it, a stray nonzero `sp_type` byte on an RPG2000 database (the
+      # field's schema default is 0, but the RPG2000 editor never controls it,
+      # so a hand-edited row can carry anything) would route through the
+      # percent formula here even though the actual charge (#skill_cost) never
+      # would, inflating the ranking-only cost term this feeds.
+      if @rpg2003 && sk.respond_to?(:sp_type) && sk.sp_type == 1
         (caster.max_mp || 0) * (sk.respond_to?(:sp_percent) ? (sk.sp_percent || 0) : 0) / 100
       else
         sk.respond_to?(:sp_cost) ? (sk.sp_cost || 0) : 0
