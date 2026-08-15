@@ -1062,6 +1062,7 @@ class RPG2k
           dir = saved[2] if saved[2]
         end
         ch = Game::Character.new(x, y, dir)
+        ch.event_id = id # #char_passable?/#char_can_land?'s "is this the hero" test
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
@@ -3342,6 +3343,7 @@ class RPG2k
       # it. Input movement is suppressed while the route is active.
       def start_player_route(route, freq)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_char.event_id = MOVE_TARGET_PLAYER # #char_passable?/#char_can_land?'s hero test
         # Through Mode carries over from whatever an earlier route (or one
         # halted mid-Through-Mode) left it at -- a fresh mirror's own default
         # (false) would otherwise silently turn it back off.
@@ -3541,9 +3543,16 @@ class RPG2k
       # block, period" rule #passable? already applies for the hero (see the
       # LAYER_* comment). `overlap_forbidden` blocks any non-hero mover
       # regardless of layer, same as before; the hero's own forced Set Move
-      # Route mirror (`@player_char`) is exempt from it here -- see
-      # #passable? for the hero's own overlap_forbidden gating on an
-      # ordinary step.
+      # Route mirror is exempt from it here -- see #passable? for the hero's
+      # own overlap_forbidden gating on an ordinary step. "Is this the hero"
+      # is answered by `character.event_id == MOVE_TARGET_PLAYER`, not by
+      # comparing against `@player_char` directly -- the mirror #start_
+      # player_route builds is a fresh object every route, so an
+      # `equal?`/object-identity check taken from outside that method (a
+      # `character` this method was merely handed) is only ever reliable at
+      # the exact moment the caller captured it, not in general; `event_id`
+      # is set once, on the object itself, and answers the question no
+      # matter who is asking or when.
       #
       # The chipset half asks **both** tiles at the boundary, each from its
       # own side, as RPG2000's per-direction passability does: the tile a
@@ -3562,7 +3571,7 @@ class RPG2k
         if nx == @state.x && ny == @state.y
           return false if character.layer == LAYER_SAME || character.overlap_forbidden
         end
-        hero = character.equal?(@player_char)
+        hero = character.event_id == MOVE_TARGET_PLAYER
         return false if blockers_at(nx, ny).any? { |b| b[:layer] == LAYER_SAME || (!hero && b[:overlap_forbidden]) }
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
@@ -3596,7 +3605,7 @@ class RPG2k
         if x == @state.x && y == @state.y
           return false if character.layer == LAYER_SAME || character.overlap_forbidden
         end
-        hero = character.equal?(@player_char)
+        hero = character.event_id == MOVE_TARGET_PLAYER
         return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME || (!hero && b[:overlap_forbidden]) }
         return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
