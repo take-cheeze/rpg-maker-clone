@@ -5199,6 +5199,30 @@ not yet verified:
   independently of each other, and a compound skill's stat-mod effect landing
   on its own roll while its HP effect misses on a different one), each
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **`Game::Battle#fatigue` (the RPG2003 `fatigue` page condition) now
+  rounds an exact tie to the nearest *even* whole percent, not always up.**
+  A prior version of this method's own comment claimed it used "the same
+  round-half-up the C++ does" — checked directly against EasyRPG's actual
+  `Game_Party::GetFatigue` (`src/game_party.cpp`) rather than that assumption:
+  it computes the ratio as a float, then rounds through `Utils::RoundTo<int>`
+  (`src/utils.h`), which calls `std::lrint` — under the default IEEE 754
+  `FE_TONEAREST` rounding mode (nothing in EasyRPG's source changes it),
+  `lrint` rounds an exact `.5` to the nearest *even* integer (banker's
+  rounding), not up. A single ally at max HP 16 / current HP 3 with no SP
+  (the SP term forced to a 1-denominator per the method's own existing
+  divide-by-zero guard) computes exactly 12.5 before rounding: EasyRPG lands
+  on 12 (already even), this method's round-half-up landed on 13 — one point
+  apart on the `fatigue` page condition / RPG2003 enemy-AI `COND_FATIGUE`
+  threshold at that exact boundary. Fixed with a new `Game.round_half_even`
+  (integer `num`/`den` arithmetic: compare `2 * remainder` against the
+  denominator, and break an exact tie toward whichever quotient is even),
+  replacing the method's own hand-rolled round-half-up integer trick.
+  Every existing `#fatigue` test computes a ratio that isn't an exact `.5`
+  tie, so none of them change. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (the real 12.5-tie `#fatigue` case
+  landing on 88 rather than 87, and four direct `Game.round_half_even`
+  cases spanning an even tie, an odd tie, and two ordinary non-tie
+  fractions), confirmed to fail against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
