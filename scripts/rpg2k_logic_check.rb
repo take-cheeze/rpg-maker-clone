@@ -12038,10 +12038,26 @@ check 'a switch-gated action is invalid with no AI env to ask' do
   ok enemy_entry([act], nil)[:defend].nil?, 'falls back to attacking'
 end
 
-check 'an actor-count action ranges over the living party' do
+# "Enemies" in the editor's own condition list -- EasyRPG's IsActionValid
+# (src/enemyai.cpp) reads game_enemyparty's own GetActiveBattlers here, never
+# game_party, so this ranges over the acting monster's own living troop-mates,
+# not the player party's headcount.
+check 'an actor-count action ranges over the living enemy troop, not the party' do
   act = enemy_action(kind: 0, basic: 2, condition_type: 3,
                      condition_param1: 2, condition_param2: 4)
-  ok enemy_entry([act], nil)[:defend].nil?, 'a party of one is below the range'
+  hero = combatant('Hero', 40, 0, 20, 500)
+  foe1 = combatant('Slime1', 40, 0, 5, 500)
+  foe1.actions = [act]
+  foe2 = combatant('Slime2', 40, 0, 5, 500)
+  foe3 = combatant('Slime3', 40, 0, 5, 500)
+  b = Game::Battle.new([hero], [foe1, foe2, foe3], Game::Rng.new(1), nil,
+                       false, false, false, false, nil, nil)
+  ok b.send(:enemy_action_valid?, foe1, act),
+     'three troop-mates alive (within 2..4) -- fires regardless of party size'
+  foe2.hp = 0
+  foe3.hp = 0
+  ok !b.send(:enemy_action_valid?, foe1, act),
+     'only foe1 itself left alive now (1, outside 2..4) -- no longer fires'
 end
 
 check 'a turn-gated action uses the battle turn clock' do
