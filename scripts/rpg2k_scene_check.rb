@@ -157,7 +157,14 @@ module RGSS
     # screen) can assert which track started.
     class << self; attr_accessor :bgm_calls; end
     def self.bgm_play(*a); (@bgm_calls ||= []) << a; end
-    def self.reset_bgm; @bgm_calls = []; @bgm_volume_calls = []; @bgm_pan_calls = []; @bgm_fade_calls = []; end
+    def self.reset_bgm
+      @bgm_calls = []
+      @bgm_volume_calls = []
+      @bgm_pan_calls = []
+      @bgm_fade_calls = []
+      @me_calls = []
+      @me_stop_calls = 0
+    end
     # Recorded separately from bgm_calls: a same-file Play BGM re-trigger
     # calls this instead of bgm_play (see Game::Interpreter#play_audio /
     # Scene::Map#play_bgm), so the two checks stay distinguishable.
@@ -177,6 +184,14 @@ module RGSS
     # driven: a value that jumps backwards is how SDL_mixer reports a loop.
     class << self; attr_accessor :pos; end
     def self.bgm_pos; @pos || 0; end
+    # Record me_play/me_stop calls (the victory fanfare, #play_victory_bgm /
+    # #restore_pre_battle_bgm) separately from bgm_calls -- the whole point of
+    # the fix they cover is that the fanfare goes through the one-shot ME
+    # channel rather than the ordinary looping BGM one, so a check needs to
+    # tell the two apart.
+    class << self; attr_accessor :me_calls, :me_stop_calls; end
+    def self.me_play(*a); (@me_calls ||= []) << a; end
+    def self.me_stop; @me_stop_calls = (@me_stop_calls || 0) + 1; end
     # Record se_play calls so system-SFX checks can assert which sound fired.
     class << self; attr_accessor :se_calls; end
     def self.se_play(*a); (@se_calls ||= []) << a; end
@@ -5052,13 +5067,20 @@ check 'Enemy Encounter scene: victory plays the database battle_end_music over t
   2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
   RGSS::Audio.reset_bgm
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
-  eq [['VictoryBGM', 90, 105]], RGSS::Audio.bgm_calls,
-     'the victory fanfare played as soon as the result screen appeared'
-  eq 'VictoryBGM', st.current_bgm[:name]
+  eq [], RGSS::Audio.bgm_calls,
+     'the fanfare is a one-shot ME, not an ordinary looping BGM play'
+  eq [['VictoryBGM', 90, 105]], RGSS::Audio.me_calls,
+     'the victory fanfare played over the result screen through the ME channel'
+  eq 'BattleBGM', st.current_bgm[:name],
+     "the ME is not tracked as the ongoing BGM -- #current_bgm still names " \
+     'whatever the last actual BGM play was (the battle track)'
   RGSS::Audio.reset_bgm
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
   scene.update
   RGSS::Input.triggered = []
+  eq 1, RGSS::Audio.me_stop_calls,
+     'the fanfare is ended through its own ME stop path rather than a bare BGM play ' \
+     'yanking the shared music stream out from under it'
   eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
      'the field BGM that was playing before the fight replays once the result is dismissed'
   eq 'Field', st.current_bgm[:name]
@@ -5079,9 +5101,11 @@ check 'Enemy Encounter scene: a Change System BGM victory override beats the dat
   2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
   RGSS::Audio.reset_bgm
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
-  eq [['CustomVictory', 60, 130]], RGSS::Audio.bgm_calls,
+  eq [], RGSS::Audio.bgm_calls,
+     'the fanfare is a one-shot ME, not an ordinary looping BGM play'
+  eq [['CustomVictory', 60, 130]], RGSS::Audio.me_calls,
      'the Change System BGM override played instead of the database battle_end_music'
-  eq 'CustomVictory', st.current_bgm[:name]
+  eq 'BattleBGM', st.current_bgm[:name]
 end
 
 check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do

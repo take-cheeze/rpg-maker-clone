@@ -1922,16 +1922,19 @@ class RPG2k
       # #play_battle_bgm swaps in the battle track when the fight opens. RPG_RT
       # stops the battle BGM the instant the last enemy falls and plays the
       # System's battle_end_music (Change System BGM slot 1) for the "Victory! /
-      # EXP gained" screen; #restore_pre_battle_bgm already brings the
-      # pre-battle field/vehicle track back once that screen is dismissed
-      # (#finish_battle), so nothing here needs to remember or restore
-      # anything of its own. A game with no victory BGM configured leaves
-      # whatever was playing (the battle track) alone, the same blank-Music
-      # no-op #battle_bgm documents.
+      # EXP gained" screen -- a genuine one-shot "ME" (music effect), not an
+      # ordinary looping track, so RGSS::Audio.me_play is what plays it rather
+      # than #play_bgm: SDL_mixer's ME channel plays it exactly once and, left
+      # alone, auto-resumes whatever BGM it interrupted once it ends.
+      # #restore_pre_battle_bgm already brings the pre-battle field/vehicle
+      # track back once that screen is dismissed (#finish_battle), so nothing
+      # here needs to remember or restore anything of its own. A game with no
+      # victory BGM configured leaves whatever was playing (the battle track)
+      # alone, the same blank-Music no-op #battle_bgm documents.
       def play_victory_bgm
         music = victory_bgm
         return unless music
-        play_bgm(music)
+        RGSS::Audio.me_play(music[:name], music[:volume] || 100, music[:tempo] || 100)
       rescue StandardError => e
         $stderr.puts "[RPG2k] victory BGM failed: #{e.message}"
       end
@@ -1958,10 +1961,21 @@ class RPG2k
       # so the field/vehicle track was never interrupted and there is nothing
       # to bring back -- and when the party is headed to the Game Over screen
       # instead, which plays its own music and never returns to this map.
+      #
+      # A victory's fanfare (#play_victory_bgm's RGSS::Audio.me_play) is still
+      # a one-shot "ME" playing over the (silent, since the battle BGM stopped
+      # when the last enemy fell) music channel at this point if the player
+      # dismissed the result screen before it finished on its own --
+      # RGSS::Audio.me_stop ends it cleanly through the ME's own stop path
+      # (a no-op if it had already finished) rather than leaving #play_bgm's
+      # RGSS::Audio.bgm_play to yank the shared music stream out from under
+      # it. Harmless to call for an escape or a defeat too: there is no ME
+      # active then, so it is a no-op.
       def restore_pre_battle_bgm
         bgm = @pre_battle_bgm
         @pre_battle_bgm = nil
         return unless bgm && bgm[:name] && !bgm[:name].empty?
+        RGSS::Audio.me_stop
         play_bgm(bgm)
       rescue StandardError => e
         $stderr.puts "[RPG2k] restoring BGM after battle failed: #{e.message}"
