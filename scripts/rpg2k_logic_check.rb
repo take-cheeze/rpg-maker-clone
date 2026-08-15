@@ -4306,6 +4306,34 @@ check 'Game::Party#alternate_battle_layout? reads chunk 29 field 7 (BattleType)'
      'BattleType_gauge (2) -> alternate layout'
 end
 
+check 'Game::Party#gauge_battle_layout? reads chunk 29 field 7, true for gauge (2) only' do
+  # An RPG2000 database (no chunk 29 at all) reads false, same as
+  # #alternate_battle_layout? does for the same fixture.
+  eq false, party_state.party.gauge_battle_layout?,
+     'no Battle Commands table at all -> not the gauge layout'
+
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+
+  traditional = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 0))
+  eq false, Game::Party.new(traditional).gauge_battle_layout?,
+     'BattleType_traditional (0) -> not the gauge layout'
+
+  # Unlike #alternate_battle_layout? (true for both 1 and 2), this reads
+  # false for the plain alternative layout -- only battle_type 2 replaces
+  # the status panel with the gauge card layout (scene/map.rb's
+  # #refresh_battle_status); battle_type 1 keeps the unchanged text rows.
+  alternative = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 1))
+  eq false, Game::Party.new(alternative).gauge_battle_layout?,
+     'BattleType_alternative (1) -> not the gauge layout'
+
+  gauge = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                           battlecommands: FakeBattleCommandsTable.new({}, 2))
+  eq true, Game::Party.new(gauge).gauge_battle_layout?,
+     'BattleType_gauge (2) -> the gauge layout'
+end
+
 check 'Game::Party#automatic_battle_placement? reads chunk 29 field 2 (Placement)' do
   eq false, party_state.party.automatic_battle_placement?,
      'no Battle Commands table at all -> manual (the schema default)'

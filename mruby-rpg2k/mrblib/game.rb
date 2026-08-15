@@ -3152,6 +3152,19 @@ module Game
       table && table.battle_type != 0 ? true : false
     end
 
+    # Whether the database asks specifically for RPG2003's gauge battle-screen
+    # presentation (`battlecommands.battle_type == 2`) -- distinct from
+    # `#alternate_battle_layout?` above, which is also true for the plain
+    # sprite-only layout (1). The party status panel reads this to know when
+    # to replace its text status window with the gauge card layout (see
+    # scene/map.rb's `#refresh_battle_status`); an alternative-layout (1)
+    # database, or one with no `#battlecommands` table at all, reads false.
+    def gauge_battle_layout?
+      return false unless @db.respond_to?(:battlecommands)
+      table = @db.battlecommands
+      table && table.battle_type == 2 ? true : false
+    end
+
     # RPG2003's battle-sprite placement choice (`battlecommands.placement`,
     # chunk 29 field 2 -- 0 manual, 1 automatic; see schema.rb). Manual is
     # `Game::Actor#battle_x`/`#battle_y` read as literal screen coordinates;
