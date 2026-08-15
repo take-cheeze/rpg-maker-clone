@@ -3696,10 +3696,24 @@ following this paragraph as the original record.
   fuller writeup under the "Documented race condition" bullet, "Full-site
   sweep" section below, where this is fixed (`Scene::Map#drive_event`'s
   `:battle` case, `mruby-rpg2k/mrblib/scene/map.rb`).
-- `017_heiretu_totyu_end/hei_mukou.htm` — (a) a Parallel Process's appearance
-  condition going false mid-execution isn't observed until the process
-  naturally hits a Wait/yield point, not instantly (may already follow from
-  how `step_parallel` is structured — unverified). ✅ (b) **Set Move Route +
+- `017_heiretu_totyu_end/hei_mukou.htm` — ✅ (a) **a Parallel Process's
+  appearance condition going false mid-execution isn't observed until the
+  process naturally hits a Wait/yield point, not instantly — confirmed
+  already correct.** `Scene::Map#step_parallel` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) only ever resumes the interpreter object it already has for
+  a given parallel-process slot; it has no code path that re-derives
+  `EventPage.select`/re-checks the owning event's page conditions on an
+  in-flight interpreter mid-command the way a fresh `#build_parallels` pass
+  does at the *start* of a lap — a condition flip is only ever noticed the
+  next time that process finishes and `#build_parallels`/`#new_parallel`
+  runs again, i.e. at its own natural yield-to-restart boundary, not
+  instantly. This is the identical fact already recorded (and cross-
+  referenced from here) under the "Untriaged backlog, from
+  `2k/01_shoshin/011_siyou/`" **Parallel Process** bullet below ("appearance
+  condition going false mid-run only stops at the next yield point, not
+  instantly ... `step_parallel` structurally cannot reconsider a running
+  interpreter's own condition mid-command"); no separate check needed beyond
+  what that entry already establishes. ✅ (b) **Set Move Route +
   "wait for completion" (Proceed With Movement) issued from a Parallel
   Process now actually blocks that process**, instead of the command reading
   as a fire-and-forget no-op regardless of "wait for completion" — including
@@ -3741,8 +3755,8 @@ following this paragraph as the original record.
   already-fixed foreground "Set Move Route targeting a currently-hidden map
   event freezes Proceed With Movement" check (`docs/TODO.md`'s `015_shujinkou_idou_huka`
   entry above) relies on — no separate `@stuck_move_targets` handling was
-  needed for the parallel-process case. Part (a) of this same bullet remains
-  open.
+  needed for the parallel-process case. Both parts of this bullet are now
+  disposed of.
 - `015_shujinkou_idou_huka/` — catalogue of hero-can't-move causes; most
   already covered by existing passability/move-route logic. ✅ **"Force Move
   All" targeting a currently-hidden (appearance-conditions-unmet) map event
@@ -3780,11 +3794,30 @@ following this paragraph as the original record.
   refreshed; a control case pins that a target id with no matching event *at
   all* is left as a plain no-op, not this freeze), the first confirmed to
   fail against the pre-fix code before the fix.
-- `037_zen_tuukou_kanou/` — passability is the AND of lower+upper chip
-  passability (probably already correct, unverified); only the chipset's
-  literal top-left upper tile is the canonical "no tile" transparent chip,
-  any other blank-looking one carries its own (possibly impassable)
-  identity — content-authoring nuance, likely nothing to fix engine-side.
+- ✅ `037_zen_tuukou_kanou/` — **passability already combines lower+upper chip
+  passability correctly, confirmed against the actual algorithm rather than
+  a plain AND.** `ChipSet#passable_tile?` (`mruby-rpg2k/mrblib/game.rb`),
+  called by `Scene::Map#passable?`/`#char_passable?`/`#char_can_land?`/
+  `#vehicle_passable?`/`#airship_landable?` alike, is more precise than a
+  simple AND: an upper tile that blocks the direction wins outright (how a
+  counter, blocked every side, refuses entry even over passable ground); one
+  that permits it but isn't flagged `ABOVE_BIT` is solid ground in its own
+  right and the check stops there without consulting the lower layer at all;
+  only an `ABOVE_BIT`-flagged upper tile (or no upper tile) falls through to
+  the lower layer's own passability — the same rule EasyRPG's
+  `Game_Map::IsPassableTile` documents. A tile blocked by *either* layer (the
+  simple-AND reading) is still refused overall, so the claim's practical
+  upshot holds; the engine just doesn't literally AND two independent
+  booleans, it short-circuits through whichever layer is authoritative. The
+  second half — only the chipset's literal top-left upper tile is the
+  canonical transparent "no tile" chip, any other blank-looking one carries
+  its own (possibly impassable) identity — is a content-authoring nuance
+  about how a chipset's upper-layer flags table is filled in, not an engine
+  rule: `upper_flags`/`passable_tile?` read whatever the actual per-tile
+  flags say for the tile id given, with no hardcoded "blank tile" special
+  case anywhere, so an author-supplied non-transparent "blank" upper tile
+  already gets its own real flags read and honoured. Nothing to fix
+  engine-side.
 - ✅ `028_tokushu_huka/` — a skill whose Attack/Defense Attribute is configured
   as a **weapon** attribute (vs. a **magic** attribute) can only be used
   while a weapon carrying that same attribute is equipped; armour with the
@@ -3792,19 +3825,35 @@ following this paragraph as the original record.
   attribute-based equip-gating at all before this — see the "Database field
   semantics" entry below, now implemented as `Game::Party#can_cast?` /
   `#weapon_attribute_ready?`.
-- `033_load/` — editing a map in the *editor* after a save exists resets
-  that save's event positions to default on load, and database edits (e.g.
-  reordering Items) desync old saves since items are referenced by
-  index/id. Narrow/likely not applicable — this reimplementation has no
-  "map data changed since this save" concept to model.
-- `027_tokushu_suicchi/` — a Skill Type "Switch" becoming unselectable in
-  battle until its attributes are reset appears to be an *editor* bug that
-  produces malformed authored data, not runtime engine behaviour — probably
-  nothing to reproduce here.
-- `001_bug_taisaku/`, `014_shift/`, `024_shori_ochi/`, `032_bgm_naranai/`,
-  `040_siro_bubun/` — debugging-technique guide, Windows StickyKeys dialog,
-  frame-rate-drop authoring advice, and two Windows/graphics-import issues,
-  respectively. Not engine game-logic; skip.
+- ✅ `033_load/` — **not applicable: editing a map in the *editor* after a
+  save exists resets that save's event positions to default on load, and
+  database edits (e.g. reordering Items) desync old saves since items are
+  referenced by index/id.** Both halves are consequences of a real RPG2000
+  editor mutating `.lmu`/`.ldb` files on disk out from under a save that was
+  taken against the old data — a genuinely stateful, file-system-level
+  authoring workflow this reimplementation has no counterpart for (there is
+  no "map/database data changed since this save" concept, no separate
+  editor process, and no on-disk `.lmu`/`.ldb` mutation path at all — a save
+  is always loaded against whatever map/database data is currently running).
+  Nothing engine-side to model or fix.
+- ✅ `027_tokushu_suicchi/` — **not applicable: a Skill Type "Switch"
+  becoming unselectable in battle until its attributes are reset is an
+  *editor*-side authoring bug that produces malformed data (a Skill Type
+  entry left without a valid backing Switch reference), not a runtime
+  engine rule.** This codebase has no RPG2000-editor equivalent that could
+  reproduce the malformed-authoring step in the first place — any Skill
+  Type reaching the runtime already has whatever switch reference the
+  `.ldb` actually encodes, so there is no "becomes unselectable" state
+  distinct from "the database says it's unselectable" for the engine to get
+  right or wrong. Nothing to reproduce here.
+- ✅ `001_bug_taisaku/`, `014_shift/`, `024_shori_ochi/`, `032_bgm_naranai/`,
+  `040_siro_bubun/` — **not applicable, all five: a debugging-technique
+  guide, a Windows StickyKeys dialog interaction, frame-rate-drop authoring
+  advice, and two Windows/graphics-import issues, respectively.** None
+  describes RPG_RT engine game-logic — they document Windows OS behaviour,
+  the RPG2000 *editor's* own import tooling, and general troubleshooting
+  advice for content authors, none of which this engine reimplementation
+  has a corresponding code path for. No action needed.
 
 #### Untriaged backlog, from `2k/01_shoshin/011_siyou/` (ツクールの仕様)
 Full page read; ~140 distinct quirks catalogued, grouped by the page's own
@@ -3905,9 +3954,12 @@ Everything below is unverified against the codebase.
   runtime analog) remain unverifiable in this environment and are not
   modelled. ("A variable can't pick the called common-event id directly" is
   confirmed already correct — see below.)
-- **Wait** — an inline "(W)" wait option is identical to a separate Wait
+- ✅ **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
-  above).
+  above — `do_wait`/`drive_wait` cost exactly one frame for a zero-length
+  wait, and this codebase's own event-command parser has no separate
+  "inline (W)" opcode distinct from the dedicated Wait command in the first
+  place, so there is nothing that could diverge between the two).
 - **Encounter** — ✅ **standing on a "hero touches event" tile suppresses
   random encounters there.** `Scene::Map#check_random_encounter` rolled for
   a wandering-monster fight on every ordinary step regardless of what stood
@@ -3968,7 +4020,7 @@ Everything below is unverified against the codebase.
   as the `015_shujinkou_idou_huka` item above — now fixed there, see the
   "Untriaged backlog, from `2k/09_bug/`" section above for the full
   writeup).
-- **Move Speed is dead code engine-wide in this codebase's rpg2k
+- 🚧 **Move Speed is dead code engine-wide in this codebase's rpg2k
   `Scene::Map` — a real, well-evidenced, deliberately still-open bug, not a
   stale doc note.** `Scene::Map::SPEED = 2` (px/frame, `mruby-rpg2k/mrblib/
   scene/map.rb`) is hardcoded, and every slide — ordinary player walking
@@ -4158,9 +4210,41 @@ Everything below is unverified against the codebase.
   as this bullet's own unverified restatement. ✅ **targeting a Vehicle
   position now reads that vehicle's live x/y even from a different map than
   the one shown** — see the fuller writeup under "Full-site sweep" below.
-- **Material data** — an imported asset takes priority over a same-named RTP
-  one; dropping files directly into asset folders bypasses size/transparent-
-  colour-index validation.
+- ✅ **Material data** — **an imported (project) asset already takes
+  priority over a same-named RTP one, confirmed by reading the actual
+  search order — this engine really does have an RTP fallback, not just an
+  absent concept.** `RTP_DIR` is resolved at boot from the Wine registry
+  per maker (`src/main.cxx`: RPG2000/2003 via
+  `Software\ASCII\RPG2000\RuntimePackagePath`, XP via
+  `Software\Enterbrain\RGSS\RTP`, VX/VX Ace via the project's own `Game.ini`
+  `RTP=` name), cleared when `RPG_RT.ini` sets `FullPackageFlag=1` for a
+  self-contained game, and forced empty on the Emscripten build. The
+  loader every rpg2k asset load goes through — `Bitmap#initialize`
+  (`mruby-rgss/mrblib/lib.rb`, shared by `mruby-rpg2k` since it depends on
+  `mruby-rgss`; `Bitmap.new "ChipSet/#{name}", true` and friends in
+  `mruby-rpg2k/mrblib/scene/map.rb`) — tries candidates in a fixed order:
+  `[GAME_DIR, RTP_DIR].each`, i.e. the project's own directory is always
+  probed, across every extension in `EXTENSIONS`, *before* `RTP_DIR` is
+  ever consulted, and only once both roots miss does it fall back to the
+  packed encrypted archive ("loose files shadow the archive," matching real
+  RGSS). A same-named project asset therefore always wins over the RTP
+  one, and an asset present only in the RTP still loads when the project
+  doesn't supply its own — exactly the claimed priority. **The second half
+  is not applicable**: "dropping files directly into asset folders bypasses
+  size/transparent-colour-index validation" describes the real RPG2000
+  *editor's* Material Manager import dialog performing checks that a raw
+  filesystem drop skips — a distinction this engine has no counterpart for,
+  since it has no import step separate from load at all; every asset,
+  however it got onto disk, goes through the identical loader, which
+  already does its own format-level validation regardless of origin: the
+  XYZ decoder (`mruby-rgss/src/lib.cxx`, `load_xyz_mem`) rejects non-positive
+  dimensions and a decompressed length that doesn't match `768-byte palette
+  + width*height` exactly, and both the XYZ and tolerant-PNG paths treat
+  palette index 0 as transparent when the caller's `trans` flag is set
+  (`lib.cxx`'s `trans && p == 0` / `trans && idx == 0`) — the actual
+  transparent-colour-index mechanism the claim gestures at. There is no
+  "bypass" state to reproduce because there is no non-bypass (validated
+  editor-import) state to contrast it with.
 - ✅ **Parallel Process** — yields to others during its own Wait/Show-Text
   pause; appearance condition going false mid-run only stops at the next
   yield point, not instantly (same fact as the `09_bug` item above,
@@ -4332,10 +4416,24 @@ Everything below is unverified against the codebase.
   `scripts/rpg2k_scene_check.rb` check (a boarded boat's own hero-targeted
   Set Move Route on a `boat_pass: false` map stays put instead of sailing
   through), confirmed to fail against the pre-fix code (`[1, 1]` instead of
-  the correct `[0, 1]`) before the fix. **Setting a map event's trigger to
-  Parallel Process and running "Set Vehicle Position" from it crashes
-  RPG_RT** (any other trigger type does not) — an authentic engine crash,
-  probably not worth reproducing; ✅ a
+  the correct `[0, 1]`) before the fix. ✅ **Not applicable: "Setting a map
+  event's trigger to Parallel Process and running 'Set Vehicle Position'
+  from it crashes RPG_RT"** (any other trigger type does not) — an
+  authentic RPG_RT crash-dialog bug, the same category this doc already
+  declines to reproduce elsewhere (the Call Event/Common Event "invalid
+  target" Windows error dialogs a few bullets up, and the general "this
+  project generally does not reproduce RPG_RT's own Windows error dialogs"
+  policy stated there). This codebase's own `do_set_vehicle_location` (Set
+  Vehicle Location, 10850, `mruby-rpg2k/mrblib/interpreter.rb`) has no
+  trigger-type awareness at all and simply repositions the target
+  `Game::Vehicle` regardless of which
+  interpreter (foreground or any parallel process, whatever page trigger
+  started it) issued the command — reproducing a genuine engine crash for
+  one specific trigger type would mean deliberately raising an error where
+  this codebase currently succeeds, which is a regression relative to
+  every other command in this doc's own error-catalog policy of "no crash
+  where none is otherwise modelled." Not reproduced, matching the existing
+  Windows-dialog exclusions. ✅ a
   vehicle's x/y/screen-x/y can be read via variable ops from a different map
   than it currently occupies — `Game::Interpreter#event_operand`'s Control
   Variables "character position" operand (type 6) recognised the hero (ref
@@ -4444,34 +4542,79 @@ Everything below is unverified against the codebase.
   keeps rendering.) Covered by a new `scripts/rpg2k_scene_check.rb` check
   (a picture shown and mid-move stays visible, keeps compositing every
   frame, and keeps advancing its move while a message window is open, then
-  is still visible once the window closes). **changing maps clears all
+  is still visible once the window closes). ✅ **changing maps clears all
   Pictures — except via Teleport or Escape (skill/item), which don't clear
-  them**; semi-transparent (1-99%) opacity costs noticeably more than fully
-  opaque/transparent; Erase Picture is instant (no fade) — a gradual fade
-  needs Move Picture to the same spot at 0% opacity instead. (50 slots with
-  the higher id always drawing on top, independent of show order, is
-  confirmed already correct — see below.)
+  them** — confirmed and fixed, see the "Full-site sweep" **Pictures**
+  cluster below (the Teleport/Escape `keep_pictures:` fix). ✅ **semi-
+  transparent (1-99%) opacity costs noticeably more than fully
+  opaque/transparent — confirmed correct.** `Bitmap#stretch_blt`
+  (`mruby-rgss/src/lib.cxx`) takes a cheap direct-write fast path once the
+  combined alpha is fully opaque (`alpha >= 255`) or skips the pixel
+  entirely once it is fully transparent (`alpha <= 0`), and only falls
+  through to the more expensive `blend_over` (extra reads plus per-channel
+  blend math) for anything in between — the same per-pixel cost asymmetry
+  the claim describes. ✅ **Erase Picture is instant (no fade) — a gradual
+  fade needs Move Picture to the same spot at 0% opacity instead** —
+  confirmed correct, see the same "Full-site sweep" **Pictures** cluster
+  below. (50 slots with the higher id always drawing on top, independent of
+  show order, is confirmed already correct — see below.)
 - **Map Event** — "hero touches event" does *not* fire in three specific
-  cases: (a) ✅ the event has already logically started moving into its next
-  tile (hit-test uses the target tile, even if the sprite still visually
-  overlaps the old one) — **already correctly modelled**. `Scene::Map
-  #reoccupy` rewrites `@event_tiles` (what a touch trigger / the player's own
-  passability check reads) to the destination tile the instant a step
-  commits, in the same call that starts the pixel slide (`#start_event_slide`)
-  toward it — the vacated tile's hit-test clears immediately, well before
-  `#event_sliding?` (`disp_x`/`disp_y` catching up to the logical tile) says
-  the sprite has visually arrived. No code change; covered by a new
+  cases (re-read against the source page, `2k/01_shoshin/011_siyou/`, to
+  pin down exactly what each of the three means): (a) ✅ the event has
+  already logically started moving into its next tile (hit-test uses the
+  target tile, even if the sprite still visually overlaps the old one) —
+  **already correctly modelled**. `Scene::Map#reoccupy` rewrites
+  `@event_tiles` (what a touch trigger / the player's own passability check
+  reads) to the destination tile the instant a step commits, in the same
+  call that starts the pixel slide (`#start_event_slide`) toward it — the
+  vacated tile's hit-test clears immediately, well before `#event_sliding?`
+  (`disp_x`/`disp_y` catching up to the logical tile) says the sprite has
+  visually arrived. No code change; covered by a new
   `scripts/rpg2k_scene_check.rb` check pinning that exact gap between the
-  logical and display position mid-step. (b) the event moved onto the hero's
-  own tile
-  (event-initiated contact doesn't count for this trigger — **already
-  correctly modelled**, `move_autonomous` only checks trigger 2 for that
-  case); (c) hero and event simultaneously swap tiles by crossing paths —
-  this "pass-through" also fails to register (looked at this one already —
-  genuinely tricky to verify without a real RPG_RT reference, see prior
-  session notes); if a multi-page event's move route is mid-execution when
-  its page switches, the route restarts *unless* the two pages' move-route
-  settings are byte-identical (**same fact as the "confirmed gap" above**).
+  logical and display position mid-step. (b) ✅ the event moved onto the
+  hero's own tile (event-initiated contact doesn't count for this trigger)
+  — **already correctly modelled, and for a stronger reason than "doesn't
+  count": the event never actually moves there at all.**
+  `Scene::Map#move_autonomous`'s target-tile check (`nx == @state.x && ny
+  == @state.y`) and `Game::MoveRoute#do_move`'s identical `world.hero_
+  position == [nx, ny]` reclassification (the `:touched_hero` status, used
+  by both a page-authored custom route and a Set Move Route) both stop the
+  event from stepping onto the hero's live tile at all — it faces and,
+  if its own trigger is Event Touch (2), fires that instead, but `ch.move`
+  is never called, so there is no tile-based Player Touch (1) hit-test to
+  even consult for this case; it structurally cannot fire. 🚧 (c) **a real,
+  reachable gap, deliberately left open rather than rushed: hero and event
+  simultaneously crossing paths (event moving left as the hero moves right
+  toward it, their two tiles trading places in one step) currently fires
+  Hero Touch when it should not.** The source page is specific that this is
+  a *third*, distinct case from (b) — both parties are mid-move toward each
+  other's *current* tile, not one walking onto an already-stationary other
+  — and states the hit-test is invalidated (`当たり判定が無効になります`)
+  for it, i.e. no trigger fires either way. This codebase's actual frame
+  order (`Scene::Map#update`: `step_events` — which is where an
+  autonomous/route-driven event's move is decided, including the (b) hero-
+  tile refusal above — always runs *before* `step_movement`, which decides
+  and applies the player's own move for the same frame) means the event
+  sees the hero still standing at their *pre-move* tile when it does its
+  own hero-tile check, refuses to advance, and stays put; `step_movement`
+  then finds that same event still sitting on the tile the hero is trying
+  to enter and, if it is a Hero Touch (1) page, fires it via the ordinary
+  `event_at(nx, ny)` check in `#step_movement` — the crossing case collapses
+  into an ordinary "hero walks onto a stationary touch event" outcome
+  instead of the invalidated-hit-test real RPG_RT documents. A correct fix
+  needs the two moves resolved as a genuine pair rather than sequentially:
+  the player's intended direction has to be known (or the outcome
+  reinterpreted) before the event's own hero-tile refusal is decided, so a
+  same-frame "event's target is the hero's current tile AND the hero's own
+  target is that event's current tile" configuration can be recognised and
+  suppressed — a change to the update loop's movement-resolution shape, not
+  a local one-line fix, and risky to rush against the rest of this frame's
+  established sequencing (parallels-before-foreground, forced-route-before-
+  input) without its own dedicated pass. Left open for a future PR with
+  this precise scope. The multi-page move-route-restart clause originally
+  paired with this bullet is the same fact as the already-fixed "Move route
+  continuation across a page switch" entry under "#### Fixed" above, not a
+  separate open item.
 - **Menu screen** — ✅ **Call Menu Screen bypasses "Prohibit Menu" (only the
   player's own Cancel-key shortcut respects it) -- confirmed already
   correct, and now covered by a regression test.** `Scene::Map#
@@ -4498,7 +4641,7 @@ Everything below is unverified against the codebase.
   black-out being undone by opening and closing the menu is ✅ implemented
   — see the "Screen effects" bullet below, same fact from a different site
   page.
-- **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
+- ✅ **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
   where it left off, *unless* the map was edited/re-saved since, in which
   case that event restarts from the top (edge case, likely not applicable
   here — no "map data changed since save" concept). **Resuming mid-Autorun
@@ -5496,7 +5639,7 @@ not yet verified:
   refuses to create one. Covered by a new `scripts/rpg2k_logic_check.rb`
   check (id 51 is silently dropped; the boundary id 50 still works),
   confirmed to fail against the pre-fix code before the fix.
-- Changing maps **auto-clears every picture** — except when the transfer
+- ✅ Changing maps **auto-clears every picture** — except when the transfer
   was via Teleport or Escape, which is an explicit, deliberate exception
   (multiply corroborated). ✅ **The Teleport/Escape skill/item half of this
   is now implemented.** `Scene::Map#perform_teleport` (the one method both
@@ -5545,21 +5688,55 @@ not yet verified:
   actually open) is up and take effect on the very next lap once it closes —
   while confirming the same process's non-picture commands (`Control
   Variables`) keep advancing throughout, so the sibling fix stays intact.
-- Re-issuing **Show Picture** every tick (rather than reusing an
-  already-shown picture via Move Picture) is expensive enough to cause
-  real frame drops; Move Picture, even at 0.0s duration, is cheap and can
-  update position/opacity/tone/zoom all in the same call — this is why
-  the standard idiom across dozens of tutorials is "Show once at 0%
-  opacity, then only ever Move Picture."
-- A picture's source image can be up to 640×480 (vs. the 320×240 screen);
-  rendering off the visible edge is simple clipping, but packing multiple
-  animation frames into one oversized image and under-spacing them (less
-  than a full screen width/height apart) bleeds a neighboring frame's
-  content onto the opposite screen edge — implying non-clamped/toroidal
-  sampling at the image's own bounds, not just clipping the final
-  viewport.
-- Erase Picture is instant; a fade needs Move Picture to the same
-  position at 0% opacity over a duration instead.
+- ✅ **Not applicable: re-issuing Show Picture every tick being expensive
+  enough to cause real frame drops (vs. cheap repeated Move Picture) is a
+  real-RPG_RT-specific performance characteristic, not a state/behaviour
+  rule this engine could reproduce or diverge from.** This engine's own
+  `Game::State#show_picture` (`mruby-rpg2k/mrblib/game.rb`) just replaces a
+  plain `Picture` data object in a Hash — cheap regardless of call
+  frequency — and the actual image bytes are resolved separately, through
+  `Scene::Map#picture_src`'s own `@picture_cache` (keyed by `[name,
+  transparent]`, `mruby-rpg2k/mrblib/scene/map.rb`), so re-issuing Show
+  Picture with the same filename every tick never re-decodes or re-loads
+  anything either. Real RPG_RT's specific per-call cost (likely a GDI/
+  DirectX resource rebuild or similar Windows-implementation detail) has no
+  engine-behaviour analogue to get right or wrong here — both idioms
+  ("Show once, then Move Picture" vs. repeated Show Picture) already
+  produce identical on-screen results in this codebase, with no
+  reproduced perf cliff between them. Nothing to model.
+- ✅ **A picture's source image can be up to 640×480 (vs. the 320×240
+  screen), and rendering off the visible edge is simple clipping —
+  confirmed correct.** `Scene::Map#draw_picture` always blits a picture's
+  *entire* source image (`Rect.new(0, 0, src.width, src.height)`, whatever
+  its actual dimensions) via `stretch_blt` into the screen-sized
+  `@picture_bmp`, positioned by its centre; `Bitmap#stretch_blt`'s C++
+  implementation (`mruby-rgss/src/lib.cxx`) bounds-checks both the
+  destination (`dx < 0 || dx >= dst.width` skips the pixel) and the source
+  (`sx < 0 || sy < 0 || sx >= sb.width || sy >= sb.height` skips it too) —
+  a plain per-pixel clamp-and-skip, with no modulo/wraparound indexing
+  anywhere in the loop. **The second half — under-spaced multi-frame
+  packing "bleeding" a neighbouring frame's content onto the opposite
+  screen edge, implying toroidal sampling — is not reproduced, and
+  deliberately not chased further**: nothing in this engine's blit path can
+  produce that outcome (the bounds checks above make an out-of-range source
+  sample impossible, wrapping included), and RPG2000 itself has no
+  Picture concept of "frames" or a sub-rect window into a larger source
+  image at all — a Show Picture command names one whole image, shown
+  whole, every time, exactly as this engine already does. The described
+  bleed reads far more like an artifact of the original executable's own
+  fixed-size internal buffer arithmetic (an unsafe out-of-bounds memory
+  read, not a deliberate sampling mode) than a behaviour worth
+  intentionally reproducing — the same category of genuine-but-undefined
+  RPG_RT implementation quirk this doc already declines to chase elsewhere
+  (Windows crash dialogs, the heavy-load Call Event freeze).
+- ✅ **Erase Picture is instant; a fade needs Move Picture to the same
+  position at 0% opacity over a duration instead — confirmed correct.**
+  `Game::State#erase_picture` (`mruby-rpg2k/mrblib/game.rb`) is a plain
+  `@pictures.delete(id)` with no animation of any kind, while `Picture#
+  move_to`/`#update` already support easing opacity (along with position/
+  zoom/tone) toward a target over an arbitrary frame count, reaching 0%
+  precisely on the final frame — the documented fade idiom, already fully
+  supported by existing code with nothing missing.
 - ✅ **"Hero's screen X/Y" is the feet position, not center, and is a
   one-shot snapshot at read time, not a live binding — tracking the hero
   with a picture (spotlight, flashlight) requires re-reading and
@@ -7851,6 +8028,39 @@ genuine, correctly-modelled answer rather than a stale reference — nothing
 there was silently failing. Covered by four new
 `scripts/rpg2k_logic_check.rb` checks (one per new diagnostic path),
 each asserting on the exact captured `$stderr` line.
+✅ **Enemy Encounter no longer opens a battle against a dangling enemy-group
+(troop) id** — one of the "database shrink leaves a dangling id reference"
+cases above. `Game::Troop.new` (`mruby-rpg2k/mrblib/game.rb`) already
+tolerated a missing `enemy_group` row by degrading to an empty member list
+(by design — see the "missing troop / enemy degrades to an empty, harmless
+model" check), but nothing upstream ever noticed the gap, so both a scripted
+Enemy Encounter and a wandering-monster random encounter would open a real
+battle screen (SE, BGM swap, status panel, [Victory]/[Escape]/[Defeat]
+routing) against zero enemies. `Game::Interpreter#do_enemy_encounter` and
+`#start_random_battle` (`mruby-rpg2k/mrblib/interpreter.rb`) now check the
+troop id against the database (`Game::Party#db_enemy_group`, the same
+`respond_to?`-guarded reach into `@db` as `#db_item`/`#db_skill`) *before*
+ever arming the `:battle` wait, and log a `[RPG2k] Enemy Encounter: ...`
+diagnostic instead. Real RPG_RT has no on-screen precedent to match here
+(its own editor forbids saving a dangling reference), so a scripted
+encounter resolves exactly as an immediate Escape would — into the
+[Escape] handler if the command carries one, ending the event outright
+under the "abort on escape" escape mode, or otherwise simply continuing
+past the command — without bumping the win/escape/defeat "Other" battle
+counters, since no battle was ever actually fought; a random encounter has
+no event to resume, so it just never arms the wait and movement continues
+uninterrupted. The validation went in `Game::Interpreter` rather than
+`Scene::Map#open_battle` (the battle screen's own shared entry point for
+both call sites) specifically so it stays covered by the host-side
+`scripts/rpg2k_logic_check.rb` harness, which loads `game.rb`/
+`interpreter.rb` but never `scene/map.rb`; `Game::Party` already held the
+same unified database `Scene::Map` itself reaches through `db` (both trace
+back to the single `Game::Party.new(@db)` / `Scene::Base#db = parent.db` in
+`main.rb`), so no interpreter constructor change was needed. Covered by
+five new `scripts/rpg2k_logic_check.rb` checks (no handlers, an [Escape]
+handler, escape-abort mode, and the random-encounter path both missing and
+present), each asserting on the captured `$stderr` line and that no
+`:battle` wait was ever armed.
 ✅ **"invalid map" (Transfer Player / Recall to Location naming a
 nonexistent map id) no longer crashes the interpreter** — `Scene::Map
 #perform_teleport` (`mruby-rpg2k/mrblib/scene/map.rb`) called
@@ -8065,6 +8275,32 @@ above are repeated here)
   Knockout; the same rank on an ordinary state — the control case — still
   resists it, pinning the exemption to state id 1 specifically), the first
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A state id past the end of a battler's own `state_ranks` array now
+  defaults to the correct rank per side — B/80% for an enemy, C/60% for an
+  actor — instead of always C/60%.** A routine situation: liblcf/RPG_RT
+  truncate trailing default-valued bytes off a database battler's
+  `state_ranks` array, so any state added to the database after a given
+  actor/enemy row was last saved in the editor, or one whose own trailing
+  ranks are all default, legitimately has a short array — `#state_susceptibility`
+  (`mruby-rpg2k/mrblib/game.rb`) already handled this ("a state id the array
+  doesn't cover") but applied one shared `|| 2` (C) fallback to every
+  target regardless of side. EasyRPG Player's own source models this as two
+  distinct functions with two distinct defaults: `Game_Actor::
+  GetStateProbability` ("rate = 2, C - default") vs. `Game_Enemy::
+  GetStateProbability` ("rate = 1, Enemies have only B as the default state
+  rank") — an explicit, commented asymmetry, not an oversight on EasyRPG's
+  part. Concretely: any enemy whose `state_ranks` doesn't cover a state
+  landed that state at 60% of a skill's own chance instead of the real 80%
+  — a status-inflicting skill read as more resisted than real RPG_RT
+  specifically against monsters with an unpadded `state_ranks` array (a
+  common shape for community test games). Fixed by reusing `#ally?` (the
+  same `Combatant#actor` presence check `Battle` already uses elsewhere) to
+  pick the fallback rank per side. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (an actor and an enemy each missing
+  the same state id from their own `state_ranks` land at 60%/80%
+  respectively; a state id both *do* carry is unaffected either way),
+  confirmed to fail against the pre-fix code (enemy read 60, not 80) before
+  the fix.
 - ✅ A skill flagged "attribute defense up/down" (field 45,
   `affect_attr_defence`) now shifts the target's rank for each attribute in
   its `attribute_effects` list by **exactly one step**, capped at ±1 from the

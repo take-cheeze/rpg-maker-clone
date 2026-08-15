@@ -1303,22 +1303,51 @@ module Game
     # VICTORY/ESCAPE/DEFEAT_HANDLER, closed by END_BATTLE), like a Show Choices
     # block. The interpreter records the request and suspends on a :battle wait;
     # the scene runs the battle (rewards, game over) and resumes via
-    # resume_battle. The turn-based battle itself is not built yet.
+    # resume_battle. The turn-based battle itself is not built yet. A troop id
+    # the database no longer has never arms the wait at all -- see
+    # #skip_invalid_troop.
     def do_enemy_encounter(cmd)
       escape_mode = cmd.param(3)
+      troop_id = cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)]
       @battle_indent = cmd.indent
       @battle_escape_aborts = escape_mode == 1
       nxt = @list[@index]
       @battle_has_handlers =
         !nxt.nil? && nxt.code == Cmd::VICTORY_HANDLER && nxt.indent == cmd.indent
+      return skip_invalid_troop(troop_id) unless party.db_enemy_group(troop_id)
       @battle_request = {
-        troop_id: cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)],
+        troop_id: troop_id,
         allow_escape: escape_mode != 0, first_strike: cmd.param(5) != 0,
         defeat_game_over: cmd.param(4) == 0
       }
       @state.battle_count += 1 # a battle was entered (Control Variables "Other")
       @wait_kind = :battle
       @waiting = true
+    end
+
+    # A database shrink can leave a dangling enemy-group (troop) id reference
+    # (docs/TODO.md's runtime error catalog) -- Game::Troop tolerates the gap
+    # by degrading to an empty member list, which would otherwise open a real
+    # battle screen (SE, BGM swap, status panel) against zero enemies. Real
+    # RPG_RT has no on-screen precedent to match here (its own editor forbids
+    # saving a dangling reference in the first place), so like Call Event's
+    # other reported-but-tolerated gaps this logs instead of crashing or
+    # silently succeeding. Routes exactly where an immediate Escape would --
+    # into the [Escape] handler if the command carries one, ending the event
+    # outright under the "abort on escape" escape mode, or otherwise simply
+    # falling through to the command right after the encounter -- but does not
+    # bump the win/escape/defeat "Other" battle counters (#resume_battle's
+    # job), since no battle was ever actually fought.
+    def skip_invalid_troop(troop_id)
+      $stderr.puts "[RPG2k] Enemy Encounter: enemy group #{troop_id} not " \
+                   'found, skipping battle'
+      if @battle_escape_aborts
+        @index = @list.size
+        @call_stack = []
+        return
+      end
+      target = @battle_has_handlers && find_battle_option(:escape)
+      @index = target if target
     end
 
     # Start a battle that no event triggered — a wandering-monster encounter
@@ -1331,8 +1360,16 @@ module Game
     # (Scene::Map only calls it from ordinary player movement, never while an
     # event is running); escape is always allowed and a wipe is always game
     # over, since a random encounter carries no encounter-specific settings of
-    # its own to say otherwise.
+    # its own to say otherwise. A troop id the database no longer has (the
+    # map's own encounter list can go stale the same way a scripted Enemy
+    # Encounter's can) logs and simply never arms the wait -- there is no
+    # event to resume here, so movement just continues uninterrupted.
     def start_random_battle(troop_id, first_strike: false)
+      unless party.db_enemy_group(troop_id)
+        $stderr.puts "[RPG2k] Enemy Encounter: enemy group #{troop_id} not " \
+                     'found, skipping random encounter'
+        return
+      end
       @battle_has_handlers = false
       @battle_escape_aborts = false
       @battle_request = { troop_id: troop_id, allow_escape: true,

@@ -223,9 +223,19 @@ if psp
     # objects match the EBOOT's ABI.
     cpu_flags = %w[-G0]
 
+    # pspsdk's own headers (pspctrl.h, pspdisplay.h, pspkernel.h, ... --
+    # needed once PSP_BUILD turns on the real psp.cxx / psp_input_bridge.cxx
+    # HAL below) live outside psp-gcc's baked-in sysroot; psp-cmake's
+    # toolchain file adds this automatically for CMake's own compiles (main.cxx,
+    # LVGL, uni-algo), but this Rakefile drives psp-gcc/psp-g++ directly and
+    # gets none of that, so ask pspsdk's own discovery tool for the path
+    # instead of hardcoding one.
+    pspsdk_include = "#{`psp-config --pspsdk-path`.strip}/include"
+
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
       t.flags += cpu_flags
+      t.include_paths << pspsdk_include
       t.defines << 'PSP_BUILD'
       # newlib on the PSP defines none of __linux__/__APPLE__/__*BSD__, so
       # mruby's string.c falls through to the 1 MiB MRB_STR_LENGTH_MAX cap and

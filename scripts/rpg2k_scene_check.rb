@@ -662,8 +662,14 @@ def fake_party(members = [])
   # Party#apply_map_step_damage on every walked tile, so the fixture has to
   # answer the real interface. It starts empty -- `system.party` is [] and the
   # movement / event checks have no members to care about -- and takes any it
-  # needs from the caller.
-  party = Game::Party.new(OpenStruct.new(system: OpenStruct.new(party: [])))
+  # needs from the caller. This db is deliberately its own bare OpenStruct, not
+  # the scene's own `fake_db` (built separately by `new_scene`) -- so
+  # `enemy_group` defaults to "every id exists" (Hash.new(true)), the same
+  # permissive default the other stub parties in this file use, since these
+  # movement/event checks are not exercising the missing-troop-id diagnostic
+  # path (covered in scripts/rpg2k_logic_check.rb instead).
+  party = Game::Party.new(OpenStruct.new(system: OpenStruct.new(party: []),
+                                          enemy_group: Hash.new(true)))
   members.each { |m| party.actors << m }
   party
 end
@@ -2063,7 +2069,12 @@ class BattleStubParty
   # #flying_offset` reads it off `@state.party`, not the database directly, so
   # a battle scene check needs its stub party to answer it too) -- false by
   # default, matching every other check's plain RPG2000 fixture.
-  def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil)
+  # `enemy_group` defaults to "every id exists" (Hash.new(true)) -- these
+  # checks drive an already-opening or already-open battle, not the
+  # missing-troop-id diagnostic path (covered in scripts/rpg2k_logic_check.rb),
+  # so an Enemy Encounter command's real troop id should never be rejected here.
+  def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil,
+                 enemy_group: Hash.new(true))
     @actors = [actor]
     @gold = 0
     @leader = nil
@@ -2071,6 +2082,7 @@ class BattleStubParty
     @items = {}
     @item_db = item_db
     @skill_db = skill_db
+    @enemy_group = enemy_group
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
@@ -2087,6 +2099,7 @@ class BattleStubParty
   # was given, mirroring #db_item above.
   def db_skill(id); @skill_db && @skill_db[id]; end
   def db_item(id); @item_db && @item_db[id]; end
+  def db_enemy_group(id); @enemy_group[id]; end
 end
 
 # A party the shop can charge and stock: gold plus an item-count bag, with the
@@ -7786,6 +7799,9 @@ class BattleMagicParty
   def battle_item_command(_it, _target); { hp: 20, mp: 0 }; end
   def item_all_allies?(it); it.respond_to?(:scope) && it.scope == 1; end
   def switch_item?(_id); false; end
+  # These checks drive an already-opening or already-open battle, not the
+  # missing-troop-id diagnostic path -- every id reads as present.
+  def db_enemy_group(_id); true; end
 end
 
 # BattleMagicParty built around a caller-supplied actor instead of always

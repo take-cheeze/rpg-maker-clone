@@ -1185,15 +1185,65 @@ jobs:
           show-progress: false
           persist-credentials: false
 
+      - name: Download Unicode mapping tables
+        # mruby-lcf/cp932_to_unicode.rb and mruby-rgss/gen_shinonome_data.rb
+        # (both rake-time code generators, run as part of the psp mruby
+        # cross-build below) read $cp932_table / $jis0208_table -- normally
+        # set by the nix devshell's fetchurl derivations (flake.nix), which
+        # this bare-container job does not have. scripts/native-build-without-nix.bash
+        # solves the same gap for a non-nix host build the same way: download
+        # and verify against the flake's own sha256 pins, so the build
+        # consumes the same bytes Nix would hand it, not a lookalike.
+        run: |
+          mkdir -p .native-build-tables
+          fetch_table() {
+            local url="$1" dest="$2" want="$3"
+            curl -fsSL -o "$dest" "$url"
+            local got
+            got="$(python3 -c 'import hashlib,base64,sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1],"rb").read()).digest()).decode())' "$dest")"
+            if [ "$got" != "$want" ]; then
+              echo "hash mismatch for $dest" >&2
+              echo "  flake.nix pins $want" >&2
+              echo "  downloaded     $got" >&2
+              exit 1
+            fi
+          }
+          fetch_table \
+            'https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt' \
+            .native-build-tables/bestfit932.txt \
+            'JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE='
+          fetch_table \
+            'https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT' \
+            .native-build-tables/JIS0208.TXT \
+            'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
+
       - name: Build EBOOT (pspdev container)
         # The pspdev image ships psp-gcc, cmake and the psp-cmake wrapper (which
-        # points CMake at the pspdev toolchain and provides create_pbp_file).
-        # Pull it up front with -q: an implicit pull from `docker run` prints a
-        # per-layer download/extract progress block, which `-q` reduces to the
-        # resolved digest.
+        # points CMake at the pspdev toolchain and provides create_pbp_file), but
+        # not Ruby and not a native (x86_64) compiler: the psp mruby cross-build
+        # (build_config.rb's `psp` MRuby::CrossBuild) is driven by `rake`,
+        # invoked from a CMake custom command (app/psp/CMakeLists.txt) exactly
+        # the way the desktop/wasm builds drive it from the root CMakeLists.txt
+        # -- but those run inside the nix devshell, which provides both; this
+        # container does not. Install them before configuring. The image's
+        # final stage is Alpine (github.com/pspdev/pspdev's own Dockerfile, not
+        # the archived pspdev/pspdev-docker repo, which is Ubuntu-based but
+        # unrelated to what actually publishes the pspdev/pspdev:latest tag) --
+        # apk, not apt-get. build-base is needed alongside psp-gcc: rake's
+        # MRuby::CrossBuild also builds a native "host" mruby (to produce mrbc,
+        # which then compiles the target .rb sources to bytecode), and that
+        # half runs the ambient `gcc`, not psp-gcc -- confirmed missing by a
+        # real CI run ("sh: gcc: not found") once Ruby alone was installed.
+        # Pull the image up front with -q: an implicit pull from `docker run`
+        # prints a per-layer download/extract progress block, which `-q`
+        # reduces to the resolved digest.
         run: |
           docker pull -q pspdev/pspdev:latest
-          docker run --rm -v "$PWD:/src" -w /src pspdev/pspdev:latest sh -euc '
+          docker run --rm -v "$PWD:/src" -w /src \
+            -e cp932_table=/src/.native-build-tables/bestfit932.txt \
+            -e jis0208_table=/src/.native-build-tables/JIS0208.TXT \
+            pspdev/pspdev:latest sh -euc '
+            apk add --no-cache ruby ruby-rake build-base
             psp-cmake -S app/psp -B build-psp
             cmake --build build-psp -j"$(nproc)"
           '
