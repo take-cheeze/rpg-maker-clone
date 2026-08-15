@@ -3924,11 +3924,11 @@ module Game
     # ATK/DEF/SPI/AGI value. EasyRPG's `Game_BattleAlgorithm::Skill::vExecute`
     # rolls each of `affect_attack`/`affect_defense`/`affect_spirit`/
     # `affect_agility` independently, alongside `affect_hp`/`affect_sp`, all
-    # against the *same* signed effect value -- this runtime already applies
-    # `affect_hp`/`affect_sp` unconditionally (no roll; see the field-cast
-    # `#skill_state_ids` comment on `hit` being state-infliction-only), so
-    # these four follow suit for consistency, rather than introducing a
-    # per-stat accuracy roll nothing else in this class models.
+    # against the *same* signed effect value -- `Game::Battle#apply_skill_hit`
+    # now rolls all six the same independent way (`#skill_effect_hits?`),
+    # matching this. A previous version of this comment recorded a deliberate
+    # decision to leave all six unrolled "for consistency" rather than half-fix
+    # the gap; the fix closed the whole thing symmetrically instead.
     SKILL_STAT_MOD_FLAGS = { atk: :affect_attack, def: :affect_defense,
                               spi: :affect_spirit, agi: :affect_agility }.freeze
 
@@ -9050,6 +9050,29 @@ module Game
       @rng.random(100) < to_hit(attacker, target)
     end
 
+    # Whether one particular effect of a Skill/Item command actually lands --
+    # EasyRPG's `Game_BattleAlgorithm::Skill::vExecute` gates each of
+    # `affect_hp`/`affect_sp`/`affect_attack`/`affect_defense`/`affect_spirit`/
+    # `affect_agility` behind its own, independent `Rand::PercentChance(to_hit)`
+    # roll -- `to_hit` there being `skill.hit` for the overwhelming majority of
+    # skills (`Algo::CalcSkillToHit` only runs the fuller, agility-adjusted
+    # physical-style formula for an enemy-scope skill the editor flagged with
+    # the "physical" failure message, `failure_message == 3` -- unmodelled
+    # here; see docs/TODO.md). `#battle_skill_command`/`#battle_item_command`
+    # already carry that flat rate as `cmd[:chance]`, defaulting to 100 (an
+    # item has no `hit` field at all, and RPG_RT's own medicine algorithm
+    # never rolls one -- see `#item_recovery`'s callers), so this is a
+    # deliberately thin wrapper: called fresh for every affected field, never
+    # cached, matching each being its own roll rather than one shared verdict
+    # for the whole skill. Unconditional (always true) when the fight has
+    # accuracy off, matching #hits?'s own @accuracy gate for a basic attack --
+    # a seeded fight stays reproducible by default, and the live game turns
+    # this on (Scene::Map's own `Game::Battle.new(..., true, true, true, ...)`).
+    def skill_effect_hits?(cmd)
+      return true unless @accuracy
+      @rng.random(100) < (cmd[:chance] || 100)
+    end
+
     # Spread `base` by a `var` (0-10) amount: an adjustment of `var*base/10` (min
     # 1) is centred on the base with a random offset, floored at 1. Port of
     # EasyRPG's Algo::VarianceAdjustEffect.
@@ -9327,23 +9350,37 @@ module Game
         # agi and has no stat-absorbing counterpart to HP's own (vanilla
         # RPG2000/2003 never sets `easyrpg_enable_stat_absorbing`).
         stat_amount = -dmg
+        # Whether the blow actually lands -- EasyRPG's `Game_BattleAlgorithm::
+        # Skill::vExecute` gates `affect_hp`'s application behind its own
+        # `Rand::PercentChance(to_hit)` roll, `to_hit` being `cmd[:chance]`
+        # here (#skill_effect_hits?). Computed once and reused for both the
+        # HP change and 吸収 below -- they are the same `affect_hp` gate in
+        # EasyRPG, not two independent rolls.
+        hits = skill_effect_hits?(cmd)
         # 吸収: the caster takes what the target loses, and can take no more than
         # the target has. EasyRPG clamps the effect to the target's current HP
         # *before* applying it ("Only absorb the hp that were left"), so a
         # 200-damage drain on a 30 HP foe deals 30 and returns 30 -- the drain is
         # weaker against a nearly-dead target, not merely capped in what it gives.
         absorbed = 0
-        if cmd[:absorb] && dmg > 0
-          dmg = target.hp if dmg > target.hp
-          absorbed = dmg
+        if hits
+          if cmd[:absorb] && dmg > 0
+            dmg = target.hp if dmg > target.hp
+            absorbed = dmg
+          end
+          target.hp -= dmg
+        else
+          dmg = 0
         end
-        target.hp -= dmg
         b.hp = [b.hp + absorbed, b.max_hp].min if absorbed > 0
         # An attack skill may inflict its states -- or, under the RPG2003
         # reverse_state_effect flip #battle_skill_command's own `heals_states`
         # already resolved, cure them instead -- and shift attribute defence
         # ranks, each rolled/applied only if the target lived through the
-        # damage.
+        # damage. These roll independently of the HP hit above (EasyRPG calls
+        # `Rand::PercentChance` fresh for each `affect_*` gate), so a skill's
+        # buff/state can still land on a swing whose damage missed, or vice
+        # versa.
         if target.dead?
           inflicted = already = cured = shifted = []
           stat_changed = {}
@@ -9352,9 +9389,10 @@ module Game
           cured = (cmd[:cured] || []).select { |s| target.state?(s) }
           target.states = (target.states || []) - cured unless cured.empty?
           shifted = apply_attr_shift(target, cmd)
-          stat_changed = apply_stat_mods(target, cmd[:stat_mod_keys], stat_amount)
+          stat_keys = (cmd[:stat_mod_keys] || []).select { skill_effect_hits?(cmd) }
+          stat_changed = apply_stat_mods(target, stat_keys, stat_amount)
         end
-        { attacker: b.name, target: target.name, damage: dmg,
+        { attacker: b.name, target: target.name, damage: dmg, missed: !hits,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already, cured: cured,
           attr_shifted: shifted, attr_shift_dir: cmd[:attr_shift],
@@ -9391,8 +9429,13 @@ module Game
         rcap = recover_cap
         hp = rcap if hp > rcap
         stat_amount = rcap if stat_amount > rcap
-        target.hp = [target.hp + hp, target.max_hp].min if hp > 0
-        target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
+        # Each affected field rolls its own, independent accuracy check --
+        # EasyRPG calls `Rand::PercentChance(to_hit)` fresh inside each of
+        # `affect_hp`/`affect_sp`'s own `if`, not once for the whole skill
+        # (#skill_effect_hits?). A skill that restores HP and SP alike can
+        # therefore land one and miss the other.
+        target.hp = [target.hp + hp, target.max_hp].min if hp > 0 && skill_effect_hits?(cmd)
+        target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp && skill_effect_hits?(cmd)
         # Cure the item's status conditions from the target (an antidote / herb),
         # unconditionally, matching the field item cure.
         cured = (cmd[:cured] || []).select { |s| target.state?(s) }
@@ -9404,7 +9447,8 @@ module Game
         # only ever curing states on this branch.
         inflicted, already = target.dead? ? [[], []] : roll_inflict(target, cmd)
         shifted = target.dead? ? [] : apply_attr_shift(target, cmd)
-        stat_changed = target.dead? ? {} : apply_stat_mods(target, cmd[:stat_mod_keys], stat_amount)
+        stat_keys = target.dead? ? [] : (cmd[:stat_mod_keys] || []).select { skill_effect_hits?(cmd) }
+        stat_changed = target.dead? ? {} : apply_stat_mods(target, stat_keys, stat_amount)
         { recover: true, actor: b.name, source: cmd[:name],
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target: target.name,
           target_index: @enemies.index(target),

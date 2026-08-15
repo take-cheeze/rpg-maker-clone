@@ -9696,6 +9696,90 @@ check 'a battle attack skill at 0% accuracy never inflicts its state' do
   eq false, foe.state?(3)                        # 0% -> never lands
 end
 
+# -- Battle skill/item effect accuracy (Game::Battle#skill_effect_hits?) -----
+#
+# Ported from EasyRPG's Game_BattleAlgorithm::Skill::vExecute: each of
+# affect_hp/affect_sp/affect_attack/affect_defense/affect_spirit/
+# affect_agility is gated behind its own Rand::PercentChance(to_hit) roll.
+# Previously #apply_skill_hit applied a skill's core HP/SP/stat effect
+# unconditionally -- only state infliction (#roll_inflict) ever consulted
+# cmd[:chance] -- so an offensive or buff skill with hit < 100 landed its
+# damage/heal/stat-mod on every single cast.
+
+# An Rng stub that hands back a fixed sequence of values in order (repeating
+# the last one once exhausted), so a test can pin exactly which of several
+# independent rolls in one #apply_skill_hit call hits and which misses.
+class SequenceRng
+  def initialize(values); @values = values; @i = 0; end
+  def random(n)
+    v = @values[[@i, @values.length - 1].min]
+    @i += 1
+    n <= 0 ? 0 : v % n
+  end
+end
+
+check "battle: an attack skill's damage now rolls its own accuracy" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  cmd = { attack: true, chance: 50 }
+
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [foe], FixedRng.new(49), nil, false, false, true)
+  e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  eq 20, e[:damage], 'a roll under the 50% chance lands'
+  ok !e[:missed]
+  eq 80, foe.hp
+
+  miss_foe = combatant('Foe', 0, 0, 5, 100)
+  bat2 = Game::Battle.new([hero], [miss_foe], FixedRng.new(50), nil, false, false, true)
+  e2 = bat2.send(:apply_skill_hit, hero, miss_foe, -20, 0, cmd)
+  eq 0, e2[:damage], 'a roll at or above the chance misses'
+  eq true, e2[:missed]
+  eq 100, miss_foe.hp, 'and no damage actually landed'
+end
+
+check "battle: with accuracy off, a skill's low-chance effect still always lands" do
+  # #skill_effect_hits? mirrors #hits?'s own @accuracy gate: a seeded fight
+  # stays fully deterministic unless the fight opts into rolling accuracy.
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  cmd = { attack: true, chance: 1 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1)) # accuracy off (default)
+  e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  eq 20, e[:damage]
+  ok !e[:missed]
+end
+
+check 'battle: a heal skill restoring both HP and SP rolls each independently' do
+  hero = combatant_mp('Hero', 0, 0, 20, 100, 30)
+  hero.hp = 50
+  hero.mp = 10
+  cmd = { chance: 50 }
+  # First roll (HP) at 49 hits; second roll (SP) at 60 misses.
+  bat = Game::Battle.new([hero], [combatant('Foe', 0, 0, 5, 100)],
+                         SequenceRng.new([49, 60]), nil, false, false, true)
+  e = bat.send(:apply_skill_hit, hero, hero, 20, 10, cmd)
+  eq 20, e[:recover_hp], 'HP roll (49 < 50) landed'
+  eq 0, e[:recover_mp], 'SP roll (60 >= 50) missed, independently of HP'
+  eq 70, hero.hp
+  eq 10, hero.mp
+end
+
+check "battle: a skill's stat-mod effect rolls independently of its HP effect" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.def = 20
+  cmd = { attack: true, chance: 50, stat_mod_keys: [:def] }
+  # First roll (HP) at 60 misses; second roll (the def stat mod) at 10 hits.
+  bat = Game::Battle.new([hero], [foe], SequenceRng.new([60, 10]), nil, false, false, true)
+  e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  eq 0, e[:damage], 'the HP roll missed'
+  eq true, e[:missed]
+  eq 100, foe.hp, 'so no damage landed'
+  eq({ def: -10 }, e[:stat_changed],
+     "but the def stat mod still landed on its own, independent roll " \
+     '(-20 clamped to the asymmetric -base/2..+base band, base def 20)')
+end
+
 check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
   # Sleep inflicts state 4; the state table marks 4 as restriction 1 (do nothing).
   skills = { 7 => fake_skill(name: 'Sleep', scope: 0, sp_cost: 3, power: 1,

@@ -5154,6 +5154,51 @@ not yet verified:
   5001) and one real-data test-bed check
   (`scripts/rpg2k_testbed_logic_check.rb`), each confirmed to fail against
   the pre-fix code before the fix.
+- ✅ **A Skill/Item's own core effect — HP/SP change and each of the ATK/DEF/
+  SPI/AGI stat modifiers — now rolls its own accuracy, instead of applying
+  unconditionally on every cast.** Only state infliction ever consulted a
+  skill's `hit` field (via `Game::Battle#roll_inflict`'s `cmd[:chance]`); the
+  actual damage/heal/buff always landed regardless of the skill's own
+  accuracy. Confirmed against EasyRPG's `Game_BattleAlgorithm::Skill::vExecute`
+  (`src/game_battlealgorithm.cpp`): `to_hit` (`Algo::CalcSkillToHit`, `skill.hit`
+  for the overwhelming majority of skills — see below) gates each of
+  `affect_hp`/`affect_sp`/`affect_attack`/`affect_defense`/`affect_spirit`/
+  `affect_agility` behind its own, independent `Rand::PercentChance(to_hit)`
+  roll — a fresh draw per field, not one shared verdict for the whole skill,
+  so a compound skill can land its damage while its accompanying debuff
+  misses, or the reverse. A `SKILL_STAT_MOD_FLAGS`/`#skill_stat_mod_keys`
+  in-code comment had explicitly recorded the gap as a *deliberate* choice
+  ("these four follow suit for consistency" with the also-unrolled HP/SP
+  roll, "rather than introducing a per-stat accuracy roll nothing else in
+  this class models") rather than an oversight — but the stated reasoning
+  was an argument against a *partial* fix, not a claim that leaving all six
+  unrolled matched real RPG_RT; closing the gap symmetrically for all six at
+  once (rather than only some) resolves the very inconsistency the comment
+  objected to. Implemented as a new `Game::Battle#skill_effect_hits?`
+  (`@rng.random(100) < (cmd[:chance] || 100)`, gated behind the fight's own
+  `@accuracy` flag exactly like `#hits?` gates a basic attack, so a seeded
+  fight stays reproducible by default) called independently from
+  `#apply_skill_hit` for the HP change (and its 吸収 absorption, which
+  EasyRPG's own code gates behind the *same* `affect_hp` roll, not a second
+  one), the SP change, and each stat-mod key individually before
+  `#apply_stat_mods` ever sees it. An item's `cmd[:chance]` stays absent
+  (defaulting to 100, an unconditional hit) since real RPG_RT's medicine
+  algorithm (`Item::vExecute`) has no accuracy concept at all — nothing
+  changes for item use. **Not implemented**: `CalcSkillToHit`'s fuller,
+  agility-adjusted physical-style formula (state-hit-modifier scaling, the
+  AGI ratio, evasion-ignore, physical-evasion-up, restricted-target-always-
+  hits), which only replaces the flat `skill.hit` reading for an enemy-scope
+  skill the editor flagged with the "physical" failure message
+  (`failure_message == 3`) — EasyRPG's own comment on this path notes RPG2003's
+  editor cannot even set the flag any more, so this is a narrow, likely
+  RPG2000-only edge case left for a follow-up rather than blocking the much
+  more broadly observable core fix above. Covered by four new
+  `scripts/rpg2k_logic_check.rb` checks (an attack skill's damage landing vs.
+  missing at its own roll boundary, the existing @accuracy-off default still
+  applying every effect unconditionally, a heal skill's HP and SP landing
+  independently of each other, and a compound skill's stat-mod effect landing
+  on its own roll while its HP effect misses on a different one), each
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
