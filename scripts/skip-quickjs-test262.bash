@@ -15,7 +15,9 @@ set -eu -o pipefail
 #
 # Only `nix build '.?submodules=1#build'` (the `flake` CI job) asks for that
 # walk now — flake.nix no longer declares `self.submodules = true`, so
-# `nix develop` skips it — but the other jobs still run this as a cheap guard.
+# `nix develop` skips it, and the dev-shell jobs no longer run this at all.
+# Still worth running by hand before any `?submodules=1` command on a checkout
+# that has the entry registered.
 #
 # Both the `.gitmodules` section and the gitlink go: an index entry with no
 # `.gitmodules` mapping is an orphan that `git submodule status` itself errors

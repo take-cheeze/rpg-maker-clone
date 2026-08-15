@@ -84,17 +84,11 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Kept as a guard, not a requirement: `nix develop` no longer fetches this
-      # flake with submodules (flake.nix stopped declaring them; only the
-      # `flake` job's `nix build '.?submodules=1#build'` walks them now), so
-      # nothing here should reach quickjs-ng's unused nested entry. It stays
-      # until a CI run confirms the walk is gone from this job — it costs
-      # nothing and it is what makes the walk safe if one comes back. See the
-      # script for the full story.
-      - name: Skip the quickjs test262 submodule
-        run: ./scripts/skip-quickjs-test262.bash
-        env:
-          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+      # No `Skip the quickjs test262 submodule` step here any more: it existed
+      # only to keep nix's nested-`.gitmodules` walk off tc39/test262, and this
+      # job no longer triggers that walk — `nix develop` stopped fetching
+      # submodules when flake.nix dropped `self.submodules = true`. The `flake`
+      # job, the one that still asks for them, keeps the step.
 
       # Realises the dev shell and exports its environment (PATH, compiler
       # launchers, etc.) into $GITHUB_ENV / $GITHUB_PATH, so every later step
@@ -737,12 +731,7 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Same guard as the `build` job, and as unneeded as it is there now that
-      # the dev shell no longer walks submodules; see that job.
-      - name: Skip the quickjs test262 submodule
-        run: ./scripts/skip-quickjs-test262.bash
-        env:
-          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+      # No test262-skip step here either; see the `build` job.
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -943,12 +932,7 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Same guard as the `build` job, and as unneeded as it is there now that
-      # the dev shell no longer walks submodules; see that job.
-      - name: Skip the quickjs test262 submodule
-        run: ./scripts/skip-quickjs-test262.bash
-        env:
-          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+      # No test262-skip step here either; see the `build` job.
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
