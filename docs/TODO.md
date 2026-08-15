@@ -5223,6 +5223,32 @@ not yet verified:
   landing on 88 rather than 87, and four direct `Game.round_half_even`
   cases spanning an even tie, an odd tie, and two ordinary non-tie
   fractions), confirmed to fail against the pre-fix code before the fix.
+- ✅ **`Game::Battle#compute_escape_chance` now rounds an exact tie to even
+  too, the same rounding-mode gap `#fatigue` had (immediately above).** This
+  method's own comment already correctly named the mechanism —
+  `Utils::RoundTo<int>` (`std::lrint`), cited as "RPG_RT / Delphi compatible
+  rounding" straight from EasyRPG's own doc comment on `Utils::RoundTo`
+  (`src/utils.h`, linking `delphibasics.co.uk/RTL.asp?Name=Round`) — but the
+  Ruby implementation still used `Float#round`, which rounds half *away from
+  zero*, not to even; Delphi's own `Round()` is documented banker's rounding,
+  the same IEEE 754 `FE_TONEAREST` behaviour `std::lrint` has by default. A
+  party at average agility 200 against an enemy average of 101 computes the
+  ratio `100*101/200 = 50.5` exactly: EasyRPG rounds to 50 (already even,
+  escape chance 100), the prior `.round` landed on 51 (escape chance 99).
+  This exact call was introduced earlier this session (escape chance's own
+  fix, matching EasyRPG's formula and average-agility semantics) before the
+  round-half-to-even insight existed — a real gap in the same bug class, not
+  something the fatigue fix already covered (only `#fatigue` uses it, not
+  `#compute_escape_chance`, until now). Fixed by reusing the same
+  `Game.round_half_even` helper, computed directly in integer arithmetic
+  (`Game.round_half_even(100 * ea, pa)`) rather than through
+  `(100.0 * ea / pa).round`, matching `#fatigue`'s own integer-native style.
+  Every existing `#escape_chance` test computes a ratio that isn't an exact
+  `.5` tie (the existing rounding-vs-truncation check is `100*10/7 =
+  142.857...`, nowhere near a tie), so none of them change. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (the 50.5-tie case above landing on
+  escape chance 100, not 99), confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control

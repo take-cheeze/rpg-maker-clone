@@ -8703,6 +8703,19 @@ check 'Battle#escape_chance rounds the agility ratio to the nearest percent' do
   eq 7, b.escape_chance, 'the ratio rounds to 143 before the 150 - x clamp'
 end
 
+check 'Battle#escape_chance rounds an exact tie to even, not always up' do
+  # Same rounding-mode gap Battle#fatigue had (see Game.round_half_even):
+  # Utils::RoundTo<int> is std::lrint under the default IEEE 754 FE_TONEAREST
+  # mode -- round-half-to-*even*, not round-half-up (`Float#round`'s own
+  # half-away-from-zero rule). Party average agility 200, enemy average 101:
+  # 100*101/200 = 50.5 exactly. EasyRPG rounds to 50 (already even) -> escape
+  # 150-50 = 100; round-half-up would land on 51 -> escape 99.
+  hero = combatant('Hero', 0, 0, 200, 10)
+  slime = combatant('Slime', 0, 0, 101, 10)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  eq 100, b.escape_chance, '100 - round(50.5) = 100 - 50 (even), not 100 - 51'
+end
+
 check 'Battle#escape_chance is fixed at battle start, not re-derived per attempt' do
   # EasyRPG calls InitEscapeChance() exactly once, from Scene_Battle::Start;
   # TryEscape only ever adds +10 to that one starting value on a failure, and
