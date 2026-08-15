@@ -6626,6 +6626,11 @@ class RPG2k
       def note_party_step
         steps = @state.walk_step
         hit = @state.party.apply_map_step_damage(state_table, steps)
+        # A GAIN-type (regen) state's own tick never flashes red, matching
+        # EasyRPG's `Game_Party::ApplyStateDamage` -- see
+        # Game::Party#map_step_damaged?'s own doc comment.
+        state_damaged = @state.party.respond_to?(:map_step_damaged?) &&
+                        @state.party.map_step_damaged?
         # RPG2000's 地形ダメージ on top of it: the terrain the tile just stepped
         # onto belongs to may take HP off everyone not wearing gear that blocks
         # it -- or, for a terrain with a negative `damage` (a healing tile),
@@ -6641,7 +6646,7 @@ class RPG2k
                           row.damage && row.damage > 0
         play_terrain_footstep_se(row, terrain_damaged)
         return if hit.empty? && !terrain_damaged
-        @state.screen.flash(*STEP_DAMAGE_FLASH)
+        @state.screen.flash(*STEP_DAMAGE_FLASH) if state_damaged || terrain_damaged
       end
 
       # Apply the damage of the terrain under the party, returning the actors it

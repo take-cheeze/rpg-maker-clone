@@ -6083,6 +6083,171 @@ not yet verified:
   proving a non-RPG2003 party ignores a stray 7th parameter and always
   settles — the `Game::Screen` test and the two interpreter dispatch tests
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
+  status effect from landing at all, instead of only its A-E susceptibility
+  rank ever mattering.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Actor::GetStateProbability` (`src/game_actor.cpp`) scans every
+  equipped item (weapon excluded) for one that flags the state in its own
+  `state_set` and — for RPG2000, or an RPG2003 item without
+  `reverse_state_effect` set — folds `100 - item->state_chance` into the
+  result as a multiplier, taking the *strongest* single piece across all
+  four defensive slots rather than summing them ("takes the armor of the
+  character with the most resistance for that particular state"), applied
+  on top of the existing `GetStateRate(rank)` result. Both of its real call
+  sites (`src/game_battlealgorithm.cpp`, skill/item infliction and
+  weapon-granted infliction alike) route every state roll through it. This
+  codebase's `Game::Battle#state_susceptibility` (`mruby-rpg2k/mrblib/
+  game.rb`) already modelled the A-E rank half correctly but never read a
+  defensive item's `state_set`/`state_chance` fields at all — despite both
+  being parsed by the schema and already consumed on the *offense* side
+  (`Actor#weapon_states`, weapon-only) — so an ordinary "50% Poison
+  resistance" accessory or "90% Paralysis ward" helmet had zero effect on
+  its wearer. Concretely: an actor with no rank override for Poison (rank-C
+  default, 60%) wearing an accessory that flags Poison at `state_chance: 50`
+  faces a Poison Sting at 100% occurrence — real RPG_RT/EasyRPG lands it
+  `60 * (100-50)/100 = 30%` of the time; this build landed it the full `60%`,
+  the accessory silently doing nothing. Fixed with a new `Actor
+  #state_resist_mul(sid)` (mirroring `#weapon_states`' own equipment-scan
+  shape, but gated on the four defensive types — `Party::ITEM_SHIELD/
+  _ARMOR/_HELMET/_ACCESSORY` — instead of the weapon slot, and excluding an
+  RPG2003 `reverse_state_effect` item exactly as EasyRPG's own
+  `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard does, since
+  that flag has no meaning on defensive gear's `state_set`), multiplied into
+  `#state_susceptibility`'s existing rank-based result whenever the target
+  is an ally (an enemy Combatant carries no `actor`, matching
+  `Game_Enemy::GetStateProbability`'s own equipment-free formula). Covered
+  by four new `scripts/rpg2k_logic_check.rb` checks — the Poison-accessory
+  trace above (bare vs. equipped), the strongest-of-several-pieces rule (a
+  50% and a 90% resist item together yield 90%'s multiplier, not both
+  stacked), a weapon's own `state_set` granting no resistance to its
+  wearer, and RPG2003 `reverse_state_effect` on defensive gear carrying no
+  resistance meaning — the first two confirmed to fail against the pre-fix
+  code before the fix.
+- ✅ **An enemy Transformation (action kind 2) no longer clamps its current
+  HP/SP down to the new form's maximum — they now carry over completely
+  unchanged, as real RPG_RT does.** Confirmed against EasyRPG's actual C++
+  source: `Game_Enemy::Transform` (`src/game_enemy.cpp`) only ever repoints
+  the `enemy` database row and refreshes the battle sprite — `hp`/`sp` are
+  set to their max exactly once, in the constructor, on the enemy's very
+  first spawn (`Game_Enemy::Game_Enemy`), never again inside `Transform`
+  itself. `Game_BattleAlgorithm::Transform::ApplyCustomEffect`
+  (`src/game_battlealgorithm.cpp`) calls `Game_Enemy::Transform` and nothing
+  else — it never calls `SetAffectedHp`/`SetAffectedSp`, so the generic
+  post-effect `ApplyHpEffect`/`ApplySpEffect` pass every action runs through
+  afterward is a no-op for it (`GetAffectedHp() == 0` short-circuits before
+  `ChangeHp`/`SetHp`, the only place that ever clamps to `GetMaxHp()`, is
+  reached). `Game::Battle#enemy_transform_action`
+  (`mruby-rpg2k/mrblib/game.rb`) instead force-clamped `b.hp`/`b.mp` down to
+  the new form's max whenever the prior value exceeded it — the comment
+  above it even claimed this matched `Game_Enemy::Transform`, which the
+  actual source contradicts outright. This breaks the classic "damage
+  carries across a phase transformation" boss design: a monster with
+  `max_hp = 1000` sitting at 950 HP that transforms into a "true form" with
+  `max_hp = 100` should still take 950 cumulative damage to finish off (its
+  `GetHp()` legitimately exceeding its own `GetMaxHp()` until something else
+  changes it) — this build instead silently full-healed it down to the new
+  100 cap, making the "true form" reveal trivially one-shot-able. Fixed by
+  simply removing the two clamp lines; `max_hp`/`max_mp` still update to the
+  new form's values exactly as before, only the current `hp`/`mp` fields are
+  left untouched. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  transforming a 950-HP/40-SP monster into a 100-max-HP/10-max-SP form and
+  asserting both current values survive exactly, confirmed to fail against
+  the pre-fix code (`expected 950, got 100`) before the fix.
+- ✅ **A KO'd party member no longer earns EXP from a battle victory.**
+  Confirmed against EasyRPG's actual C++ source: `Scene_Battle_Rpg2k
+  ::ProcessSceneActionVictory` (`src/scene_battle_rpg2k.cpp`) grants the
+  troop's EXP by looping `ally_battlers`, populated via
+  `Game_Party_Base::GetActiveBattlers` (`src/game_party_base.cpp`) — not the
+  raw party roster — which only collects a battler passing
+  `Game_Battler::Exists()` (`src/game_battler.h`:
+  `!IsHidden() && !IsDead() && IsInParty()`). `Scene::Map#battle_result_lines`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) instead iterated
+  `@state.party.actors` — the plain roster, no alive/dead filter at all —
+  calling `#gain_exp` on every member unconditionally. This is reachable in
+  practice because victory only requires *one* ally still standing
+  (`Game::Battle#end_round`'s `alive?(@allies)`), so a fight can legitimately
+  end in victory with one or more party members dead. Concretely: Alice
+  (alive) and Bob (KO'd, still enrolled) win a fight worth 50 EXP — real
+  RPG_RT/EasyRPG credits only Alice; this build credited both, and could
+  even level Bob up (and teach him a growth-table skill, announced in the
+  result window) purely from a fight he never regained consciousness in.
+  Fixed by skipping `a.dead?` before `#gain_exp` in the loop, mirroring
+  `Exists()`'s `!IsDead()` half (`Game::Actor#dead?` already exists and is
+  the right predicate; this build has no per-actor "hidden" concept to mirror
+  the other half). Covered by a new `scripts/rpg2k_scene_check.rb` check
+  driving a real two-party-member Enemy Encounter (one already KO'd going
+  in) to victory and asserting only the survivor's EXP total rises,
+  confirmed to fail against the pre-fix code (`expected 0, got 10`) before
+  the fix.
+- ✅ **Elemental-resistance equipment (a shield/armor/helmet/accessory
+  flagging an attribute in its own `attribute_set`) now actually grants
+  resistance, instead of having zero effect on the wearer.** Confirmed
+  against EasyRPG's actual C++ source: `Game_Actor::GetBaseAttributeRate`
+  (`src/game_actor.cpp`) starts from the actor's own database
+  `attribute_ranks` row (default C/rank 2 when absent), then OR's a flat
+  `+1` boost from every equipped shield/armor/helmet/accessory whose own
+  `attribute_set` flags that attribute — `ForEachEquipment<allow_weapon=
+  false, allow_armor=true>` explicitly excludes the weapon slot — clamping
+  the result to `0..4`. `Game::Actor#attribute_ranks`
+  (`mruby-rpg2k/mrblib/game.rb`) only ever read the actor's own database row;
+  `attribute_set` (LCF item field 66) was already parsed and already
+  consumed, but only off the *weapon* slot, for the opposite (offensive)
+  purpose (`#weapon_attributes`, what element a basic attack carries) and
+  for RPG2003 skill-cast gating (`Party#weapon_attribute_ready?`, which the
+  existing `can_cast?` test already proves armor does *not* satisfy — a
+  different, correctly-scoped mechanic this fix leaves untouched). No code
+  path anywhere read a defensive item's `attribute_set` at all. Concretely:
+  an actor with no database override for Fire (rank-C default, 100%) wearing
+  an armor piece that flags Fire faces a 100-damage Fire attack — real
+  RPG_RT/EasyRPG lands it for `50` (rank C(2) + the +1 boost = D(3), 50% on
+  the RPG2000 default table); this build landed the full `100`, the armor
+  silently doing nothing. Fixed with a new `Actor#defensive_attribute_ids`
+  (the defensive counterpart of `#weapon_attributes`, gated on
+  `Party::ITEM_SHIELD/_ARMOR/_HELMET/_ACCESSORY` instead of the weapon slot),
+  OR'd into `#attribute_ranks`' returned `{ attribute_id => rank }` map as a
+  `+1` (clamped at 4) — baked in at the rank-table level, not the battle
+  layer, since `GetBaseAttributeRate` computes its `rate = 2` default
+  *before* ever consulting equipment, so an attribute the database row never
+  lists must still resist once a matching item is equipped. Covered by two
+  new `scripts/rpg2k_logic_check.rb` checks — one on `Actor#attribute_ranks`
+  itself (bare vs. weapon vs. armor vs. armor+accessory both flagging the
+  same element, proving the OR-not-stack rule), one end-to-end through
+  `Battle#apply_attr_multiplier` proving the actual damage reduction — both
+  confirmed to fail against the pre-fix code before the fix.
+- ✅ **A GAIN-type (regen) status condition's own map-step tick no longer
+  flashes the screen red, matching a healing terrain tile's own exemption.**
+  Confirmed against EasyRPG's actual C++ source: `Game_Party::
+  ApplyStateDamage` (`src/game_party.cpp`) sets its `damage` return bool only
+  inside a state's `ChangeType_lose` branch — the `ChangeType_gain` branch
+  heals the actor but leaves `damage` untouched — and
+  `Game_Player::UpdateNextMovementAction` (`src/game_player.cpp`) gates
+  `Game_Screen::FlashMapStepDamage` on exactly that bool.
+  `Game::Party#apply_map_step_damage` (`mruby-rpg2k/mrblib/game.rb`) already
+  correctly signs a GAIN-type state's own delta positive (`Game::States
+  .drain`'s `CHANGE_TYPE_GAIN` case), but `Scene::Map#note_party_step`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) flashed the screen whenever
+  `apply_map_step_damage`'s returned array was non-empty at all — heal
+  included, since the only guard was "did anything change." This is the
+  state-side twin of an already-fixed, already-tested terrain rule (a
+  negative-`damage` terrain tile heals without flashing, `scripts/
+  rpg2k_scene_check.rb`'s "a healing tile never flashes the screen" check) —
+  the state side of the same "your HP just fell and the map has nowhere to
+  say so" moment was never given the equivalent exemption. Concretely: a
+  RPG2003 "Regen" state (`hp_change_map_steps=4`, `hp_change_map_val=1`,
+  `hp_change_type=GAIN`) ticks on an actor's 4th walked tile — real
+  RPG_RT/EasyRPG heals silently; this build healed *and* flashed the screen
+  red, as if the party had just taken damage. Fixed with a new `Game::Party
+  #map_step_damaged?`, tracking (per state, not on the summed net delta —
+  RPG_RT applies each state independently, so a LOSE and a GAIN state
+  landing on the same step both apply, and the tile still counts as damaged
+  if any single state on it was a loss, even when the net HP change is a
+  heal) whether the most recent `#apply_map_step_damage` call included an
+  actual loss; `#note_party_step`'s flash condition now checks that flag (or
+  the existing terrain-damage flag) instead of the returned array's
+  emptiness. Covered by a new `scripts/rpg2k_logic_check.rb` unit check on
+  `#map_step_damaged?` itself (LOSE, bare GAIN, and mixed LOSE+GAIN-net-heal)
+  and a new `scripts/rpg2k_scene_check.rb` end-to-end walking check, both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

@@ -1797,13 +1797,47 @@ module Game
     # The actor's per-attribute defence ranks as `{ attribute_id => rank }`, read
     # from the database row's `attribute_ranks` byte array (rank 0 = A, most
     # vulnerable .. 4 = E, immune). An attribute the row omits defaults to C
-    # (100%) at the battle layer. A fixture row without the field yields {}.
+    # (100%) at the battle layer. A fixture row without the field, and no
+    # resistance gear equipped either, yields {}.
+    #
+    # Equipped shield/armor/helmet/accessory gear (never a weapon) that flags
+    # an attribute in its own `attribute_set` grants a flat +1 to that
+    # attribute's defence rank -- ports EasyRPG's `Game_Actor
+    # ::GetBaseAttributeRate` (src/game_actor.cpp): every matching piece worn
+    # is OR'd into a single one-step boost, not stacked per item, clamped at
+    # E (4, immune). This is why the boost is baked in here rather than left
+    # to the battle layer's own default: an attribute an actor's database row
+    # never lists (no explicit rank) still resists once a matching item is
+    # equipped, exactly as `GetBaseAttributeRate` computes `rate = 2` before
+    # ever consulting equipment.
     def attribute_ranks
       ranks = {}
       arr = @db_row.respond_to?(:attribute_ranks) ? @db_row.attribute_ranks : nil
-      return ranks unless arr
-      arr.each_with_index { |v, i| ranks[i + 1] = v }
+      arr.each_with_index { |v, i| ranks[i + 1] = v } if arr
+      defensive_attribute_ids.each do |aid|
+        ranks[aid] = [(ranks[aid] || 2) + 1, 4].min
+      end
       ranks
+    end
+
+    # The attribute ids an equipped shield/armor/helmet/accessory (never a
+    # weapon) flags in its own `attribute_set` -- the defensive counterpart of
+    # #weapon_attributes, which reads the same field off the weapon slot only,
+    # for the opposite (offensive) purpose.
+    def defensive_attribute_ids
+      ids = []
+      return ids unless @db.respond_to?(:item)
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next unless it && it.respond_to?(:type) &&
+                    [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
+                     Party::ITEM_ACCESSORY].include?(it.type)
+        set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
+        next unless set
+        set.each_index { |i| ids << (i + 1) if set[i] && set[i] != 0 }
+      end
+      ids.uniq
     end
 
     # The actor's per-state susceptibility ranks as `{ state_id => rank }`, read
@@ -1879,6 +1913,37 @@ module Game
         end
       end
       { inflict: inflict, heal: heal }
+    end
+
+    # The strongest defensive resistance the actor's equipped shield / armor /
+    # helmet / accessory (never a weapon) offers against state `sid` landing,
+    # as a percent multiplier (100 = no resistance). Ports EasyRPG's
+    # `Game_Actor::GetStateProbability` (`src/game_actor.cpp`): an item that
+    # flags `sid` in its own `state_set` contributes `100 - state_chance`, and
+    # the *lowest* (strongest) contribution across every equipped defensive
+    # item wins -- "takes the armor of the character with the most resistance
+    # for that particular state", not a sum of every piece worn. An RPG2003
+    # item with `reverse_state_effect` set plays no part here (that flag turns
+    # a *weapon's* own states into cures, per #weapon_states -- it has no
+    # meaning on defensive gear's state_set), matching EasyRPG's own
+    # `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard.
+    def state_resist_mul(sid)
+      mul = 100
+      return mul unless @db.respond_to?(:item)
+      is2k3 = rpg2003?
+      @equipment.each do |iid|
+        next if iid.nil? || iid == 0
+        it = @db.item[iid]
+        next unless it && it.respond_to?(:type) &&
+                    [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
+                     Party::ITEM_ACCESSORY].include?(it.type)
+        next if is2k3 && it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+        set = it.respond_to?(:state_set) ? it.state_set : nil
+        next unless set && set[sid - 1] && set[sid - 1] != 0
+        chance = it.respond_to?(:state_chance) ? (it.state_chance || 0) : 0
+        mul = 100 - chance if 100 - chance < mul
+      end
+      mul
     end
 
     # The actor's basic-attack base hit rate (percent): the highest `hit` among
@@ -2996,16 +3061,18 @@ module Game
     #
     # `table` is the database `situation` array; a caller without one (the seeded
     # harness fixtures) drains nothing. Returns the actors actually affected
-    # (lost *or* gained something), so the scene can flash the screen only when
-    # there is something to report.
+    # (lost *or* gained something) -- #map_step_damaged? (see below) is the one
+    # that answers whether the scene should flash the screen over it.
     def apply_map_step_damage(table, steps)
       hit = []
+      @map_step_damaged = false
       @actors.each do |actor|
         next if actor.nil? || actor.dead?
         hp = 0
         sp = 0
         actor.states.each do |id|
           dhp, dsp = States.map_step_drain(id, table, steps)
+          @map_step_damaged ||= dhp < 0 || dsp < 0
           hp += dhp
           sp += dsp
         end
@@ -3015,6 +3082,24 @@ module Game
         hit << actor
       end
       hit
+    end
+
+    # Whether the most recent #apply_map_step_damage call included at least one
+    # state's own HP/SP *loss* landing on that step -- distinct from
+    # #apply_map_step_damage's own return value, which reports every actor who
+    # changed either way, gain included. Ports EasyRPG's
+    # `Game_Party::ApplyStateDamage` (src/game_party.cpp): its `damage` bool is
+    # only ever set inside the `ChangeType_lose` branches, never the
+    # `ChangeType_gain` ones, and `Game_Player::UpdateNextMovementAction` gates
+    # `Game_Screen::FlashMapStepDamage` on exactly that bool -- a GAIN-type
+    # "regen" state's tick alone must never redden the screen, even though the
+    # actor it healed is still in the returned #apply_map_step_damage array.
+    # Checked per state, not on the summed net delta: a LOSE and a GAIN state
+    # landing on the same step both apply (RPG_RT applies each independently),
+    # so a net-positive tile still counts as damaged if any single state on it
+    # was a loss.
+    def map_step_damaged?
+      @map_step_damaged
     end
 
     # Damage every standing member for walking onto a damaging tile: RPG2000's
@@ -7327,28 +7412,36 @@ module Game
     end
 
     # EXP / gold / drops are only earned from members that actually fell in
-    # this fight -- a member still flagged `hidden` at victory time (either
-    # never revealed by a Show Hidden Monster page, or sent running by a
-    # page's own Force Flee) contributes none of the three, even though a
-    # fight can end in victory while such a member is technically still at
-    # full HP: `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`)
-    # already treats hidden the same as dead for win/loss purposes
-    # (`out_of_play?`), so `alive?(@enemies)` goes false -- and victory fires
-    # -- the instant every *visible* member is down, with no requirement that
-    # a still-hidden one ever engaged at all. Matches EasyRPG's actual C++
-    # source: `Game_EnemyParty::GetExp`/`GetMoney`/`GenerateDrops`
-    # (`src/game_enemyparty.cpp`) each loop `if (enemy.IsDead())` before
+    # this fight -- a member still flagged `hidden` at victory time (never
+    # revealed by a Show Hidden Monster page, sent running by a page's own
+    # Force Flee, sent running by its own basic Escape action, or blown up by
+    # its own basic Autodestruct -- see `Game::Battle#enemy_autodestruct`)
+    # contributes none of the three, even though a fight can end in victory
+    # while such a member is technically still at full HP:
+    # `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`) already
+    # treats hidden the same as dead for win/loss purposes (`out_of_play?`),
+    # so `alive?(@enemies)` goes false -- and victory fires -- the instant
+    # every *visible* member is down, with no requirement that a still-hidden
+    # one ever engaged at all. Matches EasyRPG's actual C++ source:
+    # `Game_EnemyParty::GetExp`/`GetMoney`/`GenerateDrops` (`src/
+    # game_enemyparty.cpp`) each loop `if (enemy.IsDead())` before
     # summing/rolling that member at all, and `Game_Battler::IsDead` (`src/
     # game_battler.h`) is a bare `GetHp() == 0` check -- a hidden member's own
-    # HP is never touched by never fighting, and a Force-Fled member's isn't
-    # either (`SetHidden` alone, no `Kill`), so both read `IsDead() == false`
-    # and are skipped by all three real methods. This class never lets a
-    # member's HP move at all -- the actual combat plays out on parallel
-    # `Combatant` structs in `Game::Battle`, not on `Troop`'s own `Enemy`
-    # objects -- so `hidden` (kept live by `Scene::Map#reveal_battle_monster`/
-    # `#remove_fled_monster`) is the one signal available here, and by the
-    # "hidden ~ not dead" equivalence above it is also the *correct* one: a
-    # non-hidden member reaching this call is always the dead case.
+    # HP is never touched by never fighting, a Force-Fled/Escaped member's
+    # isn't either (`SetHidden` alone, no `Kill`), and neither is a
+    # self-destructed one's (`Game_BattleAlgorithm::SelfDestruct` only ever
+    # calls `SetHidden` on its own caster, never touching its HP -- see
+    # `enemy_autodestruct`'s own comment), so all three read `IsDead() ==
+    # false` and are skipped by all three real reward methods. This class
+    # never lets a member's HP move at all -- the actual combat plays out on
+    # parallel `Combatant` structs in `Game::Battle`, not on `Troop`'s own
+    # `Enemy` objects -- so `hidden` (kept live by
+    # `Scene::Map#reveal_battle_monster`/`#remove_fled_monster` for a battle
+    # page's own commands, and by `Scene::Map#refresh_battle_sprites` for
+    # anything a combatant does to itself mid-fight) is the one signal
+    # available here, and by the "hidden ~ not dead" equivalence above it is
+    # also the *correct* one: a non-hidden member reaching this call is
+    # always the dead case.
     def total_exp;  live_members.reduce(0) { |s, e| s + e.exp } end
     def total_gold; live_members.reduce(0) { |s, e| s + e.gold } end
 
@@ -9403,10 +9496,21 @@ module Game
 
     # Self-destruction (basic 5): the enemy blows itself up, hitting every living
     # party member for `atk - def/2` (EasyRPG's CalcSelfDestructEffect, floored at
-    # 0 and spread by the usual variance), and dies doing it. Defending halves
-    # the blow, and 強力防御 halves it again -- the same `AdjustDamageForDefend`
-    # `#deal_attack` already applies, shared verbatim by EasyRPG's own
-    # `SelfDestruct::vExecute` rather than a self-destruct-specific rule.
+    # 0 and spread by the usual variance). Defending halves the blow, and 強力防御
+    # halves it again -- the same `AdjustDamageForDefend` `#deal_attack` already
+    # applies, shared verbatim by EasyRPG's own `SelfDestruct::vExecute` rather
+    # than a self-destruct-specific rule. It does not kill the caster itself,
+    # though -- verified against EasyRPG Player's actual C++ source:
+    # `Game_BattleAlgorithm::SelfDestruct::vExecute` (`src/
+    # game_battlealgorithm.cpp`) calls `SetAffectedHp` against the *target* only,
+    # never the source, and `ApplyCustomEffect` reacts to the caster with nothing
+    # but `enemy->SetHidden(true)` (plus an explode-animation timer) -- no HP
+    # write at all. So the caster is hidden, exactly like a page's Force Flee or
+    # its own basic Escape action, not killed: this matches the community
+    # デフォ戦bot trivia that a self-destructed enemy drops no EXP / gold / items,
+    # that its HP reads unchanged (not 0) if a battle event variable-assigns it,
+    # and that "Enemy Appears" (Show Hidden Monster) brings it right back with
+    # whatever HP it already had.
     def enemy_autodestruct(b)
       targets = @allies.reject(&:out_of_play?)
       entries = targets.map do |t|
@@ -9431,8 +9535,8 @@ module Game
         entry[:woke] = woke unless woke.empty?
         entry
       end
-      # The blast kills the caster whether or not it found anyone to hit.
-      b.hp = 0
+      # Hidden, not killed -- see the method comment above.
+      b.hidden = true
       entries.empty? ? { attacker: b.name, autodestruct: true } : entries
     end
 
@@ -9500,17 +9604,28 @@ module Game
     end
 
     # A transformation (kind 2): the monster becomes another database enemy,
-    # taking on its name, stats and battle graphic (and its action pattern) while
-    # keeping its place in the fight. Current HP / SP carry over clamped to the
-    # new maxima, matching RPG_RT's Game_Enemy::Transform.
+    # taking on its name, stats and battle graphic (and its action pattern)
+    # while keeping its place in the fight. Current HP / SP carry over
+    # completely unchanged, *not* reclamped to the new maxima -- EasyRPG's
+    # `Game_Enemy::Transform` (`src/game_enemy.cpp`) only ever repoints the
+    # `enemy` database row and refreshes the sprite; it never touches `hp`/
+    # `sp` at all (those are set to the max only once, in the constructor, on
+    # the enemy's very first spawn). `Transform`'s own battle-algorithm
+    # (`Game_BattleAlgorithm::Transform::ApplyCustomEffect`,
+    # `src/game_battlealgorithm.cpp`) never calls `SetAffectedHp`/
+    # `SetAffectedSp` either, so the generic post-effect `ApplyHpEffect`/
+    # `ApplySpEffect` pass skip it outright (`GetAffectedHp() == 0` is a
+    # no-op). A boss can therefore legitimately carry HP above a later,
+    # lower-max "true form" until something else changes it -- a classic
+    # "damage carries across a transformation" design this build's own
+    # clamp made impossible by silently full-healing every downward
+    # transform.
     def enemy_transform_action(b, act)
       into = @ai && @ai.enemy(act.enemy_id)
       return enemy_fallback_attack(b) unless into
       b.name = into.name
       b.atk = into.atk; b.def = into.def; b.agi = into.agi; b.spi = into.spi
       b.max_hp = into.max_hp; b.max_mp = into.max_sp
-      b.hp = b.hp > into.max_hp ? into.max_hp : b.hp
-      b.mp = (b.mp || 0) > into.max_sp ? into.max_sp : b.mp
       b.crit_chance = Battle.crit_chance_of(into)
       b.attr_ranks = Battle.attr_ranks_of(into)
       b.state_ranks = Battle.state_ranks_of(into)
@@ -10572,15 +10687,28 @@ module Game
     # directly (RPG2000 has no separate instant-death mechanic), and yado.tk
     # documents its infliction chance as governed solely by the skill's own
     # occurrence-rate operand, never reduced by the target's A-E resistance rank.
+    # An ally's own defensive equipment can scale the A-E result down further
+    # still -- see Actor#state_resist_mul.
     def state_susceptibility(target, sid)
       return 100 if sid == Game::Actor::DEATH_STATE
       ranks = target.state_ranks
       return 100 if ranks.nil? || ranks.empty?
-      default_rank = ally?(target) ? 2 : 1
+      is_ally = ally?(target)
+      default_rank = is_ally ? 2 : 1
       rank = ranks[sid] || default_rank
       rank = 0 if rank < 0
       rank = 4 if rank > 4
-      state_rate(sid, rank)
+      pct = state_rate(sid, rank)
+      # An ally's equipped shield/armor/helmet/accessory can further resist a
+      # state landing on top of its A-E rank -- see Actor#state_resist_mul.
+      # Enemies equip nothing, matching Game_Enemy::GetStateProbability's own
+      # rank-only formula (no equipment scan at all). `respond_to?` tolerates
+      # a bare test double standing in for `actor` (#ally? only cares that the
+      # field is non-nil), read as full resistance (100, a no-op multiplier).
+      if is_ally && target.actor.respond_to?(:state_resist_mul)
+        pct = pct * target.actor.state_resist_mul(sid) / 100
+      end
+      pct
     end
 
     # Inflict a skill command's `inflict` states on `target`, each landing only if

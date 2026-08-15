@@ -283,15 +283,23 @@ class RPG2k
 
       # How long the encounter banner lingers before the command phase opens.
       # Real RPG_RT paces this per-line with wordwrap and per-page wait
-      # timers (`SetWait(4, 4)` / `SetWait(8, 8)` / `SetWait(30, 70)`); this
-      # screen has no per-page message window (see #battle_result_lines'
+      # timers -- `SetWait(4, 4)` before the first line, `SetWait(8, 8)`
+      # between lines that are not the page's last, and `SetWait(30, 70)`
+      # (repeated again for the first-strike line, when there is one) on
+      # whichever line ends a page -- and, per `CheckWait`, holds the full
+      # `max_wait` of each of those unless the player actively skips ahead.
+      # This screen has no per-page message window (see #battle_result_lines'
       # own comment on the same simplification), so the whole banner -- every
-      # line at once -- holds for one flat beat instead, matching only
-      # RPG_RT's own minimum `SetWait(4, 4)` gate rather than the full
-      # per-line reading pause -- long enough to register as its own frame
-      # of input-free banner before the command menu takes over the same
-      # screen rect.
-      BATTLE_ENCOUNTER_MSG_FRAMES = 4
+      # line at once -- holds for one flat beat instead. That beat used to
+      # match only RPG_RT's own minimum `SetWait(4, 4)` gate, not its real
+      # per-line reading pause, which read as barely a flicker; 70 frames
+      # (~1.2s) matches RPG_RT's own default no-skip hold on a single
+      # encounter line (`SetWait(30, 70)`) instead -- long enough to actually
+      # read the banner before the command menu takes over the same screen
+      # rect, closer to (if still short of, for a troop with several enemies
+      # or a first strike, both of which stack more `SetWait(30, 70)`s that
+      # this one flat beat cannot represent) real RPG_RT's own pace.
+      BATTLE_ENCOUNTER_MSG_FRAMES = 70
 
       # Drive the encounter-message phase: hold the banner for
       # `BATTLE_ENCOUNTER_MSG_FRAMES`, then drop it and fall into the same
@@ -759,6 +767,15 @@ class RPG2k
           # the field and must not be drawn — the same test #living_foes uses to
           # keep it out of the target cursor.
           spr.visible = !foe.out_of_play? if spr
+          # A combatant hidden by anything other than a battle page's own Force
+          # Flee (its own Escape action, or self-destruct -- Game::Battle#
+          # enemy_autodestruct) never runs through #remove_fled_monster, so
+          # mirror it onto the *troop* member here. #total_exp/#total_gold/
+          # #drops key off the troop member's own `hidden`, not the combatant's
+          # -- without this they would still pay out for a monster that never
+          # actually died this fight.
+          member = @ui[:troop].members[i]
+          member.hidden = true if member && foe.hidden && !member.hidden
         end
       end
 
@@ -1540,9 +1557,38 @@ class RPG2k
         i >= 0 ? i : nil
       end
 
-      # Frames each attack of the round lingers on screen before the next lands —
-      # a beat long enough to read the hit and see the HP tick, at ~1/3s / 60fps.
-      BATTLE_ANIM_FRAMES = 20
+      # Frames each attack of the round lingers on screen before the next lands
+      # -- only when the action has no battle animation to pace it instead
+      # (`#drive_battle_animate` sets this timer to 0 and lets
+      # `#battle_animation_playing?` drive the wait when one plays, so this
+      # constant is specifically the "just the text" case).
+      #
+      # RPG_RT does not use one flat gate here; it holds each stage of the
+      # action separately (`Scene_Battle_Rpg2k::SetWait`/`SetWaitForUsage`,
+      # `src/scene_battle_rpg2k.cpp`), and *without* the player holding
+      # Decision/Shift to skip ahead, `CheckWait` always burns the full
+      # `max_wait` of every stage it passes through -- confirmed by reading
+      # `CheckWait` itself: it decrements every frame regardless of input and
+      # only short-circuits early once a skip key is actually held. Tracing
+      # the default (no-skip) path for a plain attack that hits, with no
+      # animation, no crit and no state change -- the common case this
+      # constant covers -- through every stage that fires:
+      # `ProcessBattleActionBegin` (no state-proc message) `SetWait(4,4)`,
+      # `ProcessBattleActionUsage`'s start-message
+      # `SetWaitForUsage(Normal, 0)` = `SetWait(20,40)`,
+      # `ProcessBattleActionAnimationImpl` with no animation still applies
+      # the same `SetWaitForUsage(Normal, 0)` = `SetWait(20,40)`,
+      # `ProcessBattleActionExecute` `SetWait(4,4)`,
+      # `ProcessBattleActionDamage`'s `eBegin` `SetWait(4,4)`, its `eMessage`
+      # damage line `SetWait(20,40)`, and its `ePost` `SetWait(0,10)` --
+      # 4+40+40+4+4+40+10 = 142 frames (~2.4s at 60fps) before RPG_RT would
+      # move on. This banner shows the "attacks" and "damage" lines at once
+      # rather than as RPG_RT's two sequential message pages, so it does not
+      # need the full 142 to be equally readable; 90 frames (~1.5s) lands
+      # much closer to that real pace than the old 20 (~0.33s, barely long
+      # enough to register the hit at all) while still reading as one beat
+      # rather than RPG_RT's own two-page hold.
+      BATTLE_ANIM_FRAMES = 90
 
       # Begin animating the commanded round: dismiss the command menu and prime
       # the battle's per-action queue. From here #drive_battle_animate lands one
@@ -2249,6 +2295,12 @@ class RPG2k
           lines << "#{name}#{term(:item_received, ' obtained.')}"
         end
         @state.party.actors.each do |a|
+          # A KO'd party member earns nothing from the victory -- EasyRPG's own
+          # EXP-granting loop (Scene_Battle_Rpg2k::ProcessSceneActionVictory)
+          # iterates Game_Party_Base::GetActiveBattlers, not the raw roster,
+          # and GetActiveBattlers excludes anyone failing Game_Battler::
+          # Exists() (`!IsHidden() && !IsDead() && IsInParty()`).
+          next if a.respond_to?(:dead?) && a.dead?
           before_level = a.respond_to?(:level) ? a.level : nil
           before_skills = a.respond_to?(:skills) ? a.skills.dup : []
           a.gain_exp(exp)

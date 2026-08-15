@@ -1763,6 +1763,24 @@ assert "RGSS::ErrorReport::Tee forwards every write and records it" do
   RGSS::ErrorReport.clear
 end
 
+assert "RGSS::ErrorReport stamps a bridged line with the script's location" do
+  # Every line the bridge forwards used to reach ng-log from the same C++
+  # statement, so the whole runtime log was stamped "log_bridge.cxx:12" and said
+  # nothing about which script logged what. RGSS.__log_bridge_write now reads
+  # the location off the interpreter's call stack, skipping the tee's own frames
+  # (record/push, both error_report.rb) -- so what it answers is *this* file and
+  # the line that logged. mrbtest installs no ng-log hook, so the location it
+  # reports is the only observable half of the forward here.
+  RGSS::ErrorReport.clear
+  expected_line = __LINE__ + 1
+  RGSS::ErrorReport.record("[RGSS] location probe\n")
+  loc = RGSS::ErrorReport.last_location
+  assert_kind_of String, loc
+  assert_true loc.include?("test.rb:"), "attributed to #{loc}"
+  assert_equal expected_line, loc.split(":").last.to_i
+  RGSS::ErrorReport.clear
+end
+
 assert "RGSS::ErrorReport.probe! raises after logging its marker line" do
   # The engine's --error_dump_probe drives this to check a real report keeps the
   # exception, its backtrace and the captured log; assert here that the probe

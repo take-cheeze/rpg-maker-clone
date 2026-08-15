@@ -464,7 +464,14 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                  # waking anyone back up mid-test.
                  6 => OpenStruct.new(name: 'Stone', color: 8, priority: 90,
                                      restriction: 1, auto_release_prob: 0),
-                 5 => OpenStruct.new(name: 'Silence', color: 5, priority: 10) },
+                 5 => OpenStruct.new(name: 'Silence', color: 5, priority: 10),
+                 # RPG2003's `hp_change_type` GAIN counterpart to Poison above:
+                 # the same map-step interval/amount fields, but healing --
+                 # exercises the flash-suppression half of
+                 # Game::Party#map_step_damaged?.
+                 7 => OpenStruct.new(name: 'Regen', color: 3, priority: 20,
+                                     hp_change_map_steps: 4, hp_change_map_val: 1,
+                                     hp_change_type: 1) },
     # A tiny item table the Open Shop window prices its goods from.
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
             5 => OpenStruct.new(name: 'Herb', price: 40) },
@@ -5396,7 +5403,11 @@ end
 # the first target). The budget is generous: between command phases each round
 # now animates action by action (BATTLE_ANIM_FRAMES per hit), so a multi-round
 # fight spans a few hundred frames.
-def battle_attack_to_end(scene, max = 600)
+# Budgeted for a several-round fight at BATTLE_ANIM_FRAMES=90 (each
+# no-animation action) plus the encounter banner's BATTLE_ENCOUNTER_MSG_FRAMES
+# hold -- both slower than this file's old defaults, so a fight that used to
+# finish well inside 600 frames can now run past it.
+def battle_attack_to_end(scene, max = 2000)
   max.times do
     ui = battle_ui(scene)
     break if ui && ui[:phase] == :result
@@ -5412,8 +5423,11 @@ end
 # Run `scene` until its battle UI's phase becomes `phase`, budgeted to `max`
 # frames -- used by the options-window checks below, which need to catch the
 # battle right when a phase first appears rather than run it through to a
-# later one the way #battle_attack_to_end does.
-def battle_until_phase(scene, phase, max = 15)
+# later one the way #battle_attack_to_end does. `:battle_options` (every
+# call site's actual target) only opens once the encounter banner's own
+# BATTLE_ENCOUNTER_MSG_FRAMES hold has run out, so the default budget needs
+# enough room for that hold plus the frames battle-open itself takes.
+def battle_until_phase(scene, phase, max = 90)
   ui = nil
   max.times do
     scene.update
@@ -5454,6 +5468,27 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   3.times { scene.update }
   ok st.switches[1], 'the Victory handler ran'
   ok !st.switches[2], 'the Escape handler was skipped'
+end
+
+# EasyRPG's own EXP-granting loop (Scene_Battle_Rpg2k::
+# ProcessSceneActionVictory) iterates Game_Party_Base::GetActiveBattlers, not
+# the raw party roster, and GetActiveBattlers excludes anyone failing
+# Game_Battler::Exists() (`!IsHidden() && !IsDead() && IsInParty()`) -- a
+# fallen ally still enrolled in the party at the moment of victory gets
+# nothing.
+check "Enemy Encounter scene: a KO'd party member earns no EXP from the victory" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  alive = BattleStubActor.new(id: 1)
+  fallen = BattleStubActor.new(id: 2, hp: 0) # already KO'd going into the fight
+  st.instance_variable_set(:@party, BattleStubParty.new(actors: [alive, fallen]))
+  scene.update
+  battle_attack_to_end(scene) # only the living actor's Attack drives it to victory
+  eq 10, alive.exp, 'the surviving actor still gains the troop EXP (2 Slimes x 5)'
+  eq 0, fallen.exp, "a KO'd party member earns nothing from the victory"
 end
 
 # `Game::Battle` already tracks the fight's own round count live (`@rounds`,
@@ -8544,7 +8579,7 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
   # dismissing the once-per-battle automatic options window (C on its default
   # cursor row 0, "Battle") along the way.
   ui = nil
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -8631,7 +8666,7 @@ end
 # the way (a C press on its default cursor row 0, "Battle").
 def battle_to_command(scene)
   ui = nil
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -8730,7 +8765,7 @@ check 'Enemy Encounter scene: the enemy-attack SE plays for an enemy Attack, ' \
   # The Slime survives the Hero's hit (19 damage against 30 HP), so it is
   # still alive to take its own turn next and swing back.
   RGSS::Audio.reset_se
-  40.times do
+  120.times do
     scene.update
     break if ui[:battle].log.length >= 2
   end
@@ -9389,6 +9424,54 @@ check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
   ok !sprites[0].visible, 'a monster that fled is taken off the field'
   ok !ui[:foes][0].dead?, 'without counting as a kill'
   ok sprites[1].visible, 'its companion is untouched'
+  # #refresh_battle_sprites also mirrors the combatant's `hidden` onto the
+  # *troop* member -- the flag #total_exp/#total_gold/#drops actually key off
+  # -- since neither an AI Escape action nor Game::Battle#enemy_autodestruct
+  # runs through the interpreter's Force-Flee queue (#remove_fled_monster).
+  # Without this a self-fled/self-destructed monster would still pay full
+  # rewards on victory.
+  ok ui[:troop].members[0].hidden, 'the troop member is marked hidden too'
+  ok !ui[:troop].members[1].hidden, 'its companion is untouched'
+end
+
+# 2000_battle_bot / デフォ戦bot trivia: 自爆した敵は、経験値・お金・アイテムを落と
+# さない。しかもデータ内部では逃走した状態と同じ扱いになっており、敵ＨＰを変数に
+# 代入してみると0になっていない。更に自爆後にイベントコマンド「敵キャラの出現」で
+# 指定すると何喰わぬ顔で元に戻る。Verified against EasyRPG Player's actual C++
+# source (see Game::Battle#enemy_autodestruct's own comment in mrblib/game.rb):
+# Game_BattleAlgorithm::SelfDestruct never writes the caster's own HP, only
+# SetHidden(true) -- so this scene-level check exercises the same "hidden, not
+# killed" path a real self-destruct takes through #refresh_battle_sprites, and
+# that Show Hidden Monster ("Enemy Appears") brings it right back unharmed.
+check 'Enemy Encounter scene: a self-destructed monster drops no reward and ' \
+      '"Enemy Appears" brings it back exactly as before (デフォ戦bot trivia)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  starting_hp = ui[:foes][0].hp
+  # What Game::Battle#enemy_autodestruct now does to its own caster: hide it,
+  # leave its HP untouched (no `b.hp = 0`).
+  ui[:foes][0].hidden = true
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
+  ok !ui[:foes][0].dead?, 'the caster does not die'
+  eq starting_hp, ui[:foes][0].hp,
+     'its HP reads unchanged, exactly as a variable assignment would show in real RPG_RT'
+  ok ui[:troop].members[0].hidden, 'excluded from the troop reward roll'
+  eq [ui[:troop].members[1]], ui[:troop].send(:live_members),
+     'only the untouched companion still counts toward EXP/gold/drops'
+
+  # "Enemy Appears" (Show Hidden Monster, 13150) targeting the exploded slot
+  # brings it right back -- same path a genuinely-fled monster already uses.
+  scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 0)
+  ok !ui[:troop].members[0].hidden, 'visible again'
+  ok !ui[:foes][0].hidden, 'back in play'
+  eq starting_hp, ui[:foes][0].hp, 'with the same HP it had before it blew up'
+  eq [ui[:troop].members[0], ui[:troop].members[1]], ui[:troop].send(:live_members),
+     'and it counts toward rewards again, same as any other live member'
 end
 
 # yado.tk's own text on the "airborne" enemy flag names no pixel offset or
@@ -10217,7 +10300,7 @@ end
 check 'entering a battle with an empty party is instant defeat, not a frozen command menu' do
   scene, st = battle_scene_with_pages({})
   st.party.instance_variable_set(:@actors, [])
-  12.times do
+  90.times do
     scene.update
     ui = battle_ui(scene)
     break if ui && ui[:phase] == :result
@@ -10231,7 +10314,7 @@ end
 check 'entering a battle with an all-KO\'d party is instant defeat too' do
   scene, st = battle_scene_with_pages({})
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(hp: 0)])
-  12.times do
+  90.times do
     scene.update
     ui = battle_ui(scene)
     break if ui && ui[:phase] == :result
@@ -10257,7 +10340,7 @@ check 'an asleep ally is skipped straight to the next commandable one, no comman
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, states: [4]),
                                             BattleStubActor.new(id: 2)])
   ui = nil
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10276,7 +10359,7 @@ check 'a lone ally under a do-nothing state (asleep) never gets a command prompt
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, states: [4])])
   saw_animate = false
   ui = nil
-  30.times do
+  200.times do
     scene.update
     ui = battle_ui(scene)
     saw_animate ||= ui && ui[:phase] == :animate
@@ -10305,7 +10388,7 @@ check 'a lone Forced-AI ally never gets a command prompt -- the round starts on 
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, force_ai: true)])
   saw_animate = false
   ui = nil
-  30.times do
+  200.times do
     scene.update
     ui = battle_ui(scene)
     saw_animate ||= ui && ui[:phase] == :animate
@@ -10322,7 +10405,7 @@ check 'a Forced-AI ally is skipped straight to the next manually-commandable one
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1, force_ai: true),
                                             BattleStubActor.new(id: 2)])
   ui = nil
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10342,7 +10425,7 @@ check 'a turn-0 battle-event page runs as the fight opens' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 12, 12, 0])]) }
   scene, st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     scene.update
     break if st.switches[12]
   end
@@ -10391,7 +10474,7 @@ check 'a battle page conditioned on enemy HP fires mid-round, before the round s
                             Game::BattlePage::ENEMY_HP, enemy_hp_max: 50) }
   scene, st = battle_scene_with_pages(pages)
   phase_when_fired = nil
-  60.times do
+  300.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui[:phase])
     scene.update
@@ -10426,7 +10509,7 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
   pages = { 1 => troop_page([ECmd.new(ic::SHOW_HIDDEN_MONSTER, [1])],
                             Game::BattlePage::ENEMY_HP, enemy_id: 0, enemy_hp_max: 0) }
   scene, st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10483,7 +10566,10 @@ end
 # (nil) before the battle has opened as it does after it has cleanly closed,
 # so a naive loop can "pass" by breaking on frame 0, before any battle-event
 # page -- Terminate Battle included -- ever actually ran.
-def open_then_close_battle(scene, open_budget: 10, close_budget: 20)
+# A turn-0 battle page (Terminate Battle included) only runs once the
+# encounter banner's own BATTLE_ENCOUNTER_MSG_FRAMES hold has run out, so
+# close_budget needs enough room for that hold plus the page's own work.
+def open_then_close_battle(scene, open_budget: 10, close_budget: 100)
   open_budget.times do
     scene.update
     break if battle_ui(scene)
@@ -10529,7 +10615,7 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
   scene.update
   eq 0, bmp.stretch_calls.size, 'and stops compositing pictures entirely while the fight runs'
 
-  20.times do
+  100.times do
     scene.update
     break if battle_ui(scene).nil?
   end
@@ -10581,7 +10667,7 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq 0, (lower_bmp.blt_calls || []).size,
      'and nothing draws over them either'
 
-  20.times do
+  100.times do
     scene.update
     break if battle_ui(scene).nil?
   end
@@ -10635,7 +10721,7 @@ check 'a page can wound a monster through Change Monster HP' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 7, 1])]) }
   scene, _st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -10653,7 +10739,7 @@ check 'Change Battle Background from a page rebuilds the backdrop sprite' do
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_BATTLE_BG, [], string: 'Cave')]) }
   scene, _st = battle_scene_with_pages(pages)
   before = nil
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     before ||= ui && ui[:back_sprite]
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
@@ -10689,7 +10775,7 @@ check "a battle page's Show Battle Animation actually holds the page, not resumi
   # wait the command sets (rather than counting frames blindly, since the
   # battle itself takes a few frames to open first).
   it = nil
-  60.times do
+  150.times do
     scene.update
     ui = battle_ui(scene)
     it = ui && ui[:events]
@@ -10715,7 +10801,7 @@ check "a battle page's Show Battle Animation draws over the targeted troop membe
   scene, st = battle_scene_with_pages(pages)
   spr_shown = false
   ma_seen = nil
-  40.times do
+  150.times do
     scene.update
     ui = battle_ui(scene)
     anim_spr = scene.instance_variable_get(:@animation_sprite)
@@ -10745,7 +10831,7 @@ check "a battle page's Show Battle Animation target-scope flash pulses the named
   ui = nil
   target_flashed = false
   bystander_flashed = false
-  40.times do
+  150.times do
     scene.update
     ui = battle_ui(scene)
     next unless ui && ui[:enemy_sprites]
@@ -10764,7 +10850,7 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
   pages = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'It appears!'),
                              ECmd.new(ic::CONTROL_SWITCHES, [0, 15, 15, 0])]) }
   scene, st = battle_scene_with_pages(pages)
-  10.times do
+  90.times do
     scene.update
     ui = battle_ui(scene)
     break if ui && ui[:event_win]
@@ -10783,7 +10869,7 @@ end
 
 check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -11170,7 +11256,7 @@ end
 def battle_at_command(pages = nil, party: BattleStubParty.new, battleranimations: nil)
   scene, = battle_scene_with_pages(pages, party: party, battleranimations: battleranimations)
   ui = nil
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -11911,7 +11997,7 @@ check 'a Change Party Member remove on a battle page disposes only that ' \
   hero_sprite, ally_sprite, third_sprite = ui[:actor_sprites]
   ok hero_sprite && ally_sprite && third_sprite, 'all three built a sprite up front'
 
-  30.times do
+  150.times do
     RGSS::Input.triggered = [RGSS::Input::C] if ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
@@ -11952,7 +12038,7 @@ check 'a Change Party Member add reaches the gauge-card status panel ' \
   scene.db.system.system2_name = 'BattleStatus'
 
   ui = nil
-  30.times do
+  150.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -14340,6 +14426,25 @@ check 'walking slips HP from a poisoned member every fourth tile' do
   eq 99, hero.hp, 'the fourth tile slips 1 HP'
 end
 
+# Ports EasyRPG's `Game_Party::ApplyStateDamage` (src/game_party.cpp): its
+# `damage` bool is only ever set inside a `ChangeType_lose` branch, never a
+# `ChangeType_gain` one, and `Game_Player::UpdateNextMovementAction` gates the
+# red step-damage flash on exactly that bool. Regen's map-step tick heals, so
+# it must never redden the screen the way Poison's does.
+check "walking a GAIN-type state's own map-step tick heals without flashing the screen" do
+  hero = SlipActor.new([7], 90)                         # Regen
+  scene = new_scene({}, player: [0, 0], members: [hero])
+  st = scene.instance_variable_get(:@state)
+
+  walk(scene, 3)
+  eq 90, hero.hp, 'not a multiple of the interval yet'
+  ok !st.screen.flashing?
+
+  walk(scene, 1)
+  eq 91, hero.hp, 'the fourth tile heals 1 HP'
+  ok !st.screen.flashing?, 'a GAIN-type tick never flashes the screen, unlike a LOSE one'
+end
+
 check 'walking a damaging terrain takes HP every tile' do
   # 地形ダメージ: unlike the status slip this is a property of the ground, and it
   # bites on every tile rather than on an interval. Nepheshel's ダメージ床 set and
@@ -15087,7 +15192,7 @@ end
 
 check 'a transformed monster is redrawn with its new battler graphic' do
   scene, _st = battle_scene_with_pages(nil)
-  10.times do
+  90.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update

@@ -5799,6 +5799,52 @@ check "can_cast?: a weapon-type Attribute skill needs a weapon carrying it equip
   eq true, st.party.can_cast?(hero, 8)
 end
 
+# Ports EasyRPG's `Game_Actor::GetBaseAttributeRate` (src/game_actor.cpp): a
+# shield/armor/helmet/accessory that flags an attribute in its own
+# `attribute_set` grants the wearer a flat +1 defensive rank for that
+# element, OR'd across every matching piece worn (not stacked per item),
+# clamped at E (4, immune) -- the defensive counterpart of
+# `#weapon_attributes`, which reads the very same field off the weapon slot
+# only, for the opposite (offensive) purpose.
+check "Actor#attribute_ranks: equipped defensive gear grants a flat +1 resistance rank" do
+  items = {
+    10 => fake_item(type: 1, name: 'Flame Sword', attribute_set: [true]),  # weapon, attr 1
+    11 => fake_item(type: 3, name: 'Flame Armor', attribute_set: [true]),  # armour, attr 1
+    12 => fake_item(type: 5, name: 'Fire Charm', attribute_set: [true]),   # accessory, attr 1 too
+  }
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1], items)), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  eq({}, hero.attribute_ranks, 'nothing equipped, no database ranks -- no entries at all')
+
+  hero.equip([10, 0, 0, 0, 0]) # the Flame Sword, weapon slot
+  eq({}, hero.attribute_ranks, "a weapon's own attribute_set grants no defensive resistance")
+
+  hero.equip([0, 0, 11, 0, 0]) # the Flame Armor, armour slot
+  eq({ 1 => 3 }, hero.attribute_ranks, 'base default C(2) + the armour boost = D(3)')
+
+  hero.equip([0, 0, 11, 0, 12]) # armour + accessory, both flagging attribute 1
+  eq({ 1 => 3 }, hero.attribute_ranks, 'two matching pieces OR together, not stack, to +1 total')
+end
+
+check 'battle: equipped defensive gear reduces elemental damage taken, on top of the ' \
+      "target's own rank" do
+  items = { 11 => fake_item(type: 3, name: 'Flame Armor', attribute_set: [true]) } # armour, attr 1
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  bare = Game::Battle.from_actor(a)
+  foe = Game::Battle::Combatant.new('Foe', 0, 0, 5, 999, 999)
+  bat = Game::Battle.new([bare], [foe], Game::Rng.new(1))
+  eq 100, bat.send(:apply_attr_multiplier, 100, [1], bare),
+     'no armour yet -- default rank C (100%)'
+
+  a.equip([0, 0, 11, 0, 0])
+  worn = Game::Battle.from_actor(a)
+  eq 50, bat.send(:apply_attr_multiplier, 100, [1], worn),
+     'rank C(2) + the armour boost = D(3) -- 50% of the RPG2000 default table'
+end
+
 check 'an all-ally heal skill heals the whole party (caster included) and spends SP' do
   skills = { 5 => fake_skill(scope: 4, sp_cost: 8, power: 30, hp: true) }
   st = skill_party(skills)
@@ -8459,6 +8505,18 @@ check 'Troop EXP/gold/drops exclude a member still hidden at victory time (yado.
   eq 5, fled_troop.total_exp, 'a fled member grants no EXP even though it started visible'
   eq 10, fled_troop.total_gold
   eq [7], fled_troop.drops(Game::Rng.new(1)), 'and no drop either'
+
+  # A self-destructed member: Game::Battle#enemy_autodestruct only hides its
+  # Combatant (see that method's own comment, verified against EasyRPG's
+  # Game_BattleAlgorithm::SelfDestruct), and Scene::Map#refresh_battle_sprites
+  # mirrors that onto the troop member the same way #remove_fled_monster does
+  # for a scripted Force Flee -- so it drops nothing either, matching the
+  # community デフォ戦bot trivia (自爆した敵は経験値・お金・アイテムを落とさない).
+  exploded_troop = Game::Troop.new(db, 1)
+  exploded_troop.members[1].hidden = true # simulates a mid-battle self-destruct
+  eq 5, exploded_troop.total_exp, 'a self-destructed member grants no EXP'
+  eq 10, exploded_troop.total_gold
+  eq [7], exploded_troop.drops(Game::Rng.new(1)), 'and no drop either'
 end
 
 check 'a missing troop / enemy degrades to an empty, harmless model' do
@@ -8741,6 +8799,77 @@ check "an enemy's own missing state-rank entry defaults to B (80%), an actor's t
   # A state that *is* explicitly ranked is unaffected by the default either way.
   eq 100, bat.send(:state_susceptibility, hero, 2), "state 2 is explicitly rank A (100%) for the actor"
   eq 100, bat.send(:state_susceptibility, slime, 2), "state 2 is explicitly rank A (100%) for the enemy too"
+end
+
+# Ports EasyRPG's `Game_Actor::GetStateProbability` (src/game_actor.cpp): a
+# shield/armor/helmet/accessory that flags a state in its own `state_set`
+# resists it landing at all, by `100 - state_chance` percent, on top of the
+# target's A-E rank. `Game_Enemy::GetStateProbability` never scans equipment
+# at all (monsters equip nothing), so only an ally is affected.
+check "an ally's defensive equipment resists a state landing, on top of its A-E rank" do
+  items = { 5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50) } # accessory
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  bare = Game::Battle.from_actor(a)
+  bare.state_ranks = { 99 => 0 } # a fixture row models no ranks -- force the non-empty path
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([bare], [foe], Game::Rng.new(1))
+  eq 60, bat.send(:state_susceptibility, bare, 3),
+     'no resist gear equipped yet -- the plain rank-C default (60%)'
+
+  a.equip([0, 0, 0, 0, 5]) # the accessory, in the accessory slot
+  worn = Game::Battle.from_actor(a)
+  worn.state_ranks = { 99 => 0 }
+  bat2 = Game::Battle.new([worn], [foe], Game::Rng.new(1))
+  eq 30, bat2.send(:state_susceptibility, worn, 3),
+     '60% rank-C base * (100 - 50)% resist = 30%'
+end
+
+check "the strongest of several equipped resistances wins, not their sum or the weakest" do
+  items = {
+    5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50), # accessory, 50% resist
+    6 => fake_item(type: 4, state_set: [0, 0, 1], state_chance: 90), # helmet, 90% resist (stronger)
+  }
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  a.equip([0, 0, 0, 6, 5])
+  hero = Game::Battle.from_actor(a)
+  hero.state_ranks = { 99 => 0 }
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  eq 6, bat.send(:state_susceptibility, hero, 3),
+     '60% rank-C base * (100 - 90)% -- the strongest single piece, not 50+90 stacked'
+end
+
+check "a weapon's own state_set/state_chance is offense only -- it grants no resistance" do
+  items = { 5 => fake_item(type: 1, state_set: [0, 0, 1], state_chance: 90) } # weapon
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  a.equip([5, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  hero.state_ranks = { 99 => 0 }
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  eq 60, bat.send(:state_susceptibility, hero, 3),
+     "a weapon's own state_set never counts toward the wearer's own resistance"
+end
+
+check "on RPG2003, a defensive item's reverse_state_effect flag grants no resistance either" do
+  # reverse_state_effect only ever means something on a *weapon's own* states
+  # (flips inflict to heal, #weapon_states) or a curative item; it has no
+  # meaning on defensive gear's state_set, matching EasyRPG's own
+  # `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard excluding it.
+  items = { 5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50,
+                            reverse_state: true) }
+  st = skill_party({}, items, rpg2003: true)
+  a = st.party.actor_by_id(1)
+  a.equip([0, 0, 0, 0, 5])
+  hero = Game::Battle.from_actor(a)
+  hero.state_ranks = { 99 => 0 }
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  eq 60, bat.send(:state_susceptibility, hero, 3),
+     'reverse_state_effect on defensive gear is not a resistance flip'
 end
 
 check 'Battle.attack_damage is half attack less a quarter defence, floored at 0' do
@@ -11980,6 +12109,45 @@ check 'map slip damage: a GAIN-type state heals instead of draining, clamped to 
   eq [hero.max_mp, before_mp + 30].min, hero.mp
 end
 
+# Ports EasyRPG's `Game_Party::ApplyStateDamage` (src/game_party.cpp): its
+# `damage` bool is only ever set inside a `ChangeType_lose` branch, never a
+# `ChangeType_gain` one -- #apply_map_step_damage's own return value reports
+# every actor who changed either way, but #map_step_damaged? is the one the
+# scene should gate a red step-damage flash on (Scene::Map#note_party_step).
+check 'Party#map_step_damaged?: true only for an actual LOSE-type slip, never a bare GAIN' do
+  lose_table = { 2 => fake_state(name: 'Poison', hp_map_steps: 1, hp_map_val: 1) }
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2)
+  st.party.apply_map_step_damage(lose_table, 1)
+  eq true, st.party.map_step_damaged?, 'a LOSE-type tick is damage'
+
+  gain_table = { 3 => fake_state(name: 'Regen', hp_map_steps: 1, hp_map_val: 1,
+                                  hp_change_type: Game::States::CHANGE_TYPE_GAIN) }
+  st2 = party_state
+  hero2 = st2.party.actor_by_id(1)
+  hero2.add_state(3)
+  hero2.set_hp(hero2.max_hp - 5)
+  st2.party.apply_map_step_damage(gain_table, 1)
+  eq false, st2.party.map_step_damaged?, 'a bare GAIN-type tick never counts as damage'
+
+  # A LOSE and a GAIN state landing on the same step both apply -- RPG_RT
+  # applies each independently (never sums first), so a net-positive tile
+  # still counts as damaged if any single state on it was a loss.
+  mixed_table = { 2 => fake_state(name: 'Poison', hp_map_steps: 1, hp_map_val: 1),
+                  3 => fake_state(name: 'Regen', hp_map_steps: 1, hp_map_val: 10,
+                                  hp_change_type: Game::States::CHANGE_TYPE_GAIN) }
+  st3 = party_state
+  hero3 = st3.party.actor_by_id(1)
+  hero3.add_state(2)
+  hero3.add_state(3)
+  hero3.set_hp(hero3.max_hp - 20)
+  before = hero3.hp
+  st3.party.apply_map_step_damage(mixed_table, 1)
+  eq before + 9, hero3.hp, 'net +10 gain - 1 loss = +9, still an overall heal'
+  eq true, st3.party.map_step_damaged?, 'the loss half still counts as damage despite the net heal'
+end
+
 check 'two slipping states stack rather than the worse one winning' do
   # The battle-side effects pick a single significant state; the map drain is
   # summed, so a doubly-afflicted member loses both amounts on a step that is a
@@ -13945,16 +14113,24 @@ check 'an escaping enemy leaves the fight without counting as a kill' do
   eq :victory, b.run, 'the fight is over with the troop gone'
 end
 
-check 'self-destruction hits the party for atk - def/2 and kills the caster' do
+check 'self-destruction hits the party for atk - def/2 and hides the caster, ' \
+      'not kills it (2000_battle_bot / デフォ戦bot trivia, verified against ' \
+      'EasyRPG: Game_BattleAlgorithm::SelfDestruct::vExecute sets the ' \
+      'affected HP on the target only, and ApplyCustomEffect reacts to the ' \
+      'caster with SetHidden(true) alone, no HP write)' do
   hero = combatant('Hero', 40, 10, 20, 500)
   foe = combatant('Bomb', 60, 0, 5, 500)
   b = ai_battle([enemy_action(kind: 0, basic: 5)], nil, foe: foe, hero: hero)
   b.begin_round
-  b.step_action
+  b.step_action # the faster hero (agi 20 > 5) swings first: 40/2 - 10/4 = 18 dmg
+  hp_before_blast = foe.hp
   e = b.step_action
   eq true, e[:autodestruct]
   eq 55, e[:damage], '60 - 10/2'
-  ok foe.dead?, 'the bomb dies doing it'
+  ok !foe.dead?, 'the bomb does not die doing it'
+  eq hp_before_blast, foe.hp, "its own HP is untouched by the blast itself, " \
+    'exactly as a variable read of it would show in real RPG_RT'
+  ok foe.hidden, 'but it is taken out of play, the same as a fled monster'
 end
 
 # -- the rating-weighted choice ------------------------------------------------
@@ -14427,6 +14603,36 @@ check 'a transformation into an unknown enemy degrades to an attack' do
   e = enemy_entry([enemy_action(kind: 2, enemy_id: 99)], ai)
   ok e[:transform].nil?
   eq 20, e[:damage]
+end
+
+# A "true form" boss trick -- transforming into a form with a *smaller* max
+# HP/SP than the current values must not full-heal-then-clamp them down.
+# EasyRPG's `Game_Enemy::Transform` (src/game_enemy.cpp) only ever repoints
+# the `enemy` database row and refreshes the sprite; it never touches hp/sp
+# at all (those are set to the max exactly once, in the constructor, on the
+# enemy's very first spawn). `Game_BattleAlgorithm::Transform`'s own
+# `ApplyCustomEffect` never calls `SetAffectedHp`/`SetAffectedSp` either, so
+# the generic post-effect pass (`GetAffectedHp() == 0`) is a no-op for it.
+check 'a transformation carries current HP/SP over unchanged, not reclamped to the new maxima' do
+  row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                   :agility, :exp, :gold).new('Weak Slime', 100, 10, 5, 2, 2,
+                                              5, 0, 0)
+  db = Struct.new(:enemy).new({ 1 => row })
+  ai = Game::EnemyAi.new(db, new_state)
+  # def 80 makes the hero's own preceding basic-attack turn (it goes first,
+  # being faster) land for 0 damage, so the transform's own hp/sp handling is
+  # what this check is isolating -- the pre-existing default-hero attack step
+  # in #enemy_entry is otherwise unavoidable.
+  foe = combatant('Slime King', 90, 80, 5, 950) # 950 current HP
+  foe.max_hp = 1000 # ...out of a 1000 max, about to drop to a 100-max form
+  foe.mp = 40
+  foe.max_mp = 50
+  e = enemy_entry([enemy_action(kind: 2, enemy_id: 1)], ai, foe: foe)
+  eq true, e[:transform]
+  eq 100, foe.max_hp, "the new form's own max"
+  eq 950, foe.hp, 'current HP carries over completely unchanged, above the new max'
+  eq 10, foe.max_mp
+  eq 40, foe.mp, 'current SP carries over unchanged too'
 end
 
 # -- the database path ---------------------------------------------------------
