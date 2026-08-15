@@ -12642,6 +12642,123 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   ok !parent.pop_to_map_called
 end
 
+# A party whose four field skills exercise #apply_switch_skill /
+# #apply_escape_skill's own `sound_effect` playback (schema.rb field 16) --
+# one Switch skill with a configured SE, one Switch skill with a blank one
+# (no filename set), one Switch skill that always fails (Buzzer only, no
+# skill SE), and an Escape skill with a configured SE. Confirmed against
+# EasyRPG's `Scene_Skill::Update`: Switch/Escape play `skill->sound_effect`
+# on a successful cast; Teleport does not (it keeps the ordinary decision SE
+# played earlier in #update_teleport_target, already covered above), so it
+# is not repeated here.
+class SkillSoundEffectStubParty < MenuStubParty
+  SWITCH_SID = 40
+  SWITCH_SID_BLANK = 41
+  ESCAPE_SID = 42
+  SWITCH_SID_FAIL = 43
+
+  SE = OpenStruct.new(file: 'SwitchOn', volume: 90, pitch: 110, balance: 30)
+  BLANK_SE = OpenStruct.new(file: '', volume: 100, pitch: 100, balance: 50)
+
+  def field_skills(_actor, state = nil)
+    return [] unless state
+    [[SWITCH_SID, 2], [SWITCH_SID_BLANK, 2], [ESCAPE_SID, 5], [SWITCH_SID_FAIL, 2]]
+  end
+
+  def db_skill(id)
+    case id
+    when SWITCH_SID then OpenStruct.new(name: 'Summon', type: Game::Party::SKILL_SWITCH, sound_effect: SE)
+    when SWITCH_SID_BLANK
+      OpenStruct.new(name: 'Silent Switch', type: Game::Party::SKILL_SWITCH, sound_effect: BLANK_SE)
+    when ESCAPE_SID then OpenStruct.new(name: 'Escape', type: Game::Party::SKILL_ESCAPE, sound_effect: SE)
+    when SWITCH_SID_FAIL
+      OpenStruct.new(name: 'Failing Switch', type: Game::Party::SKILL_SWITCH, sound_effect: SE)
+    end
+  end
+
+  def cast_switch_skill(_caster, sid)
+    case sid
+    when SWITCH_SID then 17
+    when SWITCH_SID_BLANK then 18
+    end
+  end
+
+  def cast_escape_skill(_caster, sid, state)
+    return nil unless sid == ESCAPE_SID
+    state.escape_target
+  end
+end
+
+def skill_sound_effect_state
+  st = Game::State.new(SkillSoundEffectStubParty.new, 1, 0, 0)
+  st.escape_target = { map_id: 9, x: 1, y: 2, switch_id: nil }
+  st
+end
+
+check 'Scene::SkillMenu: a Switch skill plays its own sound_effect on a successful cast' do
+  parent = fake_parent(fake_db)
+  state = skill_sound_effect_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the first row, the switch skill with an SE
+  scene.update
+  RGSS::Input.reset
+  eq true, state.switches[17], 'the switch turned on'
+  eq [['Decision1', 100, 100], ['SwitchOn', 90, 110]], RGSS::Audio.se_calls,
+     "the ordinary Decision SE (confirming the choice) then the skill's own sound_effect"
+end
+
+check 'Scene::SkillMenu: a Switch skill with a blank sound_effect plays nothing extra and does not error' do
+  parent = fake_parent(fake_db)
+  state = skill_sound_effect_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second row, the blank-SE switch skill
+  scene.update
+  RGSS::Input.reset
+  RGSS::Audio.reset_se                               # after the cursor-move SE, before the confirm
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq true, state.switches[18], 'the switch still turned on'
+  eq [['Decision1', 100, 100]], RGSS::Audio.se_calls,
+     'only the ordinary Decision SE -- the blank sound_effect filename makes #play_sound no-op silently'
+end
+
+check 'Scene::SkillMenu: a failed Switch cast plays only Buzzer, not the skill\'s own sound_effect' do
+  parent = fake_parent(fake_db)
+  state = skill_sound_effect_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the fourth skill, row 1 col 1 (always fails)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Audio.reset_se                               # after the cursor-move SEs, before the confirm
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok !state.switches[17] && !state.switches[18], 'no switch flipped'
+  eq [['Decision1', 100, 100], ['Buzzer1', 100, 100]], RGSS::Audio.se_calls,
+     "Decision then Buzzer -- the configured sound_effect never plays on a failed cast"
+end
+
+check 'Scene::SkillMenu: an Escape skill plays its own sound_effect on a successful cast' do
+  parent = fake_parent(fake_db)
+  state = skill_sound_effect_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the third skill, row 1 col 0 (Escape)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Audio.reset_se                               # after the cursor-move SE, before the confirm
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq [9, 1, 2, 0], state.pending_teleport, 'queued straight from the one registered escape target'
+  eq [['Decision1', 100, 100], ['SwitchOn', 90, 110]], RGSS::Audio.se_calls,
+     "the ordinary Decision SE then the skill's own sound_effect, before the warp closes the menu"
+end
+
 # EasyRPG's Window_Skill::UpdateHelp (src/window_skill.cpp) feeds the
 # database skill's own `description` straight to Scene_Skill's Window_Help
 # banner every time the selection changes -- the exact mechanism
