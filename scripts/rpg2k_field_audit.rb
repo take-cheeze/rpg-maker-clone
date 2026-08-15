@@ -60,8 +60,6 @@ NOT_OURS = {
   message_affected: 'no known trigger — EasyRPG defines ' \
                     'GetStateAffectedMessage and never calls it from either ' \
                     'battle scene, so nothing pins when RPG_RT prints it',
-  footstep: 'RPG2003 only — EasyRPG plays it from Game_Player::BeginMove ' \
-            'behind an IsRPG2k3() gate',
   hp_change_type: 'RPG2003 only — the schema marks it so, and RPG2000 has one ' \
                   'flat/percentage reading rather than a selector',
   sp_change_type: 'see hp_change_type',

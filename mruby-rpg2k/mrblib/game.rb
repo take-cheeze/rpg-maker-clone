@@ -485,6 +485,20 @@ module Game
     v
   end
 
+  # round(num.to_f / den), banker's rounding (ties go to the nearest *even*
+  # integer, not always up) -- integer arithmetic standing in for C's
+  # `std::lrint` under the default IEEE 754 `FE_TONEAREST` rounding mode,
+  # which is round-half-to-even, not round-half-up. `num`/`den` are both
+  # non-negative (every caller's own numerator/denominator are sums/products
+  # of non-negative game values); `den` must be positive.
+  def self.round_half_even(num, den)
+    q, r = num.divmod(den)
+    twice_r = 2 * r
+    return q if twice_r < den
+    return q + 1 if twice_r > den
+    q.even? ? q : q + 1
+  end
+
   # RPG2000 transparency (0 opaque .. 100 fully clear) -> a 0..255 opacity.
   # Shared by Interpreter#trans_to_opacity (Show/Move Picture's live param) and
   # Game::State.restore_pictures (the save's chunk 103 field 34), which use the
@@ -7461,9 +7475,20 @@ module Game
     # The party's exhaustion, 0 (untouched) to 100 (wiped out) — the RPG2003
     # `fatigue` page condition. Ported from EasyRPG's Game_Party::GetFatigue:
     # HP is two thirds of the weight and SP one third, so a party at full HP with
-    # no SP left still only reaches 33. Written in integer arithmetic (mruby has
-    # no rounding helper here) with the same round-half-up the C++ does; an
-    # SP-less party divides by 1 rather than 0, exactly as the original notes.
+    # no SP left still only reaches 33. An SP-less party divides by 1 rather
+    # than 0, exactly as the original notes.
+    #
+    # Written in integer arithmetic (mruby has no rounding helper here) with
+    # round-half-**to-even**, not round-half-up: EasyRPG's own
+    # `Utils::RoundTo<int>` calls `std::lrint`, which under the default IEEE
+    # 754 rounding mode (`FE_TONEAREST`, which nothing in EasyRPG's source
+    # changes) rounds an exact `.5` to the nearest *even* integer, not always
+    # up. A single ally at max_hp 16 / hp 3 with no SP (total_sp forced to 1)
+    # computes exactly 12.5 before rounding -- EasyRPG rounds that to 12
+    # (even), this method used to round it to 13 (a prior version's comment
+    # incorrectly assumed C rounds `.5` up), landing the `fatigue` page
+    # condition/enemy AI threshold one point apart at that exact boundary
+    # (88 vs 87).
     def fatigue
       return 0 if @allies.empty?
       hp = 0; total_hp = 0; sp = 0; total_sp = 0
@@ -7477,7 +7502,7 @@ module Game
       total_sp = 1 if total_sp <= 0
       num = 100 * (2 * hp * total_sp + sp * total_hp)
       den = 3 * total_hp * total_sp
-      100 - (2 * num + den) / (2 * den)
+      100 - Game.round_half_even(num, den)
     end
 
     # The `command_actor` page condition (which battle command an actor just

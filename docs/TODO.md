@@ -5212,6 +5212,30 @@ not yet verified:
   independently of each other, and a compound skill's stat-mod effect landing
   on its own roll while its HP effect misses on a different one), each
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **`Game::Battle#fatigue` (the RPG2003 `fatigue` page condition) now
+  rounds an exact tie to the nearest *even* whole percent, not always up.**
+  A prior version of this method's own comment claimed it used "the same
+  round-half-up the C++ does" — checked directly against EasyRPG's actual
+  `Game_Party::GetFatigue` (`src/game_party.cpp`) rather than that assumption:
+  it computes the ratio as a float, then rounds through `Utils::RoundTo<int>`
+  (`src/utils.h`), which calls `std::lrint` — under the default IEEE 754
+  `FE_TONEAREST` rounding mode (nothing in EasyRPG's source changes it),
+  `lrint` rounds an exact `.5` to the nearest *even* integer (banker's
+  rounding), not up. A single ally at max HP 16 / current HP 3 with no SP
+  (the SP term forced to a 1-denominator per the method's own existing
+  divide-by-zero guard) computes exactly 12.5 before rounding: EasyRPG lands
+  on 12 (already even), this method's round-half-up landed on 13 — one point
+  apart on the `fatigue` page condition / RPG2003 enemy-AI `COND_FATIGUE`
+  threshold at that exact boundary. Fixed with a new `Game.round_half_even`
+  (integer `num`/`den` arithmetic: compare `2 * remainder` against the
+  denominator, and break an exact tie toward whichever quotient is even),
+  replacing the method's own hand-rolled round-half-up integer trick.
+  Every existing `#fatigue` test computes a ratio that isn't an exact `.5`
+  tie, so none of them change. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (the real 12.5-tie `#fatigue` case
+  landing on 88 rather than 87, and four direct `Game.round_half_even`
+  cases spanning an even tie, an odd tie, and two ordinary non-tie
+  fractions), confirmed to fail against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
@@ -8753,6 +8777,26 @@ the now-dangling tile, and asserts the diagnostic fires exactly once (not
 once per the two call sites that both read the same landed-on tile in a
 single step, and not again on further re-queries of the same tile) while
 terrain damage/bush depth both fall back to their harmless defaults.
+✅ **Terrain's `footstep` and `on_damage_se` fields (chunk 16 elements 15/16)
+are wired up** — parsed by `mruby-lcf/mrblib/schema.rb` since the terrain
+chunk was first decoded (ADR 0034) but never read by the runtime;
+`scripts/rpg2k_field_audit.rb`'s `NOT_OURS` table used to list `footstep` as
+out of scope for exactly that reason. Checked against a real
+`Game_Player::Move` (EasyRPG source, not guessed): the footstep SE is
+**RPG2003-only** — gated on `Player::IsRPG2k3()`, so an RPG2000 database never
+plays one no matter what the field holds — and `on_damage_se` does not gate
+whether the terrain's own damage tick plays a sound; it repurposes `footstep`
+itself, from an ordinary per-step ambient sound into a damage-tick-only one
+(`!terrain->on_damage_se || red_flash`, where `red_flash` is "this step's
+terrain damage actually hit someone"). `Scene::Map#play_terrain_footstep_se`
+(`mruby-rpg2k/mrblib/scene/map.rb`) reproduces both rules, called from
+`#note_party_step` right alongside `#terrain_step_damage` — the same
+`#terrain_row_at` lookup that call site already made for the damage tick is
+now passed to both rather than queried twice. Covered by three new
+`scripts/rpg2k_scene_check.rb` checks: an RPG2003 fixture's footstep SE
+firing once per tile walked; an RPG2000 fixture never playing one even when
+the field is set; and an RPG2003 fixture with `on_damage_se` set staying
+silent on a harmless tile while playing on every tile of a damaging one.
 ✅ **A dangling chipset id no longer renders a map blank and fully passable
 with no trace** — the "chipset" case from the "invalid hero, skill, item,
 enemy, enemy group, battle animation, terrain, chipset, common event" list

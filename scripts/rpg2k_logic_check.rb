@@ -11841,6 +11841,24 @@ check 'Battle#fatigue weights HP two thirds and SP one third' do
   eq 100, b2.fatigue
 end
 
+check 'Battle#fatigue rounds an exact tie to even, not always up' do
+  # EasyRPG's Utils::RoundTo<int> is std::lrint under the default IEEE 754
+  # FE_TONEAREST mode -- round-half-to-*even*, not round-half-up. max_hp 16,
+  # hp 3, no SP (total_sp forced to 1) computes exactly 12.5 before rounding:
+  # EasyRPG rounds to 12 (already even), landing fatigue at 88, not 87.
+  tied = combatant('Hero', 10, 0, 10, 16)
+  tied.hp = 3
+  b = Game::Battle.new([tied], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1))
+  eq 88, b.fatigue, '100 - round(12.5) = 100 - 12 (even), not 100 - 13'
+end
+
+check 'Game.round_half_even rounds a tie to the nearest even integer' do
+  eq 12, Game.round_half_even(25, 2), '12.5 -> 12 (already even)'
+  eq 14, Game.round_half_even(27, 2), '13.5 -> 14, not 13 (odd ties round up)'
+  eq 10, Game.round_half_even(31, 3), '10.333... is not a tie -> plain round-down'
+  eq 11, Game.round_half_even(32, 3), '10.666... is not a tie -> plain round-up'
+end
+
 check 'the fatigue page condition tests the window' do
   hero = combatant_mp('Hero', 10, 0, 10, 100, 50)
   b = Game::Battle.new([hero], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1))
