@@ -3361,7 +3361,7 @@ class RPG2k
           set_char_location(r[:a], this_event, b[0], b[1])
           set_char_location(r[:b], this_event, a[0], a[1])
         else
-          set_char_location(r[:target], this_event, r[:x], r[:y])
+          set_char_location(r[:target], this_event, r[:x], r[:y], r[:dir])
         end
       end
 
@@ -3382,18 +3382,32 @@ class RPG2k
         end
       end
 
-      # Instantly move a target character to a tile.
-      def set_char_location(target, this_event, x, y)
+      # Instantly move a target character to a tile, optionally snapping its
+      # facing too (Change Event Location's own RPG2003 facing sub-parameter
+      # -- see #do_change_event_location; nil/0 leaves the current facing
+      # alone, matching Teleport's own "0 means keep it" convention. Trade
+      # Event Locations carries no facing at all, so it always calls this
+      # with `dir` left at its default).
+      def set_char_location(target, this_event, x, y, dir = nil)
         case target
         when MOVE_TARGET_PLAYER
           move_player_to(x, y)
+          @state.direction = dir if dir && dir > 0
         when 0, MOVE_TARGET_THIS
-          move_event_to(this_event, x, y) if this_event
+          if this_event
+            move_event_to(this_event, x, y)
+            this_event[:char].face!(dir) if dir && dir > 0
+          end
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
-          move_vehicle_to(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT], x, y)
+          type = Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]
+          move_vehicle_to(type, x, y)
+          @state.vehicle(type).direction = dir if dir && dir > 0
         else
           ev = @events.find { |e| e[:id] == target }
-          move_event_to(ev, x, y) if ev
+          if ev
+            move_event_to(ev, x, y)
+            ev[:char].face!(dir) if dir && dir > 0
+          end
         end
       end
 

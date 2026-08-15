@@ -6631,6 +6631,32 @@ not yet verified:
   riding along with it — east, with no separate vehicle-character route ever
   armed), confirmed to fail against the pre-fix code (stayed at x=0) before
   the fix.
+- ✅ **Change Event Location's RPG2003 facing sub-parameter is now honoured —
+  a target moved by the command can snap to face a direction on arrival,
+  instead of always keeping whatever facing it already had.** Confirmed
+  against EasyRPG's actual C++ source: `Game_Interpreter::
+  CommandChangeEventLocation` (code 10860, `src/game_interpreter.cpp`) reads
+  a 5th parameter as `direction = com.parameters[4] - 1` under
+  `Player::IsRPG2k3Commands()`, then applies it with `event->SetDirection`/
+  `UpdateFacing` — but "only for the constant case, not for variables" (its
+  own comment), i.e. only when the target's x/y came from the literal
+  param2/param3 rather than the variable-appointment mode. `Interpreter#
+  do_change_event_location` (`mruby-rpg2k/mrblib/interpreter.rb`) never read
+  `cmd.param(4)` at all, so an event authored with the editor's "set facing"
+  sub-option — e.g. teleporting a statue onto a cutscene mark and turning it
+  to face the camera — silently kept its old facing instead. Fixed by
+  reusing `#teleport_facing` (the identical 1-based up/right/down/left → this
+  runtime's own numpad-direction conversion Teleport's own param3 already
+  goes through, for the exact same "RPG2000 writes 0 here" reasoning) on
+  `cmd.param(4)`, gated on constant-appointment mode, and threading the
+  result through the queued `:set` location request into `Scene::Map#
+  set_char_location`, which now snaps whichever character type the request
+  targets (player, this event, another map event, or a vehicle) to face it.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (the queued
+  request carries the converted `dir:`, and variable-appointment mode always
+  reads as `0`/no facing change) and a new `scripts/rpg2k_scene_check.rb`
+  check (a targeted event snaps to face down on arrival), all three
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

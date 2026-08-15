@@ -2687,14 +2687,27 @@ module Game
     # constants param2/param3, 1 the values of those two variables); param2/param3
     # the x and y. Queued as a `:set` request the scene applies — non-blocking,
     # so the rest of the command list runs on.
+    #
+    # param4 is the same **RPG2003** facing addition Teleport's own param3 is
+    # (EasyRPG's `CommandChangeEventLocation`, `src/game_interpreter.cpp`: `if
+    # (Player::IsRPG2k3Commands() && com.parameters.size() > 4) direction =
+    # com.parameters[4] - 1;`), 1-based over up/right/down/left, 0 (or absent,
+    # which `#param` already reads as 0) meaning "keep the current facing" —
+    # `#teleport_facing` already converts that exact encoding into this
+    # runtime's own numpad direction, so it is reused verbatim here rather
+    # than duplicated. EasyRPG only applies it "for the constant case, not
+    # for variables" (its own comment) -- the appointment-mode check below
+    # mirrors that.
     def do_change_event_location(cmd)
       x = cmd.param(2)
       y = cmd.param(3)
-      if cmd.param(1) == 1
+      variable_mode = cmd.param(1) == 1
+      if variable_mode
         x = variables[x]
         y = variables[y]
       end
-      @location_requests.push({ op: :set, target: cmd.param(0), x: x, y: y })
+      dir = variable_mode ? 0 : teleport_facing(cmd.param(4))
+      @location_requests.push({ op: :set, target: cmd.param(0), x: x, y: y, dir: dir })
     end
 
     # Trade Event Locations (Swap Event Locations): exchange the tiles of the two
