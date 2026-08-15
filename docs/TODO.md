@@ -5897,6 +5897,25 @@ not yet verified:
   `no_terrain_damage` gear that blocks ordinary damage, and a healing tile
   never flashing the screen — the first two confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **A `\.` (quarter-second) message pause now stretches with the `\s[n]`
+  typing speed in effect when it's reached, instead of always holding a flat
+  16 frames.** Confirmed against EasyRPG's actual C++ source
+  (`src/window_message.cpp`, `case '.'`, whose own comment calls it "a
+  bug(??)"): `SetWaitForNonPrintable(16 + Utils::Clamp(speed - 16, 0, 4))`,
+  where `speed` is whatever `\s[n]` (1..20) is active at that point in the
+  text — a speed of 17..20 stretches the pause by 1..4 extra frames. `\|`
+  (the full-second pause) carries no such term and stays a flat 61 in both
+  engines. `Scene::Map#drive_message_pause` used a bare `MSG_PAUSE_QUARTER`
+  constant (16) with no reference to the current speed at all, even though
+  the engine already tracks everything needed to compute it correctly:
+  `Game::TextReveal#speed_at(pos)` resolves the `\s[n]` in effect at any
+  revealed-character position, and each pause already carries its own `at:`
+  position. Fixed by having `#drive_message_pause` call
+  `reveal.speed_at(pause[:at])` and add EasyRPG's own clamp term for the
+  `:quarter` pause kind only, leaving `:full`/`:key` untouched. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check pinning a `\s[20]\.` pause to
+  exactly 20 frames (16 + 4, the maximum stretch), confirmed to fail against
+  the pre-fix code before the fix (`expected 20, got 16`).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

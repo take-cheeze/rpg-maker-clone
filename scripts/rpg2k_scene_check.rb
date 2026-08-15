@@ -3448,6 +3448,35 @@ check 'a \\. pause holds the reveal for RPG_RT\'s real 16 frames, not the docume
   eq 16, held, 'RPG_RT holds a \\. pause for 16 frames, not the documented 15'
 end
 
+check 'a \\. pause at typing speed 20 holds for 20 frames, not a flat 16' do
+  # EasyRPG's own comment calls this "a bug(??)": `SetWaitForNonPrintable(16
+  # + Utils::Clamp(speed - 16, 0, 4))`, where `speed` is whatever `\s[n]`
+  # (1..20) is in effect when the `\.` is reached, not a fixed 16. Speed 20
+  # stretches the quarter-pause by its full +4 (`clamp(20-16, 0, 4) = 4`).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: '\\s[20]a\\.b')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  frames = 0
+  until reveal.pending_pause
+    scene.update
+    frames += 1
+    break if frames > 30
+  end
+  ok reveal.pending_pause, 'the \\. pause is reached'
+  held = 0
+  until reveal.pending_pause.nil?
+    scene.update
+    held += 1
+    break if held > 30
+  end
+  eq 20, held, 'speed 20 stretches the quarter-pause to 20 frames (16 + 4), not a flat 16'
+end
+
 check 'a \\| pause holds the reveal for RPG_RT\'s real 61 frames, not the documented 60' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
