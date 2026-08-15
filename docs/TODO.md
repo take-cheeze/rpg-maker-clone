@@ -1497,6 +1497,27 @@ The work below is roughly ordered by the critical path to a walkable game
   Nepheshel never takes since it names no terrain backdrops at all. The walk is
   bounded and cycle-safe, so a tree that loops ends at the terrain instead of
   hanging the battle.
+  **And it is on screen now**, which for a while it was not: the name resolved
+  correctly and the sprite was built, but it drew *behind the map*. RPG_RT
+  replaces `Scene_Map` with `Scene_Battle` outright, so nothing of the map is on
+  screen during a fight and the backdrop is the whole background; this port runs
+  the fight inline on `Scene::Map` instead, and `#render` kept compositing the
+  tile layers, parallax, hero, events and vehicles every frame — over the
+  backdrop, since its z 5 (EasyRPG Player's own `Priority_Background`,
+  `src/drawable.h`, correct there precisely *because* no map is drawn beside it)
+  is outranked by both `@map_viewport` (z 100) and `@upper_viewport` (z 200),
+  and the lower tile layer is opaque. Every fight was fought over whatever chip
+  layer the party stood on. `Scene::Map#set_map_layers_visible` hides both
+  viewports for the fight's duration and `#render` skips the map compositing
+  outright rather than leaving a hidden layer redrawing under the battle — the
+  same treatment the picture layer already gets (see the **Picture** bullet
+  below) — with both back on the first frame after `@battle_ui` clears. The
+  in-battle Show Battle Animation is deliberately *not* gated with them: it
+  renders through `@animation_sprite`, a top-level sprite at z 150 (above the
+  battlers, below the pictures), not through either map viewport. Still open,
+  and a separate question: Change Screen Tone rides on `@map_viewport`'s tone,
+  so it reaches the map and not the backdrop — whether RPG_RT tints the battle
+  background needs a wine diff before anything is changed.
   **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
   than only ever attacking — the single biggest silent gap left in the battle
   system, since **510 of the 959 enemy actions across the two test beds are
@@ -3587,6 +3608,58 @@ The work below is roughly ordered by the critical path to a walkable game
   staying put for center; a map-triggered animation carrying RPG_RT's own
   24px map-target height, not the CharSet frame's 32px), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Per-cell transparency is no longer approximated away either.** Each
+  cell of an animation frame carries its own `transparency` (`battle_anime`
+  chunk 19's per-cell field 10 — liblcf's
+  `rpg::AnimationCellData::transparency`, an `int32_t` defaulting to 0),
+  decoded by the schema all along and dropped on the floor by
+  `#blit_animation_cell`, which blitted every cell fully opaque: an animation
+  whose author faded a cell in or out, or layered a translucent glow over a
+  solid one, played every frame at full strength. A new
+  `Scene::Map#animation_cell_opacity` converts the field's percentage (0 fully
+  opaque .. 100 fully invisible) to RGSS's 0..255 opacity exactly the way
+  EasyRPG's own `BattleAnimation::DrawAt` does (`src/battle_animation.cpp`,
+  fetched verbatim): `SetOpacity(255 * (100 - cell.transparency) / 100)`,
+  integer division and all. That opacity goes straight into `Bitmap#blt`'s own
+  optional opacity argument, which blends in *straight* (non-premultiplied)
+  alpha — so a half-transparent cell lands in the screen-sized
+  `@animation_bmp` at half coverage with its colour intact, and
+  `@animation_sprite`'s own composite then attenuates it once, not twice (the
+  exact double-attenuation `blend_over` was written to avoid,
+  `mruby-rgss/src/lib.cxx`). A cell at 100% is skipped rather than run through
+  the blit's 96x96 per-pixel loop to draw nothing, and a cell with no
+  `transparency` at all (the schema default, or a test double that never sets
+  one) reads as 0 and draws exactly as it did before. Out-of-range values clamp
+  both ways. **Still approximated:** per-cell zoom and tone, which need an
+  `RGSS::Viewport` tone and a scaling blit the map rendering path has never had
+  — unchanged by this. Covered by new `scripts/rpg2k_scene_check.rb` checks
+  (the percentage-to-opacity math including the defaulted and out-of-range
+  cases; a drawn cell blitting at its own opacity and in the same place as
+  before; a 100%-transparent cell laying down nothing), confirmed to fail
+  against the pre-fix code before the fix.
+  ✅ **The sheet itself is now loaded colour-keyed**, which was the larger
+  half of the same bug. `Bitmap.new`'s second argument maps palette index 0 to
+  transparent (`mruby-rgss/src/lib.cxx`'s `load_xyz_mem` /
+  `load_png_tolerant_mem` `trans` flag), and `#animation_sheet` was the one
+  sheet loader in this runtime that never passed it — `CharSet/`, `ChipSet/`,
+  `FaceSet/`, `Monster/`, `System/` and `Picture/` all did, so `Battle/` alone
+  decoded opaque. An animation sheet is a 5-column grid of 96x96 cells whose
+  *entire* background is the transparent colour, so every cell
+  `#blit_animation_cell` laid down painted an opaque 96x96 rectangle of that
+  background over its target: a solid block parked on the enemy for the
+  animation's whole duration, not a spell. (With the per-cell transparency fix
+  above and without this one, the block would merely have become a translucent
+  block; the two are halves of the same "handle the animation's transparency"
+  gap.) Confirmed against EasyRPG's own material table (`src/cache.cpp`,
+  fetched verbatim), whose `Spec::transparent` column is true for `Battle`
+  alongside every directory this runtime already colour-keys, and false only
+  for the four full-screen backdrops — `Backdrop`, `Panorama`, `Title`,
+  `GameOver` — which this runtime already loads opaque and which stay that
+  way. Covered by a new `scripts/rpg2k_scene_check.rb` check (the sheet loads
+  as `Battle/<name>` with the flag set, `Backdrop/` still loads without it),
+  which needed the check suite's stub `Bitmap` taught to record *how* a
+  graphic was loaded rather than only that it was; confirmed to fail against
+  the pre-fix code before the fix.
 - ✅ **Which fields the games set that the runtime never reads** —
   `ruby scripts/rpg2k_field_audit.rb`. A survey, not a check (it asserts nothing
   and always exits 0): for every scalar database field it counts the rows of the
@@ -5688,6 +5761,43 @@ not yet verified:
   buy/sell-a-stack-of-three checks that used to press UP twice and now press
   RIGHT twice), all four confirmed to fail against the pre-fix code before
   the fix.
+- ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
+  only once it has been used that many times, `0` means 無制限 (never
+  consumed), and the five equipment types are never consumed by use at all.**
+  The field has been parsed since the schema was written (`LCF::Schema`'s item
+  chunk 13, field 6, default 1) and no runtime code had ever read it: every one
+  of the eight consumption sites — `#use_medicine`, `#use_skill_book`,
+  `#use_seed`, `#use_special_item`, `#use_equip_skill_item`,
+  `#use_special_escape_item`, `#use_special_teleport_item`, `#use_switch_item`
+  and the battle screen's own Item action (`Scene::Map#drive_battle_animate`) —
+  called a bare `lose_item(id, 1)`, so *every* item vanished on its first use.
+  Three separate behaviours were missing, all from EasyRPG's
+  `Game_Party::ConsumeItemUse` (`src/game_party.cpp`), which
+  `Game_Party::UseItem` calls once an item is known to have done something:
+  a **type gate** (`Type_normal` and the five equipment types return before the
+  use count is ever looked at, so a 特殊効果 `use_skill` weapon casting its
+  skill from the Item menu is a *reusable tool* — this build destroyed the
+  weapon on its first use), **`uses == 0` meaning unlimited**, and the
+  **partial-use tally** itself (`item_usage[idx]++`, and only on reaching
+  `uses` is a copy removed and the tally reset). The tally is per item id, not
+  per copy, matching the save format: chunk 109's `item_usage` (field 14) runs
+  parallel to `item_ids`/`item_counts` and was already decoded but unused.
+  Modelled as `Game::Party#item_usage` (id → uses spent on the copy in hand)
+  behind one new `#consume_item_use` that every site now calls; `#gain_item`
+  carries the other half of the rule — EasyRPG's `AddItem` resets the tally
+  whenever a copy *leaves* the bag and never when one is added, so selling a
+  half-used item and buying it back refills its uses while topping the stack up
+  does not. The tally survives Save/Continue both ways: through
+  `Party#to_h`/`#load_state` for this runtime's own Marshal saves (an older
+  save with no tally simply reads as "nothing spent") and through chunk 109
+  field 14 in `State#to_lsd`/`.from_lsd` for a genuine `Save<N>.lsd`. Covered
+  by six new `scripts/rpg2k_logic_check.rb` checks (the N-uses-per-copy walk,
+  `uses == 0`, the schema default, the gain/lose reset asymmetry, the
+  Save/Continue round-trip and the `.lsd` round-trip) plus a data-driven
+  `scripts/rpg2k_testbed_logic_check.rb` check that walks every real switch
+  item whose 使用回数 is not the default; the two existing `use_skill`
+  equipment checks now assert the weapon is *not* consumed, which is what they
+  had been pinning the old bug as correct.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control

@@ -210,3 +210,12 @@ only show up in the deployed page. When you touch a codec, reason about the
 ## Testing Standards
 
 - Unit tests are written using Google Test and executed by CTest. Use `cmake --build build -t test` to run it
+- Line coverage of the Ruby engine sources comes from the host-side checks:
+  `ruby scripts/coverage_report.rb` runs the `scripts/*_check.rb` harnesses
+  under CRuby's `Coverage` stdlib and reports `mruby-*/mrblib` per gem and per
+  file (`coverage/lcov.info`, `coverage/coverage.json`). It measures only what
+  those CRuby harnesses reach — `mruby_test` and the native smoke tests run
+  inside mruby, where there is no `Coverage` — so the total is a floor, not a
+  ceiling. When adding a check to the `ruby-checks` CI job, add it to the
+  reporter's `CHECKS` list too, or its coverage goes unmeasured. See
+  `docs/coverage.md` and ADR 0049.

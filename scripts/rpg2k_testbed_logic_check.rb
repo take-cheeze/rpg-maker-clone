@@ -382,6 +382,34 @@ def check_menus(dir)
       ok party.switch_item?(id), "switch item ##{id} is recognised as one"
     end
   end
+
+  # 使用回数 (item field 6) read off real rows: 0 is 無制限 (never consumed) and
+  # anything above 1 makes one copy worth several uses, which this runtime used
+  # to ignore entirely -- every item vanished on its first use. A switch item is
+  # the self-contained probe: using one needs no target and always does
+  # something, so every call reaches Game::Party#consume_item_use. Each gets a
+  # party of its own so the shared one above keeps its full bag.
+  multi = switch.select { |id| (party.db_item(id).uses || 1) != 1 }
+  return if multi.empty?
+  puts "   #{multi.size} switch item(s) with a non-default 使用回数"
+
+  check "#{name}: a switch item's 使用回数 decides when a copy is spent" do
+    multi.each do |id|
+      p2 = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+      uses = p2.db_item(id).uses
+      p2.gain_item(id, 1)
+      if uses == 0
+        5.times { ok p2.use_switch_item(id), "item ##{id} (無制限) still flips its switch" }
+        eq 1, p2.item_count(id), "item ##{id} (無制限) is never consumed"
+      else
+        (uses - 1).times { p2.use_switch_item(id) }
+        eq 1, p2.item_count(id),
+           "item ##{id} survives its first #{uses - 1} use(s) of #{uses}"
+        p2.use_switch_item(id)
+        eq 0, p2.item_count(id), "and is spent by use #{uses}"
+      end
+    end
+  end
 end
 
 # The status effects a real game's 状態 table asks for, exercised against that

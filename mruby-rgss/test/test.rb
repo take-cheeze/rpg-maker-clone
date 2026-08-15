@@ -10,6 +10,25 @@ assert "RGSS.to_nfd" do
   assert_equal RGSS.to_nfd("Ŵ"), "W\u0302"
 end
 
+assert "RGSS.window_title records what a game names itself" do
+  # No window here (mrbtest installs no hook), so this asserts the record every
+  # backend keeps -- what the SDL window would have been titled with.
+  RGSS.window_title = "ゆめにっき"
+  assert_equal "ゆめにっき", RGSS.window_title
+
+  # Anything else is stringised, the way a title read out of a database or an
+  # ini may not be a String to begin with.
+  RGSS.window_title = 2003
+  assert_equal "2003", RGSS.window_title
+
+  # A project with no title of its own clears it back to "no title" rather than
+  # raising or leaving the previous game's name up.
+  RGSS.window_title = nil
+  assert_nil RGSS.window_title
+  RGSS.window_title = ""
+  assert_nil RGSS.window_title
+end
+
 assert "RGSS::Color basics" do
   c = RGSS::Color.new(10, 20, 30)
   assert_equal 10.0, c.red

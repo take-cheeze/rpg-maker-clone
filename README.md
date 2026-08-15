@@ -131,6 +131,14 @@
   invented English string. And a battle page's **Change Monster Condition** now
   redraws the panel: it writes straight to the live combatant, so nothing had
   told the screen it was out of date
+- The **battle background is on screen**, not merely resolved. Which
+  `Backdrop/<name>` a fight uses already came from the game's own data (the map
+  tree's `backdrop_type` walked for inheritance, falling back to the terrain
+  the encounter started on), but the map kept drawing over it: RPG_RT swaps
+  `Scene_Map` out for `Scene_Battle`, while this port runs the fight inline on
+  the map scene, whose tile layers sit above the backdrop and are opaque. The
+  map view is hidden — and stops compositing — for the fight's duration, and is
+  back the frame it ends
 - The **field windows show a condition too** — the menu party list, the item and
   skill target lists, and the status screen, which are the three RPG_RT draws one
   in. The target lists are the point: they are where you pick who to use an
@@ -420,6 +428,23 @@
   animation's sheet away, which the log reports as `played=true` because the
   cell sprite is there, holding a placeholder bitmap
 
+### Window title
+- The window is named after the game that is running, so the desktop (and the
+  browser tab, in the WebAssembly build) says which project is loaded. Each
+  maker's boot reads it from where that maker keeps it: RPG2000/2003 from
+  `RPG_RT.ini`'s `GameTitle` (decoded from CP932, like the rest of a 2000/2003
+  project), XP from `Game.ini`'s `Title`, VX / VX Ace from the database's
+  `System#game_title`, and MV / MZ from their own `Scene_Boot`, which assigns
+  `$dataSystem.gameTitle` to `document.title`
+- A project with no title of its own is named after the folder it was loaded
+  from; before any game is loaded — and for a boot that never gets far enough to
+  read one — the window says **RPG Maker Clone**
+- A running game can rename the window: `RGSS.window_title = "..."` from Ruby,
+  or (for the JavaScript makers) any `document.title` assignment, the way an MV
+  plugin retitles the page. The terminal backends below have no window to name,
+  so there the title is simply recorded and readable back through
+  `RGSS.window_title`
+
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC
   **sixel** protocol or **iTerm2's inline-image** protocol
@@ -539,6 +564,35 @@
   LLVM defaults and invents a diff of hundreds of unrelated lines. The script's
   header notes the two smaller traps as well — a genuine but narrow clang-format
   version difference, and why a line-length grep is not a substitute.
+
+### Code coverage
+
+- Nearly all of the runtime is Ruby (`mruby-*/mrblib`, ~39k lines against ~3k
+  lines of C++ glue), and the `scripts/*_check.rb` harnesses load those exact
+  sources under CRuby. `scripts/coverage_report.rb` runs the harnesses with
+  CRuby's `Coverage` stdlib switched on and reports what they reached:
+
+  ```sh
+  ruby scripts/coverage_report.rb              # -> coverage/lcov.info + .json
+  ruby scripts/coverage_report.rb --per-file   # every file, not just the tail
+  genhtml coverage/lcov.info -o coverage/html  # browsable per-line report
+  ```
+
+  ```
+  mruby-lcf      #################.......   68.8%     271 / 394
+  mruby-rpg2k    ######################..   92.9%   11305 / 12175
+  total          ###################.....   80.5%   12733 / 15810
+  ```
+
+- CI's `ruby-checks` job publishes the same table in its job summary and the
+  files as the `ruby-coverage` artifact. It is report-only; `--min-line-rate`
+  turns it into a gate when a floor is wanted.
+
+- The total is a **floor**: `mruby_test` and the native smoke tests exercise the
+  same sources inside mruby, where no `Coverage` module exists, so what only
+  they reach counts as uncovered here (which is why the RGSS and MV/MZ runtime
+  files read 0%). `docs/coverage.md` and `docs/adr/0049-ruby-line-coverage-from-the-host-side-checks.md`
+  cover the details and the trade-off.
 
 ### Play in the browser (WebAssembly)
 

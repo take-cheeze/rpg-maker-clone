@@ -2603,6 +2603,11 @@ module Game
 
     attr_reader :actors, :items, :gold
 
+    # Per-item 使用回数 progress: item id => uses already spent on the copy
+    # currently being used up (see #consume_item_use). Exposed for the save
+    # layer (#to_h) and for tests; the bag itself stays `items`.
+    attr_reader :item_usage
+
     # The permanent actor roster this party draws from (see Game::Actors). The
     # party owns it, so `State#party.roster` reaches every actor the game has
     # met, including ones who have since left.
@@ -2618,6 +2623,12 @@ module Game
       ids ||= db.system.party || []
       @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| @roster[i] }.compact
       @items = {}  # item id => count
+      # 使用回数 bookkeeping: item id => how many uses the *current* copy has
+      # already spent (see #consume_item_use). One tally per id, not per copy,
+      # matching the save format's own `item_usage` array (chunk 109 field 14),
+      # which runs parallel to `item_ids`/`item_counts`. An id absent here has
+      # spent nothing.
+      @item_usage = {}
       @gold = 0
       @revision = 0
     end
@@ -2654,7 +2665,11 @@ module Game
                        class_id: a.class_id,
                        battle_commands: a.battle_commands.dup }
       end
-      { actor_ids: @actors.map { |a| a.id }, items: @items, gold: @gold,
+      { actor_ids: @actors.map { |a| a.id }, items: @items,
+        # Half-spent 使用回数 rides along with the bag, the way the save format
+        # keeps `item_usage` beside `item_counts` -- without it a Save/Continue
+        # silently refills every partly-used item.
+        item_usage: @item_usage, gold: @gold,
         hp: hp, mp: mp, exp: exp, actor_meta: meta }
     end
 
@@ -2672,6 +2687,10 @@ module Game
     def load_state(data)
       @revision += 1
       @items = data[:items] || {}
+      # A save written before 使用回数 was modelled carries no tally at all, so
+      # every held item simply starts its uses over -- the same answer this
+      # runtime gave for the whole of that save's life.
+      @item_usage = data[:item_usage] || {}
       @gold = data[:gold] || 0
       exp = data[:exp] || {}
       hp = data[:hp] || {}
@@ -2878,6 +2897,19 @@ module Game
       c = item_count(id) + n
       c = 0 if c < 0
       c = 99 if c > 99
+      # **Losing** a copy wipes the part-used tally on that id, so the next copy
+      # starts on a full set of uses; gaining one never touches it, even at the
+      # 99 cap (EasyRPG's `Game_Party::AddItem`: "If the item was removed, the
+      # number of uses resets. Adding an item never changes the number of uses,
+      # even when you already have x99 of them."). Selling a half-used potion
+      # and buying it back therefore refills its uses, exactly as RPG_RT does.
+      if n < 0
+        if c == 0
+          @item_usage.delete(id)
+        else
+          @item_usage[id] = 0
+        end
+      end
       return c if @items[id] == c
       @items[id] = c
       @revision += 1
@@ -2911,6 +2943,11 @@ module Game
     ITEM_SEED = 8
     ITEM_SPECIAL = 9
     ITEM_SWITCH = 10
+
+    # 通常物品 (type 0): an item with no effect of its own -- a key item, a quest
+    # token, something an event checks for. It is never *used*, which is why
+    # #consume_item_use names it among the types it passes over untouched.
+    ITEM_NORMAL = 0
 
     # The five equipment types (see Actor::EQUIP_ORDER for the slot mapping),
     # named here for #field_usable? / #battle_usable? / #use_item's `use_skill`
@@ -3046,13 +3083,14 @@ module Game
       !it.nil? && it.type == ITEM_SWITCH
     end
 
-    # Use a switch item from the field menu: consume one and return the id of the
-    # switch to turn on (the caller owns the switch table). nil when `id` is not a
-    # switch item the party holds, so nothing is consumed. Matches EasyRPG, where
-    # UseItem consumes and the scene flips the switch.
+    # Use a switch item from the field menu: spend one use (#consume_item_use, so
+    # a multi-use or 無制限 switch item is not eaten on its first flip) and return
+    # the id of the switch to turn on (the caller owns the switch table). nil when
+    # `id` is not a switch item the party holds, so nothing is consumed. Matches
+    # EasyRPG, where UseItem consumes and the scene flips the switch.
     def use_switch_item(id)
       return nil unless switch_item?(id) && item_count(id) > 0
-      lose_item(id, 1)
+      consume_item_use(id)
       db_item(id).switch_id
     end
 
@@ -3207,6 +3245,69 @@ module Game
       end
     end
 
+    # 使用回数 (`uses`, item field 6): how many times **one copy** of an item may
+    # be used before it is spent. The editor's own wording is 使用回数, with 0
+    # meaning 無制限 -- an item that is never consumed however often it is used
+    # (Nepheshel's reusable tools are exactly this, and until now every one of
+    # them vanished on first use). The default is 1: a plain potion is used up
+    # by a single use, which is why every consumption site could get away with a
+    # bare `lose_item(id, 1)` before this existed.
+    #
+    # A fixture item row with no `uses` field at all reads as 1, the schema's own
+    # default (`LCF::Schema` item field 6), so a hand-built test item keeps the
+    # single-use behaviour it has always had.
+    def item_uses(it)
+      u = it.respond_to?(:uses) ? it.uses : nil
+      u.nil? ? 1 : u
+    end
+
+    # Spend one use of item `id`, consuming a copy only once its 使用回数 runs
+    # out. This is the single consumption point for *using* an item -- the field
+    # menu, the battle item action and every #use_* helper below go through it
+    # instead of calling #lose_item themselves, mirroring EasyRPG's
+    # `Game_Party::ConsumeItemUse`, which `Game_Party::UseItem` calls once the
+    # item is known to have done something.
+    #
+    # Three rules come from RPG_RT and none of them were modelled before:
+    #
+    #   * **Type gate.** A 通常物品 and the five equipment types are never
+    #     consumed by use. The equipment case is the load-bearing one here: an
+    #     item flagged 特殊効果 (`use_skill`) casts its skill straight from the
+    #     Item menu, and RPG_RT does *not* eat the weapon for it -- it is
+    #     `ConsumeItemUse`'s early `return`, not a missing branch. This build
+    #     used to destroy such a weapon on its first use.
+    #   * **`uses == 0` is unlimited.** Nothing is spent, ever.
+    #   * **Partial use.** Otherwise the id's tally rises by one and the copy is
+    #     only removed once the tally reaches `uses`, at which point it resets --
+    #     so an item with 使用回数 3 held ×2 survives five uses and disappears on
+    #     the sixth. #gain_item handles the reset for the other direction (an
+    #     item leaving the bag by any route).
+    #
+    # A dangling id (no database row) is logged and left alone rather than
+    # silently eaten, the same way #field_usable? reports one for the menu.
+    def consume_item_use(id)
+      it = db_item(id)
+      if it.nil?
+        $stderr.puts "[RPG2k] Item use: item ##{id} has no matching database " \
+                     'row, consuming nothing'
+        return
+      end
+      case it.type
+      when ITEM_NORMAL, Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR,
+           ITEM_HELMET, ITEM_ACCESSORY
+        return
+      end
+      uses = item_uses(it)
+      return if uses == 0
+      return unless item_count(id) > 0
+      spent = (@item_usage[id] || 0) + 1
+      if spent >= uses
+        lose_item(id, 1) # clears the tally itself (see #gain_item)
+      else
+        @item_usage[id] = spent
+      end
+    end
+
     # Use item `id` from the field menu, dispatching on its database type, and
     # return the actors it affected (empty when it did nothing -- then nothing is
     # consumed). A medicine heals; a skill book teaches its skill; a seed raises a
@@ -3239,7 +3340,7 @@ module Game
     def use_special_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id)
       affected = cast_skill(actor, it.skill_id, actor, true)
-      lose_item(id, 1) unless affected.empty?
+      consume_item_use(id) unless affected.empty?
       affected
     end
 
@@ -3248,10 +3349,17 @@ module Game
     # cast #use_special_item gives a type-9 special item, gated additionally by
     # `class_set` (#item_usable_by_class?), the restriction list a use_skill
     # equipment item carries that a special item does not.
+    #
+    # The weapon itself is **not** consumed, however often it is used: RPG_RT
+    # returns from `ConsumeItemUse` on the five equipment types before it ever
+    # looks at 使用回数 (see #consume_item_use), which is what makes a 特殊効果
+    # weapon a reusable tool rather than a one-shot. Routing the consumption
+    # through #consume_item_use is what gets that right -- this used to spend
+    # the weapon on its first use and leave the party without it.
     def use_equip_skill_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id) && item_usable_by_class?(it, actor)
       affected = cast_skill(actor, it.skill_id, actor, true)
-      lose_item(id, 1) unless affected.empty?
+      consume_item_use(id) unless affected.empty?
       affected
     end
 
@@ -3269,7 +3377,7 @@ module Game
       return nil unless it && it.type == ITEM_SPECIAL && actor && item_usable_by?(it, actor.id)
       target = cast_escape_skill(actor, it.skill_id, state, true)
       return nil unless target
-      lose_item(id, 1)
+      consume_item_use(id)
       target
     end
 
@@ -3281,7 +3389,7 @@ module Game
       return nil unless it && it.type == ITEM_SPECIAL && actor && item_usable_by?(it, actor.id)
       target = cast_teleport_skill(actor, it.skill_id, state, map_id, true)
       return nil unless target
-      lose_item(id, 1)
+      consume_item_use(id)
       target
     end
 
@@ -3333,7 +3441,7 @@ module Game
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
-      lose_item(id, 1) unless affected.empty?
+      consume_item_use(id) unless affected.empty?
       affected
     end
 
@@ -3345,7 +3453,7 @@ module Game
       return [] unless actor && item_usable_by?(it, actor.id) &&
                        skill && skill != 0 && !actor.knows_skill?(skill)
       actor.learn_skill(skill)
-      lose_item(id, 1)
+      consume_item_use(id)
       [actor]
     end
 
@@ -3368,7 +3476,7 @@ module Game
       boosts = seed_boosts(it)
       return [] unless boosts.any? { |b| b != 0 }
       boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }
-      lose_item(id, 1)
+      consume_item_use(id)
       [actor]
     end
 
@@ -10666,6 +10774,11 @@ module Game
       inv[11] = item_ids.size
       inv[12] = item_ids
       inv[13] = item_ids.map { |i| @party.items[i] }
+      # Field 14 runs parallel to 12/13: how many uses the copy in hand has
+      # already spent (Party#consume_item_use). Written for every id, zeros
+      # included, so the three arrays stay the same length the way a genuine
+      # save keeps them -- .from_lsd and RPG_RT alike read them by index.
+      inv[14] = item_ids.map { |i| @party.item_usage[i] || 0 }
       inv[21] = @party.gold
       t1, t2 = @timers[0], @timers[1]
       inv[23] = t1.frames
@@ -10779,7 +10892,16 @@ module Game
       items = {}
       ids = inv.item_ids || []
       counts = inv.item_counts || []
-      ids.each_index { |i| items[ids[i]] = counts[i] || 0 }
+      # `item_usage` (chunk 109 field 14) runs parallel to the id/count arrays:
+      # how many uses the copy currently in hand has already spent, so a potion
+      # with 使用回数 3 that RPG_RT had used twice resumes with one use left
+      # rather than three (see Party#consume_item_use).
+      usage_arr = inv.item_usage || []
+      usage = {}
+      ids.each_index do |i|
+        items[ids[i]] = counts[i] || 0
+        usage[ids[i]] = usage_arr[i] if usage_arr[i] && usage_arr[i] != 0
+      end
       # Per-actor state comes from the SAVE_PARTY_ACTOR table (chunk 108), keyed
       # by actor id. Restore each actor's saved level (which rescales its base
       # stats) and exp first, then its current HP/SP, so Continue resumes a
@@ -10821,7 +10943,8 @@ module Game
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
       end
-      party.load_state(items: items, gold: inv.gold, hp: hp, mp: mp)
+      party.load_state(items: items, item_usage: usage, gold: inv.gold,
+                       hp: hp, mp: mp)
       state = new(party, hero.map_id, hero.x, hero.y)
       state.direction = hero.direction || 2
       # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a

@@ -16,6 +16,7 @@
 
 require 'ostruct'
 require 'stringio'
+require 'tmpdir'
 
 # -- RGSS stubs (just enough for Scene::Map to build, render and tick) --------
 
@@ -37,8 +38,21 @@ module RGSS
   # ChipsetLayout blit path instead of the colour-block fallback.
   class Bitmap
     attr_reader :width, :height
-    def initialize(w = 1, h = 1)
+    # The `"Dir/name"` a file-loading construction asked for, and whether it
+    # asked for the colour-keyed (palette index 0 transparent) decode -- the
+    # real Bitmap's own second argument. Recorded so a check can assert *how* a
+    # graphic was loaded, not only that something was: an RPG2000 sprite sheet
+    # loaded opaque draws its whole transparent background as solid pixels.
+    # The real Bitmap overloads its second argument the same way: it is the
+    # height for `Bitmap.new(w, h)` and the transparency flag for
+    # `Bitmap.new("Dir/name", trans)` (mruby-rgss/src/lib.cxx, `bmp_init`'s
+    # `"z|b"` vs the two-integer form), so it is read here as whichever the
+    # first argument makes it.
+    attr_reader :load_name, :load_transparent
+    def initialize(w = 1, h = nil)
       if w.is_a?(String)
+        @load_name = w
+        @load_transparent = h ? true : false
         @width = 480; @height = 256
       else
         @width = w.to_i; @height = h.to_i
@@ -8326,6 +8340,10 @@ class BattleMagicParty
   def item_count(id); @items[id] || 0; end
   def gain_item(id, n = 1); @items[id] = item_count(id) + n; end
   def lose_item(id, n = 1); @items[id] = [item_count(id) - n, 0].max; end
+  # The battle scene spends a *use* rather than a copy (Game::Party#
+  # consume_item_use, whose 使用回数 arithmetic rpg2k_logic_check covers); this
+  # stub's potion is an ordinary single-use one, so a use costs a copy.
+  def consume_item_use(id); lose_item(id, 1); end
 
   # Battle sub-menu hooks the scene calls (Game::Party provides these for real):
   def battle_skills(actor, _caster); actor.skills.include?(1) ? [[1, 3]] : []; end
@@ -10174,6 +10192,54 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
   ok sprite.visible, 'the picture layer reappears the instant the fight ends'
 end
 
+# RPG_RT's Scene_Battle replaces Scene_Map outright, so the map is not on
+# screen during a fight at all -- the Backdrop/<name> image is the whole
+# background. This port runs the fight inline on Scene::Map, and #render used
+# to keep compositing the map every frame underneath it: the backdrop sprite's
+# z 5 (EasyRPG's Priority_Background) is outranked by @map_viewport (z 100) and
+# @upper_viewport (z 200), and the lower tile layer is opaque, so the correctly
+# resolved backdrop was drawn entirely behind the map graphics.
+check 'the map is hidden while the battle screen is up, so the backdrop actually shows' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, _st = battle_scene_with_pages(pages)
+  vp = scene.instance_variable_get(:@map_viewport)
+  upper = scene.instance_variable_get(:@upper_viewport)
+  lower_bmp = scene.instance_variable_get(:@lower_bmp)
+
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+    # `!= false` rather than a plain truth test: RGSS::Viewport#visible
+    # defaults to true on the real backend but nil on this stub, so a bare
+    # `ok vp.visible` here would be asserting the stub's default, not the
+    # behaviour. The fight's own hide/show below is checked exactly instead.
+    ok vp.visible != false, 'the map view draws normally before any fight opens'
+    ok upper.visible != false, 'and so does the above-character layer'
+    ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers do composite'
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, 'the battle opened'
+  ok ui[:back_sprite], 'the fight has a battle background sprite'
+  ok ui[:back_sprite].z < vp.z, 'whose z sits below the map viewport ...'
+  ok ui[:back_sprite].z < upper.z, '... and below the upper-layer viewport'
+  eq false, vp.visible, 'so the map view is hidden the instant the battle screen is up'
+  eq false, upper.visible, 'and so is the above-character layer'
+  lower_bmp.clear_blt_calls
+  scene.update
+  eq 0, (lower_bmp.blt_calls || []).size,
+     'and the tile layers stop compositing entirely while the fight runs'
+
+  20.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui).nil?
+  end
+  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+  eq true, vp.visible, 'the map view reappears the instant the fight ends'
+  eq true, upper.visible, 'and so does the above-character layer'
+  ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers composite again'
+end
+
 # yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the
 # enclosing Enemy Encounter's [Victory] nor [Escape]/[Defeat] handler branch --
 # it resumes right after Branch End, an unlabeled third outcome -- and only
@@ -11091,6 +11157,79 @@ check 'a head/feet Show Battle Animation position offsets where it draws over th
   call = bmp.blt_calls.first
   eq [ma[:tx] - 48, ma[:ty] - 48], [call[0], call[1]],
      'position 1 (center), the schema default, is unchanged from the plain centre pixel'
+end
+
+# An RPG2000 animation sheet is a grid of 96x96 cells whose whole background is
+# the palette's transparent colour, so it has to be decoded colour-keyed
+# (`Bitmap.new`'s second argument) the same way every other sprite sheet this
+# runtime loads is. `Battle/` was the one sheet directory asking for an opaque
+# decode, which made every cell blit a solid 96x96 rectangle of background over
+# its target. EasyRPG's own material table (`src/cache.cpp`) sets
+# `Spec::transparent` true for Battle, and false only for the four full-screen
+# backdrops this runtime already loads opaque.
+check 'the Battle/ animation sheet is loaded colour-keyed, like every other sprite sheet' do
+  scene, = battle_at_command
+  sheet = scene.send(:animation_sheet, 'Anim')
+  ok sheet, 'the sheet loaded'
+  eq 'Battle/Anim', sheet.load_name
+  eq true, sheet.load_transparent,
+     'palette index 0 must decode transparent, or every cell paints an opaque 96x96 block'
+  # The four full-screen backdrops are the deliberate exceptions, and stay
+  # opaque -- they have no transparent colour to key out.
+  eq false, scene.send(:battle_back_bitmap, 'Back').load_transparent,
+     'Backdrop/ is a full-screen image and stays opaque'
+end
+
+# Each animation cell carries its own `transparency` (LCF battle_anime chunk
+# 19's per-cell field 10 -- mruby-lcf/mrblib/schema.rb), decoded all along and
+# never read, so every cell drew fully opaque no matter what its author asked
+# for. #animation_cell_opacity is the pure-logic half, mirroring EasyRPG's own
+# `BattleAnimation::DrawAt`: `SetOpacity(255 * (100 - cell.transparency) / 100)`.
+check 'animation_cell_opacity converts a cell transparency percentage to a blit opacity' do
+  scene, = battle_at_command
+  op = ->(t) { scene.send(:animation_cell_opacity, OpenStruct.new(cell_id: 0, transparency: t)) }
+  eq 255, op.call(0), '0% transparent is fully opaque, the schema default'
+  eq 0, op.call(100), '100% transparent is fully invisible'
+  eq 127, op.call(50), 'half transparent is half opacity (255 * 50 / 100, truncated)'
+  eq 191, op.call(25)
+  eq 63, op.call(75)
+  eq 255, scene.send(:animation_cell_opacity, OpenStruct.new(cell_id: 0)),
+     'a cell carrying no transparency field at all reads as the 0 default, not as nil'
+  # A real Array1D only ever decodes an unsigned BER here, but a hand-authored
+  # or corrupt row must not be able to ask for an out-of-range opacity.
+  eq 255, op.call(-10), 'a negative transparency clamps to fully opaque'
+  eq 0, op.call(150), 'a transparency past 100 clamps to fully invisible'
+end
+
+check 'a battle animation cell blits at its own transparency' do
+  scene, = battle_at_command
+  scene.send(:start_battle_animation,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+               skill_id: 8, target_index: 0, target_ally: false })
+  ma = scene.instance_variable_get(:@map_animation)
+  bmp = scene.instance_variable_get(:@animation_bmp)
+  cell = ma[:frames][0].cells[1]
+
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  eq 255, bmp.blt_calls.first[4],
+     'a cell with no transparency set goes down fully opaque, exactly as before this fix'
+
+  cell.transparency = 60
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  eq 1, bmp.blt_calls.size, 'still one cell'
+  eq 102, bmp.blt_calls.first[4], '60% transparent blits at 255 * 40 / 100'
+  eq [ma[:tx] - 48, ma[:ty] - 48], bmp.blt_calls.first[0, 2],
+     'and lands in exactly the same place -- opacity is the only thing that changed'
+
+  cell.transparency = 100
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  ok bmp.blt_calls.empty?,
+     'a fully transparent cell is skipped outright rather than blitted at opacity 0'
+  # The fixture database is rebuilt per scene (#new_scene -> #fake_db), so the
+  # mutated cell does not leak into the next check.
 end
 
 check 'the battle status window shows each ally condition, or the normal term' do
@@ -14343,6 +14482,68 @@ check 'Nepheshel-shaped Save choice event: a Show Choices "SAVE" branch reaches 
   scene.update # dispatches the wait and opens the picker
   eq 1, parent.pushed.size, 'the SAVE branch reaches Open Save Menu, which opens the picker'
   ok parent.pushed.first.is_a?(RPG2k::Scene::SaveLoad), 'the pushed scene is the picker'
+end
+
+# -- window title -------------------------------------------------------------
+
+# RPG2k#read_ini_title reads the caption RPG_RT.exe puts on its own window out
+# of RPG_RT.ini, which the boot hands to RGSS.window_title (mruby-rpg2k/mrblib/
+# main.rb; include/terminal.hxx's window title bridge). The rest of the boot
+# needs a real .ldb/.lmt, so the reader is exercised on its own here, against
+# real ini files on disk -- including a CP932 one, since that is what the
+# Japanese editor writes and what every game in the test beds ships.
+check 'the window title comes from RPG_RT.ini, decoded from CP932' do
+  # The engine decodes the ini through LCF.cp932_to_utf8 (native; mruby-lcf/
+  # src/lcf.cxx). Stand in for it with CRuby's own encoding conversion, so this
+  # asserts the reader's parsing and hand-off, not the table.
+  unless Object.const_defined?(:LCF) && LCF.respond_to?(:cp932_to_utf8)
+    mod = Object.const_defined?(:LCF) ? LCF : Object.const_set(:LCF, Module.new)
+    mod.define_singleton_method(:cp932_to_utf8) do |s|
+      s.dup.force_encoding(Encoding::CP932).encode(Encoding::UTF_8)
+    end
+  end
+
+  read_title = lambda do |dir|
+    Object.send(:remove_const, :GAME_DIR) if Object.const_defined?(:GAME_DIR)
+    Object.const_set(:GAME_DIR, dir)
+    RPG2k.allocate.send(:read_ini_title)
+  end
+
+  Dir.mktmpdir('rpg2k-title') do |root|
+    # A Japanese title as the editor writes it: CP932 bytes, CRLF line ends,
+    # and GameTitle sitting among the other [RPG_RT] keys.
+    jp = File.join(root, 'jp')
+    Dir.mkdir jp
+    File.binwrite(File.join(jp, 'RPG_RT.ini'),
+                  "[RPG_RT]\r\nGameTitle=#{'ネフェシエル'.encode(Encoding::CP932)}\r\n" \
+                  "MapEditMode=1\r\nFullPackageFlag=1\r\n")
+    eq 'ネフェシエル', read_title.call(jp), 'the CP932 title, decoded and stripped of its CR'
+
+    # An ASCII title passes through the same conversion unchanged.
+    ascii = File.join(root, 'ascii')
+    Dir.mkdir ascii
+    File.binwrite(File.join(ascii, 'RPG_RT.ini'), "[RPG_RT]\nGameTitle=Meido Action\n")
+    eq 'Meido Action', read_title.call(ascii), 'an ASCII title'
+
+    # A project whose ini has no GameTitle (or no ini at all -- a game unpacked
+    # without it) still names the window something: the folder it was loaded
+    # from, never a blank caption.
+    bare = File.join(root, 'Bare Project')
+    Dir.mkdir bare
+    File.binwrite(File.join(bare, 'RPG_RT.ini'), "[RPG_RT]\nFullPackageFlag=0\n")
+    eq 'Bare Project', read_title.call(bare), 'the folder name when GameTitle is missing'
+
+    none = File.join(root, 'No Ini')
+    Dir.mkdir none
+    eq 'No Ini', read_title.call(none), 'the folder name when there is no ini at all'
+
+    # An empty GameTitle= is the same as none: fall back rather than clearing
+    # the caption to nothing.
+    empty = File.join(root, 'Empty Title')
+    Dir.mkdir empty
+    File.binwrite(File.join(empty, 'RPG_RT.ini'), "[RPG_RT]\nGameTitle=\r\n")
+    eq 'Empty Title', read_title.call(empty), 'the folder name when GameTitle is empty'
+  end
 end
 
 # -- summary ------------------------------------------------------------------
