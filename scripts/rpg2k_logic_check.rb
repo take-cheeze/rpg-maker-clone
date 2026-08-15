@@ -9660,6 +9660,25 @@ check 'Battle command_skill: a recovery skill also hard-caps at 999 (yado.tk)' d
   eq 999, e[:recover_hp], 'capped, not the uncapped 5000'
 end
 
+# Game_Constants::MaxDamageValue widens the same fixed-width-popup cap to
+# 9999 on an RPG2003 database -- Game::Battle#recover_cap follows #damage_cap
+# exactly, so this mirrors the RPG2000 check above with an rpg2003: true
+# battle and a heal large enough to exceed *that* wider ceiling too.
+check 'Battle command_skill: an RPG2003 fight widens the recovery hard-cap to 9999' do
+  mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  ally = combatant('Ally', 0, 0, 5, 100_000)
+  ally.hp = 1
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([mage, ally], [foe], Game::Rng.new(1), nil, false, false, false,
+                       false, nil, nil, rpg2003: true)
+  b.command_skill(mage, ally, name: 'Mega Heal', cost: 10, hp: 50_000)
+  b.command_defend(ally)
+  b.begin_round
+  e = b.step_action # the faster mage heals first
+  eq 10_000, ally.hp, 'capped to +9999 (1 + 9999), not the uncapped 50000'
+  eq 9_999, e[:recover_hp], 'capped at the wider RPG2003 ceiling, not the uncapped 50000'
+end
+
 check 'battle: an all-ally heal skips a downed member but still heals the wounded' do
   # Mirrors Game::Actor#change_hp's `return @hp if dead?` guard on the field: a
   # downed (0 HP) Combatant is filtered out before #apply_skill_hit's HP-raising
@@ -11088,21 +11107,27 @@ end
 # slip-damage cap (Game::Battle::DAMAGE_CAP) applies to this raw event
 # command's own damage too -- it shares no code path with any of those four,
 # so it needed its own clamp.
-check 'Simulated Attack hard-caps damage at 999, matching the battle damage cap' do
-  # max_hp: 5000 needs an RPG2003 fixture database now that #recompute_stats
-  # itself clamps effective max HP to 999/9999 by edition (see "#recompute_
-  # stats clamps the effective max HP..." below) -- an RPG2000 actor could
-  # never actually reach 5000 max HP to survive this hit and show the
-  # leftover HP this check asserts.
-  players = { 1 => FakePlayerRow.new('Tank', '', 0, 5, max_hp: 5000, max_mp: 0, atk: 0, def: 0) }
-  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, rpg2003: true)), 1, 0, 0)
-  it = Game::Interpreter.new(st)
-  # scope 1, actor 1, atk 5000, def-weight 0, spi-weight 0, variance 0,
+check 'Simulated Attack hard-caps damage at the battle damage cap, by edition' do
+  # The damage cap is edition-gated the same way the max-HP cap is
+  # (Game::Battle#damage_cap, Game_Constants::MaxDamageValue: 999 on
+  # RPG2000, 9999 on RPG2003) -- an atk high enough to exceed *either*
+  # edition's own cap is needed to exercise both branches distinctly.
+  players = { 1 => FakePlayerRow.new('Tank', '', 0, 5, max_hp: 999, max_mp: 0, atk: 0, def: 0) }
+  st2k = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1])), 1, 0, 0)
+  it2k = Game::Interpreter.new(st2k)
+  # scope 1, actor 1, atk 15000, def-weight 0, spi-weight 0, variance 0,
   # store-damage flag 1 -> var 1.
-  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 5000, 0, 0, 0, 1, 1])])
-  it.update
-  eq 999, st.variables[1], 'capped, not the uncapped 5000'
-  eq 5000 - 999, st.party.actor_by_id(1).hp
+  it2k.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 15_000, 0, 0, 0, 1, 1])])
+  it2k.update
+  eq 999, st2k.variables[1], 'RPG2000: capped at 999, not the uncapped 15000'
+  eq 0, st2k.party.actor_by_id(1).hp, 'a full-cap hit against the RPG2000 max HP ceiling is exactly lethal'
+
+  st2k3 = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, rpg2003: true)),
+                          1, 0, 0)
+  it2k3 = Game::Interpreter.new(st2k3)
+  it2k3.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 15_000, 0, 0, 0, 1, 1])])
+  it2k3.update
+  eq 9999, st2k3.variables[1], 'RPG2003: capped at 9999, not the uncapped 15000'
 end
 
 check 'Change Actor Face overrides the actor FaceSet' do

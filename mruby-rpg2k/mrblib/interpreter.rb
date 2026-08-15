@@ -1964,18 +1964,20 @@ module Game
     # RPG_RT: `atk - def * p_def / 400 - spi * p_spi / 800`, then spread by
     # +/- (param5 * 5) percent and floored at 0. The hit can be lethal.
     #
-    # RPG_RT's damage popup is a fixed three digits (the same reasoning behind
-    # `Game::Battle::DAMAGE_CAP` on the normal-attack/skill/self-destruct/
-    # slip-damage paths), so a Simulated Attack's own computed damage is
-    # clamped at 999 too before it reaches HP or the result variable.
+    # RPG_RT's damage popup is a fixed-width widget (the same reasoning behind
+    # `Game::Battle#damage_cap` on the normal-attack/skill/self-destruct/
+    # slip-damage paths -- edition-gated the same way, 999 on RPG2000, 9999
+    # on RPG2003), so a Simulated Attack's own computed damage is clamped
+    # too before it reaches HP or the result variable.
     def do_simulated_attack(cmd)
       atk = cmd.param(2)
       damage = 0
+      cap = @state.party.rpg2003? ? Battle::DAMAGE_CAP_2K3 : Battle::DAMAGE_CAP_2K
       stat_targets(cmd).each do |a|
         damage = atk - (a.def * cmd.param(3)) / 400 - (a.int * cmd.param(4)) / 800
         damage += damage * simulated_attack_spread(cmd.param(5)) / 100
         damage = 0 if damage < 0
-        damage = Battle::DAMAGE_CAP if damage > Battle::DAMAGE_CAP
+        damage = cap if damage > cap
         a.change_hp(-damage, true)
       end
       variables[cmd.param(7)] = damage if cmd.param(6) != 0

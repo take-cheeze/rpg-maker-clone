@@ -7165,20 +7165,38 @@ module Game
 
     MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
 
-    # RPG_RT's battle damage popup is a fixed three digits, so every single hit
+    # RPG_RT's battle damage popup is a fixed-width widget, so every single hit
     # -- normal attack, dual-wield swing, attack-skill, self-destruct, and
-    # per-turn state slip damage alike -- is hard-clamped to 999 before it is
+    # per-turn state slip damage alike -- is hard-clamped before it is
     # subtracted from the target's HP, no matter how large the underlying ATK/
     # DEF/attribute math computes. A yado.tk-quirks build with no cap could
     # one-shot a target well past what the original engine could ever display
-    # or apply in a single blow.
-    DAMAGE_CAP = 999
+    # or apply in a single blow. The width itself is edition-gated:
+    # `Game_Constants::MaxDamageValue` (`src/game_constants.cpp`) is `999` on
+    # RPG2000, `9999` on RPG2003 -- the same shape as `MAX_EFFECTIVE_HP_2K`/
+    # `_2K3` and `EXP_MAX_2K`/`_2K3` above. EasyRPG's own
+    # `game_battlealgorithm.cpp` clamps a Normal Attack/Skill/SelfDestruct
+    # effect through this single constant symmetrically in *both* directions
+    # (`Utils::Clamp(effect, -MaxDamageValue(), MaxDamageValue())` -- a
+    # healing skill's own `effect` is just the negative-signed case of the
+    # same clamp), so the same pair covers recovery too.
+    DAMAGE_CAP_2K = 999
+    DAMAGE_CAP_2K3 = 9999
+    RECOVER_CAP_2K = DAMAGE_CAP_2K
+    RECOVER_CAP_2K3 = DAMAGE_CAP_2K3
 
-    # Same fixed-width-popup reasoning as DAMAGE_CAP, for the opposite
-    # direction: RPG_RT's HP-recovery popup is the same fixed 3-digit widget
-    # as the damage one, so a single heal can't display (or apply) more than
-    # 999 either, no matter how large `recover_hp_rate` x max_hp computes it.
-    RECOVER_CAP = 999
+    # The effective damage-popup ceiling for this fight -- `DAMAGE_CAP_2K3` on
+    # an RPG2003 database, `DAMAGE_CAP_2K` otherwise. Mirrors
+    # `Game::Actor#max_hp_cap` exactly.
+    def damage_cap
+      @rpg2003 ? DAMAGE_CAP_2K3 : DAMAGE_CAP_2K
+    end
+
+    # Same as #damage_cap, for HP recovery -- EasyRPG clamps both directions
+    # through the one constant, so the two ceilings are identical per edition.
+    def recover_cap
+      @rpg2003 ? RECOVER_CAP_2K3 : RECOVER_CAP_2K
+    end
 
     attr_reader :allies, :enemies, :rounds, :result, :log, :rng, :escape_chance
 
@@ -7980,7 +7998,8 @@ module Game
           next
         end
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
-        hp = DAMAGE_CAP if hp > DAMAGE_CAP # 999 hard-cap applies to slip damage too
+        cap = damage_cap
+        hp = cap if hp > cap # the popup hard-cap applies to slip damage too
         b.hp = slip_stat(b.hp, b.max_hp, hp, state_field(d, :hp_change_type), 1) if hp > 0
         if b.max_mp && b.mp
           sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100
@@ -8331,7 +8350,8 @@ module Game
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
         dmg = [dmg / 2, 1].max if t.defending && dmg > 0
-        dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
+        cap = damage_cap
+        dmg = cap if dmg > cap
         t.hp -= dmg
         { attacker: b.name, target: t.name, damage: dmg, critical: false,
           autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
@@ -8800,9 +8820,10 @@ module Game
         dmg = [dmg / 2, 1].max
         dmg = [dmg / 2, 1].max if target.strong_defence
       end
-      # RPG_RT's damage popup tops out at three digits -- a crit/charge blow
-      # that would compute past it still only ever takes 999.
-      dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
+      # RPG_RT's damage popup tops out at a fixed width -- a crit/charge blow
+      # that would compute past it still only ever takes #damage_cap.
+      cap = damage_cap
+      dmg = cap if dmg > cap
       target.hp -= dmg
       woke = target.dead? ? [] : shake_off_states(target)
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
@@ -9125,9 +9146,10 @@ module Game
         dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
         # Spread the skill's damage by its own variance when the fight rolls it.
         dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
-        # Same 999 hard-cap as a normal attack (#deal_attack), applied before
+        # Same hard-cap as a normal attack (#deal_attack), applied before
         # absorption so a drain skill can't smuggle a bigger hit past it either.
-        dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
+        cap = damage_cap
+        dmg = cap if dmg > cap
         # The ATK/DEF/SPI/AGI modifier delta (see #apply_stat_mods) shares
         # this same post-attribute-scaling, post-variance, post-cap figure --
         # captured here, before 吸収 trims `dmg` further below, since EasyRPG
@@ -9196,8 +9218,9 @@ module Game
         end
         before_hp = target.hp
         before_mp = target.mp || 0
-        hp = RECOVER_CAP if hp > RECOVER_CAP
-        stat_amount = RECOVER_CAP if stat_amount > RECOVER_CAP
+        rcap = recover_cap
+        hp = rcap if hp > rcap
+        stat_amount = rcap if stat_amount > rcap
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
         # Cure the item's status conditions from the target (an antidote / herb),
