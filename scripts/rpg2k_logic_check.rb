@@ -7095,6 +7095,44 @@ check 'Key Input Proc accepts only the chosen keys' do
   eq 0, it.key_input_result([:cancel, :up, :down]), 'unlisted keys ignored'
 end
 
+check 'Key Input Proc (RPG2003 Numbers/Operators layout) decodes the two flags' do
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  # 9 params: var, wait, arrows-all, decision, cancel, numbers, operators,
+  # time-var (unused here), timed (unused here) -- RPG2003's own layout,
+  # distinct from the 10-param RPG2000 1.50+ Shift/arrows layout that reuses
+  # the same param5/param6 slots for something else entirely.
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 1, 1, 0, 1, 1, 0, 0])])
+  it.update
+  acc = it.key_input_request[:accepted]
+  eq true, acc[:numbers], 'Numbers accepted'
+  eq true, acc[:operators], 'Operators accepted'
+  eq true, acc[:decision]
+  eq false, acc[:cancel]
+  [:down, :left, :right, :up].each { |k| eq true, acc[k], "#{k} on (single arrows-all flag)" }
+  eq false, acc[:shift], 'this layout has no individual Shift, unlike RPG2000 1.50+'
+  # Numbers/Operators are accepted but the input layer has no keys mapped to
+  # them (see Scene::Map::KEY_INPUT_BUTTONS), so the scene can never place
+  # them in the active-key list; key_input_result must not resolve them even
+  # if asked to.
+  eq 0, it.key_input_result([:numbers, :operators])
+  eq 5, it.key_input_result([:decision, :numbers]), 'Decision still resolves alongside them'
+end
+
+check 'Key Input Proc (RPG2003, 10 params) is the imported RPG2000 1.50+ layout, not Numbers/Operators' do
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  # An RPG2000 project's Key Input command carried unchanged into an RPG2003
+  # database still has exactly 10 params -- RPG_RT keeps reading it as
+  # Shift/Down/Left/Right/Up, never as Numbers/Operators.
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 0, 1, 1, 1, 1, 1, 1, 1])])
+  it.update
+  acc = it.key_input_request[:accepted]
+  eq true, acc[:shift]
+  eq false, acc[:numbers], 'a 10-param command is the RPG2000 layout, not Numbers/Operators'
+  eq false, acc[:operators]
+end
+
 # -- Show Inn (Stay at Inn) ---------------------------------------------------
 
 check 'Show Inn: staying charges the price and full-heals the party' do

@@ -1191,29 +1191,59 @@ module Game
 
     # Key Input Processing (11610): wait for — or, in no-wait mode, sample — one
     # of a chosen set of buttons and store its RPG2000 code in a variable. The
-    # parameter layout matches RPG_RT and depends on the command's length:
+    # parameter layout matches RPG_RT and depends on the command's length and,
+    # for the param5/param6 slot, on whether the database is RPG2000 or
+    # RPG2003 (`@state.party.rpg2003?`) — the two editions disagree on what
+    # those two params mean:
     #   param0            target variable id
     #   param1            wait flag (0 = read this frame and continue)
-    #   param2            (pre-1.50 only) accept all four arrows when non-zero
+    #   param2            (pre-1.50, or RPG2003's Numbers/Operators layout)
+    #                     accept all four arrows when non-zero
     #   param3 / param4   accept Decision (OK) / Cancel — always present
-    #   param5..param9    (1.50+) accept Shift / Down / Left / Right / Up
-    # The interpreter only records the request and suspends on a :key_input wait;
-    # the owning scene samples real input (triggered edges when waiting, held
-    # state otherwise) and calls resume_key_input with the resulting code. Number
-    # and operator keys (RPG2003) and the mouse (Maniac) are not modelled.
+    #   param5..param9    (RPG2000 1.50+, or an RPG2000 command carried
+    #                     unchanged into an RPG2003 project — always a
+    #                     10-param command either way) accept Shift / Down /
+    #                     Left / Right / Up
+    #   param5 / param6   (RPG2003's own Numbers/Operators layout — any other
+    #                     length on an RPG2003 database) accept the numeric
+    #                     keypad (0-9) / the five operator keys (+ - * / .) as
+    #                     a whole; RPG_RT does not offer individual per-key
+    #                     flags here, only through the Maniac Patch's own
+    #                     further-extended param list (out of scope, see
+    #                     below). param7/param8 are a separate "timed input"
+    #                     countdown-variable feature, still unmodelled.
+    # The interpreter only records the request and suspends on a :key_input
+    # wait; the owning scene samples real input (triggered edges when waiting,
+    # held state otherwise) and calls resume_key_input with the resulting code.
+    # Numbers/Operators are decoded into `accepted` but not yet actionable: the
+    # input layer (RGSS::Input) models a fixed console/keyboard button set with
+    # no numeric-keypad or operator keys to sample, so a request that accepts
+    # only Numbers/Operators can never resolve — same as the mouse (Maniac),
+    # which stays fully unmodelled.
     def do_key_input(cmd)
       var_id = cmd.param(0)
       wait = cmd.param(1) != 0
+      size = cmd.parameters.size
       accepted = { decision: cmd.param(3) != 0, cancel: cmd.param(4) != 0,
                    shift: false, down: false, left: false, right: false,
-                   up: false }
-      if cmd.parameters.size < 6
+                   up: false, numbers: false, operators: false }
+      if @state.party.rpg2003? && size != 10
+        # RPG2003's Numbers/Operators layout: still a single flag for the
+        # whole D-pad, not the individual Shift/arrows RPG2000 1.50+ offers.
+        if size < 10 && cmd.param(2) != 0
+          accepted[:down] = accepted[:left] = true
+          accepted[:right] = accepted[:up] = true
+        end
+        accepted[:numbers] = cmd.param(5) != 0
+        accepted[:operators] = cmd.param(6) != 0
+      elsif size < 6
         # Pre-1.50: a single flag enables the whole D-pad, no Shift.
         if cmd.param(2) != 0
           accepted[:down] = accepted[:left] = true
           accepted[:right] = accepted[:up] = true
         end
       else
+        # RPG2000 1.50+, or that same layout carried into an RPG2003 project.
         accepted[:shift] = cmd.param(5) != 0
         accepted[:down]  = cmd.param(6) != 0
         accepted[:left]  = cmd.param(7) != 0

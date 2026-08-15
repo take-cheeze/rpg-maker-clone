@@ -513,7 +513,14 @@ The work below is roughly ordered by the critical path to a walkable game
   Processing** waits for (or, in no-wait mode, samples) a chosen set of buttons
   and writes the pressed key's RPG2000 code to a variable — the scene drives it
   for foreground and parallel events alike, following RPG_RT's pre-1.50 /
-  1.50+ parameter layouts (number / operator keys and mouse are not modelled). **Change Actor
+  1.50+ parameter layouts, and now also decodes RPG2003's own Numbers /
+  Operators layout (`db.rpg2003?`-gated, since it reuses the same param slots
+  RPG2000 1.50+ gives Shift and the arrows) into the request's accepted-key
+  set. 🚧 Those two flags are decoded but not yet actionable: `RGSS::Input`
+  models a fixed console/keyboard button set with no numeric-keypad or
+  operator keys to sample, so a Numbers/Operators-only request can never
+  resolve — mouse input (Maniac) stays fully out of scope the same way.
+  **Change Actor
   Name / Title / Sprite** rename a party actor, set its status-screen title or
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
   these edits survive Save / Continue. **Set Transparent Flag** hides or shows
