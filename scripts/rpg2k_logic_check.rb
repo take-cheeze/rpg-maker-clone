@@ -5074,6 +5074,22 @@ check 'field_skills lists only known field-usable ally skills; can_cast? checks 
   eq false, st.party.can_cast?(hero, 99)       # unknown skill
 end
 
+# A database shrink can leave a caster's learned skill id dangling -- shown
+# as "?" in the editor, docs/TODO.md's runtime error catalog. #db_skill
+# silently resolves that to nil, and #field_skill? just as silently excludes
+# it (`return false unless sk`); the skill vanished from the field menu with
+# no trace anywhere in the call chain. #field_skills now reports it.
+check 'field_skills reports a dangling learned skill id and excludes it from the menu' do
+  skills = { 7 => fake_skill(scope: 3, sp_cost: 5, power: 10, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(7)
+  hero.learn_skill(99)                          # 99 no longer exists in the database
+  out = capture_stderr { eq [[7, 5]], st.party.field_skills(hero) }
+  ok out.include?("[RPG2k] Skill menu: caster's learned skill #99 has no " \
+                   'matching database row'), out
+end
+
 # A property/attribute row exposing just the weapon (0) / magic (1) `type`
 # flag the equip-gating check reads (field 2 of the real `property` row).
 AttrTypeRow = Struct.new(:type)

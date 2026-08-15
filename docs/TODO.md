@@ -8454,6 +8454,26 @@ five new `scripts/rpg2k_logic_check.rb` checks (no handlers, an [Escape]
 handler, escape-abort mode, and the random-encounter path both missing and
 present), each asserting on the captured `$stderr` line and that no
 `:battle` wait was ever armed.
+✅ **The field skill menu no longer drops a dangling learned-skill id with no
+trace** — one of the "invalid skill" cases above, the "opens a skill-select
+screen" variant. `Game::Party#field_skills` (`mruby-rpg2k/mrblib/game.rb`)
+builds a caster's field-usable skill list from `#db_skill(id)`, which already
+tolerated a shrunk database by returning `nil` for a stale id; `#field_skill?`
+just as silently excluded it (`return false unless sk`), so the skill
+vanished from the menu with no diagnostic anywhere in the chain. `#field_skills`
+now checks `db_skill(sid)` itself before delegating to `#field_skill?` and
+logs a `[RPG2k] Skill menu: caster's learned skill #<id> has no matching
+database row, excluding from field menu` diagnostic the same
+reported-not-invented way Call Event/Enemy Encounter/Teleport above do,
+including the skill id; the skill still doesn't appear in the menu — there is
+nothing sensible to show for it — this is diagnostics only. Follows this
+catalog's existing precedent of logging every occurrence rather than deduping
+per id: none of Call Event, Enemy Encounter or Teleport keep any
+already-logged state, so a menu opened repeatedly logs the same stale id each
+time, and this doesn't diverge from that. Covered by a new
+`scripts/rpg2k_logic_check.rb` check asserting the captured `$stderr` line and
+that the dangling id is excluded while a genuine sibling skill still comes
+through.
 ✅ **"invalid map" (Transfer Player / Recall to Location naming a
 nonexistent map id) no longer crashes the interpreter** — `Scene::Map
 #perform_teleport` (`mruby-rpg2k/mrblib/scene/map.rb`) called
