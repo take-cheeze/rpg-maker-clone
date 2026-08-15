@@ -175,7 +175,24 @@ class RPG2k
 
       # -- Variable value editor, opened by C on a Variable row ----------------
 
-      EDITOR_DIGITS = 6 # 999,999 -- Game::Variables::MAX/MIN
+      # 999,999 (RPG2000) / 9,999,999 (RPG2003) -- Game::Variables::MAX/MIN
+      # vs. RPG2003_MAX/MIN (`mruby-rpg2k/mrblib/game.rb`), the same
+      # edition-gated range EasyRPG's own `Game_Variables::GetMaxDigits`
+      # derives its debug-menu editor width from (`src/scene_debug.cpp`
+      # sizes and drives its `Window_NumberInput` straight off it) --
+      # a flat 6-digit editor structurally cannot enter or display an
+      # RPG2003 variable's own top decade.
+      EDITOR_DIGITS_2K = 6
+      EDITOR_DIGITS_2K3 = 7
+
+      # The effective digit width for this state's own database edition. A
+      # bare test double with no #rpg2003? of its own reads false, matching
+      # a genuine RPG2000 database (the same guard Game::Actor#rpg2003?/
+      # Game::Party#rpg2003? already use for their own @db).
+      def editor_digits
+        rpg2003 = @state.party.respond_to?(:rpg2003?) && @state.party.rpg2003?
+        rpg2003 ? EDITOR_DIGITS_2K3 : EDITOR_DIGITS_2K
+      end
 
       def open_editor(id)
         v = @state.variables[id]
@@ -183,12 +200,13 @@ class RPG2k
         build_editor_window
       end
 
-      # EDITOR_DIGITS-long digit array (most significant first) for a
+      # #editor_digits-long digit array (most significant first) for a
       # non-negative value, e.g. digits_of(7) -> [0, 0, 0, 0, 0, 7]. No
       # String#chars/#rjust here, for the same reason as #id_label above.
       def digits_of(value)
-        ds = Array.new(EDITOR_DIGITS, 0)
-        (EDITOR_DIGITS - 1).downto(0) do |i|
+        n = editor_digits
+        ds = Array.new(n, 0)
+        (n - 1).downto(0) do |i|
           ds[i] = value % 10
           value /= 10
         end
@@ -201,7 +219,7 @@ class RPG2k
       end
 
       def build_editor_window
-        w = (EDITOR_DIGITS + 1) * 12 + Window::BORDER * 2
+        w = (editor_digits + 1) * 12 + Window::BORDER * 2
         h = LINE_H + Window::BORDER * 2
         @editor_window = Window.new((SCREEN_W - w) / 2, (SCREEN_H - h) / 2, w, h)
         @editor_window.z = 410
@@ -220,7 +238,7 @@ class RPG2k
       end
 
       def update_editor
-        cells = EDITOR_DIGITS + 1 # the sign occupies cell 0, digits follow
+        cells = editor_digits + 1 # the sign occupies cell 0, digits follow
         if Input.trigger?(Input::B)
           close_editor
         elsif Input.trigger?(Input::C)

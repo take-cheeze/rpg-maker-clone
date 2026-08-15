@@ -13524,6 +13524,37 @@ check 'B cancels the debug menu variable editor without changing the value' do
   eq 5, st.variables[1], 'cancelling left the variable untouched'
 end
 
+# EasyRPG's own Game_Variables::GetMaxDigits (src/game_variables.cpp) derives
+# the debug menu's own Window_NumberInput width from the same edition-gated
+# range Game::Variables::MAX/RPG2003_MAX already carries -- 6 digits on
+# RPG2000, 7 on RPG2003, not a flat 6 regardless of database.
+class Rpg2003MenuStubParty < MenuStubParty
+  def rpg2003?; true; end
+end
+
+check "the debug menu variable editor widens to 7 digits on an RPG2003 database" do
+  st = Game::State.new(Rpg2003MenuStubParty.new, 1, 0, 0)
+  st.variables[1] = 5
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  scene.instance_variable_set(:@mode, :variable)
+  scene.send(:refresh)
+  eq 7, scene.send(:editor_digits), 'RPG2003 widens the editor to 7 digits'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # open the editor on variable 1
+  scene.update
+  eq 7, scene.instance_variable_get(:@editor)[:digits].size,
+     'the digit array itself is 7 cells wide, not 6'
+  # Digits are most-significant-first, so the new, RPG2003-only millions
+  # place is digit index 0 -- cursor cell 1, right after the sign cell (0).
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]; scene.update
+  RGSS::Input.triggered = [RGSS::Input::UP] # the millions digit 0 -> 1
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm
+  scene.update
+  eq 1_000_005, st.variables[1],
+     'the millions digit only the RPG2003-widened editor exposes landed in the variable'
+end
+
 check "a troop's terrain_set excludes it from a tile it does not cover" do
   scene = new_scene({})
   scene.db.enemy_group[9] = OpenStruct.new(name: 'Wolves', members: {}, terrain_set: [0])
