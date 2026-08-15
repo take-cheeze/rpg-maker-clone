@@ -1938,6 +1938,30 @@ The work below is roughly ordered by the critical path to a walkable game
   (11020) drive `Game::Screen` too: a fade level (0 visible .. 255 black) held
   erased until a Show, drawn by the same screen-sized sprite mechanism as the
   flash. All share the `:screen` wait, so event timing around them is correct.
+  ✅ **Pan Screen's own per-speed pixel rate is now RPG_RT's real value, not a
+  flat doubling that was 4x too fast at every setting.** `Game::Screen
+  #pan_step_for` (`mruby-rpg2k/mrblib/game.rb`) was `2**(speed-1)` — 1, 2, 4,
+  8, 16, 32 px/frame for speed 1..6, a plain doubling starting at a whole
+  pixel, self-flagged in its own comment as "An approximation — the exact
+  subpixel rate is a native refinement." EasyRPG Player's own
+  `Game_Player::StartPan`/`ResetPan` (`src/game_player.cpp`) set `pan_speed
+  = 2 << speed`, a value that lives in RPG_RT's own 1/16-pixel subpixel
+  space (`SCREEN_TILE_SIZE = 256`, sixteen per this codebase's own real
+  `Game::TILE = 16` px) — so the real whole-pixel rate is `(2 << speed) /
+  16.0`: 0.25, 0.5, 1, 2, 4, 8 px/frame for speed 1..6, exactly a quarter of
+  what this codebase used at every setting, so a Pan Screen command used to
+  finish in a quarter of the real frame count and visibly raced rather than
+  glided. Fixed by correcting the formula and having `@pan_x`/`@pan_y`
+  accumulate the (possibly sub-whole-pixel) real rate exactly — 0.25 and
+  0.5 are both exact powers of two in binary floating point, so the two
+  slowest speeds never drift and still land precisely on the whole-pixel
+  target once a pan finishes — with `#pan_offset` (the only way `Scene::Map`
+  ever reads this) rounding to a whole pixel at the point of consumption,
+  the same way RPG_RT's own subpixel position is only ever rounded for
+  display. Covered by tightening an existing `scripts/rpg2k_logic_check.rb`
+  check to the real per-frame values and adding a new one pinning the
+  sub-pixel accumulation at the slowest speed, both confirmed to fail
+  against the pre-fix code before the fix.
   **Show Picture** now renders (see the interpreter bullet above).
 
   Those two commands now run their **actual transition style** rather than one

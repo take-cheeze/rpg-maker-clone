@@ -4737,10 +4737,10 @@ check 'Pan Screen locks the camera and holds the interpreter while scrolling' do
 
   5.times { scene.update } # mid-scroll: renders with a locked, panned camera
   ok st.screen.pan_locked?, 'the camera is locked'
-  ok st.screen.panning?, 'still scrolling (80 px at 2 px/frame)'
+  ok st.screen.panning?, 'still scrolling (80 px at speed 2, 0.5 px/frame)'
   ok !st.switches[1], 'the command after the pan waits'
 
-  80.times { scene.update } # 80 px at 2 px/frame -> 40 frames, plenty
+  170.times { scene.update } # 80 px at 0.5 px/frame -> 160 frames, plenty
   ok !st.screen.panning?, 'the pan reached its target'
   eq [80, 0], st.screen.pan_offset
   ok st.switches[1], 'the interpreter resumed after the pan'
