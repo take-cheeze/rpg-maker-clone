@@ -37,14 +37,15 @@ set -euo pipefail
 attempts=${NIX_DEVELOP_ATTEMPTS:-4}
 delay=${NIX_DEVELOP_RETRY_DELAY:-5}
 
-# `nix develop` fetches this flake with `self.submodules = true`, which makes
-# nix fetch every submodule from its remote with the refspec `refs/*:refs/*`
-# and `--progress`: a `* [new ref]` line per ref — ~20k of them, GitHub's
-# `refs/pull/*` included, on the first nix command of a job — plus the object
-# counters git would otherwise keep to itself when stderr is not a terminal. It
-# all comes from a `git` child process holding nix's stderr, so no nix
-# verbosity flag suppresses it; see the filter for the full story. The same
-# filter also quiets the clones the download scripts run inside the shell.
+# A `nix` call that fetches this flake *with submodules* (`?submodules=1`, which
+# `nix develop` no longer implies — see flake.nix) makes nix fetch every
+# submodule from its remote with the refspec `refs/*:refs/*` and `--progress`: a
+# `* [new ref]` line per ref — ~15k of them, GitHub's `refs/pull/*` included —
+# plus the object counters git would otherwise keep to itself when stderr is not
+# a terminal. It all comes from a `git` child process holding nix's stderr, so
+# no nix verbosity flag suppresses it; see the filter for the full story. The
+# same filter also quiets the clones the download scripts run inside the shell,
+# which is what keeps it on this wrapper now that the shell itself is quiet.
 drop_fetch_noise="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/drop-git-fetch-noise.bash"
 
 log="$(mktemp)"

@@ -84,13 +84,11 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Keep the tc39/test262 clone out of CI — `nix develop` fetches this flake
-      # with submodules and would otherwise trip over quickjs-ng's unused nested
-      # entry. See the script for the full story.
-      - name: Skip the quickjs test262 submodule
-        run: ./scripts/skip-quickjs-test262.bash
-        env:
-          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+      # No `Skip the quickjs test262 submodule` step here any more: it existed
+      # only to keep nix's nested-`.gitmodules` walk off tc39/test262, and this
+      # job no longer triggers that walk — `nix develop` stopped fetching
+      # submodules when flake.nix dropped `self.submodules = true`. The `flake`
+      # job, the one that still asks for them, keeps the step.
 
       # Realises the dev shell and exports its environment (PATH, compiler
       # launchers, etc.) into $GITHUB_ENV / $GITHUB_PATH, so every later step
@@ -733,11 +731,7 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Keep the tc39/test262 clone out of CI; see the `build` job.
-      - name: Skip the quickjs test262 submodule
-        run: ./scripts/skip-quickjs-test262.bash
-        env:
-          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+      # No test262-skip step here either; see the `build` job.
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -938,12 +932,7 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Same as the `build` job: keep the tc39/test262 clone out of the nix
-      # submodule walk that `nix develop` triggers.
-      - name: Skip the quickjs test262 submodule
-        run: ./scripts/skip-quickjs-test262.bash
-        env:
-          CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
+      # No test262-skip step here either; see the `build` job.
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -1409,9 +1398,10 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      # Same as the `build` job — `nix build '.?submodules=1'` walks every entry
-      # of every nested `.gitmodules`, so drop quickjs-ng's unused test262 entry
-      # rather than cloning tc39/test262 to satisfy the walk.
+      # This is the one job that still fetches submodules (`?submodules=1` on
+      # the `nix build` below), and the walk covers every entry of every nested
+      # `.gitmodules` — so drop quickjs-ng's unused test262 entry rather than
+      # cloning tc39/test262 to satisfy it.
       - name: Skip the quickjs test262 submodule
         run: ./scripts/skip-quickjs-test262.bash
         env:
@@ -1429,16 +1419,21 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix') }}
 
+      # `?submodules=1` is what puts the submodule sources in the store copy of
+      # this flake, which `packages.build` compiles. It is asked for here rather
+      # than declared in flake.nix, so that only this job pays for the walk --
+      # the three jobs that enter the dev shell build the checkout itself and
+      # never read nix's copy of it (see the comment in flake.nix).
+      #
       # Piped through the same ref-noise filter every `nix` call in this
-      # workflow uses (see e.g. scripts/nix-develop-export-env.bash):
-      # fetching this flake with `self.submodules = true` makes nix fetch
-      # each submodule with
-      # `refs/*:refs/*` and print a `* [new ref]` line per ref, ~20k of them
-      # ahead of the first build log line. Merging stderr into stdout is what
-      # lets one filter see both; `-L`'s build logs stay untouched, they are
-      # prefixed with the derivation name rather than looking like fetch output.
+      # workflow uses (see e.g. scripts/nix-develop-export-env.bash): fetching
+      # the flake with submodules makes nix fetch each one with `refs/*:refs/*`
+      # and print a `* [new ref]` line per ref, ~15k of them ahead of the first
+      # build log line. Merging stderr into stdout is what lets one filter see
+      # both; `-L`'s build logs stay untouched, they are prefixed with the
+      # derivation name rather than looking like fetch output.
       - name: Build flake
-        run: nix build -L '.#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
+        run: nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
 
   # Publish the WebAssembly page to GitHub Pages on every push to master. The
   # build carries no pthreads/SharedArrayBuffer, so it needs no COOP/COEP
