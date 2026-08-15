@@ -8550,27 +8550,45 @@ module Game
       @queue = @queue.reject { |b| side_of(b) == :enemy } if @first_strike && @rounds == 1
     end
 
-    # Battlers ordered by agility (highest first) -- except a battler whose
-    # round is about to be a basic Attack with a `preemptive` weapon equipped
-    # sorts before everyone else (EasyRPG's `CreateExecutionOrder` adding
-    # 9999 to such a battler's computed order, which in practice always
-    # outruns ordinary agility). Ties between two preemptive battlers still
-    # fall back to agility. On an agility tie, an ally always acts before an
-    # enemy (whether `Combatant#actor` is set ranks 0 below an unset one's 1,
-    # independent of either's magnitude, rather than relying on array
-    # position happening to list every ally before every enemy); among tied
-    # allies specifically, the
-    # **lower actor id** acts first -- not party seat/join order, which can
-    # diverge from id order once a member has left and rejoined in a
-    # different slot (`Game::Party#add_actor` appends to `@actors` in join
-    # order, not id order -- see the "seat order" note on `Party#actors`).
-    # An enemy tie has no documented ordering rule, so it keeps its troop
-    # (definition) order via `i`, same as before.
+    # Battlers ordered by a per-round randomised Agility roll (highest first)
+    # -- except a battler whose round is about to be a basic Attack with a
+    # `preemptive` weapon equipped sorts before everyone else (EasyRPG's
+    # `CreateExecutionOrder`, src/scene_battle_rpg2k.cpp, adding 9999 to such
+    # a battler's computed order, which in practice always outruns ordinary
+    # agility). Confirmed against that same function: real RPG_RT does not
+    # sort by raw Agility at all -- each battler rolls `agi +
+    # Rand(0, agi/4 + 3)` fresh at the start of the round (computed once per
+    # battler *before* sorting, exactly like here, "because of the strict
+    # weak ordering property" its own comment gives, not re-rolled per
+    # comparison), so two battlers with equal Agility do not act in a fixed
+    # order round after round -- either may go first, independently each
+    # round. The previous version sorted purely by `effective_agi` with no
+    # randomisation at all, making an agility tie between an ally and an
+    # enemy resolve the same way in literally every round of literally every
+    # battle, a divergence from real RPG_RT's roll on any encounter with
+    # matched Agility (a common case for a balanced fight).
+    #
+    # EasyRPG's own comparator has no documented rule for what happens when
+    # the *rolled* orders still tie (a `std::sort` over unspecified relative
+    # order); this port keeps its own deterministic fallback for that now-rare
+    # case -- an ally before an enemy, then the lower actor id, then troop
+    # (definition) order -- purely so the same input reproduces the same
+    # output for testing, not because it's meant to mirror any specific
+    # undocumented C++ sort behaviour.
     def turn_order
-      (@allies + @enemies).reject(&:out_of_play?).each_with_index
-                          .sort_by { |b, i| [preemptive_boost?(b) ? 0 : 1, -effective_agi(b),
-                                              b.actor ? 0 : 1, b.actor ? b.actor.id : i] }
-                          .map { |b, _| b }
+      # [battler, rolled_order] pairs, not a Hash keyed by battler --
+      # Combatant is a Struct, whose #hash/#eql? compare field *values*, so
+      # two battlers that happen to share identical stats (a common case for
+      # same-type enemies) would collide as one Hash key instead of two.
+      rolled = (@allies + @enemies).reject(&:out_of_play?).map do |b|
+        agi = effective_agi(b)
+        roll = agi + @rng.random(agi / 4 + 4)
+        roll += 9999 if preemptive_boost?(b)
+        [b, roll]
+      end
+      rolled.each_with_index
+            .sort_by { |(b, roll), i| [-roll, b.actor ? 0 : 1, b.actor ? b.actor.id : i] }
+            .map { |(b, _roll), _i| b }
     end
 
     # Whether `b`'s action this round earns the `preemptive` weapon's

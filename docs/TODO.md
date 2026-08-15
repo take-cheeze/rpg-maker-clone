@@ -5761,6 +5761,41 @@ not yet verified:
   buy/sell-a-stack-of-three checks that used to press UP twice and now press
   RIGHT twice), all four confirmed to fail against the pre-fix code before
   the fix.
+- ✅ **Battle turn order now rolls a random Agility jitter each round, instead
+  of sorting purely by raw Agility.** Confirmed against EasyRPG's actual
+  `Scene_Battle_Rpg2k::CreateExecutionOrder` (`src/scene_battle_rpg2k.cpp`):
+  every battler rolls `agi + Rand(0, agi / 4 + 3)` fresh, once per round,
+  before the sort — its own comment notes this must happen *outside* the
+  sort comparator ("because of the strict weak ordering property, so the
+  sort is consistent"), which this port follows too. `Game::Battle#turn_order`
+  instead sorted `(@allies + @enemies)` purely by `-effective_agi`, with an
+  explicit tie-break tuple (ally before enemy, then lower actor id, then
+  troop order) that its own doc comment incorrectly attributed to
+  `CreateExecutionOrder` — real RPG_RT has no such fixed tie-break at all; it
+  resolves agility ties (and near-ties) via the random roll instead. The
+  practical effect: two battlers with equal Agility — a common case for a
+  balanced encounter — acted in the exact same relative order in literally
+  every round of literally every battle (the ally always first), when real
+  RPG_RT lets either go first, independently, each round. Fixed by rolling
+  `agi + rng.random(agi / 4 + 4)` (the `+4` compensating for `#random`'s
+  exclusive upper bound against `Rand::GetRandomNumber`'s inclusive one) for
+  every non-out-of-play battler before sorting, adding the existing 9999
+  preemptive-weapon boost on top same as before, and keeping the old
+  ally/actor-id/troop-order tuple only as a deterministic fallback for the
+  now-rare case where two rolled totals still tie exactly (not because it's
+  RPG_RT's own rule — it isn't — but so the same inputs still reproduce the
+  same output for testing). Built with `[battler, roll]` pairs rather than a
+  `Hash` keyed by battler, since `Combatant` is a `Struct` whose `#hash`/
+  `#eql?` compare field values, not identity — two battlers that happen to
+  share identical stats (same-type enemies) would otherwise collide as one
+  Hash key. Covered by a new `scripts/rpg2k_logic_check.rb` check pinning
+  two battlers tied on raw Agility landing in opposite orders under two
+  different forced rolls, confirmed to fail against the pre-fix code before
+  the fix (it always produced the ally-first order regardless of the RNG
+  sequence supplied); two existing checks that happened to rely on an exact
+  agility tie resolving deterministically were switched from a real (if
+  seeded) RNG to `FixedRng.new(0)`, which zeroes the jitter term and
+  restores the pure-Agility ordering they actually mean to exercise.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
