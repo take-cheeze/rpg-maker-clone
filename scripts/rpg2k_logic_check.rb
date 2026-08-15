@@ -2966,9 +2966,20 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :animation_id,
                       # ステート発生率 (weapon field 67): the flat percent chance
                       # applied to every state `state_set` flags on a basic
-                      # Attack (Game::Actor#weapon_states). Appended last, same
-                      # positional-safety reasoning as every field above.
-                      :state_chance)
+                      # Attack (Game::Actor#weapon_states).
+                      :state_chance,
+                      # 特殊効果 (field 71): a weapon/shield/armour/helmet/
+                      # accessory item flagged this way invokes `skill_id`
+                      # directly from the Item menu, the same as a type-9
+                      # special item, without being equipped
+                      # (Game::Party#use_equip_skill_item).
+                      :use_skill,
+                      # 使用可能職業 (field 73): `use_skill`'s companion --
+                      # the RPG2003 class ids (0-based index, bool per class)
+                      # allowed to trigger it this way
+                      # (Game::Party#item_usable_by_class?). Appended last,
+                      # same positional-safety reasoning as every field above.
+                      :class_set)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2978,14 +2989,14 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
               cursed: false, raise_evasion: false, animation_id: nil,
-              state_chance: 0)
+              state_chance: 0, use_skill: false, class_set: nil)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
                ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
-               raise_evasion, animation_id, state_chance)
+               raise_evasion, animation_id, state_chance, use_skill, class_set)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -5000,6 +5011,88 @@ check 'a special item invokes its skill, free of SP and without knowing it' do
   eq 90, hero.hp, 'the skill landed'
   eq 0, hero.mp, 'no SP was spent'
   eq 1, st.party.item_count(3), 'one was consumed'
+end
+
+check 'a use_skill-flagged equipment item invokes its skill directly, free ' \
+      'and unequipped, the same as a type-9 special item' do
+  # Type 1 is 武器 (weapon): with no use_skill flag it is ordinary gear, never
+  # offered by the Item menu. Flip use_skill on and it behaves exactly like a
+  # type-9 special item -- confirmed against EasyRPG's Game_Party::UseItem,
+  # whose `do_skill` ORs `use_skill` with a Weapon/Shield/Armor/Helmet/
+  # Accessory type check.
+  skills = { 8 => fake_skill(name: 'Elixir', scope: 3, sp_cost: 99,
+                             power: 40, hp: true) }
+  plain = { 3 => fake_item(type: 1, skill_id: 8, name: 'Plain Sword') }
+  st = skill_party(skills, plain)
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(3, 2)
+  ok !st.party.field_usable?(3), 'no use_skill flag -- ordinary equipment, not menu-usable'
+  ok !st.party.battle_usable?(3)
+  eq [], st.party.use_item(3, hero)
+  eq 2, st.party.item_count(3), 'nothing consumed'
+
+  rune = { 4 => fake_item(type: 1, skill_id: 8, use_skill: true, name: 'Rune Sword') }
+  st = skill_party(skills, rune)
+  hero = st.party.actor_by_id(1)
+  hero.change_hp(-50)
+  hero.mp = 0                                   # cannot afford the skill itself
+  ok !hero.knows_skill?(8), 'and has never learnt it'
+  st.party.gain_item(4, 2)
+  ok st.party.field_usable?(4), 'use_skill plus an ally-scope skill offers it'
+  ok st.party.battle_usable?(4)
+  affected = st.party.use_item(4, hero)
+  eq [hero], affected
+  eq 90, hero.hp, 'the skill landed'
+  eq 0, hero.mp, 'no SP was spent -- the item is the cost'
+  eq 1, st.party.item_count(4), 'one was consumed'
+
+  # Shield (2), armour (3), helmet (4) and accessory (5) all take the same
+  # branch, not just weapons.
+  [2, 3, 4, 5].each do |t|
+    gear = { 5 => fake_item(type: t, skill_id: 8, use_skill: true, name: "Gear #{t}") }
+    gst = skill_party(skills, gear)
+    ghero = gst.party.actor_by_id(1)
+    ghero.change_hp(-50)
+    gst.party.gain_item(5, 1)
+    ok gst.party.field_usable?(5), "type #{t} with use_skill is field-usable"
+    eq [ghero], gst.party.use_item(5, ghero)
+  end
+end
+
+check 'a use_skill equipment item restricted by class_set is only usable by ' \
+      'an actor in one of its listed classes' do
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  job2 = []
+  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
+  skills = { 8 => fake_skill(name: 'Elixir', scope: 3, sp_cost: 99, power: 40, hp: true) }
+  # class_set index 0 (class 1) false, index 1 (class 2) true: only class 2 may
+  # trigger it.
+  items = { 4 => fake_item(type: 1, skill_id: 8, use_skill: true,
+                           class_set: [false, true], name: 'Class Rune') }
+  players = {
+    1 => ClassedRow.new('Warrior', '', 0, 3, actor_curve, [], 1, nil),
+    2 => ClassedRow.new('Mage', '', 0, 3, actor_curve, [], 2, nil),
+  }
+  jobs = {
+    1 => JobRow.new('Fighter', job1),
+    2 => JobRow.new('Mage', job2),
+  }
+  db = FakeActorDB.new(players, [1, 2], items, skills, jobs)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  warrior = st.party.actor_by_id(1)
+  mage = st.party.actor_by_id(2)
+  eq 1, warrior.class_id
+  eq 2, mage.class_id
+  st.party.gain_item(4, 2)
+  warrior.change_hp(-50)
+  mage.change_hp(-50)
+  eq [], st.party.use_item(4, warrior), "class 1 isn't in class_set"
+  eq 2, st.party.item_count(4), 'nothing consumed'
+  eq [mage], st.party.use_item(4, mage), 'class 2 is listed'
+  eq 1, st.party.item_count(4), 'one was consumed'
 end
 
 check 'a special item invoking an Escape skill is hidden with no runtime ' \

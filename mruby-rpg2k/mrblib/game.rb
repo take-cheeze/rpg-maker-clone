@@ -2845,6 +2845,18 @@ module Game
     ITEM_SPECIAL = 9
     ITEM_SWITCH = 10
 
+    # The five equipment types (see Actor::EQUIP_ORDER for the slot mapping),
+    # named here for #field_usable? / #battle_usable? / #use_item's `use_skill`
+    # branch: an equipment item flagged `use_skill` (field 71) invokes its
+    # `skill_id` skill directly from the Item menu, exactly like a type-9
+    # special item, without being equipped. Confirmed against EasyRPG's
+    # `Game_Party::UseItem`, whose `do_skill` computation ORs `use_skill` with
+    # this exact five-type check.
+    ITEM_SHIELD = 2
+    ITEM_ARMOR = 3
+    ITEM_HELMET = 4
+    ITEM_ACCESSORY = 5
+
     # The database row for a held item id, or nil when the database has no item
     # table (a bare test fixture) or no such row.
     def db_item(id)
@@ -2912,6 +2924,8 @@ module Game
       when ITEM_MEDICINE, ITEM_SKILL_BOOK, ITEM_SEED then true
       when ITEM_SWITCH then item_field_occasion?(it)
       when ITEM_SPECIAL then field_skill?(db_skill(it.skill_id), state)
+      when Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR, ITEM_HELMET, ITEM_ACCESSORY
+        it.use_skill && field_skill?(db_skill(it.skill_id), state)
       else false
       end
     end
@@ -3060,6 +3074,26 @@ module Game
       set[idx] ? true : false
     end
 
+    # `class_set` (item field 73), `use_skill`'s companion restriction list:
+    # whether `actor`'s RPG2003 class (Actor#class_id) is among the classes
+    # allowed to trigger this item's skill, when the item actually restricts by
+    # class (a non-empty `class_set`, i.e. `class_set_size` field 72 > 0).
+    # Mirrors EasyRPG's `Game_Actor::IsItemUsable` class_set arm and follows
+    # #item_usable_by?'s own "empty/short array reads as allowed" convention
+    # for this bit-array field pair (the `_size` field itself is never read --
+    # the array's own length already carries it, as for actor_set/state_set/
+    # attribute_set). An actor with no class (RPG2000 has none) is always
+    # allowed.
+    def item_usable_by_class?(it, actor)
+      return true unless it.respond_to?(:class_set) && it.class_set
+      class_id = actor && actor.respond_to?(:class_id) ? (actor.class_id || 0) : 0
+      return true if class_id <= 0
+      set = it.class_set
+      idx = class_id - 1
+      return true if idx < 0 || set.size <= idx
+      set[idx] ? true : false
+    end
+
     # Whether using item `id` on `actor` would change anything, so the menu can
     # grey out a no-op. A medicine is effective when the target is below full
     # HP/SP and it restores some (RPG_RT forbids using a pure-recovery item on a
@@ -3104,6 +3138,8 @@ module Game
       when ITEM_SKILL_BOOK then use_skill_book(it, id, actor)
       when ITEM_SEED then use_seed(it, id, actor)
       when ITEM_SPECIAL then use_special_item(it, id, actor)
+      when Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR, ITEM_HELMET, ITEM_ACCESSORY
+        it.use_skill ? use_equip_skill_item(it, id, actor) : []
       else []
       end
     end
@@ -3121,6 +3157,18 @@ module Game
     # reason a switch item bypasses #use_item for #use_switch_item.
     def use_special_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id)
+      affected = cast_skill(actor, it.skill_id, actor, true)
+      lose_item(id, 1) unless affected.empty?
+      affected
+    end
+
+    # A weapon/shield/armour/helmet/accessory item flagged `use_skill` invokes
+    # its `skill_id` skill directly, without being equipped -- the same free
+    # cast #use_special_item gives a type-9 special item, gated additionally by
+    # `class_set` (#item_usable_by_class?), the restriction list a use_skill
+    # equipment item carries that a special item does not.
+    def use_equip_skill_item(it, id, actor)
+      return [] unless actor && item_usable_by?(it, actor.id) && item_usable_by_class?(it, actor)
       affected = cast_skill(actor, it.skill_id, actor, true)
       lose_item(id, 1) unless affected.empty?
       affected
@@ -4072,6 +4120,8 @@ module Game
       when ITEM_MEDICINE then !item_field_only?(it)
       when ITEM_SWITCH then item_battle_occasion?(it)
       when ITEM_SPECIAL then battle_skill?(db_skill(it.skill_id))
+      when Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR, ITEM_HELMET, ITEM_ACCESSORY
+        it.use_skill && battle_skill?(db_skill(it.skill_id))
       else false
       end
     end
