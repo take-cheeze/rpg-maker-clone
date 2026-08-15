@@ -5292,6 +5292,52 @@ not yet verified:
   `scripts/rpg2k_logic_check.rb` check (the 50.5-tie case above landing on
   escape chance 100, not 99), confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **A skill/spell attack now rolls its own critical hit, and a critical's
+  ×3 multiplier now applies before variance rather than after it — two bugs
+  in the damage-effect formula, both confirmed against EasyRPG's `algo.cpp`.**
+  1. **Skill/spell criticals were entirely unmodelled.** EasyRPG's
+     `Game_BattleAlgorithm::Skill::vExecute` rolls
+     `Algo::CalcCriticalHitChance(source, target, WeaponAll, ...)` — with no
+     `easyrpg_critical_hit_chance` override (an EasyRPG-only extension field
+     no genuine `.ldb` sets), this falls back to the caster's ordinary
+     weapon-inclusive crit rate, the *exact same* rate a basic attack already
+     reads via `#critical?` — and `Algo::CalcSkillEffect` triples the result
+     the same way a basic attack's `CalcNormalAttackEffect` does. Nothing in
+     `Game::Battle#apply_skill_hit` ever rolled this: every offensive skill's
+     damage was silently capped at its non-critical value on every single
+     cast, in every fight. Fixed by rolling `#critical?(b) && side_of(b) !=
+     side_of(target) && !target.prevents_crit` — the identical guard
+     `#deal_attack` already applies — right after the attribute-multiplier
+     step, tripling `dmg` when it lands, and threading a new `critical:` flag
+     onto the returned log entry (`Scene::Map`'s existing "(critical!)"
+     suffix, `#battle_action_line`, already reads this field — it only ever
+     saw it from a basic attack before).
+  2. **A basic attack's own critical/charge multiplier was applying *after*
+     variance instead of before.** EasyRPG's `CalcNormalAttackEffect`:
+     attribute multiplier, then `if (is_critical_hit) dmg *= 3` / `else if
+     (is_charged) dmg *= 2`, then `VarianceAdjustEffect` last.
+     `Game::Battle#deal_attack` had the last two swapped. Since `#varied`'s
+     own spread (`var*base/10`) scales with its input, rolling it on the
+     pre-crit base and tripling the *result* afterward can only ever land a
+     multiple of 3 (or 2, for a charge) away from the tripled/doubled base —
+     each ±1 unit of pre-crit noise becomes ±3 once multiplied — a strictly
+     coarser, differently-shaped spread than rolling variance against the
+     *actual* landed damage, which can land on any integer in its own wider
+     window. Fixed by moving the existing `#varied` call to after the
+     crit/charge multiplier, matching `CalcSkillEffect`'s order (which this
+     codebase's own skill-crit fix above now follows from the start, so the
+     two damage paths stay consistent with each other as well as with
+     EasyRPG). No existing test exercises variance and criticals in the same
+     fight (every one explicitly turns one or the other off, per their own
+     "variance off, criticals on" comments), so none of them change.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks (a skill/spell
+  attack's damage tripling on a guaranteed crit and reporting `critical:
+  true`, the same target-side gear-guard and criticals-off exclusions a
+  basic attack already has now also blocking a skill's crit, and — for the
+  ordering fix — sampling many seeds of a guaranteed-crit, variance-on basic
+  attack and confirming at least one resulting damage value is *not* a
+  multiple of 3, which the pre-fix order could never produce), each
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control

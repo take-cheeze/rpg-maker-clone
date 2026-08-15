@@ -9002,7 +9002,6 @@ module Game
       # An elemental weapon scales its damage by the target's resistance before
       # variance / criticals (EasyRPG's ApplyAttributeNormalAttackMultiplier).
       dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
-      dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
       # No critical on a same-side hit (e.g. a confused ally striking an ally) or
       # against a target whose gear prevents criticals, matching EasyRPG.
       crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
@@ -9016,6 +9015,17 @@ module Game
       elsif charged
         dmg *= 2
       end
+      # Variance is the *last* term before the popup cap -- EasyRPG's
+      # CalcNormalAttackEffect applies the critical/charge multiplier and only
+      # then spreads by VarianceAdjustEffect, not the other way round. Since
+      # #varied's own spread (`var*base/10`) scales with its input, rolling it
+      # on the pre-crit base and tripling the *result* afterward (a prior
+      # version's order) both narrows the spread relative to the final damage
+      # and collapses it onto only the multiples of 3 (or 2) the pre-crit
+      # value's own noise happened to land on, instead of the wider, finer-
+      # grained spread a variance roll against the *actual* (already tripled/
+      # doubled) damage produces.
+      dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
       # Defending halves the blow, and 強力防御 halves it again — a quarter, not a
       # half (EasyRPG's `AdjustDamageForDefend` applies the second `dmg /= 2`
       # for a battler with strong defence). Seven of Nepheshel's 50 actors have
@@ -9387,8 +9397,21 @@ module Game
       if attack
         dmg = -hp
         # An elemental skill scales its damage by the target's resistance first
-        # (EasyRPG's ApplyAttributeSkillMultiplier), then spreads by variance.
+        # (EasyRPG's ApplyAttributeSkillMultiplier), then a critical hit, then
+        # spreads by variance -- EasyRPG's own CalcSkillEffect order exactly
+        # (algo.cpp: attribute multiplier, `if (is_critical_hit) effect *= 3`,
+        # then VarianceAdjustEffect last).
         dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
+        # A skill/spell crits at the caster's own basic-attack rate (weapon
+        # bonus included) -- EasyRPG's `Skill::vExecute` rolls
+        # `Algo::CalcCriticalHitChance(source, target, WeaponAll, ...)`, the
+        # exact same rate `#deal_attack` already reads via `#critical?`, not a
+        # separate magic-only chance. Previously nothing here ever rolled a
+        # skill/spell critical at all -- every offensive skill's damage was
+        # capped at its non-critical value on every single cast. Same
+        # same-side / gear exclusions as a basic attack.
+        crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
+        dmg *= 3 if crit
         # Spread the skill's damage by its own variance when the fight rolls it.
         dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
         # Same hard-cap as a normal attack (#deal_attack), applied before
@@ -9445,6 +9468,7 @@ module Game
           stat_changed = apply_stat_mods(target, stat_keys, stat_amount)
         end
         { attacker: b.name, target: target.name, damage: dmg, missed: !hits,
+          critical: crit,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already, cured: cured,
           attr_shifted: shifted, attr_shift_dir: cmd[:attr_shift],

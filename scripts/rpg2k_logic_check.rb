@@ -8143,6 +8143,32 @@ check 'battle: a critical hit triples the damage when the fight rolls one' do
   eq true, e[:critical]
 end
 
+check "battle: a critical's damage multiplier now applies before variance, not after" do
+  # EasyRPG's CalcNormalAttackEffect applies the critical/charge multiplier
+  # and only then spreads the result by VarianceAdjustEffect -- not the other
+  # way round. #varied's own spread (`var*base/10`) scales with its input, so
+  # rolling variance on the pre-crit base and tripling the *result* afterward
+  # can only ever land on a multiple of 3 away from the tripled base (each
+  # ±1 unit of pre-crit noise becomes ±3 once multiplied) -- a strictly
+  # coarser, wrong-shaped spread than rolling variance against the *actual*
+  # (already-tripled) damage, which lands on any integer in its own wider
+  # window. Sampling many seeds and finding a non-multiple-of-3 damage value
+  # proves the fix is rolling variance second, since the old order could
+  # never produce one.
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_chance = 100 # certainty -> always crits
+  damages = (1..60).map do |seed|
+    slime = combatant('Slime', 0, 0, 5, 100_000)
+    # 6-arg: variance on, criticals on.
+    bat = Game::Battle.new([hero], [slime], Game::Rng.new(seed), nil, true, true)
+    bat.begin_round
+    bat.step_action[:damage]
+  end
+  ok damages.any? { |d| d % 3 != 0 },
+     "variance rolled against the tripled damage should land off a multiple " \
+     "of 3 at least once in 60 seeds (got #{damages.uniq.sort.inspect})"
+end
+
 check 'battle: no critical when the fight has criticals off' do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.crit_chance = 100                             # would always crit, but...
@@ -9791,6 +9817,49 @@ check "battle: a skill's stat-mod effect rolls independently of its HP effect" d
   eq({ def: -10 }, e[:stat_changed],
      "but the def stat mod still landed on its own, independent roll " \
      '(-20 clamped to the asymmetric -base/2..+base band, base def 20)')
+end
+
+check "battle: a skill/spell attack now rolls its own critical hit too" do
+  # EasyRPG's Game_BattleAlgorithm::Skill::vExecute rolls
+  # Algo::CalcCriticalHitChance(source, target, WeaponAll, ...) -- the exact
+  # same weapon-inclusive rate #deal_attack's own #critical? already reads --
+  # and Algo::CalcSkillEffect triples the result the same way a basic
+  # attack's own CalcNormalAttackEffect does. Previously nothing in
+  # #apply_skill_hit ever rolled a skill/spell critical at all: every
+  # offensive skill's damage was capped at its non-critical value on every
+  # single cast.
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_chance = 100 # certainty -> always crits
+  foe = combatant('Foe', 0, 0, 5, 100)
+  cmd = { attack: true, chance: 100 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, true) # 6-arg: criticals on
+  e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  eq 60, e[:damage], "base 20 tripled by the crit, matching a basic attack's own crit"
+  eq true, e[:critical]
+  eq 40, foe.hp
+end
+
+check "battle: a target's gear-guard against criticals blocks a skill's crit too" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_chance = 100
+  guarded = combatant('Foe', 0, 0, 5, 100)
+  guarded.prevents_crit = true
+  cmd = { attack: true, chance: 100 }
+  bat = Game::Battle.new([hero], [guarded], Game::Rng.new(1), nil, false, true)
+  e = bat.send(:apply_skill_hit, hero, guarded, -20, 0, cmd)
+  eq 20, e[:damage], 'gear that prevents criticals blocks a skill crit, same as a basic attack'
+  ok !e[:critical]
+end
+
+check 'battle: no skill/spell critical when the fight has criticals off' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_chance = 100 # would always crit, but...
+  foe = combatant('Foe', 0, 0, 5, 100)
+  cmd = { attack: true, chance: 100 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1)) # 3-arg: criticals off
+  e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  eq 20, e[:damage]
+  ok !e[:critical]
 end
 
 check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
