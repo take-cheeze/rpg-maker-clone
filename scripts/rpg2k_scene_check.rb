@@ -1390,6 +1390,104 @@ check 'event-touch (trigger 2): a custom-route event stepping into the ' \
   eq [0, 0], [ch.x, ch.y], 'the event stayed put, it did not step onto the player'
 end
 
+# docs/TODO.md, "Map Event" bullet, case (c): the party and an event trading
+# tiles in one step -- the event's target this frame is the party's *current*
+# tile while the party's own target this frame is the event's *current*
+# tile, both mid-move toward each other rather than one walking onto an
+# already-stationary other (that's case (b), the two tests just above). Real
+# RPG_RT invalidates the hit-test for this configuration entirely (no trigger
+# fires either way), but this codebase's frame order (#step_events, which
+# decides the event's move and so its case-(b) hero-tile refusal, always
+# runs before #step_movement, which decides and applies the party's own move
+# for the same frame) used to see only the event's *stale, pre-move* refusal
+# and the party's own subsequent walk onto that same tile -- collapsing a
+# genuine crossing into an ordinary "party walks onto a stationary touch
+# event" outcome. Fixed via Scene::Map#player_intended_target, snapshotted
+# before #step_events runs each frame precisely so #move_autonomous /
+# Game::MoveRoute#do_move's hero-tile refusal can recognise this same-frame
+# configuration and flag it (e[:crossed_hero_this_frame]) for
+# #step_movement's own #event_at check to consult.
+check 'hero and event crossing paths (case (c)): trading tiles suppresses ' \
+      'Hero Touch' do
+  ic = Game::Interpreter::Cmd
+  # Same-layer, so the party is actually blocked from stepping onto the
+  # event's tile once the touch check itself is (correctly) suppressed --
+  # otherwise a below-characters event's tile is walkable anyway and the
+  # blocked-vs-not distinction this check wants would not show up.
+  pg = page(x_move_type: Game::MoveType::TOWARD, trigger: 1, frequency: 8,
+           layer: RPG2k::Scene::Map::LAYER_SAME)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  ch = chars(scene)[1]
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right, toward the event -- same frame the
+                            # event (frequency 8: decides every frame) is
+                            # itself heading left, toward the party
+  10.times { scene.update }
+  ok !st.switches[6], 'Hero Touch never fired -- the hit-test is invalidated'
+  eq [0, 0], [st.x, st.y], 'the party never stepped onto the event'
+  eq [1, 0], [ch.x, ch.y], "the event never stepped onto the party (case (b), unchanged)"
+end
+
+check 'hero and event crossing paths (case (c)): trading tiles also ' \
+      "suppresses the event's own Event Touch -- no trigger fires either way" do
+  ic = Game::Interpreter::Cmd
+  pg = page(x_move_type: Game::MoveType::TOWARD, trigger: 2, frequency: 8,
+           layer: RPG2k::Scene::Map::LAYER_SAME)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  ch = chars(scene)[1]
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  10.times { scene.update }
+  ok !st.switches[5], 'Event Touch never fired either, same crossing'
+  eq [0, 0], [st.x, st.y], 'the party never stepped onto the event'
+  eq [1, 0], [ch.x, ch.y], 'the event never stepped onto the party'
+end
+
+check 'hero and event crossing paths (case (c)): a Set Move Route / custom-' \
+      'route event crossing the party is suppressed the same way as an ' \
+      'autonomous Approach move' do
+  ic = Game::Interpreter::Cmd
+  pg = page(x_move_type: Game::MoveType::CUSTOM, trigger: 1, frequency: 8,
+           layer: RPG2k::Scene::Map::LAYER_SAME,
+           route: move_route([R::MOVE_LEFT], repeat: true))
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  ch = chars(scene)[1]
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6
+  10.times { scene.update }
+  ok !st.switches[6], 'Hero Touch never fired for the crossing custom-route event'
+  eq [0, 0], [st.x, st.y], 'the party never stepped onto the event'
+  eq [1, 0], [ch.x, ch.y], 'the event never stepped onto the party'
+end
+
+check 'hero and event crossing paths (case (c)) requires an actual same-' \
+      "frame crossing -- an event's earlier, separate-frame refusal does " \
+      'not suppress a later ordinary Hero Touch' do
+  ic = Game::Interpreter::Cmd
+  pg = page(x_move_type: Game::MoveType::TOWARD, trigger: 1, frequency: 8,
+           layer: RPG2k::Scene::Map::LAYER_SAME)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  # The party holds still for this frame: the event (case (b)) still refuses
+  # to step onto the party's tile, but since the party attempted no move at
+  # all this frame, it is not a crossing.
+  scene.update
+  e = event_hashes(scene)[1]
+  ok !e[:crossed_hero_this_frame], 'not a crossing: the party was not moving'
+  # Freeze the event's own move cadence so its next decision cannot coincide
+  # with the party's move below -- isolating "does an old refusal leak into
+  # suppressing a later frame" from the crossing detection itself.
+  e[:move_timer] = 999
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # only now does the party start walking in
+  6.times { scene.update }
+  ok st.switches[6], 'Hero Touch still fires -- this was never a same-frame crossing'
+  eq [0, 0], [st.x, st.y], 'and the party did not step onto it, same as any touch event'
+end
+
 check 'action (trigger 0) does not fire on mere contact' do
   ic = Game::Interpreter::Cmd
   pg = page(trigger: 0) # needs the action button
