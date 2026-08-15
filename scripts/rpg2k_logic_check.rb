@@ -7862,6 +7862,36 @@ check 'to_lsd/from_lsd round-trips the latest battle\'s turn count' do
      'an old save without the field keeps the default (no battle ever captured)'
 end
 
+check 'to_lsd/from_lsd round-trips a map event\'s custom-route index' do
+  # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) used to never be written or read
+  # at all -- #map_event_positions/#map_event_route_index already tracked a
+  # map event's live position and its page's custom-route cursor, round-
+  # tripping through the portable Marshal save, but docs/TODO.md flagged
+  # both as "remain unmodelled at the `.lsd` layer". Field 43
+  # (move_route_index) now carries the route cursor alongside the position
+  # fields (12/13/22) chunk 111 already covers.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.map_event_positions = { 3 => [5, 7, 1] }
+  st.map_event_route_index = { 3 => 4 }
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq [5, 7, 1], round.map_event_positions[3], 'the event\'s position round-trips'
+  eq 4, round.map_event_route_index[3], 'the mid-route cursor round-trips'
+
+  # A save written before this field existed (or one taken before this event
+  # ever recorded a custom-route index) simply omits field 43; from_lsd must
+  # leave #map_event_route_index without an entry for that id rather than
+  # invent one, matching Scene::Map#build_event's existing "no saved index
+  # means start the custom route from the top" fallback.
+  legacy = st.to_lsd
+  legacy[111].events[3].delete(43)
+  old = Game::State.from_lsd(db, legacy)
+  eq [5, 7, 1], old.map_event_positions[3], 'position still round-trips without a route index'
+  eq nil, old.map_event_route_index[3], 'no saved cursor means the route restarts at 0'
+end
+
 # EasyRPG models an actor's and an enemy's own "state id the target's
 # state_ranks array doesn't cover" case (routine -- liblcf/RPG_RT truncate
 # trailing default bytes off it) as two distinct functions with two distinct
