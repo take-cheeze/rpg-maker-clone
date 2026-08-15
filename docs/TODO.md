@@ -6378,6 +6378,46 @@ not yet verified:
   `#auto_battle_raw_cost` directly against both an RPG2000 and an RPG2003
   `Game::Battle`, confirmed to fail against the pre-fix code (`expected 10,
   got 50`) before the fix.
+- ✅ **Enter Hero Name (10740) issued from a Parallel Process now actually
+  opens the name-entry screen, instead of silently doing nothing.**
+  Confirmed against EasyRPG's actual C++ source:
+  `Game_Interpreter_Map::CommandEnterHeroName`
+  (`src/game_interpreter_map.cpp`) is the very same method for the
+  foreground and every Parallel Process's own interpreter — there is no
+  "foreground only" restriction, only a `Game_Message::IsMessageActive()`
+  gate (the same gate `CommandOpenShop` right above it uses). This build's
+  `Interpreter#do_name_input` (`mruby-rpg2k/mrblib/interpreter.rb`) already
+  correctly recorded the request and suspended on a `:name_input` wait
+  regardless of which interpreter ran it, but `Scene::Map
+  #drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`) — the dispatch
+  table driving every *non*-foreground interpreter's own wait — had no
+  `:name_input` branch at all, unlike the nine sibling wait kinds
+  (`:message`, `:choice`, `:number`, `:battle`, `:movement`, `:teleport`,
+  `:game_over`, `:screen`/`:picture`/`:sprite_flash`) each already fixed in
+  earlier rounds for the exact same failure mode, each with its own
+  in-code comment citing the history. `:name_input` instead fell into the
+  final generic `else` branch, which unconditionally calls `it.resume` —
+  clearing the wait and letting the parallel process's command list
+  continue as though Enter Hero Name had been a no-op, the request object
+  discarded unread. Fixed by threading the owning interpreter through
+  `#drive_name_input(it = @interpreter)` (mirroring `#open_message`'s own
+  `interp:` idiom, `@message[:interp]`, with `@name_ui[:interp]` as its
+  counterpart here) and adding the missing `:name_input` branch to
+  `#drive_parallel_wait`, blocking until any open message window or
+  name-entry widget clears, then driving this one — the same
+  block-and-retry shape already used for `:message`/`:choice`/`:number`.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check driving a full
+  Parallel-Process-issued Enter Hero Name through open → type → confirm →
+  resume, confirmed to fail against the pre-fix code (the widget never
+  opened at all) before the fix. Scoped narrowly to Enter Hero Name: Open
+  Shop (10720) shares the identical `IsMessageActive()`-gated shape and is
+  presumably affected the same way, but its own drive/finish helpers are
+  spread across several more functions than name-input's tightly-scoped
+  three, and Show Inn (10730) carries EasyRPG's own additional
+  `main_flag`/`CanShowMessage` "Emulates RPG_RT behavior (Bug?)" nuance for
+  a Parallel-Process caller specifically (it *skips* the message-active
+  check rather than honouring it) — both left open for a future, separately
+  well-scoped fix rather than folded into this one.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

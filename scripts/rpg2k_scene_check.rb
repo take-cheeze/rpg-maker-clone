@@ -6521,6 +6521,44 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
+# EasyRPG's `Game_Interpreter_Map::CommandEnterHeroName`
+# (src/game_interpreter_map.cpp) is the exact same method for the foreground
+# and every Parallel Process's own interpreter -- gated only on
+# `Game_Message::IsMessageActive()`, no "foreground only" restriction. Before
+# this fix, `Scene::Map#drive_parallel_wait` had no `:name_input` branch at
+# all, so a Parallel Process's own Enter Hero Name silently never opened the
+# screen -- the command fell into the generic "background: resume" default
+# and read as a complete no-op.
+check 'Enter Hero Name issued from a Parallel Process opens the entry widget too' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4) # Parallel Process
+  par.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0), # actor 1, letters, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  ui = nil
+  6.times { scene.update; ui = scene.instance_variable_get(:@name_ui); break if ui }
+  ok ui, 'the name-entry widget opened for a Parallel-Process-issued command'
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the first cell, 'A'
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'A', ui[:name]
+
+  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1 # jump to OK and confirm
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'A', st.party.actor_by_id(1).name, 'the actor was renamed on confirm'
+  eq nil, scene.instance_variable_get(:@name_ui), 'the widget closed'
+  3.times { scene.update }
+  ok st.switches[5], 'the parallel process resumed after entry, not stuck forever'
+end
+
 check 'Enter Hero Name: draws a full-screen background behind the widget' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
