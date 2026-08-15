@@ -42,27 +42,28 @@ set -euo pipefail
 #
 # The `build` job runs pre-commit as a background step, so a formatting slip
 # fails CI as `build` rather than as a lint job -- worth knowing before you go
-# looking for a compile error that is not there. Its clang-format hook is
-# `language: system`, i.e. whatever `clang-format` is on PATH, and this
-# container's is not the version CI's Nix `clang-tools` supplies.
+# looking for a compile error that is not there.
 #
-# The check that works:
+# The check that works, and the one CI runs:
 #
-#   clang-format --dry-run --Werror <file>      # run from inside the repo
+#   pre-commit run clang-format --files <file>
 #
-# Three traps, in the order they will catch you:
+# The hook installs its own pinned clang-format from PyPI
+# (.pre-commit-config.yaml), so it formats exactly as CI does no matter what
+# `clang-format` this container has on PATH -- there is no version difference
+# left to work around. It rewrites the file in place and reports it as a
+# failure; `git diff` then shows what it changed.
 #
-#   * Run it *inside the repository*. clang-format finds `.clang-format` by
-#     walking up from the file's own directory, so checking a copy in /tmp
-#     silently formats to LLVM defaults instead -- `PointerAlignment: Right`
-#     where this repo sets Left -- and produces a diff of hundreds of unrelated
-#     lines that looks like a version disagreement and is not one.
-#   * There *is* a real version difference on top of that, but it is small: this
-#     container's clang-format 18 flags three pre-existing lines in
-#     mruby-rgss/src/lib.cxx (`double T::* Field` twice, `const int
-#     (*quad_table)[4][2]`) that CI is happy with. Read the violations your
-#     change caused and leave the rest alone; do not run `clang-format -i` over
-#     a whole file.
+# Two traps, in the order they will catch you:
+#
+#   * If you do reach for a `clang-format` binary directly, run it *inside the
+#     repository*: clang-format finds `.clang-format` by walking up from the
+#     file's own directory, so checking a copy in /tmp silently formats to LLVM
+#     defaults instead -- `PointerAlignment: Right` where this repo sets Left --
+#     and produces a diff of hundreds of unrelated lines. Its version is also
+#     not the pinned one (clang-format 18 flags three lines in
+#     mruby-rgss/src/lib.cxx that 20 and later accept), so read the violations
+#     your change caused and leave the rest alone.
 #   * A plain line-length grep is not a substitute. `ColumnLimit` is 80, but
 #     several tracked files hold longer lines that clang-format has no way to
 #     break and accepts as they are (include/lv_conf.h, mruby-mvjs/src/*.cxx).

@@ -566,12 +566,15 @@
 
 - **Formatting is checked by `build`, not by a lint job** — pre-commit runs there
   as a background step, so a formatting slip fails `build` with no compile error
-  in the log. Locally, `clang-format --dry-run --Werror <file>`, run **from
-  inside the repository**: clang-format finds `.clang-format` by walking up from
-  the file's own directory, so checking a copy under `/tmp` quietly falls back to
-  LLVM defaults and invents a diff of hundreds of unrelated lines. The script's
-  header notes the two smaller traps as well — a genuine but narrow clang-format
-  version difference, and why a line-length grep is not a substitute.
+  in the log. Locally, `pre-commit run clang-format --files <file>`: the hook
+  installs its own pinned clang-format from PyPI, so it matches CI whatever the
+  host has on PATH. Reaching for a `clang-format` binary directly works too, as
+  `clang-format --dry-run --Werror <file>` run **from inside the repository** —
+  clang-format finds `.clang-format` by walking up from the file's own directory,
+  so checking a copy under `/tmp` quietly falls back to LLVM defaults and invents
+  a diff of hundreds of unrelated lines. `scripts/native-build-without-nix.bash`
+  notes the smaller traps as well, including why a line-length grep is not a
+  substitute.
 
 ### Code coverage
 

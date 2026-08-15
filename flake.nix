@@ -37,7 +37,6 @@
                 autoconf
                 automake
                 ccache
-                clang-tools
                 cmake
                 cmake-format
                 emscripten
