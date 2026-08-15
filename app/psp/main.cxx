@@ -1,29 +1,39 @@
-// PlayStation Portable EBOOT entry point -- hardware bring-up.
+// PlayStation Portable EBOOT entry point -- HAL bring-up plus the real RPG2k
+// scene tree.
 //
 // This slice proves the HAL compiles and runs on the PSP and that libmruby.a
 // (built for the psp target by build_config.rb, linked in via
 // app/psp/CMakeLists.txt) actually links and boots on real MIPS/pspdev: it
 // stands up the LVGL display (psp_display_create), scans the pad
 // (psp_input_scan), draws a small status screen that echoes the pressed keys,
-// and opens an mruby interpreter (mrb_open). main() owns the loop and pumps
-// LVGL once per iteration -- the same "host owns the loop" shape the
-// Emscripten and Wio builds use. Its per-second heartbeat also reports real
-// free-memory and LVGL-pool numbers (see the RPG2K_PSP_BRINGUP marker below),
-// which is ADR 0047's P1: measuring the HAL's own footprint on real
-// hardware/an emulator ahead of sizing anything for a real game.
+// opens an mruby interpreter (mrb_open), and -- if a project is present at
+// kGameDir -- constructs RPG2k and drives its per-frame #main_loop the same
+// way the Emscripten build drives it from rpg_start_game's callback (mruby's
+// gems are already registered the moment mrb_open() returns; nothing extra
+// wires RGSS in, since libmruby.a's gem_init runs every bundled gem, RPG2k
+// included -- see build_config.rb's rpg_maker_gems). main() owns the loop and
+// pumps LVGL once per iteration when no game is running, and through
+// RPG2k#main_loop's own Graphics.update (which flushes LVGL and polls the pad
+// via rgss_psp_poll, mruby-rgss/src/psp_input_bridge.cxx) once one is -- the
+// same "host owns the loop" shape the Emscripten and Wio builds use. Its
+// per-second heartbeat also reports real free-memory and LVGL-pool numbers
+// (see the RPG2K_PSP_BRINGUP marker below), which is ADR 0047's P1: measuring
+// the HAL's own footprint on real hardware/an emulator, now against a real
+// game's usage once one is present at kGameDir instead of just the idle HAL.
 //
 // mrb_open() here uses mruby's own default allocator (plain malloc) rather
 // than routing through lv_malloc the way the desktop build does -- ADR 0047's
 // P2 (share LVGL's pool vs. a separate arena) is still an open decision that
-// this slice does not need to make just to prove the interpreter boots. No
-// RGSS methods are registered and no game is started: the real RPG2k scene
-// tree, Memory-Stick asset loading and the GAME_DIR convention are the next
-// slice (see app/psp/README.md and docs/adr/0010-psp-port.md).
+// this slice does not need to make just to prove the interpreter boots and a
+// game can start.
 
 #include <cstdio>
 
 #include <lvgl.h>
 #include <mruby.h>
+#include <mruby/array.h>
+#include <mruby/error.h>
+#include <mruby/variable.h>
 #include <pspiofilemgr.h>
 #include <pspkernel.h>
 #include <pspsysmem.h>
@@ -42,6 +52,26 @@ lv_obj_t* g_status_label = nullptr;
 // Names for the RGSS key ids, indexed by PspKey, for the on-screen echo.
 const char* const kKeyNames[PSP_INPUT_KEY_COUNT] = {
     "Up", "Down", "Left", "Right", "A", "B", "C"};
+
+// The Memory Stick install location this build looks for a project at --
+// matching app/psp/README.md's own install instructions (copy EBOOT.PBP to
+// this same PSP/GAME/rpg2k directory). One EBOOT, one game, no in-app project
+// picker: unlike the desktop build (--game_dir) or the browser build (the
+// page's own loader unzips a project at runtime), there is no way for this
+// build to be told a different location at launch. RPG2k (RPG_RT.ldb) is the
+// only maker checked -- ADR 0010 scopes the PSP port to "starting the real
+// RPG2k scene tree", not XP/VX/VX Ace; those can follow the same pattern
+// (mirroring the desktop/Emscripten maker-detection chain in src/main.cxx)
+// once this path is proven.
+const char kGameDir[] = "ms0:/PSP/GAME/rpg2k";
+
+bool file_exists(const char* path) {
+  FILE* const f = std::fopen(path, "rb");
+  if (!f)
+    return false;
+  std::fclose(f);
+  return true;
+}
 
 // Write a buffer to the PSP stdout (fd 1) and stderr (fd 2). Under an emulator
 // the host captures these; on real hardware they go nowhere. The length is
@@ -134,14 +164,57 @@ int main(void) {
 
   // Open the interpreter and report whether it succeeded. `M` is kept alive
   // (never mrb_close()d) for the rest of the process, the same as every other
-  // target's entry point -- there is nothing to hand it yet, but the next
-  // slice needs it alive for the process's whole lifetime, not just this
-  // function.
+  // target's entry point.
   mrb_state* const M = mrb_open();
   {
     char buf[48];
     const int n = std::snprintf(buf, sizeof(buf), "RPG2K_PSP_MRUBY_OPEN %s\n",
                                 M ? "ok" : "FAILED");
+    if (n > 0)
+      psp_write(buf, n);
+  }
+
+  // GAME_DIR/RTP_DIR are load-bearing mruby constants: mruby-rpg2k/mrblib and
+  // mruby-rgss/mrblib read them directly (RPG_RT.ldb/.lmt paths, asset/audio
+  // search paths, ...), the same as every other target's entry point sets
+  // them (src/main.cxx). RTP_DIR is empty -- this build is a single
+  // self-contained project per EBOOT, no shared RTP install to point at.
+  mrb_value game_obj = mrb_nil_value();
+  bool have_game = false;
+  if (M) {
+    mrb_const_set(M, mrb_obj_value(M->object_class),
+                  mrb_intern_lit(M, "GAME_DIR"), mrb_str_new_cstr(M, kGameDir));
+    mrb_const_set(M, mrb_obj_value(M->object_class),
+                  mrb_intern_lit(M, "RTP_DIR"), mrb_str_new_cstr(M, ""));
+
+    char ldb_path[64];
+    std::snprintf(ldb_path, sizeof(ldb_path), "%s/RPG_RT.ldb", kGameDir);
+    const char* game_start_result;
+    if (file_exists(ldb_path)) {
+      // No TestPlay/HideTitle words -- this build has no command line to
+      // carry them on.
+      const mrb_value args = mrb_ary_new(M);
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
+      if (M->exc) {
+        // Leaves no game running; falls through to the idle HAL loop below,
+        // same as "not_found".
+        M->exc = nullptr;
+        game_start_result = "FAILED";
+      } else {
+        // Keeps `game_obj` reachable from the GC across the frame loop below
+        // -- mruby's GC only sees the VM's own stack/registers and explicit
+        // roots, not arbitrary C++ locals, the same reason src/main.cxx
+        // registers its own game_obj (Emscripten's rpg_start_game).
+        mrb_gc_register(M, game_obj);
+        have_game = true;
+        game_start_result = "ok";
+      }
+    } else {
+      game_start_result = "not_found";
+    }
+    char buf[48];
+    const int n = std::snprintf(buf, sizeof(buf), "RPG2K_PSP_GAME_START %s\n",
+                                game_start_result);
     if (n > 0)
       psp_write(buf, n);
   }
@@ -158,8 +231,35 @@ int main(void) {
   // max_used high-water mark, which is the number that actually matters for
   // sizing that pool once the interpreter is linked.
   for (uint32_t frame = 0;; ++frame) {
-    show_keys(psp_input_scan());
-    lv_timer_handler();
+    if (have_game) {
+      // RPG2k#main_loop (mruby-rpg2k/mrblib/main.rb) is the single-frame step
+      // #start loops forever on desktop; driving it once per C++ frame here
+      // instead keeps this loop, not mruby, in charge of the process, the
+      // same shape src/main.cxx's rpg_start_game gives the browser. It calls
+      // Graphics.update itself, which flushes LVGL (mruby-rgss/src/lib.cxx's
+      // gfx_update) and polls the pad (rgss_psp_poll) -- so neither
+      // lv_timer_handler() nor show_keys()/psp_input_scan() below are needed
+      // while a game is driving its own frame.
+      mrb_funcall(M, game_obj, "main_loop", 0);
+      if (M->exc) {
+        // MRB_EXC_EXIT_P distinguishes a clean Kernel#exit (RPG_RT's own
+        // "Shutdown" title command, via mruby-exit) from an actual crash --
+        // read before clearing, since clearing drops the flag with the
+        // exception object.
+        const bool clean_exit = MRB_EXC_EXIT_P(M->exc);
+        M->exc = nullptr;
+        have_game = false;
+        char buf[48];
+        const int n =
+            std::snprintf(buf, sizeof(buf), "RPG2K_PSP_GAME_STOP %s\n",
+                          clean_exit ? "exit" : "error");
+        if (n > 0)
+          psp_write(buf, n);
+      }
+    } else {
+      show_keys(psp_input_scan());
+      lv_timer_handler();
+    }
     if (frame % 200 == 0) {
       lv_mem_monitor_t mon;
       lv_mem_monitor(&mon);
