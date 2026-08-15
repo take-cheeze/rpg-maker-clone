@@ -7123,6 +7123,31 @@ check 'Move Event targeting a currently-ridden vehicle redirects onto the ' \
      'no separate vehicle-character route was ever armed for the boat itself'
 end
 
+# EasyRPG's own CommandSetVehicleLocation (src/game_interpreter.cpp): "Check
+# if the party is in the current vehicle and transfer the party together with
+# it" -- boarding the boat and issuing Set Vehicle Location for the *same*
+# vehicle, on the current map, moves the whole party there too, not just the
+# vehicle. Without this, rendering while boarded follows the player's own
+# position, so the command had no visible effect at all, and the party's
+# still-unmoved tile silently overwrote the vehicle right back on the very
+# next completed step (#follow_vehicle).
+check 'Set Vehicle Location moves the boarded party along with the vehicle' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # boat (0), literal mode, map 1 (the current one), x=8, y=6.
+  auto.event_commands = [ECmd.new(ic::SET_VEHICLE_LOCATION, [0, 0, 1, 8, 6])]
+  scene = new_scene({ 1 => event(0, 4, auto) }, player: [0, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 0
+  st.boarded = :boat
+  3.times { scene.update }
+  eq [8, 6], [boat.x, boat.y], 'the boat itself was repositioned'
+  eq [8, 6], [st.x, st.y], 'and the boarded party rode along with it'
+end
+
 check 'Change Event Location repositions a vehicle' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
