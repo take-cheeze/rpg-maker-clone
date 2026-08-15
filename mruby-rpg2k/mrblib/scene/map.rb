@@ -7813,8 +7813,9 @@ class RPG2k
       # Composite the animation's current frame over its target. Runs in the
       # render pass (the camera is known here): each visible cell of the frame is
       # blitted from the sheet's 96x96 grid to the target's screen position plus
-      # the cell's offset. Zoom / tone / per-cell transparency are approximated as
-      # a plain blit for now.
+      # the cell's offset, at that cell's own transparency
+      # (#animation_cell_opacity). Zoom / tone are still approximated as a plain
+      # blit.
       def draw_map_animation(cam_x, cam_y)
         return unless @animation_sprite
         ma = @map_animation
@@ -7867,13 +7868,47 @@ class RPG2k
         end
       end
 
+      # The blit opacity a cell's own `transparency` field asks for (LCF
+      # `battle_anime` chunk 19's per-cell field 10, decoded in
+      # mruby-lcf/mrblib/schema.rb; liblcf's `rpg::AnimationCellData::
+      # transparency`, an `int32_t` defaulting to 0). It is a *percentage of
+      # transparency*, 0 fully opaque .. 100 fully invisible, and it converts to
+      # RGSS's 0..255 opacity exactly the way EasyRPG's own
+      # `BattleAnimation::DrawAt` does (src/battle_animation.cpp, fetched
+      # verbatim): `SetOpacity(255 * (100 - cell.transparency) / 100)` — integer
+      # division, so 0 -> 255 and 100 -> 0, with the same truncation in between.
+      #
+      # Every drawable cell went down fully opaque before this: an animation
+      # whose author faded a cell in or out (or layered a translucent glow over
+      # a solid one) drew every one of its frames at full strength, which is a
+      # visibly different animation, not a subtler one. The field is decoded off
+      # the real database and was simply never read.
+      #
+      # A cell with no `transparency` at all — a bare test double, or an
+      # Array2D entry the schema left defaulted — reads as 0 (opaque), the same
+      # "absent means the schema default" shape #draw_map_animation's own
+      # `visible` guard uses. Clamped both ways so a database carrying an
+      # out-of-range value cannot ask for a negative or over-255 opacity.
+      def animation_cell_opacity(cell)
+        t = cell.respond_to?(:transparency) ? cell.transparency : nil
+        t = 0 if t.nil?
+        t = 0 if t < 0
+        t = 100 if t > 100
+        255 * (100 - t) / 100
+      end
+
       def blit_animation_cell(sheet, cell, cx, cy)
+        opacity = animation_cell_opacity(cell)
+        # A fully transparent cell contributes nothing; skipping it spares the
+        # blit's own 96x96 per-pixel loop (Bitmap#blt would drop every pixel on
+        # its `alpha <= 0` test anyway, one at a time).
+        return if opacity <= 0
         cid = cell.cell_id || 0
         sx = (cid % ANIM_SHEET_COLS) * ANIM_CELL
         sy = (cid / ANIM_SHEET_COLS) * ANIM_CELL
         dx = cx + (cell.x || 0) - ANIM_CELL / 2
         dy = cy + (cell.y || 0) - ANIM_CELL / 2
-        @animation_bmp.blt dx, dy, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL)
+        @animation_bmp.blt dx, dy, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL), opacity
       rescue StandardError
         nil
       end

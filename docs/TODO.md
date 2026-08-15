@@ -3587,6 +3587,35 @@ The work below is roughly ordered by the critical path to a walkable game
   staying put for center; a map-triggered animation carrying RPG_RT's own
   24px map-target height, not the CharSet frame's 32px), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Per-cell transparency is no longer approximated away either.** Each
+  cell of an animation frame carries its own `transparency` (`battle_anime`
+  chunk 19's per-cell field 10 — liblcf's
+  `rpg::AnimationCellData::transparency`, an `int32_t` defaulting to 0),
+  decoded by the schema all along and dropped on the floor by
+  `#blit_animation_cell`, which blitted every cell fully opaque: an animation
+  whose author faded a cell in or out, or layered a translucent glow over a
+  solid one, played every frame at full strength. A new
+  `Scene::Map#animation_cell_opacity` converts the field's percentage (0 fully
+  opaque .. 100 fully invisible) to RGSS's 0..255 opacity exactly the way
+  EasyRPG's own `BattleAnimation::DrawAt` does (`src/battle_animation.cpp`,
+  fetched verbatim): `SetOpacity(255 * (100 - cell.transparency) / 100)`,
+  integer division and all. That opacity goes straight into `Bitmap#blt`'s own
+  optional opacity argument, which blends in *straight* (non-premultiplied)
+  alpha — so a half-transparent cell lands in the screen-sized
+  `@animation_bmp` at half coverage with its colour intact, and
+  `@animation_sprite`'s own composite then attenuates it once, not twice (the
+  exact double-attenuation `blend_over` was written to avoid,
+  `mruby-rgss/src/lib.cxx`). A cell at 100% is skipped rather than run through
+  the blit's 96x96 per-pixel loop to draw nothing, and a cell with no
+  `transparency` at all (the schema default, or a test double that never sets
+  one) reads as 0 and draws exactly as it did before. Out-of-range values clamp
+  both ways. **Still approximated:** per-cell zoom and tone, which need an
+  `RGSS::Viewport` tone and a scaling blit the map rendering path has never had
+  — unchanged by this. Covered by new `scripts/rpg2k_scene_check.rb` checks
+  (the percentage-to-opacity math including the defaulted and out-of-range
+  cases; a drawn cell blitting at its own opacity and in the same place as
+  before; a 100%-transparent cell laying down nothing), confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Which fields the games set that the runtime never reads** —
   `ruby scripts/rpg2k_field_audit.rb`. A survey, not a check (it asserts nothing
   and always exits 0): for every scalar database field it counts the rows of the
