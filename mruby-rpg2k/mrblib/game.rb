@@ -5784,12 +5784,22 @@ module Game
         return false unless hp_within?(ctx.ally_by_actor_id(cond.actor_id),
                                        cond.actor_hp_min, cond.actor_hp_max)
       end
-      if (flags & TURN_ENEMY) != 0
+      # turn_enemy / turn_actor / fatigue are RPG2003-only conditions --
+      # EasyRPG's own `Game_Interpreter_Battle::AreConditionsMet`
+      # (src/game_interpreter_battle.cpp) wraps all three (and command_actor,
+      # already handled below) in `Player::IsRPG2k3Commands() &&`. The
+      # RPG2000 editor's condition box has no controls for these bits at
+      # all, so a genuine .lmt should never set them on a non-2k3 database
+      # -- but an untested flag with no guard reads as "always true" the
+      # instant one is set, exactly the same silent-pass-through class of
+      # bug the map-event TIMER2 condition (Game::EventPage.active?, this
+      # file) was already fixed for.
+      if (flags & TURN_ENEMY) != 0 && ctx.rpg2003?
         t = ctx.enemy_turn(cond.turn_enemy_id)
         return false if t.nil?
         return false unless check_turns(t, cond.turn_enemy_b, cond.turn_enemy_a)
       end
-      if (flags & TURN_ACTOR) != 0
+      if (flags & TURN_ACTOR) != 0 && ctx.rpg2003?
         t = ctx.actor_turn(cond.turn_actor_id)
         return false if t.nil?
         return false unless check_turns(t, cond.turn_actor_b, cond.turn_actor_a)
@@ -5797,7 +5807,7 @@ module Game
       if (flags & COMMAND_ACTOR) != 0
         return false unless ctx.actor_command(cond.command_actor_id) == cond.command_id
       end
-      if (flags & FATIGUE) != 0
+      if (flags & FATIGUE) != 0 && ctx.rpg2003?
         f = ctx.fatigue
         return false if f.nil?
         return false if f < cond.fatigue_min || f > cond.fatigue_max
@@ -8428,6 +8438,12 @@ module Game
     def ally_by_actor_id(id)
       @allies.find { |a| a.actor && a.actor.respond_to?(:id) && a.actor.id == id }
     end
+
+    # Whether this fight is running under an RPG2003 database — `Game::Party`'s
+    # own `#rpg2003?` reads the same underlying flag; exposed here too since
+    # `BattlePage.active?` gates the RPG2003-only page conditions on the
+    # battle context (`ctx`, always a `Battle`) rather than the party.
+    def rpg2003?; @rpg2003; end
 
     # Turns taken by troop member `index` / by the party member whose database
     # actor id is `id` — the RPG2003 per-battler turn counters the pages'

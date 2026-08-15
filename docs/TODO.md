@@ -6942,6 +6942,45 @@ not yet verified:
   accessors. Covered by a new `scripts/rpg2k_logic_check.rb` check that
   inspects the actual raw tags `#to_lsd` writes to, confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **A troop battle-event page's `turn_enemy` / `turn_actor` / `fatigue`
+  conditions are RPG2003-only — an RPG2000 database that somehow set one of
+  these bits used to have it evaluated (and could fail it) instead of being
+  ignored outright.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Interpreter_Battle::AreConditionsMet`
+  (`src/game_interpreter_battle.cpp`) wraps all three condition checks (and
+  `command_actor`, already correctly handled here — see below) in
+  `Player::IsRPG2k3Commands() &&`, exactly the same edition gate `Game::
+  EventPage.active?` (this same file) already applies to a map event page's
+  RPG2003-only TIMER2 condition. `Game::BattlePage.active?`
+  (`mruby-rpg2k/mrblib/game.rb`) checked `ctx.enemy_turn`/`ctx.actor_turn`/
+  `ctx.fatigue` purely off the condition's flag bits, with no edition check
+  at all. The RPG2000 editor's condition box has no controls for any of
+  these three condition types, so a genuine `.lmt` file should never set
+  them on a non-2k3 database — but an unguarded flag reads as an ordinary,
+  *evaluated* condition the instant one is set (by a corrupted file, a
+  hand-edited one, or a future schema change), rather than the "ignored
+  entirely, page still runs" answer real RPG_RT/EasyRPG give. Concretely: an
+  RPG2000 troop page whose condition byte has only the `fatigue` bit set
+  (`fatigue_min: 50, fatigue_max: 100`) — real RPG_RT never even looks at
+  the flag on a non-2k3 database and runs the page unconditionally; this
+  build instead computed the party's actual fatigue and gated the page on
+  it, a materially different, conditional trigger where none should exist.
+  `command_actor` needed no equivalent fix: this codebase's own `Game::
+  Battle#actor_command` already always answers `nil` regardless of edition
+  (documented above, since RPG2000's own battle scene never has a "source"
+  battler to test against either — EasyRPG's `Scene_Battle_Rpg2k::
+  CheckBattleEndAndScheduleEvents` always schedules pages with a null
+  source), so that condition already reads as permanently unmet on every
+  edition, matching the real engine's own RPG2000 behaviour by coincidence
+  rather than by an explicit gate. Fixed by adding `Game::Battle#rpg2003?`
+  (a public reader for the `@rpg2003` flag the class already carries
+  internally) and gating the `turn_enemy`/`turn_actor`/`fatigue` blocks on
+  `ctx.rpg2003?`. Covered by a new `scripts/rpg2k_logic_check.rb` check (all
+  three conditions read as active on a non-2k3 battle even when they would
+  clearly fail if evaluated), confirmed to fail against the pre-fix code
+  before the fix; the three existing checks that exercised these
+  conditions' actual matching logic were updated to construct an explicit
+  RPG2003 battle so the edition gate does not mask what they test.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
