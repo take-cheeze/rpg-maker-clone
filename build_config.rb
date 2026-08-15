@@ -1,5 +1,16 @@
 # Gems shared by every build variant (the actual game libraries).
-def rpg_maker_gems(conf)
+#
+# include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
+# QuickJS). Only the psp cross-build passes this: mruby-mvjs's mrbgem.rake
+# links against qjs (quickjs-ng, cross-compiled by the *root* CMakeLists.txt
+# for the desktop/wasm targets only -- app/psp's standalone CMake project has
+# no equivalent) and optionally EGL/GLESv2 for MZ's WebGL renderer, neither
+# of which exists for MIPS/pspdev. RPG Maker MV/MZ support was never in scope
+# for the PSP port (ADR 0010 only ever describes "starting the real RPG2k
+# scene tree"), so this drops a gem that cannot link rather than attempting
+# to port quickjs and a software GL stack to the PSP as a side effect of
+# wiring RPG2k up.
+def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
   # Enumerable#sort_by / min_by / max_by / group_by etc. mruby-array-ext does not
@@ -74,7 +85,7 @@ def rpg_maker_gems(conf)
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
-  conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs"
+  conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
 end
 
 # When cross-compiling (Emscripten, or the Wio Terminal below) the host build
@@ -227,7 +238,7 @@ if psp
     end
     conf.linker.flags += cpu_flags
 
-    rpg_maker_gems(conf)
+    rpg_maker_gems(conf, include_mvjs: false)
   end
 end
 

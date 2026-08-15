@@ -165,9 +165,17 @@ The work below is roughly ordered by the critical path to a walkable game
     slots as doubles of unknown meaning; **31/32 are the centre position**,
     identified by rewriting each candidate pair in a real save and diffing the
     resumed frame against the unedited one (see the ADR 0021 table). The picture
-    region of the resumed frame is now pixel-identical to RPG_RT. Zoom, opacity
-    and tone have save fields but no sample where they are off their defaults,
-    so they are still left at `Picture`'s defaults rather than guessed at.
+    region of the resumed frame is now pixel-identical to RPG_RT. Zoom (33),
+    transparency (34) and tone (41-44) are now restored too — the "no sample
+    off-default" worry was really about validating the field mapping, and that
+    is settled without a sample: the schema's own field names (拡大率/透明度/
+    色調) match Show Picture's param5/param6/param8-11 one for one, and that
+    live path already converts transparency through `#trans_to_opacity` and
+    feeds zoom/tone straight into `Picture#zoom`/red/green/blue/saturation —
+    `Game::State.restore_pictures` now does exactly the same conversion,
+    covered by a synthetic-chunk round-trip in `rpg2k_logic_check.rb` (`to_lsd`
+    does not write chunk 103 itself yet, so there is no live save to round-trip
+    through).
   - ✅ **`Game::State#to_lsd` output is loadable by RPG_RT.** It round-tripped
     through our own parser (`scripts/lcf_save_roundtrip.rb`) but the genuine
     runtime left "Continue" dead, with no error anywhere. The assumed cause —
@@ -2487,6 +2495,25 @@ The work below is roughly ordered by the critical path to a walkable game
   further since it needs another actor's data point to tell the two apart;
   `scripts/rpg2k_save_load_check.rb` skips its hp/mp-within-max assertion for
   this one actor rather than asserting either guess.
+  ✅ **Change System BGM (10660) / Change System SFX (10670) overrides now
+  round-trip through the `.lsd` too**, not just the portable `Marshal` save.
+  `Game::State#system_bgm`/`#system_sfx` (populated by
+  `Interpreter#do_change_system_bgm`/`#do_change_system_sfx`) used to stay
+  Marshal-only even though `LCF::Schema::SAVE_SYSTEM` already decoded every
+  slot's field (BGM: `title_bgm`(71, no Change System BGM slot maps to it —
+  RPG_RT never lets that command override the title screen's own music) /
+  `battle_bgm`(72) / `battle_end_bgm`(73) / `inn_bgm`(74) / `boat_bgm`(79) /
+  `ship_bgm`(80) / `airship_bgm`(81) / `gameover_bgm`(82); SFX: `cursor_se`(91)
+  through `item_se`(102)). `Game::State#to_lsd` now writes every populated
+  slot into its field (a new `SYSTEM_BGM_SAVE_FIELD`/`SYSTEM_SFX_SAVE_FIELD`
+  slot → field map, matching EasyRPG's `Game_System::sys_bgm` enum for BGM
+  and `Scene::Base::DB_SE_FIELD`'s slot order for SFX, reusing `#bgm_chunk`
+  and a new `#se_chunk`), and `.from_lsd` reads them back (`.bgm_from_chunk`
+  and a new `.se_from_chunk`). Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (a battle-slot and a game-over-slot BGM override, plus a cursor-slot
+  and a battle-start-slot SFX override, all round-trip through an in-memory
+  `to_lsd`/`from_lsd`; an untouched slot comes back absent rather than a
+  spurious empty override).
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done
@@ -3817,13 +3844,16 @@ Everything below is unverified against the codebase.
   already independently confirmed elsewhere in this doc. `MAX_CALL_DEPTH =
   1000` matches "nesting caps at 1000" exactly, and "caller resumes right
   after itself" is the natural consequence of the call-stack push/pop.
-  Calling a bad event/page id's specific Windows error dialogs, the heavy-
-  load freeze and its `Wait:0.0s` workaround (a timing/performance edge
-  case), and "Battle Events can't use Call Event through the normal editor"
-  (an editor-authoring limitation with no runtime analog) remain
-  unverifiable in this environment and are not modelled. ("A variable can't
-  pick the called common-event id directly" is confirmed already correct —
-  see below.)
+  Calling a bad event/page id no longer resolves to nothing untraceably —
+  `#resolve_call`/`#map_event_call` now log a `[RPG2k] Call Event: ...`
+  diagnostic for an unresolved target instead (see the "Concrete runtime
+  error catalog" entry below) — but the specific Windows error dialogs
+  themselves, the heavy-load freeze and its `Wait:0.0s` workaround (a
+  timing/performance edge case), and "Battle Events can't use Call Event
+  through the normal editor" (an editor-authoring limitation with no
+  runtime analog) remain unverifiable in this environment and are not
+  modelled. ("A variable can't pick the called common-event id directly" is
+  confirmed already correct — see below.)
 - **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
   above).
@@ -3936,13 +3966,28 @@ Everything below is unverified against the codebase.
   Left open, now with a precise citation trail and fix shape for whoever
   picks it up next.
 - **Repeat/Loop** — loops forever without an explicit Break Loop.
-- **Common Event** — can't display map graphics or use touch-style
-  triggers, can't run during battle or with the menu open; "This Event" as
-  a target inside a Common Event (no map-event context) raises the invalid-
-  event error; **interrupting a Common Event's Parallel Process (its switch
-  turns off mid-run) and re-enabling it resumes exactly where it left off**
-  — ✅ the same fact as the fixed "A Common Event's Parallel Process now
-  survives a Transfer Player and a save/load" item above, restated.
+- **Common Event** — ✅ can't display map graphics or use touch-style
+  triggers (`Game::CommonEvent` defines only `AUTO_START`/`PARALLEL` —
+  no charset field, no touch-trigger constant exists in the data model at
+  all, structurally distinct from a map event's own `Game::EventPage`); ✅
+  can't run during battle (same fact as the already-confirmed "Common
+  events never run during battle" bullet elsewhere in this doc) or with
+  the menu open (`Scene::Map#update` — and with it `#step_parallels` — is
+  simply not called at all while a menu scene sits on top, the same
+  structural fact the Picture bullet's own Menu half already relies on).
+  "This Event" as a target inside a Common Event (no map-event context)
+  raising the specific invalid-event error dialog is not modelled — this
+  project generally does not reproduce RPG_RT's own Windows error dialogs
+  (see the already-flagged "Set Vehicle Position from a Parallel Process"
+  crash nearby) — but the natural consequence is: `Interpreter
+  #character_ref(0)`/`CHAR_THIS_EVENT` resolves to `@event_id`, nil for a
+  Common Event's own interpreter, and `#map_event_call` already returns
+  nil outright for a nil id ("no page to run"), so the reference resolves
+  to nothing rather than crashing or targeting a stray map event.
+  **Interrupting a Common Event's Parallel Process (its switch turns off
+  mid-run) and re-enabling it resumes exactly where it left off** — ✅ the
+  same fact as the fixed "A Common Event's Parallel Process now survives a
+  Transfer Player and a save/load" item above, restated.
 - ✅ **Move All / Force Complete Move** — blocks Event Content at that
   command until every targeted character's route finishes; same freeze
   conditions as Set Move Route above (both halves now confirmed there).
@@ -4559,10 +4604,11 @@ not yet verified:
   how many distinct ids get used, which is a different question from a single
   variable's *value* range, now fixed). Picture id range 1-50 is now fixed
   too, see the "Pictures" bullet under "Full-site sweep" below.
-- **Runtime per-map overrides that reset on leaving-and-returning to the
+- ✅ **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
-  source — Save/Teleport/Escape Prohibition changes. `perform_teleport`
+  source — Save/Teleport/Escape Prohibition changes. **Every member of this
+  bullet is now confirmed correct.** `perform_teleport`
   resets tileset/parallax/pan on a *map change*, and Save/Teleport/Escape
   Prohibition are confirmed correct above (`apply_map_access`). **Tile
   Replacement is confirmed correct too**, for a different reason than the
@@ -4593,7 +4639,7 @@ not yet verified:
   EventPage.select`). Battle events are the opposite: **every** satisfied
   page runs once per turn, lower page number first (already implemented,
   `Game::BattlePage.select_all` — confirmed correct earlier this session).
-- **Autorun (auto-start) and any other non-parallel-process trigger are
+- ✅ **Autorun (auto-start) and any other non-parallel-process trigger are
   mutually exclusive engine-wide**: an Autorun can't start while any other
   foreground event (action-key, touch) is executing, and per one source
   this exclusion is **global, not per-map** — a second map's Autorun won't
@@ -4602,7 +4648,23 @@ not yet verified:
   Also: Autorun and parallel process are independent — parallel processes
   keep running during an Autorun's *blocking* waits (Show Text/Wait) but
   are blocked while the Autorun executes non-blocking commands; if both
-  are set to fire the same frame, parallel process goes first.
+  are set to fire the same frame, parallel process goes first. **Every
+  sub-claim confirmed correct**, and largely already documented in-code
+  rather than freshly derived: `#parallels_paused?` is exactly
+  `!@battle_ui.nil? || (@interpreter.running? && !@interpreter.waiting?)`
+  — false (not paused) the whole time the single foreground `@interpreter`
+  is mid-`Wait`/`Show Text`, true only while it is actively bursting
+  through non-blocking commands within the current frame — and
+  `Scene::Map#update`'s own comment on `step_parallels` (called *before*
+  the foreground dispatch every frame) already cites this bullet's own
+  "if both are set to fire the same frame, parallel process goes first"
+  wording verbatim. The single-slot exclusivity is structural: `Scene::Map`
+  holds exactly one `@interpreter` for its whole lifetime — `#perform_teleport`
+  never touches it — so a foreground script (Autorun included) that issues
+  its own Transfer Player mid-script keeps running on the very same
+  interpreter object after landing on the new map, with no second,
+  independent foreground slot a different map's own Autorun could ever
+  race into.
 - An Autorun/parallel event whose appearance condition goes false
   mid-execution **keeps running to completion** rather than aborting —
   confirmed by many independent sources, including across a map transfer
@@ -7685,6 +7747,29 @@ specific stale tile, invalid battle animation only when it would actually
 display, invalid skill only when a skill-select screen opens (or, if the
 dangling ref is in a hero's learned-skill list, at the moment of
 level-up).
+✅ **Call Event no longer swallows three of the four "invalid event ID"
+causes above, plus the separate "invalid event page" case** — this codebase
+has no error-dialog UI to show real RPG_RT's popup, but the target now
+gets a logged `[RPG2k] Call Event: ...` diagnostic (the same
+reported-not-invented pattern Toggle Fullscreen and Call Common Event
+already use) instead of resolving to nothing with no trace. `Interpreter
+#resolve_call` (`mruby-rpg2k/mrblib/interpreter.rb`) reports an unresolved
+common-event target (mode 0) and any exception raised while resolving a
+target; `#map_event_call` reports "This Event" used with no map-event
+context (mode 1/2 from inside a common event, `#character_ref` returning
+`nil`) and a map-event target whose id or page number doesn't resolve
+(mode 1/2, covering both the "common event referencing a map-event ID
+absent on the current map" cause and "a variable-driven Call Event
+resolving to no match", plus invalid-event-page as a distinct message from
+invalid-event-id). The remaining "invalid event ID" cause — a stale
+Variable-Op/Move-Route target — is a different command family, not part
+of Call Event, and is still open. **Store Event ID has no analogous gap**:
+unlike Call Event it never targets an event *by id*, only by tile position
+(`#do_store_event_id`), and "no event on this tile" (stored as `0`) is a
+genuine, correctly-modelled answer rather than a stale reference — nothing
+there was silently failing. Covered by four new
+`scripts/rpg2k_logic_check.rb` checks (one per new diagnostic path),
+each asserting on the exact captured `$stderr` line.
 
 **Map/Event ID assignment & tile occupancy**
 - Event IDs (and separately, Map IDs) are assigned by **creation order**
@@ -7791,6 +7876,43 @@ above are repeated here)
   name, including two certain item drops from a two-member troop; a blank
   database falls back to the composed English for all three), both
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **The battle victory result screen now announces a level-up and any
+  skill it teaches, the same way Change EXP/Change Level already do** —
+  `#battle_result_lines`'s own `a.gain_exp(exp)` call (the line right above
+  the EXP/gold/item fix above) granted EXP with zero level-up/skill
+  messaging, unlike `Game::Interpreter#do_change_exp`/`#do_change_level`
+  (`mrblib/interpreter.rb`), which already snapshot each target's
+  level/skills before their own `#gain_exp`/`#change_level_by` and queue one
+  `#level_up_message` per level gained plus one `#skill_learned_message` per
+  growth-table skill it teaches (`#queue_level_up_messages`). EasyRPG's own
+  victory sequence confirms the same shape belongs here too:
+  `Scene_Battle_Rpg2k::ProcessSceneActionVictory` (`src/scene_battle_rpg2k.cpp`)
+  builds the EXP/gold/item summary as one page, then calls
+  `Game_Actor::ChangeExp` once per active ally right after it, and that is
+  exactly where the level-up/skill-learned lines it pushes come from. Fixed
+  by snapshotting each actor's level/skills right before its own
+  `#gain_exp` in `#battle_result_lines`, the same as the interpreter path,
+  appending the resulting lines after the EXP/gold/item lines (this screen
+  has no per-page window like RPG_RT's, only one flat line list for the
+  whole result, so the per-actor page break becomes an in-order append
+  instead). Unlike the interpreter path — still `#level_up_message`/
+  `#skill_learned_message`'s own documented "plain English line for now"
+  simplification, left untouched here — this screen already reads real
+  database terms for every other line, so its `#battle_level_up_message`/
+  `#battle_skill_learned_message` do too now, confirmed against EasyRPG's
+  `ActorMessage::GetLevelUpMessage`/`GetLearningMessage`
+  (`src/game_message_terms.cpp`), stock-RPG2000/CP932 branch: `name << "は"
+  << terms.level << " " << new_level << " " << terms.level_up` and
+  `skill.name << terms.skill_learned` (no actor name — it always trails
+  that actor's own level-up line). Falls back to composed English
+  (matching `#level_up_message`/`#skill_learned_message`'s own wording)
+  when the database leaves `level_up`/`skill_learned` blank, the same rule
+  as every other line here. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a database setting `level`/`level_up`/`skill_learned` shows the
+  composed level-up line and the skill it names, from a stub actor whose one
+  EXP threshold and one learn-table entry line up with the two-Slime troop's
+  10 total EXP; a blank database falls back to the composed English for
+  both), both confirmed to fail against the pre-fix code before the fix.
 - ✅ **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
   but free if placed in a shop's own buy list — confirmed already
   correct**, all three facts, no code change needed. `Game::Shop#sell_price`

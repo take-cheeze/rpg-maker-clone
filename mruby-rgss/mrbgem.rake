@@ -17,7 +17,18 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
     "#{dir}/../3rd/stb" <<
     build_dir
   linker.library_paths << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/uni-algo" << "#{ENV["PROJECT_BUILD_DIR"]}/3rd/lvgl/lib"
-  linker.libraries << "uni-algo" << "lvgl" << "pthread"
+  linker.libraries << "uni-algo" << "lvgl"
+  # pthread backs terminal.cxx's std::thread writer (the sixel/iTerm2
+  # backends). That file compiles out entirely on PSP/Wio (see its file-level
+  # comment) -- neither bare-metal target has a proven std::thread/pthread
+  # story, and nothing on either can select a terminal backend anyway -- so
+  # linking pthread there would be a requirement with no corresponding need,
+  # on toolchains where it may not even exist. Checked against *this build's*
+  # own name (the psp/wio MRuby::CrossBuild, not the ENV MRUBY_TARGET a
+  # cross-compile also sets for the native host build that produces mrbc
+  # alongside it in the same rake run -- that host build still wants
+  # pthread).
+  linker.libraries << "pthread" unless %w[psp wio].include?(build.name)
 
   objs << objfile("#{build_dir}/shinonome")
 

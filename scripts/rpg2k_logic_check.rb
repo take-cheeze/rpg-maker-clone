@@ -82,6 +82,17 @@ def ok(cond, msg = 'expected truthy')
   raise msg unless cond
 end
 
+# Runs the block with $stderr redirected to a StringIO and returns everything
+# written to it, for checks that assert on a "[RPG2k] ..." diagnostic line.
+def capture_stderr
+  old_stderr = $stderr
+  $stderr = StringIO.new
+  yield
+  $stderr.string
+ensure
+  $stderr = old_stderr
+end
+
 # -- fakes --------------------------------------------------------------------
 
 # A grid world implementing the MoveRoute/MoveType `world` protocol. Passability
@@ -1419,6 +1430,17 @@ check 'a missing Call Event target is a no-op and the caller continues' do
   ok !it.running?
 end
 
+check 'a missing Call Event common-event target is reported, not silent' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: {}) # id 5 not defined
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0])])
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: common event 5 not found'), out
+end
+
 check 'a face set inside a Call Event survives back into the caller and clears only once the caller finishes too' do
   st = new_state
   cfg = st.message_config
@@ -1724,6 +1746,56 @@ check 'Call Event on "this event" from a common event is a no-op' do
   it.update
   eq false, st.switches[9], 'there is no "this event" to call'
   eq true, st.switches[1], 'and the caller carries on'
+end
+
+check 'Call Event on "this event" from a common event reports the unresolved target' do
+  st = new_state
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [1, 10005, 2])]) # no event is running it
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: "this event" has no map event to refer to'), out
+end
+
+check 'Call Event targeting a stale map event id or page is reported, not silent' do
+  st = new_state
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [1, 8, 2])]) # event 8 does not exist
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: map event 8 page 2 not found'), out
+
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  it2.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  out2 = capture_stderr do
+    it2.start([FakeCmd.new(IC::CALL_EVENT, [1, 7, 3])]) # event 7 has no page 3
+    it2.update
+  end
+  ok out2.include?('[RPG2k] Call Event: map event 7 page 3 not found'), out2
+end
+
+check 'a Call Event resolver failure is reported instead of swallowed' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  failing_resolver = Object.new
+  def failing_resolver.common_event_commands(_id)
+    raise 'resolver exploded'
+  end
+  it.resolver = failing_resolver
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
+              FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Event: failed to resolve target: resolver exploded'), out
+  eq true, st.switches[1], 'the caller still continues after the failed call'
 end
 
 check 'Call Event has no indirect mode for a common event id (target 0 stays literal)' do
@@ -3031,6 +3103,37 @@ check 'to_lsd/from_lsd round-trips a Change Actor Title override' do
   eq '', cleared.party.leader.title, 'a cleared title round-trips as an empty string, not the database default'
 end
 
+check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
+  # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
+  # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots
+  # Scene::Map's #battle_bgm/#victory_bgm/#vehicle_bgm and
+  # Scene::GameOver#gameover_bgm_override, plus Scene::Base#system_se, read
+  # back out. These used to round-trip only through the portable Marshal
+  # save (Game::State#to_h/.load); #to_lsd/.from_lsd now write/read every
+  # slot too, via SAVE_SYSTEM's BGM fields 72-74/79-82 and SE fields 91-102.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.system_bgm[0] = { name: 'Battle1', fadein: 500, volume: 90, tempo: 110, balance: 50 }
+  st.system_bgm[6] = { name: 'GameOver1', fadein: 0, volume: 80, tempo: 100, balance: 50 }
+  st.system_sfx[0] = { name: 'Cursor1', volume: 95, tempo: 105, balance: 50 }
+  st.system_sfx[4] = { name: 'BattleStart1', volume: 85, tempo: 95, balance: 50 }
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq 'Battle1', round.system_bgm[0][:name], 'Change System BGM slot 0 (battle) round-trips'
+  eq 90, round.system_bgm[0][:volume]
+  eq 110, round.system_bgm[0][:tempo]
+  eq 'GameOver1', round.system_bgm[6][:name], 'Change System BGM slot 6 (game over) round-trips'
+  eq 'Cursor1', round.system_sfx[0][:name], 'Change System SFX slot 0 (cursor) round-trips'
+  eq 95, round.system_sfx[0][:volume]
+  eq 105, round.system_sfx[0][:tempo]
+  eq 'BattleStart1', round.system_sfx[4][:name], 'Change System SFX slot 4 (battle start) round-trips'
+
+  # A slot never touched by Change System BGM/SFX stays absent, not a
+  # spurious empty-string override.
+  eq nil, round.system_bgm[1], 'an untouched BGM slot round-trips as absent, not an empty override'
+  eq nil, round.system_sfx[1], 'an untouched SFX slot round-trips as absent, not an empty override'
+end
+
 check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
   # docs/TODO.md used to call the game timer the one field the .lsd export
   # "cannot yet carry", guessing it would need "a documented chunk id" of its
@@ -3066,6 +3169,67 @@ check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
   eq false, old.timer(0).running
   eq 0, old.timer(1).seconds, 'and the default second timer'
   eq false, old.timer(1).running
+end
+
+check 'restore_pictures restores zoom, opacity and tone, not just name/position' do
+  # These used to stay at Picture's defaults: no sample save had them off-
+  # default, so reading save fields 33/34/41-44 would have been guesswork. That
+  # is resolved by cross-checking against the *live* Show Picture command
+  # (#do_show_picture, interpreter.rb), which is already exercised elsewhere in
+  # this codebase and uses the exact same field semantics the rpg2kpsp save
+  # schema names: zoom (33, "拡大率") is a raw percentage fed straight into
+  # Picture#zoom, tone (41-44, "色調") are raw ints fed straight into Picture's
+  # red/green/blue/saturation, and transparency (34, "透明度") is the same
+  # 0 (opaque) .. 100 (clear) scale #trans_to_opacity already converts for the
+  # live command. `to_lsd` does not write chunk 103 yet (see ADR 0021's
+  # addendum), so this builds a synthetic chunk 103 entry directly rather than
+  # round-tripping through our own writer.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+
+  pic = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  pic[1] = 'backdrop'
+  pic[31] = 200.0
+  pic[32] = 150.0
+  pic[33] = 150 # zoom: 150%
+  pic[34] = 25  # transparency: 25 (out of 100, clear side)
+  pic[41] = 50  # tone red
+  pic[42] = 60  # tone green
+  pic[43] = 70  # tone blue
+  pic[44] = 80  # tone saturation
+  pictures = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  pictures[3] = pic
+
+  Game::State.restore_pictures(st, pictures)
+  restored = st.pictures[3]
+  ok !restored.nil?, 'the picture is shown'
+  eq 'backdrop', restored.name
+  eq 200, restored.x
+  eq 150, restored.y
+  eq 150, restored.zoom, 'zoom is the save\'s raw percentage, matching Show Picture\'s own param5'
+  eq Game.trans_to_opacity(25), restored.opacity,
+     'transparency converts through the same 0..100 -> 0..255 scale Show Picture uses'
+  eq 191, restored.opacity, 'trans_to_opacity(25) == (100-25)*255/100 == 191'
+  eq 50, restored.red
+  eq 60, restored.green
+  eq 70, restored.blue
+  eq 80, restored.saturation
+
+  # A picture entry with none of these fields present (an older-style save, or
+  # a still-empty slot) must keep Picture's own defaults rather than crash on a
+  # nil transparency reaching #trans_to_opacity.
+  bare = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  bare[1] = 'plain'
+  bare_pictures = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  bare_pictures[4] = bare
+  Game::State.restore_pictures(st, bare_pictures)
+  plain = st.pictures[4]
+  eq 100, plain.zoom, 'no saved zoom keeps Picture\'s default'
+  eq 255, plain.opacity, 'no saved transparency keeps Picture\'s default opacity'
+  eq 100, plain.red
+  eq 100, plain.green
+  eq 100, plain.blue
+  eq 100, plain.saturation
 end
 
 # -- the permanent actor roster (Game::Actors) --------------------------------

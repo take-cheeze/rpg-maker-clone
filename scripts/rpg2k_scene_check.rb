@@ -1975,16 +1975,24 @@ BattleCommandDef = Struct.new(:name, :type)
 
 class BattleStubActor
   attr_accessor :exp, :hp, :mp
-  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills, :states
+  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills, :states,
+              :level, :learn_table
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
   # a defeat test passes weaker stats. `states` seeds the Combatant Game::Battle
   # ::from_actor builds (Game::Battle.actor_states reads it off any source that
   # responds to `:states`), so a battle-command-skip check can start the fight
   # with an ally already afflicted, without reaching into the built battle's
   # own Combatant list after the fact.
+  #
+  # `level_up_at`/`learn_table` are opt-in (default nil/[]): a check that never
+  # sets `level_up_at` gets a stub whose #level never moves, exactly like every
+  # check predating #battle_result_lines's own level-up/skill-learned lines
+  # (mirrors Game::Actor's real growth curve/learn table only as far as a
+  # single EXP-threshold level-up needs, not the full RPG2000 curve).
   def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1,
                  rename_skill: false, skill_name: '', states: [], force_ai: false,
-                 battle_commands: nil, battle_command_table: {})
+                 battle_commands: nil, battle_command_table: {},
+                 level: 1, level_up_at: nil, learn_table: [])
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
@@ -1992,6 +2000,7 @@ class BattleStubActor
     @force_ai = force_ai
     @battle_commands = battle_commands
     @battle_command_table = battle_command_table
+    @level = level; @level_up_at = level_up_at; @learn_table = learn_table
   end
   # Mirrors Game::Actor's own RPG2003 battle-command-customization interface
   # (`#battle_commands` / `#battle_command_row`), so a stub battle can drive
@@ -2000,7 +2009,17 @@ class BattleStubActor
   # sets no such list.
   attr_reader :battle_commands
   def battle_command_row(id); @battle_command_table[id]; end
-  def gain_exp(n); @exp += n; end
+  # Bumps #level once @exp crosses @level_up_at (nil disables this entirely),
+  # learning whatever @learn_table names for the new level -- the shape
+  # #battle_level_up_lines (Scene::Map) needs to exercise the real Game::Actor
+  # code path it mirrors (Game::Actor#gain_exp -> #set_level -> #learn_level_skills)
+  # without the full RPG2000 EXP curve.
+  def gain_exp(n)
+    @exp += n
+    return unless @level_up_at && @exp >= @level_up_at
+    @level += 1
+    @learn_table.each { |sid, at| @skills.push(sid) if at == @level && !@skills.include?(sid) }
+  end
   # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
   # HP absolutely; the stub has no state model beyond the starting `states`
   # above, so just clamp to [0, max].
@@ -2032,13 +2051,14 @@ class BattleStubParty
   # #flying_offset` reads it off `@state.party`, not the database directly, so
   # a battle scene check needs its stub party to answer it too) -- false by
   # default, matching every other check's plain RPG2000 fixture.
-  def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil)
+  def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil)
     @actors = [actor]
     @gold = 0
     @leader = nil
     @rpg2003 = rpg2003
     @items = {}
     @item_db = item_db
+    @skill_db = skill_db
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
@@ -2050,6 +2070,10 @@ class BattleStubParty
   # item table `item_db` (typically the scene's own fake_db.item) was given.
   attr_reader :items
   def gain_item(id, n = 1); @items[id] = (@items[id] || 0) + n; end
+  # A newly-learned skill (#battle_level_up_lines, Scene::Map) is named from
+  # whatever skill table `skill_db` (typically the scene's own fake_db.skill)
+  # was given, mirroring #db_item above.
+  def db_skill(id); @skill_db && @skill_db[id]; end
   def db_item(id); @item_db && @item_db[id]; end
 end
 
@@ -4666,6 +4690,10 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   scene.update
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the "purchased" confirmation
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
   RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
   scene.update
   scene.update # the Transaction branch runs
@@ -4763,7 +4791,10 @@ check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   eq 200, st.party.gold, '500 - 3*100'
   eq 3, st.party.item_count(3), 'three bought in one confirm'
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'and it returns to the buy list'
+  eq :purchased, shop[:screen], 'the "purchased" confirmation shows first'
+  press(scene, RGSS::Input::C)
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'and dismissing it returns to the buy list'
 end
 
 check 'Open Shop scene: cancelling the counter buys nothing' do
@@ -9579,6 +9610,79 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
      'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
 end
 
+check 'Open Shop scene: buying shows the shop_purchased confirmation, then returns ' \
+      'to the buy list' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.shop_purchased1 = '毎度あり！'
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3], indent: 0)] # buy-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the shop opens straight to the buy list (buy-only)
+
+  RGSS::Input.triggered = [RGSS::Input::C] # select the first good -> the counter
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the default quantity of 1
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :purchased, shop[:screen], 'the purchase confirms before the list reappears'
+  ok window_texts(shop[:window]).any? { |t| t.include?('毎度あり！') },
+     'the confirmation line uses the database shop_purchased term'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the confirmation
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'a button press returns to the buy list, same as EasyRPG\'s ' \
+                          'Bought -> Buy transition'
+end
+
+check 'Open Shop scene: selling shows the shop_sold confirmation, then returns ' \
+      'to the sell list' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.shop_sold1 = '毎度！'
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [2, 0, 0, 0, 3], indent: 0)] # sell-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  party = ShopStubParty.new(0)
+  party.gain_item(3, 5)
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the shop opens straight to the sell list (sell-only)
+
+  RGSS::Input.triggered = [RGSS::Input::C] # select the held good -> the counter
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the default quantity of 1
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :sold, shop[:screen], 'the sale confirms before the list reappears'
+  ok window_texts(shop[:window]).any? { |t| t.include?('毎度！') },
+     'the confirmation line uses the database shop_sold term'
+
+  RGSS::Input.triggered = [RGSS::Input::B] # dismiss the confirmation (B works too)
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen], 'and returns to the sell list, same as EasyRPG\'s Sold -> Sell'
+end
+
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
   ic = Game::Interpreter::Cmd
   db = fake_db
@@ -9643,6 +9747,55 @@ check 'Enemy Encounter scene: blank database EXP/gold/item received terms fall b
   ok texts.any? { |t| t.include?('10 EXP gained.') }, 'a blank exp_received term falls back'
   ok texts.any? { |t| t.include?('Found 20G.') }, 'blank gold_received_a/gold/gold_received_b fall back'
   ok texts.count { |t| t.include?('Potion obtained.') } == 2, 'a blank item_received term falls back'
+end
+
+check 'Enemy Encounter scene: the result window announces a level-up and the skill it ' \
+      'teaches, the same way Change EXP/Change Level do' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.level = 'レベル'
+  db.term.level_up = 'に上がった！'
+  db.skill[42] = OpenStruct.new(name: 'Meteor')
+  db.term.skill_learned = 'を覚えた！'
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  # Troop 1 (two Slimes, 5 EXP each -- see the EXP/gold/item checks above)
+  # awards exactly 10 EXP; the stub crosses its one level threshold right at
+  # 10 and learns skill 42 at that level, mirroring
+  # Game::Interpreter#queue_level_up_messages's own before/after skill diff.
+  actor = BattleStubActor.new(level_up_at: 10, learn_table: [[42, 2]])
+  state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  eq 2, actor.level, 'the EXP gain crossed the one threshold configured'
+  ok texts.any? { |t| t.include?('Heroはレベル 2 に上がった！') },
+     'the level-up line reads name + level term + number + level_up term ' \
+     '(GetLevelUpMessage stock/CP932 branch)'
+  ok texts.any? { |t| t.include?('Meteorを覚えた！') },
+     'the newly-learned skill names itself (GetLearningMessage), right after the level-up line'
+end
+
+check 'Enemy Encounter scene: blank database level_up/skill_learned terms fall back to ' \
+      'composed English' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db # leaves level_up/skill_learned blank
+  db.skill[42] = OpenStruct.new(name: 'Meteor')
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  actor = BattleStubActor.new(level_up_at: 10, learn_table: [[42, 2]])
+  state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  ok texts.any? { |t| t.include?('Hero is now level 2!') }, 'a blank level_up term falls back'
+  ok texts.any? { |t| t.include?('Hero learned Meteor!') }, 'a blank skill_learned term falls back'
 end
 
 check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to English' do

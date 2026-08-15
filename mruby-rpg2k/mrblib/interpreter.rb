@@ -938,7 +938,9 @@ module Game
     # another page of the event already running — RPG_RT resolves the id through
     # the same `GetCharacter` every other character reference uses, so a game can
     # keep a page of shared subroutine commands on the event itself.
-    # A missing/empty target is a no-op; recursion is bounded by MAX_CALL_DEPTH.
+    # A missing target is a logged no-op (see #resolve_call/#map_event_call); an
+    # empty (but resolved) target is a silent no-op, since that page/event
+    # genuinely has nothing to run. Recursion is bounded by MAX_CALL_DEPTH.
     def do_call_event(cmd)
       return unless @resolver
       cmds = resolve_call(cmd)
@@ -951,22 +953,37 @@ module Game
 
     def resolve_call(cmd)
       case cmd.param(0)
-      when 0 then @resolver.common_event_commands(cmd.param(1))
+      when 0
+        id = cmd.param(1)
+        cmds = @resolver.common_event_commands(id)
+        $stderr.puts "[RPG2k] Call Event: common event #{id} not found" if cmds.nil?
+        cmds
       when 1 then map_event_call(cmd.param(1), cmd.param(2))
       when 2 then map_event_call(variables[cmd.param(1)],
                                  variables[cmd.param(2)])
       end
-    rescue StandardError
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] Call Event: failed to resolve target: #{e.message}"
       nil
     end
 
     # The command list of a map event's page, with the event id resolved through
     # #character_ref so "this event" reaches the running event. An unresolvable
-    # reference (a common event calling "this event") has no page to run.
+    # reference (a common event calling "this event") has no page to run, and a
+    # stale event id or page number resolves to no commands either -- both are
+    # reported here rather than left a silent no-op, matching real RPG_RT's
+    # error dialog for the same targets (see docs/TODO.md's runtime error
+    # catalog).
     def map_event_call(event_ref, page)
       id = character_ref(event_ref)
-      return nil if id.nil?
-      @resolver.map_event_commands(id, page)
+      if id.nil?
+        $stderr.puts '[RPG2k] Call Event: "this event" has no map event to ' \
+                     'refer to (running inside a common event)'
+        return nil
+      end
+      cmds = @resolver.map_event_commands(id, page)
+      $stderr.puts "[RPG2k] Call Event: map event #{id} page #{page} not found" if cmds.nil?
+      cmds
     end
 
     # Translate a command's character reference into the map event id the scene
@@ -2896,7 +2913,7 @@ module Game
 
     # RPG2000 transparency (0 opaque .. 100 fully clear) -> a 0..255 opacity.
     def trans_to_opacity(top_trans)
-      (100 - Game.clamp(top_trans, 0, 100)) * 255 / 100
+      Game.trans_to_opacity(top_trans)
     end
 
     # The picture's file name (the command's string parameter), or ''.
@@ -3015,12 +3032,13 @@ module Game
     # param0. The remaining fields carry a Music struct: string = file name,
     # param1 fade-in, param2 volume, param3 tempo, param4 balance. Stashed in
     # a Game::State slot table; Scene::Map's #battle_bgm reads slot 0 (battle),
-    # #victory_bgm reads slot 1 (the "Victory!" result screen) and #vehicle_bgm
-    # reads slots 3-5 (boat/ship/airship) back out ahead of the database
-    # default, the same override-then-default idiom Change System SFX already
-    # gets; Scene::GameOver#gameover_bgm_override does the same for slot 6.
-    # Inn (2) still only round-trips through the save, since nothing plays it
-    # yet (no inn / lodging screen exists in this build).
+    # #victory_bgm reads slot 1 (the "Victory!" result screen), #inn_bgm reads
+    # slot 2 and #vehicle_bgm reads slots 3-5 (boat/ship/airship) back out
+    # ahead of the database default, the same override-then-default idiom
+    # Change System SFX already gets; Scene::GameOver#gameover_bgm_override
+    # does the same for slot 6. All seven slots round-trip through a real
+    # .lsd Save/Continue now too (Game::State#to_lsd/.from_lsd, SAVE_SYSTEM
+    # fields 72-74/79-82), not just the portable Marshal save.
     def do_change_system_bgm(cmd)
       @state.system_bgm[cmd.param(0)] = {
         name: cmd.string, fadein: cmd.param(1), volume: cmd.param(2),
@@ -3033,7 +3051,9 @@ module Game
     # string = file name, param1 volume, param2 tempo, param3 balance. The map
     # scene (Scene::Map::DB_SE_FIELD) already plays most of these slots at the
     # moments they name; a slot beyond the ones it plays is still stored for
-    # save fidelity, matching the system BGM.
+    # save fidelity, matching the system BGM -- all twelve slots round-trip
+    # through a real .lsd Save/Continue now too (SAVE_SYSTEM fields 91-102),
+    # not just the portable Marshal save.
     def do_change_system_sfx(cmd)
       @state.system_sfx[cmd.param(0)] = {
         name: cmd.string, volume: cmd.param(1),

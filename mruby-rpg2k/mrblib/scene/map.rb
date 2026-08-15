@@ -3780,8 +3780,10 @@ class RPG2k
       # Drive an Open Shop wait. On the first frame the shop opens (a command
       # menu for a buy+sell shop, or straight to the buy / sell list for a
       # single-mode shop). Buying and selling happen one unit per confirm on
-      # Game::Shop; leaving resumes the interpreter with whether anything was
-      # traded (which picks the [Transaction] / [No Transaction] branch).
+      # Game::Shop, followed by a purchased / sold confirmation line before
+      # control returns to the list; leaving resumes the interpreter with
+      # whether anything was traded (which picks the [Transaction] /
+      # [No Transaction] branch).
       def drive_shop
         req = @interpreter.shop_request
         return @interpreter.resume_shop(false) unless req
@@ -3792,6 +3794,7 @@ class RPG2k
         case @shop[:screen]
         when :command  then drive_shop_command
         when :quantity then drive_shop_quantity
+        when :purchased, :sold then drive_shop_confirm
         else drive_shop_list
         end
       end
@@ -3829,7 +3832,10 @@ class RPG2k
           buy_number: nonblank([t.shop_buy_number1, t.shop_buy_number2, t.shop_buy_number3][i],
                                'How many will you buy?'),
           sell_number: nonblank([t.shop_sell_number1, t.shop_sell_number2, t.shop_sell_number3][i],
-                                'How many will you sell?')
+                                'How many will you sell?'),
+          purchased: nonblank([t.shop_purchased1, t.shop_purchased2, t.shop_purchased3][i],
+                              'Thank you!'),
+          sold: nonblank([t.shop_sold1, t.shop_sold2, t.shop_sold3][i], 'Thank you!')
         }
       end
 
@@ -3838,8 +3844,9 @@ class RPG2k
       # shopkeeper asking "anything else?" on returning to it after browsing
       # (EasyRPG's Window_Shop switches from `shop_greeting` to
       # `shop_regreeting` once the player has entered Buy or Sell mode -- a
-      # per-visit flag, not a persisted "have I shopped here before"), and a
-      # prompt on the buy / sell / quantity screens themselves. nil for any
+      # per-visit flag, not a persisted "have I shopped here before"), a
+      # prompt on the buy / sell / quantity screens themselves, and the
+      # purchased / sold confirmation once a transaction commits. nil for any
       # other screen, which #draw_shop reads as "no header row".
       def shop_header
         t = @shop[:terms]
@@ -3849,6 +3856,8 @@ class RPG2k
         when :sell then t[:sell_select]
         when :quantity
           @shop[:quantity][:mode] == :buy ? t[:buy_number] : t[:sell_number]
+        when :purchased then t[:purchased]
+        when :sold then t[:sold]
         end
       end
 
@@ -3881,6 +3890,8 @@ class RPG2k
             "#{unit * q[:count]}#{shop_gold_term}", q[:id]]]
         when :buy
           m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
+        when :purchased, :sold
+          [] # the confirmation line is the whole screen -- no selectable rows
         else # :sell
           m.sellable_items.map do |id|
             ["#{m.name(id)} x#{@state.party.item_count(id)}  " \
@@ -3955,6 +3966,19 @@ class RPG2k
         end
       end
 
+      # The purchased / sold confirmation shown right after a transaction
+      # commits (Game::Shop#buy / #sell): a single line, dismissed on a
+      # button press the same way the battle event message panel is (see
+      # #drive_battle_event_message), then back to the list it came from --
+      # EasyRPG's own Scene_Shop::Bought / Sold modes return to Buy / Sell
+      # respectively (a timed auto-dismiss there; button-driven here to match
+      # every other message screen in this scene).
+      def drive_shop_confirm
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        @shop[:screen] = @shop[:screen] == :purchased ? :buy : :sell
+        draw_shop
+      end
+
       # How far LEFT / RIGHT jump the quantity cursor — RPG_RT's shop counter
       # moves in tens on the horizontal axis so a stack of 99 is a few presses
       # away rather than ninety-nine.
@@ -3982,8 +4006,11 @@ class RPG2k
           draw_shop
         elsif Input.trigger?(Input::C)
           model = @shop[:model]
-          q[:mode] == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
-          close_shop_quantity
+          mode = q[:mode]
+          mode == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
+          @shop[:quantity] = nil
+          @shop[:screen] = mode == :buy ? :purchased : :sold
+          draw_shop
         elsif Input.trigger?(Input::B)
           close_shop_quantity
         end
@@ -5830,12 +5857,34 @@ class RPG2k
       # in `mruby-rpg2k` before now, so a game that customised them (a
       # translation, a non-English original) showed this codebase's
       # hardcoded English regardless.
+      #
+      # A level-up (and any skill the growth table teaches at it) is
+      # announced too now, the missing half of the same gap: EasyRPG's
+      # `Scene_Battle_Rpg2k::ProcessSceneActionVictory`
+      # (`src/scene_battle_rpg2k.cpp`) builds the EXP/gold/item summary as one
+      # page, then calls `Game_Actor::ChangeExp` once per active ally right
+      # after it, which is exactly `Game::Interpreter#do_change_exp`'s own
+      # gain_exp-then-announce shape (`queue_level_up_messages`,
+      # `mrblib/interpreter.rb`) -- so each actor's level/skill snapshot is
+      # taken here the same way, right before its own `#gain_exp`. Unlike
+      # that interpreter path (still the documented "plain English line for
+      # now" simplification), this screen already reads real database terms
+      # for every other line, so `#battle_level_up_message` /
+      # `#battle_skill_learned_message` below do too, built from EasyRPG's
+      # `ActorMessage::GetLevelUpMessage` / `GetLearningMessage`
+      # (`src/game_message_terms.cpp`), stock-RPG2000/CP932 branch: `name <<
+      # "は" << terms.level << " " << new_level << " " << terms.level_up` and
+      # `skill.name << terms.skill_learned` (no actor name -- it always
+      # follows that actor's own level-up line, same as here). RPG_RT shows
+      # these on their own page per actor rather than inline with the EXP
+      # tally; this screen has no per-page window, only one flat line list
+      # for the whole result, so they are appended to that list instead, in
+      # the same after-the-tally order the real sequence uses.
       def battle_result_lines(result, troop)
         return [term(:escape_success, 'Escaped!')] if result == :escape
         return [term(:defeat, 'The party was defeated...')] unless result == :victory
         exp = troop.total_exp
         gold = troop.total_gold
-        @state.party.actors.each { |a| a.gain_exp(exp) }
         @state.party.gain_gold(gold)
         lines = [term(:victory, 'Victory!')]
         lines << "#{exp}#{term(:exp_received, ' EXP gained.')}" if exp > 0
@@ -5851,7 +5900,61 @@ class RPG2k
           name = it ? it.name : "item #{iid}"
           lines << "#{name}#{term(:item_received, ' obtained.')}"
         end
+        @state.party.actors.each do |a|
+          before_level = a.respond_to?(:level) ? a.level : nil
+          before_skills = a.respond_to?(:skills) ? a.skills.dup : []
+          a.gain_exp(exp)
+          lines.concat(battle_level_up_lines(a, before_level, before_skills)) if before_level
+        end
         lines
+      end
+
+      # Level-up (and, for each level, any growth-table skill it teaches)
+      # lines for one actor's post-battle EXP gain, mirroring
+      # `Game::Interpreter#queue_level_up_messages`'s own before/after skill
+      # comparison: `before_skills` is that actor's skill list snapshotted
+      # right before `#gain_exp`, so a skill already known (an earlier
+      # explicit Change Skill teach) is told apart from one this exact gain
+      # just taught. Returns [] when the level did not rise.
+      def battle_level_up_lines(actor, before_level, before_skills)
+        return [] if actor.level <= before_level
+        lines = []
+        ((before_level + 1)..actor.level).each do |lv|
+          lines << battle_level_up_message(actor, lv)
+          next unless actor.respond_to?(:learn_table)
+          actor.learn_table.each do |sid, at|
+            next unless at == lv && !before_skills.include?(sid)
+            sk = @state.party.db_skill(sid)
+            lines << battle_skill_learned_message(actor, sk) if sk
+          end
+        end
+        lines
+      end
+
+      # The one line a level-up announces, built from the database's own
+      # `level`/`level_up` terms the way EasyRPG's stock/CP932
+      # `GetLevelUpMessage` branch does (see `#battle_result_lines`'s own
+      # comment) -- falls back to composed English, matching every other
+      # line on this screen, only when the database leaves `level_up` blank
+      # (a raw `level_up` term with no `level` term set still gets the
+      # 'Lv' stand-in rather than losing the whole line to English).
+      def battle_level_up_message(actor, level)
+        up = term(:level_up, nil)
+        return "#{actor.name} is now level #{level}!" unless up
+        "#{actor.name}は#{term(:level, 'Lv')} #{level} #{up}"
+      end
+
+      # The one line a newly-learned skill announces, immediately following
+      # its level's own line above -- EasyRPG's stock/CP932
+      # `GetLearningMessage` branch names only the skill, never the actor,
+      # since it always trails that actor's own level-up line the way it
+      # does here too. Falls back to composed English (which does name the
+      # actor, since a database leaving `skill_learned` blank gets no
+      # level-up line's context to lean on either) when the term is blank.
+      def battle_skill_learned_message(actor, sk)
+        learned = term(:skill_learned, nil)
+        return "#{actor.name} learned #{sk.name}!" unless learned
+        "#{sk.name}#{learned}"
       end
 
       # RPG_RT's battle windows share one fixed panel: a 320x80 strip along the

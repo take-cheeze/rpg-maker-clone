@@ -1,3 +1,15 @@
+// The sixel/iTerm2 terminal backends (see include/terminal.hxx): a POSIX
+// tty in raw mode, driven by a background std::thread writer. Neither exists
+// on the PSP (pspdev's newlib has no termios/ioctl, and no proven std::thread
+// support) or the Wio Terminal (bare-metal Arduino, same story), and mruby's
+// build never offers the game a way to select this backend on either target
+// anyway (no --sixel/--iterm CLI, no controlling tty) -- so the whole real
+// implementation below is compiled out there, the same way psp.cxx/wio.cxx
+// are no-ops off their own target. Only rgss_terminal_poll's declared
+// signature is required elsewhere (mruby-rgss/src/lib.cxx's input_poll calls
+// it unconditionally on every target), so the #else branch stubs just that.
+#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)
+
 #include "terminal.hxx"
 
 #include "profiler.hxx"
@@ -765,3 +777,13 @@ lv_display_t* terminal_display_create(int32_t hor_res,
   g_active = true;
   return disp;
 }
+
+#else  // PSP_BUILD || WIO_TERMINAL
+
+struct mrb_state;
+
+// No terminal backend exists on this target (see the file-level comment) and
+// nothing on it can select one, so there is never anything to drain.
+extern "C" void rgss_terminal_poll(mrb_state*) {}
+
+#endif  // !PSP_BUILD && !WIO_TERMINAL
