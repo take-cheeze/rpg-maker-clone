@@ -139,6 +139,11 @@ module RGSS
   module Input
     C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6; SHIFT = 7
     CTRL = 8; F9 = 9; L = 10; R = 11
+    # RPG2003 Key Input Processing's Numbers/Operators groups (see
+    # Scene::Map::NUMBER_KEY_BUTTONS / OPERATOR_KEY_BUTTONS).
+    N0 = 20; N1 = 21; N2 = 22; N3 = 23; N4 = 24
+    N5 = 25; N6 = 26; N7 = 27; N8 = 28; N9 = 29
+    PLUS = 30; MINUS = 31; MULTIPLY = 32; DIVIDE = 33; PERIOD = 34
     class << self
       attr_accessor :dir_value, :triggered
     end
@@ -2340,26 +2345,65 @@ check 'Key Input Proc ignores keys it was not told to accept' do
   ok st.switches[5]
 end
 
-check 'Key Input Proc (RPG2003 Numbers layout) accepts Decision but Numbers has no key to press' do
+check 'Key Input Proc (RPG2003 Numbers layout) resolves a digit key press' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   # RPG2003's own 9-param layout: var, wait, arrows off, decision on, cancel
-  # off, numbers on, operators off, time-var/timed unused. Nothing in
-  # Scene::Map::KEY_INPUT_BUTTONS samples Numbers, so only the Decision press
-  # can ever resume this proc even though the request also accepts Numbers.
+  # off, numbers on, operators off, time-var/timed unused.
   auto.event_commands = [
     ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 1, 0, 0, 0]),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
   ]
   scene = new_scene({ 1 => event(2, 2, auto) }, rpg2003: true)
   st = scene.instance_variable_get(:@state)
-  5.times { scene.update } # no key this input layer can sample was pressed
+  5.times { scene.update } # no key pressed yet: the proc keeps waiting
   eq 0, st.variables[1]
   ok !st.switches[5]
-  RGSS::Input.triggered = [RGSS::Input::C] # Decision (OK)
+  RGSS::Input.triggered = [RGSS::Input::N3] # digit 3
   scene.update # this frame resumes the proc and stores the code
-  eq 5, st.variables[1], 'Decision still resolves even with Numbers also accepted'
+  eq 13, st.variables[1], 'digit 3 -> RPG2000 code 13 (10 + the digit)'
   scene.update # the following command runs once the proc has resumed
+  ok st.switches[5]
+end
+
+check 'Key Input Proc (RPG2003 Operators layout) resolves an operator key press' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Same 9-param layout, but with operators (not numbers) accepted.
+  auto.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 1, 0, 0]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, rpg2003: true)
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update } # no key pressed yet: the proc keeps waiting
+  eq 0, st.variables[1]
+  ok !st.switches[5]
+  RGSS::Input.triggered = [RGSS::Input::PERIOD] # decimal point
+  scene.update
+  eq 24, st.variables[1], 'Period is the highest-priority operator code'
+  scene.update
+  ok st.switches[5]
+end
+
+check 'Key Input Proc (RPG2003 Numbers layout) ignores a digit key when Numbers is not accepted' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # Decision only; Numbers off.
+  auto.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 0, 0, 0]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, rpg2003: true)
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::N3] # not accepted: Numbers is off
+  3.times { scene.update }
+  ok !st.switches[5], 'an unaccepted digit must not resume the proc'
+  eq 0, st.variables[1]
+  RGSS::Input.triggered = [RGSS::Input::C] # Decision: accepted
+  scene.update
+  eq 5, st.variables[1]
+  scene.update
   ok st.switches[5]
 end
 

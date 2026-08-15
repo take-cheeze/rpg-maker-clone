@@ -42,6 +42,25 @@ enum RgssKey {
   KEY_F8 = 18,
   KEY_F9 = 19,
   KEY_F12 = 20,
+  // RPG2003 Key Input Processing's Numbers/Operators groups (mruby-rgss's
+  // RGSS::Input::N0..PERIOD). Real key backing for these lives only in this
+  // SDL backend today -- see the comment on those constants in
+  // mruby-rgss/mrblib/lib.rb.
+  KEY_N0 = 21,
+  KEY_N1 = 22,
+  KEY_N2 = 23,
+  KEY_N3 = 24,
+  KEY_N4 = 25,
+  KEY_N5 = 26,
+  KEY_N6 = 27,
+  KEY_N7 = 28,
+  KEY_N8 = 29,
+  KEY_N9 = 30,
+  KEY_PLUS = 31,
+  KEY_MINUS = 32,
+  KEY_MULTIPLY = 33,
+  KEY_DIVIDE = 34,
+  KEY_PERIOD = 35,
 };
 
 // Map an SDL keysym to an RGSS::Input key id, or -1 when the key is unbound.
@@ -103,6 +122,56 @@ int map_key(SDL_Keycode k) {
       return KEY_F9;
     case SDLK_F12:
       return KEY_F12;
+    // Numbers: both the main-row digit keys and the numeric keypad produce
+    // the same digit (real RPG_RT/EasyRPG accept either), so both feed the
+    // same RGSS::Input id.
+    case SDLK_0:
+    case SDLK_KP_0:
+      return KEY_N0;
+    case SDLK_1:
+    case SDLK_KP_1:
+      return KEY_N1;
+    case SDLK_2:
+    case SDLK_KP_2:
+      return KEY_N2;
+    case SDLK_3:
+    case SDLK_KP_3:
+      return KEY_N3;
+    case SDLK_4:
+    case SDLK_KP_4:
+      return KEY_N4;
+    case SDLK_5:
+    case SDLK_KP_5:
+      return KEY_N5;
+    case SDLK_6:
+    case SDLK_KP_6:
+      return KEY_N6;
+    case SDLK_7:
+    case SDLK_KP_7:
+      return KEY_N7;
+    case SDLK_8:
+    case SDLK_KP_8:
+      return KEY_N8;
+    case SDLK_9:
+    case SDLK_KP_9:
+      return KEY_N9;
+    // Operators: the numpad has a dedicated key for all five; the main
+    // keyboard row only has unshifted "-", "/" and "." (a bare SDL keycode
+    // switch can't tell a shifted "+"/"*" chord from the unshifted digit
+    // underneath it, so PLUS/MULTIPLY are numpad-only here).
+    case SDLK_KP_PLUS:
+      return KEY_PLUS;
+    case SDLK_MINUS:
+    case SDLK_KP_MINUS:
+      return KEY_MINUS;
+    case SDLK_KP_MULTIPLY:
+      return KEY_MULTIPLY;
+    case SDLK_SLASH:
+    case SDLK_KP_DIVIDE:
+      return KEY_DIVIDE;
+    case SDLK_PERIOD:
+    case SDLK_KP_PERIOD:
+      return KEY_PERIOD;
     default:
       return -1;
   }

@@ -1358,24 +1358,55 @@ module RGSS
     F9 = 19
     F12 = 20
 
+    # RPG2003's Key Input Processing event command can accept a numeric
+    # keypad (Numbers) or math-operator (Operators) group instead of the
+    # console/keyboard button set above (Game::Interpreter#do_key_input,
+    # Scene::Map::NUMBER_KEY_BUTTONS / OPERATOR_KEY_BUTTONS). Ids continue the
+    # F12 sequence; the digit/operator identity (not the id) is what matters,
+    # since Scene::Map re-maps each hit onto the RPG2000 key-input code
+    # (Game::Interpreter::KEY_INPUT_CODES). Real key backing exists only on
+    # the SDL desktop backend today (src/sdl_input.cxx) — the other native
+    # backends (PSP, Wio Terminal, terminal/sixel) simply never press these
+    # ids, the same way they already leave F5-F12 unbound.
+    N0 = 21
+    N1 = 22
+    N2 = 23
+    N3 = 24
+    N4 = 25
+    N5 = 26
+    N6 = 27
+    N7 = 28
+    N8 = 29
+    N9 = 30
+    PLUS = 31
+    MINUS = 32
+    MULTIPLY = 33
+    DIVIDE = 34
+    PERIOD = 35
+
     # RGSS2 (VX) and RGSS3 (VX Ace) name the keys with **symbols** —
     # `Input.trigger?(:C)` — where RGSS1 (XP) used the integer constants above.
     # The stock VX Ace scripts use symbols exclusively (measured: :C, :UP/:DOWN/
     # :LEFT/:RIGHT, :B, :A, :L, :R, :CTRL, :F9 — see docs/rpgvx-rgss-api-gap.md),
     # so map them onto the same key indices instead of keeping two key tables.
     # An Integer is passed through untouched, so every XP / RPG2000 caller and
-    # the C++ input bridge are unaffected.
+    # the C++ input bridge are unaffected. N0-N9/PLUS-PERIOD have no RGSS
+    # precedent (RPG2003's own Numbers/Operators keys, not an RGSS button) but
+    # are listed the same way for a consistent `Input.trigger?(:N3)` spelling.
     SYMBOL_KEYS = {
       UP: UP, DOWN: DOWN, LEFT: LEFT, RIGHT: RIGHT,
       A: A, B: B, C: C, X: X, Y: Y, Z: Z, L: L, R: R,
       SHIFT: SHIFT, CTRL: CTRL, ALT: ALT,
-      F5: F5, F6: F6, F7: F7, F8: F8, F9: F9, F12: F12
+      F5: F5, F6: F6, F7: F7, F8: F8, F9: F9, F12: F12,
+      N0: N0, N1: N1, N2: N2, N3: N3, N4: N4,
+      N5: N5, N6: N6, N7: N7, N8: N8, N9: N9,
+      PLUS: PLUS, MINUS: MINUS, MULTIPLY: MULTIPLY, DIVIDE: DIVIDE, PERIOD: PERIOD
     }.freeze
 
-    @pressed = Array.new(21, false)
-    @triggered = Array.new(21, false)
-    @repeated = Array.new(21, false)
-    @count = Array.new(21, 0)
+    @pressed = Array.new(36, false)
+    @triggered = Array.new(36, false)
+    @repeated = Array.new(36, false)
+    @count = Array.new(36, 0)
 
     # Key index for either spelling. An unrecognised key reads as unpressed
     # rather than raising (a script may probe a key this build has no name for),

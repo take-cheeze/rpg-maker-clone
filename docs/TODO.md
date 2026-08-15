@@ -529,10 +529,22 @@ The work below is roughly ordered by the critical path to a walkable game
   1.50+ parameter layouts, and now also decodes RPG2003's own Numbers /
   Operators layout (`db.rpg2003?`-gated, since it reuses the same param slots
   RPG2000 1.50+ gives Shift and the arrows) into the request's accepted-key
-  set. 🚧 Those two flags are decoded but not yet actionable: `RGSS::Input`
-  models a fixed console/keyboard button set with no numeric-keypad or
-  operator keys to sample, so a Numbers/Operators-only request can never
-  resolve — mouse input (Maniac) stays fully out of scope the same way.
+  set. Those two flags now sample real keys: `RGSS::Input` gained
+  `N0`-`N9`/`PLUS`/`MINUS`/`MULTIPLY`/`DIVIDE`/`PERIOD` ids (continuing past
+  `F12`, `mruby-rgss/mrblib/lib.rb`), `Scene::Map`'s
+  `NUMBER_KEY_BUTTONS`/`OPERATOR_KEY_BUTTONS` sample them the same way
+  `KEY_INPUT_BUTTONS` samples the rest, and `Game::Interpreter::KEY_INPUT_CODES`
+  produces the matching RPG2000 codes (digit `d` → `10 + d`, Plus/Minus/
+  Multiply/Divide/Period → 20-24 — matching EasyRPG Player's
+  `Game_Interpreter::KeyInputState::CheckInput`, the documented reference for
+  RPG_RT behaviour this codebase already leans on elsewhere). 🚧 Real key
+  backing exists only on the SDL desktop window backend
+  (`src/sdl_input.cxx`: digits from the main row or numpad, operators mostly
+  numpad-only since a bare `SDL_Keycode` switch can't tell a shifted "+"/"*"
+  chord from the key underneath it) — the PSP, Wio Terminal and
+  terminal/sixel native backends leave these ids unbound (never pressed, no
+  crash), the same way this build already leaves `F5`-`F12` unbound there.
+  Mouse input (Maniac) stays fully out of scope the same way.
   **Change Actor
   Name / Title / Sprite** rename a party actor, set its status-screen title or
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);
