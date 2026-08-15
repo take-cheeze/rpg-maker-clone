@@ -5003,6 +5003,35 @@ not yet verified:
   indistinguishable from a 999 popup cap by coincidence): a raw 9999 HP heal
   against a 9999-max-HP target sitting at 1 HP lands at the full 9999, not
   1 + 999 = 1000 the way the already-fixed battle-cast equivalent clamps.
+- ✅ **The battle damage/recovery popup cap itself now widens to RPG2003's
+  real 9999 too, instead of staying a flat 999 on every database — the same
+  edition-blind gap the max-HP and total-EXP fixes above already closed for
+  their own constants.** `Game::Battle::DAMAGE_CAP`/`RECOVER_CAP`
+  (`mruby-rpg2k/mrblib/game.rb`) were both a single, uniform `999`, even
+  though `Battle` already carries its own `@rpg2003` flag (set from the
+  constructor's `rpg2003:` keyword, the same one the "Special-skill HP
+  recovery" and "damage cap" fixes above were themselves confirmed against).
+  EasyRPG's `Game_Constants::MaxDamageValue` (`src/game_constants.cpp`)
+  widens the real ceiling to `9'999` on an RPG2003 database, and
+  `game_battlealgorithm.cpp` clamps a Normal Attack/Skill/SelfDestruct
+  effect through this **one** constant symmetrically in both directions
+  (`Utils::Clamp(effect, -MaxDamageValue(), MaxDamageValue())` — a healing
+  skill's own effect is just the negative-signed case of the same clamp),
+  confirming `RECOVER_CAP` shares the exact same edition-gated pair rather
+  than being independently 999-only. `Interpreter#do_simulated_attack`
+  (`mruby-rpg2k/mrblib/interpreter.rb`), which cites the same cap for its
+  own damage clamp, had the identical gap. Fixed by splitting both into
+  `_2K`/`_2K3` pairs and new `Game::Battle#damage_cap`/`#recover_cap`
+  methods mirroring `Game::Actor#max_hp_cap` exactly, with every call site
+  (normal attack, skill/item damage and recovery, self-destruct, per-turn
+  state slip damage, and the Simulated Attack command) reading the method
+  instead of the old bare constant. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check pinning the RPG2003 Simulated Attack
+  cap at 9999 (alongside a tightened existing RPG2000 case, now built from
+  an atk large enough to exceed *either* edition's cap distinctly) and a new
+  companion to the existing "recovery skill hard-caps at 999" check for an
+  RPG2003 fight's own wider 9999 ceiling, both confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
@@ -8220,12 +8249,20 @@ genuine Continue), not this one. Fixed with a new `restore_route_index:`
 keyword threaded through `#build_events`/`#build_event`, `true` by default
 (`Scene::Map#initialize`, `#perform_teleport` — moot there anyway, since
 `#map_event_route_index` is cleared immediately before that call) and passed
-`false` only from `#rebuild_events_preserving_positions`. The
-`original_move_route_index`/`move_route_index` real-RPG_RT fields this
-bullet cites remain unmodelled at the `.lsd` layer (chunk 111's
-`SaveMapEvent`/`SAVE_MOVABLE` schema still has no documented field for
-this), matching `#common_event_progress`'s identical "Marshal save only, not
-yet `.lsd`" scoping. Covered by two new `scripts/rpg2k_scene_check.rb`
+`false` only from `#rebuild_events_preserving_positions`. The `move_route_index`
+real-RPG_RT field this bullet cites is now modelled at the `.lsd` layer too:
+chunk 111's `SAVE_MOVABLE` schema gained field 43 (`move_route_index`,
+sourced from EasyRPG's liblcf `generator/csv/fields.csv`,
+`SaveMapEventBase.move_route_index` == 0x2B), and `Game::State#to_lsd`/
+`.from_lsd` read/write it alongside the position fields (12/13/22) already
+covered — see `mruby-lcf/mrblib/schema.rb` and `#map_event_route_index`'s own
+doc comment in `game.rb`. `original_move_route_index` (liblcf
+`SaveMapEvent.original_move_route_index`, 0x66) — the *pre-override* route a
+Set Move Route command replaced — stays unmodelled: this codebase's
+`#map_event_route_index` has no separate "original vs current route" concept
+of its own to source it from, so decoding that field would mean inventing
+state that does not exist, the same discipline the recent `SaveInventory`
+fields followed. Covered by two new `scripts/rpg2k_scene_check.rb`
 checks: a non-repeating 4-tile custom route snapshotted partway through (via
 `to_h`/`Game::State.load`) resumes a fresh `Scene::Map` at the exact saved
 command index and tile, then finishes only the *remaining* distance rather
@@ -8237,7 +8274,12 @@ over from page 1's own route — passing unchanged before this fix too (there
 was no saved-index consultation at all yet to leak), added as a standing
 regression guard against the exact mistake described above. The earlier
 `map_event_positions` round-trip and Proceed-With-Movement save/load checks
-this same paragraph already listed are unaffected and still pass.
+this same paragraph already listed are unaffected and still pass. The new
+`.lsd`-layer field 43 is covered separately in
+`scripts/rpg2k_logic_check.rb`: a map event mid-way through a custom route
+round-trips its saved index through `Game::State#to_lsd`/`.from_lsd`, and a
+legacy save missing field 43 falls back to the existing "no saved index"
+default (route restarts at 0) rather than erroring.
 
 State that does **not** survive a save/load specifically (distinct from
 mere map-revisit): screen-shake offset (never saved, always resets);

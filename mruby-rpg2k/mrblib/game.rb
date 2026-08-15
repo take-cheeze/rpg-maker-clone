@@ -7165,20 +7165,38 @@ module Game
 
     MAX_ROUNDS = 1000 # safety net against a stalemate (should never be reached)
 
-    # RPG_RT's battle damage popup is a fixed three digits, so every single hit
+    # RPG_RT's battle damage popup is a fixed-width widget, so every single hit
     # -- normal attack, dual-wield swing, attack-skill, self-destruct, and
-    # per-turn state slip damage alike -- is hard-clamped to 999 before it is
+    # per-turn state slip damage alike -- is hard-clamped before it is
     # subtracted from the target's HP, no matter how large the underlying ATK/
     # DEF/attribute math computes. A yado.tk-quirks build with no cap could
     # one-shot a target well past what the original engine could ever display
-    # or apply in a single blow.
-    DAMAGE_CAP = 999
+    # or apply in a single blow. The width itself is edition-gated:
+    # `Game_Constants::MaxDamageValue` (`src/game_constants.cpp`) is `999` on
+    # RPG2000, `9999` on RPG2003 -- the same shape as `MAX_EFFECTIVE_HP_2K`/
+    # `_2K3` and `EXP_MAX_2K`/`_2K3` above. EasyRPG's own
+    # `game_battlealgorithm.cpp` clamps a Normal Attack/Skill/SelfDestruct
+    # effect through this single constant symmetrically in *both* directions
+    # (`Utils::Clamp(effect, -MaxDamageValue(), MaxDamageValue())` -- a
+    # healing skill's own `effect` is just the negative-signed case of the
+    # same clamp), so the same pair covers recovery too.
+    DAMAGE_CAP_2K = 999
+    DAMAGE_CAP_2K3 = 9999
+    RECOVER_CAP_2K = DAMAGE_CAP_2K
+    RECOVER_CAP_2K3 = DAMAGE_CAP_2K3
 
-    # Same fixed-width-popup reasoning as DAMAGE_CAP, for the opposite
-    # direction: RPG_RT's HP-recovery popup is the same fixed 3-digit widget
-    # as the damage one, so a single heal can't display (or apply) more than
-    # 999 either, no matter how large `recover_hp_rate` x max_hp computes it.
-    RECOVER_CAP = 999
+    # The effective damage-popup ceiling for this fight -- `DAMAGE_CAP_2K3` on
+    # an RPG2003 database, `DAMAGE_CAP_2K` otherwise. Mirrors
+    # `Game::Actor#max_hp_cap` exactly.
+    def damage_cap
+      @rpg2003 ? DAMAGE_CAP_2K3 : DAMAGE_CAP_2K
+    end
+
+    # Same as #damage_cap, for HP recovery -- EasyRPG clamps both directions
+    # through the one constant, so the two ceilings are identical per edition.
+    def recover_cap
+      @rpg2003 ? RECOVER_CAP_2K3 : RECOVER_CAP_2K
+    end
 
     attr_reader :allies, :enemies, :rounds, :result, :log, :rng, :escape_chance
 
@@ -7980,7 +7998,8 @@ module Game
           next
         end
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
-        hp = DAMAGE_CAP if hp > DAMAGE_CAP # 999 hard-cap applies to slip damage too
+        cap = damage_cap
+        hp = cap if hp > cap # the popup hard-cap applies to slip damage too
         b.hp = slip_stat(b.hp, b.max_hp, hp, state_field(d, :hp_change_type), 1) if hp > 0
         if b.max_mp && b.mp
           sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100
@@ -8331,7 +8350,8 @@ module Game
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
         dmg = [dmg / 2, 1].max if t.defending && dmg > 0
-        dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
+        cap = damage_cap
+        dmg = cap if dmg > cap
         t.hp -= dmg
         { attacker: b.name, target: t.name, damage: dmg, critical: false,
           autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
@@ -8800,9 +8820,10 @@ module Game
         dmg = [dmg / 2, 1].max
         dmg = [dmg / 2, 1].max if target.strong_defence
       end
-      # RPG_RT's damage popup tops out at three digits -- a crit/charge blow
-      # that would compute past it still only ever takes 999.
-      dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
+      # RPG_RT's damage popup tops out at a fixed width -- a crit/charge blow
+      # that would compute past it still only ever takes #damage_cap.
+      cap = damage_cap
+      dmg = cap if dmg > cap
       target.hp -= dmg
       woke = target.dead? ? [] : shake_off_states(target)
       entry = { attacker: b.name, target: target.name, damage: dmg, critical: crit,
@@ -9125,9 +9146,10 @@ module Game
         dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
         # Spread the skill's damage by its own variance when the fight rolls it.
         dmg = varied(dmg, cmd[:variance]) if @variance && dmg > 0 && cmd[:variance] && cmd[:variance] > 0
-        # Same 999 hard-cap as a normal attack (#deal_attack), applied before
+        # Same hard-cap as a normal attack (#deal_attack), applied before
         # absorption so a drain skill can't smuggle a bigger hit past it either.
-        dmg = DAMAGE_CAP if dmg > DAMAGE_CAP
+        cap = damage_cap
+        dmg = cap if dmg > cap
         # The ATK/DEF/SPI/AGI modifier delta (see #apply_stat_mods) shares
         # this same post-attribute-scaling, post-variance, post-cap figure --
         # captured here, before 吸収 trims `dmg` further below, since EasyRPG
@@ -9196,8 +9218,9 @@ module Game
         end
         before_hp = target.hp
         before_mp = target.mp || 0
-        hp = RECOVER_CAP if hp > RECOVER_CAP
-        stat_amount = RECOVER_CAP if stat_amount > RECOVER_CAP
+        rcap = recover_cap
+        hp = rcap if hp > rcap
+        stat_amount = rcap if stat_amount > rcap
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp
         # Cure the item's status conditions from the target (an antidote / herb),
@@ -9633,31 +9656,33 @@ module Game
     attr_accessor :common_event_progress
     # The current map's own live event positions, event id => [x, y, direction],
     # snapshotted every frame by Scene::Map#record_map_event_positions. Real
-    # RPG_RT's SaveMapEvent chunk carries exactly this (plus a move-route index
-    # this codebase does not attempt to round-trip yet) for whichever map is
-    # loaded at save time -- a wandering NPC's exact spot survives a Save/
-    # Continue on the same map, distinct from an ordinary map re-visit (leave
-    # and return with no save involved), which genuinely does reset every event
-    # to its page's own default placement, matching the "Save / Load
-    # persistence" list in docs/TODO.md. Scoped to the single currently-loaded
-    # map only: event ids are per-map, not global, so this is cleared on every
-    # genuine map change (Scene::Map#perform_teleport) rather than carried
-    # across one, the same "resets on leaving-and-returning" family as
-    # #encounter_rate/#parallax just above.
+    # RPG_RT's SaveMapEvent chunk carries exactly this (plus a move-route index,
+    # see #map_event_route_index just below) for whichever map is loaded at
+    # save time -- a wandering NPC's exact spot survives a Save/Continue on
+    # the same map, distinct from an ordinary map re-visit (leave and return
+    # with no save involved), which genuinely does reset every event to its
+    # page's own default placement, matching the "Save / Load persistence"
+    # list in docs/TODO.md. Scoped to the single currently-loaded map only:
+    # event ids are per-map, not global, so this is cleared on every genuine
+    # map change (Scene::Map#perform_teleport) rather than carried across
+    # one, the same "resets on leaving-and-returning" family as
+    # #encounter_rate/#parallax just above. Round-trips through both the
+    # portable Marshal save (#to_h/.load) and a real `.lsd` (chunk 111,
+    # LCF::Schema::SAVE_MOVABLE fields 12/13/22 -- see Game::State#to_lsd/
+    # .from_lsd).
     attr_accessor :map_event_positions
     # The current map's own live custom-move-route (page move_type CUSTOM)
     # cursor, event id => Game::MoveRoute#index, snapshotted alongside
-    # #map_event_positions -- the "move-route index this codebase does not
-    # attempt to round-trip yet" gap #map_event_positions' own comment above
-    # used to flag. A map event mid-way through its page's own custom route
-    # when a Save/Continue is taken now resumes at the exact same command
-    # instead of restarting the route from the top, matching real RPG_RT's
-    # SaveMapEvent chunk (still opaque here, see LCF::Schema::SAVE_MOVABLE --
-    # this is Marshal-save-only, same as #common_event_progress). Scoped
-    # identically to #map_event_positions in every other way: per-map, reset
-    # on #perform_teleport, and only ever consulted for a page whose move_type
-    # is CUSTOM (Scene::Map#build_event's `e[:route]`) -- a page with no
-    # custom route of its own leaves a stale entry here unread and harmless.
+    # #map_event_positions. A map event mid-way through its page's own custom
+    # route when a Save/Continue is taken now resumes at the exact same
+    # command instead of restarting the route from the top, matching real
+    # RPG_RT's SaveMapEvent chunk (LCF::Schema::SAVE_MOVABLE field 43,
+    # move_route_index). Scoped identically to #map_event_positions in every
+    # other way: per-map, reset on #perform_teleport, only ever consulted for
+    # a page whose move_type is CUSTOM (Scene::Map#build_event's `e[:route]`)
+    # -- a page with no custom route of its own leaves a stale entry here
+    # unread and harmless -- and round-trips through both the portable
+    # Marshal save and a real `.lsd` the same way #map_event_positions does.
     attr_accessor :map_event_route_index
 
     def initialize(party, map_id, x, y)
@@ -10121,6 +10146,32 @@ module Game
       inv[41] = @last_battle_turns if @last_battle_turns
       save[109] = inv
 
+      # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) is the currently-loaded map's
+      # own live event table, mirrored straight from #map_event_positions/
+      # #map_event_route_index -- both already scoped to the current map
+      # only, see their own doc comments above. Camera scroll (SAVE_MAP_EVENT
+      # fields 1/2) is not modelled by this codebase, so it stays absent,
+      # matching the "view derives from the hero" fallback ADR 0021
+      # documents. Omitted entirely on a State that has not recorded any
+      # positions yet (e.g. a fresh, unplayed save), the same "absent means
+      # nothing to restore" rule the unplaced-vehicle chunks above use.
+      unless @map_event_positions.empty?
+        mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
+        events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+        @map_event_positions.each do |id, pos|
+          x, y, direction = pos
+          e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+          e[12] = x
+          e[13] = y
+          e[22] = direction
+          idx = @map_event_route_index[id]
+          e[43] = idx if idx
+          events[id] = e
+        end
+        mapev[11] = events
+        save[111] = mapev
+      end
+
       save
     end
 
@@ -10350,6 +10401,29 @@ module Game
       # "Turns passed in latest battle" (field 41); absent on a save written
       # before this landed, or one taken before any battle ever finished.
       state.last_battle_turns = inv.turns unless inv.turns.nil?
+      # The currently-loaded map's own live event table (chunk 111,
+      # #to_lsd's write above): position/facing into #map_event_positions and
+      # a page's custom-route cursor (field 43) into #map_event_route_index.
+      # An absent chunk (a save written before this landed, or a state that
+      # never recorded any positions) leaves the constructor's empty {}
+      # defaults in place; an entry with no field 43 restores its position
+      # but nothing for #map_event_route_index, matching build_event's
+      # existing "no saved index means start the custom route from the top"
+      # fallback.
+      map_events = save[111]
+      saved_events = map_events && map_events.events
+      if saved_events
+        positions = {}
+        route_index = {}
+        saved_events.each do |id, mv|
+          next unless mv.x && mv.y
+          positions[id] = [mv.x, mv.y, mv.direction || 2]
+          idx = mv.move_route_index
+          route_index[id] = idx unless idx.nil?
+        end
+        state.map_event_positions = positions
+        state.map_event_route_index = route_index
+      end
       state
     end
 

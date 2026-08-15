@@ -1011,6 +1011,19 @@ module LCF
       22 => { name: :direction, type: :int },
       35 => { name: :animation_type, type: :int },
       37 => { name: :move_speed, type: :int },
+      # SaveMapEventBase's own move-route cursor: how far into a page's
+      # move_type CUSTOM route this event had gotten (Game::MoveRoute#index),
+      # sourced from EasyRPG's liblcf generator/csv/fields.csv (0x2B == 43).
+      # liblcf also has a SaveMapEvent.original_move_route_index (0x66/102),
+      # tracking the route in force *before* a Set Move Route override --
+      # left undecoded, since this codebase's own Game::State
+      # #map_event_route_index has no separate "original vs current route"
+      # concept to source it from, only the single live cursor field 43
+      # already covers. No `default:` (matching e.g. SAVE_INVENTORY's
+      # turns/steps counters), so an absent field reads back as nil rather
+      # than 0 -- Game::State.from_lsd tells "no saved cursor, restart the
+      # route from the top" from "explicitly at command 0" the same way.
+      43 => { name: :move_route_index, type: :int },
       73 => { name: :charset_name, type: :string },
       75 => { name: :charset_index, type: :int },
     }
