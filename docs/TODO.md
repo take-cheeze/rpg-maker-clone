@@ -6916,6 +6916,32 @@ not yet verified:
   facing on both the hero and a vehicle, and confirms it decodes back to the
   correct numpad direction, confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **Change System Graphics' windowskin / font override now round-trips
+  through `.lsd` at the correct liblcf tags — this build wrote and read
+  them at the raw hex *digits* of their liblcf field ids instead of the hex
+  *value* converted to decimal, unlike every other field in the same
+  table.** liblcf's `SaveSystem` (`generator/csv/fields.csv`):
+  `graphics_name` is `0x15` == **21**, `message_stretch` is `0x16` == **22**,
+  `font_id` is `0x17` == **23** — `SAVE_SYSTEM` declared them at 15/16/17
+  instead, a transcription slip standing out against every neighbouring
+  field in the exact same table, all of which convert correctly (`0x1F`→31
+  `switches` count, `0x29`→41 `message_transparent`, `0x33`→51 `face_name`,
+  ...). `Game::State#to_lsd`/`.from_lsd` (`mruby-rpg2k/mrblib/game.rb`) read
+  and wrote the same wrong tags symmetrically, so this engine's own
+  Save→Continue round-trip (and the Marshal-based save/load test, which
+  never touches `.lsd` at all) never disagreed with itself — only a genuine
+  RPG_RT save that used Change System Graphics (10680), or this engine's
+  own `.lsd` export opened in real RPG_RT/EasyRPG, would ever surface it.
+  Field 16/22 (`wallpaper_type`/`message_stretch`) was never actually read
+  or written by this engine at all, so its own mistagging had zero live
+  effect — fixed for schema correctness regardless, matching the file's own
+  convention of tagging fields precisely even before something consumes
+  them. Fixed by rekeying the three schema.rb entries to 21/22/23 and the
+  two `#to_lsd` write sites to match; the read side needed no changes,
+  since it already goes through the schema-driven `.system_graphic`/`.font`
+  accessors. Covered by a new `scripts/rpg2k_logic_check.rb` check that
+  inspects the actual raw tags `#to_lsd` writes to, confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

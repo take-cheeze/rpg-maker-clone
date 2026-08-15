@@ -1331,9 +1331,19 @@ module LCF
       # 6 title, 7 game over, 8 F9 debug menu.
       1 => { name: :scene, type: :int, default: 0 },
       11 => { name: :frame_count, type: :int },
-      15 => { name: :system_graphic, type: :string },
-      16 => { name: :wallpaper_type, type: :int },
-      17 => { name: :font, type: :int },
+      # liblcf's `SaveSystem` (generator/csv/fields.csv): `graphics_name`
+      # 0x15 == 21, `message_stretch` 0x16 == 22, `font_id` 0x17 == 23 --
+      # these three were declared at their raw hex *digits* (15/16/17)
+      # instead of the hex *value* converted to decimal, unlike every other
+      # field in this table (0x1F==31, 0x29==41, 0x33==51, ... all correctly
+      # converted). `Game::State#to_lsd`/`.from_lsd` read/write the same
+      # wrong tags symmetrically, so a same-engine save/load round-trip
+      # never caught it -- only a genuine RPG_RT save using Change System
+      # Graphics (10680), or this engine's own export opened in real
+      # RPG_RT/EasyRPG, would ever disagree.
+      21 => { name: :system_graphic, type: :string },
+      22 => { name: :wallpaper_type, type: :int },
+      23 => { name: :font, type: :int },
       31 => { name: :switch_size, type: :int, default: 0 },
       32 => { name: :switches, type: :bool_array },
       33 => { name: :variable_size, type: :int, default: 0 },

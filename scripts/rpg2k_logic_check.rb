@@ -7627,6 +7627,31 @@ check 'Change System Graphics overrides the windowskin / font; round-trips' do
   eq 1, loaded.font_id
 end
 
+# liblcf's SaveSystem (generator/csv/fields.csv): graphics_name is 0x15 == 21,
+# font_id is 0x17 == 23 -- schema.rb used to declare these at the raw hex
+# *digits* (15/17) instead of the hex value converted to decimal, unlike
+# every other field in the same table. #to_lsd/.from_lsd used the same wrong
+# tags symmetrically, so a same-engine round-trip (like the check above, and
+# the Marshal-based one) never caught it -- only inspecting the actual wire
+# tag, or a genuine RPG_RT save, would.
+check 'to_lsd writes the system graphic / font override at the correct ' \
+      'liblcf tags (21 / 23, not 15 / 17)' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.system_graphic = 'Skin2'
+  st.font_id = 1
+
+  saved = st.to_lsd
+  eq 'Skin2', saved[101][21], "graphics_name at its correct tag (liblcf's 0x15)"
+  eq 1, saved[101][23], "font_id at its correct tag (liblcf's 0x17)"
+
+  round = Game::State.from_lsd(db, saved)
+  eq 'Skin2', round.system_graphic, 'and it round-trips back correctly'
+  eq 1, round.font_id
+end
+
 # -- Enter Hero Name (Name Input) ---------------------------------------------
 
 check 'Enter Hero Name suspends on :name_input and resume renames the actor' do
