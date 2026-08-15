@@ -8717,6 +8717,32 @@ behaviour itself is unchanged, this is diagnostics only. Covered by a new
 alongside the unchanged blank name/graphic and default-passable/terrain
 behaviour, plus that an existing id, id `0`, a `nil` id and a chipset-less
 bare fixture all stay silent.
+✅ **The Equip and Status screens no longer show a dangling equipped item id
+with no trace** — the "item" case from the "invalid hero, skill, item,
+enemy, enemy group, battle animation, terrain, chipset, common event" list
+above, on its equipped-slot *display* path specifically (the field/battle
+Item-menu's own *list-filtering* manifestation of the same dangling-item
+case — `Game::Party#field_items`/`#battle_items` — is a separate fix).
+`Scene::EquipMenu#item_name` and `Scene::StatusMenu#item_name`
+(`mruby-rpg2k/mrblib/scene/equip_menu.rb` /
+`mruby-rpg2k/mrblib/scene/status_menu.rb`, near-identical duplicates) already
+degraded a slot whose `db_item(id)` lookup misses to an `"Item #<id>"`
+placeholder label rather than crashing — the graceful part was already
+right — but logged nothing, so a database shrink leaving a stale equipped
+id behind was invisible. Both now log a `[RPG2k] Equip screen: item #<id>
+not found in the database, showing a placeholder label` /
+`[RPG2k] Status screen: ...` diagnostic the first time a dangling id is hit,
+distinguishing it from an existing row that merely has a blank name (still
+silent, since that is not a dangling reference); the placeholder label is
+unchanged, this is diagnostics only. Deduped per item id for the scene's
+lifetime, mirroring the terrain fix's own `@warned_stale_terrain` precedent
+above — `#item_name` reruns every time the slot/status window rebuilds
+(every LEFT/RIGHT actor switch), and logging each of those for an id that
+never resolves would spam the console for as long as the screen stays open.
+Covered by two new `scripts/rpg2k_scene_check.rb` checks (one per screen), each
+equipping a fixture actor with a dangling item id, asserting the diagnostic
+fires exactly once across construction and repeated rebuilds while the
+placeholder label still renders correctly.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.

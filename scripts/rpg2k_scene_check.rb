@@ -12692,6 +12692,35 @@ check 'Scene::EquipMenu: the candidate arrow sums all four stat deltas against t
   eq '-', texts[8], 'an exact match draws Same, not counted per-stat'
 end
 
+# A party whose weapon slot equips a dangling item id (a database shrink
+# removed row 99) -- db_item(99) misses while db_item(1) resolves normally,
+# so a check can tell "reported gap" apart from an ordinary equipped item.
+class DanglingItemParty < MenuStubParty
+  ITEMS = { 1 => OpenStruct.new(name: 'Bronze Sword') }.freeze
+  def db_item(id); ITEMS[id]; end
+end
+
+check 'Scene::EquipMenu: a dangling equipped item id logs once, not per rebuild, ' \
+      'while the slot still shows the "Item #<id>" placeholder' do
+  state = Game::State.new(DanglingItemParty.new, 1, 0, 0)
+  state.party.actors.first.equipment[0] = 99 # weapon slot: dangling id, no database row
+  scene = nil
+  out = capture_stderr { scene = menu_scene(RPG2k::Scene::EquipMenu, state) }
+  eq 1, out.scan('[RPG2k] Equip screen:').size,
+     "expected exactly one diagnostic for the one dangling id, got: #{out.inspect}"
+  ok out.include?('[RPG2k] Equip screen: item #99 not found in the database, ' \
+                   'showing a placeholder label'), out
+
+  texts = window_texts(scene.instance_variable_get(:@slot_window))
+  ok texts.include?('Item 99'), "the placeholder label still shows, got: #{texts.inspect}"
+
+  # Switching actors and back rebuilds the slot window (#rebuild_for_actor)
+  # without a fresh database shrink -- the same dangling id re-renders every
+  # time, and must not add a second line to the console.
+  out2 = capture_stderr { 3.times { scene.send(:build_slot_window) } }
+  ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
+end
+
 check 'the status screen gives the condition a labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
@@ -12716,6 +12745,27 @@ check 'Scene::StatusMenu: the actor cursor wraps around' do
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@actor_index), 'Right from the last actor wraps to the first'
+end
+
+check 'Scene::StatusMenu: a dangling equipped item id logs once, not per rebuild, ' \
+      'while the slot still shows the "Item #<id>" placeholder' do
+  state = Game::State.new(DanglingItemParty.new, 1, 0, 0)
+  state.party.actors.first.equipment[0] = 99 # weapon slot: dangling id, no database row
+  scene = nil
+  out = capture_stderr { scene = menu_scene(RPG2k::Scene::StatusMenu, state) }
+  eq 1, out.scan('[RPG2k] Status screen:').size,
+     "expected exactly one diagnostic for the one dangling id, got: #{out.inspect}"
+  ok out.include?('[RPG2k] Status screen: item #99 not found in the database, ' \
+                   'showing a placeholder label'), out
+
+  texts = window_texts(scene.instance_variable_get(:@window))
+  ok texts.any? { |t| t.include?('Item 99') }, "the placeholder label still shows, got: #{texts.inspect}"
+
+  # Switching actors and back rebuilds the whole window (#build_window)
+  # without a fresh database shrink -- the same dangling id re-renders every
+  # time, and must not add a second line to the console.
+  out2 = capture_stderr { 3.times { scene.send(:build_window) } }
+  ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
 check 'the field windows resolve the same condition the battle panel does' do
