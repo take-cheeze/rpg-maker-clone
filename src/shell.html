@@ -73,9 +73,17 @@
         background: #000;
         border: 1px solid var(--border);
         border-radius: 6px;
-        /* SDL sets the intrinsic pixel size; keep it crisp and never let it
-           overflow a small screen. touch-action:none keeps taps off the canvas
-           from scrolling the page. */
+        /* The page-wide border-box rule would take the 1px border out of the
+           size fitCanvas() sets, leaving a fractional scale (638/320 instead of
+           2) that resamples every game pixel. This is the one element whose CSS
+           size has to be the pixel grid itself, so keep the border outside it. */
+        box-sizing: content-box;
+        /* SDL sets the intrinsic pixel size -- one canvas pixel per game pixel,
+           since the browser display is never zoomed engine-side (src/main.cxx).
+           The zooming happens here: fitCanvas() below sets an explicit CSS size
+           and this keeps the upscale crisp, with max-width as the fallback that
+           already fits the canvas on a small screen before the script runs.
+           touch-action:none keeps taps off the canvas from scrolling the page. */
         image-rendering: pixelated;
         max-width: 100%;
         touch-action: none;
@@ -860,6 +868,61 @@
       });
 
       setStatus('Loading runtime…', 'busy');
+    </script>
+
+    <script type="text/javascript">
+      // The presentation zoom, done by the page instead of by the engine. SDL
+      // keeps the canvas at the game's own resolution (320x240 for RPG2000/MV,
+      // 640x480 for XP -- see src/main.cxx), so the frame is presented 1:1 and
+      // the browser, not the software renderer, does the upscale: the canvas
+      // element is given an explicit CSS size here and `image-rendering:
+      // pixelated` keeps the same nearest-neighbour look SDL_RenderCopy had.
+      (function () {
+        var canvas = document.getElementById('canvas');
+
+        // Until the runtime opens its window the canvas still reports the HTML
+        // default (300x150); that black placeholder is not a game screen, so
+        // leave it to the stylesheet.
+        function sized() {
+          return canvas.width > 0 && canvas.height > 0 &&
+                 !(canvas.width === 300 && canvas.height === 150);
+        }
+
+        // Mirrors the native window zoom in src/main.cxx: a 640-wide game is
+        // already large at 1:1, a 320-wide one is doubled.
+        function preferredZoom(width) { return width >= 640 ? 1 : 2; }
+
+        function fitCanvas() {
+          if (!sized()) return;
+          var w = canvas.width, h = canvas.height;
+          // Body padding is 16px a side, and the canvas's own border sits
+          // outside the size set below (see the stylesheet above); both come off
+          // the width the game screen itself may use.
+          var frame = canvas.offsetWidth - canvas.clientWidth;
+          var avail = (document.documentElement.clientWidth || w) - 32 - frame;
+          // A screen with room for the whole-number zoom gets it, so every game
+          // pixel is the same size. A narrower one fills the width it has
+          // instead of dropping to the next whole number, which is what
+          // `max-width: 100%` did before and keeps the screen as large as the
+          // phone allows.
+          var zoom = Math.min(preferredZoom(w), avail / w);
+          canvas.style.width = Math.round(w * zoom) + 'px';
+          canvas.style.height = Math.round(h * zoom) + 'px';
+        }
+
+        // The runtime sizes the canvas once the SDL window exists, and again
+        // when a loaded project's resolution differs from the default (an XP
+        // project arrives at 640x480 through the loader). SDL does that by
+        // writing the width/height attributes, which no longer changes the
+        // on-screen size now that the CSS size is set here -- so watch for it.
+        new MutationObserver(fitCanvas).observe(canvas, {
+          attributes: true,
+          attributeFilter: ['width', 'height']
+        });
+        window.addEventListener('resize', fitCanvas);
+        window.addEventListener('orientationchange', fitCanvas);
+        fitCanvas();
+      })();
     </script>
 
     <script type="text/javascript">

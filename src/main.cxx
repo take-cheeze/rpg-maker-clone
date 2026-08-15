@@ -782,14 +782,16 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     // RPG Maker XP renders at 640x480. Native main() sizes the display from
     // --game_dir before creating it, but in the browser no project exists yet
     // at that point (the page's loader mounts one here, later), so the display
-    // was created at the 320x240 default and doubled. Resize it now, before the
-    // runtime builds any screen-sized object: with a 320x240 canvas the XP
-    // scenes draw off the edge -- the title's command window lands past the
-    // bottom and its centred text past the right (found by the browser check
-    // that ADR 0025 has since dropped; see docs/adr/0025).
+    // was created at the 320x240 default. Resize it now, before the runtime
+    // builds any screen-sized object: with a 320x240 canvas the XP scenes draw
+    // off the edge -- the title's command window lands past the bottom and its
+    // centred text past the right (found by the browser check that ADR 0025 has
+    // since dropped; see docs/adr/0025). The canvas follows the new resolution
+    // (LVGL resizes the SDL window on a resolution change) and the page
+    // rescales it from there; the browser display is never zoomed, see main()
+    // below.
     if (em_display) {
       lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
-      lv_sdl_window_set_zoom(em_display.get(), 1.f);
       LOG(INFO) << "RPGXP: display sized to " << RPGXP_WIDTH << "x"
                 << RPGXP_HEIGHT;
     }
@@ -1148,9 +1150,21 @@ int main(int argc, char** argv) {
         [](lv_display_t*) { lv_sdl_quit(); });
     CHECK(display);
     lv_sdl_window_set_resizeable(display.get(), false);
-    // A 640x480 (XP) canvas is already large, so present it 1:1; the smaller
-    // 320x240 (RPG2000/MV) canvas is doubled to a comfortable window size.
+    // A 640x480 (XP) window is already large, so present it 1:1; the smaller
+    // 320x240 (RPG2000/MV) one is doubled to a comfortable size.
+    //
+    // Not in the browser: there the page does the zooming (src/shell.html sizes
+    // the canvas in CSS, with image-rendering: pixelated for the same
+    // nearest-neighbour look), so the display keeps lv_sdl_window's default 1:1
+    // and the canvas keeps the game's own resolution. LVGL's zoom only enlarges
+    // the SDL window, leaving the software renderer to stretch every frame on
+    // the CPU (lv_sdl_sw.c presents with SDL_RenderCopy into the zoom-sized
+    // window) and to hand the canvas four times the pixels at 2x -- work the
+    // browser does for free. It also keeps SDL's window pixels equal to game
+    // pixels, which is what the pointer bridge in src/sdl_input.cxx assumes.
+#ifndef __EMSCRIPTEN__
     lv_sdl_window_set_zoom(display.get(), FLAGS_width >= 640 ? 1.f : 2.f);
+#endif
     // Name the window: this one titles it for the run, and every maker's boot
     // replaces that with the loaded game's own title through
     // RGSS.window_title= (see include/terminal.hxx's "Window title bridge").
