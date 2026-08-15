@@ -5419,24 +5419,54 @@ module Game
     # flags bits (chunk 1 of the page condition). Bit order confirmed against
     # liblcf's generated EventPageCondition::Flags declaration (switch_a,
     # switch_b, variable, item, actor, timer, timer2): TIMER is bit 5 (0x20),
-    # a genuine RPG2000 page condition, not an RPG2003 extension. The next bit,
-    # timer2 (0x40), *is* RPG2003-only (EasyRPG's AreConditionsMet gates it on
-    # Player::IsRPG2k3Commands()) and stays out of scope here -- see
-    # schema.rb's MAP_EVENT_PAGE_CONDITION comment.
+    # a genuine RPG2000 page condition, not an RPG2003 extension. The next
+    # bit, TIMER2 (0x40), *is* RPG2003-only -- EasyRPG's AreConditionsMet
+    # (src/game_event.cpp) gates it on `Player::IsRPG2k3Commands()`.
     SWITCH_A = 0x01
     SWITCH_B = 0x02
     VARIABLE = 0x04
     ITEM     = 0x08
     ACTOR    = 0x10
     TIMER    = 0x20
+    TIMER2   = 0x40
 
-    def self.active?(cond, switches, variables, party, timer_seconds = 0)
+    # `EventPageCondition::Comparison` (liblcf): the variable condition's own
+    # RPG2003 operator, read only once `#active?`'s RPG2003 branch below
+    # confirms it's in this valid 0..5 range -- an out-of-range value (never
+    # written by a real editor, but not schema-clamped either) falls through
+    # to "condition not checked", matching EasyRPG's own
+    # `compare_operator >= 0 && compare_operator <= 5` guard exactly.
+    def self.compare(a, b, op)
+      case op
+      when 0 then a == b
+      when 1 then a >= b
+      when 2 then a <= b
+      when 3 then a > b
+      when 4 then a < b
+      when 5 then a != b
+      end
+    end
+
+    def self.active?(cond, switches, variables, party, timer_seconds = 0, timer2_seconds = 0)
       return true if cond.nil?
       flags = cond.flags || 0
       return false if (flags & SWITCH_A) != 0 && !switches[cond.switch_a_id]
       return false if (flags & SWITCH_B) != 0 && !switches[cond.switch_b_id]
       if (flags & VARIABLE) != 0
-        return false if variables[cond.variable_id] < cond.variable_value
+        # RPG2000 always compares with plain >=; RPG2003 reads the page's own
+        # operator instead (EasyRPG's AreConditionsMet: `Player::IsRPG2k()`
+        # branches to the hardcoded >=, everything else to `CheckOperator`
+        # against `compare_operator`) -- these are genuinely different rules,
+        # not the same comparison with an edition-gated constant.
+        rpg2003 = party && party.respond_to?(:rpg2003?) && party.rpg2003?
+        if rpg2003
+          op = cond.compare_operator
+          if op && op >= 0 && op <= 5
+            return false unless compare(variables[cond.variable_id], cond.variable_value, op)
+          end
+        else
+          return false if variables[cond.variable_id] < cond.variable_value
+        end
       end
       if (flags & ITEM) != 0
         return false unless party && party.has_item?(cond.item_id)
@@ -5450,15 +5480,21 @@ module Game
       if (flags & TIMER) != 0
         return false if timer_seconds > cond.timer_sec
       end
+      # TIMER2 is the identical rule against Timer2's own remaining seconds,
+      # RPG2003-only (EasyRPG's `Player::IsRPG2k3Commands()` gate).
+      if (flags & TIMER2) != 0 && party && party.respond_to?(:rpg2003?) && party.rpg2003?
+        return false if timer2_seconds > cond.timer2_sec
+      end
       true
     end
 
     # Return [id, page] of the active page for an event, or nil when none apply.
-    def self.select(pages, switches, variables, party, timer_seconds = 0)
+    def self.select(pages, switches, variables, party, timer_seconds = 0, timer2_seconds = 0)
       return nil if pages.nil?
       chosen = nil
       pages.each do |id, page|
-        chosen = [id, page] if active?(page.condition, switches, variables, party, timer_seconds)
+        chosen = [id, page] if active?(page.condition, switches, variables, party,
+                                        timer_seconds, timer2_seconds)
       end
       chosen
     end
@@ -11025,6 +11061,10 @@ module Game
     # so these keep reading and writing it by name.
     def timer_seconds; timer(0).seconds; end
     def timer_display_text; timer(0).display_text; end
+
+    # Timer2's own remaining seconds -- RPG2003's map-event page TIMER2
+    # condition reads this, not #timer_seconds (Timer1's).
+    def timer2_seconds; timer(1).seconds; end
     def timer_frames; timer(0).frames; end
     def timer_frames=(v); timer(0).frames = v; end
     def timer_running; timer(0).running; end

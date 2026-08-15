@@ -12722,22 +12722,29 @@ FakePage = Struct.new(:condition, :event)
 
 # A map event page condition (LMU chunk 1 of MAP_EVENT_PAGE_CONDITION). Only
 # the fields a given check enables in `flags` are read, so the rest can stay
-# at their editor defaults.
+# at their editor defaults. `compare_operator` defaults to 1 (>=), matching
+# liblcf's own generated default (`eventpagecondition.h`: `int32_t
+# compare_operator = 1;`) -- the value an untouched field decodes to.
 FakeEventCond = Struct.new(:flags, :switch_a_id, :switch_b_id, :variable_id,
-                            :variable_value, :item_id, :actor_id, :timer_sec)
+                            :variable_value, :item_id, :actor_id, :timer_sec,
+                            :timer2_sec, :compare_operator)
 def event_cond(flags, opts = {})
   c = FakeEventCond.new(flags)
   c.variable_value = 0
   c.timer_sec = 0
+  c.timer2_sec = 0
+  c.compare_operator = 1
   opts.each { |k, v| c.send("#{k}=", v) }
   c
 end
 
-# A minimal party stand-in for EventPage::ITEM / ::ACTOR: just enough to
-# answer has_item?/include_actor? from plain arrays.
-FakeEventPageParty = Struct.new(:items, :actor_ids) do
+# A minimal party stand-in for EventPage::ITEM / ::ACTOR / the RPG2003-only
+# compare_operator / TIMER2 branches: just enough to answer has_item?/
+# include_actor?/rpg2003? from plain values.
+FakeEventPageParty = Struct.new(:items, :actor_ids, :rpg2003) do
   def has_item?(id); items.include?(id); end
   def include_actor?(id); actor_ids.include?(id); end
+  def rpg2003?; !!rpg2003; end
 end
 
 check 'Game::EventPage.active? tests switch, variable, item and actor conditions' do
@@ -12794,6 +12801,68 @@ check 'Game::EventPage.active? tests the Timer (0x20) condition against Timer1 s
   sw[4] = true
   eq true, Game::EventPage.active?(combo, sw, vars, party, 10)
   eq false, Game::EventPage.active?(combo, sw, vars, party, 60), 'switch alone is not enough'
+end
+
+check 'Game::EventPage.active? tests the Timer2 (0x40) condition, RPG2003 only' do
+  # Confirmed against EasyRPG's actual C++ source: Game_Event::
+  # AreConditionsMet (src/game_event.cpp) gates Timer2 on
+  # Player::IsRPG2k3Commands() -- an RPG2000 database ignores the bit
+  # entirely, even if it happens to be set. Same "counted down to timer2_sec
+  # or below" rule as Timer1, against Timer2's own seconds (the method's
+  # 6th argument), never Timer1's.
+  st = new_state
+  sw = st.switches
+  vars = st.variables
+  cond = event_cond(Game::EventPage::TIMER2, timer2_sec: 30)
+
+  rpg2003 = FakeEventPageParty.new([], [], true)
+  eq false, Game::EventPage.active?(cond, sw, vars, rpg2003, 0, 60), 'well above the threshold'
+  eq false, Game::EventPage.active?(cond, sw, vars, rpg2003, 0, 31), 'one second above the threshold'
+  eq true, Game::EventPage.active?(cond, sw, vars, rpg2003, 0, 30), 'exactly at the threshold: <=, not <'
+  eq true, Game::EventPage.active?(cond, sw, vars, rpg2003, 0, 0), 'timer fully elapsed'
+  # Timer1's own seconds (arg 5) plays no part in a pure Timer2 condition.
+  eq true, Game::EventPage.active?(cond, sw, vars, rpg2003, 999, 0)
+
+  rpg2000 = FakeEventPageParty.new([], [], false)
+  eq true, Game::EventPage.active?(cond, sw, vars, rpg2000, 0, 999),
+     'RPG2000 ignores the Timer2 bit entirely, however far from the threshold Timer2 sits'
+end
+
+check "Game::EventPage.active?'s variable condition reads RPG2003's own " \
+      'compare_operator instead of a hardcoded >=' do
+  # Confirmed against EasyRPG's actual C++ source: AreConditionsMet branches
+  # on Player::IsRPG2k() -- RPG2000 always compares >=, but everything else
+  # (RPG2003) reads condition.compare_operator through CheckOperator
+  # (src/game_interpreter_shared.h): 0 == 1 >= 2 <= 3 > 4 < 5 !=. These are
+  # genuinely different rules per edition, not a shared comparison with an
+  # edition-gated constant.
+  st = new_state
+  sw = st.switches
+  vars = st.variables
+  vars[2] = 5
+
+  rpg2003 = FakeEventPageParty.new([], [], true)
+  eq_cond = event_cond(Game::EventPage::VARIABLE, variable_id: 2,
+                        variable_value: 5, compare_operator: 0) # ==
+  eq true, Game::EventPage.active?(eq_cond, sw, vars, rpg2003), 'var 2 (5) == 5'
+  vars[2] = 6
+  eq false, Game::EventPage.active?(eq_cond, sw, vars, rpg2003),
+     'RPG2003 == does not also accept >, unlike a hardcoded >='
+
+  vars[2] = 5
+  gt_cond = event_cond(Game::EventPage::VARIABLE, variable_id: 2,
+                        variable_value: 5, compare_operator: 3) # >
+  eq false, Game::EventPage.active?(gt_cond, sw, vars, rpg2003), 'var 2 (5) is not > 5'
+  vars[2] = 6
+  eq true, Game::EventPage.active?(gt_cond, sw, vars, rpg2003)
+
+  # RPG2000 always compares >=, regardless of what compare_operator (an
+  # RPG2003-only field) happens to hold -- here it would read as == and
+  # reject the equal case if RPG2000 consulted it, which it must not.
+  vars[2] = 5
+  rpg2000 = FakeEventPageParty.new([], [], false)
+  eq true, Game::EventPage.active?(eq_cond, sw, vars, rpg2000),
+     'RPG2000 ignores compare_operator entirely and stays >='
 end
 
 check 'Game::EventPage.select picks the last page whose conditions (including Timer) hold' do

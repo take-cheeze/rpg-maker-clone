@@ -1030,7 +1030,7 @@ class RPG2k
           next if @erased_events[id] # an Erase Event lasts the whole visit
           selected = Game::EventPage.select(ev.pages, @state.switches,
                                             @state.variables, @state.party,
-                                            @state.timer_seconds)
+                                            @state.timer_seconds, @state.timer2_seconds)
           next unless selected
           page = selected[1]
           @events.push(build_event(id, ev, page, restore_route_index: restore_route_index))
@@ -2588,7 +2588,7 @@ class RPG2k
           next if changed || @erased_events[id]
           selected = Game::EventPage.select(src.pages, @state.switches,
                                             @state.variables, @state.party,
-                                            @state.timer_seconds)
+                                            @state.timer_seconds, @state.timer2_seconds)
           page = selected && selected[1]
           e = live[id]
           changed = true unless page.equal?(e && e[:page])

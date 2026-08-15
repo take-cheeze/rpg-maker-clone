@@ -5975,6 +5975,46 @@ not yet verified:
   an end-to-end frame count showing the Airship's own tile-crossing slide is
   exactly half the length of the on-foot one — both confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **A map event page's RPG2003-only Timer2 (0x40) condition is now
+  consulted, and its variable condition now reads RPG2003's own
+  `compare_operator` instead of always testing `>=`.** Confirmed against
+  EasyRPG's actual C++ source: `Game_Event::AreConditionsMet`
+  (`src/game_event.cpp`) checks `page.condition.flags.timer2 &&
+  Player::IsRPG2k3Commands()` against `GetTimerSeconds(Timer2)` — the
+  identical "counted down to *_sec or below" rule `TIMER` (Timer1) already
+  used, just against a different timer and edition-gated — and separately
+  branches the `VARIABLE` condition on `Player::IsRPG2k()`: RPG2000 always
+  hardcodes `>=`, but RPG2003 reads `compare_operator` (0..5: `==, >=, <=,
+  >, <, !=`) through `Game_Interpreter_Shared::CheckOperator`. `Game::
+  EventPage` (`mruby-rpg2k/mrblib/game.rb`) had no `TIMER2` constant at all
+  and its own doc comment said the bit "stays out of scope"; its `VARIABLE`
+  branch hardcoded `>=` for every edition, with no `compare_operator`
+  branch whatsoever. Both fields were already parsed by the schema
+  (`mruby-lcf/mrblib/schema.rb`'s `MAP_EVENT_PAGE_CONDITION`, fields 9-10)
+  but never consumed — the same "parsed but never read" pattern behind
+  several other fixes this session. A third bug surfaced while fixing the
+  second: liblcf's own generated `eventpagecondition.h` declares
+  `int32_t compare_operator = 1;` (`Comparison_greater_equal`), but this
+  port's schema declared its default as `0` (`Comparison_equal`) — since an
+  absent chunk field decodes to its schema default, reading
+  `compare_operator` with the wrong default would have silently turned
+  every RPG2003 map's *untouched* variable condition (the common case —
+  the field only differs from its default when a page author explicitly
+  picks a comparison other than the editor's own ">=") from `>=` into `==`,
+  a regression the fix had to correct before the new read could ship safely.
+  Fixed by adding `EventPage::TIMER2`, threading `Game::State#timer2_seconds`
+  (mirroring `#timer_seconds`, both reading `#timer(id)`) through
+  `EventPage.active?`/`.select` and their two `Scene::Map` call sites, and
+  branching the `VARIABLE` check on `party.rpg2003?` the same way EasyRPG
+  branches on `Player::IsRPG2k()` — plus correcting the schema default from
+  `0` to `1`. `Game::BattlePage` (troop/battle-event pages) needed no
+  equivalent change: EasyRPG's own `TroopPageCondition` carries no
+  `compare_operator` field at all, so its hardcoded `>=` was already
+  correct. Covered by three new `scripts/rpg2k_logic_check.rb` checks — the
+  Timer2 threshold/edition-gate (mirroring the existing Timer1 check), and
+  the RPG2003 `compare_operator` read for both `==`/`>` against RPG2000's
+  unconditional `>=` — the first two confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
