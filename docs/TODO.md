@@ -8597,6 +8597,35 @@ time, and this doesn't diverge from that. Covered by a new
 `scripts/rpg2k_logic_check.rb` check asserting the captured `$stderr` line and
 that the dangling id is excluded while a genuine sibling skill still comes
 through.
+✅ **The field/battle Item menus no longer drop a dangling held-item id with
+no trace** — the "item" case from the "invalid hero, skill, item, enemy,
+enemy group, battle animation, terrain, chipset, common event" list above,
+mirroring the field skill menu fix just above it. `Game::Party#field_items`/
+`#battle_items` (`mruby-rpg2k/mrblib/game.rb`) build the bag's usable-item
+lists from `#field_usable?`/`#battle_usable?`, which already tolerated a
+shrunk database by returning `false` for a stale id (`db_item(id)` degrading
+to `nil`, same as `db_skill`), so a dangling item just vanished from both
+menus with no diagnostic anywhere in the chain. `#field_usable?` and
+`#battle_usable?` now each check `db_item(id)` themselves before falling
+through to the type-dispatch `case`, and log a `[RPG2k] Item menu:
+party-held item #<id> has no matching database row, excluding from field
+menu` (or `..., excluding from battle menu`) diagnostic the same
+reported-not-invented way `#field_skills` does, including the item id; the
+item still doesn't appear in either menu — there is nothing sensible to show
+for it — this is diagnostics only. Unlike `#field_skill?` (which the skill
+fix deliberately left untouched, since it also runs for an item's own
+special-skill lookup with no menu behind it), `#field_usable?`/
+`#battle_usable?` have no other caller besides their own list-builder, so the
+check lives directly in them rather than being hoisted into
+`#field_items`/`#battle_items` the way `#field_skills` hoisted its
+`db_skill` check out of `#field_skill?`. Follows the same
+logging-every-occurrence precedent as the skill-menu fix and the three
+fixes it itself follows (Call Event, Enemy Encounter, Teleport): no
+already-logged state, so a menu opened repeatedly logs the same stale id
+each time. Covered by a new `scripts/rpg2k_logic_check.rb` check asserting
+both captured `$stderr` lines and that the dangling id is excluded from both
+`field_items` and `battle_items` while a genuine sibling item still comes
+through.
 ✅ **"invalid map" (Transfer Player / Recall to Location naming a
 nonexistent map id) no longer crashes the interpreter** — `Scene::Map
 #perform_teleport` (`mruby-rpg2k/mrblib/scene/map.rb`) called

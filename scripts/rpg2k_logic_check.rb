@@ -4595,6 +4595,26 @@ check 'a field-only medicine is kept out of battle; every medicine is in the fie
   eq [[5, 1]], st.party.battle_items
 end
 
+# A database shrink can leave a party-held item id dangling -- shown as "?"
+# in the editor, docs/TODO.md's runtime error catalog. #db_item silently
+# resolves that to nil, and #field_usable?/#battle_usable? just as silently
+# excluded it; the item vanished from both menus with no trace anywhere in
+# the call chain. #field_usable?/#battle_usable? now report it.
+check 'field_items/battle_items report a dangling held item id and exclude it from both menus' do
+  items = { 5 => fake_item(type: 6, rhp: 50) }   # medicine, usable everywhere
+  st = item_party(items)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(99, 1)   # 99 no longer exists in the database
+
+  out = capture_stderr { eq [[5, 1]], st.party.field_items }
+  ok out.include?('[RPG2k] Item menu: party-held item #99 has no matching ' \
+                   'database row, excluding from field menu'), out
+
+  out = capture_stderr { eq [[5, 1]], st.party.battle_items }
+  ok out.include?('[RPG2k] Item menu: party-held item #99 has no matching ' \
+                   'database row, excluding from battle menu'), out
+end
+
 check 'a switch item reads its own pair of occasion flags' do
   # A switch item is the one item kind gated on both sides, and by its *own*
   # fields: occasion_field2 (57) and occasion_battle (58).

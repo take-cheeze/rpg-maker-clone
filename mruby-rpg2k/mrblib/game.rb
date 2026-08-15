@@ -2865,9 +2865,23 @@ module Game
     # available (access flag + a registered target), which a bare item lookup
     # has no way to answer. Omitting it reads such an item as unusable, exactly
     # as the old hard-coded "no state" call always did.
+    #
+    # A database shrink can leave a party-held item id with no matching row
+    # (docs/TODO.md's runtime error catalog) -- `db_item` degrades that to a
+    # silent `nil`, which used to drop the item from the field menu with no
+    # trace anywhere in the call chain. Logged here, the same way
+    # #field_skills reports a dangling learned-skill id: this is the only
+    # caller of #field_usable? with an id from the party's own bag, so it's
+    # the one place that knows the gap came from *that* list rather than some
+    # other `db_item` call with no menu behind it.
     def field_usable?(id, state = nil)
       it = db_item(id)
-      return false unless it && item_count(id) > 0
+      if it.nil?
+        $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
+                     'matching database row, excluding from field menu'
+        return false
+      end
+      return false unless item_count(id) > 0
       case it.type
       when ITEM_MEDICINE, ITEM_SKILL_BOOK, ITEM_SEED then true
       when ITEM_SWITCH then item_field_occasion?(it)
@@ -4011,9 +4025,17 @@ module Game
     # (the same deferral #field_usable? makes). Nepheshel's whole thrown-bomb line
     # — 火炎玉, 爆裂玉, 氷結玉, 雷撃玉 and the rest — is special items, so this is
     # what puts them in the battle item list at all.
+    #
+    # A dangling item id (see #field_usable?) is reported the same way here,
+    # for the battle menu's own list.
     def battle_usable?(id)
       it = db_item(id)
-      return false unless it && item_count(id) > 0
+      if it.nil?
+        $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
+                     'matching database row, excluding from battle menu'
+        return false
+      end
+      return false unless item_count(id) > 0
       case it.type
       when ITEM_MEDICINE then !item_field_only?(it)
       when ITEM_SWITCH then item_battle_occasion?(it)
