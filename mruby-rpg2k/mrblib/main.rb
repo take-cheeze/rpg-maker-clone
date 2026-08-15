@@ -506,7 +506,7 @@ class RPG2k
   # rather than repeating the literal.
   MAX_SAVE_SLOTS = 15
 
-  attr_reader :db, :map_tree, :test_play
+  attr_reader :db, :map_tree, :test_play, :title
   # Whether the title screen's background picture and command-window position
   # should follow HideTitle (see Scene::Title). Named with a `?` since it
   # answers a question, unlike the plain `test_play` value above.
@@ -542,6 +542,10 @@ class RPG2k
 
     @db = LCF::Database.new File.open "#{GAME_DIR}/RPG_RT.ldb"
     @map_tree = LCF::MapTree.new File.open "#{GAME_DIR}/RPG_RT.lmt"
+    # Put the game's own name on the window (and on the browser tab in the web
+    # build), the way RPG_RT.exe titles its own.
+    @title = read_ini_title
+    RGSS.window_title = @title
     @scenes = []
     push Scene::Title.new self
   end
@@ -553,6 +557,53 @@ class RPG2k
     false
   end
   private :native_test_play?
+
+  # The game's name, from RPG_RT.ini's `[RPG_RT] GameTitle=` -- where RPG_RT.exe
+  # reads the caption of its own window from; the .ldb carries no title of its
+  # own. The value is written in the editor's own encoding (CP932, the same
+  # encoding every string in the database is read back as), so it goes through
+  # the same conversion those do; an ASCII title passes through unchanged.
+  # Parsed with core string operations only -- this mruby build bundles neither
+  # a regexp engine nor String#strip -- and best effort throughout: a missing or
+  # garbled ini falls back to the folder name rather than stopping the boot.
+  INI_TITLE_KEY = 'GameTitle='.freeze
+
+  def read_ini_title
+    path = "#{GAME_DIR}/RPG_RT.ini"
+    return default_title unless File.exist? path
+    File.open(path, 'r') do |f|
+      f.each_line do |line|
+        next unless line.size >= INI_TITLE_KEY.size &&
+                    line[0, INI_TITLE_KEY.size] == INI_TITLE_KEY
+        value = trim_ini_value line[INI_TITLE_KEY.size, line.size]
+        return LCF.cp932_to_utf8(value) unless value.empty?
+      end
+    end
+    default_title
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] RPG_RT.ini read failed: #{e.message}"
+    default_title
+  end
+  private :read_ini_title
+
+  # Strip trailing CR/LF/space/tab from an ini value without String#strip.
+  def trim_ini_value s
+    e = s.size
+    while e > 0
+      c = s[e - 1]
+      break unless c == "\r" || c == "\n" || c == ' ' || c == "\t"
+      e -= 1
+    end
+    s[0, e]
+  end
+  private :trim_ini_value
+
+  def default_title
+    File.basename GAME_DIR
+  rescue StandardError
+    'RPG Maker 2000'
+  end
+  private :default_title
 
   # Push `scene` on top of the stack. The scene it covers gets a #suspend
   # call first (Scene::Menu uses it to hide its own command/status windows --

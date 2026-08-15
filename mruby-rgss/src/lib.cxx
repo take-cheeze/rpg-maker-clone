@@ -86,6 +86,14 @@ void log_bridge_write(const char* msg, size_t len);
 // diagnostics below that used to be a bare fprintf(stderr, ...).
 void log_bridge_write_stderr(const char* msg);
 
+// Defined in window_title.cxx (same gem). Hands the running game's own title
+// to the executable's hook -- the SDL window's caption, or the browser tab
+// under Emscripten -- and remembers it. Beyond that record it is a no-op where
+// no hook is installed (the terminal backends, mrbtest, PSP, Wio Terminal);
+// see include/terminal.hxx's "Window title bridge" section.
+void window_title_set(const char* title);
+const std::string& window_title_get();
+
 #if defined(WIO_TERMINAL)
 // Defined in wio_input_bridge.cxx; scans the board's buttons/5-way switch and
 // forwards press/release edges to RGSS::Input.  Guarded so the desktop/wasm
@@ -6030,6 +6038,31 @@ static mrb_value log_bridge_write_m(mrb_state* M, mrb_value) {
   return mrb_nil_value();
 }
 
+// RGSS.window_title = "..." -- the running game's own title, set by each
+// maker's boot once its database says what the game is called (see
+// include/terminal.hxx's "Window title bridge" section). nil clears it back to
+// the empty string rather than raising: a project with no title of its own is
+// a normal state, not an error.
+static mrb_value window_title_set_m(mrb_state* M, mrb_value) {
+  mrb_value title = mrb_nil_value();
+  mrb_get_args(M, "o", &title);
+  if (mrb_nil_p(title)) {
+    window_title_set("");
+    return mrb_nil_value();
+  }
+  const mrb_value str = mrb_obj_as_string(M, title);
+  window_title_set(mrb_str_to_cstr(M, str));
+  return title;
+}
+
+// RGSS.window_title -- the last title set, or nil when none was. Reads the
+// gem's own record rather than the window, so it answers under every backend.
+static mrb_value window_title_get_m(mrb_state* M, mrb_value) {
+  const std::string& title = window_title_get();
+  return title.empty() ? mrb_nil_value()
+                       : mrb_str_new(M, title.data(), title.size());
+}
+
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
@@ -6043,6 +6076,10 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                              MRB_ARGS_NONE());
   mrb_define_module_function(M, m, "__log_bridge_write", log_bridge_write_m,
                              MRB_ARGS_REQ(1));
+  mrb_define_module_function(M, m, "window_title=", window_title_set_m,
+                             MRB_ARGS_REQ(1));
+  mrb_define_module_function(M, m, "window_title", window_title_get_m,
+                             MRB_ARGS_NONE());
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
                 mrb_fixnum_value(lv_tick_get()));

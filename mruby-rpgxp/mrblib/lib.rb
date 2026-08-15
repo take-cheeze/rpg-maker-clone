@@ -43,6 +43,9 @@ class RPGXP
 
   def initialize(_args)
     @title = read_ini_title
+    # Name the window after the game, as RGSS104E.dll does with the same
+    # Game.ini value (and the browser tab, in the web build).
+    RGSS.window_title = @title
     # XP selects its UI font by family name (Font.default_name, "MS PGothic" on
     # Windows) and expects the file under the project's Fonts/. Projects that
     # ship none would render every window with the 12px shinonome bitmap font

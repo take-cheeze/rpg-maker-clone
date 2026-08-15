@@ -116,6 +116,9 @@ class RPGVX
     # own scripts, so the loaders need it globally (see RGSS.asset_archive).
     RGSS.asset_archive = @db.archive if @db
     @title = read_title
+    # Say which game is running on the window itself (and on the browser tab in
+    # the web build), the way RPG Maker VX's own player does.
+    RGSS.window_title = @title
     # A VX/VX Ace project's engine *is* its script bundle, so the script host is
     # the only path that can run one — and it is on by default, like XP's. The
     # pending-runtime notice below is what a project without scripts (or a boot

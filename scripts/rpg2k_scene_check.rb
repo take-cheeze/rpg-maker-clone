@@ -16,6 +16,7 @@
 
 require 'ostruct'
 require 'stringio'
+require 'tmpdir'
 
 # -- RGSS stubs (just enough for Scene::Map to build, render and tick) --------
 
@@ -14477,6 +14478,68 @@ check 'Nepheshel-shaped Save choice event: a Show Choices "SAVE" branch reaches 
   scene.update # dispatches the wait and opens the picker
   eq 1, parent.pushed.size, 'the SAVE branch reaches Open Save Menu, which opens the picker'
   ok parent.pushed.first.is_a?(RPG2k::Scene::SaveLoad), 'the pushed scene is the picker'
+end
+
+# -- window title -------------------------------------------------------------
+
+# RPG2k#read_ini_title reads the caption RPG_RT.exe puts on its own window out
+# of RPG_RT.ini, which the boot hands to RGSS.window_title (mruby-rpg2k/mrblib/
+# main.rb; include/terminal.hxx's window title bridge). The rest of the boot
+# needs a real .ldb/.lmt, so the reader is exercised on its own here, against
+# real ini files on disk -- including a CP932 one, since that is what the
+# Japanese editor writes and what every game in the test beds ships.
+check 'the window title comes from RPG_RT.ini, decoded from CP932' do
+  # The engine decodes the ini through LCF.cp932_to_utf8 (native; mruby-lcf/
+  # src/lcf.cxx). Stand in for it with CRuby's own encoding conversion, so this
+  # asserts the reader's parsing and hand-off, not the table.
+  unless Object.const_defined?(:LCF) && LCF.respond_to?(:cp932_to_utf8)
+    mod = Object.const_defined?(:LCF) ? LCF : Object.const_set(:LCF, Module.new)
+    mod.define_singleton_method(:cp932_to_utf8) do |s|
+      s.dup.force_encoding(Encoding::CP932).encode(Encoding::UTF_8)
+    end
+  end
+
+  read_title = lambda do |dir|
+    Object.send(:remove_const, :GAME_DIR) if Object.const_defined?(:GAME_DIR)
+    Object.const_set(:GAME_DIR, dir)
+    RPG2k.allocate.send(:read_ini_title)
+  end
+
+  Dir.mktmpdir('rpg2k-title') do |root|
+    # A Japanese title as the editor writes it: CP932 bytes, CRLF line ends,
+    # and GameTitle sitting among the other [RPG_RT] keys.
+    jp = File.join(root, 'jp')
+    Dir.mkdir jp
+    File.binwrite(File.join(jp, 'RPG_RT.ini'),
+                  "[RPG_RT]\r\nGameTitle=#{'ネフェシエル'.encode(Encoding::CP932)}\r\n" \
+                  "MapEditMode=1\r\nFullPackageFlag=1\r\n")
+    eq 'ネフェシエル', read_title.call(jp), 'the CP932 title, decoded and stripped of its CR'
+
+    # An ASCII title passes through the same conversion unchanged.
+    ascii = File.join(root, 'ascii')
+    Dir.mkdir ascii
+    File.binwrite(File.join(ascii, 'RPG_RT.ini'), "[RPG_RT]\nGameTitle=Meido Action\n")
+    eq 'Meido Action', read_title.call(ascii), 'an ASCII title'
+
+    # A project whose ini has no GameTitle (or no ini at all -- a game unpacked
+    # without it) still names the window something: the folder it was loaded
+    # from, never a blank caption.
+    bare = File.join(root, 'Bare Project')
+    Dir.mkdir bare
+    File.binwrite(File.join(bare, 'RPG_RT.ini'), "[RPG_RT]\nFullPackageFlag=0\n")
+    eq 'Bare Project', read_title.call(bare), 'the folder name when GameTitle is missing'
+
+    none = File.join(root, 'No Ini')
+    Dir.mkdir none
+    eq 'No Ini', read_title.call(none), 'the folder name when there is no ini at all'
+
+    # An empty GameTitle= is the same as none: fall back rather than clearing
+    # the caption to nothing.
+    empty = File.join(root, 'Empty Title')
+    Dir.mkdir empty
+    File.binwrite(File.join(empty, 'RPG_RT.ini'), "[RPG_RT]\nGameTitle=\r\n")
+    eq 'Empty Title', read_title.call(empty), 'the folder name when GameTitle is empty'
+  end
 end
 
 # -- summary ------------------------------------------------------------------
