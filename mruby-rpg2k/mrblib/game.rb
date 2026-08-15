@@ -11226,7 +11226,7 @@ module Game
     # System Graphics (10680), overriding the database defaults. `system_graphic`
     # is nil until a command sets it (the database's own graphic then applies)
     # and `font_id` defaults to 0. Both persist in the save (LSD SAVE_SYSTEM
-    # chunks 15 / 17); Scene::Map reloads the windowskin when the override
+    # chunks 21 / 23); Scene::Map reloads the windowskin when the override
     # changes.
     attr_accessor :system_graphic, :font_id
     # Last known-good resume position of each running Common Event Parallel
@@ -11687,8 +11687,8 @@ module Game
       # Screen-transition slots 0..5 map to chunks 111..116 in order.
       @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
       # System windowskin / font override (Change System Graphics).
-      sys[15] = @system_graphic if @system_graphic
-      sys[17] = @font_id
+      sys[21] = @system_graphic if @system_graphic
+      sys[23] = @font_id
       sys[131] = save_count
       sys[132] = 1
       save[101] = sys
