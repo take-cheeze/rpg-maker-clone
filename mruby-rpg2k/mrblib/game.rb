@@ -8904,6 +8904,11 @@ module Game
     def do_nothing_restricted?(b)
       (b.states || []).any? { |id| state_field(state_def(id), :restriction) == RESTRICTION_DO_NOTHING }
     end
+    # Called from Game::Interpreter#battle_actor_condition (the battle-page
+    # Conditional Branch's "can use battle command" actor test, EasyRPG's
+    # `Game_Battler::CanAct`) -- exposed the same way #choose_auto_battle_command
+    # is, well outside this otherwise-private section.
+    public :do_nothing_restricted?
 
     # The state definition for `id` from the lookup, or nil (no lookup / unknown).
     def state_def(id); @states ? @states[id] : nil; end

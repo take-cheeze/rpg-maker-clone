@@ -13392,6 +13392,60 @@ check 'the battle Conditional Branch tests switches, variables and battlers' do
   eq 2, st.variables[1], 'an actor not in the fight fails'
 end
 
+# デフォ戦bot trivia, verified against EasyRPG's real
+# Game_Interpreter_Battle::CommandConditionalBranchBattle / Game_Battler::CanAct
+# (src/game_interpreter_battle.cpp, src/game_battler.cpp): actor sub-test 3
+# ("can use battle command") is true unless the ally carries a "do nothing"
+# restriction (asleep/paralysed) -- it does NOT fail for a Berserk
+# (attack_enemy) or Confusion (attack_ally) restriction, since such an ally
+# still "can act," it just acts on a forced target. That is a strictly
+# narrower check than Game::Battle#command_restricted? (which flags
+# Berserk/Confusion too, since it answers "does this ally get a normal
+# command menu" -- a different question); a naive implementation built on
+# #command_restricted? instead of the do_nothing-only check would wrongly
+# report the berserked/confused ally below as unable to use a battle command.
+check 'battle Conditional Branch actor sub-test 3 (can use battle command) matches CanAct, not command_restricted?' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0),  # do-nothing (asleep/paralysed)
+             7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0),  # attack-enemy (berserk)
+             6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL_B, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)]
+  end
+
+  it.start(branch.call([2, 1, 3]))
+  it.update
+  eq 1, st.variables[1], 'an unrestricted ally can use a battle command'
+
+  hero.states = [8]
+  it.start(branch.call([2, 1, 3]))
+  it.update
+  eq 2, st.variables[1], 'a do-nothing restricted (asleep/paralysed) ally cannot'
+
+  hero.states = [7]
+  ok b.command_restricted?(hero), 'sanity: command_restricted? flags the berserked ally...'
+  it.start(branch.call([2, 1, 3]))
+  it.update
+  eq 1, st.variables[1],
+     '...but the berserked ally still "can act" (CanAct), so sub-test 3 stays true'
+
+  hero.states = [6]
+  ok b.command_restricted?(hero), 'sanity: command_restricted? flags the confused ally too...'
+  it.start(branch.call([2, 1, 3]))
+  it.update
+  eq 1, st.variables[1], '...yet a confused ally likewise still "can act"'
+end
+
 check 'troop-member numbering stays stable when a middle member dies or is hidden' do
   # docs/TODO.md's render-order fix left this "still open": does killing or
   # hiding troop member 1 (the middle of three) shift member 2 down into
