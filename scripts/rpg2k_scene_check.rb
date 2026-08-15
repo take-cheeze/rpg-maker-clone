@@ -58,6 +58,15 @@ module RGSS
     def stretch_blt(*a); (@stretch_calls ||= []) << a; end
     attr_reader :stretch_calls
     def clear_stretch_calls; @stretch_calls = []; end
+    # Recorded so the Mosaic/Wave transition checks can assert the native
+    # resample was reached with the right per-frame parameters, mirroring how
+    # #stretch_calls covers zoom.
+    def mosaic_blt(*a); (@mosaic_calls ||= []) << a; end
+    attr_reader :mosaic_calls
+    def clear_mosaic_calls; @mosaic_calls = []; end
+    def wave_blt(*a); (@wave_calls ||= []) << a; end
+    attr_reader :wave_calls
+    def clear_wave_calls; @wave_calls = []; end
     # Record the tone a Flash Sprite pass asks for, so the flash checks can
     # assert the colour actually reached the renderer.
     def tone_blt(src, tone); (@tone_calls ||= []) << [src, tone]; self; end
@@ -8988,6 +8997,110 @@ check 'zoom out resamples a growing crop of the capture, stretched full-screen' 
   srect = fade.bitmap.stretch_calls.first[2]
   eq [0, 0, 320, 240], [srect.x, srect.y, srect.width, srect.height],
      'finished: the crop has grown back out to the whole capture'
+ensure
+  RGSS::Graphics.snapshot = nil
+end
+
+check 'mosaic transitions resample the capture through a shrinking/growing block size' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  snap = RGSS::Bitmap.new(320, 240)
+  RGSS::Graphics.snapshot = snap
+
+  # Erase (MOSAIC_OUT): starts sharp (block size 1) and gets chunkier --
+  # EasyRPG's `m_size = current_frame + 1`, confirmed against
+  # src/transition.cpp's TransitionMosaicOut case.
+  st.screen.erase(Game::Transition::MOSAIC_OUT)
+  fade.bitmap.clear_mosaic_calls
+  scene.update
+  eq 255, fade.opacity, 'a captured style paints, so it is fully opaque like a mask'
+  ok (fade.bitmap.blt_calls || []).empty?, 'mosaic never uses the 1:1 paste path'
+  ok (fade.bitmap.stretch_calls || []).empty?, 'mosaic never uses the resize path either'
+  calls = fade.bitmap.mosaic_calls || []
+  eq 1, calls.length, 'mosaic resamples the whole capture in one native call'
+  cap, size = calls.first
+  ok cap.equal?(snap), 'resampled from the captured snapshot'
+  eq 2, size, 'frame 1 (the first rendered frame) is barely chunkier than sharp'
+
+  mid = Game::Transition.default_frames(Game::Transition::MOSAIC_OUT) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_mosaic_calls
+  scene.update
+  size = fade.bitmap.mosaic_calls.first[1]
+  eq 41, size, 'finished: as chunky as the transition ever gets'
+
+  # Show (MOSAIC_IN): starts fully mosaic'd and sharpens -- `m_size =
+  # total_frames - current_frame`, the same ramp run backwards.
+  st.screen.erase(Game::Transition::FADE_OUT, 1) # show is a no-op unless erased first
+  2.times { scene.update }
+
+  st.screen.show(Game::Transition::MOSAIC_IN)
+  fade.bitmap.clear_mosaic_calls
+  scene.update
+  size = fade.bitmap.mosaic_calls.first[1]
+  eq 40, size, 'frame 1 of a show starts almost as chunky as it gets'
+
+  mid = Game::Transition.default_frames(Game::Transition::MOSAIC_IN) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_mosaic_calls
+  scene.update
+  size = fade.bitmap.mosaic_calls.first[1]
+  eq 1, size, 'finished: sharpened all the way down to 1px blocks'
+ensure
+  RGSS::Graphics.snapshot = nil
+end
+
+check 'wave transitions resample the capture through the depth/phase ramp' do
+  scene = new_scene({}, player: [5, 5])
+  fade, = overlay(scene)
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  snap = RGSS::Bitmap.new(320, 240)
+  RGSS::Graphics.snapshot = snap
+
+  # Erase (WAVE_OUT): depth/phase grow as the screen prepares to vanish --
+  # EasyRPG's `p = current_frame + 1`, confirmed against src/transition.cpp's
+  # TransitionWaveOut case (itself Bitmap::WaverBlit's depth/phase args).
+  st.screen.erase(Game::Transition::WAVE_OUT)
+  fade.bitmap.clear_wave_calls
+  scene.update
+  ok (fade.bitmap.blt_calls || []).empty?, 'wave never uses the 1:1 paste path'
+  ok (fade.bitmap.stretch_calls || []).empty?, 'wave never uses the resize path either'
+  calls = fade.bitmap.wave_calls || []
+  eq 1, calls.length, 'wave resamples the whole capture in one native call'
+  cap, depth, phase = calls.first
+  ok cap.equal?(snap), 'resampled from the captured snapshot'
+  eq 2, depth, 'frame 1 (the first rendered frame) has barely started waving'
+  eq 1.25 * Math::PI, phase
+
+  mid = Game::Transition.default_frames(Game::Transition::WAVE_OUT) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_wave_calls
+  scene.update
+  depth, phase = fade.bitmap.wave_calls.first[1, 2]
+  eq 41, depth, 'finished: the widest the wave ever gets'
+  eq 6.125 * Math::PI, phase
+
+  # Show (WAVE_IN): the same ramp run backwards, settling flat.
+  st.screen.erase(Game::Transition::FADE_OUT, 1) # show is a no-op unless erased first
+  2.times { scene.update }
+
+  st.screen.show(Game::Transition::WAVE_IN)
+  fade.bitmap.clear_wave_calls
+  scene.update
+  depth, phase = fade.bitmap.wave_calls.first[1, 2]
+  eq 40, depth, 'frame 1 of a show starts almost as wide as it gets'
+  eq 6 * Math::PI, phase
+
+  mid = Game::Transition.default_frames(Game::Transition::WAVE_IN) - 3
+  mid.times { scene.update }
+  fade.bitmap.clear_wave_calls
+  scene.update
+  depth, phase = fade.bitmap.wave_calls.first[1, 2]
+  eq 1, depth, 'finished: settled down to a near-flat wave'
+  eq 1.125 * Math::PI, phase
 ensure
   RGSS::Graphics.snapshot = nil
 end
