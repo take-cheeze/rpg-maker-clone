@@ -8736,8 +8736,9 @@ check 'to_lsd/from_lsd round-trips the latest battle\'s turn count' do
   # undecoded: there was no per-battle turn tracker on the Ruby side to
   # source it from (see the step-counter-and-battle-tallies check above).
   # There is now -- Game::Battle already counts its own rounds live
-  # (@rounds, exposed by #turn); Scene::Map#finish_battle (scene/map.rb)
-  # captures it onto Game::State#last_battle_turns right before the fought
+  # (@rounds, exposed by #turn); Scene::Battle#finish_battle
+  # (mruby-rpg2k/mrblib/scene/battle.rb) captures it onto
+  # Game::State#last_battle_turns right before the fought
   # Battle object is discarded. This exercises that capture + round-trip
   # without going through the scene layer: run a fight for a fixed number of
   # rounds, read #turn the way #finish_battle does, then round-trip it

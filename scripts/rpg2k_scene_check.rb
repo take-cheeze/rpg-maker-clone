@@ -292,6 +292,28 @@ def eq(exp, act, msg = nil)
   raise "expected #{exp.inspect}, got #{act.inspect}#{msg ? " (#{msg})" : ''}"
 end
 
+# The fight's own live state (RPG2k::Scene::Battle#ui) is a plain hash again,
+# same shape a check written against the old Scene::Map#@battle_ui already
+# expects -- reached through the scene's own @battle (nil between
+# encounters), so this is the one place a check has to know the fight moved
+# out to its own scene object at all.
+def battle_ui(scene)
+  b = scene.instance_variable_get(:@battle)
+  b && b.ui
+end
+
+# Fabricate a running fight directly, the way a handful of checks below poke
+# @battle_ui without ever driving a real encounter open (a parallel-process
+# pause check, the F9-during-battle checks, ...). Bypasses Scene::Battle#start
+# entirely -- `ui` only needs to carry whatever keys the check itself reads.
+def fake_battle(scene, ui)
+  battle = RPG2k::Scene::Battle.allocate
+  battle.instance_variable_set(:@map, scene)
+  battle.instance_variable_set(:@ui, ui)
+  scene.instance_variable_set(:@battle, battle)
+  battle
+end
+
 # Runs the block with $stderr redirected to a StringIO and returns everything
 # written to it, for checks that assert on a "[RPG2k] ..." diagnostic line.
 def capture_stderr
@@ -2933,7 +2955,7 @@ check 'parallel processes pause during battle' do
   par = page(trigger: 4)
   par.event_commands = [add_var_cmd(1)]
   scene = new_scene({ 1 => event(4, 4, par) })
-  scene.instance_variable_set(:@battle_ui, { phase: :command })
+  fake_battle(scene, { phase: :command })
   10.times { scene.update }
   eq 0, scene.instance_variable_get(:@state).variables[1],
      'a parallel process must not advance while a battle is in progress'
@@ -5511,7 +5533,7 @@ end
 # finish well inside 600 frames can now run past it.
 def battle_attack_to_end(scene, max = 2000)
   max.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :result
     # A pressed C on :battle_options picks the cursor's default row 0,
     # "Battle" -- dismissing the once-per-battle automatic options window
@@ -5533,7 +5555,7 @@ def battle_until_phase(scene, phase, max = 90)
   ui = nil
   max.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == phase
   end
   ui
@@ -5639,9 +5661,9 @@ check 'Enemy Encounter scene: opening a battle plays the database Battle Start S
   RGSS::Audio.reset_se
   10.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
   end
-  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+  ok battle_ui(scene), 'the battle actually opened'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'BattleStart1' },
      'the database Battle Start SE played the instant the fight opened'
 end
@@ -5658,9 +5680,9 @@ check 'Enemy Encounter scene: a Change System SFX battle-start override wins ove
   RGSS::Audio.reset_se
   10.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
   end
-  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+  ok battle_ui(scene), 'the battle actually opened'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'CustomBattleStart' },
      'the override plays instead of the database BattleStart1'
   ok !RGSS::Audio.se_calls.any? { |c| c[0] == 'BattleStart1' },
@@ -5752,7 +5774,7 @@ check "Enemy Encounter scene: battle math reuses the scene's own advancing " \
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   rng = scene.instance_variable_get(:@rng)
   ok ui[:battle].rng.equal?(rng),
      "the battle's own combat math should draw from the scene's single, " \
@@ -5769,7 +5791,7 @@ check 'Enemy Encounter scene: rolls already spent by earlier map activity change
   scene_a.instance_variable_get(:@state)
           .instance_variable_set(:@party, BattleStubParty.new)
   battle_attack_to_end(scene_a)
-  log_a = scene_a.instance_variable_get(:@battle_ui)[:battle].log.dup
+  log_a = battle_ui(scene_a)[:battle].log.dup
 
   scene_b = new_scene({ 1 => event(2, 2, auto) })
   scene_b.instance_variable_get(:@state)
@@ -5779,7 +5801,7 @@ check 'Enemy Encounter scene: rolls already spent by earlier map activity change
   # entirely -- all of which draw from this same per-scene RNG stream.
   7.times { scene_b.instance_variable_get(:@rng).next_int }
   battle_attack_to_end(scene_b)
-  log_b = scene_b.instance_variable_get(:@battle_ui)[:battle].log.dup
+  log_b = battle_ui(scene_b)[:battle].log.dup
 
   ok log_a != log_b,
      'a fight reached after other map-side rolls should not replay the exact ' \
@@ -6046,7 +6068,7 @@ check 'Enemy Encounter scene: the Battle/Auto Battle/Escape options window opens
   eq :battle_options, ui[:phase], 'the options window shows before any per-actor command menu'
   eq 0, ui[:opt], 'the cursor starts on the first row, Battle'
   eq %w[Fight AutoBattle Escape].map { |s| s == 'AutoBattle' ? 'Auto Battle' : s },
-     scene.send(:battle_option_rows).map { |r| r[:label] },
+     scene.instance_variable_get(:@battle).send(:battle_option_rows).map { |r| r[:label] },
      'fake_db leaves the battle_fight/battle_auto/battle_escape terms blank, so these are ' \
      'the composed English fallbacks'
 end
@@ -6183,7 +6205,7 @@ check 'Enemy Encounter scene: the options window does not reappear automatically
   40.times do
     RGSS::Input.triggered = [RGSS::Input::C] if %i[command target].include?(ui[:phase])
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = []
     saw_options_again ||= ui && ui[:phase] == :battle_options
     break if ui.nil? || ui[:phase] == :result
@@ -6391,9 +6413,9 @@ check "a Common Event Parallel Process's own Battle Processing now actually open
   scene = new_scene({}, common: { 1 => ce })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  eq nil, scene.instance_variable_get(:@battle_ui), 'no battle before the process reaches it'
+  eq nil, battle_ui(scene), 'no battle before the process reaches it'
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui, "the parallel process's own Enemy Encounter actually opened a real battle screen"
   eq :result, ui[:phase]
   fg = scene.instance_variable_get(:@interpreter)
@@ -6427,7 +6449,7 @@ check "a battle a Parallel Process opened blocks player movement, just like one 
   RGSS::Input.dir_value = 6 # hold right the whole time
   12.times { scene.update }
   RGSS::Input.dir_value = 0
-  ok scene.instance_variable_get(:@battle_ui), 'the fight is open by now'
+  ok battle_ui(scene), 'the fight is open by now'
   eq 0, st.x, "the party must not walk anywhere while a Parallel Process's own fight is up"
 end
 
@@ -8611,7 +8633,7 @@ check 'a timer without the battle flag pauses and hides for the fight, and drops
   eq 4, spr.y, 'parked at the top outside of battle'
 
   frames = st.timer(0).frames
-  scene.instance_variable_set(:@battle_ui, { phase: :command })
+  fake_battle(scene, { phase: :command })
   scene.update
   eq frames, st.timer(0).frames, 'it stopped counting for the fight'
   ok !spr.visible, 'and is hidden'
@@ -8682,11 +8704,11 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
   # cursor row 0, "Battle") along the way.
   ui = nil
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
   # Command the sole hero to Attack the first enemy: C picks Attack, C confirms
@@ -8696,7 +8718,7 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
     scene.update
     RGSS::Input.triggered = []
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   eq :animate, ui[:phase], 'the commanded round now plays out as an animation'
   eq 0, ui[:battle].log.length, 'no hit has landed the instant the round starts'
 
@@ -8765,17 +8787,15 @@ end
 
 # Open a battle and step to the per-actor command menu, dismissing the
 # once-per-battle automatic Battle/Auto Battle/Escape options window along
-# the way (a C press on its default cursor row 0, "Battle"). Budgeted past
-# the encounter banner's own BATTLE_ENCOUNTER_MSG_FRAMES hold, which runs in
-# full before :battle_options ever opens.
+# the way (a C press on its default cursor row 0, "Battle").
 def battle_to_command(scene)
   ui = nil
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
   ui
@@ -9293,7 +9313,7 @@ check "Enemy Encounter scene: a restricted item's ally-target picker skips the a
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
   eq :ally_target, ui[:phase]
   eq 2, ui[:allies].reject(&:dead?).length, 'both actors are alive and in the fight'
-  targets = scene.send(:battle_ally_targets)
+  targets = scene.instance_variable_get(:@battle).send(:battle_ally_targets)
   eq 1, targets.length, 'the restricted actor never appears as a choice'
   eq 1, targets.first.actor.id, 'only the allowed actor is offered'
   eq 0, ui[:ally_i], 'starts on the sole remaining candidate'
@@ -9450,14 +9470,14 @@ check 'Enemy Encounter scene: an "Appear Transparent" enemy draws at reduced ' \
   # reduced opacity, not just the initial build.
   ui[:foes][0].battler_name = 'Wraith'
   ui[:foes][0].name = 'Wraith'
-  scene.send(:refresh_battle_sprites)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   eq 160, ui[:enemy_sprites][0].opacity,
      'a transformation redraw keeps the reduced opacity'
 
   # Show Hidden Monster (#reveal_battle_monster) builds a fresh sprite too.
   ui[:foes][0].hidden = true
   ui[:troop].members[0].hidden = true
-  scene.send(:reveal_battle_monster, 0)
+  scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 0)
   eq 160, ui[:enemy_sprites][0].opacity,
      'Show Hidden Monster also draws it at the reduced opacity'
 end
@@ -9494,7 +9514,7 @@ check 'Enemy Encounter scene: a battle-graphic hue shift rotates the battler ' \
   # very same "Slime" battler file -- its own decode must stay unrotated
   # rather than being mutated by the Red Slime's #hue_change call above,
   # since #battler_bitmap keys the cache by name+hue rather than name alone.
-  plain = scene.send(:battler_bitmap, Game::Enemy.new(scene.db, 2))
+  plain = scene.instance_variable_get(:@battle).send(:battler_bitmap, Game::Enemy.new(scene.db, 2))
   ok plain.hue_calls.nil? || plain.hue_calls.empty?,
      'a same-file, zero-hue enemy decodes its own unrotated bitmap'
 
@@ -9504,7 +9524,7 @@ check 'Enemy Encounter scene: a battle-graphic hue shift rotates the battler ' \
   ui[:foes][0].battler_name = 'Slime'
   ui[:foes][0].battler_hue = 0
   ui[:foes][0].name = 'Slime'
-  scene.send(:refresh_battle_sprites)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   ok ui[:enemy_sprites][0].bitmap.hue_calls.nil? ||
      ui[:enemy_sprites][0].bitmap.hue_calls.empty?,
      'transforming into the zero-hue battler redraws with no hue rotation'
@@ -9524,7 +9544,7 @@ check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
   # a page's Force Flee), which used to stay on screen because visibility keyed
   # off `dead?` alone.
   ui[:foes][0].hidden = true
-  scene.send(:refresh_battle_sprites)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   ok !sprites[0].visible, 'a monster that fled is taken off the field'
   ok !ui[:foes][0].dead?, 'without counting as a kill'
   ok sprites[1].visible, 'its companion is untouched'
@@ -9560,7 +9580,7 @@ check 'Enemy Encounter scene: a self-destructed monster drops no reward and ' \
   # What Game::Battle#enemy_autodestruct now does to its own caster: hide it,
   # leave its HP untouched (no `b.hp = 0`).
   ui[:foes][0].hidden = true
-  scene.send(:refresh_battle_sprites)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   ok !ui[:foes][0].dead?, 'the caster does not die'
   eq starting_hp, ui[:foes][0].hp,
      'its HP reads unchanged, exactly as a variable assignment would show in real RPG_RT'
@@ -9570,7 +9590,7 @@ check 'Enemy Encounter scene: a self-destructed monster drops no reward and ' \
 
   # "Enemy Appears" (Show Hidden Monster, 13150) targeting the exploded slot
   # brings it right back -- same path a genuinely-fled monster already uses.
-  scene.send(:reveal_battle_monster, 0)
+  scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 0)
   ok !ui[:troop].members[0].hidden, 'visible again'
   ok !ui[:foes][0].hidden, 'back in play'
   eq starting_hp, ui[:foes][0].hp, 'with the same HP it had before it blew up'
@@ -9599,13 +9619,13 @@ check 'Scene::Map#flying_offset: RPG2003 + levitate is a +/-4px, 256-frame sine 
   ok member.levitate, 'the fixture enemy (id 3, Bat) carries the flag'
 
   ui[:frame] = 0
-  eq 0, scene.send(:flying_offset, member), 'frame 0: sin(0) = 0'
+  eq 0, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'frame 0: sin(0) = 0'
   ui[:frame] = 64 # a quarter period: sin(pi/2) = 1
-  eq 4, scene.send(:flying_offset, member), 'a quarter period in: the +4px peak'
+  eq 4, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'a quarter period in: the +4px peak'
   ui[:frame] = 128 # half period: sin(pi) = 0
-  eq 0, scene.send(:flying_offset, member), 'half a period in: back through 0'
+  eq 0, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'half a period in: back through 0'
   ui[:frame] = 192 # three-quarter period: sin(3pi/2) = -1
-  eq(-4, scene.send(:flying_offset, member), 'three-quarters in: the -4px trough')
+  eq(-4, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'three-quarters in: the -4px trough')
 end
 
 check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the sprite ' \
@@ -10406,10 +10426,10 @@ check 'entering a battle with an empty party is instant defeat, not a frozen com
   st.party.instance_variable_set(:@actors, [])
   90.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :result
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui, 'the battle is open'
   eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
   eq :defeat, ui[:result], 'an empty party reads the same as a wipeout'
@@ -10420,10 +10440,10 @@ check 'entering a battle with an all-KO\'d party is instant defeat too' do
   st.party.instance_variable_set(:@actors, [BattleStubActor.new(hp: 0)])
   90.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :result
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui, 'the battle is open'
   eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
   eq :defeat, ui[:result]
@@ -10445,16 +10465,16 @@ check 'an asleep ally is skipped straight to the next commandable one, no comman
                                             BattleStubActor.new(id: 2)])
   ui = nil
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
   ok ui, 'the battle opened'
   eq :command, ui[:phase], 'a still-commandable ally is left to open the prompt'
-  eq ui[:allies][1], scene.send(:current_actor),
+  eq ui[:allies][1], scene.instance_variable_get(:@battle).send(:current_actor),
      'the asleep ally at index 0 was skipped straight to the awake one at index 1'
 end
 
@@ -10465,7 +10485,7 @@ check 'a lone ally under a do-nothing state (asleep) never gets a command prompt
   ui = nil
   200.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     saw_animate ||= ui && ui[:phase] == :animate
     break if ui && ui[:phase] == :result
   end
@@ -10494,7 +10514,7 @@ check 'a lone Forced-AI ally never gets a command prompt -- the round starts on 
   ui = nil
   200.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     saw_animate ||= ui && ui[:phase] == :animate
     break if ui && ui[:phase] == :result
   end
@@ -10510,16 +10530,16 @@ check 'a Forced-AI ally is skipped straight to the next manually-commandable one
                                             BattleStubActor.new(id: 2)])
   ui = nil
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
   ok ui, 'the battle opened'
   eq :command, ui[:phase], 'the still-manually-commandable second ally is left to open the prompt'
-  eq ui[:allies][1], scene.send(:current_actor),
+  eq ui[:allies][1], scene.instance_variable_get(:@battle).send(:current_actor),
      'the Forced-AI ally at index 0 was skipped straight to the manual one at index 1'
   ok ui[:allies][0].action || ui[:allies][0].command,
      'the skipped Forced-AI ally already has its own action queued automatically'
@@ -10535,7 +10555,7 @@ check 'a turn-0 battle-event page runs as the fight opens' do
   end
   ok st.switches[12], 'the page ran before the command phase'
   scene.update # the exhausted page hands the turn back
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui, 'the battle is still open'
   # Control returns to the party through the options window first -- its own
   # once-per-battle automatic appearance, the same one a bare encounter with
@@ -10579,11 +10599,11 @@ check 'a battle page conditioned on enemy HP fires mid-round, before the round s
   scene, st = battle_scene_with_pages(pages)
   phase_when_fired = nil
   300.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui[:phase])
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     if st.switches[20] && phase_when_fired.nil?
       phase_when_fired = ui && ui[:phase]
     end
@@ -10614,14 +10634,14 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
                             Game::BattlePage::ENEMY_HP, enemy_id: 0, enemy_hp_max: 0) }
   scene, st = battle_scene_with_pages(pages)
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   # Troop member 1 stands in for a placed-but-invisible reinforcement.
   ui[:foes][1].hidden = true
   ui[:troop].members[1].hidden = true
@@ -10642,10 +10662,10 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
   ui[:battler_boundary] = true
   revealed_before_victory = nil
   20.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break unless ui
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break unless ui
     next if ui[:foes][1].hidden
     revealed_before_victory = ui[:phase] != :result
@@ -10658,8 +10678,8 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
   # #reveal_battle_monster returns immediately once `hidden` is already false,
   # so a second reveal neither rebuilds the sprite nor errors.
   sprite_before = ui[:enemy_sprites][1]
-  scene.send(:reveal_battle_monster, 1)
-  eq sprite_before, scene.instance_variable_get(:@battle_ui)[:enemy_sprites][1],
+  scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 1)
+  eq sprite_before, battle_ui(scene)[:enemy_sprites][1],
      'revealing an already-visible member again is a no-op, not a sprite rebuild'
 end
 
@@ -10676,14 +10696,14 @@ end
 def open_then_close_battle(scene, open_budget: 10, close_budget: 100)
   open_budget.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
   end
-  ok scene.instance_variable_get(:@battle_ui), 'the battle opened'
+  ok battle_ui(scene), 'the battle opened'
   close_budget.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui).nil?
+    break if battle_ui(scene).nil?
   end
-  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+  eq nil, battle_ui(scene), 'the battle closed again'
 end
 
 check 'Terminate Battle from a page ends the fight and resumes the event' do
@@ -10710,10 +10730,10 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
 
   10.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
     ok sprite.visible, 'the picture layer draws normally before any fight opens'
   end
-  ok scene.instance_variable_get(:@battle_ui), 'the battle opened'
+  ok battle_ui(scene), 'the battle opened'
   ok !sprite.visible, 'the picture layer is hidden the instant the battle screen is up'
   bmp.clear_stretch_calls
   scene.update
@@ -10721,9 +10741,9 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
 
   100.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui).nil?
+    break if battle_ui(scene).nil?
   end
-  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+  eq nil, battle_ui(scene), 'the battle closed again'
   ok sprite.visible, 'the picture layer reappears the instant the fight ends'
 end
 
@@ -10744,7 +10764,7 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
 
   10.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
     # `!= false` rather than a plain truth test: RGSS::Viewport#visible
     # defaults to true on the real backend but nil on this stub, so a bare
     # `ok vp.visible` here would be asserting the stub's default, not the
@@ -10756,7 +10776,7 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
     # the events drawn over it -- is what says compositing happened at all.
     ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers do composite'
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui, 'the battle opened'
   ok ui[:back_sprite], 'the fight has a battle background sprite'
   ok ui[:back_sprite].z < vp.z, 'whose z sits below the map viewport ...'
@@ -10773,9 +10793,9 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
 
   100.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui).nil?
+    break if battle_ui(scene).nil?
   end
-  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+  eq nil, battle_ui(scene), 'the battle closed again'
   eq true, vp.visible, 'the map view reappears the instant the fight ends'
   eq true, upper.visible, 'and so does the above-character layer'
   ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers composite again'
@@ -10805,9 +10825,9 @@ check 'a battle-valid Timer reaching 0:00 force-ends the fight (yado.tk)' do
   scene, st = battle_scene_with_pages({})
   10.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
   end
-  ok scene.instance_variable_get(:@battle_ui), 'the battle opened'
+  ok battle_ui(scene), 'the battle opened'
   # A timer already at 0:00-next-tick, marked to count during battle.
   t = st.timer(0)
   t.frames = 1
@@ -10815,7 +10835,7 @@ check 'a battle-valid Timer reaching 0:00 force-ends the fight (yado.tk)' do
   t.visible = true
   t.in_battle = true
   scene.update
-  eq nil, scene.instance_variable_get(:@battle_ui),
+  eq nil, battle_ui(scene),
      'the battle force-ends the instant the timer reaches 0:00, mid-command-phase'
   ok !st.switches[1] && !st.switches[2] && !st.switches[3],
      'no Win/Escape/Defeat handler matched -- an unlabeled third outcome, same as Terminate Battle'
@@ -10826,14 +10846,14 @@ check 'a page can wound a monster through Change Monster HP' do
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 7, 1])]) }
   scene, _st = battle_scene_with_pages(pages)
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   foe = ui[:battle].enemy(0)
   eq foe.max_hp - 7, foe.hp, 'the page took 7 HP off the first troop member'
 end
@@ -10844,15 +10864,15 @@ check 'Change Battle Background from a page rebuilds the backdrop sprite' do
   scene, _st = battle_scene_with_pages(pages)
   before = nil
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     before ||= ui && ui[:back_sprite]
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui[:back_sprite], 'a backdrop is still in place'
   ok !ui[:back_sprite].equal?(before), 'and it was rebuilt for the new name'
 end
@@ -10881,7 +10901,7 @@ check "a battle page's Show Battle Animation actually holds the page, not resumi
   it = nil
   150.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     it = ui && ui[:events]
     break if it && it.waiting? && it.wait_kind == :animation
   end
@@ -10907,7 +10927,7 @@ check "a battle page's Show Battle Animation draws over the targeted troop membe
   ma_seen = nil
   150.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     anim_spr = scene.instance_variable_get(:@animation_sprite)
     spr_shown ||= anim_spr && anim_spr.visible
     ma = scene.instance_variable_get(:@map_animation)
@@ -10917,7 +10937,7 @@ check "a battle page's Show Battle Animation draws over the targeted troop membe
   ok spr_shown, 'the animation sprite actually drew'
   ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
   ok ma_seen[:battle], 'positioned in screen space, like a battle-round animation'
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   spr = ui[:enemy_sprites][1]
   eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
      [ma_seen[:tx], ma_seen[:ty]], "centred on troop member 1's sprite, the command's own target param"
@@ -10937,7 +10957,7 @@ check "a battle page's Show Battle Animation target-scope flash pulses the named
   bystander_flashed = false
   150.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     next unless ui && ui[:enemy_sprites]
     target_flashed ||= !!ui[:enemy_sprites][0].flash_color
     bystander_flashed ||= !!ui[:enemy_sprites][1].flash_color
@@ -10956,10 +10976,10 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
   scene, st = battle_scene_with_pages(pages)
   90.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:event_win]
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui[:event_win], 'the message panel is up'
   ok !st.switches[15], 'the page is held at the message'
   RGSS::Input.triggered = [RGSS::Input::C]
@@ -10967,32 +10987,32 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
   RGSS::Input.triggered = []
   3.times { scene.update }
   ok st.switches[15], 'the button dismissed it and the page ran on'
-  eq nil, scene.instance_variable_get(:@battle_ui)[:event_win],
+  eq nil, battle_ui(scene)[:event_win],
      'the panel closed with the message'
 end
 
 check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   eq 2, ui[:foes].length
   # Hide the second member the way an invisible troop entry would have.
   ui[:foes][1].hidden = true
   ui[:troop].members[1].hidden = true
-  targets = scene.send(:living_foes)
+  targets = scene.instance_variable_get(:@battle).send(:living_foes)
   eq 1, targets.length, 'the target cursor skips the hidden member'
   ok !targets.include?(ui[:foes][1])
 
-  scene.send(:reveal_battle_monster, 1)
+  scene.instance_variable_get(:@battle).send(:reveal_battle_monster, 1)
   ok !ui[:foes][1].hidden, 'revealing clears the combatant flag, not just the sprite'
-  eq 2, scene.send(:living_foes).length, 'and it becomes targetable'
+  eq 2, scene.instance_variable_get(:@battle).send(:living_foes).length, 'and it becomes targetable'
   ok ui[:enemy_sprites][1], 'with a sprite built for it'
 end
 
@@ -11188,7 +11208,7 @@ check 'Enemy Encounter scene: the result window shows the database Victory term'
   state.instance_variable_set(:@party, BattleStubParty.new)
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  texts = window_texts(battle_ui(scene)[:result_win])
   ok texts.any? { |t| t.include?('戦いに勝利した！') }, 'the database term is shown'
   ok !texts.any? { |t| t.include?('Victory!') }, 'not the composed English fallback'
 end
@@ -11213,7 +11233,7 @@ check 'Enemy Encounter scene: the result window composes the database EXP/gold/i
   state.instance_variable_set(:@party, BattleStubParty.new(item_db: db.item))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  texts = window_texts(battle_ui(scene)[:result_win])
   ok texts.any? { |t| t.include?('10の経験値を得た！') },
      'the EXP term is composed as amount-then-term (GetExperienceGainedMessage)'
   ok texts.any? { |t| t.include?('仲間は 20ゴールドを手に入れた！') },
@@ -11236,7 +11256,7 @@ check 'Enemy Encounter scene: blank database EXP/gold/item received terms fall b
   state.instance_variable_set(:@party, BattleStubParty.new(item_db: db.item))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  texts = window_texts(battle_ui(scene)[:result_win])
   ok texts.any? { |t| t.include?('10 EXP gained.') }, 'a blank exp_received term falls back'
   ok texts.any? { |t| t.include?('Found 20G.') }, 'blank gold_received_a/gold/gold_received_b fall back'
   ok texts.count { |t| t.include?('Potion obtained.') } == 2, 'a blank item_received term falls back'
@@ -11263,7 +11283,7 @@ check 'Enemy Encounter scene: the result window announces a level-up and the ski
   state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  texts = window_texts(battle_ui(scene)[:result_win])
   eq 2, actor.level, 'the EXP gain crossed the one threshold configured'
   ok texts.any? { |t| t.include?('Heroはレベル 2 に上がった！') },
      'the level-up line reads name + level term + number + level_up term ' \
@@ -11286,7 +11306,7 @@ check 'Enemy Encounter scene: blank database level_up/skill_learned terms fall b
   state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  texts = window_texts(battle_ui(scene)[:result_win])
   ok texts.any? { |t| t.include?('Hero is now level 2!') }, 'a blank level_up term falls back'
   ok texts.any? { |t| t.include?('Hero learned Meteor!') }, 'a blank skill_learned term falls back'
 end
@@ -11301,7 +11321,7 @@ check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to
                            BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
   scene.update
   battle_attack_to_end(scene)
-  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  texts = window_texts(battle_ui(scene)[:result_win])
   ok texts.any? { |t| t.include?('The party was defeated...') },
      'a blank database term still falls back to the composed English'
 end
@@ -11361,11 +11381,11 @@ def battle_at_command(pages = nil, party: BattleStubParty.new, battleranimations
   scene, = battle_scene_with_pages(pages, party: party, battleranimations: battleranimations)
   ui = nil
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
   [scene, ui]
@@ -11379,7 +11399,7 @@ check 'a skill that names an animation plays it over the targeted enemy' do
   scene, ui = battle_at_command
   entry = { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
             skill_id: 8, target_index: 0, target_ally: false }
-  ok scene.send(:start_battle_animation, entry), 'an animation started'
+  ok scene.instance_variable_get(:@battle).send(:start_battle_animation, entry), 'an animation started'
   ma = scene.instance_variable_get(:@map_animation)
   ok ma, 'the player was armed'
   ok ma[:battle], 'and flagged as a battle animation'
@@ -11415,7 +11435,7 @@ check 'a target-scope animation flash pulses the hit enemy, not the screen or a 
   eq nil, bystander.flash_color, 'the other, untargeted enemy sprite is untouched'
   # Driven every frame the way #drive_battle already does (#update_enemy_flashes),
   # the flash fades out and clears after its own duration -- not left stuck on.
-  anim_flash_frames.times { scene.send(:update_enemy_flashes) }
+  anim_flash_frames.times { scene.instance_variable_get(:@battle).send(:update_enemy_flashes) }
   eq nil, spr.flash_color, 'the flash faded out after its duration'
 end
 
@@ -11469,7 +11489,7 @@ check 'a target-scope animation shake jitters the hit enemy sprite, not a bystan
   scene.send(:fire_animation_flashes, ma)
   moved = false
   RPG2k::Scene::Map::ANIM_SHAKE_FRAMES.times do
-    scene.send(:update_enemy_shakes)
+    scene.instance_variable_get(:@battle).send(:update_enemy_shakes)
     moved ||= spr.x != base_x
   end
   ok moved, "the targeted enemy sprite's x moved off its base position at some point during the shake"
@@ -11559,7 +11579,7 @@ end
 
 check 'a skill that names none plays nothing' do
   scene, = battle_at_command
-  ok !scene.send(:start_battle_animation,
+  ok !scene.instance_variable_get(:@battle).send(:start_battle_animation,
                  { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Heal',
                    skill_id: 9, target_index: 0, target_ally: false })
   eq nil, scene.instance_variable_get(:@map_animation)
@@ -11603,7 +11623,7 @@ check 'a skill naming a since-deleted battle animation plays nothing, but report
   entry = { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
             skill_id: 8, target_index: 0, target_ally: false }
   out = capture_stderr do
-    ok !scene.send(:start_battle_animation, entry), 'nothing plays -- unchanged from before this diagnostic'
+    ok !scene.instance_variable_get(:@battle).send(:start_battle_animation, entry), 'nothing plays -- unchanged from before this diagnostic'
   end
   eq nil, scene.instance_variable_get(:@map_animation), 'draws nothing, same as always'
   ok out.include?('[RPG2k] battle animation #8 not found in database, nothing drawn'), out
@@ -11615,7 +11635,7 @@ check 'an action on a party member plays over the middle of the screen' do
   scene, = battle_at_command
   entry = { attacker: 'Slime', target: 'Hero', damage: 7, skill: 'Fire',
             skill_id: 8, target_index: nil, target_ally: true }
-  ok scene.send(:start_battle_animation, entry)
+  ok scene.instance_variable_get(:@battle).send(:start_battle_animation, entry)
   ma = scene.instance_variable_get(:@map_animation)
   eq [RPG2k::Scene::Map::SCREEN_W / 2, RPG2k::Scene::Map::SCREEN_H / 2],
      [ma[:tx], ma[:ty]]
@@ -11624,19 +11644,19 @@ end
 check 'the round waits for the animation instead of the banner timer' do
   scene, ui = battle_at_command
   ui[:phase] = :animate
-  scene.send(:start_battle_animation,
+  scene.instance_variable_get(:@battle).send(:start_battle_animation,
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                skill_id: 8, target_index: 0, target_ally: false })
-  ok scene.send(:battle_animation_playing?), 'the round is held'
+  ok scene.instance_variable_get(:@battle).send(:battle_animation_playing?), 'the round is held'
   # It plays out frame by frame and clears itself; nothing else advances while
   # it does, and no interpreter is resumed (a battle animation has no event
   # waiting on it, unlike the map's Show Battle Animation).
   200.times do
     break if scene.instance_variable_get(:@map_animation).nil?
-    scene.send(:drive_battle_animate)
+    scene.instance_variable_get(:@battle).send(:drive_battle_animate)
   end
   eq nil, scene.instance_variable_get(:@map_animation), 'it finished'
-  ok !scene.send(:battle_animation_playing?)
+  ok !scene.instance_variable_get(:@battle).send(:battle_animation_playing?)
 end
 
 # Real RPG_RT (EasyRPG's BattleAnimation::Update, src/battle_animation.cpp)
@@ -11647,7 +11667,7 @@ end
 # comment in scene/map.rb for the fuller citation.
 check 'each battle animation frame is held for exactly ANIM_CELL_FRAMES ticks (2, 1/30s)' do
   scene, = battle_at_command
-  scene.send(:start_battle_animation,
+  scene.instance_variable_get(:@battle).send(:start_battle_animation,
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                skill_id: 8, target_index: 0, target_ally: false })
   ma = scene.instance_variable_get(:@map_animation)
@@ -11663,13 +11683,13 @@ end
 
 check 'an item names its animation the same way a skill does' do
   scene, = battle_at_command
-  eq nil, scene.send(:battle_animation_id,
+  eq nil, scene.instance_variable_get(:@battle).send(:battle_animation_id,
                      { item_id: 3, recover: true }),
      'the fixture Potion names none'
-  eq 8, scene.send(:battle_animation_id, { skill_id: 8 })
-  eq nil, scene.send(:battle_animation_id, { attacker: 'Hero' }),
+  eq 8, scene.instance_variable_get(:@battle).send(:battle_animation_id, { skill_id: 8 })
+  eq nil, scene.instance_variable_get(:@battle).send(:battle_animation_id, { attacker: 'Hero' }),
      'a plain attack with no attack_animation_id resolved (a bare fixture Combatant, or an enemy) carries none'
-  eq 5, scene.send(:battle_animation_id, { attacker: 'Hero', attack_animation_id: 5 }),
+  eq 5, scene.instance_variable_get(:@battle).send(:battle_animation_id, { attacker: 'Hero', attack_animation_id: 5 }),
      'a plain attack falls back to the id Game::Battle#deal_attack already resolved onto the entry'
 end
 
@@ -11681,7 +11701,7 @@ check 'a plain attack with a resolved weapon animation plays it over the targete
   scene, ui = battle_at_command
   entry = { attacker: 'Hero', target: 'Slime', damage: 7,
             attack_animation_id: 8, target_index: 0, target_ally: false }
-  ok scene.send(:start_battle_animation, entry), 'an animation started, same as a skill would'
+  ok scene.instance_variable_get(:@battle).send(:start_battle_animation, entry), 'an animation started, same as a skill would'
   ma = scene.instance_variable_get(:@map_animation)
   ok ma, 'the player was armed'
   spr = ui[:enemy_sprites][0]
@@ -11691,7 +11711,7 @@ end
 
 check 'a plain attack with nothing resolved plays no animation' do
   scene, = battle_at_command
-  ok !scene.send(:start_battle_animation,
+  ok !scene.instance_variable_get(:@battle).send(:start_battle_animation,
                  { attacker: 'Hero', target: 'Slime', damage: 7, target_index: 0 }),
      'an unarmed attacker with no unarmed_animation configured, or an enemy, carries no id'
   eq nil, scene.instance_variable_get(:@map_animation)
@@ -11699,7 +11719,7 @@ end
 
 check 'the battle animation draws in screen pixels, not map ones' do
   scene, = battle_at_command
-  scene.send(:start_battle_animation,
+  scene.instance_variable_get(:@battle).send(:start_battle_animation,
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                skill_id: 8, target_index: 0, target_ally: false })
   ma = scene.instance_variable_get(:@map_animation)
@@ -11743,7 +11763,7 @@ end
 
 check 'a head/feet Show Battle Animation position offsets where it draws over the enemy sprite' do
   scene, = battle_at_command
-  scene.send(:start_battle_animation,
+  scene.instance_variable_get(:@battle).send(:start_battle_animation,
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                skill_id: 8, target_index: 0, target_ally: false })
   ma = scene.instance_variable_get(:@map_animation)
@@ -11790,7 +11810,7 @@ check 'the Battle/ animation sheet is loaded colour-keyed, like every other spri
      'palette index 0 must decode transparent, or every cell paints an opaque 96x96 block'
   # The four full-screen backdrops are the deliberate exceptions, and stay
   # opaque -- they have no transparent colour to key out.
-  eq false, scene.send(:battle_back_bitmap, 'Back').load_transparent,
+  eq false, scene.instance_variable_get(:@battle).send(:battle_back_bitmap, 'Back').load_transparent,
      'Backdrop/ is a full-screen image and stays opaque'
 end
 
@@ -11817,7 +11837,7 @@ end
 
 check 'a battle animation cell blits at its own transparency' do
   scene, = battle_at_command
-  scene.send(:start_battle_animation,
+  scene.instance_variable_get(:@battle).send(:start_battle_animation,
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                skill_id: 8, target_index: 0, target_ally: false })
   ma = scene.instance_variable_get(:@map_animation)
@@ -11853,7 +11873,7 @@ check 'the battle status window shows each ally condition, or the normal term' d
      'the one ally starts clear, showing the database normal term'
 
   ui[:allies][0].states = [4]                    # Sleep
-  scene.send(:refresh_battle_status)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
   texts = window_texts(ui[:status_win])
   ok texts.include?('Sleep'), 'the afflicted ally shows its state'
   # RPG2000 is front-view: EasyRPG's Scene_Battle_Rpg2k builds exactly one
@@ -11866,10 +11886,10 @@ check 'the condition shown is the significant state, in the state colour' do
   scene, ui = battle_at_command
   # Sleep (priority 80) outranks Silence (10) whichever order they landed in.
   ui[:allies][0].states = [4, 5]
-  scene.send(:refresh_battle_status)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
   ok window_texts(ui[:status_win]).include?('Sleep'), 'the higher priority wins'
   ui[:allies][0].states = [5, 4]
-  scene.send(:refresh_battle_status)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
   ok window_texts(ui[:status_win]).include?('Sleep'), 'regardless of order'
 
   # The state's own palette colour reaches the draw call. This project ships no
@@ -11904,7 +11924,7 @@ end
 
 check 'battle_type 0 (no gauge layout) still draws the plain text status row' do
   scene, ui = battle_at_command
-  ok !scene.send(:gauge_battle_layout?), 'the plain fixture answers false'
+  ok !scene.instance_variable_get(:@battle).send(:gauge_battle_layout?), 'the plain fixture answers false'
   texts = window_texts(ui[:status_win])
   ok texts.include?('Hero'), 'the text status row is unchanged'
   eq [], ui[:status_win].contents.blt_calls || [],
@@ -11917,8 +11937,8 @@ check 'battle_type 1 (alternative) keeps the unchanged text status row too, ' \
   party = BattleStubParty.new(actor, alternate_layout: true, gauge_layout: false)
   scene, ui = battle_at_command(nil, party: party)
   scene.db.system.system2_name = 'BattleStatus'
-  scene.send(:refresh_battle_status)
-  ok !scene.send(:gauge_battle_layout?),
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
+  ok !scene.instance_variable_get(:@battle).send(:gauge_battle_layout?),
      'battle_type 1 answers false to #gauge_battle_layout? -- only 2 does'
   texts = window_texts(ui[:status_win])
   ok texts.include?('Hero'), 'the text status row is still what battle_type 1 draws'
@@ -11929,9 +11949,9 @@ check 'battle_type 2 (gauge) with no System2 graphic falls back to the text ' \
   actor = BattleStubActor.new
   party = BattleStubParty.new(actor, gauge_layout: true)
   scene, ui = battle_at_command(nil, party: party)
-  ok scene.send(:gauge_battle_layout?), 'the fixture asks for the gauge layout'
+  ok scene.instance_variable_get(:@battle).send(:gauge_battle_layout?), 'the fixture asks for the gauge layout'
   ok !scene.db.system.respond_to?(:system2_name), 'and the database names no System2 graphic'
-  scene.send(:refresh_battle_status)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
   texts = window_texts(ui[:status_win])
   ok texts.include?('Hero'), 'falls back to the plain text row rather than an empty/crashed panel'
 end
@@ -11944,7 +11964,7 @@ check 'battle_type 2 (gauge) draws the gauge card: face, HP/SP bars, digit numbe
   # A non-full HP (so this same window also exercises the normal, not
   # "full", fill tile) alongside SP's still-full 20/20.
   ui[:allies][0].hp = 100
-  scene.send(:refresh_battle_status)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
   win = ui[:status_win]
 
   ok window_texts(win).empty?,
@@ -11989,12 +12009,14 @@ end
 
 check 'DrawGaugeSystem2 stretches the fill by 25 * cur / max, and reads the ' \
       'distinct "full" tile only when cur == max' do
-  scene = new_scene({})
+  # A pure function of its own arguments (no @ui / fight state touched), so a
+  # bare, never-#start'ed Scene::Battle is enough to call it on.
+  battle = RPG2k::Scene::Battle.allocate
   system2 = RGSS::Bitmap.new(80, 96)
   c = RGSS::Bitmap.new(64, 16)
   draw = lambda do |cur, max, which|
     c.clear_stretch_calls
-    scene.send(:draw_gauge_system2, c, system2, 100, 200, cur, max, which)
+    battle.send(:draw_gauge_system2, c, system2, 100, 200, cur, max, which)
     c.stretch_calls.last
   end
 
@@ -12016,17 +12038,17 @@ check 'DrawGaugeSystem2 stretches the fill by 25 * cur / max, and reads the ' \
      'which=1 (SP) reads its own row, 16px down -- still the "full" tile at cur == max'
 
   c.clear_stretch_calls
-  scene.send(:draw_gauge_system2, c, system2, 100, 200, 5, 0, 0)
+  battle.send(:draw_gauge_system2, c, system2, 100, 200, 5, 0, 0)
   eq nil, c.stretch_calls.last, 'max == 0 draws nothing at all, matching the real max_value guard'
 end
 
 check 'DrawNumberSystem2 leading-zero cascade matches EasyRPG exactly (7, 42, 100, 999)' do
-  scene = new_scene({})
+  battle = RPG2k::Scene::Battle.allocate
   system2 = RGSS::Bitmap.new(80, 96)
   c = RGSS::Bitmap.new(64, 16)
   glyphs = lambda do |value|
     c.clear_blt_calls
-    scene.send(:draw_number_system2, c, system2, 0, 0, value)
+    battle.send(:draw_number_system2, c, system2, 0, 0, value)
     c.blt_calls.map { |call| [call[0], call[3].x / 8] }
   end
 
@@ -12090,7 +12112,7 @@ check 'a Change Party Member remove on a battle page disposes only that ' \
   ui = nil
   10.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui
   end
   ok ui, 'the battle opened'
@@ -12103,7 +12125,7 @@ check 'a Change Party Member remove on a battle page disposes only that ' \
     RGSS::Input.triggered = [RGSS::Input::C] if ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui[:phase] == :command
   end
   eq :command, ui[:phase], 'the page ran (and handed control back) along the way'
@@ -12141,11 +12163,11 @@ check 'a Change Party Member add reaches the gauge-card status panel ' \
 
   ui = nil
   150.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
   eq :command, ui[:phase]
@@ -12173,12 +12195,12 @@ check 'leaving and rejoining the same fight reuses the same Combatant (and ' \
   ok original_combatant && original_sprite
 
   original_combatant.states = [5] # an accumulated battle-only status
-  scene.send(:on_battle_party_changed, ally, false) # leaves
+  scene.instance_variable_get(:@battle).send(:on_battle_party_changed, ally, false) # leaves
   eq 1, ui[:allies].length, 'dropped from the render roster'
   ok !ui[:actor_sprites].include?(original_sprite)
   ok original_sprite.disposed?, 'their sprite was disposed on the way out'
 
-  scene.send(:on_battle_party_changed, ally, true) # rejoins the same fight
+  scene.instance_variable_get(:@battle).send(:on_battle_party_changed, ally, true) # rejoins the same fight
   eq 2, ui[:allies].length, 'back in the render roster, not duplicated'
   eq 1, ui[:allies].count { |c| c.actor && c.actor.id == 2 }, 'no leaked duplicate Combatant'
   rejoined_combatant = ui[:allies].find { |c| c.actor.id == 2 }
@@ -12203,11 +12225,11 @@ check 'actor sprite Z stays collision-free across a remove-then-add cycle, ' \
   scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
   eq [200, 201, 202], ui[:actor_sprites].map(&:z), 'starting Z per index (#actor_sprite_z)'
 
-  scene.send(:on_battle_party_changed, ally, false) # remove the middle member
+  scene.instance_variable_get(:@battle).send(:on_battle_party_changed, ally, false) # remove the middle member
   eq [200, 201], ui[:actor_sprites].map(&:z),
      "Third's Z was recomputed for its new index (1), not left stale at 202"
 
-  scene.send(:on_battle_party_changed, newcomer, true) # a brand new member joins
+  scene.instance_variable_get(:@battle).send(:on_battle_party_changed, newcomer, true) # a brand new member joins
   zs = ui[:actor_sprites].map(&:z)
   eq [200, 201, 202], zs
   eq zs.uniq.length, zs.length, 'no two actor sprites end up sharing a Z'
@@ -12217,7 +12239,7 @@ end
 
 check 'a plain attack reads as RPG_RT words it: the attack, then the damage' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Hero', target: 'Slime', damage: 42,
                        target_ally: false })
   eq ['Heroの攻撃！', 'Slimeに 42 のダメージを与えた！'], lines
@@ -12225,7 +12247,7 @@ end
 
 check 'and from the other side, with the other predicate and particle' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Slime', target: 'Hero', damage: 7,
                        target_ally: true })
   eq ['Slimeの攻撃！', 'Heroは 7 のダメージを受けた！'], lines
@@ -12233,7 +12255,7 @@ end
 
 check 'a miss reads as the target dodging' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Hero', target: 'Slime', damage: 0,
                        missed: true, target_ally: false })
   eq ['Heroの攻撃！', 'Slimeは身をかわした！'], lines
@@ -12241,7 +12263,7 @@ end
 
 check 'a blow that gets through for nothing says so' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Hero', target: 'Slime', damage: 0,
                        target_ally: false })
   eq ['Heroの攻撃！', 'Slimeにダメージを与えられない！'], lines
@@ -12253,7 +12275,7 @@ end
 # damage predicates themselves, not on which side dealt it.
 check 'a critical hit adds the game\'s own line between the attack and the damage' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Hero', target: 'Slime', damage: 42,
                        critical: true, target_ally: false })
   eq ['Heroの攻撃！', '会心の一撃！！', 'Slimeに 42 のダメージを与えた！'], lines
@@ -12261,7 +12283,7 @@ end
 
 check 'and from the other side, the term keyed on the party member taking it' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Slime', target: 'Hero', damage: 7,
                        critical: true, target_ally: true })
   eq ['Slimeの攻撃！', '痛恨の一撃！！', 'Heroは 7 のダメージを受けた！'], lines
@@ -12271,7 +12293,7 @@ check 'a blank critical term drops the whole entry back to the composed ' \
       'wording, "(critical!)" included' do
   scene, = battle_at_command
   scene.db.term.enemy_critical = ''
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Hero', target: 'Slime', damage: 42,
                        critical: true, target_ally: false })
   eq ['Hero hits Slime for 42 (critical!)'], lines
@@ -12280,20 +12302,20 @@ end
 check 'the basic actions with no target are one line each' do
   scene, = battle_at_command
   eq ['Slimeは身を守っている'],
-     scene.send(:battle_action_lines, { attacker: 'Slime', defend: true })
+     scene.instance_variable_get(:@battle).send(:battle_action_lines, { attacker: 'Slime', defend: true })
   eq ['Slimeは力をためている・・・'],
-     scene.send(:battle_action_lines, { attacker: 'Slime', charge: true })
+     scene.instance_variable_get(:@battle).send(:battle_action_lines, { attacker: 'Slime', charge: true })
   eq ['Slimeは逃げてしまった！'],
-     scene.send(:battle_action_lines, { attacker: 'Slime', fled: true })
+     scene.instance_variable_get(:@battle).send(:battle_action_lines, { attacker: 'Slime', fled: true })
   eq ['Slimeは変身した！'],
-     scene.send(:battle_action_lines, { attacker: 'Slime', transform: true,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines, { attacker: 'Slime', transform: true,
                                         target: 'Bat' })
 end
 
 check 'an autodestruct names itself and then the damage it did' do
   scene, = battle_at_command
   eq ['Slimeは自爆した！', 'Heroは 20 のダメージを受けた！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Slime', target: 'Hero', damage: 20,
                   autodestruct: true, target_ally: true })
 end
@@ -12304,7 +12326,7 @@ check 'a blank term drops the whole entry back to the composed wording' do
   # `observing` is blank in the fixture, so Observe cannot be worded from the
   # table and the entry falls back whole rather than printing a bare name.
   eq ['Slime watches closely'],
-     scene.send(:battle_action_lines, { attacker: 'Slime', observe: true })
+     scene.instance_variable_get(:@battle).send(:battle_action_lines, { attacker: 'Slime', observe: true })
 end
 
 check 'a skill keeps its composed line until its own sentence is read' do
@@ -12312,14 +12334,14 @@ check 'a skill keeps its composed line until its own sentence is read' do
   # using_message1 / use_item are still unread; dropping to the bare damage line
   # would lose the only thing naming what was cast.
   eq ["Hero's Venom hits Slime for 7"],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Venom',
                   target_ally: false })
 end
 
 check 'the state sentences still follow the action ones' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Slime', target: 'Hero', damage: 7,
                        inflicted: [3], target_ally: true })
   eq ['Slimeの攻撃！', 'Heroは 7 のダメージを受けた！', 'Hero is poisoned!'], lines
@@ -12337,17 +12359,17 @@ end
 check 'an affect_attack/defense/spirit/agility skill announces the stat rise ' \
       'or drop, in the game\'s own words' do
   scene, = battle_at_command
-  up = scene.send(:battle_state_lines, { target: 'Hero', target_ally: true,
+  up = scene.instance_variable_get(:@battle).send(:battle_state_lines, { target: 'Hero', target_ally: true,
                                          stat_changed: { atk: 10 } })
   eq ['Heroの攻撃力が 10 上がった！'], up
 
-  down = scene.send(:battle_state_lines, { target: 'Slime', target_ally: false,
+  down = scene.instance_variable_get(:@battle).send(:battle_state_lines, { target: 'Slime', target_ally: false,
                                            stat_changed: { def: -4 } })
   eq ['Slimeの防御力が 4 下がった！'], down
 
   # Every ability-value key the mechanic can touch, and in the order
   # #apply_stat_mods reports them.
-  all_four = scene.send(:battle_state_lines,
+  all_four = scene.instance_variable_get(:@battle).send(:battle_state_lines,
                         { target: 'Hero', target_ally: true,
                           stat_changed: { atk: 3, def: -2, spi: 1, agi: -5 } })
   eq ['Heroの攻撃力が 3 上がった！', 'Heroの防御力が 2 下がった！',
@@ -12356,7 +12378,7 @@ end
 
 check 'a zero-delta stat entry (already pinned at its cap) says nothing' do
   scene, = battle_at_command
-  eq [], scene.send(:battle_state_lines,
+  eq [], scene.instance_variable_get(:@battle).send(:battle_state_lines,
                     { target: 'Hero', target_ally: true, stat_changed: { atk: 0 } })
 end
 
@@ -12364,12 +12386,12 @@ check 'an affect_attr_defence skill announces which way the target\'s ' \
       'resistance moved, by the attribute\'s own name -- no magnitude, ' \
       'matching EasyRPG\'s GetAttributeShiftMessage' do
   scene, = battle_at_command
-  raised = scene.send(:battle_state_lines,
+  raised = scene.instance_variable_get(:@battle).send(:battle_state_lines,
                       { target: 'Hero', target_ally: true,
                         attr_shifted: [1], attr_shift_dir: 1 })
   eq ['Heroは火 耐性が上がった！'], raised
 
-  lowered = scene.send(:battle_state_lines,
+  lowered = scene.instance_variable_get(:@battle).send(:battle_state_lines,
                        { target: 'Slime', target_ally: false,
                          attr_shifted: [1], attr_shift_dir: -1 })
   eq ['Slimeは火 耐性が下がった！'], lowered
@@ -12378,7 +12400,7 @@ end
 check 'the stat and attribute-shift lines follow the damage line, like every ' \
       'other landed condition' do
   scene, = battle_at_command
-  lines = scene.send(:battle_action_lines,
+  lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Slime', target: 'Hero', damage: 7,
                        target_ally: true, stat_changed: { def: -5 },
                        attr_shifted: [1], attr_shift_dir: -1 })
@@ -12390,7 +12412,7 @@ check 'a skill announces itself with its own two sentences, then the damage' do
   scene, = battle_at_command
   eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
       'Slimeに 42 のダメージを与えた！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 42, skill: 'Fire',
                   skill_id: 8, target_ally: false })
 end
@@ -12398,7 +12420,7 @@ end
 check 'a skill with only a first sentence gives one line before the damage' do
   scene, = battle_at_command
   eq ['Heroは光をまとった！', 'Slimeに 5 のダメージを与えた！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 5, skill: 'Heal',
                   skill_id: 9, target_ally: false })
 end
@@ -12406,7 +12428,7 @@ end
 check 'a skill row with no sentence keeps the composed line' do
   scene, = battle_at_command
   eq ["Hero's Mute hits Slime for 5"],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 5, skill: 'Mute',
                   skill_id: 10, target_ally: false })
 end
@@ -12414,7 +12436,7 @@ end
 check 'a skill that misses takes its own failure sentence, not the damage line' do
   scene, = battle_at_command
   eq ['Heroは呪文を唱えた！', 'Slimeは眠らなかった！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 0, missed: true,
                   skill: 'Sleep', skill_id: 11, target_ally: false })
 end
@@ -12422,7 +12444,7 @@ end
 check 'a heal that restored nothing reads as a failure' do
   scene, = battle_at_command
   eq ['Heroは光をまとった！', 'Heroには効かなかった！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { recover: true, actor: 'Hero', source: 'Heal', skill_id: 9,
                   target: 'Hero', recover_hp: 0, recover_mp: 0,
                   cured: [], target_ally: true })
@@ -12431,7 +12453,7 @@ end
 check 'a heal that worked says what it restored, in the game own words' do
   scene, = battle_at_command
   eq ['Heroは光をまとった！', 'HeroのＨＰが 30 回復した！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { recover: true, actor: 'Hero', source: 'Heal', skill_id: 9,
                   target: 'Hero', recover_hp: 30, recover_mp: 0,
                   cured: [], target_ally: true })
@@ -12441,7 +12463,7 @@ check 'a heal that filled both pools says so once per pool' do
   scene, = battle_at_command
   eq ['Heroは光をまとった！', 'HeroのＨＰが 30 回復した！',
       'HeroのＭＰが 12 回復した！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { recover: true, actor: 'Hero', source: 'Heal', skill_id: 9,
                   target: 'Hero', recover_hp: 30, recover_mp: 12,
                   cured: [], target_ally: true })
@@ -12450,7 +12472,7 @@ end
 check 'an item names itself with the caster, the item and the term' do
   scene, = battle_at_command
   eq ['HeroはPotionを使った！', 'HeroのＨＰが 30 回復した！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { recover: true, actor: 'Hero', source: 'Potion', item_id: 3,
                   target: 'Hero', recover_hp: 30, recover_mp: 0,
                   cured: [], target_ally: true })
@@ -12459,7 +12481,7 @@ end
 check 'an item that only cured says so through the state sentence' do
   scene, = battle_at_command
   eq ['HeroはAntidoteを使った！', 'Hero is cured.'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { recover: true, actor: 'Hero', source: 'Antidote', item_id: 5,
                   target: 'Hero', recover_hp: 0, recover_mp: 0,
                   cured: [3], target_ally: true })
@@ -12469,7 +12491,7 @@ check 'an item that did nothing keeps the composed line' do
   scene, = battle_at_command
   # RPG2000 gives an item no failure sentence to choose from -- unlike a skill,
   # it has no failure_message -- so the composed wording still says more.
-  ok scene.send(:battle_action_lines,
+  ok scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { recover: true, actor: 'Hero', source: 'Potion', item_id: 3,
                   target: 'Hero', recover_hp: 0, recover_mp: 0,
                   cured: [], target_ally: true })
@@ -12480,7 +12502,7 @@ check 'a drain adds its own line after the damage' do
   scene, = battle_at_command
   eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
       'Slimeに 20 のダメージを与えた！', 'SlimeのＨＰを 20 奪った！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 20, skill: 'Fire',
                   skill_id: 8, absorbed_hp: 20, target_ally: false })
 end
@@ -12489,7 +12511,7 @@ check 'a drain on a party member is worded from their side' do
   scene, = battle_at_command
   eq ['Slimeは炎を放った！', 'あたりが真っ赤に染まる！',
       'Heroは 20 のダメージを受けた！', 'HeroはＨＰを 20 奪われた！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Slime', target: 'Hero', damage: 20, skill: 'Fire',
                   skill_id: 8, absorbed_hp: 20, target_ally: true })
 end
@@ -12498,7 +12520,7 @@ check 'a skill that drained nothing adds no line' do
   scene, = battle_at_command
   eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
       'Slimeに 20 のダメージを与えた！'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 20, skill: 'Fire',
                   skill_id: 8, absorbed_hp: 0, target_ally: false })
 end
@@ -12507,7 +12529,7 @@ check 'a skill still trails the states it landed' do
   scene, = battle_at_command
   eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
       'Slimeに 7 のダメージを与えた！', 'Slime looks ill!'],
-     scene.send(:battle_action_lines,
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
                 { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
                   skill_id: 8, inflicted: [3], target_ally: false })
 end
@@ -12515,34 +12537,34 @@ end
 check 'the action banner announces the states an action landed and lifted' do
   scene, = battle_at_command
   # The database's own sentences, printed straight after the target's name.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Venom',
                inflicted: [3], target_ally: false })
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   texts = window_texts(ui[:action_win])
   ok texts.any? { |t| t.include?('Venom') }, 'the action itself still reads'
   ok texts.include?('Slime looks ill!'), 'with the enemy wording for the state'
 
   # The same state on a party member takes the actor wording.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 7,
                inflicted: [3], target_ally: true })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Hero is poisoned!'), 'and the actor wording for an ally'
 
   # A cure reads the recovery sentence.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { recover: true, actor: 'Hero', source: 'Antidote', target: 'Hero',
                recover_hp: 0, recover_mp: 0, cured: [3], target_ally: true })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Hero is cured.'), 'the recovery sentence'
 
   # So does a state a blow shook off (`woke`, a state's release_by_attack) --
   # the state lifting is the same event however it happened.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Hero', target: 'Slime', damage: 9,
                woke: [3], target_ally: false })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Slime is cured.'), 'a state shaken off by a blow reads the same'
 end
 
@@ -12550,30 +12572,30 @@ check 'being downed is announced with the death state own sentence' do
   scene, = battle_at_command
   # State 1 is death; the fake database words it from the speaker's side, the
   # way a real one does.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Hero', target: 'Slime', damage: 30,
                defeated: true, target_ally: false })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Slime is struck down!'), 'the enemy wording'
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 30,
                defeated: true, target_ally: true })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Hero falls!'), 'and the actor wording'
 end
 
 check 'a status the target already had is announced, in the state own words' do
   scene, = battle_at_command
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                already: [3], target_ally: true })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Hero is already poisoned!'),
      'one wording, whichever side the target is on'
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Hero', target: 'Slime', damage: 3,
                already: [3], target_ally: false })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Slime is already poisoned!')
 end
 
@@ -12581,10 +12603,10 @@ check 'an already-carried state with no sentence still gets announced' do
   scene, = battle_at_command
   # State 4 (Sleep) has a name but no message_already, which is what an
   # English-release database looks like.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                already: [4], target_ally: true })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Hero is already Sleep'), 'the scene composes its own wording'
 end
 
@@ -12592,17 +12614,17 @@ check 'a state the database gives no sentence still gets announced' do
   scene, = battle_at_command
   # State 5 (Silence) has a name but no message_actor / message_enemy, which is
   # what an English-release database looks like.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                inflicted: [5], target_ally: true })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Hero is Silence'), 'the scene composes its own wording'
 
   # An id the table does not define at all still reads as something.
-  scene.send(:show_battle_action,
+  scene.instance_variable_get(:@battle).send(:show_battle_action,
              { attacker: 'Slime', target: 'Hero', damage: 3,
                inflicted: [99], target_ally: true })
-  ok window_texts(scene.instance_variable_get(:@battle_ui)[:action_win])
+  ok window_texts(battle_ui(scene)[:action_win])
       .include?('Hero is state 99'), 'falling back to the id'
 end
 
@@ -15295,26 +15317,26 @@ end
 check 'a transformed monster is redrawn with its new battler graphic' do
   scene, _st = battle_scene_with_pages(nil)
   90.times do
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
     RGSS::Input.triggered = []
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui && ui[:phase] == :command
   end
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   before = ui[:enemy_sprites][0]
   ok before, 'the monster is on the field'
   # What Game::Battle's transform action does to the combatant.
   ui[:foes][0].battler_name = 'Dragon'
   ui[:foes][0].name = 'Dragon'
-  scene.send(:refresh_battle_sprites)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   ok !ui[:enemy_sprites][0].equal?(before), 'its sprite is rebuilt'
   eq 'Dragon', ui[:sprite_names][0], 'and tracked against the new battler'
   ok ui[:enemy_sprites][0].visible, 'still on the field'
   # A second refresh with nothing changed must not churn the sprite again.
   same = ui[:enemy_sprites][0]
-  scene.send(:refresh_battle_sprites)
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
   ok ui[:enemy_sprites][0].equal?(same), 'an unchanged battler is left alone'
 end
 
@@ -15336,7 +15358,7 @@ check 'a random encounter opens a battle with the map-tree node\'s own troop' do
   ui = nil
   20.times do
     scene.update
-    ui = scene.instance_variable_get(:@battle_ui)
+    ui = battle_ui(scene)
     break if ui
   end
   RGSS::Input.dir_value = 0
@@ -15351,7 +15373,7 @@ check 'an empty encounter list never starts a random battle' do
   RGSS::Input.dir_value = 6
   15.times { scene.update }
   RGSS::Input.dir_value = 0
-  ok scene.instance_variable_get(:@battle_ui).nil?,
+  ok battle_ui(scene).nil?,
      'the roll succeeds but there is nothing to fight, so no battle opens'
 end
 
@@ -15361,7 +15383,7 @@ check 'riding the airship skips the random-encounter roll entirely' do
   st = scene.instance_variable_get(:@state)
   st.boarded = :airship
   scene.send(:check_random_encounter)
-  ok scene.instance_variable_get(:@battle_ui).nil?, 'flying is RPG_RT\'s one blanket exemption'
+  ok battle_ui(scene).nil?, 'flying is RPG_RT\'s one blanket exemption'
   eq 0, st.encounter_total, 'the accumulator never even started'
 end
 
@@ -15379,7 +15401,7 @@ check 'a forced move route does not roll for a random encounter' do
   st = scene.instance_variable_get(:@state)
   30.times { scene.update }
   ok st.x > 0, "the forced route actually moved the player, at x=#{st.x}"
-  ok scene.instance_variable_get(:@battle_ui).nil?,
+  ok battle_ui(scene).nil?,
      'the whole forced route ran without ever rolling for an encounter'
 end
 
@@ -15396,7 +15418,7 @@ check 'standing on a Hero Touch event tile suppresses the random-encounter roll'
   st = scene.instance_variable_get(:@state)
   scene.send(:check_random_encounter)
   scene.update # give it a frame too, in case a battle wait was queued anyway
-  ok scene.instance_variable_get(:@battle_ui).nil?,
+  ok battle_ui(scene).nil?,
      "the party is standing on a Hero Touch event's own tile: no roll"
   eq 0, st.encounter_total, 'the step never accumulated, matching the flying early-out above'
 end
@@ -15412,7 +15434,7 @@ check 'standing on an Event Touch tile still rolls for a random encounter' do
   scene = new_scene({ 1 => event(0, 0, other) }, player: [0, 0], map_tree: tree)
   scene.send(:check_random_encounter)
   scene.update # the roll only queues a :battle wait; a frame turns it into @battle_ui
-  ui = scene.instance_variable_get(:@battle_ui)
+  ui = battle_ui(scene)
   ok ui, 'an Event Touch event on the tile does not suppress the roll'
   eq 1, ui[:troop].id, "the map tree node's own troop"
 end
@@ -15439,7 +15461,7 @@ check 'an encounter-steps of 0 disables random encounters and resets the accumul
   st.encounter_total = 55
   scene.send(:check_random_encounter)
   eq 0, st.encounter_total, 'the accumulator resets rather than piling up while encounters are off'
-  ok scene.instance_variable_get(:@battle_ui).nil?
+  ok battle_ui(scene).nil?
 end
 
 # -- Debug keys (RPG2k#test_play only -- see mruby-rpg2k/mrblib/scene/map.rb
@@ -15470,7 +15492,7 @@ check 'Ctrl during Test Play suppresses the random-encounter roll' do
   st = scene.instance_variable_get(:@state)
   RGSS::Input.triggered = [RGSS::Input::CTRL]
   scene.send(:check_random_encounter)
-  ok scene.instance_variable_get(:@battle_ui).nil?,
+  ok battle_ui(scene).nil?,
      'Ctrl held: a guaranteed roll (encount_steps 1, default terrain rate) never fires'
   eq 0, st.encounter_total, 'the accumulator never even started'
 end
@@ -15552,16 +15574,16 @@ check 'F9 opens the debug menu during Test Play even with a battle open' do
   st.instance_variable_set(:@party, BattleStubParty.new)
   10.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
   end
-  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+  ok battle_ui(scene), 'the battle actually opened'
 
   RGSS::Input.triggered = [RGSS::Input::F9]
   scene.update
   pushed = scene.parent.pushed
   eq 1, pushed.size, 'F9 pushed exactly one scene, mid-battle'
   ok pushed.first.is_a?(RPG2k::Scene::DebugMenu), 'the pushed scene is the debug menu'
-  ok scene.instance_variable_get(:@battle_ui), 'the battle stays open behind the debug menu'
+  ok battle_ui(scene), 'the battle stays open behind the debug menu'
 end
 
 check 'F9 does nothing during a battle outside Test Play' do
@@ -15573,9 +15595,9 @@ check 'F9 does nothing during a battle outside Test Play' do
   st.instance_variable_set(:@party, BattleStubParty.new)
   10.times do
     scene.update
-    break if scene.instance_variable_get(:@battle_ui)
+    break if battle_ui(scene)
   end
-  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+  ok battle_ui(scene), 'the battle actually opened'
 
   RGSS::Input.triggered = [RGSS::Input::F9]
   scene.update
