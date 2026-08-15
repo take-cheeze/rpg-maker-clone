@@ -2448,7 +2448,9 @@ module Game
     #   4 the currently-targeted troop member is param1
     #   5 actor param1's chosen command is param2
     # Tests 4 and 5 read live battle-UI state the runtime does not model; they
-    # report false rather than guessing, so the else branch runs.
+    # report false rather than guessing, so the else branch runs. Actor
+    # sub-test 3 ("can use battle command") is implemented; sub-test 1
+    # ("named") is not -- see #battle_actor_condition for why.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
       skip_to([Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B], cmd.indent)
@@ -2469,15 +2471,31 @@ module Game
       end
     end
 
-    # An actor sub-condition: is the actor in this fight, and is it afflicted by
-    # the given status? The name / usable-command tests need data the battle
-    # context does not carry, so they report false.
+    # An actor sub-condition: is the actor in this fight, is it afflicted by
+    # the given status, and can it currently be handed a battle command?
+    #
+    # Sub-test 3 mirrors EasyRPG's `Game_Battler::CanAct` (via
+    # `Game_Interpreter_Battle::CommandConditionalBranchBattle`'s actor case):
+    # true unless the ally carries a "do nothing" restriction (asleep /
+    # paralysed). A Berserk (attack_enemy) or Confusion (attack_ally)
+    # restriction does NOT fail this test -- such an ally still "can act", it
+    # just acts on a forced target instead of the chosen command, which is why
+    # this calls Game::Battle's do_nothing-only check rather than its broader
+    # #command_restricted? (which also flags Berserk/Confusion because it
+    # answers a different question: "does this ally get a normal command
+    # menu").
+    #
+    # Sub-test 1 ("named") has no real counterpart to implement: EasyRPG's
+    # actual actor case never sub-dispatches on a second parameter at all --
+    # it unconditionally resolves to CanAct() using only the actor id. There
+    # is no known "named" behavior to match, so it reports false.
     def battle_actor_condition(cmd)
       ally = @battle && @battle.ally_by_actor_id(cmd.param(1))
       return false unless ally
       case cmd.param(2)
-      when 0 then true                       # is in the party
-      when 2 then ally.state?(cmd.param(3))  # is afflicted by a status
+      when 0 then true                                  # is in the party
+      when 2 then ally.state?(cmd.param(3))              # is afflicted by a status
+      when 3 then !@battle.do_nothing_restricted?(ally)  # can use a battle command
       else false
       end
     end
