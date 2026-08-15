@@ -7358,28 +7358,36 @@ module Game
     end
 
     # EXP / gold / drops are only earned from members that actually fell in
-    # this fight -- a member still flagged `hidden` at victory time (either
-    # never revealed by a Show Hidden Monster page, or sent running by a
-    # page's own Force Flee) contributes none of the three, even though a
-    # fight can end in victory while such a member is technically still at
-    # full HP: `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`)
-    # already treats hidden the same as dead for win/loss purposes
-    # (`out_of_play?`), so `alive?(@enemies)` goes false -- and victory fires
-    # -- the instant every *visible* member is down, with no requirement that
-    # a still-hidden one ever engaged at all. Matches EasyRPG's actual C++
-    # source: `Game_EnemyParty::GetExp`/`GetMoney`/`GenerateDrops`
-    # (`src/game_enemyparty.cpp`) each loop `if (enemy.IsDead())` before
+    # this fight -- a member still flagged `hidden` at victory time (never
+    # revealed by a Show Hidden Monster page, sent running by a page's own
+    # Force Flee, sent running by its own basic Escape action, or blown up by
+    # its own basic Autodestruct -- see `Game::Battle#enemy_autodestruct`)
+    # contributes none of the three, even though a fight can end in victory
+    # while such a member is technically still at full HP:
+    # `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`) already
+    # treats hidden the same as dead for win/loss purposes (`out_of_play?`),
+    # so `alive?(@enemies)` goes false -- and victory fires -- the instant
+    # every *visible* member is down, with no requirement that a still-hidden
+    # one ever engaged at all. Matches EasyRPG's actual C++ source:
+    # `Game_EnemyParty::GetExp`/`GetMoney`/`GenerateDrops` (`src/
+    # game_enemyparty.cpp`) each loop `if (enemy.IsDead())` before
     # summing/rolling that member at all, and `Game_Battler::IsDead` (`src/
     # game_battler.h`) is a bare `GetHp() == 0` check -- a hidden member's own
-    # HP is never touched by never fighting, and a Force-Fled member's isn't
-    # either (`SetHidden` alone, no `Kill`), so both read `IsDead() == false`
-    # and are skipped by all three real methods. This class never lets a
-    # member's HP move at all -- the actual combat plays out on parallel
-    # `Combatant` structs in `Game::Battle`, not on `Troop`'s own `Enemy`
-    # objects -- so `hidden` (kept live by `Scene::Map#reveal_battle_monster`/
-    # `#remove_fled_monster`) is the one signal available here, and by the
-    # "hidden ~ not dead" equivalence above it is also the *correct* one: a
-    # non-hidden member reaching this call is always the dead case.
+    # HP is never touched by never fighting, a Force-Fled/Escaped member's
+    # isn't either (`SetHidden` alone, no `Kill`), and neither is a
+    # self-destructed one's (`Game_BattleAlgorithm::SelfDestruct` only ever
+    # calls `SetHidden` on its own caster, never touching its HP -- see
+    # `enemy_autodestruct`'s own comment), so all three read `IsDead() ==
+    # false` and are skipped by all three real reward methods. This class
+    # never lets a member's HP move at all -- the actual combat plays out on
+    # parallel `Combatant` structs in `Game::Battle`, not on `Troop`'s own
+    # `Enemy` objects -- so `hidden` (kept live by
+    # `Scene::Map#reveal_battle_monster`/`#remove_fled_monster` for a battle
+    # page's own commands, and by `Scene::Map#refresh_battle_sprites` for
+    # anything a combatant does to itself mid-fight) is the one signal
+    # available here, and by the "hidden ~ not dead" equivalence above it is
+    # also the *correct* one: a non-hidden member reaching this call is
+    # always the dead case.
     def total_exp;  live_members.reduce(0) { |s, e| s + e.exp } end
     def total_gold; live_members.reduce(0) { |s, e| s + e.gold } end
 
@@ -9434,10 +9442,21 @@ module Game
 
     # Self-destruction (basic 5): the enemy blows itself up, hitting every living
     # party member for `atk - def/2` (EasyRPG's CalcSelfDestructEffect, floored at
-    # 0 and spread by the usual variance), and dies doing it. Defending halves
-    # the blow, and 強力防御 halves it again -- the same `AdjustDamageForDefend`
-    # `#deal_attack` already applies, shared verbatim by EasyRPG's own
-    # `SelfDestruct::vExecute` rather than a self-destruct-specific rule.
+    # 0 and spread by the usual variance). Defending halves the blow, and 強力防御
+    # halves it again -- the same `AdjustDamageForDefend` `#deal_attack` already
+    # applies, shared verbatim by EasyRPG's own `SelfDestruct::vExecute` rather
+    # than a self-destruct-specific rule. It does not kill the caster itself,
+    # though -- verified against EasyRPG Player's actual C++ source:
+    # `Game_BattleAlgorithm::SelfDestruct::vExecute` (`src/
+    # game_battlealgorithm.cpp`) calls `SetAffectedHp` against the *target* only,
+    # never the source, and `ApplyCustomEffect` reacts to the caster with nothing
+    # but `enemy->SetHidden(true)` (plus an explode-animation timer) -- no HP
+    # write at all. So the caster is hidden, exactly like a page's Force Flee or
+    # its own basic Escape action, not killed: this matches the community
+    # デフォ戦bot trivia that a self-destructed enemy drops no EXP / gold / items,
+    # that its HP reads unchanged (not 0) if a battle event variable-assigns it,
+    # and that "Enemy Appears" (Show Hidden Monster) brings it right back with
+    # whatever HP it already had.
     def enemy_autodestruct(b)
       targets = @allies.reject(&:out_of_play?)
       entries = targets.map do |t|
@@ -9462,8 +9481,8 @@ module Game
         entry[:woke] = woke unless woke.empty?
         entry
       end
-      # The blast kills the caster whether or not it found anyone to hit.
-      b.hp = 0
+      # Hidden, not killed -- see the method comment above.
+      b.hidden = true
       entries.empty? ? { attacker: b.name, autodestruct: true } : entries
     end
 

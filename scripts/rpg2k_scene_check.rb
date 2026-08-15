@@ -9397,6 +9397,54 @@ check 'Enemy Encounter scene: a monster that leaves the field is not drawn' do
   ok !sprites[0].visible, 'a monster that fled is taken off the field'
   ok !ui[:foes][0].dead?, 'without counting as a kill'
   ok sprites[1].visible, 'its companion is untouched'
+  # #refresh_battle_sprites also mirrors the combatant's `hidden` onto the
+  # *troop* member -- the flag #total_exp/#total_gold/#drops actually key off
+  # -- since neither an AI Escape action nor Game::Battle#enemy_autodestruct
+  # runs through the interpreter's Force-Flee queue (#remove_fled_monster).
+  # Without this a self-fled/self-destructed monster would still pay full
+  # rewards on victory.
+  ok ui[:troop].members[0].hidden, 'the troop member is marked hidden too'
+  ok !ui[:troop].members[1].hidden, 'its companion is untouched'
+end
+
+# 2000_battle_bot / デフォ戦bot trivia: 自爆した敵は、経験値・お金・アイテムを落と
+# さない。しかもデータ内部では逃走した状態と同じ扱いになっており、敵ＨＰを変数に
+# 代入してみると0になっていない。更に自爆後にイベントコマンド「敵キャラの出現」で
+# 指定すると何喰わぬ顔で元に戻る。Verified against EasyRPG Player's actual C++
+# source (see Game::Battle#enemy_autodestruct's own comment in mrblib/game.rb):
+# Game_BattleAlgorithm::SelfDestruct never writes the caster's own HP, only
+# SetHidden(true) -- so this scene-level check exercises the same "hidden, not
+# killed" path a real self-destruct takes through #refresh_battle_sprites, and
+# that Show Hidden Monster ("Enemy Appears") brings it right back unharmed.
+check 'Enemy Encounter scene: a self-destructed monster drops no reward and ' \
+      '"Enemy Appears" brings it back exactly as before (デフォ戦bot trivia)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  starting_hp = ui[:foes][0].hp
+  # What Game::Battle#enemy_autodestruct now does to its own caster: hide it,
+  # leave its HP untouched (no `b.hp = 0`).
+  ui[:foes][0].hidden = true
+  scene.send(:refresh_battle_sprites)
+  ok !ui[:foes][0].dead?, 'the caster does not die'
+  eq starting_hp, ui[:foes][0].hp,
+     'its HP reads unchanged, exactly as a variable assignment would show in real RPG_RT'
+  ok ui[:troop].members[0].hidden, 'excluded from the troop reward roll'
+  eq [ui[:troop].members[1]], ui[:troop].send(:live_members),
+     'only the untouched companion still counts toward EXP/gold/drops'
+
+  # "Enemy Appears" (Show Hidden Monster, 13150) targeting the exploded slot
+  # brings it right back -- same path a genuinely-fled monster already uses.
+  scene.send(:reveal_battle_monster, 0)
+  ok !ui[:troop].members[0].hidden, 'visible again'
+  ok !ui[:foes][0].hidden, 'back in play'
+  eq starting_hp, ui[:foes][0].hp, 'with the same HP it had before it blew up'
+  eq [ui[:troop].members[0], ui[:troop].members[1]], ui[:troop].send(:live_members),
+     'and it counts toward rewards again, same as any other live member'
 end
 
 # yado.tk's own text on the "airborne" enemy flag names no pixel offset or
