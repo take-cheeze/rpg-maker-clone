@@ -8459,6 +8459,18 @@ check 'Troop EXP/gold/drops exclude a member still hidden at victory time (yado.
   eq 5, fled_troop.total_exp, 'a fled member grants no EXP even though it started visible'
   eq 10, fled_troop.total_gold
   eq [7], fled_troop.drops(Game::Rng.new(1)), 'and no drop either'
+
+  # A self-destructed member: Game::Battle#enemy_autodestruct only hides its
+  # Combatant (see that method's own comment, verified against EasyRPG's
+  # Game_BattleAlgorithm::SelfDestruct), and Scene::Map#refresh_battle_sprites
+  # mirrors that onto the troop member the same way #remove_fled_monster does
+  # for a scripted Force Flee -- so it drops nothing either, matching the
+  # community デフォ戦bot trivia (自爆した敵は経験値・お金・アイテムを落とさない).
+  exploded_troop = Game::Troop.new(db, 1)
+  exploded_troop.members[1].hidden = true # simulates a mid-battle self-destruct
+  eq 5, exploded_troop.total_exp, 'a self-destructed member grants no EXP'
+  eq 10, exploded_troop.total_gold
+  eq [7], exploded_troop.drops(Game::Rng.new(1)), 'and no drop either'
 end
 
 check 'a missing troop / enemy degrades to an empty, harmless model' do
@@ -14015,16 +14027,24 @@ check 'an escaping enemy leaves the fight without counting as a kill' do
   eq :victory, b.run, 'the fight is over with the troop gone'
 end
 
-check 'self-destruction hits the party for atk - def/2 and kills the caster' do
+check 'self-destruction hits the party for atk - def/2 and hides the caster, ' \
+      'not kills it (2000_battle_bot / デフォ戦bot trivia, verified against ' \
+      'EasyRPG: Game_BattleAlgorithm::SelfDestruct::vExecute sets the ' \
+      'affected HP on the target only, and ApplyCustomEffect reacts to the ' \
+      'caster with SetHidden(true) alone, no HP write)' do
   hero = combatant('Hero', 40, 10, 20, 500)
   foe = combatant('Bomb', 60, 0, 5, 500)
   b = ai_battle([enemy_action(kind: 0, basic: 5)], nil, foe: foe, hero: hero)
   b.begin_round
-  b.step_action
+  b.step_action # the faster hero (agi 20 > 5) swings first: 40/2 - 10/4 = 18 dmg
+  hp_before_blast = foe.hp
   e = b.step_action
   eq true, e[:autodestruct]
   eq 55, e[:damage], '60 - 10/2'
-  ok foe.dead?, 'the bomb dies doing it'
+  ok !foe.dead?, 'the bomb does not die doing it'
+  eq hp_before_blast, foe.hp, "its own HP is untouched by the blast itself, " \
+    'exactly as a variable read of it would show in real RPG_RT'
+  ok foe.hidden, 'but it is taken out of play, the same as a fled monster'
 end
 
 # -- the rating-weighted choice ------------------------------------------------

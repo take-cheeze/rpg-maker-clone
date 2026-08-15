@@ -5220,6 +5220,15 @@ class RPG2k
           # the field and must not be drawn — the same test #living_foes uses to
           # keep it out of the target cursor.
           spr.visible = !foe.out_of_play? if spr
+          # A combatant hidden by anything other than a battle page's own Force
+          # Flee (its own Escape action, or self-destruct -- Game::Battle#
+          # enemy_autodestruct) never runs through #remove_fled_monster, so
+          # mirror it onto the *troop* member here. #total_exp/#total_gold/
+          # #drops key off the troop member's own `hidden`, not the combatant's
+          # -- without this they would still pay out for a monster that never
+          # actually died this fight.
+          member = @battle_ui[:troop].members[i]
+          member.hidden = true if member && foe.hidden && !member.hidden
         end
       end
 
