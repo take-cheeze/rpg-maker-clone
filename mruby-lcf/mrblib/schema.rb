@@ -746,6 +746,30 @@ module LCF
           name: :common_event, type: :Array2D,
           elements: COMMON_EVENT
         },
+        29 => {
+          # RPG2003's database-wide "Battle Commands" list (0x1D on liblcf's
+          # own rpg::Database, not on the VIPRPG 200X wiki this file otherwise
+          # transcribes -- confirmed against liblcf's generator/csv/fields.csv
+          # and enums.csv instead). A single instance, not a table: field 10
+          # (0x0A) is the table itself, one BattleCommand (name + type) per
+          # entry. An actor's or class's own `battle_commands` (field 80 on
+          # 11/30 below) holds ids that index into `commands` here -- 1-based,
+          # matching every other database table id in this format -- except 0
+          # (Row) and -1 (an empty slot), which name no entry and are handled
+          # by the caller instead.
+          name: :battlecommands, type: :Array1D,
+          elements: {
+            10 => {
+              name: :commands, type: :Array2D,
+              elements: {
+                1 => { name: :name, type: :string, default: '' },
+                # 0 attack, 1 skill, 2 subskill (a single named skill used as
+                # its own shortcut), 3 defense, 4 item, 5 escape, 6 special.
+                2 => { name: :type, type: :int, default: 0 },
+              }
+            }
+          }
+        },
         30 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E8%81%B7%E6%A5%AD
           name: :job, type: :Array2D,

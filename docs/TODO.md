@@ -897,16 +897,39 @@ The work below is roughly ordered by the critical path to a walkable game
   recomputed per actor rather than cached once for the whole battle, since it
   can differ member to member. RPG2003's own further customization of this
   list (`Game::Actor#battle_commands`, edited by Change Battle Commands (1009)
-  or a class change, both already modelled in `game.rb`) still is not consumed
-  by this menu — a separate, still-open gap, the same "reported, not silently
-  invented" answer Toggle ATB Mode and the field-menu command list above give
-  for the same unmodelled RPG2003 battle-command customization. Covered by new
+  or a class change, both already modelled in `game.rb`) **now drives the menu
+  too**: `Scene::Map#custom_battle_commands` resolves each positive id through
+  a new `Game::Actor#battle_command_row`, itself reading a new LCF chunk 29
+  (`battlecommands`, `mruby-lcf/mrblib/schema.rb`) that decodes the
+  database-wide Battle Commands table (name + type per entry — id/field
+  layout transcribed from liblcf's own `generator/csv/{fields,enums}.csv`,
+  the VIPRPG 200X wiki this schema otherwise cites having no page for it) a
+  positive `battle_commands` id refs into; 0 (Row) and -1 (an empty slot)
+  never do and are skipped, matching EasyRPG's own `Game_Actor
+  ::GetBattleCommands` (its comment marks Row "not impl" and skips it the same
+  way). Only the four types this engine drives — Attack, (sub)Skill, Defense,
+  Item — become a menu row; Escape (already offered as Cancel on the first
+  actor) and Special (no handler modelled anywhere in this engine) are
+  skipped, same as a ref this database's table doesn't define at all (an
+  RPG2000 file, or any database that never decoded/wrote chunk 29). A
+  customized list with nothing usable in it (no data at all, or every entry
+  unsupported) falls back to the fixed four, the same "falls back to
+  defaults" pattern `#skill_command_label` above already follows; a reordered
+  or shortened list still dispatches correctly, since `#select_battle_command`
+  now reads the highlighted row's own `action` off `#battle_command_rows`
+  rather than assuming a fixed Attack/Skill/Defend/Item index. Covered by new
   `scripts/rpg2k_scene_check.rb` checks (the drawn label order; cmd row 2
   committing Defend rather than opening Item; an actor with the rename flag
   showing its custom name; an actor without it keeping the database "Skill"
-  term), plus three existing checks that assumed the old order updated to
-  match, confirmed to fail against the pre-fix code before the fix. See
-  `changelog.d/battle-command-order-and-skill-rename.fixed.md`.
+  term; a skill-only customized list; a shortened, reordered list whose
+  Item/Defense rows draw and dispatch in their own order rather than the
+  fixed four's; Row alone falling back to the fixed four), plus three existing
+  checks that assumed the old order updated to match, confirmed to fail
+  against the pre-fix code before the fix, plus a new
+  `mruby-lcf/test/lcf_test.rb` check and `scripts/rpg2k_logic_check.rb` checks
+  for the new chunk 29 decode and `Game::Actor#battle_command_row`. See
+  `changelog.d/battle-command-order-and-skill-rename.fixed.md` and
+  `changelog.d/rpg2003-battle-command-customization.added.md`.
   The enemy troop is **drawn as
   battler sprites** (`Monster/<battler_name>`, placeholder block fallback, hidden
   on death) over a plain battle field. **Post-battle HP now persists to the

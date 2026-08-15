@@ -2994,9 +2994,9 @@ class ClassedRow < SkillRow
 end
 
 class FakeActorDB
-  attr_reader :player, :system, :item, :skill, :job, :situation, :property
+  attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands
   def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
-                 property = nil, rpg2003: false)
+                 property = nil, rpg2003: false, battlecommands: nil)
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
@@ -3005,12 +3005,21 @@ class FakeActorDB
     @situation = situation
     @property = property
     @rpg2003 = rpg2003
+    @battlecommands = battlecommands
   end
 
   # Mirrors LCF::Schema::Database#rpg2003? (Classes-chunk presence) for tests
   # that need to distinguish the two editions' own numeric ranges/caps.
   def rpg2003?; @rpg2003; end
 end
+
+# The database-wide RPG2003 Battle Commands table (LCF chunk 29's `commands`
+# field, `Game::Actor#battle_command_row`'s own source) and one of its
+# entries, mirroring the shape `LCF::Array1D#battlecommands` /
+# `#commands[id]` decode to: an object with `#commands` (id -> entry) and an
+# entry with `#name` + `#type`.
+FakeBattleCommandsTable = Struct.new(:commands)
+FakeBattleCommand = Struct.new(:name, :type)
 
 def party_state
   players = {
@@ -3917,6 +3926,26 @@ check 'a class change and its battle commands survive Save / Continue' do
   eq 1, a.class_id
   eq 220, a.max_hp, "the class's curve, not the actor row's"
   eq [3, 7, 0], a.battle_commands
+end
+
+check "Game::Actor#battle_command_row resolves a positive id via the database's Battle Commands table" do
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, [5, 0, -1, -1, -1, -1, -1]) }
+  table = FakeBattleCommandsTable.new({ 5 => FakeBattleCommand.new('Cast Fire', 2) })
+  db = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, battlecommands: table)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  eq [5, 0, -1, -1, -1, -1, -1], a.battle_commands, 'straight from the database, unedited'
+  row = a.battle_command_row(5)
+  eq 'Cast Fire', row.name
+  eq 2, row.type, 'BATTLE_COMMAND_SUBSKILL'
+  eq nil, a.battle_command_row(99), 'an id the table does not define resolves to nil'
+end
+
+check 'Game::Actor#battle_command_row is nil when the database carries no Battle Commands table at all' do
+  a = party_state.party.actor_by_id(1) # the plain RPG2000 fixture, no chunk 29
+  eq nil, a.battle_command_row(1)
 end
 
 check 'Change HP command damages a fixed actor' do

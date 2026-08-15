@@ -4604,27 +4604,80 @@ class RPG2k
         idx ? @state.party.actors[idx] : nil
       end
 
-      # The four per-actor commands, in menu order (the cursor row is 1 + index,
-      # below the actor-name header): **Attack, Skill, Defend, Item** — EasyRPG's
-      # `Scene_Battle_Rpg2k::CreateBattleCommandWindow` builds that exact array
-      # (`command_attack`, `command_skill`, `command_defend`, `command_item`),
-      # not the Item-before-Defend order this used to assume, read from the
-      # database's battle-command terms with the standard RPG2k labels as
-      # fallback. The Skill slot is not memoized any more: it substitutes the
-      # acting actor's own RPG2000 rename (`#skill_command_label` below) when
-      # the database sets one, so it can change from one actor's turn to the
-      # next. RPG2003's *own* battle-command customization (`Game::Actor
-      # #battle_commands`, edited by Change Battle Commands / a class change) is
-      # a separate list this menu still does not build from — still open, the
-      # same "reported gap, not silently invented" precedent the ATB toggle and
-      # menu-command entries elsewhere in this file already follow.
-      def battle_commands
+      # The per-actor commands, in menu order (the cursor row is 1 + index,
+      # below the actor-name header): each a `{ label:, action: }` pair, drawn
+      # by `#battle_commands` below and dispatched by `#select_battle_command`.
+      #
+      # An acting actor whose own RPG2003 battle-command list
+      # (`Game::Actor#battle_commands`, edited by Change Battle Commands (1009)
+      # or a class change) resolves to at least one usable entry drives the
+      # menu; otherwise this falls back to the fixed **Attack, Skill, Defend,
+      # Item** four — EasyRPG's `Scene_Battle_Rpg2k::CreateBattleCommandWindow`
+      # builds that exact array (`command_attack`, `command_skill`,
+      # `command_defend`, `command_item`), not the Item-before-Defend order
+      # this used to assume, read from the database's battle-command terms with
+      # the standard RPG2k labels as fallback. The Skill slot is not memoized:
+      # it substitutes the acting actor's own RPG2000 rename
+      # (`#skill_command_label` below) when the database sets one, so it can
+      # change from one actor's turn to the next.
+      def battle_command_rows
+        actor = current_actor_row
+        custom = actor && custom_battle_commands(actor)
+        return custom if custom
+
         [
-          term(:battle_attack, 'Attack'),
-          skill_command_label,
-          term(:battle_defend, 'Defend'),
-          term(:battle_item, 'Item')
+          { label: term(:battle_attack, 'Attack'), action: :attack },
+          { label: skill_command_label, action: :skill },
+          { label: term(:battle_defend, 'Defend'), action: :defend },
+          { label: term(:battle_item, 'Item'), action: :item }
         ]
+      end
+
+      # `actor`'s own RPG2003 battle-command list resolved to menu rows, or nil
+      # when there is nothing usable in it (no data at all -- an RPG2000
+      # database, or a class/actor row that never set field 80, both of which
+      # `Game::Actor#battle_commands` itself already reports as `[0]`, Row
+      # alone -- or every entry turned out unsupported), so the caller falls
+      # back to the fixed four.
+      #
+      # Each id is either 0 (Row -- not a menu row here any more than in
+      # EasyRPG's own `Game_Actor::GetBattleCommands`, whose comment marks it
+      # "not impl" and skips it the same way), -1 (an empty padding slot,
+      # likewise skipped), or a positive ref into the database's own
+      # Battle-Commands table (`Game::Actor#battle_command_row`) naming one
+      # entry's `name` + `type`. Only the four types this engine actually
+      # drives -- Attack, (sub)Skill, Defense, Item -- become a row; Escape
+      # (the first actor's own Cancel already offers it) and Special (no
+      # handler modelled anywhere in this engine) are skipped, same as an
+      # unresolvable ref (a project whose database has no Battle-Commands
+      # table decoded, or an id it doesn't define).
+      def custom_battle_commands(actor)
+        return nil unless actor.respond_to?(:battle_commands)
+        cmds = actor.battle_commands
+        return nil unless cmds
+        rows = cmds.each_with_object([]) do |cmd_id, out|
+          next if cmd_id.nil? || cmd_id <= 0 # Row / empty slot
+
+          row = actor.battle_command_row(cmd_id)
+          next unless row
+
+          case row.type
+          when Game::Actor::BATTLE_COMMAND_ATTACK
+            out << { label: nonblank(row.name, term(:battle_attack, 'Attack')), action: :attack }
+          when Game::Actor::BATTLE_COMMAND_SKILL, Game::Actor::BATTLE_COMMAND_SUBSKILL
+            out << { label: nonblank(row.name, skill_command_label), action: :skill }
+          when Game::Actor::BATTLE_COMMAND_DEFENSE
+            out << { label: nonblank(row.name, term(:battle_defend, 'Defend')), action: :defend }
+          when Game::Actor::BATTLE_COMMAND_ITEM
+            out << { label: nonblank(row.name, term(:battle_item, 'Item')), action: :item }
+          end
+          # Escape / Special: no menu row (see the method comment above).
+        end
+        rows.empty? ? nil : rows
+      end
+
+      def battle_commands
+        battle_command_rows.map { |c| c[:label] }
       end
 
       # The Skill command's own label. RPG2000's Actor sheet has a "custom
@@ -4710,7 +4763,11 @@ class RPG2k
       end
 
       # Act on the highlighted command: Attack / Skill open a selection, Defend
-      # is committed at once.
+      # is committed at once. Dispatches by `#battle_command_rows`' own
+      # `action` for the highlighted row rather than a fixed row index, so a
+      # customized, reordered or shortened list (`#custom_battle_commands`)
+      # still routes to the right handler regardless of where each command
+      # landed.
       # Which SE each command plays on confirm -- Decision immediately for
       # Attack/Defend (`Scene_Battle::AttackSelected`/`DefendSelected` both
       # play it as their own first statement, before doing anything else),
@@ -4718,19 +4775,19 @@ class RPG2k
       # RPG_RT's own Decision-on-opening-the-submenu and Buzzer-on-nothing-
       # to-pick are both conditional on that submenu's own state there.
       def select_battle_command
-        case @battle_ui[:cmd]
-        when 0 # Attack
+        case battle_command_rows[@battle_ui[:cmd]][:action]
+        when :attack
           play_system_se(SFX_DECISION)
           @battle_ui[:pending] = { kind: :attack }
           @battle_ui[:target_i] = 0
           @battle_ui[:phase] = :target
           draw_battle_target
-        when 1 then open_battle_skill
-        when 2 # Defend
+        when :skill then open_battle_skill
+        when :defend
           play_system_se(SFX_DECISION)
           @battle_ui[:battle].command_defend(current_actor)
           advance_actor
-        when 3 then open_battle_item
+        when :item then open_battle_item
         end
       end
 
