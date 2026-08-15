@@ -8708,6 +8708,16 @@ class RPG2k
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
+        # Same marker `RPG2k#start_new_game`/`#continue_game` log on the initial
+        # map load (`mruby-rpg2k/mrblib/main.rb`) — those only fire once, so a
+        # session that walks through several Transfer Player/Teleport/Recall to
+        # Location commands after that needs this to know which map and tile it
+        # is actually looking at (see docs on debugging via this marker).
+        # Existing `[RPG2k-MAP]`-scraping tooling (rpg2k_boot_check.bash,
+        # compare-nepheshel-save-wine.bash) stays correct: one only checks the
+        # marker's presence, and the other's `tail -1` never crosses a teleport
+        # in the sequence it scripts.
+        $stderr.puts "[RPG2k-MAP] map=#{@state.map_id} x=#{@state.x} y=#{@state.y}"
         # RPG2000 clears every shown picture when the map changes (RPG2003 is
         # the edition that added a per-picture "keep across map change" flag).
         # Without this, Nepheshel's opening leaves its full-screen credit
