@@ -134,7 +134,11 @@ module RGSS
     # the map layers share one and the overlays do not.
     attr_reader :viewport
     def initialize(viewport = nil, *); @viewport = viewport; end
-    def dispose; end
+    # Tracked (not just a no-op) so the mid-battle roster-sync rendering
+    # checks can assert a departed actor's specific sprite was actually
+    # disposed, and that a rejoin never hands back an already-disposed one.
+    def dispose; @disposed = true; end
+    def disposed?; !!@disposed; end
     # #flash/#update, as the target-scope Battle Animation flash
     # (Scene::Map#fire_target_flash/#update_enemy_flashes) uses them: mirrors
     # the real native contract (mruby-rgss/src/lib.cxx's spr_flash/spr_update)
@@ -2224,8 +2228,8 @@ class BattleStubActor
                  battle_commands: nil, battle_command_table: {},
                  level: 1, level_up_at: nil, learn_table: [],
                  battler_animation_id: nil, battle_x: 0, battle_y: 0,
-                 faceset_name: nil, faceset_index: 0)
-    @exp = 0; @id = id; @name = 'Hero'
+                 faceset_name: nil, faceset_index: 0, name: 'Hero')
+    @exp = 0; @id = id; @name = name
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
     @rename_skill = rename_skill; @skill_name = skill_name; @states = states
@@ -2285,7 +2289,7 @@ class BattleStubActor
 end
 
 class BattleStubParty
-  attr_reader :actors, :gold
+  attr_reader :actors, :gold, :roster
   attr_accessor :leader
   # `rpg2003` stands in for the real `Game::Party#rpg2003?` (`Scene::Map
   # #flying_offset` reads it off `@state.party`, not the database directly, so
@@ -2304,10 +2308,18 @@ class BattleStubParty
   # #gauge_battle_layout? the same way -- distinct from `alternate_layout`,
   # which is also true for the plain sprite-only layout (battle_type 1); a
   # check exercising the gauge card status panel sets this one instead/as well.
+  # `actors:`/`roster_actors:` back the mid-battle roster-sync rendering
+  # checks (Interpreter#do_change_party -> Scene::Map#on_battle_party_changed):
+  # `actors:` overrides the single-`actor` default as the starting party,
+  # `roster_actors:` names actors known but not (yet) a member, mirroring a
+  # real Game::Party's roster always knowing an actor #add_actor can bring
+  # in. Every check predating this stays on the plain `[actor]`/roster-of-one
+  # shape.
   def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil,
                  enemy_group: Hash.new(true), alternate_layout: false,
-                 automatic_placement: false, gauge_layout: false)
-    @actors = [actor]
+                 automatic_placement: false, gauge_layout: false,
+                 actors: nil, roster_actors: nil)
+    @actors = actors || [actor]
     @gold = 0
     @leader = nil
     @rpg2003 = rpg2003
@@ -2318,6 +2330,8 @@ class BattleStubParty
     @alternate_layout = alternate_layout
     @automatic_placement = automatic_placement
     @gauge_layout = gauge_layout
+    @roster = {}
+    (@actors + (roster_actors || [])).each { |a| @roster[a.id] = a }
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
@@ -2326,6 +2340,18 @@ class BattleStubParty
   def alternate_battle_layout?; @alternate_layout; end
   def automatic_battle_placement?; @automatic_placement; end
   def gauge_battle_layout?; @gauge_layout; end
+  # Interpreter#do_change_party's own interface (#add_actor/#remove_actor/
+  # #include_actor?), mirroring Game::Party's real semantics closely enough
+  # for these checks: add is a no-op for an already-present or unknown-roster
+  # id, remove drops whichever actor (if any) currently holds that id.
+  def include_actor?(id); @actors.any? { |a| a.id == id }; end
+  def add_actor(id)
+    return if include_actor?(id)
+    a = @roster[id]
+    return unless a
+    @actors.push(a)
+  end
+  def remove_actor(id); @actors.reject! { |a| a.id == id }; end
   # A troop victory drop (Game::Troop#drops -> Scene::Map#battle_result_lines)
   # both grants the item and names it in the result window -- mirrors
   # ShopStubParty's own #gain_item, plus a #db_item lookup against whatever
@@ -10105,11 +10131,12 @@ end
 # check predating the gauge-card status panel used; a check exercising a
 # non-default battle-screen presentation (BattleStubParty's `gauge_layout:`)
 # passes its own instead.
-def battle_scene_with_pages(pages, party: BattleStubParty.new)
+def battle_scene_with_pages(pages, party: BattleStubParty.new, battleranimations: nil)
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
-  scene = new_scene({ 1 => event(2, 2, auto) }, troop_pages: pages)
+  scene = new_scene({ 1 => event(2, 2, auto) }, troop_pages: pages,
+                    battleranimations: battleranimations)
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, party)
   [scene, st]
@@ -11077,8 +11104,8 @@ end
 # Open a battle and run it up to the command phase, answering [scene, ui].
 # Dismisses the once-per-battle automatic options window (a C press on its
 # default cursor row 0, "Battle") along the way -- see #battle_to_command.
-def battle_at_command(pages = nil, party: BattleStubParty.new)
-  scene, = battle_scene_with_pages(pages, party: party)
+def battle_at_command(pages = nil, party: BattleStubParty.new, battleranimations: nil)
+  scene, = battle_scene_with_pages(pages, party: party, battleranimations: battleranimations)
   ui = nil
   10.times do
     ui = scene.instance_variable_get(:@battle_ui)
@@ -11683,6 +11710,181 @@ check 'DrawNumberSystem2 leading-zero cascade matches EasyRPG exactly (7, 42, 10
   eq [[8, 1], [16, 0], [24, 0]], glyphs.call(100),
      'a hundreds digit that carries down still draws its own zero tens/ones cells'
   eq [[8, 9], [16, 9], [24, 9]], glyphs.call(999), 'three 9s, still no (blank) thousands cell'
+end
+
+# -- mid-battle party roster sync: the screen (step 2 of the roster-sync ------
+# initiative; step 1, ADR 0050, fixed the mechanic -- Game::Battle now
+# re-derives its own turn order/targeting from the live party every round/
+# action) --------------------------------------------------------------------
+#
+# Interpreter#do_change_party notifies the open battle screen the moment a
+# Change Party Member battle event actually adds or removes a member (see
+# Scene::Map#on_battle_party_changed, reached via `@battle_ui[:events].
+# battle_screen`) -- these checks drive it through a real battle-event page,
+# the same path production code takes, except where noted.
+
+check 'a Change Party Member add on a battle page builds that actor\'s sprite ' \
+      'immediately and updates the status window' do
+  ic = Game::Interpreter::Cmd
+  hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
+  ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5, hp: 50)
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  party = BattleStubParty.new(hero, alternate_layout: true, roster_actors: [ally])
+  pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [0, 0, 2])]) } # add actor 2
+  scene, ui = battle_at_command(pages, party: party, battleranimations: anims)
+
+  eq 2, ui[:allies].length, 'the newcomer joined @battle_ui[:allies] the instant the page ran'
+  newcomer = ui[:allies].find { |c| c.actor && c.actor.id == 2 }
+  ok newcomer, 'as their own Combatant'
+  eq 50, newcomer.hp
+
+  sprites = ui[:actor_sprites]
+  eq 2, sprites.length, 'a sprite slot for the newcomer too'
+  ok sprites[0] && sprites[1], "both members' idle-pose sprites were built"
+
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Hero') && texts.include?('Ally'), 'both members show in the status window'
+end
+
+check 'a Change Party Member remove on a battle page disposes only that ' \
+      'actor\'s sprite, and drops just them from @battle_ui[:allies]/the status window' do
+  ic = Game::Interpreter::Cmd
+  hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
+  ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
+  third = BattleStubActor.new(id: 3, name: 'Third', battler_animation_id: 5)
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  party = BattleStubParty.new(actors: [hero, ally, third], alternate_layout: true)
+  pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [1, 0, 2])]) } # remove actor 2
+  scene, = battle_scene_with_pages(pages, party: party, battleranimations: anims)
+
+  # Capture the pristine, pre-page sprite objects: #build_actor_sprites runs
+  # synchronously inside #open_battle, before the turn-0 page's own command
+  # ever gets a chance to run (it waits out the encounter-narration banner
+  # first -- see #drive_battle_encounter_message).
+  ui = nil
+  10.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui
+  end
+  ok ui, 'the battle opened'
+  eq :encounter_message, ui[:phase], 'still narrating -- the page has not run its command yet'
+  eq 3, ui[:allies].length, 'all three start in @battle_ui[:allies]'
+  hero_sprite, ally_sprite, third_sprite = ui[:actor_sprites]
+  ok hero_sprite && ally_sprite && third_sprite, 'all three built a sprite up front'
+
+  30.times do
+    RGSS::Input.triggered = [RGSS::Input::C] if ui[:phase] == :battle_options
+    scene.update
+    RGSS::Input.triggered = []
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui[:phase] == :command
+  end
+  eq :command, ui[:phase], 'the page ran (and handed control back) along the way'
+
+  eq 2, ui[:allies].length, 'the removed member dropped out of @battle_ui[:allies]'
+  ok ui[:allies].none? { |c| c.actor && c.actor.id == 2 }
+  ok ui[:allies].any? { |c| c.actor && c.actor.id == 1 }
+  ok ui[:allies].any? { |c| c.actor && c.actor.id == 3 }
+
+  eq 2, ui[:actor_sprites].length
+  ok ui[:actor_sprites].include?(hero_sprite), "Hero's original sprite object is untouched"
+  ok ui[:actor_sprites].include?(third_sprite), "Third's original sprite object is untouched"
+  ok !ui[:actor_sprites].include?(ally_sprite), "the removed actor's sprite slot is gone"
+  ok ally_sprite.disposed?, "the removed actor's specific sprite was disposed"
+  ok !hero_sprite.disposed?, "a bystander's sprite was never disposed"
+  ok !third_sprite.disposed?, "a bystander's sprite was never disposed"
+
+  texts = window_texts(ui[:status_win])
+  ok !texts.include?('Ally'), 'the removed member dropped off the status window'
+  ok texts.include?('Hero') && texts.include?('Third'), 'the remaining members still show'
+end
+
+check 'a Change Party Member add reaches the gauge-card status panel ' \
+      '(battle_type 2) too, not just the plain text row' do
+  ic = Game::Interpreter::Cmd
+  hero = BattleStubActor.new(id: 1, name: 'Hero', hp: 100, mp: 20, faceset_name: 'HeroFace')
+  ally = BattleStubActor.new(id: 2, name: 'Ally', hp: 80, mp: 10, faceset_name: 'AllyFace')
+  party = BattleStubParty.new(hero, gauge_layout: true, roster_actors: [ally])
+  pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [0, 0, 2])]) } # add actor 2
+  scene, = battle_scene_with_pages(pages, party: party)
+  # Set before the fight ever opens, so #on_battle_party_changed's own
+  # #refresh_battle_status call (triggered by the page below) already draws
+  # the gauge card, not just a later manually-forced redraw.
+  scene.db.system.system2_name = 'BattleStatus'
+
+  ui = nil
+  30.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    scene.update
+    RGSS::Input.triggered = []
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == :command
+  end
+  eq :command, ui[:phase]
+  eq 2, ui[:allies].length, 'both members reached the gauge-card roster'
+
+  faces = ui[:status_win].contents.blt_calls.select do |call|
+    call[2].respond_to?(:load_name) && call[2].load_name.to_s.start_with?('FaceSet/')
+  end
+  eq [[0, 24], [80, 24]], faces.map { |call| call[0, 2] },
+     'a face column at x = 80*i for each member -- the newcomer got their own at i=1'
+end
+
+check 'leaving and rejoining the same fight reuses the same Combatant (and ' \
+      'its accumulated battle-only state) but always rebuilds a fresh sprite -- ' \
+      'never a leaked duplicate, never a disposed-and-reused one' do
+  hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
+  ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  party = BattleStubParty.new(actors: [hero, ally], alternate_layout: true)
+  scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
+
+  eq 2, ui[:allies].length
+  original_combatant = ui[:allies].find { |c| c.actor.id == 2 }
+  original_sprite = ui[:actor_sprites][ui[:allies].index(original_combatant)]
+  ok original_combatant && original_sprite
+
+  original_combatant.states = [5] # an accumulated battle-only status
+  scene.send(:on_battle_party_changed, ally, false) # leaves
+  eq 1, ui[:allies].length, 'dropped from the render roster'
+  ok !ui[:actor_sprites].include?(original_sprite)
+  ok original_sprite.disposed?, 'their sprite was disposed on the way out'
+
+  scene.send(:on_battle_party_changed, ally, true) # rejoins the same fight
+  eq 2, ui[:allies].length, 'back in the render roster, not duplicated'
+  eq 1, ui[:allies].count { |c| c.actor && c.actor.id == 2 }, 'no leaked duplicate Combatant'
+  rejoined_combatant = ui[:allies].find { |c| c.actor.id == 2 }
+  ok rejoined_combatant.equal?(original_combatant), 'the exact same Combatant object is reused'
+  eq [5], rejoined_combatant.states, 'their accumulated battle-only state survived the round trip'
+
+  new_sprite = ui[:actor_sprites][ui[:allies].index(rejoined_combatant)]
+  ok new_sprite, 'a sprite was rebuilt for the rejoin'
+  ok !new_sprite.equal?(original_sprite), 'a fresh Sprite object, never the disposed one'
+  eq 2, ui[:actor_sprites].compact.length, 'no leaked extra sprite either'
+end
+
+check 'actor sprite Z stays collision-free across a remove-then-add cycle, ' \
+      'matching EasyRPG\'s ResetAllBattlerZ' do
+  hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
+  ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
+  third = BattleStubActor.new(id: 3, name: 'Third', battler_animation_id: 5)
+  newcomer = BattleStubActor.new(id: 4, name: 'New', battler_animation_id: 5)
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  party = BattleStubParty.new(actors: [hero, ally, third], alternate_layout: true,
+                              roster_actors: [newcomer])
+  scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
+  eq [200, 201, 202], ui[:actor_sprites].map(&:z), 'starting Z per index (#actor_sprite_z)'
+
+  scene.send(:on_battle_party_changed, ally, false) # remove the middle member
+  eq [200, 201], ui[:actor_sprites].map(&:z),
+     "Third's Z was recomputed for its new index (1), not left stale at 202"
+
+  scene.send(:on_battle_party_changed, newcomer, true) # a brand new member joins
+  zs = ui[:actor_sprites].map(&:z)
+  eq [200, 201, 202], zs
+  eq zs.uniq.length, zs.length, 'no two actor sprites end up sharing a Z'
 end
 
 # -- the battle log in the game's own words ------------------------------------

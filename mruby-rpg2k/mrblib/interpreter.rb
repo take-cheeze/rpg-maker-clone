@@ -242,6 +242,14 @@ module Game
     # what makes the battle-only commands no-ops outside a battle — exactly as
     # they are in RPG_RT, where the editor cannot even place them there.
     attr_accessor :battle
+    # The Scene::Map hosting the running fight `@battle` belongs to, set
+    # alongside it. Lets #do_change_party notify the battle screen the moment
+    # a Change Party Member command actually adds/removes a member, mirroring
+    # EasyRPG's `Game_Party::AddActor`/`RemoveActor` calling
+    # `Scene::Battle::OnPartyChanged` synchronously rather than leaving the
+    # screen to notice on some later redraw. nil outside battle (same scope as
+    # `@battle`), so the notification is a no-op there.
+    attr_accessor :battle_screen
     # Answers tile queries for Store Terrain / Event ID: responds to
     # `terrain_id(x, y)` and `event_id_at(x, y)`. Set by the owning scene; nil
     # makes those commands store 0 (the map is not queryable without it).
@@ -1793,13 +1801,23 @@ module Game
     # (loaded from the leader's CharSet) has to be reloaded here too. Without
     # this a companion swap left the map showing whichever leader's graphic
     # happened to be cached, which for Nepheshel's 5205 Change Party Member
-    # commands is most of the game.
+    # commands is most of the game. When this runs from a battle-event page
+    # (@battle_screen set, see its own comment), also pushes the change to
+    # the open battle screen's actor sprites and status window immediately.
     def do_change_party(cmd)
-      actor = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
-      if cmd.param(0) == 0
-        party.add_actor(actor)
-      else
-        party.remove_actor(actor)
+      id = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
+      added = cmd.param(0) == 0
+      was_member = party.include_actor?(id)
+      added ? party.add_actor(id) : party.remove_actor(id)
+      # #add_actor/#remove_actor silently no-op on a full party, an unknown
+      # roster id, or a redundant add/remove of an already-(non)member -- only
+      # a genuine membership flip needs to reach the battle screen. Reads the
+      # actor back from the roster (not @actors, which no longer holds it
+      # after a remove) since #on_battle_party_changed needs the same
+      # Game::Actor either way.
+      if @battle_screen && party.include_actor?(id) != was_member
+        actor = party.roster[id]
+        @battle_screen.on_battle_party_changed(actor, added) if actor
       end
       @actor_graphic_changed = true
       check_game_over

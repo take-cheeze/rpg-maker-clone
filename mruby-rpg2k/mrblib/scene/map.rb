@@ -4481,7 +4481,20 @@ class RPG2k
                        # from `opt`, the cursor row inside it whenever it is
                        # open (set fresh by #open_battle_options each time).
                        options_shown: false, opt: 0,
-                       battle: Game::Battle.new(allies, foes, @rng,
+                       # `allies.dup`, not `allies` itself: `@battle_ui[:allies]`
+                       # below stays the exact same array Game::Battle is
+                       # handed here would otherwise *be* -- Ruby arrays are
+                       # mutable objects, so without the dup, deleting a
+                       # departed member from the render-facing
+                       # `@battle_ui[:allies]` (#remove_battle_actor_sprite)
+                       # would delete it from Game::Battle's own bookkeeping
+                       # array too, breaking the rejoin-reuses-the-same-
+                       # Combatant guarantee #sync_allies_from_party depends
+                       # on (ADR 0050). The two arrays start with the same
+                       # Combatant *objects* (so a lookup through either one
+                       # sees the same battle-only state) but are free to
+                       # diverge in which objects they each hold.
+                       battle: Game::Battle.new(allies.dup, foes, @rng,
                                                 situations, true, true, true,
                                                 req[:first_strike] ? true : false,
                                                 properties,
@@ -4504,14 +4517,16 @@ class RPG2k
                                                 # from it every round/action
                                                 # rather than staying pinned to
                                                 # the `allies` snapshot taken
-                                                # just above. `@battle_ui[:allies]`
-                                                # itself is untouched here --
-                                                # still that one-shot snapshot
-                                                # -- so the status window/actor
-                                                # sprites do not yet reflect a
-                                                # mid-fight swap; that is
-                                                # rendering work left for a
-                                                # follow-up.
+                                                # just above. The screen itself
+                                                # (`@battle_ui[:allies]`, the
+                                                # status window, actor sprites)
+                                                # follows the same change the
+                                                # instant it happens instead --
+                                                # see #on_battle_party_changed,
+                                                # reached from
+                                                # Interpreter#do_change_party
+                                                # via `@battle_ui[:events].
+                                                # battle_screen` below.
                                                 party: @state.party),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
@@ -4538,6 +4553,14 @@ class RPG2k
                        # it needs no seeding beyond starting at 0 every fight.
                        frame: 0 }
         @battle_ui[:events].battle = @battle_ui[:battle]
+        # Lets a Change Party Member command run from a battle event page
+        # (Interpreter#do_change_party) reach back into this screen the
+        # moment it fires -- see #on_battle_party_changed. `@battle_ui[:events]`
+        # is the one interpreter ever running commands while a battle is open
+        # (the foreground/parallel interpreters are held off by `event_busy?`/
+        # `parallels_paused?` for as long as `@battle_ui` exists), so this is
+        # never set on any other interpreter.
+        @battle_ui[:events].battle_screen = self
         # A battle page can Call Common Event (1005), so it needs the same
         # resolver the encounter's own owning interpreter runs against --
         # the foreground by default, or a Parallel Process's own interpreter
@@ -4817,6 +4840,81 @@ class RPG2k
         spr.y = actor.respond_to?(:battle_y) ? (actor.battle_y || 0) : 0
         spr.z = actor_sprite_z(i)
         spr
+      end
+
+      # Interpreter#do_change_party's hook (via `@battle_ui[:events].
+      # battle_screen`, set in #open_battle) for a Change Party Member battle
+      # event that actually added or removed a member -- mirrors EasyRPG's
+      # `Game_Party::AddActor`/`RemoveActor` calling
+      # `Scene_Battle_Rpg2k::OnPartyChanged` synchronously, right when the
+      # party changes, rather than leaving the screen to notice on some later
+      # redraw. `actor` is the `Game::Actor` (from `Game::Party#roster`, so it
+      # resolves the same whether they are still a member or just left).
+      # `Game::Battle`'s own roster (`@battle_ui[:battle]`) is left alone --
+      # its `sync_allies_from_party`/`out_of_play?`/`member` bookkeeping
+      # (ADR 0050) already reads correctly from the live party on its own
+      # schedule; this only updates what's drawn.
+      def on_battle_party_changed(actor, added)
+        return unless @battle_ui
+        added ? add_battle_actor_sprite(actor) : remove_battle_actor_sprite(actor)
+        refresh_battle_status
+      end
+      public :on_battle_party_changed
+
+      # An actor just (re)joined the fight: reuse their existing `Combatant`
+      # if `Game::Battle` already has one (they left and are rejoining this
+      # same fight, so the reused object keeps its accumulated battle-only
+      # state -- the same reuse-on-rejoin guarantee ADR 0050 gives the
+      # mechanics), or build a fresh one exactly the way
+      # `Game::Battle#sync_allies_from_party` would on its own next sync --
+      # pushed onto `@battle_ui[:battle].allies` (not just returned) so that
+      # later sync finds it already there and reuses it too, rather than the
+      # render layer and the battle ending up tracking two different
+      # `Combatant` objects for the same actor.
+      def add_battle_actor_sprite(actor)
+        battle = @battle_ui[:battle]
+        combatant = battle.ally_by_actor_id(actor.id)
+        unless combatant
+          combatant = Game::Battle.from_actor(actor)
+          battle.allies.push(combatant)
+        end
+        return if @battle_ui[:allies].any? { |c| c.equal?(combatant) }
+        @battle_ui[:allies].push(combatant)
+        return unless @battle_ui[:actor_sprites]
+        i = @battle_ui[:allies].length - 1
+        @battle_ui[:actor_sprites].push(combatant.dead? ? nil : build_actor_sprite(combatant.actor, i))
+        reset_actor_battler_z
+      end
+
+      # An actor just left the fight: drop their `Combatant` from the
+      # render-facing `@battle_ui[:allies]` (not from `Game::Battle`'s own
+      # roster -- see #on_battle_party_changed) and dispose their specific
+      # sprite, leaving every other actor's sprite untouched. A rejoin later
+      # builds a brand new sprite (#add_battle_actor_sprite always calls
+      # #build_actor_sprite fresh); this never leaves a disposed `Sprite`
+      # sitting in the collection for that to reuse.
+      def remove_battle_actor_sprite(actor)
+        idx = @battle_ui[:allies].index { |c| c.actor && c.actor.id == actor.id }
+        return unless idx
+        @battle_ui[:allies].delete_at(idx)
+        sprites = @battle_ui[:actor_sprites]
+        return unless sprites
+        dispose_battle_sprite(sprites.delete_at(idx))
+        reset_actor_battler_z
+      end
+
+      # Re-derive every surviving actor sprite's Z from its current index in
+      # `@battle_ui[:allies]` (#actor_sprite_z). An add or remove elsewhere in
+      # the roster shifts everyone after it, so without this, two sprites can
+      # end up sharing a Z once enough adds/removes have happened -- e.g.
+      # remove index 1 of 3 (leaving index 2's sprite still at its old Z 202),
+      # then add a new member at the new index 2, which would also compute Z
+      # 202. Matches EasyRPG's own `ResetAllBattlerZ()`, called for the same
+      # reason right after `OnPartyChanged` adds a sprite.
+      def reset_actor_battler_z
+        sprites = @battle_ui[:actor_sprites]
+        return unless sprites
+        sprites.each_with_index { |spr, i| spr.z = actor_sprite_z(i) if spr }
       end
 
       # The BattleCharSet bitmap for an actor pose's `battler_name`, cached
