@@ -2962,9 +2962,13 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :raise_evasion,
                       # アニメーション (weapon field 20): the battle animation a
                       # basic Attack plays with this weapon equipped
-                      # (Actor#attack_animation_id). Appended last, same
+                      # (Actor#attack_animation_id).
+                      :animation_id,
+                      # ステート発生率 (weapon field 67): the flat percent chance
+                      # applied to every state `state_set` flags on a basic
+                      # Attack (Game::Actor#weapon_states). Appended last, same
                       # positional-safety reasoning as every field above.
-                      :animation_id)
+                      :state_chance)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2973,14 +2977,15 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
-              cursed: false, raise_evasion: false, animation_id: nil)
+              cursed: false, raise_evasion: false, animation_id: nil,
+              state_chance: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
                ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
-               raise_evasion, animation_id)
+               raise_evasion, animation_id, state_chance)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -8460,6 +8465,63 @@ check 'Actor weapon/attribute readers feed the combatant snapshot' do
   a.equip([7, 0, 0, 0, 0])
   eq [1, 3], a.weapon_attributes
   eq [1, 3], Game::Battle.from_actor(a).atk_attrs, 'carried onto the combatant'
+end
+
+check "battle: a basic Attack rolls its weapon's own state-infliction chance" do
+  # A "Poison Dagger" -- state_set flags state 3, state_chance 100 -- ported
+  # from EasyRPG's Game_BattleAlgorithm::Normal::vExecute weapon block, which
+  # this codebase previously left entirely unbuilt: only Skills/Items rolled
+  # state infliction, never a plain Attack.
+  items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1], state_chance: 100) }
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  a.equip([7, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  eq({ 3 => 100 }, hero.atk_states[:inflict], 'carried onto the combatant')
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 3 => fake_state })
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [3], entry[:inflicted], "the weapon's own state landed alongside the damage"
+  ok foe.state?(3), 'the state is actually on the target, not just reported'
+end
+
+check "battle: an RPG2003 weapon's reverse_state_effect heals instead of inflicts" do
+  # Same weapon, `reverse_state_effect` set: on RPG2003 this flips the weapon
+  # from inflicting its named states to curing them (EasyRPG's
+  # `is2k3 && w->reverse_state_effect` branch) -- the same flip
+  # `#item_inflicted_states`/`#skill_state_ids` already model for items/skills.
+  items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1],
+                            state_chance: 100, reverse_state: true) }
+  st = skill_party({}, items, rpg2003: true)
+  a = st.party.actor_by_id(1)
+  a.equip([7, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  eq({ 3 => 100 }, hero.atk_states[:heal], 'carried onto the combatant, on the heal side')
+  foe = combatant('Foe', 0, 0, 5, 999)
+  foe.states = [3] # already afflicted, for the weapon to lift
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 3 => fake_state })
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [3], entry[:cured], "the RPG2003 weapon healed its own state instead of inflicting it"
+  ok !foe.state?(3)
+end
+
+check "battle: on RPG2000, a weapon's reverse_state_effect has no effect -- it still inflicts" do
+  # The exact same weapon/scenario as the RPG2003 heal check above, but on an
+  # RPG2000 database: `reverse_state_effect` only flips a weapon's polarity on
+  # RPG2003 (EasyRPG's `is2k3 &&` guard), so the state still inflicts here.
+  items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1],
+                            state_chance: 100, reverse_state: true) }
+  st = skill_party({}, items) # rpg2003 defaults to false
+  a = st.party.actor_by_id(1)
+  a.equip([7, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  eq({ 3 => 100 }, hero.atk_states[:inflict],
+     'the flag is ignored on RPG2000 -- the state stays on the inflict side')
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 3 => fake_state })
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [3], entry[:inflicted]
+  ok foe.state?(3)
 end
 
 check 'Game::Enemy reads its per-attribute defence ranks' do

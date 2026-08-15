@@ -3435,9 +3435,13 @@ The work below is roughly ordered by the critical path to a walkable game
   crude in one direction on purpose — a field named only in a comment counts as
   read, so the list under-reports and never over-reports. A row is a question,
   not a defect: the script carries a `NOT_OURS` table of fields checked against
-  EasyRPG and deliberately left alone (`levitate` and `state_chance` are RPG2003
-  only, `message_affected` has no known trigger, and the two critical-hit terms
-  are side-keying-unresolved, ADR 0036), so nobody re-derives them.
+  EasyRPG and deliberately left alone (`levitate` is RPG2003 only,
+  `message_affected` has no known trigger, and the two critical-hit terms are
+  side-keying-unresolved, ADR 0036), so nobody re-derives them. `state_chance`
+  used to sit in this table on the same "RPG2003 only" reasoning, checked only
+  against the item-cure code path; the weapon-attack path reads it on both
+  editions, and a real RPG2000 game (Nepheshel) sets it on several weapons —
+  see the basic-Attack weapon-state-infliction fix below.
 - ✅ **Drain skills** (吸収, the skill row's `absorb_damage`) — 13 of Nepheshel's
   306 skills and 5 of mtf's 134 set it and nothing read it, so every drain spell
   in both games was an ordinary attack spell, and the two 用語 sentences that
@@ -5052,6 +5056,34 @@ not yet verified:
   RPG2003 database, walks the cursor onto the RPG2003-only millions-place
   digit cell, and confirms the value it produces is only reachable with the
   wider editor, confirmed to fail against the pre-fix code before the fix.
+- ✅ **A basic Attack now rolls its own weapon's state-infliction chance**
+  (item fields 63/64 `state_set` and 67 `state_chance`) instead of doing
+  nothing at all — only Skills and Items ever rolled state infliction
+  before, so a "Poison Dagger"-style weapon could never actually poison
+  anything on a plain swing. Confirmed against EasyRPG's
+  `Game_BattleAlgorithm::Normal::vExecute` (`src/game_battlealgorithm.cpp`,
+  the "Conditions caused / healed by weapon" block): each state a weapon's
+  `state_set` flags rolls against `state_chance`, scaled by the target's own
+  susceptibility (`Game::Battle#state_susceptibility`, the same function a
+  skill's infliction already uses) — and, unlike a skill, a state already on
+  the target is silently skipped rather than re-reported. A 二刀流 (dual-
+  wielding) actor's second weapon can flag a different state, or the same
+  state at a different chance, in which case the higher chance wins (ported
+  as a per-state max across both weapons). RPG2003's `reverse_state_effect`
+  flag (field 20) flips a weapon's own states from inflicting to *curing*
+  them — but only on RPG2003 (`is2k3 && w->reverse_state_effect`); the same
+  flag on an RPG2000 database has no effect here, matching how it already
+  behaves for a medicine item / field skill elsewhere in this codebase.
+  Implemented as a new `Game::Actor#weapon_states` reader (mirroring
+  `#weapon_attributes`'s own equipment scan) carried onto the Combatant
+  snapshot as `atk_states`, and a new `Game::Battle#roll_weapon_states`
+  applied from `#deal_attack` once the blow's damage is resolved and the
+  target has survived it — the same guard `#shake_off_states` already uses.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks (a plain
+  RPG2000 weapon inflicting its state, an RPG2003 `reverse_state_effect`
+  weapon healing one instead, and the same weapon on RPG2000 still
+  inflicting since the flag is edition-gated), each confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
