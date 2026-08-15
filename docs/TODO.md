@@ -4405,13 +4405,22 @@ Everything below is unverified against the codebase.
   keeps rendering.) Covered by a new `scripts/rpg2k_scene_check.rb` check
   (a picture shown and mid-move stays visible, keeps compositing every
   frame, and keeps advancing its move while a message window is open, then
-  is still visible once the window closes). **changing maps clears all
+  is still visible once the window closes). ✅ **changing maps clears all
   Pictures — except via Teleport or Escape (skill/item), which don't clear
-  them**; semi-transparent (1-99%) opacity costs noticeably more than fully
-  opaque/transparent; Erase Picture is instant (no fade) — a gradual fade
-  needs Move Picture to the same spot at 0% opacity instead. (50 slots with
-  the higher id always drawing on top, independent of show order, is
-  confirmed already correct — see below.)
+  them** — confirmed and fixed, see the "Full-site sweep" **Pictures**
+  cluster below (the Teleport/Escape `keep_pictures:` fix). ✅ **semi-
+  transparent (1-99%) opacity costs noticeably more than fully
+  opaque/transparent — confirmed correct.** `Bitmap#stretch_blt`
+  (`mruby-rgss/src/lib.cxx`) takes a cheap direct-write fast path once the
+  combined alpha is fully opaque (`alpha >= 255`) or skips the pixel
+  entirely once it is fully transparent (`alpha <= 0`), and only falls
+  through to the more expensive `blend_over` (extra reads plus per-channel
+  blend math) for anything in between — the same per-pixel cost asymmetry
+  the claim describes. ✅ **Erase Picture is instant (no fade) — a gradual
+  fade needs Move Picture to the same spot at 0% opacity instead** —
+  confirmed correct, see the same "Full-site sweep" **Pictures** cluster
+  below. (50 slots with the higher id always drawing on top, independent of
+  show order, is confirmed already correct — see below.)
 - **Map Event** — "hero touches event" does *not* fire in three specific
   cases: (a) ✅ the event has already logically started moving into its next
   tile (hit-test uses the target tile, even if the sprite still visually
@@ -5457,7 +5466,7 @@ not yet verified:
   refuses to create one. Covered by a new `scripts/rpg2k_logic_check.rb`
   check (id 51 is silently dropped; the boundary id 50 still works),
   confirmed to fail against the pre-fix code before the fix.
-- Changing maps **auto-clears every picture** — except when the transfer
+- ✅ Changing maps **auto-clears every picture** — except when the transfer
   was via Teleport or Escape, which is an explicit, deliberate exception
   (multiply corroborated). ✅ **The Teleport/Escape skill/item half of this
   is now implemented.** `Scene::Map#perform_teleport` (the one method both
@@ -5506,21 +5515,55 @@ not yet verified:
   actually open) is up and take effect on the very next lap once it closes —
   while confirming the same process's non-picture commands (`Control
   Variables`) keep advancing throughout, so the sibling fix stays intact.
-- Re-issuing **Show Picture** every tick (rather than reusing an
-  already-shown picture via Move Picture) is expensive enough to cause
-  real frame drops; Move Picture, even at 0.0s duration, is cheap and can
-  update position/opacity/tone/zoom all in the same call — this is why
-  the standard idiom across dozens of tutorials is "Show once at 0%
-  opacity, then only ever Move Picture."
-- A picture's source image can be up to 640×480 (vs. the 320×240 screen);
-  rendering off the visible edge is simple clipping, but packing multiple
-  animation frames into one oversized image and under-spacing them (less
-  than a full screen width/height apart) bleeds a neighboring frame's
-  content onto the opposite screen edge — implying non-clamped/toroidal
-  sampling at the image's own bounds, not just clipping the final
-  viewport.
-- Erase Picture is instant; a fade needs Move Picture to the same
-  position at 0% opacity over a duration instead.
+- ✅ **Not applicable: re-issuing Show Picture every tick being expensive
+  enough to cause real frame drops (vs. cheap repeated Move Picture) is a
+  real-RPG_RT-specific performance characteristic, not a state/behaviour
+  rule this engine could reproduce or diverge from.** This engine's own
+  `Game::State#show_picture` (`mruby-rpg2k/mrblib/game.rb`) just replaces a
+  plain `Picture` data object in a Hash — cheap regardless of call
+  frequency — and the actual image bytes are resolved separately, through
+  `Scene::Map#picture_src`'s own `@picture_cache` (keyed by `[name,
+  transparent]`, `mruby-rpg2k/mrblib/scene/map.rb`), so re-issuing Show
+  Picture with the same filename every tick never re-decodes or re-loads
+  anything either. Real RPG_RT's specific per-call cost (likely a GDI/
+  DirectX resource rebuild or similar Windows-implementation detail) has no
+  engine-behaviour analogue to get right or wrong here — both idioms
+  ("Show once, then Move Picture" vs. repeated Show Picture) already
+  produce identical on-screen results in this codebase, with no
+  reproduced perf cliff between them. Nothing to model.
+- ✅ **A picture's source image can be up to 640×480 (vs. the 320×240
+  screen), and rendering off the visible edge is simple clipping —
+  confirmed correct.** `Scene::Map#draw_picture` always blits a picture's
+  *entire* source image (`Rect.new(0, 0, src.width, src.height)`, whatever
+  its actual dimensions) via `stretch_blt` into the screen-sized
+  `@picture_bmp`, positioned by its centre; `Bitmap#stretch_blt`'s C++
+  implementation (`mruby-rgss/src/lib.cxx`) bounds-checks both the
+  destination (`dx < 0 || dx >= dst.width` skips the pixel) and the source
+  (`sx < 0 || sy < 0 || sx >= sb.width || sy >= sb.height` skips it too) —
+  a plain per-pixel clamp-and-skip, with no modulo/wraparound indexing
+  anywhere in the loop. **The second half — under-spaced multi-frame
+  packing "bleeding" a neighbouring frame's content onto the opposite
+  screen edge, implying toroidal sampling — is not reproduced, and
+  deliberately not chased further**: nothing in this engine's blit path can
+  produce that outcome (the bounds checks above make an out-of-range source
+  sample impossible, wrapping included), and RPG2000 itself has no
+  Picture concept of "frames" or a sub-rect window into a larger source
+  image at all — a Show Picture command names one whole image, shown
+  whole, every time, exactly as this engine already does. The described
+  bleed reads far more like an artifact of the original executable's own
+  fixed-size internal buffer arithmetic (an unsafe out-of-bounds memory
+  read, not a deliberate sampling mode) than a behaviour worth
+  intentionally reproducing — the same category of genuine-but-undefined
+  RPG_RT implementation quirk this doc already declines to chase elsewhere
+  (Windows crash dialogs, the heavy-load Call Event freeze).
+- ✅ **Erase Picture is instant; a fade needs Move Picture to the same
+  position at 0% opacity over a duration instead — confirmed correct.**
+  `Game::State#erase_picture` (`mruby-rpg2k/mrblib/game.rb`) is a plain
+  `@pictures.delete(id)` with no animation of any kind, while `Picture#
+  move_to`/`#update` already support easing opacity (along with position/
+  zoom/tone) toward a target over an arbitrary frame count, reaching 0%
+  precisely on the final frame — the documented fade idiom, already fully
+  supported by existing code with nothing missing.
 - ✅ **"Hero's screen X/Y" is the feet position, not center, and is a
   one-shot snapshot at read time, not a live binding — tracking the hero
   with a picture (spotlight, flashlight) requires re-reading and
