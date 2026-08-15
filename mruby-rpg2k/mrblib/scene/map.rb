@@ -8947,6 +8947,14 @@ class RPG2k
       # 61 frames" -- src/window_message.cpp, `case '.'` / `case '|'`), the
       # same "the natural reading is wrong" shape this codebase already
       # tracks for other RPG_RT quirks (e.g. the item-drain clamp order).
+      #
+      # `\.` alone has a second quirk on top: EasyRPG's own comment calls it
+      # "a bug(??)" -- `SetWaitForNonPrintable(16 + Utils::Clamp(speed - 16,
+      # 0, 4))`, where `speed` is whatever `\s[n]` (1..20) is in effect when
+      # the `\.` is reached, not a fixed 16. A speed of 17..20 stretches the
+      # quarter-pause by 1..4 extra frames; `\|`'s own 61-frame hold carries
+      # no such term (`case '|'` is a bare literal, no `speed` reference at
+      # all) and stays flat regardless of speed.
       MSG_PAUSE_QUARTER = 16
       MSG_PAUSE_FULL = 61
 
@@ -8997,14 +9005,21 @@ class RPG2k
       end
 
       # Hold the reveal at a pacing code: `\!` waits for a button, `\.` / `\|`
-      # count down a fixed number of frames (a button skips the wait).
+      # count down a fixed number of frames (a button skips the wait). A `\.`
+      # pause's own length depends on the `\s[n]` typing speed in effect at
+      # that point in the text (see #speed_at and MSG_PAUSE_QUARTER's own
+      # comment); `\|` never varies.
       def drive_message_pause(reveal, pause, pressed)
         if pause[:kind] == :key
           reveal.release_pause if pressed
           return
         end
-        @message[:pause_frames] ||=
-          pause[:kind] == :full ? MSG_PAUSE_FULL : MSG_PAUSE_QUARTER
+        @message[:pause_frames] ||= if pause[:kind] == :full
+                                       MSG_PAUSE_FULL
+                                     else
+                                       speed = reveal.speed_at(pause[:at])
+                                       MSG_PAUSE_QUARTER + Game.clamp(speed - 16, 0, 4)
+                                     end
         @message[:pause_frames] -= 1
         if pressed || @message[:pause_frames] <= 0
           @message[:pause_frames] = nil
