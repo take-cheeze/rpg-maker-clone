@@ -8322,6 +8322,10 @@ class BattleMagicParty
   def item_count(id); @items[id] || 0; end
   def gain_item(id, n = 1); @items[id] = item_count(id) + n; end
   def lose_item(id, n = 1); @items[id] = [item_count(id) - n, 0].max; end
+  # The battle scene spends a *use* rather than a copy (Game::Party#
+  # consume_item_use, whose 使用回数 arithmetic rpg2k_logic_check covers); this
+  # stub's potion is an ordinary single-use one, so a use costs a copy.
+  def consume_item_use(id); lose_item(id, 1); end
 
   # Battle sub-menu hooks the scene calls (Game::Party provides these for real):
   def battle_skills(actor, _caster); actor.skills.include?(1) ? [[1, 3]] : []; end

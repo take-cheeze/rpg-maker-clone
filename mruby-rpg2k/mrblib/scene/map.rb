@@ -5722,12 +5722,15 @@ class RPG2k
         end
         entry = @battle_ui[:battle].step_action
         if entry
-          # An Item action consumes one from the real bag when it lands (so
-          # backing out during the command phase never spends it). A switch
-          # item flips its switch at the same moment -- the state table is
-          # the scene's, same as the field menu's own Scene::ItemMenu, and
+          # An Item action spends one *use* from the real bag when it lands (so
+          # backing out during the command phase never spends it), which only
+          # costs a copy once the item's 使用回数 runs out -- the same
+          # Game::Party#consume_item_use the field menu goes through, so a
+          # multi-use bomb or a 特殊効果 weapon behaves identically in a fight.
+          # A switch item flips its switch at the same moment -- the state table
+          # is the scene's, same as the field menu's own Scene::ItemMenu, and
           # this is the only place a queued switch-item action ever reaches it.
-          @state.party.lose_item(entry[:item_id], 1) if entry[:item_id]
+          @state.party.consume_item_use(entry[:item_id]) if entry[:item_id]
           @state.switches[entry[:switch_id]] = true if entry[:switch_id]
           log_round([entry])
           refresh_battle_status
