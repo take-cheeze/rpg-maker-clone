@@ -7754,6 +7754,30 @@ check 'a missing troop / enemy degrades to an empty, harmless model' do
   eq 1, Game::Enemy.new(battle_db, 99).max_hp, 'defaults for a missing enemy'
 end
 
+# A database shrink can leave a troop member naming a deleted *individual*
+# enemy id (chunk 14) -- shown as "?" in the editor, docs/TODO.md's runtime
+# error catalog. This is distinct from the enemy-*group* (troop) id case
+# `Game::Party#db_enemy_group`/Enemy Encounter already reports: here the troop
+# itself resolves fine, but one of its members points at a dangling enemy id.
+# `Game::Enemy.new` already tolerated this by degrading to a blank/1-HP model
+# (see the check above); it now also reports the gap.
+check 'a dangling individual enemy id reports and still degrades to the harmless model' do
+  e = nil
+  out = capture_stderr { e = Game::Enemy.new(battle_db, 99) }
+  ok out.include?('[RPG2k] Enemy: enemy id 99 not found in the database'), out
+  eq 1, e.max_hp, 'degrade behaviour is unchanged -- still a blank 1-HP model'
+  eq '', e.name
+
+  # Reached through a real troop member, not just a direct Game::Enemy.new call.
+  broken_group = { 1 => GroupRow.new('Broken', { 1 => GroupMember.new(99, 5, 5, false) }) }
+  db = BattleDB.new(battle_db.enemy, broken_group)
+  troop = nil
+  out2 = capture_stderr { troop = Game::Troop.new(db, 1) }
+  ok out2.include?('[RPG2k] Enemy: enemy id 99 not found in the database'), out2
+  eq 1, troop.members.size
+  eq 1, troop.members.first.max_hp, 'the dangling member still degrades harmlessly'
+end
+
 check 'Enemy Encounter parses the troop and modes and suspends on :battle' do
   st = party_state
   it = Game::Interpreter.new(st)

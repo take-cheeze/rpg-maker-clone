@@ -8487,6 +8487,25 @@ five new `scripts/rpg2k_logic_check.rb` checks (no handlers, an [Escape]
 handler, escape-abort mode, and the random-encounter path both missing and
 present), each asserting on the captured `$stderr` line and that no
 `:battle` wait was ever armed.
+✅ **A troop member naming a deleted *individual* enemy id (chunk 14) no
+longer degrades silently** — the "invalid enemy" case above, distinct from
+the enemy-*group*/troop case fixed just above: there the whole troop id was
+dangling, here the troop itself resolves fine but one of its members points
+at an enemy id the database no longer has. `Game::Enemy#initialize`
+(`mruby-rpg2k/mrblib/game.rb`) already tolerated a missing `enemy` row by
+degrading every field to a safe default (blank name, 1 max HP, 0 stats — see
+the "missing troop / enemy degrades to an empty, harmless model" check), and
+that degrade behaviour is unchanged; it now also logs a `[RPG2k] Enemy:
+enemy id <id> not found in the database, degrading to a blank placeholder`
+diagnostic whenever `id` is truthy/positive but the lookup misses, guarded by
+the same `respond_to?(:enemy)` check `db_item`/`db_enemy_group` use so a bare
+test fixture with no `enemy` table at all stays silent. Placed in the
+constructor itself (rather than `Troop#member`, its one production call
+site) so every construction path is covered, present and future. Covered by
+a new `scripts/rpg2k_logic_check.rb` check asserting the diagnostic fires
+both for a direct `Game::Enemy.new` call and for one reached through a real
+troop member, and that the degrade-to-harmless-model behaviour (1 HP, blank
+name) is unchanged in both cases.
 ✅ **The field skill menu no longer drops a dangling learned-skill id with no
 trace** — one of the "invalid skill" cases above, the "opens a skill-select
 screen" variant. `Game::Party#field_skills` (`mruby-rpg2k/mrblib/game.rb`)

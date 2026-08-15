@@ -6436,6 +6436,19 @@ module Game
 
     def initialize(db, id, x = 0, y = 0, hidden = false)
       row = db.enemy[id]
+      # A database shrink can leave a troop member naming a deleted individual
+      # enemy id (chunk 14) -- shown as "?" in the editor, docs/TODO.md's
+      # runtime error catalog, distinct from the enemy-*group* (troop) id case
+      # `Game::Party#db_enemy_group`/Enemy Encounter already reports. Degrading
+      # to a blank/1-HP model below is unchanged (by design, matching real
+      # RPG_RT's own tolerance); only the gap is now visible. `respond_to?`
+      # guarded the same way `db_item`/`db_enemy_group` reach into `@db`, so a
+      # bare test fixture with no `enemy` table at all stays silent -- this is
+      # only for a genuine dangling id in a real database.
+      if row.nil? && id && id > 0 && db.respond_to?(:enemy)
+        $stderr.puts "[RPG2k] Enemy: enemy id #{id} not found in the " \
+                     'database, degrading to a blank placeholder'
+      end
       @id = id
       @name    = row ? row.name.to_s : ''
       # The Monster/<name> battle graphic (blank for a fixture that omits it);
