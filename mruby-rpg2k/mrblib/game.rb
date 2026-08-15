@@ -2034,9 +2034,10 @@ module Game
       ml && ml >= 1 ? ml : 50
     end
 
-    # Total EXP required to *be at* `level` (0 at level 1). RPG2000's standard
-    # curve, computed from the row's exp_basic / exp_increase / exp_correction —
-    # a direct port of EasyRPG's CalculateExp(level - 1).
+    # Total EXP required to *be at* `level` (0 at level 1), computed from the
+    # row's exp_basic / exp_increase / exp_correction through the edition's
+    # own curve (#calc_exp) — a direct port of EasyRPG's
+    # CalculateExp(level - 1).
     def exp_for_level(level)
       return 0 if level <= 1
       calc_exp(level - 1)
@@ -2427,10 +2428,38 @@ module Game
       list.is_a?(Array) && !list.empty? ? list.dup : [0]
     end
 
-    # EasyRPG's CalculateExp(n): the RPG2000 standard EXP curve summed over n
-    # steps. Float arithmetic mirrors RPG_RT; the running total truncates toward
-    # zero each step (C's (int) cast) and the whole result caps at #exp_max.
+    # EasyRPG's CalculateExp(n): two genuinely different curves picked by
+    # edition (`Player::IsRPG2k() ? 1 : 2`), not a shared formula with an
+    # edition-gated constant the way the HP/EXP *caps* are -- RPG2003's own
+    # curve is linear in the level index, not the RPG2000 curve's compounding
+    # multiply-by-inflation-each-step shape. A prior version of this method
+    # ran the RPG2000 branch unconditionally regardless of database edition
+    # (no `rpg2003?` check anywhere in it), even though `#rpg2003?` already
+    # exists and is used elsewhere in this class. For the shared
+    # `exp_basic`/`exp_increase`/`exp_correction` = 30/30/30 default fixture,
+    # `calc_exp(1)` (the level 1->2 threshold) computed 60 under the RPG2000
+    # curve but should be 90 under RPG2003's -- a full third off at the very
+    # first level, diverging further at every level after since the two
+    # curves have different shapes, not just different constants. Every actor
+    # in an RPG2003 database levelled up on the wrong EXP thresholds
+    # throughout the game.
+    #
+    # RPG2000: float arithmetic mirrors RPG_RT; the running total truncates
+    # toward zero each step (C's (int) cast) and the whole result caps at
+    # #exp_max. RPG2003: the three fields are summed as plain integers, `i`
+    # times the increase field accumulating each step -- EasyRPG's own
+    # `double` locals for this branch never leave integral values, so no
+    # float arithmetic is needed to match it exactly.
     def calc_exp(n)
+      if rpg2003?
+        base = db_exp_param(:exp_basic)
+        inflation = db_exp_param(:exp_increase)
+        correction = db_exp_param(:exp_correction)
+        result = 0
+        (1..n).each { |i| result += base + i * inflation + correction }
+        cap = exp_max
+        return result > cap ? cap : result
+      end
       base = db_exp_param(:exp_basic).to_f
       inflation = 1.5 + db_exp_param(:exp_increase) * 0.01
       correction = db_exp_param(:exp_correction).to_f

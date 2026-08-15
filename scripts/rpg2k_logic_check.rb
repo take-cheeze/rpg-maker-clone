@@ -7122,6 +7122,20 @@ check "an RPG2003 database widens the EXP cap to 9999999" do
   eq 9_999_999, b.exp_for_level(50), "calc_exp's own cap is the wider RPG2003 ceiling too"
 end
 
+check "an RPG2003 database's EXP curve is RPG2003's own linear formula, not RPG2000's" do
+  # EasyRPG's CalculateExp branches entirely on edition
+  # (`Player::IsRPG2k() ? 1 : 2`) -- RPG2003's own curve sums
+  # `base + i*inflation + correction` linearly over the level index, a
+  # structurally different formula from RPG2000's compounding
+  # multiply-by-inflation-each-step one, not just a different constant.
+  db = FakeActorDB.new({ 1 => ExpRow.new(exp_basic: 30, exp_increase: 30, exp_correction: 30) },
+                       [1], {}, {}, {}, nil, nil, rpg2003: true)
+  a = Game::Party.new(db).actor_by_id(1)
+  eq 0, a.exp_for_level(1)
+  eq 90, a.exp_for_level(2), 'level index 1 alone: 30 + 1*30 + 30 = 90'
+  eq 210, a.exp_for_level(3), 'level indices 1 and 2: 90 + (30 + 2*30 + 30 = 120) = 210'
+end
+
 IC2 = Game::Interpreter::Cmd
 
 check 'Change EXP command levels up a fixed actor' do
