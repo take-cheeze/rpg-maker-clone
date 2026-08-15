@@ -2913,7 +2913,7 @@ module Game
 
     # RPG2000 transparency (0 opaque .. 100 fully clear) -> a 0..255 opacity.
     def trans_to_opacity(top_trans)
-      (100 - Game.clamp(top_trans, 0, 100)) * 255 / 100
+      Game.trans_to_opacity(top_trans)
     end
 
     # The picture's file name (the command's string parameter), or ''.

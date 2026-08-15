@@ -165,9 +165,17 @@ The work below is roughly ordered by the critical path to a walkable game
     slots as doubles of unknown meaning; **31/32 are the centre position**,
     identified by rewriting each candidate pair in a real save and diffing the
     resumed frame against the unedited one (see the ADR 0021 table). The picture
-    region of the resumed frame is now pixel-identical to RPG_RT. Zoom, opacity
-    and tone have save fields but no sample where they are off their defaults,
-    so they are still left at `Picture`'s defaults rather than guessed at.
+    region of the resumed frame is now pixel-identical to RPG_RT. Zoom (33),
+    transparency (34) and tone (41-44) are now restored too — the "no sample
+    off-default" worry was really about validating the field mapping, and that
+    is settled without a sample: the schema's own field names (拡大率/透明度/
+    色調) match Show Picture's param5/param6/param8-11 one for one, and that
+    live path already converts transparency through `#trans_to_opacity` and
+    feeds zoom/tone straight into `Picture#zoom`/red/green/blue/saturation —
+    `Game::State.restore_pictures` now does exactly the same conversion,
+    covered by a synthetic-chunk round-trip in `rpg2k_logic_check.rb` (`to_lsd`
+    does not write chunk 103 itself yet, so there is no live save to round-trip
+    through).
   - ✅ **`Game::State#to_lsd` output is loadable by RPG_RT.** It round-tripped
     through our own parser (`scripts/lcf_save_roundtrip.rb`) but the genuine
     runtime left "Continue" dead, with no error anywhere. The assumed cause —
