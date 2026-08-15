@@ -6179,6 +6179,41 @@ not yet verified:
   in) to victory and asserting only the survivor's EXP total rises,
   confirmed to fail against the pre-fix code (`expected 0, got 10`) before
   the fix.
+- ✅ **Elemental-resistance equipment (a shield/armor/helmet/accessory
+  flagging an attribute in its own `attribute_set`) now actually grants
+  resistance, instead of having zero effect on the wearer.** Confirmed
+  against EasyRPG's actual C++ source: `Game_Actor::GetBaseAttributeRate`
+  (`src/game_actor.cpp`) starts from the actor's own database
+  `attribute_ranks` row (default C/rank 2 when absent), then OR's a flat
+  `+1` boost from every equipped shield/armor/helmet/accessory whose own
+  `attribute_set` flags that attribute — `ForEachEquipment<allow_weapon=
+  false, allow_armor=true>` explicitly excludes the weapon slot — clamping
+  the result to `0..4`. `Game::Actor#attribute_ranks`
+  (`mruby-rpg2k/mrblib/game.rb`) only ever read the actor's own database row;
+  `attribute_set` (LCF item field 66) was already parsed and already
+  consumed, but only off the *weapon* slot, for the opposite (offensive)
+  purpose (`#weapon_attributes`, what element a basic attack carries) and
+  for RPG2003 skill-cast gating (`Party#weapon_attribute_ready?`, which the
+  existing `can_cast?` test already proves armor does *not* satisfy — a
+  different, correctly-scoped mechanic this fix leaves untouched). No code
+  path anywhere read a defensive item's `attribute_set` at all. Concretely:
+  an actor with no database override for Fire (rank-C default, 100%) wearing
+  an armor piece that flags Fire faces a 100-damage Fire attack — real
+  RPG_RT/EasyRPG lands it for `50` (rank C(2) + the +1 boost = D(3), 50% on
+  the RPG2000 default table); this build landed the full `100`, the armor
+  silently doing nothing. Fixed with a new `Actor#defensive_attribute_ids`
+  (the defensive counterpart of `#weapon_attributes`, gated on
+  `Party::ITEM_SHIELD/_ARMOR/_HELMET/_ACCESSORY` instead of the weapon slot),
+  OR'd into `#attribute_ranks`' returned `{ attribute_id => rank }` map as a
+  `+1` (clamped at 4) — baked in at the rank-table level, not the battle
+  layer, since `GetBaseAttributeRate` computes its `rate = 2` default
+  *before* ever consulting equipment, so an attribute the database row never
+  lists must still resist once a matching item is equipped. Covered by two
+  new `scripts/rpg2k_logic_check.rb` checks — one on `Actor#attribute_ranks`
+  itself (bare vs. weapon vs. armor vs. armor+accessory both flagging the
+  same element, proving the OR-not-stack rule), one end-to-end through
+  `Battle#apply_attr_multiplier` proving the actual damage reduction — both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
