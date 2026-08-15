@@ -3300,7 +3300,21 @@ class RPG2k
           force_event_route(this_event, route, r[:frequency]) if this_event
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
-          force_vehicle_route(type, route, r[:frequency])
+          # EasyRPG's own `Game_Interpreter::CommandMoveEvent` (code 11330):
+          # "If the event is a vehicle in use, push the commands to the
+          # player instead" (`event = Main_Data::game_player.get()` when
+          # `Game_Vehicle::IsInUse()`) -- a scripted vehicle ride (sail the
+          # boat/airship across the map while the party stands on it) works
+          # by driving the *player*, which the ridden vehicle already
+          # mirrors every frame (#follow_vehicle). This used to fall
+          # straight into #force_vehicle_route, which explicitly no-ops
+          # while ridden (`return if @state.boarded == type`) -- the whole
+          # route was silently dropped instead of redirected.
+          if @state.boarded == type
+            start_player_route(route, r[:frequency])
+          else
+            force_vehicle_route(type, route, r[:frequency])
+          end
         else
           ev = @events.find { |e| e[:id] == r[:target] }
           if ev
@@ -3438,13 +3452,16 @@ class RPG2k
       end
 
       # Give vehicle `type` a forced route (Move Event / Set Move Route
-      # targeting a boat/ship/airship). A no-op when the vehicle is not
-      # placed on the current map (nothing here simulates a map that is not
-      # loaded) or is currently ridden -- the party's own #follow_vehicle
-      # already claims the ridden vehicle's position every frame, and RPG_RT
-      # has no documented "pilot the vehicle you're standing on by event"
-      # interaction, so the simplest, safest reading is that boarding and a
-      # route on the same vehicle just don't mix.
+      # targeting a boat/ship/airship, and only that -- a ridden vehicle is
+      # redirected onto the player before this is ever reached, see
+      # #apply_move_request). A no-op when the vehicle is not placed on the
+      # current map (nothing here simulates a map that is not loaded); the
+      # `@state.boarded == type` guard below is now unreachable through
+      # #apply_move_request's own redirect but stays as a defensive no-op
+      # for any other caller this method gains -- the party's own
+      # #follow_vehicle already claims a ridden vehicle's position every
+      # frame, so a route driving the vehicle character directly while
+      # boarded would fight that.
       def force_vehicle_route(type, route, freq)
         v = @state.vehicle(type)
         return unless v.placed? && v.map_id == @state.map_id

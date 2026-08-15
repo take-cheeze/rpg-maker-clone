@@ -6601,6 +6601,36 @@ not yet verified:
   ally now appears in the battle Item ally-target picker and can be
   selected and queued as the command's target), all three confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **A Move Event targeting a boat/ship/airship the party is currently
+  riding now redirects onto the player, driving a scripted vehicle ride,
+  instead of the whole move route being silently dropped.** Confirmed
+  against EasyRPG's actual C++ source: `Game_Interpreter::CommandMoveEvent`
+  (code 11330, `src/game_interpreter.cpp`) — "If the event is a vehicle in
+  use, push the commands to the player instead" — reassigns its target to
+  `Main_Data::game_player.get()` whenever `Game_Vehicle::IsInUse()`
+  (`Main_Data::game_player->GetVehicle() == this`, `src/game_vehicle.cpp`)
+  is true, then calls `ForceMoveRoute` on whichever character it ended up
+  with. This is how a genuine RPG2000/2003 event scripts "the boat sails
+  across the map while the party stands on it": the player is what actually
+  moves, and a ridden vehicle already mirrors the player's tile every frame
+  (this build's own `#follow_vehicle`). `Scene::Map#apply_move_request`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) routed every boat/ship/airship target
+  straight into `#force_vehicle_route` regardless of who was riding it, and
+  that method explicitly no-ops while the vehicle is boarded (`return if
+  @state.boarded == type` — needed so a *parked* vehicle's own route never
+  fights `#follow_vehicle` once someone boards it mid-route) — so a Move
+  Event issued at a boat the party is standing on did nothing at all: no
+  movement, no error, silently discarded. Fixed by having
+  `#apply_move_request` check `@state.boarded == type` itself and call the
+  already-existing `#start_player_route` (the same method Set Move Route
+  targeting the player itself uses) instead of `#force_vehicle_route` when
+  the target vehicle is the one currently ridden — no new state or rendering
+  path, just reusing the existing player-route mechanism EasyRPG's own
+  redirect maps onto. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (a Move Event issued at a boarded boat now sails the party — and the boat
+  riding along with it — east, with no separate vehicle-character route ever
+  armed), confirmed to fail against the pre-fix code (stayed at x=0) before
+  the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
