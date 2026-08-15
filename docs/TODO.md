@@ -3943,13 +3943,28 @@ Everything below is unverified against the codebase.
   Left open, now with a precise citation trail and fix shape for whoever
   picks it up next.
 - **Repeat/Loop** — loops forever without an explicit Break Loop.
-- **Common Event** — can't display map graphics or use touch-style
-  triggers, can't run during battle or with the menu open; "This Event" as
-  a target inside a Common Event (no map-event context) raises the invalid-
-  event error; **interrupting a Common Event's Parallel Process (its switch
-  turns off mid-run) and re-enabling it resumes exactly where it left off**
-  — ✅ the same fact as the fixed "A Common Event's Parallel Process now
-  survives a Transfer Player and a save/load" item above, restated.
+- **Common Event** — ✅ can't display map graphics or use touch-style
+  triggers (`Game::CommonEvent` defines only `AUTO_START`/`PARALLEL` —
+  no charset field, no touch-trigger constant exists in the data model at
+  all, structurally distinct from a map event's own `Game::EventPage`); ✅
+  can't run during battle (same fact as the already-confirmed "Common
+  events never run during battle" bullet elsewhere in this doc) or with
+  the menu open (`Scene::Map#update` — and with it `#step_parallels` — is
+  simply not called at all while a menu scene sits on top, the same
+  structural fact the Picture bullet's own Menu half already relies on).
+  "This Event" as a target inside a Common Event (no map-event context)
+  raising the specific invalid-event error dialog is not modelled — this
+  project generally does not reproduce RPG_RT's own Windows error dialogs
+  (see the already-flagged "Set Vehicle Position from a Parallel Process"
+  crash nearby) — but the natural consequence is: `Interpreter
+  #character_ref(0)`/`CHAR_THIS_EVENT` resolves to `@event_id`, nil for a
+  Common Event's own interpreter, and `#map_event_call` already returns
+  nil outright for a nil id ("no page to run"), so the reference resolves
+  to nothing rather than crashing or targeting a stray map event.
+  **Interrupting a Common Event's Parallel Process (its switch turns off
+  mid-run) and re-enabling it resumes exactly where it left off** — ✅ the
+  same fact as the fixed "A Common Event's Parallel Process now survives a
+  Transfer Player and a save/load" item above, restated.
 - ✅ **Move All / Force Complete Move** — blocks Event Content at that
   command until every targeted character's route finishes; same freeze
   conditions as Set Move Route above (both halves now confirmed there).
