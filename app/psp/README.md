@@ -73,6 +73,37 @@ The pieces below are scaffolded but **not** part of the bring-up EBOOT:
   (`rgss_psp_poll`, called from `Graphics.update`), and `build_config.rb` has a
   `psp` mruby MIPS cross-build (`MRUBY_TARGET=psp`). Wiring `libmruby.a` into the
   EBOOT link and starting the real `RPG2k` scene tree is the next slice.
+
+  Three prerequisite blockers the `psp` cross-build hit the moment it was
+  actually exercised (found while scoping this slice, before any of it
+  compiled against real pspdev headers — none of this was caught by CI, since
+  the `psp` cross-build had never pulled `mruby-rgss` in before):
+  - `mruby-rgss/src/terminal.cxx` (the sixel/iTerm2 backends) used POSIX
+    `termios.h`/`sys/ioctl.h` and a `std::thread` writer unconditionally at
+    file scope — unlike `psp.cxx`/`wio.cxx`, it was never self-guarded to be
+    a no-op off its own target, so it would not have compiled against
+    pspdev's newlib. Now guarded the same way (`#if !defined(PSP_BUILD) &&
+    !defined(WIO_TERMINAL)`), with a stub for the one symbol
+    (`rgss_terminal_poll`) called unconditionally elsewhere in the gem.
+  - `mrbgem.rake` unconditionally linked `pthread`, needed only by that same
+    `std::thread` writer. Now conditional on the *build's own* name (`psp`/
+    `wio`), not on `MRUBY_TARGET` — that env var is also set while the
+    native host build (which still needs pthread, to produce `mrbc`) runs
+    in the same cross-compile session.
+  - `mruby-mvjs` (RPG Maker MV/MZ via embedded QuickJS) links against `qjs`
+    and optionally EGL/GLESv2, neither of which exists for MIPS/pspdev or is
+    built by `app/psp`'s CMake project. MV/MZ was never in scope for this
+    port, so `rpg_maker_gems(conf, include_mvjs: false)` drops it for `psp`
+    specifically rather than porting QuickJS and a software GL stack as a
+    side effect.
+
+  Still ahead: building `uni-algo` for the `app/psp` CMake project (currently
+  only LVGL is added as a subdirectory there; `mruby-rgss`/`mruby-lcf` both
+  link it), actually invoking the `psp` mruby cross-build from
+  `app/psp/CMakeLists.txt` and linking `libmruby.a` in (dropping the
+  now-redundant direct `psp.cxx` compilation once the gem supplies it),
+  deciding the `GAME_DIR` Memory-Stick path convention, and — per ADR
+  0047's P2 — the mruby/LVGL allocator split.
 - **Memory-Stick assets.** Game data is opened by path through mruby-io /
   `std::fopen`; on the PSP these resolve to newlib syscalls backed by the
   Memory Stick, which pspsdk's `stdio` already routes. Pointing `GAME_DIR` at a
