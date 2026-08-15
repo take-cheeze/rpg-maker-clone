@@ -1034,6 +1034,25 @@ check 'Screen flash with zero duration is inert' do
   eq 0, s.flash_color[3]
 end
 
+check 'Screen flash_begin re-arms to peak strength indefinitely until flash_end' do
+  s = Game::Screen.new
+  s.flash_begin(0, 255, 0, 40, 4) # colour, peak strength 40, over 4 frames
+  ok s.flashing?
+  eq 40, s.flash_color[3], 'peaks at full strength when it starts'
+  s.update; eq 30, s.flash_color[3]
+  s.update; eq 20, s.flash_color[3]
+  s.update; eq 10, s.flash_color[3]
+  s.update
+  eq 40, s.flash_color[3], 're-armed to peak strength instead of settling at 0'
+  ok s.flashing?, 'still flashing after re-arming'
+  s.update; eq 30, s.flash_color[3], 'decaying again from the fresh peak'
+  s.flash_end
+  ok !s.flashing?, 'flash_end stops the strobe immediately'
+  eq 0, s.flash_color[3]
+  s.update # further updates are a no-op once ended
+  eq 0, s.flash_color[3]
+end
+
 check 'Screen busy? reflects tint, shake or flash activity' do
   s = Game::Screen.new
   ok !s.busy?
@@ -2070,6 +2089,54 @@ check 'Flash Screen with a wait pauses until the flash fades out' do
   it.update
   eq true, st.switches[2], 'resumed once the flash faded'
   eq 0, st.screen.flash_color[3]
+end
+
+check 'RPG2003 Flash Screen mode 1 (Begin) strobes indefinitely and never pauses' do
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  # red, peak strength 20, 2 tenths (12 frames), wait 0, mode 1 (Begin).
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [255, 0, 0, 20, 2, 0, 1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'Begin never pauses the interpreter'
+  eq true, st.switches[1], 'the command after Begin still ran'
+  ok st.screen.flashing?
+  eq 20, st.screen.flash_color[3]
+  11.times { st.screen.update }
+  ok st.screen.flash_color[3] < 20, 'decaying before the period ends'
+  st.screen.update # the 12th update: the period lapses
+  eq 20, st.screen.flash_color[3], 're-armed to peak instead of settling at 0'
+  ok st.screen.flashing?, 'still strobing after one full period'
+end
+
+check 'RPG2003 Flash Screen mode 2 (End) stops a Begin strobe immediately' do
+  st = new_state(rpg2003: true)
+  st.screen.flash_begin(255, 0, 0, 20, 12)
+  ok st.screen.flashing?
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [0, 0, 0, 0, 0, 0, 2]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'End never pauses the interpreter'
+  eq true, st.switches[1], 'the command after End still ran'
+  ok !st.screen.flashing?, 'End stops the strobe'
+  eq 0, st.screen.flash_color[3]
+  st.screen.update # further updates are a no-op once ended
+  ok !st.screen.flashing?
+end
+
+check 'A pre-RPG2003 or short-parameter Flash Screen command always falls back to mode 0' do
+  st = new_state(rpg2003: false)
+  it = Game::Interpreter.new(st)
+  # A 7-parameter command list, but not an RPG2003 project: EasyRPG's
+  # `CommandFlashScreen` fallback (`com.parameters.size() <= 6 ||
+  # !Player::IsRPG2k3Commands()`) always wins, so param6's "1" is ignored.
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [255, 0, 0, 20, 2, 0, 1])])
+  it.update
+  ok st.screen.flashing?
+  12.times { st.screen.update }
+  eq 0, st.screen.flash_color[3], 'settled to zero, not re-armed -- mode 0, not Begin'
+  ok !st.screen.flashing?
 end
 
 check 'Pan Screen lock / unlock are instant and never pause' do

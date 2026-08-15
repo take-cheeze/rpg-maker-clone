@@ -2965,13 +2965,29 @@ module Game
     # peak strength param3, fading out over param4 tenths of a second. When param5
     # (the wait flag) is set, pause until it fades — the owning scene advances
     # Game::Screen each frame and resumes us once no screen effect is animating.
+    # RPG2003 extends the command with a param6 mode byte (0 one-shot / 1 begin a
+    # repeating strobe / 2 end one), matching EasyRPG's `CommandFlashScreen`
+    # (src/game_interpreter.cpp): a command list carrying no 7th parameter (an
+    # RPG2000 project, or an RPG2003 one never given the extended layout) always
+    # falls back to a plain one-shot flash, mode 0. Only mode 0 ever waits — Begin
+    # and End never suspend the interpreter, since the strobe runs indefinitely.
     def do_flash_screen(cmd)
-      frames = cmd.param(4) * FRAMES_PER_TENTH
-      @state.screen.flash(cmd.param(0), cmd.param(1), cmd.param(2),
-                          cmd.param(3), frames)
-      return unless cmd.param(5) != 0 && @state.screen.flashing?
-      @wait_kind = :screen
-      @waiting = true
+      mode = @state.party.rpg2003? && cmd.parameters.size > 6 ? cmd.param(6) : 0
+      case mode
+      when 1
+        frames = cmd.param(4) * FRAMES_PER_TENTH
+        @state.screen.flash_begin(cmd.param(0), cmd.param(1), cmd.param(2),
+                                  cmd.param(3), frames)
+      when 2
+        @state.screen.flash_end
+      else
+        frames = cmd.param(4) * FRAMES_PER_TENTH
+        @state.screen.flash(cmd.param(0), cmd.param(1), cmd.param(2),
+                            cmd.param(3), frames)
+        return unless cmd.param(5) != 0 && @state.screen.flashing?
+        @wait_kind = :screen
+        @waiting = true
+      end
     end
 
     # Pan Screen: param0 selects the operation — 0 lock the camera in place, 1

@@ -6049,6 +6049,40 @@ not yet verified:
   effect is included), the symmetric shield-slot case, and Remove's own
   no-side-effect exemption — the first two confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **RPG2003's Flash Screen command (11040) now supports its Begin/End
+  continuous-strobe mode, instead of always running the RPG2000 one-shot
+  fade.** Confirmed against EasyRPG's actual C++ source: `CommandFlashScreen`
+  (`src/game_interpreter.cpp`) reads a 7th parameter — present only on an
+  RPG2003 command list of more than 6 parameters
+  (`com.parameters.size() <= 6 || !Player::IsRPG2k3Commands()` always falls
+  back to mode 0) — and dispatches on it: `0` → `Game_Screen::FlashOnce`
+  (the existing one-shot fade this build already had), `1` →
+  `Game_Screen::FlashBegin` (arms an indefinitely repeating strobe), `2` →
+  `Game_Screen::FlashEnd` (stops one immediately). `Flash::Update`
+  (`src/flash.h`) re-arms a Begin strobe at its peak strength the instant it
+  would otherwise settle to zero, over and over, until an explicit End —
+  this build's `Interpreter#do_flash_screen`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) never read `cmd.param(6)` at all, so
+  every RPG2003 Begin/End flash silently ran as a single fade-and-stop, and
+  no amount of waiting brought the strobe back. Only mode 0 ever waits —
+  EasyRPG's own `CommandFlashScreen` never calls `SetupWait` for modes 1/2,
+  matching how a Begin strobe never actually "finishes" for the interpreter
+  to resume on. Fixed by giving `Game::Screen` (`mruby-rpg2k/mrblib/game.rb`)
+  a `@flash_continuous` flag: `#flash_begin` is `#flash` plus setting it,
+  `#flash_end` zeroes the flash and clears it, and `#update_flash` re-arms to
+  `@flash_power`/`@flash_total` the instant `@flash_frames` would settle at
+  zero while the flag holds — the existing one-shot decay curve is untouched
+  otherwise. `#do_flash_screen` now dispatches on `cmd.param(6)`, gated on
+  `@state.party.rpg2003? && cmd.parameters.size > 6` to match EasyRPG's
+  fallback exactly. Covered by four new checks — a `Game::Screen`-level test
+  (`scripts/rpg2k_logic_check.rb`) proving a Begin strobe decays to zero then
+  re-arms to peak and repeats until `#flash_end` stops it, an
+  interpreter-level Begin test proving the command itself never pauses and
+  the re-arm happens after one real period, an interpreter-level End test
+  proving it stops an in-flight strobe immediately, and a fallback test
+  proving a non-RPG2003 party ignores a stray 7th parameter and always
+  settles — the `Game::Screen` test and the two interpreter dispatch tests
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
