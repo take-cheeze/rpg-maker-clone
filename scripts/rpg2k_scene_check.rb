@@ -770,7 +770,7 @@ check 'a jumping sprite is lifted off the ground and comes back down' do
     heights << scene.send(:event_jump_offset, e) if e[:jumping]
   end
   ok heights.max > 0, 'the sprite left the ground'
-  eq 21, heights.max, "RPG_RT's arc peaks at 21px on a 16px tile"
+  eq 16, heights.max, "RPG_RT's arc peaks at exactly 16px on a 16px tile, never past it"
   # It is an arc, not a step up: it rises from nothing and returns.
   peak = heights.index(heights.max)
   ok peak > 0, 'the hop starts on the ground'
@@ -12552,7 +12552,7 @@ check 'a forced player jump arcs the hero the way it arcs an event' do
     heights << h if scene.instance_variable_get(:@player_jumping)
   end
   eq 2, st.x, 'the hop cleared two tiles'
-  eq 21, heights.max, 'and rose to the same peak an event does'
+  eq 16, heights.max, 'and rose to the same peak an event does'
   peak = heights.index(heights.max)
   ok heights[0...peak] == heights[0...peak].sort,
      "rises to the peak: #{heights.inspect}"
@@ -12561,6 +12561,29 @@ check 'a forced player jump arcs the hero the way it arcs an event' do
   eq 0, scene.send(:jump_offset_for, 0), 'the hop begins on the ground'
   eq 0, scene.send(:jump_offset_for, Game::TILE), 'and ends on it'
   eq 0, scene.send(:player_jump_offset), 'and the hero is back on it once landed'
+end
+
+# EasyRPG's own Game_Character::GetJumpHeight (src/game_character.cpp) is
+# `jump_height &lt; 5 ? jump_height * 2 : jump_height &lt; 13 ? jump_height + 4 :
+# 16` -- doubled while small, offset by 4 through h < 13, and capped at a
+# flat 16 beyond that. #jump_offset_for used to mis-port this as an
+# uncapped `h + 5`, peaking at 21px instead of the real arc's own 16px
+# ceiling (a full tile, never past it).
+check "#jump_offset_for's piecewise arc matches EasyRPG's GetJumpHeight exactly" do
+  scene = new_scene({})
+  jh = ->(move_count) { scene.send(:jump_offset_for, move_count) }
+  eq 0, jh.call(0), 'move_count 0: the hop begins on the ground'
+  eq 0, jh.call(Game::TILE), 'move_count 16: and ends on it'
+  eq 4, jh.call(15), 'move_count 15: h=2, the doubled branch (2*2)'
+  eq 4, jh.call(1), 'move_count 1: the symmetric doubled-branch point'
+  eq 12, jh.call(12), 'move_count 12: h=8, the +4 branch (8+4)'
+  eq 12, jh.call(4), 'move_count 4: the symmetric +4-branch point'
+  # The cap flattens the true peak into a 3-frame plateau at exactly 16, not
+  # a single sharp point -- h=14 at move_count 7 and 9 is already >= 13 and
+  # caps the same as h=16's own move_count 8, matching "hang near the top."
+  eq 16, jh.call(9), 'move_count 9: h=14, already capped'
+  eq 16, jh.call(8), 'move_count 8: h=16, the true midpoint'
+  eq 16, jh.call(7), 'move_count 7: h=14, capped again, symmetric'
 end
 
 check 'a forced player walk is never lifted' do

@@ -286,10 +286,23 @@ The work below is roughly ordered by the critical path to a walkable game
   step still snaps rather than streaking) and is lifted along the way by
   `Scene::Map#event_jump_offset`, a port of EasyRPG's
   `Game_Character::GetJumpHeight`: the height tracks the remaining step, peaks at
-  the midpoint and is then stretched — doubled while small, offset by 5 past 4 —
-  which is what makes the hop leave the ground sharply and hang near the top. It
-  peaks at 21px on a 16px tile, so a jumping sprite clearly leaves its row. The
-  lift is applied where the sprite is **blitted**, not to its position, so the
+  the midpoint and is then stretched — doubled while small, offset by 4 through
+  h < 13, capped at a flat 16 beyond that — which is what makes the hop leave the
+  ground sharply and hang near the top. ✅ **That cap/offset shape is now the
+  real EasyRPG one — it was previously mis-ported as an uncapped `h + 5`,
+  peaking at 21px (5px, ~31%, past the real arc's own ceiling) instead of the
+  correct, exact 16px (a full tile, never past it).** Fixed by capping
+  `#jump_offset_for` at `h < 13 ? h + 4 : 16`, matching `GetJumpHeight`'s
+  own three-way `jump_height < 5 ? jump_height*2 : jump_height < 13 ?
+  jump_height+4 : 16` exactly; the cap also flattens the true peak into a
+  3-frame plateau (h=14 already caps to 16 one frame either side of the true
+  midpoint's own h=16) rather than a single sharp point, matching "hang near
+  the top" more literally than the old formula did. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check pinning `#jump_offset_for`'s exact
+  value at both branches and the plateau, plus tightened existing checks
+  (an event's own jump and a forced player jump both now assert the correct
+  16px peak instead of 21px), all confirmed to fail against the pre-fix code
+  before the fix. The lift is applied where the sprite is **blitted**, not to its position, so the
   camera and the y-sorted draw order still see the character on the ground, as
   RPG_RT does. `Game::Character#jumped` is what tells the renderer which kind of
   move it is watching, since the distance cannot: a jump can land one tile away
