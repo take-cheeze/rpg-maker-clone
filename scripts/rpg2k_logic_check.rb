@@ -6987,6 +6987,27 @@ check 'set_exp caps EXP at 999999' do
   eq 999_999, a.exp
 end
 
+# Game_Constants::MaxExpValue (src/game_constants.cpp) widens RPG2000's
+# 999_999 EXP ceiling to 9_999_999 on an RPG2003 database -- the same
+# edition split Game::Actor#max_hp_cap already applies to HP.
+check "an RPG2003 database widens the EXP cap to 9999999" do
+  db = FakeActorDB.new({ 1 => ExpRow.new(initial_level: 1, max_level: 99, exp_basic: 100) },
+                       [1], {}, {}, {}, nil, nil, rpg2003: true)
+  a = Game::Party.new(db).actor_by_id(1)
+  a.set_exp(10_000_000)
+  eq 9_999_999, a.exp, 'an RPG2003 over-range set_exp clamps at the wider max'
+  a.set_exp(5_000_000)
+  eq 5_000_000, a.exp, 'a value between the two editions\' ceilings survives untouched'
+  # calc_exp's own running total caps at the same wider ceiling, not just
+  # set_exp's clamp -- a database whose curve alone would exceed it (huge
+  # exp_basic/exp_increase) still stops at 9_999_999, not 999_999.
+  huge = FakeActorDB.new({ 1 => ExpRow.new(initial_level: 1, max_level: 99,
+                                            exp_basic: 500_000, exp_increase: 99) },
+                         [1], {}, {}, {}, nil, nil, rpg2003: true)
+  b = Game::Party.new(huge).actor_by_id(1)
+  eq 9_999_999, b.exp_for_level(50), "calc_exp's own cap is the wider RPG2003 ceiling too"
+end
+
 IC2 = Game::Interpreter::Cmd
 
 check 'Change EXP command levels up a fixed actor' do

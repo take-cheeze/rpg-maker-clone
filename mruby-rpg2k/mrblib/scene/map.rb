@@ -217,6 +217,9 @@ class RPG2k
         @player_jumping = false
         @dest_x = @state.x
         @dest_y = @state.y
+        # This frame's input-driven move target, snapshotted before
+        # #step_events runs -- see #player_intended_target.
+        @player_intended_target = nil
         @tile_colors = {}
         @last_frame = nil
         # Frame counter driving the chipset's water/animated-tile animation.
@@ -343,6 +346,14 @@ class RPG2k
           if event_busy?
             drive_autostart_cascade
           else
+            # Snapshot this frame's input-driven move target *before*
+            # #step_events runs, so an autonomous/route-driven event's own
+            # hero-tile refusal (#move_autonomous, Game::MoveRoute#do_move)
+            # can tell a genuine same-frame crossing -- the party and the
+            # event trading tiles in one step -- from the party simply
+            # walking up to an event that is not, this frame, trying to walk
+            # onto the party's own tile. See #player_intended_target.
+            @player_intended_target = player_intended_target
             step_player_route
             step_events
             step_vehicle_routes
@@ -2212,6 +2223,12 @@ class RPG2k
       end
 
       def step_event(e, allow_trigger: true)
+        # Cleared unconditionally, before any early return, so a crossing
+        # recognised on some earlier frame (see #move_autonomous /
+        # #player_intended_target) never lingers into a later frame where
+        # this event does not even attempt a move -- #step_movement must
+        # only ever see this true for a refusal decided *this* frame.
+        e[:crossed_hero_this_frame] = false
         # An event fired earlier this frame; hold the rest -- except when this
         # is the "keep moving during the message" pass, which is *always*
         # called while busy (that is the point) and must not immediately bail.
@@ -2248,7 +2265,20 @@ class RPG2k
         # trigger too, the same as #move_autonomous's dedicated hero check
         # already does for a Random/Approach/Away-type move -- see
         # Game::MoveRoute#do_move's `:touched_hero` status.
-        if allow_trigger && status == :touched_hero &&
+        #
+        # `:touched_hero` means the route's target this step was the hero's
+        # own (pre-move) tile -- exactly half of a same-frame crossing (see
+        # #move_autonomous for the other half and the full writeup). The
+        # event is still sitting at (ox, oy), unmoved, so it is that
+        # unchanged position #step_movement's own #event_at check will find
+        # the party walking into if the party's already-known target this
+        # frame is this same tile. Gated on `allow_trigger` for the same
+        # reason #move_autonomous gates its own crossing check on it -- see
+        # that comment.
+        if status == :touched_hero
+          e[:crossed_hero_this_frame] = allow_trigger && @player_intended_target == [ox, oy]
+        end
+        if allow_trigger && status == :touched_hero && !e[:crossed_hero_this_frame] &&
            e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
           start_event(e)
         end
@@ -2308,7 +2338,28 @@ class RPG2k
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
         if nx == @state.x && ny == @state.y
           ch.face(dir)
-          start_event(e) if allow_trigger && e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+          # A genuine same-frame crossing (docs/TODO.md "Map Event" case (c)):
+          # this event's target is the party's current tile *and* the
+          # party's own already-known target this frame (see
+          # #player_intended_target, snapshotted before #step_events ran) is
+          # this event's current tile -- the two are trading tiles in one
+          # step. Real RPG_RT invalidates the hit-test for that
+          # configuration, so neither this Event Touch (2) nor the Hero
+          # Touch (1) #step_movement's own #event_at check would otherwise
+          # find here fires -- #step_movement consults
+          # e[:crossed_hero_this_frame] for its own half.
+          #
+          # `allow_trigger` gates this the same way it gates the Event Touch
+          # start below: the "keep moving during an open message" pass
+          # (allow_trigger: false) never actually reaches #step_movement
+          # this frame (the message keeps #update in its @event_busy?
+          # branch), so @player_intended_target was not refreshed for this
+          # frame and cannot be trusted -- treat that pass as never
+          # crossing, same as it never fires the trigger either.
+          crossing = allow_trigger && @player_intended_target == [ch.x, ch.y]
+          e[:crossed_hero_this_frame] = crossing
+          start_event(e) if allow_trigger && !crossing &&
+                             e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
         elsif @world.passable?(ch, dir)
           ch.move(dir)
         else
@@ -8356,6 +8407,27 @@ class RPG2k
         @number_input = nil
       end
 
+      # The tile the party would try to step onto this frame if #step_movement
+      # ran right now, or nil if it would not attempt a move at all -- the
+      # exact same set of early-outs #step_movement itself bails out on
+      # (mid-slide, an event already running, a forced route driving the
+      # party, no direction held), evaluated *before* #step_events so a
+      # same-frame crossing can be recognised while an autonomous/route event
+      # is still deciding its own move (see the #update call site and
+      # #move_autonomous). None of these guards can change between here and
+      # #step_movement's own call: #step_events never touches @moving,
+      # #event_busy?, @player_route or @state.boarded for the party, so both
+      # reads agree.
+      def player_intended_target
+        return nil if @moving
+        return nil if event_busy?
+        return nil if @player_route
+        return nil if @state.boarded? # no touch trigger applies while riding
+        dir = Input.dir4
+        return nil if dir == 0
+        target_tile(@state.x, @state.y, dir)
+      end
+
       def step_movement
         return if advance_player_slide
 
@@ -8384,7 +8456,21 @@ class RPG2k
           # background loop (#step_parallel) is untouched, so contact starts a
           # second, independent run through the shared foreground @interpreter.
           touched = event_at(nx, ny)
-          if touched && touch_trigger?(touched[:trigger]) && touched[:commands]
+          # A genuine same-frame crossing (docs/TODO.md "Map Event" case (c),
+          # yado.tk's 当たり判定が無効になります): `touched` refused to step
+          # onto the party's own tile this very frame *because* it was
+          # heading for it, while the party is, this same frame, heading for
+          # `touched`'s tile -- see #move_autonomous /
+          # Game::MoveRoute#do_move's `:touched_hero` handling, which is the
+          # only place this flag is ever set true. Real RPG_RT invalidates
+          # the hit-test entirely for that configuration: neither this Hero
+          # Touch (1) nor `touched`'s own Event Touch (2) (already withheld
+          # above) fires, and control falls through to the ordinary
+          # passability check below exactly as if `touched` were not a touch
+          # page at all -- ordinary blocking (a same-layer event still stops
+          # the party cold, just silently) is unaffected.
+          if touched && touch_trigger?(touched[:trigger]) && touched[:commands] &&
+             !touched[:crossed_hero_this_frame]
             start_event(touched)
             return
           end
