@@ -7410,7 +7410,7 @@ module Game
     # interpreter runs. nil / empty for a troop that scripts nothing.
     attr_reader :pages
 
-    def initialize(db, id)
+    def initialize(db, id, rng = nil)
       row = db.enemy_group[id]
       @id = id
       @name = row ? row.name.to_s : ''
@@ -7418,6 +7418,7 @@ module Game
       # Array2D#each yields (id, entry); a plain Hash test double does the same.
       row.members.each { |_, m| @members << member(db, m) } if row && row.members
       @pages = row && row.respond_to?(:pages) ? row.pages : nil
+      apply_appear_randomly(row, rng) if row && rng
     end
 
     # EXP / gold / drops are only earned from members that actually fell in
@@ -7474,6 +7475,30 @@ module Game
 
     def member(db, m)
       Enemy.new(db, m.enemy_id, m.x, m.y, m.invisible)
+    end
+
+    # ランダムに出現 (Appear Randomly, chunk 15 field 6): once per battle, roll
+    # each initially-visible member for a 40% chance to start hidden instead,
+    # stopping the instant only one member is left visible -- a fight always
+    # needs at least one visible foe to open against. Ports EasyRPG's
+    # `Game_EnemyParty::ResetBattle` (src/game_enemyparty.cpp) exactly: a
+    # per-member `Rand::PercentChance(40)` roll, an already-hidden member
+    # (its own individual chunk-15-member field 4, `invisible`) skipped
+    # rather than re-rolled or counted against the "one must stay visible"
+    # floor, and the roll happening once, in member order, not a
+    # roll-then-reveal-one-back pass. `rng` is optional (nil skips the whole
+    # pass) since most callers -- the seeded harness fixtures included --
+    # have no RNG to hand in and expect a `Troop` to build deterministically.
+    def apply_appear_randomly(row, rng)
+      return unless row.respond_to?(:appear_randomly) && row.appear_randomly
+      non_hidden = @members.count { |m| !m.hidden }
+      @members.each do |m|
+        break if non_hidden <= 1
+        next if m.hidden
+        next unless rng.random(100) < 40
+        m.hidden = true
+        non_hidden -= 1
+      end
     end
   end
 

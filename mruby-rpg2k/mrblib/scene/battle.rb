@@ -140,7 +140,7 @@ class RPG2k
         # shared entry point.
         play_system_se(SFX_BATTLE)
         @map.play_battle_bgm
-        troop = Game::Troop.new(db, @req[:troop_id])
+        troop = Game::Troop.new(db, @req[:troop_id], @rng)
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
         # The database's state table drives per-turn afflictions (poison slip,

@@ -287,6 +287,9 @@ module LCF
             },
             4 => { name: :terrain_data_size, type: :int, default: 0 },
             5 => { name: :terrain_set, type: :int8_array },                # bool[]
+            # ランダムに出現 (Appear Randomly): rolled once at battle start,
+            # see Game::Troop#apply_appear_randomly (mruby-rpg2k/mrblib/game.rb).
+            6 => { name: :appear_randomly, type: :bool, default: false },
             11 => {
               name: :pages, type: :Array2D,
               elements: {
