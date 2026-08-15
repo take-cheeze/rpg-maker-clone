@@ -7820,7 +7820,26 @@ module Game
                            # Combatant leaves it nil (read as empty by
                            # #atk_states -- monsters equip nothing in real
                            # RPG_RT either).
-                           :atk_states) do
+                           :atk_states,
+                           # Whether this ally's actor is currently a member of
+                           # the live Game::Party, kept in sync by
+                           # Battle#sync_allies_from_party for a fight
+                           # constructed with `party:` (mid-battle roster
+                           # sync). nil/true means "yes" -- every Combatant
+                           # built without going through that path (every
+                           # existing fixture, and an enemy, which never has
+                           # this field touched at all) is a member for free,
+                           # matching the unconditional-membership behaviour
+                           # this class had before the field existed. Distinct
+                           # from #out_of_play?'s other two causes
+                           # (dead?/hidden): a not-a-member Combatant has not
+                           # left *the fight* the way a felled or fled battler
+                           # has -- it is deliberately kept in @allies (not
+                           # removed) so a later rejoin finds and reuses this
+                           # exact object rather than rebuilding a fresh one
+                           # and losing its accumulated battle-only state (see
+                           # this Struct's own class comment).
+                           :member) do
       def dead?; hp <= 0; end
 
       # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
@@ -7846,8 +7865,16 @@ module Game
       # A troop member the editor placed but flagged invisible has not entered
       # the fight yet: it does not act, cannot be targeted and does not keep the
       # battle going. Show Hidden Monster (13150) clears the flag and brings it
-      # in. Distinct from `dead?`, which is purely about HP.
-      def out_of_play?; dead? || hidden ? true : false; end
+      # in. Distinct from `dead?`, which is purely about HP. An ally whose
+      # actor has left the live party (#member? false, mid-battle roster sync)
+      # is out of play the same way -- not queued, not targetable -- without
+      # being dropped from @allies the way dead?/hidden never are either.
+      def out_of_play?; dead? || hidden || !member? ? true : false; end
+      # See the `member` field's own comment: nil (never touched by
+      # mid-battle roster sync, or synced back true on a rejoin) reads as "yes,
+      # a member" -- only an explicit `false` (this actor's Combatant exists
+      # but has left the live party) reads otherwise.
+      def member?; member == false ? false : true; end
       # Spirit under the name Game::Party's skill formulas (#skill_effect,
       # #skill_cost) read on a caster.
       def int; spi; end
@@ -8015,9 +8042,16 @@ module Game
     # actions its pattern lists, but a skill or transformation it cannot resolve
     # falls back to a plain attack — which is exactly the old behaviour, so every
     # existing fixture keeps its results.
+    # `party` is an optional live Game::Party reference (Scene::Map#open_battle
+    # passes `@state.party`) that opts this fight into re-deriving @allies from
+    # the *live* roster around every acting battler -- see
+    # #sync_allies_from_party. Omitted (every existing fixture / spec battle
+    # that builds `allies` once and hands it to .new directly), @allies is
+    # exactly what the constructor was given and never changes membership on
+    # its own, unchanged from before this parameter existed.
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
                    criticals = false, accuracy = false, first_strike = false,
-                   attributes = nil, ai = nil, rpg2003: false)
+                   attributes = nil, ai = nil, rpg2003: false, party: nil)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
@@ -8029,6 +8063,7 @@ module Game
       @attributes = attributes
       @ai = ai
       @rpg2003 = rpg2003 ? true : false
+      @party = party
       @rounds = 0
       @result = nil
       @escaped = false # set once the party successfully flees (#attempt_escape)
@@ -8208,7 +8243,8 @@ module Game
         refill_queue if @queue.empty?
         return nil if @queue.empty? # hit MAX_ROUNDS
         b = @queue.shift
-        next if b.dead?
+        sync_allies_from_party if @party # see #step_action's own comment on why
+        next if b.dead? || !b.member?
         # The battler's own turn starts here, whether or not it ends up able to
         # act — RPG_RT bumps the per-battler counter as the turn begins, not
         # once the action lands (EasyRPG's Scene_Battle::NextTurn).
@@ -8698,12 +8734,29 @@ module Game
     # Returns nil once the round's queue is exhausted or the battle is decided —
     # the caller then clears commands with #end_round and either shows the result
     # or asks for the next round. Unlike #step it never starts a new round.
+    #
+    # `sync_allies_from_party` (mid-battle roster sync) runs again right here,
+    # not only once at #refill_queue -- ported from EasyRPG's
+    # `Scene_Battle_Rpg2k::ProcessSceneActionBattle`, whose `ePreAction`
+    # substate rechecks `battler->Exists()` (`!IsHidden() && !IsDead() &&
+    # IsInParty()`, `game_battler.h`) immediately before running *each* queued
+    # action and discards the ones that fail
+    # (`while (!battle_actions.empty() && !battle_actions.front()->Exists())
+    # RemoveCurrentAction();`, `scene_battle_rpg2k.cpp`) -- confirmed against
+    # that real source specifically because this codebase's own community-
+    # trivia writeup claimed the opposite ("swap out then back in still lets
+    # the queued command execute"). It does not: a party member who leaves
+    # *after* their action was queued this round but *before* their turn comes
+    # up loses that turn, exactly like a battler who dies first already did
+    # here (`next if b.dead?`, unchanged) -- only a turn that has already
+    # resolved is unaffected, since nothing here ever reaches back into `@log`.
     def step_action
       return @pending.shift unless @pending.empty? # drain a buffered all-target hit
       loop do
         return nil if finished? || @queue.empty?
         b = @queue.shift
-        next if b.dead?
+        sync_allies_from_party if @party
+        next if b.dead? || !b.member?
         # Afflicted states act at the start of the battler's turn: slip damage
         # (which cannot itself knock it out -- see apply_turn_states) and, if it
         # cannot act (asleep / paralysed), its turn is skipped.
@@ -8893,10 +8946,55 @@ module Game
     def refill_queue
       @rounds += 1
       return if @rounds > MAX_ROUNDS
+      # Mid-battle roster sync: who is queueable *this* round is decided right
+      # here, once, before #turn_order runs -- see #sync_allies_from_party.
+      # EasyRPG builds its own equivalent queue (`battle_actions`) the same
+      # way: `Scene_Battle_Rpg2k::SelectNextActor`/`CreateEnemyActions` walk
+      # the *current* `Main_Data::game_party`/`game_enemyparty` once per round,
+      # ahead of `CreateExecutionOrder`'s sort -- a member not present in the
+      # party at that moment is not in `battle_actions` and does not act this
+      # round, even if they swap in moments later. (#step_action re-syncs
+      # again before every single action for the other half of the rule --
+      # see its own comment.)
+      sync_allies_from_party if @party
       @queue = turn_order
       # A pre-emptive first strike catches the enemies off guard: they skip the
       # opening round, so only the party acts in round 1.
       @queue = @queue.reject { |b| side_of(b) == :enemy } if @first_strike && @rounds == 1
+    end
+
+    # Re-derive @allies from the live Game::Party (`party:` on #initialize) --
+    # see #refill_queue and #step_action, the two call sites, and the
+    # Combatant `member` field's own comment for what this flag means.
+    #
+    # A live party member with no Combatant here yet (never present in this
+    # fight before) gets a fresh one via .from_actor and joins @allies --
+    # EasyRPG has no separate battle roster to preserve at all (its
+    # `Game_Party::GetBattlers` is a live read every time, straight off the
+    # persistent `Game_Actor`), so a genuinely new participant starting with
+    # no accumulated battle-only modifiers (atk_mod/attr_ranks/states/...)
+    # matches that live-read semantics exactly. A live member who already has
+    # a Combatant (they left *this* fight earlier and are rejoining) reuses
+    # that exact object instead -- rebuilding it would silently reset
+    # whatever battle-only state it had accumulated, which is precisely what
+    # this class's own ephemeral-snapshot design (see the Combatant class
+    # comment) exists to avoid ever happening to a member who never left.
+    #
+    # A Combatant whose actor is no longer live is kept in @allies (so a later
+    # rejoin still finds it, and #apply_to_party still writes its final state
+    # back to the actor at battle end) but flagged not-a-member, which
+    # #out_of_play? now folds in alongside dead?/hidden -- every existing
+    # #turn_order/#side_targets/#alive?/etc. site that already filters
+    # out_of_play? stops queueing or targeting it for free, with no call site
+    # of its own to update.
+    def sync_allies_from_party
+      live_ids = {}
+      @party.actors.each { |a| live_ids[a.id] = true }
+      @allies.each { |c| c.member = false if c.actor && !live_ids[c.actor.id] }
+      @party.actors.each do |a|
+        existing = @allies.find { |c| c.actor && c.actor.id == a.id }
+        existing ? (existing.member = true) : @allies.push(self.class.from_actor(a))
+      end
     end
 
     # Battlers ordered by a per-round randomised Agility roll (highest first)
