@@ -34,6 +34,11 @@
 /assets/voicevox/*
 !/assets/voicevox/README.md
 
+# Line-coverage reports written by scripts/coverage_report.rb (lcov.info,
+# coverage.json, and anything genhtml renders from them). Generated output, and
+# CI publishes its own copy as a build artifact.
+/coverage
+
 # Runtime save artifacts written by the MV/websave (localStorage) shim.
 /save
 
