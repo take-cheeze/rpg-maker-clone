@@ -4651,6 +4651,10 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   scene.update
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the "purchased" confirmation
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
   RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
   scene.update
   scene.update # the Transaction branch runs
@@ -4748,7 +4752,10 @@ check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   eq 200, st.party.gold, '500 - 3*100'
   eq 3, st.party.item_count(3), 'three bought in one confirm'
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'and it returns to the buy list'
+  eq :purchased, shop[:screen], 'the "purchased" confirmation shows first'
+  press(scene, RGSS::Input::C)
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'and dismissing it returns to the buy list'
 end
 
 check 'Open Shop scene: cancelling the counter buys nothing' do
@@ -9475,6 +9482,79 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   eq :command, shop[:screen]
   ok window_texts(shop[:window]).any? { |t| t.include?('他に何かご入用ですか？') },
      'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
+end
+
+check 'Open Shop scene: buying shows the shop_purchased confirmation, then returns ' \
+      'to the buy list' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.shop_purchased1 = '毎度あり！'
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3], indent: 0)] # buy-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the shop opens straight to the buy list (buy-only)
+
+  RGSS::Input.triggered = [RGSS::Input::C] # select the first good -> the counter
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the default quantity of 1
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :purchased, shop[:screen], 'the purchase confirms before the list reappears'
+  ok window_texts(shop[:window]).any? { |t| t.include?('毎度あり！') },
+     'the confirmation line uses the database shop_purchased term'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the confirmation
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'a button press returns to the buy list, same as EasyRPG\'s ' \
+                          'Bought -> Buy transition'
+end
+
+check 'Open Shop scene: selling shows the shop_sold confirmation, then returns ' \
+      'to the sell list' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.shop_sold1 = '毎度！'
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [2, 0, 0, 0, 3], indent: 0)] # sell-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  party = ShopStubParty.new(0)
+  party.gain_item(3, 5)
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the shop opens straight to the sell list (sell-only)
+
+  RGSS::Input.triggered = [RGSS::Input::C] # select the held good -> the counter
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the default quantity of 1
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :sold, shop[:screen], 'the sale confirms before the list reappears'
+  ok window_texts(shop[:window]).any? { |t| t.include?('毎度！') },
+     'the confirmation line uses the database shop_sold term'
+
+  RGSS::Input.triggered = [RGSS::Input::B] # dismiss the confirmation (B works too)
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen], 'and returns to the sell list, same as EasyRPG\'s Sold -> Sell'
 end
 
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
