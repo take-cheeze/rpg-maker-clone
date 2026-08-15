@@ -8073,19 +8073,20 @@ end
 check 'Rng#scaled pays out a small threshold at its stated rate' do
   # The generator's period is prime, so `next_int % scale` leaves the lowest
   # `PERIOD % scale` values over-represented. At the sizes #random is used with
-  # that is invisible; at CRIT_SCALE the surplus is 5537 values sitting exactly
-  # where a roll-under-a-small-threshold test looks, and every such threshold
-  # fires about 7% too often. #scaled spreads it instead.
+  # that is invisible; at a large scale like this one the surplus is a sizeable
+  # block sitting exactly where a roll-under-a-small-threshold test looks, and
+  # every such threshold fires about 7% too often. #scaled spreads it instead.
+  scale = 10_000
   [[333, 30], [500, 20], [3333, 3]].each do |bp, denom|
     trials = 40_000
     modulo = Game::Rng.new(1)
     scaled = Game::Rng.new(1)
     m = s = 0
     trials.times do
-      m += 1 if modulo.random(Game::CRIT_SCALE) < bp
-      s += 1 if scaled.scaled(Game::CRIT_SCALE) < bp
+      m += 1 if modulo.random(scale) < bp
+      s += 1 if scaled.scaled(scale) < bp
     end
-    want = trials * bp / Game::CRIT_SCALE.to_f
+    want = trials * bp / scale.to_f
     ok (s - want).abs < want * 0.03,
        "1/#{denom}: scaled gave #{s}, wanted about #{want.round}"
     ok m > want * 1.03,
@@ -8096,10 +8097,10 @@ check 'Rng#scaled pays out a small threshold at its stated rate' do
 end
 
 check 'battle: a crit chance is paid out at the rate it states' do
-  # End to end through the real roll, which is what the bias actually reached.
-  chance = Game::CRIT_SCALE / 20                      # 1/20 -> 500 bp
+  # End to end through the real roll: a 5% (1-in-20) chance should land on
+  # about a twentieth of swings.
   hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_chance = chance
+  hero.crit_chance = 5
   foe = combatant('Foe', 0, 0, 5, 100)
   bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, true)
   trials = 40_000
@@ -8112,7 +8113,7 @@ end
 
 check 'battle: a critical hit triples the damage when the fight rolls one' do
   hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_chance = Game::CRIT_SCALE                # certainty -> always crits
+  hero.crit_chance = 100                             # certainty -> always crits
   slime = combatant('Slime', 0, 0, 5, 100_000)
   # 6-arg: variance off, criticals on.
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
@@ -8124,7 +8125,7 @@ end
 
 check 'battle: no critical when the fight has criticals off' do
   hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_chance = Game::CRIT_SCALE                # would always crit, but...
+  hero.crit_chance = 100                             # would always crit, but...
   slime = combatant('Slime', 0, 0, 5, 100_000)
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))  # 3-arg: crit off
   bat.begin_round
@@ -8148,7 +8149,7 @@ end
 # defenceless target (Game::Battle::DAMAGE_CAP).
 check 'battle: a normal-attack critical hard-caps damage at 999' do
   hero = combatant('Hero', 4000, 0, 20, 100)         # base 2000, uncapped x3 crit = 6000
-  hero.crit_chance = Game::CRIT_SCALE                # always crits
+  hero.crit_chance = 100                             # always crits
   slime = combatant('Slime', 0, 0, 5, 100_000)
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)
   bat.begin_round
@@ -8172,23 +8173,26 @@ def crit_party(items)
   Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items)), 1, 0, 0)
 end
 
-check 'Actor#crit_chance: the row rate alone, in basis points' do
+check 'Actor#crit_chance: the row rate alone, truncated to a whole percent' do
+  # EasyRPG's Algo::CalcCriticalHitChance truncates the actor's own float rate
+  # to a whole int percent before ever rolling (`static_cast<int>(chance *
+  # 100.0)`, fed straight to `Rand::PercentChance(int)`'s plain 0..99 roll) --
+  # a 1-in-30 rate is a flat 3%, not 3.33%.
   st = crit_party({})
-  eq Game::CRIT_SCALE / 30, st.party.actor_by_id(1).crit_chance
-  eq 333, st.party.actor_by_id(1).crit_chance, '1-in-30 is 3.33%'
+  eq 3, st.party.actor_by_id(1).crit_chance, '1-in-30 truncates to 3%'
   eq 0, st.party.actor_by_id(2).crit_chance, 'an actor that never crits'
 end
 
 check 'Actor#crit_chance: an equipped weapon adds its own percentage' do
-  # The whole point of the probability model: RPG_RT adds the weapon's rate to
-  # the wielder's, which no 1-in-N denominator can express.
+  # RPG_RT adds the weapon's rate to the wielder's, which no 1-in-N denominator
+  # can express -- but the *sum*, not the base rate, is what EasyRPG truncates,
+  # so 3% + 20% lands on the same 23% either way the truncation is ordered.
   items = { 7 => fake_item(type: 1, atk: 5, critical_hit: 20) }
   st = crit_party(items)
   a = st.party.actor_by_id(1)
-  eq 333, a.crit_chance, 'unarmed: the row rate'
+  eq 3, a.crit_chance, 'unarmed: the row rate'
   a.equip([7, 0, 0, 0, 0])
-  eq 333 + 20 * Game::CRIT_PERCENT, a.crit_chance
-  eq 2333, a.crit_chance, '3.33% + 20% = 23.33%'
+  eq 23, a.crit_chance, '3% + 20% = 23%'
 end
 
 check 'Actor#crit_chance: the best weapon wins, and only a weapon counts' do
@@ -8203,10 +8207,9 @@ check 'Actor#crit_chance: the best weapon wins, and only a weapon counts' do
   st = crit_party(items)
   a = st.party.actor_by_id(1)
   a.equip([8, 7, 0, 0, 0])
-  eq 333 + 20 * Game::CRIT_PERCENT, a.crit_chance,
-     'the better of two wielded weapons, not their sum'
+  eq 23, a.crit_chance, 'the better of two wielded weapons, not their sum'
   a.equip([0, 0, 9, 0, 0])
-  eq 333, a.crit_chance, 'the armour contributes nothing'
+  eq 3, a.crit_chance, 'the armour contributes nothing'
 end
 
 check 'Actor#crit_chance: a weapon arms an actor whose own rate is off' do
@@ -8219,7 +8222,7 @@ check 'Actor#crit_chance: a weapon arms an actor whose own rate is off' do
   ally = st.party.actor_by_id(2)
   eq 0, ally.crit_chance
   ally.equip([7, 0, 0, 0, 0])
-  eq 20 * Game::CRIT_PERCENT, ally.crit_chance
+  eq 20, ally.crit_chance
 end
 
 check 'battle: a 100% weapon crits every swing, and still triples' do
@@ -8227,8 +8230,8 @@ check 'battle: a 100% weapon crits every swing, and still triples' do
   hero = st.party.actor_by_id(1)
   hero.equip([7, 0, 0, 0, 0])
   c = Game::Battle.from_actor(hero)
-  ok c.crit_chance >= Game::CRIT_SCALE, 'certainty or better'
-  # A chance at or over the scale must land on every roll, whatever the seed.
+  ok c.crit_chance >= 100, 'certainty or better'
+  # A chance at or over 100 must land on every roll, whatever the seed.
   5.times do |i|
     slime = combatant('Slime', 0, 0, 5, 100_000)
     bat = Game::Battle.new([Game::Battle.from_actor(hero)], [slime],
@@ -8243,34 +8246,28 @@ end
 class FixedRng
   def initialize(value); @value = value; end
   def random(n); n <= 0 ? 0 : @value % n; end
-  # The crit roll draws through #scaled; a fixture pinning an exact roll wants
-  # that value handed back untouched rather than rescaled.
-  def scaled(scale); scale <= 0 ? 0 : @value % scale; end
 end
 
-check 'battle: the crit roll is read against the basis-point scale' do
-  # A rate of N must crit on a roll of N-1 and not on N. This is what says the
-  # chance is a probability over CRIT_SCALE rather than a denominator: 5000 bp
-  # and "1 in 2" sample the same, but only one of them answers this.
-  [[4999, true], [5000, false], [5001, false]].each do |roll, want|
+check 'battle: the crit roll is read against a whole-percent scale' do
+  # A rate of N must crit on a roll of N-1 and not on N -- EasyRPG's
+  # Rand::PercentChance(int rate), `GetRandomNumber(0, 99) < rate`.
+  [[49, true], [50, false], [51, false]].each do |roll, want|
     hero = combatant('Hero', 40, 0, 20, 100)
-    hero.crit_chance = 5000
+    hero.crit_chance = 50
     slime = combatant('Slime', 0, 0, 5, 100_000)
     bat = Game::Battle.new([hero], [slime], FixedRng.new(roll), nil, false, true)
     bat.begin_round
-    eq want, bat.step_action[:critical], "a 5000 bp rate on a roll of #{roll}"
+    eq want, bat.step_action[:critical], "a 50% rate on a roll of #{roll}"
   end
 end
 
 check 'battle: the crit rate is the chance, not a 1-in-N denominator' do
-  # A 2500 bp battler crits about a quarter of the time; the old model could
-  # only have said "1 in 4" and had no way to add a weapon's 20% to it.
-  hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_chance = 2500
+  # A 25% battler crits about a quarter of the time; the old model could only
+  # have said "1 in 4" and had no way to add a weapon's 20% to it.
   crits = 0
   400.times do |i|
     h = combatant('Hero', 40, 0, 20, 100)
-    h.crit_chance = 2500
+    h.crit_chance = 25
     slime = combatant('Slime', 0, 0, 5, 100_000)
     bat = Game::Battle.new([h], [slime], Game::Rng.new(i + 1), nil, false, true)
     bat.begin_round
@@ -8282,7 +8279,7 @@ end
 
 check 'battle: gear that prevents criticals blocks the 3x hit' do
   hero = combatant('Hero', 40, 0, 20, 100)
-  hero.crit_chance = Game::CRIT_SCALE                # would always crit...
+  hero.crit_chance = 100                             # would always crit...
   slime = combatant('Slime', 0, 0, 5, 100_000)
   slime.prevents_crit = true                         # ...but the target is guarded
   bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), nil, false, true)

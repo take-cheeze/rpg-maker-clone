@@ -6,14 +6,6 @@
 # the not-yet-implemented map renderer, and unit-testable on its own.
 module Game
   TILE = 16 # tile size in pixels
-  # Denominator a critical-hit chance is expressed over -- basis points, so
-  # 10000 is certainty and an actor's 1/30 row rate is 333. RPG_RT adds a
-  # weapon's own percentage to the wielder's rate, which a 1-in-N denominator
-  # cannot express, so the chance is carried as a probability and the whole
-  # damage path stays on integer arithmetic. See Actor#crit_chance.
-  CRIT_SCALE = 10_000
-  # ... and what one percentage point of it is worth.
-  CRIT_PERCENT = CRIT_SCALE / 100
   # The RPG2000 screen, in pixels. `RPG2k::WIDTH`/`HEIGHT` are the same numbers
   # on the scene side; the pure-logic half needs them for the screen-transition
   # geometry, which cannot reach the scene.
@@ -2111,23 +2103,36 @@ module Game
       @hp
     end
 
-    # The actor's critical-hit chance in basis points (0 = never): the row's own
-    # 1-in-`critical_rate` rate, gated by `has_critical_rate`, **plus** the
+    # The actor's critical-hit chance as a whole percent (0 = never): the row's
+    # own 1-in-`critical_rate` rate, gated by `has_critical_rate`, **plus** the
     # equipped weapon's `critical_hit` percentage. RPG_RT adds the two, which is
-    # why this is a probability rather than the 1-in-N denominator it used to
+    # why this is a percentage rather than the 1-in-N denominator it used to
     # be -- there is no denominator that expresses "1/30 and 20% more".
     #
-    # Basis points (1/10000) rather than a float, to stay with the integer
-    # arithmetic the rest of the damage path uses. The base truncates there: a
-    # 1/30 row is 333 bp, i.e. 3.33% against a true 3.333...%, which is one crit
-    # fewer in roughly 300,000 swings.
+    # A whole percent, truncated, not a finer-grained probability: EasyRPG's
+    # `Game_Actor::GetCriticalHitChance` sums the base rate and weapon bonus as
+    # a float (`1.0f/n + bonus/100.0f`), and its one caller,
+    # `Algo::CalcCriticalHitChance`, immediately does
+    # `static_cast<int>(chance * 100.0)` -- RPG_RT itself throws away everything
+    # past the first digit before ever rolling, rather than preserving it. A
+    # previous version of this method kept the fraction (basis points over
+    # 10000, so a 1/30 row read 333 rather than truncating to a flat 3) on the
+    # theory that no integer percent could add a weapon's bonus onto a 1-in-N
+    # rate cleanly -- true, but RPG_RT doesn't attempt that either: it truncates
+    # the *sum*, not the base rate alone, which lands on the same whole percent
+    # this method now computes directly (`(100.0/n).to_i + bonus`, exactly
+    # equal to `((1.0/n + bonus/100.0) * 100).to_i` since the bonus is already
+    # an integer). Keeping the finer-grained probability made every critical
+    # roll land measurably more often than genuine RPG_RT for almost any rate
+    # -- a plain 1-in-30 actor crit 3.33% of the time here against RPG_RT's
+    # flat 3%, an eleven percent relative inflation.
     def crit_chance
-      base = 0
+      pct = weapon_crit_bonus
       if @db_row.respond_to?(:has_critical_rate) && @db_row.has_critical_rate
         n = @db_row.respond_to?(:critical_rate) ? @db_row.critical_rate : 0
-        base = CRIT_SCALE / n if n && n > 0
+        pct += (100.0 / n).to_i if n && n > 0
       end
-      base + weapon_crit_bonus * CRIT_PERCENT
+      pct
     end
 
     # 会心必殺 -- the best `critical_hit` percentage among the equipped weapons
@@ -6484,12 +6489,13 @@ module Game
       @hidden = hidden ? true : false
       @hp = @max_hp
       @sp = @max_sp
-      # Critical-hit chance in basis points (0 = never), from the enemy's
-      # critical_hit flag and its 1-in-`critical_hit_chance` rate. An enemy has
-      # no equipment, so unlike an actor's this is the whole of it.
+      # Critical-hit chance as a whole percent (0 = never), from the enemy's
+      # critical_hit flag and its 1-in-`critical_hit_chance` rate, truncated
+      # the same way -- and for the same reason -- as Actor#crit_chance. An
+      # enemy has no equipment, so unlike an actor's this is the whole of it.
       @crit_chance = if row && row.respond_to?(:critical_hit) && row.critical_hit
                        n = row.respond_to?(:critical_hit_chance) ? row.critical_hit_chance : 0
-                       n && n > 0 ? CRIT_SCALE / n : 0
+                       n && n > 0 ? (100.0 / n).to_i : 0
                      else
                        0
                      end
@@ -8998,16 +9004,22 @@ module Game
     end
 
     # Whether `b`'s attack criticals: enabled for the fight, the attacker has a
-    # non-zero `crit_chance`, and a 0..9999 roll lands under it. A chance at or
-    # above CRIT_SCALE always crits, which is what a weapon carrying 100% means.
+    # non-zero `crit_chance`, and a 0..99 roll lands under it -- EasyRPG's
+    # `Rand::PercentChance(int rate)`, `GetRandomNumber(0, 99) < rate`, the
+    # exact overload `Algo::CalcCriticalHitChance`'s already-truncated whole
+    # percent is rolled through. A chance at or above 100 always crits, which
+    # is what a weapon carrying 100% means.
+    #
+    # Drawn with #random, not #scaled: #scaled exists because a modulus of the
+    # generator's prime period over-represents the low values a *large*-scale
+    # threshold test (thousands/millions) sits in, which a plain 0..99 roll at
+    # `n` = 100 is far too small to suffer from -- the same reasoning
+    # `#random`'s own doc comment already gives for every other small-`n`
+    # caller in this file.
     def critical?(b)
       return false unless @criticals
       chance = b.crit_chance
-      # Drawn with Rng#scaled, not #random: at CRIT_SCALE a modulus of the
-      # generator's prime period over-represents the low values a small
-      # threshold tests against, and pays out every crit chance about 7% more
-      # often than the number says.
-      chance && chance > 0 && @rng.scaled(CRIT_SCALE) < chance
+      chance && chance > 0 && @rng.random(100) < chance
     end
 
     # Whether `attacker`'s basic attack lands on `target`: a 0..99 roll under the
