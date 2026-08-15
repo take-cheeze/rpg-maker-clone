@@ -162,14 +162,29 @@ class RPG2k
                       SFX_ACTOR_DAMAGE => :actor_damaged_se,
                       SFX_DODGE => :dodge_se, SFX_ENEMY_DEATH => :enemy_death_se,
                       SFX_ITEM => :item_se }.freeze
-      # `enemy_attack_se` (slot 6) is declared above so the slot numbering and
-      # Change System SFX overrides both land correctly, but nothing calls
-      # `play_system_se(SFX_ENEMY_ATTACK)` yet: RPG_RT plays it at the start of
-      # an enemy's swing, before the hit lands, and this build's round animation
-      # has no separate wind-up moment to hang that on -- a plain attack is one
-      # step (land the hit, then banner and pace by it), not a swing-then-impact
-      # pair. Playing it at the same moment as the impact sound would be a
-      # different, unverified timing rather than a faithful one.
+      # `enemy_attack_se` (slot 6) is played from
+      # Scene::Map#play_battle_action_se, gated on Battle#deal_attack's
+      # `attacker_ally: false` (an enemy's own plain Attack, never a
+      # skill/item hit -- EasyRPG's Game_BattleAlgorithm::Normal::GetStartSe
+      # returns SFX_EnemyAttacks only for an enemy source, and only the
+      # Normal algorithm ever returns it). Confirmed against EasyRPG Player's
+      # source (scene_battle_rpg2k.cpp): ProcessBattleActionUsage plays
+      # GetStartSe() before ProcessBattleActionAnimation and
+      # ProcessBattleActionExecute -- the very start of the action, before
+      # any sprite swing or hit/miss/damage resolution -- and, for a
+      # repeated (dual-attack) action, ProcessBattleActionFinished re-enters
+      # at Execute rather than Usage, so it plays once per action, not once
+      # per swing (mirrored here by nilling `attacker_ally` on the dual
+      # attack's second entry, see #enemy_basic_action).
+      #
+      # This build's round has no separate wind-up beat to hang that lead-in
+      # on -- a plain attack still resolves hit/miss/damage in the one step
+      # that builds the log entry -- so the SE plays at the top of
+      # #play_battle_action_se for that entry, ahead of the dodge/damage/
+      # death cues the same call already fires for it. That collapses
+      # RPG_RT's swing-then-impact gap to nothing, but keeps the one thing
+      # that gap is *for*: the attack cue is heard before, never alongside
+      # or after, the resolution it precedes.
 
       # Play a system sound effect by slot, preferring a Change System SFX
       # override held on the game state and falling back to the database's own
