@@ -14531,6 +14531,104 @@ check 'a 二刀流 actor with one dual_attack weapon sums 2 + 1, not just 2' do
   eq 3, hero.strike_count, "the dual_attack sword's 2 swings plus the dagger's 1"
 end
 
+check "battle: a two-weapon actor's swings each roll their own weapon's to-hit, " \
+      'not a merged max' do
+  # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
+  # Normal::GetWeapon (src/game_battlealgorithm.cpp) resolves each swing to
+  # exactly one weapon (the primary weapon's own hit count worth of swings,
+  # then the secondary's), and Game_Actor::GetHitChance's own
+  # ForEachEquipment (src/game_actor.cpp) excludes the *other* weapon's slot
+  # entirely -- never a merge/max across both. hit 100 always lands (its own
+  # agi term collapses to zero regardless of either side's Agility); a low
+  # hit rate against a much nimbler target clamps to a guaranteed miss (the
+  # agi term, `100 - (100-base)*(src+tgt)/(2*src)`, goes negative and clamps
+  # to 0). Before this fix, both swings read #attack_hit_rate's merged max
+  # (100, from whichever weapon has it) -- the low-hit weapon's swing would
+  # always land too, identically to the other weapon's.
+  items = { 1 => fake_item(type: 1, atk: 10, hit: 100), # always lands
+            2 => fake_item(type: 1, atk: 10, hit: 10) } # clamps to a guaranteed miss below
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  actor = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(actor, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(actor, 2, Game::Actor::SHIELD_SLOT)
+  hero = Game::Battle.from_actor(actor)
+  foe = combatant('Foe', 0, 0, 20, 999) # much nimbler than the hero's agi 10
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), {}, false, false, true)
+  first, second = bat.send(:swing, hero, foe)
+  ok !first[:missed], 'swing 1 (the hit-100 weapon) always lands'
+  eq true, second[:missed], "swing 2 (the hit-10 weapon) always misses -- its own roll, " \
+                            'clamped to 0 against a much nimbler target'
+end
+
+check "battle: a two-weapon actor's swings each carry their own weapon's " \
+      'elemental attribute and state, not a union of both' do
+  # Same GetWeapon/ForEachEquipment exclusion as the to-hit check above, but
+  # for Attribute::ApplyAttributeNormalAttackMultiplier and the weapon-state
+  # block of Normal::vExecute (both also gated on that swing's own resolved
+  # weapon, per EasyRPG's src/attribute.cpp and src/game_battlealgorithm.cpp).
+  # Both weapons hit 100 so accuracy never interferes; element 1 is immune
+  # (rank 4 -> 0%) and element 2 is normal (rank 2 -> 100%) on the target.
+  items = { 1 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [true, false],
+                           state_set: [1, 0], state_chance: 100),   # element 1, state 1
+            2 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [false, true],
+                           state_set: [0, 1], state_chance: 100) }  # element 2, state 2
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  actor = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(actor, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(actor, 2, Game::Actor::SHIELD_SLOT)
+  hero = Game::Battle.from_actor(actor)
+  foe = combatant('Foe', 0, 0, 10, 999)
+  foe.attr_ranks = { 1 => 4, 2 => 2 } # immune to 1, normal to 2
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 1 => fake_state, 2 => fake_state },
+                        false, false, false)
+  first, second = bat.send(:swing, hero, foe)
+  eq 0, first[:damage], "swing 1's own element (1) is immune on the target"
+  ok first[:damage] < second[:damage], "swing 2's own element (2) is unscaled, unlike swing 1's"
+  eq [1], first[:inflicted], "swing 1 only rolls its own weapon's state (1)"
+  eq [2], second[:inflicted], "swing 2 only rolls its own weapon's state (2), not both"
+end
+
+check 'battle: #swing actually lands three attacks when strike_count is three, ' \
+      'not capped at two' do
+  # #swing previously hardcoded "at most two attacks" (`deal_attack` once,
+  # then a second only if strike_count >= 2) -- a limit that happened to
+  # match every *previous* strike_count value (1 or 2, #dual_attack?'s own
+  # binary range), so it went unnoticed until a two-weapon actor with one
+  # dual_attack weapon could report 3 (or 4). EasyRPG's own SetRepeat takes
+  # the summed hit count as-is, with no such cap.
+  items = { 1 => fake_item(type: 1, atk: 5, hit: 100, dual_attack: true), # 2 swings
+            2 => fake_item(type: 1, atk: 5, hit: 100) }                  # 1 swing
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  actor = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(actor, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(actor, 2, Game::Actor::SHIELD_SLOT)
+  eq 3, actor.strike_count
+  hero = Game::Battle.from_actor(actor)
+  foe = combatant('Foe', 0, 0, 10, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), {}, false, false, true)
+  entries = bat.send(:swing, hero, foe)
+  eq 3, entries.size, 'all three swings actually happened, not capped at two'
+  ok entries.none? { |e| e[:missed] }, 'hit 100 on both weapons: every swing lands'
+end
+
 check 'a shield is rejected for a 二刀流 actor\'s shield slot even named directly' do
   st = double_hand_party
   hero = st.party.actor_by_id(1)
