@@ -442,7 +442,14 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                  # waking anyone back up mid-test.
                  6 => OpenStruct.new(name: 'Stone', color: 8, priority: 90,
                                      restriction: 1, auto_release_prob: 0),
-                 5 => OpenStruct.new(name: 'Silence', color: 5, priority: 10) },
+                 5 => OpenStruct.new(name: 'Silence', color: 5, priority: 10),
+                 # RPG2003's `hp_change_type` GAIN counterpart to Poison above:
+                 # the same map-step interval/amount fields, but healing --
+                 # exercises the flash-suppression half of
+                 # Game::Party#map_step_damaged?.
+                 7 => OpenStruct.new(name: 'Regen', color: 3, priority: 20,
+                                     hp_change_map_steps: 4, hp_change_map_val: 1,
+                                     hp_change_type: 1) },
     # A tiny item table the Open Shop window prices its goods from.
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
             5 => OpenStruct.new(name: 'Herb', price: 40) },
@@ -14395,6 +14402,25 @@ check 'walking slips HP from a poisoned member every fourth tile' do
   walk(scene, 1)
   eq 4, st.steps
   eq 99, hero.hp, 'the fourth tile slips 1 HP'
+end
+
+# Ports EasyRPG's `Game_Party::ApplyStateDamage` (src/game_party.cpp): its
+# `damage` bool is only ever set inside a `ChangeType_lose` branch, never a
+# `ChangeType_gain` one, and `Game_Player::UpdateNextMovementAction` gates the
+# red step-damage flash on exactly that bool. Regen's map-step tick heals, so
+# it must never redden the screen the way Poison's does.
+check "walking a GAIN-type state's own map-step tick heals without flashing the screen" do
+  hero = SlipActor.new([7], 90)                         # Regen
+  scene = new_scene({}, player: [0, 0], members: [hero])
+  st = scene.instance_variable_get(:@state)
+
+  walk(scene, 3)
+  eq 90, hero.hp, 'not a multiple of the interval yet'
+  ok !st.screen.flashing?
+
+  walk(scene, 1)
+  eq 91, hero.hp, 'the fourth tile heals 1 HP'
+  ok !st.screen.flashing?, 'a GAIN-type tick never flashes the screen, unlike a LOSE one'
 end
 
 check 'walking a damaging terrain takes HP every tile' do

@@ -12108,6 +12108,45 @@ check 'map slip damage: a GAIN-type state heals instead of draining, clamped to 
   eq [hero.max_mp, before_mp + 30].min, hero.mp
 end
 
+# Ports EasyRPG's `Game_Party::ApplyStateDamage` (src/game_party.cpp): its
+# `damage` bool is only ever set inside a `ChangeType_lose` branch, never a
+# `ChangeType_gain` one -- #apply_map_step_damage's own return value reports
+# every actor who changed either way, but #map_step_damaged? is the one the
+# scene should gate a red step-damage flash on (Scene::Map#note_party_step).
+check 'Party#map_step_damaged?: true only for an actual LOSE-type slip, never a bare GAIN' do
+  lose_table = { 2 => fake_state(name: 'Poison', hp_map_steps: 1, hp_map_val: 1) }
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2)
+  st.party.apply_map_step_damage(lose_table, 1)
+  eq true, st.party.map_step_damaged?, 'a LOSE-type tick is damage'
+
+  gain_table = { 3 => fake_state(name: 'Regen', hp_map_steps: 1, hp_map_val: 1,
+                                  hp_change_type: Game::States::CHANGE_TYPE_GAIN) }
+  st2 = party_state
+  hero2 = st2.party.actor_by_id(1)
+  hero2.add_state(3)
+  hero2.set_hp(hero2.max_hp - 5)
+  st2.party.apply_map_step_damage(gain_table, 1)
+  eq false, st2.party.map_step_damaged?, 'a bare GAIN-type tick never counts as damage'
+
+  # A LOSE and a GAIN state landing on the same step both apply -- RPG_RT
+  # applies each independently (never sums first), so a net-positive tile
+  # still counts as damaged if any single state on it was a loss.
+  mixed_table = { 2 => fake_state(name: 'Poison', hp_map_steps: 1, hp_map_val: 1),
+                  3 => fake_state(name: 'Regen', hp_map_steps: 1, hp_map_val: 10,
+                                  hp_change_type: Game::States::CHANGE_TYPE_GAIN) }
+  st3 = party_state
+  hero3 = st3.party.actor_by_id(1)
+  hero3.add_state(2)
+  hero3.add_state(3)
+  hero3.set_hp(hero3.max_hp - 20)
+  before = hero3.hp
+  st3.party.apply_map_step_damage(mixed_table, 1)
+  eq before + 9, hero3.hp, 'net +10 gain - 1 loss = +9, still an overall heal'
+  eq true, st3.party.map_step_damaged?, 'the loss half still counts as damage despite the net heal'
+end
+
 check 'two slipping states stack rather than the worse one winning' do
   # The battle-side effects pick a single significant state; the map drain is
   # summed, so a doubly-afflicted member loses both amounts on a step that is a

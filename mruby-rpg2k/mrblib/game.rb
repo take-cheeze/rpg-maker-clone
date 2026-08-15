@@ -3061,16 +3061,18 @@ module Game
     #
     # `table` is the database `situation` array; a caller without one (the seeded
     # harness fixtures) drains nothing. Returns the actors actually affected
-    # (lost *or* gained something), so the scene can flash the screen only when
-    # there is something to report.
+    # (lost *or* gained something) -- #map_step_damaged? (see below) is the one
+    # that answers whether the scene should flash the screen over it.
     def apply_map_step_damage(table, steps)
       hit = []
+      @map_step_damaged = false
       @actors.each do |actor|
         next if actor.nil? || actor.dead?
         hp = 0
         sp = 0
         actor.states.each do |id|
           dhp, dsp = States.map_step_drain(id, table, steps)
+          @map_step_damaged ||= dhp < 0 || dsp < 0
           hp += dhp
           sp += dsp
         end
@@ -3080,6 +3082,24 @@ module Game
         hit << actor
       end
       hit
+    end
+
+    # Whether the most recent #apply_map_step_damage call included at least one
+    # state's own HP/SP *loss* landing on that step -- distinct from
+    # #apply_map_step_damage's own return value, which reports every actor who
+    # changed either way, gain included. Ports EasyRPG's
+    # `Game_Party::ApplyStateDamage` (src/game_party.cpp): its `damage` bool is
+    # only ever set inside the `ChangeType_lose` branches, never the
+    # `ChangeType_gain` ones, and `Game_Player::UpdateNextMovementAction` gates
+    # `Game_Screen::FlashMapStepDamage` on exactly that bool -- a GAIN-type
+    # "regen" state's tick alone must never redden the screen, even though the
+    # actor it healed is still in the returned #apply_map_step_damage array.
+    # Checked per state, not on the summed net delta: a LOSE and a GAIN state
+    # landing on the same step both apply (RPG_RT applies each independently),
+    # so a net-positive tile still counts as damaged if any single state on it
+    # was a loss.
+    def map_step_damaged?
+      @map_step_damaged
     end
 
     # Damage every standing member for walking onto a damaging tile: RPG2000's

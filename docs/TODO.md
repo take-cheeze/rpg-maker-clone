@@ -6214,6 +6214,40 @@ not yet verified:
   same element, proving the OR-not-stack rule), one end-to-end through
   `Battle#apply_attr_multiplier` proving the actual damage reduction — both
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A GAIN-type (regen) status condition's own map-step tick no longer
+  flashes the screen red, matching a healing terrain tile's own exemption.**
+  Confirmed against EasyRPG's actual C++ source: `Game_Party::
+  ApplyStateDamage` (`src/game_party.cpp`) sets its `damage` return bool only
+  inside a state's `ChangeType_lose` branch — the `ChangeType_gain` branch
+  heals the actor but leaves `damage` untouched — and
+  `Game_Player::UpdateNextMovementAction` (`src/game_player.cpp`) gates
+  `Game_Screen::FlashMapStepDamage` on exactly that bool.
+  `Game::Party#apply_map_step_damage` (`mruby-rpg2k/mrblib/game.rb`) already
+  correctly signs a GAIN-type state's own delta positive (`Game::States
+  .drain`'s `CHANGE_TYPE_GAIN` case), but `Scene::Map#note_party_step`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) flashed the screen whenever
+  `apply_map_step_damage`'s returned array was non-empty at all — heal
+  included, since the only guard was "did anything change." This is the
+  state-side twin of an already-fixed, already-tested terrain rule (a
+  negative-`damage` terrain tile heals without flashing, `scripts/
+  rpg2k_scene_check.rb`'s "a healing tile never flashes the screen" check) —
+  the state side of the same "your HP just fell and the map has nowhere to
+  say so" moment was never given the equivalent exemption. Concretely: a
+  RPG2003 "Regen" state (`hp_change_map_steps=4`, `hp_change_map_val=1`,
+  `hp_change_type=GAIN`) ticks on an actor's 4th walked tile — real
+  RPG_RT/EasyRPG heals silently; this build healed *and* flashed the screen
+  red, as if the party had just taken damage. Fixed with a new `Game::Party
+  #map_step_damaged?`, tracking (per state, not on the summed net delta —
+  RPG_RT applies each state independently, so a LOSE and a GAIN state
+  landing on the same step both apply, and the tile still counts as damaged
+  if any single state on it was a loss, even when the net HP change is a
+  heal) whether the most recent `#apply_map_step_damage` call included an
+  actual loss; `#note_party_step`'s flash condition now checks that flag (or
+  the existing terrain-damage flag) instead of the returned array's
+  emptiness. Covered by a new `scripts/rpg2k_logic_check.rb` unit check on
+  `#map_step_damaged?` itself (LOSE, bare GAIN, and mixed LOSE+GAIN-net-heal)
+  and a new `scripts/rpg2k_scene_check.rb` end-to-end walking check, both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
