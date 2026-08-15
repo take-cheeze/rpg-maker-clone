@@ -1125,18 +1125,25 @@ end
 # -- Interpreter (a few existing-behaviour regressions) -----------------------
 
 # Build a minimal State without the LCF database: stub Party just enough for the
-# commands the checks below drive (gold/items).
+# commands the checks below drive (gold/items). `enemy_group` defaults to
+# "every id exists" (Hash.new(true)) since most checks here have nothing to do
+# with troop validity; pass an explicit hash (e.g. {}) to exercise the
+# missing-troop-id diagnostic path (see Game::Interpreter#do_enemy_encounter /
+# #start_random_battle).
 class FakeParty
   attr_reader :gold, :items
-  def initialize(rpg2003: false); @gold = 0; @items = {}; @rpg2003 = rpg2003; end
+  def initialize(rpg2003: false, enemy_group: Hash.new(true))
+    @gold = 0; @items = {}; @rpg2003 = rpg2003; @enemy_group = enemy_group
+  end
   def gain_gold(n); @gold += n; end
   def gain_item(id, n); @items[id] = (@items[id] || 0) + n; end
   def has_item?(id); (@items[id] || 0) > 0; end
   def rpg2003?; @rpg2003; end
+  def db_enemy_group(id); @enemy_group[id]; end
 end
 
-def new_state(rpg2003: false)
-  Game::State.new(FakeParty.new(rpg2003: rpg2003), 1, 0, 0)
+def new_state(rpg2003: false, enemy_group: Hash.new(true))
+  Game::State.new(FakeParty.new(rpg2003: rpg2003, enemy_group: enemy_group), 1, 0, 0)
 end
 
 IC = Game::Interpreter::Cmd
@@ -2994,9 +3001,14 @@ class ClassedRow < SkillRow
 end
 
 class FakeActorDB
-  attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands
+  attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands,
+              :enemy_group
+  # `enemy_group` defaults to "every id exists" (Hash.new(true)) since most
+  # checks using this fixture have nothing to do with troop validity; pass an
+  # explicit hash (e.g. {}) to exercise the missing-troop-id diagnostic path.
   def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
-                 property = nil, rpg2003: false, battlecommands: nil)
+                 property = nil, rpg2003: false, battlecommands: nil,
+                 enemy_group: Hash.new(true))
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
@@ -3006,6 +3018,7 @@ class FakeActorDB
     @property = property
     @rpg2003 = rpg2003
     @battlecommands = battlecommands
+    @enemy_group = enemy_group
   end
 
   # Mirrors LCF::Schema::Database#rpg2003? (Classes-chunk presence) for tests
@@ -3021,14 +3034,15 @@ end
 FakeBattleCommandsTable = Struct.new(:commands)
 FakeBattleCommand = Struct.new(:name, :type)
 
-def party_state
+def party_state(enemy_group: Hash.new(true))
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8),
     2 => FakePlayerRow.new('Ally', '', 0, 3,
                            max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
-  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2])), 1, 0, 0)
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], enemy_group: enemy_group)),
+                  1, 0, 0)
 end
 
 check 'both timers round-trip through the save; an old save still loads' do
@@ -7467,6 +7481,86 @@ check 'Enemy Encounter escape-abort mode ends the event' do
   it.resume_battle(:escape)
   it.update
   ok !st.switches[5], 'the rest of the event is abandoned on an aborting escape'
+end
+
+# A database shrink can leave an Enemy Encounter's troop id (enemy_group)
+# dangling -- shown as "?" in the editor, docs/TODO.md's runtime error
+# catalog. Game::Troop itself tolerates the gap silently (degrades to an
+# empty member list, see "a missing troop / enemy degrades to an empty,
+# harmless model" above), which would otherwise open a real battle screen
+# against zero enemies. The interpreter now checks first and never arms the
+# :battle wait at all -- see #skip_invalid_troop / #start_random_battle.
+
+check 'Enemy Encounter reports a missing troop id and skips the battle, no handlers' do
+  list = [
+    FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 99, 0, 0, 0, 0], indent: 0), # troop 99 missing
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 0)
+  ]
+  st = party_state(enemy_group: {})
+  it = Game::Interpreter.new(st)
+  out = capture_stderr do
+    it.start(list)
+    it.update
+  end
+  ok out.include?('[RPG2k] Enemy Encounter: enemy group 99 not found'), out
+  ok !it.waiting?, 'never suspends on a :battle wait'
+  eq nil, it.battle_request
+  eq 0, st.battle_count, 'no battle was actually entered'
+  eq true, st.switches[1], 'execution falls straight through to the next command'
+end
+
+check 'Enemy Encounter with a missing troop id routes into the [Escape] handler, like a real escape' do
+  list = [
+    FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 99, 0, 2, 1, 0], indent: 0), # troop 99 missing
+    FakeCmd.new(IC::VICTORY_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    FakeCmd.new(IC::ESCAPE_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+    FakeCmd.new(IC::DEFEAT_HANDLER, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 3, 3, 0], indent: 1),
+    FakeCmd.new(IC::END_BATTLE, [], indent: 0),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 4, 4, 0], indent: 0)
+  ]
+  st = party_state(enemy_group: {})
+  it = Game::Interpreter.new(st)
+  out = capture_stderr do
+    it.start(list)
+    it.update
+  end
+  ok out.include?('[RPG2k] Enemy Encounter: enemy group 99 not found'), out
+  ok !it.waiting?, 'never suspends on a :battle wait'
+  [1, 2, 3].each { |s| eq(s == 2, st.switches[s] || false, "switch #{s}") }
+  eq true, st.switches[4], 'execution continues past the encounter'
+  eq 0, st.escape_count, 'no real escape happened, so the "Other" counter is untouched'
+end
+
+check 'Enemy Encounter escape-abort mode with a missing troop id ends the event, like a real escape' do
+  list = [
+    FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 99, 0, 1, 0, 0], indent: 0), # escape=abort
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  st = party_state(enemy_group: {})
+  it = Game::Interpreter.new(st)
+  capture_stderr do
+    it.start(list)
+    it.update
+  end
+  ok !it.waiting?
+  ok !st.switches[5], 'the rest of the event is abandoned, same as an aborting escape'
+end
+
+check 'a random encounter reports and skips a missing troop id without arming the :battle wait' do
+  st = party_state(enemy_group: { 1 => true }) # only troop 1 exists
+  it = Game::Interpreter.new(st)
+  out = capture_stderr { it.start_random_battle(99) }
+  ok out.include?('[RPG2k] Enemy Encounter: enemy group 99 not found'), out
+  ok !it.waiting?, 'movement is never interrupted -- there is no event to resume'
+  eq nil, it.battle_request
+  eq 0, st.battle_count
+
+  ok capture_stderr { it.start_random_battle(1) }.empty?, 'an existing troop id logs nothing'
+  ok it.waiting?
+  eq :battle, it.wait_kind
 end
 
 # -- Battle (headless auto-battle) --------------------------------------------

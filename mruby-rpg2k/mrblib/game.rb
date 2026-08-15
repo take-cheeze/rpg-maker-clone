@@ -2736,6 +2736,18 @@ module Game
       @db.item[id]
     end
 
+    # The database row for an enemy-group (troop) id, or nil when the database
+    # has no enemy_group table (a bare test fixture) or the id is a dangling
+    # reference -- a database shrink can leave one behind, shown as "?" in the
+    # editor (see docs/TODO.md's runtime error catalog). `Game::Interpreter`
+    # checks this *before* opening a battle for an Enemy Encounter command or a
+    # random encounter, since `Game::Troop.new` itself tolerates a missing row
+    # by degrading to an empty member list rather than raising.
+    def db_enemy_group(id)
+      return nil unless @db.respond_to?(:enemy_group)
+      @db.enemy_group[id]
+    end
+
     # Whether this party's database is an RPG2003 project (see
     # `LCF::Schema::Database#rpg2003?`), exposed here the same way `db_item` /
     # `db_skill` reach into `@db` for other callers -- a bare test fixture with

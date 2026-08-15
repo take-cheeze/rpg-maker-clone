@@ -7812,6 +7812,39 @@ genuine, correctly-modelled answer rather than a stale reference — nothing
 there was silently failing. Covered by four new
 `scripts/rpg2k_logic_check.rb` checks (one per new diagnostic path),
 each asserting on the exact captured `$stderr` line.
+✅ **Enemy Encounter no longer opens a battle against a dangling enemy-group
+(troop) id** — one of the "database shrink leaves a dangling id reference"
+cases above. `Game::Troop.new` (`mruby-rpg2k/mrblib/game.rb`) already
+tolerated a missing `enemy_group` row by degrading to an empty member list
+(by design — see the "missing troop / enemy degrades to an empty, harmless
+model" check), but nothing upstream ever noticed the gap, so both a scripted
+Enemy Encounter and a wandering-monster random encounter would open a real
+battle screen (SE, BGM swap, status panel, [Victory]/[Escape]/[Defeat]
+routing) against zero enemies. `Game::Interpreter#do_enemy_encounter` and
+`#start_random_battle` (`mruby-rpg2k/mrblib/interpreter.rb`) now check the
+troop id against the database (`Game::Party#db_enemy_group`, the same
+`respond_to?`-guarded reach into `@db` as `#db_item`/`#db_skill`) *before*
+ever arming the `:battle` wait, and log a `[RPG2k] Enemy Encounter: ...`
+diagnostic instead. Real RPG_RT has no on-screen precedent to match here
+(its own editor forbids saving a dangling reference), so a scripted
+encounter resolves exactly as an immediate Escape would — into the
+[Escape] handler if the command carries one, ending the event outright
+under the "abort on escape" escape mode, or otherwise simply continuing
+past the command — without bumping the win/escape/defeat "Other" battle
+counters, since no battle was ever actually fought; a random encounter has
+no event to resume, so it just never arms the wait and movement continues
+uninterrupted. The validation went in `Game::Interpreter` rather than
+`Scene::Map#open_battle` (the battle screen's own shared entry point for
+both call sites) specifically so it stays covered by the host-side
+`scripts/rpg2k_logic_check.rb` harness, which loads `game.rb`/
+`interpreter.rb` but never `scene/map.rb`; `Game::Party` already held the
+same unified database `Scene::Map` itself reaches through `db` (both trace
+back to the single `Game::Party.new(@db)` / `Scene::Base#db = parent.db` in
+`main.rb`), so no interpreter constructor change was needed. Covered by
+five new `scripts/rpg2k_logic_check.rb` checks (no handlers, an [Escape]
+handler, escape-abort mode, and the random-encounter path both missing and
+present), each asserting on the captured `$stderr` line and that no
+`:battle` wait was ever armed.
 ✅ **"invalid map" (Transfer Player / Recall to Location naming a
 nonexistent map id) no longer crashes the interpreter** — `Scene::Map
 #perform_teleport` (`mruby-rpg2k/mrblib/scene/map.rb`) called
