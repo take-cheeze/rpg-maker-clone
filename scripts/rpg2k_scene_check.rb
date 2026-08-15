@@ -15194,6 +15194,49 @@ check 'F9 does nothing outside Test Play' do
   ok scene.parent.pushed.empty?, 'a released game never sees F9 open anything'
 end
 
+# yado.tk / community RPG_RT trivia (@2000_battle_bot / デフォ戦bot):
+# "テストプレイ中にＦ９キーを押せば スイッチ・変数の値を好きに変えられる。
+# これは戦闘中でも行える。" -- F9 during Test Play works during battle too,
+# unlike every other #event_busy? condition (see #try_open_debug_menu).
+check 'F9 opens the debug menu during Test Play even with a battle open' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) }, test_play: true)
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+
+  RGSS::Input.triggered = [RGSS::Input::F9]
+  scene.update
+  pushed = scene.parent.pushed
+  eq 1, pushed.size, 'F9 pushed exactly one scene, mid-battle'
+  ok pushed.first.is_a?(RPG2k::Scene::DebugMenu), 'the pushed scene is the debug menu'
+  ok scene.instance_variable_get(:@battle_ui), 'the battle stays open behind the debug menu'
+end
+
+check 'F9 does nothing during a battle outside Test Play' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) }) # test_play defaults false
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+  end
+  ok scene.instance_variable_get(:@battle_ui), 'the battle actually opened'
+
+  RGSS::Input.triggered = [RGSS::Input::F9]
+  scene.update
+  ok scene.parent.pushed.empty?, 'a released game never sees F9 open anything, mid-battle either'
+end
+
 check 'the debug menu toggles a switch on C and flips to Variable on Left/Right' do
   st = menu_state
   st.switches[1] = false
