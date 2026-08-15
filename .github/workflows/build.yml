@@ -1188,22 +1188,27 @@ jobs:
       - name: Build EBOOT (pspdev container)
         # The pspdev image ships psp-gcc, cmake and the psp-cmake wrapper (which
         # points CMake at the pspdev toolchain and provides create_pbp_file), but
-        # not Ruby: the psp mruby cross-build (build_config.rb's `psp`
-        # MRuby::CrossBuild) is driven by `rake`, invoked from a CMake custom
-        # command (app/psp/CMakeLists.txt) exactly the way the desktop/wasm
-        # builds drive it from the root CMakeLists.txt -- but those run inside
-        # the nix devshell, which provides Ruby; this container does not.
-        # Install it before configuring. The image's final stage is Alpine
-        # (github.com/pspdev/pspdev's own Dockerfile, not the archived
-        # pspdev/pspdev-docker repo, which is Ubuntu-based but unrelated to what
-        # actually publishes the pspdev/pspdev:latest tag) -- apk, not apt-get.
+        # not Ruby and not a native (x86_64) compiler: the psp mruby cross-build
+        # (build_config.rb's `psp` MRuby::CrossBuild) is driven by `rake`,
+        # invoked from a CMake custom command (app/psp/CMakeLists.txt) exactly
+        # the way the desktop/wasm builds drive it from the root CMakeLists.txt
+        # -- but those run inside the nix devshell, which provides both; this
+        # container does not. Install them before configuring. The image's
+        # final stage is Alpine (github.com/pspdev/pspdev's own Dockerfile, not
+        # the archived pspdev/pspdev-docker repo, which is Ubuntu-based but
+        # unrelated to what actually publishes the pspdev/pspdev:latest tag) --
+        # apk, not apt-get. build-base is needed alongside psp-gcc: rake's
+        # MRuby::CrossBuild also builds a native "host" mruby (to produce mrbc,
+        # which then compiles the target .rb sources to bytecode), and that
+        # half runs the ambient `gcc`, not psp-gcc -- confirmed missing by a
+        # real CI run ("sh: gcc: not found") once Ruby alone was installed.
         # Pull the image up front with -q: an implicit pull from `docker run`
-        # prints a per-layer download/extract progress block, which `-q` reduces
-        # to the resolved digest.
+        # prints a per-layer download/extract progress block, which `-q`
+        # reduces to the resolved digest.
         run: |
           docker pull -q pspdev/pspdev:latest
           docker run --rm -v "$PWD:/src" -w /src pspdev/pspdev:latest sh -euc '
-            apk add --no-cache ruby ruby-rake
+            apk add --no-cache ruby ruby-rake build-base
             psp-cmake -S app/psp -B build-psp
             cmake --build build-psp -j"$(nproc)"
           '
