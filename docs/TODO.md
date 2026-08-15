@@ -1497,6 +1497,27 @@ The work below is roughly ordered by the critical path to a walkable game
   Nepheshel never takes since it names no terrain backdrops at all. The walk is
   bounded and cycle-safe, so a tree that loops ends at the terrain instead of
   hanging the battle.
+  **And it is on screen now**, which for a while it was not: the name resolved
+  correctly and the sprite was built, but it drew *behind the map*. RPG_RT
+  replaces `Scene_Map` with `Scene_Battle` outright, so nothing of the map is on
+  screen during a fight and the backdrop is the whole background; this port runs
+  the fight inline on `Scene::Map` instead, and `#render` kept compositing the
+  tile layers, parallax, hero, events and vehicles every frame — over the
+  backdrop, since its z 5 (EasyRPG Player's own `Priority_Background`,
+  `src/drawable.h`, correct there precisely *because* no map is drawn beside it)
+  is outranked by both `@map_viewport` (z 100) and `@upper_viewport` (z 200),
+  and the lower tile layer is opaque. Every fight was fought over whatever chip
+  layer the party stood on. `Scene::Map#set_map_layers_visible` hides both
+  viewports for the fight's duration and `#render` skips the map compositing
+  outright rather than leaving a hidden layer redrawing under the battle — the
+  same treatment the picture layer already gets (see the **Picture** bullet
+  below) — with both back on the first frame after `@battle_ui` clears. The
+  in-battle Show Battle Animation is deliberately *not* gated with them: it
+  renders through `@animation_sprite`, a top-level sprite at z 150 (above the
+  battlers, below the pictures), not through either map viewport. Still open,
+  and a separate question: Change Screen Tone rides on `@map_viewport`'s tone,
+  so it reaches the map and not the backdrop — whether RPG_RT tints the battle
+  background needs a wine diff before anything is changed.
   **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
   than only ever attacking — the single biggest silent gap left in the battle
   system, since **510 of the 959 enemy actions across the two test beds are
