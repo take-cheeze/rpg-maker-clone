@@ -13045,16 +13045,20 @@ check 'Flash Sprite without its wait flag does not pause the interpreter' do
 end
 
 check 'Fade Out BGM fades the music and forgets the current track' do
+  # param0 is already milliseconds -- EasyRPG's CommandFadeOutBGM passes it
+  # straight through to Game_System::BgmFade with no scaling (confirmed
+  # against its "Duration in ms" doc comment and every real call site, all
+  # bare millisecond literals).
   st = new_state
   RGSS::Audio.log = []
   it = Game::Interpreter.new(st)
   it.start([
     FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'Town'),
-    FakeCmd.new(IC::FADEOUT_BGM, [20]), # 2 seconds
+    FakeCmd.new(IC::FADEOUT_BGM, [2000]), # 2000 ms
   ])
   it.update
   eq nil, st.current_bgm, 'nothing is playing after a fade-out'
-  eq [:bgm_fade, 2000], RGSS::Audio.log.last, 'faded over 2000 ms'
+  eq [:bgm_fade, 2000], RGSS::Audio.log.last, 'the parameter is passed straight through as ms'
 end
 
 check 'Play Movie records the request instead of dropping it' do
