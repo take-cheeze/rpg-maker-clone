@@ -6746,6 +6746,70 @@ not yet verified:
   before the fix (the third is a same-behaviour-either-way regression
   check). `ninja -C build test` (mruby-lcf's own suite, since schema.rb
   changed) still passes.
+- ✅ **A live RPG2003 Change Class or Change Battle Commands now survives a
+  real `.lsd` Save/Continue — chunk 108 (SAVE_PARTY_ACTOR) never carried the
+  class id or the battle-command-list override at all, so both silently
+  reverted to the database default the moment the exported save was read
+  back.** Confirmed against liblcf's own field table
+  (`generator/csv/fields.csv`): `SaveActor` declares `class_id` (0x5A = field
+  90, default **-1**, "int class-id"), `battle_commands` (0x50 = field 80,
+  "array of int32") and `changed_battle_commands` (0x53 = field 83, a
+  boolean gate) as real, persisted fields of the same struct `LSD_Reader`/
+  `LSD_Writer` round-trip — `mruby-lcf/mrblib/schema.rb`'s `SAVE_PARTY_ACTOR`
+  table declared none of the three. `Game::Actor#change_class`
+  (`mruby-rpg2k/mrblib/game.rb`) already models the runtime effect correctly
+  (growth curve, skills, battle commands all switch for the rest of that
+  session), but `Game::State#to_lsd`'s per-roster-actor loop wrote only
+  name/title/level/exp/skills/equipment/hp/mp/states — never `a.class_id` —
+  and `.from_lsd`'s matching restore loop never touched it either, while
+  `Game::Party.from_lsd` always rebuilds every actor fresh from its database
+  row, whose own `class_id` is whatever the *editor* set as the starting
+  class. Concretely: Change Class swaps an actor from no class to Mage
+  mid-session — the Mage growth curve, skill list and battle-command set all
+  apply correctly for the rest of that play session, and the level/EXP/HP/MP
+  accumulated under that curve are genuinely saved — but a real .lsd Save
+  then Continue silently reverted the class itself (and the battle-command
+  list Change Class had materialized) to the pre-change default, while the
+  level-derived numbers earned under the *new* curve stayed. Fixed by
+  declaring the three fields (field 90 defaulting to **-1**, liblcf's own
+  "never changed" sentinel — *not* 0, since Change Class to "no class" is
+  itself a real, persisted change distinct from "field absent"); having
+  `#to_lsd` write `class_id` once a live or restored Change Class has
+  actually run (`Actor#class_changed?`, a new public reader for the
+  `@class_changed` flag `#battler_animation_id` already relies on
+  internally) and `battle_commands`/`changed_battle_commands` once either
+  command has materialized the list (`Actor#battle_commands_changed?`, which
+  reads the raw ivar rather than the memoizing public accessor); and having
+  `.from_lsd`'s actor loop call the already-existing `Actor#restore_class`
+  before restoring level/EXP — mirroring `Party#load_state`'s own
+  established ordering ("the class comes back first: it decides which
+  growth and EXP curves the restored EXP is then read against"). Fixing this
+  also surfaced (and fixed) a real bug in `#restore_class` itself: its own
+  `#set_level` call defaulted to `preserve_mod: true`, which re-expresses
+  the actor's *pre-restore* stat total as a delta from the *new* class's
+  curve and adds it straight back — reproducing the wrong-class numbers
+  verbatim rather than the new class's own baseline. This was silently
+  masked in the pre-existing `Party#load_state` path (which always
+  overwrites the result with the saved absolute `base_raw` immediately
+  after, via `#restore_base`) but surfaced directly once `.from_lsd` called
+  `#restore_class` with no such follow-up — fixed by passing `preserve_mod:
+  false`, matching `#change_class`'s own already-correct call. The four
+  Change-Parameters stat-mod fields (`attack_mod`/`defense_mod`/
+  `spirit_mod`/`agility_mod`, plus `hp_mod`/`sp_mod`) are a distinct,
+  deliberately deferred follow-up: EasyRPG stores them as *deltas from the
+  class curve*, not the absolute running total this runtime's own
+  `@base_raw` represents, so round-tripping them correctly needs a genuine
+  unit conversion at both write and read time, not just a field mapping —
+  left undone here rather than risk getting that conversion wrong. Covered
+  by four new `scripts/rpg2k_logic_check.rb` checks (a live Change Class and
+  its materialized battle commands both round-trip with the new class's own
+  stats intact; a Change Battle Commands edit with no class change involved
+  round-trips on its own without a spurious class-changed flag; an
+  untouched actor keeps reading as unchanged on both counts; and Change
+  Class to "no class" — id 0 — round-trips as a real change, not as "field
+  absent"), all four confirmed to fail against the pre-fix code before the
+  fix. `ninja -C build test` (mruby-lcf's own suite, since schema.rb
+  changed) still passes.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

@@ -1155,6 +1155,21 @@ module LCF
       72 => { name: :mp, type: :int },                     # 現在ＭＰ
       81 => { name: :state_size, type: :int, default: 0 }, # 『状態』情報のデータ数
       82 => { name: :states, type: :int16_array },         # 『状態』情報 (uint16[])
+
+      # RPG2003 Change Battle Commands (Game::Actor#battle_commands=):
+      # `changed_battle_commands` (83) gates whether `battle_commands` (80)
+      # overrides the database/class default at all, or is simply the
+      # not-yet-touched default -- mirroring `#battle_commands`'s own
+      # nil-means-"still deferring to the class/database" convention.
+      80 => { name: :battle_commands, type: :int32_array, default: [] },
+      83 => { name: :changed_battle_commands, type: :bool, default: false },
+
+      # RPG2003 Change Class (Game::Actor#change_class / #restore_class):
+      # -1, liblcf's own default, means "never changed -- still whatever the
+      # actor's own database row declares", not class id 0 ("no class" is a
+      # legitimate Change Class target in its own right, distinct from
+      # "unset").
+      90 => { name: :class_id, type: :int, default: -1 }, # 職業ID (Change Class)
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/37.html
