@@ -241,12 +241,12 @@ mrb_data_type DataType<T>::data_type{
 };
 
 // Generic floating point component getter/setter usable by Color and Tone.
-template <class T, double T::*Field>
+template <class T, double T::* Field>
 mrb_value component_get(mrb_state* M, V self) {
   return mrb_float_value(M, DataType<T>::get(M, self).*Field);
 }
 
-template <class T, double T::*Field, int Lo, int Hi>
+template <class T, double T::* Field, int Lo, int Hi>
 mrb_value component_set(mrb_state* M, V self) {
   mrb_float v;
   mrb_get_args(M, "f", &v);
@@ -4072,7 +4072,7 @@ int vx_tile_quads(int tile_id, int frame, bool table, VXQuad out[8]) {
   const int tx = kind % 8;
   const int ty = kind / 8;
   int sheet = 0, bx = 0, by = 0;
-  const int(*quad_table)[4][2] = VX_FLOOR_QUADS;
+  const int (*quad_table)[4][2] = VX_FLOOR_QUADS;
   int shape_count = 48;
   bool is_table = false;
 
