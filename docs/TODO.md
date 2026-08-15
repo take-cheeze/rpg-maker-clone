@@ -8414,7 +8414,8 @@ absent on the current map" cause and "a variable-driven Call Event
 resolving to no match", plus invalid-event-page as a distinct message from
 invalid-event-id). The remaining "invalid event ID" cause — a stale
 Variable-Op/Move-Route target — is a different command family, not part
-of Call Event, and is still open. **Store Event ID has no analogous gap**:
+of Call Event; **the Variable-Op half is now fixed too** (see the ✅ entry
+below), leaving only Move-Route open. **Store Event ID has no analogous gap**:
 unlike Call Event it never targets an event *by id*, only by tile position
 (`#do_store_event_id`), and "no event on this tile" (stored as `0`) is a
 genuine, correctly-modelled answer rather than a stale reference — nothing
@@ -8500,6 +8501,22 @@ new `scripts/rpg2k_scene_check.rb` checks, each targeting a `FakeParent`
 whose `load_map` raises `Errno::ENOENT` for one specific id and asserting
 the `$stderr` diagnostic fires while `state.map_id`/`state.x`/`state.y`
 stay exactly as they were before the failed command ran.
+✅ **Control Variables' Character operand no longer swallows a stale
+Variable-Op target** — the last of the four "invalid event ID" causes
+listed above, and a different command family from Call Event. `Interpreter
+#event_operand`/`#screen_operand` (`mruby-rpg2k/mrblib/interpreter.rb`)
+back the Character-attribute selectors (map id/x/y/direction and the
+screen-x/screen-y pair) and previously read `0` at every unresolved-target
+branch with no trace: "This Event" used with no map-event context
+(`#character_ref` returning `nil`, mirroring the Call Event fix's own
+"this event" case) and a map-event id absent on the current map (mirroring
+Call Event's own stale-target case), each now logged for both the
+plain-attribute path (`#event_operand`) and the screen-coordinate path
+(`#screen_operand`), plus a character with a resolvable id but no on-screen
+position to report. All four log a `[RPG2k] Control Variables: ...`
+diagnostic and still resolve to `0` — behaviour is unchanged, only the
+gap is now visible. Covered by four new `scripts/rpg2k_logic_check.rb`
+checks, each asserting on the captured `$stderr` line.
 
 **Map/Event ID assignment & tile occupancy**
 - ✅ **Not applicable: Event ID (and, separately, Map ID) assignment by
