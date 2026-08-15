@@ -13704,6 +13704,41 @@ check 'harmless ground takes nothing' do
   eq 100, hero.hp
 end
 
+check 'a negative terrain damage heals every tile instead of hurting' do
+  # Confirmed against EasyRPG's actual C++ source: Game_Player::Move applies
+  # `hero->ChangeHp(-terrain->damage, ...)` regardless of sign, so a terrain
+  # row with a negative `damage` field (a "recovery floor") heals rather than
+  # hurts -- `-(-3) = +3`. Party#apply_terrain_damage's own doc comment is the
+  # port target.
+  hero = SlipActor.new([], 70)
+  scene = new_scene({}, player: [0, 0], members: [hero], terrain_damage: -3)
+  walk(scene, 1)
+  eq 73, hero.hp, 'the first tile already heals'
+  walk(scene, 2)
+  eq 79, hero.hp, 'and so does every one after it'
+end
+
+check '地形ダメージ無効 gear does NOT block a healing tile -- only a damaging one' do
+  # EasyRPG's own gate is `terrain->damage < 0 || !hero->PreventsTerrainDamage()`
+  # -- a negative damage value short-circuits the immunity check entirely, so
+  # gear that blocks a damage floor does not also block a recovery floor.
+  hero = SlipActor.new([], 70)
+  hero.prevents_terrain_damage = true
+  scene = new_scene({}, player: [0, 0], members: [hero], terrain_damage: -3)
+  walk(scene, 2)
+  eq 76, hero.hp, "the immunity gear didn't stop the heal"
+end
+
+check 'a healing tile never flashes the screen, unlike a damaging one' do
+  # EasyRPG's Game_Player::Move only sets `red_flash` for positive `damage`
+  # (`if (terrain->damage > 0) red_flash = true`) -- a heal never flashes.
+  hero = SlipActor.new([], 70)
+  scene = new_scene({}, player: [0, 0], members: [hero], terrain_damage: -3)
+  walk(scene, 1)
+  st = scene.instance_variable_get(:@state)
+  ok !st.screen.flashing?, 'no flash for a heal, even though HP changed'
+end
+
 # -- footstep SE (RPG2003 歩行音, ADR 0034 follow-up) --------------------------
 #
 # EasyRPG's Game_Player::Move plays terrain->footstep behind a

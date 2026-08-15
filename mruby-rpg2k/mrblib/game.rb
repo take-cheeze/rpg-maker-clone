@@ -2963,14 +2963,25 @@ module Game
     # mtf-meido-action on its Safety Boots, against damage floors of 1 HP a step
     # (Nepheshel's ダメージ床 set, mtf's Poison Swamp).
     #
-    # Returns the actors that actually lost HP, so the scene can flash only when
-    # there is something to report.
+    # Returns the actors actually touched (damaged *or* healed), so the scene
+    # can flash only when there is something to report.
+    #
+    # A negative `amount` is a *healing* tile (RPG2000/2003 terrain rows carry
+    # one plain signed damage field, no separate heal flag) -- confirmed
+    # against EasyRPG's actual C++ source: `Game_Player::Move`'s terrain block
+    # (`src/game_player.cpp`) guards the per-actor loop with `terrain->damage
+    # < 0 || !hero->PreventsTerrainDamage()`, so a negative value heals *every*
+    # party member unconditionally, bypassing `no_terrain_damage` gear
+    # entirely -- only positive damage respects that immunity. `ChangeHp` is
+    # still called with `-terrain->damage` either way (`-(-1) = +1`, a heal),
+    # so the existing `-amount` formula already produces the right sign; only
+    # which branch the immunity check gates needed to change.
     def apply_terrain_damage(amount)
-      return [] unless amount && amount > 0
+      return [] unless amount && amount != 0
       hit = []
       @actors.each do |actor|
         next if actor.nil? || actor.dead?
-        next if actor.prevents_terrain_damage?
+        next if amount > 0 && actor.prevents_terrain_damage?
         actor.change_hp(-amount, false)
         hit << actor
       end

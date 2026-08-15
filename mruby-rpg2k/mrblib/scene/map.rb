@@ -9059,13 +9059,19 @@ class RPG2k
         hit = @state.party.apply_map_step_damage(state_table, steps)
         # RPG2000's 地形ダメージ on top of it: the terrain the tile just stepped
         # onto belongs to may take HP off everyone not wearing gear that blocks
-        # it. Read after the status slip and flashed together, since both are the
-        # same "your HP just fell and the map has nowhere to say so" moment.
+        # it -- or, for a terrain with a negative `damage` (a healing tile),
+        # add HP to everyone regardless of that gear (#apply_terrain_damage's
+        # own doc comment). Read after the status slip and flashed together,
+        # since both are the same "your HP just fell and the map has nowhere
+        # to say so" moment -- except a heal never flashes red or counts as
+        # "damaged" for the footstep SE below, matching EasyRPG's own
+        # `Game_Player::Move`, which only sets `red_flash` for positive damage.
         row = terrain_row_at(@state.x, @state.y)
         terrain_hit = terrain_step_damage(row)
-        hit = hit + terrain_hit
-        play_terrain_footstep_se(row, !terrain_hit.empty?)
-        return if hit.empty?
+        terrain_damaged = !terrain_hit.empty? && row && row.respond_to?(:damage) &&
+                          row.damage && row.damage > 0
+        play_terrain_footstep_se(row, terrain_damaged)
+        return if hit.empty? && !terrain_damaged
         @state.screen.flash(*STEP_DAMAGE_FLASH)
       end
 
