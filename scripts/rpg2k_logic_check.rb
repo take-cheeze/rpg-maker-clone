@@ -3529,6 +3529,37 @@ check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
   ok restored.class_changed?
 end
 
+# ADR 0020 mapped SAVE_MOVABLE's charset_index to liblcf tag 75, citing
+# "RPG::SaveSystem" -- but SaveSystem's own fields 73-75 are
+# battle_end_music/inn_music/current_music, unrelated to a character
+# graphic. The struct chunk 104 (hero) and 105-107 (vehicles) actually use is
+# SaveMapEventBase, whose sprite_id is tag 74; tag 75 there is `processed`,
+# an unrelated per-frame movement-scheduling flag. A same-engine round-trip
+# never caught this (both the writer and reader used the same wrong tag
+# consistently) -- only inspecting the actual on-disk tag number does.
+check 'to_lsd writes the leader/vehicle sprite index at the correct liblcf ' \
+      'tag (SaveMapEventBase sprite_id, 74 -- not 75, which is `processed`)' do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.leader.set_charset('HeroAlt', 5)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 1
+  boat.y = 1
+  boat.charset_name = 'Boat1'
+  boat.charset_index = 2
+
+  hero = st.to_lsd[104]
+  eq 'HeroAlt', hero[73], "sprite_name at its correct tag (liblcf's 0x49)"
+  eq 5, hero[74], "sprite_id at its correct tag (liblcf's 0x4A)"
+
+  boat_chunk = st.to_lsd[105]
+  eq 'Boat1', boat_chunk[73]
+  eq 2, boat_chunk[74]
+end
+
 check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
   # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
   # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots

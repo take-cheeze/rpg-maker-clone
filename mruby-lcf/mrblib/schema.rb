@@ -1078,8 +1078,21 @@ module LCF
       # than 0 -- Game::State.from_lsd tells "no saved cursor, restart the
       # route from the top" from "explicitly at command 0" the same way.
       43 => { name: :move_route_index, type: :int },
+      # liblcf's `SaveMapEventBase` (generator/csv/fields.csv): `sprite_name`
+      # 0x49 == 73, `sprite_id` 0x4A == 74. Field 75 (0x4B) is `processed`, an
+      # unrelated per-frame flag ("has this event already taken its movement
+      # step this frame") -- ADR 0020 originally mapped charset_index to 75,
+      # citing "liblcf's RPG::SaveSystem", but SaveSystem's own fields 73-75
+      # are battle_end_music/inn_music/current_music, nothing to do with a
+      # character graphic; SaveMapEventBase (the struct chunk 104/105-107
+      # actually use, already correctly named two fields up for
+      # move_route_index) is the right one. Confirmed against a real save
+      # (Nepheshel Save01's hero record): field 75 is present (`\x01`, a
+      # plausible `processed` value) while 73/74 are both absent -- exactly
+      # what "no sprite override, mid-frame" looks like, not what a genuine
+      # sprite_id co-occurring without its paired sprite_name ever would.
       73 => { name: :charset_name, type: :string },
-      75 => { name: :charset_index, type: :int },
+      74 => { name: :charset_index, type: :int },
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/21.html
