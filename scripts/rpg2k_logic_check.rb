@@ -3185,6 +3185,46 @@ check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
   eq false, old.timer(1).running
 end
 
+check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
+  # docs/TODO.md used to say a resumed real save "starts counting from 0" for
+  # both the step counter and the battle win/defeat/escape/victory tallies --
+  # they were already Marshal-persisted and already live in-game (bumped by
+  # #walk_step and by Interpreter's battle-result handling), but chunk 109
+  # only decoded the two timers. Confirmed against liblcf's SaveInventory
+  # struct (every field here is a plain int32_t, like gold):
+  # battles/defeats/escapes/victories/steps at ids 32/33/34/35/42. Field 41
+  # ("turns passed in latest battle") stays deliberately undecoded -- there
+  # is no per-battle turn tracker on the Ruby side to source it from.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.steps = 1234
+  st.battle_count = 7
+  st.win_count = 4
+  st.defeat_count = 2
+  st.escape_count = 1
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq 1234, round.steps, 'the step counter round-trips'
+  eq 7, round.battle_count, 'battles entered round-trips'
+  eq 4, round.win_count, 'victories round-trips'
+  eq 2, round.defeat_count, 'defeats round-trips'
+  eq 1, round.escape_count, 'escapes round-trips'
+
+  # A save written before this landed simply omits all five fields; from_lsd
+  # must leave the freshly-constructed State's zeroed defaults alone rather
+  # than crash reading an absent field.
+  legacy = st.to_lsd
+  inv = legacy[109]
+  [32, 33, 34, 35, 42].each { |idx| inv.delete(idx) }
+  old = Game::State.from_lsd(db, legacy)
+  eq 0, old.steps, 'an old save without the counter fields keeps the default step count'
+  eq 0, old.battle_count
+  eq 0, old.win_count
+  eq 0, old.defeat_count
+  eq 0, old.escape_count
+end
+
 check 'restore_pictures restores zoom, opacity and tone, not just name/position' do
   # These used to stay at Picture's defaults: no sample save had them off-
   # default, so reading save fields 33/34/41-44 would have been guesswork. That

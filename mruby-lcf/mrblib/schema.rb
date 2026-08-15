@@ -1175,6 +1175,17 @@ module LCF
       28 => { name: :timer2_active, type: :bool },
       29 => { name: :timer2_visible, type: :bool },
       30 => { name: :timer2_battle, type: :bool },
+      # Battle tallies and the field step counter, likewise undefaulted --
+      # confirmed against liblcf's SaveInventory struct (all plain int32_t,
+      # like gold). Field 41 (`turns`, "turns passed in latest battle") is
+      # deliberately left out: there is no Ruby-side per-battle turn tracker
+      # to source it from yet, so decoding it here would have nothing to
+      # round-trip.
+      32 => { name: :battles, type: :int },
+      33 => { name: :defeats, type: :int },
+      34 => { name: :escapes, type: :int },
+      35 => { name: :victories, type: :int },
+      42 => { name: :steps, type: :int },
     }
 
     # Saved common-event execution state (chunk 114): an Array2D indexed by

@@ -994,9 +994,12 @@ The work below is roughly ordered by the critical path to a walkable game
   but **not** for a teleport — the party arrives without walking, and counting it
   would let an event chain drain the party by shuffling it about. A draining step
   flashes the screen red, because the map has no HP display for the loss to show
-  up on otherwise. The counter persists in the Marshal save; the `.lsd` keeps its
-  own in the inventory chunk (109), whose step / turn fields are still
-  deliberately undecoded, so a resumed real save starts counting from 0.
+  up on otherwise. The counter persists in the Marshal save, and now round-trips
+  through the `.lsd` too: the inventory chunk (109)'s `steps` field (42) is
+  decoded and written by `Game::State#to_lsd` / `.from_lsd`, so a resumed real
+  save continues its count instead of starting from 0. The chunk's `turns`
+  field (41, "turns passed in latest battle") stays deliberately undecoded —
+  there is no per-battle turn tracker on the Ruby side to source it from yet.
   mtf-meido-action's Poison (1 HP every 4 steps) is the only state in either test
   bed that carries the field, and `rpg2k_testbed_logic_check.rb` walks the real
   party through the real interval against it. **`affect_type` stat
@@ -2526,6 +2529,25 @@ The work below is roughly ordered by the critical path to a walkable game
   and a battle-start-slot SFX override, all round-trip through an in-memory
   `to_lsd`/`from_lsd`; an untouched slot comes back absent rather than a
   spurious empty override).
+  ✅ **The step counter and battle win/defeat/escape/victory tallies now
+  round-trip through the `.lsd` too**, closing the gap the map-step-damage
+  entry above used to describe ("a resumed real save starts counting from
+  0"). `Game::State#steps`/`#battle_count`/`#win_count`/`#defeat_count`/
+  `#escape_count` were already Marshal-persisted and already live in-game
+  (bumped by `#walk_step` and by `Interpreter`'s battle-result handling, both
+  readable via Control Variables selectors 4-7), but chunk 109 only decoded
+  the two timers. Confirmed against liblcf's `SaveInventory` struct (every
+  field here is a plain `int32_t`, like `gold`): `LCF::Schema::SAVE_INVENTORY`
+  now also decodes `battles`(32)/`defeats`(33)/`escapes`(34)/`victories`(35)/
+  `steps`(42), undefaulted like the timer fields so an absent field reads back
+  `nil`; `Game::State#to_lsd` writes the five live counters into them and
+  `.from_lsd` restores them, leaving a legacy save's zeroed `State.new`
+  defaults in place when the fields are absent. Chunk 109's `turns` field (41,
+  "turns passed in latest battle") stays deliberately undecoded — there is no
+  per-battle turn tracker on the Ruby side to source it from, and building one
+  is a separate, larger feature. Covered by a new `scripts/
+  rpg2k_logic_check.rb` check (a non-zero step count and battle tallies both
+  round-trip through an in-memory `to_lsd`/`from_lsd`).
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done

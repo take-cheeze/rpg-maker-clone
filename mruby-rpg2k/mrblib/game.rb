@@ -9324,14 +9324,17 @@ module Game
     # status condition's own step interval to decide when a field ailment slips
     # HP / SP (see Party#apply_map_step_damage), which is the only thing reading
     # it so far -- the encounter system that would share it is not built. It
-    # persists in the Marshal save; the `.lsd` keeps its step counter in the
-    # inventory chunk (109), whose step / turn fields are deliberately still
-    # undecoded (see LCF::Schema::SAVE_INVENTORY), so a resumed real save starts
-    # its count from 0.
+    # persists in both the Marshal save and the `.lsd` (inventory chunk 109
+    # field 42, see LCF::Schema::SAVE_INVENTORY), so a resumed real save
+    # continues its count rather than restarting from 0. The chunk's `turns`
+    # field (41, "turns passed in latest battle") stays deliberately undecoded
+    # -- there is no per-battle turn tracker on the Ruby side to source it from.
     attr_accessor :steps
     # Running tallies RPG2000 keeps and exposes through the Control Variables
     # "Other" operand: how many times the game was saved, and how many battles
-    # were fought / won / lost / escaped. All persist in the save.
+    # were fought / won / lost / escaped. All persist in the Marshal save; the
+    # battle tallies (not `save_count`) also round-trip through the `.lsd`
+    # inventory chunk (109 fields 32-35).
     attr_accessor :save_count, :battle_count, :win_count, :defeat_count,
                   :escape_count
     # Teleport / Escape skill destinations registered by Set Teleport Target
@@ -9681,7 +9684,8 @@ module Game
     #   * hero (104): map position, facing and the leader's on-map CharSet (so a
     #     Change Sprite override survives);
     #   * actors (108): the per-actor level/exp/equipment/skills/HP/MP table;
-    #   * inventory (109): the party roster / gold / item bag.
+    #   * inventory (109): the party roster / gold / item bag / both timers /
+    #     the step counter and battle win/defeat/escape/victory tallies.
     #
     # Switch and variable ids are 1-indexed in-game but 0-indexed in the save, so
     # they shift down by one; unset entries default to false / 0. +save_count+
@@ -9696,10 +9700,11 @@ module Game
     # a time until only the title chunk failed, then one field at a time within
     # it. See ADR 0021.
     #
-    # Both Timer Operation countdowns and every roster member's Change Actor
-    # Name and Change Actor Title overrides round-trip now too (see
-    # LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_* fields and
-    # SAVE_PARTY_ACTOR's actor_name/title), so this is a near-parity export.
+    # Both Timer Operation countdowns, the step counter, the battle tallies and
+    # every roster member's Change Actor Name and Change Actor Title overrides
+    # round-trip now too (see LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
+    # battles/defeats/escapes/victories/steps fields and SAVE_PARTY_ACTOR's
+    # actor_name/title), so this is a near-parity export.
     def to_lsd(save_count = 1, timestamp = nil)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
@@ -9849,6 +9854,11 @@ module Game
       inv[28] = t2.running
       inv[29] = t2.visible
       inv[30] = t2.in_battle
+      inv[32] = @battle_count
+      inv[33] = @defeat_count
+      inv[34] = @escape_count
+      inv[35] = @win_count
+      inv[42] = @steps
       save[109] = inv
 
       save
@@ -10069,6 +10079,14 @@ module Game
       state.timer(1).running = inv.timer2_active unless inv.timer2_active.nil?
       state.timer(1).visible = inv.timer2_visible unless inv.timer2_visible.nil?
       state.timer(1).in_battle = inv.timer2_battle unless inv.timer2_battle.nil?
+      # Step counter and battle win/defeat/escape/victory tallies (inventory
+      # chunk 109 fields 32-35/42); a save written before this landed simply
+      # omits them, leaving the fresh State's zeroed defaults in place.
+      state.battle_count = inv.battles unless inv.battles.nil?
+      state.defeat_count = inv.defeats unless inv.defeats.nil?
+      state.escape_count = inv.escapes unless inv.escapes.nil?
+      state.win_count = inv.victories unless inv.victories.nil?
+      state.steps = inv.steps unless inv.steps.nil?
       state
     end
 
