@@ -4792,39 +4792,58 @@ Everything below is unverified against the codebase.
   event from stepping onto the hero's live tile at all — it faces and,
   if its own trigger is Event Touch (2), fires that instead, but `ch.move`
   is never called, so there is no tile-based Player Touch (1) hit-test to
-  even consult for this case; it structurally cannot fire. 🚧 (c) **a real,
-  reachable gap, deliberately left open rather than rushed: hero and event
-  simultaneously crossing paths (event moving left as the hero moves right
-  toward it, their two tiles trading places in one step) currently fires
-  Hero Touch when it should not.** The source page is specific that this is
-  a *third*, distinct case from (b) — both parties are mid-move toward each
-  other's *current* tile, not one walking onto an already-stationary other
-  — and states the hit-test is invalidated (`当たり判定が無効になります`)
-  for it, i.e. no trigger fires either way. This codebase's actual frame
-  order (`Scene::Map#update`: `step_events` — which is where an
-  autonomous/route-driven event's move is decided, including the (b) hero-
-  tile refusal above — always runs *before* `step_movement`, which decides
-  and applies the player's own move for the same frame) means the event
-  sees the hero still standing at their *pre-move* tile when it does its
-  own hero-tile check, refuses to advance, and stays put; `step_movement`
-  then finds that same event still sitting on the tile the hero is trying
-  to enter and, if it is a Hero Touch (1) page, fires it via the ordinary
-  `event_at(nx, ny)` check in `#step_movement` — the crossing case collapses
-  into an ordinary "hero walks onto a stationary touch event" outcome
-  instead of the invalidated-hit-test real RPG_RT documents. A correct fix
-  needs the two moves resolved as a genuine pair rather than sequentially:
-  the player's intended direction has to be known (or the outcome
-  reinterpreted) before the event's own hero-tile refusal is decided, so a
-  same-frame "event's target is the hero's current tile AND the hero's own
-  target is that event's current tile" configuration can be recognised and
-  suppressed — a change to the update loop's movement-resolution shape, not
-  a local one-line fix, and risky to rush against the rest of this frame's
-  established sequencing (parallels-before-foreground, forced-route-before-
-  input) without its own dedicated pass. Left open for a future PR with
-  this precise scope. The multi-page move-route-restart clause originally
-  paired with this bullet is the same fact as the already-fixed "Move route
-  continuation across a page switch" entry under "#### Fixed" above, not a
-  separate open item.
+  even consult for this case; it structurally cannot fire. (c) ✅ **hero and
+  event simultaneously crossing paths (event moving left as the hero moves
+  right toward it, their two tiles trading places in one step) used to fire
+  Hero Touch when it should not — now fixed.** The source page is specific
+  that this is a *third*, distinct case from (b) — both parties are mid-move
+  toward each other's *current* tile, not one walking onto an
+  already-stationary other — and states the hit-test is invalidated
+  (`当たり判定が無効になります`) for it, i.e. no trigger fires either way.
+  The root cause was this codebase's frame order: `Scene::Map#update`'s
+  `step_events` (deciding an autonomous/route-driven event's move, including
+  the (b) hero-tile refusal above) always ran *before* `step_movement`
+  (deciding and applying the player's own move for the same frame), so the
+  event saw the hero still standing at their *pre-move* tile when it did its
+  own hero-tile check, refused to advance, and stayed put; `step_movement`
+  then found that same event still sitting on the tile the hero was trying
+  to enter and fired Hero Touch via the ordinary `event_at(nx, ny)` check —
+  the crossing case collapsed into an ordinary "hero walks onto a stationary
+  touch event" outcome instead of the invalidated-hit-test real RPG_RT
+  documents. Fixed without reordering `step_events`/`step_movement` (the
+  rest of this frame's established sequencing — parallels-before-foreground,
+  forced-route-before-input — stays untouched): `Scene::Map#update` now
+  snapshots the party's own input-driven move target *before* `step_events`
+  runs (`#player_intended_target`, called right before `step_player_route`),
+  the exact same early-outs `step_movement` itself bails out on (mid-slide,
+  an event already running, a forced route, boarded) evaluated a few lines
+  earlier so both reads always agree. `#move_autonomous` and
+  `Game::MoveRoute#do_move`'s identical `:touched_hero` reclassification (see
+  case (b)) both now compare that snapshot against the tile they are
+  refusing to leave — if the party's own target this frame is exactly the
+  tile the event is refusing to leave (because the event's target is the
+  party's tile), it is a genuine crossing rather than an ordinary refusal,
+  and the event stamps `e[:crossed_hero_this_frame] = true` instead of
+  firing its own Event Touch (2). `step_movement`'s `event_at(nx, ny)` check
+  consults that same flag and withholds Hero Touch (1) too, falling through
+  to the ordinary passability check exactly as if the tile held no touch
+  page at all — an obstructing (same-layer) event still silently blocks the
+  step, only the trigger fire is suppressed. The flag is reset unconditionally
+  at the top of every `#step_event` call (including throttled early-returns),
+  so it only ever reflects *this* frame's decision and cannot leak into a
+  later frame where the two moves no longer coincide. Covered by five new
+  `scripts/rpg2k_scene_check.rb` checks: an autonomous Approach-type crossing
+  suppresses Hero Touch, the same crossing suppresses the event's own Event
+  Touch (both halves of "no trigger fires either way"), a Set Move Route /
+  custom-route event crossing the party is suppressed the same way, an
+  event's own tile stays correctly blocking (case (b), unchanged) and the
+  party never actually steps onto the crossing event, and — the key
+  regression guard — an event's *earlier*, separate-frame refusal does not
+  suppress a later, non-crossing Hero Touch once the party finally walks
+  in. The multi-page move-route-restart clause originally paired with this
+  bullet is the same fact as the already-fixed "Move route continuation
+  across a page switch" entry under "#### Fixed" above, not a separate open
+  item.
 - **Menu screen** — ✅ **Call Menu Screen bypasses "Prohibit Menu" (only the
   player's own Cancel-key shortcut respects it) -- confirmed already
   correct, and now covered by a regression test.** `Scene::Map#
