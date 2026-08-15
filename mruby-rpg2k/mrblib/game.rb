@@ -11606,6 +11606,11 @@ module Game
       hero[12] = @x
       hero[13] = @y
       hero[22] = @direction || 2
+      # Set Transparent Flag's own override (Player Visibility, 11310) --
+      # liblcf's own "0 or 3" convention for this field (see schema.rb's
+      # SAVE_MOVABLE comment on why it lives here, on the hero's own movable
+      # record, not the system chunk).
+      hero[24] = @player_transparent ? 3 : 0
       if leader
         hero[73] = leader.charset_name || ''
         hero[74] = leader.charset_index || 0
@@ -11653,7 +11658,6 @@ module Game
       sys[52] = mc.face_index || 0
       sys[53] = mc.face_right ? 1 : 0
       sys[54] = mc.face_flipped ? true : false
-      sys[55] = @player_transparent ? true : false
       sys[75] = bgm_chunk(@current_bgm) if @current_bgm
       sys[78] = bgm_chunk(@memorized_bgm) if @memorized_bgm
       # Change System BGM (10660) / Change System SFX (10670) overrides, one
@@ -11916,6 +11920,10 @@ module Game
                        hp: hp, mp: mp)
       state = new(party, hero.map_id, hero.x, hero.y)
       state.direction = hero.direction || 2
+      # Set Transparent Flag's own override (Player Visibility, 11310):
+      # liblcf's "0 or 3" convention on the hero's own movable record (see
+      # #to_lsd's own citation on why this lives here, not the system chunk).
+      state.player_transparent = (hero.transparency || 0) != 0
       # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a
       # SAVE_MOVABLE; an absent chunk leaves that vehicle unplaced.
       state.vehicle(:boat).load_movable(save.boat)
@@ -11943,7 +11951,6 @@ module Game
       mc.face_index = sys.face_index || 0
       mc.face_right = (sys.face_right_position || 0) != 0
       mc.face_flipped = sys.face_flip ? true : false
-      state.player_transparent = sys.transparent ? true : false
       # Overridden BGM playback state; an empty file name means "none".
       state.current_bgm = bgm_from_chunk(sys.current_bgm)
       state.memorized_bgm = bgm_from_chunk(sys.stored_bgm)
