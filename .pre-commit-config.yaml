@@ -10,10 +10,18 @@ repos:
     - id: check-added-large-files
 - repo: local
   hooks:
+    # clang-format comes from PyPI (a wheel wrapping the upstream binary) so
+    # the hook pins its own version instead of formatting with whatever
+    # `clang-format` happens to be on PATH. That is what lets the flake drop
+    # nixpkgs' `clang-tools`, and it ends the drift between CI's clang-format
+    # and a distro one (18 flags three lines in mruby-rgss/src/lib.cxx that 20+
+    # accepts). pre-commit builds the venv with its own interpreter, so nothing
+    # needs python on PATH.
     - id: clang-format
       name: clang-format
       entry: clang-format -i
-      language: system
+      language: python
+      additional_dependencies: ["clang-format==22.1.8"]
       files: ".*\\.(cxx|cc|h|hxx)$"
     - id: cmake-format
       name: cmake-format
