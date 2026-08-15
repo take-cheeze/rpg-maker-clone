@@ -170,8 +170,8 @@ if(EMSCRIPTEN)
   set(ONIGMO_DIR
       "${MRUBY_BUILD_DIR}/emscripten/mrbgems/mruby-onig-regexp/onigmo-6.2.0")
   set(ONIGMO_A "${CMAKE_CURRENT_BINARY_DIR}/libonigmo_clean.a")
-  # Tell build_config.rb to emit the emscripten cross build, and give it
-  # native compilers to build mrbc with (CXX=/CC= below point at em++/emcc).
+  # Tell build_config.rb to emit the emscripten cross build, and give it native
+  # compilers to build mrbc with (CXX=/CC= below point at em++/emcc).
   set(MRUBY_EXTRA_OPTS MRUBY_TARGET=emscripten "HOST_CC=cc" "HOST_CXX=c++")
 else()
   set(MRUBY_TARGET_NAME "host")
@@ -184,17 +184,27 @@ endif()
 # target name, gem list and a few extra rake options differing.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-mruby.cmake)
 rpg2k_add_mruby(
-  TARGET_NAME ${MRUBY_TARGET_NAME}
-  REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}
-  PROJECT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}
-  GEMS mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-mvjs
+  TARGET_NAME
+  ${MRUBY_TARGET_NAME}
+  REPO_ROOT
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PROJECT_BUILD_DIR
+  ${CMAKE_CURRENT_BINARY_DIR}
+  GEMS
+  mruby-rgss
+  mruby-lcf
+  mruby-rpg2k
+  mruby-rpgxp
+  mruby-rpgvx
+  mruby-mvjs
   MRB_OPTS
-    BUILD_DIR=${MRUBY_BUILD_DIR}
-    "CXX=${CMAKE_CXX_COMPILER_LAUNCHER} ${CMAKE_CXX_COMPILER}"
-    "CC=${CMAKE_C_COMPILER_LAUNCHER} ${CMAKE_C_COMPILER}"
-    "CXXFLAGS=${CMAKE_CXX_FLAGS}"
-    "CFLAGS=${CMAKE_C_FLAGS}"
-    "LDFLAGS=${CMAKE_CXX_FLAGS}" ${MRUBY_EXTRA_OPTS})
+  BUILD_DIR=${MRUBY_BUILD_DIR}
+  "CXX=${CMAKE_CXX_COMPILER_LAUNCHER} ${CMAKE_CXX_COMPILER}"
+  "CC=${CMAKE_C_COMPILER_LAUNCHER} ${CMAKE_C_COMPILER}"
+  "CXXFLAGS=${CMAKE_CXX_FLAGS}"
+  "CFLAGS=${CMAKE_C_FLAGS}"
+  "LDFLAGS=${CMAKE_CXX_FLAGS}"
+  ${MRUBY_EXTRA_OPTS})
 list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
 
 if(EMSCRIPTEN)

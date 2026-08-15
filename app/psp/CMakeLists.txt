@@ -73,17 +73,26 @@ add_subdirectory(${REPO_ROOT}/3rd/uni-algo 3rd/uni-algo EXCLUDE_FROM_ALL)
 # cross-compiler (set via the pspdev toolchain file), not a host one.
 include(${REPO_ROOT}/cmake/build-mruby.cmake)
 rpg2k_add_mruby(
-  TARGET_NAME psp
-  REPO_ROOT ${REPO_ROOT}
-  PROJECT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}
+  TARGET_NAME
+  psp
+  REPO_ROOT
+  ${REPO_ROOT}
+  PROJECT_BUILD_DIR
+  ${CMAKE_CURRENT_BINARY_DIR}
   # Mirrors the root CMakeLists.txt's gem list, trimmed to what
   # build_config.rb's psp cross-build actually pulls in (rpg_maker_gems with
   # include_mvjs: false -- no mruby-mvjs/quickjs on this target).
-  GEMS mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-rpgvx
-  MRB_OPTS MRUBY_TARGET=psp)
+  GEMS
+  mruby-rgss
+  mruby-lcf
+  mruby-rpg2k
+  mruby-rpgxp
+  mruby-rpgvx
+  MRB_OPTS
+  MRUBY_TARGET=psp)
 
-# The bring-up HAL (mruby-rgss/src/psp.cxx) now comes from libmruby.a -- the
-# psp cross-build compiles it as part of the mruby-rgss gem, self-guarded on
+# The bring-up HAL (mruby-rgss/src/psp.cxx) now comes from libmruby.a -- the psp
+# cross-build compiles it as part of the mruby-rgss gem, self-guarded on
 # PSP_BUILD the same way it always was. Compiling it here directly too, as the
 # earlier HAL-only bring-up did, would double-define every symbol in it
 # (psp_display_create, psp_input_scan, ...) once both this executable and
