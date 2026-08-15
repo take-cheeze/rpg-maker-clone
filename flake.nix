@@ -54,11 +54,6 @@
                 xvfb
                 xvfb-run
               ]
-              ++ lib.optionals (system == "x86_64-linux") [
-                winePackages.staging
-                winePackages.fonts
-                winetricks
-              ]
               # Software-GL environment for the MZ WebGL backend's headless EGL
               # (mruby-mvjs/src/mvgl.cxx). The setup hook exports LIBGL_* /
               # __EGL_VENDOR_LIBRARY_FILENAMES / LD_LIBRARY_PATH pointing at
@@ -113,13 +108,31 @@
       devShells = forAllSystems (
         system:
         let
-          sccache = "${nixpkgs.legacyPackages.${system}.sccache}/bin/sccache";
+          pkgs = nixpkgs.legacyPackages.${system};
+          sccache = "${pkgs.sccache}/bin/sccache";
         in
         {
-          default = self.packages.${system}.build.overrideAttrs {
+          default = self.packages.${system}.build.overrideAttrs (old: {
             CMAKE_C_COMPILER_LAUNCHER = sccache;
             CMAKE_CXX_COMPILER_LAUNCHER = sccache;
-          };
+            # wine is a shell-only dependency, kept out of `packages.build`
+            # above: nothing in the package build runs a Windows binary, so
+            # putting it there only made `nix build '.#build'` (the `flake` CI
+            # job) realise a 32-bit wine closure it never opens. It is still
+            # load-bearing for the shell — `scripts/rtp_install.bash` /
+            # `rtp_xp_install.bash` install the RPG Maker 2000/XP RTPs by
+            # running the vendors' own installers under wine, and the engine
+            # then resolves the RTP through that prefix's registry
+            # (`rtp_path()` / `xp_rtp_path()` in src/main.cxx) — so the `build`
+            # CI job, which enters the shell, keeps it. `winetricks` is gone
+            # entirely: nothing in the tree ever called it.
+            nativeBuildInputs =
+              old.nativeBuildInputs
+              ++ pkgs.lib.optionals (system == "x86_64-linux") [
+                pkgs.winePackages.staging
+                pkgs.winePackages.fonts
+              ];
+          });
         }
       );
     };
