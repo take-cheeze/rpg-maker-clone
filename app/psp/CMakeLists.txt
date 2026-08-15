@@ -61,10 +61,9 @@ add_subdirectory(${REPO_ROOT}/3rd/uni-algo 3rd/uni-algo EXCLUDE_FROM_ALL)
 
 # Build libmruby.a for the psp target via mruby's own rake-based build system
 # (build_config.rb's `psp` MRuby::CrossBuild), the same way the root
-# CMakeLists.txt does for the desktop/wasm builds -- a separate build system
-# or invoked as a custom command, not a native CMake target, because mruby's
-# gem system (which C sources, generated headers, gembox membership) is all
-# decided by that Rakefile, not by anything CMake can glob on its own.
+# CMakeLists.txt does for the desktop/wasm builds -- factored into
+# cmake/build-mruby.cmake since both drive the same rake invocation with only
+# the target name, gem list and a few extra rake options differing.
 #
 # Unlike the root build, no native `mrbc`-producing host build needs its own
 # CC/CXX override here: build_config.rb's psp block hardcodes psp-gcc/psp-g++
@@ -72,67 +71,16 @@ add_subdirectory(${REPO_ROOT}/3rd/uni-algo 3rd/uni-algo EXCLUDE_FROM_ALL)
 # (which still produces mrbc) uses the ambient CC/CXX -- ordinary host
 # compilers, since this CMake project's own C/CXX compiler *is* the psp
 # cross-compiler (set via the pspdev toolchain file), not a host one.
-set(MRUBY_PREFIX ${REPO_ROOT}/3rd/mruby)
-set(MRUBY_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/mruby)
-set(LIBMRUBY_A ${MRUBY_BUILD_DIR}/psp/lib/libmruby.a)
-set(MRUBY_GEN_INCLUDE ${MRUBY_BUILD_DIR}/psp/include)
-file(MAKE_DIRECTORY ${MRUBY_GEN_INCLUDE})
-
-# Rebuild whenever any local mrbgem this target actually uses changes --
-# mirrors the root CMakeLists.txt's MRB_FILES collection, trimmed to the gems
-# build_config.rb's psp cross-build actually pulls in (rpg_maker_gems with
-# include_mvjs: false -- no mruby-mvjs/quickjs on this target).
-foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-rpgvx)
-  file(
-    GLOB_RECURSE
-    src
-    CONFIGURE_DEPENDS
-    ${REPO_ROOT}/${g}/src/*.c
-    ${REPO_ROOT}/${g}/src/*.cxx
-    ${REPO_ROOT}/${g}/src/*.cpp
-    ${REPO_ROOT}/${g}/src/*.h
-    ${REPO_ROOT}/${g}/src/*.hpp
-    ${REPO_ROOT}/${g}/src/*.hxx)
-  file(GLOB_RECURSE rb CONFIGURE_DEPENDS ${REPO_ROOT}/${g}/mrblib/*.rb)
-  list(APPEND MRB_FILES ${src} ${rb} ${REPO_ROOT}/${g}/mrbgem.rake)
-endforeach()
-file(
-  GLOB_RECURSE
-  mruby_core
-  CONFIGURE_DEPENDS
-  ${MRUBY_PREFIX}/src/*.c
-  ${MRUBY_PREFIX}/src/*.h
-  ${MRUBY_PREFIX}/mrblib/*.rb
-  ${MRUBY_PREFIX}/include/*.h)
-list(APPEND MRB_FILES ${mruby_core})
-
-set(MRB_OPTS
-    MRUBY_CONFIG=${REPO_ROOT}/build_config.rb
-    MRUBY_TARGET=psp
-    MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
-    PROJECT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR})
-
-# Same mgem-list symlink dance as the root CMakeLists.txt: points mruby's rake
-# at the vendored mgem index so it resolves gems locally instead of trying to
-# clone from GitHub. `ln -sfn` (not `-sf`) so re-running this doesn't
-# dereference the existing symlink-to-directory and nest one inside the other.
-add_custom_command(
-  OUTPUT "${LIBMRUBY_A}"
-  COMMAND
-    mkdir -p ${MRUBY_BUILD_DIR}/repos/host ${MRUBY_BUILD_DIR}/repos/psp &&
-    ln -sfn ${REPO_ROOT}/3rd/mgem-list
-    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sfn
-    ${REPO_ROOT}/3rd/mgem-list ${MRUBY_BUILD_DIR}/repos/psp/mgem-list &&
-    ${MRB_OPTS} rake -v
-  WORKING_DIRECTORY "${MRUBY_PREFIX}"
-  DEPENDS "${REPO_ROOT}/build_config.rb" ${MRB_FILES})
-add_custom_target(mruby_build DEPENDS "${LIBMRUBY_A}")
-
-add_library(mruby STATIC IMPORTED)
-set_target_properties(mruby PROPERTIES IMPORTED_LOCATION "${LIBMRUBY_A}")
-target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include"
-                                           "${MRUBY_GEN_INCLUDE}")
-add_dependencies(mruby mruby_build)
+include(${REPO_ROOT}/cmake/build-mruby.cmake)
+rpg2k_add_mruby(
+  TARGET_NAME psp
+  REPO_ROOT ${REPO_ROOT}
+  PROJECT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}
+  # Mirrors the root CMakeLists.txt's gem list, trimmed to what
+  # build_config.rb's psp cross-build actually pulls in (rpg_maker_gems with
+  # include_mvjs: false -- no mruby-mvjs/quickjs on this target).
+  GEMS mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-rpgvx
+  MRB_OPTS MRUBY_TARGET=psp)
 
 # The bring-up HAL (mruby-rgss/src/psp.cxx) now comes from libmruby.a -- the
 # psp cross-build compiles it as part of the mruby-rgss gem, self-guarded on

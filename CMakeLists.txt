@@ -156,8 +156,6 @@ if(NOT EMSCRIPTEN)
   endif()
 endif()
 
-set(MRUBY_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/3rd/mruby")
-add_library(mruby STATIC IMPORTED)
 set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
 if(EMSCRIPTEN)
   # The native "host" build only produces mrbc; the app links the cross build.
@@ -172,94 +170,32 @@ if(EMSCRIPTEN)
   set(ONIGMO_DIR
       "${MRUBY_BUILD_DIR}/emscripten/mrbgems/mruby-onig-regexp/onigmo-6.2.0")
   set(ONIGMO_A "${CMAKE_CURRENT_BINARY_DIR}/libonigmo_clean.a")
+  # Tell build_config.rb to emit the emscripten cross build, and give it
+  # native compilers to build mrbc with (CXX=/CC= below point at em++/emcc).
+  set(MRUBY_EXTRA_OPTS MRUBY_TARGET=emscripten "HOST_CC=cc" "HOST_CXX=c++")
 else()
   set(MRUBY_TARGET_NAME "host")
+  set(MRUBY_EXTRA_OPTS "")
 endif()
-set(LIBMRUBY_A "${MRUBY_BUILD_DIR}/${MRUBY_TARGET_NAME}/lib/libmruby.a")
-set_target_properties(mruby PROPERTIES IMPORTED_LOCATION "${LIBMRUBY_A}")
-list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
-# mruby 4.0 always enables presym, so <mruby.h> unconditionally pulls in
-# <mruby/presym.h> and its generated mruby/presym/id.h. That header lives in the
-# build tree (produced by the mruby build below), not in the source include dir,
-# so expose it too. Create it now so CMake's imported-target check — which
-# requires INTERFACE include dirs to exist at configure time — passes before the
-# build populates it.
-set(MRUBY_GEN_INCLUDE "${MRUBY_BUILD_DIR}/${MRUBY_TARGET_NAME}/include")
-file(MAKE_DIRECTORY "${MRUBY_GEN_INCLUDE}")
-target_include_directories(mruby INTERFACE "${MRUBY_PREFIX}/include"
-                                           "${MRUBY_GEN_INCLUDE}")
-# Collect the source of each local mrbgem so libmruby.a rebuilds when any of it
-# changes. GLOB_RECURSE also picks up files in nested subdirectories, and
-# CONFIGURE_DEPENDS makes CMake re-run the glob at build time: adding or
-# removing a source file triggers a reconfigure (and thus a libmruby rebuild) on
-# the next `make`, with no manual `cmake` re-run. Header changes under src/ are
-# caught too so an edit to a private header still forces the archive to be
-# rebuilt.
-foreach(g mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-mvjs)
-  file(
-    GLOB_RECURSE
-    src
-    CONFIGURE_DEPENDS
-    ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.cxx
-    ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/${g}/src/*.hxx)
-  file(GLOB_RECURSE rb CONFIGURE_DEPENDS
-       ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrblib/*.rb)
-  list(APPEND MRB_FILES ${src} ${rb}
-       ${CMAKE_CURRENT_SOURCE_DIR}/${g}/mrbgem.rake)
-endforeach()
 
-# Also rebuild libmruby.a when mruby's own core changes. These sources live in
-# the 3rd/mruby submodule; CONFIGURE_DEPENDS keeps the list current as the
-# submodule is checked out or updated to a new revision.
-file(
-  GLOB_RECURSE
-  mruby_core
-  CONFIGURE_DEPENDS
-  ${MRUBY_PREFIX}/src/*.c
-  ${MRUBY_PREFIX}/src/*.h
-  ${MRUBY_PREFIX}/mrblib/*.rb
-  ${MRUBY_PREFIX}/include/*.h)
-list(APPEND MRB_FILES ${mruby_core})
-set(MRB_OPTS
-    MRUBY_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb
-    MRUBY_BUILD_DIR=${MRUBY_BUILD_DIR}
+# Build libmruby.a via mruby's own rake-based build system (build_config.rb),
+# factored into cmake/build-mruby.cmake since the PSP EBOOT build
+# (app/psp/CMakeLists.txt) drives the exact same rake invocation with only the
+# target name, gem list and a few extra rake options differing.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-mruby.cmake)
+rpg2k_add_mruby(
+  TARGET_NAME ${MRUBY_TARGET_NAME}
+  REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}
+  PROJECT_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}
+  GEMS mruby-rgss mruby-lcf mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-mvjs
+  MRB_OPTS
     BUILD_DIR=${MRUBY_BUILD_DIR}
-    PROJECT_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
     "CXX=${CMAKE_CXX_COMPILER_LAUNCHER} ${CMAKE_CXX_COMPILER}"
     "CC=${CMAKE_C_COMPILER_LAUNCHER} ${CMAKE_C_COMPILER}"
     "CXXFLAGS=${CMAKE_CXX_FLAGS}"
     "CFLAGS=${CMAKE_C_FLAGS}"
-    "LDFLAGS=${CMAKE_CXX_FLAGS}")
-if(EMSCRIPTEN)
-  # Tell build_config.rb to emit the emscripten cross build, and give it native
-  # compilers to build mrbc with (CC/CXX above point at emcc/em++).
-  list(APPEND MRB_OPTS MRUBY_TARGET=emscripten "HOST_CC=cc" "HOST_CXX=c++")
-endif()
-# Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks in
-# its repos/ dir so it resolves gems locally instead of cloning from GitHub. Use
-# `ln -sfn`, not `ln -sf`: once these links exist, a plain `ln -sf` would
-# dereference the existing symlink-to-directory and drop a new link *inside*
-# 3rd/mgem-list (a self-referential 3rd/mgem-list/mgem-list), dirtying the
-# submodule. `-n` (no-dereference; portable across GNU and BSD/macOS) replaces
-# the symlink in place instead.
-add_custom_command(
-  OUTPUT "${LIBMRUBY_A}"
-  COMMAND
-    mkdir -p ${MRUBY_BUILD_DIR}/repos/host
-    ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME} && ln -sfn
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
-    ${MRUBY_BUILD_DIR}/repos/host/mgem-list && ln -sfn
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rd/mgem-list
-    ${MRUBY_BUILD_DIR}/repos/${MRUBY_TARGET_NAME}/mgem-list && ${MRB_OPTS} rake
-    -v
-  WORKING_DIRECTORY "${MRUBY_PREFIX}"
-  DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/build_config.rb" ${MRB_FILES})
-add_custom_target(mruby_build DEPENDS "${LIBMRUBY_A}")
-add_dependencies(mruby mruby_build)
+    "LDFLAGS=${CMAKE_CXX_FLAGS}" ${MRUBY_EXTRA_OPTS})
+list(APPEND ADDITIONAL_CLEAN_FILES "${MRUBY_BUILD_DIR}")
 
 if(EMSCRIPTEN)
   # Re-archive onigmo's pristine per-file wasm objects (see ONIGMO_A above).
