@@ -242,7 +242,7 @@ module Game
     # what makes the battle-only commands no-ops outside a battle — exactly as
     # they are in RPG_RT, where the editor cannot even place them there.
     attr_accessor :battle
-    # The Scene::Map hosting the running fight `@battle` belongs to, set
+    # The Scene::Battle running the fight `@battle` belongs to, set
     # alongside it. Lets #do_change_party notify the battle screen the moment
     # a Change Party Member command actually adds/removes a member, mirroring
     # EasyRPG's `Game_Party::AddActor`/`RemoveActor` calling
