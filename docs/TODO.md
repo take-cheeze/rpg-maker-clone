@@ -6448,6 +6448,38 @@ not yet verified:
   Open Shop through open → buy → confirm → leave → resume into its
   [Transaction] branch, confirmed to fail against the pre-fix code (the shop
   screen never opened at all) before the fix.
+- ✅ **Return to Title Screen (12510) and Exit Game (5002) now actually fire
+  when issued from a Parallel Process, instead of silently doing nothing.**
+  The same missing-branch defect as Enter Hero Name / Open Shop above, but
+  for two *terminal* commands (nothing is ever resumed afterward, since the
+  whole scene tears down) rather than a resumable modal screen. Confirmed
+  against EasyRPG's actual C++ source: `Game_Interpreter
+  ::CommandReturnToTitleScreen` and `Game_Interpreter::CommandExitGame`
+  (`src/game_interpreter.cpp`) are both plain `Game_Interpreter` methods
+  gated only on `Game_Message::IsMessageActive()`, with no `main_flag`
+  reference anywhere in either body — same as Open Shop/Enter Hero Name.
+  Show Inn is the one exception in this whole family (its own
+  `main_flag`/`CanShowMessage` nuance is why it stays deliberately
+  unfixed); these two have no such asymmetry to reproduce at all.
+  `Scene::Map#drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`) had
+  no `:return_title`/`:exit_game` branches, so both fell into the generic
+  `else` → unconditional `it.resume`, silently discarding the request and
+  letting the parallel process's command list continue as though the
+  command had been a no-op — a "reset the game" trap event, an alternate
+  Game-Over-to-title flow, or the classic "auto-quit once switch X turns
+  on" idiom built entirely inside a Parallel Process would never actually
+  fire. Fixed by threading the owning interpreter through
+  `#perform_return_to_title(it = @interpreter)` and
+  `#perform_exit_game(it = @interpreter)` and adding the two missing
+  branches to `#drive_parallel_wait` — no shared-resource gate needed
+  (unlike `:shop`/`:name_input`), since the whole scene ends the instant
+  either one runs, leaving nothing to race. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check driving a Parallel-Process-issued
+  Return to Title Screen and confirming the app is told to return to the
+  title screen, confirmed to fail against the pre-fix code before the fix
+  (Exit Game itself is not covered by an automated check, matching the
+  pre-existing foreground Exit Game command's own lack of test coverage,
+  since it calls a real process exit).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

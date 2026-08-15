@@ -1847,6 +1847,28 @@ class RPG2k
           if (@shop.nil? || @shop[:interp].equal?(it)) && @message.nil? && @name_ui.nil?
             drive_shop(it)
           end
+        elsif it.wait_kind == :return_title
+          # Return to Title Screen issued from a Parallel Process: EasyRPG's
+          # `Game_Interpreter::CommandReturnToTitleScreen`
+          # (src/game_interpreter.cpp) is a plain `Game_Interpreter` method
+          # with no `main_flag` gate at all -- unlike Open Shop/Enter Hero
+          # Name, there is no foreground-vs-parallel distinction whatsoever
+          # here. Before this branch existed this fell into the generic
+          # #resume below, so a Parallel Process's own Return to Title
+          # silently never happened -- a "reset the game" trap event, or an
+          # alternate Game-Over-to-title flow, was a permanent no-op instead
+          # of ending the play session. No shared-resource gate is needed
+          # (unlike :shop/:name_input): the whole scene tears down the
+          # instant this runs, so there is nothing left to race.
+          perform_return_to_title(it)
+        elsif it.wait_kind == :exit_game
+          # Exit Game issued from a Parallel Process: same reasoning as
+          # :return_title just above -- EasyRPG's `Game_Interpreter
+          # ::CommandExitGame` (src/game_interpreter.cpp) has no `main_flag`
+          # gate either. Before this branch existed a Parallel Process's own
+          # Exit Game silently never quit the game at all -- the classic
+          # "auto-quit once switch X is on" idiom was a permanent no-op.
+          perform_exit_game(it)
         else
           # :message, :choice and :number are all handled above now.
           it.resume
@@ -3162,9 +3184,17 @@ class RPG2k
       end
 
       # Exit Game (5002, RPG2003): quit, the way the title screen's Shutdown
-      # entry does.
-      def perform_exit_game
-        @interpreter.stop
+      # entry does. `it` defaults to the foreground @interpreter but
+      # #drive_parallel_wait passes its own parallel interpreter here too --
+      # EasyRPG's `Game_Interpreter::CommandExitGame` (src/game_interpreter.cpp)
+      # is a plain `Game_Interpreter` method with no `main_flag` gate, unlike
+      # Open Shop/Enter Hero Name's own foreground-vs-parallel distinction, so
+      # every interpreter reaches it identically. Which interpreter's own
+      # #stop runs barely matters here -- #exit tears down the whole process
+      # immediately after -- but it is threaded through for consistency with
+      # #perform_return_to_title just below.
+      def perform_exit_game(it = @interpreter)
+        it.stop
         exit
       end
 
@@ -5942,13 +5972,19 @@ class RPG2k
 
       # Return to Title Screen: stop the running event and hand control back to
       # the app, which tears the play scenes down and shows a fresh title. There
-      # is nothing to resume afterwards — this scene is being disposed.
-      def perform_return_to_title
-        @interpreter.stop
+      # is nothing to resume afterwards — this scene is being disposed. `it`
+      # defaults to the foreground @interpreter but #drive_parallel_wait
+      # passes its own parallel interpreter here too -- EasyRPG's
+      # `Game_Interpreter::CommandReturnToTitleScreen` (src/game_interpreter.cpp)
+      # is a plain `Game_Interpreter` method with no `main_flag` gate, so a
+      # Common Event's or a map event's own Parallel Process can trigger it
+      # exactly like the foreground can.
+      def perform_return_to_title(it = @interpreter)
+        it.stop
         @parent.return_to_title
       rescue StandardError => e
         $stderr.puts "[RPG2k] Return to Title failed: #{e.message}"
-        @interpreter.stop
+        it.stop
       end
 
       # -- message / choice window --------------------------------------------
