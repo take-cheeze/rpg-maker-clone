@@ -124,7 +124,21 @@ void terminal_append_console(std::string& s);
 // mrbtest, the PSP and Wio Terminal targets -- leave it null, so the forward
 // is a harmless no-op and $stderr keeps behaving exactly as before there.
 
-using log_bridge_hook_fn = void (*)(const char* msg, size_t len);
+// Each forwarded line carries the source location it came from, because
+// without one every bridged line reaches ng-log from the same C++ statement in
+// src/log_bridge.cxx -- so the whole runtime log used to be stamped
+// "log_bridge.cxx:12" and said nothing about which script logged what.  For a
+// line written from Ruby the binding answers the *script* location
+// (mruby-rgss/src/lib.cxx walks the interpreter's call stack for it), so a
+// warning from a game's own Scene_Map section is stamped with that section and
+// line, exactly as a C++ LOG() is stamped with its file and line.  `file` is
+// null when the location is unknown -- a native caller that passed none, or a
+// build whose bytecode carries no debug info -- and the hook then falls back to
+// its own call site.
+using log_bridge_hook_fn = void (*)(const char* msg,
+                                    size_t len,
+                                    const char* file,
+                                    int line);
 
 // Install (or clear, with nullptr) the hook every forwarded line reaches.
 // Called once at start-up, before the mruby interpreter runs any Ruby code;
@@ -132,8 +146,14 @@ using log_bridge_hook_fn = void (*)(const char* msg, size_t len);
 void log_bridge_set_hook(log_bridge_hook_fn hook);
 
 // Forward one already-buffered line (no trailing newline) to the installed
-// hook, if any.  Safe to call unconditionally.
-void log_bridge_write(const char* msg, size_t len);
+// hook, if any.  Safe to call unconditionally.  `file`/`line` are the source
+// location the line came from (see above); the default means "unknown", which
+// is what every native caller passes.  `file` need only stay alive for the
+// duration of the call.
+void log_bridge_write(const char* msg,
+                      size_t len,
+                      const char* file = nullptr,
+                      int line = 0);
 
 // Convenience for the native (non-Ruby) diagnostics in mruby-rgss/mruby-mvjs
 // that used to be a bare `fprintf(stderr, ...)`: writes `msg` to the real

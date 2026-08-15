@@ -15,7 +15,9 @@ module RGSS
   # forwards it to ng-log via the hook the executable installs (see
   # include/terminal.hxx's "Stderr log bridge" section) -- so the same warning
   # that lands in a crash report also respects ng-log's severity filtering and
-  # shows up in the on-screen terminal log console. That call is guarded by
+  # shows up in the on-screen terminal log console, stamped with the script
+  # location it was written at (the binding reads that off the call stack,
+  # skipping the tee's own frames below). That call is guarded by
   # `respond_to?`: this file otherwise has no mruby dependency, which is what
   # lets scripts/error_report_check.rb exercise it on plain CRuby (see that
   # script and mruby-rgss/test/test.rb, which both cover this design). `$stderr`
@@ -74,10 +76,21 @@ module RGSS
     @lines = []
     @partial = ""
     @installed = false
+    @last_location = nil
 
     class << self
       # The recorded lines, oldest first, newline-free.
       attr_reader :lines
+
+      # The script location the log bridge attributed to the last line it
+      # forwarded, as "file:line" — the location the engine's log stamps that
+      # line with (RGSS.__log_bridge_write answers it; see
+      # include/terminal.hxx's "Stderr log bridge" section). nil where nothing
+      # has been forwarded, or where the binding is absent (CRuby) or could not
+      # tell (bytecode built without debug info). Nothing in the runtime reads
+      # it; it is how the location can be checked from Ruby, where the forward
+      # itself is invisible.
+      attr_reader :last_location
     end
 
     # Tee $stderr through the ring buffer. Called once at start-up (from
@@ -116,10 +129,26 @@ module RGSS
     # Record raw log output. Writes arrive in arbitrary chunks (a `puts` is one
     # call, a `print` per fragment is many), so text is buffered until a newline
     # completes a line.
+    #
+    # A plain index loop rather than `each { |line| push(line) }` on purpose:
+    # `each`'s block is its own call frame (Array#each is core Ruby, not a C
+    # primitive), which sat between `push` and whatever called `record` on
+    # every single bridged line. RGSS.__log_bridge_write's script_location walk
+    # (mruby-rgss/src/lib.cxx) skips frames it recognises as this file's own
+    # plumbing to find the real logging site, and that extra frame is core
+    # mruby's own file (mrblib/array.rb) rather than error_report.rb, so the
+    # walk stopped there and every bridged line got attributed to Array#each
+    # instead of the script that logged. A `while` loop compiles with no new
+    # call frame, so the frame right above `push` is `record`, and the one
+    # above that is `record`'s real caller, exactly as intended.
     def self.record(text)
       parts = (@partial + text.to_s).split("\n", -1)
       @partial = parts.pop || ""
-      parts.each { |line| push(line) }
+      i = 0
+      while i < parts.size
+        push(parts[i])
+        i += 1
+      end
       nil
     end
 
@@ -139,6 +168,7 @@ module RGSS
     def self.clear
       @lines = []
       @partial = ""
+      @last_location = nil
       nil
     end
 
@@ -146,7 +176,9 @@ module RGSS
       line = line[0, MAX_LINE_CHARS] + "..." if line.size > MAX_LINE_CHARS
       @lines << line
       @lines.shift while @lines.size > MAX_LINES
-      RGSS.__log_bridge_write(line) if RGSS.respond_to?(:__log_bridge_write)
+      if RGSS.respond_to?(:__log_bridge_write)
+        @last_location = RGSS.__log_bridge_write(line)
+      end
       nil
     end
 

@@ -2,7 +2,13 @@
 #include <mruby/array.h>
 #include <mruby/class.h>
 #include <mruby/data.h>
+// debug.h/irep.h/proc.h: the log bridge reads the script location of the frame
+// that logged out of the running proc's irep debug info (see
+// script_location below).
+#include <mruby/debug.h>
 #include <mruby/hash.h>
+#include <mruby/irep.h>
+#include <mruby/proc.h>
 #include <mruby/string.h>
 #include <mruby/value.h>
 #include <mruby/variable.h>
@@ -80,7 +86,10 @@ void rgss_tts_define(mrb_state* M, RClass* rgss);
 // $stderr line to the executable's ng-log hook (a no-op on mrbtest, PSP and
 // Wio Terminal, which never install one -- see include/terminal.hxx's
 // "Stderr log bridge" section, docs/adr/0005).
-void log_bridge_write(const char* msg, size_t len);
+void log_bridge_write(const char* msg,
+                      size_t len,
+                      const char* file = nullptr,
+                      int line = 0);
 // Also defined in log_bridge.cxx: writes to the real stderr (unconditionally)
 // and forwards through log_bridge_write. Used by the native (non-Ruby)
 // diagnostics below that used to be a bare fprintf(stderr, ...).
@@ -6118,15 +6127,92 @@ static mrb_value mouse_pressed_m(mrb_state* M, mrb_value) {
   return mrb_bool_value(rgss_mouse_pressed() != 0);
 }
 
+// Where a bridged log line was written: the Ruby file and line, or file =
+// nullptr when the call stack cannot say.
+struct ScriptLocation {
+  const char* file;
+  int line;
+};
+
+// True for a frame that only *carried* the message rather than writing it.
+// RGSS::ErrorReport's tee (Tee#write / #puts / .record / .push, all of
+// error_report.rb) sits between every logging site and this binding, and
+// RGSS.warn_once / .warn_stub are the engine's own forwarders on top of it --
+// stamping the log with any of them would just name the plumbing on every
+// line, which is the same uselessness as naming log_bridge.cxx.
+static bool log_forwarder_frame(mrb_state* M,
+                                const mrb_callinfo* ci,
+                                const char* file) {
+  const char* base = file;
+  for (const char* p = file; *p != '\0'; ++p) {
+    if (*p == '/' || *p == '\\')
+      base = p + 1;
+  }
+  if (std::strcmp(base, "error_report.rb") == 0)
+    return true;
+  if (ci->mid == 0)
+    return false;
+  const char* mid = mrb_sym_name(M, ci->mid);
+  return mid != nullptr && (std::strcmp(mid, "warn_once") == 0 ||
+                            std::strcmp(mid, "warn_stub") == 0);
+}
+
+// The script location the innermost non-forwarder Ruby frame is at. Walks the
+// interpreter's call stack the way mruby's own backtrace does (see
+// pack_backtrace in 3rd/mruby/src/backtrace.c): each frame's proc carries the
+// irep it runs, and the irep's debug info maps the frame's program counter to
+// a file and line. Frames with no debug info are skipped rather than reported
+// as unknown, so a build compiled without -g (or a C function in the middle of
+// the stack) falls back to the next frame that can answer, and only a stack
+// that can answer nowhere gives up.
+static bool script_location(mrb_state* M, ScriptLocation* out) {
+  for (const mrb_callinfo* ci = M->c->ci; ci >= M->c->cibase; --ci) {
+    const struct RProc* proc = ci->proc;
+    if (proc == nullptr || MRB_PROC_CFUNC_P(proc))
+      continue;
+    const mrb_irep* irep = proc->body.irep;
+    if (irep == nullptr || irep->debug_info == nullptr || ci->pc == nullptr)
+      continue;
+    // ci->pc is the *next* instruction to run, so the call being made is the
+    // one before it -- the same -1 mruby's backtrace applies.
+    const uint32_t idx = static_cast<uint32_t>(ci->pc - 1 - irep->iseq);
+    int32_t line = -1;
+    const char* file = nullptr;
+    if (!mrb_debug_get_position(M, irep, idx, &line, &file))
+      continue;
+    if (file == nullptr || line < 0)
+      continue;
+    if (log_forwarder_frame(M, ci, file))
+      continue;
+    out->file = file;
+    out->line = static_cast<int>(line);
+    return true;
+  }
+  out->file = nullptr;
+  out->line = 0;
+  return false;
+}
+
 // RGSS.__log_bridge_write(line) -- called by RGSS::ErrorReport.push
 // (mruby-rgss/mrblib/error_report.rb) for every $stderr line it buffers. See
 // include/terminal.hxx's "Stderr log bridge" section.
+//
+// The line is forwarded together with the script location it was written at,
+// so the engine's log names the script that logged ("Scene_Map:120") instead
+// of stamping every bridged line with this bridge's own C++ call site. Returns
+// that location as "file:line", or nil when the stack could not say -- what
+// RGSS::ErrorReport.last_location exposes, and what the mrbtest build (which
+// installs no hook, so nothing else about the forward is observable) checks.
 static mrb_value log_bridge_write_m(mrb_state* M, mrb_value) {
   const char* msg;
   mrb_int len;
   mrb_get_args(M, "s", &msg, &len);
-  log_bridge_write(msg, static_cast<size_t>(len));
-  return mrb_nil_value();
+  ScriptLocation loc = {nullptr, 0};
+  script_location(M, &loc);
+  log_bridge_write(msg, static_cast<size_t>(len), loc.file, loc.line);
+  if (loc.file == nullptr)
+    return mrb_nil_value();
+  return mrb_format(M, "%s:%d", loc.file, loc.line);
 }
 
 // RGSS.window_title = "..." -- the running game's own title, set by each
