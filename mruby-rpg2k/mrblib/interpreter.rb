@@ -2553,7 +2553,17 @@ module Game
         @state.bgm_looped ? true : false
       when 10 # RPG2003's second timer, laid out exactly like type 2
         timer_condition(cmd, 1)
-      else true
+      else
+        # An unhandled/unsupported branch type (RPG2003 v1.11's own type 11
+        # "EX" conditions -- savestate available, Test Play, ATB-wait,
+        # fullscreen -- Maniac Patch types 12-16, or malformed data) defaults
+        # to false, taking the else branch, not the true one. Confirmed
+        # against EasyRPG's `Game_Interpreter::CommandConditionalBranch`
+        # (src/game_interpreter.cpp): `result` is initialized `false` at the
+        # top of the function and is only ever set inside a matched `case`;
+        # its `default:` arm only logs a warning, leaving `result` at its
+        # initial `false`.
+        false
       end
     end
 

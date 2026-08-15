@@ -2647,6 +2647,26 @@ check 'Control Variables and Conditional Branch read the second timer' do
   eq 2, st.variables[3], 'type 2 still reads the first timer'
 end
 
+# Ports EasyRPG's `Game_Interpreter::CommandConditionalBranch`
+# (src/game_interpreter.cpp): its local `result` is initialized `false`
+# before the type switch, and the `default:` arm (any condition type it
+# doesn't recognize -- RPG2003 v1.11's own type 11 "EX" conditions, a
+# Maniac Patch type, or malformed data) only logs a warning, never touching
+# `result` -- so an unhandled type takes the *else* branch, not the true
+# one.
+check 'Conditional Branch: an unrecognized condition type defaults to false, not true' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONDITIONAL, [11, 0, 0], indent: 0), # type 11: unhandled here
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+            FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+            FakeCmd.new(IC::END_BRANCH, [], indent: 0)])
+  it.update
+  ok !st.switches[1], 'the true branch did not run'
+  ok st.switches[2], 'an unrecognized type falls through to the else branch'
+end
+
 # -- Memorize / Recall Location ----------------------------------------------
 
 check 'Memorize Location stores map/x/y into three variables' do
