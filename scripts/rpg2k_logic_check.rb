@@ -3396,6 +3396,28 @@ check 'add_actor no-ops once the party already holds MAX_SIZE (4) members' do
      'adding is allowed again once a member has left and freed a slot'
 end
 
+check 'Party#reorder applies a picked front-to-back permutation, ' \
+      'and can change the leader' do
+  # RPG2003's Order menu command -- see Scene::Order (mruby-rpg2k/mrblib/
+  # scene/order.rb), which builds exactly this kind of permutation one pick
+  # at a time and hands it to #reorder. Confirmed against EasyRPG's own
+  # `Scene_Order::Confirm`, which has the same net effect (remove every
+  # member, then re-add them in the picked order).
+  players = (1..4).to_h { |i| [i, FakePlayerRow.new("Actor#{i}", '', 0, 1, max_hp: 10)] }
+  db = FakeActorDB.new(players, [1, 2, 3, 4])
+  party = Game::Party.new(db)
+  before_revision = party.revision
+
+  party.reorder([2, 0, 1, 3])
+  eq [3, 1, 2, 4], party.actors.map(&:id),
+     'index 2 (Actor3) leads, then the picked order of the rest'
+  eq 3, party.leader.id, 'the leader changed along with slot 0'
+  ok party.revision > before_revision, 'reordering bumps @revision like #promote_to_leader'
+
+  party.reorder([0, 1, 2, 3])
+  eq [3, 1, 2, 4], party.actors.map(&:id), 'the identity permutation (by current index) is a no-op order'
+end
+
 check 'Actors builds each id once and reports a missing row as nil' do
   roster = Game::Actors.new(roster_db)
   a = roster[1]

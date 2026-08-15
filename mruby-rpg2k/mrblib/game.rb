@@ -2562,6 +2562,22 @@ module Game
     def size; @actors.size; end
     def leader; @actors.first; end
 
+    # RPG2003's Order menu command: reassign the party's front-to-back order
+    # to `new_order`, a permutation of the current member indices (new_order[i]
+    # is which existing member becomes the i'th). Confirmed against EasyRPG's
+    # `Scene_Order`: the player picks members one at a time from the original
+    # roster to build exactly this array (`UpdateOrder`'s `actors[actor_counter]
+    # = window_left->GetIndex() + 1`), then `Confirm()` removes every member and
+    # re-adds them in that order -- #reorder applies the net effect directly
+    # rather than replaying the remove/re-add dance. Membership is unchanged,
+    # but the leader can be -- `#leader` is simply `@actors.first` -- which is
+    # why this bumps @revision the same as #promote_to_leader above, the
+    # existing precedent for a leader change with no membership change.
+    def reorder(new_order)
+      @actors = new_order.map { |i| @actors[i] }
+      @revision += 1
+    end
+
     def include_actor?(id); @actors.any? { |a| a.id == id }; end
     def actor_by_id(id); @actors.find { |a| a.id == id }; end
 
