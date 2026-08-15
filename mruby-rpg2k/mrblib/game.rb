@@ -7648,10 +7648,21 @@ module Game
     # agility term, which RPG_RT computes in `float` and truncates on its
     # implicit int conversion -- the two nearby agility-ratio formulas round
     # differently in the reference itself, not just here.
+    #
+    # "Delphi compatible rounding" is banker's rounding -- ties go to the
+    # nearest *even* integer, not always up (`std::lrint` under the default
+    # IEEE 754 `FE_TONEAREST` mode; EasyRPG's own `Utils::RoundTo` doc
+    # comment cites Delphi's own `Round()`, which is documented as exactly
+    # this). A prior version of this method used Ruby's `Float#round`, which
+    # rounds half *away from zero* -- the same rounding-mode gap
+    # `Game::Battle#fatigue` had (see `Game.round_half_even`'s own comment) --
+    # so an exact `.5` ratio (e.g. party average agility 200, enemy average
+    # 101: `100*101/200 = 50.5` precisely) rounded up to 51 here instead of
+    # EasyRPG's 50, landing the escape chance one point off (99 vs 100).
     def compute_escape_chance
       pa = avg_agi(@allies)
       ea = avg_agi(@enemies)
-      base = pa > 0 ? (100.0 * ea / pa).round : 100
+      base = pa > 0 ? Game.round_half_even(100 * ea, pa) : 100
       Game.clamp(150 - base, 0, 100)
     end
 
