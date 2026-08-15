@@ -4766,6 +4766,35 @@ class RPG2k
         ''
       end
 
+      # Show or hide the whole map view -- both tile layers, the parallax, the
+      # hero, the events and the vehicles, all of which live inside
+      # @map_viewport (z 100) or @upper_viewport (z 200).
+      #
+      # RPG2000's battle screen is a scene of its own in RPG_RT: `Scene_Battle`
+      # replaces `Scene_Map` outright, so no part of the map is on screen while
+      # a fight runs, and the chosen Backdrop/<name> image is all there is
+      # behind the troop. This port instead runs the fight inline on Scene::Map
+      # (gated on @battle_ui), and #render kept compositing the map every frame
+      # underneath it -- which put the map *over* the battle background, since
+      # the backdrop sprite's z 5 (EasyRPG Player's own `Priority_Background`,
+      # `src/drawable.h`, correct there precisely because no map is ever drawn
+      # beside it) is outranked by both map viewports, and the lower tile layer
+      # is opaque. The backdrop was resolved correctly (`Game::Backdrop`, the
+      # map-tree walk) and then drawn entirely behind the map graphics: every
+      # fight was fought over whatever chip layer the party happened to be
+      # standing on.
+      #
+      # Hidden for the fight's whole duration, and #render skips the tile /
+      # parallax / character compositing outright rather than leaving a stale
+      # frame hidden underneath -- the same treatment the picture layer already
+      # gets there. Both un-hide and redraw on the first frame after @battle_ui
+      # clears; the hero frame's own @last_frame cache is untouched by the
+      # skipped frames, so an unchanged pose is not needlessly rebuilt then.
+      def set_map_layers_visible(visible)
+        @map_viewport.visible = visible if @map_viewport
+        @upper_viewport.visible = visible if @upper_viewport
+      end
+
       def build_battle_back(name = nil)
         bmp = battle_back_bitmap(name)
         spr = Sprite.new
@@ -9191,17 +9220,29 @@ class RPG2k
         px, py = player_pixel
         cam_x, cam_y = camera_position
 
-        draw_parallax cam_x, cam_y
-        draw_layers cam_x, cam_y
+        # The map itself never shows on the battle screen -- see
+        # #set_map_layers_visible, which explains why the backdrop needs it gone
+        # rather than merely sitting above it.
+        if @battle_ui
+          set_map_layers_visible false
+        else
+          set_map_layers_visible true
+          draw_parallax cam_x, cam_y
+          draw_layers cam_x, cam_y
 
-        @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
-        @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
-                           player_jump_offset
-        # Reflect the Set Transparent Flag command (and any leader graphic flag)
-        # every frame so the hero hides/shows as events toggle it.
-        @player_sprite.visible = !player_hidden?
-        draw_player_frame
-        draw_vehicles cam_x, cam_y, px, py
+          @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
+          @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
+                             player_jump_offset
+          # Reflect the Set Transparent Flag command (and any leader graphic flag)
+          # every frame so the hero hides/shows as events toggle it.
+          @player_sprite.visible = !player_hidden?
+          draw_player_frame
+          draw_vehicles cam_x, cam_y, px, py
+        end
+        # Not gated: @animation_sprite is a top-level sprite (z 150, above the
+        # battlers) and #draw_map_animation drives the in-battle Show Battle
+        # Animation through the very same path as the map one -- see its own
+        # `ma[:battle]` branch.
         draw_map_animation cam_x, cam_y
 
         # Pictures never show on the battle screen (yado.tk / 01_shoshin's

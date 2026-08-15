@@ -10183,6 +10183,54 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
   ok sprite.visible, 'the picture layer reappears the instant the fight ends'
 end
 
+# RPG_RT's Scene_Battle replaces Scene_Map outright, so the map is not on
+# screen during a fight at all -- the Backdrop/<name> image is the whole
+# background. This port runs the fight inline on Scene::Map, and #render used
+# to keep compositing the map every frame underneath it: the backdrop sprite's
+# z 5 (EasyRPG's Priority_Background) is outranked by @map_viewport (z 100) and
+# @upper_viewport (z 200), and the lower tile layer is opaque, so the correctly
+# resolved backdrop was drawn entirely behind the map graphics.
+check 'the map is hidden while the battle screen is up, so the backdrop actually shows' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, _st = battle_scene_with_pages(pages)
+  vp = scene.instance_variable_get(:@map_viewport)
+  upper = scene.instance_variable_get(:@upper_viewport)
+  lower_bmp = scene.instance_variable_get(:@lower_bmp)
+
+  10.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui)
+    # `!= false` rather than a plain truth test: RGSS::Viewport#visible
+    # defaults to true on the real backend but nil on this stub, so a bare
+    # `ok vp.visible` here would be asserting the stub's default, not the
+    # behaviour. The fight's own hide/show below is checked exactly instead.
+    ok vp.visible != false, 'the map view draws normally before any fight opens'
+    ok upper.visible != false, 'and so does the above-character layer'
+    ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers do composite'
+  end
+  ui = scene.instance_variable_get(:@battle_ui)
+  ok ui, 'the battle opened'
+  ok ui[:back_sprite], 'the fight has a battle background sprite'
+  ok ui[:back_sprite].z < vp.z, 'whose z sits below the map viewport ...'
+  ok ui[:back_sprite].z < upper.z, '... and below the upper-layer viewport'
+  eq false, vp.visible, 'so the map view is hidden the instant the battle screen is up'
+  eq false, upper.visible, 'and so is the above-character layer'
+  lower_bmp.clear_blt_calls
+  scene.update
+  eq 0, (lower_bmp.blt_calls || []).size,
+     'and the tile layers stop compositing entirely while the fight runs'
+
+  20.times do
+    scene.update
+    break if scene.instance_variable_get(:@battle_ui).nil?
+  end
+  eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
+  eq true, vp.visible, 'the map view reappears the instant the fight ends'
+  eq true, upper.visible, 'and so does the above-character layer'
+  ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers composite again'
+end
+
 # yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the
 # enclosing Enemy Encounter's [Victory] nor [Escape]/[Defeat] handler branch --
 # it resumes right after Branch End, an unlabeled third outcome -- and only
