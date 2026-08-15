@@ -9788,14 +9788,28 @@ module Game
     end
 
     # The most disruptive "forced action" restriction among `b`'s states (0 = act
-    # normally). A "do nothing" state has already skipped the turn upstream, so
-    # only the attack-enemy / attack-ally restrictions matter here; the higher
-    # value (attack-ally) wins when several are present.
+    # normally). This is *not* a numeric max over the restriction constants --
+    # EasyRPG's `State::GetSignificantRestriction` (src/state.cpp) walks every
+    # afflicted state and tracks a fixed priority hierarchy, do_nothing >
+    # attack_enemy (berserk) > attack_ally (confusion) > normal, with
+    # asymmetric upgrade rules: attack_enemy overrides attack_ally or normal,
+    # but attack_ally only ever overrides normal (never attack_enemy), and
+    # do_nothing short-circuits immediately regardless of what else is
+    # present. Matches デフォ戦bot's own trivia: berserk beats confusion when
+    # both are active simultaneously, even though RESTRICTION_ATTACK_ALLY is
+    # numerically the larger constant.
     def battler_restriction(b)
       r = 0
       (b.states || []).each do |id|
         v = state_field(state_def(id), :restriction)
-        r = v if v > r && (v == RESTRICTION_ATTACK_ENEMY || v == RESTRICTION_ATTACK_ALLY)
+        case v
+        when RESTRICTION_DO_NOTHING
+          return RESTRICTION_DO_NOTHING
+        when RESTRICTION_ATTACK_ENEMY
+          r = RESTRICTION_ATTACK_ENEMY if r == 0 || r == RESTRICTION_ATTACK_ALLY
+        when RESTRICTION_ATTACK_ALLY
+          r = RESTRICTION_ATTACK_ALLY if r == 0
+        end
       end
       r
     end

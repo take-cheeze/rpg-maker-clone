@@ -10928,6 +10928,40 @@ check 'battle: a berserk battler (restriction 2) attacks despite defending' do
   eq 80, slime.hp                                         # ...but berserk forced a 20 hit
 end
 
+# デフォ戦bot (@2000_battle_bot) trivia, confirmed against EasyRPG's own
+# State::GetSignificantRestriction (src/state.cpp): "同時に暴走と混乱の状態に
+# なった場合、暴走が優先されて敵を攻撃する" -- Berserk (attack-enemy) beats
+# Confusion (attack-ally) when both are inflicted simultaneously. That C++
+# resolves a *fixed priority hierarchy* by restriction type (do_nothing >
+# attack_enemy > attack_ally > normal) while scanning every afflicted state,
+# not a numeric max of the raw restriction constants -- RESTRICTION_ATTACK_ALLY
+# (3) is numerically larger than RESTRICTION_ATTACK_ENEMY (2), so a naive
+# `v > r` comparison gets this backwards and lets Confusion win instead.
+check 'battler_restriction: Berserk (attack_enemy) beats Confusion (attack_ally) together' do
+  states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0),   # attack-ally (confusion)
+             7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) }  # attack-enemy (berserk)
+  both = combatant('Both', 40, 0, 20, 100)
+  both.states = [6, 7]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([both], [slime], Game::Rng.new(1), states)
+  eq Game::Battle::RESTRICTION_ATTACK_ENEMY, bat.send(:battler_restriction, both),
+     'berserk must win over confusion regardless of the states array order'
+  both.states = [7, 6] # order must not matter: berserk still wins reversed
+  eq Game::Battle::RESTRICTION_ATTACK_ENEMY, bat.send(:battler_restriction, both)
+end
+
+check 'battler_restriction: a do_nothing state short-circuits over attack_enemy/attack_ally' do
+  states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0),   # attack-ally (confusion)
+             7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0),   # attack-enemy (berserk)
+             8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) }  # do-nothing (asleep/paralysed)
+  all_three = combatant('AllThree', 40, 0, 20, 100)
+  all_three.states = [6, 7, 8]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([all_three], [slime], Game::Rng.new(1), states)
+  eq Game::Battle::RESTRICTION_DO_NOTHING, bat.send(:battler_restriction, all_three),
+     'do_nothing outranks both forced-attack restrictions, wherever it sits in the list'
+end
+
 # デフォ戦botまとめ: "Berserk/Confusion override target selection but still
 # honour 'hits twice'/'ignores evasion,' while Berserk additionally collapses
 # an 'attack all' weapon down to a single target and disables 'always acts
