@@ -30,27 +30,27 @@ by wall-clock instead folds in the fps-cap sleep and understates every section.
 
 ## Baseline: RPG2000 / Nepheshel, map scene
 
-1364 frames over 24.8s, `RelWithDebInfo` (the project default), 320x240,
+1405 frames over 24.8s, `RelWithDebInfo` (the project default), 320x240,
 software rendering under Xvfb. Percentages are of **CPU work**, not wall clock.
 
 | section | calls | avg ms | max ms | % work |
 | --- | ---: | ---: | ---: | ---: |
-| `scene.update` | 1365 | 5.00 | 563.35 | 55.3% |
-| `gfx.lvgl` | 1364 | 3.80 | 29.64 | 41.9% |
-| ` map.render` | 1364 | 3.39 | 29.28 | 37.4% |
-| ` map.layers` | 1365 | 2.47 | 28.33 | 27.3% |
-| ` map.pictures` | 1365 | 0.76 | 0.92 | 8.4% |
-| ` map.refresh_pages` | 1364 | 0.10 | 9.50 | 1.1% |
-| `input.update` | 1365 | 0.05 | 0.17 | 0.6% |
-| ` map.overlay` | 1365 | 0.04 | 0.18 | 0.4% |
-| `audio.music_load` | 1 | 34.32 | 34.32 | 0.3% |
-| ` map.chars` | 1365 | 0.02 | 0.19 | 0.2% |
-| `gfx.invalidate` | 1364 | 0.02 | 0.12 | 0.2% |
-| ` map.animate_events` | 1364 | 0.01 | 0.13 | 0.2% |
-| `audio.update` | 1365 | 0.0002 | 0.0004 | 0.0% |
+| `scene.update` | 1406 | 4.69 | 536.65 | 54.0% |
+| `gfx.lvgl` | 1405 | 3.75 | 15.39 | 43.2% |
+| ` map.render` | 1405 | 3.16 | 21.83 | 36.4% |
+| ` map.layers` | 1406 | 2.25 | 20.84 | 26.0% |
+| ` map.pictures` | 1406 | 0.76 | 0.96 | 8.7% |
+| ` map.refresh_pages` | 1405 | 0.09 | 0.34 | 1.0% |
+| `input.update` | 1406 | 0.05 | 0.21 | 0.6% |
+| ` map.overlay` | 1406 | 0.04 | 0.29 | 0.4% |
+| `audio.music_load` | 1 | 32.64 | 32.64 | 0.3% |
+| ` map.chars` | 1406 | 0.02 | 0.12 | 0.2% |
+| `gfx.invalidate` | 1405 | 0.02 | 0.10 | 0.2% |
+| ` map.animate_events` | 1405 | 0.01 | 0.09 | 0.1% |
+| `audio.update` | 1406 | 0.0002 | 0.0004 | 0.0% |
 
-Headline: **9.1ms of work per frame against a 16.67ms budget**, running at
-55fps. Allocation churn is ~30,000 mruby allocations/second.
+Headline: **8.7ms of work per frame against a 16.67ms budget**, running at
+57fps. Allocation churn is ~30,000 mruby allocations/second.
 
 This is the state *after* the map-layer work described below. The same run
 before it sat at **20fps and 34.1ms a frame** — over budget on every single
@@ -112,7 +112,17 @@ two apart.
 alpha-blending onto a surface that had just been cleared. `Bitmap#copy_blt`
 does the same job as a row-wise `memcpy`, taking the copy path to ~1.8ms.
 
-Net: `map.layers` 22.7ms → 2.5ms, frame work 34.1ms → 9.1ms, 20fps → 55fps,
+**(3) The upper layer's blank chip is not drawn.** RPG2000's first upper-layer
+id (`BLOCK_F`) means "nothing here", and real data is very nearly all of it —
+98.45% of the 584,049 upper cells across Nepheshel's 543 maps — so a rebuild
+was blitting a fully transparent chipset cell ~330 times for no pixels. That
+is 28% of a rebuild (16.5ms → 11.8ms), which matters more than its share of
+the average suggests: the rebuild is the spike that drops frames. Note it is a
+*drawing* sentinel only — the blank id still indexes entry 0 of the chipset's
+upper passability table, a real lookup, so `ChipsetLayout.upper_blank?` must
+never be used to skip one.
+
+Net: `map.layers` 22.7ms → 2.3ms, frame work 34.1ms → 8.7ms, 20fps → 57fps,
 and 96% of frames now skip the rebuild entirely.
 
 `gfx.lvgl` (3.8ms, the LVGL render and flush) is now the largest single cost
@@ -142,9 +152,20 @@ driven to the same input-gated point in Nepheshel's opening (`--no_render_wait`
 so the frame-driven waits do not desynchronise two builds running at different
 frame rates). **The map region is pixel-identical — zero differing pixels over
 640x435**, tile layers, autotiles, furniture and character sprites included.
-`scripts/rpg2k_scene_check.rb` covers the invalidation directly: a frame that
-changed nothing must not re-blit a single tile, and a tile crossing, a Tile
-Substitution and an animation step the visible tiles follow each must rebuild.
+Skipping the blank upper chip was diffed the same way and came out identical
+over the *whole* frame, which is the direct evidence that the chip it stopped
+drawing really was fully transparent rather than merely assumed to be.
+
+`scripts/rpg2k_scene_check.rb` covers the behaviour directly: a frame that
+changed nothing must not re-blit a single tile; a tile crossing, a Tile
+Substitution and an animation step the visible tiles follow must each rebuild;
+and a map whose upper layer is entirely the blank id must cost exactly its
+lower layer while still answering passability through that id.
+
+Worth repeating for anyone extending this: the failure mode of a render cache
+is silence. Too eager and it only costs speed, but too lazy and the picture is
+simply wrong, with nothing raising. The invalidation checks are the part of
+this work most worth keeping honest.
 
 ## Audio: what is already off the main thread
 
@@ -170,7 +191,7 @@ the profile prices it at essentially nothing:
 
 So moving "audio processing" to a worker thread would move work that is
 already elsewhere, and would buy ~0.0002ms/frame. It was never where the frame
-went — not at the 34.1ms this page originally measured, and still not at 9.1ms.
+went — not at the 34.1ms this page originally measured, and still not at 8.7ms.
 
 ### The part that *is* worth moving: asset load
 

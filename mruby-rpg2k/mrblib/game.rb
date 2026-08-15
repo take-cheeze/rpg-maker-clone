@@ -865,6 +865,24 @@ module Game
       @quads_cache[key] = uncached_quads(b, id, abf, cf)
     end
 
+    # Whether an upper-layer id draws nothing, so the renderer can skip it.
+    #
+    # Two ids mean "no upper tile here". BLOCK_F -- the *first* upper id -- is
+    # the reserved blank chip, and it is what upper-layer map data is very
+    # nearly all made of: 98.45% of the 584,049 upper cells across Nepheshel's
+    # 543 maps, with the other 1.55% spread over 141 real ids. Drawing it
+    # blitted the chipset's blank cell ~330 times per grid rebuild for no
+    # pixels. A raw 0 is the other sentinel; no real map here uses it (it does
+    # not appear once in those 543 maps), but the lower layer's own ids start
+    # at 0, so a stray one must not be fed to .quads as water set 0.
+    #
+    # Rendering only. The blank id still indexes entry 0 of the chipset's
+    # upper *passability* table, which Game::ChipSet#upper_flags reads for
+    # real -- so this must not be used to skip a passability lookup.
+    def self.upper_blank?(id)
+      id.nil? || id == 0 || id == BLOCK_F
+    end
+
     # Which of the two animation inputs a tile id's quads actually move with:
     # :abf for the block A/B autotiles (every quarter takes its chipset column
     # from it -- see .water_quads), :cf for the block C animated chips, or nil

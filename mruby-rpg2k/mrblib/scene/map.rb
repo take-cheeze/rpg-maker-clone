@@ -9734,15 +9734,17 @@ class RPG2k
 
             lower = @map.lower(tx, ty)
             upper = @map.upper(tx, ty)
+            upper_drawn = !Game::ChipsetLayout.upper_blank?(upper)
             note_anim_input lower
-            note_anim_input upper if upper && upper != 0
+            note_anim_input upper if upper_drawn
 
             if @chipset_bmp
               draw_tile @lower_tiles, lower, dx, dy, abf, cf
-              # 0 means "no upper tile" (the upper layer's own ids start at
-              # BLOCK_F); on the lower layer the same value is water set 0, so
-              # only this call may skip it. See Game::ChipsetLayout.block.
-              if upper && upper != 0
+              # Nothing to draw for the two "no upper tile here" ids -- the
+              # reserved blank chip the upper layer is almost entirely made of,
+              # and a raw 0. Only this call may skip them: on the lower layer 0
+              # is water set 0, a real tile. See ChipsetLayout.upper_blank?.
+              if upper_drawn
                 # Only a starred ("above hero") upper tile belongs in the
                 # buffer that composites over the player/events -- see
                 # Game::ChipSet#elevated? and its ABOVE_BIT comment. An
@@ -9760,7 +9762,7 @@ class RPG2k
             else
               # Fallback: solid colour blocks keyed by tile id (no chipset image).
               @lower_tiles.fill_rect dx, dy, TILE, TILE, tile_color(lower)
-              @upper_tiles.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
+              @upper_tiles.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper_drawn
             end
           end
         end
