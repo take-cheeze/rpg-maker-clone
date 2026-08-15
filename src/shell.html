@@ -73,6 +73,11 @@
         background: #000;
         border: 1px solid var(--border);
         border-radius: 6px;
+        /* The page-wide border-box rule would take the 1px border out of the
+           size fitCanvas() sets, leaving a fractional scale (638/320 instead of
+           2) that resamples every game pixel. This is the one element whose CSS
+           size has to be the pixel grid itself, so keep the border outside it. */
+        box-sizing: content-box;
         /* SDL sets the intrinsic pixel size -- one canvas pixel per game pixel,
            since the browser display is never zoomed engine-side (src/main.cxx).
            The zooming happens here: fitCanvas() below sets an explicit CSS size
@@ -890,12 +895,17 @@
         function fitCanvas() {
           if (!sized()) return;
           var w = canvas.width, h = canvas.height;
-          // Body padding is 16px a side (see the stylesheet above).
-          var avail = (document.documentElement.clientWidth || w) - 32;
+          // Body padding is 16px a side, and the canvas's own border sits
+          // outside the size set below (see the stylesheet above); both come off
+          // the width the game screen itself may use.
+          var frame = canvas.offsetWidth - canvas.clientWidth;
+          var avail = (document.documentElement.clientWidth || w) - 32 - frame;
+          // A screen with room for the whole-number zoom gets it, so every game
+          // pixel is the same size. A narrower one fills the width it has
+          // instead of dropping to the next whole number, which is what
+          // `max-width: 100%` did before and keeps the screen as large as the
+          // phone allows.
           var zoom = Math.min(preferredZoom(w), avail / w);
-          // Whole-number scales keep every game pixel the same size. Only a
-          // screen too narrow for 1:1 gets a fractional one, to fit the width.
-          if (zoom >= 1) zoom = Math.floor(zoom);
           canvas.style.width = Math.round(w * zoom) + 'px';
           canvas.style.height = Math.round(h * zoom) + 'px';
         }
