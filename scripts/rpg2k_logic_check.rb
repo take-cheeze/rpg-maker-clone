@@ -9167,6 +9167,63 @@ class FixedRng
   def random(n); n <= 0 ? 0 : @value % n; end
 end
 
+# ランダムに出現 (Appear Randomly, chunk 15 field 6): parsed but never read
+# before this fix -- every troop with the box checked behaved exactly like
+# one without it. Ports EasyRPG's actual C++ source, `Game_EnemyParty
+# ::ResetBattle` (src/game_enemyparty.cpp): a per-member
+# `Rand::PercentChance(40)` roll in member order, stopping the instant only
+# one member is left visible.
+AppearRandomRow = Struct.new(:name, :members, :appear_randomly)
+
+def appear_random_db(flag: true)
+  BattleDB.new(
+    { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10) },
+    { 1 => AppearRandomRow.new('Mob', { 1 => GroupMember.new(2, 0, 0, false),
+                                        2 => GroupMember.new(2, 0, 0, false),
+                                        3 => GroupMember.new(2, 0, 0, false),
+                                        4 => GroupMember.new(2, 0, 0, false) }, flag) })
+end
+
+check 'Game::Troop honours Appear Randomly: a 40% per-member roll hides all ' \
+      'but the last visible member' do
+  db = appear_random_db
+  troop = Game::Troop.new(db, 1, FixedRng.new(0)) # a roll of 0 always succeeds (< 40)
+  eq 1, troop.members.count { |m| !m.hidden }, 'exactly one member stays visible'
+  eq 3, troop.members.count(&:hidden)
+end
+
+check 'Appear Randomly succeeds on a roll under 40, not on 40 itself' do
+  db = appear_random_db
+  hides = Game::Troop.new(db, 1, FixedRng.new(39)).members.count(&:hidden)
+  ok hides > 0, 'a roll of 39 (< 40) succeeds'
+  no_hides = Game::Troop.new(db, 1, FixedRng.new(40)).members.count(&:hidden)
+  eq 0, no_hides, 'a roll of 40 (not < 40) never succeeds'
+end
+
+check 'Appear Randomly leaves every member visible without the flag set, or ' \
+      'without an RNG handed in at all' do
+  eq 0, Game::Troop.new(appear_random_db(flag: false), 1, FixedRng.new(0)).members.count(&:hidden),
+     'the flag is off -- an always-succeeding roll still hides nobody'
+  eq 0, Game::Troop.new(appear_random_db, 1).members.count(&:hidden),
+     'no RNG handed in at all -- the pass is skipped entirely, not rolled against a default'
+end
+
+check 'Appear Randomly never re-rolls a member already individually flagged ' \
+      'invisible' do
+  db = BattleDB.new(
+    { 2 => EnemyRow.new('Slime', 30, 0, 8, 4, 3, 5, 5, 10) },
+    { 1 => AppearRandomRow.new('Mob', { 1 => GroupMember.new(2, 0, 0, true), # already invisible
+                                        2 => GroupMember.new(2, 0, 0, false),
+                                        3 => GroupMember.new(2, 0, 0, false) }, true) })
+  troop = Game::Troop.new(db, 1, FixedRng.new(0)) # always succeeds
+  # 2 members start visible; the roll stops once only 1 remains, so exactly
+  # one of the two gets hidden -- the already-invisible member is never
+  # touched by the loop at all.
+  eq 2, troop.members.count(&:hidden), 'the pre-invisible member plus one newly-rolled one'
+  ok troop.members[0].hidden, 'the already-invisible member stays hidden (never re-rolled)'
+  ok !troop.members[2].hidden, 'the loop stopped once one member was left visible'
+end
+
 check 'battle: the crit roll is read against a whole-percent scale' do
   # A rate of N must crit on a roll of N-1 and not on N -- EasyRPG's
   # Rand::PercentChance(int rate), `GetRandomNumber(0, 99) < rate`.

@@ -6519,6 +6519,48 @@ not yet verified:
   separately covered, matching its own foreground counterpart's existing
   test shape (mode is the only difference from Open Save Menu, already
   proven by the pre-existing foreground Load Menu check).
+- ✅ **A troop's ランダムに出現 (Appear Randomly, chunk 15 field 6) option is now
+  honoured: a flagged troop's own members can start a fight already hidden,
+  instead of every member always showing up regardless of the setting.**
+  The field was parsed by neither the schema nor any runtime code — a "parsed
+  but never read" gap one level up from the usual case, since it was never
+  even decoded out of the .ldb data at all. Confirmed against EasyRPG's
+  actual C++ source: `Game_EnemyParty::ResetBattle`
+  (`src/game_enemyparty.cpp`) rolls each initially-visible member for a flat
+  `Rand::PercentChance(40)` chance to start hidden instead, in member order,
+  stopping the instant only one member is left visible (a fight always needs
+  at least one visible foe to open against) — unconditional on RPG2000 vs
+  RPG2003 or the battle system, gated only on the troop's own
+  `appear_randomly` bool. `mruby-lcf/mrblib/schema.rb`'s `enemy_group`
+  (chunk 15) element table declared fields 1/2/4/5/11 but never 3
+  (`auto_alignment`, a separate, unrelated battle-formation feature not
+  investigated here) or 6 (`appear_randomly`), and `Game::Troop#initialize`
+  (`mruby-rpg2k/mrblib/game.rb`) built `@members` purely from each member's
+  own static `invisible` field, with no troop-level random-hide pass
+  anywhere in `game.rb`/`interpreter.rb`/`scene/battle.rb`. Concretely: a
+  4-member "Slime Swarm" troop with the box checked and every member
+  visible — real RPG_RT/EasyRPG rolls each of the 4 independently (stopping
+  once only 1 remains showing), so anywhere from 1 to 4 slimes actually
+  appear, varying fight to fight, with EXP/gold/drops scaling accordingly
+  (only non-hidden/dead members count, per the already-shipped "Troop
+  EXP/gold/drops exclude a member still hidden" fix above); this build
+  always showed all 4, every single time, forever — the intended
+  easier/harder variable-encounter design was silently absent. Fixed by
+  adding field 6 to the schema and a new `Game::Troop
+  #apply_appear_randomly(row, rng)`, called from `#initialize` (now taking
+  an optional third `rng` parameter) and reproducing EasyRPG's loop exactly
+  — an already-individually-invisible member (its own separate `invisible`
+  field) is skipped, never re-rolled or counted against the "one must stay
+  visible" floor. `Scene::Battle#start`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) now passes its own `@rng` through
+  to `Game::Troop.new`; every other caller (the seeded harness fixtures
+  included) passes none, which skips the whole pass and keeps building a
+  troop deterministically, exactly as before. Covered by four new
+  `scripts/rpg2k_logic_check.rb` checks — the core roll-until-one-remains
+  behaviour, the exact `< 40` (not `<= 40`) threshold, the flag/no-RNG
+  no-op cases, and the already-invisible-member-is-skipped case — all four
+  confirmed to fail against the pre-fix code (`ArgumentError`, since
+  `Troop.new` didn't even accept a third argument yet) before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
