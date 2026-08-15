@@ -14499,6 +14499,36 @@ check 'a transformation into an unknown enemy degrades to an attack' do
   eq 20, e[:damage]
 end
 
+# A "true form" boss trick -- transforming into a form with a *smaller* max
+# HP/SP than the current values must not full-heal-then-clamp them down.
+# EasyRPG's `Game_Enemy::Transform` (src/game_enemy.cpp) only ever repoints
+# the `enemy` database row and refreshes the sprite; it never touches hp/sp
+# at all (those are set to the max exactly once, in the constructor, on the
+# enemy's very first spawn). `Game_BattleAlgorithm::Transform`'s own
+# `ApplyCustomEffect` never calls `SetAffectedHp`/`SetAffectedSp` either, so
+# the generic post-effect pass (`GetAffectedHp() == 0`) is a no-op for it.
+check 'a transformation carries current HP/SP over unchanged, not reclamped to the new maxima' do
+  row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                   :agility, :exp, :gold).new('Weak Slime', 100, 10, 5, 2, 2,
+                                              5, 0, 0)
+  db = Struct.new(:enemy).new({ 1 => row })
+  ai = Game::EnemyAi.new(db, new_state)
+  # def 80 makes the hero's own preceding basic-attack turn (it goes first,
+  # being faster) land for 0 damage, so the transform's own hp/sp handling is
+  # what this check is isolating -- the pre-existing default-hero attack step
+  # in #enemy_entry is otherwise unavoidable.
+  foe = combatant('Slime King', 90, 80, 5, 950) # 950 current HP
+  foe.max_hp = 1000 # ...out of a 1000 max, about to drop to a 100-max form
+  foe.mp = 40
+  foe.max_mp = 50
+  e = enemy_entry([enemy_action(kind: 2, enemy_id: 1)], ai, foe: foe)
+  eq true, e[:transform]
+  eq 100, foe.max_hp, "the new form's own max"
+  eq 950, foe.hp, 'current HP carries over completely unchanged, above the new max'
+  eq 10, foe.max_mp
+  eq 40, foe.mp, 'current SP carries over unchanged too'
+end
+
 # -- the database path ---------------------------------------------------------
 
 check 'Game::Enemy decodes its action pattern off the database row' do
