@@ -21,6 +21,25 @@ namespace {
 // cache writeback.
 uint16_t* g_fb = nullptr;
 
+// Physical-pixel offset of the logical canvas's (0, 0) origin, set once by
+// psp_display_create() from the requested hor_res/ver_res. RPG2k's native
+// 320x240 is smaller than the 480x272 panel in both dimensions, so it is
+// centered with a positive offset (black bars, no scaling). RPG XP's 640x480
+// and RPG VX/VX Ace's 544x416 are each larger than the panel in *both*
+// dimensions (they were designed for a desktop window, not a handheld LCD) --
+// there is no offset that fits them, so they get a negative offset instead,
+// centering a same-scale *window* onto the middle of the game's own canvas:
+// content runs at its correct native resolution and everything RGSS-side
+// (Graphics.width/height, mouse-free coordinate math) is unaffected, but
+// anything drawn near an edge of a XP/VX screen -- a window docked in a
+// corner, say -- falls outside the visible 480x272 and is simply never
+// flushed. flush_cb clips every row to the panel's bounds either way, so
+// this is a real, known limitation (not full-canvas scaling, which would
+// need per-pixel resampling this bring-up doesn't attempt) but not a
+// correctness or memory-safety one.
+int32_t g_offset_x = 0;
+int32_t g_offset_y = 0;
+
 // LVGL partial-render draw buffers, in main RAM. Quarter-screen each
 // (480 * 68 * 2 = ~64 KB); two buffers let LVGL render one while the other is
 // being copied out. The PSP has ~24 MB of user RAM, so unlike the Wio backend
@@ -41,8 +60,14 @@ void delay_cb(uint32_t ms) {
 }
 
 // Copy one rendered rectangle into the VRAM framebuffer. LVGL hands RGB565
-// pixels packed at the rectangle's own width; the framebuffer has a fixed
-// 512-pixel line stride, so each row is copied to its (x, y) offset there.
+// pixels packed at the rectangle's own width, in the *logical* canvas's
+// coordinate space; g_offset_x/g_offset_y translate that into panel-relative
+// coordinates (see the comment above them), and every row is clipped to the
+// panel's actual 480x272 bounds before it is copied -- required whenever the
+// logical canvas is larger than the panel (RPG XP/VX/VX Ace), since an
+// unclipped row or column would land outside g_fb's PSP_BUF_WIDTH * 272
+// allocation. The framebuffer's fixed 512-pixel line stride is accounted for
+// in the destination row stride either way.
 //
 // NOTE: the PSP's 565 display format is BGR-ordered (red in the low 5 bits)
 // while LVGL's RGB565 puts red high, so the red/blue channels are swapped on
@@ -55,9 +80,27 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   const uint16_t* src = reinterpret_cast<const uint16_t*>(px_map);
 
   for (int32_t row = 0; row < h; ++row) {
-    uint16_t* dst = g_fb + (area->y1 + row) * PSP_BUF_WIDTH + area->x1;
-    std::memcpy(dst, src, static_cast<size_t>(w) * 2);
+    const int32_t dst_y = area->y1 + row + g_offset_y;
+    const uint16_t* row_src = src;
     src += w;
+    if (dst_y < 0 || dst_y >= PSP_SCR_HEIGHT)
+      continue;
+
+    int32_t dst_x = area->x1 + g_offset_x;
+    int32_t copy_w = w;
+    if (dst_x < 0) {
+      // The row's first -dst_x source pixels land left of the panel.
+      row_src -= dst_x;
+      copy_w += dst_x;
+      dst_x = 0;
+    }
+    if (dst_x + copy_w > PSP_SCR_WIDTH)
+      copy_w = PSP_SCR_WIDTH - dst_x;
+    if (copy_w <= 0)
+      continue;
+
+    uint16_t* dst = g_fb + dst_y * PSP_BUF_WIDTH + dst_x;
+    std::memcpy(dst, row_src, static_cast<size_t>(copy_w) * 2);
   }
 
   lv_display_flush_ready(disp);
@@ -78,6 +121,13 @@ lv_display_t* psp_display_create(int32_t hor_res, int32_t ver_res) {
 
   lv_tick_set_cb(tick_cb);
   lv_delay_set_cb(delay_cb);
+
+  // Center the logical canvas on the panel (see the g_offset_x/y comment
+  // above): positive when it is smaller than the panel (RPG2k's 320x240),
+  // negative when larger (RPG XP/VX/VX Ace), either way computed once here
+  // rather than per flush.
+  g_offset_x = (PSP_SCR_WIDTH - hor_res) / 2;
+  g_offset_y = (PSP_SCR_HEIGHT - ver_res) / 2;
 
   lv_display_t* disp = lv_display_create(hor_res, ver_res);
   if (!disp)

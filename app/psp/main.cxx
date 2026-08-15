@@ -1,5 +1,5 @@
-// PlayStation Portable EBOOT entry point -- HAL bring-up plus the real RPG2k
-// scene tree.
+// PlayStation Portable EBOOT entry point -- HAL bring-up plus the real
+// RPG2k/XP/VX/VX Ace scene tree.
 //
 // This slice proves the HAL compiles and runs on the PSP and that libmruby.a
 // (built for the psp target by build_config.rb, linked in via
@@ -7,19 +7,36 @@
 // stands up the LVGL display (psp_display_create), scans the pad
 // (psp_input_scan), draws a small status screen that echoes the pressed keys,
 // opens an mruby interpreter (mrb_open), and -- if a project is present at
-// kGameDir -- constructs RPG2k and drives its per-frame #main_loop the same
-// way the Emscripten build drives it from rpg_start_game's callback (mruby's
-// gems are already registered the moment mrb_open() returns; nothing extra
-// wires RGSS in, since libmruby.a's gem_init runs every bundled gem, RPG2k
-// included -- see build_config.rb's rpg_maker_gems). main() owns the loop and
-// pumps LVGL once per iteration when no game is running, and through
-// RPG2k#main_loop's own Graphics.update (which flushes LVGL and polls the pad
-// via rgss_psp_poll, mruby-rgss/src/psp_input_bridge.cxx) once one is -- the
-// same "host owns the loop" shape the Emscripten and Wio builds use. Its
-// per-second heartbeat also reports real free-memory and LVGL-pool numbers
-// (see the RPG2K_PSP_BRINGUP marker below), which is ADR 0047's P1: measuring
-// the HAL's own footprint on real hardware/an emulator, now against a real
+// kGameDir -- constructs the detected maker's game class (RPG2k/RPGXP/RPGVX)
+// and drives its per-frame #main_loop the same way the Emscripten build
+// drives it from rpg_start_game's callback (mruby's gems are already
+// registered the moment mrb_open() returns; nothing extra wires RGSS in,
+// since libmruby.a's gem_init runs every bundled gem -- see
+// build_config.rb's rpg_maker_gems). main() owns the loop and pumps LVGL
+// once per iteration when no game is running, and through the game's own
+// Graphics.update (which flushes LVGL and polls the pad via rgss_psp_poll,
+// mruby-rgss/src/psp_input_bridge.cxx) once one is -- the same "host owns
+// the loop" shape the Emscripten and Wio builds use. Its per-second
+// heartbeat also reports real free-memory and LVGL-pool numbers (see the
+// RPG2K_PSP_BRINGUP marker below), which is ADR 0047's P1: measuring the
+// HAL's own footprint on real hardware/an emulator, now against a real
 // game's usage once one is present at kGameDir instead of just the idle HAL.
+//
+// The display is created at each maker's *native* logical resolution
+// (RPG2k 320x240, RPGXP 640x480, RPGVX/VX Ace 544x416 -- matching
+// RPGXP_WIDTH/RPGVX_WIDTH in src/main.cxx), not the PSP panel's fixed
+// 480x272: RGSS::Graphics.width/height and everything the game draws derive
+// directly from the LVGL display's own resolution
+// (lv_display_get_horizontal_resolution in mruby-rgss/src/lib.cxx), so
+// creating it at the panel's resolution instead would silently distort
+// every game's own coordinate math. mruby-rgss/src/psp.cxx centers that
+// logical canvas on the panel and clips whatever falls outside it -- for
+// RPG2k, comfortably smaller than the panel in both dimensions, that is
+// just letterboxing; for RPGXP/RPGVX, both larger than the panel in both
+// dimensions (they were designed for a desktop window), that means only a
+// same-scale, centered *window* onto the game's own screen is ever visible
+// -- a real, known limitation (not full-canvas scaling, which this bring-up
+// does not attempt), not a correctness or memory-safety one.
 //
 // mrb_open() here uses mruby's own default allocator (plain malloc) rather
 // than routing through lv_malloc the way the desktop build does -- ADR 0047's
@@ -58,11 +75,7 @@ const char* const kKeyNames[PSP_INPUT_KEY_COUNT] = {
 // this same PSP/GAME/rpg2k directory). One EBOOT, one game, no in-app project
 // picker: unlike the desktop build (--game_dir) or the browser build (the
 // page's own loader unzips a project at runtime), there is no way for this
-// build to be told a different location at launch. RPG2k (RPG_RT.ldb) is the
-// only maker checked -- ADR 0010 scopes the PSP port to "starting the real
-// RPG2k scene tree", not XP/VX/VX Ace; those can follow the same pattern
-// (mirroring the desktop/Emscripten maker-detection chain in src/main.cxx)
-// once this path is proven.
+// build to be told a different location at launch.
 const char kGameDir[] = "ms0:/PSP/GAME/rpg2k";
 
 bool file_exists(const char* path) {
@@ -71,6 +84,66 @@ bool file_exists(const char* path) {
     return false;
   std::fclose(f);
   return true;
+}
+
+bool path_exists(const char* dir, const char* rel) {
+  char buf[96];
+  std::snprintf(buf, sizeof(buf), "%s/%s", dir, rel);
+  return file_exists(buf);
+}
+
+// An RPG Maker VX / VX Ace project: mirrors is_rpgvx_game in src/main.cxx.
+// Checked before the XP predicate below, which only looks for Game.ini -- a
+// VX project has one too.
+bool is_rpgvx_game(const char* gd) {
+  return path_exists(gd, "Data/System.rvdata2") ||
+         path_exists(gd, "Data/System.rvdata") ||
+         path_exists(gd, "Game.rgss3a") || path_exists(gd, "Game.rgss2a");
+}
+
+// An RPG Maker XP project: mirrors is_xp_game in src/main.cxx.
+bool is_xp_game(const char* gd) {
+  if (is_rpgvx_game(gd))
+    return false;
+  const bool xp_data =
+      path_exists(gd, "Data/System.rxdata") || path_exists(gd, "Game.rgssad");
+  return path_exists(gd, "Game.ini") && xp_data;
+}
+
+// The mruby class to construct and the LVGL display resolution to create for
+// it -- see the file-level comment on why this has to be each maker's own
+// native resolution, not the panel's.
+struct GameInfo {
+  const char* class_name;
+  int32_t width;
+  int32_t height;
+};
+
+// RPG Maker 2000/2003's native screen size, matching src/main.cxx's --width/
+// --height defaults. RPGXP_WIDTH/HEIGHT and RPGVX_WIDTH/HEIGHT there are the
+// other two.
+constexpr int32_t kRpg2kWidth = 320;
+constexpr int32_t kRpg2kHeight = 240;
+constexpr int32_t kXpWidth = 640;
+constexpr int32_t kXpHeight = 480;
+constexpr int32_t kVxWidth = 544;
+constexpr int32_t kVxHeight = 416;
+
+// Which maker's project (if any) is present at kGameDir, mirroring
+// src/main.cxx's dispatch order: RPG2k (RPG_RT.ldb) first, then VX / VX Ace
+// (whose own archives/data files the XP predicate would otherwise also
+// match), then XP. Returns nullptr if none matched -- the idle HAL bring-up.
+const GameInfo* detect_game(void) {
+  static const GameInfo kRpg2k{"RPG2k", kRpg2kWidth, kRpg2kHeight};
+  static const GameInfo kXp{"RPGXP", kXpWidth, kXpHeight};
+  static const GameInfo kVx{"RPGVX", kVxWidth, kVxHeight};
+  if (path_exists(kGameDir, "RPG_RT.ldb"))
+    return &kRpg2k;
+  if (is_rpgvx_game(kGameDir))
+    return &kVx;
+  if (is_xp_game(kGameDir))
+    return &kXp;
+  return nullptr;
 }
 
 // Write a buffer to the PSP stdout (fd 1) and stderr (fd 2). Under an emulator
@@ -157,8 +230,16 @@ int main(void) {
 
   setup_callbacks();
 
+  // Detected before the display exists: which maker's project (if any) is
+  // present decides the display's own logical resolution (see the
+  // file-level comment), so this has to run first. It is a handful of plain
+  // fopen probes, nothing mruby-related, so it does not need the
+  // interpreter open yet either.
+  const GameInfo* const game_info = detect_game();
+
   lv_init();
-  psp_display_create(PSP_SCR_WIDTH, PSP_SCR_HEIGHT);
+  psp_display_create(game_info ? game_info->width : PSP_SCR_WIDTH,
+                     game_info ? game_info->height : PSP_SCR_HEIGHT);
   psp_input_init();
   build_ui();
 
@@ -174,11 +255,12 @@ int main(void) {
       psp_write(buf, n);
   }
 
-  // GAME_DIR/RTP_DIR are load-bearing mruby constants: mruby-rpg2k/mrblib and
-  // mruby-rgss/mrblib read them directly (RPG_RT.ldb/.lmt paths, asset/audio
-  // search paths, ...), the same as every other target's entry point sets
-  // them (src/main.cxx). RTP_DIR is empty -- this build is a single
-  // self-contained project per EBOOT, no shared RTP install to point at.
+  // GAME_DIR/RTP_DIR are load-bearing mruby constants: mruby-rpg2k/mruby-rpgxp/
+  // mruby-rpgvx/mruby-rgss's own mrblib read them directly (RPG_RT.ldb/.lmt
+  // paths, Game.ini, asset/audio search paths, ...), the same as every other
+  // target's entry point sets them (src/main.cxx). RTP_DIR is empty -- this
+  // build is a single self-contained project per EBOOT, no shared RTP
+  // install to point at.
   mrb_value game_obj = mrb_nil_value();
   bool have_game = false;
   if (M) {
@@ -187,17 +269,20 @@ int main(void) {
     mrb_const_set(M, mrb_obj_value(M->object_class),
                   mrb_intern_lit(M, "RTP_DIR"), mrb_str_new_cstr(M, ""));
 
-    char ldb_path[64];
-    std::snprintf(ldb_path, sizeof(ldb_path), "%s/RPG_RT.ldb", kGameDir);
     const char* game_start_result;
-    if (file_exists(ldb_path)) {
+    if (game_info) {
       // No TestPlay/HideTitle words -- this build has no command line to
       // carry them on.
       const mrb_value args = mrb_ary_new(M);
-      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
+      game_obj =
+          mrb_obj_new(M, mrb_class_get(M, game_info->class_name), 1, &args);
       if (M->exc) {
         // Leaves no game running; falls through to the idle HAL loop below,
-        // same as "not_found".
+        // same as "not_found". The display stays sized for the maker whose
+        // construction failed rather than reverting to the panel's own
+        // resolution -- a rare path (the project's own files exist but its
+        // database failed to parse), not worth the extra bookkeeping to fix
+        // up for what the idle status screen looks like.
         M->exc = nullptr;
         game_start_result = "FAILED";
       } else {
@@ -212,9 +297,10 @@ int main(void) {
     } else {
       game_start_result = "not_found";
     }
-    char buf[48];
-    const int n = std::snprintf(buf, sizeof(buf), "RPG2K_PSP_GAME_START %s\n",
-                                game_start_result);
+    char buf[64];
+    const int n = std::snprintf(
+        buf, sizeof(buf), "RPG2K_PSP_GAME_START %s %s\n",
+        game_info ? game_info->class_name : "none", game_start_result);
     if (n > 0)
       psp_write(buf, n);
   }
