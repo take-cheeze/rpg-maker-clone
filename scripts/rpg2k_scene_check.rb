@@ -7078,6 +7078,37 @@ check 'a Move Route request targeting a currently-ridden vehicle is ignored' do
      'the route request was dropped rather than fighting #follow_vehicle'
 end
 
+# EasyRPG's own Game_Interpreter::CommandMoveEvent (code 11330,
+# src/game_interpreter.cpp): "If the event is a vehicle in use, push the
+# commands to the player instead" -- a Move Event targeting a boat the party
+# is currently riding drives the *player*, which the ridden boat already
+# mirrors every frame (#follow_vehicle), producing a scripted "sail the boat
+# across the map while the party stands on it" cutscene. #apply_move_request
+# used to route this straight into #force_vehicle_route above, which
+# deliberately no-ops while ridden -- so the whole move route was silently
+# dropped instead of redirected onto the player.
+check 'Move Event targeting a currently-ridden vehicle redirects onto the ' \
+      'player instead of being dropped' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target 10002 (boat), freq 8, repeat off, skippable on, MOVE_RIGHT.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10002, 8, 0, 1, R::MOVE_RIGHT])]
+  scene = new_scene({ 1 => event(0, 4, auto) }, player: [0, 1], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  st.boarded = :boat
+  20.times { scene.update }
+  ok st.x > 0,
+     "the player (and the vehicle riding along with it) should have sailed " \
+     "east under the redirected route, at x=#{st.x}"
+  eq boat.x, st.x, "the ridden boat mirrors the player it was redirected onto"
+  eq nil, scene.instance_variable_get(:@vehicle_routes)[:boat],
+     'no separate vehicle-character route was ever armed for the boat itself'
+end
+
 check 'Change Event Location repositions a vehicle' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
