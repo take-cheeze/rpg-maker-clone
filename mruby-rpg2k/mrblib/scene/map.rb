@@ -2347,10 +2347,14 @@ class RPG2k
       # A port of EasyRPG's `Game_Character::GetJumpHeight`, kept in its own
       # 256-per-tile units so the formula reads as it does there: the height
       # rises and falls linearly with the remaining step, peaking at the
-      # midpoint, and is then stretched -- doubled while small, offset by 5 once
-      # past 4 -- which is what makes the hop leave the ground sharply and hang
-      # near the top. The peak is 21px on a 16px tile, so a jumping sprite
-      # clearly leaves its row.
+      # midpoint, and is then stretched -- doubled while small (h < 5), offset
+      # by 4 through h < 13, and capped at a flat 16 beyond that -- which is
+      # what makes the hop leave the ground sharply, hang near the top, and
+      # never rise past a full tile. The peak is exactly 16px on a 16px tile,
+      # so a jumping sprite clearly leaves its row without overshooting it.
+      # (This offset/cap shape was previously mis-ported as an uncapped `h +
+      # 5`, peaking at 21px -- 5px, ~31%, past the real arc's own ceiling --
+      # now corrected to match EasyRPG's actual source exactly.)
       #
       # The lift is applied where the sprite is blitted, not inside #event_pixel:
       # RPG_RT raises the drawn character without moving it, so its logical
@@ -2369,7 +2373,8 @@ class RPG2k
         remaining = (TILE - move_count) * (JUMP_STEP_UNITS / TILE)
         half = JUMP_STEP_UNITS / 2
         h = (remaining > half ? JUMP_STEP_UNITS - remaining : remaining) / 8
-        h < 5 ? h * 2 : h + 5
+        return h * 2 if h < 5
+        h < 13 ? h + 4 : 16
       end
 
       # Current position of event `e` in map pixels, interpolated from its
