@@ -7042,6 +7042,16 @@ check 'the airship floats above a ground shadow; a boat casts none' do
   shadow = scene.instance_variable_get(:@airship_shadow)
   ok shadow.visible, 'the airship casts a shadow'
   ok sprites[:airship].y < shadow.y, 'the airship floats above its shadow'
+  # shadow.y carries no feet-alignment offset (it sits flat on the tile), but
+  # the airship sprite's own y is drawn CharSet::HEIGHT - TILE pixels above
+  # that already (every vehicle/character sprite's own feet-alignment,
+  # unrelated to floating), plus AIRSHIP_ALTITUDE on top of that -- a full
+  # tile (16px), not half. EasyRPG's own Game_Vehicle::GetAltitude() is
+  # SCREEN_TILE_SIZE / (SCREEN_TILE_SIZE / TILE_SIZE) once fully airborne,
+  # 256 / (256 / 16) = 16 with RPG_RT's own real constants.
+  base_offset = Game::CharSet::HEIGHT - Game::TILE
+  eq 16, shadow.y - sprites[:airship].y - base_offset,
+     "the airship floats a full 16px tile above its shadow, not half"
   ok shadow.z < sprites[:airship].z, 'the shadow sits under the airship'
   # A boat (no airship placed) casts no shadow.
   air.map_id = 0 # unplace the airship
@@ -7434,11 +7444,14 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   st.weather.set(1, 2) # heavy rain
   scene.update
   ok wsp.visible, 'rain draws an overlay'
-  # A stronger downpour draws more particles than a light one.
-  heavy = scene.send(:weather_particle_count, st.weather)
+  # EasyRPG's own num_rain_or_snow_particles table (src/weather.cpp) is the
+  # literal { 20, 60, 100 } for strength 0/1/2 -- a real, non-uniform step
+  # (+40, +40), not a fixed multiple of the lightest strength's own count.
+  eq 100, scene.send(:weather_particle_count, st.weather), 'strength 2 (heavy)'
+  st.weather.set(1, 1) # medium rain
+  eq 60, scene.send(:weather_particle_count, st.weather), 'strength 1 (medium)'
   st.weather.set(1, 0) # light rain
-  light = scene.send(:weather_particle_count, st.weather)
-  ok heavy > light, 'strength scales the particle count'
+  eq 20, scene.send(:weather_particle_count, st.weather), 'strength 0 (light)'
   st.weather.set(2, 1) # snow
   scene.update
   ok wsp.visible, 'snow draws an overlay too'
