@@ -7754,6 +7754,30 @@ check 'a missing troop / enemy degrades to an empty, harmless model' do
   eq 1, Game::Enemy.new(battle_db, 99).max_hp, 'defaults for a missing enemy'
 end
 
+# A database shrink can leave a troop member naming a deleted *individual*
+# enemy id (chunk 14) -- shown as "?" in the editor, docs/TODO.md's runtime
+# error catalog. This is distinct from the enemy-*group* (troop) id case
+# `Game::Party#db_enemy_group`/Enemy Encounter already reports: here the troop
+# itself resolves fine, but one of its members points at a dangling enemy id.
+# `Game::Enemy.new` already tolerated this by degrading to a blank/1-HP model
+# (see the check above); it now also reports the gap.
+check 'a dangling individual enemy id reports and still degrades to the harmless model' do
+  e = nil
+  out = capture_stderr { e = Game::Enemy.new(battle_db, 99) }
+  ok out.include?('[RPG2k] Enemy: enemy id 99 not found in the database'), out
+  eq 1, e.max_hp, 'degrade behaviour is unchanged -- still a blank 1-HP model'
+  eq '', e.name
+
+  # Reached through a real troop member, not just a direct Game::Enemy.new call.
+  broken_group = { 1 => GroupRow.new('Broken', { 1 => GroupMember.new(99, 5, 5, false) }) }
+  db = BattleDB.new(battle_db.enemy, broken_group)
+  troop = nil
+  out2 = capture_stderr { troop = Game::Troop.new(db, 1) }
+  ok out2.include?('[RPG2k] Enemy: enemy id 99 not found in the database'), out2
+  eq 1, troop.members.size
+  eq 1, troop.members.first.max_hp, 'the dangling member still degrades harmlessly'
+end
+
 check 'Enemy Encounter parses the troop and modes and suspends on :battle' do
   st = party_state
   it = Game::Interpreter.new(st)
@@ -10715,6 +10739,49 @@ check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unco
   # Carrying an unrelated, unflagged state alongside it changes nothing.
   dodger.states = [12, 13]
   eq 0, bat.send(:to_hit, attacker, dodger), 'still dodges with a second, unrelated state'
+end
+
+check 'battle: a "do nothing"-restricted target always gets hit' do
+  # EasyRPG's CalcNormalAttackToHit: `if (!target.CanAct()) return 100;` --
+  # the next term down from avoid_attacks, ahead of every ordinary accuracy
+  # roll. An asleep/paralysed target (state restriction 1) was previously
+  # rolled through the normal hit-rate/agility math like anyone else.
+  states = { 5 => fake_state(restriction: Game::Battle::RESTRICTION_DO_NOTHING) }
+  # A slow, low-hit-rate attacker against a fast target: agility alone would
+  # push this well under 100 if the restriction were not consulted first.
+  attacker = combatant('Weak', 0, 0, 1, 100)
+  attacker.hit_rate = 10
+  target = combatant('Sleeper', 0, 0, 99, 100)
+  bat = Game::Battle.new([attacker], [target], Game::Rng.new(1), states,
+                         false, false, true)          # accuracy on
+  eq 0, bat.send(:to_hit, attacker, target), "unafflicted: the attacker's own poor odds, floored at 0"
+
+  target.states = [5]
+  eq 100, bat.send(:to_hit, attacker, target), "afflicted: sleep overrides the attacker's own poor odds"
+
+  awake = combatant('Awake', 0, 0, 99, 100)
+  ok bat.send(:to_hit, attacker, awake) < 100,
+     'an unafflicted target of the same agility is not swept up in the same rule'
+end
+
+check "battle: a state's reduce_hit_ratio folds into the base hit rate before " \
+      'the agility term, not after' do
+  # EasyRPG: `to_hit = to_hit * GetHitChanceModifierFromStates() / 100;` runs
+  # *before* `CalcToHitAgiAdjustment`, so the AGI term's own nonlinear
+  # `100 - (100 - to_hit) * (src + tgt) / (2 * src)` shape is applied to the
+  # already-blinded hit rate, not to the unblinded base with the state
+  # discount multiplied on afterward -- the two orders disagree whenever
+  # attacker and target have unequal agility, since the AGI adjustment isn't
+  # linear in its input.
+  states = { 8 => fake_state(reduce_hit_ratio: 50) }
+  blind = combatant('Blind', 0, 0, 20, 100)   # faster than its target
+  blind.hit_rate = 90
+  blind.states = [8]
+  foe = combatant('Foe', 0, 0, 10, 100)
+  bat = Game::Battle.new([blind], [foe], Game::Rng.new(1), states,
+                         false, false, true)          # accuracy on
+  eq 59, bat.send(:to_hit, blind, foe),
+     '90*50/100=45 scaled by the state first, then 100-(100-45)*30/40=59 by agility'
 end
 
 check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its own caster' do
@@ -13802,6 +13869,30 @@ check 'elevated? reads ABOVE_BIT off the upper passability table' do
   ok !cs.elevated?(0), 'id 0 (no upper tile here) is never starred'
   ok !chipset_with_upper(nil, nil).elevated?(BLOCK_F),
      'a chipset with no upper table at all is never starred'
+end
+
+# A dangling chipset id (a database shrink, or a bad Change Map Tileset
+# override) reports and degrades to the same blank/passable model as before,
+# rather than rendering the map blank and fully passable with no trace.
+check 'a dangling chipset id reports and degrades to a blank/passable chipset' do
+  db = Struct.new(:chipset).new({ 1 => FakeChipsetRow.new('cs', 'cs.png', [1], [2], [3], 1, 1) })
+  out = capture_stderr { @cs = Game::ChipSet.new(db, 99) }
+  ok out.include?('[RPG2k] chipset #99 not found in database'), out
+
+  eq '', @cs.name
+  eq '', @cs.graphic
+  ok !@cs.elevated?(BLOCK_F), 'no upper passability table -- never starred'
+  ok @cs.passable?(0, 2), 'no passability table -- everything degrades to passable'
+  ok @cs.landable?(0), 'no passability table -- everything degrades to landable'
+  eq 1, @cs.terrain(0), 'no terrain table -- reads the default terrain 1'
+
+  ok capture_stderr { Game::ChipSet.new(db, 1) }.empty?, 'an existing chipset id logs nothing'
+  ok capture_stderr { Game::ChipSet.new(db, 0) }.empty?, 'id 0 (no chipset) is not a dangling reference'
+  ok capture_stderr { Game::ChipSet.new(db, nil) }.empty?, 'a nil id is not a dangling reference'
+
+  bare_db = Struct.new(:name).new('bare fixture, no chipset table at all')
+  ok capture_stderr { Game::ChipSet.new(bare_db, 99) }.empty?,
+     'a bare fixture with no chipset table at all is not a dangling reference'
 end
 
 # -- summary ------------------------------------------------------------------

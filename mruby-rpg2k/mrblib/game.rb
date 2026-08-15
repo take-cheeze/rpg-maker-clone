@@ -551,8 +551,21 @@ module Game
 
     attr_reader :name, :graphic, :animation_type, :animation_speed
 
+    # `id` a dangling reference (a database shrink, or a bad Change Map
+    # Tileset override, can leave one behind -- see docs/TODO.md's runtime
+    # error catalog) still degrades to a blank name/graphic and nil
+    # passability/terrain tables, same as it always has, but is now reported
+    # rather than silently rendering the map blank and fully passable with no
+    # trace. `has_table` guards the diagnostic the same way `db_item` /
+    # `db_enemy_group` do, so a bare test fixture with no chipset table at all
+    # (rather than a real dangling id) stays quiet.
     def initialize(db, id)
-      c = db.chipset[id]
+      has_table = db.respond_to?(:chipset)
+      c = has_table ? db.chipset[id] : nil
+      if c.nil? && has_table && id && id > 0
+        $stderr.puts "[RPG2k] chipset ##{id} not found in database, " \
+                     'tiles treated as blank/passable'
+      end
       @name = c ? c.name : ''
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
@@ -6436,6 +6449,19 @@ module Game
 
     def initialize(db, id, x = 0, y = 0, hidden = false)
       row = db.enemy[id]
+      # A database shrink can leave a troop member naming a deleted individual
+      # enemy id (chunk 14) -- shown as "?" in the editor, docs/TODO.md's
+      # runtime error catalog, distinct from the enemy-*group* (troop) id case
+      # `Game::Party#db_enemy_group`/Enemy Encounter already reports. Degrading
+      # to a blank/1-HP model below is unchanged (by design, matching real
+      # RPG_RT's own tolerance); only the gap is now visible. `respond_to?`
+      # guarded the same way `db_item`/`db_enemy_group` reach into `@db`, so a
+      # bare test fixture with no `enemy` table at all stays silent -- this is
+      # only for a genuine dangling id in a real database.
+      if row.nil? && id && id > 0 && db.respond_to?(:enemy)
+        $stderr.puts "[RPG2k] Enemy: enemy id #{id} not found in the " \
+                     'database, degrading to a blank placeholder'
+      end
       @id = id
       @name    = row ? row.name.to_s : ''
       # The Monster/<name> battle graphic (blank for a fixture that omits it);
@@ -7595,8 +7621,9 @@ module Game
     end
 
     # `attacker`'s to-hit percentage against `target` for a basic attack: the
-    # attacker's base hit rate (weapon / unarmed 90, a "miss" enemy 70), adjusted
-    # by the agility ratio — EasyRPG's CalcToHitAgiAdjustment, which simplifies to
+    # attacker's base hit rate (weapon / unarmed 90, a "miss" enemy 70), scaled
+    # by the attacker's own state-based accuracy penalty, then adjusted by the
+    # agility ratio — EasyRPG's CalcToHitAgiAdjustment, which simplifies to
     # `100 - (100 - base) * (srcAgi + tgtAgi) / (2 * srcAgi)` — so a nimbler
     # target dodges more. Clamped to 0..100. Only consulted when the fight has
     # accuracy enabled (see #initialize).
@@ -7605,32 +7632,43 @@ module Game
     # attack unconditionally, before any other term -- EasyRPG's
     # `CalcNormalAttackToHit` (algo.cpp) checks `target.EvadesAllPhysicalAttacks()`
     # first and returns 0 immediately, ahead of even the restricted-target
-    # "always hits" rule and a 必中 attacker's own evasion-ignoring branch.
+    # "always hits" rule and a 必中 attacker's own evasion-ignoring branch. A
+    # target with a "do nothing" restriction (asleep / paralysed) is the next
+    # term down and always gets hit -- `CalcNormalAttackToHit`'s `if
+    # (!target.CanAct()) return 100;`, ahead of every accuracy term below it.
     def to_hit(attacker, target)
       return 0 if evades_all_physical?(target)
-      base = attacker.hit_rate || 90
+      return 100 if do_nothing_restricted?(target)
+      # Modify hit chance for each state the *source* has (`#hit_modifier`,
+      # e.g. Blind) before the agility term -- EasyRPG folds this in first
+      # (`to_hit = to_hit * GetHitChanceModifierFromStates() / 100`) and only
+      # then computes `CalcToHitAgiAdjustment` off the already-reduced value,
+      # not the raw weapon hit rate. Applying it last instead (multiplying
+      # the finished, agility-adjusted percentage) skews the result whenever
+      # attacker and target have unequal agility, since the AGI term is not
+      # linear in its input.
+      base = (attacker.hit_rate || 90) * hit_modifier(attacker) / 100
       # 必中: a weapon flagged `ignore_evasion` skips the agility term entirely —
       # RPG_RT's `CalcNormalAttackToHit` returns before it applies evasion for
-      # such a weapon. The attacker's own statuses still spoil its aim, since
-      # what the flag ignores is the *target's* evasion, not the wielder's blind.
-      raw =
-        if attacker.ignores_evasion
-          Game.clamp(base, 0, 100)
-        else
-          src = effective_agi(attacker)
-          src = 1 if src < 1
-          tgt = effective_agi(target)
-          agi_adjusted = 100 - (100 - base) * (src + tgt) / (2 * src)
-          # 物理回避率アップ: a shield/armour/helmet/accessory flagged
-          # `raise_evasion` (Actor#physical_evasion_up?) subtracts a further
-          # flat 25 from the already agi-adjusted chance, right where
-          # EasyRPG's `CalcNormalAttackToHit` applies it -- after the AGI
-          # term, and never reached at all by a 必中 attacker (the branch
-          # above already returned).
-          agi_adjusted -= 25 if target.evasion_up
-          Game.clamp(agi_adjusted, 0, 100)
-        end
-      raw * hit_modifier(attacker) / 100
+      # such a weapon. The attacker's own statuses still spoil its aim (baked
+      # into `base` above), since what the flag ignores is the *target's*
+      # evasion, not the wielder's blind.
+      if attacker.ignores_evasion
+        Game.clamp(base, 0, 100)
+      else
+        src = effective_agi(attacker)
+        src = 1 if src < 1
+        tgt = effective_agi(target)
+        agi_adjusted = 100 - (100 - base) * (src + tgt) / (2 * src)
+        # 物理回避率アップ: a shield/armour/helmet/accessory flagged
+        # `raise_evasion` (Actor#physical_evasion_up?) subtracts a further
+        # flat 25 from the already agi-adjusted chance, right where
+        # EasyRPG's `CalcNormalAttackToHit` applies it -- after the AGI
+        # term, and never reached at all by a 必中 attacker (the branch
+        # above already returned).
+        agi_adjusted -= 25 if target.evasion_up
+        Game.clamp(agi_adjusted, 0, 100)
+      end
     end
 
     # Whether any state currently afflicting `b` is flagged "Avoid Attacks"
@@ -8025,10 +8063,19 @@ module Game
     # back to correctly (a random living foe via #attack_target).
     def command_restricted?(b)
       return true if battler_restriction(b) != 0
-      (b.states || []).any? { |id| state_field(state_def(id), :restriction) == RESTRICTION_DO_NOTHING }
+      do_nothing_restricted?(b)
     end
 
     private
+
+    # Whether `b` currently carries a "do nothing" restriction (asleep /
+    # paralysed) -- EasyRPG's `Game_Battler::CanAct`, which scans exactly this
+    # one restriction value and nothing else (not death, not a forced-target
+    # restriction). Shared by #command_restricted? (half of its own check)
+    # and #to_hit (a restricted target always gets hit).
+    def do_nothing_restricted?(b)
+      (b.states || []).any? { |id| state_field(state_def(id), :restriction) == RESTRICTION_DO_NOTHING }
+    end
 
     # The state definition for `id` from the lookup, or nil (no lookup / unknown).
     def state_def(id); @states ? @states[id] : nil; end

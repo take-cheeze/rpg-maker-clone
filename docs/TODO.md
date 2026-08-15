@@ -5084,6 +5084,39 @@ not yet verified:
   weapon healing one instead, and the same weapon on RPG2000 still
   inflicting since the flag is edition-gated), each confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **A basic Attack's to-hit chance is now correct in two ways it wasn't
+  before, both in `Game::Battle#to_hit`.** Confirmed against EasyRPG's
+  `Algo::CalcNormalAttackToHit` (`src/algo.cpp`) line by line:
+  1. **A "do nothing"-restricted target (asleep / paralysed) now always gets
+     hit**, instead of still rolling the ordinary hit-rate/agility math.
+     `CalcNormalAttackToHit`'s `if (!target.CanAct()) return 100;` sits right
+     below its `EvadesAllPhysicalAttacks` check (already ported) and above
+     every accuracy term — a restricted target was RPG_RT's one guaranteed
+     landing before the "Avoid Attacks" state existed, and this codebase's
+     own comment on the `evades_all_physical?` fix already named this rule
+     in passing without ever implementing it. Ported as a new
+     `Game::Battle#do_nothing_restricted?` (factored out of
+     `#command_restricted?`'s own half of the same check) and a
+     `return 100 if do_nothing_restricted?(target)` right after the
+     avoid-attacks guard.
+  2. **A state's `reduce_hit_ratio` (Blind and friends) now scales the
+     attacker's *base* hit rate before the agility adjustment, not the
+     finished, agility-adjusted percentage afterward.** EasyRPG folds the
+     state modifier in first (`to_hit = to_hit *
+     GetHitChanceModifierFromStates() / 100`) and only then computes
+     `CalcToHitAgiAdjustment` off the already-reduced value; this codebase
+     multiplied by the state modifier last instead. Since the agility term
+     is not linear in its input, the two orders disagree whenever attacker
+     and target have unequal agility — e.g. a Blind (50%) attacker with base
+     hit 90 and agility 20 against a target with agility 10 landed 46% the
+     old way and should land 59% (`90*50/100=45` scaled by the state first,
+     then `100-(100-45)*30/40=59` by agility). Equal-agility fights were
+     unaffected (the agility term is an identity there), which is why the
+     existing Blind coverage never caught it.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (a restricted
+  target hit despite an attacker whose own hit-rate/agility odds would
+  otherwise floor at 0, and the 46-vs-59 unequal-agility case above), each
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
@@ -8487,6 +8520,25 @@ five new `scripts/rpg2k_logic_check.rb` checks (no handlers, an [Escape]
 handler, escape-abort mode, and the random-encounter path both missing and
 present), each asserting on the captured `$stderr` line and that no
 `:battle` wait was ever armed.
+✅ **A troop member naming a deleted *individual* enemy id (chunk 14) no
+longer degrades silently** — the "invalid enemy" case above, distinct from
+the enemy-*group*/troop case fixed just above: there the whole troop id was
+dangling, here the troop itself resolves fine but one of its members points
+at an enemy id the database no longer has. `Game::Enemy#initialize`
+(`mruby-rpg2k/mrblib/game.rb`) already tolerated a missing `enemy` row by
+degrading every field to a safe default (blank name, 1 max HP, 0 stats — see
+the "missing troop / enemy degrades to an empty, harmless model" check), and
+that degrade behaviour is unchanged; it now also logs a `[RPG2k] Enemy:
+enemy id <id> not found in the database, degrading to a blank placeholder`
+diagnostic whenever `id` is truthy/positive but the lookup misses, guarded by
+the same `respond_to?(:enemy)` check `db_item`/`db_enemy_group` use so a bare
+test fixture with no `enemy` table at all stays silent. Placed in the
+constructor itself (rather than `Troop#member`, its one production call
+site) so every construction path is covered, present and future. Covered by
+a new `scripts/rpg2k_logic_check.rb` check asserting the diagnostic fires
+both for a direct `Game::Enemy.new` call and for one reached through a real
+troop member, and that the degrade-to-harmless-model behaviour (1 HP, blank
+name) is unchanged in both cases.
 ✅ **The field skill menu no longer drops a dangling learned-skill id with no
 trace** — one of the "invalid skill" cases above, the "opens a skill-select
 screen" variant. `Game::Party#field_skills` (`mruby-rpg2k/mrblib/game.rb`)
@@ -8576,6 +8628,28 @@ the now-dangling tile, and asserts the diagnostic fires exactly once (not
 once per the two call sites that both read the same landed-on tile in a
 single step, and not again on further re-queries of the same tile) while
 terrain damage/bush depth both fall back to their harmless defaults.
+✅ **A dangling chipset id no longer renders a map blank and fully passable
+with no trace** — the "chipset" case from the "invalid hero, skill, item,
+enemy, enemy group, battle animation, terrain, chipset, common event" list
+above. `Game::ChipSet#initialize` (`mruby-rpg2k/mrblib/game.rb`) already
+tolerated a missing `db.chipset[id]` row by degrading every field (name,
+graphic, passability tables, terrain data, animation params) to a safe
+blank/nil default — matching the same graceful-degrade philosophy
+`Game::Party#db_enemy_group`/`Game::Enemy` use — but nothing ever logged the
+gap, so a map with a stale `chipset_id` (or a Change Map Tileset override to
+a bad id; `Scene::Map#build_chipset`, `mruby-rpg2k/mrblib/scene/map.rb`,
+only rescues real exceptions like a missing graphic file) rendered blank
+tiles with every direction passable and no diagnostic anywhere. `ChipSet
+#initialize` now checks the lookup itself, `respond_to?`-guarded the same
+way `db_item`/`db_enemy_group` are so a bare test fixture with no chipset
+table at all stays quiet, and logs a `[RPG2k] chipset #<id> not found in
+database, tiles treated as blank/passable` diagnostic when `id` is a
+positive, resolvable-looking reference that simply misses; the degrade
+behaviour itself is unchanged, this is diagnostics only. Covered by a new
+`scripts/rpg2k_logic_check.rb` check asserting the captured `$stderr` line
+alongside the unchanged blank name/graphic and default-passable/terrain
+behaviour, plus that an existing id, id `0`, a `nil` id and a chipset-less
+bare fixture all stay silent.
 
 **Map/Event ID assignment & tile occupancy**
 - ✅ **Not applicable: Event ID (and, separately, Map ID) assignment by
