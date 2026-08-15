@@ -7344,9 +7344,24 @@ class RPG2k
           target_height: target_height, flash_target: flash_target }
       end
 
+      # The single choke point every battle-animation lookup goes through: a
+      # Show Battle Animation command and a skill/item's own animation
+      # (#start_battle_animation, #start_map_animation,
+      # #start_battle_page_animation, all via #build_animation) all land here.
+      # A database shrink can leave one of those naming a deleted battle_anime
+      # id -- the "battle animation" case in docs/TODO.md's runtime error
+      # catalog -- and until now that just drew nothing with no trace.
+      # `respond_to?`/nil-guarded the same way `terrain_row_at`/`db_item` are,
+      # so a bare test fixture with no battle_anime table at all stays silent;
+      # only a genuine dangling id in a real database is reported.
       def animation_row(id)
         return nil if id.nil? || !@db.respond_to?(:battle_anime) || @db.battle_anime.nil?
-        @db.battle_anime[id]
+        row = @db.battle_anime[id]
+        if row.nil? && id.is_a?(Integer) && id > 0
+          $stderr.puts "[RPG2k] battle animation ##{id} not found in " \
+                       'database, nothing drawn'
+        end
+        row
       rescue StandardError
         nil
       end

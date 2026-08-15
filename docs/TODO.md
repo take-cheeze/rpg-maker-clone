@@ -5117,6 +5117,43 @@ not yet verified:
   target hit despite an attacker whose own hit-rate/agility odds would
   otherwise floor at 0, and the 46-vs-59 unequal-agility case above), each
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **Critical-hit chance now truncates to a whole percent before rolling,
+  instead of preserving basis-point precision RPG_RT itself discards** —
+  correcting the "Assets & infrastructure" section's own 会心必殺 bullet
+  above. That bullet's own reasoning was sound on the *shape* of the problem
+  (RPG_RT adds a weapon's percentage to the wielder's 1-in-N rate, and no
+  integer denominator expresses "1/30 and 20% more", so the chance has to be
+  carried as a probability) but wrong about what precision that probability
+  needs: it moved to basis points over `Game::CRIT_SCALE` (10000) on the
+  theory that a 1/30 row "should" read 3.33%, matching the true mathematical
+  fraction. Checked directly against EasyRPG's actual source rather than that
+  assumption: `Game_Actor::GetCriticalHitChance` (`src/game_actor.cpp`) does
+  sum the base rate and weapon bonus as a float (`1.0f/n + bonus/100.0f`) —
+  but its one caller, `Algo::CalcCriticalHitChance` (`src/algo.cpp`),
+  immediately does `static_cast<int>(chance * 100.0)`, and the roll itself
+  goes through `Rand::PercentChance(int rate)` (`GetRandomNumber(0, 99) <
+  rate`, `src/rand.cpp`) — RPG_RT truncates the *combined* rate to a whole
+  percent before it ever rolls, not after; the fractional remainder past the
+  first digit is thrown away regardless of which of the two additive terms
+  produced it. A plain 1-in-30 actor with no weapon crit here landed 3.33% of
+  the time against RPG_RT's flat 3% — an eleven percent relative inflation,
+  present for almost every rate. Fixed by rewriting `Game::Actor#crit_chance`
+  / `Game::Enemy#crit_chance` to return a whole percent
+  (`(100.0 / n).to_i + weapon_crit_bonus`, exactly equal to truncating the
+  float sum the way EasyRPG does, since the weapon bonus is already an
+  integer) and `Game::Battle#critical?` to roll a plain `@rng.random(100) <
+  chance` instead of `@rng.scaled(Game::CRIT_SCALE)` — which also retires the
+  `#scaled`-over-`#random` modulus-bias workaround the old basis-point scale
+  needed (that workaround's own reasoning was correct at scale 10000; a scale
+  of 100 is exactly the "small `n`, `#random` is correct enough" regime every
+  other caller in this file already relies on). `Game::CRIT_SCALE`/
+  `CRIT_PERCENT` are removed as a result — nothing references basis points
+  for this any more. Covered by rewriting the existing crit-chance test suite
+  onto whole percentages (a 1-in-30 actor now asserts 3%, not 333 bp; a
+  50%-rate roll boundary at 49/50/51 instead of a 5000 bp one at 4999/5000/
+  5001) and one real-data test-bed check
+  (`scripts/rpg2k_testbed_logic_check.rb`), each confirmed to fail against
+  the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
@@ -8453,9 +8490,10 @@ event-id-existence and page-existence as two distinct checks); invalid
 map (Transfer Player / Teleport-to-Remembered-Location targeting a
 nonexistent map id — error text includes the literal missing filename;
 fixed, see the ✅ below);
-invalid hero, skill, item, enemy, enemy group, battle animation, terrain
-(fixed, see the ✅ below), chipset, common event (all: a database shrink
-leaves a dangling id reference somewhere, shown as "?" in the editor);
+invalid hero, skill, item, enemy, enemy group, battle animation, terrain,
+chipset, common event (skill/enemy/enemy-group/battle-animation/terrain/
+chipset fixed, see the ✅ entries below; all: a database shrink leaves a
+dangling id reference somewhere, shown as "?" in the editor);
 event-call recursion past 1000. Several of these errors are **deferred**
 until the stale reference is actually exercised at runtime rather than
 raised at load time — e.g. invalid terrain only errors when the player
@@ -8676,6 +8714,28 @@ Covered by two new `scripts/rpg2k_scene_check.rb` checks (one per screen), each
 equipping a fixture actor with a dangling item id, asserting the diagnostic
 fires exactly once across construction and repeated rebuilds while the
 placeholder label still renders correctly.
+✅ **A dangling battle-animation id no longer draws nothing with no trace** —
+the "battle animation" case from the "invalid hero, skill, item, enemy,
+enemy group, battle animation, terrain, chipset, common event" list above.
+`Scene::Map#animation_row` (`mruby-rpg2k/mrblib/scene/map.rb`) is the single
+choke point every battle-animation lookup goes through — a Show Battle
+Animation command and a skill/item's own animation (`#start_battle_animation`,
+`#start_map_animation`, `#start_battle_page_animation`, all via
+`#build_animation`) — and used to swallow a miss with a bare
+`rescue StandardError; nil`, so a database shrink leaving a Show Battle
+Animation, or a skill/item's own animation, naming a deleted `battle_anime`
+row simply drew nothing with no trace. It now logs a `[RPG2k] battle
+animation #<id> not found in database, nothing drawn` diagnostic when `id` is
+a positive, resolvable-looking reference that simply misses, `respond_to?`/
+nil-guarded the same way `terrain_row_at`/`db_item` are so a bare test
+fixture with no `battle_anime` table at all stays quiet. This already matches
+the "deferred until exercised" framing above for free: the lookup only ever
+runs when the animation would actually play. Behaviour is otherwise
+unchanged — the lookup still returns `nil` and every caller still draws
+nothing. Covered by new `scripts/rpg2k_scene_check.rb` checks asserting the
+captured `$stderr` line for a dangling id, silence for a valid id/`nil`/`0`/a
+`battle_anime`-less bare fixture, and that a skill naming a since-deleted
+animation still plays nothing through `#start_battle_animation`.
 
 **Map/Event ID assignment & tile occupancy**
 - ✅ **Not applicable: Event ID (and, separately, Map ID) assignment by

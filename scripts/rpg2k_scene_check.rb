@@ -10466,6 +10466,50 @@ check 'a skill that names none plays nothing' do
   eq nil, scene.instance_variable_get(:@map_animation)
 end
 
+# -- dangling battle-animation id (database shrink) ---------------------------
+# The "battle animation" case from docs/TODO.md's runtime error catalog:
+# #animation_row is the single choke point every battle-animation lookup goes
+# through (Show Battle Animation, and a skill/item's own animation via
+# #build_animation), so this is exercised once at that choke point rather than
+# once per caller.
+
+check '#animation_row reports a dangling animation id, stays silent for a ' \
+      'valid id, a nil id, id 0 or a db with no battle_anime table at all' do
+  scene = new_scene({})
+  # Id 7 is intentionally absent from the fake db (see its own fixture
+  # comment) -- a stand-in for a database shrink leaving a Show Battle
+  # Animation / skill / item naming a deleted battle_anime row.
+  out = capture_stderr { eq nil, scene.send(:animation_row, 7) }
+  ok out.include?('[RPG2k] battle animation #7 not found in database, ' \
+                  'nothing drawn'), out
+
+  out2 = capture_stderr do
+    ok scene.send(:animation_row, 8), 'a real id still resolves its row'
+    eq nil, scene.send(:animation_row, nil), 'a nil id is the ordinary no-animation case'
+    eq nil, scene.send(:animation_row, 0), 'id 0 is the ordinary no-animation case'
+  end
+  ok out2.empty?, "a valid id, nil or 0 must stay silent, got: #{out2.inspect}"
+
+  # A bare fixture with no battle_anime table at all (respond_to? false) must
+  # not be mistaken for a dangling reference either.
+  bare_db = OpenStruct.new
+  scene.instance_variable_set(:@db, bare_db)
+  out3 = capture_stderr { eq nil, scene.send(:animation_row, 7) }
+  ok out3.empty?, "a db with no battle_anime table at all must stay silent, got: #{out3.inspect}"
+end
+
+check 'a skill naming a since-deleted battle animation plays nothing, but reports the gap' do
+  scene, = battle_at_command
+  scene.db.battle_anime.delete(8) # simulate the database shrink Fire's animation_id (8) now dangles from
+  entry = { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+            skill_id: 8, target_index: 0, target_ally: false }
+  out = capture_stderr do
+    ok !scene.send(:start_battle_animation, entry), 'nothing plays -- unchanged from before this diagnostic'
+  end
+  eq nil, scene.instance_variable_get(:@map_animation), 'draws nothing, same as always'
+  ok out.include?('[RPG2k] battle animation #8 not found in database, nothing drawn'), out
+end
+
 # RPG2000's battle is first-person: no sprite is drawn for a party member, so an
 # action aimed at one has nowhere to centre on.
 check 'an action on a party member plays over the middle of the screen' do
