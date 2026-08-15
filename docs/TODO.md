@@ -9129,7 +9129,7 @@ codebase yet):
   running straight off read-only media. Not applicable to this project's
   own portable `Marshal` save format today; relevant only if/when `.lsd`
   save compatibility is targeted.
-- RTP graphic asset mistakes (`FaceSet/モンスター.png` has the Dark Elf's
+- ✅ **Not applicable: RTP graphic asset mistakes** (`FaceSet/モンスター.png` has the Dark Elf's
   face bleeding into the Grim Reaper's portrait next to it; `CharSet/
   主人公3.png`'s female ninja sideways sprite has a transparency mistake in
   her hair; two `ChipSet` off-by-one-pixel errors in `基本.png`'s castle
@@ -9137,11 +9137,13 @@ codebase yet):
   official RTP art assets, fixable by an official patch — not applicable
   unless this project ever ships or tests against the stock RTP bitmaps
   directly.
-- `2000/デフォ戦/デフォ戦botまとめ` is a large (~140-item), fine-grained
+- 🚧 `2000/デフォ戦/デフォ戦botまとめ` is a large (~140-item), fine-grained
   community trivia dump for default-battle-system fidelity, sourced from
   the `@2000_battle_bot` Twitter account — worth a dedicated read-through
   once battle-system work resumes rather than transcribing it piecemeal
-  now. A few structurally-significant points worth flagging early so
+  now; deliberately left as raw, untriaged reference material for that
+  future pass rather than attempted item-by-item here. A few
+  structurally-significant points worth flagging early so
   they're not missed later: ✅ **displayed ability-value changes clamp to
   1–999 but the *underlying* unclamped total is still tracked internally
   and can un-clamp back into view after a later change** (e.g. lower Attack
