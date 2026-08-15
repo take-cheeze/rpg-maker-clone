@@ -591,6 +591,12 @@
 - The page draws an **on-screen keypad** (D-pad plus OK/Cancel/Dash, the L/R
   shoulders and the A/X/Y/Z buttons) beneath the canvas, so the game is playable
   by touch or mouse without a physical keyboard; the keyboard keeps working too.
+- **Scaling is the page's job, not the engine's.** The canvas holds one pixel
+  per game pixel (320x240 for RPG2000/MV, 640x480 for XP) and the page sizes the
+  element in CSS — a whole-number zoom, shrunk to fit when the screen is too
+  narrow for 1:1, with `image-rendering: pixelated` to keep it crisp. The frame
+  is therefore presented 1:1 and the browser does the upscale, instead of the
+  software renderer stretching every frame into a doubled window.
 - CI publishes this page: pushes to `master` deploy it to **GitHub Pages**, and
   commenting `/preview` on a pull request builds that PR and posts a
   **Cloudflare Pages** preview URL back on it. See
