@@ -6083,6 +6083,46 @@ not yet verified:
   proving a non-RPG2003 party ignores a stray 7th parameter and always
   settles — the `Game::Screen` test and the two interpreter dispatch tests
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
+  status effect from landing at all, instead of only its A-E susceptibility
+  rank ever mattering.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Actor::GetStateProbability` (`src/game_actor.cpp`) scans every
+  equipped item (weapon excluded) for one that flags the state in its own
+  `state_set` and — for RPG2000, or an RPG2003 item without
+  `reverse_state_effect` set — folds `100 - item->state_chance` into the
+  result as a multiplier, taking the *strongest* single piece across all
+  four defensive slots rather than summing them ("takes the armor of the
+  character with the most resistance for that particular state"), applied
+  on top of the existing `GetStateRate(rank)` result. Both of its real call
+  sites (`src/game_battlealgorithm.cpp`, skill/item infliction and
+  weapon-granted infliction alike) route every state roll through it. This
+  codebase's `Game::Battle#state_susceptibility` (`mruby-rpg2k/mrblib/
+  game.rb`) already modelled the A-E rank half correctly but never read a
+  defensive item's `state_set`/`state_chance` fields at all — despite both
+  being parsed by the schema and already consumed on the *offense* side
+  (`Actor#weapon_states`, weapon-only) — so an ordinary "50% Poison
+  resistance" accessory or "90% Paralysis ward" helmet had zero effect on
+  its wearer. Concretely: an actor with no rank override for Poison (rank-C
+  default, 60%) wearing an accessory that flags Poison at `state_chance: 50`
+  faces a Poison Sting at 100% occurrence — real RPG_RT/EasyRPG lands it
+  `60 * (100-50)/100 = 30%` of the time; this build landed it the full `60%`,
+  the accessory silently doing nothing. Fixed with a new `Actor
+  #state_resist_mul(sid)` (mirroring `#weapon_states`' own equipment-scan
+  shape, but gated on the four defensive types — `Party::ITEM_SHIELD/
+  _ARMOR/_HELMET/_ACCESSORY` — instead of the weapon slot, and excluding an
+  RPG2003 `reverse_state_effect` item exactly as EasyRPG's own
+  `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard does, since
+  that flag has no meaning on defensive gear's `state_set`), multiplied into
+  `#state_susceptibility`'s existing rank-based result whenever the target
+  is an ally (an enemy Combatant carries no `actor`, matching
+  `Game_Enemy::GetStateProbability`'s own equipment-free formula). Covered
+  by four new `scripts/rpg2k_logic_check.rb` checks — the Poison-accessory
+  trace above (bare vs. equipped), the strongest-of-several-pieces rule (a
+  50% and a 90% resist item together yield 90%'s multiplier, not both
+  stacked), a weapon's own `state_set` granting no resistance to its
+  wearer, and RPG2003 `reverse_state_effect` on defensive gear carrying no
+  resistance meaning — the first two confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
