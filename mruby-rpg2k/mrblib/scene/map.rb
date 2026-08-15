@@ -5695,18 +5695,23 @@ class RPG2k
         end
       end
 
-      # Choose the highlighted skill: if the caster cannot afford its SP, this
-      # is RPG_RT's own Buzzer case (`SkillSelected`'s `CheckEnable` covers
-      # affordability); otherwise Decision, then route to enemy / ally target
-      # selection (or cast at once on a self-scope skill).
+      # Choose the highlighted skill: if the caster cannot afford its SP, or is
+      # missing a weapon-type Attribute the skill requires
+      # (`Game::Party#weapon_attribute_ready?` -- the same equip-gate
+      # `#can_cast?` already applies to a field cast and to a Forced-AI actor's
+      # own skill eligibility, see `Game::Battle#skill_ready?`), this is
+      # RPG_RT's own Buzzer case (`SkillSelected`'s `CheckEnable` covers both);
+      # otherwise Decision, then route to enemy / ally target selection (or
+      # cast at once on a self-scope skill).
       def confirm_battle_skill
         sid, cost = @battle_ui[:skills][@battle_ui[:skill_i]]
-        if current_actor.mp < cost # can't afford: stay on the list
+        sk = @state.party.db_skill(sid)
+        if current_actor.mp < cost ||
+           !@state.party.weapon_attribute_ready?(current_actor_row, sk)
           play_system_se(SFX_BUZZER)
           return
         end
         play_system_se(SFX_DECISION)
-        sk = @state.party.db_skill(sid)
         @battle_ui[:pending] = { kind: :skill, sk: sk, sid: sid }
         close_battle_skill
         case @state.party.battle_skill_target(sk)

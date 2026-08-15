@@ -8615,6 +8615,10 @@ class BattleMagicParty
   def db_skill(id); id == 1 ? OpenStruct.new(name: 'Fire', scope: 0) : nil; end
   def battle_skill_target(sk); sk.scope == 0 ? :enemy : :ally; end
   def battle_skill_command(_sk, _caster, _target); { cost: 3, hp: -15, mp: 0 }; end
+  # A skill's weapon-type Attribute requirement -- true (unrestricted) by
+  # default, so every check predating the equip-gate stays on its own path;
+  # see BattleWeaponGateParty below for a check that flips this.
+  def weapon_attribute_ready?(_caster, _sk); true; end
   def battle_items
     @items.keys.sort.select { |id| item_count(id) > 0 }.map { |id| [id, item_count(id)] }
   end
@@ -8816,6 +8820,75 @@ check 'Enemy Encounter scene: confirming an unaffordable skill plays Buzzer, ' \
   press_key(scene, RGSS::Input::C) # try Fire, can't afford it
   eq :skill, ui[:phase], 'an unaffordable skill leaves the player on the list'
   eq 'Buzzer1', RGSS::Audio.se_calls.last[0], 'and plays Buzzer instead of Decision'
+end
+
+# A party whose Fire skill requires a weapon-type Attribute the Hero starts
+# without -- `weapon_ready` flips what Game::Party#weapon_attribute_ready?
+# answers, standing in for equipping the matching weapon (the real equip
+# mechanics are covered by rpg2k_logic_check.rb's own "can_cast?: a
+# weapon-type Attribute skill needs a weapon carrying it equipped" check;
+# this only asserts Scene::Map#confirm_battle_skill wires the answer in).
+class BattleWeaponGateParty < BattleMagicParty
+  attr_accessor :weapon_ready
+  def initialize(hurt: false)
+    super(hurt: hurt)
+    @weapon_ready = false
+  end
+  def weapon_attribute_ready?(_caster, _sk); @weapon_ready; end
+end
+
+check 'Enemy Encounter scene: confirming a skill missing its required weapon ' \
+      'Attribute plays Buzzer, not Decision, and stays on the list -- equipping ' \
+      'the matching weapon makes it castable again' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  party = BattleWeaponGateParty.new
+  st.instance_variable_set(:@party, party)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  eq :skill, ui[:phase]
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::C) # try Fire, missing the required weapon Attribute
+  eq :skill, ui[:phase], 'a skill missing its weapon Attribute leaves the player on the list'
+  eq 'Buzzer1', RGSS::Audio.se_calls.last[0], 'and plays Buzzer instead of Decision'
+
+  party.weapon_ready = true # the matching weapon is now equipped
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::C) # try Fire again
+  eq :target, ui[:phase], 'the very same skill casts once the weapon requirement is met'
+  eq 'Decision1', RGSS::Audio.se_calls.last[0]
+end
+
+check 'Enemy Encounter scene: an item-triggered heal bypasses the weapon-Attribute ' \
+      'gate -- no skill-eligibility check runs for it at all' do
+  # Regression guard: #confirm_battle_skill's new weapon-Attribute check lives
+  # entirely on the Skill sub-menu path -- the Item sub-menu never calls
+  # #weapon_attribute_ready? (Game::Party#battle_item_command is pure HP/SP
+  # arithmetic, matching the field menu's own free: item-cast bypass covered
+  # in rpg2k_logic_check.rb).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  party = BattleWeaponGateParty.new(hurt: true) # weapon_ready stays false throughout
+  st.instance_variable_set(:@party, party)
+  ui = battle_to_command(scene)
+
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+  press_key(scene, RGSS::Input::C)    # choose Potion -> ally target
+  eq :ally_target, ui[:phase]
+  press_key(scene, RGSS::Input::C)    # heal the Hero -> round animates
+  eq :animate, ui[:phase], 'the item cast went through with the weapon requirement still unmet'
 end
 
 # A party whose Hero knows no battle skill at all, so Skill's own list opens
