@@ -37,8 +37,21 @@ module RGSS
   # ChipsetLayout blit path instead of the colour-block fallback.
   class Bitmap
     attr_reader :width, :height
-    def initialize(w = 1, h = 1)
+    # The `"Dir/name"` a file-loading construction asked for, and whether it
+    # asked for the colour-keyed (palette index 0 transparent) decode -- the
+    # real Bitmap's own second argument. Recorded so a check can assert *how* a
+    # graphic was loaded, not only that something was: an RPG2000 sprite sheet
+    # loaded opaque draws its whole transparent background as solid pixels.
+    # The real Bitmap overloads its second argument the same way: it is the
+    # height for `Bitmap.new(w, h)` and the transparency flag for
+    # `Bitmap.new("Dir/name", trans)` (mruby-rgss/src/lib.cxx, `bmp_init`'s
+    # `"z|b"` vs the two-integer form), so it is read here as whichever the
+    # first argument makes it.
+    attr_reader :load_name, :load_transparent
+    def initialize(w = 1, h = nil)
       if w.is_a?(String)
+        @load_name = w
+        @load_transparent = h ? true : false
         @width = 480; @height = 256
       else
         @width = w.to_i; @height = h.to_i
@@ -11087,6 +11100,27 @@ check 'a head/feet Show Battle Animation position offsets where it draws over th
   call = bmp.blt_calls.first
   eq [ma[:tx] - 48, ma[:ty] - 48], [call[0], call[1]],
      'position 1 (center), the schema default, is unchanged from the plain centre pixel'
+end
+
+# An RPG2000 animation sheet is a grid of 96x96 cells whose whole background is
+# the palette's transparent colour, so it has to be decoded colour-keyed
+# (`Bitmap.new`'s second argument) the same way every other sprite sheet this
+# runtime loads is. `Battle/` was the one sheet directory asking for an opaque
+# decode, which made every cell blit a solid 96x96 rectangle of background over
+# its target. EasyRPG's own material table (`src/cache.cpp`) sets
+# `Spec::transparent` true for Battle, and false only for the four full-screen
+# backdrops this runtime already loads opaque.
+check 'the Battle/ animation sheet is loaded colour-keyed, like every other sprite sheet' do
+  scene, = battle_at_command
+  sheet = scene.send(:animation_sheet, 'Anim')
+  ok sheet, 'the sheet loaded'
+  eq 'Battle/Anim', sheet.load_name
+  eq true, sheet.load_transparent,
+     'palette index 0 must decode transparent, or every cell paints an opaque 96x96 block'
+  # The four full-screen backdrops are the deliberate exceptions, and stay
+  # opaque -- they have no transparent colour to key out.
+  eq false, scene.send(:battle_back_bitmap, 'Back').load_transparent,
+     'Backdrop/ is a full-screen image and stays opaque'
 end
 
 # Each animation cell carries its own `transparency` (LCF battle_anime chunk

@@ -7662,11 +7662,28 @@ class RPG2k
       # Animation command can replay the same animation many times over a
       # visit, and previously this reloaded and redecoded the sheet from disk
       # on every single play.
+      #
+      # Loaded **colour-keyed** (`Bitmap.new`'s second argument, which maps
+      # palette index 0 to transparent -- `mruby-rgss/src/lib.cxx`'s
+      # `load_xyz_mem`/`load_png_tolerant_mem` `trans` flag), like every other
+      # RPG2000 sprite sheet this runtime loads. `Battle/` was the one sheet
+      # directory that asked for an opaque decode, and it is the one directory
+      # where that is never right: an animation sheet is a 5-column grid of
+      # 96x96 cells whose *entire* background is the transparent colour, so
+      # every cell #blit_animation_cell laid down painted an opaque 96x96
+      # rectangle of that background over the target -- a solid block sitting
+      # on the enemy for the animation's whole duration, not a spell. Confirmed
+      # against EasyRPG's own material table (`src/cache.cpp`, fetched
+      # verbatim), whose `Spec::transparent` column is true for `Battle` (and
+      # for CharSet / ChipSet / FaceSet / Monster / Picture / System, matching
+      # every other loader here) and false only for the four full-screen
+      # backdrops -- `Backdrop`, `Panorama`, `Title`, `GameOver` -- which this
+      # runtime already loads opaque.
       def animation_sheet(name)
         return nil if name.nil? || name.empty?
         cached_bitmap(@animation_cache, name) do
           begin
-            Bitmap.new "Battle/#{name}"
+            Bitmap.new "Battle/#{name}", true
           rescue StandardError => e
             $stderr.puts "[RPG2k] battle animation '#{name}' load failed: #{e.message}"
             nil

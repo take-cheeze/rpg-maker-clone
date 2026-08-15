@@ -3616,6 +3616,29 @@ The work below is roughly ordered by the critical path to a walkable game
   cases; a drawn cell blitting at its own opacity and in the same place as
   before; a 100%-transparent cell laying down nothing), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **The sheet itself is now loaded colour-keyed**, which was the larger
+  half of the same bug. `Bitmap.new`'s second argument maps palette index 0 to
+  transparent (`mruby-rgss/src/lib.cxx`'s `load_xyz_mem` /
+  `load_png_tolerant_mem` `trans` flag), and `#animation_sheet` was the one
+  sheet loader in this runtime that never passed it — `CharSet/`, `ChipSet/`,
+  `FaceSet/`, `Monster/`, `System/` and `Picture/` all did, so `Battle/` alone
+  decoded opaque. An animation sheet is a 5-column grid of 96x96 cells whose
+  *entire* background is the transparent colour, so every cell
+  `#blit_animation_cell` laid down painted an opaque 96x96 rectangle of that
+  background over its target: a solid block parked on the enemy for the
+  animation's whole duration, not a spell. (With the per-cell transparency fix
+  above and without this one, the block would merely have become a translucent
+  block; the two are halves of the same "handle the animation's transparency"
+  gap.) Confirmed against EasyRPG's own material table (`src/cache.cpp`,
+  fetched verbatim), whose `Spec::transparent` column is true for `Battle`
+  alongside every directory this runtime already colour-keys, and false only
+  for the four full-screen backdrops — `Backdrop`, `Panorama`, `Title`,
+  `GameOver` — which this runtime already loads opaque and which stay that
+  way. Covered by a new `scripts/rpg2k_scene_check.rb` check (the sheet loads
+  as `Battle/<name>` with the flag set, `Backdrop/` still loads without it),
+  which needed the check suite's stub `Bitmap` taught to record *how* a
+  graphic was loaded rather than only that it was; confirmed to fail against
+  the pre-fix code before the fix.
 - ✅ **Which fields the games set that the runtime never reads** —
   `ruby scripts/rpg2k_field_audit.rb`. A survey, not a check (it asserts nothing
   and always exits 0): for every scalar database field it counts the rows of the
