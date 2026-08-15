@@ -3657,10 +3657,24 @@ following this paragraph as the original record.
   fuller writeup under the "Documented race condition" bullet, "Full-site
   sweep" section below, where this is fixed (`Scene::Map#drive_event`'s
   `:battle` case, `mruby-rpg2k/mrblib/scene/map.rb`).
-- `017_heiretu_totyu_end/hei_mukou.htm` — (a) a Parallel Process's appearance
-  condition going false mid-execution isn't observed until the process
-  naturally hits a Wait/yield point, not instantly (may already follow from
-  how `step_parallel` is structured — unverified). ✅ (b) **Set Move Route +
+- `017_heiretu_totyu_end/hei_mukou.htm` — ✅ (a) **a Parallel Process's
+  appearance condition going false mid-execution isn't observed until the
+  process naturally hits a Wait/yield point, not instantly — confirmed
+  already correct.** `Scene::Map#step_parallel` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) only ever resumes the interpreter object it already has for
+  a given parallel-process slot; it has no code path that re-derives
+  `EventPage.select`/re-checks the owning event's page conditions on an
+  in-flight interpreter mid-command the way a fresh `#build_parallels` pass
+  does at the *start* of a lap — a condition flip is only ever noticed the
+  next time that process finishes and `#build_parallels`/`#new_parallel`
+  runs again, i.e. at its own natural yield-to-restart boundary, not
+  instantly. This is the identical fact already recorded (and cross-
+  referenced from here) under the "Untriaged backlog, from
+  `2k/01_shoshin/011_siyou/`" **Parallel Process** bullet below ("appearance
+  condition going false mid-run only stops at the next yield point, not
+  instantly ... `step_parallel` structurally cannot reconsider a running
+  interpreter's own condition mid-command"); no separate check needed beyond
+  what that entry already establishes. ✅ (b) **Set Move Route +
   "wait for completion" (Proceed With Movement) issued from a Parallel
   Process now actually blocks that process**, instead of the command reading
   as a fire-and-forget no-op regardless of "wait for completion" — including
@@ -3702,8 +3716,8 @@ following this paragraph as the original record.
   already-fixed foreground "Set Move Route targeting a currently-hidden map
   event freezes Proceed With Movement" check (`docs/TODO.md`'s `015_shujinkou_idou_huka`
   entry above) relies on — no separate `@stuck_move_targets` handling was
-  needed for the parallel-process case. Part (a) of this same bullet remains
-  open.
+  needed for the parallel-process case. Both parts of this bullet are now
+  disposed of.
 - `015_shujinkou_idou_huka/` — catalogue of hero-can't-move causes; most
   already covered by existing passability/move-route logic. ✅ **"Force Move
   All" targeting a currently-hidden (appearance-conditions-unmet) map event
@@ -3741,11 +3755,30 @@ following this paragraph as the original record.
   refreshed; a control case pins that a target id with no matching event *at
   all* is left as a plain no-op, not this freeze), the first confirmed to
   fail against the pre-fix code before the fix.
-- `037_zen_tuukou_kanou/` — passability is the AND of lower+upper chip
-  passability (probably already correct, unverified); only the chipset's
-  literal top-left upper tile is the canonical "no tile" transparent chip,
-  any other blank-looking one carries its own (possibly impassable)
-  identity — content-authoring nuance, likely nothing to fix engine-side.
+- ✅ `037_zen_tuukou_kanou/` — **passability already combines lower+upper chip
+  passability correctly, confirmed against the actual algorithm rather than
+  a plain AND.** `ChipSet#passable_tile?` (`mruby-rpg2k/mrblib/game.rb`),
+  called by `Scene::Map#passable?`/`#char_passable?`/`#char_can_land?`/
+  `#vehicle_passable?`/`#airship_landable?` alike, is more precise than a
+  simple AND: an upper tile that blocks the direction wins outright (how a
+  counter, blocked every side, refuses entry even over passable ground); one
+  that permits it but isn't flagged `ABOVE_BIT` is solid ground in its own
+  right and the check stops there without consulting the lower layer at all;
+  only an `ABOVE_BIT`-flagged upper tile (or no upper tile) falls through to
+  the lower layer's own passability — the same rule EasyRPG's
+  `Game_Map::IsPassableTile` documents. A tile blocked by *either* layer (the
+  simple-AND reading) is still refused overall, so the claim's practical
+  upshot holds; the engine just doesn't literally AND two independent
+  booleans, it short-circuits through whichever layer is authoritative. The
+  second half — only the chipset's literal top-left upper tile is the
+  canonical transparent "no tile" chip, any other blank-looking one carries
+  its own (possibly impassable) identity — is a content-authoring nuance
+  about how a chipset's upper-layer flags table is filled in, not an engine
+  rule: `upper_flags`/`passable_tile?` read whatever the actual per-tile
+  flags say for the tile id given, with no hardcoded "blank tile" special
+  case anywhere, so an author-supplied non-transparent "blank" upper tile
+  already gets its own real flags read and honoured. Nothing to fix
+  engine-side.
 - ✅ `028_tokushu_huka/` — a skill whose Attack/Defense Attribute is configured
   as a **weapon** attribute (vs. a **magic** attribute) can only be used
   while a weapon carrying that same attribute is equipped; armour with the
@@ -3753,19 +3786,35 @@ following this paragraph as the original record.
   attribute-based equip-gating at all before this — see the "Database field
   semantics" entry below, now implemented as `Game::Party#can_cast?` /
   `#weapon_attribute_ready?`.
-- `033_load/` — editing a map in the *editor* after a save exists resets
-  that save's event positions to default on load, and database edits (e.g.
-  reordering Items) desync old saves since items are referenced by
-  index/id. Narrow/likely not applicable — this reimplementation has no
-  "map data changed since this save" concept to model.
-- `027_tokushu_suicchi/` — a Skill Type "Switch" becoming unselectable in
-  battle until its attributes are reset appears to be an *editor* bug that
-  produces malformed authored data, not runtime engine behaviour — probably
-  nothing to reproduce here.
-- `001_bug_taisaku/`, `014_shift/`, `024_shori_ochi/`, `032_bgm_naranai/`,
-  `040_siro_bubun/` — debugging-technique guide, Windows StickyKeys dialog,
-  frame-rate-drop authoring advice, and two Windows/graphics-import issues,
-  respectively. Not engine game-logic; skip.
+- ✅ `033_load/` — **not applicable: editing a map in the *editor* after a
+  save exists resets that save's event positions to default on load, and
+  database edits (e.g. reordering Items) desync old saves since items are
+  referenced by index/id.** Both halves are consequences of a real RPG2000
+  editor mutating `.lmu`/`.ldb` files on disk out from under a save that was
+  taken against the old data — a genuinely stateful, file-system-level
+  authoring workflow this reimplementation has no counterpart for (there is
+  no "map/database data changed since this save" concept, no separate
+  editor process, and no on-disk `.lmu`/`.ldb` mutation path at all — a save
+  is always loaded against whatever map/database data is currently running).
+  Nothing engine-side to model or fix.
+- ✅ `027_tokushu_suicchi/` — **not applicable: a Skill Type "Switch"
+  becoming unselectable in battle until its attributes are reset is an
+  *editor*-side authoring bug that produces malformed data (a Skill Type
+  entry left without a valid backing Switch reference), not a runtime
+  engine rule.** This codebase has no RPG2000-editor equivalent that could
+  reproduce the malformed-authoring step in the first place — any Skill
+  Type reaching the runtime already has whatever switch reference the
+  `.ldb` actually encodes, so there is no "becomes unselectable" state
+  distinct from "the database says it's unselectable" for the engine to get
+  right or wrong. Nothing to reproduce here.
+- ✅ `001_bug_taisaku/`, `014_shift/`, `024_shori_ochi/`, `032_bgm_naranai/`,
+  `040_siro_bubun/` — **not applicable, all five: a debugging-technique
+  guide, a Windows StickyKeys dialog interaction, frame-rate-drop authoring
+  advice, and two Windows/graphics-import issues, respectively.** None
+  describes RPG_RT engine game-logic — they document Windows OS behaviour,
+  the RPG2000 *editor's* own import tooling, and general troubleshooting
+  advice for content authors, none of which this engine reimplementation
+  has a corresponding code path for. No action needed.
 
 #### Untriaged backlog, from `2k/01_shoshin/011_siyou/` (ツクールの仕様)
 Full page read; ~140 distinct quirks catalogued, grouped by the page's own
