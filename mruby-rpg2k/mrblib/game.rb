@@ -2914,6 +2914,20 @@ module Game
       @db.respond_to?(:rpg2003?) && @db.rpg2003?
     end
 
+    # Whether the database asks for RPG2003's sprite/gauge battle-screen
+    # presentation instead of RPG2000's status-window-only one
+    # (`battlecommands.battle_type`, database chunk 0x1D field 7 -- 0
+    # traditional, 1 alternative, 2 gauge). Nothing in this runtime branches
+    # on it yet -- rendering support lands in a follow-up change -- but it
+    # needs to exist now so that follow-up can be reviewed against real data
+    # instead of guessed. A bare test fixture with no `#battlecommands` table
+    # reads false, the same answer a genuine RPG2000 database gives.
+    def alternate_battle_layout?
+      return false unless @db.respond_to?(:battlecommands)
+      table = @db.battlecommands
+      table && table.battle_type != 0 ? true : false
+    end
+
     # Whether item `id` can be used from the field (main-menu) item screen: a
     # medicine or switch item the party holds whose "usable in field" occasion is
     # set (a battle-only medicine is hidden here, mirroring #battle_usable?), or a

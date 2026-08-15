@@ -3173,9 +3173,10 @@ end
 # The database-wide RPG2003 Battle Commands table (LCF chunk 29's `commands`
 # field, `Game::Actor#battle_command_row`'s own source) and one of its
 # entries, mirroring the shape `LCF::Array1D#battlecommands` /
-# `#commands[id]` decode to: an object with `#commands` (id -> entry) and an
-# entry with `#name` + `#type`.
-FakeBattleCommandsTable = Struct.new(:commands)
+# `#commands[id]` decode to: an object with `#commands` (id -> entry), a
+# `#battle_type` (chunk 29 field 7, Game::Party#alternate_battle_layout?'s own
+# source), and an entry with `#name` + `#type`.
+FakeBattleCommandsTable = Struct.new(:commands, :battle_type)
 FakeBattleCommand = Struct.new(:name, :type)
 
 def party_state(enemy_group: Hash.new(true))
@@ -4152,7 +4153,7 @@ check "Game::Actor#battle_command_row resolves a positive id via the database's 
   actor_curve = []
   3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
   players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, [5, 0, -1, -1, -1, -1, -1]) }
-  table = FakeBattleCommandsTable.new({ 5 => FakeBattleCommand.new('Cast Fire', 2) })
+  table = FakeBattleCommandsTable.new({ 5 => FakeBattleCommand.new('Cast Fire', 2) }, 0)
   db = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, battlecommands: table)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   a = st.party.actor_by_id(1)
@@ -4166,6 +4167,30 @@ end
 check 'Game::Actor#battle_command_row is nil when the database carries no Battle Commands table at all' do
   a = party_state.party.actor_by_id(1) # the plain RPG2000 fixture, no chunk 29
   eq nil, a.battle_command_row(1)
+end
+
+check 'Game::Party#alternate_battle_layout? reads chunk 29 field 7 (BattleType)' do
+  # An RPG2000 database (no chunk 29 at all -- RPG2000's editor has no such
+  # option) reads traditional/false, same as party_state's plain fixture.
+  eq false, party_state.party.alternate_battle_layout?,
+     'no Battle Commands table at all -> traditional layout'
+
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+
+  traditional = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 0))
+  eq false, Game::Party.new(traditional).alternate_battle_layout?,
+     'BattleType_traditional (0) -> traditional layout'
+
+  alternative = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 1))
+  eq true, Game::Party.new(alternative).alternate_battle_layout?,
+     'BattleType_alternative (1) -> alternate layout'
+
+  gauge = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                           battlecommands: FakeBattleCommandsTable.new({}, 2))
+  eq true, Game::Party.new(gauge).alternate_battle_layout?,
+     'BattleType_gauge (2) -> alternate layout'
 end
 
 check 'Change HP command damages a fixed actor' do
