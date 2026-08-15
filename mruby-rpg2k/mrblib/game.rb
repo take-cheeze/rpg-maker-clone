@@ -5579,8 +5579,12 @@ module Game
     # True while a flash is still fading out.
     def flashing?; @flash_frames > 0; end
 
-    # The current pan offset [x, y] in pixels, added to the camera by the scene.
-    def pan_offset; [@pan_x, @pan_y]; end
+    # The current pan offset [x, y] in whole pixels, added to the camera by the
+    # scene. @pan_x/@pan_y themselves may sit at a sub-pixel value mid-pan (see
+    # #pan_step_for) -- rounded only here, at the point of consumption, the
+    # same way real RPG_RT's own 1/16-pixel subpixel pan position is only ever
+    # rounded to a whole pixel for display.
+    def pan_offset; [@pan_x.round, @pan_y.round]; end
 
     # Whether a Lock operation has frozen the camera in place — the scene stops
     # following the hero while this holds. The pan offset (see #pan_offset) is
@@ -5845,11 +5849,20 @@ module Game
       cur < target ? cur + step : cur - step
     end
 
-    # Pixels moved per frame for a pan speed (1..6): RPG2000's pan speeds roughly
-    # double per step. An approximation — the exact subpixel rate is a native
-    # refinement.
+    # Pixels moved per frame for a pan speed (1..6). EasyRPG's own
+    # Game_Player::StartPan/ResetPan (src/game_player.cpp) set `pan_speed = 2
+    # << speed`, a value that lives in RPG_RT's own 1/16-pixel subpixel space
+    # (game_map.h's SCREEN_TILE_SIZE = 256, sixteen per this codebase's own
+    # real TILE = 16 px) -- so the real whole-pixel rate is `(2 << speed) /
+    # 16.0`: 0.25, 0.5, 1, 2, 4, 8 px/frame for speed 1..6, not a plain
+    # doubling starting at a whole pixel (1, 2, 4, 8, 16, 32), which was 4x
+    # too fast at every setting. @pan_x/@pan_y (see #approach/#pan_offset)
+    # accumulate this sub-pixel-per-frame rate exactly at speeds 1/2 (0.25
+    # and 0.5 are both exact powers of two in binary floating point, so this
+    # never drifts), landing on the same whole-pixel target #pan_offset's own
+    # rounding always resolves to once a pan finishes.
     def pan_step_for(speed)
-      2**(Game.clamp(speed, 1, 6) - 1)
+      (2 << Game.clamp(speed, 1, 6)) / 16.0
     end
   end
 
