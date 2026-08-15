@@ -561,9 +561,11 @@ The work below is roughly ordered by the critical path to a walkable game
   and **Change Equipment** apply to a fixed actor, a variable-selected actor or
   the whole party, clamped to each actor's maxima (Change HP honours the
   allow-death floor; Change Parameters re-clamps current HP/MP when a maximum is
-  lowered; **Change EXP** re-derives the level from the RPG2000 standard curve
-  (`Game::Actor#exp_for_level`, ported from EasyRPG's `CalculateExp` off the
-  row's exp_basic/increase/correction) and **Change Level** rescales base stats
+  lowered; **Change EXP** re-derives the level from the database edition's own
+  curve (`Game::Actor#exp_for_level`/`#calc_exp`, ported from EasyRPG's
+  `CalculateExp` off the row's exp_basic/increase/correction — RPG2000 and
+  RPG2003 use genuinely different formulas, not a shared one with an
+  edition-gated constant; see the ✅ below) and **Change Level** rescales base stats
   through the per-level growth curve, both keeping EXP and level consistent
   without refilling current HP/MP, matching RPG_RT; Change Equipment folds an
   equipped item's bonuses into the effective stats). **Change Party Member**
@@ -5451,6 +5453,31 @@ not yet verified:
   5, which the old percent model could never produce; and the zero-variance/
   zero-base passthrough cases), confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **An RPG2003 database now uses RPG2003's own EXP curve, instead of
+  always running RPG2000's regardless of edition.** EasyRPG's
+  `Game_Actor::CalculateExp` (`src/game_actor.cpp`) branches entirely on
+  edition (`Player::IsRPG2k() ? 1 : 2`) between two *structurally different*
+  formulas, not a shared curve with an edition-gated constant the way the
+  HP/EXP *ceilings* are: RPG2000's compounds a running base by an inflation
+  factor each step (`base *= inflation`), while RPG2003's is linear in the
+  level index (`result += base + i*inflation + correction` for `i` from 1 to
+  the level). `Game::Actor#calc_exp` had no `#rpg2003?` branch anywhere in
+  it, even though the method already exists and is used elsewhere in this
+  same class — every actor in an RPG2003 database levelled up on RPG2000's
+  thresholds throughout the game. For the shared
+  `exp_basic`/`exp_increase`/`exp_correction` = 30/30/30 default fixture,
+  the level 1→2 threshold computed 60 under the wrongly-applied RPG2000
+  curve where RPG2003's own formula gives 90 — a third off at the very
+  first level, diverging further at every level after since the curves
+  don't just differ by a constant, they have different shapes entirely.
+  Fixed by branching `#calc_exp` on `#rpg2003?` and porting
+  `CalculateExp`'s linear RPG2003 loop verbatim — plain integer arithmetic,
+  since EasyRPG's own `double` locals for this branch never leave integral
+  values, so (unlike the RPG2000 branch) no float compounding is needed to
+  match it exactly. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  pinning the RPG2003 curve's own level 1→2 and 1→3 thresholds against a
+  database flagged `rpg2003: true`, confirmed to fail against the pre-fix
+  code before the fix (`expected 90, got 60`).
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
