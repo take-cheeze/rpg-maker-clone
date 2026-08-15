@@ -6480,6 +6480,45 @@ not yet verified:
   (Exit Game itself is not covered by an automated check, matching the
   pre-existing foreground Exit Game command's own lack of test coverage,
   since it calls a real process exit).
+- ✅ **Open Save Menu (11910), Open Main Menu (11950) and Open Load Menu (5001,
+  RPG2003) now actually open their screen when issued from a Parallel
+  Process, instead of silently doing nothing.** The last three of the
+  seven-command family of Parallel-Process dispatch gaps this session found
+  in `Scene::Map#drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`),
+  after `:shop`/`:name_input`/`:return_title`/`:exit_game` above. Confirmed
+  against EasyRPG's actual C++ source: `Game_Interpreter_Map
+  ::CommandOpenSaveMenu`/`CommandOpenMainMenu`/`CommandOpenLoadMenu`
+  (`src/game_interpreter_map.cpp`) are each gated only on
+  `Game_Message::IsMessageActive()` (`CommandOpenLoadMenu` additionally
+  requires `Player::IsRPG2k3ECommands()`) — no `main_flag` reference
+  anywhere in any of the three, exactly the same "no foreground/parallel
+  distinction at all" shape already confirmed for Return to Title/Exit
+  Game. `drive_parallel_wait` had no `:save_menu`/`:menu`/`:load_menu`
+  branches, so all three fell into the generic `else` → unconditional
+  `it.resume`, silently discarding the request — an "auto-save trap" idiom,
+  a custom pause-menu hotkey built from a polled Key Input Processing
+  variable, or an RPG2003 custom load-menu shortcut, all built entirely
+  inside a Parallel Process, would never actually open anything. Unlike
+  Return to Title/Exit Game, these three *are* resumable (the interpreter
+  needs to pick back up once the pushed `Scene::SaveLoad`/`Scene::Menu`
+  closes), so the fix mirrors `:shop`/`:name_input`'s "track the owner"
+  shape instead: `#perform_event_save`/`#perform_event_load`/
+  `#perform_event_menu` each gain an `it = @interpreter` parameter, and
+  their shared one-visit guard flags (`@event_save_load`, reused by both
+  Save and Load Menu since only one `Scene::SaveLoad` can ever be open at
+  once; `@event_menu` for the field menu) now hold the *owning interpreter*
+  itself (nil when closed) rather than a bare boolean, so the picker/menu
+  resumes whichever interpreter actually opened it. No shared-resource
+  cross-guard is needed the way `:shop`/`:name_input` need one, since a
+  pushed `Scene::SaveLoad`/`Scene::Menu` fully suspends `Scene::Map#update`
+  — and so `#drive_parallel_wait` itself — until it pops, leaving nothing
+  to race. Covered by two new `scripts/rpg2k_scene_check.rb` checks (Open
+  Main Menu and Open Save Menu, each driving a full
+  Parallel-Process-issued open → paused → close → resume cycle), confirmed
+  to fail against the pre-fix code before the fix; Open Load Menu is not
+  separately covered, matching its own foreground counterpart's existing
+  test shape (mode is the only difference from Open Save Menu, already
+  proven by the pre-existing foreground Load Menu check).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

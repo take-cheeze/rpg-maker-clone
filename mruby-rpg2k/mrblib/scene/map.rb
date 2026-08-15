@@ -1869,6 +1869,31 @@ class RPG2k
           # Exit Game silently never quit the game at all -- the classic
           # "auto-quit once switch X is on" idiom was a permanent no-op.
           perform_exit_game(it)
+        elsif it.wait_kind == :save_menu
+          # Open Save Menu issued from a Parallel Process: EasyRPG's
+          # `Game_Interpreter_Map::CommandOpenSaveMenu`
+          # (src/game_interpreter_map.cpp) is gated only on
+          # `Game_Message::IsMessageActive()`, no `main_flag` restriction --
+          # same reasoning as :shop/:name_input above. Before this branch
+          # existed this fell into the generic #resume below, so an
+          # "auto-save trap" idiom built entirely inside a Parallel Process
+          # silently never opened the save picker at all. No shared-resource
+          # cross-guard is needed the way :shop/:name_input need one: a
+          # pushed Scene::SaveLoad/Scene::Menu fully suspends this scene's
+          # own #update -- and so #drive_parallel_wait itself -- until it
+          # pops, so nothing else can race it open.
+          perform_event_save(it) if @message.nil?
+        elsif it.wait_kind == :menu
+          # Open Main Menu issued from a Parallel Process: same reasoning as
+          # :save_menu just above -- EasyRPG's `Game_Interpreter_Map
+          # ::CommandOpenMainMenu` has no `main_flag` gate either.
+          perform_event_menu(it) if @message.nil?
+        elsif it.wait_kind == :load_menu
+          # Open Load Menu (5001, RPG2003) issued from a Parallel Process:
+          # same reasoning as :save_menu/:menu above -- EasyRPG's
+          # `Game_Interpreter_Map::CommandOpenLoadMenu` has no `main_flag`
+          # gate either.
+          perform_event_load(it) if @message.nil?
         else
           # :message, :choice and :number are all handled above now.
           it.resume
@@ -3144,18 +3169,34 @@ class RPG2k
       # Game::MapAccess::TRISTATE_FORBID`) relies on this command to bypass --
       # confirmed against Nepheshel's real data, which forbids Save on that
       # very map and puts its "SAVE" choice behind Open Save Menu regardless.
-      def perform_event_save
+      # `it` defaults to the foreground @interpreter, but #drive_parallel_wait
+      # passes its own parallel interpreter here too -- EasyRPG's
+      # `Game_Interpreter_Map::CommandOpenSaveMenu` (src/game_interpreter_map.cpp)
+      # is gated only on `Game_Message::IsMessageActive()`, no `main_flag`
+      # restriction, so a Common Event's or a map event's own Parallel Process
+      # can trigger it exactly like the foreground can. `@event_save_load` now
+      # holds the *owning interpreter* (nil when the picker is closed) rather
+      # than a bare boolean, so the second visit resumes whichever interpreter
+      # actually opened it -- mirroring `@shop[:interp]`/`@name_ui[:interp]`'s
+      # own "who asked for this shared, singleton screen" tracking, just kept
+      # as a bare ivar since there is no extra per-open state to carry here
+      # (unlike the shop/name-entry widgets, a pushed Scene::SaveLoad/
+      # Scene::Menu fully suspends this scene's own #update -- and so
+      # #drive_parallel_wait itself -- until it pops, so there is no way for a
+      # second Open Save/Load/Main Menu to race the one already open).
+      def perform_event_save(it = @interpreter)
         if @event_save_load
-          @event_save_load = false
-          @interpreter.resume
+          owner = @event_save_load
+          @event_save_load = nil
+          owner.resume
         else
-          @event_save_load = true
+          @event_save_load = it
           @parent.push Scene::SaveLoad.new(@parent, @state, :save)
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Save Menu failed: #{e.message}"
-        @event_save_load = false
-        @interpreter.resume
+        @event_save_load = nil
+        it.resume
       end
 
       # Open Load Menu (5001, RPG2003): open Scene::SaveLoad in :load mode, the
@@ -3169,18 +3210,27 @@ class RPG2k
       # that opened the screen carries on from the next command, rather than
       # being abandoned the way the old single-slot version's unconditional
       # #stop did.
-      def perform_event_load
+      # `it` defaults to the foreground @interpreter, but #drive_parallel_wait
+      # passes its own parallel interpreter here too, for the same reason and
+      # the same `@event_save_load`-holds-the-owner shape as #perform_event_save
+      # just above (they deliberately share the one flag -- see its own doc
+      # comment). EasyRPG's `Game_Interpreter_Map::CommandOpenLoadMenu`
+      # (src/game_interpreter_map.cpp) is gated only on
+      # `Game_Message::IsMessageActive()` (plus its own RPG2003-English-release
+      # check), same as Open Save/Main Menu.
+      def perform_event_load(it = @interpreter)
         if @event_save_load
-          @event_save_load = false
-          @interpreter.resume
+          owner = @event_save_load
+          @event_save_load = nil
+          owner.resume
         else
-          @event_save_load = true
+          @event_save_load = it
           @parent.push Scene::SaveLoad.new(@parent, nil, :load)
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Load Menu failed: #{e.message}"
-        @event_save_load = false
-        @interpreter.resume
+        @event_save_load = nil
+        it.resume
       end
 
       # Exit Game (5002, RPG2003): quit, the way the title screen's Shutdown
@@ -3202,18 +3252,27 @@ class RPG2k
       # event once the player closes it again. `@event_menu` marks that this
       # scene is waiting on its own menu, so the event stays paused for exactly
       # one visit instead of re-opening it every frame.
-      def perform_event_menu
+      # `it` defaults to the foreground @interpreter, but #drive_parallel_wait
+      # passes its own parallel interpreter here too -- EasyRPG's
+      # `Game_Interpreter_Map::CommandOpenMainMenu` (src/game_interpreter_map.cpp)
+      # is gated only on `Game_Message::IsMessageActive()`, no `main_flag`
+      # restriction. `@event_menu` now holds the owning interpreter (nil when
+      # closed) rather than a bare boolean, the same shape (and the same
+      # "a pushed Scene fully suspends #update, so nothing can race it"
+      # reasoning) as `@event_save_load` above.
+      def perform_event_menu(it = @interpreter)
         if @event_menu
-          @event_menu = false
-          @interpreter.resume
+          owner = @event_menu
+          @event_menu = nil
+          owner.resume
         else
-          @event_menu = true
+          @event_menu = it
           @parent.push Scene::Menu.new(@parent, @state)
         end
       rescue StandardError => e
         $stderr.puts "[RPG2k] Open Main Menu failed: #{e.message}"
-        @event_menu = false
-        @interpreter.resume
+        @event_menu = nil
+        it.resume
       end
 
       # -- Move Event (Set Move Route) ----------------------------------------
