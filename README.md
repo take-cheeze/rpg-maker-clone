@@ -107,6 +107,15 @@
   Show Hidden Monster, Change Battle Background, the battle Show Battle
   Animation, the battle Conditional Branch and Terminate Battle. A page whose
   condition box is entirely unticked never fires, which is how RPG_RT reads it
+- The **Battle/Auto Battle/Escape options window** shows automatically once at
+  the start of every fight, and reopens on B/Cancel landing on the first
+  commandable actor's command list. Battle opens the ordinary per-actor
+  command menu; Auto Battle hands every commandable living ally to the same
+  AI pick (`Game::Battle#choose_auto_battle_command`) a 強制AI-flagged actor
+  already used, so the round plays out with no further input; Escape rolls
+  the same agility-based escape chance either way. A party that is entirely
+  asleep/paralysed/forced or already Forced-AI'd skips the window, matching
+  real RPG_RT
 - **Status conditions show on the battle screen**, where until now they were only
   simulated — a poisoned hero and a healthy one looked identical. The status
   panel gained a condition column carrying the *significant* state (death first,

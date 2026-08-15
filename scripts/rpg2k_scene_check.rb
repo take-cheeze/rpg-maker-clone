@@ -5187,10 +5187,27 @@ def battle_attack_to_end(scene, max = 600)
   max.times do
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :result
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target].include?(ui[:phase])
+    # A pressed C on :battle_options picks the cursor's default row 0,
+    # "Battle" -- dismissing the once-per-battle automatic options window
+    # exactly the way a player who ignores Auto Battle/Escape would.
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui[:phase])
     scene.update # a nil ui just means the battle is still opening
     RGSS::Input.triggered = []
   end
+end
+
+# Run `scene` until its battle UI's phase becomes `phase`, budgeted to `max`
+# frames -- used by the options-window checks below, which need to catch the
+# battle right when a phase first appears rather than run it through to a
+# later one the way #battle_attack_to_end does.
+def battle_until_phase(scene, phase, max = 15)
+  ui = nil
+  max.times do
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    break if ui && ui[:phase] == phase
+  end
+  ui
 end
 
 check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Victory' do
@@ -5582,18 +5599,110 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   ok parent.game_over_shown, 'a game-over defeat puts up the Game Over screen'
 end
 
-check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
+# The real RPG2k Battle/Auto Battle/Escape options window (EasyRPG's
+# `scene_battle_rpg2k.cpp`, `State_SelectOption` /
+# `ProcessSceneActionFightAutoEscape`), traced verbatim in docs/TODO.md's
+# "SelectPreviousActor" writeup: shown automatically once per battle, right
+# after the encounter/turn-0-event messages resolve
+# (`ProcessSceneActionStart`'s final substate: unconditional
+# `SetState(State_SelectOption)`), and reopened whenever B/Cancel lands on
+# the very first commandable actor's command list
+# (`SelectPreviousActor()`'s `allies[0] == active_actor` branch), instead of
+# this engine's old direct-B-press Escape shortcut.
+
+check 'Enemy Encounter scene: the Battle/Auto Battle/Escape options window opens ' \
+      'automatically once at the very start of every fight' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  ok ui, 'the battle opened'
+  eq :battle_options, ui[:phase], 'the options window shows before any per-actor command menu'
+  eq 0, ui[:opt], 'the cursor starts on the first row, Battle'
+  eq %w[Fight AutoBattle Escape].map { |s| s == 'AutoBattle' ? 'Auto Battle' : s },
+     scene.send(:battle_option_rows).map { |r| r[:label] },
+     'fake_db leaves the battle_fight/battle_auto/battle_escape terms blank, so these are ' \
+     'the composed English fallbacks'
+end
+
+check 'Enemy Encounter scene: B/Cancel does nothing while the options window is open' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  eq :battle_options, ui[:phase]
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :battle_options, ui[:phase], 'B/Cancel is a no-op here -- there is no parent state to cancel to'
+  eq 0, ui[:opt], 'the cursor did not move either'
+  eq [], RGSS::Audio.se_calls, 'and no SE played, matching a real cancel-into-nothing'
+end
+
+check 'Enemy Encounter scene: selecting Battle from the options window returns to the ' \
+      'ordinary per-actor command menu' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # Battle -- the default cursor row 0
+  scene.update
+  RGSS::Input.triggered = []
+  eq :command, ui[:phase], 'Battle dismisses the window and opens the normal command menu'
+  eq 0, ui[:actor_i], 'still commanding the same first actor'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Decision1' }, 'choosing Battle plays Decision'
+end
+
+check "Enemy Encounter scene: B-cancel on the first commandable actor's command list " \
+      'reopens the options window instead of escaping directly' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss via Battle first
+  scene.update
+  RGSS::Input.triggered = []
+  eq :command, ui[:phase]
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B] # cancel on the very first actor
+  scene.update
+  RGSS::Input.triggered = []
+  eq :battle_options, ui[:phase],
+     'reopens the options window rather than attempting Escape directly, ' \
+     'the deliberate simplification this replaces'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Cancel1' },
+     'B always plays Cancel first, matching a real re-command, before landing on the window'
+end
+
+check 'Enemy Encounter scene: selecting Escape from the options window runs Escape, exactly ' \
+      'as the old direct-B shortcut did' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic, escape_mode: 2) # custom escape handler
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  2.times { scene.update } # the encounter runs, then the command menu opens
-  RGSS::Input.triggered = [RGSS::Input::B] # Flee (cancel on the first actor)
+  ui = battle_until_phase(scene, :battle_options)
+  2.times { RGSS::Input.triggered = [RGSS::Input::DOWN]; scene.update } # Fight -> Auto Battle -> Escape
+  RGSS::Input.triggered = []
+  eq 2, ui[:opt], 'the cursor landed on Escape'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm Escape
   scene.update
   RGSS::Input.triggered = []
-  ui = scene.instance_variable_get(:@battle_ui)
   eq :result, ui[:phase], 'a successful flee shows the result window too, like a win or a loss'
   ok !st.switches[2], 'the Escape handler has not run yet -- the result is still up'
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss the result
@@ -5603,6 +5712,60 @@ check 'Enemy Encounter scene: Flee (B on the first actor) runs Escape' do
   eq 0, st.party.gold, 'fleeing grants nothing'
   ok !st.switches[1], 'the Victory handler was skipped'
   ok st.switches[2], 'the Escape handler ran'
+end
+
+check 'Enemy Encounter scene: selecting Auto Battle queues the AI pick for every ' \
+      'commandable living ally and starts the round without further input' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  st.party.instance_variable_set(:@actors, [BattleStubActor.new(id: 1), BattleStubActor.new(id: 2)])
+  ui = battle_until_phase(scene, :battle_options)
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # Fight -> Auto Battle
+  scene.update
+  RGSS::Input.triggered = []
+  eq 1, ui[:opt], 'the cursor landed on Auto Battle'
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm Auto Battle
+  scene.update
+  RGSS::Input.triggered = []
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Decision1' }, 'choosing Auto Battle plays Decision'
+  ok ui[:allies][0].action || ui[:allies][0].command,
+     "Game::Battle#choose_auto_battle_command queued the first ally's action"
+  ok ui[:allies][1].action || ui[:allies][1].command,
+     "and the second ally's too -- the whole party, not just one"
+  ok ui[:phase] != :command,
+     'the round started on its own -- no per-actor command menu was ever shown'
+end
+
+check 'Enemy Encounter scene: the options window does not reappear automatically at round 2+' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # A tough hero the two Slimes cannot fell in one round, so the fight is
+  # still going once round 2 opens its own command phase.
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 1, hp: 500)))
+  ui = battle_until_phase(scene, :battle_options)
+  RGSS::Input.triggered = [RGSS::Input::C] # Battle
+  scene.update
+  RGSS::Input.triggered = []
+  eq :command, ui[:phase], 'round 1 command phase, options window already dismissed'
+  saw_options_again = false
+  40.times do
+    RGSS::Input.triggered = [RGSS::Input::C] if %i[command target].include?(ui[:phase])
+    scene.update
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = []
+    saw_options_again ||= ui && ui[:phase] == :battle_options
+    break if ui.nil? || ui[:phase] == :result
+  end
+  ok !saw_options_again, 'round 2 (and beyond) opens the command phase directly, never the options window'
 end
 
 check 'Enemy Encounter scene: a game-over defeat returns to the title' do
@@ -7992,9 +8155,15 @@ check 'Enemy Encounter scene: the round animates action by action, not at once' 
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  # Let the encounter open the per-actor command menu (it takes a frame or two).
+  # Let the encounter open the per-actor command menu (it takes a frame or two),
+  # dismissing the once-per-battle automatic options window (C on its default
+  # cursor row 0, "Battle") along the way.
+  ui = nil
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -8068,11 +8237,16 @@ class BattleCustomCommandParty < BattleMagicParty
   end
 end
 
-# Open a battle and step to the per-actor command menu.
+# Open a battle and step to the per-actor command menu, dismissing the
+# once-per-battle automatic Battle/Auto Battle/Escape options window along
+# the way (a C press on its default cursor row 0, "Battle").
 def battle_to_command(scene)
   ui = nil
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -8744,9 +8918,15 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   member = ui[:troop].members[0]
   base_y = member.y - spr.bitmap.height / 2
   frame_before = ui[:frame]
-  # Drive to the next quarter-period boundary (a multiple of 64 frames) so the
-  # expected offset is an exact, easily-asserted +4 rather than a fraction.
-  target = ((frame_before / 64.0).ceil + 1) * 64
+  # Drive to the next frame landing exactly on a sine peak (frame % 256 ==
+  # 64) so the expected offset is an exact, easily-asserted +4 rather than a
+  # fraction -- computed from whatever `frame_before` actually is (the
+  # once-per-battle options window's own dismiss press adds a frame before
+  # reaching :command, so this cannot assume battle_to_command always lands
+  # on frame 0) rather than a fixed multiple-of-64 offset, which only lands
+  # on a peak one time in four.
+  target = (frame_before / 256) * 256 + 64
+  target += 256 while target <= frame_before
   (target - frame_before).times { scene.update }
   eq target, ui[:frame], 'the per-battle frame counter ticks once per scene.update'
   eq base_y + 4, spr.y, "the sprite's own y actually moved with it, not just " \
@@ -9558,7 +9738,10 @@ check 'an asleep ally is skipped straight to the next commandable one, no comman
                                             BattleStubActor.new(id: 2)])
   ui = nil
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -9620,7 +9803,10 @@ check 'a Forced-AI ally is skipped straight to the next manually-commandable one
                                             BattleStubActor.new(id: 2)])
   ui = nil
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -9644,7 +9830,15 @@ check 'a turn-0 battle-event page runs as the fight opens' do
   scene.update # the exhausted page hands the turn back
   ui = scene.instance_variable_get(:@battle_ui)
   ok ui, 'the battle is still open'
-  eq :command, ui[:phase], 'and control returned to the party'
+  # Control returns to the party through the options window first -- its own
+  # once-per-battle automatic appearance, the same one a bare encounter with
+  # no turn-0 page shows immediately -- not straight to the ordinary
+  # per-actor command menu.
+  eq :battle_options, ui[:phase], 'and control returned to the party via the options window'
+  RGSS::Input.triggered = [RGSS::Input::C] # Battle (default cursor row 0)
+  scene.update
+  RGSS::Input.triggered = []
+  eq :command, ui[:phase], 'dismissing Battle reaches the ordinary per-actor command menu'
 end
 
 check 'a battle page gated on an unmet condition does not fire' do
@@ -9679,7 +9873,7 @@ check 'a battle page conditioned on enemy HP fires mid-round, before the round s
   phase_when_fired = nil
   60.times do
     ui = scene.instance_variable_get(:@battle_ui)
-    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target].include?(ui[:phase])
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && %i[command target battle_options].include?(ui[:phase])
     scene.update
     RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
@@ -9713,7 +9907,10 @@ check 'a battle page reveals a reinforcement before the round can end in a prema
                             Game::BattlePage::ENEMY_HP, enemy_id: 0, enemy_hp_max: 0) }
   scene, st = battle_scene_with_pages(pages)
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -9865,7 +10062,10 @@ check 'a page can wound a monster through Change Monster HP' do
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 7, 1])]) }
   scene, _st = battle_scene_with_pages(pages)
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -9880,9 +10080,12 @@ check 'Change Battle Background from a page rebuilds the backdrop sprite' do
   scene, _st = battle_scene_with_pages(pages)
   before = nil
   10.times do
-    scene.update
     ui = scene.instance_variable_get(:@battle_ui)
     before ||= ui && ui[:back_sprite]
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    scene.update
+    RGSS::Input.triggered = []
+    ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
   ui = scene.instance_variable_get(:@battle_ui)
@@ -10007,7 +10210,10 @@ end
 check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -10298,50 +10504,57 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  2.times { scene.update }
+  ui = battle_until_phase(scene, :battle_options)
+  2.times { RGSS::Input.triggered = [RGSS::Input::DOWN]; scene.update } # Fight -> Auto Battle -> Escape
+  RGSS::Input.triggered = []
   RGSS::Audio.reset_se
-  RGSS::Input.triggered = [RGSS::Input::B] # Flee
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm Escape
   scene.update
   RGSS::Input.triggered = []
-  ui = scene.instance_variable_get(:@battle_ui)
   eq :result, ui[:phase]
   texts = window_texts(ui[:result_win])
   ok texts.any? { |t| t.include?('Escaped!') },
      'fake_db leaves escape_success blank, so this is the composed English fallback'
-  # Decision plays first (attempting Escape at all is a confirm action), then
-  # the dedicated Escape SE right before the battle actually ends -- see
-  # #try_battle_escape's comment.
-  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Decision1' }, 'attempting escape plays Decision'
+  # Decision plays first (choosing Escape from the options window is a
+  # confirm action), then the dedicated Escape SE right before the battle
+  # actually ends -- see #try_battle_escape's comment.
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Decision1' }, 'choosing Escape plays Decision'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Escape1' },
      'a successful escape also plays the dedicated Escape SE'
 end
 
 check 'Enemy Encounter scene: Escape forbidden (the default escape_mode 0) plays ' \
-      'Buzzer on B, not Escape, and the battle continues' do
+      'Buzzer on Escape, and the options window stays open' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic) # default escape_mode: 0 -> allow_escape false
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
-  2.times { scene.update }
-  ui = scene.instance_variable_get(:@battle_ui)
-  eq :command, ui[:phase]
+  ui = battle_until_phase(scene, :battle_options)
+  2.times { RGSS::Input.triggered = [RGSS::Input::DOWN]; scene.update } # Fight -> Auto Battle -> Escape
+  RGSS::Input.triggered = []
+  eq 2, ui[:opt], 'the cursor landed on Escape'
   RGSS::Audio.reset_se
-  RGSS::Input.triggered = [RGSS::Input::B]
+  RGSS::Input.triggered = [RGSS::Input::C] # attempt Escape
   scene.update
   RGSS::Input.triggered = []
-  eq :command, ui[:phase], 'the battle is not left -- escape stays refused'
+  eq :battle_options, ui[:phase], 'the battle is not left -- escape stays refused, the window stays open'
   eq 'Buzzer1', RGSS::Audio.se_calls.last[0],
      'a disallowed escape attempt plays Buzzer, matching a disallowed Save/Continue elsewhere'
 end
 
 # Open a battle and run it up to the command phase, answering [scene, ui].
+# Dismisses the once-per-battle automatic options window (a C press on its
+# default cursor row 0, "Battle") along the way -- see #battle_to_command.
 def battle_at_command(pages = nil)
   scene, = battle_scene_with_pages(pages)
   ui = nil
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end
@@ -13399,7 +13612,10 @@ end
 check 'a transformed monster is redrawn with its new battler graphic' do
   scene, _st = battle_scene_with_pages(nil)
   10.times do
+    ui = scene.instance_variable_get(:@battle_ui)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
+    RGSS::Input.triggered = []
     ui = scene.instance_variable_get(:@battle_ui)
     break if ui && ui[:phase] == :command
   end

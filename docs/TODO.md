@@ -3270,7 +3270,7 @@ The work below is roughly ordered by the critical path to a walkable game
   visually sanity-checked with this engine's own build under Xvfb (no
   exception, no crash resuming into the map).
   **The `SelectPreviousActor()` question flagged above is now settled --
-  confirmed, not merely unconfirmed, and it is a real, concretely-shaped
+  confirmed, not merely unconfirmed, and it was a real, concretely-shaped
   gap, not just an SE nuance.** Traced verbatim: `SelectPreviousActor()`
   (`scene_battle_rpg2k.cpp`), when the actor whose command list is open is
   `allies[0]` (the very first commandable member), does not attempt Escape
@@ -3285,21 +3285,51 @@ The work below is roughly ordered by the critical path to a walkable game
   substate calls `battle_message_window->Clear(); SetState(State_Select
   Option);` unconditionally. It does **not** reappear automatically at the
   start of round 2+; only those two triggers (battle start, and B-cancel
-  underflow from the first actor) reach it. Selecting Battle returns to
-  actor command selection; Auto Battle sets the whole party to an AI-driven
-  auto-battle mode for the round; only Escape runs the already-ported
-  `IsEscapeAllowed()` Buzzer-vs-Decision gate. B/Cancel does nothing while
-  this menu itself is open (no cancel handling in that state -- it is the
-  state machine's own root). **Not implemented, on purpose:** this needs an
-  actual Auto Battle AI mode built to have a real third option, which is a
-  meaningfully sized feature of its own (a full party-command-selection AI,
-  not a UI tweak), well beyond the scope of the system-SE pass that
-  surfaced this gap -- attempting a 2-option (Battle/Escape) stand-in
-  without a genuine Auto Battle behind it would either mislead a player
-  familiar with real RPG2k or need its own separate design decision about
-  what "Auto Battle" should even mean here first. Left as a real, sized,
-  and now fully evidenced gap for whoever picks up battle-flow work next,
-  rather than a vague "battle screen might have more gaps" note.
+  underflow from the first actor) reach it.
+- ✅ **The Battle/Auto Battle/Escape options window itself is now
+  implemented**, closing the gap the paragraph above traced but left open
+  "for whoever picks up battle-flow work next." What had blocked it --
+  Auto Battle needing "an actual Auto Battle AI mode built to have a real
+  third option, which is a meaningfully sized feature of its own" -- turned
+  out to already exist for an unrelated use case: `Game::Battle
+  #choose_auto_battle_command` (a faithful port of EasyRPG's default
+  `AutoBattle::RpgRtCompat` algorithm), added earlier to auto-decide a
+  single 強制AI-flagged actor's turn without ever opening its manual command
+  window. "Auto Battle" from the options window just calls that same method
+  for every commandable living ally instead of one, so no new AI engine was
+  actually needed once that port existed -- only the window and its wiring.
+  `Scene::Map` gets a new `:battle_options` sub-state (`#drive_battle_
+  options`/`#draw_battle_options`, reusing the per-actor command window's own
+  rect and drawing convention) wired at both real triggers: automatically
+  once per battle (`#enter_command_phase`, replacing the direct
+  `#open_next_command` call that `#open_battle` and the between-rounds-event
+  return path used, gated by a fresh `options_shown` flag so round 2+ never
+  re-shows it) and on B/Cancel landing on the first commandable actor's
+  command list (`#drive_battle_command`'s `prev_i.nil?` branch, which used
+  to attempt Escape directly -- now calls `#open_battle_options` instead,
+  matching `SelectPreviousActor()`'s own `SetState(State_SelectOption)`
+  exactly, with the same unconditional Cancel SE either branch already
+  played). A party entirely asleep/paralysed/forced or already Forced-AI'd
+  bypasses the window straight to the ordinary command flow the same way
+  real RPG_RT's `IsAnyControllable()` guard does, since neither Battle nor
+  Auto Battle would have anything left to act on. Selecting Battle falls
+  through to the ordinary per-actor command menu (via `#open_next_command`,
+  not a direct draw, so a restricted/Forced-AI leading actor is still
+  skipped the same way the normal flow always skips it); Auto Battle queues
+  every commandable living ally's AI pick and starts the round with no
+  further input, exactly like a lone Forced-AI actor already did; Escape
+  reuses `#try_battle_escape` verbatim, unchanged from the direct-B-press
+  path it replaces. B/Cancel is a no-op while the window itself is open --
+  it is the state machine's own root, matching source exactly. The
+  `battle_fight`/`battle_auto`/`battle_escape` database terms (schema fields
+  101/102/103, decoded but unread before this) supply the row labels, with
+  the same English-fallback convention every other battle-command label in
+  this file already follows. Covered in `scripts/rpg2k_scene_check.rb`: the
+  window's automatic once-per-battle appearance, its absence at round 2+,
+  B-cancel reopening it instead of escaping directly, Battle/Auto
+  Battle/Escape each dispatching correctly (including the Escape-forbidden
+  Buzzer, which now leaves the window open rather than the old command
+  menu), and B/Cancel's no-op while it is open.
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
   `Music/`/`Sound/`/`Audio/*`
