@@ -8453,15 +8453,15 @@ event-id-existence and page-existence as two distinct checks); invalid
 map (Transfer Player / Teleport-to-Remembered-Location targeting a
 nonexistent map id — error text includes the literal missing filename;
 fixed, see the ✅ below);
-invalid hero, skill, item, enemy, enemy group, battle animation, terrain,
-chipset, common event (all: a database shrink leaves a dangling id
-reference somewhere, shown as "?" in the editor); event-call recursion
-past 1000. Several of these errors are **deferred** until the stale
-reference is actually exercised at runtime rather than raised at load
-time — e.g. invalid terrain only errors when the player steps onto the
-specific stale tile, invalid battle animation only when it would actually
-display, invalid skill only when a skill-select screen opens (or, if the
-dangling ref is in a hero's learned-skill list, at the moment of
+invalid hero, skill, item, enemy, enemy group, battle animation, terrain
+(fixed, see the ✅ below), chipset, common event (all: a database shrink
+leaves a dangling id reference somewhere, shown as "?" in the editor);
+event-call recursion past 1000. Several of these errors are **deferred**
+until the stale reference is actually exercised at runtime rather than
+raised at load time — e.g. invalid terrain only errors when the player
+steps onto the specific stale tile, invalid battle animation only when it
+would actually display, invalid skill only when a skill-select screen opens
+(or, if the dangling ref is in a hero's learned-skill list, at the moment of
 level-up).
 ✅ **Call Event no longer swallows three of the four "invalid event ID"
 causes above, plus the separate "invalid event page" case** — this codebase
@@ -8601,6 +8601,33 @@ position to report. All four log a `[RPG2k] Control Variables: ...`
 diagnostic and still resolve to `0` — behaviour is unchanged, only the
 gap is now visible. Covered by four new `scripts/rpg2k_logic_check.rb`
 checks, each asserting on the captured `$stderr` line.
+✅ **Invalid terrain (a chipset cell whose terrain id a database shrink has
+removed) no longer swallows the gap with a bare `rescue StandardError; nil`**
+— `Scene::Map#terrain_row_at` (`mruby-rpg2k/mrblib/scene/map.rb`), the single
+choke point every terrain lookup goes through (encounter rate, terrain
+damage, bush depth, and boat/ship/airship passability and landing), now
+distinguishes a genuinely terrain-less map/chipset (still silent, exactly as
+before) from a chipset cell whose resolved terrain id has no row in the
+database, and logs a `[RPG2k] Terrain: tile (x, y) references terrain #<id>,
+which no longer exists in the database` diagnostic for the second case. This
+already matches the "deferred until exercised" framing above for free:
+every one of `#terrain_row_at`'s callers only ever asks about a tile
+someone (the party, an event, a vehicle) currently occupies, never
+proactively scanning the whole map, so the diagnostic naturally fires only
+once the player (or a vehicle) actually steps onto the specific stale tile.
+Deduped per stale tile for the visit (a new `@warned_stale_terrain` table,
+reset alongside the other per-visit event tables on a fresh map load or
+teleport) rather than per lookup or per frame — several callers re-ask
+about the tile the party is currently standing on every single frame, and
+logging each of those would spam the console solid for a party that simply
+stands there. Behaviour is otherwise unchanged: the lookup still returns
+`nil` and every caller still falls back to whatever default it already used.
+Covered by a new `scripts/rpg2k_scene_check.rb` check that deletes a
+fixture's only terrain row out from under its chipset, walks the party onto
+the now-dangling tile, and asserts the diagnostic fires exactly once (not
+once per the two call sites that both read the same landed-on tile in a
+single step, and not again on further re-queries of the same tile) while
+terrain damage/bush depth both fall back to their harmless defaults.
 ✅ **A dangling chipset id no longer renders a map blank and fully passable
 with no trace** — the "chipset" case from the "invalid hero, skill, item,
 enemy, enemy group, battle animation, terrain, chipset, common event" list

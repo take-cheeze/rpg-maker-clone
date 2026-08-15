@@ -12777,6 +12777,41 @@ check 'a hero over the tile rather than in it does not sink' do
   eq 0, scene.send(:player_bush_depth), 'mid-jump, over the grass'
 end
 
+# -- stale terrain id (database shrink) ---------------------------------------
+
+check 'stepping onto a chipset cell whose terrain id has no row logs once, ' \
+      'not per frame, and falls back to defaults' do
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], terrain_damage: 5, bush_depth: 3)
+  # Simulate a database shrink: every tile of the fixture map's chip 0 is
+  # tagged terrain 42 (see fake_chipset), but the row itself is now gone, the
+  # same "chipset cell still points at an id the database no longer has"
+  # dangling reference docs/TODO.md's runtime error catalog describes.
+  scene.db.terrain.delete(42)
+
+  # One step lands on (1, 0). Both #note_party_step (terrain damage) and
+  # #check_random_encounter (encounter rate) look the same tile's terrain row
+  # up in that single landing frame -- two call sites hitting the one stale
+  # tile -- so this alone already exercises the "log once" dedup, not just
+  # the "not every frame while stationary" half of it.
+  out = capture_stderr { walk(scene, 1) }
+  eq 1, out.scan('[RPG2k] Terrain:').size,
+     "expected exactly one diagnostic for the one stale tile, got: #{out.inspect}"
+  ok out.include?('[RPG2k] Terrain: tile (1, 0) references terrain #42, ' \
+                   'which no longer exists in the database'), out
+  eq 100, hero.hp, 'no row resolves -> no terrain damage, the default fallback'
+
+  # Querying the very same tile again (from any of #terrain_row_at's other
+  # callers, and however many more frames pass while the party simply stands
+  # there) must not add a second line.
+  out2 = capture_stderr do
+    3.times { scene.send(:terrain_row_at, 1, 0) }
+    scene.send(:bush_depth_at, 1, 0)
+  end
+  ok out2.empty?, "re-querying the already-warned tile must stay silent, got: #{out2.inspect}"
+  eq 0, scene.send(:bush_depth_at, 1, 0), 'no row resolves -> bush depth falls back to 0'
+end
+
 check 'a boarded party draws its vehicle, so the hero does not sink' do
   scene = new_scene({}, player: [1, 1], bush_depth: 3)
   st = scene.instance_variable_get(:@state)
