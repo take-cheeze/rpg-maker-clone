@@ -122,7 +122,7 @@ module RGSS
   Tone = Struct.new(:red, :green, :blue, :gray)
 
   class Sprite
-    attr_accessor :bitmap, :x, :y, :z, :visible, :opacity
+    attr_accessor :bitmap, :x, :y, :z, :visible, :opacity, :src_rect
     # Which viewport the sprite was built in, so the tone checks can assert that
     # the map layers share one and the overlays do not.
     attr_reader :viewport
@@ -323,7 +323,8 @@ end
 
 def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
             airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
-            rpg2003: false, menu_commands: nil, footstep: '', on_damage_se: false)
+            rpg2003: false, menu_commands: nil, footstep: '', on_damage_se: false,
+            battleranimations: nil)
   OpenStruct.new(
     rpg2003?: rpg2003,
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
@@ -527,8 +528,30 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     # use once the actor has been renamed in play (see the \N[n] check).
     player: { 1 => OpenStruct.new(name: 'DbHero'),
               2 => OpenStruct.new(name: 'DbAlly'),
-              3 => OpenStruct.new(name: 'DbStranger') }
+              3 => OpenStruct.new(name: 'DbStranger') },
+    # RPG2003's Battler Animation table (chunk 32, db.battleranimations) --
+    # nil (the default, an RPG2000 database never carries chunk 32) unless a
+    # check passes its own id => entry hash (#battle_pose, #battle_pose_set
+    # below build the shape #build_actor_sprite reads).
+    battleranimations: battleranimations
   )
+end
+
+# A `db.battleranimations[id]` entry: a name, plus a poses hash keyed by
+# Pose id (0 idle, matching schema.rb's own comment on chunk 32) -- pass
+# `poses: { 0 => battle_pose(...) }` for the common one-pose case.
+def battle_pose_set(name: 'Fighter', poses: {})
+  OpenStruct.new(name: name, speed: 20, poses: poses)
+end
+
+# A single `poses[id]` row: `animation_type` 0 is a BattleCharSet sheet
+# (`battler_name`/`battler_index` frame it), 1 a Battle/<name> (CBA)
+# animation sequence (#build_actor_sprite does not implement this format --
+# see the diagnostic check below).
+def battle_pose(name: 'Idle', battler_name: 'Hero', battler_index: 0,
+                animation_type: 0, battle_animation_id: 1)
+  OpenStruct.new(name: name, battler_name: battler_name, battler_index: battler_index,
+                animation_type: animation_type, battle_animation_id: battle_animation_id)
 end
 
 # An event command (the interpreter reads code/param/string/indent/parameters).
@@ -724,11 +747,12 @@ def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: n
               members: [], terrain_damage: 0, bush_depth: 0,
               airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
               map_tree: nil, test_play: false, rpg2003: false,
-              footstep: '', on_damage_se: false)
+              footstep: '', on_damage_se: false, battleranimations: nil)
   db = fake_db(common, troop_pages, terrain_damage, bush_depth,
                airship_land: airship_land, airship_pass: airship_pass,
                boat_pass: boat_pass, ship_pass: ship_pass, rpg2003: rpg2003,
-               footstep: footstep, on_damage_se: on_damage_se)
+               footstep: footstep, on_damage_se: on_damage_se,
+               battleranimations: battleranimations)
   state = Game::State.new(fake_party(members, rpg2003: rpg2003), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   parent = fake_parent(db)
@@ -2180,10 +2204,19 @@ class BattleStubActor
   # check predating #battle_result_lines's own level-up/skill-learned lines
   # (mirrors Game::Actor's real growth curve/learn table only as far as a
   # single EXP-threshold level-up needs, not the full RPG2000 curve).
+  # `battler_animation_id`/`battle_x`/`battle_y` mirror Game::Actor's own
+  # RPG2003 alternate-battle-sprite interface (#build_actor_sprite,
+  # Scene::Map): the pre-resolved `db.battleranimations` id to draw from (nil
+  # -- the default -- reads as 0/"no sprite data", the same answer a bare
+  # actor with no battler_animation at all gives) and the raw manual-mode
+  # screen position. The full id-resolution fallback chain itself
+  # (Game::Actor#battler_animation_id) is exercised directly against a real
+  # Game::Actor in scripts/rpg2k_logic_check.rb, not re-derived here.
   def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1,
                  rename_skill: false, skill_name: '', states: [], force_ai: false,
                  battle_commands: nil, battle_command_table: {},
-                 level: 1, level_up_at: nil, learn_table: [])
+                 level: 1, level_up_at: nil, learn_table: [],
+                 battler_animation_id: nil, battle_x: 0, battle_y: 0)
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
@@ -2192,7 +2225,10 @@ class BattleStubActor
     @battle_commands = battle_commands
     @battle_command_table = battle_command_table
     @level = level; @level_up_at = level_up_at; @learn_table = learn_table
+    @battler_animation_id = battler_animation_id
+    @battle_x = battle_x; @battle_y = battle_y
   end
+  attr_reader :battler_animation_id, :battle_x, :battle_y
   # Mirrors Game::Actor's own RPG2003 battle-command-customization interface
   # (`#battle_commands` / `#battle_command_row`), so a stub battle can drive
   # `Scene::Map#custom_battle_commands` the same way a real actor row would.
@@ -2246,8 +2282,15 @@ class BattleStubParty
   # checks drive an already-opening or already-open battle, not the
   # missing-troop-id diagnostic path (covered in scripts/rpg2k_logic_check.rb),
   # so an Enemy Encounter command's real troop id should never be rejected here.
+  # `alternate_layout`/`automatic_placement` mirror Game::Party's own RPG2003
+  # battle-screen-presentation reads (#alternate_battle_layout?/
+  # #automatic_battle_placement?, both keyed off `db.battlecommands` there) --
+  # false by default, matching every other check's plain RPG2000 fixture and
+  # (for `respond_to?` gating) every check predating the alternate-battle-
+  # sprite renderer, which never set either.
   def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil,
-                 enemy_group: Hash.new(true))
+                 enemy_group: Hash.new(true), alternate_layout: false,
+                 automatic_placement: false)
     @actors = [actor]
     @gold = 0
     @leader = nil
@@ -2256,11 +2299,15 @@ class BattleStubParty
     @item_db = item_db
     @skill_db = skill_db
     @enemy_group = enemy_group
+    @alternate_layout = alternate_layout
+    @automatic_placement = automatic_placement
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
   def all_dead?; !any_alive?; end
   def rpg2003?; @rpg2003; end
+  def alternate_battle_layout?; @alternate_layout; end
+  def automatic_battle_placement?; @automatic_placement; end
   # A troop victory drop (Game::Troop#drops -> Scene::Map#battle_result_lines)
   # both grants the item and names it in the result window -- mirrors
   # ShopStubParty's own #gain_item, plus a #db_item lookup against whatever
@@ -8951,6 +8998,95 @@ check 'Enemy Encounter scene: draws a battler sprite per enemy, hidden on death'
 
   battle_attack_to_end(scene) # both Slimes fall
   ok sprites.all? { |s| !s.visible }, 'a defeated enemy sprite is hidden'
+end
+
+# RPG2003's alternative/gauge battle layouts (Game::Party#
+# alternate_battle_layout?) draw each living party member as a sprite too,
+# on top of the existing party status window -- unlike RPG2000's
+# status-window-only layout, which draws none. Scoped to the plain Idle pose
+# (character/BattleCharSet format) only; see #build_actor_sprite
+# (mruby-rpg2k/mrblib/scene/map.rb) for the other three checks covering its
+# documented gaps.
+check 'Enemy Encounter scene: the alternative/gauge layout draws a positioned Idle-pose sprite per living party member' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Hero', battler_index: 2) }) }
+  scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
+  st = scene.instance_variable_get(:@state)
+  hero = BattleStubActor.new(id: 1, battler_animation_id: 5, battle_x: 40, battle_y: 120)
+  st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
+  ui = battle_to_command(scene)
+
+  sprites = ui[:actor_sprites]
+  ok sprites, 'built when the layout is alternative/gauge'
+  eq 1, sprites.compact.length, 'one sprite for the sole living party member'
+  spr = sprites[0]
+  eq 40, spr.x, "the actor's raw database battle_x, used literally"
+  eq 120, spr.y, "the actor's raw database battle_y, used literally"
+  eq RGSS::Rect.new(0, 96, 48, 48), spr.src_rect,
+     'cell battler_index 2 of the 48x48-framed BattleCharSet sheet'
+  ok spr.z < 300, 'sits below the UI windows (z >= 300)'
+end
+
+check 'Enemy Encounter scene: the traditional (RPG2000) layout draws no actor sprites' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new) # alternate_layout: false, the default
+  ui = battle_to_command(scene)
+  eq nil, ui[:actor_sprites], 'no actor-sprite layer at all, matching current (pre-change) behaviour'
+end
+
+# Out of scope for this step: the pose's `animation_type == 1` (a full
+# Battle/<name> CBA animation sequence in place of a static sprite). Logs a
+# diagnostic and draws nothing rather than guessing at animation playback --
+# this codebase's established "reported gap, not silently invented"
+# convention.
+check 'Enemy Encounter scene: an Idle pose using the battle-animation (CBA) format logs a diagnostic and draws no sprite' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(animation_type: 1) }) }
+  scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
+  st = scene.instance_variable_get(:@state)
+  hero = BattleStubActor.new(id: 1, battler_animation_id: 5)
+  st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
+  ui = nil
+  out = capture_stderr { ui = battle_to_command(scene) }
+  eq [nil], ui[:actor_sprites], 'no sprite drawn for the unimplemented CBA pose format'
+  ok out.include?('[RPG2k]'), 'the gap is reported, not silently invented'
+end
+
+# A dangling/missing battle-animation reference must never crash or change
+# behaviour, the same convention every other database lookup in this
+# codebase follows (see #battler_bitmap's own missing-graphic handling) --
+# covers both a database with no Battler Animation table at all, and one
+# whose table simply does not define the id the actor names.
+check 'Enemy Encounter scene: an actor with no resolvable battle animation entry draws no sprite and does not crash' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) }) # no battleranimations table at all
+  st = scene.instance_variable_get(:@state)
+  hero = BattleStubActor.new(id: 1) # battler_animation_id left unresolved (nil)
+  st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
+  ui = battle_to_command(scene)
+  ok ui, 'the battle still reaches the command phase without raising'
+  eq [nil], ui[:actor_sprites], 'no sprite for an actor with no battle animation data at all'
+
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose }) }
+  auto2 = page(trigger: 3)
+  auto2.event_commands = battle_event_commands(ic)
+  scene2 = new_scene({ 1 => event(2, 2, auto2) }, battleranimations: anims)
+  st2 = scene2.instance_variable_get(:@state)
+  hero2 = BattleStubActor.new(id: 1, battler_animation_id: 99) # names no entry in `anims`
+  st2.instance_variable_set(:@party, BattleStubParty.new(hero2, alternate_layout: true))
+  ui2 = battle_to_command(scene2)
+  ok ui2, 'a dangling id reaches the command phase without raising too'
+  eq [nil], ui2[:actor_sprites], 'no sprite for a battle animation id the table does not define'
 end
 
 # The "Appear Transparent" flag (field 10, `Game::Enemy#transparent`) was

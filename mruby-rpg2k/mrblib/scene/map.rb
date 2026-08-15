@@ -98,6 +98,7 @@ class RPG2k
         @backdrop_cache = {}  # Backdrop/<name> (battle background)
         @monster_cache = {}   # Monster/<name> (battler graphics)
         @animation_cache = {} # Battle/<name> (battle animation sheets)
+        @battlecharset_cache = {} # BattleCharSet/<name> (RPG2003 actor battler sprites)
         apply_map_access if apply_access
         # Same Continue-only split as #apply_map_access just above: a fresh
         # map entry (New Game, or any Transfer Player/Teleport, which
@@ -832,7 +833,7 @@ class RPG2k
       # redrawn every frame -- and without this they would hit the decoder
       # again on every request. `cache` is the material's own hash (one of
       # @charset_cache, @picture_cache, @backdrop_cache, @monster_cache,
-      # @animation_cache), so a name is only ever looked up among graphics of
+      # @animation_cache, @battlecharset_cache), so a name is only ever looked up among graphics of
       # its own kind. The block's result is cached as-is, including a
       # nil/fallback for a failed load, so the caller's own rescue logs the
       # error once and every later call reuses that outcome instead of
@@ -4494,6 +4495,7 @@ class RPG2k
         # for a fight it opened itself (see `owner` above).
         @battle_ui[:events].resolver = owner.resolver
         build_battle_sprites
+        build_actor_sprites
         refresh_battle_status
         # RPG_RT's own `Scene_Battle_Rpg2k::ProcessSceneActionStart`
         # (EasyRPG Player's `src/scene_battle_rpg2k.cpp`) narrates the
@@ -4669,6 +4671,132 @@ class RPG2k
         @battle_ui[:sprite_names] = @battle_ui[:foes].map { |f| f.battler_name }
         @battle_ui[:sprite_hues] = @battle_ui[:foes].map { |f| f.battler_hue || 0 }
         refresh_battle_sprites
+      end
+
+      # RPG2003's alternative/gauge battle layouts draw each living party
+      # member as a sprite too (unlike RPG2000's status-window-only layout --
+      # see Game::Party#alternate_battle_layout?), sourced from the
+      # database's Battler Animation table (chunk 32, db.battleranimations --
+      # decoded in a prior change, nothing read it until now). Scoped to the
+      # plain Idle pose only (Pose id 0): no active state, not defending --
+      # EasyRPG's Sprite_Actor::DoIdleAnimation (src/sprite_actor.cpp) swaps
+      # in a Defend or state-mapped pose in those two cases, which is
+      # follow-up work for a later change, not this one. A dead party member
+      # gets no sprite (mirrors a hidden troop member never getting one
+      # either in #build_battle_sprites above); the party status window keeps
+      # showing everyone regardless, so a member left spriteless here (dead,
+      # or any of the gaps #build_actor_sprite itself documents) is never
+      # invisible to the player. A traditional-layout database (or a bare
+      # test fixture whose party doesn't even answer #alternate_battle_layout?)
+      # builds nothing, matching current behaviour exactly.
+      def build_actor_sprites
+        @battle_ui[:actor_sprites] = nil
+        return unless @state.party.respond_to?(:alternate_battle_layout?) &&
+                      @state.party.alternate_battle_layout?
+        @battle_ui[:actor_sprites] = @battle_ui[:allies].each_with_index.map do |ally, i|
+          next nil if ally.dead?
+          build_actor_sprite(ally.actor, i)
+        end
+      end
+
+      # Idle pose id within a `db.battleranimations` entry's `poses` table
+      # (lcf::rpg::BattlerAnimation::Pose_Idle -- schema.rb's own comment on
+      # chunk 32 lists the full 12-pose order).
+      ACTOR_IDLE_POSE = 0
+      # `poses[id].animation_type` values: 0 a BattleCharSet sprite sheet
+      # (implemented below), 1 a full Battle/<name> (CBA) animation sequence
+      # played in place of a static sprite (not implemented here -- see
+      # #build_actor_sprite).
+      ACTOR_POSE_TYPE_BATTLE = 1
+      # A BattleCharSet sheet is framed in fixed 48x48 cells, one row per
+      # `battler_index` (EasyRPG's Sprite_Actor::OnBattlercharsetReady --
+      # `SetSrcRect(Rect(0, battler_index * 48, 48, 48))`).
+      ACTOR_CHARSET_CELL = 48
+      # Clear of both the enemy troop's own z range (#battler_z's 100 +
+      # troop_size-1 span) and the animation overlay's z 150, so an actor
+      # sprite never fights either for draw order; still well below every UI
+      # window (z >= 300).
+      def actor_sprite_z(i)
+        200 + i
+      end
+
+      # A living party member's Idle-pose sprite, or nil when this step
+      # cannot draw one: `actor.battler_animation_id` names no
+      # `db.battleranimations` entry (Game::Actor#battler_animation_id
+      # already logs that diagnostic itself), the resolved entry defines no
+      # Idle pose at all (silent -- an entry legitimately covering only some
+      # of the 12 poses is normal authoring, not a dangling reference), or
+      # the pose uses the `animation_type == 1` battle/CBA format this step
+      # does not implement (logged below, matching this codebase's "reported
+      # gap, not silently invented" convention for unimplemented behaviour).
+      #
+      # Position is the raw database `battle_x`/`battle_y`
+      # (Game_Actor::GetOriginalPosition) -- confirmed against EasyRPG's
+      # actual C++ source this is only what `battlecommands.placement`
+      # manual (0) uses; automatic (1) instead computes a real grid formula
+      # (`CalculateBaseGridPosition`, src/game_battle.cpp) this step does not
+      # implement either, so that case also just logs and falls back to the
+      # same raw coordinates rather than guessing at the formula.
+      def build_actor_sprite(actor, i)
+        anim_id = actor.respond_to?(:battler_animation_id) ? (actor.battler_animation_id || 0) : 0
+        table = db.respond_to?(:battleranimations) ? db.battleranimations : nil
+        entry = (table && anim_id > 0) ? table[anim_id] : nil
+        return nil unless entry
+        pose = entry.respond_to?(:poses) && entry.poses ? entry.poses[ACTOR_IDLE_POSE] : nil
+        return nil unless pose
+
+        if pose.animation_type == ACTOR_POSE_TYPE_BATTLE
+          $stderr.puts "[RPG2k] actor ##{actor.id}: idle pose uses a battle-animation (CBA) " \
+                       "sheet, not a BattleCharSet -- not yet implemented, sprite not drawn"
+          return nil
+        end
+
+        bmp = actor_battlecharset_bitmap(pose.battler_name)
+        return nil unless bmp
+
+        if @state.party.respond_to?(:automatic_battle_placement?) &&
+           @state.party.automatic_battle_placement?
+          $stderr.puts "[RPG2k] actor ##{actor.id}: automatic battler placement not yet " \
+                       "implemented, using the database's manual battle_x/battle_y"
+        end
+
+        spr = Sprite.new
+        spr.bitmap = bmp
+        spr.src_rect = Rect.new(0, (pose.battler_index || 0) * ACTOR_CHARSET_CELL,
+                                ACTOR_CHARSET_CELL, ACTOR_CHARSET_CELL)
+        spr.x = actor.respond_to?(:battle_x) ? (actor.battle_x || 0) : 0
+        spr.y = actor.respond_to?(:battle_y) ? (actor.battle_y || 0) : 0
+        spr.z = actor_sprite_z(i)
+        spr
+      end
+
+      # The BattleCharSet bitmap for an actor pose's `battler_name`, cached
+      # like every other named battle graphic (see #cached_bitmap) and
+      # colour-keyed the same way CharSet/Monster are. A missing/empty name
+      # or a failed load draws the same solid placeholder block
+      # #battler_bitmap falls back to for a missing enemy graphic (see
+      # #placeholder_battler), sized to one BattleCharSet cell so the
+      # src_rect crop in #build_actor_sprite still makes sense against it.
+      def actor_battlecharset_bitmap(name)
+        key = (name && !name.empty?) ? name : nil
+        cached_bitmap(@battlecharset_cache, key) do
+          if key
+            begin
+              Bitmap.new("BattleCharSet/#{name}", true)
+            rescue StandardError => e
+              $stderr.puts "[RPG2k] actor battler '#{name}' load failed: #{e.message}"
+              actor_placeholder_battler
+            end
+          else
+            actor_placeholder_battler
+          end
+        end
+      end
+
+      def actor_placeholder_battler
+        bmp = Bitmap.new(ACTOR_CHARSET_CELL, ACTOR_CHARSET_CELL)
+        bmp.fill_rect 0, 0, ACTOR_CHARSET_CELL, ACTOR_CHARSET_CELL, Color.new(180, 60, 60, 255)
+        bmp
       end
 
       # Where a battle-event page's message panel sits — above the action banner,
@@ -6901,6 +7029,7 @@ class RPG2k
          @battle_ui[:event_win]].each { |w| w.dispose if w }
         dispose_battle_sprite(@battle_ui[:back_sprite])
         (@battle_ui[:enemy_sprites] || []).each { |s| dispose_battle_sprite(s) }
+        (@battle_ui[:actor_sprites] || []).each { |s| dispose_battle_sprite(s) }
         @battle_ui = nil
       end
 

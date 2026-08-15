@@ -2893,7 +2893,15 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            :unarmed_animation,
                            # 強制AI -- Actor#force_ai?. Same reasoning: appended
                            # last, defaults nil (never AI-controlled).
-                           :force_ai)
+                           :force_ai,
+                           # RPG2003's manual battle-sprite position (chunk 11
+                           # fields 59/60, Actor#battle_x/#battle_y) and the
+                           # actor's own database-default battle animation id
+                           # (field 62, into db.battleranimations --
+                           # Actor#battler_animation_id's "else" branch).
+                           # Same reasoning: appended last, nil reads as 0 via
+                           # the reader methods, matching the schema default.
+                           :battle_x, :battle_y, :battler_animation)
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -3124,9 +3132,15 @@ end
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
 class JobRow
   attr_reader :name, :skills, :battle_commands,
-              :exp_basic, :exp_increase, :exp_correction
+              :exp_basic, :exp_increase, :exp_correction,
+              # The class's own default battle animation id (chunk 30 field
+              # 62, into db.battleranimations) -- Actor#battler_animation_id's
+              # "Change Class actually ran" branch. Defaults to 1, the schema
+              # default for this field.
+              :battler_animation
   def initialize(name, curve, learns = [], battle_commands = nil,
-                 exp_basic: 30, exp_increase: 30, exp_correction: 0)
+                 exp_basic: 30, exp_increase: 30, exp_correction: 0,
+                 battler_animation: 1)
     @name = name
     @curve = curve
     @skills = FakeLearnTable.new(learns)
@@ -3134,6 +3148,7 @@ class JobRow
     @exp_basic = exp_basic
     @exp_increase = exp_increase
     @exp_correction = exp_correction
+    @battler_animation = battler_animation
   end
 
   def int16_values(idx); idx == 31 ? @curve : nil; end
@@ -3152,13 +3167,17 @@ end
 
 class FakeActorDB
   attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands,
-              :enemy_group
+              :enemy_group, :battleranimations
   # `enemy_group` defaults to "every id exists" (Hash.new(true)) since most
   # checks using this fixture have nothing to do with troop validity; pass an
   # explicit hash (e.g. {}) to exercise the missing-troop-id diagnostic path.
+  # `battleranimations` mirrors `db.battleranimations` (chunk 32, id ->
+  # FakeBattlerAnimation) -- nil (the default, same as a genuine RPG2000
+  # database that never carries the chunk) for every check that doesn't need
+  # Actor#battler_animation_id's resolved id to name a real entry.
   def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
                  property = nil, rpg2003: false, battlecommands: nil,
-                 enemy_group: Hash.new(true))
+                 enemy_group: Hash.new(true), battleranimations: nil)
     @player = players
     @system = FakeActorSystem.new(party_ids)
     @item = items
@@ -3169,6 +3188,7 @@ class FakeActorDB
     @rpg2003 = rpg2003
     @battlecommands = battlecommands
     @enemy_group = enemy_group
+    @battleranimations = battleranimations
   end
 
   # Mirrors LCF::Schema::Database#rpg2003? (Classes-chunk presence) for tests
@@ -3182,8 +3202,25 @@ end
 # `#commands[id]` decode to: an object with `#commands` (id -> entry), a
 # `#battle_type` (chunk 29 field 7, Game::Party#alternate_battle_layout?'s own
 # source), and an entry with `#name` + `#type`.
-FakeBattleCommandsTable = Struct.new(:commands, :battle_type)
+FakeBattleCommandsTable = Struct.new(:commands, :battle_type,
+                                     # RPG2003's battle-sprite placement
+                                     # choice (chunk 29 field 2 -- 0 manual, 1
+                                     # automatic; Game::Party#
+                                     # automatic_battle_placement?'s own
+                                     # source). Appended last, same reasoning
+                                     # as everywhere else in this file: nil
+                                     # reads as manual, matching the schema
+                                     # default.
+                                     :placement)
 FakeBattleCommand = Struct.new(:name, :type)
+# A `db.battleranimations[id]` entry (chunk 32): a name plus a poses hash
+# keyed by Pose id (0 idle, matching schema.rb's own comment on the chunk).
+FakeBattlerAnimation = Struct.new(:name, :speed, :poses)
+# A single `poses[id]` row: `animation_type` 0 is a BattleCharSet sheet
+# (`battler_name`/`battler_index` frame it), 1 a Battle/<name> (CBA)
+# animation sequence.
+FakeBattlerAnimationPose = Struct.new(:name, :battler_name, :battler_index,
+                                      :animation_type, :battle_animation_id)
 
 def party_state(enemy_group: Hash.new(true))
   players = {
@@ -4267,6 +4304,116 @@ check 'Game::Party#alternate_battle_layout? reads chunk 29 field 7 (BattleType)'
                            battlecommands: FakeBattleCommandsTable.new({}, 2))
   eq true, Game::Party.new(gauge).alternate_battle_layout?,
      'BattleType_gauge (2) -> alternate layout'
+end
+
+check 'Game::Party#automatic_battle_placement? reads chunk 29 field 2 (Placement)' do
+  eq false, party_state.party.automatic_battle_placement?,
+     'no Battle Commands table at all -> manual (the schema default)'
+
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+
+  manual = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                           battlecommands: FakeBattleCommandsTable.new({}, 1, 0))
+  eq false, Game::Party.new(manual).automatic_battle_placement?, 'Placement_manual (0)'
+
+  automatic = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                              battlecommands: FakeBattleCommandsTable.new({}, 1, 1))
+  eq true, Game::Party.new(automatic).automatic_battle_placement?, 'Placement_automatic (1)'
+end
+
+check "Game::Actor#battle_x/#battle_y read chunk 11 fields 59/60, defaulting to 0" do
+  a = party_state.party.actor_by_id(1) # the plain fixture never sets either
+  eq 0, a.battle_x
+  eq 0, a.battle_y
+
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  players[1].battle_x = 88
+  players[1].battle_y = 132
+  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1])), 1, 0, 0)
+  a2 = st.party.actor_by_id(1)
+  eq 88, a2.battle_x
+  eq 132, a2.battle_y
+end
+
+# Game::Actor#battler_animation_id (EasyRPG's misleadingly-named
+# GetBattleAnimationId) -- the db.battleranimations id an actor's alternate-
+# layout battle sprite draws its poses from. Fallback chain verified against
+# EasyRPG's actual C++ source (src/game_actor.cpp): the runtime override
+# (set only by an actual Change Class event) when positive; else the current
+# class's own battler_animation when Change Class actually ran; else the
+# actor's own database default, looked up as an id into db.battleranimations.
+check "Game::Actor#battler_animation_id resolves the actor's own database default" do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  players[1].battler_animation = 3
+  anims = { 3 => FakeBattlerAnimation.new('Fighter', 20, {}) }
+  db = FakeActorDB.new(players, [1], battleranimations: anims)
+  a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
+  eq 3, a.battler_animation_id
+end
+
+check "Game::Actor#battler_animation_id warns and returns 0 for an unset (0) database default, " \
+      'even with a real battleranimations table present' do
+  # battler_animation 0 means "chunk never written"; id 0 names no entry in
+  # any real table (every id here is 1-based, "matching every other database
+  # table id in this format" -- schema.rb's own comment), so this behaves
+  # exactly like any other dangling id: warn and return 0. The "resolved id 0
+  # -> battleranimations id 1" fallback only ever fires from the class-changed
+  # branch (see the two checks below) -- confirmed against EasyRPG's actual
+  # C++ source, whose db-default branch returns 0 immediately on a failed
+  # `ReaderUtil::GetElement` lookup, never reaching its own tail "anim == 0"
+  # check at all.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  anims = { 1 => FakeBattlerAnimation.new('Default', 20, {}) }
+  db = FakeActorDB.new(players, [1], battleranimations: anims)
+  a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
+  out = capture_stderr { eq 0, a.battler_animation_id }
+  ok out.include?('[RPG2k]'), 'the unset default is reported, not silently invented'
+end
+
+check "Game::Actor#battler_animation_id warns and returns 0 for a dangling database default id" do
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  players[1].battler_animation = 9 # no such entry below
+  anims = { 3 => FakeBattlerAnimation.new('Fighter', 20, {}) }
+  db = FakeActorDB.new(players, [1], battleranimations: anims)
+  a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
+  out = capture_stderr { eq 0, a.battler_animation_id }
+  ok out.include?('[RPG2k]') && out.include?('9'), 'the dangling id is reported, not silently invented'
+end
+
+check "Game::Actor#battler_animation_id prefers the runtime override a Change Class event set" do
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 0) }
+  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 4) }
+  db = FakeActorDB.new(players, [1], {}, {}, jobs)
+  a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
+  a.change_class(1, 1, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
+  eq 4, a.battler_animation_id, "the class's battler_animation, copied into the runtime " \
+                                'override the moment Change Class ran'
+end
+
+check "Game::Actor#battler_animation_id ignores a database-default starting class -- only an " \
+      'actual Change Class event counts' do
+  # RPG2003 lets an actor start in a class (chunk 11 field 57) with no Change
+  # Class event ever firing -- EasyRPG's own comment on this is explicit
+  # ("not applied ... only when the 'Change Class' event command is used").
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 1) }
+  players[1].battler_animation = 3
+  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 4) }
+  anims = { 3 => FakeBattlerAnimation.new('Fighter', 20, {}) }
+  db = FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil, battleranimations: anims)
+  a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
+  eq 1, a.class_id, "the starting class is live (Actor#class_id reads it back)"
+  eq 3, a.battler_animation_id, "yet the actor's own database default wins -- the class's " \
+                                '(4) is never consulted without a real Change Class event'
+end
+
+check "Game::Actor#battler_animation_id falls back to 1 when Change Class leaves the actor " \
+      'in a class whose own battler_animation is 0' do
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 0) }
+  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 0) }
+  db = FakeActorDB.new(players, [1], {}, {}, jobs)
+  a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
+  a.change_class(1, 1, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
+  eq 1, a.battler_animation_id, 'a resolved id of 0 always falls back to battleranimations id 1'
 end
 
 check 'Change HP command damages a fixed actor' do
