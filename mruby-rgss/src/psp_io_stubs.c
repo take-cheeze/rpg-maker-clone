@@ -1,19 +1,20 @@
 // mruby-io's default I/O HAL (hal-posix-io, auto-selected by
 // 3rd/mruby/mrbgems/mruby-io/mrbgem.rake since nothing in build_config.rb
-// picks one explicitly) calls six POSIX functions pspdev's newlib declares
+// picks one explicitly) calls seven POSIX functions pspdev's newlib declares
 // in its headers (so hal-posix-io compiles) but does not implement (so
 // linking the EBOOT fails with "undefined reference"): dup/dup2/sysconf
-// back mrb_hal_io_spawn_process's fork-and-exec dance, and
-// ftruncate/flock/dup are also reachable from IO#dup, File#flock and
-// File#truncate. None of that is reachable from this bring-up -- there is
-// no process model on the PSP to spawn into, and no game code yet -- so
-// minimal set-errno-and-fail definitions are enough to satisfy the linker
+// back mrb_hal_io_spawn_process's fork-and-exec dance, umask backs
+// File.umask, and ftruncate/flock/dup are also reachable from IO#dup,
+// File#flock and File#truncate. None of that is reachable from this
+// bring-up -- there is no process model on the PSP to spawn into, and no
+// game code yet -- so minimal stand-ins are enough to satisfy the linker
 // without claiming functionality the platform does not have. Only built for
 // PSP_BUILD; every other target already has a real implementation of these.
 #if defined(PSP_BUILD)
 
 #include <errno.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -56,6 +57,14 @@ pid_t waitpid(pid_t pid, int* status, int options) {
   (void)options;
   errno = ENOSYS;
   return -1;
+}
+
+// umask has no error return in POSIX -- it always succeeds -- so unlike the
+// stubs above this reports success: no permission bits are ever cleared (an
+// always-0 mask), and the previous mask it reports back is always 0 too.
+mode_t umask(mode_t mask) {
+  (void)mask;
+  return 0;
 }
 
 #endif  // PSP_BUILD

@@ -103,6 +103,16 @@ target_compile_definitions(rpg2k_psp PRIVATE PSP_BUILD LV_CONF_INCLUDE_SIMPLE)
 target_include_directories(rpg2k_psp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
                                              ${REPO_ROOT}/include)
 
+# libpspkernel.a bundles its own "ForKernel" NID-stub implementations of a
+# handful of libc functions (seen so far: strtol, strtoul) alongside the real
+# ones this user-mode (THREAD_ATTR_USER) EBOOT actually wants from newlib's
+# libc.a -- both get pulled into the link (each also resolves other symbols
+# genuinely needed from the same object) and collide as a hard "multiple
+# definition" error. --allow-multiple-definition keeps the first definition ld
+# encounters and discards the rest; libc.a is linked implicitly ahead of the
+# explicit libraries below, so that first definition is newlib's real one.
+target_link_options(rpg2k_psp PRIVATE -Wl,--allow-multiple-definition)
+
 target_link_libraries(
   rpg2k_psp
   mruby
