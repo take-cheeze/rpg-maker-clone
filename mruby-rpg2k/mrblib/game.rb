@@ -4552,7 +4552,17 @@ module Game
         # which broke exactly at this boundary once `dmg` could reach 0 --
         # `attack: true` below now says so explicitly instead.
         dmg = 0 if dmg < 0
-        { cost: cost, hp: -dmg, mp: 0, attack: true,
+        { cost: cost,
+          # `hp`/`mp` each independently gate on their own affect_hp/affect_sp
+          # flag now, mirroring the ally/recovery branch below -- EasyRPG's
+          # `Skill::vExecute` reads the identical one shared `effect` local
+          # into both `SetAffectedHp`/`SetAffectedSp` guards rather than
+          # rolling either separately, so a dual HP+SP attack skill deals the
+          # *same* number to each pool, and an SP-only drain (affect_hp clear,
+          # affect_sp set -- a real, valid Effects-tab combination, per
+          # @2000_battle_bot/デフォ戦bot trivia on the HP-reaches-zero
+          # interaction below) never touches HP at all.
+          hp: sk.affect_hp ? -dmg : 0, mp: sk.affect_sp ? -dmg : 0, attack: true,
           inflict: inflict_ids, chance: skill_hit(sk),
           variance: skill_variance(sk), attributes: skill_attributes(sk),
           # 吸収 — the caster takes what the target loses. RPG_RT reads the flag
@@ -4561,6 +4571,13 @@ module Game
           # that sets it drains nothing.
           absorb: skill_absorbs?(sk), attr_shift: shift, attr_ids: shift_ids,
           stat_mod_keys: stat_keys, cured: cure_ids,
+          # The raw, un-gated effect (see the ally branch's own `stat_effect`
+          # below) -- #apply_skill_hit's ATK/DEF/SPI/AGI modifier and its
+          # damage pipeline (elemental scaling, critical, variance) both need
+          # this even when affect_hp/affect_sp leave `hp`/`mp` at 0, the same
+          # way EasyRPG reads its one `effect` local for every affect_* branch
+          # alike regardless of which ones are actually set.
+          stat_effect: dmg,
           # The skill's own physical_rate (0-10), scaled to a 0..100 percent
           # -- #apply_skill_hit's own #shake_off_states call reads this the
           # same way EasyRPG's `Skill::vExecute` scales `BattlePhysicalStateHeal`'s
@@ -10080,7 +10097,17 @@ module Game
     def apply_skill_hit(b, target, hp, mp, cmd)
       attack = cmd[:attack].nil? ? hp < 0 : cmd[:attack]
       if attack
-        dmg = -hp
+        # The skill's one shared, un-gated effect magnitude: whichever of
+        # hp/mp actually carries it (each already the correct *per-target*
+        # figure -- #command_skill_all's own per-target hp/mp, defence term
+        # included), falling back to `cmd[:stat_effect]` (#battle_skill_command's
+        # enemy branch always sets it now, mirroring the ally branch's own
+        # `stat_effect: base`) only when neither pool is affected at all -- a
+        # stat-mod-only skill (Weaken and friends), which still needs a real
+        # number to scale/roll below even though affect_hp/affect_sp leave
+        # both `hp` and `mp` at 0. Matches EasyRPG's `effect` local, computed
+        # once regardless of which affect_* flags actually read it.
+        dmg = hp != 0 ? -hp : (mp != 0 ? -mp : (cmd[:stat_effect] || 0))
         # An elemental skill scales its damage by the target's resistance first
         # (EasyRPG's ApplyAttributeSkillMultiplier), then a critical hit, then
         # spreads by variance -- EasyRPG's own CalcSkillEffect order exactly
@@ -10123,16 +10150,33 @@ module Game
         # 200-damage drain on a 30 HP foe deals 30 and returns 30 -- the drain is
         # weaker against a nearly-dead target, not merely capped in what it gives.
         absorbed = 0
-        if hits
-          if cmd[:absorb] && dmg > 0
-            dmg = target.hp if dmg > target.hp
-            absorbed = dmg
+        hp_dmg = 0
+        if hits && hp != 0
+          hp_dmg = dmg
+          if cmd[:absorb] && hp_dmg > 0
+            hp_dmg = target.hp if hp_dmg > target.hp
+            absorbed = hp_dmg
           end
-          target.hp -= dmg
-        else
-          dmg = 0
+          target.hp -= hp_dmg
         end
         b.hp = [b.hp + absorbed, b.max_hp].min if absorbed > 0
+        # The same shared, un-gated `dmg` the HP branch above just used, applied
+        # to the target's SP instead -- EasyRPG's `Skill::vExecute` reads its
+        # one `effect` local raw here (no elemental/absorb/defend-adjustment
+        # difference from the HP side), and rolls its own fresh
+        # `Rand::PercentChance(to_hit)` independent of the HP roll above, the
+        # same way the ally/recovery branch's own HP and SP each roll
+        # separately. Skipped entirely once the HP hit above has just killed
+        # the target -- EasyRPG's own `if (!is_dead && GetHp() + AffectedHp <=
+        # 0) return` runs *before* the affect_sp block, so a dual HP+SP attack
+        # skill that lands a killing blow never also drains SP on the same
+        # swing (confirmed against @2000_battle_bot/デフォ戦bot's own trivia on
+        # this exact interaction: "HPがゼロになった場合、MPは減らない").
+        sp_dmg = 0
+        if mp != 0 && !target.dead? && target.mp && target.max_mp && skill_effect_hits?(cmd)
+          sp_dmg = dmg
+          target.mp = [target.mp - sp_dmg, 0].max
+        end
         # An attack skill may inflict its states -- or, under the RPG2003
         # reverse_state_effect flip #battle_skill_command's own `heals_states`
         # already resolved, cure them instead -- and shift attribute defence
@@ -10160,7 +10204,7 @@ module Game
           # block the damage application itself is in, not a separate roll.
           woke = hits ? shake_off_states(target, cmd[:physical_rate] || 0) : []
         end
-        { attacker: b.name, target: target.name, damage: dmg, missed: !hits,
+        { attacker: b.name, target: target.name, damage: hp_dmg, missed: !hits,
           critical: crit,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already, cured: cured, woke: woke,
@@ -10168,7 +10212,8 @@ module Game
           stat_changed: stat_changed,
           target_ally: ally?(target), skill: cmd[:name],
           skill_id: cmd[:skill_id], target_index: @enemies.index(target),
-          absorbed_hp: absorbed }
+          absorbed_hp: absorbed, sp_damage: sp_dmg,
+          target_mp: target.mp }
       else
         # Spread the recovery by the skill's own variance when the fight rolls
         # it, the same way the attack branch above does: EasyRPG's
