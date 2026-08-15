@@ -6426,7 +6426,7 @@ not yet verified:
   and every Parallel Process's own interpreter, gated only on
   `Game_Message::IsMessageActive()` — no `main_flag`/foreground-only
   restriction (unlike Show Inn's own documented nuance, see above). This
-  build's `Interpreter#do_shop` (`mruby-rpg2k/mrblib/interpreter.rb`) already
+  build's `Interpreter#do_open_shop` (`mruby-rpg2k/mrblib/interpreter.rb`) already
   correctly recorded the request and suspended on a `:shop` wait regardless of
   which interpreter ran it, but `Scene::Map#drive_parallel_wait`
   (`mruby-rpg2k/mrblib/scene/map.rb`) had no `:shop` branch at all — it fell
