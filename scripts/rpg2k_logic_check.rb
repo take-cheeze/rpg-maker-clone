@@ -9587,7 +9587,11 @@ check 'Battle#step_action walks a round one attack at a time for animation' do
   bee = combatant('Bee', 40, 0, 15, 100)
   s1 = combatant('S1', 4, 0, 5, 100)
   s2 = combatant('S2', 4, 0, 5, 100)
-  bat = Game::Battle.new([ace, bee], [s1, s2], Game::Rng.new(1))
+  # A fixed roll of 0 makes #turn_order's new per-round Agility jitter a
+  # no-op (roll == agi exactly), so this test's own point -- #step_action
+  # walking a round one attack at a time -- stays deterministic without
+  # depending on which way a real jitter roll happens to break the S1/S2 tie.
+  bat = Game::Battle.new([ace, bee], [s1, s2], FixedRng.new(0))
   bat.command_attack(ace, s1)
   bat.command_attack(bee, s2)
   bat.begin_round
@@ -10892,16 +10896,41 @@ FakeActorRef = Struct.new(:id)
 check 'battle: an agility tie among allies breaks by actor id, not seat order' do
   # Actor id 2 sits in the party's first seat, actor id 1 in the second --
   # mirrors a party where a lower-id member left and rejoined behind a
-  # higher-id one, so seat order and id order genuinely disagree.
+  # higher-id one, so seat order and id order genuinely disagree. A fixed
+  # roll of 0 makes every battler's rolled order equal its raw Agility (all
+  # three tie at exactly 10), exercising #turn_order's own deterministic
+  # fallback for a tied roll rather than depending on which way a real
+  # jitter roll happens to break it.
   b = combatant('B', 0, 0, 10, 100)
   b.actor = FakeActorRef.new(2)
   a = combatant('A', 0, 0, 10, 100)
   a.actor = FakeActorRef.new(1)
   foe = combatant('Foe', 0, 0, 10, 100) # also agi 10, but has no #actor at all
-  bat = Game::Battle.new([b, a], [foe], Game::Rng.new(1))
+  bat = Game::Battle.new([b, a], [foe], FixedRng.new(0))
   eq [a, b, foe], bat.send(:turn_order),
      "actor id 1 acts before id 2 despite sitting in the later seat; both allies " \
      'still act before the equally-fast foe'
+end
+
+check 'battle: turn order rolls a random Agility jitter each round, instead of ' \
+      'sorting by raw Agility alone' do
+  # Confirmed against EasyRPG's own Scene_Battle_Rpg2k::CreateExecutionOrder
+  # (src/scene_battle_rpg2k.cpp): each battler rolls `agi + Rand(0, agi / 4 +
+  # 3)` fresh, once per round, before the sort ("must be done outside of the
+  # sort function... so the sort is consistent", per that function's own
+  # comment) -- two battlers with identical Agility do not act in a fixed
+  # order round after round the way a plain descending sort by raw Agility
+  # would produce. Agi 20 -> Rand(0, 20/4+3) = Rand(0, 8).
+  ally = combatant('Ally', 0, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 20, 100)   # same agi -- the old code always put the ally first
+  # SequenceRng hands out rolls in call order: the ally's roll is drawn
+  # first (turn_order walks @allies then @enemies), the foe's second.
+  hi = Game::Battle.new([ally], [foe], SequenceRng.new([8, 0])) # ally 20+8=28, foe 20+0=20
+  eq [ally, foe], hi.send(:turn_order)
+  lo = Game::Battle.new([ally], [foe], SequenceRng.new([0, 8])) # ally 20+0=20, foe 20+8=28
+  eq [foe, ally], lo.send(:turn_order),
+     "the foe's higher roll wins despite tied raw Agility -- a reordering the " \
+     'old, jitter-free sort could never produce'
 end
 
 check 'battle: a self-destruct also reads state-adjusted ATK / DEF' do
