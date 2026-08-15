@@ -548,6 +548,35 @@
   header notes the two smaller traps as well — a genuine but narrow clang-format
   version difference, and why a line-length grep is not a substitute.
 
+### Code coverage
+
+- Nearly all of the runtime is Ruby (`mruby-*/mrblib`, ~39k lines against ~3k
+  lines of C++ glue), and the `scripts/*_check.rb` harnesses load those exact
+  sources under CRuby. `scripts/coverage_report.rb` runs the harnesses with
+  CRuby's `Coverage` stdlib switched on and reports what they reached:
+
+  ```sh
+  ruby scripts/coverage_report.rb              # -> coverage/lcov.info + .json
+  ruby scripts/coverage_report.rb --per-file   # every file, not just the tail
+  genhtml coverage/lcov.info -o coverage/html  # browsable per-line report
+  ```
+
+  ```
+  mruby-lcf      #################.......   68.8%     271 / 394
+  mruby-rpg2k    ######################..   92.9%   11305 / 12175
+  total          ###################.....   80.5%   12733 / 15810
+  ```
+
+- CI's `ruby-checks` job publishes the same table in its job summary and the
+  files as the `ruby-coverage` artifact. It is report-only; `--min-line-rate`
+  turns it into a gate when a floor is wanted.
+
+- The total is a **floor**: `mruby_test` and the native smoke tests exercise the
+  same sources inside mruby, where no `Coverage` module exists, so what only
+  they reach counts as uncovered here (which is why the RGSS and MV/MZ runtime
+  files read 0%). `docs/coverage.md` and `docs/adr/0049-ruby-line-coverage-from-the-host-side-checks.md`
+  cover the details and the trade-off.
+
 ### Play in the browser (WebAssembly)
 
 - The runtime cross-compiles to WebAssembly with Emscripten and ships a page

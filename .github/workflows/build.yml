@@ -819,6 +819,31 @@ jobs:
           - name: RPG2k test-bed logic check
             run: ruby scripts/rpg2k_testbed_logic_check.rb
 
+      # How much of the Ruby engine the checks above actually reach. It re-runs
+      # them (concurrently, like the group above) with CRuby's Coverage stdlib
+      # switched on and reports the line coverage of `mruby-*/mrblib` per gem
+      # and per file — see ADR 0049 and docs/coverage.md. Report-only as far as
+      # the *number* goes: it lands in the job summary and in an artifact, and
+      # no floor is enforced (`--min-line-rate` exists for when one is wanted).
+      # The step itself is not `continue-on-error`, so a reporter that breaks —
+      # or a check that fails only on this second, coverage-instrumented run —
+      # is visible rather than a quietly missing report.
+      - name: Ruby coverage report
+        run: ruby scripts/coverage_report.rb
+
+      # `always()`: the reporter writes its files before it exits non-zero on a
+      # failed check, so the report is still worth publishing on a red run.
+      - name: Upload Ruby coverage report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruby-coverage
+          path: |
+            coverage/lcov.info
+            coverage/coverage.json
+          if-no-files-found: warn
+
   # `/preview` command gate. Cloudflare previews are opt-in per pull request:
   # they are published when someone with write access comments `/preview` on the
   # PR, not automatically on every push to every PR. This job resolves that

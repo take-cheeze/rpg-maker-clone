@@ -97,5 +97,7 @@
 
 ## Development flow
 - For basic testing run `clear ; cmake --build build && cmake --build build -t test` to run basic tests
+- `ruby scripts/coverage_report.rb` reports line coverage of the Ruby engine
+  sources (`mruby-*/mrblib`) from the host-side checks — see `docs/coverage.md`
 - Issues and pull requests are labelled by engine, platform, component and type
   — see `docs/labels.md` for the taxonomy and how the labels get applied
