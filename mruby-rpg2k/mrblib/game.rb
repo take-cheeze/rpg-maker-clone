@@ -6413,6 +6413,7 @@ module Game
       @flash_strength = 0 # current strength, fading to 0 over the duration
       @flash_frames = 0 # frames left in the current flash (0 = faded out)
       @flash_total = 0
+      @flash_continuous = false # RPG2003 Begin/End strobe: re-arms at 0 instead of settling
       @pan_x = 0        # current pan offset in pixels (added to the camera)
       @pan_y = 0
       @pan_tx = 0       # target pan offset the current pan/reset scrolls toward
@@ -6544,8 +6545,12 @@ module Game
     end
 
     # Begin a flash of colour (r, g, b) at peak strength `power`, fading linearly
-    # to 0 over `frames` frames (frames <= 0 clears any flash immediately).
+    # to 0 over `frames` frames (frames <= 0 clears any flash immediately). A
+    # one-shot flash (RPG2003's Flash Screen mode 0, or the pre-2003 command
+    # shape) — matches EasyRPG's `Game_Screen::FlashOnce`, which always clears
+    # any in-progress strobe.
     def flash(r, g, b, power, frames)
+      @flash_continuous = false
       @flash_r = r
       @flash_g = g
       @flash_b = b
@@ -6558,6 +6563,22 @@ module Game
         @flash_frames = frames
         @flash_strength = power
       end
+    end
+
+    # RPG2003 Flash Screen mode 1: like #flash, but the strobe re-arms to peak
+    # strength every time it fades out, indefinitely, until #flash_end (or a
+    # fresh one-shot #flash) stops it — matches `Game_Screen::FlashBegin`.
+    def flash_begin(r, g, b, power, frames)
+      flash(r, g, b, power, frames)
+      @flash_continuous = true
+    end
+
+    # RPG2003 Flash Screen mode 2: stop a #flash_begin strobe immediately,
+    # settled at no flash — matches `Game_Screen::FlashEnd`.
+    def flash_end
+      @flash_continuous = false
+      @flash_frames = 0
+      @flash_strength = 0
     end
 
     # Erase Screen: take the screen to black in the given Game::Transition style,
@@ -6699,8 +6720,15 @@ module Game
     def update_flash
       return if @flash_frames <= 0
       @flash_frames -= 1
-      # Strength fades linearly from the peak power to 0 across the duration.
-      @flash_strength = @flash_total > 0 ? @flash_power * @flash_frames / @flash_total : 0
+      if @flash_frames <= 0 && @flash_continuous
+        # A Begin strobe never settles: re-arm at peak strength for another
+        # full duration, matching `Flash::Update`'s own continuous re-arm.
+        @flash_frames = @flash_total
+        @flash_strength = @flash_power
+      else
+        # Strength fades linearly from the peak power to 0 across the duration.
+        @flash_strength = @flash_total > 0 ? @flash_power * @flash_frames / @flash_total : 0
+      end
     end
 
     # Step the pan offset toward its target, landing exactly on the last frame.
