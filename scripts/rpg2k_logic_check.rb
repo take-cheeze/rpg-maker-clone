@@ -2962,9 +2962,13 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :raise_evasion,
                       # アニメーション (weapon field 20): the battle animation a
                       # basic Attack plays with this weapon equipped
-                      # (Actor#attack_animation_id). Appended last, same
+                      # (Actor#attack_animation_id).
+                      :animation_id,
+                      # ステート発生率 (weapon field 67): the flat percent chance
+                      # applied to every state `state_set` flags on a basic
+                      # Attack (Game::Actor#weapon_states). Appended last, same
                       # positional-safety reasoning as every field above.
-                      :animation_id)
+                      :state_chance)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2973,14 +2977,15 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               field_only: false, dual_attack: false, ignore_evasion: false,
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
-              cursed: false, raise_evasion: false, animation_id: nil)
+              cursed: false, raise_evasion: false, animation_id: nil,
+              state_chance: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
                ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
-               raise_evasion, animation_id)
+               raise_evasion, animation_id, state_chance)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -5074,6 +5079,22 @@ check 'field_skills lists only known field-usable ally skills; can_cast? checks 
   eq false, st.party.can_cast?(hero, 99)       # unknown skill
 end
 
+# A database shrink can leave a caster's learned skill id dangling -- shown
+# as "?" in the editor, docs/TODO.md's runtime error catalog. #db_skill
+# silently resolves that to nil, and #field_skill? just as silently excludes
+# it (`return false unless sk`); the skill vanished from the field menu with
+# no trace anywhere in the call chain. #field_skills now reports it.
+check 'field_skills reports a dangling learned skill id and excludes it from the menu' do
+  skills = { 7 => fake_skill(scope: 3, sp_cost: 5, power: 10, hp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(7)
+  hero.learn_skill(99)                          # 99 no longer exists in the database
+  out = capture_stderr { eq [[7, 5]], st.party.field_skills(hero) }
+  ok out.include?("[RPG2k] Skill menu: caster's learned skill #99 has no " \
+                   'matching database row'), out
+end
+
 # A property/attribute row exposing just the weapon (0) / magic (1) `type`
 # flag the equip-gating check reads (field 2 of the real `property` row).
 AttrTypeRow = Struct.new(:type)
@@ -5721,6 +5742,18 @@ check 'Control Variables reads a map event position (operand type 6)' do
   eq 0, st.variables[5]                                          # unknown event reads 0
 end
 
+check 'Control Variables targeting a stale map event id is reported, not silent' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new # event 7 at (2,3) dir 6; event 9 does not exist
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 9, 1])])
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: map event 9 not found'), out
+end
+
 check 'Control Variables: a map event\'s map id is the RPG2000-only quirk -- an ' \
       'RPG2003 database reads the real (current) map id instead' do
   st = new_state(rpg2003: true)
@@ -5791,6 +5824,30 @@ check 'Control Variables "this event" reads 0 without a running map event' do
   eq 0, st.variables[2]
 end
 
+check '"this event" with no running map event is reported (event_operand: x/y/direction)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 1])]) # this event's x
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: "this event" has no map event to refer to'), out
+end
+
+check '"this event" with no running map event is reported (screen_operand: screen x/y)' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 10005, 4])]) # this event's screen x
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: "this event" has no map event to refer to'), out
+end
+
 check 'Control Variables reads an actor stat (operand type 5)' do
   st = party_state
   a = st.party.actor_by_id(1) # atk 10, max_hp 100
@@ -5820,6 +5877,18 @@ check 'Control Variables reads a character screen position (operand 6, attr 4/5)
   eq 120, st.variables[2]
   eq 40, st.variables[3]
   eq 0, st.variables[4]
+end
+
+check 'a character with no screen position (not on this map) is reported, not silent' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.map_info = FakeMapInfo.new # event 9 has no screen position
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 6, 9, 4])])
+    it.update
+  end
+  eq 0, st.variables[1]
+  ok out.include?('[RPG2k] Control Variables: character 9 has no screen position'), out
 end
 
 check 'a screen position with no camera to measure against reads 0' do
@@ -8460,6 +8529,63 @@ check 'Actor weapon/attribute readers feed the combatant snapshot' do
   a.equip([7, 0, 0, 0, 0])
   eq [1, 3], a.weapon_attributes
   eq [1, 3], Game::Battle.from_actor(a).atk_attrs, 'carried onto the combatant'
+end
+
+check "battle: a basic Attack rolls its weapon's own state-infliction chance" do
+  # A "Poison Dagger" -- state_set flags state 3, state_chance 100 -- ported
+  # from EasyRPG's Game_BattleAlgorithm::Normal::vExecute weapon block, which
+  # this codebase previously left entirely unbuilt: only Skills/Items rolled
+  # state infliction, never a plain Attack.
+  items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1], state_chance: 100) }
+  st = skill_party({}, items)
+  a = st.party.actor_by_id(1)
+  a.equip([7, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  eq({ 3 => 100 }, hero.atk_states[:inflict], 'carried onto the combatant')
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 3 => fake_state })
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [3], entry[:inflicted], "the weapon's own state landed alongside the damage"
+  ok foe.state?(3), 'the state is actually on the target, not just reported'
+end
+
+check "battle: an RPG2003 weapon's reverse_state_effect heals instead of inflicts" do
+  # Same weapon, `reverse_state_effect` set: on RPG2003 this flips the weapon
+  # from inflicting its named states to curing them (EasyRPG's
+  # `is2k3 && w->reverse_state_effect` branch) -- the same flip
+  # `#item_inflicted_states`/`#skill_state_ids` already model for items/skills.
+  items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1],
+                            state_chance: 100, reverse_state: true) }
+  st = skill_party({}, items, rpg2003: true)
+  a = st.party.actor_by_id(1)
+  a.equip([7, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  eq({ 3 => 100 }, hero.atk_states[:heal], 'carried onto the combatant, on the heal side')
+  foe = combatant('Foe', 0, 0, 5, 999)
+  foe.states = [3] # already afflicted, for the weapon to lift
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 3 => fake_state })
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [3], entry[:cured], "the RPG2003 weapon healed its own state instead of inflicting it"
+  ok !foe.state?(3)
+end
+
+check "battle: on RPG2000, a weapon's reverse_state_effect has no effect -- it still inflicts" do
+  # The exact same weapon/scenario as the RPG2003 heal check above, but on an
+  # RPG2000 database: `reverse_state_effect` only flips a weapon's polarity on
+  # RPG2003 (EasyRPG's `is2k3 &&` guard), so the state still inflicts here.
+  items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1],
+                            state_chance: 100, reverse_state: true) }
+  st = skill_party({}, items) # rpg2003 defaults to false
+  a = st.party.actor_by_id(1)
+  a.equip([7, 0, 0, 0, 0])
+  hero = Game::Battle.from_actor(a)
+  eq({ 3 => 100 }, hero.atk_states[:inflict],
+     'the flag is ignored on RPG2000 -- the state stays on the inflict side')
+  foe = combatant('Foe', 0, 0, 5, 999)
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 3 => fake_state })
+  entry = bat.send(:deal_attack, hero, foe)
+  eq [3], entry[:inflicted]
+  ok foe.state?(3)
 end
 
 check 'Game::Enemy reads its per-attribute defence ranks' do

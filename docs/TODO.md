@@ -3435,9 +3435,13 @@ The work below is roughly ordered by the critical path to a walkable game
   crude in one direction on purpose — a field named only in a comment counts as
   read, so the list under-reports and never over-reports. A row is a question,
   not a defect: the script carries a `NOT_OURS` table of fields checked against
-  EasyRPG and deliberately left alone (`levitate` and `state_chance` are RPG2003
-  only, `message_affected` has no known trigger, and the two critical-hit terms
-  are side-keying-unresolved, ADR 0036), so nobody re-derives them.
+  EasyRPG and deliberately left alone (`levitate` is RPG2003 only,
+  `message_affected` has no known trigger, and the two critical-hit terms are
+  side-keying-unresolved, ADR 0036), so nobody re-derives them. `state_chance`
+  used to sit in this table on the same "RPG2003 only" reasoning, checked only
+  against the item-cure code path; the weapon-attack path reads it on both
+  editions, and a real RPG2000 game (Nepheshel) sets it on several weapons —
+  see the basic-Attack weapon-state-infliction fix below.
 - ✅ **Drain skills** (吸収, the skill row's `absorb_damage`) — 13 of Nepheshel's
   306 skills and 5 of mtf's 134 set it and nothing read it, so every drain spell
   in both games was an ordinary attack spell, and the two 用語 sentences that
@@ -5052,6 +5056,34 @@ not yet verified:
   RPG2003 database, walks the cursor onto the RPG2003-only millions-place
   digit cell, and confirms the value it produces is only reachable with the
   wider editor, confirmed to fail against the pre-fix code before the fix.
+- ✅ **A basic Attack now rolls its own weapon's state-infliction chance**
+  (item fields 63/64 `state_set` and 67 `state_chance`) instead of doing
+  nothing at all — only Skills and Items ever rolled state infliction
+  before, so a "Poison Dagger"-style weapon could never actually poison
+  anything on a plain swing. Confirmed against EasyRPG's
+  `Game_BattleAlgorithm::Normal::vExecute` (`src/game_battlealgorithm.cpp`,
+  the "Conditions caused / healed by weapon" block): each state a weapon's
+  `state_set` flags rolls against `state_chance`, scaled by the target's own
+  susceptibility (`Game::Battle#state_susceptibility`, the same function a
+  skill's infliction already uses) — and, unlike a skill, a state already on
+  the target is silently skipped rather than re-reported. A 二刀流 (dual-
+  wielding) actor's second weapon can flag a different state, or the same
+  state at a different chance, in which case the higher chance wins (ported
+  as a per-state max across both weapons). RPG2003's `reverse_state_effect`
+  flag (field 20) flips a weapon's own states from inflicting to *curing*
+  them — but only on RPG2003 (`is2k3 && w->reverse_state_effect`); the same
+  flag on an RPG2000 database has no effect here, matching how it already
+  behaves for a medicine item / field skill elsewhere in this codebase.
+  Implemented as a new `Game::Actor#weapon_states` reader (mirroring
+  `#weapon_attributes`'s own equipment scan) carried onto the Combatant
+  snapshot as `atk_states`, and a new `Game::Battle#roll_weapon_states`
+  applied from `#deal_attack` once the blow's damage is resolved and the
+  target has survived it — the same guard `#shake_off_states` already uses.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks (a plain
+  RPG2000 weapon inflicting its state, an RPG2003 `reverse_state_effect`
+  weapon healing one instead, and the same weapon on RPG2000 still
+  inflicting since the flag is edition-gated), each confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
@@ -8414,7 +8446,8 @@ absent on the current map" cause and "a variable-driven Call Event
 resolving to no match", plus invalid-event-page as a distinct message from
 invalid-event-id). The remaining "invalid event ID" cause — a stale
 Variable-Op/Move-Route target — is a different command family, not part
-of Call Event, and is still open. **Store Event ID has no analogous gap**:
+of Call Event; **the Variable-Op half is now fixed too** (see the ✅ entry
+below), leaving only Move-Route open. **Store Event ID has no analogous gap**:
 unlike Call Event it never targets an event *by id*, only by tile position
 (`#do_store_event_id`), and "no event on this tile" (stored as `0`) is a
 genuine, correctly-modelled answer rather than a stale reference — nothing
@@ -8454,6 +8487,26 @@ five new `scripts/rpg2k_logic_check.rb` checks (no handlers, an [Escape]
 handler, escape-abort mode, and the random-encounter path both missing and
 present), each asserting on the captured `$stderr` line and that no
 `:battle` wait was ever armed.
+✅ **The field skill menu no longer drops a dangling learned-skill id with no
+trace** — one of the "invalid skill" cases above, the "opens a skill-select
+screen" variant. `Game::Party#field_skills` (`mruby-rpg2k/mrblib/game.rb`)
+builds a caster's field-usable skill list from `#db_skill(id)`, which already
+tolerated a shrunk database by returning `nil` for a stale id; `#field_skill?`
+just as silently excluded it (`return false unless sk`), so the skill
+vanished from the menu with no diagnostic anywhere in the chain. `#field_skills`
+now checks `db_skill(sid)` itself before delegating to `#field_skill?` and
+logs a `[RPG2k] Skill menu: caster's learned skill #<id> has no matching
+database row, excluding from field menu` diagnostic the same
+reported-not-invented way Call Event/Enemy Encounter/Teleport above do,
+including the skill id; the skill still doesn't appear in the menu — there is
+nothing sensible to show for it — this is diagnostics only. Follows this
+catalog's existing precedent of logging every occurrence rather than deduping
+per id: none of Call Event, Enemy Encounter or Teleport keep any
+already-logged state, so a menu opened repeatedly logs the same stale id each
+time, and this doesn't diverge from that. Covered by a new
+`scripts/rpg2k_logic_check.rb` check asserting the captured `$stderr` line and
+that the dangling id is excluded while a genuine sibling skill still comes
+through.
 ✅ **"invalid map" (Transfer Player / Recall to Location naming a
 nonexistent map id) no longer crashes the interpreter** — `Scene::Map
 #perform_teleport` (`mruby-rpg2k/mrblib/scene/map.rb`) called
@@ -8480,6 +8533,22 @@ new `scripts/rpg2k_scene_check.rb` checks, each targeting a `FakeParent`
 whose `load_map` raises `Errno::ENOENT` for one specific id and asserting
 the `$stderr` diagnostic fires while `state.map_id`/`state.x`/`state.y`
 stay exactly as they were before the failed command ran.
+✅ **Control Variables' Character operand no longer swallows a stale
+Variable-Op target** — the last of the four "invalid event ID" causes
+listed above, and a different command family from Call Event. `Interpreter
+#event_operand`/`#screen_operand` (`mruby-rpg2k/mrblib/interpreter.rb`)
+back the Character-attribute selectors (map id/x/y/direction and the
+screen-x/screen-y pair) and previously read `0` at every unresolved-target
+branch with no trace: "This Event" used with no map-event context
+(`#character_ref` returning `nil`, mirroring the Call Event fix's own
+"this event" case) and a map-event id absent on the current map (mirroring
+Call Event's own stale-target case), each now logged for both the
+plain-attribute path (`#event_operand`) and the screen-coordinate path
+(`#screen_operand`), plus a character with a resolvable id but no on-screen
+position to report. All four log a `[RPG2k] Control Variables: ...`
+diagnostic and still resolve to `0` — behaviour is unchanged, only the
+gap is now visible. Covered by four new `scripts/rpg2k_logic_check.rb`
+checks, each asserting on the captured `$stderr` line.
 ✅ **Invalid terrain (a chipset cell whose terrain id a database shrink has
 removed) no longer swallows the gap with a bare `rescue StandardError; nil`**
 — `Scene::Map#terrain_row_at` (`mruby-rpg2k/mrblib/scene/map.rb`), the single
