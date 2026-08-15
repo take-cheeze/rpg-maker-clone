@@ -130,6 +130,44 @@ after `map.layers`. It has not changed in absolute terms — the layer surfaces
 are still fully invalidated every frame, because the events drawn over them
 change every frame.
 
+#### What it costs in memory
+
+Caching trades memory for time, so the trade was measured rather than assumed.
+Two things are newly allocated:
+
+- **The two cached grids**, `COLS*TILE x ROWS*TILE` at ARGB8888 — 336x256x4 =
+  336 KiB each, **672 KiB** together. Fixed, allocated once with the scene.
+- **The `quads` table.** Bounded, not unbounded: its key space is the game's
+  distinct tile ids x 3 `abf` x 4 `cf`. For Nepheshel that ceiling is 639
+  distinct ids across all 543 maps, so **7,668 entries / ~28,000 small arrays /
+  ~2.7 MiB** (measured under CRuby, whose objects are larger than mruby's) —
+  and only if a session renders every tile in the game in every animation
+  state. It cannot grow with play time past that.
+
+Against that, the change removes ~97% of the engine's allocation churn, which
+is worth more than the caches cost. Two 3-minute runs, same game, both read at
+their RSS plateau:
+
+| | before | after |
+| --- | ---: | ---: |
+| process RSS (plateau) | 70.02 MB | **69.33 MB** |
+| LVGL pool, floor (retained) | 16.60 MB | 16.58 MB |
+| LVGL pool, peak | 26.72 MB | 25.70 MB |
+| mruby live blocks, floor | 21,806 | 21,132 |
+| mruby live blocks, peak | 190,539 | 162,916 |
+| allocations/second | 348,172 | **10,571** |
+
+So there is **no net memory cost** — RSS came out 0.7 MB *lower*, and every
+other figure is flat or down. The 672 KiB of surfaces and whatever the quads
+table has filled are more than paid for by the garbage no longer being
+produced: with 33x fewer allocations the heap holds far less transient rubbish
+between collections (peak live blocks down 27,000).
+
+Read short windows carefully here. A 40-second sample of the same pair showed
+the *optimized* build with a higher heap peak, purely because the two builds
+were caught in different phases of the GC's sawtooth; only at the plateau do
+the numbers mean anything.
+
 #### Checking it still draws the same thing
 
 This is a renderer with pixel-parity commitments (ADR 0021), so the change was
