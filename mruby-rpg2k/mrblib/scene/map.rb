@@ -636,8 +636,13 @@ class RPG2k
 
       WEATHER_RAIN = 1
       WEATHER_SNOW = 2
-      # Particles at the lightest strength; each step up adds another band.
-      WEATHER_BASE_PARTICLES = 48
+      # Particle counts by strength (0..2) -- EasyRPG's own
+      # num_rain_or_snow_particles table (src/weather.cpp) is the literal
+      # { 20, 60, 100 }, not a fixed multiple of the lightest strength's own
+      # count: the step from light to medium (+40) and medium to heavy (+40)
+      # is constant, but light itself (20) is under half of what a "* (n+1)"
+      # progression from a single base would give.
+      WEATHER_PARTICLE_COUNTS = [20, 60, 100].freeze
       RAIN_COLOR = Color.new(200, 210, 255, 200)
       SNOW_COLOR = Color.new(255, 255, 255, 220)
 
@@ -659,7 +664,8 @@ class RPG2k
       end
 
       def weather_particle_count(w)
-        WEATHER_BASE_PARTICLES * ((w.strength || 0) + 1)
+        i = Game.clamp(w.strength || 0, 0, WEATHER_PARTICLE_COUNTS.length - 1)
+        WEATHER_PARTICLE_COUNTS[i]
       end
 
       # A single particle's on-screen cell, spread across the screen by a cheap
@@ -8667,8 +8673,13 @@ class RPG2k
       # sits on its own tile; the ridden one follows the party's pixel position
       # (so it slides smoothly), drawn just under the hero. A vehicle on another
       # map, or one with no CharSet graphic, is hidden.
-      # Pixels the airship floats above its shadow on the ground.
-      AIRSHIP_ALTITUDE = 8
+      # Pixels the airship floats above its shadow on the ground -- a full
+      # tile, not half. EasyRPG's own Game_Vehicle::GetAltitude()
+      # (src/game_vehicle.cpp) is `SCREEN_TILE_SIZE / (SCREEN_TILE_SIZE /
+      # TILE_SIZE)` once fully airborne (this codebase never models the
+      # gradual ascend/descend transition itself, only this steady-state
+      # value) -- 256 / (256 / 16) = 16 with RPG_RT's own real constants.
+      AIRSHIP_ALTITUDE = 16
 
       def draw_vehicles(cam_x, cam_y, px, py)
         return unless @vehicle_sprites
