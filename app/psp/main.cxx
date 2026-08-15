@@ -1,24 +1,29 @@
 // PlayStation Portable EBOOT entry point -- hardware bring-up.
 //
-// This first slice proves the HAL compiles and runs on the PSP without the
-// mruby interpreter: it stands up the LVGL display (psp_display_create), scans
-// the pad (psp_input_scan), and draws a small status screen that echoes the
-// pressed keys. main() owns the loop and pumps LVGL once per iteration -- the
-// same "host owns the loop" shape the Emscripten and Wio builds use. Its
-// per-second heartbeat also reports real free-memory and LVGL-pool numbers
-// (see the RPG2K_PSP_BRINGUP marker below), which is ADR 0047's P1: this
-// bring-up EBOOT never opens mruby, but it can still measure the device's
-// actual RAM and how much of LVGL's pool the HAL alone uses, ahead of the
-// interpreter-linking slice that will need to size that pool for real.
+// This slice proves the HAL compiles and runs on the PSP and that libmruby.a
+// (built for the psp target by build_config.rb, linked in via
+// app/psp/CMakeLists.txt) actually links and boots on real MIPS/pspdev: it
+// stands up the LVGL display (psp_display_create), scans the pad
+// (psp_input_scan), draws a small status screen that echoes the pressed keys,
+// and opens an mruby interpreter (mrb_open). main() owns the loop and pumps
+// LVGL once per iteration -- the same "host owns the loop" shape the
+// Emscripten and Wio builds use. Its per-second heartbeat also reports real
+// free-memory and LVGL-pool numbers (see the RPG2K_PSP_BRINGUP marker below),
+// which is ADR 0047's P1: measuring the HAL's own footprint on real
+// hardware/an emulator ahead of sizing anything for a real game.
 //
-// The mruby interpreter, the real RPG2k scene tree and Memory-Stick asset
-// loading are wired in the following slices (see app/psp/README.md and
-// docs/adr/0010-psp-port.md); this build intentionally links neither libmruby
-// nor the mruby input bridge.
+// mrb_open() here uses mruby's own default allocator (plain malloc) rather
+// than routing through lv_malloc the way the desktop build does -- ADR 0047's
+// P2 (share LVGL's pool vs. a separate arena) is still an open decision that
+// this slice does not need to make just to prove the interpreter boots. No
+// RGSS methods are registered and no game is started: the real RPG2k scene
+// tree, Memory-Stick asset loading and the GAME_DIR convention are the next
+// slice (see app/psp/README.md and docs/adr/0010-psp-port.md).
 
 #include <cstdio>
 
 #include <lvgl.h>
+#include <mruby.h>
 #include <pspiofilemgr.h>
 #include <pspkernel.h>
 #include <pspsysmem.h>
@@ -126,6 +131,20 @@ int main(void) {
   psp_display_create(PSP_SCR_WIDTH, PSP_SCR_HEIGHT);
   psp_input_init();
   build_ui();
+
+  // Open the interpreter and report whether it succeeded. `M` is kept alive
+  // (never mrb_close()d) for the rest of the process, the same as every other
+  // target's entry point -- there is nothing to hand it yet, but the next
+  // slice needs it alive for the process's whole lifetime, not just this
+  // function.
+  mrb_state* const M = mrb_open();
+  {
+    char buf[48];
+    const int n = std::snprintf(buf, sizeof(buf), "RPG2K_PSP_MRUBY_OPEN %s\n",
+                                M ? "ok" : "FAILED");
+    if (n > 0)
+      psp_write(buf, n);
+  }
 
   // The loop runs ~200 iterations/second (5 ms delay); emit a heartbeat line
   // roughly once a second. The CI smoke test asserts this marker appears,

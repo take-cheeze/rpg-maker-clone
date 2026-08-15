@@ -18,8 +18,8 @@ project(rpg2k_psp C CXX ASM)
 set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
 # pspsdk static libraries are built without gp-relative small-data addressing;
-# every object linked with them (LVGL and our own) must match, so force -G0 at
-# directory scope before LVGL is added.
+# every object linked with them (LVGL, uni-algo, mruby and our own) must match,
+# so force -G0 at directory scope before any of them are added.
 add_compile_options(-G0)
 
 # LVGL ships ARM Helium/NEON SIMD blend kernels as hand-written .S assembly and
@@ -39,23 +39,85 @@ endif()
 # Build the vendored LVGL with the PSP-tuned lv_conf.h in this directory (same
 # submodule the desktop and Wio builds use). LV_BUILD_CONF_DIR points LVGL's
 # build at our config.
+#
+# Binary dir is "3rd/lvgl", not "lvgl": the psp mruby cross-build below (via
+# rake, a separate build system from this CMake project) links against
+# mruby-rgss's own linker.library_paths, which -- matching the root
+# CMakeLists.txt's layout, where "3rd/lvgl" is genuinely the path from the repo
+# root -- expects to find liblvgl.a at "${PROJECT_BUILD_DIR}/3rd/lvgl/lib".
+# Verified against a real (host-compiler) build of the vendored LVGL/uni-algo
+# CMakeLists.txt: LVGL places its archive at "<binary_dir>/lib/liblvgl.a";
+# uni-algo places its directly at "<binary_dir>/libuni-algo.a" (its own
+# CMakeLists.txt sets no output subdirectory) -- both reflected below.
 set(LV_BUILD_CONF_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}
     CACHE PATH "lv_conf.h location" FORCE)
-add_subdirectory(${REPO_ROOT}/3rd/lvgl lvgl EXCLUDE_FROM_ALL)
+add_subdirectory(${REPO_ROOT}/3rd/lvgl 3rd/lvgl EXCLUDE_FROM_ALL)
 
-# The bring-up EBOOT: the platform HAL (compiled straight from the mruby-rgss
-# gem, self-guarded on PSP_BUILD) plus the entry-point sketch. libmruby and the
-# input bridge are layered on in a later slice.
-add_executable(rpg2k_psp main.cxx ${REPO_ROOT}/mruby-rgss/src/psp.cxx)
+# mruby-rgss and mruby-lcf both link uni-algo (Unicode normalisation / CP932
+# conversion). See the LVGL comment above for why the binary dir must be
+# "3rd/uni-algo".
+add_subdirectory(${REPO_ROOT}/3rd/uni-algo 3rd/uni-algo EXCLUDE_FROM_ALL)
+
+# Build libmruby.a for the psp target via mruby's own rake-based build system
+# (build_config.rb's `psp` MRuby::CrossBuild), the same way the root
+# CMakeLists.txt does for the desktop/wasm builds -- factored into
+# cmake/build-mruby.cmake since both drive the same rake invocation with only
+# the target name, gem list and a few extra rake options differing.
+#
+# Unlike the root build, no native `mrbc`-producing host build needs its own
+# CC/CXX override here: build_config.rb's psp block hardcodes psp-gcc/psp-g++
+# directly (conf.cc.command = 'psp-gcc', ...), and the host build alongside it
+# (which still produces mrbc) uses the ambient CC/CXX -- ordinary host
+# compilers, since this CMake project's own C/CXX compiler *is* the psp
+# cross-compiler (set via the pspdev toolchain file), not a host one.
+include(${REPO_ROOT}/cmake/build-mruby.cmake)
+rpg2k_add_mruby(
+  TARGET_NAME
+  psp
+  REPO_ROOT
+  ${REPO_ROOT}
+  PROJECT_BUILD_DIR
+  ${CMAKE_CURRENT_BINARY_DIR}
+  # Mirrors the root CMakeLists.txt's gem list, trimmed to what
+  # build_config.rb's psp cross-build actually pulls in (rpg_maker_gems with
+  # include_mvjs: false -- no mruby-mvjs/quickjs on this target).
+  GEMS
+  mruby-rgss
+  mruby-lcf
+  mruby-rpg2k
+  mruby-rpgxp
+  mruby-rpgvx
+  MRB_OPTS
+  MRUBY_TARGET=psp)
+
+# The bring-up HAL (mruby-rgss/src/psp.cxx) now comes from libmruby.a -- the psp
+# cross-build compiles it as part of the mruby-rgss gem, self-guarded on
+# PSP_BUILD the same way it always was. Compiling it here directly too, as the
+# earlier HAL-only bring-up did, would double-define every symbol in it
+# (psp_display_create, psp_input_scan, ...) once both this executable and
+# libmruby.a define them.
+add_executable(rpg2k_psp main.cxx)
 
 target_compile_definitions(rpg2k_psp PRIVATE PSP_BUILD LV_CONF_INCLUDE_SIMPLE)
 target_include_directories(rpg2k_psp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
                                              ${REPO_ROOT}/include)
 
+# libpspkernel.a bundles its own "ForKernel" NID-stub implementations of a
+# handful of libc functions (seen so far: strtol, strtoul) alongside the real
+# ones this user-mode (THREAD_ATTR_USER) EBOOT actually wants from newlib's
+# libc.a -- both get pulled into the link (each also resolves other symbols
+# genuinely needed from the same object) and collide as a hard "multiple
+# definition" error. --allow-multiple-definition keeps the first definition ld
+# encounters and discards the rest; libc.a is linked implicitly ahead of the
+# explicit libraries below, so that first definition is newlib's real one.
+target_link_options(rpg2k_psp PRIVATE -Wl,--allow-multiple-definition)
+
 target_link_libraries(
   rpg2k_psp
+  mruby
   lvgl
+  uni-algo::uni-algo
   pspdisplay
   pspge
   pspctrl
