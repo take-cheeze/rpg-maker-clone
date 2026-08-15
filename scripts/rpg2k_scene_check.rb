@@ -7306,6 +7306,47 @@ check "a map-triggered Show Battle Animation's target-scope flash pulses the pla
   ok st.switches[6], 'the event resumed after the animation'
 end
 
+# screen_shaking (LCF database field 8 on an animation timing: 0 none / 1
+# target / 2 screen, decoded by mruby-lcf/mrblib/schema.rb) was decoded but
+# never read by #fire_animation_flashes at all. Verified against EasyRPG
+# Player's actual C++ source, `BattleAnimation::ProcessAnimationTiming`
+# (src/battle_animation.cpp, fetched verbatim): screen_shaking 2 fires
+# `screen->ShakeOnce(3, 5, 32)` from the shared base class, with no
+# `ma[:battle]` gate the way the target case just below needs one -- so a
+# map-triggered Show Battle Animation shakes the whole screen exactly the
+# same way a battle-round one does (see the battle-round check further down),
+# reusing the exact Game::Screen#shake call/argument order the Shake Screen
+# event command (11050, #do_shake_screen) already drives rather than
+# inventing a second shake mechanism. A hand-built timing (rather than a
+# fixture animation) isolates it the same way the flash_scope-1 check above
+# does.
+check 'a map-context screen-scope animation shake triggers the same Game::Screen#shake state as Shake Screen' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  ok !st.screen.shaking?, 'not shaking to start with'
+  timing = OpenStruct.new(frame: 0, screen_shaking: 2)
+  ma = { frame_i: 0, timings: [timing] } # no :battle key -- the map path
+  scene.send(:fire_animation_flashes, ma)
+  ok st.screen.shaking?, 'the screen shake started on the map path too'
+end
+
+# screen_shaking 1 ("target") on a map-triggered Show Battle Animation is a
+# genuine no-op, not a dropped feature: EasyRPG's own `BattleAnimationMap::
+# ShakeTargets` (src/battle_animation.cpp, fetched verbatim) is an empty
+# method body -- `void BattleAnimationMap::ShakeTargets(int, int, int) {}` --
+# unlike `BattleAnimationBattle`/`BattleAnimationBattler`'s real per-battler
+# shake (see the battle-round check further down). #fire_animation_flashes
+# only calls #fire_target_shake when `ma[:battle]`, matching that real split
+# rather than treating the map path as an oversight to fill in.
+check 'a map-context target-scope animation shake is a real no-op, matching BattleAnimationMap::ShakeTargets' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  timing = OpenStruct.new(frame: 0, screen_shaking: 1)
+  ma = { frame_i: 0, timings: [timing] } # no :battle key -- the map path
+  scene.send(:fire_animation_flashes, ma) # must not raise
+  ok !st.screen.shaking?, 'never touches the whole-screen shake either'
+end
+
 # The same timing aimed at a named map event instead pulses *that* event's own
 # flash, not the player's -- #map_animation_flash_target resolves a plain
 # event id the same way #animation_target_pixel already does for centring the
@@ -11164,6 +11205,79 @@ check 'a target-scope animation flash pulses the hit enemy, not the screen or a 
   # the flash fades out and clears after its own duration -- not left stuck on.
   anim_flash_frames.times { scene.send(:update_enemy_flashes) }
   eq nil, spr.flash_color, 'the flash faded out after its duration'
+end
+
+# screen_shaking 2 ("screen") on a battle-round animation. Verified against
+# EasyRPG Player's actual C++ source, `BattleAnimation::ProcessAnimationTiming`
+# (src/battle_animation.cpp, fetched verbatim): `screen->ShakeOnce(3, 5, 32)`
+# -- the exact same Game::Screen#shake call and (power, speed, frames)
+# argument order the Shake Screen event command (11050) already drives (see
+# the 'Shake Screen with a wait...' check above), so this reuses it rather
+# than inventing a second shake mechanism.
+check 'a screen-scope animation shake triggers the same Game::Screen#shake state as Shake Screen' do
+  scene, = battle_at_command
+  st = scene.instance_variable_get(:@state)
+  ok !st.screen.shaking?, 'not shaking to start with'
+  timing = OpenStruct.new(frame: 0, screen_shaking: 2)
+  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma)
+  ok st.screen.shaking?, 'the screen shake started'
+  RPG2k::Scene::Map::ANIM_SHAKE_FRAMES.times { st.screen.update }
+  ok !st.screen.shaking?, "settled after EasyRPG's own fixed 32-frame duration"
+end
+
+# The default (0, "none") screen_shaking must stay a regression-safe no-op --
+# #fire_animation_flashes already runs unconditionally on every timing, so a
+# frame with no screen_shaking data at all (the schema default) must never
+# start a shake nobody asked for.
+check 'a screen_shaking-0 (default) timing triggers no shake' do
+  scene, = battle_at_command
+  st = scene.instance_variable_get(:@state)
+  timing = OpenStruct.new(frame: 0, flash_scope: 0, screen_shaking: 0)
+  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma)
+  ok !st.screen.shaking?, 'screen_shaking 0 (the schema default) never touches the screen shake'
+end
+
+# screen_shaking 1 ("target"): EasyRPG's own `BattleAnimationBattle::
+# ShakeTargets`/`BattleAnimationBattler::ShakeTargets` (src/battle_animation.cpp,
+# fetched verbatim) shake every one of the animation's own battler targets
+# with the same (3, 5, 32) triple as the screen case, via `battler->
+# ShakeOnce(...)` -- #fire_target_shake/#update_enemy_shakes port that to this
+# codebase's own per-sprite x, since there is no native per-sprite shake
+# primitive the way Sprite#flash exists for the colour pulse.
+check 'a target-scope animation shake jitters the hit enemy sprite, not a bystander, and settles back' do
+  scene, ui = battle_at_command
+  spr = ui[:enemy_sprites][0]
+  bystander = ui[:enemy_sprites][1]
+  base_x = spr.x
+  bystander_x = bystander.x
+  timing = OpenStruct.new(frame: 0, screen_shaking: 1)
+  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma)
+  moved = false
+  RPG2k::Scene::Map::ANIM_SHAKE_FRAMES.times do
+    scene.send(:update_enemy_shakes)
+    moved ||= spr.x != base_x
+  end
+  ok moved, "the targeted enemy sprite's x moved off its base position at some point during the shake"
+  eq base_x, spr.x, 'settled back to its base x once the shake duration elapsed'
+  eq bystander_x, bystander.x, 'the untargeted bystander sprite was never touched'
+  st = scene.instance_variable_get(:@state)
+  ok !st.screen.shaking?, 'screen_shaking 1 never touches the whole-screen shake, unlike screen_shaking 2'
+end
+
+# An ally-targeted entry (RPG2000's battle is front-view: no sprite for a
+# party member, so target_index is nil there -- see #battle_animation_pixel)
+# has nothing to shake; #fire_target_shake must not raise reaching for a
+# nonexistent sprite, the same shape #fire_target_flash's own no-target check
+# above already covers.
+check 'a target-scope shake with no resolvable target sprite is a silent no-op' do
+  scene, = battle_at_command
+  timing = OpenStruct.new(frame: 0, screen_shaking: 1)
+  ma = { frame_i: 0, battle: true, target_index: nil, timings: [timing] }
+  scene.send(:fire_animation_flashes, ma) # must not raise
+  ok true, 'no exception targeting nothing'
 end
 
 # ANIM_FLASH_FRAMES itself, pinned against EasyRPG's actual C++ source rather
