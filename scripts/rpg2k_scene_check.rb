@@ -2222,10 +2222,18 @@ class BattleStubParty
   def db_enemy_group(id); @enemy_group[id]; end
 end
 
+# A minimal party member for the shop status panel's equipped-count check --
+# just an equipment slot array, mirroring Game::Actor#equipment.
+class ShopStubActor
+  attr_reader :equipment
+  def initialize(equipment); @equipment = equipment; end
+end
+
 # A party the shop can charge and stock: gold plus an item-count bag, with the
 # leader Scene::Map reads while rendering.
 class ShopStubParty
-  attr_reader :actors, :gold, :items
+  attr_accessor :actors
+  attr_reader :gold, :items
   attr_accessor :leader
   def initialize(gold); @gold = gold; @items = {}; @actors = []; @leader = nil; end
   def gain_gold(n); @gold += n; @gold = 0 if @gold < 0; end
@@ -2235,6 +2243,9 @@ class ShopStubParty
     c = 0 if c < 0
     c = 99 if c > 99
     @items[id] = c
+  end
+  def equipped_item_count(id)
+    @actors.reduce(0) { |n, a| n + a.equipment.count(id) }
   end
 end
 
@@ -10365,6 +10376,61 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   scene.update
   shop = scene.instance_variable_get(:@shop)
   eq :sell, shop[:screen], 'and returns to the sell list, same as EasyRPG\'s Sold -> Sell'
+end
+
+check 'Open Shop scene: the status panel shows the highlighted item\'s possessed ' \
+      'and equipped counts, and disappears off the buy/sell list' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.possessed_items = '所持数'
+  db.term.equipped_items = '装備数'
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)] # buy+sell
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  party = ShopStubParty.new(500)
+  party.gain_item(3, 2)                                # two Potions already in the bag
+  party.actors = [ShopStubActor.new([3, 0, 0, 0, 0])]  # one of them equipped
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  ok shop[:status].nil?, 'the command menu highlights no single item -- no panel'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen]
+  texts = window_texts(shop[:status])
+  ok texts.include?('所持数'), 'the possessed_items term labels the first row'
+  ok texts.include?('装備数'), 'the equipped_items term labels the second row'
+  ok texts.include?('2'), 'two Potions already held'
+  ok texts.include?('1'), 'one Potion equipped across the party'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the second good (Herb, id 5)
+  scene.update
+  RGSS::Input.triggered = []
+  texts = window_texts(scene.instance_variable_get(:@shop)[:status])
+  ok texts.include?('0'), 'no Herbs held or equipped'
+  ok !texts.include?('2') && !texts.include?('1'),
+     'the stale Potion counts are gone once the cursor moves to a different good'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # open the quantity counter for the Herb
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :quantity, shop[:screen]
+  ok shop[:status].nil?, 'the quantity counter highlights no single list row -- no panel'
+
+  RGSS::Input.triggered = [RGSS::Input::B] # back to the buy list
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen]
+  ok !shop[:status].nil?, 'the panel returns once a good is highlighted again'
 end
 
 check 'Enemy Encounter scene: the result window shows the database Victory term' do

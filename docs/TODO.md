@@ -904,6 +904,17 @@ The work below is roughly ordered by the critical path to a walkable game
   unaffordable, or already capped — does not open the counter, and cancelling it
   returns to the list having traded nothing. Nepheshel opens 10 shops, so this is
   exercised content rather than a hypothetical.
+  A **status panel** now sits beside the buy / sell list too — EasyRPG's
+  `Window_ShopStatus` — showing the currently highlighted item's
+  `possessed_items` / `equipped_items` database terms (blank falls back to
+  plain English, matching every other shop term) with right-aligned counts:
+  the bag-only `Party#item_count` and a new `Party#equipped_item_count`
+  (every slot on every party member holding the item, matching EasyRPG's
+  `Game_Party::GetEquippedItemCount` / `Game_Actor::GetItemCount` slot-equality
+  scan — a copy currently equipped no longer counts toward the bag, so the
+  two rows move independently). It refreshes with the list's own cursor and
+  is torn down for the command menu, the quantity counter and the
+  purchase/sale confirmation, none of which highlight a single item.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

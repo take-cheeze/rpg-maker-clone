@@ -5393,6 +5393,31 @@ check 'party#has_item? counts a copy equipped on any member, not just the bag' d
   eq true, st.party.has_item?(7)
 end
 
+# The shop status panel's "equipped" row (Scene::Map#draw_shop_status) sums
+# every slot on every party member holding the item -- EasyRPG's
+# Game_Party::GetEquippedItemCount / Game_Actor::GetItemCount, a plain slot
+# equality scan, so two members (or two slots on one member) each holding a
+# copy count as two, and it moves independently of the bag count.
+check "party#equipped_item_count sums a held item across every member's " \
+      'equipment slots' do
+  items = { 7 => fake_item(atk: 15, type: 1) }   # weapon -> slot 0
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]),
+                        2 => CurveRow.new('Ally', '', 0, 1, [8, 4, 2, 3, 2, 3]) },
+                       [1, 2], items)
+  party = Game::Party.new(db)
+  hero, ally = party.actors
+  eq 0, party.equipped_item_count(7), 'nothing equipped yet'
+  hero.equip([7, 0, 0, 0, 0])
+  eq 1, party.equipped_item_count(7)
+  ally.equip([7, 0, 0, 0, 0])
+  eq 2, party.equipped_item_count(7), 'summed across both party members'
+  party.gain_item(7, 3)
+  eq 3, party.item_count(7), 'the bag count moves independently of what is equipped'
+  eq 2, party.equipped_item_count(7)
+  hero.equip([0, 0, 0, 0, 0])
+  eq 1, party.equipped_item_count(7)
+end
+
 check 'Conditional Branch item test (type 4) sees an equipped copy too' do
   items = { 7 => fake_item(atk: 15, type: 1) }
   st = equip_party(items)
