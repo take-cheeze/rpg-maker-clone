@@ -4536,10 +4536,11 @@ not yet verified:
   how many distinct ids get used, which is a different question from a single
   variable's *value* range, now fixed). Picture id range 1-50 is now fixed
   too, see the "Pictures" bullet under "Full-site sweep" below.
-- **Runtime per-map overrides that reset on leaving-and-returning to the
+- ✅ **Runtime per-map overrides that reset on leaving-and-returning to the
   map**, not just on Transfer Player/save-load: Chipset Change, Panorama/
   parallax Change, Encounter Steps Change, Tile Replacement, and — per one
-  source — Save/Teleport/Escape Prohibition changes. `perform_teleport`
+  source — Save/Teleport/Escape Prohibition changes. **Every member of this
+  bullet is now confirmed correct.** `perform_teleport`
   resets tileset/parallax/pan on a *map change*, and Save/Teleport/Escape
   Prohibition are confirmed correct above (`apply_map_access`). **Tile
   Replacement is confirmed correct too**, for a different reason than the
@@ -4570,7 +4571,7 @@ not yet verified:
   EventPage.select`). Battle events are the opposite: **every** satisfied
   page runs once per turn, lower page number first (already implemented,
   `Game::BattlePage.select_all` — confirmed correct earlier this session).
-- **Autorun (auto-start) and any other non-parallel-process trigger are
+- ✅ **Autorun (auto-start) and any other non-parallel-process trigger are
   mutually exclusive engine-wide**: an Autorun can't start while any other
   foreground event (action-key, touch) is executing, and per one source
   this exclusion is **global, not per-map** — a second map's Autorun won't
@@ -4579,7 +4580,23 @@ not yet verified:
   Also: Autorun and parallel process are independent — parallel processes
   keep running during an Autorun's *blocking* waits (Show Text/Wait) but
   are blocked while the Autorun executes non-blocking commands; if both
-  are set to fire the same frame, parallel process goes first.
+  are set to fire the same frame, parallel process goes first. **Every
+  sub-claim confirmed correct**, and largely already documented in-code
+  rather than freshly derived: `#parallels_paused?` is exactly
+  `!@battle_ui.nil? || (@interpreter.running? && !@interpreter.waiting?)`
+  — false (not paused) the whole time the single foreground `@interpreter`
+  is mid-`Wait`/`Show Text`, true only while it is actively bursting
+  through non-blocking commands within the current frame — and
+  `Scene::Map#update`'s own comment on `step_parallels` (called *before*
+  the foreground dispatch every frame) already cites this bullet's own
+  "if both are set to fire the same frame, parallel process goes first"
+  wording verbatim. The single-slot exclusivity is structural: `Scene::Map`
+  holds exactly one `@interpreter` for its whole lifetime — `#perform_teleport`
+  never touches it — so a foreground script (Autorun included) that issues
+  its own Transfer Player mid-script keeps running on the very same
+  interpreter object after landing on the new map, with no second,
+  independent foreground slot a different map's own Autorun could ever
+  race into.
 - An Autorun/parallel event whose appearance condition goes false
   mid-execution **keeps running to completion** rather than aborting —
   confirmed by many independent sources, including across a map transfer
