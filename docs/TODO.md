@@ -1564,7 +1564,19 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmed to fail against the pre-fix code before the fix.
   Placed vehicles are **drawn on the map** from their CharSet, the
   ridden one following the party under the hero, and the **airship floats above a
-  ground shadow**. Boarding **plays the vehicle's own BGM** (the database System
+  ground shadow**. ✅ **The airship's own float height is now a real, full
+  16px tile, not a wrong half-tile 8px.** `Scene::Map::AIRSHIP_ALTITUDE`
+  was `8`. EasyRPG Player's own `Game_Vehicle::GetAltitude()`
+  (`src/game_vehicle.cpp`) is `SCREEN_TILE_SIZE / (SCREEN_TILE_SIZE /
+  TILE_SIZE)` once fully airborne (this codebase never models the gradual
+  ascend/descend transition itself, only this steady-state value) — `256 /
+  (256 / 16) = 16` with RPG_RT's own real constants, exactly a full tile.
+  Fixed by changing the constant to `16`. Covered by tightening the
+  existing `scripts/rpg2k_scene_check.rb` shadow check from a loose
+  "floats above" ordering assertion to the exact 16px gap (net of the
+  ordinary feet-alignment offset every vehicle sprite already carries),
+  confirmed to fail against the pre-fix code (`8` instead of `16`) before
+  the fix. Boarding **plays the vehicle's own BGM** (the database System
   boat / ship / airship music) and disembarking restores the map BGM.
   ✅ **A Change System BGM override for a vehicle's slot is now honoured
   too**, ahead of the database default. `Scene::Map#vehicle_bgm` used to read
@@ -3964,7 +3976,17 @@ Everything below is unverified against the codebase.
   frames" scheme at the ~3 call sites (`scene/map.rb`'s player slide,
   autonomous/forced event movement, and the vehicle-route equivalent).
   Left open, now with a precise citation trail and fix shape for whoever
-  picks it up next.
+  picks it up next. **A second, independent symptom of this same gap,
+  found separately**: `Scene::Map::ANIM_FRAME_PERIOD = 6` (the fixed real-
+  frame period `#animate_event` holds a moving/continuous-type event's
+  walk/spin cell for) is EasyRPG's own per-speed `GetStationaryAnimFrames`
+  table (`src/game_character.h`, `{12, 10, 8, 6, 5, 4}` indexed by speed
+  1-6) evaluated only at speed 4 — correct for a default-speed *walking*
+  event, but wrong for any other configured speed, and wrong even at the
+  default speed for a *continuous*-type (always-animating) event at rest,
+  whose own table (`GetContinuousAnimFrames`, `{16, 12, 10, 8, 7, 6}`)
+  gives `8` at speed 4, not `6`. Not fixed for the same reason above —
+  it is downstream of the same dead `move_speed` field.
 - ✅ **Repeat/Loop** — loops forever without an explicit Break Loop.
   `Interpreter#do_end_loop` unconditionally scans back to the matching
   `Loop` marker and jumps `@index` there every single time it is reached —
@@ -5706,6 +5728,21 @@ not yet verified:
   other lingering state to interrupt — a Change Weather "None" command takes
   effect on the very next frame it runs, the same as any other weather-type
   change.
+- ✅ **Rain/snow particle counts by strength are now RPG_RT's own real
+  20/60/100, not a wrong invented progression.** `Scene::Map
+  ::WEATHER_BASE_PARTICLES` (`mruby-rpg2k/mrblib/scene/map.rb`) was `48`,
+  used as `48 * (strength + 1)` — 48/96/144 for strength 0/1/2. EasyRPG
+  Player's own `num_rain_or_snow_particles` table (`src/weather.cpp`) is
+  the literal `{ 20, 60, 100 }`: a real, non-uniform step (+40, +40), not a
+  multiple of the lightest strength's own count at all. The invented
+  formula was roughly 2.4x too dense at the lightest strength and ~44% too
+  dense at the heaviest, with the wrong progression shape besides. Fixed by
+  replacing the formula with the literal `WEATHER_PARTICLE_COUNTS = [20,
+  60, 100]` table, indexed (and clamped) by strength. Covered by tightening
+  the existing `scripts/rpg2k_scene_check.rb` weather check from a loose
+  "heavier is denser" ordering assertion to the three exact real counts,
+  confirmed to fail against the pre-fix code (`144` instead of `100` at
+  heavy strength) before the fix.
 
 **BGM / SE**
 - 🚧 BGM has a **single channel** — a new Play BGM force-stops whatever's
@@ -7740,7 +7777,8 @@ resolving to no match); invalid event *page* (event exists, page number
 doesn't — a **separate** error from invalid event, i.e. RPG_RT validates
 event-id-existence and page-existence as two distinct checks); invalid
 map (Transfer Player / Teleport-to-Remembered-Location targeting a
-nonexistent map id — error text includes the literal missing filename);
+nonexistent map id — error text includes the literal missing filename;
+fixed, see the ✅ below);
 invalid hero, skill, item, enemy, enemy group, battle animation, terrain,
 chipset, common event (all: a database shrink leaves a dangling id
 reference somewhere, shown as "?" in the editor); event-call recursion
@@ -7807,6 +7845,32 @@ five new `scripts/rpg2k_logic_check.rb` checks (no handlers, an [Escape]
 handler, escape-abort mode, and the random-encounter path both missing and
 present), each asserting on the captured `$stderr` line and that no
 `:battle` wait was ever armed.
+✅ **"invalid map" (Transfer Player / Recall to Location naming a
+nonexistent map id) no longer crashes the interpreter** — `Scene::Map
+#perform_teleport` (`mruby-rpg2k/mrblib/scene/map.rb`) called
+`@parent.load_map(map_id)` (`RPG2k#load_map`, `mruby-rpg2k/mrblib/main.rb`,
+a bare `File.open` against `Map####.lmu`) with nothing guarding it
+anywhere in the call chain, so a stale/deleted map id raised
+`Errno::ENOENT` straight out of the running event and killed the whole
+process. The map-load call is now wrapped in its own rescue — narrower
+than catching over the whole method, per this repo's own error-handling
+rule — that logs a `[RPG2k] Teleport: destination map #<id> failed to
+load: <message>` diagnostic (the underlying `e.message` already carries
+the literal missing filename, matching real RPG_RT's own error dialog
+text) and aborts just the teleport: `@interpreter.stop` unwinds the
+requesting event's own command list and the method returns before
+touching `@map`/`@state`, so the party stays exactly where it already
+was. Both routes that can name a bad map id — Transfer Player (the
+`TELEPORT` command) and Recall to Location (`RECALL_LOCATION`, which
+resolves its target from three variables and routes through the very
+same `:teleport` wait/dispatch) — go through this one method, along with
+every other `#perform_teleport` caller (a Teleport/Escape field skill's
+`pending_teleport`, and a Common Event Parallel Process's own teleport
+request), so all of them are covered by the same fix. Verified with two
+new `scripts/rpg2k_scene_check.rb` checks, each targeting a `FakeParent`
+whose `load_map` raises `Errno::ENOENT` for one specific id and asserting
+the `$stderr` diagnostic fires while `state.map_id`/`state.x`/`state.y`
+stay exactly as they were before the failed command ran.
 
 **Map/Event ID assignment & tile occupancy**
 - Event IDs (and separately, Map IDs) are assigned by **creation order**

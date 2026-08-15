@@ -15,6 +15,7 @@
 # Usage: ruby scripts/rpg2k_scene_check.rb   (exits non-zero on any failure)
 
 require 'ostruct'
+require 'stringio'
 
 # -- RGSS stubs (just enough for Scene::Map to build, render and tick) --------
 
@@ -239,6 +240,17 @@ def ok(cond, msg = 'expected truthy'); raise msg unless cond; end
 def eq(exp, act, msg = nil)
   return if exp == act
   raise "expected #{exp.inspect}, got #{act.inspect}#{msg ? " (#{msg})" : ''}"
+end
+
+# Runs the block with $stderr redirected to a StringIO and returns everything
+# written to it, for checks that assert on a "[RPG2k] ..." diagnostic line.
+def capture_stderr
+  old_stderr = $stderr
+  $stderr = StringIO.new
+  yield
+  $stderr.string
+ensure
+  $stderr = old_stderr
 end
 
 # -- synthetic database / map -------------------------------------------------
@@ -3519,6 +3531,56 @@ check 'a Change Encounter Rate override does not survive a teleport' do
      'Panorama/Tile Replacement -- an override does not survive any map change'
   eq 25, scene.send(:current_encounter_steps),
      "current_encounter_steps falls back to the map tree node's own setting again"
+end
+
+# A parent whose load_map raises for one specific "deleted" map id (mirroring
+# RPG2k#load_map's bare File.open against a stale/removed Map####.lmu) and
+# otherwise behaves like fake_parent's normal empty-map stub.
+def missing_map_parent(db, missing_id)
+  FakeParent.new(db) do |id|
+    if id == missing_id
+      raise Errno::ENOENT, "Map#{format('%04d', missing_id)}.lmu"
+    else
+      fake_map(id, {})
+    end
+  end
+end
+
+check 'a Transfer Player naming a deleted map reports a diagnostic and stays put' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::TELEPORT, [999, 4, 3])]
+  db = fake_db(nil, nil, 0, 0)
+  state = Game::State.new(fake_party([]), 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  parent = missing_map_parent(db, 999)
+  scene = RPG2k::Scene::Map.new(parent, state)
+  out = capture_stderr { 20.times { scene.update } }
+  ok out.include?('[RPG2k] Teleport:') && out.include?('Map0999.lmu'),
+     "expected a [RPG2k] Teleport diagnostic naming the missing file, got: #{out.inspect}"
+  eq 1, state.map_id, 'the party never left the map it was already on'
+  eq [0, 0], [state.x, state.y], 'the player position is untouched by the failed teleport'
+end
+
+check 'Recall to Location naming a deleted map reports a diagnostic and stays put' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 0, 999]), # var1 = the deleted map id
+    ECmd.new(ic::CONTROL_VARS, [0, 2, 2, 0, 0, 4]),   # var2 = x 4
+    ECmd.new(ic::CONTROL_VARS, [0, 3, 3, 0, 0, 3]),   # var3 = y 3
+    ECmd.new(ic::RECALL_LOCATION, [1, 2, 3]),
+  ]
+  db = fake_db(nil, nil, 0, 0)
+  state = Game::State.new(fake_party([]), 1, 5, 6)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  parent = missing_map_parent(db, 999)
+  scene = RPG2k::Scene::Map.new(parent, state)
+  out = capture_stderr { 20.times { scene.update } }
+  ok out.include?('[RPG2k] Teleport:') && out.include?('Map0999.lmu'),
+     "expected a [RPG2k] Teleport diagnostic naming the missing file, got: #{out.inspect}"
+  eq 1, state.map_id, 'the party never left the map it was already on'
+  eq [5, 6], [state.x, state.y], 'the player position is untouched by the failed recall'
 end
 
 check 'the menu opens on cancel only when menu access is allowed' do
@@ -7055,6 +7117,16 @@ check 'the airship floats above a ground shadow; a boat casts none' do
   shadow = scene.instance_variable_get(:@airship_shadow)
   ok shadow.visible, 'the airship casts a shadow'
   ok sprites[:airship].y < shadow.y, 'the airship floats above its shadow'
+  # shadow.y carries no feet-alignment offset (it sits flat on the tile), but
+  # the airship sprite's own y is drawn CharSet::HEIGHT - TILE pixels above
+  # that already (every vehicle/character sprite's own feet-alignment,
+  # unrelated to floating), plus AIRSHIP_ALTITUDE on top of that -- a full
+  # tile (16px), not half. EasyRPG's own Game_Vehicle::GetAltitude() is
+  # SCREEN_TILE_SIZE / (SCREEN_TILE_SIZE / TILE_SIZE) once fully airborne,
+  # 256 / (256 / 16) = 16 with RPG_RT's own real constants.
+  base_offset = Game::CharSet::HEIGHT - Game::TILE
+  eq 16, shadow.y - sprites[:airship].y - base_offset,
+     "the airship floats a full 16px tile above its shadow, not half"
   ok shadow.z < sprites[:airship].z, 'the shadow sits under the airship'
   # A boat (no airship placed) casts no shadow.
   air.map_id = 0 # unplace the airship
@@ -7447,11 +7519,14 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   st.weather.set(1, 2) # heavy rain
   scene.update
   ok wsp.visible, 'rain draws an overlay'
-  # A stronger downpour draws more particles than a light one.
-  heavy = scene.send(:weather_particle_count, st.weather)
+  # EasyRPG's own num_rain_or_snow_particles table (src/weather.cpp) is the
+  # literal { 20, 60, 100 } for strength 0/1/2 -- a real, non-uniform step
+  # (+40, +40), not a fixed multiple of the lightest strength's own count.
+  eq 100, scene.send(:weather_particle_count, st.weather), 'strength 2 (heavy)'
+  st.weather.set(1, 1) # medium rain
+  eq 60, scene.send(:weather_particle_count, st.weather), 'strength 1 (medium)'
   st.weather.set(1, 0) # light rain
-  light = scene.send(:weather_particle_count, st.weather)
-  ok heavy > light, 'strength scales the particle count'
+  eq 20, scene.send(:weather_particle_count, st.weather), 'strength 0 (light)'
   st.weather.set(2, 1) # snow
   scene.update
   ok wsp.visible, 'snow draws an overlay too'

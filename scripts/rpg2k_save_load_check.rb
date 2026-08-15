@@ -173,13 +173,24 @@ def check_game(dir)
   entry[1] = 'island'
   entry[31] = 80.0
   entry[32] = 60.0
+  # Zoom (33), transparency (34) and tone (41-44) round-trip too -- see
+  # #restore_pictures' own comment for why these fields read the same way
+  # Show Picture's own live params do. transparency 25 -> opacity
+  # (100-25)*255/100 = 191 via the same #trans_to_opacity the live command uses.
+  entry[33] = 150
+  entry[34] = 25
+  entry[41] = 90
+  entry[42] = 110
+  entry[43] = 95
+  entry[44] = 80
   pics[3] = entry
   restored = {}
   Game::State.restore_pictures(Struct.new(:pictures) do
     def show_picture(id, opts); pictures[id] = opts; end
   end.new(restored), pics)
-  eq({ 3 => { name: 'island', x: 80, y: 60 } }, restored,
-     'a saved picture is re-shown at its saved centre')
+  eq({ 3 => { name: 'island', x: 80, y: 60, zoom: 150, opacity: 191,
+              red: 90, green: 110, blue: 95, saturation: 80 } }, restored,
+     'a saved picture is re-shown at its saved centre, zoom, opacity and tone')
 
   # An entry with no file name is one of the empty slots RPG2000 always writes.
   blank = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
