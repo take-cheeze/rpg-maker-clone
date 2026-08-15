@@ -4897,6 +4897,14 @@ module Game
     attr_accessor :direction, :move_speed, :move_frequency
     attr_accessor :through, :facing_locked, :animation_stopped, :transparency
     attr_accessor :layer, :overlap_forbidden
+    # The map event id this character mirrors (Scene::Map#build_event), or
+    # Scene::Map::MOVE_TARGET_PLAYER (10001) for the party's own forced
+    # Set Move Route mirror (Scene::Map#start_player_route) -- an id-based
+    # "is this the hero" test for #char_passable?/#char_can_land? that does
+    # not depend on still holding the exact same object reference a route
+    # started with. nil for a character built without either (a vehicle
+    # mirror, which never reaches those two methods -- see VehicleWorld).
+    attr_accessor :event_id
     # Whether this character's own page Animation Type is one of the three
     # "fixed direction" kinds (Game::EventGraphic.fixed_direction? -- a plain
     # or continuous walk with facing pinned, or a single never-animating
@@ -4945,6 +4953,7 @@ module Game
       @jumped = false
       @layer = 1                # priority type: same as normal characters
       @overlap_forbidden = false # LCF page field 35: collide regardless of layer
+      @event_id = nil            # set by Scene::Map once it knows what this mirrors
     end
 
     def set_graphic(name, index)

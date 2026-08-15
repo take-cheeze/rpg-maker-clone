@@ -52,12 +52,21 @@ class RPG2k
 
       # Event-page priority type (the page `layer` field): where the event
       # draws relative to normal characters, and — RPG_RT ties the two together
-      # — which of them it collides with. Only LAYER_SAME blocks movement: a
-      # "below"/"above characters" event is a decoration the hero, vehicles and
-      # other events all walk straight through (see #passable?, #char_passable?).
+      # — which of them it collides with. The hero (and a vehicle) only ever
+      # collides with a LAYER_SAME event, since the hero's own layer is
+      # always effectively LAYER_SAME — a "below"/"above characters" event is
+      # a decoration the hero walks straight through (see #passable?). Two
+      # *events* collide only when their layers match exactly, whatever that
+      # layer is — two below-characters events collide with each other same
+      # as two same-characters ones do, but a below/above pair passes
+      # through each other (see #char_passable?'s fuller citation).
       LAYER_BELOW = 0
       LAYER_SAME  = 1
       LAYER_ABOVE = 2
+
+      # #blockers_at's answer for a tile with nothing on it -- a single frozen
+      # empty array so an empty tile costs no allocation.
+      NO_BLOCKERS = [].freeze
 
       # Move Event (Set Move Route) target ids: the player, the three vehicles
       # and "this event" (the event running the command). Any other id is a map
@@ -1019,6 +1028,7 @@ class RPG2k
       def build_events(restore_route_index: true)
         @events = []
         @event_tiles = {}
+        @event_tiles_by_pos = {}
         evs = @map.unit.events
         return unless evs
         evs.each do |id, ev|
@@ -1040,6 +1050,7 @@ class RPG2k
         $stderr.puts "[RPG2k] event setup failed, map runs with no events: #{e.message}"
         @events = []
         @event_tiles = {}
+        @event_tiles_by_pos = {}
       end
 
       def build_event(id, ev, page, restore_route_index: true)
@@ -1056,6 +1067,7 @@ class RPG2k
           dir = saved[2] if saved[2]
         end
         ch = Game::Character.new(x, y, dir)
+        ch.event_id = id # #char_passable?/#char_can_land?'s "is this the hero" test
         ch.move_speed = page_move_speed(page)
         ch.move_frequency = page_move_frequency(page)
         ch.set_graphic(page_charset_name(page), page_charset_index(page))
@@ -1151,7 +1163,46 @@ class RPG2k
       # Recompute the occupied-tile set from the events' current positions.
       def rebuild_event_tiles
         @event_tiles = {}
-        @events.each { |e| @event_tiles[[e[:char].x, e[:char].y]] = e }
+        @event_tiles_by_pos = {}
+        @events.each { |e| index_event_tile(e, e[:char].x, e[:char].y) }
+      end
+
+      # Record event `e` as occupying (x, y) in both occupied-tile caches:
+      # `@event_tiles`, which keeps a single event per tile (last write wins,
+      # i.e. highest id -- see #event_id_at) for the "pick one event here"
+      # queries (#event_at, action/touch triggers, encounter suppression), and
+      # `@event_tiles_by_pos`, which keeps *every* live event on the tile for
+      # #blockers_at. Two events legitimately share a tile in RPG2000 whenever
+      # their priority types differ (a below-characters decal under a
+      # same-as-characters NPC, say) -- collision has to see all of them, or a
+      # blocking event can go unnoticed just because another one sharing its
+      # tile was indexed after it.
+      def index_event_tile(e, x, y)
+        @event_tiles[[x, y]] = e
+        (@event_tiles_by_pos[[x, y]] ||= []) << e
+      end
+
+      # Undo #index_event_tile for event `e` at (x, y): drops it from the
+      # single-event cache only if it is still the one recorded there (a
+      # same-tile companion may have since taken over that slot), and always
+      # drops it from the multi-event list, pruning the list entirely once
+      # empty so #blockers_at's `@event_tiles_by_pos[[x, y]]` miss stays a
+      # plain nil rather than accumulating empty arrays.
+      def deindex_event_tile(e, x, y)
+        @event_tiles.delete([x, y]) if @event_tiles[[x, y]].equal?(e)
+        list = @event_tiles_by_pos[[x, y]]
+        return unless list
+        list.delete_if { |o| o.equal?(e) }
+        @event_tiles_by_pos.delete([x, y]) if list.empty?
+      end
+
+      # Every live event occupying (x, y), for collision -- unlike
+      # `@event_tiles[[x, y]]` (a single, last-write-wins event meant for
+      # "which one event is here" queries), this answers "is *anything* here
+      # that would block", so two events sharing a tile on different priority
+      # types both get a say instead of one silently shadowing the other.
+      def blockers_at(x, y)
+        @event_tiles_by_pos[[x, y]] || NO_BLOCKERS
       end
 
       # Read an optional event-page field through a guard that logs (rather than
@@ -1909,8 +1960,7 @@ class RPG2k
       # terrain data (a bare fixture) is landable.
       def airship_landable?(x, y)
         return false unless @map.in_bounds?(x, y)
-        blocker = @event_tiles[[x, y]]
-        return false if blocker && !blocker[:char].through
+        return false if blockers_at(x, y).any? { |b| !b[:char].through }
         row = terrain_row_at(x, y)
         return true if row.nil?
         row.airship_land ? true : false
@@ -2193,8 +2243,7 @@ class RPG2k
           return true if row.nil?
           return row.airship_pass ? true : false
         end
-        blocker = @event_tiles[[x, y]]
-        return false if blocker && !blocker[:char].through
+        return false if blockers_at(x, y).any? { |b| !b[:char].through }
         return passable?(x, y, dir) unless row
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
       end
@@ -2419,8 +2468,8 @@ class RPG2k
       # Also begins the pixel slide from the old tile toward the new one so the
       # sprite glides instead of teleporting (see event_pixel).
       def reoccupy(e, ox, oy)
-        @event_tiles.delete([ox, oy]) if @event_tiles[[ox, oy]].equal?(e)
-        @event_tiles[[e[:char].x, e[:char].y]] = e
+        deindex_event_tile(e, ox, oy)
+        index_event_tile(e, e[:char].x, e[:char].y)
         start_event_slide(e, ox, oy)
       end
 
@@ -2519,7 +2568,7 @@ class RPG2k
         # for the rest of the visit to the map, whatever its conditions do next.
         @erased_events[ev[:id]] = true
         tile = [ev[:char].x, ev[:char].y]
-        @event_tiles.delete(tile) if @event_tiles[tile].equal?(ev)
+        deindex_event_tile(ev, tile[0], tile[1])
         # Frozen at the tile it occupied right before erasure -- an erased
         # event cannot move any further, and #event_id_at still needs it (see
         # there) even though it no longer blocks or draws.
@@ -3299,6 +3348,7 @@ class RPG2k
       # it. Input movement is suppressed while the route is active.
       def start_player_route(route, freq)
         @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_char.event_id = MOVE_TARGET_PLAYER # #char_passable?/#char_can_land?'s hero test
         # Through Mode carries over from whatever an earlier route (or one
         # halted mid-Through-Mode) left it at -- a fresh mirror's own default
         # (false) would otherwise silently turn it back off.
@@ -3490,12 +3540,39 @@ class RPG2k
       # passable per the chipset, and not onto the hero or another event that
       # shares its collision layer. A "through" character ignores all of this.
       #
-      # Layer gates the occupancy half the same way RPG_RT's priority type
-      # does: the hero is always a "normal character", so a below/above-
-      # characters event (LAYER_BELOW / LAYER_ABOVE) walks straight through it
-      # and vice versa; two events only collide when they share the same
-      # layer (below blocks below, above blocks above, same blocks same) —
-      # different layers pass through each other too.
+      # Layer gates the occupancy half exactly the way EasyRPG Player's own
+      # `WouldCollide` (`src/game_map.cpp`) does: two characters only collide
+      # over layer when their priority types match *exactly* --
+      # `self.GetLayer() == other.GetLayer()` -- not when either happens to
+      # be LAYER_SAME specifically. Two below-characters events collide with
+      # each other exactly as two same-characters ones do; a below-layer
+      # mover and an above-layer (or same-layer) blocker pass through each
+      # other, layers differing either way. The hero's own layer is always
+      # effectively LAYER_SAME (`Game_Player` never overrides `GetLayer`, so
+      # it keeps `Game_Character`'s LAYER_SAME default) -- `character.layer`
+      # already reads that way whenever `character` is the party's own
+      # forced Set Move Route mirror, so this single check covers the hero
+      # correctly with no special-casing.
+      #
+      # `overlap_forbidden` is different: `WouldCollide` only ever consults
+      # it when **both** sides are map events --
+      # `self.GetType() == Event && other.GetType() == Event && (self.
+      # IsOverlapForbidden() || other.IsOverlapForbidden())` -- so it can
+      # make two events collide regardless of their (mismatched) layers, but
+      # can never be what blocks the hero, on either side: the party's own
+      # `GetType()` is `Player`, never `Event`, in real RPG_RT. `hero` (via
+      # `character.event_id == MOVE_TARGET_PLAYER`) gates it out entirely
+      # for the party's forced-route mirror, and it is checked on *both*
+      # `character` and the blocker (`character.overlap_forbidden ||
+      # b[:overlap_forbidden]`), matching `self.IsOverlapForbidden() ||
+      # other.IsOverlapForbidden()` rather than the blocker's flag alone.
+      # "Is this the hero" reads `character.event_id`, not
+      # `character.equal?(@player_char)`, since the mirror #start_
+      # player_route builds is a fresh object every route -- an identity
+      # check taken from outside that method is only reliable at the exact
+      # moment a caller captured the reference, not in general, while
+      # `event_id` is set once, on the object itself, and answers the
+      # question no matter who is asking or when.
       #
       # The chipset half asks **both** tiles at the boundary, each from its
       # own side, as RPG2000's per-direction passability does: the tile a
@@ -3511,12 +3588,13 @@ class RPG2k
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
         return false unless @map.in_bounds?(nx, ny)
-        if nx == @state.x && ny == @state.y
-          return false if character.layer == LAYER_SAME || character.overlap_forbidden
+        return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
+        hero = character.event_id == MOVE_TARGET_PLAYER
+        return false if blockers_at(nx, ny).any? do |b|
+          b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
         end
-        blocker = @event_tiles[[nx, ny]]
-        return false if blocker && (blocker[:layer] == character.layer || blocker[:overlap_forbidden])
-        return false if vehicle_blocks?(nx, ny, block_airship: !character.equal?(@player_char))
+        return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(character.x, character.y),
                                  @map.upper(character.x, character.y), dir) &&
@@ -3545,12 +3623,13 @@ class RPG2k
         return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
         # Same layer-gated occupancy rule as #char_passable? (see its comment).
-        if x == @state.x && y == @state.y
-          return false if character.layer == LAYER_SAME || character.overlap_forbidden
+        return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
+        hero = character.event_id == MOVE_TARGET_PLAYER
+        return false if blockers_at(x, y).any? do |b|
+          b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
         end
-        blocker = @event_tiles[[x, y]]
-        return false if blocker && (blocker[:layer] == character.layer || blocker[:overlap_forbidden])
-        return false if vehicle_blocks?(x, y, block_airship: !character.equal?(@player_char))
+        return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
       end
@@ -9765,13 +9844,21 @@ class RPG2k
       # gets the same say as the lower one.
       def passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
-        blocker = @event_tiles[[x, y]]
         # The hero is always a "normal character" for collision purposes: only
         # a same-layer event blocks it, a below/above-characters one is a
-        # decoration it walks straight over (see the LAYER_* comment) —
-        # unless that event's own "doesn't overlap" flag forces the block
-        # regardless of layer (LCF page field 35, #overlap_forbidden).
-        return false if blocker && (blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden])
+        # decoration it walks straight over (see the LAYER_* comment).
+        # `overlap_forbidden` (LCF page field 35) never enters into it: real
+        # RPG_RT (`WouldCollide`, `src/game_map.cpp`) only ever consults that
+        # flag when *both* sides of a collision are map events
+        # (`self.GetType() == Event && other.GetType() == Event`) — the
+        # party's own `GetType()` is `Player`, never `Event`, so an event
+        # with the flag set collides with *other events* regardless of its
+        # layer but is never what blocks the hero (see #char_passable? for
+        # the fuller citation). Every event on the tile gets a say
+        # (#blockers_at), not just one of them: a below-characters decal and
+        # a same-as-characters NPC can share a tile, and the NPC must still
+        # block even though the decal alone would not.
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME }
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
         # never does, on foot or otherwise (block_airship: false — the hero
