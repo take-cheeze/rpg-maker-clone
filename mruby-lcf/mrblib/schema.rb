@@ -892,8 +892,12 @@ module LCF
       5 => { name: :variable_value, type: :int, default: 0 },
       6 => { name: :item_id, type: :int, default: 1 },
       7 => { name: :actor_id, type: :int, default: 1 },
+      # Genuine RPG2000 condition (flags bit 0x20): the page is active once
+      # Timer1 has counted down to timer_sec seconds or below -- see
+      # Game::EventPage::TIMER.
       8 => { name: :timer_sec, type: :int, default: 0 },
-      # RPG2003-only: a second timer condition and the variable comparison
+      # RPG2003-only: a second timer condition (flags bit 0x40, gated on
+      # Player::IsRPG2k3Commands() in EasyRPG) and the variable comparison
       # operator (0 = >=). The RPG2000 runtime always compares with >=, so these
       # are carried for schema completeness rather than consumed by EventPage.
       9 => { name: :timer2_sec, type: :int, default: 0 },

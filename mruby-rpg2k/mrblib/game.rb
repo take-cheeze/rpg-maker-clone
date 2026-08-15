@@ -4824,14 +4824,21 @@ module Game
   # active when every sub-condition enabled in its `flags` bitfield holds; the
   # active page for an event is the highest-numbered active page.
   module EventPage
-    # flags bits (chunk 1 of the page condition).
+    # flags bits (chunk 1 of the page condition). Bit order confirmed against
+    # liblcf's generated EventPageCondition::Flags declaration (switch_a,
+    # switch_b, variable, item, actor, timer, timer2): TIMER is bit 5 (0x20),
+    # a genuine RPG2000 page condition, not an RPG2003 extension. The next bit,
+    # timer2 (0x40), *is* RPG2003-only (EasyRPG's AreConditionsMet gates it on
+    # Player::IsRPG2k3Commands()) and stays out of scope here -- see
+    # schema.rb's MAP_EVENT_PAGE_CONDITION comment.
     SWITCH_A = 0x01
     SWITCH_B = 0x02
     VARIABLE = 0x04
     ITEM     = 0x08
     ACTOR    = 0x10
+    TIMER    = 0x20
 
-    def self.active?(cond, switches, variables, party)
+    def self.active?(cond, switches, variables, party, timer_seconds = 0)
       return true if cond.nil?
       flags = cond.flags || 0
       return false if (flags & SWITCH_A) != 0 && !switches[cond.switch_a_id]
@@ -4845,15 +4852,21 @@ module Game
       if (flags & ACTOR) != 0
         return false unless party && party.include_actor?(cond.actor_id)
       end
+      # RPG_RT's AreConditionsMet: "if (secs > condition.timer_sec) return
+      # false" -- active once Timer1 has counted down to timer_sec or below,
+      # not on an exact match and not while counting up.
+      if (flags & TIMER) != 0
+        return false if timer_seconds > cond.timer_sec
+      end
       true
     end
 
     # Return [id, page] of the active page for an event, or nil when none apply.
-    def self.select(pages, switches, variables, party)
+    def self.select(pages, switches, variables, party, timer_seconds = 0)
       return nil if pages.nil?
       chosen = nil
       pages.each do |id, page|
-        chosen = [id, page] if active?(page.condition, switches, variables, party)
+        chosen = [id, page] if active?(page.condition, switches, variables, party, timer_seconds)
       end
       chosen
     end

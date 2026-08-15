@@ -939,6 +939,33 @@ check 'flipping a switch re-selects an event page mid-map' do
   ok st.switches[5], 'and its parallel process now runs'
 end
 
+# An event whose page 2 is gated on Timer1 having counted down to
+# `timer_sec` seconds or below (flags bit 0x20 -- see Game::EventPage::TIMER).
+def timer_gated_event(x, y, timer_sec, page1, page2)
+  page2.condition = OpenStruct.new(flags: Game::EventPage::TIMER, timer_sec: timer_sec)
+  OpenStruct.new(x: x, y: y, pages: { 1 => page1, 2 => page2 })
+end
+
+check "Timer1 counting down past a page's threshold re-selects it mid-map" do
+  # Page 1 (trigger 0) is active above 5 s left; page 2 (trigger 4) takes over
+  # once Timer1 reads 5 s or below.
+  p1 = page(trigger: 0, charset_name: 'Villager')
+  p2 = page(trigger: 4, charset_name: 'Ghost')
+  scene = new_scene({ 1 => timer_gated_event(2, 2, 5, p1, p2) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).set(7) # 7 s left -- above the 5 s threshold
+  st.timer(0).start(false)
+
+  scene.update
+  ev = event_hashes(scene)[1]
+  eq 0, ev[:trigger], 'still above the threshold: page 1 stays active'
+
+  130.times { scene.update } # ticks Timer1 down from 7 s to 5 s (< 60*2 frames)
+  ev = event_hashes(scene)[1]
+  eq 4, ev[:trigger], 'Timer1 counted down to the threshold: page 2 takes over'
+  eq 5, st.timer_seconds
+end
+
 check "an unrelated event's page change does not reset another event's " \
       'Through Mode / Direction Fix / Stop Animation / Transparency' do
   # Event 1 (the bystander) never changes page; event 2 is the one gated on

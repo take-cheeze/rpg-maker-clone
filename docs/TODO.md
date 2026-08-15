@@ -483,6 +483,29 @@ The work below is roughly ordered by the critical path to a walkable game
   target id fine, but `Scene::Map` silently no-opped it). See the "Vehicle
   move-routes" paragraph in the Movement & collision entry above for the
   implementation
+- ✅ **A page's Timer condition (flags bit `0x20`) is now evaluated, not
+  ignored.** `LCF::Schema::MAP_EVENT_PAGE_CONDITION` already parsed field 8
+  (`timer_sec`), but no flags bit ever gated it, so a page conditioned on
+  "Timer ≤ N seconds" read as always-active regardless of the real countdown.
+  Confirmed against liblcf's generated `EventPageCondition::Flags` declaration
+  order (`switch_a, switch_b, variable, item, actor, timer, timer2`, packed
+  LSB-first — the same convention the existing bits already follow) that
+  `0x20` is `timer`, a genuine RPG2000 condition, and against EasyRPG's
+  `Game_Event::AreConditionsMet` (`src/game_event.cpp`) that the comparison is
+  `if (secs > condition.timer_sec) return false` — active once Timer1 has
+  counted down to `timer_sec` or below, not on an exact match. `timer2` (bit
+  `0x40`) is confirmed RPG2003-only (gated on `Player::IsRPG2k3Commands()` in
+  that same function) and stays out of scope. `Game::EventPage::TIMER` and
+  `.active?`/`.select` now take the live seconds-remaining value, threaded in
+  from `Game::State#timer_seconds` at both call sites in `Scene::Map`
+  (`build_events` and `pages_changed?`); `#page_revision` folds
+  `@state.timer_seconds` into its sum too, so `refresh_event_pages` re-selects
+  a Timer-gated page the instant the displayed second crosses the threshold,
+  the same way it already reacts to a switch/variable/item/party change.
+  Covered by new `Game::EventPage.active?`/`.select` checks in
+  `scripts/rpg2k_logic_check.rb` and a `Scene::Map` check in
+  `scripts/rpg2k_scene_check.rb` driving Timer1 down across a page's
+  threshold mid-map.
 - 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Change
