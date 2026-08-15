@@ -192,11 +192,32 @@ class RPG2k
         switch = @state.party.cast_switch_skill(caster, sid)
         if switch
           @state.switches[switch] = true
+          play_skill_sound_effect(sid)
           show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
         else
           play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         end
+      end
+
+      # Switch and Escape skills replace the ordinary decision SE with their
+      # own database `sound_effect` field (schema.rb field 16) on a
+      # successful cast -- confirmed against EasyRPG's `Scene_Skill::Update`,
+      # which calls `SePlay(skill->sound_effect)` for exactly these two
+      # types. Teleport is the odd one out: it keeps playing the ordinary
+      # decision SE instead (see #update_teleport_target), so it does not
+      # call this. Mirrors #play_cursor_se in scene/title.rb (the same
+      # Array1D/SE struct, read the same way) -- a no-op on a blank/absent
+      # filename, or when the field carries no SE at all.
+      def play_skill_sound_effect(sid)
+        sk = @state.party.db_skill(sid)
+        se = sk && sk.sound_effect
+        return unless se
+        name = se.file
+        return if name.nil? || name.empty?
+        Audio.se_play name, se.volume, se.pitch
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] skill SE '#{name}' playback failed: #{e.message}"
       end
 
       def leave_target
@@ -239,6 +260,7 @@ class RPG2k
       def apply_escape_skill(sid)
         target = @state.party.cast_escape_skill(caster, sid, @state)
         if target
+          play_skill_sound_effect(sid)
           queue_teleport(target)
         else
           play_system_se(SFX_BUZZER)

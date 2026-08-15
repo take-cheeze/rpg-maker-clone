@@ -3299,6 +3299,26 @@ The work below is roughly ordered by the critical path to a walkable game
   Option);` unconditionally. It does **not** reappear automatically at the
   start of round 2+; only those two triggers (battle start, and B-cancel
   underflow from the first actor) reach it.
+  ✅ **A Switch or Escape skill played no sound at all on a successful field
+  cast -- only a Buzzer on failure.** Real RPG_RT plays the skill's own
+  database `sound_effect` field (schema.rb field 16, an `SE` struct: file/
+  volume/pitch/balance) instead, confirmed against EasyRPG's
+  `Scene_Skill::Update` (`src/scene_skill.cpp`): Switch and Escape both call
+  `SePlay(skill->sound_effect)` on success. Teleport is the odd one out --
+  it keeps playing the ordinary decision SE instead (already correct here,
+  in `#update_teleport_target`'s confirm step, since that plays before
+  `#apply_teleport_skill` is even reached), so it needed no change.
+  `Scene::SkillMenu#apply_switch_skill`/`#apply_escape_skill` now call a new
+  `#play_skill_sound_effect`, reading the struct the same way
+  `scene/title.rb#play_cursor_se` already reads `cursor_se` (`se.file`/
+  `se.volume`/`se.pitch`, the identical `Array1D`/`SE` schema shape) and
+  no-oping silently on a blank or absent filename. Covered by four new
+  `scripts/rpg2k_scene_check.rb` checks: a configured SE plays (after the
+  ordinary Decision SE that confirming any skill choice already plays) on a
+  successful Switch cast, a blank `sound_effect` plays nothing extra and
+  raises nothing, a failed Switch cast plays only Decision then Buzzer
+  (never the configured SE), and a successful Escape cast plays its SE
+  before the warp closes the menu.
 - ✅ **The Battle/Auto Battle/Escape options window itself is now
   implemented**, closing the gap the paragraph above traced but left open
   "for whoever picks up battle-flow work next." What had blocked it --
