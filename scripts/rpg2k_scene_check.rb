@@ -657,7 +657,7 @@ class SlipActor
   def change_mp(delta); @mp = [@mp + delta, 0].max; end
 end
 
-def fake_party(members = [])
+def fake_party(members = [], rpg2003: false)
   # A real Game::Party rather than a stand-in: Scene::Map runs the party through
   # Party#apply_map_step_damage on every walked tile, so the fixture has to
   # answer the real interface. It starts empty -- `system.party` is [] and the
@@ -667,9 +667,13 @@ def fake_party(members = [])
   # `enemy_group` defaults to "every id exists" (Hash.new(true)), the same
   # permissive default the other stub parties in this file use, since these
   # movement/event checks are not exercising the missing-troop-id diagnostic
-  # path (covered in scripts/rpg2k_logic_check.rb instead).
+  # path (covered in scripts/rpg2k_logic_check.rb instead). `rpg2003:` mirrors
+  # Game::Party#rpg2003? (`@db.rpg2003?`) for checks that need the RPG2003
+  # branch of a command's parameter decoding (e.g. Key Input Processing's
+  # Numbers/Operators layout).
   party = Game::Party.new(OpenStruct.new(system: OpenStruct.new(party: []),
-                                          enemy_group: Hash.new(true)))
+                                          enemy_group: Hash.new(true),
+                                          rpg2003?: rpg2003))
   members.each { |m| party.actors << m }
   party
 end
@@ -677,11 +681,11 @@ end
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
               members: [], terrain_damage: 0, bush_depth: 0,
               airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
-              map_tree: nil, test_play: false)
+              map_tree: nil, test_play: false, rpg2003: false)
   db = fake_db(common, troop_pages, terrain_damage, bush_depth,
                airship_land: airship_land, airship_pass: airship_pass,
-               boat_pass: boat_pass, ship_pass: ship_pass)
-  state = Game::State.new(fake_party(members), 1, player[0], player[1])
+               boat_pass: boat_pass, ship_pass: ship_pass, rpg2003: rpg2003)
+  state = Game::State.new(fake_party(members, rpg2003: rpg2003), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   parent = fake_parent(db)
   parent.map_tree = map_tree if map_tree
@@ -2279,6 +2283,29 @@ check 'Key Input Proc ignores keys it was not told to accept' do
   scene.update # resumes and stores the code
   eq 5, st.variables[1]
   scene.update # the following command runs
+  ok st.switches[5]
+end
+
+check 'Key Input Proc (RPG2003 Numbers layout) accepts Decision but Numbers has no key to press' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # RPG2003's own 9-param layout: var, wait, arrows off, decision on, cancel
+  # off, numbers on, operators off, time-var/timed unused. Nothing in
+  # Scene::Map::KEY_INPUT_BUTTONS samples Numbers, so only the Decision press
+  # can ever resume this proc even though the request also accepts Numbers.
+  auto.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 1, 0, 0, 0]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, rpg2003: true)
+  st = scene.instance_variable_get(:@state)
+  5.times { scene.update } # no key this input layer can sample was pressed
+  eq 0, st.variables[1]
+  ok !st.switches[5]
+  RGSS::Input.triggered = [RGSS::Input::C] # Decision (OK)
+  scene.update # this frame resumes the proc and stores the code
+  eq 5, st.variables[1], 'Decision still resolves even with Numbers also accepted'
+  scene.update # the following command runs once the proc has resumed
   ok st.switches[5]
 end
 
