@@ -1,5 +1,4 @@
 
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
@@ -23,6 +22,7 @@
 #include "default_font.hxx"
 #include "error_dump.hxx"
 #include "iterm.hxx"
+#include "log_bridge.hxx"
 #include "log_console.hxx"
 #include "profiler.hxx"
 #include "sixel.hxx"
@@ -789,8 +789,8 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     if (em_display) {
       lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
       lv_sdl_window_set_zoom(em_display.get(), 1.f);
-      std::fprintf(stderr, "[RPGXP] display sized to %dx%d\n", RPGXP_WIDTH,
-                   RPGXP_HEIGHT);
+      LOG(INFO) << "RPGXP: display sized to " << RPGXP_WIDTH << "x"
+                << RPGXP_HEIGHT;
     }
     error_dump_set_context("project", "RPG Maker XP (Game.ini)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
@@ -811,12 +811,11 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
     game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
   } else {
-    std::fprintf(stderr,
-                 "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker VX / VX "
-                 "Ace (Data/System.rvdata[2]), RPG Maker MV "
-                 "(js/rpg_core.js + data/System.json) or RPG Maker MZ "
-                 "(js/rmmz_core.js + data/System.json) project found under "
-                 "/game\n");
+    LOG(ERROR) << "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker VX / VX "
+                  "Ace (Data/System.rvdata[2]), RPG Maker MV "
+                  "(js/rpg_core.js + data/System.json) or RPG Maker MZ "
+                  "(js/rmmz_core.js + data/System.json) project found under "
+                  "/game";
     return 1;
   }
   if (M->exc) {
@@ -837,7 +836,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
         // SystemExit and stop driving frames; the tab keeps the last frame on
         // the canvas, since there is no process to end here.
         M->exc = nullptr;
-        std::fprintf(stderr, "The game exited (status %d).\n", status);
+        LOG(INFO) << "The game exited (status " << status << ").";
       } else {
         error_dump_report(M, "the frame loop");
       }
@@ -974,6 +973,10 @@ int main(int argc, char** argv) {
       FLAGS_game_dir = absolute.lexically_normal().string();
   }
   nglog::InitializeLogging(argv[0]);
+  // Before error_dump_install below tees $stderr through RGSS::ErrorReport,
+  // so the very first buffered line already reaches ng-log too. See
+  // include/terminal.hxx's "Stderr log bridge" section.
+  log_bridge_install();
 
   // Whether this run is a Test Play launch: either the project's own
   // Game.ini says so (the RPG Maker editors' own signal, for 2000/2003, XP
@@ -1386,9 +1389,8 @@ int main(int argc, char** argv) {
        fs::exists(game_dir_path / "data" / "System.json"))) {
     rpg_start_game();
   } else {
-    std::fprintf(stderr,
-                 "No project baked in; waiting for the page to load one "
-                 "into /game.\n");
+    LOG(INFO) << "No project baked in; waiting for the page to load one "
+                 "into /game.";
   }
   return EXIT_SUCCESS;
 #else

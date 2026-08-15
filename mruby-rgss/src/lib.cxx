@@ -76,6 +76,16 @@ extern "C" void rgss_audio_frame(void);
 // no-op backend when --zundamon_tts was not passed).
 void rgss_tts_define(mrb_state* M, RClass* rgss);
 
+// Defined in log_bridge.cxx (same gem). Forwards one already-buffered
+// $stderr line to the executable's ng-log hook (a no-op on mrbtest, PSP and
+// Wio Terminal, which never install one -- see include/terminal.hxx's
+// "Stderr log bridge" section, docs/adr/0005).
+void log_bridge_write(const char* msg, size_t len);
+// Also defined in log_bridge.cxx: writes to the real stderr (unconditionally)
+// and forwards through log_bridge_write. Used by the native (non-Ruby)
+// diagnostics below that used to be a bare fprintf(stderr, ...).
+void log_bridge_write_stderr(const char* msg);
+
 #if defined(WIO_TERMINAL)
 // Defined in wio_input_bridge.cxx; scans the board's buttons/5-way switch and
 // forwards press/release edges to RGSS::Input.  Guarded so the desktop/wasm
@@ -2070,8 +2080,10 @@ std::shared_ptr<TtfFont> load_ttf(const std::string& path) {
     }
   }
   std::fclose(fp);
-  if (!f->ok)
-    std::fprintf(stderr, "[RGSS] failed to load font file: %s\n", path.c_str());
+  if (!f->ok) {
+    const std::string msg = "[RGSS] failed to load font file: " + path;
+    log_bridge_write_stderr(msg.c_str());
+  }
   return f;
 }
 
@@ -6007,6 +6019,17 @@ static mrb_value mouse_pressed_m(mrb_state* M, mrb_value) {
   return mrb_bool_value(rgss_mouse_pressed() != 0);
 }
 
+// RGSS.__log_bridge_write(line) -- called by RGSS::ErrorReport.push
+// (mruby-rgss/mrblib/error_report.rb) for every $stderr line it buffers. See
+// include/terminal.hxx's "Stderr log bridge" section.
+static mrb_value log_bridge_write_m(mrb_state* M, mrb_value) {
+  const char* msg;
+  mrb_int len;
+  mrb_get_args(M, "s", &msg, &len);
+  log_bridge_write(msg, static_cast<size_t>(len));
+  return mrb_nil_value();
+}
+
 extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   RClass* m = mrb_define_module(M, "RGSS");
   mrb_define_module_function(M, m, "to_nfd", to_nfd, MRB_ARGS_REQ(1));
@@ -6018,6 +6041,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_module_function(M, m, "mouse_y", mouse_y_m, MRB_ARGS_NONE());
   mrb_define_module_function(M, m, "mouse_pressed?", mouse_pressed_m,
                              MRB_ARGS_NONE());
+  mrb_define_module_function(M, m, "__log_bridge_write", log_bridge_write_m,
+                             MRB_ARGS_REQ(1));
 
   mrb_const_set(M, mrb_obj_value(m), mrb_intern_lit(M, "_game_start"),
                 mrb_fixnum_value(lv_tick_get()));

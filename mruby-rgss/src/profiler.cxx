@@ -1,5 +1,7 @@
 #include "profiler.hxx"
 
+#include "terminal.hxx"
+
 #include <mruby.h>
 #include <mruby/hash.h>
 #include <mruby/string.h>
@@ -336,7 +338,10 @@ void profiler_trace_start(const char* path) {
     return;
   g_trace_file = std::fopen(path, "w");
   if (!g_trace_file) {
-    std::fprintf(stderr, "[profiler] could not open trace file: %s\n", path);
+    char msg[512];
+    std::snprintf(msg, sizeof(msg), "[profiler] could not open trace file: %s",
+                  path);
+    log_bridge_write_stderr(msg);
     return;
   }
   // Tracing is pointless without the timing it records, so turn it on.

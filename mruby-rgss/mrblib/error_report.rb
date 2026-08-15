@@ -11,9 +11,16 @@ module RGSS
   # lines. Nothing about the existing logging changes (every write still reaches
   # the real `$stderr`); the tail is simply also kept in memory, and
   # `error_dump_report` (src/error_dump.cxx) folds it into the report the player
-  # copies. `$stderr` is teed and `$stdout` is not: `$stderr` is where the
-  # runtime logs its diagnostics by convention (see the Error Handling section
-  # of AGENTS.md).
+  # copies. Each buffered line is also handed to RGSS.__log_bridge_write, which
+  # forwards it to ng-log via the hook the executable installs (see
+  # include/terminal.hxx's "Stderr log bridge" section) -- so the same warning
+  # that lands in a crash report also respects ng-log's severity filtering and
+  # shows up in the on-screen terminal log console. That call is guarded by
+  # `respond_to?`: this file otherwise has no mruby dependency, which is what
+  # lets scripts/error_report_check.rb exercise it on plain CRuby (see that
+  # script and mruby-rgss/test/test.rb, which both cover this design). `$stderr`
+  # is teed and `$stdout` is not: `$stderr` is where the runtime logs its
+  # diagnostics by convention (see the Error Handling section of AGENTS.md).
   module ErrorReport
     # How much log to keep. Enough to cover a scene transition and the loads it
     # triggers, small enough that the report stays pasteable.
@@ -139,6 +146,7 @@ module RGSS
       line = line[0, MAX_LINE_CHARS] + "..." if line.size > MAX_LINE_CHARS
       @lines << line
       @lines.shift while @lines.size > MAX_LINES
+      RGSS.__log_bridge_write(line) if RGSS.respond_to?(:__log_bridge_write)
       nil
     end
 
