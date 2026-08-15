@@ -9716,6 +9716,69 @@ check 'battle_skill_command carries the skill variance on its heal branch too' d
   eq 7, c[:variance], 'the heal branch reports the skill row variance, not 0'
 end
 
+check 'battle_skill_command carries the skill elemental attributes on its heal branch too, ' \
+     'and a target that partly resists them heals for less than the raw base' do
+  # EasyRPG's `Algo::CalcSkillEffect` runs `Attribute::
+  # ApplyAttributeSkillMultiplier` unconditionally -- no heal-vs-damage branch
+  # gates it -- so a healing skill tagged with an elemental attribute (a real
+  # RPG2000/2003 database trick: tag a heal with a custom attribute and set a
+  # character's own resistance to it to make them harder/easier to heal) scales
+  # its recovery by the target's resistance exactly like an attack skill's own
+  # `attributes:` already does. Verified directly against EasyRPG Player's
+  # `src/algo.cpp` and independently by @2000_battle_bot/デフォ戦bot trivia.
+  skills = { 8 => fake_skill(name: 'Cure', scope: 3, power: 30, hp: true,
+                             attribute_effects: [false, false, true]) } # element 3
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  ally = combatant('Ally', 0, 0, 5, 1000)
+  ally.hp = 1
+  ally.attr_ranks = { 3 => 3 } # rank D = 50% -- partly resists this heal
+  bat = Game::Battle.new([caster, ally], [combatant('Foe', 0, 0, 1, 1)],
+                        Game::Rng.new(1)) # 3-arg: variance off
+  c = st.party.battle_skill_command(st.party.db_skill(8), caster, ally)
+  eq [3], c[:attributes], "the recovery branch now carries the skill's own attributes"
+  bat.command_skill(caster, ally, name: 'Cure', cost: c[:cost], hp: c[:hp],
+                    mp: c[:mp], variance: c[:variance], attributes: c[:attributes])
+  bat.begin_round
+  e = bat.step_action
+  eq 15, e[:recover_hp], "30 * 50% resistance -- not the raw base 30"
+end
+
+check 'battle: a healing skill tagged with an attribute the target is fully immune to ' \
+     '(0% rank) heals for the attribute-adjusted amount, not the raw base' do
+  # Rank E is 0% on the default attribute table -- the same "0% self-resistance"
+  # trick a caster-excluding MP-restore skill relies on.
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+  ally = combatant('Ally', 40, 0, 5, 100)
+  ally.hp = 1
+  ally.attr_ranks = { 3 => 4 } # rank E = 0% -- fully immune to this heal
+  bat = Game::Battle.new([mage, ally], [combatant('Foe', 0, 0, 1, 1)],
+                        Game::Rng.new(1)) # variance off
+  bat.command_skill(mage, ally, name: 'Cure', cost: 0, hp: 30, attributes: [3])
+  bat.begin_round
+  e = bat.step_action
+  eq 0, e[:recover_hp], '30 scaled by 0% resistance -- the attribute-adjusted amount, not raw 30'
+end
+
+check 'battle: a healing skill with no attributes tagged heals the raw base amount, unchanged ' \
+     '(regression against the elemental-heal fix above)' do
+  skills = { 8 => fake_skill(name: 'Heal', scope: 3, power: 30, hp: true) } # no attribute_effects
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  ally = combatant('Ally', 0, 0, 5, 1000)
+  ally.hp = 1
+  ally.attr_ranks = { 3 => 4 } # would zero an attribute-3 heal -- irrelevant here, the skill is untagged
+  bat = Game::Battle.new([caster, ally], [combatant('Foe', 0, 0, 1, 1)],
+                        Game::Rng.new(1)) # 3-arg: variance off
+  c = st.party.battle_skill_command(st.party.db_skill(8), caster, ally)
+  eq [], c[:attributes], 'an untagged skill still carries an empty attributes list'
+  bat.command_skill(caster, ally, name: 'Heal', cost: c[:cost], hp: c[:hp],
+                    mp: c[:mp], variance: c[:variance], attributes: c[:attributes])
+  bat.begin_round
+  e = bat.step_action
+  eq 30, e[:recover_hp], 'the raw base, exactly as before this fix'
+end
+
 check 'Battle: a stronger party wins, a weaker one is defeated' do
   hero = combatant('Hero', 40, 20, 20, 200)
   slime = combatant('Slime', 8, 4, 5, 30)
@@ -9942,11 +10005,11 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
        stat_mod_keys: [], cured: [], stat_effect: 24,
        physical_rate: 0 }, # purely magical -> 0
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
-  eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [],
+  eq({ cost: 5, hp: 32, mp: 0, attributes: [], variance: 4, attr_shift: nil, attr_ids: [],
        stat_mod_keys: [], stat_effect: 32, cured: [], inflict: [], chance: 100 },
      st.party.battle_skill_command(st.party.db_skill(8), caster, nil))
   # Cure affects HP and SP: effect = 10 + 40*12/40 = 22
-  eq({ cost: 4, hp: 22, mp: 22, variance: 4, attr_shift: nil, attr_ids: [],
+  eq({ cost: 4, hp: 22, mp: 22, attributes: [], variance: 4, attr_shift: nil, attr_ids: [],
        stat_mod_keys: [], stat_effect: 22, cured: [], inflict: [], chance: 100 },
      st.party.battle_skill_command(st.party.db_skill(9), caster, nil))
 end
