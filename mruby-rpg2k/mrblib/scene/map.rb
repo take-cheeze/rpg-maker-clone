@@ -151,6 +151,9 @@ class RPG2k
         # id, so an event whose *very first* selected page fails its
         # conditions still has a position to answer from. See #event_id_at.
         @event_last_position = {}
+        # Tiles #warn_stale_terrain has already reported this visit -- see
+        # #terrain_row_at.
+        @warned_stale_terrain = {}
         @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
@@ -2205,12 +2208,39 @@ class RPG2k
       public :vehicle_char_can_land?
 
       # The database terrain row under tile (x, y), or nil when the chipset / map
-      # carry no terrain data (e.g. the colour-block fallback or a bare fixture).
+      # carry no terrain data (e.g. the colour-block fallback or a bare fixture)
+      # -- or when the chipset cell at (x, y) points at a terrain id a database
+      # shrink has since removed. Real RPG_RT only surfaces that second case
+      # once the player actually steps onto the specific stale tile rather than
+      # proactively at load time (docs/TODO.md's runtime error catalog), which
+      # this already matches for free: every caller only ever asks about a tile
+      # someone (the party, an event, a vehicle) currently occupies. See
+      # #warn_stale_terrain for the "log once, not once per frame" diagnostic.
       def terrain_row_at(x, y)
         return nil if @chipset.nil? || !@db.respond_to?(:terrain) || @db.terrain.nil?
-        @db.terrain[@chipset.terrain(@map.lower(x, y))]
-      rescue StandardError
+        tid = @chipset.terrain(@map.lower(x, y))
+        row = @db.terrain[tid]
+        warn_stale_terrain(x, y, tid) if row.nil?
+        row
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Terrain: lookup failed at (#{x}, #{y}): #{e.message}"
         nil
+      end
+
+      # #terrain_row_at's diagnostic for a chipset cell whose terrain id has no
+      # database row -- a database shrink leaving a dangling reference behind,
+      # not the ordinary "no terrain table at all" case #terrain_row_at already
+      # returns nil for silently. Deduped per stale tile (`@warned_stale_terrain`,
+      # reset per map visit alongside @erased_event_positions /
+      # @event_last_position above) rather than per lookup: several callers
+      # (encounter rate, bush depth, vehicle passability) ask about the tile the
+      # party is standing on every single frame, and logging each of those would
+      # spam the console solid for a party that simply stands still on it.
+      def warn_stale_terrain(x, y, tid)
+        return if @warned_stale_terrain[[x, y]]
+        @warned_stale_terrain[[x, y]] = true
+        $stderr.puts "[RPG2k] Terrain: tile (#{x}, #{y}) references terrain " \
+                     "##{tid}, which no longer exists in the database"
       end
 
       # Advance autonomous / custom-route event movement one frame. Skipped
@@ -7664,6 +7694,10 @@ class RPG2k
         # left happened to be.
         @state.map_event_positions = {}
         @state.map_event_route_index = {}
+        # Tiles #warn_stale_terrain has already reported are per-visit too, same
+        # reasoning as the tables above -- a stale reference on the map being
+        # left says nothing about the destination.
+        @warned_stale_terrain = {}
         @page_revision = page_revision
         build_events
         @interpreter.resolver = build_resolver
