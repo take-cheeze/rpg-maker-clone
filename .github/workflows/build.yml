@@ -1187,13 +1187,20 @@ jobs:
 
       - name: Build EBOOT (pspdev container)
         # The pspdev image ships psp-gcc, cmake and the psp-cmake wrapper (which
-        # points CMake at the pspdev toolchain and provides create_pbp_file).
-        # Pull it up front with -q: an implicit pull from `docker run` prints a
-        # per-layer download/extract progress block, which `-q` reduces to the
-        # resolved digest.
+        # points CMake at the pspdev toolchain and provides create_pbp_file), but
+        # not Ruby: the psp mruby cross-build (build_config.rb's `psp`
+        # MRuby::CrossBuild) is driven by `rake`, invoked from a CMake custom
+        # command (app/psp/CMakeLists.txt) exactly the way the desktop/wasm
+        # builds drive it from the root CMakeLists.txt -- but those run inside
+        # the nix devshell, which provides Ruby; this container (Ubuntu-based,
+        # confirmed against github.com/pspdev/pspdev-docker) does not. Install it
+        # before configuring. Pull the image up front with -q: an implicit pull
+        # from `docker run` prints a per-layer download/extract progress block,
+        # which `-q` reduces to the resolved digest.
         run: |
           docker pull -q pspdev/pspdev:latest
           docker run --rm -v "$PWD:/src" -w /src pspdev/pspdev:latest sh -euc '
+            apt-get update -qq && apt-get install -qq -y --no-install-recommends ruby rake
             psp-cmake -S app/psp -B build-psp
             cmake --build build-psp -j"$(nproc)"
           '
