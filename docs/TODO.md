@@ -8026,6 +8026,32 @@ above are repeated here)
   Knockout; the same rank on an ordinary state — the control case — still
   resists it, pinning the exemption to state id 1 specifically), the first
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A state id past the end of a battler's own `state_ranks` array now
+  defaults to the correct rank per side — B/80% for an enemy, C/60% for an
+  actor — instead of always C/60%.** A routine situation: liblcf/RPG_RT
+  truncate trailing default-valued bytes off a database battler's
+  `state_ranks` array, so any state added to the database after a given
+  actor/enemy row was last saved in the editor, or one whose own trailing
+  ranks are all default, legitimately has a short array — `#state_susceptibility`
+  (`mruby-rpg2k/mrblib/game.rb`) already handled this ("a state id the array
+  doesn't cover") but applied one shared `|| 2` (C) fallback to every
+  target regardless of side. EasyRPG Player's own source models this as two
+  distinct functions with two distinct defaults: `Game_Actor::
+  GetStateProbability` ("rate = 2, C - default") vs. `Game_Enemy::
+  GetStateProbability` ("rate = 1, Enemies have only B as the default state
+  rank") — an explicit, commented asymmetry, not an oversight on EasyRPG's
+  part. Concretely: any enemy whose `state_ranks` doesn't cover a state
+  landed that state at 60% of a skill's own chance instead of the real 80%
+  — a status-inflicting skill read as more resisted than real RPG_RT
+  specifically against monsters with an unpadded `state_ranks` array (a
+  common shape for community test games). Fixed by reusing `#ally?` (the
+  same `Combatant#actor` presence check `Battle` already uses elsewhere) to
+  pick the fallback rank per side. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (an actor and an enemy each missing
+  the same state id from their own `state_ranks` land at 60%/80%
+  respectively; a state id both *do* carry is unaffected either way),
+  confirmed to fail against the pre-fix code (enemy read 60, not 80) before
+  the fix.
 - ✅ A skill flagged "attribute defense up/down" (field 45,
   `affect_attr_defence`) now shifts the target's rank for each attribute in
   its `attribute_effects` list by **exactly one step**, capped at ±1 from the

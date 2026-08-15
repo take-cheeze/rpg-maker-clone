@@ -9009,9 +9009,17 @@ module Game
     end
 
     # The percentage a target's susceptibility scales an infliction of `sid`: its
-    # rank in the target's `state_ranks` (default C / 60% for a listed-but-absent
-    # state, EasyRPG's GetStateProbability). 100 (unscaled) when the target (a
-    # bare fixture) models no ranks, so a plain sim keeps landing every status.
+    # rank in the target's `state_ranks`, defaulting (for a state id the array
+    # doesn't cover -- routine, since liblcf/RPG_RT truncate trailing default
+    # bytes off it) to C / 60% for an actor or B / 80% for an enemy. EasyRPG
+    # models this as two distinct functions with two distinct defaults --
+    # `Game_Actor::GetStateProbability` ("rate = 2, C - default") and
+    # `Game_Enemy::GetStateProbability` ("rate = 1, Enemies have only B as the
+    # default state rank") -- not one shared default the way this used to read.
+    # `#ally?` is the same actor-vs-enemy tell `Battle` already uses elsewhere
+    # (only an actor-built Combatant, #from_actor, carries a live `actor`).
+    # 100 (unscaled) when the target (a bare fixture) models no ranks at all,
+    # so a plain sim keeps landing every status.
     # The Knockout state (id 1, `Game::Actor::DEATH_STATE`) is exempt from rank
     # scaling entirely -- a skill's "state change" effect list can name it
     # directly (RPG2000 has no separate instant-death mechanic), and yado.tk
@@ -9021,7 +9029,8 @@ module Game
       return 100 if sid == Game::Actor::DEATH_STATE
       ranks = target.state_ranks
       return 100 if ranks.nil? || ranks.empty?
-      rank = ranks[sid] || 2
+      default_rank = ally?(target) ? 2 : 1
+      rank = ranks[sid] || default_rank
       rank = 0 if rank < 0
       rank = 4 if rank > 4
       state_rate(sid, rank)
