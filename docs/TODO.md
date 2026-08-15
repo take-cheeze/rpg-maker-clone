@@ -6248,6 +6248,33 @@ not yet verified:
   `#map_step_damaged?` itself (LOSE, bare GAIN, and mixed LOSE+GAIN-net-heal)
   and a new `scripts/rpg2k_scene_check.rb` end-to-end walking check, both
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A Conditional Branch of an unrecognized type now takes the else branch,
+  instead of always taking the true one.** Confirmed against EasyRPG's
+  actual C++ source: `Game_Interpreter::CommandConditionalBranch`
+  (`src/game_interpreter.cpp`, code 12010) initializes its local `result` to
+  `false` before the type switch, and its `default:` arm — reached by any
+  condition type the switch has no `case` for — only logs a warning, never
+  touching `result`, so it stays at its initial `false` and the interpreter
+  falls to the else branch. `Interpreter#eval_condition`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) handles types 0–10 (switch, variable,
+  timer, gold, item, actor, orientation, vehicle, decision-key,
+  BGM-looped, Timer2) but ended its `case` with `else true` — the exact
+  opposite default. This is reachable on real data: RPG Maker 2003 v1.11
+  added an official type-11 "EX condition" (savestate available / Test Play
+  / ATB-wait / fullscreen), and the Maniac Patch adds several more (12–16)
+  — none of which this build's `eval_condition` recognizes, so every one of
+  them silently always took the true branch. Concretely: a type-11/param1=1
+  ("Is Test Play mode?") branch gating debug/cheat content so it only shows
+  under Test Play — EasyRPG's `result` stays `false` outside Test Play (the
+  event's `default:` catches the unimplemented type-11 case exactly the
+  same as a type this codebase has never heard of), taking the else branch
+  and hiding the debug content from ordinary players; this build took the
+  **true** branch unconditionally, exposing the debug content to every
+  player regardless of Test Play state. Fixed by flipping the fallback from
+  `true` to `false`, a one-line change with no redesign implied. Covered by
+  a new `scripts/rpg2k_logic_check.rb` check driving a type-11 Conditional
+  Branch through a full true/else pair and asserting the else branch ran,
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
