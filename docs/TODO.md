@@ -5084,6 +5084,39 @@ not yet verified:
   weapon healing one instead, and the same weapon on RPG2000 still
   inflicting since the flag is edition-gated), each confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **A basic Attack's to-hit chance is now correct in two ways it wasn't
+  before, both in `Game::Battle#to_hit`.** Confirmed against EasyRPG's
+  `Algo::CalcNormalAttackToHit` (`src/algo.cpp`) line by line:
+  1. **A "do nothing"-restricted target (asleep / paralysed) now always gets
+     hit**, instead of still rolling the ordinary hit-rate/agility math.
+     `CalcNormalAttackToHit`'s `if (!target.CanAct()) return 100;` sits right
+     below its `EvadesAllPhysicalAttacks` check (already ported) and above
+     every accuracy term — a restricted target was RPG_RT's one guaranteed
+     landing before the "Avoid Attacks" state existed, and this codebase's
+     own comment on the `evades_all_physical?` fix already named this rule
+     in passing without ever implementing it. Ported as a new
+     `Game::Battle#do_nothing_restricted?` (factored out of
+     `#command_restricted?`'s own half of the same check) and a
+     `return 100 if do_nothing_restricted?(target)` right after the
+     avoid-attacks guard.
+  2. **A state's `reduce_hit_ratio` (Blind and friends) now scales the
+     attacker's *base* hit rate before the agility adjustment, not the
+     finished, agility-adjusted percentage afterward.** EasyRPG folds the
+     state modifier in first (`to_hit = to_hit *
+     GetHitChanceModifierFromStates() / 100`) and only then computes
+     `CalcToHitAgiAdjustment` off the already-reduced value; this codebase
+     multiplied by the state modifier last instead. Since the agility term
+     is not linear in its input, the two orders disagree whenever attacker
+     and target have unequal agility — e.g. a Blind (50%) attacker with base
+     hit 90 and agility 20 against a target with agility 10 landed 46% the
+     old way and should land 59% (`90*50/100=45` scaled by the state first,
+     then `100-(100-45)*30/40=59` by agility). Equal-agility fights were
+     unaffected (the agility term is an identity there), which is why the
+     existing Blind coverage never caught it.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (a restricted
+  target hit despite an attacker whose own hit-rate/agility odds would
+  otherwise floor at 0, and the 46-vs-59 unequal-agility case above), each
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control
