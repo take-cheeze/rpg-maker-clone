@@ -6348,6 +6348,36 @@ not yet verified:
   the bug rather than catching it); its expected value is corrected to the
   pass-through relationship (`param 2000 → 2000ms`), confirmed to fail
   against the pre-fix code (`expected 2000, got 200000`) before the fix.
+- ✅ **A Forced-AI actor's auto-battle skill-ranking cost is no longer
+  inflated by a percent-cost formula RPG2000 never applies.**
+  `Game::Battle#auto_battle_raw_cost` (`mruby-rpg2k/mrblib/game.rb`) is the
+  cost term `#auto_battle_damage_rank`/`#auto_battle_heal_rank` subtract when
+  scoring a candidate skill against a plain Attack — its own header comment
+  already cites EasyRPG's `CalcSkillCostAutoBattle` under `emulate_bugs:
+  true` (always the case for `AutoBattle::RpgRtCompat`, the algorithm this
+  build ports), which routes through `Algo::CalcSkillCost`
+  (`src/algo.cpp`): `(Player::IsRPG2k3() && skill.sp_type ==
+  SpType_percent) ? max_sp * skill.sp_percent / 100 / div : (skill.sp_cost +
+  half) / div` — the percent-cost branch is gated on `IsRPG2k3()`. This
+  function's own condition read only `sk.sp_type == 1`, no edition check at
+  all, even though `Game::Battle` already carries an `@rpg2003` ivar
+  (used elsewhere in the same class, e.g. the damage cap) and its sibling
+  `Game::Party#skill_cost` — which computes the SP actually *charged* for
+  the exact same field once the action is queued — already applies the
+  identical `rpg2003? && sk.sp_type == 1` gate, with its own comment
+  explaining why: a stray nonzero `sp_type` byte can sit on an RPG2000
+  database row even though the field's schema default is 0 and the RPG2000
+  editor UI never writes to it. Concretely: an RPG2000 skill carries
+  `sp_cost: 10` (the actual charge) but also a stray `sp_type: 1,
+  sp_percent: 50`; for a caster with `max_mp: 100`, the real charge (and
+  what `#skill_cost` correctly computes) is `10`, but this function computed
+  `100 * 50 / 100 = 50` — a 5x-too-high ranking-only cost, large enough to
+  flip which of two competing skills (or skill vs. plain Attack) a
+  Forced-AI actor picks. Fixed by adding the same `@rpg2003 &&` gate.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check calling
+  `#auto_battle_raw_cost` directly against both an RPG2000 and an RPG2003
+  `Game::Battle`, confirmed to fail against the pre-fix code (`expected 10,
+  got 50`) before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

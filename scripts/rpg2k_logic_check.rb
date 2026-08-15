@@ -14629,6 +14629,30 @@ check 'Game::Actor#force_ai? reads the row (or its RPG2003 class) exactly like #
   ok !st.party.actor_by_id(2).force_ai?, 'an unflagged actor reads false'
 end
 
+# Ports EasyRPG's `Algo::CalcSkillCost` edition gate (`Player::IsRPG2k3() &&
+# skill.sp_type == SpType_percent`), reached via `CalcSkillCostAutoBattle`'s
+# own `emulate_bugs: true` path (`AutoBattle::RpgRtCompat` always calls it
+# that way) -- the exact same gate `Game::Party#skill_cost` already applies
+# for the SP actually charged once the action is queued. Without it, a stray
+# nonzero `sp_type` byte on an RPG2000 database (the field's schema default
+# is 0, but the RPG2000 editor never writes to it) would route through the
+# percent formula here even though the real charge never would, inflating
+# the ranking-only cost term #auto_battle_damage_rank/#auto_battle_heal_rank
+# both subtract.
+check "battle: auto_battle_raw_cost's percent-cost branch is RPG2003-only, matching #skill_cost" do
+  sk = FakeAiSkill.new(name: 'Spell', sp_type: 1, sp_percent: 50, sp_cost: 10)
+  caster = combatant_mp('Caster', 10, 0, 5, 100, 100) # max_mp 100
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat2k = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  eq 10, bat2k.send(:auto_battle_raw_cost, sk, caster),
+     "RPG2000: sp_type is ignored, the flat sp_cost is used, matching #skill_cost's own gate"
+
+  bat2k3 = Game::Battle.new([caster], [foe], Game::Rng.new(1), nil, false, false, false, false,
+                            nil, nil, rpg2003: true)
+  eq 50, bat2k3.send(:auto_battle_raw_cost, sk, caster),
+     'RPG2003: the percent formula applies -- 100 max_mp * 50% = 50'
+end
+
 check 'battle: a Forced-AI actor picks a clearly-better Skill over Attack, with no manual command' do
   # 強制AI (mruby-lcf/mrblib/schema.rb, player/job field 23, force_ai) --
   # parsed but never read anywhere in mruby-rpg2k before this fix. Ported
