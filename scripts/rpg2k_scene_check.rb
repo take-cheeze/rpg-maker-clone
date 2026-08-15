@@ -298,7 +298,7 @@ end
 
 def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
             airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
-            rpg2003: false, menu_commands: nil)
+            rpg2003: false, menu_commands: nil, footstep: '', on_damage_se: false)
   OpenStruct.new(
     rpg2003?: rpg2003,
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
@@ -493,7 +493,8 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     # airship checks) whether it may fly over / land on any tile.
     terrain: { 42 => OpenStruct.new(damage: terrain_damage, bush_depth: bush_depth,
                                     airship_land: airship_land, airship_pass: airship_pass,
-                                    boat_pass: boat_pass, ship_pass: ship_pass) },
+                                    boat_pass: boat_pass, ship_pass: ship_pass,
+                                    footstep: footstep, on_damage_se: on_damage_se) },
     common_event: common,
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
@@ -695,10 +696,12 @@ end
 def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: nil,
               members: [], terrain_damage: 0, bush_depth: 0,
               airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
-              map_tree: nil, test_play: false, rpg2003: false)
+              map_tree: nil, test_play: false, rpg2003: false,
+              footstep: '', on_damage_se: false)
   db = fake_db(common, troop_pages, terrain_damage, bush_depth,
                airship_land: airship_land, airship_pass: airship_pass,
-               boat_pass: boat_pass, ship_pass: ship_pass, rpg2003: rpg2003)
+               boat_pass: boat_pass, ship_pass: ship_pass, rpg2003: rpg2003,
+               footstep: footstep, on_damage_se: on_damage_se)
   state = Game::State.new(fake_party(members, rpg2003: rpg2003), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   parent = fake_parent(db)
@@ -12850,6 +12853,48 @@ check 'harmless ground takes nothing' do
   scene = new_scene({}, player: [0, 0], members: [hero])   # damage 0
   walk(scene, 4)
   eq 100, hero.hp
+end
+
+# -- footstep SE (RPG2003 歩行音, ADR 0034 follow-up) --------------------------
+#
+# EasyRPG's Game_Player::Move plays terrain->footstep behind a
+# Player::IsRPG2k3() gate -- RPG2000 never plays it -- and on_damage_se
+# repurposes the same field into a damage-tick-only SE instead of an
+# ordinary per-step one: `!terrain->on_damage_se || red_flash`. See
+# #play_terrain_footstep_se's comment (mruby-rpg2k/mrblib/scene/map.rb).
+
+check 'RPG2003 terrain footstep plays every ordinary step onto that tile' do
+  RGSS::Audio.reset_se
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true, footstep: 'Step1')
+  walk(scene, 3)
+  eq 3, RGSS::Audio.se_calls.count { |c| c[0] == 'Step1' }, 'one footstep per tile walked'
+end
+
+check 'RPG2000 never plays a terrain footstep, even when one is set' do
+  RGSS::Audio.reset_se
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: false, footstep: 'Step1')
+  walk(scene, 3)
+  ok RGSS::Audio.se_calls.none? { |c| c[0] == 'Step1' },
+     'footstep is an RPG2003-only feature (EasyRPG gates it on Player::IsRPG2k3())'
+end
+
+check 'on_damage_se withholds the footstep on a harmless step, and plays it on a damaging one' do
+  RGSS::Audio.reset_se
+  harmless = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [harmless], rpg2003: true,
+                     footstep: 'Hurt1', on_damage_se: true)   # terrain_damage 0 -> harmless
+  walk(scene, 2)
+  ok RGSS::Audio.se_calls.none? { |c| c[0] == 'Hurt1' },
+     'on_damage_se suppresses the footstep on a step that dealt no damage'
+
+  RGSS::Audio.reset_se
+  hurt = SlipActor.new([])
+  scene2 = new_scene({}, player: [0, 0], members: [hurt], rpg2003: true, terrain_damage: 3,
+                      footstep: 'Hurt1', on_damage_se: true)
+  walk(scene2, 2)
+  eq 2, RGSS::Audio.se_calls.count { |c| c[0] == 'Hurt1' }, 'and plays it on every step that does'
 end
 
 # -- bush depth (下半身消去) ---------------------------------------------------

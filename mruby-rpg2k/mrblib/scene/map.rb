@@ -8555,17 +8555,44 @@ class RPG2k
         # onto belongs to may take HP off everyone not wearing gear that blocks
         # it. Read after the status slip and flashed together, since both are the
         # same "your HP just fell and the map has nowhere to say so" moment.
-        hit = hit + terrain_step_damage
+        row = terrain_row_at(@state.x, @state.y)
+        terrain_hit = terrain_step_damage(row)
+        hit = hit + terrain_hit
+        play_terrain_footstep_se(row, !terrain_hit.empty?)
         return if hit.empty?
         @state.screen.flash(*STEP_DAMAGE_FLASH)
       end
 
       # Apply the damage of the terrain under the party, returning the actors it
       # hit ([] when the tile is harmless or the database has no terrain table).
-      def terrain_step_damage
-        row = terrain_row_at(@state.x, @state.y)
+      # `row` defaults to a fresh #terrain_row_at lookup so existing callers
+      # (and the diagnostic dedup test, which calls this indirectly through a
+      # step) keep working; #note_party_step passes its own already-looked-up
+      # row instead of asking #terrain_row_at a second time for the same tile.
+      def terrain_step_damage(row = terrain_row_at(@state.x, @state.y))
         return [] unless row && row.respond_to?(:damage)
         @state.party.apply_terrain_damage(row.damage)
+      end
+
+      # RPG2003's 歩行音 (footstep SE): EasyRPG's `Game_Player::Move` plays
+      # `terrain->footstep` right after applying that step's terrain damage,
+      # gated on `Player::IsRPG2k3()` -- RPG2000 never plays it at all, which
+      # is why `scripts/rpg2k_field_audit.rb`'s `NOT_OURS` table used to list
+      # `footstep` as out of scope; wiring it here (RPG2003-gated, matching
+      # real behaviour) is what retires that entry. `on_damage_se` repurposes
+      # the same field: when set, `footstep` only plays on a step that actually
+      # damaged someone (EasyRPG's `!terrain->on_damage_se || red_flash`),
+      # turning it from an ambient step sound into the terrain's own damage-tick
+      # SE instead of playing on every ordinary step onto that terrain.
+      def play_terrain_footstep_se(row, damaged)
+        return unless @db.respond_to?(:rpg2003?) && @db.rpg2003?
+        return unless row && row.respond_to?(:footstep) && row.respond_to?(:on_damage_se)
+        return if row.on_damage_se && !damaged
+        name = row.footstep
+        return if name.nil? || name.empty?
+        RGSS::Audio.se_play(name)
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] Terrain: footstep SE playback failed: #{e.message}"
       end
 
       # -- Random ("wandering monster") encounters -----------------------------

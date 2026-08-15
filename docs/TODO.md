@@ -8740,6 +8740,26 @@ the now-dangling tile, and asserts the diagnostic fires exactly once (not
 once per the two call sites that both read the same landed-on tile in a
 single step, and not again on further re-queries of the same tile) while
 terrain damage/bush depth both fall back to their harmless defaults.
+✅ **Terrain's `footstep` and `on_damage_se` fields (chunk 16 elements 15/16)
+are wired up** — parsed by `mruby-lcf/mrblib/schema.rb` since the terrain
+chunk was first decoded (ADR 0034) but never read by the runtime;
+`scripts/rpg2k_field_audit.rb`'s `NOT_OURS` table used to list `footstep` as
+out of scope for exactly that reason. Checked against a real
+`Game_Player::Move` (EasyRPG source, not guessed): the footstep SE is
+**RPG2003-only** — gated on `Player::IsRPG2k3()`, so an RPG2000 database never
+plays one no matter what the field holds — and `on_damage_se` does not gate
+whether the terrain's own damage tick plays a sound; it repurposes `footstep`
+itself, from an ordinary per-step ambient sound into a damage-tick-only one
+(`!terrain->on_damage_se || red_flash`, where `red_flash` is "this step's
+terrain damage actually hit someone"). `Scene::Map#play_terrain_footstep_se`
+(`mruby-rpg2k/mrblib/scene/map.rb`) reproduces both rules, called from
+`#note_party_step` right alongside `#terrain_step_damage` — the same
+`#terrain_row_at` lookup that call site already made for the damage tick is
+now passed to both rather than queried twice. Covered by three new
+`scripts/rpg2k_scene_check.rb` checks: an RPG2003 fixture's footstep SE
+firing once per tile walked; an RPG2000 fixture never playing one even when
+the field is set; and an RPG2003 fixture with `on_damage_se` set staying
+silent on a harmless tile while playing on every tile of a damaging one.
 ✅ **A dangling chipset id no longer renders a map blank and fully passable
 with no trace** — the "chipset" case from the "invalid hero, skill, item,
 enemy, enemy group, battle animation, terrain, chipset, common event" list
