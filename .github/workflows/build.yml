@@ -44,6 +44,30 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: nixbuild/nix-quick-install-action@v35
+
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+        background: true
+      - name: cache rtp
+        uses: actions/cache@v6
+        id: rtp-cache
+        with:
+          path: scripts/*.zip
+          key: rtp-${{ hashFiles('./scripts/rtp*_install.bash') }}
+          restore-keys: rtp-
+        background: true
+      - name: cache test game
+        uses: actions/cache@v6
+        id: cache
+        with:
+          path: data
+          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './scripts/gen-sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
+        background: true
+
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
@@ -68,33 +92,13 @@ jobs:
         env:
           CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
 
-      - uses: nixbuild/nix-quick-install-action@v35
-      - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-
       # Realises the dev shell and exports its environment (PATH, compiler
       # launchers, etc.) into $GITHUB_ENV / $GITHUB_PATH, so every later step
       # below runs its command directly instead of going through
       # `nix develop -c`.
+      - name: wait nix setup
+        wait-all:
       - run: ./scripts/nix-develop-export-env.bash
-
-      - name: cache rtp
-        uses: actions/cache@v6
-        id: rtp-cache
-        with:
-          path: scripts/*.zip
-          key: rtp-${{ hashFiles('./scripts/rtp*_install.bash') }}
-          restore-keys: rtp-
-
-      - name: cache test game
-        uses: actions/cache@v6
-        id: cache
-        with:
-          path: data
-          key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './scripts/gen-sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
 
       # The native compile is the long pole. Everything that does not feed the
       # compiler — the RTP/game/MV downloads (network-bound) and pre-commit
