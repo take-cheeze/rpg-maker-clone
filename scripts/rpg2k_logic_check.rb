@@ -9532,7 +9532,7 @@ end
 
 check 'battle skill damage varies by the skill variance when the fight rolls it' do
   skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 0, power: 20,
-                             mrate: 40, variance: 4) }
+                             mrate: 40, variance: 4, hp: true) }
   st = skill_party(skills)
   mage = Game::Battle.from_actor(st.party.actor_by_id(1))    # spi 12 -> effect 32
   slime = combatant('Slime', 0, 0, 5, 100_000)               # def 0, tanky
@@ -9813,7 +9813,7 @@ end
 
 check 'battle_skill_command yields attack damage, ally heal and self recovery' do
   skills = {
-    7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 20, mrate: 40),
+    7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 20, mrate: 40, hp: true),
     8 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5, power: 20, mrate: 40, hp: true),
     9 => fake_skill(name: 'Cure', scope: 2, sp_cost: 4, power: 10, mrate: 40,
                     hp: true, sp: true)
@@ -9827,7 +9827,8 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   # all with its armour: 32 - (0*8/40 + 40*16/80) = 32 - 8 = 24.
   eq({ cost: 6, hp: -24, mp: 0, attack: true, inflict: [], chance: 100, variance: 4,
        attributes: [], absorb: false, attr_shift: nil, attr_ids: [],
-       stat_mod_keys: [], cured: [], physical_rate: 0 }, # purely magical -> 0
+       stat_mod_keys: [], cured: [], stat_effect: 24,
+       physical_rate: 0 }, # purely magical -> 0
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [],
        stat_mod_keys: [], stat_effect: 32, cured: [], inflict: [], chance: 100 },
@@ -9839,7 +9840,7 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
 end
 
 check 'battle_skill_command respects a stat-halving state on the caster' do
-  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40) }
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40, hp: true) }
   states = { 1 => fake_state(affect_type: 0, affect_spirit: true) } # 0 = halve
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
                                      atk: 10, def: 8, int: 20, agi: 7) }
@@ -9858,7 +9859,7 @@ check 'battle_skill_command respects a stat-halving state on the caster' do
 end
 
 check 'battle_skill_command respects a stat-doubling state on the target' do
-  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40) }
+  skills = { 7 => fake_skill(name: 'Fire', scope: 0, sp_cost: 6, power: 0, mrate: 40, hp: true) }
   states = { 2 => fake_state(affect_type: 1, affect_spirit: true) } # 1 = double
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
                                      atk: 10, def: 8, int: 20, agi: 7) }
@@ -9909,6 +9910,91 @@ check 'an attack skill that computes to 0 damage still reads as an attack, not a
   eq 'Fire', e[:skill], 'still reads as the attack skill that landed, not a recovery'
   ok !e[:recover], 'never mistaken for a heal'
   eq 100, tough_foe.hp, 'the target neither took damage nor was healed'
+end
+
+# Ported from EasyRPG's Game_BattleAlgorithm::Skill::vExecute (algo.cpp's
+# CalcSkillEffect + game_battlealgorithm.cpp): an enemy-scope attack skill's
+# `affect_hp`/`affect_sp` flags each independently gate whether the skill's
+# one shared `effect` value (the same number, not two separately-rolled
+# amounts) lands on the target's HP and/or SP. #battle_skill_command's enemy
+# branch used to hardcode `mp: 0` unconditionally, never reading `affect_sp`
+# at all, and its `hp:` field was never gated by `affect_hp` either -- an
+# SP-only drain (affect_hp clear, affect_sp set: a real, valid Effects-tab
+# combination, per @2000_battle_bot/デフォ戦bot trivia on the very
+# interaction the third check below covers) always dealt HP damage too.
+
+check 'an enemy-scope attack skill with both affect_hp and affect_sp deals ' \
+      'both HP and SP damage to the target, from the same effect value' do
+  skills = { 7 => fake_skill(name: 'Drain Fire', scope: 0, sp_cost: 6, power: 20,
+                             mrate: 40, hp: true, sp: true) }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # spi 12 -> effect 32
+  foe = combatant_mp('Foe', 0, 0, 5, 100, 50)                # def/spi 0 -> no term
+  cmd = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq(-32, cmd[:hp], 'hp carries the full effect')
+  eq(-32, cmd[:mp], 'mp carries the identical effect, not a separate roll')
+
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1)) # variance/accuracy off
+  bat.command_skill(caster, foe, name: 'Drain Fire', cost: cmd[:cost], hp: cmd[:hp],
+                    mp: cmd[:mp], attack: cmd[:attack], chance: cmd[:chance],
+                    variance: cmd[:variance])
+  bat.begin_round
+  e = bat.step_action
+  eq 32, e[:damage], 'HP damage applied'
+  eq 32, e[:sp_damage], 'SP damage applied, the same magnitude as the HP hit'
+  eq 68, foe.hp, '100 - 32'
+  eq 18, foe.mp, '50 - 32'
+end
+
+check 'an enemy-scope attack skill with affect_sp but not affect_hp deals ' \
+      'only SP damage' do
+  skills = { 7 => fake_skill(name: 'SP Drain', scope: 0, sp_cost: 6, power: 20,
+                             mrate: 40, sp: true) } # hp: false (default)
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # spi 12 -> effect 32
+  foe = combatant_mp('Foe', 0, 0, 5, 100, 50)
+  cmd = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq 0, cmd[:hp], 'affect_hp is not set, so hp stays 0'
+  eq(-32, cmd[:mp], 'affect_sp is set, so mp carries the full effect')
+
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  bat.command_skill(caster, foe, name: 'SP Drain', cost: cmd[:cost], hp: cmd[:hp],
+                    mp: cmd[:mp], attack: cmd[:attack], chance: cmd[:chance],
+                    variance: cmd[:variance])
+  bat.begin_round
+  e = bat.step_action
+  eq 0, e[:damage], 'no HP damage at all'
+  eq 32, e[:sp_damage], 'the SP damage still lands, off the same effect'
+  eq 100, foe.hp, 'HP genuinely untouched'
+  eq 18, foe.mp, '50 - 32'
+end
+
+check "a dual HP+SP attack skill's killing blow leaves SP untouched -- HP " \
+      'reaching 0 blocks the SP damage on the same swing' do
+  # EasyRPG's own ordering: `if (!is_dead && GetTarget()->GetHp() +
+  # this->GetAffectedHp() <= 0) return IsSuccess();` runs right after the
+  # affect_hp block and *before* affect_sp's -- so a lethal HP hit skips SP
+  # entirely on that swing, matching デフォ戦bot's own trivia: "ＨＰとＭＰに
+  # ダメージを与える技能でＨＰがゼロになった場合、ＭＰは減らない".
+  skills = { 7 => fake_skill(name: 'Drain Fire', scope: 0, sp_cost: 6, power: 20,
+                             mrate: 40, hp: true, sp: true) }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # spi 12 -> effect 32
+  foe = combatant_mp('Foe', 0, 0, 5, 10, 50)                 # only 10 HP -- dies
+  cmd = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq(-32, cmd[:hp])
+  eq(-32, cmd[:mp])
+
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  bat.command_skill(caster, foe, name: 'Drain Fire', cost: cmd[:cost], hp: cmd[:hp],
+                    mp: cmd[:mp], attack: cmd[:attack], chance: cmd[:chance],
+                    variance: cmd[:variance])
+  bat.begin_round
+  e = bat.step_action
+  eq 32, e[:damage], 'the killing HP hit still lands in full'
+  ok e[:defeated], 'the target died from the HP hit'
+  eq 0, e[:sp_damage], 'SP damage was skipped -- the target died first'
+  eq 50, foe.mp, 'MP never decreased'
 end
 
 check 'a skill flagged "attribute defence up/down" picks direction from ' \
@@ -10140,7 +10226,8 @@ check 'an affect_attack attack skill lowers the target\'s per-battle ATK ' \
   bat = Game::Battle.new([caster], [foe], Game::Rng.new(1)) # variance off
   cast = lambda do
     bat.command_skill(caster, foe, name: 'Weaken', cost: c[:cost], hp: c[:hp],
-                      mp: c[:mp], stat_mod_keys: c[:stat_mod_keys])
+                      mp: c[:mp], attack: c[:attack], stat_mod_keys: c[:stat_mod_keys],
+                      stat_effect: c[:stat_effect])
     bat.run_round
   end
 
@@ -10176,7 +10263,8 @@ check 'ability-value decrease rounds toward zero (up) on an odd base, not ' \
   c = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
   bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
   bat.command_skill(caster, foe, name: 'Weaken', cost: c[:cost], hp: c[:hp],
-                    mp: c[:mp], stat_mod_keys: c[:stat_mod_keys])
+                    mp: c[:mp], attack: c[:attack], stat_mod_keys: c[:stat_mod_keys],
+                    stat_effect: c[:stat_effect])
   bat.run_round
   eq(-2, foe.atk_mod, '-(5/2) rounds up (toward zero) to -2, not floor\'s -3')
 end
@@ -14297,11 +14385,11 @@ end
 
 def defence_party
   skills = {
-    1 => fake_skill(name: 'Slash', scope: 0, power: 20, prate: 10, mrate: 0),
-    2 => fake_skill(name: 'Bolt',  scope: 0, power: 20, prate: 0,  mrate: 40),
+    1 => fake_skill(name: 'Slash', scope: 0, power: 20, prate: 10, mrate: 0, hp: true),
+    2 => fake_skill(name: 'Bolt',  scope: 0, power: 20, prate: 0,  mrate: 40, hp: true),
     3 => fake_skill(name: 'Pierce', scope: 0, power: 20, prate: 10, mrate: 0,
-                    ignore_defense: true),
-    4 => fake_skill(name: 'Mixed', scope: 0, power: 20, prate: 10, mrate: 40),
+                    ignore_defense: true, hp: true),
+    4 => fake_skill(name: 'Mixed', scope: 0, power: 20, prate: 10, mrate: 40, hp: true),
   }
   skill_party(skills)
 end
