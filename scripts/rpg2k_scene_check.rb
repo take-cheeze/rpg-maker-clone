@@ -1328,6 +1328,47 @@ check 'events on different layers no longer pass through when overlap_forbidden 
      "overlap_forbidden should stop the mover short of the blocker, got #{[ch.x, ch.y]}"
 end
 
+check 'a same-layer blocker stacked under a below-layer decal still blocks the hero' do
+  # Two events can legitimately share a tile in RPG2000 when their priority
+  # types differ -- a below-characters decal drawn under a same-as-characters
+  # NPC, say. Collision used to cache only one event per tile (last write
+  # wins), so whichever of the two got indexed last silently decided the
+  # whole tile's blocking answer; here that used to be the decal (layer
+  # BELOW, id 2), which masked the NPC (layer SAME, id 1) underneath it and
+  # let the hero walk straight through. #blockers_at now asks every event on
+  # the tile, so the same-layer one still blocks regardless of build order.
+  blocker = event(1, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME))
+  decal   = event(1, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => blocker, 2 => decal }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.dir_value = 6 # hold right, toward the shared tile at (1, 0)
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y],
+     "the same-layer event should still block despite the stacked decal, got #{[st.x, st.y]}"
+end
+
+check 'a below-layer event moving off a shared tile leaves the same-layer event still blocking' do
+  # The same stacked start as above, but the below-layer half of the pair now
+  # wanders away on a custom route. Its own #reoccupy used to overwrite the
+  # single-event cache with itself, dropping the stationary same-layer event
+  # from the tile it never left; deindex/index now keep both companions'
+  # entries in @event_tiles_by_pos independent, so the stationary one keeps
+  # blocking after the other one moves off.
+  blocker = event(2, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME))
+  mover   = event(2, 0, page(x_move_type: Game::MoveType::CUSTOM,
+                             route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                             layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => blocker, 2 => mover }, player: [1, 0])
+  st = scene.instance_variable_get(:@state)
+  40.times { scene.update } # let the below-layer event finish wandering off
+  RGSS::Input.dir_value = 6 # hold right, toward the blocker at (2, 0)
+  30.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [1, 0], [st.x, st.y],
+     "the hero should still be blocked by the same-layer event, got #{[st.x, st.y]}"
+end
+
 # Each tile's four passability bits mark whether *that tile's own* north/
 # south/east/west edge is open; crossing a boundary needs the leaving tile's
 # bit for the side it exits through *and* the entering tile's bit for the

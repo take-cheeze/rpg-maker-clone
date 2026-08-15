@@ -3977,6 +3977,23 @@ following this paragraph as the original record.
   Covered by two new `scripts/rpg2k_scene_check.rb` checks (a below-characters
   blocker with the flag set still stops the hero; two events on different
   layers no longer pass through each other when the blocker sets it).
+- ✅ **A same-as-characters event stacked with a below/above-characters event
+  on the same tile could stop blocking the hero.** Two events legitimately
+  share a tile when their priority types differ (a below-characters floor
+  decal under a same-as-characters NPC), but `Scene::Map`'s occupied-tile
+  cache (`@event_tiles`) kept only one event per tile — the last one indexed
+  — so whichever tile-mate was built or moved last silently decided the
+  whole tile's collision answer, masking the other one entirely. `passable?`,
+  `char_passable?`, `char_can_land?`, `vehicle_passable?` and
+  `airship_landable?` now consult every live event on a tile through a new
+  `blockers_at`/`@event_tiles_by_pos` index instead of the single
+  last-write-wins entry; `@event_tiles` itself is untouched and still
+  answers the "pick one event here" queries (`event_at`, the action/touch
+  triggers, encounter suppression, `event_id_at`'s highest-id tiebreak).
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (a same-layer
+  blocker stacked under a below-layer decal still blocks; the below-layer
+  half wandering off a shared tile leaves the same-layer half still
+  blocking).
 - ✅ **The active party caps at four members.** `Game::Party#add_actor` had no
   size check at all, so a Change Party Member "Add" past the fourth slot grew
   `@actors` unbounded instead of no-op'ing the way RPG_RT does (the editor
