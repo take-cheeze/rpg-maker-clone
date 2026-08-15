@@ -11425,6 +11425,83 @@ check 'battle: a "do nothing" state (restriction 1) skips the turn' do
   eq 100, slime.hp                                   # the asleep hero never struck
 end
 
+# デフォ戦bot: "once afflicted with a 'cannot act' state, curing it before your
+# turn comes up still doesn't let you act that turn; likewise Silence cured
+# before your turn still blocks magic." Checked directly against EasyRPG's
+# real source rather than trusted from the trivia alone (`SelectNextActor`/
+# `CreateEnemyActions`, `PrepareBattleAction`, `Game_Battler::AddState`, all
+# in `src/scene_battle*.cpp`/`game_battler.cpp`): a do-nothing restriction
+# (`!CanAct()`) locks an actor's queued algorithm to `Game_BattleAlgorithm::
+# None` the moment it is decided -- at `SelectNextActor`/`CreateEnemyActions`
+# (queue-build time) if already restricted then, or live via `AddState`'s own
+# override if the restriction lands later, mid-round, before the actor's
+# queued turn runs. Nothing in the reference ever reverses that lock once set
+# -- `PrepareBattleAction`, which runs again immediately before each queued
+# action executes, only ever *tightens* it (`!CanAct()` -> force `None`); it
+# never turns an already-`None` algorithm back into a real one, even when
+# `BattleStateHeal`/`ApplyConditions` (this codebase's own #apply_turn_states)
+# cures the state in that exact same call. #refill_queue's new `queued_no_act`
+# snapshot (Combatant field) and #step/#step_action's `can_act = false if
+# b.queued_no_act` port this lock; the live #apply_turn_states recheck stays,
+# since it is what still catches a battler newly restricted *after* the
+# queue was built (mirrors `AddState`'s own live override) -- these two
+# checks are written to fail under either a purely-live implementation (the
+# first) or a purely-locked-at-queue-time-only implementation (the second),
+# not just under the code as it stood before this fix.
+check 'battle: a do-nothing restriction locked in when queued still blocks a turn cured before it resolves' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing, 0% auto-release
+  healthy = combatant('Healthy', 40, 0, 100, 100)         # fast -- acts first
+  sleepy = combatant('Sleepy', 40, 0, 1, 100)             # slow -- acts second, asleep at queue time
+  sleepy.states = [8]
+  slime = combatant('Slime', 0, 0, 5, 100_000)            # punching bag, stays alive through the round
+  bat = Game::Battle.new([healthy, sleepy], [slime], Game::Rng.new(1), states)
+
+  bat.begin_round
+  eq true, sleepy.queued_no_act, 'locked in as unable to act when this round\'s queue was built'
+
+  first = bat.step_action
+  eq 'Healthy', first[:attacker], 'the fast ally goes first'
+
+  # A cure lands on Sleepy before its own queued turn comes up -- an ally's
+  # Esna/Cure this same round, auto-release, anything; the mechanism does not
+  # matter here, only that the state is gone by the time Sleepy is dequeued.
+  sleepy.states = []
+
+  entries = []
+  loop { e = bat.step_action; break unless e; entries << e }
+  bat.end_round
+  ok entries.none? { |e| e[:attacker] == 'Sleepy' },
+     'cured before its turn, but the queue already locked this round\'s turn out -- a purely-live ' \
+     'recheck at dequeue (no states left) would wrongly let Sleepy act here'
+end
+
+check 'battle: a do-nothing state inflicted after queueing still blocks the turn live' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing, 0% auto-release
+  healthy = combatant('Healthy', 40, 0, 100, 100)         # fast -- acts first
+  victim = combatant('Victim', 40, 0, 1, 100)             # fine at queue time, acts second
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([healthy, victim], [slime], Game::Rng.new(1), states)
+
+  bat.begin_round
+  eq false, victim.queued_no_act, 'not restricted yet when this round\'s queue was built'
+
+  first = bat.step_action
+  eq 'Healthy', first[:attacker]
+
+  # Something in the round (an earlier ally/enemy action, a troop page) puts
+  # Victim to sleep before its own queued turn comes up -- EasyRPG's
+  # Game_Battler::AddState overrides an already-queued action to None the
+  # moment this happens, live, not only at the round's original queue-build.
+  victim.states = [8]
+
+  entries = []
+  loop { e = bat.step_action; break unless e; entries << e }
+  bat.end_round
+  ok entries.none? { |e| e[:attacker] == 'Victim' },
+     'newly afflicted before its turn -- a purely queue-time-locked implementation (no live ' \
+     'recheck at dequeue) would wrongly let Victim act here'
+end
+
 check 'battle poison slips SP too when the battler has max SP' do
   states = { 4 => FakeStateDef.new(0, 3, 0, 2, 0) }  # 3 HP + 2 SP / turn
   mage = combatant_mp('Mage', 40, 0, 20, 100, 10)

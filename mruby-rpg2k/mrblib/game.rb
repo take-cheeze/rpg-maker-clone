@@ -7987,7 +7987,29 @@ module Game
                            # exact object rather than rebuilding a fresh one
                            # and losing its accumulated battle-only state (see
                            # this Struct's own class comment).
-                           :member) do
+                           :member,
+                           # Whether this battler was under a "do nothing"
+                           # restriction (asleep/paralysed) at the moment its
+                           # action entered this round's queue (#refill_queue),
+                           # snapshotted there and consulted -- not
+                           # re-derived -- when the action is dequeued
+                           # (#step/#step_action). See #apply_turn_states'
+                           # own comment for why a live re-check at dequeue
+                           # time is wrong: EasyRPG's `PrepareBattleAction`
+                           # (src/scene_battle.cpp) locks a restricted
+                           # battler's queued algorithm to `None` right when
+                           # it is chosen (`Scene_Battle_Rpg2k::
+                           # SelectNextActor`/`CreateEnemyActions`) or first
+                           # afflicted mid-round (`Game_Battler::AddState`),
+                           # and nothing in the reference ever reverses that
+                           # once the restriction later clears -- curing
+                           # Sleep/Paralysis after the round's queue is built
+                           # does not give the battler its turn back. nil
+                           # (never queued this round yet) reads as "not
+                           # locked", matching every existing fixture that
+                           # calls #apply_turn_states directly without going
+                           # through #refill_queue first.
+                           :queued_no_act) do
       def dead?; hp <= 0; end
 
       # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
@@ -8415,6 +8437,11 @@ module Game
         # once the action lands (EasyRPG's Scene_Battle::NextTurn).
         b.next_battle_turn
         can_act = apply_turn_states(b)
+        # A do-nothing restriction locked in when this round's queue was
+        # built (or picked up live, above, from one inflicted since) always
+        # wins over a cure that landed in between -- see the Combatant
+        # `queued_no_act` field's own comment.
+        can_act = false if b.queued_no_act
         next if b.dead? || !can_act
         entry = record_action(strike(b))
         next unless entry # attacker had no living target; try the next
@@ -8926,6 +8953,10 @@ module Game
         # (which cannot itself knock it out -- see apply_turn_states) and, if it
         # cannot act (asleep / paralysed), its turn is skipped.
         can_act = apply_turn_states(b)
+        # ...unless a do-nothing restriction was already locked in when this
+        # round's queue was built -- see #step's own comment and the
+        # Combatant `queued_no_act` field's.
+        can_act = false if b.queued_no_act
         next if b.dead? || !can_act
         entry = record_action(strike(b))
         next unless entry
@@ -9137,6 +9168,16 @@ module Game
       # A pre-emptive first strike catches the enemies off guard: they skip the
       # opening round, so only the party acts in round 1.
       @queue = @queue.reject { |b| side_of(b) == :enemy } if @first_strike && @rounds == 1
+      # Lock in "cannot act" for the round right here, matching EasyRPG's
+      # `SelectNextActor`/`CreateEnemyActions` (`!CanAct()` -> a `None`
+      # algorithm queued on the spot) -- see the Combatant `queued_no_act`
+      # field's own comment. #apply_turn_states still runs live at dequeue
+      # for slip damage/auto-recovery and to catch a battler newly afflicted
+      # *after* this point but before its own turn (mirrors
+      # `Game_Battler::AddState`'s live override); this flag only ever adds
+      # to that, it never lets a battler restricted here act again once its
+      # state clears before its turn comes up.
+      @queue.each { |b| b.queued_no_act = do_nothing_restricted?(b) }
     end
 
     # Re-derive @allies from the live Game::Party (`party:` on #initialize) --
