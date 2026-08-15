@@ -6,10 +6,11 @@ set -uo pipefail
 # while they transfer. Reads stdin, writes what survives to stdout; put it at
 # the end of a pipe.
 #
-#     nix build -L '.#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
+#     nix build -L '.?submodules=1#build' 2>&1 | ./scripts/drop-git-fetch-noise.bash
 #
-# flake.nix sets `self.submodules = true`, so every `nix develop` / `nix build`
-# hands each of this repo's submodules to nix's own git fetcher. Nix builds
+# A `nix` call that asks for submodules -- `?submodules=1`, which only the
+# `flake` CI job needs (see flake.nix) -- hands each of this repo's submodules
+# to nix's own git fetcher. Nix builds
 # that fetcher input (src/libfetchers/git.cc) from the URL in `.gitmodules`
 # with `allRefs = true` hardcoded, and `allRefs` picks the refspec
 # `refs/*:refs/*` — literally every ref the remote has, including the

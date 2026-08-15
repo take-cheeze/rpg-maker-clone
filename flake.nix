@@ -6,8 +6,19 @@
     # the web). Channel revisions are what cache.nixos.org has prebuilt, so
     # binary-cache hit rates are as good as tracking the release branch head.
     nixpkgs.url = "https://channels.nixos.org/nixos-26.05/nixexprs.tar.xz";
-    self.submodules = true;
   };
+
+  # `self.submodules = true` deliberately *not* set here. It made every `nix`
+  # call fetch all twelve submodules with `refs/*:refs/*` -- a full-history
+  # fetch per submodule, lvgl alone being ~760 MiB of refs -- and only
+  # `packages.build` ever reads those sources. The dev shell does not: every job
+  # that enters it (`build`, `ruby-checks`, `wasm`) compiles the checkout in
+  # $GITHUB_WORKSPACE, not nix's copy of it, so the walk was pure latency there.
+  # The one consumer that needs them asks per command instead:
+  #
+  #     nix build '.?submodules=1#build'
+  #
+  # See the `flake` job in .github/workflows/build.yml.
 
   outputs =
     { self, nixpkgs }:

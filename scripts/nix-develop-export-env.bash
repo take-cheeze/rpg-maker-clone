@@ -28,10 +28,12 @@ set -euo pipefail
 # actually need), are skipped.
 #
 # This is the first `nix` command of the job, so its stderr is piped through
-# the same noise filter `./scripts/nix-develop.bash` uses: fetching this
-# flake with `self.submodules = true` makes nix fetch every submodule with
-# `refs/*:refs/*`, a `* [new ref]` line per ref -- see the filter for the
-# full story.
+# the same noise filter `./scripts/nix-develop.bash` uses. The submodule walk
+# that filter was written for no longer happens here -- flake.nix stopped
+# declaring `self.submodules = true`, so only an explicit `?submodules=1`
+# fetches them -- but the filter also quiets the clones the download scripts
+# run, and it costs nothing to keep the pipe. See the filter for the full
+# story.
 
 contains() {
     # -F: nix store paths and the base64 delimiter below can contain regex
