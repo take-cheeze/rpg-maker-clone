@@ -5441,6 +5441,27 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   ok !st.switches[2], 'the Escape handler was skipped'
 end
 
+# EasyRPG's own EXP-granting loop (Scene_Battle_Rpg2k::
+# ProcessSceneActionVictory) iterates Game_Party_Base::GetActiveBattlers, not
+# the raw party roster, and GetActiveBattlers excludes anyone failing
+# Game_Battler::Exists() (`!IsHidden() && !IsDead() && IsInParty()`) -- a
+# fallen ally still enrolled in the party at the moment of victory gets
+# nothing.
+check "Enemy Encounter scene: a KO'd party member earns no EXP from the victory" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  alive = BattleStubActor.new(id: 1)
+  fallen = BattleStubActor.new(id: 2, hp: 0) # already KO'd going into the fight
+  st.instance_variable_set(:@party, BattleStubParty.new(actors: [alive, fallen]))
+  scene.update
+  battle_attack_to_end(scene) # only the living actor's Attack drives it to victory
+  eq 10, alive.exp, 'the surviving actor still gains the troop EXP (2 Slimes x 5)'
+  eq 0, fallen.exp, "a KO'd party member earns nothing from the victory"
+end
+
 # `Game::Battle` already tracks the fight's own round count live (`@rounds`,
 # `#turn`), but nothing captured it before `#close_battle` discarded the
 # `Battle` object once the fight ended -- see docs/TODO.md's "turns passed in

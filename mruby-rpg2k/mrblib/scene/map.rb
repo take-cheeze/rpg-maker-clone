@@ -6744,6 +6744,12 @@ class RPG2k
           lines << "#{name}#{term(:item_received, ' obtained.')}"
         end
         @state.party.actors.each do |a|
+          # A KO'd party member earns nothing from the victory -- EasyRPG's own
+          # EXP-granting loop (Scene_Battle_Rpg2k::ProcessSceneActionVictory)
+          # iterates Game_Party_Base::GetActiveBattlers, not the raw roster,
+          # and GetActiveBattlers excludes anyone failing Game_Battler::
+          # Exists() (`!IsHidden() && !IsDead() && IsInParty()`).
+          next if a.respond_to?(:dead?) && a.dead?
           before_level = a.respond_to?(:level) ? a.level : nil
           before_skills = a.respond_to?(:skills) ? a.skills.dup : []
           a.gain_exp(exp)
