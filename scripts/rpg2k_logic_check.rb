@@ -3059,6 +3059,67 @@ check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
   eq false, old.timer(1).running
 end
 
+check 'restore_pictures restores zoom, opacity and tone, not just name/position' do
+  # These used to stay at Picture's defaults: no sample save had them off-
+  # default, so reading save fields 33/34/41-44 would have been guesswork. That
+  # is resolved by cross-checking against the *live* Show Picture command
+  # (#do_show_picture, interpreter.rb), which is already exercised elsewhere in
+  # this codebase and uses the exact same field semantics the rpg2kpsp save
+  # schema names: zoom (33, "拡大率") is a raw percentage fed straight into
+  # Picture#zoom, tone (41-44, "色調") are raw ints fed straight into Picture's
+  # red/green/blue/saturation, and transparency (34, "透明度") is the same
+  # 0 (opaque) .. 100 (clear) scale #trans_to_opacity already converts for the
+  # live command. `to_lsd` does not write chunk 103 yet (see ADR 0021's
+  # addendum), so this builds a synthetic chunk 103 entry directly rather than
+  # round-tripping through our own writer.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+
+  pic = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  pic[1] = 'backdrop'
+  pic[31] = 200.0
+  pic[32] = 150.0
+  pic[33] = 150 # zoom: 150%
+  pic[34] = 25  # transparency: 25 (out of 100, clear side)
+  pic[41] = 50  # tone red
+  pic[42] = 60  # tone green
+  pic[43] = 70  # tone blue
+  pic[44] = 80  # tone saturation
+  pictures = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  pictures[3] = pic
+
+  Game::State.restore_pictures(st, pictures)
+  restored = st.pictures[3]
+  ok !restored.nil?, 'the picture is shown'
+  eq 'backdrop', restored.name
+  eq 200, restored.x
+  eq 150, restored.y
+  eq 150, restored.zoom, 'zoom is the save\'s raw percentage, matching Show Picture\'s own param5'
+  eq Game.trans_to_opacity(25), restored.opacity,
+     'transparency converts through the same 0..100 -> 0..255 scale Show Picture uses'
+  eq 191, restored.opacity, 'trans_to_opacity(25) == (100-25)*255/100 == 191'
+  eq 50, restored.red
+  eq 60, restored.green
+  eq 70, restored.blue
+  eq 80, restored.saturation
+
+  # A picture entry with none of these fields present (an older-style save, or
+  # a still-empty slot) must keep Picture's own defaults rather than crash on a
+  # nil transparency reaching #trans_to_opacity.
+  bare = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  bare[1] = 'plain'
+  bare_pictures = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  bare_pictures[4] = bare
+  Game::State.restore_pictures(st, bare_pictures)
+  plain = st.pictures[4]
+  eq 100, plain.zoom, 'no saved zoom keeps Picture\'s default'
+  eq 255, plain.opacity, 'no saved transparency keeps Picture\'s default opacity'
+  eq 100, plain.red
+  eq 100, plain.green
+  eq 100, plain.blue
+  eq 100, plain.saturation
+end
+
 # -- the permanent actor roster (Game::Actors) --------------------------------
 #
 # Nepheshel drives its whole party mechanic through Change Party Member: it adds

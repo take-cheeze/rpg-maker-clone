@@ -493,6 +493,15 @@ module Game
     v
   end
 
+  # RPG2000 transparency (0 opaque .. 100 fully clear) -> a 0..255 opacity.
+  # Shared by Interpreter#trans_to_opacity (Show/Move Picture's live param) and
+  # Game::State.restore_pictures (the save's chunk 103 field 34), which use the
+  # same 0..100 scale -- see restore_pictures' comment for how that was
+  # confirmed.
+  def self.trans_to_opacity(top_trans)
+    (100 - clamp(top_trans, 0, 100)) * 255 / 100
+  end
+
   # Top-left pixel of the view so the player is centred, clamped so the camera
   # never scrolls past the edges of a map smaller/larger than the screen.
   def self.camera_offset(player_px, screen_px, map_px)
@@ -9968,19 +9977,34 @@ module Game
     # has already run and will not run again: resuming Nepheshel's opening, the
     # genuine RPG_RT drew the backdrop and we drew black. See ADR 0021.
     #
-    # Only the fields the save actually pins down are restored -- the file name
-    # and the centre position. Zoom, opacity and tone have their own save fields,
-    # but this build has never had a sample where they are not at their defaults,
-    # so reading them would be guesswork; they take Picture's defaults instead.
+    # Zoom (field 33), transparency (34) and tone (41-44) are now restored too,
+    # not just the name and centre position. The earlier version left these at
+    # Picture's defaults, reasoning that with no sample save pinning a picture
+    # off its defaults, wiring them would be guesswork -- but the schema's own
+    # field names (rpg2kpsp: 拡大率/透明度/色調, "zoom rate/transparency/tone")
+    # already match Show Picture's own param5/param6/param8-11 one for one (see
+    # #do_show_picture), and that live path is exercised and tested elsewhere in
+    # this codebase: zoom is a raw percentage fed straight into Picture#zoom
+    # (default 100), tone is raw ints fed straight into Picture's red/green/
+    # blue/saturation (default 100, neutral), and transparency is the same
+    # 0 (opaque) .. 100 (clear) scale #trans_to_opacity already converts to a
+    # 0..255 opacity for the live command. There is nothing save-format-specific
+    # left to guess: the save's fields and the command's params are the same
+    # numbers, so they are read the same way here.
     def self.restore_pictures(state, pictures)
       return unless pictures
       pictures.each do |id, pic|
         next unless pic
         name = pic.name
         next if name.nil? || name.empty?
+        transparency = pic.transparency
         state.show_picture(id, name: name,
                                x: (pic.current_x || 0).to_i,
-                               y: (pic.current_y || 0).to_i)
+                               y: (pic.current_y || 0).to_i,
+                               zoom: pic.zoom,
+                               opacity: transparency ? Game.trans_to_opacity(transparency) : nil,
+                               red: pic.tone_red, green: pic.tone_green,
+                               blue: pic.tone_blue, saturation: pic.tone_saturation)
       end
     end
 
