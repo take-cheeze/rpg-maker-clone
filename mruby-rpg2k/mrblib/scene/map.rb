@@ -4401,6 +4401,7 @@ class RPG2k
         update_enemy_flashes
         update_enemy_positions
         case @battle_ui[:phase]
+        when :encounter_message then drive_battle_encounter_message
         when :battle_options then drive_battle_options
         when :command     then drive_battle_command
         when :target      then drive_battle_target
@@ -4493,8 +4494,68 @@ class RPG2k
         @battle_ui[:events].resolver = owner.resolver
         build_battle_sprites
         refresh_battle_status
-        # Turn-0 pages fire before the party is asked for its first command —
-        # this is where a troop's opening dialogue lives.
+        # RPG_RT's own `Scene_Battle_Rpg2k::ProcessSceneActionStart`
+        # (EasyRPG Player's `src/scene_battle_rpg2k.cpp`) narrates the
+        # encounter before the party is ever asked for a command: one
+        # `terms.encounter` line per visible (non-`hidden`) troop member
+        # -- `Game_EnemyParty::GetActiveBattlers`, "not dead or hidden" --
+        # each built by concatenating the enemy's own name in front of the
+        # term (`Window_BattleMessage::PushWithSubject`'s stock, non-
+        # Maniac-Patch branch: `subject + message`, no placeholder), then,
+        # if this encounter is a first-strike ambush
+        # (`req[:first_strike]`, already threaded through to `Game::Battle`
+        # above for the actual mechanic), a final fixed `terms.
+        # special_combat` line with no name substitution -- pushed
+        # *in addition to*, not instead of, the per-enemy lines, exactly as
+        # real RPG_RT orders them. Nothing shows when the troop is entirely
+        # hidden and the fight is not a first strike, matching
+        # `if (!visible_enemies.empty()) SetWait(...)` gating the whole
+        # substate there.
+        lines = battle_encounter_lines(troop, req)
+        if lines.empty?
+          return if run_battle_events
+          settle_already_finished_battle || enter_command_phase
+        else
+          show_battle_banner(lines)
+          @battle_ui[:phase] = :encounter_message
+          @battle_ui[:anim_timer] = BATTLE_ENCOUNTER_MSG_FRAMES
+        end
+      end
+
+      # The encounter narration lines built above -- see #open_battle's own
+      # comment for the real-RPG_RT sourcing. Returns [] when there is
+      # nothing to say (every troop member hidden, no first strike).
+      def battle_encounter_lines(troop, req)
+        lines = troop.members.reject(&:hidden).map do |enemy|
+          "#{enemy.name}#{term(:encounter, ' appeared!')}"
+        end
+        lines << term(:special_combat, 'You get the first strike!') if req[:first_strike]
+        lines
+      end
+
+      # How long the encounter banner lingers before the command phase opens.
+      # Real RPG_RT paces this per-line with wordwrap and per-page wait
+      # timers (`SetWait(4, 4)` / `SetWait(8, 8)` / `SetWait(30, 70)`); this
+      # screen has no per-page message window (see #battle_result_lines'
+      # own comment on the same simplification), so the whole banner -- every
+      # line at once -- holds for one flat beat instead, matching only
+      # RPG_RT's own minimum `SetWait(4, 4)` gate rather than the full
+      # per-line reading pause -- long enough to register as its own frame
+      # of input-free banner before the command menu takes over the same
+      # screen rect.
+      BATTLE_ENCOUNTER_MSG_FRAMES = 4
+
+      # Drive the encounter-message phase: hold the banner for
+      # `BATTLE_ENCOUNTER_MSG_FRAMES`, then drop it and fall into the same
+      # turn-0-battle-event / command-phase flow #open_battle used to reach
+      # directly.
+      def drive_battle_encounter_message
+        if @battle_ui[:anim_timer] > 0
+          @battle_ui[:anim_timer] -= 1
+          return
+        end
+        close_battle_action
+        @battle_ui[:phase] = :command
         return if run_battle_events
         settle_already_finished_battle || enter_command_phase
       end
