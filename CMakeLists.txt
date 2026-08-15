@@ -231,6 +231,7 @@ add_executable(
   src/voicevox_tts.cxx
   src/log_console.cxx
   src/log_bridge.cxx
+  src/window_title.cxx
   src/error_dump.cxx)
 target_link_libraries(
   ${PROJECT_NAME}

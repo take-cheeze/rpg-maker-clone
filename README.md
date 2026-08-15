@@ -420,6 +420,23 @@
   animation's sheet away, which the log reports as `played=true` because the
   cell sprite is there, holding a placeholder bitmap
 
+### Window title
+- The window is named after the game that is running, so the desktop (and the
+  browser tab, in the WebAssembly build) says which project is loaded. Each
+  maker's boot reads it from where that maker keeps it: RPG2000/2003 from
+  `RPG_RT.ini`'s `GameTitle` (decoded from CP932, like the rest of a 2000/2003
+  project), XP from `Game.ini`'s `Title`, VX / VX Ace from the database's
+  `System#game_title`, and MV / MZ from their own `Scene_Boot`, which assigns
+  `$dataSystem.gameTitle` to `document.title`
+- A project with no title of its own is named after the folder it was loaded
+  from; before any game is loaded — and for a boot that never gets far enough to
+  read one — the window says **RPG Maker Clone**
+- A running game can rename the window: `RGSS.window_title = "..."` from Ruby,
+  or (for the JavaScript makers) any `document.title` assignment, the way an MV
+  plugin retitles the page. The terminal backends below have no window to name,
+  so there the title is simply recorded and readable back through
+  `RGSS.window_title`
+
 ### Terminal gaming
 - Render the game to a terminal instead of an SDL window, using either the DEC
   **sixel** protocol or **iTerm2's inline-image** protocol

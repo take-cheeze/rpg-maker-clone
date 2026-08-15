@@ -142,3 +142,39 @@ void log_bridge_write(const char* msg, size_t len);
 // forwards it through log_bridge_write.  `msg` must be NUL-terminated and
 // have no trailing newline; one is added to the stderr copy.
 void log_bridge_write_stderr(const char* msg);
+
+// ---------------------------------------------------------------------------
+// Window title bridge
+// ---------------------------------------------------------------------------
+// Carries the running game's own title -- RPG_RT.ini's GameTitle, Game.ini's
+// Title, VX's System#game_title, MV/MZ's $dataSystem.gameTitle -- from the
+// runtime that loaded it to whatever is showing the game, so the desktop
+// window (and the browser tab, where SDL maps the same call onto
+// document.title) says which game is running rather than the executable's
+// name.
+//
+// Split the same way as the stderr log bridge above and for the same reason:
+// each maker's boot sets it from Ruby through RGSS.window_title=, which reaches
+// window_title_set (mruby-rgss/src/window_title.cxx), and that only calls an
+// optional hook the executable installs at start-up with
+// window_title_set_hook.  The gem therefore needs no SDL -- it is also built
+// for the terminal-only, PSP and Wio Terminal targets, none of which compile
+// LVGL's SDL driver at all.  Where no hook is installed -- the terminal
+// backends, mrbtest, PSP, Wio -- setting a title is a no-op that only records
+// the last value for window_title_get.
+
+using window_title_hook_fn = void (*)(const char* title);
+
+// Install (or clear, with nullptr) the hook every title set reaches.  Called
+// once at start-up, before the mruby interpreter runs any Ruby code; not
+// synchronized against later writers.
+void window_title_set_hook(window_title_hook_fn hook);
+
+// Hand `title` (NUL-terminated, UTF-8) to the installed hook, if any, and
+// remember it.  Safe to call unconditionally.
+void window_title_set(const char* title);
+
+// The last title passed to window_title_set, or an empty string when none was.
+// Exposed to Ruby as RGSS.window_title so a boot can be asserted without a
+// window to read the title back off.
+const std::string& window_title_get();
