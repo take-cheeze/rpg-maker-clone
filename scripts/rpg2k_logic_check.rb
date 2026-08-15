@@ -9316,7 +9316,7 @@ check 'battle_skill_command yields attack damage, ally heal and self recovery' d
   # all with its armour: 32 - (0*8/40 + 40*16/80) = 32 - 8 = 24.
   eq({ cost: 6, hp: -24, mp: 0, attack: true, inflict: [], chance: 100, variance: 4,
        attributes: [], absorb: false, attr_shift: nil, attr_ids: [],
-       stat_mod_keys: [], cured: [] },
+       stat_mod_keys: [], cured: [], physical_rate: 0 }, # purely magical -> 0
      st.party.battle_skill_command(st.party.db_skill(7), caster, foe))
   eq({ cost: 5, hp: 32, mp: 0, variance: 4, attr_shift: nil, attr_ids: [],
        stat_mod_keys: [], stat_effect: 32, cured: [], inflict: [], chance: 100 },
@@ -9860,6 +9860,45 @@ check 'battle: no skill/spell critical when the fight has criticals off' do
   e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
   eq 20, e[:damage]
   ok !e[:critical]
+end
+
+check "battle: an attack skill's own physical_rate shakes loose a status on a landed hit" do
+  # EasyRPG's Skill::vExecute calls BattlePhysicalStateHeal(skill.physical_rate
+  # * 10, ...) inside the same affect_hp/to_hit-gated block the HP change
+  # itself is in -- previously #apply_skill_hit never called this at all, so
+  # even a fully melee/physical attack skill never shook a status loose.
+  states = { 8 => fake_state(release_by_attack: 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  cmd = { attack: true, chance: 100, physical_rate: 100 } # fully physical
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  entry = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  ok !foe.state?(8), 'a fully physical attack skill sheds a 100% release_by_attack state'
+  eq [8], entry[:woke]
+end
+
+check "battle: a purely magical skill's physical_rate of 0 never shakes a status loose" do
+  states = { 8 => fake_state(release_by_attack: 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  cmd = { attack: true, chance: 100, physical_rate: 0 } # purely magical
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  ok foe.state?(8), 'physical_rate 0 never rolls, matching a magical spell'
+end
+
+check "battle: a skill's status-shake roll is gated behind the same hit as its damage" do
+  states = { 8 => fake_state(release_by_attack: 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  cmd = { attack: true, chance: 0, physical_rate: 100 } # guaranteed miss
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states, false, false, true) # accuracy on
+  e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
+  eq true, e[:missed]
+  ok foe.state?(8), 'a missed skill never rolls the shake-off either'
 end
 
 check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
@@ -10513,6 +10552,42 @@ check 'battle: a self-destruct also reads state-adjusted ATK / DEF' do
   bat = Game::Battle.new([ally], [bomber], Game::Rng.new(1), states)
   entry = bat.send(:enemy_autodestruct, bomber).first
   eq 80, entry[:damage], 'doubled atk 80 - def 0 / 2 = 80'
+end
+
+check "battle: a self-destruct's 強力防御 halves a defending target's blow twice" do
+  # EasyRPG's SelfDestruct::vExecute calls the identical AdjustDamageForDefend
+  # a basic attack (#deal_attack) already applies -- not a self-destruct-
+  # specific halving rule. A prior version of this method only ever halved
+  # once, for plain Defend, ignoring the second halving a 強力防御 (strong
+  # defence) target's own gear/class adds.
+  bomber = combatant('Bomber', 50, 0, 5, 1)
+  plain = combatant('Plain', 0, 0, 5, 100)
+  plain.defending = true
+  bat1 = Game::Battle.new([plain], [bomber], Game::Rng.new(1))
+  eq 25, bat1.send(:enemy_autodestruct, bomber).first[:damage],
+     'base 50, halved once by ordinary Defend'
+
+  guarded = combatant('Guarded', 0, 0, 5, 100)
+  guarded.defending = true
+  guarded.strong_defence = true
+  bat2 = Game::Battle.new([guarded], [bomber], Game::Rng.new(1))
+  eq 12, bat2.send(:enemy_autodestruct, bomber).first[:damage],
+     'base 50, halved twice: once for Defend, again for 強力防御 (25 -> 12)'
+end
+
+check 'battle: a self-destruct shakes loose a survivor\'s status the same as a basic attack' do
+  # EasyRPG's SelfDestruct::vExecute calls the same BattlePhysicalStateHeal(100,
+  # ...) Normal::vExecute does -- previously unmodelled here, so a blinded
+  # survivor of a self-destruct stayed blind no matter how hard the blast hit,
+  # where a plain attack for the same damage would have had a shot at curing it.
+  states = { 8 => fake_state(release_by_attack: 100) }
+  bomber = combatant('Bomber', 10, 0, 5, 1) # a weak blast the target survives
+  ally = combatant('Ally', 0, 0, 5, 100)
+  ally.states = [8]
+  bat = Game::Battle.new([ally], [bomber], Game::Rng.new(1), states)
+  entry = bat.send(:enemy_autodestruct, bomber).first
+  ok !ally.state?(8), 'the 100% release_by_attack state shook off'
+  eq [8], entry[:woke]
 end
 
 # -- the state table's display side (Game::States) ----------------------------

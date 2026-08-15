@@ -4015,7 +4015,13 @@ module Game
           # !IsPositive()`), so it rides only on this branch: a healing skill
           # that sets it drains nothing.
           absorb: skill_absorbs?(sk), attr_shift: shift, attr_ids: shift_ids,
-          stat_mod_keys: stat_keys, cured: cure_ids }
+          stat_mod_keys: stat_keys, cured: cure_ids,
+          # The skill's own physical_rate (0-10), scaled to a 0..100 percent
+          # -- #apply_skill_hit's own #shake_off_states call reads this the
+          # same way EasyRPG's `Skill::vExecute` scales `BattlePhysicalStateHeal`'s
+          # rate by it (`skill.physical_rate * 10`). 0 for a purely magical
+          # skill, which #shake_off_states already reads as "never rolls".
+          physical_rate: (sk.physical_rate || 0) * 10 }
       else
         { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0,
           variance: skill_variance(sk), attr_shift: shift, attr_ids: shift_ids,
@@ -8546,20 +8552,33 @@ module Game
 
     # Self-destruction (basic 5): the enemy blows itself up, hitting every living
     # party member for `atk - def/2` (EasyRPG's CalcSelfDestructEffect, floored at
-    # 0 and spread by the usual variance), and dies doing it.
+    # 0 and spread by the usual variance), and dies doing it. Defending halves
+    # the blow, and 強力防御 halves it again -- the same `AdjustDamageForDefend`
+    # `#deal_attack` already applies, shared verbatim by EasyRPG's own
+    # `SelfDestruct::vExecute` rather than a self-destruct-specific rule.
     def enemy_autodestruct(b)
       targets = @allies.reject(&:out_of_play?)
       entries = targets.map do |t|
         dmg = effective_atk(b) - effective_def(t) / 2
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
-        dmg = [dmg / 2, 1].max if t.defending && dmg > 0
+        if t.defending && dmg > 0
+          dmg = [dmg / 2, 1].max
+          dmg = [dmg / 2, 1].max if t.strong_defence
+        end
         cap = damage_cap
         dmg = cap if dmg > cap
         t.hp -= dmg
-        { attacker: b.name, target: t.name, damage: dmg, critical: false,
-          autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
-          target_ally: ally?(t) }
+        # A survivor's physical-release states shake off here too --
+        # `SelfDestruct::vExecute` calls the identical `BattlePhysicalStateHeal(100,
+        # ...)` a basic attack does (#deal_attack's own #shake_off_states call),
+        # not a self-destruct-specific omission.
+        woke = t.dead? ? [] : shake_off_states(t, 100)
+        entry = { attacker: b.name, target: t.name, damage: dmg, critical: false,
+                  autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
+                  target_ally: ally?(t) }
+        entry[:woke] = woke unless woke.empty?
+        entry
       end
       # The blast kills the caster whether or not it found anyone to hit.
       b.hp = 0
@@ -9044,7 +9063,7 @@ module Game
         inflicted = []
         cured = []
       else
-        woke = shake_off_states(target)
+        woke = shake_off_states(target, 100)
         # A weapon's own state_set/state_chance (二刀流 or otherwise) --
         # EasyRPG's Normal::vExecute weapon block, skipped like the rest of
         # this section once the blow already felled the target.
@@ -9060,25 +9079,33 @@ module Game
       entry
     end
 
-    # Statuses a **normal attack** knocks its target out of: each state carrying
-    # a `release_by_attack` percentage rolls against it, and a hit that lands
-    # wakes the sleeper. Returns the ids removed, so the log can report them.
+    # Statuses a physical hit knocks its target out of, scaled by `rate`
+    # (0..100): each state carrying a `release_by_attack` percentage rolls
+    # against `release_by_attack * rate / 100`, and a hit that lands wakes the
+    # sleeper. Returns the ids removed, so the log can report them. Only
+    # called when the target lived through the blow.
     #
-    # Normal attacks only — EasyRPG calls `BattlePhysicalStateHeal` from
-    # `Normal::vExecute` and from nowhere else, so a skill never shakes a status
-    # loose — and only when the target lives through the blow. A normal attack is
-    # wholly physical (`physical_rate` 100), which reduces EasyRPG's
-    # `release_by_damage * physical_rate / 100` to the stored percentage.
+    # EasyRPG's `BattlePhysicalStateHeal(physical_rate, ...)` is shared by
+    # three call sites, not just a basic attack as a prior version of this
+    # comment claimed: `Normal::vExecute` (a basic attack, always the full
+    # `physical_rate` 100 -- #deal_attack's own call), `SelfDestruct::vExecute`
+    # (also a flat 100 -- #enemy_autodestruct's own call), and
+    # `Skill::vExecute` (`skill.physical_rate * 10`, an attack skill's own
+    # 0-10 field scaled to a percent -- #apply_skill_hit's own call, 0 for a
+    # purely magical skill, which is the same as never rolling at all).
     #
     # Without this, "asleep" meant asleep until the state's own timer expired, no
     # matter how hard it was hit: Nepheshel's 睡眠 wakes on 80% of blows and its
     # 混乱 clears on 30%; mtf-meido-action's Sleep is 50% and Provoke / Confuse
     # 25%.
-    def shake_off_states(target)
+    def shake_off_states(target, rate)
       woke = []
+      return woke if rate <= 0
       (target.states || []).dup.each do |sid|
         d = state_def(sid)
-        chance = d ? state_field(d, :release_by_attack) : 0
+        base = d ? state_field(d, :release_by_attack) : 0
+        next unless base > 0
+        chance = base * rate / 100
         next unless chance > 0 && @rng.random(100) < chance
         target.states.delete(sid)
         (target.state_turns || {}).delete(sid) if target.state_turns
@@ -9457,7 +9484,7 @@ module Game
         # buff/state can still land on a swing whose damage missed, or vice
         # versa.
         if target.dead?
-          inflicted = already = cured = shifted = []
+          inflicted = already = cured = shifted = woke = []
           stat_changed = {}
         else
           inflicted, already = roll_inflict(target, cmd)
@@ -9466,11 +9493,19 @@ module Game
           shifted = apply_attr_shift(target, cmd)
           stat_keys = (cmd[:stat_mod_keys] || []).select { skill_effect_hits?(cmd) }
           stat_changed = apply_stat_mods(target, stat_keys, stat_amount)
+          # A physical skill can shake a status loose the same way a basic
+          # attack does -- EasyRPG's own #shake_off_states call, scaled by
+          # the skill's `physical_rate` (0 for a purely magical skill, which
+          # never rolls). Nested behind the *same* `hits` gate as the HP
+          # change: EasyRPG's own `BattlePhysicalStateHeal` call for a skill
+          # sits inside the identical `affect_hp && Rand::PercentChance(to_hit)`
+          # block the damage application itself is in, not a separate roll.
+          woke = hits ? shake_off_states(target, cmd[:physical_rate] || 0) : []
         end
         { attacker: b.name, target: target.name, damage: dmg, missed: !hits,
           critical: crit,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
-          inflicted: inflicted, already: already, cured: cured,
+          inflicted: inflicted, already: already, cured: cured, woke: woke,
           attr_shifted: shifted, attr_shift_dir: cmd[:attr_shift],
           stat_changed: stat_changed,
           target_ally: ally?(target), skill: cmd[:name],
