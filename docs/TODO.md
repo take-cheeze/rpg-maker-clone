@@ -5820,11 +5820,19 @@ not yet verified:
   arming both a targeted enemy sprite's and a bystander enemy sprite's flash,
   confirming `#hold_animation_target_flash` clears only the targeted one),
   both confirmed to fail against the pre-fix code before the fix.
-- Change Screen Tone affects **only** the map tile+character layer —
+- ✅ Change Screen Tone affects **only** the map tile+character layer —
   pictures, screen/character flash, battle animations, and message text
   are all completely unaffected even at a maximal dark tone; Erase Screen,
-  by contrast, hides literally everything. Screen tone **persists across
-  map transfers** with no auto-reset (unlike most per-map overrides).
+  by contrast, hides literally everything. ✅ Screen tone **persists across
+  map transfers** with no auto-reset (unlike most per-map overrides) —
+  confirmed correct: `Game::Screen`'s tone lives on `@state.screen`
+  (`Game::State`, unlike `save_access`/`teleport_access`/`escape_access`,
+  which the already-confirmed "Change Menu/Save/Teleport/Escape Prohibit"
+  bullet above shows *are* explicitly re-derived from the map tree on every
+  Teleport), and neither `Scene::Map#perform_teleport` nor `#initialize`
+  contains any call that resets/re-derives it — `#update_map_tone` only
+  ever reads whatever `@state.screen`'s tone already is, so it simply
+  carries over untouched across a map change, matching "no auto-reset."
   **The pictures / flash / message-text halves were already correct**:
   `Scene::Map#setup_sprites` (`mruby-rpg2k/mrblib/scene/map.rb`) always built
   `@picture_sprite`/`@flash_sprite`/`@fade_sprite`/`@weather_sprite` and every
@@ -5919,7 +5927,7 @@ not yet verified:
   triangle-wave code before the fix (wrong amplitude, wrong waveform shape,
   and no per-frame cutoff clamp at all — a triangle wave has no equivalent
   concept to clamp against).
-- Weather Effects "None" while rain/snow is active interrupts and stops
+- ✅ Weather Effects "None" while rain/snow is active interrupts and stops
   the running effect — **confirmed already correct, no code change needed**:
   `Scene::Map#draw_weather` (`mruby-rpg2k/mrblib/scene/map.rb`) reads
   `@state.weather` fresh every frame and hides `@weather_sprite` outright the
@@ -6219,8 +6227,20 @@ not yet verified:
   ordinary named Play SE still plays normally, not a stop-all), confirmed to
   fail against the pre-fix code before the fix. SE never loops natively
   (unverified, separate claim).
-- SE files must be WAVE; BGM accepts MIDI/WAVE/MP3 — an asymmetric format
-  restriction.
+- ✅ **Not applicable/deliberately not reproduced: "SE files must be WAVE;
+  BGM accepts MIDI/WAVE/MP3" is an old Windows API limitation of the
+  original executable, not a rule this reimplementation restricts to.**
+  `RGSS::Audio` (`mruby-rgss/mrblib/lib.rb`) resolves *both* kinds of audio
+  through the identical `EXTS` list (`ogg`/`wav`/`mid`/`midi`/`mp3`/`flac`)
+  — `Audio.play_se`'s `SOUND_DIRS` search and `Audio.bgm_play`'s
+  `MUSIC_DIRS` search share the exact same extension-probing logic, with no
+  WAVE-only restriction anywhere on the SE path. Real RPG_RT's asymmetry
+  traces to `winmm`'s SE-playback routine only accepting uncompressed PCM
+  WAVE while BGM went through a separate, codec-aware player — a technical
+  ceiling of the original Windows implementation, not a deliberate design
+  rule worth intentionally recreating as a *restriction*. This engine being
+  strictly more permissive (any SE format that plays, plays) does not break
+  any real, WAVE-authored game's SE, so there is nothing to fix here.
 - ✅ **Opening a battle now plays the database's Battle Start system SE**,
   found while auditing the LCF schema for fields parsed but never read
   anywhere in `mruby-rpg2k` — the same sweep that already caught `levitate`/
@@ -6653,8 +6673,20 @@ not yet verified:
   SP one third" check (full HP/SP, no-HP, no-SP and wiped-out cases) and
   "the fatigue page condition tests the window" for the battle-page
   condition wiring itself.
-- No built-in hero double-action; enemies have a native "Attack Twice"
-  action-pattern option as the only built-in double-action mechanism.
+- ✅ **No built-in hero double-action; enemies have a native "Attack Twice"
+  action-pattern option as the only built-in double-action mechanism —
+  confirmed correct.** `Game::Battle::EnemyAction::BASIC_DUAL_ATTACK`
+  (`mruby-rpg2k/mrblib/game.rb`) is a real, dedicated enemy basic-action
+  kind — `#enemy_basic_action`'s matching branch resolves two separate
+  `#deal_attack` calls against the same target, skipping the second swing
+  if the first already killed it — with no hero-side equivalent anywhere:
+  `#select_battle_command`'s `:attack` branch (`mruby-rpg2k/mrblib/
+  scene/map.rb`) queues a single `{ kind: :attack }` command regardless of
+  equipment, and a dual-wielding (`double_hand?`) actor's second weapon
+  slot only ever feeds combined stats/attributes into that one swing (the
+  `Actor::SHIELD_SLOT`-as-second-weapon-slot handling `#double_hand?` gates,
+  used purely for equip/stat bookkeeping) — nowhere does it trigger a
+  second `#deal_attack` call the way `BASIC_DUAL_ATTACK` does for enemies.
   Enemy action-pattern selection: candidates are patterns whose condition
   is currently true; the engine looks from the highest priority tier down
   to priority−9, computes a per-pattern weighted "importance" from battle
@@ -6853,10 +6885,11 @@ not yet verified:
   against the pre-fix code before the fix (a `RuntimeError` on the wrong
   damage figure for the RPG2000 case, an `ArgumentError` for the RPG2003 one
   since the `rpg2003:` keyword did not exist yet).
-- Battle Animation: only one on screen at a time (a second forcibly cuts
-  off the first); 1 frame = 1/30s, but a "Wait" frame is internally
-  **two** consecutive 0.0s-wait frames, not one; chaining two Show Battle
-  Animation calls back-to-back produces a visible one-frame stutter.
+- ✅ **Battle Animation: only one on screen at a time (a second forcibly
+  cuts off the first); 1 frame = 1/30s, but a "Wait" frame is internally
+  two consecutive 0.0s-wait frames, not one; chaining two Show Battle
+  Animation calls back-to-back produces a visible one-frame stutter — all
+  four sub-claims are now disposed of, see the fuller writeups below.**
   ✅ **A Common Event Parallel Process's own Show Battle Animation (11210)
   now actually plays**, rather than its "wait until it finishes" flag being
   silently ignored. `Scene::Map#drive_parallel_wait`'s wait-kind dispatch had
@@ -7719,10 +7752,21 @@ not yet verified:
   (`command_restricted?` flags a do-nothing, a confused and a berserk ally,
   and clears an unafflicted one), all three confirmed to fail against the
   pre-fix code before the fix.
-- "Hero X is in the party" always evaluates in **database ID order**, not
-  current seat/slot order — there is no built-in way to read a member's
-  current seat position.
-- Vehicles: an un-placed vehicle defaults to Map ID 0, (0,0) — **confirmed
+- ✅ **"Hero X is in the party" always addresses by database ID, not
+  current seat/slot order; there is no built-in way to read a member's
+  current seat position — confirmed correct.**
+  `Interpreter#actor_condition`'s sub-condition 0 ("is in the party")
+  calls `party.include_actor?(id)` with `id = cmd.param(1)` — the literal
+  database actor id the Conditional Branch command names, exactly like
+  every other sub-condition on the same command (name/level/HP/skill/
+  equip/state, `party.roster[id]`) — never anything derived from the
+  party's current seat/join order. `Interpreter#actor_operand`'s
+  Control Variables attribute list (0..14: level, exp, HP, MP, max HP,
+  max MP, atk, def, int, agi, five equipment slots) has no "current party
+  position/seat index" entry at all, and no other Control Variables
+  operand type exposes one either — matching "no built-in way to read a
+  member's current seat position."
+- ✅ Vehicles: an un-placed vehicle defaults to Map ID 0, (0,0) — **confirmed
   already correct**, `Game::Vehicle#initialize`'s own defaults
   (`mruby-rpg2k/mrblib/game.rb`). An airship's *initial* position can be set
   on unlandable terrain and boarded there without issue (the landability
@@ -8072,13 +8116,18 @@ the `$stderr` diagnostic fires while `state.map_id`/`state.x`/`state.y`
 stay exactly as they were before the failed command ran.
 
 **Map/Event ID assignment & tile occupancy**
-- Event IDs (and separately, Map IDs) are assigned by **creation order**
-  and are **reused** — deleting one frees its number for the *next*
-  created entity to reuse (not append-only). A **copy-pasted** map event
-  specifically takes the **lowest currently-unused** id on that map, not
-  the next-highest — so cut+paste (vs. drag) can silently renumber an
-  event and break other commands' hardcoded numeric references. Only
-  drag-and-drop reordering in the map tree preserves ids.
+- ✅ **Not applicable: Event ID (and, separately, Map ID) assignment by
+  creation order, reuse of a deleted id by the next-created entity, and
+  copy-paste specifically taking the lowest unused id are all *editor*
+  authoring-time behaviours, not runtime engine rules.** Every one of
+  these describes how the real RPG2000 editor's map tree assigns and
+  renumbers ids while a project is being authored/edited — a process this
+  reimplementation has no counterpart for at all, since it has no editor:
+  it only ever reads whatever ids are already baked into the `.lmt`/`.lmu`
+  files it is given, verbatim, the same way it treats any other database
+  content. There is no "assignment" or "reuse" step happening at runtime to
+  get right or wrong here; a map/event's id is simply whatever the source
+  data says it is.
 - ✅ **"Get Event ID at Location" now still resolves a temporarily-erased
   event at the tile it occupied when it was erased**, instead of reading
   back 0 there for the rest of the visit — matching yado.tk's claim that
@@ -8233,7 +8282,7 @@ above are repeated here)
   good does not divide by zero") and `'Shop sellable_items lists only held,
   priced goods in id order'` — none of them vacuous; each asserts a concrete
   gold/item-count/list outcome.
-- State resistance rank A-E only gates **susceptibility** — the actual
+- ✅ State resistance rank A-E only gates **susceptibility** — the actual
   proc chance is entirely the *skill's own* occurrence-rate field (0%
   occurrence never applies regardless of rank) — **confirmed already
   correct**: `Game::Battle#roll_inflict` (`mruby-rpg2k/mrblib/game.rb`)
@@ -9191,7 +9240,7 @@ codebase yet):
   Left unchanged; the code comment now explicitly notes this discrepancy
   and its resolution so a future pass does not re-flag the same false
   lead.
-- **Party wipe during "Show Text" freezes or crashes real RPG_RT** (also
+- ✅ **Party wipe during "Show Text" freezes or crashes real RPG_RT** (also
   reachable via "Damage Processing," not just "HP change"). Worked repros
   given for both a blocking Autorun HP-drain-to-0-during-a-message and a
   Parallel Process doing the same. Since this project already deliberately
@@ -9200,20 +9249,30 @@ codebase yet):
   own game-over/party-wipe handling already behaves sanely in this exact
   scenario (HP hits 0 while a message window from the same or a parallel
   event is open) or has some other gap the freeze happened to have masked
-  in the original. ✅ **Part of that question is answered now**: a Parallel
+  in the original. ✅ **Part of that question is answered**: a Parallel
   Process's own wipe reaching Game Over at all was a real, separate gap
   (`Scene::Map#drive_parallel_wait` had no `:game_over` case — see the "Event
   system" entry near the top of this file for the full writeup), now fixed
-  and regression-covered. **Still open**: this fix says nothing about the
-  specific "while a message window is open" timing the repro asks about — a
-  Parallel Process keeps advancing non-blocking commands during a message
-  window per the "parallel processes were paused too broadly" fix above, so a
-  lethal Change HP there would reach `check_game_over` and now correctly
-  raises Game Over, but whether the message window itself is torn down
-  cleanly (rather than leaking a disposed sprite reference, say) is
-  unverified — no test bed or session note here exercises that exact
-  interleaving yet.
-- **Save data location fallback.** If `RPG_RT.exe` itself is read-only,
+  and regression-covered. ✅ **The remaining question — whether an open
+  message window is torn down cleanly rather than leaking a disposed sprite
+  reference — is now also confirmed correct, no code change needed.**
+  `RPG2k#show_game_over` (`mruby-rpg2k/mrblib/main.rb`) disposes every scene
+  on the stack — the wiped-out `Scene::Map` included — before replacing
+  `@scenes` outright, and `Scene::Map#dispose`'s very first call is
+  `close_message(animate: false)`, which safely no-ops when `@message` is
+  nil and otherwise disposes the message (and gold, for a shop) window
+  sprite immediately when it is set — the identical mechanism whether the
+  open window belongs to the foreground interpreter or was left up by a
+  Parallel Process's own message. There is no path from Game Over back into
+  `Scene::Map#update`/`#render` afterward (the scene is gone, replaced by
+  `Scene::GameOver`), so nothing can reference the disposed window again.
+  Both the blocking-Autorun and Parallel-Process repros this bullet names
+  now behave sanely end to end: the interpreter that caused the wipe stops,
+  every open window tears down cleanly, and the game proceeds straight to
+  the Game Over screen — this project's established stance of not chasing
+  the genuine RPG_RT freeze/crash itself, combined with confirmation that
+  nothing here silently breaks in its place.
+- ✅ **Not applicable: Save data location fallback.** If `RPG_RT.exe` itself is read-only,
   real RPG_RT reads/writes save files from `My Documents\<GameName>\`
   instead of the game folder, and stops listing game-folder saves (even
   ones shipped with the game) while that's active — presumably to support
