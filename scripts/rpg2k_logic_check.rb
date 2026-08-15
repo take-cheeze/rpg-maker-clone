@@ -14576,6 +14576,34 @@ check 'Show Battle Animation (battle form) waits like the map form' do
   eq true, it.battle_animation[:battle]
 end
 
+# Ports EasyRPG's own `Game_Interpreter_Battle::CommandShowBattleAnimation`
+# (src/game_interpreter_battle.cpp): `allies = com.parameters[3] != 0`, read
+# only `if (Player::IsRPG2k3() && com.parameters.size() > 3)` -- the same
+# trailing-RPG2003-parameter gate already used for Flash/Shake Screen.
+check 'Show Battle Animation (battle form) reads the RPG2003 Ally/Enemy target-type flag' do
+  b = battle_with
+  it = Game::Interpreter.new(new_state(rpg2003: true))
+  it.battle = b
+  it.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM_B, [7, 1, 0, 1])]) # anim 7, ally #1, no wait, allies=1
+  it.update
+  eq true, it.battle_animation[:allies]
+end
+
+check 'Show Battle Animation (battle form) ignores param3 outside RPG2003 or a short parameter list' do
+  b = battle_with
+  it = Game::Interpreter.new(new_state(rpg2003: false))
+  it.battle = b
+  it.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM_B, [7, 1, 0, 1])])
+  it.update
+  eq false, it.battle_animation[:allies], 'a non-RPG2003 database always targets the enemy troop'
+
+  it2 = Game::Interpreter.new(new_state(rpg2003: true))
+  it2.battle = b
+  it2.start([FakeCmd.new(IC::SHOW_BATTLE_ANIM_B, [7, 1, 0])]) # only 3 parameters, no param3 at all
+  it2.update
+  eq false, it2.battle_animation[:allies], 'a pre-RPG2003-layout command list always targets the enemy troop'
+end
+
 # -- hidden troop members stay out of the fight --------------------------------
 
 # A troop member the editor flagged invisible: from_enemy must carry that

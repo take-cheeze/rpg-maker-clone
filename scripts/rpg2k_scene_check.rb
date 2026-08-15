@@ -11277,6 +11277,39 @@ check "a battle page's Show Battle Animation target-scope flash pulses the named
   ok st.switches[23], 'and the page still ran on once the animation finished'
 end
 
+# RPG2003's Ally/Enemy target-type flag on Show Battle Animation
+# (Interpreter#do_show_battle_animation_b's param3, matching EasyRPG's
+# `Game_Interpreter_Battle::CommandShowBattleAnimation`) used to be dropped
+# entirely: an "Ally #1" target still indexed straight into
+# `@ui[:enemy_sprites]` -- the troop's own *second* monster in any troop
+# with 2+ members, not any party member at all. Fixed by carrying the flag
+# through to #start_battle_page_animation, which now falls back to the same
+# ally-side screen-centre positioning (and no `target_index`, so no enemy
+# sprite is ever flashed/shaken) every ally-targeted battle-round entry
+# already uses.
+check "a battle page's Show Battle Animation targets the party, not a troop member, when the RPG2003 ally flag is set" do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [9, 1, 1, 1], indent: 0), # anim 9, ally #1, wait, allies=1
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 24, 24, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages, party: BattleStubParty.new(rpg2003: true))
+  ma_seen = nil
+  150.times do
+    scene.update
+    ui = battle_ui(scene)
+    ma = scene.instance_variable_get(:@map_animation)
+    ma_seen ||= ma
+    if ui && ui[:enemy_sprites]
+      ui[:enemy_sprites].each { |s| ok !s.flash_color, 'no enemy sprite was flashed -- the target is an ally' }
+    end
+    break if st.switches[24]
+  end
+  ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
+  eq [RPG2k::WIDTH / 2, RPG2k::HEIGHT / 2], [ma_seen[:tx], ma_seen[:ty]],
+     'the ally-side screen-centre fallback, not any enemy sprite position'
+  ok !ma_seen[:target_index], 'no enemy troop-member index -- an ally target has no on-screen sprite'
+  ok st.switches[24], 'and the page still ran on once it finished'
+end
+
 check 'a battle page shows its message in a battle panel and waits for a key' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'It appears!'),

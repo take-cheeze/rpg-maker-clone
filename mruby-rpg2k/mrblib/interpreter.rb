@@ -2436,11 +2436,18 @@ module Game
 
     # Show Battle Animation (13260), the battle-page form of 11210. param0 is
     # the animation, param1 the target troop member and param2 the wait flag.
-    # Raised through the same request/wait the map command uses, so the scene
-    # drives one animation player for both.
+    # RPG2003 adds an Ally/Enemy radio button to the command's target picker,
+    # stored as a param3 flag -- matches EasyRPG's own
+    # `Game_Interpreter_Battle::CommandShowBattleAnimation`
+    # (src/game_interpreter_battle.cpp): `allies = com.parameters[3] != 0`,
+    # read only `if (Player::IsRPG2k3() && com.parameters.size() > 3)`, same
+    # gate already used for Flash/Shake Screen's own trailing RPG2003
+    # parameter. Raised through the same request/wait the map command uses,
+    # so the scene drives one animation player for both.
     def do_show_battle_animation_b(cmd)
+      allies = @state.party.rpg2003? && cmd.parameters.size > 3 && cmd.param(3) != 0
       @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
-                            wait: cmd.param(2) != 0, battle: true }
+                            wait: cmd.param(2) != 0, battle: true, allies: allies }
       return unless cmd.param(2) != 0
       @wait_kind = :animation
       @waiting = true
