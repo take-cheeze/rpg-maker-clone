@@ -6981,6 +6981,31 @@ not yet verified:
   before the fix; the three existing checks that exercised these
   conditions' actual matching logic were updated to construct an explicit
   RPG2003 battle so the edition gate does not mask what they test.
+- ✅ **Conditional Branch condition type 10 (RPG2003's second timer, Timer2)
+  is now RPG2003-only — evaluated on an RPG2000 database, it used to compare
+  Timer2's live seconds against the operand exactly like a real RPG2003
+  Conditional Branch would, instead of reading as permanently unmet.**
+  Confirmed against EasyRPG's actual C++ source: `Game_Interpreter::
+  CommandConditionalBranch`'s (`src/game_interpreter.cpp`) `case 10:` block
+  only touches `value1`/`value2`/`result` at all `if (Player::
+  IsRPG2k3Commands())`; on any other edition `result` is left at its
+  initializer, `false` — the same answer the function's own unrecognized-type
+  default arm gives, not a live comparison. The RPG2000 editor has no UI to
+  even build a Conditional Branch against Timer2, so a genuine `.lmt` file
+  should never carry type 10 on a non-2k3 database, but this runtime's
+  `Game::Interpreter#eval_condition` (`mruby-rpg2k/mrblib/interpreter.rb`)
+  called `timer_condition(cmd, 1)` for type 10 unconditionally, with no
+  edition check — the same gap already fixed for a map event page's Timer2
+  bit and a troop battle page's `turn_enemy`/`turn_actor`/`fatigue`
+  conditions (both above). Fixed by gating the branch on `party.rpg2003?`,
+  the same established pattern used at four other sites in this file.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check (a type 10 branch
+  that would clearly take the true arm on an RPG2003 database instead falls
+  through to the else arm on RPG2000, matching the "unrecognized type"
+  default), confirmed to fail against the pre-fix code before the fix; the
+  existing check exercising type 10's actual matching logic was updated to
+  construct an explicit RPG2003 state so the new edition gate does not mask
+  what it tests.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

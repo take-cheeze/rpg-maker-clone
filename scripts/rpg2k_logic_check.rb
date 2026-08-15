@@ -2618,7 +2618,7 @@ check "Timer Operation addresses RPG2003's second timer through param5" do
 end
 
 check 'Control Variables and Conditional Branch read the second timer' do
-  st = new_state
+  st = new_state(rpg2003: true)
   st.timer(0).set(10)
   st.timer(1).set(50)
   it = Game::Interpreter.new(st)
@@ -2645,6 +2645,26 @@ check 'Control Variables and Conditional Branch read the second timer' do
   it.start(branch.call([2, 40, 0]))  # timer 1 at least 40 s -> no
   it.update
   eq 2, st.variables[3], 'type 2 still reads the first timer'
+end
+
+# Ports EasyRPG's `Game_Interpreter::CommandConditionalBranch`
+# (src/game_interpreter.cpp) `case 10:` block, which only touches `value1`/
+# `value2`/`result` at all `if (Player::IsRPG2k3Commands())`. On an RPG2000
+# database `result` is left at its initializer, `false` -- the same answer
+# the "unrecognized type" default arm gives -- rather than a live comparison
+# against Timer2, a condition the RPG2000 editor has no UI to even build.
+check 'Conditional Branch type 10 (second timer) is RPG2000-inert' do
+  st = new_state(rpg2003: false)
+  st.timer(1).set(50)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONDITIONAL, [10, 40, 0], indent: 0), # timer 2 >= 40s: true on 2003
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+            FakeCmd.new(IC::ELSE_BRANCH, [], indent: 0),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0], indent: 1),
+            FakeCmd.new(IC::END_BRANCH, [], indent: 0)])
+  it.update
+  ok !st.switches[1], 'the true branch did not run on a non-RPG2003 database'
+  ok st.switches[2], 'RPG2000 falls through to the else branch, same as any unrecognized type'
 end
 
 # Ports EasyRPG's `Game_Interpreter::CommandConditionalBranch`
