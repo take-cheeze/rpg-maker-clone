@@ -44,6 +44,14 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: nixbuild/nix-quick-install-action@v35
+        background: true
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+        background: true
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
@@ -68,17 +76,12 @@ jobs:
         env:
           CLONE_TEST262: ${{ vars.CLONE_TEST262 }}
 
-      - uses: nixbuild/nix-quick-install-action@v35
-      - name: Restore and cache Nix store
-        uses: nix-community/cache-nix-action@v7
-        with:
-          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-
-
       # Realises the dev shell and exports its environment (PATH, compiler
       # launchers, etc.) into $GITHUB_ENV / $GITHUB_PATH, so every later step
       # below runs its command directly instead of going through
       # `nix develop -c`.
+      - name: wait nix setup
+        wait-all:
       - run: ./scripts/nix-develop-export-env.bash
 
       - name: cache rtp
