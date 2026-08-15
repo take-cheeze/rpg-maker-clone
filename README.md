@@ -131,6 +131,14 @@
   invented English string. And a battle page's **Change Monster Condition** now
   redraws the panel: it writes straight to the live combatant, so nothing had
   told the screen it was out of date
+- The **battle background is on screen**, not merely resolved. Which
+  `Backdrop/<name>` a fight uses already came from the game's own data (the map
+  tree's `backdrop_type` walked for inheritance, falling back to the terrain
+  the encounter started on), but the map kept drawing over it: RPG_RT swaps
+  `Scene_Map` out for `Scene_Battle`, while this port runs the fight inline on
+  the map scene, whose tile layers sit above the backdrop and are opaque. The
+  map view is hidden — and stops compositing — for the fight's duration, and is
+  back the frame it ends
 - The **field windows show a condition too** — the menu party list, the item and
   skill target lists, and the status screen, which are the three RPG_RT draws one
   in. The target lists are the point: they are where you pick who to use an

@@ -759,6 +759,12 @@ module LCF
           # by the caller instead.
           name: :battlecommands, type: :Array1D,
           elements: {
+            # RPG2003's battle-screen presentation choice (BattleType in
+            # liblcf): 0 traditional (RPG2000-style status window only), 1
+            # alternative (actor sprites), 2 gauge (actor sprites + HP/SP
+            # gauges). RPG2000's editor has no such option, so an RPG2000
+            # database never sets this and correctly reads back as 0.
+            7 => { name: :battle_type, type: :int, default: 0 },
             10 => {
               name: :commands, type: :Array2D,
               elements: {

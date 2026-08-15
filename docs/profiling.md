@@ -30,31 +30,36 @@ by wall-clock instead folds in the fps-cap sleep and understates every section.
 
 ## Baseline: RPG2000 / Nepheshel, map scene
 
-495 frames over 24.8s, `RelWithDebInfo` (the project default), 320x240,
+489 frames over 24.8s, `RelWithDebInfo` (the project default), 320x240,
 software rendering under Xvfb. Percentages are of **CPU work**, not wall clock.
 
 | section | calls | avg ms | max ms | % work |
 | --- | ---: | ---: | ---: | ---: |
-| `scene.update` | 496 | 25.46 | 544.25 | 76.2% |
-| ` map.render` | 495 | 23.19 | 49.05 | 69.3% |
-| ` map.layers` | 496 | **22.27** | 45.63 | **66.7%** |
-| `gfx.lvgl` | 495 | 7.73 | 15.04 | 23.1% |
-| ` map.pictures` | 496 | 0.74 | 0.89 | 2.2% |
-| ` map.refresh_pages` | 495 | 0.10 | 0.19 | 0.3% |
-| `audio.music_load` | 1 | 29.40 | 29.40 | 0.2% |
-| `input.update` | 496 | 0.05 | 0.11 | 0.2% |
-| ` map.overlay` | 496 | 0.04 | 0.16 | 0.1% |
-| ` map.chars` | 496 | 0.04 | 5.43 | 0.1% |
-| `gfx.invalidate` | 495 | 0.02 | 0.09 | 0.1% |
-| ` map.animate_events` | 495 | 0.01 | 0.07 | 0.0% |
-| ` map.parallax` | 496 | 0.002 | 0.04 | 0.0% |
-| `audio.sample_load` | 1 | 0.66 | 0.66 | 0.0% |
-| `audio.resolve` | 2 | 0.23 | 0.26 | 0.0% |
-| `audio.update` | 496 | 0.0002 | 0.001 | 0.0% |
+| `scene.update` | 490 | 25.93 | 537.22 | 76.1% |
+| ` map.render` | 489 | 23.63 | 50.52 | 69.2% |
+| ` map.layers` | 490 | **22.66** | 49.56 | **66.5%** |
+| `gfx.lvgl` | 489 | 7.94 | 34.27 | 23.3% |
+| ` map.pictures` | 490 | 0.78 | 1.13 | 2.3% |
+| ` map.refresh_pages` | 489 | 0.10 | 0.23 | 0.3% |
+| `audio.music_load` | 1 | 29.61 | 29.61 | 0.2% |
+| `input.update` | 490 | 0.05 | 0.12 | 0.2% |
+| ` map.overlay` | 490 | 0.05 | 0.11 | 0.1% |
+| ` map.chars` | 490 | 0.02 | 0.05 | 0.1% |
+| `gfx.invalidate` | 489 | 0.02 | 0.06 | 0.1% |
+| ` map.animate_events` | 489 | 0.01 | 0.08 | 0.0% |
+| ` map.animation` | 490 | 0.004 | 0.03 | 0.0% |
+| ` map.parallax` | 490 | 0.003 | 0.03 | 0.0% |
+| `audio.sample_load` | 1 | 0.60 | 0.60 | 0.0% |
+| `audio.resolve` | 2 | 0.20 | 0.20 | 0.0% |
+| `audio.update` | 490 | 0.0002 | 0.0004 | 0.0% |
 
-Headline: **33.5ms of work per frame against a 16.67ms budget** — 2x over, so
+Headline: **34.1ms of work per frame against a 16.67ms budget** — 2x over, so
 the run sits at 20fps with every frame counted as a drop. Allocation churn is
 ~350,000 mruby allocations/second.
+
+Note that `map.layers` and `map.chars` are inside the `if @battle_ui` gate in
+`#render`, so they stop being recorded during a fight — the map is not drawn
+there at all. A profile of a battle-heavy run will show a different shape.
 
 ### The bottleneck is `map.layers`
 
@@ -75,9 +80,11 @@ Two independent things are therefore being paid for every frame:
 1. **Recomputing tile geometry** that depends only on `(id, abf, cf)`.
 2. **Re-blitting static scenery** that did not change since the last frame.
 
-(1) is the cheaper fix and was measured: memoizing `quads` on `(id, abf, cf)`
-took `map.layers` from 22.3ms to 12.9ms, frame work from 33.5ms to 22.8ms
-(20.0 -> 25.4fps), and allocation churn from ~350k to ~225k/s. That is a
+(1) is the cheaper fix and was measured as a one-off experiment (against a
+baseline reading 22.3ms / 33.5ms, a hair under the table above): memoizing
+`quads` on `(id, abf, cf)` took `map.layers` from 22.3ms to 12.9ms and frame
+work from 33.5ms to 22.8ms (20.0 -> 25.4fps), with allocation churn dropping
+from ~350k to ~225k/s. That is a
 ~30% frame-time win from a cache, and it is *not* committed here — this page
 records the measurement, not the change. Note the guard it needs: `quads` is
 called with `nil` ids, so a naive key computation raises.
@@ -114,7 +121,7 @@ the profile prices it at essentially nothing:
 - `Mix_PlayMusic` / `Mix_PlayChannel`: 0.02ms.
 
 So moving "audio processing" to a worker thread would move work that is
-already elsewhere, and would buy ~0.0002ms/frame. It is not where the 33.5ms
+already elsewhere, and would buy ~0.0002ms/frame. It is not where the 34.1ms
 goes.
 
 ### The part that *is* worth moving: asset load

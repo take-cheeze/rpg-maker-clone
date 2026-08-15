@@ -126,7 +126,7 @@ if dirs.empty?
   exit 0
 end
 
-runtime = Dir[File.join(ROOT, 'mruby-rpg2k/mrblib/*.rb')]
+runtime = Dir[File.join(ROOT, 'mruby-rpg2k/mrblib/**/*.rb')]
           .map { |f| File.read(f, encoding: 'UTF-8') }.join("\n")
 
 dbs = dirs.map do |d|

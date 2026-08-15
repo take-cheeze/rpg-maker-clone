@@ -2979,7 +2979,12 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       # allowed to trigger it this way
                       # (Game::Party#item_usable_by_class?). Appended last,
                       # same positional-safety reasoning as every field above.
-                      :class_set)
+                      :class_set,
+                      # 使用回数 (field 6): how many times one copy may be used
+                      # before it is spent, 0 meaning 無制限
+                      # (Game::Party#consume_item_use). The schema's default is
+                      # 1, which is what `fake_item` passes when it is not named.
+                      :uses)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -2989,14 +2994,15 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
               cursed: false, raise_evasion: false, animation_id: nil,
-              state_chance: 0, use_skill: false, class_set: nil)
+              state_chance: 0, use_skill: false, class_set: nil, uses: 1)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
                prevent_crit, attribute_set, switch_id, occ_field, field_only,
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
                ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
-               raise_evasion, animation_id, state_chance, use_skill, class_set)
+               raise_evasion, animation_id, state_chance, use_skill, class_set,
+               uses)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -3173,9 +3179,10 @@ end
 # The database-wide RPG2003 Battle Commands table (LCF chunk 29's `commands`
 # field, `Game::Actor#battle_command_row`'s own source) and one of its
 # entries, mirroring the shape `LCF::Array1D#battlecommands` /
-# `#commands[id]` decode to: an object with `#commands` (id -> entry) and an
-# entry with `#name` + `#type`.
-FakeBattleCommandsTable = Struct.new(:commands)
+# `#commands[id]` decode to: an object with `#commands` (id -> entry), a
+# `#battle_type` (chunk 29 field 7, Game::Party#alternate_battle_layout?'s own
+# source), and an entry with `#name` + `#type`.
+FakeBattleCommandsTable = Struct.new(:commands, :battle_type)
 FakeBattleCommand = Struct.new(:name, :type)
 
 def party_state(enemy_group: Hash.new(true))
@@ -3846,6 +3853,31 @@ check '#recompute_stats clamps curve+mod+equipment together, not the ' \
   eq 1, a.atk
 end
 
+check 'An ordinary level change carries a live Change Parameters adjustment ' \
+      'forward instead of discarding it' do
+  # Confirmed against EasyRPG's actual C++ source: Game_Actor::SetLevel
+  # (src/game_actor.cpp) only clamps data.level and re-clamps current HP/SP --
+  # it never touches data.attack_mod/defense_mod/spirit_mod/agility_mod/
+  # hp_mod/sp_mod. Those *_mod fields are zeroed only inside
+  # Game_Actor::ChangeClass, never by an ordinary level-up (battle EXP, the
+  # Change EXP command, or the Change Level command). #set_level previously
+  # unconditionally rebuilt both @base and @base_raw from the bare level
+  # curve on every call, silently discarding any live change_param delta the
+  # moment the actor's level changed by any means.
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1,
+                                            [10, 5, 50, 2, 1, 4,   # level 1
+                                             10, 5, 52, 2, 1, 4]) }, # level 2
+                       [1])
+  a = Game::Party.new(db).leader
+  eq 50, a.atk                                  # level 1 curve atk
+  a.change_param(Game::Actor::PARAM_ATK, 20)    # raw 50 + 20 = 70
+  eq 70, a.atk
+  a.change_level_by(1)                          # level 1 -> 2, curve atk 50 -> 52
+  # The +20 adjustment rides on top of the new level's curve (52 + 20 = 72),
+  # not discarded back down to the bare curve value (52).
+  eq 72, a.atk
+end
+
 check 'Change Parameters tracks an unclamped total under the displayed clamp' do
   # yado.tk `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
   # 1..999 (1..9999 for HP/MP), but RPG_RT keeps accumulating the *real*
@@ -3993,6 +4025,26 @@ check 'Change Class swaps the growth curve and resets EXP' do
   eq a.exp_for_level(3), a.exp, 'RPG_RT resets EXP to the level threshold'
   ok a.skills.include?(31), "the new class's skill was added"
   ok a.skills.include?(10), 'and the actor kept what it already knew'
+end
+
+check 'Change Class with the reset-to-new-level param mode drops a live ' \
+      'Change Parameters adjustment instead of carrying it across' do
+  # #set_level now preserves a live change_param delta across an *ordinary*
+  # level change (see the dedicated check above), by re-deriving it from
+  # @base_raw against the curve in force before the call. Change Class must
+  # NOT inherit that carry-through for CLASS_PARAM_RESET_LEVEL -- EasyRPG's
+  # ChangeClass (src/game_actor.cpp) unconditionally zeroes attack_mod et al.
+  # before applying the new class's own curve, and the "reset to new level"
+  # mode is the one param_mode that never re-derives a mod afterward
+  # (SetBaseMaxHp/Atk/etc are skipped entirely for eParamReset), so its
+  # result must be the bare new-class curve, mod-free.
+  a = class_state.party.actor_by_id(1)
+  eq 120, a.max_hp                                # actor row, level 3
+  a.change_param(Game::Actor::PARAM_MAX_HP, 50)   # raw 120 + 50 = 170
+  eq 170, a.max_hp
+  a.change_class(2, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                 Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  eq 70, a.max_hp, "class 2's own level-3 max HP, the +50 adjustment gone"
 end
 
 check 'Change Class parameter modes carry, halve or reset the base stats' do
@@ -4177,7 +4229,7 @@ check "Game::Actor#battle_command_row resolves a positive id via the database's 
   actor_curve = []
   3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
   players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, [5, 0, -1, -1, -1, -1, -1]) }
-  table = FakeBattleCommandsTable.new({ 5 => FakeBattleCommand.new('Cast Fire', 2) })
+  table = FakeBattleCommandsTable.new({ 5 => FakeBattleCommand.new('Cast Fire', 2) }, 0)
   db = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, battlecommands: table)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   a = st.party.actor_by_id(1)
@@ -4191,6 +4243,30 @@ end
 check 'Game::Actor#battle_command_row is nil when the database carries no Battle Commands table at all' do
   a = party_state.party.actor_by_id(1) # the plain RPG2000 fixture, no chunk 29
   eq nil, a.battle_command_row(1)
+end
+
+check 'Game::Party#alternate_battle_layout? reads chunk 29 field 7 (BattleType)' do
+  # An RPG2000 database (no chunk 29 at all -- RPG2000's editor has no such
+  # option) reads traditional/false, same as party_state's plain fixture.
+  eq false, party_state.party.alternate_battle_layout?,
+     'no Battle Commands table at all -> traditional layout'
+
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+
+  traditional = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 0))
+  eq false, Game::Party.new(traditional).alternate_battle_layout?,
+     'BattleType_traditional (0) -> traditional layout'
+
+  alternative = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 1))
+  eq true, Game::Party.new(alternative).alternate_battle_layout?,
+     'BattleType_alternative (1) -> alternate layout'
+
+  gauge = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                           battlecommands: FakeBattleCommandsTable.new({}, 2))
+  eq true, Game::Party.new(gauge).alternate_battle_layout?,
+     'BattleType_gauge (2) -> alternate layout'
 end
 
 check 'Change HP command damages a fixed actor' do
@@ -4598,6 +4674,114 @@ check 'gain_item clamps at 99, silently, past a single gain or several ' \
   eq 99, st.party.item_count(5), 'gaining more once already at the cap is a silent no-op'
   st.party.lose_item(5, 50)
   eq 49, st.party.item_count(5), 'losing still works normally once below the cap again'
+end
+
+# -- 使用回数 (item uses count, item field 6) ---------------------------------
+
+check 'an item with 使用回数 N is only consumed once a copy has been used N times' do
+  # RPG_RT gives every item a use count and spends a *copy* only when it runs
+  # out (EasyRPG's Game_Party::ConsumeItemUse). The tally is per item id and
+  # resets with each copy spent, so ×2 of a three-use item is worth six uses.
+  # This build used to spend a copy on every single use, whatever the field
+  # said. A switch item is the cleanest probe: it always "does something", so
+  # every call reaches the consumption path.
+  st = item_party({ 4 => fake_item(type: 10, switch_id: 7, uses: 3) })
+  st.party.gain_item(4, 2)
+  2.times do |i|
+    eq 7, st.party.use_switch_item(4), 'it flips its switch every time'
+    eq 2, st.party.item_count(4), "use #{i + 1} of 3 costs no copy"
+    eq i + 1, st.party.item_usage[4], 'it is tallied instead'
+  end
+  eq 7, st.party.use_switch_item(4)
+  eq 1, st.party.item_count(4), 'the third use is what spends the copy'
+  eq 0, st.party.item_usage[4] || 0, 'and the tally starts over for the next one'
+  3.times { st.party.use_switch_item(4) }
+  eq 0, st.party.item_count(4), 'the second copy goes exactly the same way'
+  ok st.party.use_switch_item(4).nil?, 'with nothing left to use afterwards'
+end
+
+check '使用回数 0 means 無制限 -- the item is never consumed, however often it is used' do
+  st = item_party({ 4 => fake_item(type: 10, switch_id: 7, uses: 0) })
+  st.party.gain_item(4, 1)
+  10.times { eq 7, st.party.use_switch_item(4) }
+  eq 1, st.party.item_count(4), 'an unlimited-use item survives every use'
+  eq 0, st.party.item_usage[4] || 0, 'and nothing is tallied against it'
+end
+
+check 'an item row with no 使用回数 field is single-use, the schema default' do
+  # Field 6 defaults to 1 (LCF::Schema item field 6), so an ordinary potion is
+  # spent by one use -- the behaviour every consumption site had hard-coded.
+  st = item_party({ 5 => fake_item(type: 6, rhp: 50) })
+  hero = st.party.actor_by_id(1)
+  hero.change_hp(-60)
+  st.party.gain_item(5, 2)
+  eq [hero], st.party.use_item(5, hero)
+  eq 1, st.party.item_count(5), 'one use, one copy'
+end
+
+check 'losing a copy resets the 使用回数 tally; gaining one never does' do
+  # EasyRPG's Game_Party::AddItem: "If the item was removed, the number of uses
+  # resets. (Adding an item never changes the number of uses, even when you
+  # already have x99 of them.)" So selling a half-used item and buying it back
+  # refills its uses, while topping the stack up leaves the copy in hand alone.
+  st = item_party({ 4 => fake_item(type: 10, switch_id: 7, uses: 3) })
+  st.party.gain_item(4, 2)
+  st.party.use_switch_item(4)
+  eq 1, st.party.item_usage[4], 'one use spent'
+  st.party.gain_item(4, 1)
+  eq 1, st.party.item_usage[4], 'gaining another copy leaves the tally alone'
+  st.party.lose_item(4, 1)
+  eq 0, st.party.item_usage[4], 'losing one resets it'
+  st.party.use_switch_item(4)
+  st.party.lose_item(4, 99)
+  eq 0, st.party.item_count(4)
+  ok st.party.item_usage[4].nil?, 'and an id that leaves the bag drops its tally entirely'
+end
+
+check 'a part-used item keeps its 使用回数 tally across Save / Continue' do
+  items = { 4 => fake_item(type: 10, switch_id: 7, uses: 3) }
+  st = item_party(items)
+  st.party.gain_item(4, 1)
+  st.party.use_switch_item(4)
+  eq 1, st.party.item_usage[4]
+
+  round = item_party(items)
+  round.party.load_state(st.party.to_h)
+  eq 1, round.party.item_usage[4], 'the tally rides along with the bag'
+  2.times { round.party.use_switch_item(4) }
+  eq 0, round.party.item_count(4),
+     'so two more uses finish the copy -- Continue does not refill it'
+
+  # A save written before 使用回数 was modelled has no tally at all; every held
+  # item simply starts its uses over.
+  legacy = st.party.to_h
+  legacy.delete(:item_usage)
+  old = item_party(items)
+  old.party.load_state(legacy)
+  eq 0, old.party.item_usage[4] || 0, 'an older save reads as "nothing spent"'
+end
+
+check 'to_lsd/from_lsd round-trips the 使用回数 tally (chunk 109 field 14)' do
+  # `item_usage` runs parallel to the id/count arrays in a genuine save, so a
+  # potion RPG_RT had already used twice resumes with its remaining uses.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  items = { 4 => fake_item(type: 10, switch_id: 7, uses: 3),
+            5 => fake_item(type: 6, rhp: 50) }
+  db = FakeActorDB.new(players, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.gain_item(4, 1)
+  st.party.gain_item(5, 2)
+  st.party.use_switch_item(4)
+
+  inv = st.to_lsd[109]
+  eq [4, 5], inv.item_ids
+  eq [1, 0], inv.item_usage, 'the array is written for every id, zeros included'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq 1, round.party.item_usage[4], 'the part-used item comes back part-used'
+  eq 0, round.party.item_usage[5] || 0, 'an untouched one carries no tally'
+  eq 1, round.party.item_count(4)
 end
 
 check 'field_items lists only held medicines, in id order with counts' do
@@ -5069,7 +5253,14 @@ check 'a use_skill-flagged equipment item invokes its skill directly, free ' \
   eq [hero], affected
   eq 90, hero.hp, 'the skill landed'
   eq 0, hero.mp, 'no SP was spent -- the item is the cost'
-  eq 1, st.party.item_count(4), 'one was consumed'
+  # The weapon survives its own use: RPG_RT's ConsumeItemUse returns on the five
+  # equipment types before it ever reaches 使用回数, so a 特殊効果 weapon is a
+  # reusable tool. This used to eat one copy per use (see
+  # Game::Party#consume_item_use).
+  eq 2, st.party.item_count(4), 'the weapon itself is never consumed by using it'
+  hero.change_hp(-30)
+  eq [hero], st.party.use_item(4, hero), 'so it is still there to be used again'
+  eq 2, st.party.item_count(4), 'and using it again costs nothing either'
 
   # Shield (2), armour (3), helmet (4) and accessory (5) all take the same
   # branch, not just weapons.
@@ -5117,7 +5308,9 @@ check 'a use_skill equipment item restricted by class_set is only usable by ' \
   eq [], st.party.use_item(4, warrior), "class 1 isn't in class_set"
   eq 2, st.party.item_count(4), 'nothing consumed'
   eq [mage], st.party.use_item(4, mage), 'class 2 is listed'
-  eq 1, st.party.item_count(4), 'one was consumed'
+  # Equipment is never consumed by being used this way, whatever its class_set
+  # says -- see the use_skill check above and Game::Party#consume_item_use.
+  eq 2, st.party.item_count(4), 'and the rune itself is not consumed'
 end
 
 check 'a special item invoking an Escape skill is hidden with no runtime ' \
