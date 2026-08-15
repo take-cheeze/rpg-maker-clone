@@ -1329,6 +1329,16 @@ module Game
       @transparent = a.respond_to?(:semi_transparent) ? (a.semi_transparent ? true : false) : false
       @db_row = a
       set_class_id(a.respond_to?(:class_id) ? (a.class_id || 0) : 0)
+      # The runtime battler-animation override and whether a Change Class
+      # event has actually run this session -- see #battler_animation_id.
+      # Both start unset even when the database gives this actor a starting
+      # class (chunk 11 field 57): EasyRPG's own comment on this is explicit
+      # ("The class settings are not applied when the actor has a class on
+      # startup but only when the 'Change Class' event command is used",
+      # `Game_Actor::ChangeClass`, src/game_actor.cpp), and #battler_animation_id
+      # mirrors it by keying on this flag rather than on `@class_id > 0` alone.
+      @battler_animation_override = 0
+      @class_changed = false
       @battle_commands = nil # lazily taken from the database on the first change
       @battle_combo = nil
       @exp = 0
@@ -2324,6 +2334,13 @@ module Game
       old_skills = @skills.dup
 
       set_class_id(class_id)
+      # Mirrors EasyRPG's `data.battler_animation = cls->battler_animation`
+      # (class found) / `= 0` (class removed) inside `ChangeClass` itself --
+      # see #battler_animation_id, and the comment on the ivars in #initialize
+      # for why this is a separate flag from `@class_id`.
+      @class_changed = true
+      @battler_animation_override =
+        @class_row && @class_row.respond_to?(:battler_animation) ? (@class_row.battler_animation || 0) : 0
       # preserve_mod: false -- Change Class always zeroes the Change
       # Parameters mod shadow before applying the new class's own curve
       # (EasyRPG's ChangeClass zeroes attack_mod et al. unconditionally,
@@ -2453,6 +2470,57 @@ module Game
     # #rename_skill? is set.
     def skill_command_name
       @db_row.respond_to?(:custom_battle_command_name) ? (@db_row.custom_battle_command_name || '') : ''
+    end
+
+    # RPG2003's manual battle-sprite position (chunk 11 fields 59/60,
+    # `Game_Actor::GetOriginalPosition` -- `{dbActor->battle_x, dbActor->
+    # battle_y}` directly, no scaling), used as literal screen coordinates by
+    # the alternative/gauge battle layouts. 0 (the database default) for
+    # every RPG2000 row and any RPG2003 one that never set these.
+    def battle_x
+      @db_row.respond_to?(:battle_x) ? (@db_row.battle_x || 0) : 0
+    end
+
+    def battle_y
+      @db_row.respond_to?(:battle_y) ? (@db_row.battle_y || 0) : 0
+    end
+
+    # The `db.battleranimations` (chunk 32) id this actor's battle sprite
+    # draws its poses from -- EasyRPG's `Game_Actor::GetBattleAnimationId`
+    # (`src/game_actor.cpp`; the name is misleading, it resolves a *pose set*
+    # id, not the id of a single animation). Fallback chain, in order:
+    #
+    # 1. `@battler_animation_override` (mirrors `data.battler_animation`) when
+    #    positive -- set only by a Change Class event that actually ran this
+    #    session (see #change_class), never by a database-default starting
+    #    class.
+    # 2. The current class's own `battler_animation` (chunk 30 field 62) when
+    #    Change Class did run and left the actor in a real class.
+    # 3. This actor's own database default (chunk 11 field 62), looked up as
+    #    an id into `db.battleranimations` -- warns and returns 0 (no sprite
+    #    data at all) if that id names no entry, matching EasyRPG's own
+    #    `Output::Warning` + early return there.
+    #
+    # A resolved id of 0 (the chunk was never written) falls back to
+    # battleranimations id 1, matching `GetBattleAnimationId`'s own final
+    # "chunk was missing, set to proper default" step.
+    def battler_animation_id
+      return @battler_animation_override if @battler_animation_override && @battler_animation_override > 0
+
+      anim =
+        if @class_changed && @class_id > 0 && @class_row
+          @class_row.respond_to?(:battler_animation) ? (@class_row.battler_animation || 0) : 0
+        else
+          bid = @db_row.respond_to?(:battler_animation) ? (@db_row.battler_animation || 0) : 0
+          table = @db.respond_to?(:battleranimations) ? @db.battleranimations : nil
+          entry = table ? table[bid] : nil
+          unless entry
+            $stderr.puts "[RPG2k] actor ##{@id}: invalid battle animation id #{bid}, no sprite drawn"
+            return 0
+          end
+          bid
+        end
+      anim == 0 ? 1 : anim
     end
 
     private
@@ -3001,6 +3069,21 @@ module Game
       return false unless @db.respond_to?(:battlecommands)
       table = @db.battlecommands
       table && table.battle_type != 0 ? true : false
+    end
+
+    # RPG2003's battle-sprite placement choice (`battlecommands.placement`,
+    # chunk 29 field 2 -- 0 manual, 1 automatic; see schema.rb). Manual is
+    # `Game::Actor#battle_x`/`#battle_y` read as literal screen coordinates;
+    # automatic computes a grid formula this runtime does not implement yet
+    # (see the alternate-battle-sprite renderer in scene/map.rb), so callers
+    # use this to know when to fall back to the raw coordinates and log a
+    # diagnostic instead of guessing at the formula. A bare test fixture with
+    # no `#battlecommands` table, or an RPG2000 database (which never sets
+    # this field), reads false/manual, same as `#alternate_battle_layout?`.
+    def automatic_battle_placement?
+      return false unless @db.respond_to?(:battlecommands)
+      table = @db.battlecommands
+      table && table.respond_to?(:placement) && table.placement == 1 ? true : false
     end
 
     # Whether item `id` can be used from the field (main-menu) item screen: a

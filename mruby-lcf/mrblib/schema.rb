@@ -759,6 +759,15 @@ module LCF
           # by the caller instead.
           name: :battlecommands, type: :Array1D,
           elements: {
+            # Where a living party member's battle sprite is positioned in the
+            # alternative/gauge layouts (BattleCommands::Placement in liblcf):
+            # 0 manual (the actor's own database `battle_x`/`battle_y`, see
+            # chunk 11 fields 59/60), 1 automatic (a grid formula keyed by
+            # party size/index and the encounter's terrain -- EasyRPG's
+            # `CalculateBaseGridPosition`, `src/game_battle.cpp` -- not yet
+            # implemented here). Confirmed against liblcf's own
+            # generator/csv/fields.csv (0x02) and enums.csv, not guessed.
+            2 => { name: :placement, type: :int, default: 0 },
             # RPG2003's battle-screen presentation choice (BattleType in
             # liblcf): 0 traditional (RPG2000-style status window only), 1
             # alternative (actor sprites), 2 gauge (actor sprites + HP/SP

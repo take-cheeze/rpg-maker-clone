@@ -164,6 +164,23 @@ assert "LCF::Database battle-commands table decodes battle_type (chunk 29 field 
   assert_equal 0, db2.battlecommands.battle_type
 end
 
+assert "LCF::Database battle-commands table decodes placement (chunk 29 field 2)" do
+  # Where a living party member's battle sprite sits in the alternative/gauge
+  # layouts -- 0 manual (the actor's own database battle_x/battle_y), 1
+  # automatic (a grid formula, not yet implemented in mruby-rpg2k). A
+  # database that never sets field 2 (every RPG2000 file, and most RPG2003
+  # ones too) defaults to 0/manual.
+  automatic = lcf_array1d([lcf_int_field(2, 1)])
+  db = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(29, automatic)])))
+  assert_equal 1, db.battlecommands.placement
+
+  bare = lcf_array1d([lcf_field(10, lcf_array2d([]))])
+  db2 = LCF::Database.new(lcf_file("LcfDataBase",
+    lcf_array1d([lcf_field(29, bare)])))
+  assert_equal 0, db2.battlecommands.placement
+end
+
 assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
   row = LCF::Array1D.new(lcf_array1d([lcf_int_field(1, 5), lcf_int_field(3, 0)]),
                          { elements: { 1 => { name: :a, type: :int },
