@@ -3846,6 +3846,31 @@ check '#recompute_stats clamps curve+mod+equipment together, not the ' \
   eq 1, a.atk
 end
 
+check 'An ordinary level change carries a live Change Parameters adjustment ' \
+      'forward instead of discarding it' do
+  # Confirmed against EasyRPG's actual C++ source: Game_Actor::SetLevel
+  # (src/game_actor.cpp) only clamps data.level and re-clamps current HP/SP --
+  # it never touches data.attack_mod/defense_mod/spirit_mod/agility_mod/
+  # hp_mod/sp_mod. Those *_mod fields are zeroed only inside
+  # Game_Actor::ChangeClass, never by an ordinary level-up (battle EXP, the
+  # Change EXP command, or the Change Level command). #set_level previously
+  # unconditionally rebuilt both @base and @base_raw from the bare level
+  # curve on every call, silently discarding any live change_param delta the
+  # moment the actor's level changed by any means.
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1,
+                                            [10, 5, 50, 2, 1, 4,   # level 1
+                                             10, 5, 52, 2, 1, 4]) }, # level 2
+                       [1])
+  a = Game::Party.new(db).leader
+  eq 50, a.atk                                  # level 1 curve atk
+  a.change_param(Game::Actor::PARAM_ATK, 20)    # raw 50 + 20 = 70
+  eq 70, a.atk
+  a.change_level_by(1)                          # level 1 -> 2, curve atk 50 -> 52
+  # The +20 adjustment rides on top of the new level's curve (52 + 20 = 72),
+  # not discarded back down to the bare curve value (52).
+  eq 72, a.atk
+end
+
 check 'Change Parameters tracks an unclamped total under the displayed clamp' do
   # yado.tk `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
   # 1..999 (1..9999 for HP/MP), but RPG_RT keeps accumulating the *real*
@@ -3993,6 +4018,26 @@ check 'Change Class swaps the growth curve and resets EXP' do
   eq a.exp_for_level(3), a.exp, 'RPG_RT resets EXP to the level threshold'
   ok a.skills.include?(31), "the new class's skill was added"
   ok a.skills.include?(10), 'and the actor kept what it already knew'
+end
+
+check 'Change Class with the reset-to-new-level param mode drops a live ' \
+      'Change Parameters adjustment instead of carrying it across' do
+  # #set_level now preserves a live change_param delta across an *ordinary*
+  # level change (see the dedicated check above), by re-deriving it from
+  # @base_raw against the curve in force before the call. Change Class must
+  # NOT inherit that carry-through for CLASS_PARAM_RESET_LEVEL -- EasyRPG's
+  # ChangeClass (src/game_actor.cpp) unconditionally zeroes attack_mod et al.
+  # before applying the new class's own curve, and the "reset to new level"
+  # mode is the one param_mode that never re-derives a mod afterward
+  # (SetBaseMaxHp/Atk/etc are skipped entirely for eParamReset), so its
+  # result must be the bare new-class curve, mod-free.
+  a = class_state.party.actor_by_id(1)
+  eq 120, a.max_hp                                # actor row, level 3
+  a.change_param(Game::Actor::PARAM_MAX_HP, 50)   # raw 120 + 50 = 170
+  eq 170, a.max_hp
+  a.change_class(2, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                 Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  eq 70, a.max_hp, "class 2's own level-3 max HP, the +50 adjustment gone"
 end
 
 check 'Change Class parameter modes carry, halve or reset the base stats' do

@@ -1349,12 +1349,28 @@ module Game
     # Set the actor's level and recompute the six base stats from the database
     # growth curve at that level (see #base_stats), then the equipment-boosted
     # effective stats. Current HP/MP are re-clamped so lowering the level never
-    # leaves a vital over its cap. A fresh level-derived base is a new baseline
-    # for #change_param's unclamped tracking too -- see @base_raw there.
-    def set_level(level)
+    # leaves a vital over its cap.
+    #
+    # An ordinary level change (EXP gain/loss, the Change Level command) does
+    # NOT reset a live Change Parameters adjustment -- confirmed against
+    # EasyRPG's actual C++ source: `Game_Actor::SetLevel` (src/game_actor.cpp)
+    # only clamps `data.level` and re-clamps current HP/SP, never touching
+    # `data.attack_mod` et al.; those `*_mod` fields are zeroed only inside
+    # `Game_Actor::ChangeClass`. Since this class tracks the mod as an
+    # unclamped running total (@base_raw = curve + mod) rather than a separate
+    # field, `preserve_mod` re-derives the mod by diffing @base_raw against
+    # the curve at the *old* level/class (whichever was in force when this
+    # actor last had its base set) and re-applies that same mod on top of the
+    # new level's curve, so the delta survives level changes the way EasyRPG's
+    # separate mod field does. #change_class passes `preserve_mod: false`,
+    # matching `ChangeClass`'s own explicit mod-zeroing before it reapplies
+    # the class's own curve.
+    def set_level(level, preserve_mod: true)
+      mod = preserve_mod && @base_raw ? @base_raw.each_index.map { |i| @base_raw[i] - base_stats(@level)[i] } : nil
       @level = level && level >= 1 ? level : 1
-      @base = base_stats(@level)
-      @base_raw = @base.dup
+      curve = base_stats(@level)
+      @base_raw = mod ? curve.each_index.map { |i| curve[i] + mod[i] } : curve.dup
+      @base = @base_raw.each_index.map { |i| Game.clamp(@base_raw[i], 1, base_param_limit(i)) }
       learn_level_skills
       recompute_stats
     end
@@ -2308,7 +2324,12 @@ module Game
       old_skills = @skills.dup
 
       set_class_id(class_id)
-      set_level(Game.clamp(new_level || 1, 1, max_level))
+      # preserve_mod: false -- Change Class always zeroes the Change
+      # Parameters mod shadow before applying the new class's own curve
+      # (EasyRPG's ChangeClass zeroes attack_mod et al. unconditionally,
+      # before the param_mode switch below ever runs), unlike an ordinary
+      # level change, which #set_level's default carries the mod through.
+      set_level(Game.clamp(new_level || 1, 1, max_level), preserve_mod: false)
       @battle_commands = class_battle_commands
       @exp = exp_for_level(@level)
 
@@ -2317,9 +2338,9 @@ module Game
       when CLASS_PARAM_HALF      then @base = old_base.map { |v| v / 2 }
       when CLASS_PARAM_RESET_LV1 then @base = base_stats(1)
       end
-      # Whichever branch (or none, for CLASS_PARAM_RESET_LEVEL) ran, @base is
-      # a fresh baseline -- reset #change_param's unclamped shadow to match,
-      # the same rule set_level's own reset above already follows.
+      # Whichever branch (or none, for CLASS_PARAM_RESET_LEVEL, which keeps
+      # set_level's own zero-mod curve value) ran, @base is a fresh baseline
+      # -- reset #change_param's unclamped shadow to match.
       @base_raw = @base.dup
       recompute_stats
 
