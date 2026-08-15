@@ -833,14 +833,80 @@ module Game
     # quarters. An absent tile and out-of-range ids return []; id 0 is water, not
     # empty (see .block). `abf` / `cf` are the current animation columns/frames
     # from #anim_ab / #anim_c.
+    # Memoised on (id, abf, cf), which is the whole of the input: the result is
+    # pure geometry, the same six numbers per quad every time. Uncached this was
+    # the single largest source of allocation in the engine -- the map renderer
+    # calls it once per visible tile per layer (~670 times a frame), and an
+    # autotile answers with five fresh arrays -- which measured as ~350k mruby
+    # allocations/second on Nepheshel. The distinct key count is bounded by the
+    # chipset (a few thousand tile ids x 4 animation columns x 3 frames) and
+    # each entry is a handful of small arrays, so the table settles quickly
+    # rather than growing with play time.
+    #
+    # The returned arrays are shared between callers and must not be mutated;
+    # every caller only reads them (see Scene::Map#draw_tile).
     def self.quads(id, abf = 0, cf = 0)
+      # Resolving the block first does double duty. It answers the inputs that
+      # have no quads at all -- `nil` (Game::Map#lower/#upper out of bounds,
+      # which the renderer hits on every map edge), a negative id, and an id
+      # past the last block -- before anything does arithmetic on them. And it
+      # is what bounds the key below: past this guard `id` is under
+      # BLOCK_F + BLOCK_F_TILES, so `id << 16` stays well inside a signed 32-bit
+      # mrb_int and cannot silently become a bignum on the Emscripten / PSP /
+      # Wio builds (see AGENTS.md on 32-bit mrb_int).
+      b = block(id)
+      return [] if b.nil?
+      # abf is 0..2 and cf is 0..3 (see .anim_ab / .anim_c), so eight bits each
+      # is room to spare and the three pack without overlapping.
+      @quads_cache ||= {}
+      key = (id << 16) | (abf << 8) | cf
+      cached = @quads_cache[key]
+      return cached if cached
+      @quads_cache[key] = uncached_quads(b, id, abf, cf)
+    end
+
+    # Whether an upper-layer id draws nothing, so the renderer can skip it.
+    #
+    # Two ids mean "no upper tile here". BLOCK_F -- the *first* upper id -- is
+    # the reserved blank chip, and it is what upper-layer map data is very
+    # nearly all made of: 98.45% of the 584,049 upper cells across Nepheshel's
+    # 543 maps, with the other 1.55% spread over 141 real ids. Drawing it
+    # blitted the chipset's blank cell ~330 times per grid rebuild for no
+    # pixels. A raw 0 is the other sentinel; no real map here uses it (it does
+    # not appear once in those 543 maps), but the lower layer's own ids start
+    # at 0, so a stray one must not be fed to .quads as water set 0.
+    #
+    # Rendering only. The blank id still indexes entry 0 of the chipset's
+    # upper *passability* table, which Game::ChipSet#upper_flags reads for
+    # real -- so this must not be used to skip a passability lookup.
+    def self.upper_blank?(id)
+      id.nil? || id == 0 || id == BLOCK_F
+    end
+
+    # Which of the two animation inputs a tile id's quads actually move with:
+    # :abf for the block A/B autotiles (every quarter takes its chipset column
+    # from it -- see .water_quads), :cf for the block C animated chips, or nil
+    # for a tile that never changes on its own.
+    #
+    # This is what lets the map renderer tell an animation step that changes
+    # its picture from one that does not. The two inputs run at different
+    # rates and .anim_c is the fast one (every 6 frames, against 12 or 24 for
+    # .anim_ab), so a grid holding no block C tile at all -- which is most
+    # maps -- would otherwise be rebuilt ten times a second for nothing.
+    def self.anim_input(id)
       case block(id)
+      when :water then :abf
+      when :animated then :cf
+      end
+    end
+
+    def self.uncached_quads(b, id, abf, cf)
+      case b
       when :water    then water_quads(id, abf)
       when :animated then [full(3 + (id - BLOCK_C) / 50, 4 + cf)]
       when :terrain  then terrain_quads(id)
       when :lower    then [lower_quad(id - BLOCK_E)]
-      when :upper    then [upper_quad(id - BLOCK_F)]
-      else []
+      else                [upper_quad(id - BLOCK_F)]
       end
     end
 
@@ -3163,6 +3229,19 @@ module Game
       table && table.battle_type != 0 ? true : false
     end
 
+    # Whether the database asks specifically for RPG2003's gauge battle-screen
+    # presentation (`battlecommands.battle_type == 2`) -- distinct from
+    # `#alternate_battle_layout?` above, which is also true for the plain
+    # sprite-only layout (1). The party status panel reads this to know when
+    # to replace its text status window with the gauge card layout (see
+    # scene/map.rb's `#refresh_battle_status`); an alternative-layout (1)
+    # database, or one with no `#battlecommands` table at all, reads false.
+    def gauge_battle_layout?
+      return false unless @db.respond_to?(:battlecommands)
+      table = @db.battlecommands
+      table && table.battle_type == 2 ? true : false
+    end
+
     # RPG2003's battle-sprite placement choice (`battlecommands.placement`,
     # chunk 29 field 2 -- 0 manual, 1 automatic; see schema.rb). Manual is
     # `Game::Actor#battle_x`/`#battle_y` read as literal screen coordinates;
@@ -3702,22 +3781,12 @@ module Game
       end
     end
 
-    # Equip bag item `item_id` on `actor` into equipment `slot`, moving it
-    # through the inventory the way the equip menu does: take one from the bag,
-    # equip it into that slot, and return the previously-equipped item (if any)
-    # to the bag. `slot` defaults to the one the item's own type dictates (so
-    # the Item menu's field-usable-item paths that never pass one keep working
-    # unchanged); the equip menu always passes the slot its candidate list
-    # (#equip_candidates) was built for, which is what lets a 二刀流 actor's
-    # second weapon land in the shield slot rather than overwriting the first.
-    # A no-op returning false unless the party holds the item and it is a
-    # genuine candidate for that slot on that actor (#equip_candidate_for?);
-    # true on success. (Unlike the Change Equipment event command, which does
-    # not touch the bag, the menu swaps through it.)
-    def equip_from_bag(actor, item_id, slot = nil)
-      return false unless actor && item_count(item_id) > 0
-      slot ||= equip_slot_for(item_id)
-      return false if slot.nil? || !equip_candidate_for?(actor, item_id, slot)
+    # Equip `item_id` on `actor` into equipment `slot`, moving it through the
+    # inventory: take one from the bag if held, equip it, and return the
+    # previously-equipped item (if any) to the bag. Shared mechanics behind
+    # #equip_from_bag (the equip menu) and #equip_item_from_bag (the Change
+    # Equipment event command) -- see each for the gating layered on top.
+    def swap_equipment_through_bag(actor, item_id, slot)
       previous = actor.equipment[slot]
       # A 両手持ち weapon empties the other hand; whatever it was holding comes
       # back to the bag alongside the item this slot displaced.
@@ -3727,11 +3796,62 @@ module Game
       gain_item(freed, 1) if freed && freed != 0
       true
     end
+    private :swap_equipment_through_bag
 
-    # Unequip `actor`'s `slot`, returning the removed item to the bag. Returns the
-    # removed item id (0 when the slot was already empty or the slot is invalid).
+    # Equip bag item `item_id` on `actor` into equipment `slot`, the way the
+    # equip menu does. `slot` defaults to the one the item's own type dictates
+    # (so the Item menu's field-usable-item paths that never pass one keep
+    # working unchanged); the equip menu always passes the slot its candidate
+    # list (#equip_candidates) was built for, which is what lets a 二刀流
+    # actor's second weapon land in the shield slot rather than overwriting the
+    # first. A no-op returning false unless the party holds the item and it is
+    # a genuine candidate for that slot on that actor (#equip_candidate_for?);
+    # true on success. (Unlike the Change Equipment event command, which also
+    # equips an item the party does not hold -- see #equip_item_from_bag --
+    # the menu only ever offers what #equip_candidates already lists as held.)
+    def equip_from_bag(actor, item_id, slot = nil)
+      return false unless actor && item_count(item_id) > 0
+      slot ||= equip_slot_for(item_id)
+      return false if slot.nil? || !equip_candidate_for?(actor, item_id, slot)
+      swap_equipment_through_bag(actor, item_id, slot)
+    end
+
+    # Equip `item_id` on `actor`, the way the Change Equipment event command
+    # does: a copy already in the bag is consumed exactly as #equip_from_bag
+    # would, but -- unlike the menu -- an item the party does not hold is
+    # still equipped, RPG_RT fabricating a new copy rather than refusing
+    # (community デフォ戦bot trivia: "held in the bag, equip from there; not
+    # held, a new copy is created and equipped"; #lose_item's own floor-at-0
+    # clamp is what makes consuming an unheld item a no-op instead of going
+    # negative). The previously-equipped item, and any item a two-handed swap
+    # frees, still return to the bag exactly as #equip_from_bag does. `slot`
+    # is always the item's own type-based slot (the event command names no
+    # slot, unlike the menu's candidate-list-driven choice); a non-equippable
+    # or unknown item id is a no-op, matching EasyRPG's own type-switch
+    # default. Callers apply any actor_set restriction themselves (per target,
+    # same as #equip_candidate_for? would) before calling this.
+    def equip_item_from_bag(actor, item_id)
+      return false unless actor
+      slot = equip_slot_for(item_id)
+      return false if slot.nil?
+      swap_equipment_through_bag(actor, item_id, slot)
+    end
+
+    # Unequip `actor`'s `slot`, returning the removed item to the bag. 0..4
+    # empties that one slot; EQUIP_ORDER.size (5) empties every slot, each
+    # returning its own item to the bag in turn -- EasyRPG's "remove all" case
+    # is just this same per-slot swap looped over every slot
+    # (Game_Actor::RemoveWholeEquipment calls ChangeEquipment(slot, 0) for
+    # each). Returns the removed item id (0 when the slot was already empty,
+    # the slot is invalid, or "every slot" was requested -- there is no single
+    # id to report there).
     def unequip_to_bag(actor, slot)
-      return 0 unless actor && slot >= 0 && slot < Actor::EQUIP_ORDER.size
+      return 0 unless actor
+      if slot == Actor::EQUIP_ORDER.size
+        Actor::EQUIP_ORDER.size.times { |s| unequip_to_bag(actor, s) }
+        return 0
+      end
+      return 0 unless slot >= 0 && slot < Actor::EQUIP_ORDER.size
       removed = actor.equipment[slot]
       actor.unequip(slot)
       gain_item(removed, 1) if removed && removed != 0
@@ -4533,7 +4653,16 @@ module Game
   class Map
     attr_reader :id, :unit, :width, :height, :chipset_id
 
+    # Bumped whenever a lookup through #lower / #upper could answer differently
+    # than it did before, which today means only Tile Substitution -- the layer
+    # arrays themselves are set once here and never written again. The map
+    # renderer caches its composed tile layer and watches this to know when that
+    # cache is stale (see Scene::Map#tile_cache_valid?), so anything that starts
+    # rewriting tiles must bump it or the change will not reach the screen.
+    attr_reader :revision
+
     def initialize(id, unit)
+      @revision = 0
       @id = id
       @unit = unit
       @width = unit.width
@@ -4567,6 +4696,7 @@ module Game
       else
         table[old_id] = new_id
       end
+      @revision += 1
     end
 
     # Whether any tile on either layer is currently rewritten.

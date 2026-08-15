@@ -78,6 +78,13 @@ module RGSS
     def blt(*a); (@blt_calls ||= []) << a; end
     attr_reader :blt_calls
     def clear_blt_calls; @blt_calls = []; end
+    # The non-blending copy the map renderer moves its cached tile grid with
+    # (see Bitmap#copy_blt in mruby-rgss/src/lib.cxx). Recorded apart from
+    # #blt_calls so a check counting *tile* draws is not confused by the one
+    # whole-grid copy per frame.
+    def copy_blt(*a); (@copy_blt_calls ||= []) << a; end
+    attr_reader :copy_blt_calls
+    def clear_copy_blt_calls; @copy_blt_calls = []; end
     # Recorded so the picture layering check can assert *which order* sources
     # were composited in, not only that drawing happened.
     def stretch_blt(*a); (@stretch_calls ||= []) << a; end
@@ -2216,7 +2223,8 @@ class BattleStubActor
                  rename_skill: false, skill_name: '', states: [], force_ai: false,
                  battle_commands: nil, battle_command_table: {},
                  level: 1, level_up_at: nil, learn_table: [],
-                 battler_animation_id: nil, battle_x: 0, battle_y: 0)
+                 battler_animation_id: nil, battle_x: 0, battle_y: 0,
+                 faceset_name: nil, faceset_index: 0)
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
@@ -2227,8 +2235,13 @@ class BattleStubActor
     @level = level; @level_up_at = level_up_at; @learn_table = learn_table
     @battler_animation_id = battler_animation_id
     @battle_x = battle_x; @battle_y = battle_y
+    @faceset_name = faceset_name; @faceset_index = faceset_index
   end
   attr_reader :battler_animation_id, :battle_x, :battle_y
+  # RPG2003 gauge-card status panel fixture (#draw_battle_gauge_face,
+  # Scene::Map): a nil `faceset_name` (the default) draws no face, the same
+  # answer a real Game::Actor with no faceset row gives.
+  attr_reader :faceset_name, :faceset_index
   # Mirrors Game::Actor's own RPG2003 battle-command-customization interface
   # (`#battle_commands` / `#battle_command_row`), so a stub battle can drive
   # `Scene::Map#custom_battle_commands` the same way a real actor row would.
@@ -2287,10 +2300,13 @@ class BattleStubParty
   # #automatic_battle_placement?, both keyed off `db.battlecommands` there) --
   # false by default, matching every other check's plain RPG2000 fixture and
   # (for `respond_to?` gating) every check predating the alternate-battle-
-  # sprite renderer, which never set either.
+  # sprite renderer, which never set either. `gauge_layout` mirrors
+  # #gauge_battle_layout? the same way -- distinct from `alternate_layout`,
+  # which is also true for the plain sprite-only layout (battle_type 1); a
+  # check exercising the gauge card status panel sets this one instead/as well.
   def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil,
                  enemy_group: Hash.new(true), alternate_layout: false,
-                 automatic_placement: false)
+                 automatic_placement: false, gauge_layout: false)
     @actors = [actor]
     @gold = 0
     @leader = nil
@@ -2301,6 +2317,7 @@ class BattleStubParty
     @enemy_group = enemy_group
     @alternate_layout = alternate_layout
     @automatic_placement = automatic_placement
+    @gauge_layout = gauge_layout
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
@@ -2308,6 +2325,7 @@ class BattleStubParty
   def rpg2003?; @rpg2003; end
   def alternate_battle_layout?; @alternate_layout; end
   def automatic_battle_placement?; @automatic_placement; end
+  def gauge_battle_layout?; @gauge_layout; end
   # A troop victory drop (Game::Troop#drops -> Scene::Map#battle_result_lines)
   # both grants the item and names it in the result window -- mirrors
   # ShopStubParty's own #gain_item, plus a #db_item lookup against whatever
@@ -9996,14 +10014,17 @@ def troop_page(cmds, flags = Game::BattlePage::TURN, opts = {})
 end
 
 # Open a battle whose troop carries `pages`, running frames until the fight is
-# up. Returns [scene, state].
-def battle_scene_with_pages(pages)
+# up. Returns [scene, state]. `party` defaults to the plain fixture every
+# check predating the gauge-card status panel used; a check exercising a
+# non-default battle-screen presentation (BattleStubParty's `gauge_layout:`)
+# passes its own instead.
+def battle_scene_with_pages(pages, party: BattleStubParty.new)
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) }, troop_pages: pages)
   st = scene.instance_variable_get(:@state)
-  st.instance_variable_set(:@party, BattleStubParty.new)
+  st.instance_variable_set(:@party, party)
   [scene, st]
 end
 
@@ -10363,7 +10384,10 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
     # behaviour. The fight's own hide/show below is checked exactly instead.
     ok vp.visible != false, 'the map view draws normally before any fight opens'
     ok upper.visible != false, 'and so does the above-character layer'
-    ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers do composite'
+    # The tile layers reach the frame buffer as the cached grid's #copy_blt
+    # (see Scene::Map#draw_layers), so that -- not #blt, which now only carries
+    # the events drawn over it -- is what says compositing happened at all.
+    ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers do composite'
   end
   ui = scene.instance_variable_get(:@battle_ui)
   ok ui, 'the battle opened'
@@ -10373,9 +10397,12 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq false, vp.visible, 'so the map view is hidden the instant the battle screen is up'
   eq false, upper.visible, 'and so is the above-character layer'
   lower_bmp.clear_blt_calls
+  lower_bmp.clear_copy_blt_calls
   scene.update
-  eq 0, (lower_bmp.blt_calls || []).size,
+  eq 0, (lower_bmp.copy_blt_calls || []).size,
      'and the tile layers stop compositing entirely while the fight runs'
+  eq 0, (lower_bmp.blt_calls || []).size,
+     'and nothing draws over them either'
 
   20.times do
     scene.update
@@ -10384,7 +10411,7 @@ check 'the map is hidden while the battle screen is up, so the backdrop actually
   eq nil, scene.instance_variable_get(:@battle_ui), 'the battle closed again'
   eq true, vp.visible, 'the map view reappears the instant the fight ends'
   eq true, upper.visible, 'and so does the above-character layer'
-  ok !(lower_bmp.blt_calls || []).empty?, 'and the tile layers composite again'
+  ok !(lower_bmp.copy_blt_calls || []).empty?, 'and the tile layers composite again'
 end
 
 # yado.tk: a Battle Interrupt (Terminate Battle, 13410) satisfies neither the
@@ -10963,8 +10990,8 @@ end
 # Open a battle and run it up to the command phase, answering [scene, ui].
 # Dismisses the once-per-battle automatic options window (a C press on its
 # default cursor row 0, "Battle") along the way -- see #battle_to_command.
-def battle_at_command(pages = nil)
-  scene, = battle_scene_with_pages(pages)
+def battle_at_command(pages = nil, party: BattleStubParty.new)
+  scene, = battle_scene_with_pages(pages, party: party)
   ui = nil
   10.times do
     ui = scene.instance_variable_get(:@battle_ui)
@@ -11424,6 +11451,151 @@ check 'Change Monster Condition on a battle page updates the troop, off-panel' d
   # either, only the battle log's own wording when a state lands.
   ok !window_texts(ui[:status_win]).include?('Poison'),
      'the troop never reaches the party-only status window'
+end
+
+# -- the RPG2003 gauge card status panel (battle_type 2) -----------------------
+#
+# `Game::Party#gauge_battle_layout?`/`BattleStubParty#gauge_layout` is true
+# specifically for battle_type 2, distinct from `#alternate_battle_layout?`
+# (true for both 1 and 2) -- see #refresh_battle_status's own comment,
+# scene/map.rb. These checks exercise the dispatch and the card's own
+# drawing, ported from EasyRPG's real `Window_BattleStatus::Refresh`/
+# `RefreshGauge`/`DrawGaugeSystem2`/`DrawNumberSystem2`.
+
+check 'battle_type 0 (no gauge layout) still draws the plain text status row' do
+  scene, ui = battle_at_command
+  ok !scene.send(:gauge_battle_layout?), 'the plain fixture answers false'
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Hero'), 'the text status row is unchanged'
+  eq [], ui[:status_win].contents.blt_calls || [],
+     'and nothing else touched its contents via #blt (no gauge card drawing)'
+end
+
+check 'battle_type 1 (alternative) keeps the unchanged text status row too, ' \
+      'even when the database also carries a System2 graphic' do
+  actor = BattleStubActor.new
+  party = BattleStubParty.new(actor, alternate_layout: true, gauge_layout: false)
+  scene, ui = battle_at_command(nil, party: party)
+  scene.db.system.system2_name = 'BattleStatus'
+  scene.send(:refresh_battle_status)
+  ok !scene.send(:gauge_battle_layout?),
+     'battle_type 1 answers false to #gauge_battle_layout? -- only 2 does'
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Hero'), 'the text status row is still what battle_type 1 draws'
+end
+
+check 'battle_type 2 (gauge) with no System2 graphic falls back to the text ' \
+      'status row instead of crashing' do
+  actor = BattleStubActor.new
+  party = BattleStubParty.new(actor, gauge_layout: true)
+  scene, ui = battle_at_command(nil, party: party)
+  ok scene.send(:gauge_battle_layout?), 'the fixture asks for the gauge layout'
+  ok !scene.db.system.respond_to?(:system2_name), 'and the database names no System2 graphic'
+  scene.send(:refresh_battle_status)
+  texts = window_texts(ui[:status_win])
+  ok texts.include?('Hero'), 'falls back to the plain text row rather than an empty/crashed panel'
+end
+
+check 'battle_type 2 (gauge) draws the gauge card: face, HP/SP bars, digit numbers' do
+  actor = BattleStubActor.new(hp: 200, mp: 20, faceset_name: 'HeroFace', faceset_index: 2)
+  party = BattleStubParty.new(actor, gauge_layout: true)
+  scene, ui = battle_at_command(nil, party: party)
+  scene.db.system.system2_name = 'BattleStatus'
+  # A non-full HP (so this same window also exercises the normal, not
+  # "full", fill tile) alongside SP's still-full 20/20.
+  ui[:allies][0].hp = 100
+  scene.send(:refresh_battle_status)
+  win = ui[:status_win]
+
+  ok window_texts(win).empty?,
+     'the gauge card never calls draw_text/blend_text -- it fully replaces the text row'
+  eq 0, win.cursor_rect.width,
+     'never gets a cursor rect, even on the acting actor -- matching UpdateCursorRect' \
+     "'s unconditional empty rect for this battle_type"
+
+  c = win.contents
+  face_call = c.blt_calls[0]
+  eq [0, 24], face_call[0, 2], 'the face lands at column 0, actor_face_height (24)'
+  eq 'FaceSet/HeroFace', face_call[2].load_name, 'loaded from the actor faceset_name'
+  eq [96, 0, 48, 48], [face_call[3].x, face_call[3].y, face_call[3].width, face_call[3].height],
+     'cropped at faceset_index 2 -- (2 % 4) * 48, (2 / 4) * 48'
+
+  left_cap, right_cap = c.blt_calls[1, 2]
+  eq [32, 24], left_cap[0, 2], 'left bar cap at x = 32 + 80*i'
+  eq [0, 32, 16, 48], [left_cap[3].x, left_cap[3].y, left_cap[3].width, left_cap[3].height]
+  eq [73, 24], right_cap[0, 2], 'right bar cap at 32 + 16 (cap) + 25 (centre) = 73'
+  eq [32, 32, 16, 48], [right_cap[3].x, right_cap[3].y, right_cap[3].width, right_cap[3].height]
+
+  eq 3, c.stretch_calls.size, 'one bar-centre stretch, plus one fill each for HP and SP'
+  center, hp_fill, sp_fill = c.stretch_calls
+  eq [48, 24, 25, 48], [center[0].x, center[0].y, center[0].width, center[0].height],
+     'the bar centre stretches to fill the full 25px slot between the caps'
+  eq [48, 24, 12, 16], [hp_fill[0].x, hp_fill[0].y, hp_fill[0].width, hp_fill[0].height],
+     'HP fill: 25 * 100 / 200 = 12px wide -- the normal tile, since 100 != max 200'
+  eq [48, 32, 16, 16], [hp_fill[2].x, hp_fill[2].y, hp_fill[2].width, hp_fill[2].height],
+     'reading the normal (gauge_x 0) HP fill tile'
+  eq [48, 40, 25, 16], [sp_fill[0].x, sp_fill[0].y, sp_fill[0].width, sp_fill[0].height],
+     'SP fill: exactly full (20/20) still stretches to the maximum 25px'
+  eq [64, 48, 16, 16], [sp_fill[2].x, sp_fill[2].y, sp_fill[2].width, sp_fill[2].height],
+     'an exactly-full gauge reads the distinct "full" tile (gauge_x 16), on the SP row (y+16)'
+
+  # Numbers: HP "100" draws all three digit cells (hundreds carries a real,
+  # nonzero digit), SP "20" draws only its own two.
+  hp_digits = c.blt_calls[3, 3].map { |call| [call[0], call[3].x / 8] }
+  eq [[48, 1], [56, 0], [64, 0]], hp_digits, 'HP 100 -> hundreds=1, tens=0, ones=0'
+  sp_digits = c.blt_calls[6, 2].map { |call| [call[0], call[3].x / 8] }
+  eq [[56, 2], [64, 0]], sp_digits, 'SP 20 -> tens=2, ones=0, no hundreds/thousands cell'
+end
+
+check 'DrawGaugeSystem2 stretches the fill by 25 * cur / max, and reads the ' \
+      'distinct "full" tile only when cur == max' do
+  scene = new_scene({})
+  system2 = RGSS::Bitmap.new(80, 96)
+  c = RGSS::Bitmap.new(64, 16)
+  draw = lambda do |cur, max, which|
+    c.clear_stretch_calls
+    scene.send(:draw_gauge_system2, c, system2, 100, 200, cur, max, which)
+    c.stretch_calls.last
+  end
+
+  call = draw.call(100, 200, 0)
+  eq [100, 200, 12, 16], [call[0].x, call[0].y, call[0].width, call[0].height],
+     'width is 25 * cur / max, truncated -- 25 * 100 / 200 = 12.5 -> 12'
+  eq [48, 32, 16, 16], [call[2].x, call[2].y, call[2].width, call[2].height],
+     'the normal (gauge_x 0) fill tile, which=0 -> HP row'
+
+  call = draw.call(200, 200, 0)
+  eq 25, call[0].width, 'an exactly-full gauge still stretches to the maximum 25px width'
+  eq [64, 32], [call[2].x, call[2].y], 'but reads the "full" tile, 16px over (gauge_x 16)'
+
+  call = draw.call(0, 200, 0)
+  eq 0, call[0].width, 'zero current value stretches to 0 width'
+
+  call = draw.call(20, 20, 1)
+  eq [64, 48], [call[2].x, call[2].y],
+     'which=1 (SP) reads its own row, 16px down -- still the "full" tile at cur == max'
+
+  c.clear_stretch_calls
+  scene.send(:draw_gauge_system2, c, system2, 100, 200, 5, 0, 0)
+  eq nil, c.stretch_calls.last, 'max == 0 draws nothing at all, matching the real max_value guard'
+end
+
+check 'DrawNumberSystem2 leading-zero cascade matches EasyRPG exactly (7, 42, 100, 999)' do
+  scene = new_scene({})
+  system2 = RGSS::Bitmap.new(80, 96)
+  c = RGSS::Bitmap.new(64, 16)
+  glyphs = lambda do |value|
+    c.clear_blt_calls
+    scene.send(:draw_number_system2, c, system2, 0, 0, value)
+    c.blt_calls.map { |call| [call[0], call[3].x / 8] }
+  end
+
+  eq [[24, 7]], glyphs.call(7),
+     '7 draws only the ones cell -- the hundreds/tens cells stay blank, never a drawn "0"'
+  eq [[16, 4], [24, 2]], glyphs.call(42), '42 draws tens+ones only, no hundreds/thousands cell'
+  eq [[8, 1], [16, 0], [24, 0]], glyphs.call(100),
+     'a hundreds digit that carries down still draws its own zero tens/ones cells'
+  eq [[8, 9], [16, 9], [24, 9]], glyphs.call(999), 'three 9s, still no (blank) thousands cell'
 end
 
 # -- the battle log in the game's own words ------------------------------------
@@ -13944,7 +14116,10 @@ end
 # completely instead of showing him through the bed's own unstarred tiles.
 check 'draw_layers routes an unstarred upper tile behind the player, a starred one in front' do
   up = Array.new(144, 0)
-  up[0] = Game::ChipSet::ALL_DIRS                             # unstarred (e.g. a headboard)
+  # Index 2, not 0: index 0 is the id BLOCK_F itself, the reserved blank chip
+  # the renderer skips outright (ChipsetLayout.upper_blank?), so it cannot
+  # stand in for a real unstarred tile here.
+  up[2] = Game::ChipSet::ALL_DIRS                             # unstarred (e.g. a headboard)
   up[1] = Game::ChipSet::ALL_DIRS | Game::ChipSet::ABOVE_BIT  # starred
   row_class = Struct.new(:name, :chipset_name, :passable_data_lower,
                          :passable_data_upper, :terrain_data,
@@ -13954,29 +14129,152 @@ check 'draw_layers routes an unstarred upper tile behind the player, a starred o
   w = 6; h = 5
   upper = Array.new(w * h, 0)
   bf = Game::ChipsetLayout::BLOCK_F
-  upper[0] = bf       # (0, 0): unstarred
+  upper[0] = bf + 2   # (0, 0): unstarred
   upper[1] = bf + 1   # (1, 0): starred
   state = Game::State.new(fake_party, 1, 0, 0)
   state.map = Game::Map.new(1, OpenStruct.new(width: w, height: h, chipset_id: 1,
                                               lower_layer: Array.new(w * h, 0),
                                               upper_layer: upper, events: {}))
   scene = RPG2k::Scene::Map.new(fake_parent(db), state)
-  lower = scene.instance_variable_get(:@lower_bmp)
-  upper_bmp = scene.instance_variable_get(:@upper_bmp)
+  # The tiles are blitted into the *cached* grids, which #draw_layers then
+  # copies into @lower_bmp / @upper_bmp at the sub-tile scroll offset. The
+  # routing under test (Game::ChipSet#elevated? picking the grid) happens on
+  # the way into these, so this is where it is observable; @lower_bmp only ever
+  # sees the one whole-grid copy plus whatever events draw over it.
+  lower = scene.instance_variable_get(:@lower_tiles)
+  upper_bmp = scene.instance_variable_get(:@upper_tiles)
   lower.clear_blt_calls
   upper_bmp.clear_blt_calls
+  scene.send(:invalidate_tile_cache)
   scene.send(:draw_layers, 0, 0)
   tile = RPG2k::Scene::Map::TILE
   at = ->(calls, x, y) { calls.count { |c| c[0] == x && c[1] == y } }
   # (0, 0) always gets one blit for its own (plain, id 0) lower tile; the
   # unstarred upper tile at the same spot is a *second* blit into the same
-  # buffer, not one into the upper buffer.
+  # grid, not one into the upper grid.
   eq 2, at.call(lower.blt_calls, 0, 0),
      'the plain floor and the unstarred upper tile both land in the lower buffer'
   eq 0, at.call(upper_bmp.blt_calls, 0, 0), 'the unstarred tile never reaches the upper buffer'
   # (TILE, 0) also gets its own plain lower tile, but the starred upper tile
   # there is the one that must reach the upper (above-player) buffer.
   eq 1, at.call(upper_bmp.blt_calls, tile, 0), 'the starred tile lands in the upper buffer'
+  # Every other cell of this map is the blank first id, which draws nothing at
+  # all -- so the lower buffer is exactly the map's own tiles plus the one
+  # unstarred upper tile that landed in it. Cells outside the map draw nothing
+  # either (#lower answers nil there), and id 0 is a block A/B autotile, so
+  # each tile is its four quarters rather than one blit -- both taken from the
+  # code rather than written out, so this says "no extra blit" and not "121".
+  per_tile = Game::ChipsetLayout.quads(0, 0, 0).size
+  eq w * h * per_tile + 1, lower.blt_calls.size,
+     'the blank upper id adds no blit anywhere'
+end
+
+# RPG2000's upper layer is overwhelmingly the reserved blank chip -- 98% of the
+# upper cells across Nepheshel's 543 maps -- and drawing it blitted a
+# fully-transparent chipset cell once per tile for nothing. It is a *drawing*
+# sentinel only: it still indexes entry 0 of the chipset's upper passability
+# table, which is a real lookup, so skipping the draw must not leak into
+# passability.
+check 'the reserved blank upper id draws nothing but still answers passability' do
+  up = Array.new(144, 0)
+  up[0] = 0                      # BLOCK_F itself: blocked on every side
+  up[3] = Game::ChipSet::ALL_DIRS
+  row_class = Struct.new(:name, :chipset_name, :passable_data_lower,
+                         :passable_data_upper, :terrain_data,
+                         :animation_type, :animation_speed)
+  db = fake_db
+  db.chipset[1] = row_class.new('cs', 'cs', nil, up, nil, 0, 0)
+  w = 4; h = 4
+  bf = Game::ChipsetLayout::BLOCK_F
+  upper = Array.new(w * h, bf)   # every cell blank, as a real map very nearly is
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = Game::Map.new(1, OpenStruct.new(width: w, height: h, chipset_id: 1,
+                                              lower_layer: Array.new(w * h, 0),
+                                              upper_layer: upper, events: {}))
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  lower = scene.instance_variable_get(:@lower_tiles)
+  upper_bmp = scene.instance_variable_get(:@upper_tiles)
+  lower.clear_blt_calls
+  upper_bmp.clear_blt_calls
+  scene.send(:invalidate_tile_cache)
+  scene.send(:draw_layers, 0, 0)
+  # The lower layer's own tiles, and nothing more. (Only the map's own cells
+  # draw -- the grid is bigger than this 4x4 map and #lower answers nil past
+  # its edge -- and id 0 is an autotile, so each is its four quarters.)
+  eq w * h * Game::ChipsetLayout.quads(0, 0, 0).size, lower.blt_calls.size,
+     'a blank upper layer costs exactly the lower layer'
+  eq 0, upper_bmp.blt_calls.size, 'and nothing reaches the above-player buffer'
+  # ... while the passability table still reads through it: entry 0 here blocks
+  # every direction, so the blank id is not silently treated as "no tile".
+  cs = scene.instance_variable_get(:@chipset)
+  eq false, cs.passable_tile?(0, bf, 2), 'the blank id still blocks per its passability entry'
+end
+
+# The tile grid is cached across frames (see Scene::Map#tile_cache_valid?), so
+# what needs pinning down is not that a tile is drawn but *when* it is redrawn:
+# too eager and the cache buys nothing, too lazy and a change never reaches the
+# screen. Each case below counts blits into the cached grid across a second
+# #draw_layers, which is zero exactly when the cache was reused.
+def tile_cache_probe(map: nil, &change)
+  w = 8; h = 8
+  db = fake_db
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = map || Game::Map.new(1, OpenStruct.new(
+    width: w, height: h, chipset_id: 1,
+    lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+    events: {}))
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  scene.send(:draw_layers, 0, 0) # prime the cache
+  grid = scene.instance_variable_get(:@lower_tiles)
+  grid.clear_blt_calls
+  cam = change ? change.call(scene, state) : [0, 0]
+  scene.send(:draw_layers, cam[0], cam[1])
+  grid.blt_calls.size
+end
+
+check 'a frame that changed nothing reuses the cached tile grid' do
+  eq 0, tile_cache_probe, 'an identical frame must not re-blit a single tile'
+end
+
+check 'scrolling within a tile reuses the cache, crossing a tile rebuilds it' do
+  # A sub-tile scroll is applied when the cached grid is copied out, so the grid
+  # itself is untouched; stepping onto the next tile changes which tiles it holds.
+  eq 0, tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE - 1, 0] }
+  ok tile_cache_probe { |_s, _st| [RPG2k::Scene::Map::TILE, 0] } > 0,
+     'crossing a tile boundary must rebuild the grid'
+end
+
+check 'a Tile Substitution rebuilds the cached tile grid' do
+  # The map answers lookups differently from now on, and Game::Map#revision is
+  # what tells the cache so -- without that bump the swap would never be drawn.
+  ok(tile_cache_probe do |_s, st|
+    st.map.substitute_tile(0, 0, Game::ChipsetLayout::BLOCK_E)
+    [0, 0]
+  end > 0, 'a substituted tile must reach the screen')
+end
+
+check 'stepping the tile animation rebuilds the cached tile grid' do
+  # Water and the block-C animated tiles cycle off @anim_frame, so a frame that
+  # advances the animation column is a different picture even standing still.
+  # The probe map is all tile id 0, a block A/B autotile, so it moves with
+  # .anim_ab -- frame 24 is that input's first step at the default speed. Note
+  # a *cycle* is not a step: .anim_ab(96) is back to 0, so a probe there would
+  # see, correctly, no rebuild at all.
+  ok(tile_cache_probe do |s, _st|
+    s.instance_variable_set(:@anim_frame, 24)
+    [0, 0]
+  end > 0, 'an animation step must reach the screen')
+end
+
+check 'an animation step the visible tiles do not follow leaves the cache alone' do
+  # .anim_c steps every 6 frames but drives only the block C animated chips. A
+  # grid holding none of them -- all id 0 here, which is block A/B -- is the
+  # same picture either way, and rebuilding it ten times a second for an input
+  # nothing on screen reads was most of the cache's remaining cost.
+  eq 0, tile_cache_probe { |s, _st|
+    s.instance_variable_set(:@anim_frame, 6)
+    [0, 0]
+  }, 'a grid with no block C tile must not rebuild for .anim_c'
 end
 
 check 'a clear member walks the same ground untouched' do

@@ -2243,18 +2243,24 @@ module Game
     # the slot matching its type; 1 removes equipment, param4 selecting the slot
     # (0..4, or 5 for every slot). Confirmed against real events, e.g.
     # `[1, 3, 0, 0, 127]` equips armour 127 onto actor 3.
+    #
+    # Both operations swap through the party's bag, same as the equip menu
+    # (`Game::Party#equip_item_from_bag` / `#unequip_to_bag`) -- confirmed
+    # against real RPG_RT by community デフォ戦bot trivia: equipping consumes
+    # a held copy from the bag, or fabricates a new one if the party has none,
+    # and whatever was previously equipped comes back to the bag either way.
     def do_change_equipment(cmd)
       targets = stat_targets(cmd)
       if cmd.param(2) == 0
         item = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
-        it = @state.party.db_item(item)
+        it = party.db_item(item)
         # An actor_set restriction blocks this command the same way it blocks
         # the equip menu (EasyRPG's ChangeEquipment reads Game_Actor::
         # IsItemUsable too) -- per target, since one target of a multi-actor
         # command might be allowed the item and another not.
-        targets.each { |a| a.equip_item(item) if @state.party.item_usable_by?(it, a.id) }
+        targets.each { |a| party.equip_item_from_bag(a, item) if party.item_usable_by?(it, a.id) }
       else
-        targets.each { |a| a.unequip(cmd.param(4)) }
+        targets.each { |a| party.unequip_to_bag(a, cmd.param(4)) }
       end
       check_game_over # losing an item's max-HP bonus can knock the party out
     end

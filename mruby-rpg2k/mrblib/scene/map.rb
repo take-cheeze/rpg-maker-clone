@@ -99,6 +99,7 @@ class RPG2k
         @monster_cache = {}   # Monster/<name> (battler graphics)
         @animation_cache = {} # Battle/<name> (battle animation sheets)
         @battlecharset_cache = {} # BattleCharSet/<name> (RPG2003 actor battler sprites)
+        @system2_cache = {}   # System2/<name> (RPG2003 gauge card sprite sheet)
         apply_map_access if apply_access
         # Same Continue-only split as #apply_map_access just above: a fresh
         # map entry (New Game, or any Transfer Player/Teleport, which
@@ -267,6 +268,9 @@ class RPG2k
         @upper_viewport.dispose if @upper_viewport
         @flash_buffer.dispose if @flash_buffer
         @flash_out_buffer.dispose if @flash_out_buffer
+        # Held by no sprite (see #setup_sprites), so nothing else frees these.
+        @lower_tiles.dispose if @lower_tiles
+        @upper_tiles.dispose if @upper_tiles
         @chipset_bmp.dispose if @chipset_bmp
         @parallax_img.dispose if @parallax_img
       end
@@ -394,6 +398,15 @@ class RPG2k
         @lower_sprite.z = 0
         @lower_bmp = Bitmap.new(COLS * TILE, ROWS * TILE)
         @lower_sprite.bitmap = @lower_bmp
+
+        # The cached tile grids behind @lower_bmp / @upper_bmp: same size, but
+        # holding only the tiles, aligned to whole tiles and with no events on
+        # them, so a frame that changed nothing but the scroll remainder can be
+        # served by copying rather than by re-blitting the grid. Never attached
+        # to a sprite -- #draw_layers copies them into the two buffers above.
+        @lower_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @upper_tiles = Bitmap.new(COLS * TILE, ROWS * TILE)
+        @tiles_built = false
 
         # The upper (above-character) chip layer lives in its own viewport
         # rather than @map_viewport, purely so a Show Battle Animation sprite
@@ -833,8 +846,9 @@ class RPG2k
       # redrawn every frame -- and without this they would hit the decoder
       # again on every request. `cache` is the material's own hash (one of
       # @charset_cache, @picture_cache, @backdrop_cache, @monster_cache,
-      # @animation_cache, @battlecharset_cache), so a name is only ever looked up among graphics of
-      # its own kind. The block's result is cached as-is, including a
+      # @animation_cache, @battlecharset_cache, @system2_cache), so a name is
+      # only ever looked up among graphics of its own kind. The block's
+      # result is cached as-is, including a
       # nil/fallback for a failed load, so the caller's own rescue logs the
       # error once and every later call reuses that outcome instead of
       # retrying the disk.
@@ -2793,10 +2807,11 @@ class RPG2k
 
       # A Tile Substitution rewrote a tile id on the current map (11750). The map
       # itself already answers every lookup with the substituted tile
-      # (Game::Map#substitute_tile), and draw_layers rebuilds both tile buffers
-      # from those lookups every frame, so the swap is on screen on the next
-      # render with nothing to invalidate here. Draining the flag is what keeps
-      # the request from being reported again next step.
+      # (Game::Map#substitute_tile), and that same call bumps Game::Map#revision,
+      # which is one of the things #tile_cache_valid? watches -- so the next
+      # render rebuilds the cached tile buffers and the swap is on screen, with
+      # nothing to invalidate by hand here. Draining the flag is what keeps the
+      # request from being reported again next step.
       def apply_tile_substitution(interp)
         interp.take_tiles_changed
         nil
@@ -6650,15 +6665,39 @@ class RPG2k
       # sprites and, when targeted, by the target window's name list. The row
       # of whichever actor is currently being commanded gets the cursor,
       # mirroring `status_window->SetIndex` in EasyRPG's `SelectNextActor`.
+      #
+      # `battle_type` 2 (gauge, `#gauge_battle_layout?`) replaces this whole
+      # panel with RPG2003's face/bar "gauge card" layout instead
+      # (`#battle_status_gauge_window`) -- `battle_type` 1 (alternative) is
+      # unchanged, and still builds the same text rows this always has, since
+      # only 2 asks for the card presentation (EasyRPG's own
+      # `Window_BattleStatus::Refresh`/`RefreshGauge` branch the same way, on
+      # `battle_type == BattleType_gauge` specifically, not on "not
+      # traditional"). Falls back to the text rows when the gauge window
+      # cannot be built (no System2 graphic, or a failed load) rather than
+      # leaving the panel blank.
       def refresh_battle_status
         @battle_ui[:status_win].dispose if @battle_ui[:status_win]
-        rows = @battle_ui[:allies].map { |a| battle_status_row(a) }
-        # No row highlighted while the options window is open -- matching
-        # `status_window->SetIndex(-1)` in `ProcessSceneActionFightAutoEscape`'s
-        # own `eMoveWindow` substate; nobody is "the acting actor" until
-        # Battle or Auto Battle is chosen.
-        idx = @battle_ui[:phase] == :battle_options ? nil : @battle_ui[:allies].index(current_actor)
-        @battle_ui[:status_win] = battle_status_window(rows, idx)
+        win = battle_status_gauge_window(@battle_ui[:allies]) if gauge_battle_layout?
+        @battle_ui[:status_win] = win || begin
+          rows = @battle_ui[:allies].map { |a| battle_status_row(a) }
+          # No row highlighted while the options window is open -- matching
+          # `status_window->SetIndex(-1)` in `ProcessSceneActionFightAutoEscape`'s
+          # own `eMoveWindow` substate; nobody is "the acting actor" until
+          # Battle or Auto Battle is chosen.
+          idx = @battle_ui[:phase] == :battle_options ? nil : @battle_ui[:allies].index(current_actor)
+          battle_status_window(rows, idx)
+        end
+      end
+
+      # Whether the database's `battlecommands.battle_type` is specifically 2
+      # (gauge) -- distinct from `Game::Party#alternate_battle_layout?`, which
+      # is also true for the plain sprite-only layout (1) and still uses the
+      # unchanged text status window for that case. A bare test fixture (or
+      # any database `#alternate_battle_layout?` itself already reads false
+      # for) reads false here too.
+      def gauge_battle_layout?
+        @state.party.respond_to?(:gauge_battle_layout?) && @state.party.gauge_battle_layout?
       end
 
       # One party member's row as [text, x, colour index] segments: name,
@@ -6675,6 +6714,158 @@ class RPG2k
       def battle_state_segment(b)
         text, color = state_display(b.states)
         [text, STATUS_STATE_X, color]
+      end
+
+      # `Window_BattleStatus`'s own default `actor_face_height` (24) -- the
+      # small-window variant (14) is `battlecommands.window_size`, which
+      # schema.rb has not decoded yet (see this change's changelog entry), so
+      # every gauge card always uses the large-window offset.
+      ACTOR_FACE_HEIGHT = 24
+
+      # The gauge card layout (`battle_type` 2): one 80px-wide card per party
+      # member -- face, HP/SP bars and digit-glyph numbers, drawn straight
+      # from the database's own System2 graphic -- ported column-for-column
+      # from EasyRPG's real `Window_BattleStatus::Refresh`/`RefreshGauge`
+      # (the `!enemy && battle_type == BattleType_gauge` branch of each).
+      # Borderless like RPG_RT's own gauge window (`Window#transparent=` --
+      # EasyRPG's constructor sets `border_x = border_y = 0` and
+      # `SetOpacity(0)` for this same case, "simulate a borderless window...
+      # makes the implementation on scene-side easier"), and never gets a
+      # cursor rect: `UpdateCursorRect` returns an empty rect unconditionally
+      # for this battle_type, so no row is ever highlighted here, unlike the
+      # text status window's acting-actor cursor. The ATB/wait gauge row
+      # `RefreshGauge` also draws (`DrawGaugeSystem2(..., GetAtbGauge,
+      # GetMaxAtbGauge, 2)`) is skipped -- this runtime has no ATB/wait-timer
+      # subsystem to read a value from. Returns nil (so `#refresh_battle_status`
+      # falls back to the plain text rows) when the database names no System2
+      # graphic, or names one that fails to load -- there is no sensible
+      # placeholder gauge sprite sheet the way there's a placeholder colour
+      # block for a missing battler graphic.
+      def battle_status_gauge_window(allies)
+        system2 = battle_system2_bitmap
+        return nil unless system2
+        inner_w = BATTLE_STATUS_W - Window::BORDER * 2
+        inner_h = BATTLE_PANEL_H - Window::BORDER * 2
+        win = Window.new(0, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
+        win.z = 300
+        win.transparent = true
+        c = Bitmap.new(inner_w, inner_h)
+        allies.each_with_index { |ally, i| draw_battle_gauge_card(c, system2, ally, i) }
+        win.contents = c
+        win
+      end
+
+      # One party member's gauge card at column `i`. `ally` is a
+      # `Game::Battle::Combatant` (`Game::Battle.from_actor`) -- its `.actor`
+      # is the underlying `Game::Actor`, the only place `faceset_name`/
+      # `faceset_index` (chunk 11 fields 15/16, including any Change Actor
+      # Face override) live. Ported from `RefreshGauge`'s own gauge-card
+      # block: the face, then the bar's left cap / stretched centre / right
+      # cap at `System2` (0,32,16,48)/(16,32,16,48)/(32,32,16,48), then the
+      # HP row (`which` 0) and SP row (`which` 1) fills and numbers -- the
+      # exact x/y arithmetic (`32 + 80*i`, `40 + 80*i`, `y + 12 + 4`) is
+      # copied from the real source rather than re-derived.
+      def draw_battle_gauge_card(c, system2, ally, i)
+        draw_battle_gauge_face(c, ally.actor, i)
+        x = 32 + i * 80
+        y = ACTOR_FACE_HEIGHT
+        c.blt x, y, system2, Rect.new(0, 32, 16, 48)
+        x += 16
+        fill_x = x
+        c.stretch_blt Rect.new(x, y, 25, 48), system2, Rect.new(16, 32, 16, 48)
+        x += 25
+        c.blt x, y, system2, Rect.new(32, 32, 16, 48)
+        hp = ally.hp < 0 ? 0 : ally.hp
+        draw_gauge_system2(c, system2, fill_x, y, hp, ally.max_hp, 0)
+        draw_gauge_system2(c, system2, fill_x, y + 16, ally.mp, ally.max_mp, 1)
+        num_x = 40 + 80 * i
+        draw_number_system2(c, system2, num_x, y, hp)
+        draw_number_system2(c, system2, num_x, y + 12 + 4, ally.mp)
+      end
+
+      # The card's face portrait -- the same 48x48 FaceSet crop
+      # `#load_face_bitmap`/`FACE_SIZE` already draw for the name-entry and
+      # message-face screens, just placed at this card's column instead of
+      # its own window. Draws nothing (leaving the card's bars/numbers alone)
+      # for an actor with no faceset set, or a faceset file that fails to
+      # load, the same "a missing portrait shows nothing" rule
+      # `#load_face`/`#draw_kana_face` already use -- and, matching every
+      # other optional actor field this screen reads (`battler_animation_id`,
+      # `battle_x`/`battle_y`), `#respond_to?`-guarded so a bare test fixture
+      # actor with no faceset fields at all still draws the rest of the card.
+      def draw_battle_gauge_face(c, actor, i)
+        return unless actor && actor.respond_to?(:faceset_name)
+        face = load_face_bitmap(actor.faceset_name)
+        return unless face
+        index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
+        src = Rect.new((index % 4) * FACE_SIZE, (index / 4) * FACE_SIZE, FACE_SIZE, FACE_SIZE)
+        c.blt 80 * i, ACTOR_FACE_HEIGHT, face, src
+      end
+
+      # The HP (`which` 0) or SP (`which` 1) bar fill: a `25 * cur / max`
+      # wide stretch of the fill tile at `System2` `(48, 32 + 16*which, 16,
+      # 16)` -- except an exactly-full gauge (`cur == max`) reads the
+      # visually distinct "full" fill tile 16px over, at `(64, ...)`,
+      # instead of the normal partial-fill one. Ported from
+      # `Window_BattleStatus::DrawGaugeSystem2` exactly, including its
+      # `max == 0` no-draw guard (a stat with no pool at all, e.g. an actor
+      # with 0 max SP, draws no fill for that row).
+      def draw_gauge_system2(c, system2, x, y, cur, max, which)
+        return if max == 0
+        gauge_x = cur == max ? 16 : 0
+        width = 25 * cur / max
+        c.stretch_blt Rect.new(x, y, width, 16), system2,
+                     Rect.new(48 + gauge_x, 32 + 16 * which, 16, 16)
+      end
+
+      # Right-aligned up-to-4-digit number in 8x16 glyph cells (`System2`
+      # `(digit * 8, 80, 8, 16)`), leading zeros suppressed rather than drawn
+      # -- ported from `Window_BattleStatus::DrawNumberSystem2` exactly,
+      # including its exact leading-zero cascade: a thousands (or hundreds)
+      # digit that comes out to 0 still lets the *next* digit down draw via
+      # its own `handle_zero` carry, so 100 draws all three digits ("100")
+      # while 7 draws only the ones cell (three blank cells then "7") and 42
+      # draws the tens+ones cells ("42", blank above).
+      def draw_number_system2(c, system2, x, y, value)
+        handle_zero = false
+        if value >= 1000
+          c.blt x, y, system2, Rect.new((value / 1000) * 8, 80, 8, 16)
+          value %= 1000
+          handle_zero = true if value < 100
+        end
+        if handle_zero || value >= 100
+          handle_zero = false
+          c.blt x + 8, y, system2, Rect.new((value / 100) * 8, 80, 8, 16)
+          value %= 100
+          handle_zero = true if value < 10
+        end
+        if handle_zero || value >= 10
+          c.blt x + 16, y, system2, Rect.new((value / 10) * 8, 80, 8, 16)
+          value %= 10
+        end
+        c.blt x + 24, y, system2, Rect.new(value * 8, 80, 8, 16)
+      end
+
+      # The RPG2003 System2 graphic (gauge fill/caps and the digit glyphs the
+      # gauge card draws numbers with) -- one cache entry, keyed by name like
+      # every other named battle graphic (`#cached_bitmap`), since a project
+      # only ever declares the one in `system.system2_name` (chunk 22 field
+      # 20, schema.rb). A blank name or a failed load returns nil (and logs,
+      # for the latter) so `#battle_status_gauge_window` falls back to the
+      # plain text status row instead of crashing -- unlike
+      # `#battler_bitmap`/`#actor_battlecharset_bitmap`, there is no sensible
+      # placeholder gauge sprite sheet to draw in its place.
+      def battle_system2_bitmap
+        name = db.system.respond_to?(:system2_name) ? db.system.system2_name : nil
+        return nil unless name && !name.empty?
+        cached_bitmap(@system2_cache, name) do
+          begin
+            Bitmap.new("System2/#{name}", true)
+          rescue StandardError => e
+            $stderr.puts "[RPG2k] System2 graphic '#{name}' load failed: #{e.message}"
+            nil
+          end
+        end
       end
 
       # The current actor's command menu — Attack / Skill / Defend / Item, with
@@ -9746,9 +9937,20 @@ class RPG2k
         out
       end
 
+      # Compose this frame's two tile buffers, then draw the events into them.
+      #
+      # The tiles themselves are not re-blitted every frame. They are built into
+      # a pair of cached buffers (@lower_tiles / @upper_tiles) that hold the grid
+      # on whole-tile boundaries, and each frame those are copied across at the
+      # sub-tile scroll offset. That copy is two full-surface blits instead of
+      # ~670 per-tile ones, and the expensive build behind it only re-runs when
+      # something it depends on actually changed -- see #tile_cache_valid?.
+      #
+      # The events cannot go in the cache: they move every frame and composite
+      # into these same two buffers (see #event_target_buffer), which is exactly
+      # why the buffers stay separate from the cache rather than being drawn to
+      # directly.
       def draw_layers cam_x, cam_y
-        @lower_bmp.clear
-        @upper_bmp.clear
         first_tx = cam_x / TILE
         first_ty = cam_y / TILE
         ox = cam_x % TILE
@@ -9762,22 +9964,101 @@ class RPG2k
           cf = Game::ChipsetLayout.anim_c(@anim_frame)
         end
 
+        unless tile_cache_valid?(first_tx, first_ty, abf, cf)
+          rebuild_tile_cache(first_tx, first_ty, abf, cf)
+        end
+
+        @lower_bmp.clear
+        @upper_bmp.clear
+        # Shifting by taking the source from (ox, oy) rather than blitting to
+        # (-ox, -oy) is the same picture -- the cache is one tile wider and
+        # taller than the screen precisely so the scrolled-in edge is there to
+        # copy -- and keeps every coordinate non-negative. The strip past the
+        # shifted grid is what the clears above leave transparent, exactly as
+        # the old per-tile loop did (it never drew there either).
+        #
+        # #copy_blt, not #blt: the destination was just cleared, and blending
+        # onto transparency returns the source unchanged, so the two draw the
+        # same picture here -- but #blt pays a per-pixel read/blend/write for
+        # it, which on these two 336x256 surfaces measured ~5ms a frame.
+        src = Rect.new(ox, oy, COLS * TILE - ox, ROWS * TILE - oy)
+        @lower_bmp.copy_blt 0, 0, @lower_tiles, src
+        @upper_bmp.copy_blt 0, 0, @upper_tiles, src
+
+        draw_events cam_x, cam_y
+      end
+
+      # Whether the cached tile buffers still show what this frame wants.
+      #
+      # Everything the build reads has to be covered here, or the change never
+      # reaches the screen. In order: the cache has been built at all; the grid
+      # has not scrolled onto a different first tile (the sub-tile remainder is
+      # applied at copy time, so it is deliberately *not* part of this); the
+      # animation has not stepped; the map object is the same one (a teleport
+      # swaps it); its tile lookups still answer the same (Tile Substitution --
+      # see Game::Map#revision); and the tileset has not been swapped under us.
+      # The two animation inputs are only compared when the grid actually holds
+      # a tile that moves with them (see Game::ChipsetLayout.anim_input): an
+      # indoor map with no water and no block C chip is the same picture in
+      # every animation state, and rebuilding it on their schedule would be
+      # pure waste -- .anim_c alone steps ten times a second.
+      def tile_cache_valid?(first_tx, first_ty, abf, cf)
+        @tiles_built &&
+          @tiles_tx == first_tx && @tiles_ty == first_ty &&
+          (!@tiles_uses_abf || @tiles_abf == abf) &&
+          (!@tiles_uses_cf || @tiles_cf == cf) &&
+          @tiles_map.equal?(@map) &&
+          @tiles_revision == @map.revision &&
+          @tiles_chipset.equal?(@chipset) &&
+          @tiles_chipset_bmp.equal?(@chipset_bmp)
+      end
+
+      # Drop the cached tile buffers, forcing the next render to rebuild them.
+      # Only needed for a change #tile_cache_valid? cannot see by itself.
+      def invalidate_tile_cache
+        @tiles_built = false
+      end
+
+      # Record that this tile ties the grid to one of the animation inputs.
+      def note_anim_input(id)
+        case Game::ChipsetLayout.anim_input(id)
+        when :abf then @tiles_uses_abf = true
+        when :cf  then @tiles_uses_cf = true
+        end
+      end
+
+      # Re-blit the whole visible grid into the cached buffers, on whole-tile
+      # boundaries (the scroll remainder is applied when they are copied out).
+      # This is the expensive path the cache exists to avoid running per frame.
+      def rebuild_tile_cache(first_tx, first_ty, abf, cf)
+        @lower_tiles.clear
+        @upper_tiles.clear
+        # Whether anything actually drawn this pass moves with the animation
+        # columns/frames, which is what #tile_cache_valid? consults rather than
+        # assuming every map animates.
+        @tiles_uses_abf = false
+        @tiles_uses_cf = false
+
         (0...ROWS).each do |ry|
           (0...COLS).each do |rx|
             tx = first_tx + rx
             ty = first_ty + ry
-            dx = rx * TILE - ox
-            dy = ry * TILE - oy
+            dx = rx * TILE
+            dy = ry * TILE
 
             lower = @map.lower(tx, ty)
             upper = @map.upper(tx, ty)
+            upper_drawn = !Game::ChipsetLayout.upper_blank?(upper)
+            note_anim_input lower
+            note_anim_input upper if upper_drawn
 
             if @chipset_bmp
-              draw_tile @lower_bmp, lower, dx, dy, abf, cf
-              # 0 means "no upper tile" (the upper layer's own ids start at
-              # BLOCK_F); on the lower layer the same value is water set 0, so
-              # only this call may skip it. See Game::ChipsetLayout.block.
-              if upper && upper != 0
+              draw_tile @lower_tiles, lower, dx, dy, abf, cf
+              # Nothing to draw for the two "no upper tile here" ids -- the
+              # reserved blank chip the upper layer is almost entirely made of,
+              # and a raw 0. Only this call may skip them: on the lower layer 0
+              # is water set 0, a real tile. See ChipsetLayout.upper_blank?.
+              if upper_drawn
                 # Only a starred ("above hero") upper tile belongs in the
                 # buffer that composites over the player/events -- see
                 # Game::ChipSet#elevated? and its ABOVE_BIT comment. An
@@ -9787,20 +10068,28 @@ class RPG2k
                 # so it draws behind a character standing on or against it
                 # rather than masking them outright.
                 if @chipset.elevated?(upper)
-                  draw_tile @upper_bmp, upper, dx, dy, abf, cf
+                  draw_tile @upper_tiles, upper, dx, dy, abf, cf
                 else
-                  draw_tile @lower_bmp, upper, dx, dy, abf, cf
+                  draw_tile @lower_tiles, upper, dx, dy, abf, cf
                 end
               end
             else
               # Fallback: solid colour blocks keyed by tile id (no chipset image).
-              @lower_bmp.fill_rect dx, dy, TILE, TILE, tile_color(lower)
-              @upper_bmp.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper && upper != 0
+              @lower_tiles.fill_rect dx, dy, TILE, TILE, tile_color(lower)
+              @upper_tiles.fill_rect dx, dy, TILE, TILE, tile_color(upper) if upper_drawn
             end
           end
         end
 
-        draw_events cam_x, cam_y
+        @tiles_built = true
+        @tiles_tx = first_tx
+        @tiles_ty = first_ty
+        @tiles_abf = abf
+        @tiles_cf = cf
+        @tiles_map = @map
+        @tiles_revision = @map.revision
+        @tiles_chipset = @chipset
+        @tiles_chipset_bmp = @chipset_bmp
       end
 
       # Draw every event's graphic into the tile buffers, layered so it composits

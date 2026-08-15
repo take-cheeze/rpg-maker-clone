@@ -4306,6 +4306,34 @@ check 'Game::Party#alternate_battle_layout? reads chunk 29 field 7 (BattleType)'
      'BattleType_gauge (2) -> alternate layout'
 end
 
+check 'Game::Party#gauge_battle_layout? reads chunk 29 field 7, true for gauge (2) only' do
+  # An RPG2000 database (no chunk 29 at all) reads false, same as
+  # #alternate_battle_layout? does for the same fixture.
+  eq false, party_state.party.gauge_battle_layout?,
+     'no Battle Commands table at all -> not the gauge layout'
+
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+
+  traditional = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 0))
+  eq false, Game::Party.new(traditional).gauge_battle_layout?,
+     'BattleType_traditional (0) -> not the gauge layout'
+
+  # Unlike #alternate_battle_layout? (true for both 1 and 2), this reads
+  # false for the plain alternative layout -- only battle_type 2 replaces
+  # the status panel with the gauge card layout (scene/map.rb's
+  # #refresh_battle_status); battle_type 1 keeps the unchanged text rows.
+  alternative = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                                 battlecommands: FakeBattleCommandsTable.new({}, 1))
+  eq false, Game::Party.new(alternative).gauge_battle_layout?,
+     'BattleType_alternative (1) -> not the gauge layout'
+
+  gauge = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil,
+                           battlecommands: FakeBattleCommandsTable.new({}, 2))
+  eq true, Game::Party.new(gauge).gauge_battle_layout?,
+     'BattleType_gauge (2) -> the gauge layout'
+end
+
 check 'Game::Party#automatic_battle_placement? reads chunk 29 field 2 (Placement)' do
   eq false, party_state.party.automatic_battle_placement?,
      'no Battle Commands table at all -> manual (the schema default)'
@@ -4754,17 +4782,33 @@ check 'Change Equipment command equips into the type slot and removes' do
   eq 8, a.equipment[2] # armour still on
 end
 
-check 'Change Equipment command creates/returns items implicitly -- it never ' \
-      "touches the party's bag, unlike the Equip menu screen" do
-  # A yado.tk-catalogued quirk (docs/TODO.md's "Items & equipment" bullet):
-  # the event command conjures the item onto the actor directly and drops it
-  # the same way on removal, with no bag interaction either direction --
-  # unlike Scene::EquipMenu's own #equip_from_bag/#unequip_to_bag, which
-  # explicitly swap through Game::Party's held-item counts. Confirmed by
-  # inspection (Game::Actor#equip_item/#unequip, which this command drives,
-  # call neither #gain_item nor #lose_item anywhere), and now asserted
-  # head-on: the bag's own count for the equipped item stays exactly 0
-  # throughout, whether or not the party ever held one.
+check 'Change Equipment command consumes a held copy from the party bag, ' \
+      'like the equip menu' do
+  # Community デフォ戦bot trivia on real RPG_RT: "イベント命令で「装備の変更」
+  # をさせる場合、該当アイテムが持ち物に一つでもあれば、そこから装備される" --
+  # when the party holds the item, the event command equips *that* copy
+  # rather than conjuring a separate one, so the bag count drops exactly like
+  # Game::Party#equip_from_bag (the equip menu's own path).
+  items = { 7 => fake_item(atk: 15, type: 1) }   # weapon -> slot 0
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  st.party.gain_item(7, 2)
+  eq 2, st.party.item_count(7)
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  eq 7, a.equipment[0], 'equipped from the bag'
+  eq 1, st.party.item_count(7), 'one copy left the bag to be worn'
+end
+
+check 'Change Equipment command still equips an item the party does not ' \
+      'hold, fabricating a copy rather than refusing' do
+  # The other half of the same trivia: "持ち物に無いと新しいアイテムを入手する
+  # 形で装備される" -- absent from the bag, RPG_RT still equips it (a new copy
+  # is created), matching the command's long-observed "always succeeds"
+  # behaviour, but now via the same bag-aware mechanism instead of bypassing
+  # the bag outright: consuming an unheld item is a no-op (#lose_item floors
+  # at 0), so the bag count stays at 0 rather than going negative.
   items = { 7 => fake_item(atk: 15, type: 1) }   # weapon -> slot 0
   db = FakeActorDB.new(
     { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1], items)
@@ -4772,11 +4816,50 @@ check 'Change Equipment command creates/returns items implicitly -- it never ' \
   a = st.party.actor_by_id(1)
   eq 0, st.party.item_count(7), 'the bag starts with none of item 7 at all'
   Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  eq 18, a.atk         # base 3 + 15
   eq 7, a.equipment[0], 'the actor is equipped with an item the party never held'
-  eq 0, st.party.item_count(7), 'equipping created it out of thin air -- the bag is still empty'
+  eq 0, st.party.item_count(7), 'fabricated, not pulled from an empty bag -- still at 0'
+end
+
+check 'Change Equipment command returns the previously-equipped item to ' \
+      'the bag, both replacing it and removing it outright' do
+  items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
+            9 => fake_item(atk: 20, type: 1) }  # weapon -> slot 0
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  # Equip weapon 7, held in the bag.
+  st.party.gain_item(7, 1)
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  eq 7, a.equipment[0]
+  eq 0, st.party.item_count(7)
+  # Replace it with weapon 9 (not held -- fabricated): 7 comes back to the bag.
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 9])]); it.update }
+  eq 9, a.equipment[0], 'now wearing the replacement'
+  eq 1, st.party.item_count(7), 'the displaced weapon landed back in the bag'
+  eq 0, st.party.item_count(9), 'the replacement itself is worn, not sitting in the bag too'
+  # Remove it outright (op 1): 9 comes back to the bag too.
   Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, 0])]); it.update }
   eq 0, a.equipment[0], 'unequipped'
-  eq 0, st.party.item_count(7), 'and it did not land back in the bag either'
+  eq 1, st.party.item_count(9), 'and it returned to the bag on removal too'
+end
+
+check 'Change Equipment command "remove every slot" (param4 5) returns each ' \
+      'slot to the bag in turn' do
+  items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
+            8 => fake_item(dfn: 9, type: 3) }   # armour -> slot 2
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 8])]); it.update }
+  eq [7, 0, 8, 0, 0], a.equipment
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, Game::Actor::EQUIP_ORDER.size])]); it.update }
+  eq [0, 0, 0, 0, 0], a.equipment, 'every slot cleared'
+  eq 1, st.party.item_count(7), 'the weapon came back to the bag'
+  eq 1, st.party.item_count(8), 'the armour came back to the bag too'
 end
 
 check 'Change Equipment command respects an actor_set restriction, per actor' do
