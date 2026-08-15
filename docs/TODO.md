@@ -3994,26 +3994,37 @@ following this paragraph as the original record.
   blocker stacked under a below-layer decal still blocks; the below-layer
   half wandering off a shared tile leaves the same-layer half still
   blocking).
-- ✅ **Two below/above-characters events used to collide with each other, and
-  a below/above-characters mover could walk straight through a genuinely
-  solid same-as-characters event.** `char_passable?`/`char_can_land?` (an
-  event's own collision test — autonomous/custom-route movement and a Set
-  Move Route targeting the player) gated on the *mover's* own layer matching
-  the blocker's, instead of only asking whether the blocker itself is
-  `LAYER_SAME` — the rule `passable?` already applies for the hero (see the
-  `LAYER_*` comment). Two below-characters events (both layer 0) collided
-  with each other despite both being decorations, and a below-characters
-  mover passed straight through a same-as-characters blocker because their
-  layers did not match. Both call sites now check the blocker's layer alone
-  via `blockers_at`, matching `passable?`'s model; `overlap_forbidden` still
-  gates a map-event mover unconditionally, but the party's own forced Set
-  Move Route mirror (`@player_char`) — the one path besides ordinary walking
-  that drives the hero through these two methods rather than through
-  `passable?`, which already applies `overlap_forbidden` on its own — is
-  exempted from it here. Covered by three new `scripts/rpg2k_scene_check.rb`
-  checks (a below-layer mover still stops at a same-layer blocker; two
-  below-layer events no longer collide with each other; `overlap_forbidden`
-  does not stop the hero's own forced Set Move Route).
+- ✅ **`overlap_forbidden` (LCF page field 35, "doesn't overlap another
+  event") used to block the hero, which real RPG_RT never does.** Checked
+  against EasyRPG Player's actual C++ source (`WouldCollide`,
+  `src/game_map.cpp`) rather than assumed: the flag only ever collides two
+  *map events* — `self.GetType() == Event && other.GetType() == Event &&
+  (self.IsOverlapForbidden() || other.IsOverlapForbidden())` — the party's
+  own type is `Player`, never `Event`, so it can never be what blocks the
+  hero, on either side, regardless of layer. Layer itself gates collision on
+  an *exact* match between both sides' priority type
+  (`self.GetLayer() == other.GetLayer()`), not on either side being
+  `LAYER_SAME` specifically: two below-characters events collide with each
+  other exactly as two same-characters ones do, and only a mismatched pair
+  passes through. The hero's own layer is always effectively `LAYER_SAME`
+  (`Game_Player` never overrides `GetLayer`), so that same exact-match rule
+  already yields "only a same-as-characters event blocks the hero" with no
+  special-casing. `passable?` (the hero's own step), `char_passable?` and
+  `char_can_land?` (an event's own movement, or the party's forced Set Move
+  Route mirror) now match this precisely: `overlap_forbidden` is checked on
+  *either* side (`character.overlap_forbidden || b[:overlap_forbidden]`) but
+  only between two events; layer collision is an exact match on both sides'
+  `layer`; and the hero is never blocked by `overlap_forbidden` at all,
+  walking ordinarily or under a forced route alike. (An earlier pass at this
+  fix briefly narrowed event-vs-event layer collision to "only a
+  same-as-characters blocker is ever solid" — also wrong, since it dropped
+  the below-vs-below/above-vs-above collision real RPG_RT does have; this is
+  the corrected, source-verified rule.) Covered by
+  `scripts/rpg2k_scene_check.rb` checks for every corner: two
+  below-characters events still collide with each other; a below-layer
+  mover crosses a same-layer blocker; `overlap_forbidden` does not stop the
+  hero on an ordinary step or from a below-layer event walking onto the
+  hero's own tile, while it still stops a mismatched-layer event.
 - ✅ **The active party caps at four members.** `Game::Party#add_actor` had no
   size check at all, so a Change Party Member "Add" past the fourth slot grew
   `@actors` unbounded instead of no-op'ing the way RPG_RT does (the editor

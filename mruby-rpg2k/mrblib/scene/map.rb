@@ -52,9 +52,14 @@ class RPG2k
 
       # Event-page priority type (the page `layer` field): where the event
       # draws relative to normal characters, and — RPG_RT ties the two together
-      # — which of them it collides with. Only LAYER_SAME blocks movement: a
-      # "below"/"above characters" event is a decoration the hero, vehicles and
-      # other events all walk straight through (see #passable?, #char_passable?).
+      # — which of them it collides with. The hero (and a vehicle) only ever
+      # collides with a LAYER_SAME event, since the hero's own layer is
+      # always effectively LAYER_SAME — a "below"/"above characters" event is
+      # a decoration the hero walks straight through (see #passable?). Two
+      # *events* collide only when their layers match exactly, whatever that
+      # layer is — two below-characters events collide with each other same
+      # as two same-characters ones do, but a below/above pair passes
+      # through each other (see #char_passable?'s fuller citation).
       LAYER_BELOW = 0
       LAYER_SAME  = 1
       LAYER_ABOVE = 2
@@ -3535,24 +3540,39 @@ class RPG2k
       # passable per the chipset, and not onto the hero or another event that
       # shares its collision layer. A "through" character ignores all of this.
       #
-      # Layer gates the occupancy half the same way RPG_RT's priority type
-      # does: only a LAYER_SAME blocker is ever solid, regardless of the
-      # mover's own layer -- a below/above-characters blocker (LAYER_BELOW /
-      # LAYER_ABOVE) is a decoration everyone, same-layer movers included,
-      # walks straight through, matching the "below/above events never
-      # block, period" rule #passable? already applies for the hero (see the
-      # LAYER_* comment). `overlap_forbidden` blocks any non-hero mover
-      # regardless of layer, same as before; the hero's own forced Set Move
-      # Route mirror is exempt from it here -- see #passable? for the hero's
-      # own overlap_forbidden gating on an ordinary step. "Is this the hero"
-      # is answered by `character.event_id == MOVE_TARGET_PLAYER`, not by
-      # comparing against `@player_char` directly -- the mirror #start_
-      # player_route builds is a fresh object every route, so an
-      # `equal?`/object-identity check taken from outside that method (a
-      # `character` this method was merely handed) is only ever reliable at
-      # the exact moment the caller captured it, not in general; `event_id`
-      # is set once, on the object itself, and answers the question no
-      # matter who is asking or when.
+      # Layer gates the occupancy half exactly the way EasyRPG Player's own
+      # `WouldCollide` (`src/game_map.cpp`) does: two characters only collide
+      # over layer when their priority types match *exactly* --
+      # `self.GetLayer() == other.GetLayer()` -- not when either happens to
+      # be LAYER_SAME specifically. Two below-characters events collide with
+      # each other exactly as two same-characters ones do; a below-layer
+      # mover and an above-layer (or same-layer) blocker pass through each
+      # other, layers differing either way. The hero's own layer is always
+      # effectively LAYER_SAME (`Game_Player` never overrides `GetLayer`, so
+      # it keeps `Game_Character`'s LAYER_SAME default) -- `character.layer`
+      # already reads that way whenever `character` is the party's own
+      # forced Set Move Route mirror, so this single check covers the hero
+      # correctly with no special-casing.
+      #
+      # `overlap_forbidden` is different: `WouldCollide` only ever consults
+      # it when **both** sides are map events --
+      # `self.GetType() == Event && other.GetType() == Event && (self.
+      # IsOverlapForbidden() || other.IsOverlapForbidden())` -- so it can
+      # make two events collide regardless of their (mismatched) layers, but
+      # can never be what blocks the hero, on either side: the party's own
+      # `GetType()` is `Player`, never `Event`, in real RPG_RT. `hero` (via
+      # `character.event_id == MOVE_TARGET_PLAYER`) gates it out entirely
+      # for the party's forced-route mirror, and it is checked on *both*
+      # `character` and the blocker (`character.overlap_forbidden ||
+      # b[:overlap_forbidden]`), matching `self.IsOverlapForbidden() ||
+      # other.IsOverlapForbidden()` rather than the blocker's flag alone.
+      # "Is this the hero" reads `character.event_id`, not
+      # `character.equal?(@player_char)`, since the mirror #start_
+      # player_route builds is a fresh object every route -- an identity
+      # check taken from outside that method is only reliable at the exact
+      # moment a caller captured the reference, not in general, while
+      # `event_id` is set once, on the object itself, and answers the
+      # question no matter who is asking or when.
       #
       # The chipset half asks **both** tiles at the boundary, each from its
       # own side, as RPG2000's per-direction passability does: the tile a
@@ -3568,11 +3588,12 @@ class RPG2k
         return true if character.through
         nx, ny = Game::Character.step_tile(character.x, character.y, dir)
         return false unless @map.in_bounds?(nx, ny)
-        if nx == @state.x && ny == @state.y
-          return false if character.layer == LAYER_SAME || character.overlap_forbidden
-        end
+        return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
-        return false if blockers_at(nx, ny).any? { |b| b[:layer] == LAYER_SAME || (!hero && b[:overlap_forbidden]) }
+        return false if blockers_at(nx, ny).any? do |b|
+          b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
+        end
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(character.x, character.y),
@@ -3602,11 +3623,12 @@ class RPG2k
         return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
         # Same layer-gated occupancy rule as #char_passable? (see its comment).
-        if x == @state.x && y == @state.y
-          return false if character.layer == LAYER_SAME || character.overlap_forbidden
-        end
+        return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
-        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME || (!hero && b[:overlap_forbidden]) }
+        return false if blockers_at(x, y).any? do |b|
+          b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
+        end
         return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
         @chipset.landable_tile?(@map.lower(x, y), @map.upper(x, y))
@@ -9767,14 +9789,19 @@ class RPG2k
         return false unless @map.in_bounds?(x, y)
         # The hero is always a "normal character" for collision purposes: only
         # a same-layer event blocks it, a below/above-characters one is a
-        # decoration it walks straight over (see the LAYER_* comment) —
-        # unless that event's own "doesn't overlap" flag forces the block
-        # regardless of layer (LCF page field 35, #overlap_forbidden). Every
-        # event on the tile gets a say (#blockers_at), not just one of them:
-        # a below-characters decal and a same-as-characters NPC can share a
-        # tile, and the NPC must still block even though the decal alone
-        # would not.
-        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME || b[:overlap_forbidden] }
+        # decoration it walks straight over (see the LAYER_* comment).
+        # `overlap_forbidden` (LCF page field 35) never enters into it: real
+        # RPG_RT (`WouldCollide`, `src/game_map.cpp`) only ever consults that
+        # flag when *both* sides of a collision are map events
+        # (`self.GetType() == Event && other.GetType() == Event`) — the
+        # party's own `GetType()` is `Player`, never `Event`, so an event
+        # with the flag set collides with *other events* regardless of its
+        # layer but is never what blocks the hero (see #char_passable? for
+        # the fuller citation). Every event on the tile gets a say
+        # (#blockers_at), not just one of them: a below-characters decal and
+        # a same-as-characters NPC can share a tile, and the NPC must still
+        # block even though the decal alone would not.
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME }
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
         # never does, on foot or otherwise (block_airship: false — the hero
