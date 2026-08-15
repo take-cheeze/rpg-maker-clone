@@ -99,14 +99,18 @@ and CI-checked before the interpreter and assets are layered on:
   until the next slice wires the interpreter and starts the real `RPG2k` scene
   tree. Memory-Stick asset loading (newlib syscalls, already routed by pspsdk's
   stdio) and moving the framebuffer blit onto `sceGu` follow after that.
-  **Update:** that next slice has landed. `libmruby.a` links into the EBOOT
-  and opens (`RPG2K_PSP_MRUBY_OPEN`), and `app/psp/main.cxx` constructs
-  `RPG2k` against a fixed Memory Stick install location
-  (`ms0:/PSP/GAME/rpg2k`) and drives its per-frame `#main_loop` when a
-  project is present there, reporting the outcome via
-  `RPG2K_PSP_GAME_START`/`RPG2K_PSP_GAME_STOP` — see `app/psp/README.md` for
-  the current status and what's still ahead (XP/VX/VX Ace detection, the
-  allocator split, `sceGu`).
+  **Update:** that next slice has landed, and now covers XP/VX/VX Ace too.
+  `libmruby.a` links into the EBOOT and opens (`RPG2K_PSP_MRUBY_OPEN`), and
+  `app/psp/main.cxx` detects which maker's project (if any) is present at a
+  fixed Memory Stick install location (`ms0:/PSP/GAME/rpg2k`), constructs
+  the matching class (`RPG2k`/`RPGXP`/`RPGVX`) at its own native display
+  resolution, and drives its per-frame `#main_loop`, reporting the outcome
+  via `RPG2K_PSP_GAME_START`/`RPG2K_PSP_GAME_STOP`. RPG XP and RPG VX/VX
+  Ace's native resolutions both exceed the 480×272 panel in both dimensions
+  (they were designed for a desktop window), so `psp.cxx`'s flush callback
+  centers and clips rather than scales — see `app/psp/README.md` for the
+  current status and what's still ahead (full-canvas scaling, the allocator
+  split, `sceGu`).
 - Because the PSP has ~24 MB of RAM, the gem-trimming and streaming-asset work
   that ADR 7 needs for the Wio Terminal is not expected to be necessary here; the
   full gem set should fit.
