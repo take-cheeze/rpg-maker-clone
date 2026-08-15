@@ -10272,6 +10272,127 @@ check 'attribute defence shift applies to the target rank, capped at ' \
   eq 3, foe.attr_ranks[1], 'capped one step better than base (C -> D)'
 end
 
+# -- Battle mid-battle roster sync ---------------------------------------------
+#
+# Game::Battle's @allies is a one-shot snapshot unless constructed with
+# `party:` (a live Game::Party) -- see Battle#sync_allies_from_party and
+# Scene::Map#open_battle, its one production call site. These checks build
+# `party:` battles directly, the way #open_battle does, rather than going
+# through the scene.
+#
+# All three foes below are a 0-attack, 100000-HP punching bag, so a fight
+# never ends and the exact same two allies stay alive across every round --
+# the point of these checks is roster membership, not combat outcome.
+def roster_sync_db
+  FakeActorDB.new({
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8, agi: 100),
+    2 => FakePlayerRow.new('Companion', '', 0, 5, max_hp: 80, max_mp: 20, atk: 8, def: 6, agi: 1),
+  }, [1, 2])
+end
+
+def watcher; combatant('Watcher', 0, 0, 1, 100_000); end
+
+check 'battle: an actor added to the live party mid-fight joins the next round' do
+  db = roster_sync_db
+  party = Game::Party.new(db) # only the Hero (id 1) starts in the party
+  party.remove_actor(2)
+  bat = Game::Battle.new(party.actors.map { |a| Game::Battle.from_actor(a) }, [watcher],
+                         Game::Rng.new(1), nil, false, false, false, false, nil, nil,
+                         party: party)
+
+  bat.begin_round
+  ok bat.ally_by_actor_id(2).nil?, 'no Combatant at all before ever joining this fight'
+  entries = []
+  loop { e = bat.step_action; break unless e; entries << e }
+  bat.end_round
+  ok entries.none? { |e| e[:attacker] == 'Companion' }, 'not queued -- not a member yet'
+
+  party.add_actor(2)
+  bat.begin_round # round 2: #refill_queue re-syncs @allies from the live party
+  newcomer = bat.ally_by_actor_id(2)
+  ok newcomer, '#sync_allies_from_party built a fresh Combatant for them'
+  eq true, newcomer.member?
+
+  entries = []
+  loop { e = bat.step_action; break unless e; entries << e }
+  bat.end_round
+  ok entries.any? { |e| e[:attacker] == 'Companion' },
+     'takes a turn in the very round they joined'
+end
+
+# Corrects an initial reading of this fix's own community-trivia source
+# ("swap out then back in still lets the queued command execute"), checked
+# directly against EasyRPG's real `Scene_Battle_Rpg2k::ProcessSceneActionBattle`:
+# its `ePreAction` substate rechecks `battler->Exists()` (which folds in
+# `IsInParty()`, `game_battler.h`) immediately before running *each* queued
+# action and drops the ones that fail, not only the ones for the *next*
+# round's queue. #step_action ports that same recheck (see its own comment) --
+# a turn already resolved before the removal stands (nothing rewinds `@log`),
+# but a turn still only *queued* when its owner leaves is dropped, exactly
+# like a battler who died first already was.
+check 'battle: an actor removed mid-round loses a not-yet-resolved queued turn' do
+  db = roster_sync_db
+  party = Game::Party.new(db) # both start in the party; Hero's agi 100 guarantees they act first
+  bat = Game::Battle.new(party.actors.map { |a| Game::Battle.from_actor(a) }, [watcher],
+                         Game::Rng.new(1), nil, false, false, false, false, nil, nil,
+                         party: party)
+
+  bat.begin_round
+  first = bat.step_action
+  eq 'Hero', first[:attacker], 'the highest-agility ally goes first, deterministically'
+  ok first[:damage] > 0, 'the attack already landed'
+
+  # A battle-event page runs after Hero's turn (Game::Battle#pending_empty?'s
+  # own comment: a page is checked once per acting battler) and fires a
+  # Change Party Member removing the Companion, whose own turn is still
+  # sitting in the queue, not yet resolved.
+  party.remove_actor(2)
+
+  entries = []
+  loop { e = bat.step_action; break unless e; entries << e }
+  bat.end_round
+  ok entries.none? { |e| e[:attacker] == 'Companion' },
+     'the queued-but-not-yet-run turn is dropped, not resolved'
+
+  companion = bat.ally_by_actor_id(2)
+  ok companion, 'the Combatant is kept in @allies, not discarded'
+  eq false, companion.member?
+  ok companion.out_of_play?
+
+  bat.begin_round # round 2
+  entries2 = []
+  loop { e = bat.step_action; break unless e; entries2 << e }
+  bat.end_round
+  ok entries2.none? { |e| e[:attacker] == 'Companion' }, 'not queued for a round begun after they left'
+  ok entries2.none? { |e| e[:target] == 'Companion' }, 'not a valid target either, once out of play'
+end
+
+check 'battle: leaving and rejoining the same fight keeps accumulated battle-only state' do
+  db = roster_sync_db
+  party = Game::Party.new(db)
+  bat = Game::Battle.new(party.actors.map { |a| Game::Battle.from_actor(a) }, [watcher],
+                         Game::Rng.new(1), nil, false, false, false, false, nil, nil,
+                         party: party)
+
+  companion = bat.ally_by_actor_id(2)
+  companion.states = [5]  # an active battle-only status
+  companion.atk_mod = 7   # an accumulated per-battle stat modifier (e.g. from a skill)
+
+  party.remove_actor(2)
+  bat.begin_round # sync: flagged not-a-member, Combatant otherwise untouched
+  ok !companion.member?
+  eq [5], companion.states
+  eq 7, companion.atk_mod
+
+  party.add_actor(2)
+  bat.begin_round # sync: rejoins -- the same object is reused, not rebuilt
+  rejoined = bat.ally_by_actor_id(2)
+  ok rejoined.equal?(companion), 'the exact same Combatant comes back, not a fresh one'
+  eq true, rejoined.member?
+  eq [5], rejoined.states, 'the state they left with is still active'
+  eq 7, rejoined.atk_mod, 'the accumulated stat modifier survived the round trip'
+end
+
 # -- Ability-value change (schema fields 33-36: affect_attack/defense/spirit/
 # agility) -- a skill's own per-battle ATK/DEF/SPI/AGI modifier, distinct from
 # both attribute-defence rank shifting (above) and a *state*'s halve/double

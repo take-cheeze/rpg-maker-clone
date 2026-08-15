@@ -4478,7 +4478,26 @@ class RPG2k
                                                 # (see #apply_attr_multiplier)
                                                 # is handled differently per
                                                 # edition.
-                                                rpg2003: db.respond_to?(:rpg2003?) && db.rpg2003?),
+                                                rpg2003: db.respond_to?(:rpg2003?) && db.rpg2003?,
+                                                # Mid-battle roster sync
+                                                # (Game::Battle#sync_allies_from_party):
+                                                # a Change Party Member command
+                                                # run from a battle event page
+                                                # mutates this same live
+                                                # Game::Party, and the battle
+                                                # re-derives its own @allies
+                                                # from it every round/action
+                                                # rather than staying pinned to
+                                                # the `allies` snapshot taken
+                                                # just above. `@battle_ui[:allies]`
+                                                # itself is untouched here --
+                                                # still that one-shot snapshot
+                                                # -- so the status window/actor
+                                                # sprites do not yet reflect a
+                                                # mid-fight swap; that is
+                                                # rendering work left for a
+                                                # follow-up.
+                                                party: @state.party),
                        allies: allies, foes: foes, actor_i: 0, cmd: 0, target_i: 0,
                        skill_i: 0, item_i: 0, ally_i: 0, pending: nil,
                        skills: [], items: [],
