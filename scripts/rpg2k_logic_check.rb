@@ -3821,6 +3821,31 @@ check '#recompute_stats clamps the effective max HP/MP and the four combat ' \
   eq 999, a2k3.max_mp                # ... but MP/SP still caps at 999, no RPG2003 widening
 end
 
+check '#recompute_stats clamps curve+mod+equipment together, not the ' \
+      'unequipped total a second time before adding equipment' do
+  # A prior version summed the *already-clamped* @base[i] (curve + Change
+  # Parameters mod, floored/ceilinged with no equipment involved) with
+  # equip_bonus(i), then clamped again -- double-clamping instead of EasyRPG's
+  # real Game_Actor::GetBaseAtk et al., which sum curve + mod + equipment in
+  # one expression and clamp the combined raw total exactly once. The two
+  # only disagree once the raw total has been pushed outside the display
+  # clamp and equipment changes afterward: a heavy debuff floors the display
+  # at 1 while the raw shadow sits deep negative, and equipping a strong item
+  # must add its bonus to that still-deeply-negative raw total, not to the
+  # floored display value.
+  items = { 40 => fake_item(atk: 30) }
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 50, 2, 1, 4]) },
+                       [1], items)
+  a = Game::Party.new(db).leader
+  eq 50, a.atk                                # base atk starts at 50
+  a.change_param(Game::Actor::PARAM_ATK, -100) # raw 50 - 100 = -50
+  eq 1, a.atk                                  # floored -- raw is negative
+  a.equip([40, 0, 0, 0, 0])
+  # raw -50 + equip 30 = -20, still clamps to the floor -- NOT clamp(1, 999) +
+  # 30 = 31, which would let the weapon's whole bonus escape the active debuff.
+  eq 1, a.atk
+end
+
 check 'Change Parameters tracks an unclamped total under the displayed clamp' do
   # yado.tk `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
   # 1..999 (1..9999 for HP/MP), but RPG_RT keeps accumulating the *real*
