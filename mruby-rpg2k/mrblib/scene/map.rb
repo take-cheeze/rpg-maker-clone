@@ -5800,12 +5800,34 @@ class RPG2k
       # in `mruby-rpg2k` before now, so a game that customised them (a
       # translation, a non-English original) showed this codebase's
       # hardcoded English regardless.
+      #
+      # A level-up (and any skill the growth table teaches at it) is
+      # announced too now, the missing half of the same gap: EasyRPG's
+      # `Scene_Battle_Rpg2k::ProcessSceneActionVictory`
+      # (`src/scene_battle_rpg2k.cpp`) builds the EXP/gold/item summary as one
+      # page, then calls `Game_Actor::ChangeExp` once per active ally right
+      # after it, which is exactly `Game::Interpreter#do_change_exp`'s own
+      # gain_exp-then-announce shape (`queue_level_up_messages`,
+      # `mrblib/interpreter.rb`) -- so each actor's level/skill snapshot is
+      # taken here the same way, right before its own `#gain_exp`. Unlike
+      # that interpreter path (still the documented "plain English line for
+      # now" simplification), this screen already reads real database terms
+      # for every other line, so `#battle_level_up_message` /
+      # `#battle_skill_learned_message` below do too, built from EasyRPG's
+      # `ActorMessage::GetLevelUpMessage` / `GetLearningMessage`
+      # (`src/game_message_terms.cpp`), stock-RPG2000/CP932 branch: `name <<
+      # "は" << terms.level << " " << new_level << " " << terms.level_up` and
+      # `skill.name << terms.skill_learned` (no actor name -- it always
+      # follows that actor's own level-up line, same as here). RPG_RT shows
+      # these on their own page per actor rather than inline with the EXP
+      # tally; this screen has no per-page window, only one flat line list
+      # for the whole result, so they are appended to that list instead, in
+      # the same after-the-tally order the real sequence uses.
       def battle_result_lines(result, troop)
         return [term(:escape_success, 'Escaped!')] if result == :escape
         return [term(:defeat, 'The party was defeated...')] unless result == :victory
         exp = troop.total_exp
         gold = troop.total_gold
-        @state.party.actors.each { |a| a.gain_exp(exp) }
         @state.party.gain_gold(gold)
         lines = [term(:victory, 'Victory!')]
         lines << "#{exp}#{term(:exp_received, ' EXP gained.')}" if exp > 0
@@ -5821,7 +5843,61 @@ class RPG2k
           name = it ? it.name : "item #{iid}"
           lines << "#{name}#{term(:item_received, ' obtained.')}"
         end
+        @state.party.actors.each do |a|
+          before_level = a.respond_to?(:level) ? a.level : nil
+          before_skills = a.respond_to?(:skills) ? a.skills.dup : []
+          a.gain_exp(exp)
+          lines.concat(battle_level_up_lines(a, before_level, before_skills)) if before_level
+        end
         lines
+      end
+
+      # Level-up (and, for each level, any growth-table skill it teaches)
+      # lines for one actor's post-battle EXP gain, mirroring
+      # `Game::Interpreter#queue_level_up_messages`'s own before/after skill
+      # comparison: `before_skills` is that actor's skill list snapshotted
+      # right before `#gain_exp`, so a skill already known (an earlier
+      # explicit Change Skill teach) is told apart from one this exact gain
+      # just taught. Returns [] when the level did not rise.
+      def battle_level_up_lines(actor, before_level, before_skills)
+        return [] if actor.level <= before_level
+        lines = []
+        ((before_level + 1)..actor.level).each do |lv|
+          lines << battle_level_up_message(actor, lv)
+          next unless actor.respond_to?(:learn_table)
+          actor.learn_table.each do |sid, at|
+            next unless at == lv && !before_skills.include?(sid)
+            sk = @state.party.db_skill(sid)
+            lines << battle_skill_learned_message(actor, sk) if sk
+          end
+        end
+        lines
+      end
+
+      # The one line a level-up announces, built from the database's own
+      # `level`/`level_up` terms the way EasyRPG's stock/CP932
+      # `GetLevelUpMessage` branch does (see `#battle_result_lines`'s own
+      # comment) -- falls back to composed English, matching every other
+      # line on this screen, only when the database leaves `level_up` blank
+      # (a raw `level_up` term with no `level` term set still gets the
+      # 'Lv' stand-in rather than losing the whole line to English).
+      def battle_level_up_message(actor, level)
+        up = term(:level_up, nil)
+        return "#{actor.name} is now level #{level}!" unless up
+        "#{actor.name}は#{term(:level, 'Lv')} #{level} #{up}"
+      end
+
+      # The one line a newly-learned skill announces, immediately following
+      # its level's own line above -- EasyRPG's stock/CP932
+      # `GetLearningMessage` branch names only the skill, never the actor,
+      # since it always trails that actor's own level-up line the way it
+      # does here too. Falls back to composed English (which does name the
+      # actor, since a database leaving `skill_learned` blank gets no
+      # level-up line's context to lean on either) when the term is blank.
+      def battle_skill_learned_message(actor, sk)
+        learned = term(:skill_learned, nil)
+        return "#{actor.name} learned #{sk.name}!" unless learned
+        "#{sk.name}#{learned}"
       end
 
       # RPG_RT's battle windows share one fixed panel: a 320x80 strip along the

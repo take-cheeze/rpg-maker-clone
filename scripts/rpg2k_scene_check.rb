@@ -1970,22 +1970,41 @@ end
 # EXP, with the leader Scene::Map reads while rendering.
 class BattleStubActor
   attr_accessor :exp, :hp, :mp
-  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills, :states
+  attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills, :states,
+              :level, :learn_table
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
   # a defeat test passes weaker stats. `states` seeds the Combatant Game::Battle
   # ::from_actor builds (Game::Battle.actor_states reads it off any source that
   # responds to `:states`), so a battle-command-skip check can start the fight
   # with an ally already afflicted, without reaching into the built battle's
   # own Combatant list after the fact.
+  #
+  # `level_up_at`/`learn_table` are opt-in (default nil/[]): a check that never
+  # sets `level_up_at` gets a stub whose #level never moves, exactly like every
+  # check predating #battle_result_lines's own level-up/skill-learned lines
+  # (mirrors Game::Actor's real growth curve/learn table only as far as a
+  # single EXP-threshold level-up needs, not the full RPG2000 curve).
   def initialize(atk: 40, dfn: 20, agi: 20, hp: 200, mp: 20, int: 20, skills: [], id: 1,
-                 rename_skill: false, skill_name: '', states: [], force_ai: false)
+                 rename_skill: false, skill_name: '', states: [], force_ai: false,
+                 level: 1, level_up_at: nil, learn_table: [])
     @exp = 0; @id = id; @name = 'Hero'
     @atk = atk; @def = dfn; @agi = agi; @hp = hp; @max_hp = hp
     @mp = mp; @max_mp = mp; @int = int; @skills = skills
     @rename_skill = rename_skill; @skill_name = skill_name; @states = states
     @force_ai = force_ai
+    @level = level; @level_up_at = level_up_at; @learn_table = learn_table
   end
-  def gain_exp(n); @exp += n; end
+  # Bumps #level once @exp crosses @level_up_at (nil disables this entirely),
+  # learning whatever @learn_table names for the new level -- the shape
+  # #battle_level_up_lines (Scene::Map) needs to exercise the real Game::Actor
+  # code path it mirrors (Game::Actor#gain_exp -> #set_level -> #learn_level_skills)
+  # without the full RPG2000 EXP curve.
+  def gain_exp(n)
+    @exp += n
+    return unless @level_up_at && @exp >= @level_up_at
+    @level += 1
+    @learn_table.each { |sid, at| @skills.push(sid) if at == @level && !@skills.include?(sid) }
+  end
   # Battle write-back (Game::Battle#apply_to_party) sets the actor's post-battle
   # HP absolutely; the stub has no state model beyond the starting `states`
   # above, so just clamp to [0, max].
@@ -2017,13 +2036,14 @@ class BattleStubParty
   # #flying_offset` reads it off `@state.party`, not the database directly, so
   # a battle scene check needs its stub party to answer it too) -- false by
   # default, matching every other check's plain RPG2000 fixture.
-  def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil)
+  def initialize(actor = BattleStubActor.new, rpg2003: false, item_db: nil, skill_db: nil)
     @actors = [actor]
     @gold = 0
     @leader = nil
     @rpg2003 = rpg2003
     @items = {}
     @item_db = item_db
+    @skill_db = skill_db
   end
   def gain_gold(n); @gold += n; end
   def any_alive?; @actors.any? { |a| !a.dead? }; end
@@ -2035,6 +2055,10 @@ class BattleStubParty
   # item table `item_db` (typically the scene's own fake_db.item) was given.
   attr_reader :items
   def gain_item(id, n = 1); @items[id] = (@items[id] || 0) + n; end
+  # A newly-learned skill (#battle_level_up_lines, Scene::Map) is named from
+  # whatever skill table `skill_db` (typically the scene's own fake_db.skill)
+  # was given, mirroring #db_item above.
+  def db_skill(id); @skill_db && @skill_db[id]; end
   def db_item(id); @item_db && @item_db[id]; end
 end
 
@@ -9621,6 +9645,55 @@ check 'Enemy Encounter scene: blank database EXP/gold/item received terms fall b
   ok texts.any? { |t| t.include?('10 EXP gained.') }, 'a blank exp_received term falls back'
   ok texts.any? { |t| t.include?('Found 20G.') }, 'blank gold_received_a/gold/gold_received_b fall back'
   ok texts.count { |t| t.include?('Potion obtained.') } == 2, 'a blank item_received term falls back'
+end
+
+check 'Enemy Encounter scene: the result window announces a level-up and the skill it ' \
+      'teaches, the same way Change EXP/Change Level do' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.term.level = 'レベル'
+  db.term.level_up = 'に上がった！'
+  db.skill[42] = OpenStruct.new(name: 'Meteor')
+  db.term.skill_learned = 'を覚えた！'
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  # Troop 1 (two Slimes, 5 EXP each -- see the EXP/gold/item checks above)
+  # awards exactly 10 EXP; the stub crosses its one level threshold right at
+  # 10 and learns skill 42 at that level, mirroring
+  # Game::Interpreter#queue_level_up_messages's own before/after skill diff.
+  actor = BattleStubActor.new(level_up_at: 10, learn_table: [[42, 2]])
+  state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  eq 2, actor.level, 'the EXP gain crossed the one threshold configured'
+  ok texts.any? { |t| t.include?('Heroはレベル 2 に上がった！') },
+     'the level-up line reads name + level term + number + level_up term ' \
+     '(GetLevelUpMessage stock/CP932 branch)'
+  ok texts.any? { |t| t.include?('Meteorを覚えた！') },
+     'the newly-learned skill names itself (GetLearningMessage), right after the level-up line'
+end
+
+check 'Enemy Encounter scene: blank database level_up/skill_learned terms fall back to ' \
+      'composed English' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db # leaves level_up/skill_learned blank
+  db.skill[42] = OpenStruct.new(name: 'Meteor')
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  actor = BattleStubActor.new(level_up_at: 10, learn_table: [[42, 2]])
+  state.instance_variable_set(:@party, BattleStubParty.new(actor, skill_db: db.skill))
+  scene.update
+  battle_attack_to_end(scene)
+  texts = window_texts(scene.instance_variable_get(:@battle_ui)[:result_win])
+  ok texts.any? { |t| t.include?('Hero is now level 2!') }, 'a blank level_up term falls back'
+  ok texts.any? { |t| t.include?('Hero learned Meteor!') }, 'a blank skill_learned term falls back'
 end
 
 check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to English' do
