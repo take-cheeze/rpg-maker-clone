@@ -513,8 +513,11 @@
 
 - `frame(work)` is per-frame CPU time (the frame span minus the fps-cap sleep);
   the `sections` list is the bottleneck breakdown — `scene.update`,
-  `input.update` and the `gfx.*` phases of `Graphics.update` — sorted hottest
-  first, each with its average/max time and share of the frame. The memory
+  `input.update`, the `gfx.*` phases of `Graphics.update`, the `map.*` phases
+  of the RPG2000 map scene and the `audio.*` asset-load/poll path — sorted
+  hottest first, each with its average/max time and share of the frame. Only
+  the **top eight** sections fit on the line, so use the Chrome trace below to
+  see the cheap ones. The memory
   fields cover process RSS, the LVGL heap pool and mruby allocation churn (live
   blocks and allocations/sec; the allocation counters need the native build)
 - Game/engine Ruby code can time its own hot spots with
@@ -535,6 +538,11 @@
   `RGSS::Profiler.trace_start("trace.json")` / `RGSS::Profiler.trace_stop`. The
   stream stays loadable even if the process is killed mid-run, so it is safe to
   trace a long session and stop it with `Ctrl-C`
+- [`docs/profiling.md`](docs/profiling.md) records a measured baseline for the
+  RPG2000 map scene — what the sections above currently say, which one is the
+  bottleneck, and why moving audio to another thread does not help the frame
+  rate (SDL_mixer already mixes on its own thread; only asset load blocks the
+  game loop)
 
 ### Build natively without Nix
 

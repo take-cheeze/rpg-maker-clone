@@ -23,6 +23,17 @@ require 'tmpdir'
 module RGSS
   Rect = Struct.new(:x, :y, :width, :height)
 
+  # The real Profiler is a native mruby module (mruby-rgss/src/profiler.cxx),
+  # so it does not exist under this CRuby host. Scene::Map#render and #update
+  # time their phases through it, and the native implementation is itself a
+  # plain yield when profiling is off -- so stubbing it as exactly that keeps
+  # the measured code path identical here.
+  module Profiler
+    def self.section(_name)
+      yield
+    end
+  end
+
   # Records its components so the screen-overlay checks can assert the colour a
   # layer was filled with, not just that a fill happened.
   class Color

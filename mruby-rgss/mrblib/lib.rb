@@ -1176,7 +1176,15 @@ module RGSS
       # or one relative to the current directory), then under GAME_DIR and
       # RTP_DIR crossed with +dirs+; an accented name stored decomposed on disk
       # is retried in NFD form, as Bitmap does.
+      # Timed as `audio.resolve`: every Play SE/BGM/BGS/ME goes through here,
+      # and a miss walks two roots x the kind's directories x EXT_SPELLINGS
+      # (each also in its NFD spelling), so the cost is a burst of File.exist?
+      # syscalls on the game-loop thread rather than anything audio-related.
       def resolve(filename, dirs)
+        RGSS::Profiler.section("audio.resolve") { search_for(filename, dirs) }
+      end
+
+      def search_for(filename, dirs)
         return nil if filename.nil? || filename.empty?
         found = exist_with_ext(filename)
         return found if found
