@@ -3780,8 +3780,10 @@ class RPG2k
       # Drive an Open Shop wait. On the first frame the shop opens (a command
       # menu for a buy+sell shop, or straight to the buy / sell list for a
       # single-mode shop). Buying and selling happen one unit per confirm on
-      # Game::Shop; leaving resumes the interpreter with whether anything was
-      # traded (which picks the [Transaction] / [No Transaction] branch).
+      # Game::Shop, followed by a purchased / sold confirmation line before
+      # control returns to the list; leaving resumes the interpreter with
+      # whether anything was traded (which picks the [Transaction] /
+      # [No Transaction] branch).
       def drive_shop
         req = @interpreter.shop_request
         return @interpreter.resume_shop(false) unless req
@@ -3792,6 +3794,7 @@ class RPG2k
         case @shop[:screen]
         when :command  then drive_shop_command
         when :quantity then drive_shop_quantity
+        when :purchased, :sold then drive_shop_confirm
         else drive_shop_list
         end
       end
@@ -3829,7 +3832,10 @@ class RPG2k
           buy_number: nonblank([t.shop_buy_number1, t.shop_buy_number2, t.shop_buy_number3][i],
                                'How many will you buy?'),
           sell_number: nonblank([t.shop_sell_number1, t.shop_sell_number2, t.shop_sell_number3][i],
-                                'How many will you sell?')
+                                'How many will you sell?'),
+          purchased: nonblank([t.shop_purchased1, t.shop_purchased2, t.shop_purchased3][i],
+                              'Thank you!'),
+          sold: nonblank([t.shop_sold1, t.shop_sold2, t.shop_sold3][i], 'Thank you!')
         }
       end
 
@@ -3838,8 +3844,9 @@ class RPG2k
       # shopkeeper asking "anything else?" on returning to it after browsing
       # (EasyRPG's Window_Shop switches from `shop_greeting` to
       # `shop_regreeting` once the player has entered Buy or Sell mode -- a
-      # per-visit flag, not a persisted "have I shopped here before"), and a
-      # prompt on the buy / sell / quantity screens themselves. nil for any
+      # per-visit flag, not a persisted "have I shopped here before"), a
+      # prompt on the buy / sell / quantity screens themselves, and the
+      # purchased / sold confirmation once a transaction commits. nil for any
       # other screen, which #draw_shop reads as "no header row".
       def shop_header
         t = @shop[:terms]
@@ -3849,6 +3856,8 @@ class RPG2k
         when :sell then t[:sell_select]
         when :quantity
           @shop[:quantity][:mode] == :buy ? t[:buy_number] : t[:sell_number]
+        when :purchased then t[:purchased]
+        when :sold then t[:sold]
         end
       end
 
@@ -3881,6 +3890,8 @@ class RPG2k
             "#{unit * q[:count]}#{shop_gold_term}", q[:id]]]
         when :buy
           m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
+        when :purchased, :sold
+          [] # the confirmation line is the whole screen -- no selectable rows
         else # :sell
           m.sellable_items.map do |id|
             ["#{m.name(id)} x#{@state.party.item_count(id)}  " \
@@ -3955,6 +3966,19 @@ class RPG2k
         end
       end
 
+      # The purchased / sold confirmation shown right after a transaction
+      # commits (Game::Shop#buy / #sell): a single line, dismissed on a
+      # button press the same way the battle event message panel is (see
+      # #drive_battle_event_message), then back to the list it came from --
+      # EasyRPG's own Scene_Shop::Bought / Sold modes return to Buy / Sell
+      # respectively (a timed auto-dismiss there; button-driven here to match
+      # every other message screen in this scene).
+      def drive_shop_confirm
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        @shop[:screen] = @shop[:screen] == :purchased ? :buy : :sell
+        draw_shop
+      end
+
       # How far LEFT / RIGHT jump the quantity cursor — RPG_RT's shop counter
       # moves in tens on the horizontal axis so a stack of 99 is a few presses
       # away rather than ninety-nine.
@@ -3982,8 +4006,11 @@ class RPG2k
           draw_shop
         elsif Input.trigger?(Input::C)
           model = @shop[:model]
-          q[:mode] == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
-          close_shop_quantity
+          mode = q[:mode]
+          mode == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
+          @shop[:quantity] = nil
+          @shop[:screen] = mode == :buy ? :purchased : :sold
+          draw_shop
         elsif Input.trigger?(Input::B)
           close_shop_quantity
         end
