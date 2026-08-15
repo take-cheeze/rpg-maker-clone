@@ -4439,6 +4439,7 @@ class RPG2k
         return unless @battle_ui[:owner].equal?(it)
         update_enemy_flashes
         update_enemy_positions
+        update_enemy_shakes
         case @battle_ui[:phase]
         when :encounter_message then drive_battle_encounter_message
         when :battle_options then drive_battle_options
@@ -7751,6 +7752,21 @@ class RPG2k
       # left untouched by the `ANIM_CELL_FRAMES` fix's own comment ("independent
       # constants").
       ANIM_FLASH_FRAMES = 11
+      # A frame's `screen_shaking` timing (LCF field 8: 0 none / 1 target / 2
+      # screen) fires a fixed (power, speed, frames) triple regardless of the
+      # timing's own data -- verified against EasyRPG Player's actual C++
+      # source, `BattleAnimation::ProcessAnimationTiming` (src/battle_animation.cpp,
+      # fetched verbatim): both the `ScreenShake_screen` (`screen->
+      # ShakeOnce(3, 5, 32)`) and `ScreenShake_target` (`ShakeTargets(3, 5,
+      # 32)`) cases share this exact triple, which their own comment calls
+      # "not proven accurate" but the only real-RPG_RT numbers documented
+      # anywhere. `frames` is already in real (60fps) frames, not tenths of a
+      # second -- their comment derives it as "16 animation frames (32 real
+      # frames)" -- so it needs no `FRAMES_PER_TENTH` conversion, unlike the
+      # Shake Screen event command's own param2 (#do_shake_screen).
+      ANIM_SHAKE_POWER = 3
+      ANIM_SHAKE_SPEED = 5
+      ANIM_SHAKE_FRAMES = 32
       # RPG2000 battle-animation cells: a 96x96 grid, 5 cells across the sheet.
       ANIM_CELL = 96
       ANIM_SHEET_COLS = 5
@@ -8220,9 +8236,11 @@ class RPG2k
 
       # Fire the current frame's timings request: flash_scope 2 (whole screen,
       # already implemented) or flash_scope 1 (the animation's own target --
-      # #fire_target_flash in battle, #fire_map_target_flash on the map).
-      # RPG2000 stores the colour / power as 0..31, scaled up to the 0..255
-      # range every flash path uses.
+      # #fire_target_flash in battle, #fire_map_target_flash on the map), plus
+      # screen_shaking 2 (whole screen) / 1 (the animation's own target --
+      # #fire_target_shake in battle only, see there for why the map path is a
+      # genuine no-op rather than a gap). RPG2000 stores the flash colour /
+      # power as 0..31, scaled up to the 0..255 range every flash path uses.
       def fire_animation_flashes(ma)
         ma[:timings].each do |t|
           next unless (t.frame || 0) == ma[:frame_i]
@@ -8242,6 +8260,23 @@ class RPG2k
             # every real frame, the exact same shape as #ma[:screen_flash_hold]
             # just above.
             ma[:target_flash_hold] = ANIM_FLASH_FRAMES
+          end
+          case (t.screen_shaking || 0)
+          when 2
+            # The exact mechanism the Shake Screen event command (11050,
+            # #do_shake_screen) already drives -- same Game::Screen#shake
+            # call, same (power, speed, frames) argument order -- just with
+            # EasyRPG's own fixed triple instead of a command's own params.
+            # A timed shake decays on its own via Game::Screen#update
+            # (already driven every frame), so unlike the flash paths above
+            # this needs no per-frame re-assertion hold.
+            @state.screen.shake(ANIM_SHAKE_POWER, ANIM_SHAKE_SPEED, ANIM_SHAKE_FRAMES)
+          when 1
+            # BattleAnimationMap::ShakeTargets (the map-triggered Show Battle
+            # Animation path) is a genuine empty no-op in EasyRPG's real
+            # source, not a dropped feature -- so this only ever fires in
+            # battle, matching #fire_target_shake's own battle-only scope.
+            fire_target_shake(ma[:target_index]) if ma[:battle]
           end
         end
       end
@@ -8266,6 +8301,71 @@ class RPG2k
         spr.flash(Color.new((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
                             (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8),
                   ANIM_FLASH_FRAMES)
+      end
+
+      # The screen_shaking-1 counterpart to #fire_target_flash: arms a timed
+      # shake of just the animation's own target sprite, mirroring EasyRPG's
+      # actual C++ source verbatim -- both `BattleAnimationBattle::
+      # ShakeTargets` and `BattleAnimationBattler::ShakeTargets`
+      # (src/battle_animation.cpp) shake every one of the animation's own
+      # battler targets with `battler->ShakeOnce(str, spd, time)`, the exact
+      # same triple `ProcessAnimationTiming` already fires for the screen
+      # case. This codebase's front-view battle has no per-sprite native
+      # shake primitive the way Sprite#flash exists for the colour pulse, so
+      # the state is tracked in a plain `@battle_ui[:enemy_shake]` hash
+      # (paralleling `enemy_sprites` by index) and stepped by
+      # #update_enemy_shakes every frame -- the same `Shake::NextPosition`
+      # sine-wave port Game::Screen#update_shake already drives for the
+      # whole-screen case, just applied to one sprite's own x. RPG2000's
+      # battle is front-view, so an ally-targeted entry has no sprite to
+      # shake (target_index is nil there, the same gap #fire_target_flash's
+      # own comment already documents) -- a silent no-op, not an error.
+      def fire_target_shake(target_index)
+        sprites = @battle_ui && @battle_ui[:enemy_sprites]
+        return unless target_index && sprites && sprites[target_index]
+        @battle_ui[:enemy_shake] ||= []
+        @battle_ui[:enemy_shake][target_index] =
+          { power: ANIM_SHAKE_POWER, speed: ANIM_SHAKE_SPEED, frames: ANIM_SHAKE_FRAMES, offset: 0 }
+      end
+
+      # Advance every in-flight #fire_target_shake state by one frame --
+      # called from #drive_battle every frame, right alongside
+      # #update_enemy_flashes/#update_enemy_positions. A direct port of
+      # Game::Screen#update_shake's own step (see there for the EasyRPG
+      # `Shake::NextPosition`/`Shake::Update` provenance), just keyed per
+      # troop-member index instead of a single screen-wide state, and applied
+      # to that member's own sprite x (recomputed from its live database
+      # position the same way #update_enemy_positions already recomputes y
+      # for a levitating member, so a sprite rebuilt mid-shake --
+      # #reveal_battle_monster, #remove_fled_monster -- is never left
+      # offset from a stale base). A slot with nothing active costs nothing.
+      def update_enemy_shakes
+        shakes = @battle_ui[:enemy_shake]
+        return unless shakes
+        sprites = @battle_ui[:enemy_sprites]
+        troop = @battle_ui[:troop]
+        shakes.each_index do |i|
+          st = shakes[i]
+          next unless st
+          spr = sprites && sprites[i]
+          member = troop && troop.members[i]
+          unless spr && member
+            shakes[i] = nil
+            next
+          end
+          st[:frames] -= 1
+          if st[:frames] <= 0
+            st[:offset] = 0
+            shakes[i] = nil
+          else
+            amplitude = 1 + 2 * st[:power]
+            phase = (st[:frames] * 4 * (st[:speed] + 2)) % 256
+            newpos = (amplitude * Math.sin(phase * Math::PI / 128) * -1).to_i
+            cutoff = (st[:speed] * amplitude) / 8 + 1
+            st[:offset] = Game.clamp(newpos, st[:offset] - cutoff, st[:offset] + cutoff)
+          end
+          spr.x = member.x - spr.bitmap.width / 2 + st[:offset]
+        end
       end
 
       # The map-triggered counterpart to #fire_target_flash: a flash_scope-1
