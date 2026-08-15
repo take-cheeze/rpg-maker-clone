@@ -5568,6 +5568,47 @@ not yet verified:
   pinning the RPG2003 curve's own level 1→2 and 1→3 thresholds against a
   database flagged `rpg2003: true`, confirmed to fail against the pre-fix
   code before the fix (`expected 90, got 60`).
+- ✅ **`Game::Party#skill_cost` now edition-gates a percent-based SP cost to
+  RPG2003 and rounds a half-cost percent skill down instead of up, matching
+  two more edition/rounding distinctions EasyRPG's `Algo::CalcSkillCost`
+  (`src/algo.cpp`) makes that this method previously collapsed into one
+  shared rule.** The real function is `(Player::IsRPG2k3() && skill.sp_type
+  == SpType_percent) ? max_sp * sp_percent / 100 / div : (sp_cost +
+  half_sp_cost) / div` — two genuinely different formulas selected by both
+  edition *and* `sp_type`, not a shared cost with a shared halving rule:
+  1. **Percent-cost (`sp_type` 1) is RPG2003-only.** RPG2000's own editor has
+     no percent-cost UI at all, so a stray `sp_type` 1 byte in an RPG2000
+     database should read as the plain fixed-cost branch (`sp_cost`, which a
+     percent-cost row leaves unset — 0) instead of actually computing a
+     percentage. This method had no `rpg2003?` gate at all, unlike sibling
+     methods in this same class (`#calc_exp` immediately above, `#exp_max`)
+     that already use exactly this split.
+  2. **MP消費半分 (half-SP-cost gear) rounds the two branches differently.**
+     A fixed cost gets a `+1` before halving (`(sp_cost + 1) / div`, so a
+     1-SP skill still costs 1, never drops to 0) — this method already had
+     that half right. But a percent cost gets **no** such `+1`, a plain
+     floor by 2 — this method applied the fixed-cost `+1` rounding to
+     *whichever* cost came out, silently overcharging a percent-cost skill
+     by up to 1 SP whenever its own intermediate cost was odd: a 33-max-SP
+     caster wearing half-cost gear casting a 10%-cost RPG2003 skill paid 2 SP
+     (`(3 + 1) / 2`) instead of the correct 1 (`3 / 2`) — a full 100%
+     overcharge for that combination.
+  Fixed by restructuring `#skill_cost` to select the divisor (`half_sp_cost?
+  ? 2 : 1`) once, then apply it *inside* each branch with that branch's own
+  rounding — the percent branch a plain division, the fixed branch its own
+  `+1` first — rather than computing a shared `cost` up front and halving it
+  uniformly afterward, and gating the percent branch on `rpg2003?` the same
+  way `#calc_exp` already does. The existing percent-cost field-skills check
+  (predating this fix, on a database that was never edition-flagged) now
+  explicitly exercises both editions — an RPG2000-flagged party reading a
+  `sp_type` 1 skill as its own unset `sp_cost` (0), and an RPG2003-flagged
+  one reading it as the real percentage — and the existing half-cost check
+  gained a percent-cost skill on an RPG2003-flagged database with an odd
+  intermediate cost to actually distinguish floor from round-up (its old
+  20%-of-40-max-SP case landed on an already-even 8, which rounds the same
+  way either direction, silently passing under both the old buggy code and
+  the fix alike). Both confirmed to fail against the pre-fix code before the
+  fix.
 - ✅ **A variable's stored value now clamps to RPG_RT's ±999999 range**
   (RPG2000; RPG2003 widens it to ±9999999, per `LCF.var_min`/`var_max`) instead
   of overflowing. `Game::Variables#[]=` had no bound at all, so a Control

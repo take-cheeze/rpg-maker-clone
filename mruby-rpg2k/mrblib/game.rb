@@ -3440,21 +3440,33 @@ module Game
       @db.respond_to?(:situation) ? @db.situation : nil
     end
 
-    # The SP `caster` pays to cast skill `sk`: a fixed cost (sp_type 0) or a
-    # percentage of the caster's max SP (sp_type 1). Mirrors EasyRPG's
-    # CalculateSkillCost (the half-SP-cost modifier is a later refinement).
+    # The SP `caster` pays to cast skill `sk`: a fixed cost (sp_type 0) or, on
+    # an RPG2003 database only, a percentage of the caster's max SP (sp_type
+    # 1). Ported from EasyRPG's `Algo::CalcSkillCost` (`src/algo.cpp`):
+    # `(Player::IsRPG2k3() && skill.sp_type == SpType_percent) ? max_sp *
+    # sp_percent / 100 / div : (sp_cost + half_sp_cost) / div`. RPG2000's
+    # editor has no percent-cost UI at all, so the `rpg2003?` gate mirrors
+    # `#calc_exp`'s own edition split rather than trusting a stray sp_type
+    # byte a hand-edited RPG2000 database happened to carry.
+    #
+    # MP消費半分 gear halves the bill (`div` 2, else 1) -- but the two branches
+    # round the halving *differently*, and it must stay that way rather than
+    # applying one shared `(cost + 1) / 2` to whichever cost came out: a
+    # fixed cost rounds **up** first (`+1` before the divide, so a 1-SP skill
+    # still costs 1, not 0), while a percent cost has no such `+1` at all and
+    # simply floors. Halving a percent-based cost via the fixed-cost rounding
+    # used to overcharge by up to 1 SP whenever the intermediate percent cost
+    # came out odd -- a 33-max-SP caster with half-cost gear casting a 10%
+    # RPG2003 skill paid 2 SP (`(3 + 1) / 2`) instead of the correct 1
+    # (`3 / 2`), a full 100% overcharge for that combination.
     def skill_cost(sk, caster)
-      cost =
-        if sk.sp_type == 1
-          caster.max_mp * (sk.sp_percent || 0) / 100
-        else
-          sk.sp_cost || 0
-        end
-      # MP消費半分 gear halves the bill, rounding **up** so a 1-SP skill still
-      # costs 1 (EasyRPG's `cost = (cost + 1) / 2`). Asked of whatever the caller
-      # handed over — a Game::Actor in the menus, a battle snapshot in a fight.
-      return cost unless caster.respond_to?(:half_sp_cost?) && caster.half_sp_cost?
-      (cost + 1) / 2
+      half = caster.respond_to?(:half_sp_cost?) && caster.half_sp_cost?
+      div = half ? 2 : 1
+      if rpg2003? && sk.sp_type == 1
+        caster.max_mp * (sk.sp_percent || 0) / 100 / div
+      else
+        ((sk.sp_cost || 0) + (half ? 1 : 0)) / div
+      end
     end
 
     # `caster`'s known skills usable from the field menu, as `[skill_id, cost]`

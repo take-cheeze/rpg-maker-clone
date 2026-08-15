@@ -5262,9 +5262,19 @@ check 'an all-ally heal skill heals the whole party (caster included) and spends
   eq 22, hero.mp                               # 30 - 8
 end
 
-check 'skill_cost supports a percentage of max SP (sp_type 1)' do
+check 'skill_cost supports a percentage of max SP (sp_type 1), RPG2003 only' do
+  # EasyRPG's Algo::CalcSkillCost gates the whole percent-cost branch behind
+  # `Player::IsRPG2k3()` -- RPG2000's own editor has no percent-cost UI at
+  # all, so a stray sp_type 1 byte in an RPG2000 database reads as the plain
+  # fixed-cost branch instead (sp_cost, unset here -> 0), not as a percent.
   skills = { 5 => fake_skill(scope: 2, sp_type: 1, sp_percent: 10, power: 5, sp: true) }
-  st = skill_party(skills)
+  st2k = skill_party(skills)
+  hero2k = st2k.party.actor_by_id(1)
+  hero2k.learn_skill(5)
+  eq [[5, 0]], st2k.party.field_skills(hero2k),
+     'RPG2000: sp_type 1 is not a real percent-cost skill, reads as the unset sp_cost'
+
+  st = skill_party(skills, {}, rpg2003: true)
   hero = st.party.actor_by_id(1)               # max SP 30
   hero.learn_skill(5)
   eq [[5, 3]], st.party.field_skills(hero)      # 30 * 10 / 100 = 3
@@ -11622,12 +11632,19 @@ check 'battle: 強力防御 halves damage a second time' do
      'strong defence takes half of what an ordinary guard leaves'
 end
 
-check 'MP消費半分 gear halves a skill cost, rounding up' do
+check 'MP消費半分 gear halves a fixed cost rounding up, a percent cost rounding down' do
+  # EasyRPG's Algo::CalcSkillCost rounds the two sp_type branches differently
+  # when half-cost gear is worn: a fixed cost gets a `+1` before halving (so
+  # a 1-SP skill still costs 1), a percent cost gets no such `+1` and simply
+  # floors. Applying one shared `(cost + 1) / 2` to whichever cost came out
+  # (a prior version of this method) silently overcharged the percent branch
+  # by up to 1 SP whenever its own intermediate cost was odd -- 10% of a 33
+  # max-SP caster is 3, which should halve to 1 (3 / 2), not 2 ((3 + 1) / 2).
   skills = { 1 => fake_skill(sp_cost: 7), 2 => fake_skill(sp_cost: 1),
-             3 => fake_skill(sp_type: 1, sp_percent: 20) }
+             3 => fake_skill(sp_type: 1, sp_percent: 10) }
   items = { 9 => fake_item(type: 5, half_sp_cost: true) }  # an accessory
-  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [100, 40, 10, 5, 5, 5]) },
-                       [1], items, skills)
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [100, 33, 10, 5, 5, 5]) },
+                       [1], items, skills, {}, nil, nil, rpg2003: true)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   hero = st.party.leader
   eq false, hero.half_sp_cost?
@@ -11636,8 +11653,7 @@ check 'MP消費半分 gear halves a skill cost, rounding up' do
   ok hero.half_sp_cost?, 'the accessory grants it'
   eq 4, st.party.skill_cost(db.skill[1], hero), '7 -> 4, rounded up'
   eq 1, st.party.skill_cost(db.skill[2], hero), 'a 1-SP skill still costs 1'
-  # A percentage cost is halved the same way (20% of 40 max SP = 8 -> 4).
-  eq 4, st.party.skill_cost(db.skill[3], hero)
+  eq 1, st.party.skill_cost(db.skill[3], hero), '10% of 33 = 3, halved down to 1, not up to 2'
 end
 
 check 'Battle end_round clears a queued Skill / Item command' do
