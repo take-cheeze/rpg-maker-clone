@@ -11856,12 +11856,107 @@ check 'starting a new BGM clears the "played once" flag' do
   eq false, st.bgm_looped
 end
 
+# -- map-event pages ----------------------------------------------------------
+
+# A page: a condition plus the command list it runs. Shared by the map-event
+# and battle-event page checks below.
+FakePage = Struct.new(:condition, :event)
+
+# A map event page condition (LMU chunk 1 of MAP_EVENT_PAGE_CONDITION). Only
+# the fields a given check enables in `flags` are read, so the rest can stay
+# at their editor defaults.
+FakeEventCond = Struct.new(:flags, :switch_a_id, :switch_b_id, :variable_id,
+                            :variable_value, :item_id, :actor_id, :timer_sec)
+def event_cond(flags, opts = {})
+  c = FakeEventCond.new(flags)
+  c.variable_value = 0
+  c.timer_sec = 0
+  opts.each { |k, v| c.send("#{k}=", v) }
+  c
+end
+
+# A minimal party stand-in for EventPage::ITEM / ::ACTOR: just enough to
+# answer has_item?/include_actor? from plain arrays.
+FakeEventPageParty = Struct.new(:items, :actor_ids) do
+  def has_item?(id); items.include?(id); end
+  def include_actor?(id); actor_ids.include?(id); end
+end
+
+check 'Game::EventPage.active? tests switch, variable, item and actor conditions' do
+  st = new_state
+  sw = st.switches
+  vars = st.variables
+  party = FakeEventPageParty.new([], [])
+
+  # RPG_RT reads an entirely unticked condition box as "always", unlike a
+  # battle-event page's box (BattlePage.active? above reads that as "never").
+  eq true, Game::EventPage.active?(nil, sw, vars, party), 'a page with no condition always fires'
+  eq true, Game::EventPage.active?(event_cond(0), sw, vars, party), 'nor does one with no flags set'
+
+  cond = event_cond(Game::EventPage::SWITCH_A, switch_a_id: 3)
+  eq false, Game::EventPage.active?(cond, sw, vars, party)
+  sw[3] = true
+  eq true, Game::EventPage.active?(cond, sw, vars, party)
+
+  vcond = event_cond(Game::EventPage::VARIABLE, variable_id: 2, variable_value: 5)
+  eq false, Game::EventPage.active?(vcond, sw, vars, party)
+  vars[2] = 5
+  eq true, Game::EventPage.active?(vcond, sw, vars, party), 'the test is >=, not =='
+
+  icond = event_cond(Game::EventPage::ITEM, item_id: 7)
+  eq false, Game::EventPage.active?(icond, sw, vars, party)
+  party.items << 7
+  eq true, Game::EventPage.active?(icond, sw, vars, party)
+
+  acond = event_cond(Game::EventPage::ACTOR, actor_id: 1)
+  eq false, Game::EventPage.active?(acond, sw, vars, party)
+  party.actor_ids << 1
+  eq true, Game::EventPage.active?(acond, sw, vars, party)
+end
+
+check 'Game::EventPage.active? tests the Timer (0x20) condition against Timer1 seconds' do
+  st = new_state
+  sw = st.switches
+  vars = st.variables
+  party = FakeEventPageParty.new([], [])
+
+  # RPG_RT's AreConditionsMet: "if (secs > condition.timer_sec) return false"
+  # -- active once Timer1 has counted down to timer_sec seconds or below.
+  cond = event_cond(Game::EventPage::TIMER, timer_sec: 30)
+  eq false, Game::EventPage.active?(cond, sw, vars, party, 60), 'well above the threshold'
+  eq false, Game::EventPage.active?(cond, sw, vars, party, 31), 'one second above the threshold'
+  eq true, Game::EventPage.active?(cond, sw, vars, party, 30), 'exactly at the threshold: <=, not <'
+  eq true, Game::EventPage.active?(cond, sw, vars, party, 10), 'counted down past the threshold'
+  eq true, Game::EventPage.active?(cond, sw, vars, party, 0), 'timer fully elapsed'
+
+  # A page can gate on more than one thing at once -- both must hold.
+  combo = event_cond(Game::EventPage::SWITCH_A | Game::EventPage::TIMER,
+                      switch_a_id: 4, timer_sec: 30)
+  eq false, Game::EventPage.active?(combo, sw, vars, party, 10), 'timer alone is not enough'
+  sw[4] = true
+  eq true, Game::EventPage.active?(combo, sw, vars, party, 10)
+  eq false, Game::EventPage.active?(combo, sw, vars, party, 60), 'switch alone is not enough'
+end
+
+check 'Game::EventPage.select picks the last page whose conditions (including Timer) hold' do
+  st = new_state
+  sw = st.switches
+  vars = st.variables
+  party = FakeEventPageParty.new([], [])
+
+  always = FakePage.new(nil, [])
+  timer_gated = FakePage.new(event_cond(Game::EventPage::TIMER, timer_sec: 10), [])
+  pages = { 1 => always, 2 => timer_gated }
+
+  eq [1, always], Game::EventPage.select(pages, sw, vars, party, 60),
+     'above the threshold: only the unconditional page qualifies'
+  eq [2, timer_gated], Game::EventPage.select(pages, sw, vars, party, 5),
+     'once the timer counts down past the threshold, the later page wins'
+end
+
 # -- battle-event pages and their commands ------------------------------------
 
 BP = Game::BattlePage
-
-# A troop battle-event page: a condition plus the command list it runs.
-FakePage = Struct.new(:condition, :event)
 
 # A troop battle-event page condition. Only the fields a given check enables in
 # `flags` are read, so the rest can stay at their editor defaults.

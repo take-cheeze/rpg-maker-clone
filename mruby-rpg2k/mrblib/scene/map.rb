@@ -1014,7 +1014,8 @@ class RPG2k
           @event_last_position[id] ||= [ev.x, ev.y, nil]
           next if @erased_events[id] # an Erase Event lasts the whole visit
           selected = Game::EventPage.select(ev.pages, @state.switches,
-                                            @state.variables, @state.party)
+                                            @state.variables, @state.party,
+                                            @state.timer_seconds)
           next unless selected
           page = selected[1]
           @events.push(build_event(id, ev, page, restore_route_index: restore_route_index))
@@ -2514,20 +2515,27 @@ class RPG2k
       # -- page refresh -------------------------------------------------------
 
       # An event's active page is chosen by its conditions, and those read the
-      # switches, the variables, the party roster and its items. Change one and
-      # the choice can change with it — the "talk to me once and I turn into my
-      # page 2" idiom every RPG2000 game is built on. The pages were only ever
-      # selected when the map loaded, so an event kept whichever page it started
-      # the visit with until the player left and came back.
+      # switches, the variables, the party roster and its items, and Timer1's
+      # remaining seconds. Change one and the choice can change with it — the
+      # "talk to me once and I turn into my page 2" idiom every RPG2000 game is
+      # built on. The pages were only ever selected when the map loaded, so an
+      # event kept whichever page it started the visit with until the player
+      # left and came back.
       #
-      # RPG_RT re-selects them whenever those four things change (its
-      # `Game_Map::SetNeedRefresh`, set by Control Switches / Variables, Change
-      # Items and Change Party Member). Rather than flagging each command — which
-      # silently misses any path that is not an event command, like using an item
-      # from the menu — this watches the revision counters those four carry, so
-      # every writer is covered by construction.
+      # RPG_RT re-selects them whenever those change (its `Game_Map::
+      # SetNeedRefresh`, set by Control Switches / Variables, Change Items and
+      # Change Party Member -- plus, for a Timer condition, every tick of the
+      # countdown). Rather than flagging each command — which silently misses
+      # any path that is not an event command, like using an item from the menu
+      # — this watches the revision counters those carry, so every writer is
+      # covered by construction. Timer1's seconds figure has no revision
+      # counter of its own, but it only ever changes once a second (it is
+      # already whole seconds -- #timer_seconds), so folding it into the sum
+      # catches exactly the frame a Timer condition's threshold is crossed
+      # without sweeping every frame in between.
       def page_revision
-        rev(@state.switches) + rev(@state.variables) + rev(@state.party)
+        rev(@state.switches) + rev(@state.variables) + rev(@state.party) +
+          @state.timer_seconds
       end
 
       # A collaborator's revision counter, or 0 for one that keeps none (the
@@ -2564,7 +2572,8 @@ class RPG2k
         evs.each do |id, src|
           next if changed || @erased_events[id]
           selected = Game::EventPage.select(src.pages, @state.switches,
-                                            @state.variables, @state.party)
+                                            @state.variables, @state.party,
+                                            @state.timer_seconds)
           page = selected && selected[1]
           e = live[id]
           changed = true unless page.equal?(e && e[:page])
