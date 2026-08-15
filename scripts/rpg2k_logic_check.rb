@@ -13871,6 +13871,30 @@ check 'elevated? reads ABOVE_BIT off the upper passability table' do
      'a chipset with no upper table at all is never starred'
 end
 
+# A dangling chipset id (a database shrink, or a bad Change Map Tileset
+# override) reports and degrades to the same blank/passable model as before,
+# rather than rendering the map blank and fully passable with no trace.
+check 'a dangling chipset id reports and degrades to a blank/passable chipset' do
+  db = Struct.new(:chipset).new({ 1 => FakeChipsetRow.new('cs', 'cs.png', [1], [2], [3], 1, 1) })
+  out = capture_stderr { @cs = Game::ChipSet.new(db, 99) }
+  ok out.include?('[RPG2k] chipset #99 not found in database'), out
+
+  eq '', @cs.name
+  eq '', @cs.graphic
+  ok !@cs.elevated?(BLOCK_F), 'no upper passability table -- never starred'
+  ok @cs.passable?(0, 2), 'no passability table -- everything degrades to passable'
+  ok @cs.landable?(0), 'no passability table -- everything degrades to landable'
+  eq 1, @cs.terrain(0), 'no terrain table -- reads the default terrain 1'
+
+  ok capture_stderr { Game::ChipSet.new(db, 1) }.empty?, 'an existing chipset id logs nothing'
+  ok capture_stderr { Game::ChipSet.new(db, 0) }.empty?, 'id 0 (no chipset) is not a dangling reference'
+  ok capture_stderr { Game::ChipSet.new(db, nil) }.empty?, 'a nil id is not a dangling reference'
+
+  bare_db = Struct.new(:name).new('bare fixture, no chipset table at all')
+  ok capture_stderr { Game::ChipSet.new(bare_db, 99) }.empty?,
+     'a bare fixture with no chipset table at all is not a dangling reference'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

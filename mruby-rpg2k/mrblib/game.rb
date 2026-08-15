@@ -551,8 +551,21 @@ module Game
 
     attr_reader :name, :graphic, :animation_type, :animation_speed
 
+    # `id` a dangling reference (a database shrink, or a bad Change Map
+    # Tileset override, can leave one behind -- see docs/TODO.md's runtime
+    # error catalog) still degrades to a blank name/graphic and nil
+    # passability/terrain tables, same as it always has, but is now reported
+    # rather than silently rendering the map blank and fully passable with no
+    # trace. `has_table` guards the diagnostic the same way `db_item` /
+    # `db_enemy_group` do, so a bare test fixture with no chipset table at all
+    # (rather than a real dangling id) stays quiet.
     def initialize(db, id)
-      c = db.chipset[id]
+      has_table = db.respond_to?(:chipset)
+      c = has_table ? db.chipset[id] : nil
+      if c.nil? && has_table && id && id > 0
+        $stderr.puts "[RPG2k] chipset ##{id} not found in database, " \
+                     'tiles treated as blank/passable'
+      end
       @name = c ? c.name : ''
       @graphic = c ? c.chipset_name : ''
       @passable_lower = c ? c.passable_data_lower : nil
