@@ -1045,8 +1045,11 @@ The work below is roughly ordered by the critical path to a walkable game
   through the `.lsd` too: the inventory chunk (109)'s `steps` field (42) is
   decoded and written by `Game::State#to_lsd` / `.from_lsd`, so a resumed real
   save continues its count instead of starting from 0. The chunk's `turns`
-  field (41, "turns passed in latest battle") stays deliberately undecoded —
-  there is no per-battle turn tracker on the Ruby side to source it from yet.
+  field (41, "turns passed in latest battle") is now decoded too:
+  `Game::Battle#turn` (its live `@rounds` counter) is captured onto
+  `Game::State#last_battle_turns` by `Scene::Map#finish_battle` right before
+  the fought `Battle` object is discarded, and round-trips through the same
+  `to_lsd`/`from_lsd` (and Marshal `to_h`/`.load`) pair as `steps`.
   mtf-meido-action's Poison (1 HP every 4 steps) is the only state in either test
   bed that carries the field, and `rpg2k_testbed_logic_check.rb` walks the real
   party through the real interval against it. **`affect_type` stat
@@ -2021,10 +2024,9 @@ The work below is roughly ordered by the critical path to a walkable game
   screen being left against the screen being arrived at (one of the two is always
   solid black). That draws the blinds, the vertical / horizontal stripes and the
   border-to-centre / centre-to-border windows for real, and — see below —
-  random blocks too. Remaining: the styles a black mask cannot express — the
-  scrolls, the combine / division pairs and zoom slide or resample the live
-  scene itself, and mosaic / wave resample it too — which run as a fade of the
-  right length and the right end state for now.
+  random blocks too. The styles a black mask cannot express — the scrolls,
+  the combine / division pairs and zoom slide or resample the live scene
+  itself, and mosaic / wave resample it too — are also done, see below.
 
   **That remainder was written up as blocked on a screen capture the renderer
   does not have. It is not: `RGSS::Graphics.snap_to_bitmap` exists, is tested
@@ -2052,9 +2054,36 @@ The work below is roughly ordered by the critical path to a walkable game
     revealed each frame — rather than through `#visible_rects`'s
     full-cumulative-mask-every-frame shape, which is what made this style
     expensive enough to be left unbuilt. See the writeup below.
-  - **Mosaic (17) / wave (18)**: per-pixel resampling. `get_pixel`/`set_pixel`
-    exist but a full-screen loop per frame in Ruby is far too slow, so these are
-    the only two that genuinely want a native pass.
+  - ✅ **Mosaic (17) / wave (18)**: per-pixel resampling. `get_pixel`/`set_pixel`
+    exist but a full-screen loop per frame in Ruby is far too slow, so these
+    were the only two that genuinely wanted a native pass — now built as
+    `mruby-rgss`'s `Bitmap#mosaic_blt`/`#wave_blt` (`mruby-rgss/src/lib.cxx`),
+    the same shape as the existing `#tone_blt`/`#stretch_blt` primitives.
+    Ported from EasyRPG's real source (`src/transition.cpp`'s
+    `TransitionMosaicIn`/`Out` and `TransitionWaveIn`/`Out` cases, fetched
+    verbatim): **mosaic** resamples each pixel from the nearest-centre pixel
+    of a `block_size`x`block_size` block (`off = block_size / 2`), the block
+    size ramping `@frames..1` for the "in" (Show) style and `1..@frames` the
+    other way for "out" (Erase) — so a show sharpens out of a mosaic and an
+    erase dissolves into one, never through black. RPG_RT also nudges the
+    sampling window by a small per-frame random offset
+    (`mosaic_random_offset`); this port omits that jitter for a
+    deterministic, unit-testable block centre, the same kind of reasoned
+    simplification the random-blocks Down/Up bias and cross combine/
+    division's quadrant motion already are elsewhere in this class. **Wave**
+    displaces each captured scanline horizontally by
+    `trunc(2 * depth * sin(phase + row * 2*pi / 32))` (EasyRPG's
+    `Bitmap::WaverBlit`, `src/bitmap.cpp`, called at 1:1 scale), with
+    `depth`/`phase` driven by the same `@frames..1` / `1..@frames` ramp
+    mosaic's block size uses and `phase = p * 5 * PI / tf_off + PI`. Both
+    ride the CAPTURED snapshot machinery scroll/combine/zoom already use
+    (`Game::Transition#mosaic?`/`#wave?`/`#mosaic_block_size`/`#wave_params`,
+    `Scene::Map#draw_captured_transition`), rather than #capture_ops's
+    blt/stretch_blt geometry list. Covered by new checks in
+    `scripts/rpg2k_logic_check.rb` (the block-size/depth/phase ramps) and
+    `scripts/rpg2k_scene_check.rb` (the native calls reached with the right
+    per-frame parameters), plus `mruby-rgss/test/test.rb` for the native
+    primitives themselves.
 
   One wrinkle a Show Screen has and an Erase does not: its capture is of the
   screen being arrived at, and `snap_to_bitmap` grabs the rendered screen
@@ -2066,7 +2095,8 @@ The work below is roughly ordered by the critical path to a walkable game
   which is what makes the family worth finishing (`ruby scripts/analyze_game.rb
   --params --code 11010 data/mtf-meido-action/Debug`).
 
-  **Scroll, combine / division, zoom and random blocks are done.**
+  **Scroll, combine / division, zoom, mosaic, wave and random blocks are all
+  done.**
   `Game::Transition#capture_ops`
   computes, per style, where each piece of a captured screen goes this frame
   (a plain offset for the four scroll directions; two sliding pieces for
@@ -2142,7 +2172,13 @@ The work below is roughly ordered by the critical path to a walkable game
   this class. Covered by new checks in `scripts/rpg2k_logic_check.rb`
   (block-grid geometry, cumulative no-repeat coverage, the Down/Up row bias)
   and `scripts/rpg2k_scene_check.rb` (the incremental overlay paint).
-  Mosaic/wave alone is still unbuilt, per the per-style breakdown above.
+
+  ✅ **Mosaic (17) / wave (18) are done too**, the native per-pixel resample
+  pass the per-style breakdown above used to flag as the only two styles left
+  — see that bullet for the full writeup (`mruby-rgss`'s
+  `Bitmap#mosaic_blt`/`#wave_blt`, `Game::Transition#mosaic_block_size`/
+  `#wave_params`). With this, every Erase / Show Screen setting (0–19) now
+  paints for real; setting 20 ("no transition") always was a no-op.
 
   The fade and flash overlays were listed here as blocked on `RGSS::Viewport`
   tone/alpha support in C++. **They were not**: `RGSS::Sprite#opacity` already
@@ -2695,11 +2731,29 @@ The work below is roughly ordered by the critical path to a walkable game
   `nil`; `Game::State#to_lsd` writes the five live counters into them and
   `.from_lsd` restores them, leaving a legacy save's zeroed `State.new`
   defaults in place when the fields are absent. Chunk 109's `turns` field (41,
-  "turns passed in latest battle") stays deliberately undecoded — there is no
-  per-battle turn tracker on the Ruby side to source it from, and building one
-  is a separate, larger feature. Covered by a new `scripts/
+  "turns passed in latest battle") was left deliberately undecoded at the
+  time — there was no per-battle turn tracker on the Ruby side to source it
+  from — and is now wired up too, see below. Covered by a new `scripts/
   rpg2k_logic_check.rb` check (a non-zero step count and battle tallies both
   round-trip through an in-memory `to_lsd`/`from_lsd`).
+  ✅ **Chunk 109's `turns` field (41, "turns passed in latest battle") now
+  round-trips through the `.lsd` too**, the one field the step/battle-tally
+  entry above deliberately left out for lack of a source value.
+  `Game::Battle` already tracks the fight's own round count live (`@rounds`,
+  incremented once per `#run_round` up to `MAX_ROUNDS`; `#turn` simply
+  returns it) — it just never survived past the fight, since
+  `Scene::Map#finish_battle` discards the `Battle` object once it hands the
+  outcome back to the event. A new `Game::State#last_battle_turns`
+  (Marshal-persisted like `#steps`, nil until a battle has ever finished) is
+  now set from `@battle_ui[:battle].turn` right there, alongside the existing
+  `apply_to_party` call. `LCF::Schema::SAVE_INVENTORY` decodes field 41 as a
+  plain undefaulted `:int`, matching its neighbours; `Game::State#to_lsd`
+  writes it (only when set, so a save taken before any battle leaves the
+  field genuinely absent, not a spurious 0) and `.from_lsd` restores it.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check (a multi-round battle,
+  `finish_battle` capturing the round count, then an in-memory
+  `to_lsd`/`from_lsd` round-trip; a legacy save with the field absent stays at
+  the `nil` default).
 - Battle system — enemy groups, battle scene, actions/damage/states,
   animations (large; Nepheshel uses the default RPG2000 battle). Needs real
   assets + the native build to develop against. The game-over scene is done
@@ -6936,6 +6990,28 @@ not yet verified:
   ineffective rating-60 skill's own rating even though the skill itself
   never fires), all three confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **An action pattern's "Enemies" condition (`condition_type` 3,
+  `COND_ACTORS`) now ranges over the acting monster's own living
+  troop-mates, not the player party's headcount — a straight side-swap,
+  now fixed.** `Game::Battle#enemy_action_valid?`'s `COND_ACTORS` branch
+  (`mruby-rpg2k/mrblib/game.rb`) counted `@allies.reject(&:out_of_play?)
+  .size` — the number of living *party* members — where EasyRPG Player's
+  own `IsActionValid` (`src/enemyai.cpp`) reads `Main_Data::
+  game_enemyparty`'s own `GetActiveBattlers`, the monster *troop's* own
+  headcount, never `game_party`. Any action pattern using this condition
+  (a boss escalating once its escorts are down, a support minion firing
+  only while several troop-mates remain) evaluated against the wrong
+  side's population entirely — in a typical fixed-size party this made
+  the condition permanently static for the whole fight instead of
+  reacting to the troop actually thinning out. Fixed by reading
+  `@enemies` instead of `@allies`. An existing
+  `scripts/rpg2k_logic_check.rb` check ("an actor-count action ranges
+  over the living party") had itself encoded this same bug rather than
+  independently deriving the real behaviour — replaced with a
+  three-enemy-troop check pinning the condition against the *troop's*
+  own headcount (fires with all three troop-mates alive, stops firing
+  once two are killed off, regardless of the untouched one-hero party),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An HP-increase cannot revive a downed (0 HP) combatant**, checked
   across all three paths that can raise HP. The **field actor** path
   (`Game::Actor#change_hp`, `mruby-rpg2k/mrblib/game.rb`) was already

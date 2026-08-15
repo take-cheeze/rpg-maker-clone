@@ -9,6 +9,13 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # File, so the standalone mrbtest build needs mruby-io. The loader itself
   # reads files through C stdio, so this is only needed for the tests.
   add_test_dependency 'mruby-io'
+  # The wave_blt test computes its expected phase with Math::PI. Math is part
+  # of the full game's gem set (build_config.rb's rpg_maker_gems), but the
+  # standalone mrbtest build only pulls this gem plus its declared
+  # dependencies -- see AGENTS.md's "mruby stdlib methods live in core *-ext
+  # mrbgems" note. wave_blt itself is pure C++ (mruby-rgss/src/lib.cxx), so
+  # this is only needed for the test.
+  add_test_dependency 'mruby-math'
 
   cxx.include_paths <<
     "#{dir}/../3rd/uni-algo/include" <<

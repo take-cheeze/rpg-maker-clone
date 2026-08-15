@@ -608,10 +608,14 @@ class RPG2k
       # this particular Game::Transition instance is drawn (identity, not
       # value, so a same-style transition right after it still re-snapshots).
       #
-      # Zoom is the one captured style that resamples instead of pasting 1:1
-      # (see Game::Transition#zoom?): its single #capture_ops piece is `[dx,
-      # dy, dw, dh, sx, sy, sw, sh]` for `Bitmap#stretch_blt`, rather than the
-      # `[dx, dy, sx, sy, sw, sh]` every other style hands to `Bitmap#blt`.
+      # Zoom is the one #capture_ops style that resamples instead of pasting
+      # 1:1 (see Game::Transition#zoom?): its single piece is `[dx, dy, dw,
+      # dh, sx, sy, sw, sh]` for `Bitmap#stretch_blt`, rather than the `[dx,
+      # dy, sx, sy, sw, sh]` every other #capture_ops style hands to
+      # `Bitmap#blt`. Mosaic and wave (Game::Transition#mosaic?/#wave?) are
+      # native per-pixel resamples of the whole capture instead of a geometry
+      # list -- `Bitmap#mosaic_blt`/`#wave_blt`, driven by
+      # `#mosaic_block_size`/`#wave_params` rather than `#capture_ops`.
       def draw_captured_transition(tr)
         unless @captured_transition.equal?(tr)
           @transition_capture.dispose if @transition_capture
@@ -630,6 +634,11 @@ class RPG2k
         if tr.zoom?
           dx, dy, dw, dh, sx, sy, sw, sh = tr.capture_ops.first
           @fade_bmp.stretch_blt Rect.new(dx, dy, dw, dh), cap, Rect.new(sx, sy, sw, sh)
+        elsif tr.mosaic?
+          @fade_bmp.mosaic_blt cap, tr.mosaic_block_size
+        elsif tr.wave?
+          depth, phase = tr.wave_params
+          @fade_bmp.wave_blt cap, depth, phase
         else
           tr.capture_ops.each do |dx, dy, sx, sy, sw, sh|
             @fade_bmp.blt dx, dy, cap, Rect.new(sx, sy, sw, sh)
@@ -5705,6 +5714,11 @@ class RPG2k
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
         @battle_ui[:battle].apply_to_party
+        # Capture the fight's own round count (Game::Battle#turn, its live
+        # @rounds counter) before #close_battle discards the Battle object --
+        # this is RPG2000's "turns passed in latest battle" (Game::State
+        # #last_battle_turns, LCF inventory chunk 109 field 41).
+        @state.last_battle_turns = @battle_ui[:battle].turn
         # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
         # party knocked out ends the game; every other outcome resumes the event.
         game_over = result == :defeat && @battle_ui[:req][:defeat_game_over] &&

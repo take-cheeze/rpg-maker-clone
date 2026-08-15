@@ -2123,17 +2123,21 @@ end
 
 check 'Erase Screen records the transition style and ramps the level' do
   st = new_state
-  # Setting 17 is Mosaic, still one of the styles a black mask cannot express
-  # (per-pixel resampling), so it runs as a fade of the same length.
+  # Setting 17 is Mosaic: a black mask cannot express it (per-pixel
+  # resampling), so it composites from a captured screen like scroll /
+  # combine / division / zoom rather than drawing a plain fade -- see
+  # Game::Transition::CAPTURED / #mosaic?.
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::ERASE_SCREEN, [17])])
   it.update
   eq Game::Transition::MOSAIC_OUT, st.screen.fade_transition
-  ok st.screen.transition.uniform?, 'an unported style falls back to the fade'
-  eq 41, st.screen.transition.frames, 'but keeps its own length'
+  ok st.screen.transition.captured?, 'mosaic composites from a captured screen'
+  ok st.screen.transition.mosaic?
+  ok !st.screen.transition.uniform?, 'not drawn as a plain fade'
+  eq 41, st.screen.transition.frames, 'and keeps its own length'
   before = st.screen.fade_level
   st.screen.update
-  ok st.screen.fade_level > before, 'the level eases toward black'
+  ok st.screen.fade_level > before, 'the fallback level still eases toward black'
   ok st.screen.fade_level < 255, 'over time, not instantly'
 end
 
@@ -2333,6 +2337,61 @@ check 'random blocks down/up bias the reveal order towards one edge' do
   up = TR.new(TR::RANDOM_BLOCKS_UP, 41, 320, 240, false)
   rows = up.new_block_rects.map { |_x, y, _w, _h| y / 4 }
   ok rows.min >= 60 / 2, 'up reveals rows near the bottom of the screen first'
+end
+
+check 'mosaic/wave are captured styles with their own native-resample params' do
+  # Both ride the CAPTURED snapshot machinery (see Game::Transition::CAPTURED)
+  # but resample through a native Bitmap#mosaic_blt/#wave_blt call instead of
+  # #capture_ops's blt/stretch_blt geometry list.
+  [TR::MOSAIC_IN, TR::MOSAIC_OUT, TR::WAVE_IN, TR::WAVE_OUT].each do |style|
+    tr = TR.new(style, 41, 320, 240, true)
+    ok tr.captured?, "#{style} is captured"
+    eq [], tr.capture_ops, "#{style} has no capture_ops geometry of its own"
+  end
+
+  ok TR.new(TR::MOSAIC_IN, 41, 320, 240, false).mosaic?
+  ok TR.new(TR::MOSAIC_OUT, 41, 320, 240, true).mosaic?
+  ok !TR.new(TR::WAVE_IN, 41, 320, 240, false).mosaic?
+  ok TR.new(TR::WAVE_IN, 41, 320, 240, false).wave?
+  ok TR.new(TR::WAVE_OUT, 41, 320, 240, true).wave?
+  ok !TR.new(TR::MOSAIC_OUT, 41, 320, 240, true).wave?
+end
+
+check 'mosaic block size ramps between sharp and fully chunky, confirmed against EasyRPG' do
+  # src/transition.cpp's TransitionMosaicIn/Out case: `m_size = total_frames -
+  # current_frame` for In, `current_frame + 1` for Out.
+  into = TR.new(TR::MOSAIC_IN, 41, 320, 240, false)
+  eq 41, into.mosaic_block_size, "a show starts fully mosaic'd"
+  40.times { into.advance }
+  eq 1, into.mosaic_block_size, 'and sharpens all the way down by the last frame'
+
+  out = TR.new(TR::MOSAIC_OUT, 41, 320, 240, true)
+  eq 1, out.mosaic_block_size, 'an erase starts sharp'
+  40.times { out.advance }
+  eq 41, out.mosaic_block_size, 'and gets as chunky as it ever gets by the last frame'
+end
+
+check 'wave depth/phase ramp the same way mosaic block size does, confirmed against EasyRPG' do
+  # src/transition.cpp's TransitionWaveIn/Out case: `p` is the same In/Out
+  # ramp mosaic's `m_size` uses, and `phase = p * 5 * PI / tf_off + PI`
+  # (`tf_off` == #span, here 40 for a 41-frame transition).
+  into = TR.new(TR::WAVE_IN, 41, 320, 240, false)
+  depth, phase = into.wave_params
+  eq 41, depth
+  eq 41 * 5 * Math::PI / 40 + Math::PI, phase
+  40.times { into.advance }
+  depth, phase = into.wave_params
+  eq 1, depth
+  eq 1 * 5 * Math::PI / 40 + Math::PI, phase
+
+  out = TR.new(TR::WAVE_OUT, 41, 320, 240, true)
+  depth, phase = out.wave_params
+  eq 1, depth
+  eq 1 * 5 * Math::PI / 40 + Math::PI, phase
+  40.times { out.advance }
+  depth, phase = out.wave_params
+  eq 41, depth
+  eq 41 * 5 * Math::PI / 40 + Math::PI, phase
 end
 
 check 'conditional branch on the timer' do
@@ -3262,8 +3321,8 @@ check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
   # only decoded the two timers. Confirmed against liblcf's SaveInventory
   # struct (every field here is a plain int32_t, like gold):
   # battles/defeats/escapes/victories/steps at ids 32/33/34/35/42. Field 41
-  # ("turns passed in latest battle") stays deliberately undecoded -- there
-  # is no per-battle turn tracker on the Ruby side to source it from.
+  # ("turns passed in latest battle") is covered separately below, once
+  # Game::Battle's own round counter is captured onto it.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.steps = 1234
@@ -7746,6 +7805,42 @@ def combatant_mp(name, atk, dfn, agi, hp, mp)
   c
 end
 
+check 'to_lsd/from_lsd round-trips the latest battle\'s turn count' do
+  # Field 41 ("turns passed in latest battle") used to stay deliberately
+  # undecoded: there was no per-battle turn tracker on the Ruby side to
+  # source it from (see the step-counter-and-battle-tallies check above).
+  # There is now -- Game::Battle already counts its own rounds live
+  # (@rounds, exposed by #turn); Scene::Map#finish_battle (scene/map.rb)
+  # captures it onto Game::State#last_battle_turns right before the fought
+  # Battle object is discarded. This exercises that capture + round-trip
+  # without going through the scene layer: run a fight for a fixed number of
+  # rounds, read #turn the way #finish_battle does, then round-trip it
+  # through to_lsd/from_lsd like the sibling counters do.
+  hero = combatant('Hero', 40, 0, 20, 10_000)
+  slime = combatant('Slime', 0, 0, 5, 10_000) # tanky on both sides: nobody dies mid-loop
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  5.times { bat.run_round }
+  eq 5, bat.turn, 'the battle itself ran exactly 5 rounds'
+
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, st.last_battle_turns, 'no battle has ever finished yet'
+  st.last_battle_turns = bat.turn # what #finish_battle does with @battle_ui[:battle].turn
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq 5, round.last_battle_turns, 'the latest battle\'s round count round-trips'
+
+  # A save written before this landed simply omits the field; from_lsd must
+  # leave a freshly-constructed State's nil default alone rather than crash
+  # reading an absent field.
+  legacy = st.to_lsd
+  legacy[109].delete(41)
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.last_battle_turns,
+     'an old save without the field keeps the default (no battle ever captured)'
+end
+
 # EasyRPG models an actor's and an enemy's own "state id the target's
 # state_ranks array doesn't cover" case (routine -- liblcf/RPG_RT truncate
 # trailing default bytes off it) as two distinct functions with two distinct
@@ -11979,10 +12074,26 @@ check 'a switch-gated action is invalid with no AI env to ask' do
   ok enemy_entry([act], nil)[:defend].nil?, 'falls back to attacking'
 end
 
-check 'an actor-count action ranges over the living party' do
+# "Enemies" in the editor's own condition list -- EasyRPG's IsActionValid
+# (src/enemyai.cpp) reads game_enemyparty's own GetActiveBattlers here, never
+# game_party, so this ranges over the acting monster's own living troop-mates,
+# not the player party's headcount.
+check 'an actor-count action ranges over the living enemy troop, not the party' do
   act = enemy_action(kind: 0, basic: 2, condition_type: 3,
                      condition_param1: 2, condition_param2: 4)
-  ok enemy_entry([act], nil)[:defend].nil?, 'a party of one is below the range'
+  hero = combatant('Hero', 40, 0, 20, 500)
+  foe1 = combatant('Slime1', 40, 0, 5, 500)
+  foe1.actions = [act]
+  foe2 = combatant('Slime2', 40, 0, 5, 500)
+  foe3 = combatant('Slime3', 40, 0, 5, 500)
+  b = Game::Battle.new([hero], [foe1, foe2, foe3], Game::Rng.new(1), nil,
+                       false, false, false, false, nil, nil)
+  ok b.send(:enemy_action_valid?, foe1, act),
+     'three troop-mates alive (within 2..4) -- fires regardless of party size'
+  foe2.hp = 0
+  foe3.hp = 0
+  ok !b.send(:enemy_action_valid?, foe1, act),
+     'only foe1 itself left alive now (1, outside 2..4) -- no longer fires'
 end
 
 check 'a turn-gated action uses the battle turn clock' do

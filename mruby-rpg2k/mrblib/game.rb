@@ -4973,19 +4973,25 @@ module Game
       CROSS_COMBINE, ZOOM_OUT, MOSAIC_IN, WAVE_IN, CUT_IN
     ].freeze
 
-    # The scroll, combine / division and zoom styles: a black mask cannot
-    # express them (the true old/new pixels have to move or resample), so
-    # Scene::Map instead snapshots the screen once via
+    # The scroll, combine / division, zoom, mosaic and wave styles: a black
+    # mask cannot express them (the true old/new pixels have to move or
+    # resample), so Scene::Map instead snapshots the screen once via
     # RGSS::Graphics.snap_to_bitmap when one of these starts and composites
-    # that capture per #capture_ops every frame -- see docs/TODO.md's "Screen
-    # effects" entry. This class stays pure logic (no Graphics access, per the
-    # SCREEN_W/H comment above): it only computes where each piece of the
-    # capture goes.
+    # that capture every frame -- see docs/TODO.md's "Screen effects" entry.
+    # Scroll / combine / division / zoom composite through #capture_ops (a
+    # list of blt/stretch_blt pieces); mosaic and wave instead want a native
+    # per-pixel resample of the *whole* capture (mruby-rgss's
+    # Bitmap#mosaic_blt / #wave_blt), so they go through their own
+    # #mosaic_block_size / #wave_params accessors instead -- see #mosaic? /
+    # #wave?. This class stays pure logic throughout (no Graphics access, per
+    # the SCREEN_W/H comment above): it only computes the geometry or
+    # resample parameters, never touches a Bitmap itself.
     CAPTURED = [SCROLL_UP_IN, SCROLL_DOWN_IN, SCROLL_LEFT_IN, SCROLL_RIGHT_IN,
                 SCROLL_UP_OUT, SCROLL_DOWN_OUT, SCROLL_LEFT_OUT,
                 SCROLL_RIGHT_OUT, VERTICAL_COMBINE, VERTICAL_DIVISION,
                 HORIZONTAL_COMBINE, HORIZONTAL_DIVISION, CROSS_COMBINE,
-                CROSS_DIVISION, ZOOM_IN, ZOOM_OUT].freeze
+                CROSS_DIVISION, ZOOM_IN, ZOOM_OUT, MOSAIC_IN, MOSAIC_OUT,
+                WAVE_IN, WAVE_OUT].freeze
 
     # The random-blocks styles: a mask like BLIND_*/*_STRIPES_*/the window
     # pair above, but painted *incrementally* -- RPG_RT (and this port, see
@@ -4999,9 +5005,7 @@ module Game
     RANDOM_BLOCKS_STYLES = [RANDOM_BLOCKS, RANDOM_BLOCKS_DOWN,
                              RANDOM_BLOCKS_UP].freeze
 
-    # Styles this build paints for real. Mosaic / wave still fall through to a
-    # plain fade -- they want a native per-pixel resample, which is not built
-    # yet.
+    # Styles this build paints for real.
     DRAWN = [FADE_IN, FADE_OUT, BLIND_OPEN, BLIND_CLOSE, VERTICAL_STRIPES_IN,
              VERTICAL_STRIPES_OUT, HORIZONTAL_STRIPES_IN,
              HORIZONTAL_STRIPES_OUT, BORDER_TO_CENTER_IN, BORDER_TO_CENTER_OUT,
@@ -5128,13 +5132,53 @@ module Game
       @style == ZOOM_IN || @style == ZOOM_OUT
     end
 
+    # Whether this captured style is drawn by mosaic/wave resample (native
+    # `Bitmap#mosaic_blt` / `#wave_blt`) rather than #capture_ops's blt /
+    # stretch_blt pieces -- Scene::Map checks these before falling back to
+    # #capture_ops (see #zoom? for the sibling check that picks stretch_blt).
+    def mosaic?
+      @style == MOSAIC_IN || @style == MOSAIC_OUT
+    end
+
+    def wave?
+      @style == WAVE_IN || @style == WAVE_OUT
+    end
+
+    # The pixel block size `Bitmap#mosaic_blt` resamples the captured screen
+    # at this frame (EasyRPG's `m_size`, confirmed against `src/transition.
+    # cpp`'s `TransitionMosaicIn`/`TransitionMosaicOut` case): the "in" (Show)
+    # style starts fully mosaic'd (block size @frames) and sharpens to 1 by
+    # the last frame; the "out" (Erase) style runs the same ramp the other
+    # way, starting sharp and getting chunkier. Only called when #mosaic? is
+    # true.
+    def mosaic_block_size
+      mosaic_wave_progress
+    end
+
+    # `[depth, phase]` for `Bitmap#wave_blt` this frame (EasyRPG's own
+    # `depth`/`phase`, confirmed against `src/transition.cpp`'s
+    # `TransitionWaveIn`/`TransitionWaveOut` case, which itself calls
+    # `Bitmap::WaverBlit` -- ported to `mruby-rgss`'s `bmp_wave_blt`): depth
+    # is the same @frames..1 / 1..@frames progression #mosaic_block_size
+    # uses (the wave settles to flat as a Show finishes, and grows wilder as
+    # an Erase runs out), and phase is EasyRPG's own `p * 5 * PI / tf_off +
+    # PI` ramp (`tf_off` == #span). Only called when #wave? is true.
+    def wave_params
+      p = mosaic_wave_progress
+      d = span
+      phase = (d <= 0 ? 0 : p * 5 * Math::PI / d) + Math::PI
+      [p, phase]
+    end
+
     # The captured screen's pieces for this frame. For every style but zoom,
     # each piece is `[dx, dy, sx, sy, sw, sh]` -- paste the capture's `[sx, sy,
     # sw, sh]` region at `(dx, dy)` with `Bitmap#blt` (destination size always
     # matches source size). Zoom instead resamples, so its one piece is `[dx,
-    # dy, dw, dh, sx, sy, sw, sh]` for `Bitmap#stretch_blt` -- see #zoom?. Only
-    # called for a captured style; Scene::Map paints these over a black fill,
-    # so a piece that has slid (or shrunk) off leaves black behind it.
+    # dy, dw, dh, sx, sy, sw, sh]` for `Bitmap#stretch_blt` -- see #zoom?.
+    # Mosaic and wave are not returned here at all -- see #mosaic_block_size /
+    # #wave_params instead. Only called for a captured, non-mosaic, non-wave
+    # style; Scene::Map paints these over a black fill, so a piece that has
+    # slid (or shrunk) off leaves black behind it.
     def capture_ops
       case @style
       when SCROLL_UP_IN, SCROLL_DOWN_IN, SCROLL_LEFT_IN, SCROLL_RIGHT_IN,
@@ -5218,6 +5262,18 @@ module Game
     def frame_ratio
       d = span
       d <= 0 ? [1, 1] : [@frame, d]
+    end
+
+    # EasyRPG's own `p` for the mosaic/wave pair (`src/transition.cpp`):
+    # `@frames - @frame` for the "in" (Show) styles, `@frame + 1` for "out"
+    # (Erase) -- shared by #mosaic_block_size and #wave_params. Clamped to at
+    # least 1 as a defensive floor for a frame at or past #done? (@frame ==
+    # @frames), which never happens in normal play but would otherwise divide
+    # by zero in #mosaic_blt's block size.
+    def mosaic_wave_progress
+      out = @style == MOSAIC_OUT || @style == WAVE_OUT
+      p = out ? @frame + 1 : @frames - @frame
+      p < 1 ? 1 : p
     end
 
     # Scroll: the whole capture slides in from (or out to) one edge in a
@@ -8149,7 +8205,12 @@ module Game
         # BattlePage.check_turns, which documents why it reads backwards).
         BattlePage.check_turns(turn, a.condition_param2, a.condition_param1)
       when EnemyAction::COND_ACTORS
-        n = @allies.reject(&:out_of_play?).size
+        # "Enemies" in the editor's own condition list -- how many of this
+        # monster's own troop-mates are still standing, not the player
+        # party's headcount. EasyRPG's IsActionValid reads
+        # game_enemyparty's own GetActiveBattlers here (src/enemyai.cpp),
+        # never game_party.
+        n = @enemies.reject(&:out_of_play?).size
         n >= a.condition_param1 && n <= a.condition_param2
       when EnemyAction::COND_HP
         within_percent?(b.hp, b.max_hp, a)
@@ -9501,10 +9562,17 @@ module Game
     # it so far -- the encounter system that would share it is not built. It
     # persists in both the Marshal save and the `.lsd` (inventory chunk 109
     # field 42, see LCF::Schema::SAVE_INVENTORY), so a resumed real save
-    # continues its count rather than restarting from 0. The chunk's `turns`
-    # field (41, "turns passed in latest battle") stays deliberately undecoded
-    # -- there is no per-battle turn tracker on the Ruby side to source it from.
+    # continues its count rather than restarting from 0.
     attr_accessor :steps
+    # How many rounds the most recently finished battle ran for -- RPG2000's
+    # "turns passed in latest battle" (inventory chunk 109 field 41, `turns`).
+    # Nil until a battle has ever finished (matching the chunk's own
+    # undefaulted read); `Scene::Map#finish_battle` sets it from
+    # `Game::Battle#turn` (its live `@rounds` counter) right before the fought
+    # `Battle` object is discarded, since nothing else keeps that count once
+    # the fight ends. Persists in both the Marshal save and the `.lsd`, same
+    # as `#steps`.
+    attr_accessor :last_battle_turns
     # Running tallies RPG2000 keeps and exposes through the Control Variables
     # "Other" operand: how many times the game was saved, and how many battles
     # were fought / won / lost / escaped. All persist in the Marshal save; the
@@ -9608,6 +9676,7 @@ module Game
       @encounter_rate = nil
       @encounter_total = 0
       @steps = 0
+      @last_battle_turns = nil
       @save_count = 0
       @battle_count = 0
       @win_count = 0
@@ -9834,7 +9903,7 @@ module Game
         common_event_progress: @common_event_progress,
         map_event_positions: @map_event_positions,
         map_event_route_index: @map_event_route_index,
-        steps: @steps,
+        steps: @steps, last_battle_turns: @last_battle_turns,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
         escape_count: @escape_count,
@@ -9860,7 +9929,8 @@ module Game
     #     Change Sprite override survives);
     #   * actors (108): the per-actor level/exp/equipment/skills/HP/MP table;
     #   * inventory (109): the party roster / gold / item bag / both timers /
-    #     the step counter and battle win/defeat/escape/victory tallies.
+    #     the step counter / battle win/defeat/escape/victory tallies / the
+    #     latest battle's round count.
     #
     # Switch and variable ids are 1-indexed in-game but 0-indexed in the save, so
     # they shift down by one; unset entries default to false / 0. +save_count+
@@ -9875,11 +9945,12 @@ module Game
     # a time until only the title chunk failed, then one field at a time within
     # it. See ADR 0021.
     #
-    # Both Timer Operation countdowns, the step counter, the battle tallies and
-    # every roster member's Change Actor Name and Change Actor Title overrides
-    # round-trip now too (see LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
-    # battles/defeats/escapes/victories/steps fields and SAVE_PARTY_ACTOR's
-    # actor_name/title), so this is a near-parity export.
+    # Both Timer Operation countdowns, the step counter, the battle tallies,
+    # the latest battle's round count and every roster member's Change Actor
+    # Name and Change Actor Title overrides round-trip now too (see
+    # LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
+    # battles/defeats/escapes/victories/steps/turns fields and
+    # SAVE_PARTY_ACTOR's actor_name/title), so this is a near-parity export.
     def to_lsd(save_count = 1, timestamp = nil)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
@@ -10034,6 +10105,9 @@ module Game
       inv[34] = @escape_count
       inv[35] = @win_count
       inv[42] = @steps
+      # Undefaulted, like the other counters -- absent until a battle has ever
+      # finished (see #last_battle_turns).
+      inv[41] = @last_battle_turns if @last_battle_turns
       save[109] = inv
 
       save
@@ -10262,6 +10336,9 @@ module Game
       state.escape_count = inv.escapes unless inv.escapes.nil?
       state.win_count = inv.victories unless inv.victories.nil?
       state.steps = inv.steps unless inv.steps.nil?
+      # "Turns passed in latest battle" (field 41); absent on a save written
+      # before this landed, or one taken before any battle ever finished.
+      state.last_battle_turns = inv.turns unless inv.turns.nil?
       state
     end
 
@@ -10381,6 +10458,7 @@ module Game
       state.encounter_rate = h[:encounter_rate]
       state.encounter_total = h[:encounter_total] || 0
       state.steps = h[:steps] || 0
+      state.last_battle_turns = h[:last_battle_turns]
       state.save_count = h[:save_count] || 0
       state.battle_count = h[:battle_count] || 0
       state.win_count = h[:win_count] || 0
