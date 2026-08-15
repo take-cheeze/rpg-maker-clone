@@ -8549,6 +8549,28 @@ position to report. All four log a `[RPG2k] Control Variables: ...`
 diagnostic and still resolve to `0` — behaviour is unchanged, only the
 gap is now visible. Covered by four new `scripts/rpg2k_logic_check.rb`
 checks, each asserting on the captured `$stderr` line.
+✅ **A dangling chipset id no longer renders a map blank and fully passable
+with no trace** — the "chipset" case from the "invalid hero, skill, item,
+enemy, enemy group, battle animation, terrain, chipset, common event" list
+above. `Game::ChipSet#initialize` (`mruby-rpg2k/mrblib/game.rb`) already
+tolerated a missing `db.chipset[id]` row by degrading every field (name,
+graphic, passability tables, terrain data, animation params) to a safe
+blank/nil default — matching the same graceful-degrade philosophy
+`Game::Party#db_enemy_group`/`Game::Enemy` use — but nothing ever logged the
+gap, so a map with a stale `chipset_id` (or a Change Map Tileset override to
+a bad id; `Scene::Map#build_chipset`, `mruby-rpg2k/mrblib/scene/map.rb`,
+only rescues real exceptions like a missing graphic file) rendered blank
+tiles with every direction passable and no diagnostic anywhere. `ChipSet
+#initialize` now checks the lookup itself, `respond_to?`-guarded the same
+way `db_item`/`db_enemy_group` are so a bare test fixture with no chipset
+table at all stays quiet, and logs a `[RPG2k] chipset #<id> not found in
+database, tiles treated as blank/passable` diagnostic when `id` is a
+positive, resolvable-looking reference that simply misses; the degrade
+behaviour itself is unchanged, this is diagnostics only. Covered by a new
+`scripts/rpg2k_logic_check.rb` check asserting the captured `$stderr` line
+alongside the unchanged blank name/graphic and default-passable/terrain
+behaviour, plus that an existing id, id `0`, a `nil` id and a chipset-less
+bare fixture all stay silent.
 
 **Map/Event ID assignment & tile occupancy**
 - ✅ **Not applicable: Event ID (and, separately, Map ID) assignment by
