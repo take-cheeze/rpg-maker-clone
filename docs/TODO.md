@@ -3866,9 +3866,12 @@ Everything below is unverified against the codebase.
   runtime analog) remain unverifiable in this environment and are not
   modelled. ("A variable can't pick the called common-event id directly" is
   confirmed already correct — see below.)
-- **Wait** — an inline "(W)" wait option is identical to a separate Wait
+- ✅ **Wait** — an inline "(W)" wait option is identical to a separate Wait
   command; Wait 0.0s is one frame, not zero (**confirmed correct**, see
-  above).
+  above — `do_wait`/`drive_wait` cost exactly one frame for a zero-length
+  wait, and this codebase's own event-command parser has no separate
+  "inline (W)" opcode distinct from the dedicated Wait command in the first
+  place, so there is nothing that could diverge between the two).
 - **Encounter** — ✅ **standing on a "hero touches event" tile suppresses
   random encounters there.** `Scene::Map#check_random_encounter` rolled for
   a wandering-monster fight on every ordinary step regardless of what stood
@@ -3929,7 +3932,7 @@ Everything below is unverified against the codebase.
   as the `015_shujinkou_idou_huka` item above — now fixed there, see the
   "Untriaged backlog, from `2k/09_bug/`" section above for the full
   writeup).
-- **Move Speed is dead code engine-wide in this codebase's rpg2k
+- 🚧 **Move Speed is dead code engine-wide in this codebase's rpg2k
   `Scene::Map` — a real, well-evidenced, deliberately still-open bug, not a
   stale doc note.** `Scene::Map::SPEED = 2` (px/frame, `mruby-rpg2k/mrblib/
   scene/map.rb`) is hardcoded, and every slide — ordinary player walking
@@ -4119,9 +4122,41 @@ Everything below is unverified against the codebase.
   as this bullet's own unverified restatement. ✅ **targeting a Vehicle
   position now reads that vehicle's live x/y even from a different map than
   the one shown** — see the fuller writeup under "Full-site sweep" below.
-- **Material data** — an imported asset takes priority over a same-named RTP
-  one; dropping files directly into asset folders bypasses size/transparent-
-  colour-index validation.
+- ✅ **Material data** — **an imported (project) asset already takes
+  priority over a same-named RTP one, confirmed by reading the actual
+  search order — this engine really does have an RTP fallback, not just an
+  absent concept.** `RTP_DIR` is resolved at boot from the Wine registry
+  per maker (`src/main.cxx`: RPG2000/2003 via
+  `Software\ASCII\RPG2000\RuntimePackagePath`, XP via
+  `Software\Enterbrain\RGSS\RTP`, VX/VX Ace via the project's own `Game.ini`
+  `RTP=` name), cleared when `RPG_RT.ini` sets `FullPackageFlag=1` for a
+  self-contained game, and forced empty on the Emscripten build. The
+  loader every rpg2k asset load goes through — `Bitmap#initialize`
+  (`mruby-rgss/mrblib/lib.rb`, shared by `mruby-rpg2k` since it depends on
+  `mruby-rgss`; `Bitmap.new "ChipSet/#{name}", true` and friends in
+  `mruby-rpg2k/mrblib/scene/map.rb`) — tries candidates in a fixed order:
+  `[GAME_DIR, RTP_DIR].each`, i.e. the project's own directory is always
+  probed, across every extension in `EXTENSIONS`, *before* `RTP_DIR` is
+  ever consulted, and only once both roots miss does it fall back to the
+  packed encrypted archive ("loose files shadow the archive," matching real
+  RGSS). A same-named project asset therefore always wins over the RTP
+  one, and an asset present only in the RTP still loads when the project
+  doesn't supply its own — exactly the claimed priority. **The second half
+  is not applicable**: "dropping files directly into asset folders bypasses
+  size/transparent-colour-index validation" describes the real RPG2000
+  *editor's* Material Manager import dialog performing checks that a raw
+  filesystem drop skips — a distinction this engine has no counterpart for,
+  since it has no import step separate from load at all; every asset,
+  however it got onto disk, goes through the identical loader, which
+  already does its own format-level validation regardless of origin: the
+  XYZ decoder (`mruby-rgss/src/lib.cxx`, `load_xyz_mem`) rejects non-positive
+  dimensions and a decompressed length that doesn't match `768-byte palette
+  + width*height` exactly, and both the XYZ and tolerant-PNG paths treat
+  palette index 0 as transparent when the caller's `trans` flag is set
+  (`lib.cxx`'s `trans && p == 0` / `trans && idx == 0`) — the actual
+  transparent-colour-index mechanism the claim gestures at. There is no
+  "bypass" state to reproduce because there is no non-bypass (validated
+  editor-import) state to contrast it with.
 - ✅ **Parallel Process** — yields to others during its own Wait/Show-Text
   pause; appearance condition going false mid-run only stops at the next
   yield point, not instantly (same fact as the `09_bug` item above,
@@ -4293,10 +4328,24 @@ Everything below is unverified against the codebase.
   `scripts/rpg2k_scene_check.rb` check (a boarded boat's own hero-targeted
   Set Move Route on a `boat_pass: false` map stays put instead of sailing
   through), confirmed to fail against the pre-fix code (`[1, 1]` instead of
-  the correct `[0, 1]`) before the fix. **Setting a map event's trigger to
-  Parallel Process and running "Set Vehicle Position" from it crashes
-  RPG_RT** (any other trigger type does not) — an authentic engine crash,
-  probably not worth reproducing; ✅ a
+  the correct `[0, 1]`) before the fix. ✅ **Not applicable: "Setting a map
+  event's trigger to Parallel Process and running 'Set Vehicle Position'
+  from it crashes RPG_RT"** (any other trigger type does not) — an
+  authentic RPG_RT crash-dialog bug, the same category this doc already
+  declines to reproduce elsewhere (the Call Event/Common Event "invalid
+  target" Windows error dialogs a few bullets up, and the general "this
+  project generally does not reproduce RPG_RT's own Windows error dialogs"
+  policy stated there). This codebase's own `do_set_vehicle_location` (Set
+  Vehicle Location, 10850, `mruby-rpg2k/mrblib/interpreter.rb`) has no
+  trigger-type awareness at all and simply repositions the target
+  `Game::Vehicle` regardless of which
+  interpreter (foreground or any parallel process, whatever page trigger
+  started it) issued the command — reproducing a genuine engine crash for
+  one specific trigger type would mean deliberately raising an error where
+  this codebase currently succeeds, which is a regression relative to
+  every other command in this doc's own error-catalog policy of "no crash
+  where none is otherwise modelled." Not reproduced, matching the existing
+  Windows-dialog exclusions. ✅ a
   vehicle's x/y/screen-x/y can be read via variable ops from a different map
   than it currently occupies — `Game::Interpreter#event_operand`'s Control
   Variables "character position" operand (type 6) recognised the hero (ref
@@ -4413,26 +4462,62 @@ Everything below is unverified against the codebase.
   the higher id always drawing on top, independent of show order, is
   confirmed already correct — see below.)
 - **Map Event** — "hero touches event" does *not* fire in three specific
-  cases: (a) ✅ the event has already logically started moving into its next
-  tile (hit-test uses the target tile, even if the sprite still visually
-  overlaps the old one) — **already correctly modelled**. `Scene::Map
-  #reoccupy` rewrites `@event_tiles` (what a touch trigger / the player's own
-  passability check reads) to the destination tile the instant a step
-  commits, in the same call that starts the pixel slide (`#start_event_slide`)
-  toward it — the vacated tile's hit-test clears immediately, well before
-  `#event_sliding?` (`disp_x`/`disp_y` catching up to the logical tile) says
-  the sprite has visually arrived. No code change; covered by a new
+  cases (re-read against the source page, `2k/01_shoshin/011_siyou/`, to
+  pin down exactly what each of the three means): (a) ✅ the event has
+  already logically started moving into its next tile (hit-test uses the
+  target tile, even if the sprite still visually overlaps the old one) —
+  **already correctly modelled**. `Scene::Map#reoccupy` rewrites
+  `@event_tiles` (what a touch trigger / the player's own passability check
+  reads) to the destination tile the instant a step commits, in the same
+  call that starts the pixel slide (`#start_event_slide`) toward it — the
+  vacated tile's hit-test clears immediately, well before `#event_sliding?`
+  (`disp_x`/`disp_y` catching up to the logical tile) says the sprite has
+  visually arrived. No code change; covered by a new
   `scripts/rpg2k_scene_check.rb` check pinning that exact gap between the
-  logical and display position mid-step. (b) the event moved onto the hero's
-  own tile
-  (event-initiated contact doesn't count for this trigger — **already
-  correctly modelled**, `move_autonomous` only checks trigger 2 for that
-  case); (c) hero and event simultaneously swap tiles by crossing paths —
-  this "pass-through" also fails to register (looked at this one already —
-  genuinely tricky to verify without a real RPG_RT reference, see prior
-  session notes); if a multi-page event's move route is mid-execution when
-  its page switches, the route restarts *unless* the two pages' move-route
-  settings are byte-identical (**same fact as the "confirmed gap" above**).
+  logical and display position mid-step. (b) ✅ the event moved onto the
+  hero's own tile (event-initiated contact doesn't count for this trigger)
+  — **already correctly modelled, and for a stronger reason than "doesn't
+  count": the event never actually moves there at all.**
+  `Scene::Map#move_autonomous`'s target-tile check (`nx == @state.x && ny
+  == @state.y`) and `Game::MoveRoute#do_move`'s identical `world.hero_
+  position == [nx, ny]` reclassification (the `:touched_hero` status, used
+  by both a page-authored custom route and a Set Move Route) both stop the
+  event from stepping onto the hero's live tile at all — it faces and,
+  if its own trigger is Event Touch (2), fires that instead, but `ch.move`
+  is never called, so there is no tile-based Player Touch (1) hit-test to
+  even consult for this case; it structurally cannot fire. 🚧 (c) **a real,
+  reachable gap, deliberately left open rather than rushed: hero and event
+  simultaneously crossing paths (event moving left as the hero moves right
+  toward it, their two tiles trading places in one step) currently fires
+  Hero Touch when it should not.** The source page is specific that this is
+  a *third*, distinct case from (b) — both parties are mid-move toward each
+  other's *current* tile, not one walking onto an already-stationary other
+  — and states the hit-test is invalidated (`当たり判定が無効になります`)
+  for it, i.e. no trigger fires either way. This codebase's actual frame
+  order (`Scene::Map#update`: `step_events` — which is where an
+  autonomous/route-driven event's move is decided, including the (b) hero-
+  tile refusal above — always runs *before* `step_movement`, which decides
+  and applies the player's own move for the same frame) means the event
+  sees the hero still standing at their *pre-move* tile when it does its
+  own hero-tile check, refuses to advance, and stays put; `step_movement`
+  then finds that same event still sitting on the tile the hero is trying
+  to enter and, if it is a Hero Touch (1) page, fires it via the ordinary
+  `event_at(nx, ny)` check in `#step_movement` — the crossing case collapses
+  into an ordinary "hero walks onto a stationary touch event" outcome
+  instead of the invalidated-hit-test real RPG_RT documents. A correct fix
+  needs the two moves resolved as a genuine pair rather than sequentially:
+  the player's intended direction has to be known (or the outcome
+  reinterpreted) before the event's own hero-tile refusal is decided, so a
+  same-frame "event's target is the hero's current tile AND the hero's own
+  target is that event's current tile" configuration can be recognised and
+  suppressed — a change to the update loop's movement-resolution shape, not
+  a local one-line fix, and risky to rush against the rest of this frame's
+  established sequencing (parallels-before-foreground, forced-route-before-
+  input) without its own dedicated pass. Left open for a future PR with
+  this precise scope. The multi-page move-route-restart clause originally
+  paired with this bullet is the same fact as the already-fixed "Move route
+  continuation across a page switch" entry under "#### Fixed" above, not a
+  separate open item.
 - **Menu screen** — ✅ **Call Menu Screen bypasses "Prohibit Menu" (only the
   player's own Cancel-key shortcut respects it) -- confirmed already
   correct, and now covered by a regression test.** `Scene::Map#
@@ -4459,7 +4544,7 @@ Everything below is unverified against the codebase.
   black-out being undone by opening and closing the menu is ✅ implemented
   — see the "Screen effects" bullet below, same fact from a different site
   page.
-- **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
+- ✅ **Load** — resuming mid-Autorun/mid-Parallel-Process picks up exactly
   where it left off, *unless* the map was edited/re-saved since, in which
   case that event restarts from the top (edge case, likely not applicable
   here — no "map data changed since save" concept). **Resuming mid-Autorun
