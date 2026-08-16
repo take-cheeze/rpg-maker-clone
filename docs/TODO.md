@@ -7104,6 +7104,35 @@ not yet verified:
   confirmed to fail against the pre-fix code before the fix (the
   RPG2003-database check already passed, since the pre-fix code applied no
   gate on any edition).
+- ✅ **A troop battle-event page's `command_actor` condition is now correctly
+  RPG2003-only too, closing the one flag `Game::BattlePage.active?`'s own
+  earlier turn_enemy/turn_actor/fatigue fix (above) missed.** Confirmed
+  against EasyRPG's actual C++ source: `Game_Interpreter_Battle::
+  AreConditionsMet` (`src/game_interpreter_battle.cpp`) wraps all *four*
+  RPG2003-only condition types — `turn_enemy`, `turn_actor`, `fatigue`, and
+  `command_actor` — in `Player::IsRPG2k3Commands() &&`, but
+  `Game::BattlePage.active?` (`mruby-rpg2k/mrblib/game.rb`) only ever
+  gated the first three on `ctx.rpg2003?`; `command_actor` kept evaluating
+  unconditionally, and the block comment right above even claimed it was
+  "already handled below" without the code ever doing so. Concretely: a
+  troop page whose condition box has only the `command_actor` bit set
+  (`command_actor_id: 1, command_id: 1`) — real RPG_RT never even looks at
+  the bit on a non-2k3 database and runs the page unconditionally, since
+  this codebase's `Game::Battle#actor_command` is an unimplemented stub
+  that always answers `nil`, `nil == 1` was `false` on every edition,
+  making the page permanently inactive where it should always fire on
+  RPG2000. Fixed by adding the same `&& ctx.rpg2003?` conjunct already used
+  for its three siblings, and correcting the stale comment. On an actual
+  RPG2003 battle the condition still can never be satisfied today (the same
+  `#actor_command` stub), matching this codebase's own documented
+  not-yet-implemented state rather than real RPG_RT's per-battler
+  last-chosen-command tracking. Covered by replacing the old
+  `scripts/rpg2k_logic_check.rb` check (which asserted the bug's own wrong
+  answer and rationalized it in its comment) with two: an RPG2000-only
+  `command_actor` condition now reads active, matching its siblings; an
+  RPG2003 one still correctly reads inactive, since the runtime cannot
+  answer it yet — the RPG2000 case confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
