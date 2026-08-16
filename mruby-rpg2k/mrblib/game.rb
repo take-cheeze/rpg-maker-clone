@@ -9113,6 +9113,26 @@ module Game
       (@allies || []) + (@enemies || [])
     end
 
+    # Reset a combatant's gauge to empty after it has taken its active-time
+    # turn, so it must refill from zero before acting again (RPG_RT 2003's
+    # gauge behaviour). The per-frame Scene::Battle loop calls this from the
+    # turn picker; exposed here so the gauge cycle is unit-testable without
+    # the 2003 boot path (Phase 3).
+    def reset_gauge(c)
+      c.gauge = 0
+    end
+
+    # The active-time turn picker: return the next ready combatant (highest
+    # gauge; see #ready_combatants) and reset its gauge so the loop can advance
+    # and refill it. Returns nil when nobody is ready. A turn-based battle
+    # (battle_type != 2) never has a ready combatant, so this is nil there too.
+    def pop_ready
+      c = ready_combatants.first
+      return nil unless c
+      reset_gauge(c)
+      c
+    end
+
     def to_hit(attacker, target)
       return 0 if evades_all_physical?(target)
       return 100 if do_nothing_restricted?(target)

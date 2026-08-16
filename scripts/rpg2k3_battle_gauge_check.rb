@@ -126,5 +126,34 @@ check 'a dead battler does not charge or become ready' do
   eq false, dead.gauge_full?
 end
 
+# -- the active-time turn cycle: pop_ready consumes and resets --------------
+cycle_fast = combatant('CFast', 1, 1, 20, 1)
+cycle_slow = combatant('CSlow', 1, 1, 10, 1)
+cbat = Game::Battle.new([cycle_fast], [cycle_slow], Game::Rng.new(1))
+cbat.battle_type = 2
+cbat.advance_gauges(6)   # fast full (100), slow at 60
+
+check 'pop_ready returns the highest-gauge combatant and resets its gauge' do
+  taken = cbat.pop_ready
+  eq cycle_fast, taken
+  eq 0, cycle_fast.gauge
+  eq false, cycle_fast.gauge_full?
+  # slow is still charging, so nothing else is ready yet
+  eq [], cbat.ready_combatants
+end
+
+check 'after the taker refills it becomes ready again (the ATB loop repeats)' do
+  cbat.advance_gauges(5)   # fast: 0 -> 100 (agi 20 * 5); slow: 60 -> 110 -> 100
+  eq 2, cbat.ready_combatants.size
+  taken = cbat.pop_ready
+  eq cycle_fast, taken   # fast reached full first again
+  eq 0, cycle_fast.gauge
+end
+
+check 'pop_ready is nil for a turn-based battle' do
+  tbat = Game::Battle.new([combatant('A', 1, 1, 20, 1)], [combatant('B', 1, 1, 10, 1)], Game::Rng.new(1))
+  eq nil, tbat.pop_ready
+end
+
 puts "rpg2k3 battle gauge check: #{$checks} checks, #{$failures} failures"
 exit($failures.zero? ? 0 : 1)

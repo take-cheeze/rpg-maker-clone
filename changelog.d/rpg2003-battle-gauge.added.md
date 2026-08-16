@@ -13,6 +13,12 @@
   is now plumbed into `Game::Battle` at construction via a `battle_type:`
   keyword (default 0); `Scene::Battle` passes `db.battlecommands.battle_type`
   (0 for every RPG2000 project, which has no Battle Commands table). This is
-  the first Phase-3 (boot) slice: it selects the gauge engine for a 2003
-  gauge battle the moment one is reached, without touching the turn-based
-  path.
+   the first Phase-3 (boot) slice: it selects the gauge engine for a 2003
+   gauge battle the moment one is reached, without touching the turn-based
+   path.
+
+   The active-time turn cycle is modelled too: `Game::Battle#reset_gauge(c)`
+   empties a combatant's gauge after it acts, and `Game::Battle#pop_ready`
+   returns the highest-gauge ready combatant and resets it -- the fill ->
+   ready -> act -> refill loop the per-frame `Scene::Battle` picker will drive
+   in Phase 3. Both are nil / no-op for a turn-based battle.

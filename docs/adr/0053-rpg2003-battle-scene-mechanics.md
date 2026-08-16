@@ -4,8 +4,8 @@ Date: 2026-08-16
 
 ## Status
 
-Accepted — Phase 1 (rows) and the Phase 2 gauge model implemented
-2026-08-16; Phase 2 scene integration and Phase 3 pending.
+Accepted — Phase 1 (rows) and the Phase 2 gauge model (fill + ready + turn
+cycle) implemented 2026-08-16; Phase 2 scene integration and Phase 3 pending.
 
 ## Context
 
@@ -119,6 +119,11 @@ once a 2003 project reaches a fight.
   - `ready_combatants` returns the full-gauge battlers in descending gauge
     order — the pool the active-time turn picker draws from. `all_combatants`
     joins allies + enemies for bookkeeping.
+  - The active-time turn cycle is modelled too: `reset_gauge(c)` empties a
+    combatant's gauge after it acts, and `pop_ready` returns the highest-gauge
+    ready combatant and resets it — the "fill → ready → act → refill" loop the
+    per-frame `Scene::Battle` picker will drive (Phase 3). Both are nil / no-op
+    for a turn-based battle.
 - The database's battle-setup `battle_type` (Battle Setup chunk 0x1D field 7,
   already decoded into the schema) is now plumbed into `Game::Battle` at
   construction: `Game::Battle.new` takes a `battle_type:` keyword (default 0),
