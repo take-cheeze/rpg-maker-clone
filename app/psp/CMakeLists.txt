@@ -58,8 +58,18 @@ set(LV_BUILD_CONF_DIR
 # even when they did compile, every byte of them is RAM-resident on the PSP (the
 # whole EBOOT is loaded into memory at launch). The RGSS runtime and the idle
 # status screen need none of them, so keep both out of the EBOOT.
-set(CONFIG_LV_BUILD_EXAMPLES OFF)
-set(CONFIG_LV_BUILD_DEMOS OFF)
+#
+# These must be set as CACHE variables: LVGL's os_desktop.cmake gates its
+# examples/demos behind `option(CONFIG_LV_BUILD_EXAMPLES ...)`, and with CMP0077
+# unset (the project does not raise cmake_minimum_required past 3.12) option()
+# only honours cache variables -- a plain set() is silently ignored, which is
+# exactly how the examples leaked back into the PSP build's link.
+set(CONFIG_LV_BUILD_EXAMPLES
+    OFF
+    CACHE BOOL "" FORCE)
+set(CONFIG_LV_BUILD_DEMOS
+    OFF
+    CACHE BOOL "" FORCE)
 add_subdirectory(${REPO_ROOT}/3rd/lvgl 3rd/lvgl EXCLUDE_FROM_ALL)
 
 # mruby-rgss and mruby-lcf both link uni-algo (Unicode normalisation / CP932
