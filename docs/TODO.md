@@ -26,11 +26,26 @@
   the whole block from its defaults. `lcf_testbed_check.rb` now asserts the
   shape (nine coordinates, eighteen tile ids, every field materialising), and
   that guard was checked by mis-declaring chunk 62 and watching it fail. These
-  remain editor-only details off the walkable-game critical path — nothing reads
-  them at run time, RPG_RT included
-- ✅ Show window component for title scene
-- ✅ Implement New Game functionality — builds the party, loads the start map
-  and enters a walkable `Scene::Map` with events
+   remain editor-only details off the walkable-game critical path — nothing reads
+   them at run time, RPG_RT included
+ - 🚧 **Declare the remaining database sections / battle-command fields.** The
+   schema now names every chunk the real test beds actually write: the four
+   RPG2003-only top-level database sections that sit between the 2000 common-events
+   table and the 2003 battle-commands list and between Classes and Battler-Animation
+   (chunks 26/27/28 and 31) are declared as bare `Array2D` tables (present-but-empty
+   in the mtf-meido-action test bed, so their record layout is not yet transcribed
+   — they keep any real bytes a non-empty project writes and stay nameable instead
+   of raising on access), and the two top-level `battlecommands` (chunk 29) fields 9
+   and 24 — single-byte ints in the test bed — are declared as plain `:int` so they
+   round-trip and are nameable rather than guessed at their RPG_RT meaning. A new
+   `scripts/lcf_schema_coverage.rb` walks every test-bed `.ldb`/`.lmt`/`Map*.lmu` and
+   fails if any chunk the parser stores is left unnamed, so completeness is now a
+   checked invariant instead of an eyeball audit. The CBA/pose/animation and
+   2003 battle-command *semantics* are still unimplemented at run time; this TODO
+   is the schema surface, not the battle system.
+ - ✅ Show window component for title scene
+ - ✅ Implement New Game functionality — builds the party, loads the start map
+   and enters a walkable `Scene::Map` with events
 - ✅ Implement Continue functionality — loads a saved game (portable `Marshal`
   save; the LCF `.lsd` format is a later refinement)
 
