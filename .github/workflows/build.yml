@@ -103,10 +103,6 @@ jobs:
       # below runs its command directly instead of going through
       # `nix develop -c`.
       - name: wait nix setup
-        # Backstop for the three network-bound cache restores above: if one
-        # hangs past its own timeout-minutes it fails and unblocks this wait
-        # rather than the barrier itself; this caps the wait in case it doesn't.
-        timeout-minutes: 20
         wait-all:
       - run: ./scripts/nix-develop-export-env.bash
 
@@ -218,9 +214,6 @@ jobs:
       # checks that consume them. A failed background step (e.g. pre-commit)
       # surfaces here and fails the job, exactly as it did when these ran inline.
       - name: Wait for lint and downloads
-        # Backstop for the network-bound downloads above (each already has its
-        # own timeout-minutes): caps how long this barrier itself can block.
-        timeout-minutes: 20
         wait:
           [pre-commit, dl-rtp, dl-game, dl-mv, dl-mv-sample, dl-mz-sample,
            dl-freepats, dl-default-font]
@@ -1079,9 +1072,6 @@ jobs:
       # the build starts. A failed background fetch surfaces here and fails the
       # job, exactly as it did when this ran inline.
       - name: Wait for the MV sample engine, MIDI patches and default font
-        # Backstop for the network-bound downloads above (each already has its
-        # own timeout-minutes); see the `build` job's equivalent barrier.
-        timeout-minutes: 15
         wait: [mv-sample, freepats, default-font]
 
       - name: build
