@@ -12108,17 +12108,25 @@ session (reading + documenting only, not fixed — see below):
   re-fires from its first line on every subsequent frame — the exact
   "spams every frame" beginner case real RPG_RT produces, and the ordinary
   screen-effect/counter idiom the wiki's worked example describes. A guarded
-  auto-start (`page.guarded`, set by a real auto-start that turns off its own
-  gate) instead fires at most once per visit via `@auto_once` /
+  auto-start instead fires at most once per visit via `@auto_once` /
   `@auto_once_common` (reset only on a genuine map load, not per frame) — so a
-  properly-guarded game event does not re-fire, and the gate does not
+  guarded fixture event does not re-fire, and the gate does not
   deactivate the page (which would trigger an event-page rebuild that wipes
   an unrelated event's in-flight forced route). The ~26 auto-start fixtures
   that issue one-shot commands (forced routes, screen effects, Change Graphic,
   Inn, Battle Animation, etc.) were re-baselined this session to guard
   themselves via `one_shot_auto` / `player_route_page` / `inn_scene`'s
-  `guard:` flag, matching how a real game guards an auto-start so it does not
-  re-fire. The within-frame same-event restart (a no-wait Common Autorun
+  `guard:` flag, standing in for the page-condition gate a real game would
+  use. That flag is a **check-harness** one: no RPG2000/2003 page carries a
+  `guarded` field, so `Scene::Map#page_guarded` reads it `respond_to?`-guarded
+  once per event per page rebuild (`e[:guarded]`, not a per-frame `.guarded`
+  call on the page — an LCF record answers an unknown field by raising, which
+  is what took out `scripts/rpg2k_boot_check.bash` on Nepheshel with
+  `TypeError: nil cannot be converted to Integer`), and every auto-start on
+  real game data is unguarded: it gates itself through its page conditions,
+  and turning its own switch off deactivates the page via
+  `#refresh_event_pages` the frame after. The within-frame same-event restart
+  (a no-wait Common Autorun
   consuming the frame's own step budget up to `MAX_STEPS`, the 5000-per-frame
   worked example above) remains open — see the note directly below.
   **Re-checked this session against EasyRPG Player's actual C++ source

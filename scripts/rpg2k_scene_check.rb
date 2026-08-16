@@ -632,8 +632,11 @@ end
 # Move Event checks this used to break). This mirrors how a real auto-start
 # guards itself so it does not re-fire every frame under the per-frame
 # auto-start re-trigger (Scene::Map#update clears @started_auto each frame), but
-# avoids the rebuild a page-condition gate would cause. The `var_id` argument is
-# accepted for call-site compatibility but unused.
+# avoids the rebuild a page-condition gate would cause. The flag is this
+# harness's own: no RPG2000/2003 page has a `guarded` field, so Scene::Map reads
+# it `respond_to?`-guarded (#page_guarded) and every auto-start on real game
+# data is unguarded. The `var_id` argument is accepted for call-site
+# compatibility but unused.
 def one_shot_auto(page, _var_id = nil)
   page.guarded = true
   page

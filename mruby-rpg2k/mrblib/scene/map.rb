@@ -182,10 +182,11 @@ class RPG2k
         @message_window_top = false
         @started_auto = {}
         @started_common = {}
-        # Guarded auto-starts (page.guarded, set by a real auto-start that turns
-        # off its own gate) fire at most once per visit -- tracked here, reset
-        # only on a genuine map load, so they do not re-fire every frame the way
-        # an ungated auto-start does under Scene::Map#update's per-frame
+        # Guarded auto-starts (see #page_guarded -- a harness gating its own
+        # one-shot process; never a real game page, which gates itself through
+        # its page conditions) fire at most once per visit -- tracked here,
+        # reset only on a genuine map load, so they do not re-fire every frame
+        # the way an ungated auto-start does under Scene::Map#update's per-frame
         # @started_auto clear.
         @auto_once = {}
         @auto_once_common = {}
@@ -1213,7 +1214,8 @@ class RPG2k
         # `page` is kept so a refresh can tell whether the conditions still pick
         # the same one (see #pages_changed?).
         { id: id, char: ch, page: page, trigger: page_trigger(page),
-          commands: page_commands(page), move_type: move_type, route: route,
+          commands: page_commands(page), guarded: page_guarded(page),
+          move_type: move_type, route: route,
           move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
           # Rendering state: the page's static graphic fields, a live walk
           # animation phase / counter, a mid-step "moving" flag, and the pixel
@@ -1337,6 +1339,19 @@ class RPG2k
       def page_pattern(page); page_field(:pattern, 1) { p = page.pattern; (0..2).include?(p) ? p : 1 }; end
       def page_anim_type(page); page_field(:anim_type, 0) { page.animation_type || 0 }; end
       def page_translucent(page); page_field(:translucent, false) { page.translucent ? true : false }; end
+      # Whether this page gates its own auto-start to one run per map visit (see
+      # #start_autostart). No RPG2000/2003 page carries such a field -- a real
+      # auto-start gates itself through its page *conditions*, and turning its
+      # own switch off deactivates the page via #refresh_event_pages -- so this
+      # is false on game data and only a check harness driving a one-shot
+      # process without a condition gate sets it. `respond_to?` rather than a
+      # bare read because an LCF record answers an unknown field by raising, and
+      # this is read once per event per page rebuild.
+      def page_guarded(page)
+        page_field(:guarded, false) do
+          page.respond_to?(:guarded) && page.guarded ? true : false
+        end
+      end
 
       # -- event execution ----------------------------------------------------
 
@@ -1448,21 +1463,23 @@ class RPG2k
 
       # Start the first not-yet-run auto-start process in the foreground: map
       # events with an auto-start trigger, then auto-start common events (whose
-      # switch gate, if any, is on). A guarded auto-start (page.guarded, set by a
-      # real auto-start that turns off its own gate) runs at most once per visit
-      # (@auto_once), so it does not re-fire every frame; an ungated one may
-      # re-fire on later frames (Scene::Map#update clears @started_auto each
+      # switch gate, if any, is on). A guarded auto-start (`guarded:`, read off
+      # the page by #page_guarded for a harness that gates its own one-shot
+      # process) runs at most once per visit (@auto_once), so it does not re-fire
+      # every frame; an ungated one -- which is every auto-start on real game
+      # data, where a page gates itself through its own conditions instead --
+      # may re-fire on later frames (Scene::Map#update clears @started_auto each
       # frame) but is still skipped within a frame so distinct auto-starts
       # cascade. Parallel processes are driven separately by #step_parallels.
       def start_autostart
         ev = @events.find do |e|
           e[:trigger] == TRIGGER_AUTO_START && e[:commands] &&
             !@started_auto[e[:id]] &&
-            !(e[:page] && e[:page].guarded && @auto_once[e[:id]])
+            !(e[:guarded] && @auto_once[e[:id]])
         end
         if ev
           @started_auto[ev[:id]] = true
-          @auto_once[ev[:id]] = true if ev[:page] && ev[:page].guarded
+          @auto_once[ev[:id]] = true if ev[:guarded]
           @active_event = ev
           @interpreter.start(ev[:commands])
           @interpreter.event_id = ev[:id]
