@@ -125,7 +125,17 @@ class RPG2k
         # decides the scope — self (2) or all-ally (4) needs no prompt.
         if it && it.type == Game::Party::ITEM_SWITCH
           apply_switch_item(id)
-        elsif it && it.type == Game::Party::ITEM_SPECIAL
+        elsif it && (it.type == Game::Party::ITEM_SPECIAL ||
+                    (it.use_skill && (1..5).cover?(it.type)))
+          # A type-9 special item, or an equipment item flagged `use_skill`
+          # (schema field 71), both invoke the skill named in `skill_id`: the
+          # invoked skill's type/scope decides the dispatch, so a self (2) or
+          # all-ally (4) skill needs no target prompt and an Escape/Teleport
+          # skill warps. Mirrors the special-item path exactly (see the
+          # type-9 fixes above); an equipment item simply reaches the same
+          # `#use_equip_skill_item` / `#use_special_escape_item` /
+          # `#use_special_teleport_item` backing as it already does for an
+          # ordinary targeted cast.
           sk = @state.party.db_skill(it.skill_id)
           if sk && sk.type == Game::Party::SKILL_ESCAPE
             # Escape has one registered target and no picker -- mirroring

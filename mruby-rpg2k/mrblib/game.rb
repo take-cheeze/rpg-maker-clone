@@ -3906,7 +3906,12 @@ module Game
     # consumed, mirroring `Scene::SkillMenu#apply_escape_skill`'s own gate.
     def use_special_escape_item(id, actor, state)
       it = db_item(id)
-      return nil unless it && it.type == ITEM_SPECIAL && actor && item_usable_by?(it, actor.id)
+      # A type-9 special item, or an equipment item flagged `use_skill` (field
+      # 71) invoking an Escape-type skill, both warp free the same way.
+      return nil unless it &&
+                        (it.type == ITEM_SPECIAL ||
+                         (it.use_skill && (1..5).cover?(it.type))) &&
+                        actor && item_usable_by?(it, actor.id)
       target = cast_escape_skill(actor, it.skill_id, state, true)
       return nil unless target
       consume_item_use(id)
@@ -3918,7 +3923,12 @@ module Game
     # which — see `Scene::SkillMenu`'s teleport list, which this mirrors).
     def use_special_teleport_item(id, actor, state, map_id)
       it = db_item(id)
-      return nil unless it && it.type == ITEM_SPECIAL && actor && item_usable_by?(it, actor.id)
+      # A type-9 special item, or an equipment item flagged `use_skill` (field
+      # 71) invoking a Teleport-type skill, both warp free the same way.
+      return nil unless it &&
+                        (it.type == ITEM_SPECIAL ||
+                         (it.use_skill && (1..5).cover?(it.type))) &&
+                        actor && item_usable_by?(it, actor.id)
       target = cast_teleport_skill(actor, it.skill_id, state, map_id, true)
       return nil unless target
       consume_item_use(id)

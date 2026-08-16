@@ -2376,9 +2376,10 @@ The work below is roughly ordered by the critical path to a walkable game
   the step-count lookup / override / default / disable cases)
 
 #### Menus, save, battle
-- 🚧 Menu scene — opens over the map (cancel button); shows party status and a
+- ✅ Menu scene — opens over the map (cancel button); shows party status and a
   command list. Save, End Game, **Item**, **Skill**, **Equip**, **Status** and
-  **Order** all work.
+  **Order** all work. (The RPG2003 Row and Wait commands stay blocked on the
+  unmodelled RPG2003 battle system; see the body.)
   ✅ **The command list itself now matches the editor that wrote the game**,
   rather than always showing the same fixed six. This line used to claim
   Item/Skill/Equip/Status/Save/End Game was simply "the full main-menu set,"
@@ -2695,13 +2696,25 @@ The work below is roughly ordered by the critical path to a walkable game
   gear (not menu-usable) while the same item flagged `use_skill` behaves
   exactly like an equivalent type-9 special item across all five equipment
   types, and a `class_set`-restricted item triggers for an actor in a listed
-  class but not one outside it. `Scene::ItemMenu#choose_item`'s own dispatch
-  is untouched, so a use_skill equipment item always takes the generic
-  "prompt for a target" branch every other single-ally item takes -- correct
-  for the ordinary case, but not yet special-cased the way a type-9 special
-  item is for a self/all-ally-scope or Escape/Teleport-type attached skill
-  (see the special-item field/battle fixes above); left for whenever such an
-  item shows up in a real game.
+   class but not one outside it. `Scene::ItemMenu#choose_item`'s own dispatch
+   is now special-cased the way a type-9 special item is: `choose_item`
+   routes a `use_skill` equipment item (any of types 1..5 with schema field
+   71 set) through the same branch a special item takes, so a self (2) /
+   all-ally (4) scope skill casts from the party leader with no target prompt
+   and an Escape/Teleport skill warps straight away -- a single-ally scope
+   still prompts for a target, which was already correct. The warp path
+   needed `#use_special_escape_item` / `#use_special_teleport_item`'s own type
+   guard relaxed from `== ITEM_SPECIAL` to also admit a `use_skill`
+   equipment item (the cast is identical -- free, the caster need not know the
+   skill -- and the equipment item is **not** consumed, since RPG_RT returns
+   early from `ConsumeItemUse` on the five equipment types, the same
+   reusable-tool rule `#use_equip_skill_item` already follows). Covered by a
+   new `scripts/rpg2k_scene_check.rb` check (a `use_skill` weapon invoking an
+   all-ally skill is cast by the leader with no prompt) and two new
+   `scripts/rpg2k_logic_check.rb` checks (a `use_skill` equipment item
+   invoking an Escape/Teleport skill warps for free and a plain weapon is
+   never treated as one), confirmed to fail against the pre-fix code. See
+   `changelog.d/menu-use-skill-equipment-item.fixed.md`.
 - 🚧 Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. **Reading** the real
