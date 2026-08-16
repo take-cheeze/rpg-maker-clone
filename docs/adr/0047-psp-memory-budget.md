@@ -248,13 +248,41 @@ the interpreter-linking slice, in this order:
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
   either (file size only). This is Decision work that shipped as code rather
   than staying a P-item — see Consequences.
-- **P2 — decide the allocator split explicitly.** Either accept the default
-  (mruby shares `LV_MEM_SIZE` with LVGL, matching desktop) and size that one
-  pool generously enough for both from the P1 measurements, or add a PSP
-  exception next to Emscripten's in `src/main.cxx`/the PSP entry point so
-  mruby gets its own bounded arena. Whichever is chosen, fix
-  `app/psp/lv_conf.h`'s comment to state it accurately instead of describing
-  the un-taken option.
+- **P2 — decided for this target: mruby gets its own bounded arena.** Sharing
+  LVGL's pool the way desktop does is not viable on the PSP: the builtin TLSF
+  pool only aligns to 4 bytes on a 32-bit build (`lv_mem_core_builtin.c`'s
+  `ALIGN_MASK`), which breaks mruby's word boxing — the same reason the
+  Emscripten build opts out — and plain `malloc` lets the interpreter grow
+  unbounded until it collides with the decoded-bitmap heap. `app/psp/main.cxx`
+  now overrides `mrb_basic_alloc_func` (the mruby 4.0 global allocator hook)
+  with a fixed 8 MB first-fit arena (16-byte aligned, with splitting and
+  coalescing; the same "linker never pulls the default from libmruby.a"
+  pattern desktop uses). When the arena is exhausted the allocator returns
+  NULL and mruby raises a catchable `NoMemoryError` instead of corrupting RAM.
+  `app/psp/lv_conf.h`'s comment now states this accurately (the pool covers
+  LVGL only) instead of describing the un-taken shared-pool option. The 8 MB
+  figure is a generous placeholder to be validated against a real game
+  on-device, exactly as the BRINGUP heartbeat (P1) measures.
+- **P6 — drawn from Finding 3's "third pool" and the EBOOT's own size,
+  landed as three smaller reductions in the same slice:**
+  - The LVGL partial-render draw buffers are sized to the *logical* canvas at
+    display-create time (`mruby-rgss/src/psp.cxx`), capped at the old
+    panel-width 64 KB per buffer: RPG2k's 320×240 canvas needs ~38 KB per
+    buffer (~76 KB total vs the old fixed 128 KB), while an XP/VX canvas
+    (wider than the panel) keeps fewer rows per flush instead of growing.
+  - The EBOOT no longer links LVGL's examples/demos (they are PUBLIC-linked
+    into `liblvgl.a` by default) or any widget beyond the RGSS layer's actual
+    set (canvas/image/label) — the default theme, which `lv_display_create`
+    auto-installs and whose styles reference every widget, is disabled so the
+    unused widget object files are no longer pulled into the link. On the PSP
+    every byte of the EBOOT is loaded into RAM at launch, so this is live
+    memory, not just flash.
+  - The `psp` mruby cross-build (and the `wio` one) now sets mruby's
+    micro-controller tuning knobs `MRB_HEAP_PAGE_SIZE=256` and
+    `KHASH_INITIAL_SIZE=16` (the `MRB_CONSTRAINED_BASELINE_PROFILE` set minus
+    `MRB_NO_METHOD_CACHE`, which would cost dispatch speed), shrinking GC heap
+    page granularity and the initial khash bucket counts with no behaviour
+    change.
 - **P3 — done (the tool; the deployment step itself is still per-release).**
   `scripts/rgssad_unpack.rb` unpacks a `Game.rgssad`/`.rgss2a`/`.rgss3a`
   (desktop-side, reusing the existing `RPGXP::RGSSAD` reader rather than
@@ -290,19 +318,22 @@ the interpreter-linking slice, in this order:
   lands, this revision ships small, self-contained changes alongside the ADR
   update: P1a (stripping mrbc's `-g` for the `psp` cross-build), half of P1
   (the bring-up EBOOT's heartbeat now reports real device memory numbers),
-  and the tool half of P3 (`scripts/rgssad_unpack.rb`). None of these is a
-  pool-sizing or allocator decision — those still depend on numbers only the
-  interpreter-linking slice can produce (a real database and map actually
-  loaded) — so the rest of the Decision items remain design record only.
+  the tool half of P3 (`scripts/rgssad_unpack.rb`), and now the P2 allocator
+  split plus P6's three reductions (draw buffers sized to the canvas, the
+  LVGL widget/theme/example trim, and the mruby embedded tuning knobs). The
+  one pool-sizing number that still depends on the interpreter-linking slice
+  (a real database and map actually loaded) is the mruby arena's 8 MB
+  figure, which the heartbeat is now in place to validate.
 - ADR 0010's "the full gem set should fit" is narrowed: it holds for gem
   *code* size, but says nothing about per-title asset memory, which Finding 2
   shows can exceed the entire 24 MB budget for an RGSSAD-packed game even
   though the Wio Terminal's port needed the same warning at a much smaller
   scale.
-- **Risk register:** P2 (allocator split / pool sizing) is soft-blocking the
-  interpreter-linking slice — the slice can land without it decided, but
-  `LV_MEM_SIZE` will be guessed rather than sized until it is. P3 (RGSSAD
-  whole-archive loads) is hard-blocking for any future XP/VX PSP target; the
+- **Risk register:** P2 is now decided (a bounded 8 MB mruby arena, see the
+  Decision) rather than soft-blocking, but its *size* is still a placeholder
+  awaiting on-device numbers — the BRINGUP heartbeat measures it, so that is a
+  measurement follow-up, not an architectural one. P3 (RGSSAD whole-archive
+  loads) is hard-blocking for any future XP/VX PSP target; the
   tool to close it is done, but running it and excluding the packed archive
   is still a manual step per release, not something CI or the build enforces
   — that's the remaining risk, not the unpack logic itself. P4/P5 are

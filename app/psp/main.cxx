@@ -40,11 +40,18 @@
 //
 // mrb_open() here uses mruby's own default allocator (plain malloc) rather
 // than routing through lv_malloc the way the desktop build does -- ADR 0047's
-// P2 (share LVGL's pool vs. a separate arena) is still an open decision that
-// this slice does not need to make just to prove the interpreter boots and a
-// game can start.
+// P2 (share LVGL's pool vs. a separate arena) is now decided for this target
+// (see below): the interpreter's whole live heap is routed through a
+// fixed-size arena of its own (mrb_basic_alloc_func) instead of LVGL's pool
+// -- which only aligns to 4 bytes on a 32-bit build, too weak for mruby's word
+// boxing, the same reason the wasm build opts out -- and instead of the
+// unbounded default malloc. When the arena is exhausted the allocator returns
+// NULL and mruby raises a catchable NoMemoryError rather than the interpreter
+// growing until it collides with the decoded-bitmap heap.
 
+#include <cstddef>
 #include <cstdio>
+#include <cstring>
 
 #include <lvgl.h>
 #include <mruby.h>
@@ -65,6 +72,134 @@ PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 namespace {
 
 lv_obj_t* g_status_label = nullptr;
+
+// ADR 0047's P2 (the mruby/LVGL allocator split), decided for this target:
+// mruby gets its own bounded arena instead of sharing LVGL's pool or running
+// unbounded on plain malloc. Sharing LVGL's pool is not an option here the way
+// it is on desktop -- LVGL's builtin TLSF pool only aligns to 4 bytes on a
+// 32-bit build (lv_mem_core_builtin.c's ALIGN_MASK), which breaks mruby's word
+// boxing, the same reason the wasm build opts out -- and an unbounded malloc
+// lets the interpreter eat the whole ~24 MB until it collides with the
+// decoded-bitmap heap. A fixed arena bounds it: when the pool is exhausted
+// mrb_basic_alloc_func returns NULL and mruby raises a catchable NoMemoryError
+// (mrb_realloc -> mrb_raise_nomemory) instead of corrupting RAM.
+//
+// This is a first-fit free-list allocator with splitting and coalescing; every
+// block is 16-byte aligned (enough for the 8-byte RVALUE alignment mruby's
+// word boxing needs on 32-bit). The size should be validated against a real
+// game on-device -- the BRINGUP heartbeat below already reports free RAM --
+// but 8 MB is generous: the rpg2k+lcf+rgss mrblib costs ~1.4 MB of class
+// definitions on a 64-bit host (roughly half on the PSP's 32-bit MIPS), and a
+// real LCF database (Nepheshel's 1.3 MB .ldb) plus the maps and scene objects
+// fit well inside, while still leaving most of the ~24 MB for the LVGL pool,
+// the draw buffers and the decoded-bitmap heap.
+constexpr size_t kMrbArenaSize = 8u * 1024u * 1024u;
+alignas(16) uint8_t g_mrb_arena[kMrbArenaSize];
+
+constexpr size_t kMrbAlign = 16;
+struct MrbBlock {
+  size_t size;     // payload bytes, a multiple of kMrbAlign
+  MrbBlock* next;  // next free block in ascending address order (free blocks)
+};
+static_assert(sizeof(MrbBlock) <= kMrbAlign,
+              "block header must fit one alignment unit");
+
+MrbBlock* g_mrb_free = nullptr;
+
+size_t mrb_align_up(size_t n) {
+  return (n + kMrbAlign - 1) & ~(kMrbAlign - 1);
+}
+
+// The arena starts as one free block spanning everything after its own header.
+void mrb_arena_init() {
+  if (g_mrb_free)
+    return;
+  MrbBlock* first = reinterpret_cast<MrbBlock*>(g_mrb_arena);
+  first->size = kMrbArenaSize - kMrbAlign;
+  first->next = nullptr;
+  g_mrb_free = first;
+}
+
+void* mrb_arena_alloc(size_t n) {
+  mrb_arena_init();
+  const size_t need = mrb_align_up(n);
+  MrbBlock* prev = nullptr;
+  for (MrbBlock* b = g_mrb_free; b; prev = b, b = b->next) {
+    if (b->size < need)
+      continue;
+    // Split when the leftover can hold another block (header + 16 B payload).
+    if (b->size - need >= 2 * kMrbAlign) {
+      MrbBlock* rest = reinterpret_cast<MrbBlock*>(
+          reinterpret_cast<uint8_t*>(b) + kMrbAlign + need);
+      rest->size = b->size - need - kMrbAlign;
+      rest->next = b->next;
+      b->size = need;
+      if (prev)
+        prev->next = rest;
+      else
+        g_mrb_free = rest;
+    } else {
+      if (prev)
+        prev->next = b->next;
+      else
+        g_mrb_free = b->next;
+    }
+    return reinterpret_cast<uint8_t*>(b) + kMrbAlign;
+  }
+  return nullptr;  // arena exhausted -> mruby raises NoMemoryError
+}
+
+void mrb_arena_free(void* p) {
+  if (!p)
+    return;
+  mrb_arena_init();
+  MrbBlock* b =
+      reinterpret_cast<MrbBlock*>(reinterpret_cast<uint8_t*>(p) - kMrbAlign);
+  // Insert back into the address-ordered free list.
+  MrbBlock* prev = nullptr;
+  MrbBlock* cur = g_mrb_free;
+  while (cur && cur < b) {
+    prev = cur;
+    cur = cur->next;
+  }
+  b->next = cur;
+  if (prev)
+    prev->next = b;
+  else
+    g_mrb_free = b;
+  // Coalesce with the physically-next block when it is free and adjacent.
+  if (cur && reinterpret_cast<uint8_t*>(b) + kMrbAlign + b->size ==
+                 reinterpret_cast<uint8_t*>(cur)) {
+    b->size += kMrbAlign + cur->size;
+    b->next = cur->next;
+  }
+  // Coalesce with the physically-previous block when it is free and adjacent.
+  if (prev && reinterpret_cast<uint8_t*>(prev) + kMrbAlign + prev->size ==
+                  reinterpret_cast<uint8_t*>(b)) {
+    prev->size += kMrbAlign + b->size;
+    prev->next = b->next;
+  }
+}
+
+void* mrb_arena_realloc(void* p, size_t n) {
+  if (n == 0) {
+    mrb_arena_free(p);
+    return nullptr;
+  }
+  if (!p)
+    return mrb_arena_alloc(n);
+  MrbBlock* b =
+      reinterpret_cast<MrbBlock*>(reinterpret_cast<uint8_t*>(p) - kMrbAlign);
+  const size_t need = mrb_align_up(n);
+  if (b->size >= need)
+    return p;  // already fits; no move
+  void* nbuf = mrb_arena_alloc(need);
+  if (!nbuf)
+    return nullptr;
+  std::memcpy(nbuf, p, b->size < n ? b->size : n);
+  mrb_arena_free(p);
+  return nbuf;
+}
 
 // Names for the RGSS key ids, indexed by PspKey, for the on-screen echo.
 const char* const kKeyNames[PSP_INPUT_KEY_COUNT] = {
@@ -219,6 +354,21 @@ void show_keys(uint32_t mask) {
 }
 
 }  // namespace
+
+// mruby 4.0 has no per-state allocator hook; a program overrides the global
+// mrb_basic_alloc_func to supply its own allocator. Defining it here means the
+// linker never pulls mruby's default (plain realloc) from libmruby.a -- the
+// same pattern src/main.cxx uses to route mruby through LVGL's pool on
+// desktop. On the PSP every mruby allocation (the whole live object graph,
+// strings, the parsed LCF database) comes out of the fixed arena above, so the
+// interpreter's footprint is bounded regardless of what a game does.
+extern "C" void* mrb_basic_alloc_func(void* p, size_t size) {
+  if (size == 0) {
+    mrb_arena_free(p);
+    return nullptr;
+  }
+  return mrb_arena_realloc(p, size);
+}
 
 int main(void) {
   // Emitted before any LVGL/display init so the CI smoke test can tell "the
