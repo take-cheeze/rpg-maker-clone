@@ -12803,7 +12803,7 @@ check 'a gauge battle opens the ready actor\'s command menu on its own -- no Fig
   scene = gauge_battle_scene
   seen_options = false
   ui = nil
-  120.times do
+  250.times do
     scene.update
     ui = battle_ui(scene)
     seen_options = true if ui && ui[:phase] == :battle_options
@@ -12820,7 +12820,7 @@ end
 
 check 'committing the ready actor\'s command starts that one action, consuming its gauge' do
   scene = gauge_battle_scene
-  ui = battle_until_phase(scene, :command, 120)
+  ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
   # Empty every gauge so the fight has nothing else queued behind this action.
   ui[:battle].all_combatants.each { |c| c.gauge = 0 }
@@ -12841,7 +12841,7 @@ end
 check 'canceling the ready actor\'s menu returns to the active-time idle loop, and ' \
       'a ready enemy\'s gauge fires its action automatically there' do
   scene = gauge_battle_scene
-  ui = battle_until_phase(scene, :command, 120)
+  ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
   ui[:battle].all_combatants.each { |c| c.gauge = 0 }
   RGSS::Input.triggered = [RGSS::Input::B] # cancel the menu
@@ -12859,9 +12859,16 @@ end
 
 check 'a ready but restricted (asleep) party member\'s gauge fires a silent no-op, never a command prompt' do
   scene = gauge_battle_scene(BattleStubParty.new(BattleStubActor.new(id: 1, states: [4])))
-  ui = battle_until_phase(scene, :animate, 120)
-  ok ui, 'the battle opened'
+  ui = battle_until_phase(scene, :atb, 150)
+  ok ui, 'the battle opened to the active-time idle loop'
   hero = ui[:battle].all_combatants.first
+  # The restricted ally never *charges* under the real fill curve (EasyRPG's
+  # CanAct() gate -- the new rpg2k3_battle_gauge_check.rb check pins that), so
+  # seed its gauge directly: a full gauge it somehow holds still fires its
+  # turn, and the restriction resolves it to a silent no-op, never a prompt.
+  hero.gauge = Game::Battle::GAUGE_MAX
+  scene.update
+  ui = battle_ui(scene)
   eq 0, hero.gauge, 'the asleep member\'s ready gauge was consumed by its (no-op) turn'
   eq true, hero.queued_no_act, 'the do-nothing restriction was locked in for the turn'
 end

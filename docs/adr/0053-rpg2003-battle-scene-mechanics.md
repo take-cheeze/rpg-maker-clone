@@ -114,8 +114,12 @@ once a 2003 project reaches a fight.
   empty) with `gauge` / `gauge_full?` readers.
 - `Game::Battle` gained `battle_type` (0 traditional / 1 alternative / 2
   gauge; defaults to 0) and the gauge engine:
-  - `advance_gauges(ticks)` fills every living, in-play battler's gauge at
-    `effective_agi * GAUGE_AGI_RATE * ticks`, clamped to `GAUGE_MAX`. It is a
+  - `advance_gauges(ticks)` fills every charging battler's gauge, clamped to
+    `GAUGE_MAX`. The exact curve was settled later, in the ADR 0054 follow-on,
+    as EasyRPG's `Game_Battle::UpdateAtbGauges` port (`GAUGE_MAX` 300000,
+    per-frame increment `GAUGE_MAX / (sum_agi / (agi + 1))` over every
+    non-hidden battler's AGI) — the original placeholder (`effective_agi *
+    GAUGE_AGI_RATE * ticks`, max 100) is gone. It is a
     **no-op unless `battle_type == 2`**, so RPG2000 and the 2003 traditional
     presentation keep running the turn-based machine untouched.
   - `ready_combatants` returns the full-gauge battlers in descending gauge
@@ -138,13 +142,13 @@ once a 2003 project reaches a fight.
   resets its gauge (replacing "whose turn is it" in the round machine) is
   intentionally **not** wired yet — doing so requires the per-frame
   `Scene::Battle#update` loop and a 2003 project to run it (Phase 3). The
-  exact `GAUGE_MAX` / `GAUGE_AGI_RATE` fill curve is the RPG_RT 2003
-  constant, flagged TODO against the RPG_RT 2003 specification (still
-  inaccessible).
+  exact fill curve was also deferred — the ADR 0054 follow-on resolved it
+  against EasyRPG's own RPG_RT 2003 port once that source was reachable.
 
-Verification: `scripts/rpg2k3_battle_gauge_check.rb` (6 checks) exercises the
-inert turn-based path, AGI-proportional fill, full/ready selection, ordering,
-and that a dead battler neither charges nor becomes ready; wired into the
+Verification: `scripts/rpg2k3_battle_gauge_check.rb` (14 checks) exercises the
+inert turn-based path, the real relative fill curve, full/ready selection,
+ordering, that a dead battler neither charges nor becomes ready, and that a
+do-nothing-restricted ally never charges; wired into the
 `ruby-checks` CI job.
 
 ## Phase 2 — scene integration notes (2026-08-16)
