@@ -403,7 +403,11 @@ class RPG2k
       # battle background, while the party is represented by the status window (not
       # sprites). Build the backdrop and one sprite per visible troop member,
       # centred on its database position. Hidden (invisible) members get no sprite
-      # until a battle event reveals them — a mechanism still to come.
+      # until a battle event reveals them — already implemented: a battle
+      # event's Show Hidden Monster command is picked up by
+      # #apply_battle_event_requests, which calls #reveal_battle_monster for
+      # each index in the event's revealed-monster list (see
+      # #take_revealed_monsters), building the sprite on screen mid-battle.
       def build_battle_sprites
         build_battle_back(encounter_backdrop)
         @ui[:enemy_sprites] = @ui[:troop].members.each_with_index.map do |enemy, i|
