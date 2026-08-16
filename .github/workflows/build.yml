@@ -1015,17 +1015,35 @@ jobs:
         timeout-minutes: 5
         run: ./scripts/download-default-font.bash
 
+      # Keyed on the toolchain pin (flake.*), not github.run_id: the cached
+      # system libraries only change when the Emscripten/Nix pin does, so a
+      # run_id key -- unique every run, never an exact hit -- was saving a
+      # brand-new full copy of ~/.emscripten_cache on every single push/PR
+      # and never reusing any of them, flooding
+      # github.com/<repo>/actions/caches until GitHub's 10GB-per-repo cap
+      # started evicting older, still-useful caches (Nix store, RTP, wine
+      # prefix, game data) to make room. This key now matches "Restore and
+      # cache Nix store" above and gets a real exact-match hit on every run
+      # until the toolchain pin moves.
       - uses: actions/cache@v6
         with:
           path: ~/.emscripten_cache
-          key: ${{ runner.os }}-emcc-${{ github.run_id }}
+          key: ${{ runner.os }}-emcc-${{ hashFiles('flake.*') }}
           restore-keys: ${{ runner.os }}-emcc-
 
+      # Same run_id problem as the Emscripten cache above, but ccache's
+      # contents legitimately evolve with source changes, so it cannot use a
+      # toolchain-pin key. Keying on the commit instead of the run still
+      # caps growth to one new cache per commit rather than one per
+      # workflow *run* -- re-runs, `issue_comment`/`push`/`pull_request`
+      # firing on the same SHA, and manual workflow_dispatch retries all
+      # collapse onto the same exact-match key instead of each minting a
+      # fresh multi-hundred-MB cache entry.
       - name: Restore and cache ccache
         uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.ccache
-          key: wasm-ccache-${{ github.run_id }}
+          key: wasm-ccache-${{ github.sha }}
           restore-keys: wasm-ccache-
 
       # Emscripten builds its system libraries (libc/libc++, and the -fexceptions
