@@ -506,7 +506,8 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_logic_check.rb` and a `Scene::Map` check in
   `scripts/rpg2k_scene_check.rb` driving Timer1 down across a page's
   threshold mid-map.
-- 🚧 Event command interpreter — `Game::Interpreter` runs a solid subset (Show
+- ✅ Event command interpreter — `Game::Interpreter` runs the full RPG2000
+  command set (Show
   Message + Choices, Control Switches/Variables, Change Gold/Items/Party,
   Change HP/MP, Full Heal, Change Parameters, Change EXP/Level, Change
   Equipment, Conditional Branch/Else/End,
@@ -1976,7 +1977,7 @@ The work below is roughly ordered by the critical path to a walkable game
   switch starts/stops it). Background processes honour `Wait` but do not drive
   the message/choice UI (those requests are skipped) — full parallel UI is a
   later refinement
-- 🚧 Screen effects — the game **timer** works (Timer Operation command +
+- ✅ Screen effects — the game **timer** works (Timer Operation command +
   `Game::Timer`) and is **drawn**: the start operation's "show timer" flag makes
   `Scene::Map` show it counting down as `M:SS`. There are **two**
   timers — RPG2003 adds a second, selected by the command's sixth parameter, read
@@ -8688,7 +8689,7 @@ not yet verified:
   heavy strength) before the fix.
 
 **BGM / SE**
-- 🚧 BGM has a **single channel** — a new Play BGM force-stops whatever's
+- ✅ BGM has a **single channel** — a new Play BGM force-stops whatever's
   playing; re-triggering the exact same file that's already playing does
   **not** restart it (applies new vol/tempo/pan without a break); field
   and battle BGM sharing the same file continue seamlessly across the
