@@ -136,12 +136,15 @@ The pieces below are scaffolded but **not** part of the EBOOT yet:
   equivalent of the desktop build's `--game_dir` flag or the browser build's
   runtime project loader, since the PSP EBOOT has no command line and no
   way to be told a different location after it starts.
-- **ADR 0047's P2 (the mruby/LVGL allocator split).** `main.cxx` still opens
-  mruby with its own default allocator (plain `malloc`), not routed through
-  `lv_malloc` the way the desktop build's `mrb_basic_alloc_func` override
-  does. Starting a real game didn't require deciding this either; it needs
-  real on-device numbers from an actual game running at `kGameDir` first (see
-  "Memory budget" below).
+- **Validating ADR 0047's P2 numbers.** The mruby/LVGL allocator split itself
+  is decided and wired (mruby's whole heap lives in its own 8 MB arena, see
+  `main.cxx`'s `mrb_basic_alloc_func` — LVGL's pool only aligns to 4 bytes on
+  32-bit, too weak for mruby's word boxing, so sharing it is not an option
+  the way it is on desktop). What still needs a real game running at
+  `kGameDir` is confirming the arena size is right: the `RPG2K_PSP_BRINGUP`
+  heartbeat reports free RAM and LVGL's pool high-water mark, and the
+  mruby arena's own usage is the gap between `sceKernelTotalFreeMemSize` and
+  those two, once a title actually runs on hardware or an emulator.
 - **Accelerated rendering.** The bring-up flushes with a CPU `memcpy` into the
   framebuffer. Moving the blit onto the `sceGu` GPU is a later optimisation,
   and the natural place to also do real scaling (above) instead of clipping.
@@ -153,12 +156,26 @@ answering how the game's live heap, LVGL's pool and decoded assets actually
 fit inside the PSP's ~24 MB of RAM still needs a real game run on real
 hardware or an emulator with a Memory Stick image, not just CI's `psp-smoke`.
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)
-works through that, including a real risk: mruby 4.0's global allocator hook
-defaults to sharing LVGL's pool (as it does on desktop) if `main.cxx` ever
-installs that override the way the desktop build's `mrb_basic_alloc_func`
-does — which it does not yet (see "Not yet wired" above) — so `lv_conf.h`'s
-4 MB `LV_MEM_SIZE` may need to cover the entire mruby object graph, not just
-LVGL widgets, unless a PSP-specific allocator exception is added instead.
+works through that, including the P2 allocator split, which is now decided and
+wired: mruby's entire heap lives in a fixed 8 MB arena of its own
+(`main.cxx`'s `mrb_basic_alloc_func`) rather than sharing LVGL's pool (whose
+TLSF only 4-byte-aligns on 32-bit — too weak for mruby's word boxing) or
+growing unbounded on plain malloc, so the interpreter OOMs into a catchable
+`NoMemoryError` instead of colliding with the decoded-bitmap heap. `lv_conf.h`'s
+4 MB `LV_MEM_SIZE` therefore covers only LVGL's own widgets and internals, and
+the decoded bitmaps stay in a third, uncapped pool as before.
+
+Beyond the arena, this port also shrinks the live footprint in three smaller
+ways: the LVGL partial-render buffers are sized to the game's own canvas
+(RPG2k's 320×240 fits ~38 KB per buffer instead of the fixed panel-width 64 KB
+each — see `psp.cxx`), the EBOOT links none of LVGL's examples/demos and only
+the widgets the RGSS layer actually uses (canvas/image/label; the default theme
+that pulled every widget into the link is off), and the mruby cross-build runs
+the embedded tuning knobs (`MRB_HEAP_PAGE_SIZE`/`KHASH_INITIAL_SIZE` — see
+`build_config.rb`). The `RPG2K_PSP_BRINGUP` heartbeat is the place to read the
+result: `free`/`maxfree` from `sceKernelTotalFreeMemSize` are the device's real
+free RAM, `lvgl_used`/`lvgl_max` are LVGL's pool, and the mruby arena's usage is
+the gap between them once a game is actually running.
 
 For a packed RPG Maker XP/VX/VX Ace title,
 [`scripts/rgssad_unpack.rb`](../../scripts/rgssad_unpack.rb) unpacks

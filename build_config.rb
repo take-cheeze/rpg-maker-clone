@@ -167,6 +167,17 @@ if wio
       # mruby already does for free on Linux/macOS/BSD. Actual RAM fit is a
       # separate concern handled by the streaming rework (P3).
       t.defines << 'MRB_STR_LENGTH_MAX=0'
+      # The micro-controller tuning knobs from mruby's own mrbconf.h (the
+      # MRB_CONSTRAINED_BASELINE_PROFILE set, minus MRB_NO_METHOD_CACHE which
+      # costs dispatch speed on a CPU-bound handheld): a smaller GC heap page
+      # (256 vs 1024 objects) cuts the slack an under-filled last page wastes,
+      # and a smaller initial khash bucket count (16 vs 32) shrinks the symbol
+      # and instance-variable tables that start nearly empty. Both are pure
+      # footprint wins with no behaviour change -- the same object graph just
+      # allocates in smaller, tighter units. See
+      # docs/adr/0047-psp-memory-budget.md.
+      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
+      t.defines << 'KHASH_INITIAL_SIZE=16'
     end
     conf.linker.flags += cpu_flags
 
@@ -245,6 +256,12 @@ if psp
       # the wasm/Wio builds and what mruby already does for free on
       # Linux/macOS/BSD.
       t.defines << 'MRB_STR_LENGTH_MAX=0'
+      # Same micro-controller knobs as the Wio build above (see its comment):
+      # a 256-object GC heap page and 16-entry initial khash buckets cut the
+      # interpreter's live footprint on the PSP's ~24 MB without any
+      # behaviour change.
+      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
+      t.defines << 'KHASH_INITIAL_SIZE=16'
     end
     conf.linker.flags += cpu_flags
 

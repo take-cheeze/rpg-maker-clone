@@ -6,7 +6,9 @@
 
 #include "psp.hxx"
 
+#include <cstddef>
 #include <cstring>
+#include <vector>
 
 #include <pspctrl.h>
 #include <pspdisplay.h>
@@ -40,13 +42,16 @@ uint16_t* g_fb = nullptr;
 int32_t g_offset_x = 0;
 int32_t g_offset_y = 0;
 
-// LVGL partial-render draw buffers, in main RAM. Quarter-screen each
-// (480 * 68 * 2 = ~64 KB); two buffers let LVGL render one while the other is
-// being copied out. The PSP has ~24 MB of user RAM, so unlike the Wio backend
-// these are comfortable -- kept partial only to bound peak working set.
-constexpr int32_t kBufRows = PSP_SCR_HEIGHT / 4;
-uint8_t g_buf1[PSP_SCR_WIDTH * kBufRows * 2];
-uint8_t g_buf2[PSP_SCR_WIDTH * kBufRows * 2];
+// LVGL partial-render draw buffers, in main RAM, sized at display-create time
+// to the *logical* canvas rather than the panel (see psp_display_create):
+// RPG2k's 320x240 canvas needs ~38 KB per buffer (320 * 60 * 2) instead of the
+// old fixed panel-width 64 KB, while the idle 480x272 case keeps the full 64 KB
+// and an XP/VX canvas wider than the panel is capped at 64 KB by dropping rows.
+// Two buffers let LVGL render one while the other is being copied out. The PSP
+// has ~24 MB of user RAM, so unlike the Wio backend these are comfortable --
+// kept partial only to bound peak working set.
+std::vector<uint8_t> g_buf1;
+std::vector<uint8_t> g_buf2;
 
 // LVGL needs a millisecond tick and a delay without SDL. The pspsdk system
 // timer is microseconds; wrap it so the function-pointer types match exactly
@@ -134,7 +139,30 @@ lv_display_t* psp_display_create(int32_t hor_res, int32_t ver_res) {
     return nullptr;
 
   lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-  lv_display_set_buffers(disp, g_buf1, g_buf2, sizeof(g_buf1),
+
+  // Size the partial-render buffers to the canvas instead of the panel. Each
+  // buffer covers a quarter-screen strip of `ver_res / 4` rows at the canvas's
+  // own width; the strip is capped at the old panel-width budget (480 * 68 * 2
+  // = 64 KB) so a canvas wider than the panel (RPG XP 640 / VX 544) keeps
+  // fewer rows per flush rather than growing the buffers, while RPG2k's
+  // 320-wide canvas fits the same strip in ~38 KB. LVGL derives the strip
+  // height from buf_size / (hor_res * bpp), so a narrower buffer just means
+  // more, smaller flushes -- never a correctness change.
+  constexpr size_t kBufBytesCap =
+      static_cast<size_t>(PSP_SCR_WIDTH) * (PSP_SCR_HEIGHT / 4) * 2;
+  constexpr size_t kBpp = 2;  // RGB565
+  size_t rows = static_cast<size_t>(ver_res) / 4;
+  const size_t rows_cap = kBufBytesCap / (static_cast<size_t>(hor_res) * kBpp);
+  if (rows > rows_cap)
+    rows = rows_cap;
+  if (rows == 0)
+    rows = 1;
+  const size_t buf_bytes = rows * static_cast<size_t>(hor_res) * kBpp;
+  g_buf1.assign(buf_bytes, 0);
+  g_buf2.assign(buf_bytes, 0);
+
+  lv_display_set_buffers(disp, g_buf1.data(), g_buf2.data(),
+                         static_cast<uint32_t>(buf_bytes),
                          LV_DISPLAY_RENDER_MODE_PARTIAL);
   lv_display_set_flush_cb(disp, flush_cb);
   return disp;

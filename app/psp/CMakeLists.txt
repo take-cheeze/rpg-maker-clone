@@ -52,6 +52,14 @@ endif()
 set(LV_BUILD_CONF_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}
     CACHE PATH "lv_conf.h location" FORCE)
+# LVGL's desktop CMake builds its examples and demos into the `lvgl` library
+# itself (they are PUBLIC-linked), and their sources call widget constructors
+# that app/psp/lv_conf.h disables -- so building them would fail to compile, and
+# even when they did compile, every byte of them is RAM-resident on the PSP (the
+# whole EBOOT is loaded into memory at launch). The RGSS runtime and the idle
+# status screen need none of them, so keep both out of the EBOOT.
+set(CONFIG_LV_BUILD_EXAMPLES OFF)
+set(CONFIG_LV_BUILD_DEMOS OFF)
 add_subdirectory(${REPO_ROOT}/3rd/lvgl 3rd/lvgl EXCLUDE_FROM_ALL)
 
 # mruby-rgss and mruby-lcf both link uni-algo (Unicode normalisation / CP932
