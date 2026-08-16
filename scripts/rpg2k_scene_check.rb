@@ -625,6 +625,20 @@ def event(x, y, pg)
   OpenStruct.new(x: x, y: y, pages: { 1 => pg })
 end
 
+# Gate an auto-start page so it fires at most once per map visit. The scene's
+# Scene::Map#start_autostart skips it on later frames once it has run, without
+# deactivating the page (which would otherwise trigger an event-page rebuild
+# that wipes an unrelated event's in-flight forced route -- see the 5 map-event
+# Move Event checks this used to break). This mirrors how a real auto-start
+# guards itself so it does not re-fire every frame under the per-frame
+# auto-start re-trigger (Scene::Map#update clears @started_auto each frame), but
+# avoids the rebuild a page-condition gate would cause. The `var_id` argument is
+# accepted for call-site compatibility but unused.
+def one_shot_auto(page, _var_id = nil)
+  page.guarded = true
+  page
+end
+
 # The runtime event hash (id => {char:, layer:, anim_type:, ...}) the scene built.
 def event_hashes(scene)
   h = {}
@@ -1418,6 +1432,7 @@ check 'overlap_forbidden does not block the hero while under a forced Set Move R
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
                                   [RPG2k::Scene::Map::MOVE_TARGET_PLAYER, 8, 0, 1,
                                    R::MOVE_RIGHT, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9002)
   blocker = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW, overlap_forbidden: true)
   scene = new_scene({ 1 => event(5, 5, auto), 2 => event(1, 0, blocker) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
@@ -1969,6 +1984,7 @@ check 'a second auto-start map event does NOT cascade in while the first ' \
   p1 = page(trigger: 3) # auto-start: flips switch 1, then waits
   p1.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
                        ECmd.new(ic::WAIT, [2])] # 0.2s = 12 frames
+  one_shot_auto(p1, 9001) # fire once: a re-firing auto-start would re-wait every frame and starve p2
   p2 = page(trigger: 3) # auto-start: flips switch 2
   p2.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0])]
   scene = new_scene({ 1 => event(1, 1, p1), 2 => event(2, 2, p2) }, player: [0, 0])
@@ -2575,9 +2591,10 @@ class ShopStubParty
 end
 
 # Build an auto-start event running `commands`, with a stub party holding `gold`.
-def inn_scene(gold, commands)
+def inn_scene(gold, commands, guard: false)
   auto = page(trigger: 3)
   auto.event_commands = commands
+  one_shot_auto(auto, 9003) if guard
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, InnStubParty.new(gold))
@@ -2624,7 +2641,7 @@ check 'Show Inn scene: an accepted stay fades to black, holds through the heal, 
   eq 35, Game::Transition.default_frames(Game::Transition::FADE_OUT)
   eq 35, Game::Transition.default_frames(Game::Transition::FADE_IN)
 
-  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100), guard: true)
   5.times { scene.update } # inn command runs; the greeting prompt opens
   RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
   scene.update # accept: the fade-out starts this same frame, not an immediate resume
@@ -2722,7 +2739,7 @@ check 'Show Inn scene: a Change System BGM inn override beats the database defau
 end
 
 check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BGM' do
-  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 0)) # price 0 skips the prompt
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 0), guard: true) # price 0 skips the prompt
   st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
   RGSS::Audio.reset_bgm
   # No greeting window opens for a free stay, so this reaches the inn BGM in a
@@ -3008,6 +3025,7 @@ check 'Move Event forces a target map event onto a route' do
   auto = page(trigger: 3) # auto-start: on load, tell event 2 to walk east
   # target event 2, freq 8, repeat on, skippable on, MOVE_RIGHT.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [2, 8, 1, 1, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9004)
   mover = event(1, 1, page) # stationary by default; the route drives it
   scene = new_scene({ 1 => event(0, 4, auto), 2 => mover }, player: [5, 0])
   40.times { scene.update }
@@ -3021,6 +3039,7 @@ check 'Move Event with "this event" moves the running event itself' do
   auto = page(trigger: 3)
   # target 10005 (this event), freq 8, repeat on, skippable on, MOVE_DOWN.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10005, 8, 1, 1, R::MOVE_DOWN])]
+  one_shot_auto(auto, 9005)
   scene = new_scene({ 1 => event(2, 0, auto) }, player: [5, 4])
   c = chars(scene)[1]
   30.times { scene.update }
@@ -3036,6 +3055,7 @@ check 'Move Frequency reasserts the page value once a forced route finishes' do
   # looping forever.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
     [2, 8, 0, 1, R::FREQ_UP, R::FREQ_UP, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9006)
   target_page = page(frequency: 3) # the page's own configured frequency
   mover = event(1, 1, target_page)
   scene = new_scene({ 1 => event(0, 4, auto), 2 => mover }, player: [5, 0])
@@ -3052,6 +3072,7 @@ check 'a forced player route suppresses input while it runs' do
   auto = page(trigger: 3)
   # target 10001 (player), freq 8, repeat on, skippable on, MOVE_DOWN.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 1, 1, R::MOVE_DOWN])]
+  one_shot_auto(auto, 9007)
   scene = new_scene({ 1 => event(3, 0, auto) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   RGSS::Input.dir_value = 8 # hold up: must be ignored while the route drives down
@@ -3065,6 +3086,7 @@ check 'a non-repeating player route finishes and returns control to input' do
   auto = page(trigger: 3)
   # target 10001 (player), freq 8, repeat off, skippable on, MOVE_RIGHT.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 0, 1, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9008)
   scene = new_scene({ 1 => event(3, 3, auto) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   10.times { scene.update } # the route steps the player east once, then ends
@@ -3155,6 +3177,7 @@ check 'Through Mode set by a player route outlives the route, and Halt All Movem
   # through a wall no ordinary move could cross.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
                                   [10001, 8, 0, 1, R::THROUGH_ON, R::MOVE_DOWN])]
+  one_shot_auto(auto, 9009)
   scene = walled_in_scene({ 1 => event(5, 0, auto) }, [2, 2])
   st = scene.instance_variable_get(:@state)
 
@@ -3180,8 +3203,9 @@ check "Halt All Movement lands an in-progress jump but drops the route's trailin
   # A two-tile jump (Begin/End Jump around two Move Down) followed by a
   # trailing Move Down that a halt right after landing should never reach.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
-                                  [10001, 8, 0, 0, R::BEGIN_JUMP, R::MOVE_DOWN,
-                                   R::MOVE_DOWN, R::END_JUMP, R::MOVE_DOWN])]
+                                   [10001, 8, 0, 0, R::BEGIN_JUMP, R::MOVE_DOWN,
+                                    R::MOVE_DOWN, R::END_JUMP, R::MOVE_DOWN])]
+  one_shot_auto(auto, 9010)
   scene = new_scene({ 1 => event(5, 0, auto) }, player: [2, 0])
   st = scene.instance_variable_get(:@state)
 
@@ -3215,6 +3239,7 @@ check 'Set Transparent Flag hides and shows the player sprite' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = [ECmd.new(ic::PLAYER_VISIBILITY, [1])] # transparent ON
+  one_shot_auto(auto, 9011)
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   5.times { scene.update }
   spr = scene.instance_variable_get(:@player_sprite)
@@ -4414,6 +4439,7 @@ check 'Proceed With Movement holds the interpreter until a forced route finishes
     ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
   ]
+  one_shot_auto(auto, 9012)
   scene = new_scene({ 1 => event(0, 4, auto), 2 => event(0, 1, page) },
                     player: [5, 5])
   st = scene.instance_variable_get(:@state)
@@ -4481,6 +4507,7 @@ check "Proceed With Movement also waits on a vehicle's forced route" do
     ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
   ]
+  one_shot_auto(auto, 9013)
   scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 5], boat_pass: true)
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
@@ -4522,6 +4549,7 @@ check "a wandered map event's position and facing survive a save/load, but " \
              [2, 8, 0, 0, R::MOVE_RIGHT, R::MOVE_RIGHT, R::FACE_DOWN]),
     ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
   ]
+  one_shot_auto(auto, 9014)
   events = { 1 => event(0, 4, auto), 2 => event(1, 1, page) }
   db = fake_db
   state = Game::State.new(fake_party, 1, 5, 5)
@@ -5040,6 +5068,7 @@ check 'Shake Screen with a wait holds the interpreter and renders with an offset
     ECmd.new(ic::SHAKE_SCREEN, [6, 5, 3, 1]), # power 6, speed 5, 0.3s, wait
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
   ]
+  one_shot_auto(auto, 9015)
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   st = scene.instance_variable_get(:@state)
 
@@ -5059,6 +5088,7 @@ check 'Flash Screen with a wait holds the interpreter until the flash fades' do
     ECmd.new(ic::FLASH_SCREEN, [255, 255, 255, 31, 3, 1]), # white, 0.3s, wait
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
   ]
+  one_shot_auto(auto, 9016)
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   st = scene.instance_variable_get(:@state)
 
@@ -5411,6 +5441,7 @@ check 'Pan Screen locks the camera and holds the interpreter while scrolling' do
     ECmd.new(ic::PAN_SCREEN, [2, 1, 5, 2, 1]), # pan right 5 tiles, speed 2, wait
     ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
   ]
+  one_shot_auto(auto, 9017)
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [3, 3])
   st = scene.instance_variable_get(:@state)
 
@@ -7120,6 +7151,7 @@ check 'Move Event drives an unboarded boat along a route, respecting vehicle_pas
   auto = page(trigger: 3)
   # target 10002 (boat), freq 8, repeat off, skippable on, MOVE_RIGHT.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10002, 8, 0, 1, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9018)
   scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 0], boat_pass: true)
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
@@ -7217,6 +7249,7 @@ check 'Move Event targeting a currently-ridden vehicle redirects onto the ' \
   auto = page(trigger: 3)
   # target 10002 (boat), freq 8, repeat off, skippable on, MOVE_RIGHT.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT, [10002, 8, 0, 1, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9019)
   scene = new_scene({ 1 => event(0, 4, auto) }, player: [0, 1], boat_pass: true)
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
@@ -7601,6 +7634,7 @@ check 'Show Battle Animation with the wait flag off still plays, without blockin
     ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 0], indent: 0),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
   ]
+  one_shot_auto(auto, 9020)
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
   spr = scene.instance_variable_get(:@animation_sprite)
@@ -15700,12 +15734,12 @@ check 'a teleport is not a walked step' do
 end
 
 # A page that forces a route on the player: target 10001, freq 8, repeat off,
-# skippable on, then the route's own commands.
+# skippable on, then the route's own commands. Guarded so it fires once.
 def player_route_page(*cmds)
   pg = page(trigger: 3) # auto-start
   pg.event_commands = [ECmd.new(Game::Interpreter::Cmd::MOVE_EVENT,
                                 [10001, 8, 0, 1, *cmds])]
-  pg
+  one_shot_auto(pg, 9000)
 end
 
 check 'a forced player route slides the party instead of snapping it' do
@@ -15814,6 +15848,7 @@ check 'a forced route Change Graphic overrides the hero sprite, reverting on Tra
   params = [10001, 8, 0, 1, R::CHANGE_GRAPHIC, name.length, 3]
   pg = page(trigger: 3) # auto-start
   pg.event_commands = [ECmd.new(ic::MOVE_EVENT, params, string: name)]
+  one_shot_auto(pg, 9021)
   scene = new_scene({ 1 => event(3, 3, pg) }, player: [0, 0])
   5.times { scene.update }
   charset, index = scene.send(:player_draw_charset)
@@ -15835,6 +15870,7 @@ check 'a vehicle Change Graphic overrides its sprite without persisting to Game:
   params = [10002, 8, 0, 1, R::CHANGE_GRAPHIC, name.length, 3]
   pg = page(trigger: 3) # auto-start
   pg.event_commands = [ECmd.new(ic::MOVE_EVENT, params, string: name)]
+  one_shot_auto(pg, 9022)
   scene = new_scene({ 1 => event(3, 3, pg) }, player: [5, 5], boat_pass: true)
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
@@ -15930,6 +15966,7 @@ check 'Proceed With Movement finishes a sliding player route' do
     ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
     ECmd.new(ic::CONTROL_SWITCHES, [0, 9, 9, 0]),
   ]
+  one_shot_auto(pg, 9023)
   scene = new_scene({ 1 => event(3, 3, pg) }, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   120.times { scene.update }
@@ -15945,6 +15982,7 @@ check 'a forced player route walks the party, and its steps count' do
   route_page = lambda do |cmd|
     pg = page(trigger: 3)
     pg.event_commands = [ECmd.new(ic::MOVE_EVENT, [10001, 8, 0, 1, cmd])]
+    one_shot_auto(pg, 9024)
     pg
   end
 
@@ -16047,6 +16085,7 @@ check 'a forced move route does not roll for a random encounter' do
   # target 10001 (player), freq 8, repeat off, skippable on, three MOVE_RIGHTs.
   auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
                                   [10001, 8, 0, 1, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9025)
   scene = new_scene({ 1 => event(3, 3, auto) }, player: [0, 0], map_tree: tree)
   st = scene.instance_variable_get(:@state)
   30.times { scene.update }
