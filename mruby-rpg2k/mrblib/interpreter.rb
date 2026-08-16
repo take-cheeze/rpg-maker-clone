@@ -1423,12 +1423,18 @@ module Game
     # mode, so #resume_battle's job shrinks to tallying the outcome and
     # clearing the wait. Only valid while this interpreter is otherwise idle
     # (Scene::Map only calls it from ordinary player movement, never while an
-    # event is running); escape is always allowed and a wipe is always game
-    # over, since a random encounter carries no encounter-specific settings of
-    # its own to say otherwise. A troop id the database no longer has (the
-    # map's own encounter list can go stale the same way a scripted Enemy
-    # Encounter's can) logs and simply never arms the wait -- there is no
-    # event to resume here, so movement just continues uninterrupted.
+    # event is running); escape is always allowed. A wipe is game over unless
+    # the database's own RPG2003 Death Handler is active
+    # (Game::Party#death_handler?, matching EasyRPG's `Game_Battle::
+    # HasDeathHandler`) -- Scene::Battle#finish_battle runs it instead (see
+    # #start_death_handler below) when it applies. `random: true` marks the
+    # request so #finish_battle can tell a wandering encounter apart from a
+    # scripted Battle Processing command, whose own [Defeat] handler is a
+    # separate mechanism this flag never touches. A troop id the database no
+    # longer has (the map's own encounter list can go stale the same way a
+    # scripted Enemy Encounter's can) logs and simply never arms the wait --
+    # there is no event to resume here, so movement just continues
+    # uninterrupted.
     def start_random_battle(troop_id, first_strike: false)
       unless party.db_enemy_group(troop_id)
         $stderr.puts "[RPG2k] Enemy Encounter: enemy group #{troop_id} not " \
@@ -1438,12 +1444,41 @@ module Game
       @battle_has_handlers = false
       @battle_escape_aborts = false
       @battle_request = { troop_id: troop_id, allow_escape: true,
-                          first_strike: first_strike, defeat_game_over: true }
+                          first_strike: first_strike,
+                          defeat_game_over: !party.death_handler?, random: true }
       @state.battle_count += 1
       @wait_kind = :battle
       @waiting = true
     end
     public :start_random_battle
+
+    # RPG2003's Death Handler, run by Scene::Battle#finish_battle in place of
+    # the ordinary Game Over screen once a random encounter's party is
+    # wiped and Game::Party#death_handler? says the database wants this
+    # instead. Matches EasyRPG's `Game_Map::OnEncounterEnd`
+    # (src/game_map.cpp): the death event's own commands run first (pushed
+    # the same way Call Event starts a common event, #do_call_event), then
+    # the configured teleport (if any) is appended as a trailing synthetic
+    # Teleport command, so it runs through the ordinary #do_teleport
+    # machinery once those commands (if any) finish. Only ever called on an
+    # idle interpreter -- #finish_battle only reaches this for a random
+    # encounter, which by construction never has an owning event running
+    # underneath it (see #start_random_battle above) -- so this simply
+    # starts a fresh top-level command list rather than pushing a call
+    # frame. A death handler with neither a resolvable event nor a
+    # configured teleport is a silent no-op, the same as EasyRPG's own
+    # empty-cases-are-inert function bodies.
+    def start_death_handler
+      cmds = []
+      event_id = party.death_handler_event
+      ev_cmds = event_id > 0 ? common_event_commands(event_id) : nil
+      cmds.concat(ev_cmds) if ev_cmds
+      tp = party.death_handler_teleport
+      cmds << LCF::EventCommand.new(Cmd::TELEPORT, 0, '', tp) if tp
+      return if cmds.empty?
+      start(cmds)
+    end
+    public :start_death_handler
 
     # -- state commands -------------------------------------------------------
 

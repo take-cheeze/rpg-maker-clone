@@ -790,7 +790,31 @@ module LCF
                 # its own shortcut), 3 defense, 4 item, 5 escape, 6 special.
                 2 => { name: :type, type: :int, default: 0 },
               }
-            }
+            },
+            # RPG2003's "Death Handler": when set, a wandering-monster
+            # encounter's party wipe runs common event `death_event` and/or
+            # teleports the party instead of the ordinary Game Over screen --
+            # confirmed against liblcf's own generator/csv/fields.csv (not
+            # guessed), which also carries a `death_handler_unused` boolean
+            # at 0x04 the editor always writes alongside this one but real
+            # RPG_RT never reads, so it is deliberately left out of this
+            # schema. See Game::Party#death_handler? (mruby-rpg2k/mrblib/
+            # game.rb), which also gates this on `Player::IsRPG2k3()`
+            # (EasyRPG's `Game_Battle::HasDeathHandler`, src/game_battle.cpp)
+            # the same way every other RPG2003-only flag in this codebase is.
+            15 => { name: :death_handler, type: :bool, default: false },
+            16 => { name: :death_event, type: :int, default: 1 },
+            # `death_teleport_face` follows the same 1-based up/right/down/
+            # left-with-0-meaning-"keep the current facing" layout as the
+            # Teleport event command's own facing parameter (liblcf's
+            # `BattleCommands_Facing` enum, generator/csv/enums.csv: 0
+            # retain, 1 up, 2 right, 3 down, 4 left) -- see Interpreter
+            # #teleport_facing, reused as-is for this field.
+            25 => { name: :death_teleport, type: :bool, default: false },
+            26 => { name: :death_teleport_id, type: :int, default: 1 },
+            27 => { name: :death_teleport_x, type: :int, default: 0 },
+            28 => { name: :death_teleport_y, type: :int, default: 0 },
+            29 => { name: :death_teleport_face, type: :int, default: 0 },
           }
         },
         30 => {

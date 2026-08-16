@@ -3377,6 +3377,47 @@ module Game
       table && table.respond_to?(:placement) && table.placement == 1 ? true : false
     end
 
+    # RPG2003's "Death Handler" (`battlecommands.death_handler`, chunk 29
+    # field 0x0F -- see mruby-lcf/mrblib/schema.rb): when active, a random
+    # (wandering-monster) encounter's party wipe skips the ordinary Game
+    # Over screen and instead runs a common event and/or teleports the
+    # party. Matches EasyRPG's `Game_Battle::HasDeathHandler`
+    # (src/game_battle.cpp): `Player::IsRPG2k3() && db.death_handler`. A
+    # scripted Battle Processing command's own [Defeat] handler is a
+    # separate, already-correct mechanism (Interpreter#do_enemy_encounter's
+    # own `defeat_game_over: cmd.param(4) == 0`) that never consults this --
+    # the death handler applies to wandering encounters only. A bare test
+    # fixture with no `#battlecommands` table, or an RPG2000 database, reads
+    # false, same as `#alternate_battle_layout?` above.
+    def death_handler?
+      return false unless rpg2003? && @db.respond_to?(:battlecommands)
+      table = @db.battlecommands
+      table && table.respond_to?(:death_handler) && table.death_handler ? true : false
+    end
+
+    # The common event id a Death Handler runs (`battlecommands.death_event`),
+    # or 0 when the handler is not active -- matches EasyRPG's
+    # `Game_Battle::GetDeathHandlerCommonEvent`.
+    def death_handler_event
+      return 0 unless death_handler?
+      table = @db.battlecommands
+      table.respond_to?(:death_event) ? (table.death_event || 0) : 0
+    end
+
+    # The Death Handler's own teleport target as [map_id, x, y, facing] (the
+    # same 1-based-facing-or-0-for-keep-current layout the Teleport event
+    # command's own facing parameter uses -- see Interpreter
+    # #teleport_facing, and schema.rb's `death_teleport_face` comment for
+    # why they line up), or nil when no teleport is configured. Matches
+    # EasyRPG's `Game_Battle::GetDeathHandlerTeleport`.
+    def death_handler_teleport
+      return nil unless death_handler?
+      table = @db.battlecommands
+      return nil unless table.respond_to?(:death_teleport) && table.death_teleport
+      [table.death_teleport_id, table.death_teleport_x, table.death_teleport_y,
+       table.death_teleport_face]
+    end
+
     # Whether item `id` can be used from the field (main-menu) item screen: a
     # medicine or switch item the party holds whose "usable in field" occasion is
     # set (a battle-only medicine is hidden here, mirroring #battle_usable?), or a
