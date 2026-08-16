@@ -7295,6 +7295,39 @@ not yet verified:
   well past the ignored duration, then resumes the instant the Decision key
   is pressed) — all three confirmed to fail against the pre-fix code before
   the fix.
+- ✅ **Three RPG2003-only battle-page commands — Force Flee (1006), Enable
+  Combo (1007), and Call Common Event (1005) — are now correctly gated to
+  that edition; on RPG2000 they used to run exactly as authored, which the
+  editor itself has no UI to author at all.** Confirmed against EasyRPG's
+  actual C++ source: `Game_Interpreter_Battle::CommandForceFlee`/
+  `CommandEnableCombo`/`CommandCallCommonEvent`
+  (`src/game_interpreter_battle.cpp`) each open with `if (!Player::
+  IsRPG2k3Commands()) { return true; }` — checked against every other
+  sibling in the same battle-page command switch (`ChangeMonsterHP`/
+  `ChangeMonsterMP`/`ChangeMonsterCondition`/`ShowHiddenMonster`, none of
+  which carry the guard) to confirm this is specific to these three, not a
+  blanket pattern this repo already covers. `Interpreter#do_force_flee`/
+  `#do_enable_combo`/`#do_call_common_event`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) each already had a comment
+  documenting "RPG2003-only," but none of the three code bodies actually
+  enforced it — only gated on `@battle`/`@resolver` truthy, the same class
+  of gap already fixed this session for the map-event TIMER2 condition and
+  the four troop-page condition flags in this very file's own sibling
+  function `AreConditionsMet`, just on the **command-execution** side this
+  time rather than a condition check. Concretely: a Force Flee (target 0,
+  "grant the party") reaching this dispatch on an RPG2000 database used to
+  set `@force_flee = true`, guaranteeing the party's next Flee choice
+  succeeds regardless of the normal agility-based roll — an outcome real
+  RPG_RT 2000 could never produce, since its own battle event editor has no
+  Force Flee command at all. Fixed by adding `&& @state.party.rpg2003?` to
+  each method's existing guard. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check exercising all three commands on an
+  RPG2000 database (no escape granted, no combo armed, no common event
+  called — the page still runs on past it, same as any unrecognized
+  command would), confirmed to fail against the pre-fix code before the
+  fix; the five pre-existing checks covering these commands' actual
+  matching logic were updated to construct an explicit RPG2003 fixture so
+  the new edition gate does not mask what they test.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
