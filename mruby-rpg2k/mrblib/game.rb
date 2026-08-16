@@ -9133,6 +9133,31 @@ module Game
       c
     end
 
+    # Begin `b`'s active-time turn: its gauge fired, so it acts on its own
+    # schedule rather than as one slot of an agility-ordered round. This queues
+    # `b` as the sole battler of the coming action the way #begin_round queues a
+    # whole round, so the existing per-action machinery (#step_action / #strike /
+    # the @pending multi-hit buffer / #end_round) runs unchanged for it -- the
+    # scene's per-frame picker (RPG2k3::Scene::Battle#drive_battle_atb) calls
+    # this once per ready combatant instead of #begin_round once per round.
+    #
+    # The battler's gauge is reset here (it must refill before acting again),
+    # and its own per-battler turn counter is bumped -- RPG2003's
+    # turn_enemy / turn_actor page-condition count, the same #next_battle_turn
+    # #step bumps when the *round* machine runs one -- so a page's per-battler
+    # turn conditions tick in a gauge battle too. A "do nothing" restriction is
+    # locked in for the turn the same way #refill_queue locks it at the start of
+    # a round. Deliberately does NOT touch @rounds: a gauge battle has no
+    # RPG2000-style rounds, so the global turn number (#turn) stays 0 for it and
+    # the pages read the per-battler counters instead.
+    def begin_gauge_turn(b)
+      @pending = []
+      b.next_battle_turn
+      b.queued_no_act = do_nothing_restricted?(b)
+      reset_gauge(b)
+      @queue = [b]
+    end
+
     def to_hit(attacker, target)
       return 0 if evades_all_physical?(target)
       return 100 if do_nothing_restricted?(target)

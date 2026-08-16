@@ -155,13 +155,17 @@
   back the frame it ends
 - A fight in an **RPG2003 project** runs through the 2003 battle scene
   (`RPG2k3::Scene::Battle`, selected by the database's edition): a gauge
-  (`battle_type` 2) presentation draws the party as face/bars gauge cards from
-  the project's System2 graphic and advances each battler's active-time charge
-  every frame, while the traditional and alternative presentations inherit the
-  unchanged turn-based machine. The 2003 test beds ship no encounters, so a
-  `--rpg2k_battle_troop=<id>` flag drives a real project straight into a fight
-  against a chosen database troop after New Game — the boot check uses it to
-  exercise the 2003 battle path end to end against real data
+  (`battle_type` 2) presentation runs on the active-time turn cycle — every
+  combatant's charge gauge fills each frame, the first one full opens the
+  command menu for a controllable party member or fires the action of anyone
+  else (enemy AI included) automatically, and acting resets it — draws the
+  party as face/bars gauge cards from the project's System2 graphic, and
+  applies RPG2003's front/back row accuracy, while the traditional and
+  alternative presentations inherit the unchanged turn-based machine. The 2003
+  test beds ship no encounters, so a `--rpg2k_battle_troop=<id>` flag drives a
+  real project straight into a fight against a chosen database troop after New
+  Game — the boot check uses it to exercise the 2003 battle path end to end
+  against real data
 - The **field windows show a condition too** — the menu party list, the item and
   skill target lists, and the status screen, which are the three RPG_RT draws one
   in. The target lists are the point: they are where you pick who to use an
