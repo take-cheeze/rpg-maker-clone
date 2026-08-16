@@ -70,9 +70,17 @@ Behavioral notes and deliberate simplifications:
 - A gauge battle shows **no Fight/Auto/Escape options window**: the first ready
   actor's menu opens on its own. The `GAUGE_MAX` / `GAUGE_AGI_RATE` fill curve
   remains ADR 0053's flagged-placeholder constants.
-- A `command_actor`-gated battle page still never fires: the turn cycle hands
-  the picker a concrete battler but never records which command it chose
-  (`Game::Battle#actor_command` stays nil).
+- The **battle combo** (Enable Combo / 1007) is spent: the scene records the
+  chosen battle command onto the Combatant (`last_battle_action`), and
+  `Game::Battle#combo_hits` multiplies the hits of an attack or skill command
+  when an armed combo names that exact command — never a Defend/Item/Escape.
+  The combo stays armed for the fight (no decrement), matching EasyRPG.
+- A `command_actor`-gated battle page still never fires: the scene now records
+  which command the battler chose (`Combatant#last_battle_action`), but the
+  source-threading that lets the page test *the acting battler's* command at
+  its action boundary — EasyRPG's `ScheduleNextPage(flags, source)` — is not
+  wired, so `Game::Battle#actor_command` stays nil (never satisfiable, the
+  same answer RPG_RT's RPG2000 scene gives).
 
 ## Consequences
 
@@ -87,8 +95,12 @@ Behavioral notes and deliberate simplifications:
   bump, silent no-op turn for a restricted battler) and `rpg2k_scene_check.rb`
   drives real gauge battles through the 2003 scene (menu-on-own, commit →
   action → idle, ready enemy auto-fires, restricted member's silent turn, and a
-  battle_type 0 fight never entering the gauge loop). The native boot check
-  keeps the real 2003 battle green.
-- Follow-ups: Wait-off (active) mode and the database wait toggle; recording
-  the chosen command for `command_actor` pages; the Special command handler;
+  battle_type 0 fight never entering the gauge loop). The combo's model math is
+  pinned by `rpg2k_logic_check.rb` (armed Attack combos to its full count,
+  wrong-command and Item combos never apply, a combo'd skill repeats with SP
+  spent once, all-target too) and the command-id recording by the scene checks.
+  The native boot check keeps the real 2003 battle green.
+- Follow-ups: Wait-off (active) mode and the database wait toggle; the
+  source-threading that makes `command_actor` pages satisfiable; the Special
+  command handler;
   the attacker-side back-row reach penalty; the exact RPG_RT 2003 fill curve.

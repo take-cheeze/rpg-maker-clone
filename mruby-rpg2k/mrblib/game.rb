@@ -2789,13 +2789,17 @@ module Game
     def battle_commands_changed?; !@battle_commands.nil?; end
 
     # The RPG2003 battle combo an Enable Combo (1007) armed: the battle command
-    # to repeat and how many times. nil until a battle page arms one.
+    # to repeat and how many times. nil until a battle page arms one. Stored on
+    # the actor the way RPG_RT keeps it (EasyRPG's Game_Actor::SetBattleCombo);
+    # the battle resolution spends it -- Battle#combo_hits multiplies the hits
+    # of the armed command when it is the one the actor chose (ADR 0054).
     attr_reader :battle_combo
 
     # Enable Combo (event command 1007): make `command_id` repeat `multiple`
     # times when this actor uses it. Stored on the actor the way RPG_RT keeps it
-    # (EasyRPG's Game_Actor::SetBattleCombo); the ATB battle system that spends
-    # it is not modelled here, so this records the arming rather than acting.
+    # (EasyRPG's Game_Actor::SetBattleCombo); the combo is not decremented by a
+    # use -- it stays armed for the whole fight until another Enable Combo
+    # overwrites it, matching EasyRPG.
     def set_battle_combo(command_id, multiple)
       @battle_combo = { command_id: command_id, multiple: multiple }
     end
@@ -8455,7 +8459,18 @@ module Game
                             # advances it -- RPG2000 (battle_type 0) and the
                             # 2003 traditional presentation (1) leave it at 0
                             # and run the turn-based machine instead.
-                            :gauge) do
+                            :gauge,
+                            # The ref of the battle command (into
+                            # `db.battlecommands.commands`, 1..4 for the fixed
+                            # four) this actor last chose in the command window,
+                            # recorded by the scene (#select_battle_command) the
+                            # way EasyRPG's Scene_Battle_Rpg2k3 sets
+                            # `SetLastBattleAction(command->ID)`. Read by the
+                            # RPG2003 battle combo (#combo_hits) and, in time,
+                            # the battle-page `command_actor` condition. nil
+                            # until an actor picks a command (an enemy, or an
+                            # auto-battling ally, never records one).
+                            :last_battle_action) do
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -8831,16 +8846,17 @@ module Game
 
     # The `command_actor` page condition (which battle command an actor just
     # chose) is answered "unknown" (nil), which Game::BattlePage reads as
-    # "fails the page" rather than firing it unchecked — and this is not a
-    # gap to close, it is what RPG_RT itself does for RPG2000's battle system.
-    # EasyRPG's `AreConditionsMet` only evaluates the condition when it is
-    # handed a `source` battler (`if (!source) return false;`), and
-    # `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents` — the *only* call
-    # site `Scene_Battle_Rpg2k` has — always calls `ScheduleNextPage(nullptr)`.
-    # A per-actor `source` only ever exists in `Scene_Battle_Rpg2k3`, the
-    # separate ATB scene this runtime does not model (see the Toggle ATB Mode
-    # note); a page gated on `command_actor` is therefore *never satisfiable*
-    # under RPG2000's own battle system, not merely unimplemented here.
+    # "fails the page" rather than firing it unchecked. The *data* is now in
+    # place -- the scene records the chosen command onto the Combatant
+    # (`last_battle_action`, recorded at command selection) -- but EasyRPG's
+    # `AreConditionsMet` only evaluates the condition when handed a `source`
+    # battler (`if (!source) return false;`), and `Scene_Battle_Rpg2k::
+    # CheckBattleEndAndScheduleEvents` — the only page-scheduling call site
+    # RPG2000's own battle scene has — always calls with a null source. The
+    # source-threading that lets a page test *the acting battler's* command
+    # (rather than anyone's recorded one, at any boundary) is the remaining
+    # piece; until then a page gated on `command_actor` stays never satisfiable
+    # here, matching real RPG_RT's RPG2000 behaviour by keeping the answer nil.
     def actor_command(_id); nil; end
 
     # Force Flee (1006), target 0: let the party leave whenever it next tries.
@@ -9880,10 +9896,14 @@ module Game
         # one, same as an unforced Attack would (デフォ戦botまとめ: "Berserk
         # additionally collapses an 'attack all' weapon down to a single
         # target").
-        return swing_side(b, side_targets(target)) if r == RESTRICTION_ATTACK_ALLY && b.attack_all
-        return swing(b, target)
+        hits = combo_hits(b, :attack)
+        return swing_side(b, side_targets(target), hits) if r == RESTRICTION_ATTACK_ALLY && b.attack_all
+        return swing(b, target, hits)
       end
-      return apply_command(b) if b.command
+      # A combo multiplies a skill's hits (SP paid once), never an item's --
+      # #combo_hits resolves the chosen command's type, and an Item command
+      # reads 1.
+      return apply_command(b, combo_hits(b, :skill)) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
       # An enemy with a 行動パターン chooses from it rather than always swinging.
       if side_of(b) == :enemy
@@ -9895,8 +9915,66 @@ module Game
       end
       target = attack_target(b)
       return nil unless target
-      return swing_side(b, side_targets(target)) if b.attack_all
-      swing(b, target)
+      hits = combo_hits(b, :attack)
+      return swing_side(b, side_targets(target), hits) if b.attack_all
+      swing(b, target, hits)
+    end
+
+    # -- RPG2003 battle combo (Enable Combo / 1007) -----------------------------
+    #
+    # A combo armed by Enable Combo (event 1007) multiplies the hits of the
+    # battle command it names. Port of EasyRPG's `ProcessBattleActionCombo`
+    # (src/scene_battle_rpg2k3.cpp): the armed `{ command_id:, multiple: }`
+    # (Game::Actor#battle_combo) applies only when `command_id` is the command
+    # the actor actually chose this turn (Combatant#last_battle_action,
+    # recorded by the scene at command selection), and only to attack / skill /
+    # subskill commands -- "RPG_RT doesn't allow combo for item or other
+    # actions other than attack and skills" (their comment). Like EasyRPG, the
+    # combo is not decremented by a use: it stays armed (until battle end or
+    # another Enable Combo overwrites it), so every matching use of the command
+    # during the fight hits `multiple` times.
+    #
+    # The fixed-four command ids (1 attack, 2 skill, 3 defense, 4 item) are
+    # EasyRPG's `GetDefaultBattleCommands`; a customized actor's ids are refs
+    # into `db.battlecommands.commands`, whose rows this resolves through the
+    # actor the same way the scene's command menu does.
+    DEFAULT_BATTLE_COMMAND_TYPES = {
+      1 => Game::Actor::BATTLE_COMMAND_ATTACK,
+      2 => Game::Actor::BATTLE_COMMAND_SKILL,
+      3 => Game::Actor::BATTLE_COMMAND_DEFENSE,
+      4 => Game::Actor::BATTLE_COMMAND_ITEM
+    }.freeze
+
+    # The RPG2003 battle-command type for `cmd_id` on battler `b`: the actor's
+    # own customized list's row when it has one, else the fixed-four default
+    # table (a 2000 actor, or one whose list does not reach this id).
+    def battle_command_type(b, cmd_id)
+      actor = b.respond_to?(:actor) ? b.actor : nil
+      row = actor && actor.respond_to?(:battle_command_row) ? actor.battle_command_row(cmd_id) : nil
+      return row.type if row && row.respond_to?(:type)
+      DEFAULT_BATTLE_COMMAND_TYPES[cmd_id]
+    end
+
+    # The combo hit multiplier for `b`'s current `kind` (:attack or :skill)
+    # of action, or 1 when no matching combo is armed -- see the section
+    # comment above for the exact matching rules. Enemies and auto-battling
+    # allies never record a `last_battle_action`, so they never combo.
+    def combo_hits(b, kind)
+      actor = b.respond_to?(:actor) ? b.actor : nil
+      return 1 unless actor && actor.respond_to?(:battle_combo)
+      combo = actor.battle_combo
+      multiple = combo && combo[:multiple]
+      return 1 unless multiple && multiple > 1
+      return 1 unless combo[:command_id] && combo[:command_id] == b.last_battle_action
+      case kind
+      when :attack
+        battle_command_type(b, combo[:command_id]) == Game::Actor::BATTLE_COMMAND_ATTACK ? multiple : 1
+      when :skill
+        type = battle_command_type(b, combo[:command_id])
+        type == Game::Actor::BATTLE_COMMAND_SKILL || type == Game::Actor::BATTLE_COMMAND_SUBSKILL ? multiple : 1
+      else
+        1
+      end
     end
 
     # The living members of `target`'s own side -- what an `attack_all`
@@ -9912,11 +9990,11 @@ module Game
     # attack_all under an ordinary Attack: every target swings (dual-wield
     # included, matching a single-target #swing), flattened into one array of
     # log entries for #record_action to drain one hit at a time.
-    def swing_side(b, targets)
+    def swing_side(b, targets, hits = 1)
       # Not Array(swing(...)) -- Array() on a Hash (an ordinary single swing's
       # log entry) explodes it into [key, value] pairs rather than wrapping
       # it, since Hash is Enumerable. Same guard #record_action already uses.
-      targets.flat_map { |t| r = swing(b, t); r.is_a?(Array) ? r : [r] }
+      targets.flat_map { |t| r = swing(b, t, hits); r.is_a?(Array) ? r : [r] }
     end
 
     # -- enemy AI (行動パターン) ------------------------------------------------
@@ -10575,10 +10653,17 @@ module Game
     # handed to `#deal_attack`, which resolves a two-weapon actor's specific
     # governing weapon for that swing (`Actor#swing_weapon_data`) rather than
     # reusing the same merged hit/attribute/state/crit data for every swing.
-    def swing(b, target)
+    def swing(b, target, hits = 1)
       entries = []
-      b.strike_count.times do |i|
-        entries << deal_attack(b, target, i)
+      # A combo multiplies the whole swing count: each base swing round runs
+      # `hits` times (so a two-weapon actor's weapon rotation repeats intact),
+      # and a swing that fells the target stops the whole attack, matching the
+      # single-round rule below and EasyRPG's repeat loop.
+      hits.times do
+        b.strike_count.times do |i|
+          entries << deal_attack(b, target, i)
+          break if target.dead?
+        end
         break if target.dead?
       end
       entries.size == 1 ? entries.first : entries
@@ -10976,14 +11061,25 @@ module Game
     # landing on. Scoped to this single-target path only: an all-enemies-scope
     # Skill's own reflect handling is a materially different shape in real
     # RPG_RT -- see #apply_command_all, where it is now implemented too.
-    def apply_command(b)
+    def apply_command(b, combo = 1)
       cmd = b.command
-      return apply_command_all(b, cmd) if cmd[:all]
+      return apply_command_all(b, cmd, combo) if cmd[:all]
       target = cmd[:target]
       return nil if target.nil? || target.dead?
       target = b if reflects_skill?(b, target, cmd)
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
-      apply_skill_hit(b, target, cmd[:hp] || 0, cmd[:mp] || 0, cmd)
+      # A combo'd skill repeats its effect `combo` times against the same
+      # target, the SP spent once -- EasyRPG's repeat loop over the algorithm
+      # (which also pays its cost once, in vStart). Each repeat is its own
+      # log entry (buffered by #record_action), and one that fells the target
+      # stops the repeats, matching the swing rule.
+      entries = []
+      combo.times do
+        entry = apply_skill_hit(b, target, cmd[:hp] || 0, cmd[:mp] || 0, cmd)
+        entries << entry if entry
+        break if target.dead?
+      end
+      entries.size == 1 ? entries.first : (entries.empty? ? nil : entries)
     end
 
     # The first already-computed `{target:, hp:, mp:}` entry in `live` whose
@@ -11026,7 +11122,7 @@ module Game
     # queued against), while #apply_skill_hit still recomputes each hit's
     # own elemental multiplier/variance/absorb fresh against whichever new
     # target it actually lands on.
-    def apply_command_all(b, cmd)
+    def apply_command_all(b, cmd, combo = 1)
       live = (cmd[:targets] || []).select { |t| t[:target] && !t[:target].dead? }
       return nil if live.empty?
       reflected = reflecting_target_all(b, live, cmd)
@@ -11035,7 +11131,15 @@ module Game
         live = own_side.map { |t| { target: t, hp: reflected[:hp], mp: reflected[:mp] } }
       end
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
-      entries = live.map { |t| apply_skill_hit(b, t[:target], t[:hp] || 0, t[:mp] || 0, cmd) }
+      # A combo'd all-target skill repeats the whole volley `combo` times (one
+      # entry per hit, buffered by #record_action), the SP spent once -- the
+      # same rule as #apply_command's single-target repeat.
+      entries = []
+      combo.times do
+        live.each do |t|
+          entries << apply_skill_hit(b, t[:target], t[:hp] || 0, t[:mp] || 0, cmd)
+        end
+      end
       # An all-ally item is consumed once for the whole volley: keep item_id on
       # the first hit only, so the scene's per-entry bag deduction fires once.
       entries.each_with_index { |e, i| e[:item_id] = nil unless i.zero? } if cmd[:item_id]

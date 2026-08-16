@@ -887,8 +887,15 @@ class RPG2k
       end
 
       # The per-actor commands, in menu order (the cursor row is 1 + index,
-      # below the actor-name header): each a `{ label:, action: }` pair, drawn
-      # by `#battle_commands` below and dispatched by `#select_battle_command`.
+      # below the actor-name header): each a `{ label:, action:,
+      # command_id: }` pair, drawn by `#battle_commands` below and dispatched
+      # by `#select_battle_command`. `command_id` is the ref into the
+      # database's Battle-Commands table (`db.battlecommands.commands`) the
+      # row came from -- the fixed four map to EasyRPG's default command ids
+      # 1..4 (attack, skill, defense, item), a customized list to its own
+      # refs -- which the scene records onto the acting Combatant when the
+      # row is chosen, for the RPG2003 battle combo and the battle-page
+      # `command_actor` condition.
       #
       # An acting actor whose own RPG2003 battle-command list
       # (`Game::Actor#battle_commands`, edited by Change Battle Commands (1009)
@@ -902,16 +909,23 @@ class RPG2k
       # it substitutes the acting actor's own RPG2000 rename
       # (`#skill_command_label` below) when the database sets one, so it can
       # change from one actor's turn to the next.
+      #
+      # The fixed-four ids (1 attack, 2 skill, 3 defense, 4 item) are
+      # EasyRPG's `GetDefaultBattleCommands`, which builds exactly these four
+      # entries in this order for an actor with no customized list -- the same
+      # ids a real 2003 database's own Battle-Commands table conventionally
+      # numbers its first four entries, and the ids the Enable Combo (1007)
+      # command and the `command_actor` page condition refer to.
       def battle_command_rows
         actor = current_actor_row
         custom = actor && custom_battle_commands(actor)
         return custom if custom
 
         [
-          { label: term(:battle_attack, 'Attack'), action: :attack },
-          { label: skill_command_label, action: :skill },
-          { label: term(:battle_defend, 'Defend'), action: :defend },
-          { label: term(:battle_item, 'Item'), action: :item }
+          { label: term(:battle_attack, 'Attack'), action: :attack, command_id: 1 },
+          { label: skill_command_label, action: :skill, command_id: 2 },
+          { label: term(:battle_defend, 'Defend'), action: :defend, command_id: 3 },
+          { label: term(:battle_item, 'Item'), action: :item, command_id: 4 }
         ]
       end
 
@@ -945,13 +959,17 @@ class RPG2k
 
           case row.type
           when Game::Actor::BATTLE_COMMAND_ATTACK
-            out << { label: nonblank(row.name, term(:battle_attack, 'Attack')), action: :attack }
+            out << { label: nonblank(row.name, term(:battle_attack, 'Attack')), action: :attack,
+                     command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_SKILL, Game::Actor::BATTLE_COMMAND_SUBSKILL
-            out << { label: nonblank(row.name, skill_command_label), action: :skill }
+            out << { label: nonblank(row.name, skill_command_label), action: :skill,
+                     command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_DEFENSE
-            out << { label: nonblank(row.name, term(:battle_defend, 'Defend')), action: :defend }
+            out << { label: nonblank(row.name, term(:battle_defend, 'Defend')), action: :defend,
+                     command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_ITEM
-            out << { label: nonblank(row.name, term(:battle_item, 'Item')), action: :item }
+            out << { label: nonblank(row.name, term(:battle_item, 'Item')), action: :item,
+                     command_id: cmd_id }
           end
           # Escape / Special: no menu row (see the method comment above).
         end
@@ -1180,7 +1198,16 @@ class RPG2k
       # RPG_RT's own Decision-on-opening-the-submenu and Buzzer-on-nothing-
       # to-pick are both conditional on that submenu's own state there.
       def select_battle_command
-        case battle_command_rows[@ui[:cmd]][:action]
+        # Record the chosen battle command (its `command_id` ref into
+        # `db.battlecommands.commands`, 1..4 for the fixed four -- see
+        # #battle_command_rows) onto the acting Combatant, the way EasyRPG's
+        # Scene_Battle_Rpg2k3 sets `SetLastBattleAction(command->ID)` when the
+        # command window confirms. The RPG2003 battle combo (Enable Combo) and
+        # the battle-page `command_actor` condition both read it; RPG2000 never
+        # consults either, so recording it for every battle is harmless.
+        row = battle_command_rows[@ui[:cmd]]
+        current_actor.last_battle_action = row[:command_id] if current_actor && row[:command_id]
+        case row[:action]
         when :attack
           play_system_se(SFX_DECISION)
           @ui[:pending] = { kind: :attack }

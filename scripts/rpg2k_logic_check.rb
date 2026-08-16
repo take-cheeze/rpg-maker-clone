@@ -10826,6 +10826,131 @@ check 'battle_skill_command carries the skill variance on its heal branch too' d
   eq 7, c[:variance], 'the heal branch reports the skill row variance, not 0'
 end
 
+# -- RPG2003 battle combo (Enable Combo / 1007) --------------------------------
+#
+# A combo armed by Enable Combo (event 1007) makes the named battle command hit
+# `multiple` times. Port of EasyRPG's ProcessBattleActionCombo
+# (src/scene_battle_rpg2k3.cpp): the armed combo applies only when `command_id`
+# is the command the actor actually chose this turn (Combatant#last_battle_action,
+# recorded by the scene's #select_battle_command) and only to attack / skill /
+# subskill commands -- never Defend, Item or Escape. Like EasyRPG the combo is
+# not decremented by a use; it stays armed for the whole fight.
+
+# A party whose battle-commands table carries the fixed four (attack 1, skill
+# 2, defend 3, item 4 -- EasyRPG's GetDefaultBattleCommands ids) so a combo's
+# command id resolves to a real type the way the scene menu's would.
+def combo_party(skills = {})
+  commands = {
+    1 => FakeBattleCommand.new('Attack', Game::Actor::BATTLE_COMMAND_ATTACK),
+    2 => FakeBattleCommand.new('Skill', Game::Actor::BATTLE_COMMAND_SKILL),
+    3 => FakeBattleCommand.new('Defend', Game::Actor::BATTLE_COMMAND_DEFENSE),
+    4 => FakeBattleCommand.new('Item', Game::Actor::BATTLE_COMMAND_ITEM)
+  }
+  table = FakeBattleCommandsTable.new(commands, 0, 0)
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
+  }
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1], {}, skills, {}, nil, nil,
+                                                 rpg2003: true, battlecommands: table)),
+                  1, 0, 0)
+end
+
+def strike_entries(bat, attacker)
+  r = bat.send(:strike, attacker)
+  r.is_a?(Array) ? r : [r]
+end
+
+check 'an armed Attack combo makes a basic Attack land its full combo count' do
+  st = combo_party
+  hero = st.party.actor_by_id(1)
+  hero.set_battle_combo(1, 3) # Attack (command 1) hits 3 times
+  attacker = Game::Battle.from_actor(hero)
+  attacker.last_battle_action = 1 # the scene recorded "Attack" at command selection
+  slime = combatant('Slime', 0, 0, 5, 100_000) # tanky so every swing lands
+  bat = Game::Battle.new([attacker], [slime], Game::Rng.new(1))
+  entries = strike_entries(bat, attacker)
+  eq 3, entries.size, 'three swings for the 3x combo'
+  eq ['Slime'], entries.map { |e| e[:target] }.uniq, 'all aimed at the commanded target'
+end
+
+check 'a basic Attack with no armed combo stays a single hit' do
+  st = combo_party
+  attacker = Game::Battle.from_actor(st.party.actor_by_id(1))
+  attacker.last_battle_action = 1
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([attacker], [slime], Game::Rng.new(1))
+  entries = strike_entries(bat, attacker)
+  eq 1, entries.size, 'one swing, one log entry'
+end
+
+check 'a combo armed for one command does not multiply a different chosen command' do
+  st = combo_party
+  hero = st.party.actor_by_id(1)
+  hero.set_battle_combo(2, 3) # a Skill combo
+  attacker = Game::Battle.from_actor(hero)
+  attacker.last_battle_action = 1 # but the actor chose Attack this turn
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([attacker], [slime], Game::Rng.new(1))
+  entries = strike_entries(bat, attacker)
+  eq 1, entries.size, 'the Attack is not combo\'d -- only the armed Skill command is'
+end
+
+check 'a combo armed for the Item command never multiplies anything, matching RPG_RT' do
+  st = combo_party
+  hero = st.party.actor_by_id(1)
+  hero.set_battle_combo(4, 3) # Item is the armed command
+  attacker = Game::Battle.from_actor(hero)
+  attacker.last_battle_action = 4 # and the actor chose Item
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([attacker], [slime], Game::Rng.new(1))
+  eq 1, bat.send(:combo_hits, attacker, :skill), 'the skill path reads no combo for an Item command'
+  eq 1, bat.send(:combo_hits, attacker, :attack), 'nor does the attack path'
+end
+
+check 'a combo\'d skill repeats its effect with the SP spent once' do
+  skills = { 8 => fake_skill(name: 'Fire', scope: 0, sp_cost: 4, power: 10,
+                             mrate: 0, hp: true, type: 0) }
+  st = combo_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(8)
+  hero.set_battle_combo(2, 3) # the Skill command (2) combo
+  caster = Game::Battle.from_actor(hero)
+  caster.last_battle_action = 2 # chose the Skill command
+  caster.mp = 20
+  slime = combatant('Slime', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([caster], [slime], Game::Rng.new(1))
+  c = st.party.battle_skill_command(st.party.db_skill(8), caster, slime)
+  bat.command_skill(caster, slime, name: 'Fire', cost: c[:cost], hp: c[:hp],
+                    mp: c[:mp], variance: c[:variance])
+  entries = strike_entries(bat, caster)
+  eq 3, entries.size, 'the combo\'d skill casts three times'
+  eq 16, caster.mp, 'but the SP is spent once (20 - 4), not three times'
+end
+
+check 'a combo\'d all-target skill repeats the whole volley, SP spent once' do
+  skills = { 9 => fake_skill(name: 'Gale', scope: 1, sp_cost: 6, power: 10,
+                             mrate: 0, hp: true, type: 0) }
+  st = combo_party(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(9)
+  hero.set_battle_combo(2, 2) # the Skill command (2) combo
+  caster = Game::Battle.from_actor(hero)
+  caster.last_battle_action = 2
+  caster.mp = 30
+  slime_a = combatant('SlimeA', 0, 0, 5, 100_000)
+  slime_b = combatant('SlimeB', 0, 0, 5, 100_000)
+  bat = Game::Battle.new([caster], [slime_a, slime_b], Game::Rng.new(1))
+  c = st.party.battle_skill_command(st.party.db_skill(9), caster, slime_a)
+  bat.command_skill_all(caster,
+                        [slime_a, slime_b].map { |t| { target: t, hp: c[:hp], mp: c[:mp] } },
+                        name: 'Gale', cost: c[:cost], inflict: c[:inflict],
+                        chance: c[:chance], variance: c[:variance])
+  entries = strike_entries(bat, caster)
+  eq 4, entries.size, 'two targets times the 2x combo = four hits'
+  eq 24, caster.mp, 'but the SP is spent once (30 - 6)'
+end
+
 check 'battle_skill_command carries the skill elemental attributes on its heal branch too, ' \
      'and a target that partly resists them heals for less than the raw base' do
   # EasyRPG's `Algo::CalcSkillEffect` runs `Attribute::

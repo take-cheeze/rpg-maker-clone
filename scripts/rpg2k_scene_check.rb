@@ -9620,6 +9620,41 @@ check "Enemy Encounter scene: a reordered Defense command still commits at once,
      "cmd 1's own action (:defend) drove this, not the fixed four's cmd-2-is-Defend rule"
 end
 
+check 'selecting a battle command records its command id on the acting Combatant, ' \
+      'the way EasyRPG sets SetLastBattleAction' do
+  # The fixed four map to EasyRPG's default command ids 1..4 (attack, skill,
+  # defense, item) -- what the RPG2003 battle combo (Enable Combo) and the
+  # `command_actor` page condition compare against. This pins the recording,
+  # not the spending (the model-side combo math lives in rpg2k_logic_check.rb).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(BattleStubActor.new(agi: 20)))
+  ui = battle_to_command(scene)
+  hero = ui[:allies][0]
+  eq nil, hero.last_battle_action, 'nothing recorded before a command is chosen'
+  press_key(scene, RGSS::Input::C) # Attack (cmd 0, the default cursor row)
+  eq 1, hero.last_battle_action, 'the fixed Attack row records command id 1'
+end
+
+check 'selecting a customized battle command records its own command-table ref' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  actor = BattleStubActor.new(agi: 20,
+    battle_commands: [10, 0, -1, -1, -1, -1, -1],
+    battle_command_table: { 10 => BattleCommandDef.new('Cast Magic', Game::Actor::BATTLE_COMMAND_SUBSKILL) })
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
+  ui = battle_to_command(scene)
+  hero = ui[:allies][0]
+  press_key(scene, RGSS::Input::C) # the only row, cmd 0: the Subskill at ref 10
+  eq 10, hero.last_battle_action, 'a customized row records its own db.commands ref'
+end
+
 check "Enemy Encounter scene: a battle-command list of Row alone falls back to the fixed four" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

@@ -178,7 +178,10 @@
   curve from the class row and honouring the command's skill and parameter modes
   (keep / reset / add, keep / halve / reset); **Change Battle Commands** (1009)
   edits an actor's battle-command list; **Force Flee** (1006), **Enable Combo**
-  (1007) and **Call Common Event** (1005) act inside a battle-event page; and the
+  (1007) — an armed combo now multiplies the hits of the named battle command
+  when the actor uses it (attack and skill commands; an Item or Defend is
+  never combo'd, matching RPG_RT) — and **Call Common Event** (1005) act
+  inside a battle-event page; and the
   English-release **Open Load Menu** (5001) opens the same save/load
   file-select screen the field menu's Save command and the title's Continue
   use, and **Exit Game** (5002) quits
