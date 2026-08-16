@@ -4149,6 +4149,51 @@ check 'Actor equipment adds item bonuses to the effective stats' do
   eq [8, 2, 4, 1], [a.atk, a.def, a.agi, a.int]
 end
 
+# Ports EasyRPG's own `Game_Actor::AdjustEquipmentStates`/`IsArmorType`
+# (src/game_actor.cpp): equipping RPG2003 "cursed"/forced-state armor
+# (armor field 68, reverse_state_effect) inflicts every state its own
+# state_set flags; unequipping cures them. Confirmed against the actual
+# C++: gated on `Player::IsRPG2k3()`, and `IsArmorType` excludes
+# `Type_weapon`, so a weapon never carries this effect either way.
+check 'equipping RPG2003 cursed armor inflicts its own states; unequipping cures them' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, rpg2003: true)
+  a = Game::Party.new(db).leader
+  eq [], a.states
+  a.equip_item(20)
+  eq [4], a.states, 'the state came on the instant it was worn'
+  a.unequip(2) # armor slot
+  eq [], a.states, 'and left the instant it came off'
+end
+
+check 'cursed armor state infliction is RPG2003-only' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items) # rpg2003: false, the default
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  eq [], a.states, 'RPG2000 has no editor control for this at all, so it never applies'
+end
+
+check 'cursed armor unequipped via a two-handed weapon swap loses its own state too' do
+  # A two-handed weapon claims the shield slot too (#free_two_handed_slot);
+  # EasyRPG's own ChangeEquipment recurses into that same displaced slot
+  # (`ChangeEquipment(other_slot, 0)`), so its own AdjustEquipmentStates
+  # call runs for the shield being bumped out, not just the weapon going in.
+  items = {
+    20 => fake_item(type: 2, state_set: [0, 0, 0, 1], reverse_state: true), # cursed shield
+    21 => fake_item(type: 1, two_handed: 1), # a two-handed weapon
+  }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  eq [4], a.states
+  a.equip_item(21) # claims the weapon slot and bumps the shield
+  eq [], a.states, 'the displaced cursed shield lost its state along with its slot'
+end
+
 check 'Actor equipment never adds max_hp_points/max_sp_points to max HP/MP' do
   # Verified against EasyRPG's actual C++ source: Game_Actor::GetMaxHp/GetMaxSp
   # resolve to GetBaseMaxHp/GetBaseMaxSp with no per-equipment summation at all

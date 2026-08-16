@@ -1588,9 +1588,22 @@ module Game
     end
 
     # Replace the equipped items (an array of up to five item ids in EQUIP_ORDER,
-    # 0/nil for an empty slot) and recompute the boosted stats.
+    # 0/nil for an empty slot) and recompute the boosted stats. Adjusts
+    # #adjust_equipment_states for every slot whose item actually changes,
+    # same as a single #equip_item/#unequip would -- every real caller
+    # (Party#load_state's own actor-roster restore) immediately overwrites
+    # `@states` afterward with the save's own authoritative list anyway, so
+    # this only matters for a future bulk-equip caller that does not.
     def equip(ids)
-      @equipment = normalize_equipment(ids)
+      new_equipment = normalize_equipment(ids)
+      EQUIP_ORDER.size.times do |slot|
+        old_id = @equipment[slot]
+        new_id = new_equipment[slot]
+        next if old_id == new_id
+        adjust_equipment_states(old_id, false)
+        adjust_equipment_states(new_id, true)
+      end
+      @equipment = new_equipment
       recompute_stats
     end
 
@@ -1615,8 +1628,12 @@ module Game
       return unless it
       slot ||= it.type - 1
       return unless slot >= 0 && slot < EQUIP_ORDER.size
+      old_id = @equipment[slot]
       @equipment[slot] = item_id
       freed = free_two_handed_slot(slot)
+      adjust_equipment_states(old_id, false)
+      adjust_equipment_states(freed, false) if freed
+      adjust_equipment_states(item_id, true)
       recompute_stats
       freed
     end
@@ -1664,8 +1681,10 @@ module Game
     # command's remove operation.
     def unequip(slot)
       if slot == EQUIP_ORDER.size
+        @equipment.each { |id| adjust_equipment_states(id, false) }
         @equipment = EQUIP_ORDER.map { 0 }
       elsif slot >= 0 && slot < EQUIP_ORDER.size
+        adjust_equipment_states(@equipment[slot], false)
         @equipment[slot] = 0
       else
         return
@@ -1754,6 +1773,37 @@ module Game
     # `#rpg2003?` of its own reads false, matching a genuine RPG2000 database.
     def rpg2003?
       @db.respond_to?(:rpg2003?) && @db.rpg2003?
+    end
+
+    # RPG2003's "cursed"/forced-state armor (a shield/armor/helmet/accessory
+    # item whose `reverse_state_effect` flag is set): equipping or
+    # unequipping it inflicts or cures every state its own `state_set`
+    # marks, matching EasyRPG's `Game_Actor::AdjustEquipmentStates`
+    # (src/game_actor.cpp), called from every equip-mutation path there
+    # (`SetEquipment`, in turn `ChangeEquipment`). `IsArmorType` there
+    # covers the same four item types `Party::ITEM_SHIELD/ARMOR/HELMET/
+    # ACCESSORY` already name for the identical distinction elsewhere in
+    # this file (see e.g. #defensive_attribute_ids below) -- weapons never
+    # carry a state_set in the editor and are excluded the same way. A
+    # non-RPG2003 database, an unknown/absent item id, a non-armor item, or
+    # one with the flag unset is a no-op, matching real RPG_RT. The
+    # separate "this state can't be healed by ordinary means while the
+    # armor stays equipped" rule (EasyRPG's own `GetPermanentStates`) is
+    # not implemented here; this only ports the inflict/cure-on-equip-
+    # change half.
+    def adjust_equipment_states(item_id, add)
+      return unless rpg2003?
+      return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
+      it = @db.item[item_id]
+      return unless it
+      return unless [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
+                     Party::ITEM_ACCESSORY].include?(it.type)
+      return unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      return unless it.respond_to?(:state_set) && it.state_set
+      it.state_set.each_with_index do |set, i|
+        next unless set && set != 0
+        add ? add_state(i + 1) : remove_state(i + 1)
+      end
     end
 
     # The effective max HP ceiling #recompute_stats clamps against --
