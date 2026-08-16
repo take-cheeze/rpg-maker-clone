@@ -794,6 +794,9 @@ jobs:
           - name: LCF test-bed smoke check
             run: ruby scripts/lcf_testbed_check.rb
 
+          - name: LCF schema coverage
+            run: ruby scripts/lcf_schema_coverage.rb
+
           # The interpreter against every event command the downloaded games
           # ship (371k of them), asserting that none raises and none reaches a
           # handler's "I do not know this" arm. The unit checks pin the

@@ -749,12 +749,24 @@ module LCF
             1 => { name: :name, type: :string, default: '' },
           }
         },
-        25 => {
-          # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B3%E3%83%A2%E3%83%B3%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88
-          name: :common_event, type: :Array2D,
-          elements: COMMON_EVENT
-        },
-        29 => {
+         25 => {
+           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B3%E3%83%A2%E3%83%B3%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88
+           name: :common_event, type: :Array2D,
+           elements: COMMON_EVENT
+         },
+         # RPG2003-only database sections (chunks 26/27/28 sit between the 2000
+         # common-events table and the 2003 battle-commands list; 31 sits between
+         # the 2003 Classes table and the Battler-Animation table). They are
+         # present-but-empty in the only 2003 test bed (mtf-meido-action), so the
+         # record layout is not yet transcribed from the RPG_RT specification.
+         # Declared as bare Array2D tables -- every top-level database section is a
+         # record table, so this is structurally correct and preserves any real
+         # bytes that a non-empty project writes, while making the sections
+         # nameable instead of raising on access.
+         26 => { name: :section_26, type: :Array2D, elements: {} },
+         27 => { name: :section_27, type: :Array2D, elements: {} },
+         28 => { name: :section_28, type: :Array2D, elements: {} },
+         29 => {
           # RPG2003's database-wide "Battle Commands" list (0x1D on liblcf's
           # own rpg::Database, not on the VIPRPG 200X wiki this file otherwise
           # transcribes -- confirmed against liblcf's generator/csv/fields.csv
@@ -782,6 +794,11 @@ module LCF
             # gauges). RPG2000's editor has no such option, so an RPG2000
             # database never sets this and correctly reads back as 0.
             7 => { name: :battle_type, type: :int, default: 0 },
+            # RPG2003-only BattleCommands field (chunk 9). A single byte (0 in the
+            # mtf-meido-action test bed); the RPG_RT semantic is not yet
+            # transcribed from the specification, so it is declared as a plain int
+            # to keep the value round-tripping and nameable rather than guessed.
+            9 => { name: :section_flags_9, type: :int, default: 0 },
             10 => {
               name: :commands, type: :Array2D,
               elements: {
@@ -804,6 +821,11 @@ module LCF
             # the same way every other RPG2003-only flag in this codebase is.
             15 => { name: :death_handler, type: :bool, default: false },
             16 => { name: :death_event, type: :int, default: 1 },
+            # RPG2003-only BattleCommands field (chunk 24). A single byte (1 in the
+            # mtf-meido-action test bed); the RPG_RT semantic is not yet
+            # transcribed from the specification, so it is declared as a plain int
+            # to keep the value round-tripping and nameable rather than guessed.
+            24 => { name: :section_flags_24, type: :int, default: 0 },
             # `death_teleport_face` follows the same 1-based up/right/down/
             # left-with-0-meaning-"keep the current facing" layout as the
             # Teleport event command's own facing parameter (liblcf's
@@ -836,10 +858,16 @@ module LCF
             72 => { name: :state_ranks, type: :int8_array },
             73 => { name: :attribute_ranks_size, type: :int, default: 0 },
             74 => { name: :attribute_ranks, type: :int8_array },
-            80 => { name: :battle_commands, type: :int32_array },
-          }
-        },
-        32 => {
+             80 => { name: :battle_commands, type: :int32_array },
+           }
+         },
+         # RPG2003-only database section (chunk 31) between the 2003 Classes
+         # table and the Battler-Animation table. Present-but-empty in the only
+         # 2003 test bed (mtf-meido-action); declared as a bare Array2D table --
+         # structurally correct and preserves any real bytes a non-empty project
+         # writes, matching the 26/27/28 sections above.
+         31 => { name: :section_31, type: :Array2D, elements: {} },
+         32 => {
           # RPG2003's database-wide "Battler Animation" table (0x20 on
           # liblcf's ChunkDatabase, `rpg::BattlerAnimation`) -- a named set of
           # up to 12 poses an actor's battle sprite can show, one entry per
