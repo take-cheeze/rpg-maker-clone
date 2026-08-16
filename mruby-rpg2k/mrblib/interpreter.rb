@@ -2444,9 +2444,10 @@ module Game
 
     # Enable Combo (1007), RPG2003-only: arm actor param0's battle command param1
     # to repeat param2 times. The actor is named by id, so it resolves through the
-    # roster like the other fixed-id commands. Recorded on the actor; the ATB
-    # battle system that spends a combo is not modelled here, so nothing acts on
-    # it yet. Matches EasyRPG's own `Game_Interpreter_Battle::
+    # roster like the other fixed-id commands. Recorded on the actor; the battle
+    # resolution spends it -- a combo'd attack or skill hits `multiple` times
+    # (Game::Battle#combo_hits, ADR 0054's combo work; EasyRPG's
+    # `ProcessBattleActionCombo`). Matches EasyRPG's own `Game_Interpreter_Battle::
     # CommandEnableCombo` (src/game_interpreter_battle.cpp), the same
     # `IsRPG2k3Commands()` gate as Force Flee above.
     def do_enable_combo(cmd)

@@ -1658,9 +1658,7 @@ The work below is roughly ordered by the critical path to a walkable game
   0054 — the gauge-driven battle now modelled for the gauge presentation) and
   the round-based machine; the command itself toggles a per-battle flag the
   battle still never reads, so it stays a reported gap rather than a silent
-  no-op. And the combo
-  an Enable Combo arms is recorded on the actor but never spent, for the same
-  reason. The opcodes were read out of liblcf's `EventCommand::Code` enum, which
+  no-op. The opcodes were read out of liblcf's `EventCommand::Code` enum, which
   also corrected `analyze_game.rb` — it had Change Class / Change Battle Commands
   at 12610 / 12710, numbers the enum does not define at all.
   **Battle-event pages now run too**: a troop's pages (`enemy_group` chunk 11)
