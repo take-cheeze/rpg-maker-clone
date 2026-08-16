@@ -12085,8 +12085,7 @@ session (reading + documenting only, not fixed — see below):
   common, unaffected case; and the wiki's own worked nested-loop example,
   asserting the command after the outer loop is never reached), the second
   confirmed to fail against the pre-fix code before the fix.
-- **Autorun (auto-start) events run at most once per map visit, not once
-  per frame.** `Scene::Map#start_autostart` (`mruby-rpg2k/mrblib/scene/
+- **Autorun (auto-start) events re-trigger every frame the way real RPG_RT does, once the previous lap finishes — the cross-frame half of this claim is now implemented; the within-frame same-event restart remains open.** `Scene::Map#start_autostart` (`mruby-rpg2k/mrblib/scene/
   map.rb:919`) picks the single lowest-id not-yet-started eligible
   auto-start map event or common event, flips `@started_auto[id]` /
   `@started_common[id]` and never considers that id again this visit —
@@ -12103,15 +12102,33 @@ session (reading + documenting only, not fixed — see below):
   `[0001] += 1` auto-start common event advances the variable by 5000
   *every single frame*, not once ever, because each iteration costs 2 steps
   — the operation plus the implicit blank terminator line — and
-  10000 / 2 = 5000). The current one-shot design is a deliberate,
-  documented simplification to keep the simulation from spinning forever
-  on an unthrottled Autorun, but it means a real game's every-frame
-  Autorun screen-effect/counter idiom (the exact pattern the wiki's own
-  worked example describes as ordinary usage, not an edge case) will only
-  ever run once here. Needs a real decision — re-trigger every frame and
-  rely on `MAX_STEPS`/the existing per-command step cost to bound it the
-  way real RPG_RT does, or keep the one-shot behaviour and record the
-  divergence as accepted scope — rather than staying marked ✅ as-is.
+  10000 / 2 = 5000).   The cross-frame re-trigger is now implemented: `Scene::Map#update` clears
+  `@started_auto` / `@started_common` every frame (just after
+  `refresh_event_pages`, before the foreground drive), so an eligible Autorun
+  re-fires from its first line on every subsequent frame — the exact
+  "spams every frame" beginner case real RPG_RT produces, and the ordinary
+  screen-effect/counter idiom the wiki's worked example describes. A guarded
+  auto-start instead fires at most once per visit via `@auto_once` /
+  `@auto_once_common` (reset only on a genuine map load, not per frame) — so a
+  guarded fixture event does not re-fire, and the gate does not
+  deactivate the page (which would trigger an event-page rebuild that wipes
+  an unrelated event's in-flight forced route). The ~26 auto-start fixtures
+  that issue one-shot commands (forced routes, screen effects, Change Graphic,
+  Inn, Battle Animation, etc.) were re-baselined this session to guard
+  themselves via `one_shot_auto` / `player_route_page` / `inn_scene`'s
+  `guard:` flag, standing in for the page-condition gate a real game would
+  use. That flag is a **check-harness** one: no RPG2000/2003 page carries a
+  `guarded` field, so `Scene::Map#page_guarded` reads it `respond_to?`-guarded
+  once per event per page rebuild (`e[:guarded]`, not a per-frame `.guarded`
+  call on the page — an LCF record answers an unknown field by raising, which
+  is what took out `scripts/rpg2k_boot_check.bash` on Nepheshel with
+  `TypeError: nil cannot be converted to Integer`), and every auto-start on
+  real game data is unguarded: it gates itself through its page conditions,
+  and turning its own switch off deactivates the page via
+  `#refresh_event_pages` the frame after. The within-frame same-event restart
+  (a no-wait Common Autorun
+  consuming the frame's own step budget up to `MAX_STEPS`, the 5000-per-frame
+  worked example above) remains open — see the note directly below.
   **Re-checked this session against EasyRPG Player's actual C++ source
   (`src/game_map.cpp`'s `Game_Map::UpdateForegroundEvents`,
   `src/game_event.cpp`'s `Game_Event::ScheduleForegroundExecution`/
@@ -12127,17 +12144,20 @@ session (reading + documenting only, not fixed — see below):
   is whether `UpdateForegroundEvents`'s own `while (!interp.IsRunning() &&
   !interp.ReachedLoopLimit())` loop happens to still be turning (see the
   "Autorun cascading" fix just below, which implements exactly this loop's
-  cross-event half). This session deliberately did **not** implement the
-  same-event-restart half: doing so faithfully needs `Game::Interpreter`'s
-  `MAX_STEPS` budget threaded *across* repeated `#start`/`#update` calls
-  within one `Scene::Map#update` (today each call gets a fresh budget), and
-  — far more disruptively — would make *every* existing Auto-Start
-  `scripts/rpg2k_scene_check.rb` fixture that does not itself clear its own
-  eligibility (turn off its gating switch, change page, erase itself) before
-  its script naturally ends start looping every subsequent frame instead of
-  running once, which is not something a single surgical session can safely
-  audit and re-baseline across ~450 existing checks. Left open, now with a
-  precise citation trail for whoever picks it up next.
+  cross-event half). The cross-frame same-event half (an eligible Autorun
+  re-fires on every subsequent frame once it drains) is now implemented, as
+  described in the bullet above. The *within*-frame same-event restart half
+  (a no-wait Autorun re-running from the top inside the very same frame, up to
+  the 50000-step-per-frame budget) remains open: doing so faithfully needs
+  `Game::Interpreter`'s `MAX_STEPS` budget threaded *across* repeated
+  `#start`/`#update` calls within one `Scene::Map#update` (today each call
+  gets a fresh budget), and — far more disruptively — would make *every*
+  existing Auto-Start `scripts/rpg2k_scene_check.rb` fixture that does not
+  itself clear its own eligibility (turn off its gating switch, change page,
+  erase itself) before its script naturally ends start looping every frame
+  instead of running once, which is not something a single surgical session
+  can safely audit and re-baseline across ~450 existing checks. Left open, now
+  with a precise citation trail for whoever picks it up next.
 
 **Untriaged backlog** (raw reference material, not checked against the
 codebase yet):
