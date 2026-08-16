@@ -4,7 +4,8 @@ Date: 2026-08-16
 
 ## Status
 
-Accepted — Phase 1 (rows) implemented 2026-08-16; Phases 2–3 pending.
+Accepted — Phase 1 (rows) and the Phase 2 gauge model implemented
+2026-08-16; Phase 2 scene integration and Phase 3 pending.
 
 ## Context
 
@@ -99,6 +100,45 @@ row model, both `row_hit_modifier` definitions, and the back-row reduction in
 both `to_hit` and `skill_to_hit`; wired into the `ruby-checks` CI job. The
 existing 976-check `rpg2k_logic_check.rb` stays green because no fixture sets
 a back row.
+
+## Phase 2 — implementation notes (2026-08-16)
+
+The active-time (gauge) model is in place in `mruby-rpg2k/mrblib/game.rb`;
+the per-frame `Scene::Battle` integration that actually drives turns off it is
+**deferred to Phase 3** (the 2003 boot path), because the gauge only matters
+once a 2003 project reaches a fight.
+
+- `Game::Battle::Combatant` gained a `:gauge` field (0..`GAUGE_MAX`, default
+  empty) with `gauge` / `gauge_full?` readers.
+- `Game::Battle` gained `battle_type` (0 traditional / 1 alternative / 2
+  gauge; defaults to 0) and the gauge engine:
+  - `advance_gauges(ticks)` fills every living, in-play battler's gauge at
+    `effective_agi * GAUGE_AGI_RATE * ticks`, clamped to `GAUGE_MAX`. It is a
+    **no-op unless `battle_type == 2`**, so RPG2000 and the 2003 traditional
+    presentation keep running the turn-based machine untouched.
+  - `ready_combatants` returns the full-gauge battlers in descending gauge
+    order — the pool the active-time turn picker draws from. `all_combatants`
+    joins allies + enemies for bookkeeping.
+- The database's battle-setup `battle_type` (Battle Setup chunk 0x1D field 7,
+  already decoded into the schema) is now plumbed into `Game::Battle` at
+  construction: `Game::Battle.new` takes a `battle_type:` keyword (default 0),
+  and `Scene::Battle` passes `db.battlecommands.battle_type` (0 when the
+  database has no Battle Commands table, i.e. every RPG2000 project). This is
+  the first Phase-3 (boot) slice — it makes the gauge engine actually select
+  for a 2003 gauge battle the moment one is reached — without touching the
+  turn-based path.
+- **Open within Phase 2:** the turn picker that consumes a ready combatant and
+  resets its gauge (replacing "whose turn is it" in the round machine) is
+  intentionally **not** wired yet — doing so requires the per-frame
+  `Scene::Battle#update` loop and a 2003 project to run it (Phase 3). The
+  exact `GAUGE_MAX` / `GAUGE_AGI_RATE` fill curve is the RPG_RT 2003
+  constant, flagged TODO against the RPG_RT 2003 specification (still
+  inaccessible).
+
+Verification: `scripts/rpg2k3_battle_gauge_check.rb` (6 checks) exercises the
+inert turn-based path, AGI-proportional fill, full/ready selection, ordering,
+and that a dead battler neither charges nor becomes ready; wired into the
+`ruby-checks` CI job.
 
 ## Consequences
 
