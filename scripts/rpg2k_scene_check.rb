@@ -14251,9 +14251,59 @@ check 'Scene::ItemMenu: an all-ally special item is cast by the party leader, ' 
   scene = menu_scene(RPG2k::Scene::ItemMenu, st)
   RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- no target prompt
   scene.update
-  RGSS::Input.triggered = []
+  RGSS::Input.reset
   eq [[SpecialItemStubParty::SPECIAL_ID, st.party.leader]], st.party.use_item_calls,
      'the party leader casts it, rather than a nil actor #use_special_item rejects outright'
+end
+
+# A party whose only item is an *equipment* item (type 1) flagged `use_skill`
+# (schema field 71) invoking an all-ally scope skill -- the same "item triggers
+# a skill" shape a type-9 special item already gets in #choose_item, just gated
+# on a flag instead of a dedicated type. #choose_item used to send every
+# equipment item (use_skill or not) down the generic "prompt for a target"
+# branch, so a self/all-ally-scope use_skill weapon asked for a target it did
+# not need -- this check pins the now-symmetric dispatch. Game::Party's own
+# decision logic (#field_usable? / #use_equip_skill_item) is covered by
+# scripts/rpg2k_logic_check.rb; the stub only has to hand the scene something
+# that behaves the same way, so this stays about the RGSS wiring.
+class EquipUseSkillItemStubParty < MenuStubParty
+  EQUIP_ID = 60
+
+  attr_reader :use_item_calls
+
+  def initialize
+    super
+    @use_item_calls = []
+  end
+
+  def leader; @actors.first; end
+  def field_items(_state = nil); [[EQUIP_ID, 1]]; end
+
+  def db_item(id)
+    return nil unless id == EQUIP_ID
+    OpenStruct.new(name: 'Holy Blade', type: Game::Actor::ITEM_WEAPON, use_skill: true, skill_id: 95)
+  end
+
+  def db_skill(id)
+    return nil unless id == 95
+    OpenStruct.new(name: 'Bless All', type: 0, scope: 4) # an all-ally skill
+  end
+
+  def use_item(id, actor = nil)
+    @use_item_calls << [id, actor]
+    actor ? [actor] : []
+  end
+end
+
+check 'Scene::ItemMenu: a use_skill equipment item is cast like a special item ' \
+      '(all-ally scope needs no target prompt, leader is the caster)' do
+  st = Game::State.new(EquipUseSkillItemStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- no target prompt
+  scene.update
+  RGSS::Input.reset
+  eq [[EquipUseSkillItemStubParty::EQUIP_ID, st.party.leader]], st.party.use_item_calls,
+     'the leader casts it, exactly as a type-9 special item of the same scope would'
 end
 
 # A party whose only item is a special (type 9) one invoking either an Escape
