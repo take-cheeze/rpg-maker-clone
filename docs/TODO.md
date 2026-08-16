@@ -5484,8 +5484,37 @@ not yet verified:
   missing at its own roll boundary, the existing @accuracy-off default still
   applying every effect unconditionally, a heal skill's HP and SP landing
   independently of each other, and a compound skill's stat-mod effect landing
-  on its own roll while its HP effect misses on a different one), each
-  confirmed to fail against the pre-fix code before the fix.
+   on its own roll while its HP effect misses on a different one), each
+   confirmed to fail against the pre-fix code before the fix.
+- ✅ **`CalcSkillToHit`'s fuller agility-adjusted physical formula is now
+   implemented for enemy-scope skills flagged with the "physical" failure
+   message (`failure_message == 3`) — closing the `Not implemented` edge case
+   the skill-hit bullet above left for a follow-up.** Confirmed against
+   EasyRPG's actual `Algo::CalcSkillToHit` (`src/algo.cpp`): the physical branch
+   (`skill.failure_message == 3 && !SkillTargetsAllies(skill)`) runs the same
+   evasion-aware, agility-adjusted formula a basic attack uses — `to_hit =
+   skill.hit`, then `do_nothing`-restricted target → always 100, then
+   `to_hit *= source's state hit-modifier / 100`, then (unless the source
+   `ignores_evasion`) the AGI term `100 - (100 - to_hit) * (src + tgt) / (2 *
+   src)`, then `-25` if the target has `raise_evasion` — whereas every other
+   skill keeps the flat `skill.hit` reading (RPG_RT's non-physical skill formula
+   ignores the target's agility). `Game::Party#skill_to_hit` (a faithful port,
+   reading the state table through the party's own `@db.situation` so it works
+   for a bare `Game::Actor` caster too, like the rest of `Game::Party`'s
+   skill-formula helpers) now feeds `chance:` in `Game::Party#
+   battle_skill_command`'s attack and recovery branches, replacing the previous
+   unconditional `skill_hit(sk)` — the per-effect roll (`#skill_effect_hits?`)
+   is unchanged, so each affected HP/SP/stat field still re-rolls the one shared
+   rate. RPG2000's own editor cannot set the flag, so in practice it only shows
+   up in converted / hex-edited projects and the odd 2k3 database, but RPG_RT
+   honours the bit whenever it is set. Covered by seven new
+   `scripts/rpg2k_logic_check.rb` checks (an enemy-scope physical skill landing
+   at its agility-adjusted rate vs. the flat `skill.hit`, equal agility reducing
+   the term to identity, a non-physical skill ignoring the flag, an
+   ally-scoped physical-flagged skill staying flat, a physical-evasion-up target
+   losing 25, a `do_nothing`-restricted target always hit, and an
+   evasion-ignoring caster skipping the AGI term), each confirmed to fail
+   against the pre-fix code.
 - ✅ **`Game::Battle#fatigue` (the RPG2003 `fatigue` page condition) now
   rounds an exact tie to the nearest *even* whole percent, not always up.**
   A prior version of this method's own comment claimed it used "the same
