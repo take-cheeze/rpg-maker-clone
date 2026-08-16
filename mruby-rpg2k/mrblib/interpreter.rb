@@ -2418,9 +2418,15 @@ module Game
     # condition" flag, which suppresses the flee in a pincer / surround ambush;
     # this runtime models neither formation, so every fight counts as a normal
     # one and the flee always goes ahead. Enemies that leave are recorded so the
-    # scene can drop their sprites and play the escape sound.
+    # scene can drop their sprites and play the escape sound. Matches EasyRPG's
+    # own `Game_Interpreter_Battle::CommandForceFlee`
+    # (src/game_interpreter_battle.cpp): `if (!Player::IsRPG2k3Commands()) {
+    # return true; }` -- the RPG2003 editor's battle event editor is the only
+    # one with this command at all, so a genuine RPG2000 database's own
+    # command list should never carry it, but an unguarded dispatch reads it
+    # as live the instant one does.
     def do_force_flee(cmd)
-      return unless @battle
+      return unless @battle && @state.party.rpg2003?
       case cmd.param(0)
       when 0 then @battle.force_flee_party
       when 1 then @fled_monsters.concat(@battle.flee_all_enemies)
@@ -2434,9 +2440,11 @@ module Game
     # to repeat param2 times. The actor is named by id, so it resolves through the
     # roster like the other fixed-id commands. Recorded on the actor; the ATB
     # battle system that spends a combo is not modelled here, so nothing acts on
-    # it yet.
+    # it yet. Matches EasyRPG's own `Game_Interpreter_Battle::
+    # CommandEnableCombo` (src/game_interpreter_battle.cpp), the same
+    # `IsRPG2k3Commands()` gate as Force Flee above.
     def do_enable_combo(cmd)
-      return unless @battle
+      return unless @battle && @state.party.rpg2003?
       actor = identity_target(cmd)
       return unless actor
       actor.set_battle_combo(cmd.param(1), cmd.param(2))
@@ -2444,9 +2452,12 @@ module Game
 
     # Call Common Event (1005), the RPG2003 battle page's own call command:
     # param0 is the common event id, and unlike the map's Call Event (12330)
-    # there is no map-event form. Runs through the same call stack.
+    # there is no map-event form. Runs through the same call stack. Matches
+    # EasyRPG's own `Game_Interpreter_Battle::CommandCallCommonEvent`
+    # (src/game_interpreter_battle.cpp), the same `IsRPG2k3Commands()` gate
+    # as Force Flee/Enable Combo above.
     def do_call_common_event(cmd)
-      return unless @resolver
+      return unless @resolver && @state.party.rpg2003?
       cmds = common_event_commands(cmd.param(0))
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH

@@ -14670,7 +14670,7 @@ end
 
 check 'Force Flee target 0 grants the party a guaranteed escape' do
   b = escape_battle(5, 20)                 # 0% by agility: never flees on its own
-  it = Game::Interpreter.new(new_state)
+  it = Game::Interpreter.new(new_state(rpg2003: true))
   it.battle = b
   it.start([FakeCmd.new(IC::FORCE_FLEE, [0, 0, 0])])
   it.update
@@ -14685,7 +14685,7 @@ check 'Force Flee target 2 takes one troop member out of the fight' do
   hero = combatant('Hero', 10, 0, 10, 100)
   foes = [combatant('Slime', 5, 0, 5, 30), combatant('Bat', 5, 0, 5, 30)]
   b = Game::Battle.new([hero], foes, Game::Rng.new(1))
-  it = Game::Interpreter.new(new_state)
+  it = Game::Interpreter.new(new_state(rpg2003: true))
   it.battle = b
   it.start([FakeCmd.new(IC::FORCE_FLEE, [2, 1, 0])])
   it.update
@@ -14700,7 +14700,7 @@ check 'Force Flee target 1 empties the troop and ends the fight' do
   hero = combatant('Hero', 10, 0, 10, 100)
   foes = [combatant('Slime', 5, 0, 5, 30), combatant('Bat', 5, 0, 5, 0)]
   b = Game::Battle.new([hero], foes, Game::Rng.new(1))
-  it = Game::Interpreter.new(new_state)
+  it = Game::Interpreter.new(new_state(rpg2003: true))
   it.battle = b
   it.start([FakeCmd.new(IC::FORCE_FLEE, [1, 0, 0])])
   it.update
@@ -14712,7 +14712,9 @@ check 'Force Flee target 1 empties the troop and ends the fight' do
 end
 
 check 'Enable Combo arms a battle combo on a party actor' do
-  st = class_state
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], rpg2003: true)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   it = Game::Interpreter.new(st)
   it.battle = battle_with
   it.start([FakeCmd.new(IC::ENABLE_COMBO, [1, 4, 3]),
@@ -14722,7 +14724,7 @@ check 'Enable Combo arms a battle combo on a party actor' do
 end
 
 check 'Call Common Event runs the common event and returns to the page' do
-  st = new_state
+  st = new_state(rpg2003: true)
   called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
   it = Game::Interpreter.new(st)
   it.resolver = FakeResolver.new(common: { 4 => called })
@@ -14731,6 +14733,40 @@ check 'Call Common Event runs the common event and returns to the page' do
   it.update
   eq true, st.switches[9], 'the common event ran'
   eq true, st.switches[1], 'and control came back'
+end
+
+# Ports EasyRPG's own `Game_Interpreter_Battle::CommandForceFlee`/
+# `CommandEnableCombo`/`CommandCallCommonEvent`
+# (src/game_interpreter_battle.cpp): all three open with `if (!Player::
+# IsRPG2k3Commands()) { return true; }` -- the RPG2003 battle event editor
+# is the only one with any of these three commands at all, so a genuine
+# RPG2000 database's own battle page should never carry one, but an
+# unguarded dispatch reads it as live the instant one does.
+check 'Force Flee / Enable Combo / Call Common Event are all RPG2003-only' do
+  b = escape_battle(5, 20) # 0% by agility: never flees on its own
+  it = Game::Interpreter.new(new_state(rpg2003: false))
+  it.battle = b
+  it.start([FakeCmd.new(IC::FORCE_FLEE, [0, 0, 0])])
+  it.update
+  ok !b.force_flee?, 'Force Flee never touched the battle on a non-RPG2003 database'
+
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0) # rpg2003: false, the default
+  it2 = Game::Interpreter.new(st)
+  it2.battle = battle_with
+  it2.start([FakeCmd.new(IC::ENABLE_COMBO, [1, 4, 3])])
+  it2.update
+  eq nil, st.party.actor_by_id(1).battle_combo, 'Enable Combo never armed anything'
+
+  st3 = new_state(rpg2003: false)
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it3 = Game::Interpreter.new(st3)
+  it3.resolver = FakeResolver.new(common: { 4 => called })
+  it3.start([FakeCmd.new(IC::CALL_COMMON_EVENT, [4]),
+             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it3.update
+  eq false, st3.switches[9], 'Call Common Event never ran the common event'
+  eq true, st3.switches[1], 'the page still ran on past it, same as an unrecognized command would'
 end
 
 check 'Call Common Event with no resolver or an unknown id is a safe no-op' do
