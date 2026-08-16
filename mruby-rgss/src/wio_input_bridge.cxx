@@ -23,7 +23,7 @@ namespace {
 
 // Button state applied to RGSS::Input on the previous poll, so only transitions
 // are forwarded.
-uint32_t g_prev = 0;
+uint64_t g_prev = 0;
 
 void send_key(mrb_state* M, int key, bool press) {
   RClass* rgss = mrb_module_get(M, "RGSS");
@@ -39,11 +39,11 @@ void send_key(mrb_state* M, int key, bool press) {
 }  // namespace
 
 extern "C" void rgss_wio_poll(mrb_state* M) {
-  const uint32_t cur = wio_input_scan();
-  const uint32_t changed = cur ^ g_prev;
+  const uint64_t cur = wio_input_scan();
+  const uint64_t changed = cur ^ g_prev;
   if (changed) {
     for (int key = 0; key < WIO_INPUT_KEY_COUNT; ++key) {
-      const uint32_t bit = 1u << key;
+      const uint64_t bit = 1ull << key;
       if (changed & bit)
         send_key(M, key, (cur & bit) != 0);
     }

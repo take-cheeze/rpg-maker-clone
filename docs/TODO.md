@@ -557,17 +557,27 @@ The work below is roughly ordered by the critical path to a walkable game
   `F12`, `mruby-rgss/mrblib/lib.rb`), `Scene::Map`'s
   `NUMBER_KEY_BUTTONS`/`OPERATOR_KEY_BUTTONS` sample them the same way
   `KEY_INPUT_BUTTONS` samples the rest, and `Game::Interpreter::KEY_INPUT_CODES`
-  produces the matching RPG2000 codes (digit `d` → `10 + d`, Plus/Minus/
-  Multiply/Divide/Period → 20-24 — matching EasyRPG Player's
-  `Game_Interpreter::KeyInputState::CheckInput`, the documented reference for
-  RPG_RT behaviour this codebase already leans on elsewhere). 🚧 Real key
-  backing exists only on the SDL desktop window backend
-  (`src/sdl_input.cxx`: digits from the main row or numpad, operators mostly
-  numpad-only since a bare `SDL_Keycode` switch can't tell a shifted "+"/"*"
-  chord from the key underneath it) — the PSP, Wio Terminal and
-  terminal/sixel native backends leave these ids unbound (never pressed, no
-  crash), the same way this build already leaves `F5`-`F12` unbound there.
-  Mouse input (Maniac) stays fully out of scope the same way.
+   produces the matching RPG2000 codes (digit `d` → `10 + d`, Plus/Minus/
+   Multiply/Divide/Period → 20-24 — matching EasyRPG Player's
+   `Game_Interpreter::KeyInputState::CheckInput`, the documented reference for
+   RPG_RT behaviour this codebase already leans on elsewhere). ✅ **The
+   non-SDL backends now bind these ids where their hardware allows.**
+   `src/sdl_input.cxx` already backed every digit (main row + numpad) and the
+   operators (numpad-only for PLUS/MULTIPLY since a bare SDL keycode switch
+   can't tell a shifted "+"/"*" chord from the digit underneath it); the
+   terminal/sixel backends now type them too — `mruby-rgss/src/terminal.cxx`
+   maps the digit bytes `0`–`9` and the operator characters `+ - * / .` onto
+   `KEY_N0`..`KEY_PERIOD`, so Input Number and the numeric/operator key-input
+   groups work over a real keyboard the way they do on SDL; the PSP backend
+   (`include/psp.hxx` + `mruby-rgss/src/psp.cxx`) widened its pad bitmask to
+   `uint64_t` (the Numbers/Operators ids are 21..35 and no longer fit a 32-bit
+   mask) and binds the first five digits `N0`–`N4` to its otherwise-unused
+   Square/L/R/Start/Select buttons; the Wio Terminal still leaves them unbound
+   — its three top buttons plus 5-way switch are exactly seven signals and all
+   are already assigned, so there is no free pin, the same way it already
+   leaves `F5`–`F12` unbound (its `WioKey` enum reserves the id slots so a
+   custom board with more buttons can wire them without a layout change). Mouse
+   input (Maniac) stays fully out of scope the same way.
   **Change Actor
   Name / Title / Sprite** rename a party actor, set its status-screen title or
   swap its CharSet graphic (the scene reloads the leader's on-screen sprite);

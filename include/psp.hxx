@@ -24,7 +24,10 @@
 #include <lvgl.h>
 
 // Bit positions in the psp_input_scan() bitmask. They match the RGSS::Input key
-// ids (mruby-rgss/mrblib/lib.rb): bit (1u << id) is set while that key is held.
+// ids (mruby-rgss/mrblib/lib.rb): bit (1ull << id) is set while that key is
+// held. The mask is a uint64_t so it can carry the RPG2003 Numbers/Operators
+// ids (21..35), which the narrow D-pad + 3-button layout below cannot all bind
+// -- see the scan implementation for which physical buttons feed them.
 enum PspKey {
   PSP_INPUT_UP = 0,
   PSP_INPUT_DOWN = 1,
@@ -33,7 +36,26 @@ enum PspKey {
   PSP_INPUT_A = 4,
   PSP_INPUT_B = 5,
   PSP_INPUT_C = 6,
-  PSP_INPUT_KEY_COUNT = 7,
+  // RPG2003 Key Input Processing Numbers/Operators groups (RGSS::Input::N0..
+  // PERIOD), used by Input Number and the numeric/operator key-input groups.
+  // Reserved here so the bitmask layout stays in lock-step with the other
+  // backends; only a subset is wired to the pad's spare buttons below.
+  PSP_INPUT_N0 = 21,
+  PSP_INPUT_N1 = 22,
+  PSP_INPUT_N2 = 23,
+  PSP_INPUT_N3 = 24,
+  PSP_INPUT_N4 = 25,
+  PSP_INPUT_N5 = 26,
+  PSP_INPUT_N6 = 27,
+  PSP_INPUT_N7 = 28,
+  PSP_INPUT_N8 = 29,
+  PSP_INPUT_N9 = 30,
+  PSP_INPUT_PLUS = 31,
+  PSP_INPUT_MINUS = 32,
+  PSP_INPUT_MULTIPLY = 33,
+  PSP_INPUT_DIVIDE = 34,
+  PSP_INPUT_PERIOD = 35,
+  PSP_INPUT_KEY_COUNT = 36,
 };
 
 // The PSP's native resolution. The panel is 480x272; the display controller
@@ -52,8 +74,8 @@ lv_display_t* psp_display_create(int32_t hor_res, int32_t ver_res);
 // Configure controller sampling. Call once before scanning.
 void psp_input_init(void);
 
-// Read the current pad state as a bitmask of (1u << PspKey). A set bit means
+// Read the current pad state as a bitmask of (1ull << PspKey). A set bit means
 // the key is currently held. The D-pad (and the analog stick, treated as a
 // coarse D-pad) drive the direction keys; Cross/Circle/Triangle map to C/B/A to
 // match the desktop Z/X/C = confirm/cancel/A convention.
-uint32_t psp_input_scan(void);
+uint64_t psp_input_scan(void);
