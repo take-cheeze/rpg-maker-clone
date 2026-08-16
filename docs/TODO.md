@@ -5520,14 +5520,14 @@ not yet verified:
   `#apply_stat_mods` ever sees it. An item's `cmd[:chance]` stays absent
   (defaulting to 100, an unconditional hit) since real RPG_RT's medicine
   algorithm (`Item::vExecute`) has no accuracy concept at all — nothing
-  changes for item use. **Not implemented**: `CalcSkillToHit`'s fuller,
+  changes for item use. ✅ **Implemented — see the ✅ bullet directly below (`Game::Party#skill_to_hit` at `game.rb:4738`)**: `CalcSkillToHit`'s fuller,
   agility-adjusted physical-style formula (state-hit-modifier scaling, the
   AGI ratio, evasion-ignore, physical-evasion-up, restricted-target-always-
   hits), which only replaces the flat `skill.hit` reading for an enemy-scope
   skill the editor flagged with the "physical" failure message
   (`failure_message == 3`) — EasyRPG's own comment on this path notes RPG2003's
   editor cannot even set the flag any more, so this is a narrow, likely
-  RPG2000-only edge case left for a follow-up rather than blocking the much
+  RPG2000-only edge case now closed rather than blocking the much
   more broadly observable core fix above. Covered by four new
   `scripts/rpg2k_logic_check.rb` checks (an attack skill's damage landing vs.
   missing at its own roll boundary, the existing @accuracy-off default still
@@ -7299,8 +7299,8 @@ not yet verified:
   `Party::ITEM_SHIELD/ARMOR/HELMET/ACCESSORY` constants already used
   elsewhere in this file for the identical armor-type test. The separate
   "this state can't be healed by ordinary means while the armor stays
-  equipped" rule (EasyRPG's own `GetPermanentStates`) is not implemented
-  here — a real but distinct question this fix leaves open, the same way
+  equipped" rule (EasyRPG's own `GetPermanentStates`) is now implemented (see the ✅ bullet directly below, `Game::Actor#permanent_states` at `game.rb:1842`)
+  here — a real but distinct question this fix left open before a follow-up closed it, the same way
   the session's earlier attribute-defence fix left `reverse_state_effect`'s
   sibling battle-formula question open before a follow-up closed it.
   Covered by three new `scripts/rpg2k_logic_check.rb` checks — equip
