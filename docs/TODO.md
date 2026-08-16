@@ -4533,64 +4533,42 @@ Everything below is unverified against the codebase.
   as the `015_shujinkou_idou_huka` item above — now fixed there, see the
   "Untriaged backlog, from `2k/09_bug/`" section above for the full
   writeup).
-- 🚧 **Move Speed is dead code engine-wide in this codebase's rpg2k
-  `Scene::Map` — a real, well-evidenced, deliberately still-open bug, not a
-  stale doc note.** `Scene::Map::SPEED = 2` (px/frame, `mruby-rpg2k/mrblib/
-  scene/map.rb`) is hardcoded, and every slide — ordinary player walking
-  (`#advance_player_slide`), autonomous/forced event movement
-  (`e[:move_count] += SPEED`), and jumps alike — always advances by this
-  fixed constant across `TILE = 16` px (`mruby-rpg2k/mrblib/game.rb`), i.e.
-  always exactly 8 frames/tile regardless of configuration.
-  `Character#move_speed` (set from a page's own Move Speed field, and
-  mutated 1..6 by the `SET_MOVE_ROUTE` `SPEED_UP`/`SPEED_DOWN`
-  sub-commands, `game.rb`) is written in three places and read in zero,
-  verified by grepping the whole of `mrblib/` — nothing ever consults it.
-  EasyRPG's real C++ source (`src/game_character.cpp`) confirms the
-  intended formula: normal movement advances `1 << (1 + GetMoveSpeed())`
-  units/frame against a 256-unit-per-tile counter (speed 1..6 → 4, 8, 16,
-  32, 64, 128 units/frame → 64, 32, 16, 8, 4, 2 frames/tile), while jumping
-  uses a *separate* table, `jump_speed[] = {8, 12, 16, 24, 32, 64}`. The two
-  tables coincide only at speed 4 ("Normal"), where both give 8 frames/tile
-  — precisely this codebase's hardcoded value — so the current
-  implementation only happens to look right at the default speed and
-  silently ignores every other setting for both walking and jumping.
-  Concretely broken in-game: `SPEED_UP`/`SPEED_DOWN` move-route commands
-  have zero observable effect, and any NPC page whose Move Speed isn't
-  "4/Normal" (a slow patrol at 2, a fast dash at 6) walks at the same pace
-  as everything else. (The orthogonal *frequency* axis, `EVENT_MOVE_DELAY`
-  keyed by `move_frequency`, is correctly wired — only the *speed* axis is
-  dead.) **Deliberately not fixed this session**: this codebase's own
-  default `move_speed` (`3`, both `Character#initialize` and
-  `#page_move_speed`'s fallback) does not itself obviously correspond to
-  editor speed "4/Normal" the way the hardcoded 8-frames/tile baseline
-  does, so wiring the real formula through naively risks silently changing
-  the baseline speed of literally every character in every existing test
-  the moment `move_speed` starts being read at all — the exact same
-  "cannot safely re-baseline the existing suite in one surgical pass" risk
-  already documented for the Autorun one-shot bug above. A correct fix
-  needs, in order: (1) settling what a freshly-authored event page's Move
-  Speed really defaults to at the LCF/database level (editor label vs. raw
-  stored byte, since the `3` here may already be a 0-indexed raw value
-  rather than editor label "3/1-2 speed") before touching the default at
-  all; (2) a jump-specific speed table separate from the walking one; (3)
-  since several speeds (1/8, 1/4, 1/2) need sub-whole-pixel-per-frame
-  advancement to hit their real `frames/tile` exactly against this
-  codebase's plain-pixel (not 256-unit subpixel) movement model, either a
-  genuine subpixel accumulator or an equivalent "advance 1px every N
-  frames" scheme at the ~3 call sites (`scene/map.rb`'s player slide,
-  autonomous/forced event movement, and the vehicle-route equivalent).
-  Left open, now with a precise citation trail and fix shape for whoever
-  picks it up next. **A second, independent symptom of this same gap,
-  found separately**: `Scene::Map::ANIM_FRAME_PERIOD = 6` (the fixed real-
-  frame period `#animate_event` holds a moving/continuous-type event's
-  walk/spin cell for) is EasyRPG's own per-speed `GetStationaryAnimFrames`
-  table (`src/game_character.h`, `{12, 10, 8, 6, 5, 4}` indexed by speed
-  1-6) evaluated only at speed 4 — correct for a default-speed *walking*
-  event, but wrong for any other configured speed, and wrong even at the
-  default speed for a *continuous*-type (always-animating) event at rest,
-  whose own table (`GetContinuousAnimFrames`, `{16, 12, 10, 8, 7, 6}`)
-  gives `8` at speed 4, not `6`. Not fixed for the same reason above —
-  it is downstream of the same dead `move_speed` field.
+- ✅ **Move Speed is no longer dead code engine-wide in this codebase's rpg2k
+  `Scene::Map`.** It was (see the historical writeup below) a hardcoded
+  `SPEED = 2` px/frame that ignored every character's `move_speed`, so
+  `SPEED_UP`/`SPEED_DOWN` and any non-"Normal" page speed had no effect.
+  The fix keeps the per-frame slide advance move_speed-driven: the slide now
+  advances `1 << move_speed` **quarter-tile** units/frame (`SLIDE_UNITS =
+  TILE * 4`), so frames/tile is `64 / (1 << s)` = 32, 16, 8, 4, 2, 1 for
+  RPG2000 speeds 1..6. A subpixel `slide_frac` accumulator carries the
+  quarter-tile remainder, so the slow end (1/8, 1/4, 1/2 px/frame) is exact
+  against this codebase's plain-pixel movement model (no 256-unit counter
+  needed). The port's stored `move_speed` is **+1** from EasyRPG's
+  1-indexed convention (the codebase's default is `3`, which yields 8
+  frames/tile — exactly the old hardcoded baseline), which is why the
+  formula is `1 << s` rather than EasyRPG's `1 << (1 + s)`: at the default
+  this collapses to the old `SPEED = 2` (8 quarter-units → whole 2
+  TILE-units/frame), so **the default pace is untouched and no existing
+  test is re-baselined**. Jumps use a separate table (`JUMP_SLIDE_STEP =
+  {1=>3, 2=>4, 3=>6, 4=>8, 5=>16, 6=>16}`, quarter-tile units/frame, derived
+  from EasyRPG's `jump_speed[] = {8,12,16,24,32,64}` ÷4 and shifted by the
+  same +1 offset, top speed clamped). Walk animation cadence is now
+  move_speed-dependent too (`ANIM_STATIONARY_FRAMES`, default 3 → 6 frames,
+  unchanged). Player walking, autonomous/forced event movement and the
+  vehicle-route/airship path all route through `#advance_slide`, which folds
+  the subpixel remainder into the integer display `move_count`. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check asserting `walk_slide_step` /
+  `jump_slide_step` / `anim_frame_period` across speeds 1/3/5/6, and the
+  full scene suite (654 checks) still passes at the unchanged default.
+  **Historical context** (kept as the citation trail): EasyRPG's
+  `Game_Character::Update` advances `1 << (1 + GetMoveSpeed())` units/frame
+  over a 256-unit tile (speed 1..6 → 4..128 units → 64..2 frames/tile) and
+  jumps via `jump_speed[] = {8,12,16,24,32,64}`; its animation frames come
+  from `GetStationaryAnimFrames`/`GetContinuousAnimFrames` (`{12,10,8,6,5,4}`
+  / `{16,12,10,8,7,6}`). The two coincidental-at-"Normal" tables, the zero
+  readers of `Character#move_speed`, and the subpixel requirement were the
+  three reasons this was deferred before the subpixel accumulator made a
+  single-pass, non-re-baselining fix possible.
 - ✅ **Repeat/Loop** — loops forever without an explicit Break Loop.
   `Interpreter#do_end_loop` unconditionally scans back to the matching
   `Loop` marker and jumps `@index` there every single time it is reached —

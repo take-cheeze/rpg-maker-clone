@@ -7271,14 +7271,32 @@ check 'boarding the airship doubles the party\'s per-frame slide speed; boat/shi
   # twice the per-frame step. #player_slide_speed is the port target.
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
-  speed = RPG2k::Scene::Map::SPEED
-  eq speed, scene.send(:player_slide_speed), 'on foot: the ordinary speed'
+  # Default on-foot move_speed (3) advances 8 quarter-tile units/frame; the
+  # Airship doubles that to 16. player_slide_step returns quarter-tile units.
+  eq 8, scene.send(:player_slide_step), 'on foot: the ordinary speed'
   st.boarded = :boat
-  eq speed, scene.send(:player_slide_speed), 'boat: the ordinary speed too'
+  eq 8, scene.send(:player_slide_step), 'boat: the ordinary speed too'
   st.boarded = :ship
-  eq speed, scene.send(:player_slide_speed), 'ship: the ordinary speed too'
+  eq 8, scene.send(:player_slide_step), 'ship: the ordinary speed too'
   st.boarded = :airship
-  eq speed * 2, scene.send(:player_slide_speed), 'airship: double the ordinary speed'
+  eq 16, scene.send(:player_slide_step), 'airship: double the ordinary speed'
+end
+
+check 'Move Speed is no longer dead: it drives the per-frame slide, jump and anim' do
+  scene = new_scene({}, player: [0, 0])
+  # walk_slide_step returns quarter-tile units/frame. Default (3) -> 8 -> 8
+  # frames/tile (unchanged baseline); fastest (6) -> 64 -> 1 frame/tile;
+  # slowest (1) -> 2 -> 32 frames/tile. Before this fix every speed ignored
+  # move_speed and advanced a hardcoded 2 TILE-units (= 8 quarter-units)/frame.
+  eq 2,  scene.send(:walk_slide_step, 1)
+  eq 8,  scene.send(:walk_slide_step, 3)
+  eq 64, scene.send(:walk_slide_step, 6)
+  # Jump uses its own table (default 3 -> 6 quarter-units/frame, ~11 frames),
+  # not the walk rate.
+  eq 6,  scene.send(:jump_slide_step, 3)
+  # Animation cadence is move_speed-dependent; default (3) keeps the prior 6.
+  eq 6,  scene.send(:anim_frame_period, 3)
+  eq 4,  scene.send(:anim_frame_period, 5)
 end
 
 check 'the airship crosses a tile in half the frames walking on foot takes' do
@@ -15016,12 +15034,13 @@ check 'the field windows resolve the same condition the battle panel does' do
   ok !texts.include?('Silence'), 'and the outranked one is not shown'
 end
 
-# Frames one walked tile takes: TILE / SPEED of movement, plus the frame that
-# starts the step. Walking `n` tiles needs a little slack on top, and the fixture
-# map is 6 wide, so a rightward walk has room for four.
+# Frames one walked tile takes at the default on-foot move_speed (3): TILE / 2
+# of movement (8 frames), plus the frame that starts the step. Walking `n`
+# tiles needs a little slack on top, and the fixture map is 6 wide, so a
+# rightward walk has room for four.
 def walk(scene, tiles, dir = 6)
   RGSS::Input.dir_value = dir
-  ((RPG2k::Scene::Map::TILE / RPG2k::Scene::Map::SPEED + 1) * tiles + 2).times do
+  ((RPG2k::Scene::Map::TILE / 2 + 1) * tiles + 2).times do
     scene.update
   end
   RGSS::Input.reset

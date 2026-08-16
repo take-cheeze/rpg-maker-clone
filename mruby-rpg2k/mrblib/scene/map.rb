@@ -17,8 +17,55 @@ class RPG2k
       # Visible tiles plus a one-tile margin so partially scrolled edges show.
       COLS = SCREEN_W / TILE + 1
       ROWS = SCREEN_H / TILE + 1
-      # Pixels moved per frame while stepping between tiles (must divide TILE).
-      SPEED = 2
+      # Sub-pixel movement model. RPG2000's Move Speed (1..6) is no longer dead:
+      # the per-frame slide advance for a character of move_speed `s` is
+      # `1 << s` quarter-tile units (a full tile is SLIDE_UNITS), so
+      # frames-per-tile is 64 / (1 << s) = 32, 16, 8, 4, 2, 1 for s = 1..6. The
+      # default (s = 3) yields 8 frames/tile, identical to the old hardcoded
+      # 2px/frame, so the baseline is untouched -- only the previously-ignored
+      # non-default speeds (and the SPEED_UP / SPEED_DOWN move-route commands)
+      # now take effect. The port's move_speed is +1 from EasyRPG's 1-indexed
+      # convention, which is why the formula is `1 << s` rather than EasyRPG's
+      # `1 << (1 + s)`; see docs/TODO.md "Move Speed is dead code".
+      SLIDE_UNITS = TILE * 4   # quarter-tile units per tile (64)
+
+      # Jump slide advance (quarter-tile units/frame) by move_speed, port 1..6.
+      # From EasyRPG's jump_speed[] = {8,12,16,24,32,64} (over a 256-unit tile),
+      # ÷4 into quarter-tile units and shifted by the port's +1 offset so it
+      # lines up with the walk `1 << s` above; the top speed clamps to the last.
+      JUMP_SLIDE_STEP = { 1 => 3, 2 => 4, 3 => 6, 4 => 8, 5 => 16, 6 => 16 }.freeze
+
+      # Walk-animation frame cadence by move_speed, port 1..6, matching EasyRPG's
+      # GetStationaryAnimFrames shifted by the same +1 offset; the default (3)
+      # keeps the prior 6-frame period, so existing animation pacing is unchanged.
+      ANIM_STATIONARY_FRAMES = { 1 => 10, 2 => 8, 3 => 6, 4 => 5, 5 => 4, 6 => 4 }.freeze
+
+      # Clamp a (possibly out-of-range) move_speed to the valid RPG2000 1..6.
+      def clamp_speed(s); v = s.to_i; v < 1 ? 1 : v > 6 ? 6 : v; end
+
+      # Quarter-tile units advanced per frame while walking at `s`.
+      def walk_slide_step(s); 1 << clamp_speed(s); end
+
+      # Quarter-tile units advanced per frame while jumping at `s`.
+      def jump_slide_step(s); JUMP_SLIDE_STEP[clamp_speed(s)] || 6; end
+
+      # Walk-animation period (frames per phase) at `s`.
+      def anim_frame_period(s); ANIM_STATIONARY_FRAMES[clamp_speed(s)] || 6; end
+
+      # Advance a slide by `step` quarter-tile units. Folds the whole TILE-units
+      # into `move_count` (the integer, display-side progress) and returns the new
+      # move_count, the kept sub-pixel remainder, and whether the slide is still
+      # in progress (move_count < TILE). Callers store the returned move_count and
+      # remainder back into the entity (event hash or instance variable).
+      def advance_slide(move_count, frac, step)
+        frac = frac + step
+        whole = frac >> 2
+        if whole > 0
+          frac = frac - (whole << 2)
+          move_count = [move_count + whole, TILE].min
+        end
+        [move_count, frac, move_count < TILE]
+      end
 
       # The screen flash a step's slip damage fires: a brief red pulse, so the
       # drain is not silent on a map that shows no HP. Given as the Game::Screen
@@ -38,9 +85,8 @@ class RPG2k
       EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
                            5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
-      # Rendered frames between walk-animation phase advances for an animating
-      # event (a moving event or a continuous/spin animation type).
-      ANIM_FRAME_PERIOD = 6
+      # (Walk-animation cadence is now move_speed-dependent; see
+      # ANIM_STATIONARY_FRAMES and #anim_frame_period below.)
 
       # Event-page start conditions (the page `trigger` field): how the event's
       # command list is set off.
@@ -229,6 +275,7 @@ class RPG2k
         # as a hop, which is lifted along an arc (see player_jump_offset).
         @moving = false
         @move_count = 0
+        @slide_frac = 0
         @player_jumping = false
         @dest_x = @state.x
         @dest_y = @state.y
@@ -1141,7 +1188,7 @@ class RPG2k
           translucent: page_translucent(page),
           anim_type: anim_type, base_dir: dir,
           base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
-          moving: false, disp_x: x, disp_y: y, move_count: TILE,
+          moving: false, disp_x: x, disp_y: y, move_count: TILE, slide_frac: 0,
           jumping: false }
       end
 
@@ -2497,24 +2544,33 @@ class RPG2k
       # Advance each event's pixel slide and walk-animation phase once per frame.
       # An event "moves" for animation purposes while it is sliding between two
       # tiles (see reoccupy / event_sliding?); such events — and any
-      # continuous/spin animation type — cycle their walk frames on the
-      # ANIM_FRAME_PERIOD cadence, while an event resting on a tile shows its
-      # page pose. Game::EventGraphic.frame reads @moving / @anim_phase to pick
-      # the drawn column, and event_pixel reads the slide for the draw position.
+      # continuous/spin animation type — cycle their walk frames on a
+      # move_speed-dependent cadence (see #anim_frame_period), while an event
+      # resting on a tile shows its page pose. Game::EventGraphic.frame reads
+      # @moving / @anim_phase to pick the drawn column, and event_pixel reads the
+      # slide for the draw position.
       def animate_events
         @events.each { |e| animate_event(e) }
       end
 
       def animate_event(e)
+        ch = e[:char]
         # Advance the slide first so a fixed-graphic event still glides smoothly.
-        e[:move_count] += SPEED if e[:move_count] < TILE
+        # The per-frame advance now follows the event's move_speed (a jump uses
+        # the separate jump table) instead of a hardcoded constant, so the
+        # previously-dead speed axis actually takes effect.
+        if e[:move_count] < TILE
+          step = e[:jumping] ? jump_slide_step(ch.move_speed)
+                             : walk_slide_step(ch.move_speed)
+          e[:move_count], e[:slide_frac] = advance_slide(e[:move_count], e[:slide_frac] || 0, step)
+        end
         sliding = event_sliding?(e)
         e[:moving] = sliding
         type = e[:anim_type]
         return unless Game::EventGraphic.animated?(type)
         return unless sliding || Game::EventGraphic.continuous?(type)
         e[:anim_count] += 1
-        return if e[:anim_count] < ANIM_FRAME_PERIOD
+        return if e[:anim_count] < anim_frame_period(ch.move_speed)
         e[:anim_count] = 0
         e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
       end
@@ -2583,7 +2639,8 @@ class RPG2k
       end
 
       # Begin a render slide for event `e` that just stepped off (ox, oy): the
-      # sprite eases from that tile to its new one over TILE/SPEED frames.
+      # sprite eases from that tile to its new one over a move_speed-dependent
+      # number of frames (see #walk_slide_step / #jump_slide_step).
       #
       # A single-tile cardinal step slides, and so does a **jump**, however far
       # it goes -- RPG_RT carries the sprite across the whole hop and lifts it
@@ -2596,11 +2653,13 @@ class RPG2k
           e[:disp_x] = ox
           e[:disp_y] = oy
           e[:move_count] = 0
+          e[:slide_frac] = 0
           e[:jumping] = jumped
         else
           e[:disp_x] = e[:char].x
           e[:disp_y] = e[:char].y
           e[:move_count] = TILE
+          e[:slide_frac] = 0
           e[:jumping] = false
         end
       end
@@ -3428,6 +3487,7 @@ class RPG2k
         @dest_y = y
         @moving = false
         @move_count = 0
+        @slide_frac = 0
         if @player_char
           @player_char.x = x
           @player_char.y = y
@@ -3589,23 +3649,22 @@ class RPG2k
         @dest_y = @player_char.y
         @moving = true
         @move_count = 0
+        @slide_frac = 0
         @player_jumping = @player_char.jumped
         @player_forced_step = true
       end
 
-      # The party's own per-frame slide rate: SPEED on foot, in a Boat, or in a
-      # Ship (EasyRPG's Game_Vehicle constructor, src/game_vehicle.cpp, gives
-      # both `MoveSpeed_normal`, identical to the player's own default), but
-      # doubled while aboard the Airship (`MoveSpeed_double`). Boarding stashes
-      # no separate "preboard speed" the way EasyRPG's Game_Player does --
-      # unlike EasyRPG, this engine has no general per-character move-speed
-      # model to save and restore (Speed Up/Down move-route commands only
-      # ever touch an NPC/forced-route Character mirror, never the player's
-      # own walking rate), so the airship's speedup is derived straight from
-      # `@state.boarded` each frame instead, reverting for free the instant
-      # #disembark_vehicle clears it.
-      def player_slide_speed
-        @state.boarded == :airship ? SPEED * 2 : SPEED
+      # The party's own per-frame slide advance in quarter-tile units: the walk
+      # rate for the player's move_speed, doubled while aboard the Airship. The
+      # airship speedup is derived straight from `@state.boarded` each frame
+      # (this engine has no general per-character move-speed model to save and
+      # restore the way EasyRPG's Game_Player does), reverting for free the
+      # instant #disembark_vehicle clears it.
+      def player_slide_step
+        speed = @player_char&.move_speed || 3
+        step = @player_jumping ? jump_slide_step(speed)
+                               : walk_slide_step(speed)
+        @state.boarded == :airship && !@player_jumping ? step * 2 : step
       end
 
       # Advance the party's pixel slide by one frame, landing it on the
@@ -3618,12 +3677,13 @@ class RPG2k
       # for a landing that never came.
       def advance_player_slide
         return false unless @moving
-        @move_count += player_slide_speed
+        @move_count, @slide_frac = advance_slide(@move_count, @slide_frac || 0, player_slide_step)
         if @move_count >= TILE
           @state.x = @dest_x
           @state.y = @dest_y
           @moving = false
           @move_count = 0
+          @slide_frac = 0
           @player_jumping = false
           note_party_step
           # Random (wandering-monster) encounters only roll for ordinary
@@ -6105,6 +6165,7 @@ class RPG2k
         # events, and an auto-start page can teleport on the very next frame.
         @moving = false
         @move_count = 0
+        @slide_frac = 0
         @last_frame = nil
         # Resume, not stop: RPG_RT keeps running the rest of the event's own
         # command list after a Teleport lands, and the standard "fade to black,
