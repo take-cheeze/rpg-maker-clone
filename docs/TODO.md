@@ -7216,6 +7216,45 @@ not yet verified:
   shield too — two of the three confirmed to fail against the pre-fix code
   before the fix (the RPG2000 check already passed, since the pre-fix code
   never inflicted anything on any edition).
+- ✅ **RPG2003 cursed armor's forced state can no longer be cured by
+  ordinary means while the item stays equipped — an Antidote-style
+  medicine, a curative skill, Full Recovery, or the Change Condition event
+  command all used to cure it just like any other status condition.**
+  Confirmed against EasyRPG's actual C++ source: `Game_Actor::
+  GetPermanentStates` (`src/game_actor.cpp`) scans the same four armor
+  slots `AdjustEquipmentStates` (the previous fix) already reads, and every
+  state-removal path threads its result through — `Game_Battler::
+  RemoveState`/`RemoveAllStates` (`src/game_battler.cpp`) both pass it to
+  `State::Remove`/`State::RemoveAll` (`src/state.cpp`), whose `if
+  (ps.Has(state_id)) return false;` refuses the cure outright. This is the
+  sibling rule the previous fix explicitly deferred (`AdjustEquipmentStates`
+  only inflicts/cures on equip change; `GetPermanentStates` is what makes a
+  *currently equipped* cursed item's state stick against ordinary cures).
+  `Actor#remove_state`/`#clear_states` (`mruby-rpg2k/mrblib/game.rb`) had
+  no such concept at all, so every cure path built on them — `#use_medicine`,
+  `#cast_skill`, `#full_heal`, `Interpreter#do_change_condition` — cured a
+  cursed-armor-forced state exactly like any other. Fixed by extracting the
+  existing `#adjust_equipment_states` item-matching logic into a shared
+  `#cursed_armor_state_ids` helper, adding `#permanent_states` (mirroring
+  `GetPermanentStates`, scanned live off `@equipment`), and gating
+  `#remove_state`/`#clear_states` on it. A genuine ordering hazard fell out
+  of this: `#equip_item`/`#unequip`/`#equip` must write `@equipment` (or
+  the specific slot) *before* calling `#adjust_equipment_states`, the same
+  order EasyRPG's own `SetEquipment` uses (`data.equipped[...] =
+  new_item_id;` precedes both `AdjustEquipmentStates` calls) — otherwise
+  unequipping a cursed item would see it still equipped in `#permanent_states`
+  and refuse to cure the very state it is trying to remove.
+  `#equip_item` already had the correct order by construction;
+  `#unequip`/`#equip` needed reordering to match (verified against the
+  existing test suite: all pre-existing equip/unequip checks, including the
+  previous fix's own three, still pass unchanged after the reorder, since it
+  is a no-op for any caller with no gated `#remove_state` to trip over).
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks —
+  `#remove_state` refuses a cursed-armor-forced state but still cures an
+  ordinary one and clears immediately once the armor comes off,
+  `#clear_states`/Full Recovery leaves the forced state in place, and a
+  curative medicine item can't touch it either — all three confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

@@ -4194,6 +4194,60 @@ check 'cursed armor unequipped via a two-handed weapon swap loses its own state 
   eq [], a.states, 'the displaced cursed shield lost its state along with its slot'
 end
 
+# Ports EasyRPG's own `Game_Actor::GetPermanentStates` (src/game_actor.cpp)
+# and `State::Remove`/`State::RemoveAll` (src/state.cpp), the sibling rule
+# `#adjust_equipment_states` deliberately left open: a state a worn cursed
+# item is still actively forcing cannot be cured by any ordinary means --
+# only unequipping the item itself can. #remove_state/#clear_states are the
+# single choke point every cure path (an Antidote-style medicine, a
+# curative skill, Full Recovery, the Change Condition event command) routes
+# through, so gating those two closes all of them at once.
+check "#remove_state refuses a state RPG2003 cursed armor is still forcing" do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  eq [4], a.states
+  eq nil, a.remove_state(4), 'refused -- the armor is still equipped'
+  eq [4], a.states, 'the state is still there'
+  # A state the armor does NOT force is cured normally.
+  a.add_state(7)
+  eq 7, a.remove_state(7)
+  eq [4], a.states
+  # Taking the armor off clears it immediately -- #adjust_equipment_states'
+  # own removal call is not itself blocked by the set it is busy shrinking.
+  a.unequip(2) # armor slot
+  eq [], a.states
+end
+
+check "#clear_states (Full Recovery) leaves a cursed-armor-forced state in place" do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  a.add_state(7)
+  a.full_heal
+  eq [4], a.states, 'the cursed-armor state survives Full Recovery; the ordinary one does not'
+end
+
+check "a curative item can't remove a state RPG2003 cursed armor is forcing" do
+  items = {
+    20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true), # cursed armor
+    21 => fake_item(type: 6, state_set: [0, 0, 0, 1]), # a medicine curing the same state
+  }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, rpg2003: true)
+  party = Game::Party.new(db)
+  a = party.leader
+  a.equip_item(20)
+  eq [4], a.states
+  party.gain_item(21)
+  party.use_item(21, a)
+  eq [4], a.states, 'the medicine could not touch a state the worn cursed armor still forces'
+end
+
 check 'Actor equipment never adds max_hp_points/max_sp_points to max HP/MP' do
   # Verified against EasyRPG's actual C++ source: Game_Actor::GetMaxHp/GetMaxSp
   # resolve to GetBaseMaxHp/GetBaseMaxSp with no per-equipment summation at all
