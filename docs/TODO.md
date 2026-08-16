@@ -7255,6 +7255,46 @@ not yet verified:
   `#clear_states`/Full Recovery leaves the forced state in place, and a
   curative medicine item can't touch it either — all three confirmed to
   fail against the pre-fix code before the fix.
+- ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
+  is now implemented — it used to be silently treated as a zero-duration
+  timed wait, letting the event continue instantly with no player
+  interaction at all.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Interpreter::CommandWait` (`src/game_interpreter.cpp`, code 11410)
+  reads a param1 mode byte only `if` the command list is long enough and
+  the database is RPG2003 (the Maniac Patch's own separate wait_type/mode
+  encoding under the same param1 is a distinct, unimplemented feature, out
+  of scope here); nonzero arms `_state.wait_key_enter = true` instead of
+  `SetupWait(com.parameters[0])`, ignoring the duration entirely. The main
+  per-frame loop (`game_interpreter.cpp`) then blocks indefinitely each
+  frame — without even checking the key while `Game_Message::
+  IsMessageActive()` — until the Decision key is edge-triggered.
+  `Interpreter#do_wait` (`mruby-rpg2k/mrblib/interpreter.rb`) only ever
+  read `param(0)`, so `Wait [0, 1]` (RPG2003's "wait for key" encoding) was
+  interpreted as `SetupWait(0)` — a duration-0 timed wait resolving in a
+  single frame regardless of any keypress. Fixed by having `do_wait` arm a
+  new `:wait_key_enter` wait kind (gated on `@state.party.rpg2003? &&
+  cmd.parameters.size > 1 && cmd.param(1) != 0`) instead of the plain
+  `:wait`, and adding `Scene::Map#drive_wait_key_enter` (foreground) plus a
+  `:wait_key_enter` branch in `#drive_parallel_wait` — both block while
+  `#message_window_open?` (the same scene-global gate every other
+  message-suppressed command already uses) and otherwise resume only on
+  `Input.trigger?(Input::C)`'s rising edge, never a key already held before
+  the command started. The foreground branch also needed the same
+  same-frame-continuation idiom the plain `:wait` case already documents
+  (`unless @interpreter.waiting? … @interpreter.update`): real RPG_RT's own
+  loop does not `break` once `wait_key_enter` clears, falling straight
+  through to the next queued command in that same Update() call — an
+  initial implementation without this continuation left the interpreter
+  correctly unparked on a keypress but never actually advanced to the
+  following command until a spurious extra frame, caught by the scene-level
+  check below before it shipped. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (param1 nonzero on RPG2003 arms
+  `:wait_key_enter`; param1 0, a non-RPG2003 database, or no param1 at all
+  all fall back to the plain timed wait) and one new
+  `scripts/rpg2k_scene_check.rb` check (the event holds through many frames
+  well past the ignored duration, then resumes the instant the Decision key
+  is pressed) — all three confirmed to fail against the pre-fix code before
+  the fix.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

@@ -2863,9 +2863,23 @@ module Game
       cmds
     end
 
+    # Wait (11410): param0 tenths of a second in RPG2000. RPG2003 adds a
+    # param1 mode byte -- 0 the plain timed wait above, nonzero "wait until
+    # the Decision key is pressed" instead, ignoring param0 entirely --
+    # matching EasyRPG's own `CommandWait` (src/game_interpreter.cpp): `if
+    # (com.parameters.size() <= 1 || (!maniac && !Player::
+    # IsRPG2k3Commands())) { SetupWait(com.parameters[0]); return true; }
+    # if (!maniac && com.parameters.size() > 1 && com.parameters[1] == 0) {
+    # SetupWait(com.parameters[0]); return true; } ... _state.wait_key_enter
+    # = true;` (the Maniac Patch's own extra wait_type/mode encoding is a
+    # separate, unimplemented feature, out of scope here).
     def do_wait(cmd)
-      @wait_frames = cmd.param(0) # tenths of a second in RPG2000
-      @wait_kind = :wait
+      if @state.party.rpg2003? && cmd.parameters.size > 1 && cmd.param(1) != 0
+        @wait_kind = :wait_key_enter
+      else
+        @wait_frames = cmd.param(0) # tenths of a second in RPG2000
+        @wait_kind = :wait
+      end
       @waiting = true
     end
 
