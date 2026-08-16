@@ -4,7 +4,7 @@ Date: 2026-08-16
 
 ## Status
 
-Proposed
+Accepted — Phase 1 (rows) implemented 2026-08-16; Phases 2–3 pending.
 
 ## Context
 
@@ -69,6 +69,37 @@ Each phase lands behind a `scene/check.rb` / `logic_check.rb` harness entry
 over mtf-meido-action before merge, following the existing RPG2k verification
 convention.
 
+## Phase 1 — implementation notes (2026-08-16)
+
+Landed in `mruby-rpg2k/mrblib/game.rb`:
+
+- `Game::Battle::Combatant` gained a `:row` field (nil → front; `ROW_FRONT` /
+  `ROW_BACK` constants on `Game::Battle`). A back-row battler reports
+  `back_row?`. `Game::Battle.from_actor` seeds it to the front row by default
+  (the RPG2000-only row); per-battler row derivation from
+  `battlecommands.placement` (field 2) + the actor's `battle_x`/`battle_y` is
+  the remaining data step and is intentionally **not** guessed here — the
+  placement→row mapping is an RPG_RT 2003 presentation rule that needs the spec.
+- `Game::Battle#row_hit_modifier` / `Game::Party#row_hit_modifier` apply a
+  fixed `ROW_BACK_DEFENDER_HIT_MULT` (currently 50) to the attacker's hit rate
+  when the **target** stands in the back row. Wired into both physical hit
+  paths: `Battle#to_hit` (basic attack) and `Party#skill_to_hit` (the 2003
+  physical-skill branch). RPG2000 never sets a row, so both return 100
+  unchanged there.
+- **Open within Phase 1:** the *attacker*-side back-row reach penalty (a
+  melee back-row attacker cannot reach a front-row target / suffers reduced
+  accuracy unless the weapon is ranged) is **not** yet modelled — it needs the
+  attacker's weapon range, which this sim does not currently carry. The exact
+  `ROW_BACK_DEFENDER_HIT_MULT` value is the RPG_RT 2003 documented back-row
+  evasion and is flagged TODO against the RPG_RT 2003 specification (still
+  inaccessible; see the LCF schema work's same blocker).
+
+Verification: `scripts/rpg2k3_battle_row_check.rb` (8 checks) exercises the
+row model, both `row_hit_modifier` definitions, and the back-row reduction in
+both `to_hit` and `skill_to_hit`; wired into the `ruby-checks` CI job. The
+existing 976-check `rpg2k_logic_check.rb` stays green because no fixture sets
+a back row.
+
 ## Consequences
 
 - RPG2003 battles become progressively implementable without disturbing the
@@ -79,5 +110,6 @@ convention.
 - Row and timing are modelled as data on `Game::Battle::Combatant` so they are
   reusable by both the turn-based and gauge phase machines and by enemy AI.
 - Follow-up work (battle-event pages already parsed; 2003-specific battle
-  commands beyond the four this engine drives; the Special command handler)
-  stays out of scope for these three phases and is tracked separately.
+  commands beyond the four this engine drives; the Special command handler;
+  the attacker-side back-row reach penalty) stays out of scope for these three
+  phases and is tracked separately.
