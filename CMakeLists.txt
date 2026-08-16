@@ -91,6 +91,18 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 set(LV_BUILD_CONF_DIR
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     CACHE PATH "lv_conf.h location" FORCE)
+# LVGL's CMake builds its examples and demos into the `lvgl` library itself
+# (they are PUBLIC-linked), and their sources call widget constructors that
+# include/lv_conf.h disables -- so building them would fail to compile. The
+# runtime uses none of them, and matching app/psp's EBOOT keeps the configs
+# aligned. Set as cache variables so they override LVGL's `option(...)` defaults
+# even with CMP0077 unset (see app/psp/CMakeLists.txt).
+set(CONFIG_LV_BUILD_EXAMPLES
+    OFF
+    CACHE BOOL "" FORCE)
+set(CONFIG_LV_BUILD_DEMOS
+    OFF
+    CACHE BOOL "" FORCE)
 add_subdirectory(3rd/lvgl EXCLUDE_FROM_ALL)
 
 set(WITH_GTEST OFF)

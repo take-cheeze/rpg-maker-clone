@@ -472,125 +472,73 @@
 
 #define LV_WIDGETS_HAS_DEFAULT_VALUE  1
 
-#define LV_USE_ANIMIMG    1
-
-#define LV_USE_ARC        1
-
-#define LV_USE_BAR        1
-
-#define LV_USE_BUTTON        1
-
-#define LV_USE_BUTTONMATRIX  1
-
-#define LV_USE_CALENDAR   1
-#if LV_USE_CALENDAR
-    #define LV_CALENDAR_WEEK_STARTS_MONDAY 0
-    #if LV_CALENDAR_WEEK_STARTS_MONDAY
-        #define LV_CALENDAR_DEFAULT_DAY_NAMES {"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"}
-    #else
-        #define LV_CALENDAR_DEFAULT_DAY_NAMES {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"}
-    #endif
-
-    #define LV_CALENDAR_DEFAULT_MONTH_NAMES {"January", "February", "March",  "April", "May",  "June", "July", "August", "September", "October", "November", "December"}
-    #define LV_USE_CALENDAR_HEADER_ARROW 1
-    #define LV_USE_CALENDAR_HEADER_DROPDOWN 1
-#endif  /*LV_USE_CALENDAR*/
-
+/* The RGSS runtime renders through lv_canvas (every Bitmap is a canvas buffer)
+ * and base lv_obj containers, with lv_image's transform calls for sprite
+ * zoom/rotation; nothing else is ever instantiated, so every other widget is
+ * dead weight. Keeping the exact same minimal set (and the same disabled
+ * themes/layouts below) as the PSP and Wio configs (app/psp/lv_conf.h,
+ * app/wio/lv_conf.h) means all targets build the same LVGL, so the render path
+ * cannot drift between desktop and the embedded builds. */
+#define LV_USE_ANIMIMG    0
+#define LV_USE_ARC        0
+#define LV_USE_ARCLABEL   0
+#define LV_USE_BAR        0
+#define LV_USE_BUTTON     0
+#define LV_USE_BUTTONMATRIX 0
+#define LV_USE_CALENDAR   0
 #define LV_USE_CANVAS     1
-
-#define LV_USE_CHART      1
-
-#define LV_USE_CHECKBOX   1
-
-#define LV_USE_DROPDOWN   1   /*Requires: lv_label*/
-
-#define LV_USE_IMAGE      1   /*Requires: lv_label*/
-
-#define LV_USE_IMAGEBUTTON     1
-
-#define LV_USE_KEYBOARD   1
-
+#define LV_USE_CHART      0
+#define LV_USE_CHECKBOX   0
+#define LV_USE_DROPDOWN   0
+#define LV_USE_IMAGE      1
+#define LV_USE_IMAGEBUTTON     0
+#define LV_USE_KEYBOARD   0
 #define LV_USE_LABEL      1
 #if LV_USE_LABEL
     #define LV_LABEL_TEXT_SELECTION 1 /*Enable selecting text of the label*/
     #define LV_LABEL_LONG_TXT_HINT 1  /*Store some extra info in labels to speed up drawing of very long texts*/
     #define LV_LABEL_WAIT_CHAR_COUNT 3  /*The count of wait chart*/
 #endif
-
-#define LV_USE_LED        1
-
-#define LV_USE_LINE       1
-
-#define LV_USE_LIST       1
-
-#define LV_USE_MENU       1
-
-#define LV_USE_MSGBOX     1
-
-#define LV_USE_ROLLER     1   /*Requires: lv_label*/
-
-#define LV_USE_SCALE      1
-
-#define LV_USE_SLIDER     1   /*Requires: lv_bar*/
-
-#define LV_USE_SPAN       1
-#if LV_USE_SPAN
-    /*A line text can contain maximum num of span descriptor */
-    #define LV_SPAN_SNIPPET_STACK_SIZE 64
-#endif
-
-#define LV_USE_SPINBOX    1
-
-#define LV_USE_SPINNER    1
-
-#define LV_USE_SWITCH     1
-
-#define LV_USE_TEXTAREA   1   /*Requires: lv_label*/
-#if LV_USE_TEXTAREA != 0
-    #define LV_TEXTAREA_DEF_PWD_SHOW_TIME 1500    /*ms*/
-#endif
-
-#define LV_USE_TABLE      1
-
-#define LV_USE_TABVIEW    1
-
-#define LV_USE_TILEVIEW   1
-
-#define LV_USE_WIN        1
+#define LV_USE_LED        0
+#define LV_USE_LINE       0
+#define LV_USE_LIST       0
+#define LV_USE_MENU       0
+#define LV_USE_MSGBOX     0
+#define LV_USE_ROLLER     0
+#define LV_USE_SCALE      0
+#define LV_USE_SLIDER     0
+#define LV_USE_SPAN       0
+#define LV_USE_SPINBOX    0
+#define LV_USE_SPINNER    0
+#define LV_USE_SWITCH     0
+#define LV_USE_TEXTAREA   0
+#define LV_USE_TABLE      0
+#define LV_USE_TABVIEW    0
+#define LV_USE_TILEVIEW   0
+#define LV_USE_WIN        0
 
 /*==================
  * THEMES
  *==================*/
 
-/*A simple, impressive and very complete theme*/
-#define LV_USE_THEME_DEFAULT 1
-#if LV_USE_THEME_DEFAULT
-
-    /*0: Light mode; 1: Dark mode*/
-    #define LV_THEME_DEFAULT_DARK 0
-
-    /*1: Enable grow on press*/
-    #define LV_THEME_DEFAULT_GROW 1
-
-    /*Default transition time in [ms]*/
-    #define LV_THEME_DEFAULT_TRANSITION_TIME 80
-#endif /*LV_USE_THEME_DEFAULT*/
-
-/*A very simple theme that is a good starting point for a custom theme*/
-#define LV_USE_THEME_SIMPLE 1
-
-/*A theme designed for monochrome displays*/
-#define LV_USE_THEME_MONO 1
+/* No theme: the default theme is auto-initialised by lv_display_create and its
+ * styles reference every widget, which is what pulls all those widget object
+ * files into the link in the first place. The RGSS runtime styles every object
+ * it creates explicitly (lv_obj_remove_style_all + lv_obj_set_style_*), so
+ * dropping the theme changes nothing visually -- and matches the PSP/Wio
+ * configs, which need it gone to shrink the EBOOT. */
+#define LV_USE_THEME_DEFAULT 0
+#define LV_USE_THEME_SIMPLE 0
+#define LV_USE_THEME_MONO 0
 
 /*==================
  * LAYOUTS
  *==================*/
 
-/*A layout similar to Flexbox in CSS.*/
-#define LV_USE_FLEX 1
-
-/*A layout similar to Grid in CSS.*/
-#define LV_USE_GRID 1
+/* The RGSS runtime positions objects with lv_obj_align / lv_obj_set_pos, never
+ * flex/grid layouts. */
+#define LV_USE_FLEX 0
+#define LV_USE_GRID 0
 
 /*====================
  * 3RD PARTS LIBRARIES
@@ -804,7 +752,9 @@
 #define LV_USE_IMGFONT 0
 
 /*1: Enable an observer pattern implementation*/
-#define LV_USE_OBSERVER 1
+/* The RGSS runtime never registers observers; off to match the PSP/Wio
+ * configs. */
+#define LV_USE_OBSERVER 0
 
 /*1: Enable Pinyin input method*/
 /*Requires: lv_keyboard*/
