@@ -2357,12 +2357,14 @@ end
 
 # A lightweight party for the inn tests: resume_inn only needs gold + a party
 # roster whose members respond to full_heal, and Scene::Map reads party.leader.
-class InnStubActor
+ class InnStubActor
   attr_accessor :hp, :mp
   attr_reader :max_hp, :max_mp, :name
   def initialize(name); @name = name; @hp = 1; @mp = 0; @max_hp = 100; @max_mp = 30; end
   def full_heal; @hp = @max_hp; @mp = @max_mp; end
-end
+  def display_max_hp; hp && hp > max_hp ? hp : max_hp; end
+  def display_max_mp; mp && mp > max_mp ? mp : max_mp; end
+ end
 
 class InnStubParty
   attr_reader :actors, :gold
@@ -13231,7 +13233,10 @@ class MenuStubActor
   # exercising that needs its own richer stub, same as the item/skill tables
   # below.
   def two_handed?(_item_id); false; end
-end
+  # Mirror Game::Actor#display_max_hp / #display_max_mp for the RGSS stubs.
+  def display_max_hp; hp && hp > max_hp ? hp : max_hp; end
+  def display_max_mp; mp && mp > max_mp ? mp : max_mp; end
+ end
 
 class MenuStubParty
   attr_reader :actors, :gold, :revision

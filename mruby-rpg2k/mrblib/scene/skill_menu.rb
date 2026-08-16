@@ -360,7 +360,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         a = caster
         mp_term = term(:mp_short, 'MP')
-        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   #{mp_term} #{a.mp}/#{a.max_mp}"
+        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   #{mp_term} #{a.mp}/#{a.display_max_mp}"
         # An empty skill list draws no placeholder text -- matching the fix
         # for the analogous Item screen (see item_menu.rb), confirmed there
         # against genuine RPG_RT under wine: a blank list row with a visible,
@@ -410,8 +410,8 @@ class RPG2k
           # list, since it is where you pick who to use an antidote on.
           draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
           c.draw_text 0, y + LINE_H, inner_w, LINE_H,
-                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}  " \
-                      "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
+                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
+                      "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
         end
         @target_window.contents = c
         refresh_target_cursor
