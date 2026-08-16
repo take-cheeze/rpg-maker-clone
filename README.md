@@ -47,6 +47,16 @@
   already has, held down instead of tapped); press **F9** to open a debug
   menu listing every switch and variable, ten at a time, with a signed number
   editor for variables
+- `--rpg2k_preview_map=<id>` starts New Game on a chosen map, centred on its
+  middle tile, instead of the database's configured start position — a quick
+  way to inspect one map's rendering without a save file positioned there.
+  Combine with the terminal backends below and `--timeout_ms` to preview a map
+  straight from the command line:
+
+  ```sh
+  ./rpg_maker_clone --iterm --game_dir path/to/game --rpg2k_preview_map=5 \
+      --timeout_ms=2000
+  ```
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,

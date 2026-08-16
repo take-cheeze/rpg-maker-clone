@@ -156,7 +156,11 @@ class RPG2k
         if auto_new_game?
           @auto_started = true
           @selected_index = 0
-          $stderr.puts '[RPG2k] --rpg2k_new_game: selecting New Game'
+          if (map_id = preview_map_id)
+            $stderr.puts "[RPG2k] --rpg2k_preview_map=#{map_id}: selecting New Game"
+          else
+            $stderr.puts '[RPG2k] --rpg2k_new_game: selecting New Game'
+          end
           true
         elsif auto_continue?
           @auto_started = true
@@ -168,7 +172,18 @@ class RPG2k
         end
       end
 
+      # --rpg2k_preview_map also triggers this (see #preview_map_id below), so
+      # a preview needs only that one flag, not this one too. Each source is
+      # read through its own `begin`/`rescue` rather than a shared helper: an
+      # undefined constant (either flag, checked independently) must not sink
+      # the other, which a single `RPG2K_NEW_GAME || preview_map_id` guarded by
+      # one outer rescue would do -- resolving the bare, undefined
+      # RPG2K_NEW_GAME raises before `||` ever reaches preview_map_id.
       def auto_new_game?
+        new_game_flag? || preview_map_id
+      end
+
+      def new_game_flag?
         RPG2K_NEW_GAME
       rescue StandardError
         false
@@ -178,6 +193,17 @@ class RPG2k
         RPG2K_CONTINUE
       rescue StandardError
         false
+      end
+
+      # --rpg2k_preview_map also auto-selects New Game (see #auto_new_game?
+      # above), so a preview needs only that one flag. Guarded the same way as
+      # #hide_title?/#continue_available? below: a bare Title built without a
+      # real parent (scripts/rpg2k_scene_check.rb) answers nil rather than
+      # raising.
+      def preview_map_id
+        parent.preview_map_id
+      rescue StandardError
+        nil
       end
 
       # HideTitle, as RPG2k#initialize parsed it off RPG_RT.exe's legacy CLI

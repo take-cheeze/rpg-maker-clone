@@ -666,17 +666,25 @@ class RPG2k
   # position from the map tree, load the starting map and enter the map scene.
   # The map/player renderer is not wired up yet, so this establishes the running
   # game state and transitions scenes without drawing the map.
+  #
+  # --rpg2k_preview_map overrides both the map and the start position with a
+  # chosen map's centre tile (see #preview_map_id below) -- a quick way to
+  # inspect one map's rendering, e.g. piped through --iterm, without a save
+  # file positioned there.
   def start_new_game
     init = map_tree.initial
-    state = Game::State.new Game::Party.new(@db), init.initial_map_id,
-                            init.initial_x, init.initial_y
+    map_id = preview_map_id || init.initial_map_id
+    map = load_map map_id
+    x, y = preview_map_id ? [map.width / 2, map.height / 2]
+                           : [init.initial_x, init.initial_y]
+    state = Game::State.new Game::Party.new(@db), map_id, x, y
     # The database's System tab configures the six screen transitions a
     # "use the configured transition" (-1) Erase / Show Screen resolves against.
     state.seed_screen_transitions @db
     # The map tree's own boat/ship/airship starting positions, the editor's
     # counterpart to the hero's initial_map_id/x/y just above.
     state.seed_vehicle_positions map_tree
-    state.map = load_map state.map_id
+    state.map = map
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.
     scene = Scene::Map.new(self, state)
@@ -689,6 +697,17 @@ class RPG2k
   rescue StandardError => e
     # Never let a data problem crash the title screen; report and stay put.
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
+  end
+
+  # --rpg2k_preview_map: the map id to preview, or nil when unset (0, the
+  # default -- see src/main.cxx; map ids start at 1). Guarded the same way as
+  # #native_test_play?: an undefined RPG2K_PREVIEW_MAP (the CRuby-only host
+  # harnesses that load this file never define it) raises NameError, rescued
+  # to nil.
+  def preview_map_id
+    RPG2K_PREVIEW_MAP.zero? ? nil : RPG2K_PREVIEW_MAP
+  rescue StandardError
+    nil
   end
 
   # Save file path for a slot. Saving still uses our own portable Marshal

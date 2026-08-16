@@ -80,6 +80,16 @@ DEFINE_bool(
     "and a genuine RPG_RT.exe be brought to the same in-game map from the same "
     "Save<N>.lsd (see scripts/compare-nepheshel-save-wine.bash) instead of "
     "being driven there by counting key presses");
+DEFINE_int32(
+    rpg2k_preview_map,
+    0,
+    "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
+    "Game like --rpg2k_new_game, but start on this map id, centred on its "
+    "middle tile, instead of the database's configured start position -- a "
+    "quick way to inspect one map's rendering without a save file positioned "
+    "there. Combine with --iterm (or --sixel) and --timeout_ms to dump the "
+    "map to the terminal and exit. 0 disables the override (default; map ids "
+    "start at 1)");
 DEFINE_bool(
     rgss_script_host,
     true,
@@ -896,6 +906,7 @@ static void disable_non_test_play_flags() {
 
   reset_bool(FLAGS_rpg2k_new_game, "rpg2k_new_game");
   reset_bool(FLAGS_rpg2k_continue, "rpg2k_continue");
+  reset_int(FLAGS_rpg2k_preview_map, "rpg2k_preview_map");
   reset_bool(FLAGS_rgss_host_new_game, "rgss_host_new_game");
   reset_bool(FLAGS_rgss_host_move_test, "rgss_host_move_test");
   reset_bool(FLAGS_rgss_host_menu_test, "rgss_host_menu_test");
@@ -1271,6 +1282,13 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_CONTINUE"),
                 mrb_bool_value(FLAGS_rpg2k_continue));
+  // --rpg2k_preview_map: the map id RPG2k#start_new_game (mruby-rpg2k) should
+  // jump New Game to instead of the database's configured start position, or 0
+  // when unset. See the flag's own definition above for the map-preview use
+  // case.
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_PREVIEW_MAP"),
+                mrb_fixnum_value(FLAGS_rpg2k_preview_map));
   // Whether the RGSS script host runs the project's own scripts (the default)
   // or the built-in flow does. Resolved from --rgss_script_host and the
   // RGSS_SCRIPT_HOST environment variable above, because the Ruby side cannot
