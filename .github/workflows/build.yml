@@ -66,6 +66,20 @@ jobs:
         # Network-bound cache restore; see "Restore and cache Nix store" above.
         timeout-minutes: 10
         background: true
+      - name: cache wine prefix
+        uses: actions/cache@v6
+        id: wine-prefix-cache
+        with:
+          # rtp_install.bash / rtp_xp_install.bash default WINEPREFIX to
+          # $HOME/.wine and skip the wine RTP installer entirely once they
+          # find it already populated here, so a cache hit turns "Download
+          # RTP" into a couple of `ls` calls instead of two wine installs.
+          path: ~/.wine
+          key: wine-prefix-${{ hashFiles('./scripts/rtp*_install.bash') }}
+          restore-keys: wine-prefix-
+        # Network-bound cache restore; see "Restore and cache Nix store" above.
+        timeout-minutes: 10
+        background: true
       - name: cache test game
         uses: actions/cache@v6
         id: cache
