@@ -4756,6 +4756,18 @@ module Game
     # databases, but RPG_RT still honours the bit whenever it is set (see the
     # "Not implemented: CalcSkillToHit" note in docs/TODO.md). `source` is the
     # caster, `target` the first foe the skill lands on.
+    # RPG2003 row accuracy for physical skills: mirrors Battle#row_hit_modifier
+    # -- a back-row defender is harder to hit. Defined here too because
+    # #skill_to_hit (the physical-skill hit path) lives on Party, not Battle,
+    # and both classes keep their own copy of the shared hit-chance helpers
+    # (#hit_modifier, #do_nothing_restricted?, #effective_agi). See ADR 0053.
+    ROW_BACK_DEFENDER_HIT_MULT = 50
+
+    def row_hit_modifier(_attacker, target)
+      return 100 unless target.respond_to?(:back_row?) && target.back_row?
+      ROW_BACK_DEFENDER_HIT_MULT
+    end
+
     def skill_to_hit(sk, source, target)
       return skill_hit(sk) unless sk.respond_to?(:failure_message) && sk.failure_message == 3
       # The physical formula is enemy-only: an ally/self-scoped skill (scope 2/3/4)
@@ -4783,6 +4795,8 @@ module Game
       # 物理回避率アップ: a shield/armour/helmet/accessory flagged
       # `raise_evasion` subtracts a flat 25, after the AGI term.
       agi_adjusted -= 25 if target.evasion_up
+      # RPG2003 row: a back-row defender is harder to hit.
+      agi_adjusted = agi_adjusted * row_hit_modifier(source, target) / 100
       Game.clamp(agi_adjusted, 0, 100)
     end
 
@@ -8311,6 +8325,15 @@ module Game
   # turn-based battle *screen* wires the refinements (skills, items, criticals,
   # elemental attributes, damage variance) into a live fight.
   class Battle
+    # RPG2003 front/back row. A purely RPG2003 concept (RPG2000 never sets it):
+    # a back-row battler is harder to hit and, when attacking with a melee
+    # weapon, cannot reach a front-row target. The exact row-derived accuracy
+    # is an RPG_RT 2003 battle-system constant -- see #row_hit_modifier and
+    # ADR 0053 (the placement field that decides a battler's row for a given
+    # battle is the RPG2003 Battle Commands table, 0x1D, field 2).
+    ROW_FRONT = 0
+    ROW_BACK = 1
+
     # A battler reduced to what the fight needs. Snapshotting Game::Actor /
     # Game::Enemy keeps the real party untouched by a resolved battle.
     # `action` is the ally's chosen attack target for the round (nil = none /
@@ -8402,21 +8425,29 @@ module Game
                            # re-derived -- when the action is dequeued
                            # (#step/#step_action). See #apply_turn_states'
                            # own comment for why a live re-check at dequeue
-                           # time is wrong: EasyRPG's `PrepareBattleAction`
-                           # (src/scene_battle.cpp) locks a restricted
-                           # battler's queued algorithm to `None` right when
-                           # it is chosen (`Scene_Battle_Rpg2k::
-                           # SelectNextActor`/`CreateEnemyActions`) or first
-                           # afflicted mid-round (`Game_Battler::AddState`),
-                           # and nothing in the reference ever reverses that
-                           # once the restriction later clears -- curing
-                           # Sleep/Paralysis after the round's queue is built
-                           # does not give the battler its turn back. nil
-                           # (never queued this round yet) reads as "not
-                           # locked", matching every existing fixture that
-                           # calls #apply_turn_states directly without going
-                           # through #refill_queue first.
-                           :queued_no_act) do
+                            # time is wrong: EasyRPG's `PrepareBattleAction`
+                            # (src/scene_battle.cpp) locks a restricted
+                            # battler's queued algorithm to `None` right when
+                            # it is chosen (`Scene_Battle_Rpg2k::
+                            # SelectNextActor`/`CreateEnemyActions`) or first
+                            # afflicted mid-round (`Game_Battler::AddState`),
+                            # and nothing in the reference ever reverses that
+                            # once the restriction later clears -- curing
+                            # Sleep/Paralysis after the round's queue is built
+                            # does not give the battler its turn back. nil
+                            # (never queued this round yet) reads as "not
+                            # locked", matching every existing fixture that
+                            # calls #apply_turn_states directly without going
+                            # through #refill_queue first.
+                            :queued_no_act,
+                            # The RPG2003 front/back row this battler stands
+                            # in (see the `ROW_FRONT`/`ROW_BACK` constants
+                            # above); nil defaults to the front row, the only
+                            # row RPG2000 knows. A back-row battler is harder
+                            # to hit (#row_hit_modifier) -- the row is an
+                            # RPG2003-only concept, so this stays front for
+                            # every 2000 fight.
+                            :row) do
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -8463,6 +8494,10 @@ module Game
       def int; spi; end
       # Whether `id` is currently afflicting this battler.
       def state?(id); (states || []).include?(id); end
+      # The battler's row: nil (never set, the RPG2000 default) reads as the
+      # front row; only RPG2003 ever sets the back row.
+      def row; self[:row] || ROW_FRONT; end
+      def back_row?; row == ROW_BACK; end
     end
 
     # Seed the combatant's status set from the actor, so a member who walked into
@@ -8522,6 +8557,11 @@ module Game
       c.evasion_up = flag_of(a, :physical_evasion_up?)
       c.attr_base_ranks = c.attr_ranks.dup
       c.atk_states = atk_states_of(a)
+      # RPG2003 front/back row: defaults to the front row (the only row
+      # RPG2000 knows). Deriving it from the Battle Commands placement table
+      # (0x1D, field 2) and the actor's battle position is the ADR 0053
+      # Phase 1 data step -- until then every battler starts in front.
+      c.row = a.respond_to?(:battle_row) ? a.battle_row : ROW_FRONT
       c
     end
 
@@ -8994,6 +9034,20 @@ module Game
     # target with a "do nothing" restriction (asleep / paralysed) is the next
     # term down and always gets hit -- `CalcNormalAttackToHit`'s `if
     # (!target.CanAct()) return 100;`, ahead of every accuracy term below it.
+    # RPG2003 row accuracy: a back-row defender is harder to hit by a physical
+    # attack. RPG_RT 2003 applies a fixed hit-rate reduction to any attack aimed
+    # at a back-row battler; the front/back row is an RPG2003-only concept, so
+    # RPG2000 (which never sets a row) returns 100 unconditionally here. The
+    # exact percentage is an RPG_RT 2003 battle-system constant -- TODO(ADR
+    # 0053): confirm against the RPG_RT 2003 specification (currently
+    # inaccessible); 50% is the documented behaviour.
+    ROW_BACK_DEFENDER_HIT_MULT = 50
+
+    def row_hit_modifier(_attacker, target)
+      return 100 unless target.respond_to?(:back_row?) && target.back_row?
+      ROW_BACK_DEFENDER_HIT_MULT
+    end
+
     def to_hit(attacker, target)
       return 0 if evades_all_physical?(target)
       return 100 if do_nothing_restricted?(target)
@@ -9025,6 +9079,8 @@ module Game
         # term, and never reached at all by a 必中 attacker (the branch
         # above already returned).
         agi_adjusted -= 25 if target.evasion_up
+        # RPG2003 row: a back-row defender is harder to hit.
+        agi_adjusted = agi_adjusted * row_hit_modifier(attacker, target) / 100
         Game.clamp(agi_adjusted, 0, 100)
       end
     end
