@@ -876,6 +876,15 @@ class RPG2k
       # other way from RGSS's grey: below 100 is *less* saturated, so a value
       # under neutral becomes positive desaturation. Skipped entirely while the
       # tone is neutral, so an untinted map never pays for it.
+      # The tone currently on the map layer (or nil before the first
+      # #update_map_tone). Exposed so the battle backdrop -- a top-level sprite
+      # outside the toned @map_viewport -- can seed its own tone when it is
+      # built mid-tint (#build_battle_back) and stay in lockstep with the map
+      # layer for the rest of the fight.
+      def current_map_tone
+        @map_viewport&.tone
+      end
+
       def update_map_tone(tint)
         return unless @map_viewport
         r, g, b, sat = tint
@@ -895,6 +904,16 @@ class RPG2k
           @upper_viewport.tone = Tone.new(tr, tg, tb, tsat)
           @upper_viewport.update if @upper_viewport.respond_to?(:update)
         end
+        # The battle backdrop rides none of the toned viewports -- it is a
+        # top-level sprite (Scene::Battle#build_battle_back), so a Tint Screen
+        # active mid-fight would otherwise only reach the (hidden) map layer
+        # and skip the one element actually on screen. RPG_RT tints the battle
+        # background under a Tint Screen; EasyRPG Player confirms it
+        # (Spriteset_Battle::Update does
+        # `background->SetTone(game_screen->GetTone())`), so mirror the map
+        # tone onto the live backdrop. #build_battle_back seeds it on build so
+        # a tint already active when the encounter opens is covered too.
+        @battle.apply_backdrop_tone(Tone.new(tr, tg, tb, tsat)) if @battle
       rescue StandardError => e
         $stderr.puts "[RPG2k] screen tone failed, map drawn untinted: #{e.message}"
         nil
