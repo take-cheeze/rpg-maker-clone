@@ -179,8 +179,19 @@ class RPG2k
                                                 # (see #apply_attr_multiplier)
                                                 # is handled differently per
                                                 # edition.
-                                                rpg2003: db.respond_to?(:rpg2003?) && db.rpg2003?,
-                                                # Mid-battle roster sync
+                                                 rpg2003: db.respond_to?(:rpg2003?) && db.rpg2003?,
+                                                 # RPG2003 battle timing
+                                                 # presentation (Battle Setup
+                                                 # chunk 0x1D field 7): 0
+                                                 # traditional / 1 alternative /
+                                                 # 2 gauge. Drives whether the
+                                                 # active-time gauge engine
+                                                 # (#advance_gauges) ever runs;
+                                                 # RPG2000 has no battlecommands
+                                                 # table, so this reads 0 and the
+                                                 # turn-based machine is used.
+                                                 battle_type: db.respond_to?(:battlecommands) && db.battlecommands ? (db.battlecommands.battle_type || 0) : 0,
+                                                 # Mid-battle roster sync
                                                 # (Game::Battle#sync_allies_from_party):
                                                 # a Change Party Member command
                                                 # run from a battle event page

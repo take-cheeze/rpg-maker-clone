@@ -803,6 +803,9 @@ jobs:
           - name: RPG2003 battle row (front/back) check
             run: ruby scripts/rpg2k3_battle_row_check.rb
 
+          - name: RPG2003 battle gauge (active-time) check
+            run: ruby scripts/rpg2k3_battle_gauge_check.rb
+
           # The interpreter against every event command the downloaded games
           # ship (371k of them), asserting that none raises and none reaches a
           # handler's "I do not know this" arm. The unit checks pin the

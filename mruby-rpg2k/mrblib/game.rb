@@ -8447,7 +8447,15 @@ module Game
                             # to hit (#row_hit_modifier) -- the row is an
                             # RPG2003-only concept, so this stays front for
                             # every 2000 fight.
-                            :row) do
+                            :row,
+                            # The RPG2003 active-time (gauge) charge for this
+                            # battler (ADR 0053, Phase 2). 0..GAUGE_MAX; a
+                            # battler whose gauge is full may act. Only the
+                            # 2003 gauge presentation (battle_type 2) actually
+                            # advances it -- RPG2000 (battle_type 0) and the
+                            # 2003 traditional presentation (1) leave it at 0
+                            # and run the turn-based machine instead.
+                            :gauge) do
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -8498,6 +8506,10 @@ module Game
       # front row; only RPG2003 ever sets the back row.
       def row; self[:row] || ROW_FRONT; end
       def back_row?; row == ROW_BACK; end
+      # The battler's active-time gauge: nil (never advanced, the RPG2000 /
+      # traditional-2003 default) reads as empty.
+      def gauge; self[:gauge] || 0; end
+      def gauge_full?; gauge >= GAUGE_MAX; end
     end
 
     # Seed the combatant's status set from the actor, so a member who walked into
@@ -8674,7 +8686,8 @@ module Game
     # its own, unchanged from before this parameter existed.
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
                    criticals = false, accuracy = false, first_strike = false,
-                   attributes = nil, ai = nil, rpg2003: false, party: nil)
+                   attributes = nil, ai = nil, rpg2003: false, party: nil,
+                   battle_type: 0)
       @allies = allies
       @enemies = enemies
       @rng = rng || Rng.new(0x2000)
@@ -8687,6 +8700,14 @@ module Game
       @ai = ai
       @rpg2003 = rpg2003 ? true : false
       @party = party
+      # RPG2003 battle timing presentation (database Battle Setup chunk 0x1D
+      # field 7): 0 traditional (RPG2000-style, turn-based), 1 alternative
+      # (actor sprites, no ATB), 2 gauge (per-combatant active-time charge).
+      # Only presentation 2 advances the active-time gauge (#advance_gauges);
+      # the rest run the existing turn-based machine untouched. Seeded from the
+      # database's battle setup when the battle is constructed (see
+      # Scene::Battle), defaulting to 0 so every RPG2000 fight is turn-based.
+      @battle_type = battle_type || 0
       @rounds = 0
       @result = nil
       @escaped = false # set once the party successfully flees (#attempt_escape)
@@ -9046,6 +9067,70 @@ module Game
     def row_hit_modifier(_attacker, target)
       return 100 unless target.respond_to?(:back_row?) && target.back_row?
       ROW_BACK_DEFENDER_HIT_MULT
+    end
+
+    # RPG2003 active-time (gauge) battle timing (ADR 0053, Phase 2). The gauge
+    # is a 0..GAUGE_MAX charge each living battler accumulates every frame at a
+    # rate proportional to its AGI; the moment it is full the battler may act
+    # (see #ready_combatants). This is the RPG2003 presentation-2 ("gauge")
+    # time system -- RPG2000 (battle_type 0) and the 2003 traditional
+    # presentation (1) never advance it and keep running the turn-based
+    # machine, so #advance_gauges is a no-op for them.
+    #
+    # GAUGE_MAX and the AGI-to-fill relationship are RPG_RT 2003 constants;
+    # the exact fill curve is flagged TODO against the RPG_RT 2003
+    # specification (still inaccessible, the same blocker as the row
+    # multiplier / LCF schema work). The model below is the structure RPG_RT
+    # uses, with a linear AGI-proportional fill chosen as the documented
+    # default.
+    GAUGE_MAX = 100
+    GAUGE_AGI_RATE = 1   # gauge points gained per AGI per tick
+
+    attr_accessor :battle_type
+
+    # Advance every living, in-play battler's gauge by `ticks` frames, gated on
+    # battle_type (only the gauge presentation advances it). AGI drives the
+    # fill rate so faster battlers reach a full gauge sooner, the RPG_RT 2003
+    # behaviour. Dead / hidden / not-a-member combatants do not charge.
+    def advance_gauges(ticks = 1)
+      return unless @battle_type == 2
+      all_combatants.each do |c|
+        next if c.out_of_play?
+        add = effective_agi(c) * GAUGE_AGI_RATE * ticks
+        c.gauge = [c.gauge + add, GAUGE_MAX].min
+      end
+    end
+
+    # The combatants whose gauge is full, in descending gauge order (ties broken
+    # by side then by the order they were added), so the active-time turn picker
+    # can pull the next actor off the front. Empty for a turn-based battle.
+    def ready_combatants
+      all_combatants.reject(&:out_of_play?).select(&:gauge_full?).sort_by { |c| -c.gauge }
+    end
+
+    # Every combatant in the fight (allies then enemies), for gauge bookkeeping.
+    def all_combatants
+      (@allies || []) + (@enemies || [])
+    end
+
+    # Reset a combatant's gauge to empty after it has taken its active-time
+    # turn, so it must refill from zero before acting again (RPG_RT 2003's
+    # gauge behaviour). The per-frame Scene::Battle loop calls this from the
+    # turn picker; exposed here so the gauge cycle is unit-testable without
+    # the 2003 boot path (Phase 3).
+    def reset_gauge(c)
+      c.gauge = 0
+    end
+
+    # The active-time turn picker: return the next ready combatant (highest
+    # gauge; see #ready_combatants) and reset its gauge so the loop can advance
+    # and refill it. Returns nil when nobody is ready. A turn-based battle
+    # (battle_type != 2) never has a ready combatant, so this is nil there too.
+    def pop_ready
+      c = ready_combatants.first
+      return nil unless c
+      reset_gauge(c)
+      c
     end
 
     def to_hit(attacker, target)
