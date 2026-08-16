@@ -14017,24 +14017,31 @@ check 'BattlePage.active? tests enemy and actor HP windows' do
   eq true, BP.active?(acond, st.switches, st.variables, b)
 end
 
-check 'BattlePage.active? fails a condition the runtime cannot answer' do
-  b = battle_with
+check 'BattlePage.active? ignores command_actor on a non-RPG2003 battle, same as its siblings' do
+  b = battle_with # RPG2000 (rpg2003: false, the default)
   st = new_state
-  # The chosen-command test needs the battler whose action triggered the
-  # check, and RPG_RT's own RPG2000 battle scene never has one to give it
-  # (Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents always schedules
-  # pages with a null source; only the separate 2k3 ATB scene ever passes a
-  # real one) -- so this is not a stand-in for a future acting-battler
-  # context, it is RPG2000's own battle system never satisfying the
-  # condition either. Unlike turn_enemy/turn_actor/fatigue below,
-  # command_actor is tested on every edition (EasyRPG's own
-  # AreConditionsMet still gates it on IsRPG2k3Commands(), but that gate is
-  # moot here since #actor_command always answers nil regardless).
-  eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
-                                   command_id: 1), st.switches, st.variables, b)
-  # Nor may one keyed to a battler that is not in this fight -- on an
-  # RPG2003 battle, where turn_enemy/turn_actor actually apply (see below).
+  # RPG2000's condition box has no command_actor control at all, so this
+  # must read as active regardless of what #actor_command would say --
+  # matching the "ignores turn_enemy / turn_actor / fatigue" check below,
+  # not the old (incorrect) claim that command_actor is tested on every
+  # edition.
+  eq true, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
+                                  command_id: 1), st.switches, st.variables, b)
+end
+
+check 'BattlePage.active? fails a command_actor condition the runtime cannot answer, on RPG2003' do
+  # On a genuine RPG2003 battle the gate now lets the check run -- but this
+  # codebase's own #actor_command (Game::Battle) always answers nil, since
+  # there is no per-battler "last chosen command" tracking implemented yet,
+  # so a command_actor condition can never be satisfied here regardless of
+  # what real RPG_RT's own 2k3 ATB scene would say for a battler that just
+  # chose that exact command.
   b2003 = battle_with(rpg2003: true)
+  st = new_state
+  eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
+                                   command_id: 1), st.switches, st.variables, b2003)
+  # Nor may a turn_enemy/turn_actor condition keyed to a battler that is not
+  # in this fight (see below for the actual matching-logic checks).
   eq false, BP.active?(battle_cond(BP::TURN_ENEMY, turn_enemy_id: 9),
                        st.switches, st.variables, b2003)
   eq false, BP.active?(battle_cond(BP::TURN_ACTOR, turn_actor_id: 99),
