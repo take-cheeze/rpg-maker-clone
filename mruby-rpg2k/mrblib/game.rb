@@ -9086,33 +9086,45 @@ module Game
     end
 
     # RPG2003 active-time (gauge) battle timing (ADR 0053, Phase 2). The gauge
-    # is a 0..GAUGE_MAX charge each living battler accumulates every frame at a
-    # rate proportional to its AGI; the moment it is full the battler may act
-    # (see #ready_combatants). This is the RPG2003 presentation-2 ("gauge")
-    # time system -- RPG2000 (battle_type 0) and the 2003 traditional
-    # presentation (1) never advance it and keep running the turn-based
-    # machine, so #advance_gauges is a no-op for them.
+    # is a 0..GAUGE_MAX charge each battler accumulates every frame; the moment
+    # it is full the battler may act (see #ready_combatants). This is the
+    # RPG2003 presentation-2 ("gauge") time system -- RPG2000 (battle_type 0)
+    # and the 2003 traditional presentation (1) never advance it and keep
+    # running the turn-based machine, so #advance_gauges is a no-op for them.
     #
-    # GAUGE_MAX and the AGI-to-fill relationship are RPG_RT 2003 constants;
-    # the exact fill curve is flagged TODO against the RPG_RT 2003
-    # specification (still inaccessible, the same blocker as the row
-    # multiplier / LCF schema work). The model below is the structure RPG_RT
-    # uses, with a linear AGI-proportional fill chosen as the documented
-    # default.
-    GAUGE_MAX = 100
-    GAUGE_AGI_RATE = 1   # gauge points gained per AGI per tick
+    # GAUGE_MAX and the fill curve are EasyRPG's RPG_RT 2003 port
+    # (Game_Battler::GetMaxAtbGauge / Game_Battle::UpdateAtbGauges,
+    # src/game_battle.cpp), replacing the earlier placeholder constants
+    # (100 max, one gauge point per AGI per frame) that were flagged TODO
+    # against the then-inaccessible RPG_RT specification. The real curve is
+    # *relative*, not linear in AGI: every non-hidden battler's AGI is summed
+    # (times 100), each battler's per-frame increment is
+    # `GAUGE_MAX / (sum_agi / (agi + 1))`, and all the integer division is
+    # truncating -- so a battler with double another's AGI fills nearly twice
+    # as fast, and the whole field charges together (a bigger party shares a
+    # slower common pace rather than each battler charging at its own absolute
+    # rate). A do-nothing-restricted *ally* does not charge (`CanAct()`, and an
+    # enemy always charges -- EasyRPG's `CanAct() || Type_Enemy`), and a dead /
+    # hidden / not-a-member battler neither contributes to the sum nor charges.
+    GAUGE_MAX = 300_000
 
     attr_accessor :battle_type
 
-    # Advance every living, in-play battler's gauge by `ticks` frames, gated on
-    # battle_type (only the gauge presentation advances it). AGI drives the
-    # fill rate so faster battlers reach a full gauge sooner, the RPG_RT 2003
-    # behaviour. Dead / hidden / not-a-member combatants do not charge.
+    # Advance every charging battler's gauge by `ticks` frames, gated on
+    # battle_type (only the gauge presentation advances it). Ported verbatim
+    # from EasyRPG's `Game_Battle::UpdateAtbGauges` (src/game_battle.cpp): the
+    # sum over non-hidden battlers decides each one's share, so faster battlers
+    # reach a full gauge sooner but nobody charges at an independent absolute
+    # rate.
     def advance_gauges(ticks = 1)
       return unless @battle_type == 2
+      visible = all_combatants.reject { |c| c.hidden }
+      return if visible.empty?
+      sum_agi = visible.reduce(0) { |s, c| s + effective_agi(c) } * 100
       all_combatants.each do |c|
         next if c.out_of_play?
-        add = effective_agi(c) * GAUGE_AGI_RATE * ticks
+        next if do_nothing_restricted?(c) && side_of(c) != :enemy
+        add = GAUGE_MAX / (sum_agi / (effective_agi(c) + 1)) * ticks
         c.gauge = [c.gauge + add, GAUGE_MAX].min
       end
     end

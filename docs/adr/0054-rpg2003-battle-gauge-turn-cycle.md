@@ -68,8 +68,11 @@ Behavioral notes and deliberate simplifications:
   presentation, and the database's wait toggle itself (a Battle Commands field
   the schema does not decode yet), are follow-ups.
 - A gauge battle shows **no Fight/Auto/Escape options window**: the first ready
-  actor's menu opens on its own. The `GAUGE_MAX` / `GAUGE_AGI_RATE` fill curve
-  remains ADR 0053's flagged-placeholder constants.
+  actor's menu opens on its own. The gauge fill runs on EasyRPG's real RPG_RT
+  2003 curve — `GAUGE_MAX` 300000, per-frame increment
+  `GAUGE_MAX / (sum_agi / (agi + 1))` over every non-hidden battler's AGI, so
+  the field charges together and a do-nothing-restricted ally never charges —
+  replacing the earlier placeholder constants.
 - The **battle combo** (Enable Combo / 1007) is spent: the scene records the
   chosen battle command onto the Combatant (`last_battle_action`), and
   `Game::Battle#combo_hits` multiplies the hits of an attack or skill command
@@ -92,7 +95,9 @@ Behavioral notes and deliberate simplifications:
   and the model addition is additive.
 - Verification is fixture-driven: `rpg2k3_battle_gauge_check.rb` pins
   `begin_gauge_turn` (single-battler queue, gauge consumption, per-battler turn
-  bump, silent no-op turn for a restricted battler) and `rpg2k_scene_check.rb`
+  bump, silent no-op turn for a restricted battler) and the real fill curve
+  (exact increments, faster-fills-first, full-and-stays, a dead or
+  do-nothing-restricted ally never charging) and `rpg2k_scene_check.rb`
   drives real gauge battles through the 2003 scene (menu-on-own, commit →
   action → idle, ready enemy auto-fires, restricted member's silent turn, and a
   battle_type 0 fight never entering the gauge loop). The combo's model math is
@@ -103,4 +108,6 @@ Behavioral notes and deliberate simplifications:
 - Follow-ups: Wait-off (active) mode and the database wait toggle; the
   source-threading that makes `command_actor` pages satisfiable; the Special
   command handler;
-  the attacker-side back-row reach penalty; the exact RPG_RT 2003 fill curve.
+  the attacker-side back-row reach penalty; the automatic battler-placement
+  grid (`Calculate2k3BattlePosition`, whose reference source this ADR's work
+  also surfaced).
