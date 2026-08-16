@@ -7077,6 +7077,33 @@ not yet verified:
   every living ally or enemy at once) stays out of scope — this codebase's
   animation player only ever tracks a single `target_index`, and extending
   it to a full battler list is a separate, larger change.
+- ✅ **Weather Effects now clamps an RPG2003-only weather type back to none on
+  RPG2000, and clamps strength to at most 2 on every edition — both used to
+  be stored verbatim off the raw command bytes with no bound at all.**
+  Confirmed against EasyRPG's actual C++ source: `Game_Interpreter::
+  CommandWeatherEffects` (`src/game_interpreter.cpp`, code 11070) computes
+  `strength = std::min(str, 2)` unconditionally, then `if (!Player::
+  IsRPG2k3Commands() && type > 2) type = 0;` — the RPG2000 editor's own
+  dialog offers no weather type past Snow (2) at all, so a stray higher
+  value (a hex-edited event, a converted project) should clamp back to none
+  rather than linger, the same trailing-RPG2003-value gate already mined
+  repeatedly this session, just on a plain parameter instead of a trailing
+  extra one. `Interpreter#do_weather` (`mruby-rpg2k/mrblib/interpreter.rb`)
+  passed both `cmd.param(0)`/`cmd.param(1)` straight through to `Game::
+  Weather#set` with neither check — `Weather Effects [3, 2]` on an RPG2000
+  database used to set `weather.type == 3` (and keep it there through
+  Save/Continue) where real RPG_RT/EasyRPG show no weather at all, and any
+  out-of-range strength byte (`Weather Effects [1, 9]`) persisted past the
+  strongest defined level instead of clamping — the one downstream renderer
+  read (`Scene::Map`'s particle-count lookup) already clamps at draw time,
+  but the *stored*, saved state still diverged from what real RPG_RT would
+  ever hold. Fixed by mirroring both checks directly in `do_weather`.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks — an RPG2003
+  type forced to none on RPG2000, the same type kept on an actual RPG2003
+  database, and an out-of-range strength clamped to 2 — two of the three
+  confirmed to fail against the pre-fix code before the fix (the
+  RPG2003-database check already passed, since the pre-fix code applied no
+  gate on any edition).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

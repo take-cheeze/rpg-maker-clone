@@ -3194,8 +3194,18 @@ module Game
     # / tint overlays this records the Ruby-half model only — compositing the
     # rain/snow particles is native renderer work still to come — but the setting
     # is applied and persists through Save / Continue.
+    # Matches EasyRPG's `Game_Interpreter::CommandWeatherEffects`
+    # (src/game_interpreter.cpp): `strength = std::min(str, 2)` unconditionally
+    # (a stray value above 2 in the raw command bytes clamps down rather than
+    # persisting out of range), and `type` above 2 (an RPG2003-only weather
+    # type) is forced back to 0 (none) `if (!Player::IsRPG2k3Commands())` —
+    # the RPG2000 editor's own Weather Effects dialog offers no type past
+    # Snow at all, so a stray higher value should never linger on that
+    # edition.
     def do_weather(cmd)
-      @state.weather.set(cmd.param(0), cmd.param(1))
+      type = cmd.param(0)
+      type = 0 if !@state.party.rpg2003? && type > 2
+      @state.weather.set(type, [cmd.param(1), 2].min)
     end
 
     # Fade Out BGM (11520): fade the music to silence over param0
