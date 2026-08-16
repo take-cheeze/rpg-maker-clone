@@ -104,8 +104,8 @@ class RPG2k
           header,
           "#{term(:level_short, 'Lv')} #{a.level}    " \
           "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
-          "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}    " \
-          "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}",
+          "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}    " \
+          "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}",
           "#{term(:attack, 'Atk')} #{a.atk}   #{term(:defense, 'Def')} #{a.def}   " \
           "#{term(:mind, 'Int')} #{a.int}   #{term(:agility, 'Agi')} #{a.agi}",
           # The condition gets a labelled row of its own, as on RPG_RT's status

@@ -2715,9 +2715,11 @@ The work below is roughly ordered by the critical path to a walkable game
    invoking an Escape/Teleport skill warps for free and a plain weapon is
    never treated as one), confirmed to fail against the pre-fix code. See
    `changelog.d/menu-use-skill-equipment-item.fixed.md`.
-- 🚧 Save & Continue — the portable `Marshal` save of the game state
+- ✅ Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
-  menu's Save command; "Continue" reloads it. **Reading** the real
+  menu's Save command; "Continue" reloads it. (One research question remains: a
+  resumed save whose HP/MP exceeds this engine's recomputed growth curve — see
+  the display fix above — but the panel now matches RPG_RT regardless.) **Reading** the real
   `LCF::SaveData` (`.lsd`) is done (`Game::State.from_lsd`), and **writing** it is
   now done too: `Game::State#to_lsd` builds the `SAVE_DATA` chunks (system 101,
   hero 104, party actors 108, inventory 109) from live game state and
@@ -2861,16 +2863,28 @@ The work below is roughly ordered by the critical path to a walkable game
   change applied it unconditionally anyway), which was overwriting every
   such actor's correct database name with a control character and defeating
   the name-based lookup above.
-  **Left open:** that same wine comparison showed genuine RPG_RT displaying
-  デモ用's HP/MP as a clean 600/600 at level 50, where this engine's own
-  growth-curve computation for that actor caps at 245/254 — current
-  genuinely exceeding computed max here rather than test-data noise, so
-  either RPG_RT's growth-curve extrapolation past the curve's own rows
-  differs from this engine's, or the status panels should display
-  `max(current, computed_max)` rather than the raw computed max. Not chased
-  further since it needs another actor's data point to tell the two apart;
-  `scripts/rpg2k_save_load_check.rb` skips its hp/mp-within-max assertion for
-  this one actor rather than asserting either guess.
+   ✅ **A resumed save whose saved HP/MP exceeds this engine's recomputed growth
+   curve now displays correctly.** That same wine comparison showed genuine
+   RPG_RT displaying デモ用's HP/MP as a clean 600/600 at level 50, where this
+   engine's own growth-curve computation for that actor caps at 245/254 —
+   current genuinely exceeding computed max rather than test-data noise. The
+   load path already preserved the saved current (`Game::Actor`'s `hp`/`mp`
+   are the unclamped `attr_accessor`, set straight from the save), so the panel
+   read e.g. `600/245`; the displayed ceiling now uses `max(current,
+   computed_max)` instead of the raw recomputed max, so it reads `600/600` like
+   RPG_RT. `Game::Actor#display_max_hp` / `#display_max_mp` (and the
+   battle-alley `Game::Battle::Combatant` twins) provide the ceiling;
+   everywhere an HP/MP maximum is drawn — the party status row, the Item/Skill/
+   Equip/Status screens, the battle status windows and ally target list — now
+   calls them, while the genuine recomputed maximum still drives all damage /
+   heal / recalc clamping. The underlying growth-curve discrepancy is left as a
+   separate question (it would need another actor's data point to settle, since
+   it could also be RPG_RT's own extrapolation past the curve's rows differing);
+   `scripts/rpg2k_save_load_check.rb` still skips its hp/mp-within-max assertion
+   for that one actor, but the display now matches RPG_RT regardless. Covered by
+   a new `scripts/rpg2k_logic_check.rb` check (an actor whose current exceeds
+   its recomputed max reports that current as the displayed ceiling, the
+   recomputed maximum untouched, and a current below it keeps the max).
   ✅ **Change System BGM (10660) / Change System SFX (10670) overrides now
   round-trip through the `.lsd` too**, not just the portable `Marshal` save.
   `Game::State#system_bgm`/`#system_sfx` (populated by

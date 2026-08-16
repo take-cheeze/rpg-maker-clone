@@ -1318,6 +1318,16 @@ module Game
     # Hero Name screen and, once a message picks it explicitly, by Show Text.
     attr_reader :face_name, :face_index
     attr_accessor :hp, :mp
+    # The HP/MP maximum a status panel should display for this actor: the larger
+    # of the live current value and the recomputed stat maximum. A resumed real
+    # save (docs/TODO.md's "Save & Continue" entry) can carry a current HP/MP
+    # that exceeds this engine's own growth-curve figure -- RPG_RT shows the
+    # saved current as both value and ceiling, so a panel reads e.g. 600/600
+    # rather than 600/<smaller max>. Display only: it must never feed the
+    # damage/heal clamping in #change_hp / #change_mp / #recompute_stats, which
+    # keep using the genuine recomputed maximum.
+    def display_max_hp; hp && hp > max_hp ? hp : max_hp; end
+    def display_max_mp; mp && mp > max_mp ? mp : max_mp; end
     # Name and title (the status-screen subtitle) are mutable via the Change
     # Actor Name / Title event commands. `transparent` hides the actor's map
     # sprite (the Change Sprite Association transparency flag).
@@ -8408,6 +8418,12 @@ module Game
                            # through #refill_queue first.
                            :queued_no_act) do
       def dead?; hp <= 0; end
+
+      # The HP/MP ceiling a status panel should show for this combatant: the
+      # larger of the live current value and the recomputed maximum (see
+      # Game::Actor's identical helper, shared by the battle status windows).
+      def display_max_hp; hp && hp > max_hp ? hp : max_hp; end
+      def display_max_mp; mp && mp > max_mp ? mp : max_mp; end
 
       # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
       # members start nil, so the reader normalises.

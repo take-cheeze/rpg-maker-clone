@@ -6176,6 +6176,24 @@ check 'a field heal skill restores HP by the RPG2000 formula and spends SP' do
   eq 25, hero.mp                               # 30 - 5
 end
 
+check 'Actor#display_max_hp / #display_max_mp lift the shown ceiling to the live ' \
+      'current when it exceeds the recomputed max (a resumed real save)' do
+  # docs/TODO.md's "Save & Continue" entry: a resumed real RPG_RT save (Nepheshel
+  # under wine) carries an actor whose saved HP/MP exceeds this engine's own
+  # growth-curve figure, so the status panels must show the saved current as the
+  # ceiling (e.g. 600/600) rather than 600/<smaller computed max>. #display_max_*
+  # is display-only -- it must not change the genuine recomputed maximum.
+  st = skill_party({}, {})
+  hero = st.party.actor_by_id(1)
+  max = hero.max_hp
+  hero.hp = max + 100
+  eq max + 100, hero.display_max_hp, 'a current above the recomputed max lifts the shown ceiling'
+  eq max, hero.max_hp, 'the genuine recomputed max is untouched'
+  hero.hp = max - 1
+  eq max, hero.display_max_hp, 'a current below the max keeps the recomputed max'
+  eq hero.max_mp, hero.display_max_mp, 'MP is unaffected when only HP was changed'
+end
+
 check 'field_skills lists only known field-usable ally skills; can_cast? checks SP' do
   # What keeps an ordinary skill out of the field menu is its *scope* and whether
   # it does anything at all — not `occasion_field`, which RPG2000 only reads for

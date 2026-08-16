@@ -2550,9 +2550,9 @@ class RPG2k
       # condition, then the HP / SP gauges.
       def battle_status_row(b)
         hp = b.hp < 0 ? 0 : b.hp
-        [[b.name, STATUS_NAME_X, 0], battle_state_segment(b),
-         ["HP #{hp}/#{b.max_hp}", STATUS_HP_X, 0],
-         ["MP #{b.mp}/#{b.max_mp}", STATUS_MP_X, 0]]
+         [[b.name, STATUS_NAME_X, 0], battle_state_segment(b),
+          ["HP #{hp}/#{b.display_max_hp}", STATUS_HP_X, 0],
+          ["MP #{b.mp}/#{b.display_max_mp}", STATUS_MP_X, 0]]
       end
 
       # The condition column, as a status-panel segment: the same reading the
@@ -2622,8 +2622,8 @@ class RPG2k
         x += 25
         c.blt x, y, system2, Rect.new(32, 32, 16, 48)
         hp = ally.hp < 0 ? 0 : ally.hp
-        draw_gauge_system2(c, system2, fill_x, y, hp, ally.max_hp, 0)
-        draw_gauge_system2(c, system2, fill_x, y + 16, ally.mp, ally.max_mp, 1)
+        draw_gauge_system2(c, system2, fill_x, y, hp, ally.display_max_hp, 0)
+        draw_gauge_system2(c, system2, fill_x, y + 16, ally.mp, ally.display_max_mp, 1)
         num_x = 40 + 80 * i
         draw_number_system2(c, system2, num_x, y, hp)
         draw_number_system2(c, system2, num_x, y + 12 + 4, ally.mp)
@@ -2859,7 +2859,7 @@ class RPG2k
       def draw_battle_ally_target
         @ui[:ally_win].dispose if @ui[:ally_win]
         labels = battle_ally_targets.map do |a|
-          "#{a.name}  #{a.hp < 0 ? 0 : a.hp}/#{a.max_hp}"
+          "#{a.name}  #{a.hp < 0 ? 0 : a.hp}/#{a.display_max_hp}"
         end
         @ui[:ally_win] =
           battle_list_window(0, BATTLE_STATUS_W, labels, @ui[:ally_i], 335)

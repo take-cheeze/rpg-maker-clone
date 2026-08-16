@@ -234,8 +234,8 @@ class RPG2k
         a = actor
         c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  #{term(:level_short, 'Lv')} #{a.level}"
         c.draw_text 0, LINE_H, inner_w, LINE_H,
-                    "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}  " \
-                    "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
+                    "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
+                    "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
         c.draw_text 0, LINE_H * 2, inner_w, LINE_H,
                     "#{term(:attack, 'Atk')} #{a.atk}  #{term(:defense, 'Def')} #{a.def}  " \
                     "#{term(:mind, 'Int')} #{a.int}  #{term(:agility, 'Agi')} #{a.agi}"

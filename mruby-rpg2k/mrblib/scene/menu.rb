@@ -243,8 +243,8 @@ class RPG2k
           draw_actor_state sc, a, 0, y, sc.width, 14, @skin, 2
           sc.draw_text 0, y + 16, sc.width, 14,
                        "#{term(:level_short, 'Lv')} #{a.level}  " \
-                       "#{term(:hp_short, 'HP')} #{a.hp}/#{a.max_hp}  " \
-                       "#{term(:mp_short, 'MP')} #{a.mp}/#{a.max_mp}"
+                        "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
+                        "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
         end
         @status.contents = sc
         # No cursor of its own until Skill/Equip/Status hands it focus (see
