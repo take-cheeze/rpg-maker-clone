@@ -6227,6 +6227,11 @@ class RPG2k
       MSG_WIN_H = 80
       # One text row. Four rows fit in the 64px interior.
       MSG_LINE_H = 16
+      # Lines the message window shows before it paginates (the 64px interior
+      # holds exactly four 16px rows). RPG2000 keeps one window and shows the
+      # next four lines -- a "▼" appears in the corner -- when a Show Text (or a
+      # merged Show Choices) runs past this many lines.
+      MSG_LINES_PER_PAGE = 4
       # Characters revealed per frame for the message typewriter effect.
       MSG_REVEAL_SPEED = 2
       # RPG_RT unrolls the message window (and its `\$` gold window) open and
@@ -6284,6 +6289,38 @@ class RPG2k
       # message window at a time" rule (yado.tk) that already made a second
       # same-frame call from @interpreter itself no-op below now equally holds
       # off a second, different interpreter's request until this one closes.
+      # RPG2000 shows MSG_LINES_PER_PAGE text rows before paginating: a Show
+      # Text (or a Show Choices merged onto it) that runs past that many lines
+      # pages, with a "▼" marking that more follow. The reveal pauses at each
+      # page boundary (a synthetic `:page` pause, released by paging rather than
+      # dismissing) so the typewriter stops at the bottom of a page instead of
+      # clipping the rest. Returns the boundary offsets (in the reveal's
+      # revealed-character coordinates) for every page after the first that
+      # actually holds a line, plus the total page count.
+      def message_page_layout(plain)
+        off = 0
+        pauses = []
+        plain.each_with_index do |line, i|
+          off += line.to_s.length
+          if (i + 1) % MSG_LINES_PER_PAGE == 0 && i + 1 < plain.length
+            pauses << { at: off, kind: :page }
+          end
+        end
+        pages = (plain.length + MSG_LINES_PER_PAGE - 1) / MSG_LINES_PER_PAGE
+        pages = 1 if pages < 1
+        [pauses, pages]
+      end
+
+      # Cumulative visible-character length of the message's lines before index
+      # `idx`, in the same coordinates the reveal counts in, so a page slice can
+      # be revealed relative to its own start.
+      def message_line_offset(idx)
+        off = 0
+        lines = @message[:seg_lines]
+        idx.times { |i| (lines[i] || []).each { |s| off += (s[:text] || '').length } }
+        off
+      end
+
       def open_message(lines, choice, interp: @interpreter)
         if @message
           # A Show Choices that directly follows a Show Text keeps the same
@@ -6350,8 +6387,13 @@ class RPG2k
 
         contents = Bitmap.new(inner_w, inner_h)
 
+        # A message longer than one screen paginates: inject a synthetic `:page`
+        # pause at every page boundary so the typewriter stops at the bottom of
+        # a page (a "▼" marks more) until the player advances it.
+        page_pauses, pages = message_page_layout(plain)
         # Plain messages type out gradually; choice lists appear at once.
-        reveal = Game::TextReveal.new(plain, 0, pauses, auto_close, instants, speeds)
+        reveal = Game::TextReveal.new(plain, 0, pauses + page_pauses,
+                                      auto_close, instants, speeds)
         reveal.reveal_all if choice
         # `\$` shows the party's gold in a small window alongside the message.
         gold_window = nil
@@ -6362,6 +6404,7 @@ class RPG2k
         @message = { window: win, choice: choice, count: plain.length,
                      choice_start: 0, reveal: reveal, contents: contents,
                      inner_w: inner_w, seg_lines: seg_lines, interp: interp,
+                     page: 0, pages: pages, auto_close: auto_close,
                      face: build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped),
                      face_x: face_right ? inner_w - FACE_SIZE : 0,
                      text_x: text_x, text_w: text_w, gold_window: gold_window,
@@ -6420,11 +6463,18 @@ class RPG2k
         @message[:choice] = true
         @message[:count] = new_seg_lines.length
         # Choice lists appear at once, same as a standalone choice window; the
-        # text lines above are already fully revealed.
+        # text lines above are already fully revealed. A merged window that runs
+        # past one screen still paginates, so recompute the page layout and
+        # pause the reveal at each boundary (a confirm pages rather than
+        # dismissing, see #drive_message).
         plain = @message[:seg_lines].map { |segs| segs.map { |s| s[:text] }.join }
-        reveal = Game::TextReveal.new(plain)
+        page_pauses, pages = message_page_layout(plain)
+        reveal = Game::TextReveal.new(plain, 0, page_pauses,
+                                      @message[:auto_close], [], [])
         reveal.reveal_all
         @message[:reveal] = reveal
+        @message[:pages] = pages
+        @message[:page] = 0
         # Only the newly appended options -- the preceding Show Text already
         # spoke itself from #open_message.
         speak_message(new_seg_lines.map { |segs| segs.map { |s| s[:text] }.join })
@@ -6561,13 +6611,20 @@ class RPG2k
       # (Re)draw the message body showing the currently revealed characters,
       # each colour run in its own colour, laid out left to right per line. The
       # face graphic (when present) is drawn first, and text is inset past it.
+      # Only the current page's MSG_LINES_PER_PAGE rows are drawn; a "▼" marks
+      # that more pages follow.
       def draw_message_contents
         return unless @message
         c = @message[:contents]
         c.clear
         draw_message_face
-        vis = Game::Message.visible_segments(@message[:seg_lines],
-                                             @message[:reveal].revealed)
+        lines = @message[:seg_lines]
+        page = @message[:page] || 0
+        start = page * MSG_LINES_PER_PAGE
+        slice = lines[start, MSG_LINES_PER_PAGE] || []
+        rel = @message[:reveal].revealed - message_line_offset(start)
+        rel = 0 if rel < 0
+        vis = Game::Message.visible_segments(slice, rel)
         right = @message[:text_x] + @message[:text_w]
         vis.each_with_index do |segs, i|
           x = @message[:text_x]
@@ -6577,6 +6634,21 @@ class RPG2k
             x += c.text_size(seg[:text]).width
           end
         end
+        draw_message_more if page + 1 < (@message[:pages] || 1)
+      end
+
+      # RPG2000's "▼" continuation marker, drawn bottom-right of the message
+      # interior when further pages follow. A small downward triangle (not every
+      # system font carries the glyph), blinking like the keypress arrow it
+      # replaces.
+      def draw_message_more
+        return unless @message
+        c = @message[:contents]
+        return unless @anim_frame % 30 < 15
+        col = message_color(0)
+        x = c.width - 14
+        y = c.height - 9
+        7.times { |i| c.fill_rect(x + (6 - i), y + i, 2 * i + 1, 1, col) }
       end
 
       # Draw one coloured message run. When the System windowskin is present and
@@ -6657,9 +6729,28 @@ class RPG2k
       def set_choice_cursor
         return unless @message
         offset = @message[:choice_start] || 0
-        @message[:window].cursor_rect =
-          Rect.new(0, (offset + @choice_index) * MSG_LINE_H,
-                   @message[:window].contents.width, MSG_LINE_H)
+        sel = offset + @choice_index
+        page = @message[:page] || 0
+        # The cursor only shows when the selected option is on the current page;
+        # RPG2000 scrolls the choice list to keep the selection visible.
+        if sel >= page * MSG_LINES_PER_PAGE &&
+           sel < (page + 1) * MSG_LINES_PER_PAGE
+          row = sel - page * MSG_LINES_PER_PAGE
+          @message[:window].cursor_rect =
+            Rect.new(0, row * MSG_LINE_H,
+                     @message[:window].contents.width, MSG_LINE_H)
+        else
+          @message[:window].cursor_rect = Rect.new(0, 0, 0, 0)
+        end
+      end
+
+      # Page the window so the selected choice option is on screen (RPG2000
+      # scrolls the list to keep the cursor visible).
+      def page_to_choice
+        return unless @message
+        offset = @message[:choice_start] || 0
+        sel = offset + @choice_index
+        @message[:page] = sel / MSG_LINES_PER_PAGE
       end
 
       def drive_message
@@ -6674,14 +6765,32 @@ class RPG2k
         @message[:window].update
         @message[:gold_window].update if @message[:gold_window]
         if @message[:choice]
+          reveal = @message[:reveal]
+          # A merged text+choices window that runs past one screen pages its
+          # text first: while a `:page` pause is still pending, a confirm
+          # advances the page (releasing it) instead of choosing, so the options
+          # only become selectable once they are actually on screen.
+          unless reveal.done?
+            p = reveal.pending_pause
+            if p && p[:kind] == :page
+              if Input.trigger?(Input::C)
+                @message[:page] = [@message[:page] + 1, @message[:pages] - 1].min
+                reveal.release_pause
+                draw_message_contents
+              end
+              return
+            end
+          end
           if Input.trigger?(Input::DOWN)
             @choice_index += 1
             @choice_index %= @message[:count]
+            page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::UP)
             @choice_index -= 1
             @choice_index %= @message[:count]
+            page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::C)
@@ -6743,6 +6852,19 @@ class RPG2k
         fast_forward = confirm || (@parent.test_play && Input.press?(Input::SHIFT))
         unless reveal.done?
           pause = reveal.pending_pause
+          # A `:page` pause (synthetic, at a page boundary) means the current
+          # page is full and more follow: a confirm advances to the next page
+          # and releases it so that page's text starts typing, instead of
+          # dismissing the window. No keypress arrow -- the "▼" marks it.
+          if pause && pause[:kind] == :page
+            @message[:window].pause = false
+            if fast_forward
+              @message[:page] = [@message[:page] + 1, @message[:pages] - 1].min
+              reveal.release_pause
+              draw_message_contents
+            end
+            return
+          end
           # The blinking pause arrow only stands for a player-input wait
           # (`\!`, or the fully-revealed message below) -- not the timed
           # `\.` / `\|` holds, which clear on their own.

@@ -3405,6 +3405,64 @@ check 'a message types out gradually, then a button completes and dismisses it' 
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check 'a message longer than four lines paginates' do
+  scene = new_scene({})
+  # Six 4-char lines: four fit on page one, two on page two.
+  lines = %w[aaaa bbbb cccc dddd eeee ffff]
+  scene.send(:open_message, lines, false)
+  msg = scene.instance_variable_get(:@message)
+  reveal = msg[:reveal]
+  eq 2, msg[:pages], 'six lines make two pages'
+  # Reveal up to the first page boundary (the synthetic :page pause).
+  reveal.reveal_all
+  pause = reveal.pending_pause
+  ok pause && pause[:kind] == :page, 'the reveal stops at a page boundary'
+  eq 16, reveal.revealed, 'the first four 4-char lines show before paging'
+  eq 0, msg[:page], 'still on the first page'
+  # A confirm advances to the next page and releases the boundary pause.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.send(:drive_message)
+  RGSS::Input.reset
+  eq 1, msg[:page], 'confirm paged to the second page'
+  ok !reveal.pending_pause, 'no more page pauses after the last page'
+  reveal.reveal_all
+  ok reveal.done?, 'the whole message is revealed on the last page'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.send(:drive_message)
+  RGSS::Input.reset
+  ok !scene.instance_variable_get(:@message), 'the final confirm dismisses'
+end
+
+check 'a message of exactly four lines does not paginate' do
+  scene = new_scene({})
+  scene.send(:open_message, %w[aaaa bbbb cccc dddd], false)
+  msg = scene.instance_variable_get(:@message)
+  eq 1, msg[:pages], 'four lines is exactly one page'
+  reveal = msg[:reveal]
+  reveal.reveal_all
+  ok !reveal.pending_pause, 'no page pause for a single-screen message'
+end
+
+check 'a paginated message only draws the current page' do
+  scene = new_scene({})
+  lines = %w[aaaa bbbb cccc dddd eeee ffff]
+  scene.send(:open_message, lines, false)
+  msg = scene.instance_variable_get(:@message)
+  reveal = msg[:reveal]
+  reveal.reveal_all # sit on page one's boundary
+  # On page zero only the first four lines are drawn; #draw_message_contents
+  # slices the reveal to the page, so line five (index 4) is not yet shown.
+  scene.send(:draw_message_contents)
+  eq 16, reveal.revealed, 'page one holds the first four lines'
+  # Page forward and confirm the reveal point does not regress.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.send(:drive_message)
+  RGSS::Input.reset
+  eq 1, msg[:page], 'paged to two'
+  reveal.reveal_all
+  eq 24, reveal.revealed, 'page two reveals the remaining two lines'
+end
+
 check 'a Show Text keeps its window open when a Show Choices follows directly' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

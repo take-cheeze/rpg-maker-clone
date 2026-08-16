@@ -1819,7 +1819,7 @@ The work below is roughly ordered by the critical path to a walkable game
   still announces each skill on its own level's page; a skill taught early
   via Change Skills still stays quiet once the level that would have taught
   it is reached.)
-- 🚧 Message window — renders text lines and a choice cursor and expands the
+- ✅ **Message window** — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`,
   `\_` space). `\n[n]` names the **live** actor out of the roster rather than the
   database row, so a hero the player named through Enter Hero Name is called what
@@ -1946,9 +1946,29 @@ The work below is roughly ordered by the critical path to a walkable game
   checks (`Message.scan`'s clamped `:speeds` list; `TextReveal#speed_at`;
   `TextReveal#advance` revealing at a fraction of its base rate across a
   `\s[3]` span) and a new `scripts/rpg2k_scene_check.rb` check driving a real
-  `\s[4]` message through `Scene::Map` end to end, all confirmed to fail
-  against the old code, which dropped `\s[]` outright and revealed at a flat
-  rate regardless of it.
+   `\s[4]` message through `Scene::Map` end to end, all confirmed to fail
+   against the old code, which dropped `\s[]` outright and revealed at a flat
+   rate regardless of it.
+- ✅ **Long messages now paginate.** RPG2000's message window shows four 16px
+  rows (the 64px interior of the 80px-tall window); a Show Text that runs past
+  that many lines used to draw its later lines straight off the bottom of the
+  contents bitmap and clip them silently. `Scene::Map#open_message` (and
+  `#append_choice_lines` for a Show Choices merged onto a long Show Text) now
+  injects a synthetic `:page` pause into `Game::TextReveal` at every page
+  boundary (offset = cumulative visible length of each group of four lines), so
+  the typewriter stops at the bottom of a page and waits; `#draw_message_contents`
+  draws only the current page's slice (revealed relative to the page start) and
+  paints a blinking "▼" (`#draw_message_more`) when more pages follow. A confirm
+  (C/B) on a `:page` pause advances `#page` and releases it so the next page's
+  text starts typing, rather than dismissing — handled in both `#drive_text_message`
+  and the choice branch of `#drive_message`, and the choice cursor (`#set_choice_cursor`)
+  hides when the selection is off the current page and `#page_to_choice` scrolls
+  the list to keep it visible. `messages` longer than one screen thus reveal
+  page by page and dismiss only on the last. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (a six-line message makes two pages and
+  pages on confirm; exactly four lines stays single-page; the current page shows
+  only its four lines), all confirmed to fail against the pre-paging code (a
+  six-line message revealing past its fourth line with no page pause / `pages`).
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
