@@ -78,11 +78,14 @@ and CI-checked before the interpreter and assets are layered on:
   markers it writes via `sceIoWrite` — a libc-free `RPG2K_PSP_BOOT` literal
   emitted before any init, plus the per-second `RPG2K_PSP_BRINGUP` heartbeat — so
   CI verifies the EBOOT actually runs on an emulator, not just that it links.
-  PPSSPP is built from source (no stable prebuilt headless binary exists) and
-  cached by tag. The job is **non-blocking** (`continue-on-error`): PPSSPP only
-  partially HLE-implements pspsdk's libc stdio (plain `printf`/`strlen` resolve
-  to firmware stubs), so the markers deliberately avoid libc where possible, but
-  emulator capture can still be fragile; the required gate is the `psp` build.
+  PPSSPP comes from nixpkgs (`packages.ppsspp` in `flake.nix`, whose default
+  non-Qt build configures `-DHEADLESS=ON` and installs `bin/ppsspp-headless`),
+  pinned by `flake.lock` and substituted prebuilt from `cache.nixos.org` rather
+  than compiled in CI. The job is **non-blocking** (`continue-on-error`):
+  PPSSPP only partially HLE-implements pspsdk's libc stdio (plain
+  `printf`/`strlen` resolve to firmware stubs), so the markers deliberately
+  avoid libc where possible, but emulator capture can still be fragile; the
+  required gate is the `psp` build.
 
 ## Consequences
 
