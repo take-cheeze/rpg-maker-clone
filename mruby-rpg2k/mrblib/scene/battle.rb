@@ -1695,8 +1695,9 @@ class RPG2k
         id = battle_animation_id(entry)
         return false unless id && id > 0
         tx, ty, height = battle_animation_pixel(entry)
-        anim = @map.build_animation(id, tx, ty, true, target_index: entry[:target_index],
-                               target_height: height)
+        target = @map.anim_target(tx, ty, height: height, index: entry[:target_index],
+                                  flash_target: nil)
+        anim = @map.build_animation(id, [target], true)
         return false unless anim
         @map.map_animation = anim
         @map.fire_animation_flashes(anim) # frame 0 flashes, as the map path does
@@ -1755,16 +1756,52 @@ class RPG2k
       # #battle_animation_pixel's own nil-sprite branch already falls back to
       # screen-centre: RPG2000's battle draws no on-screen ally sprite to
       # target at all.
+      #
+      # A `target` of -1 is EasyRPG's "whole side" sentinel
+      # (`Game_Interpreter_Battle::CommandShowBattleAnimation`): the animation
+      # plays over every living troop member at once -- every living enemy
+      # when the ally flag is clear, or a single screen-centre animation (the
+      # same ally-side fallback above) when it is set, since RPG2000's
+      # front-view battle draws no ally sprite to point at.
       def start_battle_page_animation(req)
-        tx, ty, height =
-          if req[:allies]
-            [SCREEN_W / 2, SCREEN_H / 2, nil]
+        targets =
+          if req[:target] && req[:target] < 0
+            whole_side_anim_targets(req[:allies])
+          elsif req[:allies]
+            [@map.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
+                              flash_target: nil)]
           else
-            battle_animation_pixel(target_index: req[:target])
+            tx, ty, height = battle_animation_pixel(target_index: req[:target])
+            [@map.anim_target(tx, ty, height: height, index: req[:target],
+                              flash_target: nil)]
           end
-        target_index = req[:allies] ? nil : req[:target]
-        @map.build_animation(req[:animation], tx, ty, true, target_index: target_index,
-                             target_height: height)
+        @map.build_animation(req[:animation], targets, true)
+      end
+
+      # The target descriptors for a whole-side Show Battle Animation: one per
+      # living, on-screen troop member. Skips slots with no sprite (a hidden
+      # troop member -- #build_battle_sprites never created one) and any member
+      # now out of play (dead or fled -- its sprite is hidden, its index still
+      # present in `@ui[:enemy_sprites]`); the remaining sprites' live on-screen
+      # positions are what the animation is drawn over, and their indices are
+      # what a flash_scope-1 / screen_shaking-1 timing pulses. Ally-side
+      # animations get no on-screen sprite in RPG2000's front view, so the
+      # whole side collapses to the single screen-centre fallback.
+      def whole_side_anim_targets(allies)
+        return [@map.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
+                                 flash_target: nil)] if allies
+        sprites = @ui[:enemy_sprites] || []
+        foes = @ui[:foes] || []
+        out = []
+        sprites.each_with_index do |spr, i|
+          foe = foes[i]
+          next if spr.nil? || (foe && foe.out_of_play?)
+          bmp = spr.bitmap
+          next unless bmp
+          out << @map.anim_target(spr.x + bmp.width / 2, spr.y + bmp.height / 2,
+                                  height: bmp.height, index: i, flash_target: nil)
+        end
+        out
       end
 
       # Close out an animated round: clear the commands, drop the action banner,

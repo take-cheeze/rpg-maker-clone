@@ -5510,10 +5510,12 @@ class RPG2k
         if hold && hold > 0
           ma[:target_flash_hold] = hold - 1
         else
-          if ma[:battle]
-            @battle.clear_target_flash(ma[:target_index])
-          else
-            clear_map_target_flash(ma[:flash_target])
+          (ma[:targets] || []).each do |tgt|
+            if ma[:battle]
+              @battle.clear_target_flash(tgt[:index]) if tgt[:index]
+            else
+              clear_map_target_flash(tgt[:flash_target])
+            end
           end
         end
       end
@@ -5572,8 +5574,9 @@ class RPG2k
         # (see ANIM_MAP_TARGET_HEIGHT's own comment for why this is 24, not
         # the CharSet frame's actual 32px), so the sprite bounding box is
         # known without asking what kind of character this actually is.
-        build_animation(req[:animation], tx, ty, target_height: ANIM_MAP_TARGET_HEIGHT,
-                         flash_target: map_animation_flash_target(req[:target]))
+        target = anim_target(tx, ty, height: ANIM_MAP_TARGET_HEIGHT, index: nil,
+                             flash_target: map_animation_flash_target(req[:target]))
+        build_animation(req[:animation], [target], false)
       end
 
       # The character a map-triggered flash_scope-1 timing (see
@@ -5598,17 +5601,28 @@ class RPG2k
         end
       end
 
+      # One target descriptor for #build_animation's `targets` array: `tx`/`ty`
+      # the centre pixel the animation is drawn over, `height` the target
+      # sprite's own pixel height (for #animation_position_offset -- nil when
+      # there is no real sprite to measure, e.g. the ally-side screen-centre
+      # fallback), `index` the enemy-sprite index to flash/shake in a fight
+      # (nil for an ally / map target, which has no battle-sprite to pulse),
+      # and `flash_target` the map-character (player/event/vehicle) a
+      # flash_scope-1 timing pulses on the map path.
+      def anim_target(tx, ty, height:, index:, flash_target:)
+        { tx: tx, ty: ty, height: height, index: index, flash_target: flash_target }
+      end
+
       # The animation player itself, shared by the map's Show Battle Animation
       # command and by a battle round. `battle` says the pixel is already a
       # screen position rather than a map one, and that nothing is waiting on the
-      # animation to finish. `target_height` is the target sprite's own pixel
-      # height, when known (see #animation_position_offset) -- nil when there is
-      # no real sprite to measure (the ally-side "middle of the screen"
-      # fallback), which leaves every position setting drawing at the plain
-      # centre pixel, same as before this field existed. nil when the animation
-      # is unknown or its Battle/<name> sheet is missing.
-      def build_animation(id, tx, ty, battle = false, target_index: nil, target_height: nil,
-                          flash_target: nil)
+      # animation to finish. `targets` is an array of #anim_target descriptors
+      # -- usually one (the animation plays over a single character), but a
+      # whole-side battle animation (target < 0, EasyRPG's own
+      # `Game_Interpreter_Battle::CommandShowBattleAnimation`) passes every
+      # living ally or enemy at once, and the player draws each one in turn.
+      # nil when the animation is unknown or its Battle/<name> sheet is missing.
+      def build_animation(id, targets, battle = false, position: nil)
         anim = animation_row(id)
         return nil unless anim
         frames = table_entries(anim.frames)
@@ -5616,9 +5630,8 @@ class RPG2k
         sheet = animation_sheet(anim.animation_name)
         return nil unless sheet
         { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
-          position: (anim.position || 1), tx: tx, ty: ty, frame_i: 0,
-          timer: ANIM_CELL_FRAMES, battle: battle, target_index: target_index,
-          target_height: target_height, flash_target: flash_target }
+          position: (position || anim.position || 1), frame_i: 0,
+          timer: ANIM_CELL_FRAMES, battle: battle, targets: targets }
       end
 
       # The single choke point every battle-animation lookup goes through: a
@@ -5727,9 +5740,13 @@ class RPG2k
             ma[:screen_flash_hold] = ANIM_FLASH_FRAMES
           when 1
             if ma[:battle]
-              @battle.fire_target_flash(ma[:target_index], t)
+              (ma[:targets] || []).each do |tgt|
+                @battle.fire_target_flash(tgt[:index], t) if tgt[:index]
+              end
             else
-              fire_map_target_flash(ma[:flash_target], t)
+              (ma[:targets] || []).each do |tgt|
+                fire_map_target_flash(tgt[:flash_target], t)
+              end
             end
             # #hold_animation_target_flash keeps re-asserting this fire (and,
             # once it lapses, forcibly clearing the target's flash outright)
@@ -5752,7 +5769,11 @@ class RPG2k
             # Animation path) is a genuine empty no-op in EasyRPG's real
             # source, not a dropped feature -- so this only ever fires in
             # battle, matching #fire_target_shake's own battle-only scope.
-            @battle.fire_target_shake(ma[:target_index]) if ma[:battle]
+            if ma[:battle]
+              (ma[:targets] || []).each do |tgt|
+                @battle.fire_target_shake(tgt[:index]) if tgt[:index]
+              end
+            end
           end
         end
       end
@@ -5833,13 +5854,17 @@ class RPG2k
         frame = ma[:frames][ma[:frame_i]]
         return unless frame
         # A map animation is placed in map pixels and follows the camera; a
-        # battle one is already where it belongs on screen.
-        cx = ma[:battle] ? ma[:tx] : ma[:tx] - cam_x + TILE / 2
-        cy = (ma[:battle] ? ma[:ty] : ma[:ty] - cam_y + TILE / 2) +
-             animation_position_offset(ma)
-        table_entries(frame.cells).each do |cell|
-          next if cell.respond_to?(:visible) && cell.visible == false
-          blit_animation_cell(ma[:sheet], cell, cx, cy)
+        # battle one is already where it belongs on screen. A whole-side
+        # animation carries several target descriptors, so the frame is drawn
+        # over each in turn.
+        (ma[:targets] || []).each do |tgt|
+          cx = ma[:battle] ? tgt[:tx] : tgt[:tx] - cam_x + TILE / 2
+          cy = (ma[:battle] ? tgt[:ty] : tgt[:ty] - cam_y + TILE / 2) +
+               animation_position_offset(tgt, ma[:position])
+          table_entries(frame.cells).each do |cell|
+            next if cell.respond_to?(:visible) && cell.visible == false
+            blit_animation_cell(ma[:sheet], cell, cx, cy)
+          end
         end
       end
 
@@ -5861,10 +5886,10 @@ class RPG2k
       # RPG_RT itself draws at is still approximate pending a wine diff, the
       # same status the message window's own relocation zone boundary has
       # above.
-      def animation_position_offset(ma)
-        h = ma[:target_height]
+      def animation_position_offset(tgt, position)
+        h = tgt[:height]
         return 0 unless h
-        case ma[:position]
+        case position
         when 0 then -(h / 2) # head: half the sprite's height above centre
         when 2 then h / 2    # feet: half the sprite's height below centre
         else 0
@@ -7246,7 +7271,7 @@ class RPG2k
       # cross-object call -- only reaches a public method.
       public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
              :terrain_backdrop, :map_properties, :perform_game_over,
-             :try_open_debug_menu, :build_animation, :drive_map_animation,
+              :try_open_debug_menu, :build_animation, :anim_target, :drive_map_animation,
              :fire_animation_flashes, :frames_from_tenths, :load_face_bitmap,
              :step_map_animation, :close_battle
 
