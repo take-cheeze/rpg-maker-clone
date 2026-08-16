@@ -7133,6 +7133,54 @@ not yet verified:
   RPG2003 one still correctly reads inactive, since the runtime cannot
   answer it yet — the RPG2000 case confirmed to fail against the pre-fix
   code before the fix.
+- ✅ **RPG2003's "Death Handler" is now implemented: a wandering-monster
+  encounter's party wipe runs a common event and/or teleports the party
+  instead of always forcing the ordinary Game Over screen, when the
+  database's own `System > Battle Commands > Death Handler` setting is
+  active.** Confirmed against EasyRPG's actual C++ source:
+  `Game_Battle::HasDeathHandler`/`GetDeathHandlerCommonEvent`/
+  `GetDeathHandlerTeleport` (`src/game_battle.cpp`) gate all three on
+  `Player::IsRPG2k3() && db.death_handler`, and `Game_Map::OnEncounterEnd`
+  (`src/game_map.cpp`) — the callback `Game_Map::PrepareEncounter` wires
+  specifically for a *random* encounter, not the scripted Battle Processing
+  command — pushes `Game_Battle::GetDeathHandlerCommonEvent()` as a common
+  event on defeat, then reserves `GetDeathHandlerTeleport()`'s teleport,
+  instead of pushing `Scene_Gameover` when no death handler is active.
+  `Interpreter#start_random_battle` (`mruby-rpg2k/mrblib/interpreter.rb`)
+  hardcoded `defeat_game_over: true` unconditionally — a wandering
+  encounter's party wipe always ended the game outright, regardless of the
+  database setting, a complete divergence for any project using this
+  well-documented RPG2003 feature. A scripted Enemy Encounter command's own
+  `defeat_game_over: cmd.param(4) == 0` (its own [Defeat] handler) was
+  already correct and untouched by this fix — the death handler applies to
+  random encounters only. Fixed by adding `battlecommands` schema fields
+  15/16/25-29 (`death_handler`/`death_event`/`death_teleport`/
+  `death_teleport_id`/`_x`/`_y`/`_face` — confirmed against liblcf's own
+  `generator/csv/fields.csv`, not guessed) and `Game::Party#death_handler?`/
+  `#death_handler_event`/`#death_handler_teleport`
+  (`mruby-rpg2k/mrblib/game.rb`), mirroring the three EasyRPG functions
+  exactly; `start_random_battle` now computes `defeat_game_over:
+  !party.death_handler?` and marks the request `random: true` so
+  `Scene::Battle#finish_battle` can tell a wandering encounter apart from a
+  scripted one. A new `Interpreter#start_death_handler` runs the death
+  event's own commands the same way Call Event does, then appends the
+  configured teleport as a trailing synthetic Teleport command so it plays
+  through the ordinary `#do_teleport` machinery once those commands (if
+  any) finish — `death_teleport_face` turned out to follow the exact same
+  1-based up/right/down/left-with-0-meaning-"keep the current facing"
+  layout as the Teleport command's own facing parameter (liblcf's
+  `BattleCommands_Facing` enum, `generator/csv/enums.csv`), so
+  `Interpreter#teleport_facing` converts it unchanged. Covered by four new
+  `scripts/rpg2k_logic_check.rb` checks — an active Death Handler clears
+  the game-over flag on `start_random_battle`, an inactive one (RPG2000 or
+  an RPG2003 database with the bit unset) still sets it, `start_death_handler`
+  runs the death event's commands then arms the `:teleport` wait with the
+  Death Handler's own map/x/y/facing, and a Death Handler with neither a
+  resolvable event nor a configured teleport is a no-op — three of the four
+  confirmed to fail against the pre-fix code before the fix (the
+  inactive-handler check already passed, matching the previous hardcoded
+  behaviour). `ninja -C build test` (mruby-lcf's own `lcf_test.rb`) also run
+  and passing, since this fix touches `schema.rb`.
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**

@@ -3424,7 +3424,19 @@ FakeBattleCommandsTable = Struct.new(:commands, :battle_type,
                                      # as everywhere else in this file: nil
                                      # reads as manual, matching the schema
                                      # default.
-                                     :placement)
+                                     :placement,
+                                     # RPG2003's Death Handler (chunk 29
+                                     # fields 0x0F/0x10/0x19-0x1D --
+                                     # Game::Party#death_handler?/
+                                     # #death_handler_event/
+                                     # #death_handler_teleport's own source).
+                                     # Appended last, same reasoning as
+                                     # `placement` above: nil/false reads as
+                                     # "no death handler", matching the
+                                     # schema defaults.
+                                     :death_handler, :death_event, :death_teleport,
+                                     :death_teleport_id, :death_teleport_x,
+                                     :death_teleport_y, :death_teleport_face)
 FakeBattleCommand = Struct.new(:name, :type)
 # A `db.battleranimations[id]` entry (chunk 32): a name plus a poses hash
 # keyed by Pose id (0 idle, matching schema.rb's own comment on the chunk).
@@ -9171,6 +9183,65 @@ check 'a random encounter reports and skips a missing troop id without arming th
   ok capture_stderr { it.start_random_battle(1) }.empty?, 'an existing troop id logs nothing'
   ok it.waiting?
   eq :battle, it.wait_kind
+end
+
+# Ports EasyRPG's own `Game_Battle::HasDeathHandler`/
+# `GetDeathHandlerCommonEvent`/`GetDeathHandlerTeleport` (src/game_battle.cpp):
+# `Player::IsRPG2k3() && db.death_handler` gates all three. A scripted Battle
+# Processing command's own [Defeat] handler (`defeat_game_over: cmd.param(4)
+# == 0`, above) is unaffected either way -- this only changes a *random*
+# encounter's own hardcoded "a wipe is always game over" default.
+check 'a random encounter with an active RPG2003 Death Handler is not marked game-over' do
+  table = FakeBattleCommandsTable.new({}, 0, 0, true, 5, true, 3, 10, 20, 2)
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], rpg2003: true, battlecommands: table)
+  it = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
+  it.start_random_battle(1)
+  eq false, it.battle_request[:defeat_game_over]
+  eq true, it.battle_request[:random]
+end
+
+check 'a random encounter is still marked game-over without an active Death Handler' do
+  # RPG2000 (rpg2003: false) with no battlecommands table at all, and RPG2003
+  # with a battlecommands table whose death_handler bit is unset, both read
+  # the same as before this fix.
+  it = Game::Interpreter.new(party_state)
+  it.start_random_battle(1)
+  eq true, it.battle_request[:defeat_game_over]
+
+  table = FakeBattleCommandsTable.new({}, 0, 0, false)
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], rpg2003: true, battlecommands: table)
+  it2 = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
+  it2.start_random_battle(1)
+  eq true, it2.battle_request[:defeat_game_over]
+end
+
+check 'Interpreter#start_death_handler runs the death event then a synthetic Teleport' do
+  common = { 5 => [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0], indent: 0)] }
+  table = FakeBattleCommandsTable.new({}, 0, 0, true, 5, true, 3, 10, 20, 2)
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], rpg2003: true, battlecommands: table)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: common)
+  it.start_death_handler
+  it.update
+  eq true, st.switches[9], 'the death event\'s own commands ran'
+  ok it.waiting?, 'the trailing synthetic Teleport armed the :teleport wait'
+  eq :teleport, it.wait_kind
+  eq [3, 10, 20, 6], it.teleport,
+     'map/x/y from the Death Handler fields, facing 2 (right) converted to numpad 6'
+end
+
+check 'Interpreter#start_death_handler is a no-op with neither an event nor a teleport configured' do
+  table = FakeBattleCommandsTable.new({}, 0, 0, true, 0, false)
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], rpg2003: true, battlecommands: table)
+  it = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
+  it.start_death_handler
+  ok !it.waiting?
+  ok !it.running?
 end
 
 # -- Battle (headless auto-battle) --------------------------------------------

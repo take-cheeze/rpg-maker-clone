@@ -1994,6 +1994,15 @@ class RPG2k
       # Process's own interpreter, see Scene::Map#drive_battle), captured before
       # #dispose clears @ui out from under it (via Scene::Map#close_battle,
       # which drops the map's own @battle reference too).
+      #
+      # A random encounter's wipe with an active RPG2003 Death Handler
+      # (`@req[:random]` and `!@req[:defeat_game_over]`, see Interpreter
+      # #start_random_battle) is neither of those two outcomes: it skips the
+      # Game Over screen the way any other non-"game over" defeat does, but
+      # then runs the death handler itself (Interpreter#start_death_handler)
+      # in place of the ordinary "resume the event that opened this" a
+      # scripted encounter's own [Defeat] handler would get -- a random
+      # encounter has no such event to resume into.
       def finish_battle(result)
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
@@ -2007,6 +2016,8 @@ class RPG2k
         # party knocked out ends the game; every other outcome resumes the event.
         game_over = result == :defeat && @req[:defeat_game_over] &&
                     @state.party.all_dead?
+        death_handler = result == :defeat && @req[:random] &&
+                        !@req[:defeat_game_over] && @state.party.all_dead?
         owner = @owner
         @map.close_battle
         if game_over
@@ -2014,6 +2025,7 @@ class RPG2k
         else
           @map.restore_pre_battle_bgm
           owner.resume_battle(result)
+          owner.start_death_handler if death_handler
         end
       end
 
