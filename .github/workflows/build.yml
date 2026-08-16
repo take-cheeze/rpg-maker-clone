@@ -51,6 +51,10 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: nix-${{ runner.os }}-
+        # Network-bound (talks to the GitHub Actions cache service): bound it
+        # so a stalled cache backend can't silently eat the job's whole budget
+        # instead of surfacing as a clear timeout.
+        timeout-minutes: 15
         background: true
       - name: cache rtp
         uses: actions/cache@v6
@@ -59,6 +63,8 @@ jobs:
           path: scripts/*.zip
           key: rtp-${{ hashFiles('./scripts/rtp*_install.bash') }}
           restore-keys: rtp-
+        # Network-bound cache restore; see "Restore and cache Nix store" above.
+        timeout-minutes: 10
         background: true
       - name: cache test game
         uses: actions/cache@v6
@@ -66,6 +72,8 @@ jobs:
         with:
           path: data
           key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './scripts/gen-sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
+        # Network-bound cache restore; see "Restore and cache Nix store" above.
+        timeout-minutes: 10
         background: true
 
       - run: git config --global submodule.fetchJobs 4
@@ -116,6 +124,7 @@ jobs:
       - name: Download RTP
         id: dl-rtp
         background: true
+        timeout-minutes: 10
         run: |
           ./scripts/rtp_install.bash
           ./scripts/rtp_xp_install.bash
@@ -123,6 +132,7 @@ jobs:
       - name: Download game
         id: dl-game
         background: true
+        timeout-minutes: 15
         run: |
           ./scripts/download-nepheshel.bash
           ./scripts/download-mtf-meido-action.bash
@@ -133,16 +143,19 @@ jobs:
       - name: Download MV test game
         id: dl-mv
         background: true
+        timeout-minutes: 10
         run: ./scripts/download-lunatic-core.bash
 
       - name: Build MV sample engine
         id: dl-mv-sample
         background: true
+        timeout-minutes: 10
         run: ./scripts/download-mv-corescript.bash
 
       - name: Fetch MZ corescript
         id: dl-mz-sample
         background: true
+        timeout-minutes: 10
         run: ./scripts/download-mz-corescript.bash
 
       # MIDI instrument patches for SDL_mixer's TiMidity synth. Not committed
@@ -151,6 +164,7 @@ jobs:
       - name: Download MIDI patches
         id: dl-freepats
         background: true
+        timeout-minutes: 10
         run: ./scripts/download-freepats.bash
 
       # The fallback UI font for projects that ship none. Not committed
@@ -159,6 +173,7 @@ jobs:
       - name: Download default font
         id: dl-default-font
         background: true
+        timeout-minutes: 5
         run: ./scripts/download-default-font.bash
 
       - name: pre-commit
@@ -753,6 +768,7 @@ jobs:
           key: game-${{ hashFiles('./scripts/download-*.bash', './scripts/gen-mv-sample.py', './scripts/gen-sample-font.py', './data/mv-sample/data/**', './data/mv-sample/img/**', './data/mv-sample/audio/**', './data/mv-sample/fonts/**', './data/mv-sample/js/main.js', './data/mv-sample/js/plugins.js', './data/mv-sample/index.html', './scripts/gen-mz-sample.py', './data/mz-sample/data/**', './data/mz-sample/img/**', './data/mz-sample/audio/**', './data/mz-sample/fonts/**', './data/mz-sample/js/plugins.js', './data/mz-sample/index.html') }}
 
       - name: Download game
+        timeout-minutes: 15
         run: |
           ./scripts/download-nepheshel.bash
           ./scripts/download-mtf-meido-action.bash
@@ -962,6 +978,7 @@ jobs:
       - name: Build MV sample engine
         id: mv-sample
         background: true
+        timeout-minutes: 10
         run: ./scripts/download-mv-corescript.bash
 
       # Instrument samples for the TiMidity decoder the port is built with
@@ -971,6 +988,7 @@ jobs:
       - name: Download MIDI patches
         id: freepats
         background: true
+        timeout-minutes: 10
         run: ./scripts/download-freepats.bash
 
       # The fallback UI font, packaged into index.data at link time by
@@ -980,6 +998,7 @@ jobs:
       - name: Download default font
         id: default-font
         background: true
+        timeout-minutes: 5
         run: ./scripts/download-default-font.bash
 
       - uses: actions/cache@v6
