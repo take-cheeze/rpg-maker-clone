@@ -644,7 +644,27 @@ class RPG2k
         spr = Sprite.new
         spr.bitmap = bmp
         spr.z = 5
+        # The map layer the screen tone rides on is hidden for the fight, so
+        # seed the backdrop with the live map tone -- otherwise a Tint Screen
+        # already active when the encounter opened would reach the (hidden)
+        # map and not the one element on screen until the tint next changes.
+        # #update_map_tone keeps it in lockstep thereafter.
+        spr.tone = @map.current_map_tone if @map.respond_to?(:current_map_tone)
         @ui[:back_sprite] = spr
+      end
+
+      # Mirror the map layer's screen tone onto the battle backdrop. The
+      # backdrop is a top-level sprite, not a child of the toned
+      # @map_viewport, so a Change Screen Tone active during a fight would
+      # otherwise only reach the (hidden) map and skip the one element on
+      # screen. RPG_RT tints the battle background under a Tint Screen;
+      # EasyRPG Player's Spriteset_Battle::Update confirms it
+      # (`background->SetTone(game_screen->GetTone())`), so #update_map_tone
+      # calls this whenever the tint changes and #build_battle_back seeds it
+      # on build.
+      def apply_backdrop_tone(tone)
+        spr = @ui[:back_sprite]
+        spr.tone = tone if spr
       end
 
       # The battle backdrop: the Backdrop/<name> image a Change Battle Background

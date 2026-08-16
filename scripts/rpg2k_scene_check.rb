@@ -129,7 +129,7 @@ module RGSS
   Tone = Struct.new(:red, :green, :blue, :gray)
 
   class Sprite
-    attr_accessor :bitmap, :x, :y, :z, :visible, :opacity, :src_rect
+    attr_accessor :bitmap, :x, :y, :z, :visible, :opacity, :src_rect, :tone
     # Which viewport the sprite was built in, so the tone checks can assert that
     # the map layers share one and the overlays do not.
     attr_reader :viewport
@@ -5253,6 +5253,30 @@ check 'an untinted picture skips the tone pass entirely' do
   scene.update
   eq 0, scene.instance_variable_get(:@picture_tone_cache).size,
      'a neutral tone costs no work'
+end
+
+check 'battle backdrop receives the screen tone under a Tint Screen' do
+  scene = new_scene({})
+  back = RGSS::Sprite.new
+  fake_battle(scene, back_sprite: back)
+  # A non-default tint, applied twice so the "unchanged tint" early-return in
+  # #update_map_tone does not skip the push to the backdrop.
+  tint = [120, 80, 100, 100]
+  scene.send(:update_map_tone, tint)
+  scene.send(:update_map_tone, tint)
+  eq scene.send(:current_map_tone), back.tone,
+     'the live battle backdrop carries the map layer tone'
+  # And a mid-fight tint change is tracked onto the backdrop too.
+  tint2 = [80, 120, 100, 100]
+  scene.send(:update_map_tone, tint2)
+  eq scene.send(:current_map_tone), back.tone,
+     'a tint change during the fight re-tints the backdrop'
+  # The push is gated on @battle: with the fight closed, a tint change still
+  # updates the map layer but leaves a (now-detached) backdrop untouched.
+  expected = back.tone
+  scene.instance_variable_set(:@battle, nil)
+  scene.send(:update_map_tone, [100, 100, 100, 100])
+  eq expected, back.tone, 'no fight open means no backdrop re-tint'
 end
 
 check 'a picture saturation below neutral desaturates' do

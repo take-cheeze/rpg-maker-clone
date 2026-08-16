@@ -1524,10 +1524,23 @@ The work below is roughly ordered by the critical path to a walkable game
   below) — with both back on the first frame after `@battle_ui` clears. The
   in-battle Show Battle Animation is deliberately *not* gated with them: it
   renders through `@animation_sprite`, a top-level sprite at z 150 (above the
-  battlers, below the pictures), not through either map viewport. Still open,
-  and a separate question: Change Screen Tone rides on `@map_viewport`'s tone,
-  so it reaches the map and not the backdrop — whether RPG_RT tints the battle
-  background needs a wine diff before anything is changed.
+  battlers, below the pictures), not through either map viewport.
+- ✅ **Change Screen Tone now reaches the battle backdrop too.** The battle
+  backdrop (`Scene::Battle`'s `@ui[:back_sprite]`, a top-level sprite at z 5)
+  rides none of the toned viewports, so a Tint Screen active during a fight
+  reached only the (hidden) map layer and skipped the one element actually on
+  screen. `Scene::Map#update_map_tone` now pushes the same tone it puts on
+  `@map_viewport` onto the live backdrop every time the tint changes
+  (`@battle.apply_backdrop_tone`), and `Scene::Battle#build_battle_back`
+  seeds the freshly built sprite from `Scene::Map#current_map_tone` so a tint
+  already active when the encounter opens is covered too. The open question
+  the old TODO flagged — whether RPG_RT tints the battle background — is
+  answered by EasyRPG Player's own `Spriteset_Battle::Update`, which does
+  `background->SetTone(Main_Data::game_screen->GetTone())`: the battle
+  background is tinted, so this port now matches. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check that drives a Tint Screen through
+  `#update_map_tone` with a fight open and asserts the backdrop tone tracks
+  the map layer (and is left alone once the fight is closed).
   **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
   than only ever attacking — the single biggest silent gap left in the battle
   system, since **510 of the 959 enemy actions across the two test beds are
