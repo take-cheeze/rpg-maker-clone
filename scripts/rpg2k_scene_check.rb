@@ -10042,6 +10042,39 @@ check 'neither flag set leaves the title screen waiting for input' do
   ok !scene.send(:auto_select?), 'no auto-select without a flag'
 end
 
+# -- --rpg2k_preview_map (map preview, see README.md's "Map exploration") ----
+#
+# RPG2k#preview_map_id reads the RPG2K_PREVIEW_MAP constant main.cxx sets from
+# the flag (0 = unset, since map ids start at 1); Scene::Title#auto_new_game?
+# then also fires on it, exactly like --rpg2k_new_game, so a preview needs
+# only the one flag. #start_new_game itself (which loads the chosen map and
+# centres the party on it) needs a real database and .lmu, so it is only
+# exercised by the native boot check against real game data -- these two pin
+# just the flag plumbing, in CRuby, without either.
+check 'RPG2k#preview_map_id reads RPG2K_PREVIEW_MAP, 0 meaning unset' do
+  read = lambda do |v|
+    Object.send(:remove_const, :RPG2K_PREVIEW_MAP) if Object.const_defined?(:RPG2K_PREVIEW_MAP)
+    Object.const_set(:RPG2K_PREVIEW_MAP, v) unless v.nil?
+    RPG2k.allocate.send(:preview_map_id)
+  end
+  eq nil, read.call(nil), 'undefined constant (the CRuby-only checks) -> nil'
+  eq nil, read.call(0), '0, the flag default -> nil'
+  eq 7, read.call(7)
+  Object.send(:remove_const, :RPG2K_PREVIEW_MAP) if Object.const_defined?(:RPG2K_PREVIEW_MAP)
+end
+
+check '--rpg2k_preview_map auto-selects New Game, like --rpg2k_new_game' do
+  clear_title_flags
+  parent = Struct.new(:preview_map_id).new(7)
+  scene = RPG2k::Scene::Title.allocate
+  scene.instance_variable_set(:@auto_started, false)
+  scene.instance_variable_set(:@selected_index, 0)
+  scene.instance_variable_set(:@parent, parent)
+  ok scene.send(:auto_select?), 'the first frame fires the auto-select'
+  eq 0, scene.instance_variable_get(:@selected_index), 'New Game is entry 1'
+  ok !scene.send(:auto_select?), 'it does not fire again on the next frame'
+end
+
 # -- RPG_RT.exe legacy CLI arg: HideTitle --------------------------------------
 #
 # RPG_RT.exe (and the RPG2000/2003 editor's own Test Play button) is launched
