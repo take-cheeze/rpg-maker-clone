@@ -1566,17 +1566,25 @@ module Game
 
     # Cure a status condition. Removing the death state revives a downed actor
     # with 1 HP (RPG2000's revive floor); returns the removed id or nil.
+    # Refuses a state #permanent_states names -- RPG2003 cursed armor
+    # currently forcing it -- the same way EasyRPG's `State::Remove`
+    # (src/state.cpp) does: `if (ps.Has(state_id)) return false;`.
     def remove_state(state_id)
+      return nil if permanent_states.include?(state_id)
       removed = @states.delete(state_id)
       @hp = 1 if removed == DEATH_STATE && @hp <= 0
       removed
     end
 
     # Cure every status condition (RPG2000 Full Recovery clears them). If the
-    # actor was down, curing the death state revives it with 1 HP.
+    # actor was down, curing the death state revives it with 1 HP. Leaves any
+    # #permanent_states id in place, matching `State::RemoveAll`
+    # (src/state.cpp): each id is only ever cleared through the same
+    # permanent-states-respecting `State::Remove` every other cure path uses.
     def clear_states
-      revive = @hp <= 0 && @states.include?(DEATH_STATE)
-      @states = []
+      perm = permanent_states
+      revive = @hp <= 0 && @states.include?(DEATH_STATE) && !perm.include?(DEATH_STATE)
+      @states = @states.select { |s| perm.include?(s) }
       @hp = 1 if revive && @hp <= 0
     end
 
@@ -1595,15 +1603,16 @@ module Game
     # `@states` afterward with the save's own authoritative list anyway, so
     # this only matters for a future bulk-equip caller that does not.
     def equip(ids)
+      old_equipment = @equipment
       new_equipment = normalize_equipment(ids)
+      @equipment = new_equipment
       EQUIP_ORDER.size.times do |slot|
-        old_id = @equipment[slot]
+        old_id = old_equipment[slot]
         new_id = new_equipment[slot]
         next if old_id == new_id
         adjust_equipment_states(old_id, false)
         adjust_equipment_states(new_id, true)
       end
-      @equipment = new_equipment
       recompute_stats
     end
 
@@ -1681,11 +1690,13 @@ module Game
     # command's remove operation.
     def unequip(slot)
       if slot == EQUIP_ORDER.size
-        @equipment.each { |id| adjust_equipment_states(id, false) }
+        old_equipment = @equipment
         @equipment = EQUIP_ORDER.map { 0 }
+        old_equipment.each { |id| adjust_equipment_states(id, false) }
       elsif slot >= 0 && slot < EQUIP_ORDER.size
-        adjust_equipment_states(@equipment[slot], false)
+        old_id = @equipment[slot]
         @equipment[slot] = 0
+        adjust_equipment_states(old_id, false)
       else
         return
       end
@@ -1775,35 +1786,62 @@ module Game
       @db.respond_to?(:rpg2003?) && @db.rpg2003?
     end
 
-    # RPG2003's "cursed"/forced-state armor (a shield/armor/helmet/accessory
-    # item whose `reverse_state_effect` flag is set): equipping or
-    # unequipping it inflicts or cures every state its own `state_set`
-    # marks, matching EasyRPG's `Game_Actor::AdjustEquipmentStates`
-    # (src/game_actor.cpp), called from every equip-mutation path there
-    # (`SetEquipment`, in turn `ChangeEquipment`). `IsArmorType` there
-    # covers the same four item types `Party::ITEM_SHIELD/ARMOR/HELMET/
-    # ACCESSORY` already name for the identical distinction elsewhere in
-    # this file (see e.g. #defensive_attribute_ids below) -- weapons never
-    # carry a state_set in the editor and are excluded the same way. A
-    # non-RPG2003 database, an unknown/absent item id, a non-armor item, or
-    # one with the flag unset is a no-op, matching real RPG_RT. The
-    # separate "this state can't be healed by ordinary means while the
-    # armor stays equipped" rule (EasyRPG's own `GetPermanentStates`) is
-    # not implemented here; this only ports the inflict/cure-on-equip-
-    # change half.
-    def adjust_equipment_states(item_id, add)
-      return unless rpg2003?
-      return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
+    # RPG2003's "cursed"/forced-state armor rule (a shield/armor/helmet/
+    # accessory item whose `reverse_state_effect` flag is set): the state
+    # ids `item_id`'s own `state_set` marks, or [] when the rule doesn't
+    # apply at all -- a non-RPG2003 database, an unknown/absent item id, a
+    # non-armor item (weapons never carry a state_set in the editor), or
+    # one with the flag unset. Shared by #adjust_equipment_states and
+    # #permanent_states below, matching how EasyRPG's own `IsArmorType`
+    # test (src/game_actor.cpp) backs both `AdjustEquipmentStates` and
+    # `GetPermanentStates`. `Party::ITEM_SHIELD/ARMOR/HELMET/ACCESSORY`
+    # name the same four item types `IsArmorType` covers, already used
+    # elsewhere in this file for the identical distinction (see e.g.
+    # #defensive_attribute_ids below).
+    def cursed_armor_state_ids(item_id)
+      return [] unless rpg2003?
+      return [] if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
       it = @db.item[item_id]
-      return unless it
-      return unless [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
-                     Party::ITEM_ACCESSORY].include?(it.type)
-      return unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
-      return unless it.respond_to?(:state_set) && it.state_set
-      it.state_set.each_with_index do |set, i|
-        next unless set && set != 0
-        add ? add_state(i + 1) : remove_state(i + 1)
-      end
+      return [] unless it
+      return [] unless [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
+                        Party::ITEM_ACCESSORY].include?(it.type)
+      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+      return [] unless it.respond_to?(:state_set) && it.state_set
+      ids = []
+      it.state_set.each_with_index { |set, i| ids << (i + 1) if set && set != 0 }
+      ids
+    end
+
+    # Equipping or unequipping RPG2003 cursed armor inflicts or cures every
+    # state #cursed_armor_state_ids names for it, matching EasyRPG's
+    # `Game_Actor::AdjustEquipmentStates` (src/game_actor.cpp), called from
+    # every equip-mutation path there (`SetEquipment`, in turn
+    # `ChangeEquipment`). #equip_item/#unequip/#equip below each write
+    # `@equipment` *before* calling this, the same order `SetEquipment`
+    # itself uses (`data.equipped[...] = new_item_id;` precedes both
+    # `AdjustEquipmentStates` calls) -- #permanent_states, consulted by
+    # #remove_state/#clear_states below, reads `@equipment` live, so
+    # unequipping a cursed item has to stop counting it *before* this then
+    # tries to cure the very state it inflicted, or the cure would refuse
+    # itself.
+    def adjust_equipment_states(item_id, add)
+      cursed_armor_state_ids(item_id).each { |id| add ? add_state(id) : remove_state(id) }
+    end
+
+    # The states an actor's currently-equipped cursed armor (see
+    # #cursed_armor_state_ids) is forcing on right now, matching EasyRPG's
+    # `Game_Actor::GetPermanentStates` (src/game_actor.cpp) -- scanned off
+    # every equipment slot the same way `GetShield`/`GetArmor`/`GetHelmet`/
+    # `GetAccessory` are there (the weapon slot always reads [] anyway,
+    # since #cursed_armor_state_ids excludes `Type_weapon`). #remove_state
+    # and #clear_states consult this so real RPG_RT's own rule holds here
+    # too: an Antidote, a curative skill, Full Recovery, or the Change
+    # Condition event command all fail to cure a state a worn cursed item
+    # is still actively forcing -- only taking the armor off actually
+    # clears it.
+    def permanent_states
+      return [] unless rpg2003?
+      @equipment.flat_map { |id| cursed_armor_state_ids(id) }.uniq
     end
 
     # The effective max HP ceiling #recompute_stats clamps against --
