@@ -3237,20 +3237,25 @@ FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost
                        # affect_attr_defence above -- see
                        # Game::Party#skill_stat_mod_keys / Game::Battle#
                        # apply_stat_mods. Appended last, for the same reason.
-                       :affect_attack, :affect_defense, :affect_spirit,
-                       :affect_agility)
+                        :affect_attack, :affect_defense, :affect_spirit,
+                        :affect_agility,
+                        # "physical" failure message flag (schema field 7, the
+                        # bit CalcSkillToHit reads to pick the agility-adjusted
+                        # physical hit formula for an enemy-scope skill).
+                        :failure_message)
 def fake_skill(name: '', type: 0, scope: 3, occ: true, sp_type: 0, sp_cost: 0,
                sp_percent: 0, power: 0, prate: 0, mrate: 0, hp: false, sp: false,
                occ_battle: true, state_effects: nil, reverse_state: false, hit: 100,
                variance: 4, attribute_effects: nil, switch_id: 1,
                ignore_defense: false, affect_attr_defence: false,
-               affect_attack: false, affect_defense: false,
-               affect_spirit: false, affect_agility: false)
+                affect_attack: false, affect_defense: false,
+                affect_spirit: false, affect_agility: false,
+                failure_message: 0)
   FakeSkill.new(name, type, scope, occ, sp_type, sp_cost, sp_percent, power,
-                prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
-                variance, attribute_effects, switch_id, ignore_defense,
-                affect_attr_defence, affect_attack, affect_defense,
-                affect_spirit, affect_agility)
+                 prate, mrate, hp, sp, occ_battle, state_effects, reverse_state, hit,
+                 variance, attribute_effects, switch_id, ignore_defense,
+                 affect_attr_defence, affect_attack, affect_defense,
+                 affect_spirit, affect_agility, failure_message)
 end
 # A state-definition lookup for the battle: id -> a row the sim reads for its
 # per-turn slip damage (hp/sp change), action restriction and auto-recovery.
@@ -5773,16 +5778,16 @@ end
 
 # A two-actor party (Hero atk 10 / spirit 12 / max SP 30, Ally max HP 50) plus
 # the given skill table, for the field-skill checks.
-def skill_party(skills, items = {}, rpg2003: false)
-  players = {
-    1 => FakePlayerRow.new('Hero', '', 0, 5,
-                           max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
-    2 => FakePlayerRow.new('Ally', '', 0, 3,
-                           max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6),
-  }
-  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items, skills,
-                                                   rpg2003: rpg2003)), 1, 0, 0)
-end
+ def skill_party(skills, items = {}, rpg2003: false, situation: nil)
+   players = {
+     1 => FakePlayerRow.new('Hero', '', 0, 5,
+                            max_hp: 100, max_mp: 30, atk: 10, def: 8, int: 12, agi: 7),
+     2 => FakePlayerRow.new('Ally', '', 0, 3,
+                            max_hp: 50, max_mp: 20, atk: 6, def: 5, int: 4, agi: 6),
+   }
+   Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], items, skills,
+                                                    {}, situation, rpg2003: rpg2003)), 1, 0, 0)
+ end
 
 check 'an RPG2003 subskill category behaves as an ordinary skill' do
   # Types from 4 up are 2003's custom battle-command categories, not a different
@@ -10135,15 +10140,97 @@ check "battle: a database state's own rank rate gates the infliction" do
   ok !foe.state?(3)
 end
 
-check 'Party#battle_skill_command carries the skill elemental attributes' do
-  skills = { 7 => fake_skill(name: 'Ice', scope: 0, power: 20, mrate: 40,
-                             attribute_effects: [false, false, true]) } # element 3
-  st = skill_party(skills)
-  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
-  slime = combatant('Slime', 0, 0, 5, 100)
-  c = st.party.battle_skill_command(st.party.db_skill(7), mage, slime)
-  eq [3], c[:attributes]
-end
+ check 'Party#battle_skill_command carries the skill elemental attributes' do
+   skills = { 7 => fake_skill(name: 'Ice', scope: 0, power: 20, mrate: 40,
+                              attribute_effects: [false, false, true]) } # element 3
+   st = skill_party(skills)
+   mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+   slime = combatant('Slime', 0, 0, 5, 100)
+   c = st.party.battle_skill_command(st.party.db_skill(7), mage, slime)
+   eq [3], c[:attributes]
+ end
+
+ # A "physical" failure message (failure_message == 3) on an enemy-scope skill
+ # switches its to-hit from the flat `skill.hit` to the agility-adjusted,
+ # evasion-aware physical formula (EasyRPG Algo::CalcSkillToHit) -- the
+ # CalcSkillToHit edge case docs/TODO.md left unimplemented. See Game::Battle#
+ # skill_to_hit.
+ check 'a physical-flagged enemy-scope skill uses the agility-adjusted hit formula' do
+   skills = { 7 => fake_skill(name: 'Punch', scope: 0, hit: 90, failure_message: 3) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.agi = 5
+   foe = combatant('Foe', 0, 0, 10, 100)         # faster target -> harder to hit
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   # 90, then AGI: 100 - (100-90)*(5+10)/(2*5) = 100 - 10*15/10 = 85
+   eq 85, c[:chance]
+ end
+
+ check 'a physical skill at equal agility hits at its flat rate' do
+   skills = { 7 => fake_skill(name: 'Punch', scope: 0, hit: 90, failure_message: 3) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.agi = 7
+   foe = combatant('Foe', 0, 0, 7, 100)
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   eq 90, c[:chance]                            # AGI term reduces to identity
+ end
+
+ check 'a non-physical skill ignores the flag and uses the flat hit rate' do
+   skills = { 7 => fake_skill(name: 'Bolt', scope: 0, hit: 90, failure_message: 0) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.agi = 5
+   foe = combatant('Foe', 0, 0, 10, 100)
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   eq 90, c[:chance]                            # no agility term, just skill.hit
+ end
+
+ check 'an ally-scoped physical-flagged skill stays on the flat hit rate' do
+   skills = { 7 => fake_skill(name: 'Mend', scope: 3, hit: 90, failure_message: 3) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.agi = 5
+   ally = Game::Battle.from_actor(st.party.actor_by_id(1))
+   ally.agi = 10
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, ally)
+   eq 90, c[:chance]                            # physical formula is enemy-only
+ end
+
+ check 'a physical skill subtracts 25 for a physical-evasion-up target' do
+   skills = { 7 => fake_skill(name: 'Punch', scope: 0, hit: 90, failure_message: 3) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.agi = 5
+   foe = combatant('Foe', 0, 0, 10, 100)
+   foe.evasion_up = true
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   eq 60, c[:chance]                            # 85 - 25
+ end
+
+ check 'a physical skill always hits a do-nothing-restricted target' do
+   skills = { 7 => fake_skill(name: 'Punch', scope: 0, hit: 90, failure_message: 3) }
+   # a do-nothing state (restriction 1) in the situation table
+   st = skill_party(skills, situation: { 1 => FakeStateDef.new(1) })
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.agi = 5
+   foe = combatant('Foe', 0, 0, 10, 100)
+   foe.states = [1]
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   eq 100, c[:chance]
+ end
+
+ check 'a physical skill skips the agility term for an evasion-ignoring caster' do
+   skills = { 7 => fake_skill(name: 'Punch', scope: 0, hit: 90, failure_message: 3) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.agi = 5
+   hero.ignores_evasion = true
+   foe = combatant('Foe', 0, 0, 10, 100)
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   eq 90, c[:chance]                            # returns before the AGI term
+ end
+
 
 check 'Actor weapon/attribute readers feed the combatant snapshot' do
   items = { 7 => fake_item(type: 1, atk: 10, attribute_set: [true, false, true]) }

@@ -4465,6 +4465,11 @@ module Game
       adjust_stat((b.respond_to?(:spi) ? b.spi : 0) || 0, stat_mode(b, :affect_spirit))
     end
 
+    def effective_agi(b)
+      adjust_stat((b.respond_to?(:agi) ? b.agi : 0) || 0,
+                  stat_mode(b, :affect_agility))
+    end
+
     # The base HP/SP amount a recovery skill restores, per RPG2000's formula
     # `power + physical_rate*attack/20 + magical_rate*spirit/40` (spirit is the
     # `int` stat), computed from the caster deterministically -- battle applies a
@@ -4720,6 +4725,84 @@ module Game
       sk.respond_to?(:hit) ? (sk.hit || 100) : 100
     end
 
+    # A Skill's to-hit chance, ported from EasyRPG's `Algo::CalcSkillToHit`
+    # (`src/algo.cpp`). The overwhelming majority of skills use a flat
+    # `skill.hit` reading (already what `skill_hit` returns), which ignores the
+    # target's agility the way RPG_RT's non-physical skill formula does. Only an
+    # *enemy-scope* skill the editor flagged with the "physical" failure message
+    # (`failure_message == 3`) runs the fuller, agility-adjusted, evasion-aware
+    # physical formula — RPG2000's own editor hides that flag, so in practice it
+    # survives only from converted / hex-edited projects and a handful of 2k3
+    # databases, but RPG_RT still honours the bit whenever it is set (see the
+    # "Not implemented: CalcSkillToHit" note in docs/TODO.md). `source` is the
+    # caster, `target` the first foe the skill lands on.
+    def skill_to_hit(sk, source, target)
+      return skill_hit(sk) unless sk.respond_to?(:failure_message) && sk.failure_message == 3
+      # The physical formula is enemy-only: an ally/self-scoped skill (scope 2/3/4)
+      # always falls back to the flat rate regardless of the flag — EasyRPG's
+      # `CalcSkillToHit` guards the whole physical branch behind
+      # `!SkillTargetsAllies(skill)`, and its own comment notes the 2k3 editor
+      # can no longer even set the flag, so the branch is reached only by skills
+      # that still target the opposing side (scope 0 single / 1 all enemy).
+      scope = sk.respond_to?(:scope) ? sk.scope.to_i : 0
+      return skill_hit(sk) unless scope == 0 || scope == 1
+
+      to_hit = skill_hit(sk)
+      # A do-nothing-restricted target cannot dodge: the attack always connects.
+      return 100 if do_nothing_restricted?(target)
+      # The caster's own statuses (e.g. Blind) sour its aim first, before the
+      # agility term — the same ordering `Game::Battle#to_hit` already uses for a
+      # basic attack.
+      to_hit = to_hit * hit_modifier(source) / 100
+      # 必中: a source that ignores evasion skips the agility term entirely.
+      return to_hit if source.ignores_evasion
+      src = effective_agi(source)
+      src = 1 if src < 1
+      tgt = effective_agi(target)
+      agi_adjusted = 100 - (100 - to_hit) * (src + tgt) / (2 * src)
+      # 物理回避率アップ: a shield/armour/helmet/accessory flagged
+      # `raise_evasion` subtracts a flat 25, after the AGI term.
+      agi_adjusted -= 25 if target.evasion_up
+      Game.clamp(agi_adjusted, 0, 100)
+    end
+
+    # Whether any state afflicting `b` forces "do nothing" (restriction 1), in
+    # which case it cannot dodge a physical skill. Mirrors
+    # `Game::Battle#do_nothing_restricted?` but reads the state table through
+    # this party's own `@db.situation` (a battle-skill's caster/target is
+    # sometimes a bare Game::Actor with no Battle behind it, see Party#stat_mode).
+    def do_nothing_restricted?(b)
+      return false unless b.respond_to?(:states)
+      (b.states || []).each do |sid|
+        d = @db.respond_to?(:situation) ? @db.situation[sid] : nil
+        return true if d.respond_to?(:restriction) && (d.restriction || 0) == 1
+      end
+      false
+    end
+
+    # How much `b`'s own statuses cut its accuracy: the lowest `reduce_hit_ratio`
+    # among its states (EasyRPG's `GetHitChanceModifierFromStates` takes a
+    # running min). 100 means unhindered. Part of #skill_to_hit's physical
+    # formula, mirroring `Game::Battle#hit_modifier`.
+    def hit_modifier(b)
+      m = 100
+      return m unless b.respond_to?(:states)
+      (b.states || []).each do |sid|
+        d = @db.respond_to?(:situation) ? @db.situation[sid] : nil
+        r = state_hit_ratio(d)
+        m = r if r < m
+      end
+      m
+    end
+
+    # A state's `reduce_hit_ratio`, defaulting to 100 (no reduction) for an
+    # unknown state or a fixture row without the field.
+    def state_hit_ratio(d)
+      return 100 unless d.respond_to?(:reduce_hit_ratio)
+      v = d.reduce_hit_ratio
+      v.nil? ? 100 : v
+    end
+
     # A skill's damage variance (its `variance` field on the 0-10 scale, default
     # 4), the spread applied to its battle damage when the fight rolls variance.
     def skill_variance(sk)
@@ -4852,7 +4935,7 @@ module Game
           # @2000_battle_bot/デフォ戦bot trivia on the HP-reaches-zero
           # interaction below) never touches HP at all.
           hp: sk.affect_hp ? -dmg : 0, mp: sk.affect_sp ? -dmg : 0, attack: true,
-          inflict: inflict_ids, chance: skill_hit(sk),
+          inflict: inflict_ids, chance: skill_to_hit(sk, caster, target),
           variance: skill_variance(sk), attributes: skill_attributes(sk),
           # 吸収 — the caster takes what the target loses. RPG_RT reads the flag
           # only on an *offensive* skill (EasyRPG's `skill.absorb_damage &&
@@ -4898,7 +4981,7 @@ module Game
           # machinery when curing (no roll, matching a battle medicine's own
           # state cure) and its `cmd[:inflict]`/`cmd[:chance]` roll when the
           # RPG2003 reverse case above turns this into an inflict instead.
-          cured: cure_ids, inflict: inflict_ids, chance: skill_hit(sk) }
+          cured: cure_ids, inflict: inflict_ids, chance: skill_to_hit(sk, caster, target) }
       end
     end
 
