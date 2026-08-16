@@ -694,9 +694,28 @@ class RPG2k
     # scripts/compare-nepheshel-wine.bash) can assert the map scene was really
     # reached, not just the title.
     $stderr.puts "[RPG2k-MAP] map=#{state.map_id} x=#{state.x} y=#{state.y}"
+    # --rpg2k_battle: jump straight from New Game into a fight against the
+    # named troop (a headless battle-drive -- the 2003 test beds ship no
+    # encounters, see the flag's own definition in src/main.cxx), so a real
+    # project's battle path is exercised without input. The request rides the
+    # map's own interpreter and opens on the map's next frame, exactly like a
+    # random encounter's would; the battle then waits for input until the run
+    # times out. A no-op when the flag is unset.
+    scene.headless_battle(headless_battle_troop) if headless_battle_troop
   rescue StandardError => e
     # Never let a data problem crash the title screen; report and stay put.
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
+  end
+
+  # --rpg2k_battle: the troop id to open a headless battle against right after
+  # New Game, or nil when unset (0, the default -- see src/main.cxx; troop ids
+  # start at 1). Guarded the same way as #preview_map_id: an undefined
+  # RPG2K_BATTLE_TROOP (the CRuby-only host harnesses that load this file
+  # never define it) raises NameError, rescued to nil.
+  def headless_battle_troop
+    RPG2K_BATTLE_TROOP.zero? ? nil : RPG2K_BATTLE_TROOP
+  rescue StandardError
+    nil
   end
 
   # --rpg2k_preview_map: the map id to preview, or nil when unset (0, the

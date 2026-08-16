@@ -57,6 +57,10 @@
   ./rpg_maker_clone --iterm --game_dir path/to/game --rpg2k_preview_map=5 \
       --timeout_ms=2000
   ```
+- `--rpg2k_battle_troop=<id>` starts New Game and then opens a battle against
+  the named database troop (the 2003 test beds ship no encounters, so a bare
+  boot never reaches a fight on its own) — a headless way to drive a real
+  project into the battle scene, logging the fight as `[RPG2k-BATTLE]`
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
@@ -149,6 +153,15 @@
   the map scene, whose tile layers sit above the backdrop and are opaque. The
   map view is hidden — and stops compositing — for the fight's duration, and is
   back the frame it ends
+- A fight in an **RPG2003 project** runs through the 2003 battle scene
+  (`RPG2k3::Scene::Battle`, selected by the database's edition): a gauge
+  (`battle_type` 2) presentation draws the party as face/bars gauge cards from
+  the project's System2 graphic and advances each battler's active-time charge
+  every frame, while the traditional and alternative presentations inherit the
+  unchanged turn-based machine. The 2003 test beds ship no encounters, so a
+  `--rpg2k_battle_troop=<id>` flag drives a real project straight into a fight
+  against a chosen database troop after New Game — the boot check uses it to
+  exercise the 2003 battle path end to end against real data
 - The **field windows show a condition too** — the menu party list, the item and
   skill target lists, and the status screen, which are the three RPG_RT draws one
   in. The target lists are the point: they are where you pick who to use an

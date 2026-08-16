@@ -5372,6 +5372,23 @@ check 'battle backdrop receives the screen tone under a Tint Screen' do
   eq expected, back.tone, 'no fight open means no backdrop re-tint'
 end
 
+# Scene::Map#current_map_tone must be *public*, not merely reachable through
+# #send: Scene::Battle#build_battle_back seeds its backdrop with it through a
+# plain `@map.current_map_tone` call. Under CRuby the old `respond_to?` guard
+# hid the fact that it was private (CRuby's respond_to? excludes private
+# methods), but mruby's does not -- so every native battle raised NoMethodError
+# there. See the private-method fix next to #build_battle_back.
+check 'Scene::Map#current_map_tone is a public service the battle scene can call' do
+  scene = new_scene({})
+  ok scene.respond_to?(:current_map_tone),
+     'the battle backdrop can reach it without #send'
+  # And it answers, not just responds.
+  vp = RGSS::Viewport.new
+  vp.tone = [10, 20, 30, 40]
+  scene.instance_variable_set(:@map_viewport, vp)
+  eq vp.tone, scene.current_map_tone, 'a real Scene::Map answers the live tone'
+end
+
 check 'a picture saturation below neutral desaturates' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
@@ -10212,6 +10229,53 @@ check '--rpg2k_preview_map auto-selects New Game, like --rpg2k_new_game' do
   ok scene.send(:auto_select?), 'the first frame fires the auto-select'
   eq 0, scene.instance_variable_get(:@selected_index), 'New Game is entry 1'
   ok !scene.send(:auto_select?), 'it does not fire again on the next frame'
+end
+
+# --rpg2k_battle_troop also implies New Game (a headless battle needs the map
+# up first), the same way --rpg2k_preview_map does.
+check '--rpg2k_battle_troop auto-selects New Game, like --rpg2k_new_game' do
+  clear_title_flags
+  parent = Struct.new(:headless_battle_troop).new(14)
+  scene = RPG2k::Scene::Title.allocate
+  scene.instance_variable_set(:@auto_started, false)
+  scene.instance_variable_set(:@selected_index, 0)
+  scene.instance_variable_set(:@parent, parent)
+  ok scene.send(:auto_select?), 'the first frame fires the auto-select'
+  eq 0, scene.instance_variable_get(:@selected_index), 'New Game is entry 1'
+  ok !scene.send(:auto_select?), 'it does not fire again on the next frame'
+end
+
+# RPG2k#headless_battle_troop reads the RPG2K_BATTLE_TROOP constant main.cxx
+# sets from the --rpg2k_battle_troop flag (0 = unset, since troop ids start at
+# 1); Scene::Map#headless_battle then opens a fight against it once New Game's
+# map is up. The full drive (New Game -> map -> battle scene) is exercised by
+# the native boot check against real game data -- these pin just the flag
+# plumbing, in CRuby, without a database or .lmu.
+check 'RPG2k#headless_battle_troop reads RPG2K_BATTLE_TROOP, 0 meaning unset' do
+  read = lambda do |v|
+    Object.send(:remove_const, :RPG2K_BATTLE_TROOP) if Object.const_defined?(:RPG2K_BATTLE_TROOP)
+    Object.const_set(:RPG2K_BATTLE_TROOP, v) unless v.nil?
+    RPG2k.allocate.send(:headless_battle_troop)
+  end
+  eq nil, read.call(nil), 'undefined constant (the CRuby-only checks) -> nil'
+  eq nil, read.call(0), '0, the flag default -> nil'
+  eq 14, read.call(14)
+  Object.send(:remove_const, :RPG2K_BATTLE_TROOP) if Object.const_defined?(:RPG2K_BATTLE_TROOP)
+end
+
+# Scene::Map#headless_battle (the --rpg2k_battle boot drive) arms the same
+# :battle wait a random encounter does, marked `headless: true` so
+# Scene::Battle#start fires the [RPG2k-BATTLE] marker the boot check asserts
+# on. The request rides the map's own foreground interpreter and opens on the
+# next frame via the ordinary #drive_battle path.
+check 'Scene::Map#headless_battle arms a headless battle request on the interpreter' do
+  scene = new_scene({})
+  scene.headless_battle(14)
+  it = scene.instance_variable_get(:@interpreter)
+  eq :battle, it.wait_kind, 'the interpreter waits on the battle'
+  eq 14, it.battle_request[:troop_id], 'the requested troop id'
+  eq true, it.battle_request[:headless], 'the boot-drive marker rides the request'
+  eq true, it.battle_request[:random], 'otherwise a random-encounter-shaped request'
 end
 
 # -- RPG_RT.exe legacy CLI arg: HideTitle --------------------------------------

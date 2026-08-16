@@ -9390,6 +9390,22 @@ check 'a random encounter is still marked game-over without an active Death Hand
   eq true, it2.battle_request[:defeat_game_over]
 end
 
+# The --rpg2k_battle boot drive (Scene::Map#headless_battle) marks its request
+# so Scene::Battle#start fires the [RPG2k-BATTLE] marker the boot check asserts
+# on -- a headless fight is otherwise indistinguishable from any other battle
+# the same interpreter opens, so the marker has to ride the request itself.
+check 'a headless random-encounter request carries the headless marker' do
+  it = Game::Interpreter.new(party_state)
+  it.start_random_battle(1, headless: true)
+  eq true, it.battle_request[:headless], 'the boot-drive marker rides the request'
+  eq true, it.battle_request[:random], 'still a random encounter otherwise'
+  eq :battle, it.wait_kind
+
+  it2 = Game::Interpreter.new(party_state)
+  it2.start_random_battle(1)
+  eq false, it2.battle_request[:headless], 'an ordinary random encounter is not headless'
+end
+
 check 'Interpreter#start_death_handler runs the death event then a synthetic Teleport' do
   common = { 5 => [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0], indent: 0)] }
   table = FakeBattleCommandsTable.new({}, 0, 0, true, 5, true, 3, 10, 20, 2)

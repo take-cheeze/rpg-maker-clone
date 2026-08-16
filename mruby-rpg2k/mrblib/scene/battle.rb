@@ -253,6 +253,13 @@ class RPG2k
         build_battle_sprites
         build_actor_sprites
         refresh_battle_status
+        # --rpg2k_battle boot-drive marker (Scene::Map#headless_battle): fired
+        # once, here, when the headless fight's whole UI -- backdrop, troop
+        # sprites, actor sprites, the status panel -- is actually up, so
+        # scripts/rpg2k_boot_check.bash can assert the battle path was really
+        # reached rather than merely armed. A real encounter never sets
+        # `headless`, so this line never appears for ordinary play.
+        $stderr.puts "[RPG2k-BATTLE] troop=#{@req[:troop_id]}" if @req[:headless]
         # RPG_RT's own `Scene_Battle_Rpg2k::ProcessSceneActionStart`
         # (EasyRPG Player's `src/scene_battle_rpg2k.cpp`) narrates the
         # encounter before the party is ever asked for a command: one
