@@ -1639,6 +1639,13 @@ class RPG2k
         elsif it.wait_kind == :key_input
           # Parallel processes commonly poll a key each frame into a variable.
           resolve_key_input(it)
+        elsif it.wait_kind == :wait_key_enter
+          # RPG2003's Wait-for-Decision-key mode, reached from a parallel
+          # process's own command list -- see #drive_wait_key_enter, the
+          # foreground's equivalent; #message_window_open? already blocks a
+          # parallel process for other reasons only when it does not (see
+          # #parallels_paused?), so this needs the same explicit guard here.
+          it.resume if !message_window_open? && Input.trigger?(Input::C)
         elsif it.wait_kind == :animation
           # A Show Battle Animation with its wait flag set, issued from a
           # parallel process rather than the foreground event -- shares the
@@ -3979,6 +3986,18 @@ class RPG2k
               apply_interpreter_requests(@interpreter, @active_event)
             end
             return
+          when :wait_key_enter
+            drive_wait_key_enter
+            # Real RPG_RT's own per-frame wait check does not `break` once
+            # `wait_key_enter` clears -- it falls through into whatever
+            # command comes next in that same Update() call, the same
+            # "spend this frame's own step budget immediately" idiom the
+            # :wait branch above documents for its own timer running out.
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+            return
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
           when :screen then @interpreter.resume unless @state.screen.busy?
@@ -5905,6 +5924,22 @@ class RPG2k
         else
           @wait_timer -= 1
         end
+      end
+
+      # RPG2003's "wait until the Decision key is pressed" mode of the Wait
+      # command (Interpreter#do_wait's own `:wait_key_enter`) -- matches
+      # EasyRPG's own per-frame check (src/game_interpreter.cpp): `if
+      # (_state.wait_key_enter) { if (Game_Message::IsMessageActive()) {
+      # break; } if (!Input::IsTriggered(Input::DECISION)) { break; }
+      # _state.wait_key_enter = false; }`. A message window open (from any
+      # interpreter -- #message_window_open? is scene-global, not per-
+      # interpreter) blocks indefinitely without even consulting the key,
+      # the same as the real engine's own `break` before the input check;
+      # otherwise this resumes on the Decision key's rising edge, never a
+      # key already held from before the command started.
+      def drive_wait_key_enter
+        return if message_window_open?
+        @interpreter.resume if Input.trigger?(Input::C)
       end
 
       # Convert an RPG2000 wait duration (tenths of a second) to a frame count at

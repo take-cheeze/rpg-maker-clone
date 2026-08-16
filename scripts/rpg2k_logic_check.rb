@@ -14766,6 +14766,46 @@ check 'Open Load Menu and Exit Game raise their scene requests' do
   eq :exit_game, it2.wait_kind
 end
 
+# Ports EasyRPG's own `Game_Interpreter::CommandWait`
+# (src/game_interpreter.cpp): a param1 mode byte the RPG2003 editor's Wait
+# dialog adds -- 0 (or absent, an RPG2000 project) the plain timed wait,
+# nonzero "wait until the Decision key is pressed" instead, which ignores
+# param0 entirely (`if (com.parameters.size() <= 1 || (!maniac &&
+# !Player::IsRPG2k3Commands())) { SetupWait(com.parameters[0]); return
+# true; } if (!maniac && com.parameters.size() > 1 &&
+# com.parameters[1] == 0) { SetupWait(com.parameters[0]); return true; }
+# ... _state.wait_key_enter = true;`).
+check 'Wait with an RPG2003 param1 mode waits for the Decision key, not a timer' do
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::WAIT, [50, 1])]) # param0 irrelevant, param1 (mode) nonzero
+  it.update
+  ok it.waiting?
+  eq :wait_key_enter, it.wait_kind, 'not the plain timed :wait -- param0 is never consulted'
+end
+
+check 'Wait with param1 0, or on a non-RPG2003 database, or with no param1 at all, is a plain timed wait' do
+  st2003 = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st2003)
+  it.start([FakeCmd.new(IC::WAIT, [7, 0])]) # explicit mode 0
+  it.update
+  eq :wait, it.wait_kind
+  eq 7, it.wait_frames
+
+  st2k = new_state(rpg2003: false)
+  it2 = Game::Interpreter.new(st2k)
+  it2.start([FakeCmd.new(IC::WAIT, [7, 1])]) # mode 1, but not an RPG2003 database
+  it2.update
+  eq :wait, it2.wait_kind, 'param1 only means anything on an RPG2003 database'
+  eq 7, it2.wait_frames
+
+  it3 = Game::Interpreter.new(new_state(rpg2003: true))
+  it3.start([FakeCmd.new(IC::WAIT, [7])]) # a bare RPG2000-shaped command list
+  it3.update
+  eq :wait, it3.wait_kind, 'no param1 at all falls back to the plain timed wait'
+  eq 7, it3.wait_frames
+end
+
 check 'Toggle Fullscreen / Open Video Options run on without pausing' do
   st = new_state
   it = Game::Interpreter.new(st)

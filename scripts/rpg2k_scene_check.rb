@@ -1914,6 +1914,32 @@ check 'Wait 0.0 sec pauses a foreground event for exactly one frame' do
   ok st.switches[2], 'Wait 0.0 sec costs exactly one frame, not two'
 end
 
+# RPG2003's own Wait dialog adds a "wait until the Decision key is pressed"
+# mode (Interpreter#do_wait's own `:wait_key_enter`, param1 nonzero) that
+# ignores the timed duration in param0 entirely -- confirmed against
+# EasyRPG's actual `CommandWait` (src/game_interpreter.cpp). Drives the
+# same #message_window_open?-gated convention every other suppressed
+# command in this file already uses (Show/Move/Erase Picture while a
+# message is open, above); not re-proven here, just reused.
+check 'RPG2003 Wait-for-Decision-key mode blocks the event until the key is pressed, ignoring the duration' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 3) # auto-start
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+                       ECmd.new(ic::WAIT, [50, 1]), # param0 (5s) irrelevant; param1 arms key-wait
+                       ECmd.new(ic::CONTROL_SWITCHES, [0, 2, 2, 0])]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0], rpg2003: true)
+  st = scene.instance_variable_get(:@state)
+  scene.update
+  ok st.switches[1], 'ran up to the Wait'
+  ok !st.switches[2], 'held at the Wait -- no key pressed yet'
+  20.times { scene.update } # well past param0's own 3-second duration
+  ok !st.switches[2], 'still held: the timed duration plays no part in this mode'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok st.switches[2], 'resumed the instant the Decision key was pressed'
+end
+
 # yado.tk "Untriaged backlog": "Autorun cascading within one frame" -- if the
 # lowest-id eligible Autorun map event's content contains no wait-including
 # command, real RPG_RT lets the next-lowest-id eligible Autorun event start
