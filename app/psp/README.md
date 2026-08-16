@@ -108,10 +108,14 @@ PPSSPP only partially implements
 pspsdk's libc stdio (plain `printf` is an unimplemented HLE import there), so
 emulator capture can be fragile — the required build gate is the `psp` job. To
 reproduce locally, run PPSSPP's headless binary with `--log` (needed to surface
-the `sceIoWrite` output):
+the `sceIoWrite` output). CI takes that binary from nixpkgs instead of building
+it, and the same package works locally — `nix build '.#ppsspp'` puts it at
+`./result/bin/ppsspp-headless` (it finds its own assets, so the working
+directory does not matter):
 
 ```sh
-PPSSPPHeadless --log --graphics=software --timeout=15 EBOOT.PBP
+nix build '.#ppsspp'
+./result/bin/ppsspp-headless --log --graphics=software --timeout=15 EBOOT.PBP
 ```
 
 ## Not yet wired (later slices)

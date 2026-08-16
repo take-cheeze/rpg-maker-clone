@@ -111,6 +111,25 @@
             '';
           };
         }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          # The emulator the `psp-smoke` CI job boots the EBOOT under, taken
+          # from nixpkgs instead of built from source: cache.nixos.org has it
+          # prebuilt for the channel this flake pins, so the job substitutes a
+          # closure rather than compiling PPSSPP (and hand-caching the tree)
+          # itself.
+          #
+          # The default (non-Qt) build is the one that carries what the smoke
+          # test needs: it configures with -DHEADLESS=ON and installs the
+          # headless binary as `$out/bin/ppsspp-headless`, next to the SDL
+          # frontend. Its assets are found without a working directory dance --
+          # the real binary sits in $out/share/ppsspp/bin, and PPSSPP's headless
+          # entry point walks up from the executable looking for assets/flash0,
+          # which lands on $out/share/ppsspp/assets one level up.
+          #
+          # Linux-only, matching the package's own meta.platforms: forcing this
+          # attribute on darwin (e.g. `nix flake show`) would otherwise throw.
+          ppsspp = pkgs.ppsspp;
+        }
       );
 
       # `devShells.default`, the current flake schema's spelling of what used to

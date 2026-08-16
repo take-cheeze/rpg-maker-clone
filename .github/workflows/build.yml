@@ -1329,9 +1329,11 @@ jobs:
     # renderer) and look for the bring-up markers it writes via sceIoWrite --
     # RPG2K_PSP_BOOT (a libc-free string literal, emitted before any init) and
     # the per-second RPG2K_PSP_BRINGUP heartbeat. This exercises the EBOOT on an
-    # emulator, beyond the compile-only `psp` job. PPSSPP is built from source
-    # (no stable prebuilt headless binary) and cached by tag, so only the first
-    # run pays the build cost.
+    # emulator, beyond the compile-only `psp` job. The emulator comes from
+    # nixpkgs (`packages.ppsspp` in flake.nix) rather than a source build: the
+    # channel this flake pins has it prebuilt on cache.nixos.org, so the job
+    # substitutes a closure in place of a from-source PPSSPP compile plus the
+    # hand-rolled tree cache that used to carry it between runs.
     #
     # NON-BLOCKING (continue-on-error): PPSSPP's headless HLE only partially
     # implements pspsdk's libc stdio (printf/strlen resolve to firmware stubs),
@@ -1342,64 +1344,41 @@ jobs:
     needs: psp
     runs-on: ubuntu-24.04
     continue-on-error: true
-    env:
-      PPSSPP_TAG: v1.17.1
     steps:
+      - uses: actions/checkout@v7
+        with:
+          # flake.nix / flake.lock are all this job reads from the checkout --
+          # they are what pin the emulator -- so no submodules here (and hence
+          # no test262-skip step; see the `build` job). Same two quiet-checkout
+          # settings as every other checkout in this workflow.
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
       - name: Download EBOOT
         uses: actions/download-artifact@v8
         with:
           name: psp-eboot
           path: eboot
 
-      - name: Install PPSSPP build deps
-        # PPSSPP compiles its GL/Vulkan backends even for HEADLESS: its bundled
-        # GLEW pulls in GL/glu.h, so libglu is required on top of libgl. Vulkan
-        # and fontconfig headers are needed for the SDL/Linux frontend it links.
-        # -qq keeps apt to warnings and errors: the per-index "Get:N ..." and
-        # per-package "Selecting/Unpacking/Setting up ..." lines are noise on a
-        # step whose only interesting outcome is its exit code.
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            build-essential cmake ninja-build pkg-config \
-            libgl1-mesa-dev libglu1-mesa-dev libsdl2-dev libvulkan-dev \
-            libfontconfig1-dev zlib1g-dev
+      - uses: nixbuild/nix-quick-install-action@v35
 
-      # Restore/save are split so a failed (partial) build is never cached: the
-      # save runs only on success. The build step below always runs and lets
-      # ninja finish incrementally on top of whatever the restore brought back.
-      - name: Restore PPSSPP cache
-        id: cache-ppsspp
-        uses: actions/cache/restore@v6
-        with:
-          path: ppsspp
-          key: ppsspp-${{ env.PPSSPP_TAG }}-headless-v2-${{ runner.os }}
-
-      - name: Build PPSSPP headless
-        run: |
-          if [ ! -d ppsspp/.git ]; then
-            git clone --quiet --recursive --depth 1 -b "$PPSSPP_TAG" \
-              https://github.com/hrydgard/ppsspp
-          fi
-          cmake -S ppsspp -B ppsspp/build -GNinja \
-            -DHEADLESS=ON -DUNITTEST=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build ppsspp/build --target PPSSPPHeadless -j"$(nproc)"
-
-      - name: Save PPSSPP cache
-        if: success() && steps.cache-ppsspp.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ppsspp
-          key: ppsspp-${{ env.PPSSPP_TAG }}-headless-v2-${{ runner.os }}
+      # Deliberately no cache-nix-action here, unlike the jobs that enter the
+      # dev shell: the only thing this job realises is PPSSPP, which
+      # cache.nixos.org already has built for the pinned channel. Pushing its
+      # ~1 GiB closure through the Actions cache every run would cost more than
+      # substituting it, and would evict the caches that do earn their keep.
+      - name: Fetch PPSSPP
+        # `packages.ppsspp` is nixpkgs' default (non-Qt) build, which configures
+        # with -DHEADLESS=ON and ships `bin/ppsspp-headless`; see flake.nix. The
+        # emulator finds its assets relative to its own store path, so unlike
+        # the old source tree it can be run from anywhere.
+        run: nix build -L --out-link ppsspp '.#ppsspp'
 
       - name: Run headless smoke test
         run: |
           EBOOT="$GITHUB_WORKSPACE/eboot/EBOOT.PBP"
           ls -l "$EBOOT"
-          cd ppsspp
-          # Run from the PPSSPP tree so it finds its assets/ (fonts, etc.).
           # The bring-up writes its markers with sceIoWrite(fd 1 and 2); PPSSPP
           # logs those, but below the default headless level, so --log is needed
           # to surface them (plain printf is an unimplemented HLE import under
@@ -1411,7 +1390,7 @@ jobs:
           # the log file rather than the console: the whole file is uploaded as
           # the `psp-smoke` artifact below, and the lines that decide this step
           # (the markers, or the tail when they are missing) are echoed here.
-          ./build/PPSSPPHeadless --log --graphics=software --timeout=15 \
+          ./ppsspp/bin/ppsspp-headless --log --graphics=software --timeout=15 \
             "$EBOOT" > "$GITHUB_WORKSPACE/headless.log" 2>&1 || true
           echo "=== asserting the EBOOT booted (and ideally pumped frames) ==="
           # RPG2K_PSP_BOOT proves it booted with output captured; RPG2K_PSP_BRINGUP
