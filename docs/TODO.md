@@ -7101,11 +7101,26 @@ not yet verified:
   new `scripts/rpg2k_scene_check.rb` check (an ally-targeted animation
   lands at screen centre with no enemy sprite ever flashed, instead of
   hitting the troop's second member), three checks total confirmed to fail
-  against the pre-fix code before the fix. The `target < 0` "whole side"
-  case EasyRPG's own function also handles (playing one animation over
-  every living ally or enemy at once) stays out of scope — this codebase's
-  animation player only ever tracks a single `target_index`, and extending
-  it to a full battler list is a separate, larger change.
+   against the pre-fix code before the fix. **The `target < 0` "whole side"
+   case is now implemented too** — `Scene::Battle#start_battle_page_animation`
+   (`mruby-rpg2k/mrblib/scene/battle.rb`) now reads the target as
+   EasyRPG's `Game_Interpreter_Battle::CommandShowBattleAnimation` does: a
+   `target` below 0 plays one animation over every living troop member at
+   once, not a single index. That needed generalising the animation player
+   (`Scene::Map#build_animation`) away from a single `target_index` to a
+   `targets` array of per-side descriptors — `#draw_map_animation` blits the
+   frame over each, and `#fire_animation_flashes` / `#hold_animation_target_flash`
+   flash and clear every target's sprite. `#whole_side_anim_targets` skips the
+   hidden / out-of-play members (the same `@ui[:foes]`/`@ui[:enemy_sprites]`
+   pair a single target already indexes). An ally-flagged whole side
+   (`allies` set, RPG2003) collapses to the single screen-centre fallback,
+   since RPG2000's front-view battle draws no ally sprite to point at — the
+   same convention every ally-targeted entry already uses. Covered by two new
+   `scripts/rpg2k_scene_check.rb` checks (a `target -1` enemy animation
+   builds one target per living enemy and flashes each; a `target -1` ally
+   animation collapses to the single screen-centre target with no enemy
+   sprite flashed), both confirmed against the prior single-target-only
+   behaviour.
 - ✅ **Weather Effects now clamps an RPG2003-only weather type back to none on
   RPG2000, and clamps strength to at most 2 on every edition — both used to
   be stored verbatim off the raw command bytes with no bound at all.**

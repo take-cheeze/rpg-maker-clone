@@ -7625,9 +7625,9 @@ check "Show Battle Animation targeting a vehicle uses the vehicle's own live pos
     anim = scene.instance_variable_get(:@map_animation)
     break if anim || st.switches[6]
   end
-  ok anim, 'the animation actually started'
-  eq [5 * tile, 7 * tile], [anim[:tx], anim[:ty]],
-     "targeted the boat's own live position, not the player's or the event's"
+   ok anim, 'the animation actually started'
+   eq [5 * tile, 7 * tile], [anim[:targets][0][:tx], anim[:targets][0][:ty]],
+      "targeted the boat's own live position, not the player's or the event's"
 end
 
 # A map-triggered Show Battle Animation's target is always drawn from a
@@ -7654,10 +7654,10 @@ check "a map-triggered Show Battle Animation carries RPG_RT's own 24px map-targe
     anim = scene.instance_variable_get(:@map_animation)
     break if anim
   end
-  ok anim, 'the animation actually started'
-  eq RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT, anim[:target_height],
-     "RPG_RT's own hardcoded 24px map-target height, not the CharSet frame's 32px " \
-     'or the battle-only nil fallback'
+   ok anim, 'the animation actually started'
+   eq RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT, anim[:targets][0][:height],
+      "RPG_RT's own hardcoded 24px map-target height, not the CharSet frame's 32px " \
+      'or the battle-only nil fallback'
 end
 
 # A map-triggered Show Battle Animation's flash_scope-1 timing used to be
@@ -11306,8 +11306,8 @@ check "a battle page's Show Battle Animation draws over the targeted troop membe
   ok ma_seen[:battle], 'positioned in screen space, like a battle-round animation'
   ui = battle_ui(scene)
   spr = ui[:enemy_sprites][1]
-  eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
-     [ma_seen[:tx], ma_seen[:ty]], "centred on troop member 1's sprite, the command's own target param"
+   eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
+      [ma_seen[:targets][0][:tx], ma_seen[:targets][0][:ty]], "centred on troop member 1's sprite, the command's own target param"
   ok st.switches[22], 'and the page still ran on once it finished'
 end
 
@@ -11362,11 +11362,67 @@ check "a battle page's Show Battle Animation targets the party, not a troop memb
     end
     break if st.switches[24]
   end
+   ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
+   eq [RPG2k::WIDTH / 2, RPG2k::HEIGHT / 2], [ma_seen[:targets][0][:tx], ma_seen[:targets][0][:ty]],
+      'the ally-side screen-centre fallback, not any enemy sprite position'
+   ok !ma_seen[:targets][0][:index], 'no enemy troop-member index -- an ally target has no on-screen sprite'
+   ok st.switches[24], 'and the page still ran on once it finished'
+end
+
+check "a battle page's Show Battle Animation with target -1 plays over every living enemy (the whole-side case)" do
+  ic = Game::Interpreter::Cmd
+  # anim 9 carries a flash_scope-1 ("target") timing on frame 0 (see fake_db),
+  # so each enemy sprite should be pulsed by the whole-side play.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [9, -1, 1], indent: 0), # anim 9, whole side, wait
+                           ECmd.new(ic::CONTROL_SWITCHES, [0, 25, 25, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  ma_seen = nil
+  flashed = {}
+  150.times do
+    scene.update
+    ui = battle_ui(scene)
+    ma = scene.instance_variable_get(:@map_animation)
+    ma_seen ||= ma
+    if ui && ui[:enemy_sprites]
+      ui[:enemy_sprites].each_with_index { |s, i| flashed[i] = true if s && s.flash_color }
+    end
+    break if st.switches[25]
+  end
   ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
-  eq [RPG2k::WIDTH / 2, RPG2k::HEIGHT / 2], [ma_seen[:tx], ma_seen[:ty]],
+  ui = battle_ui(scene)
+  living = ui[:enemy_sprites].reject(&:nil?)
+  eq living.size, ma_seen[:targets].size, 'one target descriptor per living enemy sprite'
+  ma_seen[:targets].each { |t| ok !t[:index].nil?, 'each whole-side target names a troop-member sprite index' }
+  living.each_index { |i| ok flashed[i], "enemy #{i} was flashed by the flash_scope-1 timing" }
+  ok !st.screen.flashing?, 'a flash_scope-1 timing never touches the screen flash'
+  ok st.switches[25], 'and the page still ran on once it finished'
+end
+
+check "a battle page's Show Battle Animation with target -1 and the ally flag plays a single screen-centre animation" do
+  ic = Game::Interpreter::Cmd
+  # RPG2000's front-view battle draws no ally sprite, so an ally whole-side
+  # animation collapses to the same single screen-centre fallback a single
+  # ally target already uses -- no enemy sprite is ever flashed.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [9, -1, 1, 1], indent: 0), # anim 9, whole side, wait, allies=1
+                           ECmd.new(ic::CONTROL_SWITCHES, [0, 26, 26, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages, party: BattleStubParty.new(rpg2003: true))
+  ma_seen = nil
+  150.times do
+    scene.update
+    ma = scene.instance_variable_get(:@map_animation)
+    ma_seen ||= ma
+    ui = battle_ui(scene)
+    if ui && ui[:enemy_sprites]
+      ui[:enemy_sprites].each { |s| ok !s.flash_color, 'no enemy sprite flashed -- the ally whole-side targets none' }
+    end
+    break if st.switches[26]
+  end
+  ok ma_seen, 'the request was recorded as a live animation, not silently dropped'
+  eq 1, ma_seen[:targets].size, 'a single target, not one per ally'
+  eq [RPG2k::WIDTH / 2, RPG2k::HEIGHT / 2], [ma_seen[:targets][0][:tx], ma_seen[:targets][0][:ty]],
      'the ally-side screen-centre fallback, not any enemy sprite position'
-  ok !ma_seen[:target_index], 'no enemy troop-member index -- an ally target has no on-screen sprite'
-  ok st.switches[24], 'and the page still ran on once it finished'
+  ok ma_seen[:targets][0][:index].nil?, 'no enemy troop-member index -- an ally target has no on-screen sprite'
+  ok st.switches[26], 'and the page still ran on once it finished'
 end
 
 check 'a battle page shows its message in a battle panel and waits for a key' do
@@ -11804,8 +11860,8 @@ check 'a skill that names an animation plays it over the targeted enemy' do
   ok ma, 'the player was armed'
   ok ma[:battle], 'and flagged as a battle animation'
   spr = ui[:enemy_sprites][0]
-  eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
-     [ma[:tx], ma[:ty]], 'centred on the enemy sprite'
+   eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
+      [ma[:targets][0][:tx], ma[:targets][0][:ty]], 'centred on the enemy sprite'
 end
 
 # flash_scope 1 ("target") -- previously dropped outright, since
@@ -11821,7 +11877,9 @@ check 'a target-scope animation flash pulses the hit enemy, not the screen or a 
   bystander = ui[:enemy_sprites][1]
   timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
                           flash_blue: 0, flash_power: 20)
-  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: 0,
+         targets: [{ index: 0, flash_target: nil, tx: 0, ty: 0, height: nil }],
+         timings: [timing] }
   scene.send(:fire_animation_flashes, ma)
   ok spr.flash_color, 'the targeted enemy sprite was flashed'
   eq [248, 0, 0, 160],
@@ -11851,7 +11909,9 @@ check 'a screen-scope animation shake triggers the same Game::Screen#shake state
   st = scene.instance_variable_get(:@state)
   ok !st.screen.shaking?, 'not shaking to start with'
   timing = OpenStruct.new(frame: 0, screen_shaking: 2)
-  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: 0,
+         targets: [{ index: 0, flash_target: nil, tx: 0, ty: 0, height: nil }],
+         timings: [timing] }
   scene.send(:fire_animation_flashes, ma)
   ok st.screen.shaking?, 'the screen shake started'
   RPG2k::Scene::Map::ANIM_SHAKE_FRAMES.times { st.screen.update }
@@ -11866,7 +11926,9 @@ check 'a screen_shaking-0 (default) timing triggers no shake' do
   scene, = battle_at_command
   st = scene.instance_variable_get(:@state)
   timing = OpenStruct.new(frame: 0, flash_scope: 0, screen_shaking: 0)
-  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: 0,
+         targets: [{ index: 0, flash_target: nil, tx: 0, ty: 0, height: nil }],
+         timings: [timing] }
   scene.send(:fire_animation_flashes, ma)
   ok !st.screen.shaking?, 'screen_shaking 0 (the schema default) never touches the screen shake'
 end
@@ -11885,7 +11947,9 @@ check 'a target-scope animation shake jitters the hit enemy sprite, not a bystan
   base_x = spr.x
   bystander_x = bystander.x
   timing = OpenStruct.new(frame: 0, screen_shaking: 1)
-  ma = { frame_i: 0, battle: true, target_index: 0, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: 0,
+         targets: [{ index: 0, flash_target: nil, tx: 0, ty: 0, height: nil }],
+         timings: [timing] }
   scene.send(:fire_animation_flashes, ma)
   moved = false
   RPG2k::Scene::Map::ANIM_SHAKE_FRAMES.times do
@@ -11907,7 +11971,9 @@ end
 check 'a target-scope shake with no resolvable target sprite is a silent no-op' do
   scene, = battle_at_command
   timing = OpenStruct.new(frame: 0, screen_shaking: 1)
-  ma = { frame_i: 0, battle: true, target_index: nil, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: nil,
+         targets: [{ index: nil, flash_target: nil, tx: 0, ty: 0, height: nil }],
+         timings: [timing] }
   scene.send(:fire_animation_flashes, ma) # must not raise
   ok true, 'no exception targeting nothing'
 end
@@ -11950,7 +12016,9 @@ check 'a target-scope flash with no resolvable target sprite is a silent no-op' 
   scene, = battle_at_command
   timing = OpenStruct.new(frame: 0, flash_scope: 1, flash_red: 31, flash_green: 0,
                           flash_blue: 0, flash_power: 20)
-  ma = { frame_i: 0, battle: true, target_index: nil, timings: [timing] }
+  ma = { frame_i: 0, battle: true, target_index: nil,
+         targets: [{ index: nil, flash_target: nil, tx: 0, ty: 0, height: nil }],
+         timings: [timing] }
   scene.send(:fire_animation_flashes, ma) # must not raise
   ok true, 'no exception targeting nothing'
 end
@@ -11971,7 +12039,9 @@ check 'a Character Flash concurrent with a battle-round animation on the same en
   spr.flash(Color.new(200, 0, 0, 200), 60)
   bystander.flash(Color.new(0, 200, 0, 200), 60)
   ok spr.flash_color && bystander.flash_color, 'both unrelated flashes are in flight to start with'
-  ma = { frame_i: 0, battle: true, target_index: 0, timings: [] } # no target_flash_hold armed
+  ma = { frame_i: 0, battle: true, target_index: 0,
+         targets: [{ index: 0, flash_target: nil, tx: 0, ty: 0, height: nil }],
+         timings: [] } # no target_flash_hold armed
   scene.send(:hold_animation_target_flash, ma)
   eq nil, spr.flash_color, "the animation's own target sprite had its unrelated flash stomped to nothing"
   ok bystander.flash_color, 'the untargeted bystander sprite is untouched'
@@ -12037,8 +12107,8 @@ check 'an action on a party member plays over the middle of the screen' do
             skill_id: 8, target_index: nil, target_ally: true }
   ok scene.instance_variable_get(:@battle).send(:start_battle_animation, entry)
   ma = scene.instance_variable_get(:@map_animation)
-  eq [RPG2k::Scene::Map::SCREEN_W / 2, RPG2k::Scene::Map::SCREEN_H / 2],
-     [ma[:tx], ma[:ty]]
+   eq [RPG2k::Scene::Map::SCREEN_W / 2, RPG2k::Scene::Map::SCREEN_H / 2],
+      [ma[:targets][0][:tx], ma[:targets][0][:ty]]
 end
 
 check 'the round waits for the animation instead of the banner timer' do
@@ -12105,8 +12175,8 @@ check 'a plain attack with a resolved weapon animation plays it over the targete
   ma = scene.instance_variable_get(:@map_animation)
   ok ma, 'the player was armed'
   spr = ui[:enemy_sprites][0]
-  eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
-     [ma[:tx], ma[:ty]], 'centred on the targeted enemy sprite, same as a skill/item animation'
+   eq [spr.x + spr.bitmap.width / 2, spr.y + spr.bitmap.height / 2],
+      [ma[:targets][0][:tx], ma[:targets][0][:ty]], 'centred on the targeted enemy sprite, same as a skill/item animation'
 end
 
 check 'a plain attack with nothing resolved plays no animation' do
@@ -12129,8 +12199,8 @@ check 'the battle animation draws in screen pixels, not map ones' do
   scene.send(:draw_map_animation, 500, 400)
   ok !bmp.blt_calls.empty?, 'a cell was laid down'
   call = bmp.blt_calls.first
-  eq [ma[:tx] - 48, ma[:ty] - 48], [call[0], call[1]],
-     'placed from the target pixel itself, ignoring the camera'
+   eq [ma[:targets][0][:tx] - 48, ma[:targets][0][:ty] - 48], [call[0], call[1]],
+      'placed from the target pixel itself, ignoring the camera'
 end
 
 # The battle_anime row's own `position` field (0 head / 1 center / 2 feet,
@@ -12144,21 +12214,21 @@ end
 # exact old behaviour).
 check 'animation_position_offset splits head/center/feet around the target sprite' do
   scene, = battle_at_command
-  eq 0, scene.send(:animation_position_offset, { position: 1, target_height: 32 }),
+  eq 0, scene.send(:animation_position_offset, { height: 32 }, 1),
      'center is the plain centre pixel, unmoved'
-  eq(-16, scene.send(:animation_position_offset, { position: 0, target_height: 32 }),
+  eq(-16, scene.send(:animation_position_offset, { height: 32 }, 0),
      'head rises half the sprite height above centre')
-  eq 16, scene.send(:animation_position_offset, { position: 2, target_height: 32 }),
+  eq 16, scene.send(:animation_position_offset, { height: 32 }, 2),
      'feet sink half the sprite height below centre'
-  eq 0, scene.send(:animation_position_offset, { position: 0, target_height: nil }),
+  eq 0, scene.send(:animation_position_offset, { height: nil }, 0),
      'no known height (the ally-side screen-centre fallback) is never offset'
   # The real map-target value every #start_map_animation caller actually
   # hands this (ANIM_MAP_TARGET_HEIGHT, 24 -- RPG_RT's own hardcoded
   # constant, not the 32px CharSet frame), split at its own halves.
   eq(-12, scene.send(:animation_position_offset,
-                     { position: 0, target_height: RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT }))
+                     { height: RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT }, 0))
   eq 12, scene.send(:animation_position_offset,
-                    { position: 2, target_height: RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT })
+                    { height: RPG2k::Scene::Map::ANIM_MAP_TARGET_HEIGHT }, 2)
 end
 
 check 'a head/feet Show Battle Animation position offsets where it draws over the enemy sprite' do
@@ -12168,29 +12238,29 @@ check 'a head/feet Show Battle Animation position offsets where it draws over th
                skill_id: 8, target_index: 0, target_ally: false })
   ma = scene.instance_variable_get(:@map_animation)
   bmp = scene.instance_variable_get(:@animation_bmp)
-  ok ma[:target_height], 'start_battle_animation carried the enemy sprite\'s real height through'
-  half_height = ma[:target_height] / 2
+   ok ma[:targets][0][:height], 'start_battle_animation carried the enemy sprite\'s real height through'
+   half_height = ma[:targets][0][:height] / 2
 
-  ma[:position] = 0
-  bmp.clear_blt_calls
-  scene.send(:draw_map_animation, 500, 400)
-  call = bmp.blt_calls.first
-  eq [ma[:tx] - 48, ma[:ty] - 48 - half_height], [call[0], call[1]],
-     'position 0 (head) draws half the sprite height above the plain centre'
+   ma[:position] = 0
+   bmp.clear_blt_calls
+   scene.send(:draw_map_animation, 500, 400)
+   call = bmp.blt_calls.first
+   eq [ma[:targets][0][:tx] - 48, ma[:targets][0][:ty] - 48 - half_height], [call[0], call[1]],
+      'position 0 (head) draws half the sprite height above the plain centre'
 
-  ma[:position] = 2
-  bmp.clear_blt_calls
-  scene.send(:draw_map_animation, 500, 400)
-  call = bmp.blt_calls.first
-  eq [ma[:tx] - 48, ma[:ty] - 48 + half_height], [call[0], call[1]],
-     'position 2 (feet) draws half the sprite height below the plain centre'
+   ma[:position] = 2
+   bmp.clear_blt_calls
+   scene.send(:draw_map_animation, 500, 400)
+   call = bmp.blt_calls.first
+   eq [ma[:targets][0][:tx] - 48, ma[:targets][0][:ty] - 48 + half_height], [call[0], call[1]],
+      'position 2 (feet) draws half the sprite height below the plain centre'
 
-  ma[:position] = 1
-  bmp.clear_blt_calls
-  scene.send(:draw_map_animation, 500, 400)
-  call = bmp.blt_calls.first
-  eq [ma[:tx] - 48, ma[:ty] - 48], [call[0], call[1]],
-     'position 1 (center), the schema default, is unchanged from the plain centre pixel'
+   ma[:position] = 1
+   bmp.clear_blt_calls
+   scene.send(:draw_map_animation, 500, 400)
+   call = bmp.blt_calls.first
+   eq [ma[:targets][0][:tx] - 48, ma[:targets][0][:ty] - 48], [call[0], call[1]],
+      'position 1 (center), the schema default, is unchanged from the plain centre pixel'
 end
 
 # An RPG2000 animation sheet is a grid of 96x96 cells whose whole background is
@@ -12254,8 +12324,8 @@ check 'a battle animation cell blits at its own transparency' do
   scene.send(:draw_map_animation, 500, 400)
   eq 1, bmp.blt_calls.size, 'still one cell'
   eq 102, bmp.blt_calls.first[4], '60% transparent blits at 255 * 40 / 100'
-  eq [ma[:tx] - 48, ma[:ty] - 48], bmp.blt_calls.first[0, 2],
-     'and lands in exactly the same place -- opacity is the only thing that changed'
+   eq [ma[:targets][0][:tx] - 48, ma[:targets][0][:ty] - 48], bmp.blt_calls.first[0, 2],
+      'and lands in exactly the same place -- opacity is the only thing that changed'
 
   cell.transparency = 100
   bmp.clear_blt_calls
