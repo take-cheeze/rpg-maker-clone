@@ -797,6 +797,9 @@ jobs:
           - name: LCF schema coverage
             run: ruby scripts/lcf_schema_coverage.rb
 
+          - name: RPG2003 battle-command data check
+            run: ruby scripts/rpg2k3_battle_command_check.rb
+
           # The interpreter against every event command the downloaded games
           # ship (371k of them), asserting that none raises and none reaches a
           # handler's "I do not know this" arm. The unit checks pin the
