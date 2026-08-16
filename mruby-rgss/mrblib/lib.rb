@@ -1372,10 +1372,14 @@ module RGSS
     # Scene::Map::NUMBER_KEY_BUTTONS / OPERATOR_KEY_BUTTONS). Ids continue the
     # F12 sequence; the digit/operator identity (not the id) is what matters,
     # since Scene::Map re-maps each hit onto the RPG2000 key-input code
-    # (Game::Interpreter::KEY_INPUT_CODES). Real key backing exists only on
-    # the SDL desktop backend today (src/sdl_input.cxx) — the other native
-    # backends (PSP, Wio Terminal, terminal/sixel) simply never press these
-    # ids, the same way they already leave F5-F12 unbound.
+    # (Game::Interpreter::KEY_INPUT_CODES). Key backing: the SDL desktop backend
+    # (src/sdl_input.cxx) binds every digit and operator; the terminal/sixel
+    # backends now type them too (mruby-rgss/src/terminal.cxx), since a keyboard
+    # can actually produce them; the PSP backend binds the first five digits
+    # (N0-N4) to its spare buttons (Square/L/R/Start/Select,
+    # include/psp.hxx + mruby-rgss/src/psp.cxx); the Wio Terminal has no free
+    # pin (its seven buttons are all assigned), so these ids stay unbound there,
+    # the same way it already leaves F5-F12 unbound.
     N0 = 21
     N1 = 22
     N2 = 23

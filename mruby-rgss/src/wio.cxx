@@ -95,11 +95,11 @@ void wio_input_init(void) {
     pinMode(p.pin, INPUT_PULLUP);
 }
 
-uint32_t wio_input_scan(void) {
-  uint32_t mask = 0;
+uint64_t wio_input_scan(void) {
+  uint64_t mask = 0;
   for (const PinMap& p : kPins) {
     if (digitalRead(p.pin) == LOW)  // active low
-      mask |= (1u << p.key);
+      mask |= (1ull << p.key);
   }
   return mask;
 }

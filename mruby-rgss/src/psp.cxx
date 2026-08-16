@@ -145,42 +145,58 @@ void psp_input_init(void) {
   sceCtrlSetSamplingMode(PSP_CTRL_MODE_ANALOG);
 }
 
-uint32_t psp_input_scan(void) {
+uint64_t psp_input_scan(void) {
   SceCtrlData pad;
   if (sceCtrlReadBufferPositive(&pad, 1) < 0)
     return 0;
 
-  uint32_t mask = 0;
+  uint64_t mask = 0;
   const uint32_t b = pad.Buttons;
 
   if (b & PSP_CTRL_UP)
-    mask |= (1u << PSP_INPUT_UP);
+    mask |= (1ull << PSP_INPUT_UP);
   if (b & PSP_CTRL_DOWN)
-    mask |= (1u << PSP_INPUT_DOWN);
+    mask |= (1ull << PSP_INPUT_DOWN);
   if (b & PSP_CTRL_LEFT)
-    mask |= (1u << PSP_INPUT_LEFT);
+    mask |= (1ull << PSP_INPUT_LEFT);
   if (b & PSP_CTRL_RIGHT)
-    mask |= (1u << PSP_INPUT_RIGHT);
+    mask |= (1ull << PSP_INPUT_RIGHT);
 
   // Analog stick as a coarse D-pad. 0..255, centre 128; a generous deadzone
   // keeps a resting stick from registering.
   if (pad.Ly < 64)
-    mask |= (1u << PSP_INPUT_UP);
+    mask |= (1ull << PSP_INPUT_UP);
   else if (pad.Ly > 192)
-    mask |= (1u << PSP_INPUT_DOWN);
+    mask |= (1ull << PSP_INPUT_DOWN);
   if (pad.Lx < 64)
-    mask |= (1u << PSP_INPUT_LEFT);
+    mask |= (1ull << PSP_INPUT_LEFT);
   else if (pad.Lx > 192)
-    mask |= (1u << PSP_INPUT_RIGHT);
+    mask |= (1ull << PSP_INPUT_RIGHT);
 
   // Cross = confirm (C), Circle = cancel (B), Triangle = A, matching the
   // desktop Z/X/C convention so the same games play the same way.
   if (b & PSP_CTRL_CROSS)
-    mask |= (1u << PSP_INPUT_C);
+    mask |= (1ull << PSP_INPUT_C);
   if (b & PSP_CTRL_CIRCLE)
-    mask |= (1u << PSP_INPUT_B);
+    mask |= (1ull << PSP_INPUT_B);
   if (b & PSP_CTRL_TRIANGLE)
-    mask |= (1u << PSP_INPUT_A);
+    mask |= (1ull << PSP_INPUT_A);
+
+  // The narrow D-pad + 3-button layout cannot bind all 15 Numbers/Operators
+  // ids, so the pad's five still-free buttons feed the first five digits
+  // (Input Number 0-4). Square, L, R, Start and Select are otherwise unused by
+  // this runtime; the remaining ids (N5..N9, PLUS..PERIOD) stay unbound here,
+  // exactly like F5-F12.
+  if (b & PSP_CTRL_SQUARE)
+    mask |= (1ull << PSP_INPUT_N0);
+  if (b & PSP_CTRL_LTRIGGER)
+    mask |= (1ull << PSP_INPUT_N1);
+  if (b & PSP_CTRL_RTRIGGER)
+    mask |= (1ull << PSP_INPUT_N2);
+  if (b & PSP_CTRL_START)
+    mask |= (1ull << PSP_INPUT_N3);
+  if (b & PSP_CTRL_SELECT)
+    mask |= (1ull << PSP_INPUT_N4);
 
   return mask;
 }

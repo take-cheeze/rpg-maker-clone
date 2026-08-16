@@ -53,6 +53,26 @@ enum Key {
   KEY_CTRL = 13,
   KEY_F9 = 19,
   KEY_F12 = 20,
+  // RPG2003 Key Input Processing Numbers/Operators groups (RGSS::Input::N0..
+  // PERIOD), used by Input Number and the numeric/operator key-input groups.
+  // Like the F-keys, these were previously unbound on the terminal/sixel
+  // backends; a keyboard (unlike the PSP/Wio button pads) can actually type
+  // them, so they are bound here. See the key switch in terminal_poll.
+  KEY_N0 = 21,
+  KEY_N1 = 22,
+  KEY_N2 = 23,
+  KEY_N3 = 24,
+  KEY_N4 = 25,
+  KEY_N5 = 26,
+  KEY_N6 = 27,
+  KEY_N7 = 28,
+  KEY_N8 = 29,
+  KEY_N9 = 30,
+  KEY_PLUS = 31,
+  KEY_MINUS = 32,
+  KEY_MULTIPLY = 33,
+  KEY_DIVIDE = 34,
+  KEY_PERIOD = 35,
 };
 
 // Terminals do not report key-release events, so a key is considered held for
@@ -111,8 +131,8 @@ struct KeyState {
   bool pressed = false;
   uint32_t expiry = 0;
 };
-// Sized to KEY_F12 + 1 -- the highest key id this backend can produce.
-KeyState g_keys[21];
+// Sized to KEY_PERIOD + 1 -- the highest key id this backend can produce.
+KeyState g_keys[36];
 
 // ---------------------------------------------------------------------------
 // Async stdout writer: a background thread drains queued frames so flush_cb
@@ -707,6 +727,58 @@ void terminal_poll(mrb_state* M) {
       case 'c':
       case 'C':
         hold_key(M, KEY_A, now);
+        break;
+      // Numeric keypad digits (Input Number, the Numbers key-input group). A
+      // raw terminal delivers the digit byte directly, so these bind the same
+      // way as on the SDL desktop backend, where the row and numpad digits both
+      // feed the matching id.
+      case '0':
+        hold_key(M, KEY_N0, now);
+        break;
+      case '1':
+        hold_key(M, KEY_N1, now);
+        break;
+      case '2':
+        hold_key(M, KEY_N2, now);
+        break;
+      case '3':
+        hold_key(M, KEY_N3, now);
+        break;
+      case '4':
+        hold_key(M, KEY_N4, now);
+        break;
+      case '5':
+        hold_key(M, KEY_N5, now);
+        break;
+      case '6':
+        hold_key(M, KEY_N6, now);
+        break;
+      case '7':
+        hold_key(M, KEY_N7, now);
+        break;
+      case '8':
+        hold_key(M, KEY_N8, now);
+        break;
+      case '9':
+        hold_key(M, KEY_N9, now);
+        break;
+      // Math operators (the Operators key-input group). These arrive as the
+      // shifted/standalone character byte in raw mode: '+'/'*' from the shifted
+      // '='/'"'/'8' chords, the rest as their own key.
+      case '+':
+        hold_key(M, KEY_PLUS, now);
+        break;
+      case '-':
+        hold_key(M, KEY_MINUS, now);
+        break;
+      case '*':
+        hold_key(M, KEY_MULTIPLY, now);
+        break;
+      case '/':
+        hold_key(M, KEY_DIVIDE, now);
+        break;
+      case '.':
+        hold_key(M, KEY_PERIOD, now);
         break;
       // A raw terminal cannot tell a genuine Ctrl/Shift modifier apart from
       // an ordinary keypress for most of these bindings (Ctrl-<letter> is
