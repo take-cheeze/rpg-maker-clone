@@ -1654,8 +1654,11 @@ The work below is roughly ordered by the critical path to a walkable game
   and **Open Video Options** (5005) are logged no-ops because this build's
   display backend has neither, the same answer EasyRPG gives on a platform whose
   window cannot change mode. Still open here: **Toggle ATB Mode** (5003), which
-  needs the RPG2003 ATB battle system this runtime does not model, so it is
-  deliberately left as a reported gap rather than a silent no-op; and the combo
+  would switch a gauge fight between this engine's active-time turn cycle (ADR
+  0054 — the gauge-driven battle now modelled for the gauge presentation) and
+  the round-based machine; the command itself toggles a per-battle flag the
+  battle still never reads, so it stays a reported gap rather than a silent
+  no-op. And the combo
   an Enable Combo arms is recorded on the actor but never spent, for the same
   reason. The opcodes were read out of liblcf's `EventCommand::Code` enum, which
   also corrected `analyze_game.rb` — it had Change Class / Change Battle Commands
@@ -1691,11 +1694,13 @@ The work below is roughly ordered by the critical path to a walkable game
   *only* page-scheduling call site RPG2000's own battle scene has, always
   calls `ScheduleNextPage(nullptr)`. A real `source` only ever exists in
   `Scene_Battle_Rpg2k3`, whose active-time turn cycle — the gauge-readiness
-  driver that hands the picker a concrete acting battler, still the one
-  unmodelled piece of the 2003 battle scene this runtime routes to (see ADR
-  0053 and the Toggle ATB Mode note below) — this runtime does not model, so
-  a page gated on `command_actor` is
-  *never satisfiable* under RPG2000's own battle system — not a once-per-turn
+  driver this runtime now runs for gauge battles (ADR 0054; see the Toggle
+  ATB Mode note below) — hands the picker a concrete acting battler, but the
+  *chosen command* is still never recorded onto it (`Game::Battle#
+  actor_command` stays nil: the scene drives a gauge turn through the same
+  action queue a round does, and nothing in that path notes which command was
+  picked), so a page gated on `command_actor` remains
+  *never satisfiable* here — not a once-per-turn
   evaluation standing in for a future per-actor one. Still open: video
   playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
   scene composites the animation's cells from its `Battle/<name>` sheet over the

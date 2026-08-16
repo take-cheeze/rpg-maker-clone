@@ -6,21 +6,199 @@ module RPG2k3
     # ported (ADR 0048) and the database decode is id-driven. Only the *timing*
     # layer is overridden, keeping the 2000 battle completely untouched.
     #
-    # For a gauge (active-time) presentation (battle_type 2) #update advances
-    # every combatant's gauge each frame; the next step (ADR 0054) replaces the
-    # 2000 sequential round order with gauge-readiness-driven actor selection.
+    # For a gauge (active-time) presentation (battle_type 2) the fight runs on
+    # the per-combatant charge gauge (ADR 0053 Phase 2's model, driven by the
+    # per-frame turn cycle here): every combatant's gauge fills each frame, the
+    # moment one is full decides *whose turn it is* instead of the 2000
+    # sequential round order, and acting resets it so it refills. A
+    # controllable party member whose gauge is full opens the command menu
+    # (the battle pauses on it -- Wait-mode behaviour); everyone else acts
+    # automatically the instant their gauge fires, enemy AI included.
+    #
     # The traditional (0) and alternative (1) presentations run the inherited
-    # turn-based machine unchanged.
+    # turn-based machine unchanged -- every override below is gated on
+    # `battle_type == 2`, so routing every 2003 fight through this scene stays
+    # safe for them.
     class Battle < RPG2k::Scene::Battle
-      # Advance the active-time gauge every frame for a gauge battle, then run
-      # the inherited update (enemy flashes / phase dispatch / ...). A
-      # turn-based or alternative battle leaves the gauge at 0, so
-      # Game::Battle#advance_gauges is a no-op there and 2000 behaviour is
-      # preserved exactly.
+      # Advance the active-time gauge every frame for a gauge battle, then
+      # dispatch on the phase. A turn-based or alternative battle leaves the
+      # gauge at 0 and runs the inherited update (and with it the whole 2000
+      # round machine) untouched.
       def update
         battle = @ui && @ui[:battle]
-        battle.advance_gauges if battle && battle.battle_type == 2
+        if battle && battle.battle_type == 2
+          battle.advance_gauges
+          update_enemy_flashes
+          update_enemy_positions
+          update_enemy_shakes
+          case @ui[:phase]
+          when :encounter_message then drive_battle_encounter_message
+          # The active-time idle loop -- the phase the gauge battle lives in
+          # between actions, and the replacement for the round machine's
+          # :command/:battle_options pair (see #enter_command_phase).
+          when :atb         then drive_battle_atb
+          when :command     then drive_battle_command
+          when :target      then drive_battle_target
+          when :skill       then drive_battle_skill
+          when :item        then drive_battle_item
+          when :ally_target then drive_battle_ally_target
+          when :animate     then drive_battle_animate
+          when :result      then drive_battle_result
+          when :event       then drive_battle_event
+          end
+          @map.try_open_debug_menu
+        else
+          super
+        end
+      end
+
+      # Whether this fight is the gauge presentation -- the gate every override
+      # here checks, so the 2003 scene's traditional (0) and alternative (1)
+      # battles inherit the untouched 2000 machine. A bare fixture battle that
+      # never set a battle_type reads 0 (false), like every other optional
+      # field in this codebase.
+      def gauge_battle?
+        battle = @ui && @ui[:battle]
+        !!(battle && battle.battle_type == 2)
+      end
+
+      # The gauge battle's "whose turn is it": poll the ready combatants (the
+      # full-gauge ones, highest first) and hand the frame to whichever one
+      # fires. A living, in-play party member free to take a manual command
+      # opens the command menu for it -- its gauge stays full, held, until it
+      # commits -- and anyone else (an enemy, an asleep/paralysed or Forced-AI
+      # actor) acts automatically right away. Battle-event pages are checked
+      # once per acting battler the way the round machine checks them between
+      # battlers, and a decided fight settles to its result.
+      def drive_battle_atb
+        battle = @ui[:battle]
+        return if run_battle_events(:atb)
+        if battle.finished?
+          # #finish_round_animation settles the result before returning here,
+          # but the per-frame loop should not trust that: settle it defensively
+          # (end_round is idempotent) so a fight that became decided another
+          # way -- a battle-event page, say -- lands on its result, never on a
+          # nil one.
+          battle.end_round
+          enter_battle_result(battle.result)
+          return
+        end
+        b = battle.ready_combatants.first
+        return unless b
+        if controllable?(b)
+          # Point the command flow at the ready actor (`current_actor` reads
+          # @ui[:actor_i]) and open its menu; the gauge stays full while the
+          # player chooses.
+          idx = living_allies.index(b)
+          @ui[:actor_i] = idx if idx
+          @ui[:cmd] = 0
+          @ui[:phase] = :command
+          draw_battle_command
+        else
+          # A Forced-AI actor's ready gauge gets the same AI pick the round
+          # machine's skip logic would have queued for it; a restricted actor
+          # just fires its turn (which #step_action resolves to a no-op).
+          battle.choose_auto_battle_command(b) if force_ai_actor?(b)
+          start_gauge_action(b)
+        end
+      end
+
+      # The gauge battle's replacement for the once-per-fight Fight/Auto/Escape
+      # options window: there is none -- the first ready controllable actor's
+      # command menu opens on its own the moment its gauge fills. Both the
+      # battle-start entry (#start's own final step) and the between-actions
+      # re-entry route here.
+      def enter_command_phase
+        return enter_atb_phase if gauge_battle?
         super
+      end
+
+      # The command menu's cancel lands here too: a gauge battle offers no
+      # Fight/Auto/Escape window to fall back to, so canceling the ready
+      # actor's menu simply returns it to the idle loop -- its gauge stays full
+      # and it is offered the menu again.
+      def open_battle_options
+        return enter_atb_phase if gauge_battle?
+        super
+      end
+
+      # A gauge battle's command-cancel never re-commands a *previous* party
+      # member the way the round machine does (only the ready actor is ever
+      # offered a menu); it always returns to the active-time idle loop. The
+      # base #drive_battle_command reads this to decide where B lands.
+      def prev_commandable_actor_index
+        return nil if gauge_battle?
+        super
+      end
+
+      # The command flow's "next actor" is the round machine's job. A gauge
+      # battle instead starts the ready actor's action the moment its command
+      # commits -- every command path (Attack/Skill/Defend/Item, each of the
+      # target/skill/item sub-menus) funnels through this one method.
+      def advance_actor
+        return start_gauge_action(current_actor) if gauge_battle? && current_actor
+        super
+      end
+
+      # The gauge battle's counterpart to #start_round_animation: begin the one
+      # ready combatant's action (its gauge already consumed by the model) in
+      # place of a whole agility-ordered round. From here #drive_battle_animate
+      # plays it out exactly as it plays a round -- banner, SE, animation,
+      # battle-page checks at the action boundary -- then the queue emptying
+      # returns the fight to the idle loop (#finish_round_animation's override).
+      def start_gauge_action(b)
+        if @ui[:cmd_win]
+          @ui[:cmd_win].dispose
+          @ui[:cmd_win] = nil
+        end
+        @ui[:battle].begin_gauge_turn(b)
+        @ui[:phase] = :animate
+        @ui[:anim_timer] = 0 # land the action next frame
+      end
+
+      # A gauge action is its own "round": when the queue empties, return to
+      # the active-time idle loop rather than opening the next round's command
+      # window. The per-action `pages_run` reset matches the base's per-round
+      # reset -- each battler's turn re-arms the troop's pages.
+      def finish_round_animation
+        return super unless gauge_battle?
+        battle = @ui[:battle]
+        battle.end_round
+        close_battle_action
+        if battle.finished?
+          enter_battle_result(battle.result)
+        else
+          @ui[:actor_i] = 0
+          @ui[:cmd] = 0
+          @ui[:pages_run] = {}
+          enter_atb_phase
+        end
+      end
+
+      # Enter the active-time idle loop and give it the rest of this frame, so
+      # an action ending and the next ready combatant firing never costs a
+      # whole extra frame -- the same "spend this frame's step budget
+      # immediately" idiom the base's own #finish_round_animation uses to open
+      # the next command window. #drive_battle_atb runs the page/finished/ready
+      # checks itself, so this just points the phase at it.
+      def enter_atb_phase
+        @ui[:phase] = :atb
+        return if settle_already_finished_battle
+        drive_battle_atb
+      end
+
+      # Whether `b` is a living, in-play *party member* free to be handed a
+      # manual command right now -- an enemy is never offered a menu (its ready
+      # gauge always fires its own AI action), and the "commandable" test the
+      # round machine's own skip logic uses for the allies it does offer one to
+      # (`#command_restricted?` + the scene's Forced-AI test) decides the rest,
+      # so an asleep / paralysed / Forced-AI actor's ready gauge fires its
+      # action automatically instead of pausing the fight for a prompt the
+      # action resolution would discard or override anyway.
+      def controllable?(b)
+        return false unless @ui[:allies].include?(b)
+        battle = @ui[:battle]
+        !battle.command_restricted?(b) && !force_ai_actor?(b)
       end
     end
   end

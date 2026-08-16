@@ -24,6 +24,7 @@ module RGSS
 end
 
 require 'stringio'
+require 'ostruct'
 module LCF
   def cp932_to_utf8(s)
     s.dup.force_encoding('Windows-31J')
@@ -153,6 +154,46 @@ end
 check 'pop_ready is nil for a turn-based battle' do
   tbat = Game::Battle.new([combatant('A', 1, 1, 20, 1)], [combatant('B', 1, 1, 10, 1)], Game::Rng.new(1))
   eq nil, tbat.pop_ready
+end
+
+# -- begin_gauge_turn: the per-ready-combatant action the scene's picker primes
+# -- (RPG2k3::Scene::Battle#drive_battle_atb), the single-battler counterpart
+# -- to begin_round's whole agility-ordered queue ----------------------------
+turn_hero = combatant('THero', 30, 0, 20, 1000)
+turn_slime = combatant('TSlime', 0, 0, 5, 1000)
+tbat = Game::Battle.new([turn_hero], [turn_slime], Game::Rng.new(1))
+tbat.battle_type = 2
+tbat.advance_gauges(5) # the hero's gauge is full
+
+check 'begin_gauge_turn queues one battler: step_action plays its turn, then nothing remains' do
+  tbat.command_attack(turn_hero, turn_slime)
+  tbat.begin_gauge_turn(turn_hero)
+  eq 0, turn_hero.gauge, 'the fired gauge was consumed'
+  entry = tbat.step_action
+  ok entry, 'the queued battler acted'
+  eq 'TSlime', entry[:target], 'against the commanded target'
+  eq nil, tbat.step_action, 'no second battler is in the queue -- the turn is done'
+end
+
+check 'begin_gauge_turn bumps the battler\'s per-battler turn counter, not the round count' do
+  eq 1, turn_hero.turns_taken, 'the battler\'s own page-condition turn counter ticks'
+  eq 0, tbat.turn, 'but the RPG2000-style round count stays 0 -- a gauge battle has no rounds'
+  eq nil, tbat.ready_combatants.first, 'and the consumed gauge is no longer ready'
+end
+
+check 'a do-nothing-restricted battler\'s gauge turn is consumed as a silent no-op' do
+  asleep = combatant('Asleep', 30, 0, 20, 1000)
+  asleep.states = [4] # Sleep: restriction 1
+  states = { 4 => OpenStruct.new(restriction: Game::Battle::RESTRICTION_DO_NOTHING) }
+  abat = Game::Battle.new([asleep], [combatant('Awake', 0, 0, 5, 1000)],
+                          Game::Rng.new(1), states, false, false, false, false,
+                          nil, nil, battle_type: 2)
+  abat.advance_gauges(5)
+  eq Game::Battle::GAUGE_MAX, asleep.gauge, 'ready to act'
+  abat.begin_gauge_turn(asleep)
+  eq 0, asleep.gauge, 'the turn consumed the gauge even though it cannot act'
+  eq 1, asleep.turns_taken, 'the skipped turn still counts as the battler\'s turn'
+  eq nil, abat.step_action, 'the restriction resolved the turn to no action at all'
 end
 
 puts "rpg2k3 battle gauge check: #{$checks} checks, #{$failures} failures"

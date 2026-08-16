@@ -6,7 +6,8 @@ Date: 2026-08-16
 
 Accepted — Phase 1 (rows), the Phase 2 gauge model (fill + ready + turn cycle),
 the Phase 2 scene integration and Phase 3 (boot-to-battle) all implemented
-2026-08-16.
+2026-08-16. The active-time turn cycle itself — the per-frame picker that
+consumes a full gauge — is implemented as the follow-on ADR 0054.
 
 ## Context
 
@@ -230,11 +231,11 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   mruby/CRuby divergence class the CRuby harnesses cannot see.
 - Row and timing are modelled as data on `Game::Battle::Combatant` so they are
   reusable by both the turn-based and gauge phase machines and by enemy AI.
-- The active-time turn cycle — consuming a full gauge with a command/AI action
-  and resetting it — is the remaining 2003 battle piece: the scene integration
-  advances gauges and Phase 3 reaches a real 2003 fight, but turns still run on
-  the 2000 sequential round machine. See the "next step" note on
-  `RPG2k3::Scene::Battle`.
+- The active-time turn cycle — the gauge-readiness-driven picker that consumes
+  a full gauge with a command/AI action and resets it — is implemented as the
+  follow-on ADR 0054, on top of the Phase 2 scene integration and Phase 3 boot
+  path: a gauge fight now runs on per-combatant gauges instead of the 2000
+  sequential round machine, with every other 2003 fight untouched.
 - Follow-up work (battle-event pages already parsed; 2003-specific battle
   commands beyond the four this engine drives; the Special command handler;
   the attacker-side back-row reach penalty) stays out of scope for these three

@@ -357,7 +357,7 @@ end
 def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
             airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
             rpg2003: false, menu_commands: nil, footstep: '', on_damage_se: false,
-            battleranimations: nil)
+            battleranimations: nil, battlecommands: nil)
   OpenStruct.new(
     rpg2003?: rpg2003,
     system: OpenStruct.new(system_graphic: '', title: 'TitleGraphic',
@@ -573,7 +573,15 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     # nil (the default, an RPG2000 database never carries chunk 32) unless a
     # check passes its own id => entry hash (#battle_pose, #battle_pose_set
     # below build the shape #build_actor_sprite reads).
-    battleranimations: battleranimations
+    battleranimations: battleranimations,
+    # RPG2003's Battle Commands table (chunk 0x1D, db.battlecommands) -- nil
+    # (the default, an RPG2000 database never carries it) unless a check passes
+    # its own table, e.g. `OpenStruct.new(battle_type: 2, placement: 1)` for a
+    # gauge-presentation fight. Scene::Battle#start reads
+    # `db.battlecommands.battle_type` off it to seed the fight's timing, and
+    # `battle_scene_class(db)` routes the fight to RPG2k3::Scene::Battle on
+    # `db.rpg2003?` -- so the two must agree in a gauge check.
+    battlecommands: battlecommands
   )
 end
 
@@ -804,12 +812,13 @@ def new_scene(events, player: [0, 0], common: nil, parallax: nil, troop_pages: n
               members: [], terrain_damage: 0, bush_depth: 0,
               airship_land: true, airship_pass: true, boat_pass: false, ship_pass: false,
               map_tree: nil, test_play: false, rpg2003: false,
-              footstep: '', on_damage_se: false, battleranimations: nil)
+              footstep: '', on_damage_se: false, battleranimations: nil,
+              battlecommands: nil)
   db = fake_db(common, troop_pages, terrain_damage, bush_depth,
                airship_land: airship_land, airship_pass: airship_pass,
                boat_pass: boat_pass, ship_pass: ship_pass, rpg2003: rpg2003,
                footstep: footstep, on_damage_se: on_damage_se,
-               battleranimations: battleranimations)
+               battleranimations: battleranimations, battlecommands: battlecommands)
   state = Game::State.new(fake_party(members, rpg2003: rpg2003), 1, player[0], player[1])
   state.map = fake_map(1, events, parallax: parallax)
   parent = fake_parent(db)
@@ -10971,12 +10980,14 @@ end
 # check predating the gauge-card status panel used; a check exercising a
 # non-default battle-screen presentation (BattleStubParty's `gauge_layout:`)
 # passes its own instead.
-def battle_scene_with_pages(pages, party: BattleStubParty.new, battleranimations: nil)
+def battle_scene_with_pages(pages, party: BattleStubParty.new, battleranimations: nil,
+                            rpg2003: false, battlecommands: nil)
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) }, troop_pages: pages,
-                    battleranimations: battleranimations)
+                    battleranimations: battleranimations,
+                    rpg2003: rpg2003, battlecommands: battlecommands)
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, party)
   [scene, st]
@@ -12731,6 +12742,115 @@ check 'DrawNumberSystem2 leading-zero cascade matches EasyRPG exactly (7, 42, 10
   eq [[8, 1], [16, 0], [24, 0]], glyphs.call(100),
      'a hundreds digit that carries down still draws its own zero tens/ones cells'
   eq [[8, 9], [16, 9], [24, 9]], glyphs.call(999), 'three 9s, still no (blank) thousands cell'
+end
+
+# -- the active-time (gauge) turn cycle (ADR 0053 Phase 2, scene integration) --
+#
+# A gauge-presentation battle (battle_type 2, routed to RPG2k3::Scene::Battle
+# by `battle_scene_class`) replaces "whose turn is it" with "whose gauge is
+# full": every combatant's gauge fills each frame, a full gauge opens the
+# command menu for a controllable party member or fires the action of anyone
+# else (enemy AI included) automatically, and acting resets it. These checks
+# drive a real gauge battle through the 2003 scene and poke the gauges
+# directly to control whose turn is up.
+
+# A real gauge battle for the turn-cycle checks: the fixture database is
+# RPG2003 with a Battle Commands table asking for the gauge presentation, so
+# the fight opens in RPG2k3::Scene::Battle (not the 2000 scene) and its model
+# is seeded battle_type 2.
+def gauge_battle_scene(party = BattleStubParty.new, pages = {})
+  scene, = battle_scene_with_pages(pages, party: party, rpg2003: true,
+                                   battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
+  scene
+end
+
+check 'a gauge battle opens the ready actor\'s command menu on its own -- no Fight/Auto/Escape window' do
+  scene = gauge_battle_scene
+  seen_options = false
+  ui = nil
+  120.times do
+    scene.update
+    ui = battle_ui(scene)
+    seen_options = true if ui && ui[:phase] == :battle_options
+    break if ui && ui[:phase] == :command
+  end
+  ok ui, 'the battle opened'
+  ok scene.instance_variable_get(:@battle).is_a?(RPG2k3::Scene::Battle),
+     'the gauge database routes the fight to the 2003 scene'
+  eq :command, ui[:phase], 'the first full-gauge party member\'s menu appears on its own'
+  eq ui[:allies][0], scene.instance_variable_get(:@battle).send(:current_actor),
+     'and it is that ready member being commanded'
+  eq false, seen_options, 'the once-per-fight Fight/Auto/Escape window never shows for a gauge battle'
+end
+
+check 'committing the ready actor\'s command starts that one action, consuming its gauge' do
+  scene = gauge_battle_scene
+  ui = battle_until_phase(scene, :command, 120)
+  ok ui, 'the battle opened to the ready actor\'s menu'
+  # Empty every gauge so the fight has nothing else queued behind this action.
+  ui[:battle].all_combatants.each { |c| c.gauge = 0 }
+  RGSS::Input.triggered = [RGSS::Input::C] # Attack
+  scene.update
+  RGSS::Input.triggered = []
+  ui = battle_ui(scene)
+  eq :target, ui[:phase], 'Attack opens the target cursor'
+  RGSS::Input.triggered = [RGSS::Input::C] # the first Slime
+  scene.update
+  RGSS::Input.triggered = []
+  ui = battle_ui(scene)
+  eq :animate, ui[:phase], 'confirming the target starts the action'
+  eq 0, ui[:battle].all_combatants.first.gauge,
+     'the committed actor\'s gauge was consumed the moment its turn began'
+end
+
+check 'canceling the ready actor\'s menu returns to the active-time idle loop, and ' \
+      'a ready enemy\'s gauge fires its action automatically there' do
+  scene = gauge_battle_scene
+  ui = battle_until_phase(scene, :command, 120)
+  ok ui, 'the battle opened to the ready actor\'s menu'
+  ui[:battle].all_combatants.each { |c| c.gauge = 0 }
+  RGSS::Input.triggered = [RGSS::Input::B] # cancel the menu
+  scene.update
+  RGSS::Input.triggered = []
+  ui = battle_ui(scene)
+  eq :atb, ui[:phase], 'cancel returns to the active-time idle loop, not to a Fight/Auto/Escape window'
+  # Make a Slime ready: its gauge fires the enemy's action with no menu.
+  ui[:battle].enemy(0).gauge = Game::Battle::GAUGE_MAX
+  scene.update
+  ui = battle_ui(scene)
+  eq :animate, ui[:phase], 'a ready enemy acts immediately instead of opening a menu'
+  eq 0, ui[:battle].enemy(0).gauge, 'the acting enemy\'s gauge was consumed'
+end
+
+check 'a ready but restricted (asleep) party member\'s gauge fires a silent no-op, never a command prompt' do
+  scene = gauge_battle_scene(BattleStubParty.new(BattleStubActor.new(id: 1, states: [4])))
+  ui = battle_until_phase(scene, :animate, 120)
+  ok ui, 'the battle opened'
+  hero = ui[:battle].all_combatants.first
+  eq 0, hero.gauge, 'the asleep member\'s ready gauge was consumed by its (no-op) turn'
+  eq true, hero.queued_no_act, 'the do-nothing restriction was locked in for the turn'
+end
+
+check 'an RPG2003 battle_type 0 (traditional) fight still runs the round machine, never the gauge idle loop' do
+  scene, = battle_scene_with_pages({}, rpg2003: true,
+                                   battlecommands: OpenStruct.new(battle_type: 0, placement: 1))
+  seen_atb = false
+  ui = nil
+  120.times do
+    ui = battle_ui(scene)
+    # The same tap-before-update pattern #battle_at_command uses: dismissing
+    # the Fight/Auto/Escape window is the only way the round machine gets to
+    # its :command phase, and the tap must survive into the update that reads it.
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    seen_atb = true if ui && ui[:phase] == :atb
+    scene.update
+    RGSS::Input.triggered = []
+    ui = battle_ui(scene)
+    break if ui && ui[:phase] == :command
+  end
+  ok ui, 'the battle opened'
+  eq :command, ui[:phase], 'the traditional 2003 fight opens the ordinary round command phase'
+  eq false, seen_atb, 'and never enters the active-time idle loop'
 end
 
 # -- mid-battle party roster sync: the screen (step 2 of the roster-sync ------
