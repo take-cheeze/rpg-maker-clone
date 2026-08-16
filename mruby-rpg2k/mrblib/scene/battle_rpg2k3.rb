@@ -146,12 +146,18 @@ module RPG2k3
       # plays it out exactly as it plays a round -- banner, SE, animation,
       # battle-page checks at the action boundary -- then the queue emptying
       # returns the fight to the idle loop (#finish_round_animation's override).
+      #
+      # `battler_boundary` is armed so the *first* gauge action of a turn gets
+      # the per-battler page check too: #drive_battle_animate only runs that
+      # check on a set boundary, and a fresh gauge action has none of its own
+      # yet (the flag is normally set by the *previous* action's step_action).
       def start_gauge_action(b)
         if @ui[:cmd_win]
           @ui[:cmd_win].dispose
           @ui[:cmd_win] = nil
         end
         @ui[:battle].begin_gauge_turn(b)
+        @ui[:battler_boundary] = true
         @ui[:phase] = :animate
         @ui[:anim_timer] = 0 # land the action next frame
       end

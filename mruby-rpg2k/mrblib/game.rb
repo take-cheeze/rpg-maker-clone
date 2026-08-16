@@ -6008,7 +6008,16 @@ module Game
     # `turn`, `enemy(index)`, `ally_by_actor_id(id)`, `enemy_turn(index)`,
     # `actor_turn(id)`, `fatigue` and `actor_command(id)`. A context that cannot
     # answer a tested sub-condition fails the page.
-    def self.active?(cond, switches, variables, ctx)
+    #
+    # `source` is the battler a per-battler check runs *for* -- the scene passes
+    # the battle's #acting_battler at a battler's action boundary. It gates the
+    # turn_enemy / turn_actor / command_actor conditions the way EasyRPG's
+    # `AreConditionsMet(source, ...)` does: a page checked at one battler's turn
+    # only fires off that battler's own counter/command, and a command_actor
+    # page needs a source at all. A no-source round-boundary check leaves those
+    # conditions ungated (turn_* test the named battler regardless, command_actor
+    # fails), matching the reference.
+    def self.active?(cond, switches, variables, ctx, source = nil)
       # A page whose condition box is entirely unticked never runs — RPG_RT
       # treats "no trigger" as "never", not as "always" (EasyRPG's
       # AreConditionsMet opens with exactly this test). Worth stating because the
@@ -6044,17 +6053,17 @@ module Game
       # the same silent-pass-through class of bug the map-event TIMER2
       # condition (Game::EventPage.active?, this file) was already fixed for.
       if (flags & TURN_ENEMY) != 0 && ctx.rpg2003?
-        t = ctx.enemy_turn(cond.turn_enemy_id)
+        t = ctx.enemy_turn(cond.turn_enemy_id, source)
         return false if t.nil?
         return false unless check_turns(t, cond.turn_enemy_b, cond.turn_enemy_a)
       end
       if (flags & TURN_ACTOR) != 0 && ctx.rpg2003?
-        t = ctx.actor_turn(cond.turn_actor_id)
+        t = ctx.actor_turn(cond.turn_actor_id, source)
         return false if t.nil?
         return false unless check_turns(t, cond.turn_actor_b, cond.turn_actor_a)
       end
       if (flags & COMMAND_ACTOR) != 0 && ctx.rpg2003?
-        return false unless ctx.actor_command(cond.command_actor_id) == cond.command_id
+        return false unless ctx.actor_command(cond.command_actor_id, source) == cond.command_id
       end
       if (flags & FATIGUE) != 0 && ctx.rpg2003?
         f = ctx.fatigue
@@ -6066,11 +6075,12 @@ module Game
 
     # Every [id, page] whose condition currently holds, in page order — unlike
     # a map event (where the highest active page wins) RPG2000 runs *each*
-    # matching battle page.
-    def self.select_all(pages, switches, variables, ctx)
+    # matching battle page. `source` threads to #active? (the battler a
+    # per-battler check runs for, see there).
+    def self.select_all(pages, switches, variables, ctx, source = nil)
       out = []
       return out if pages.nil?
-      pages.each { |id, page| out << [id, page] if active?(page.condition, switches, variables, ctx) }
+      pages.each { |id, page| out << [id, page] if active?(page.condition, switches, variables, ctx, source) }
       out
     end
   end
@@ -8739,6 +8749,11 @@ module Game
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
       @pending = []  # extra hits of an all-target action, drained one per #step
+      # The battler whose turn is currently resolving (set by #step / #step_action
+      # as each one is dequeued, and by #begin_gauge_turn for a gauge-fired
+      # action). nil between turns. Exposed as #acting_battler for the per-battler
+      # battle-page checks (#enemy_turn/#actor_turn/#actor_command's `source`).
+      @acting = nil
     end
 
     # RPG2000 normal-attack damage variance on the 0-10 `var` scale.
@@ -8778,6 +8793,15 @@ module Game
     # battle turn number, which the pages' turn conditions are written against.
     def turn; @rounds; end
 
+    # The battler whose turn is currently resolving -- set as each battler is
+    # dequeued to act (#step / #step_action) or queued for a gauge-fired turn
+    # (#begin_gauge_turn), nil between turns. The `source` the per-battler
+    # battle-page checks (#enemy_turn / #actor_turn / #actor_command) gate on:
+    # the scene passes this at a battler's action boundary, so a
+    # turn_enemy / turn_actor / command_actor page tests the battler it is
+    # checked for rather than anyone's counter.
+    def acting_battler; @acting; end
+
     # The live combatant for troop member `index`, or nil when out of range.
     def enemy(index)
       return nil unless index.is_a?(Integer) && index >= 0
@@ -8801,14 +8825,26 @@ module Game
     # turn_enemy / turn_actor conditions test (Combatant#turns_taken). nil for a
     # battler that is not in this fight, which fails the page rather than
     # answering a condition about someone who is not here.
-    def enemy_turn(index)
+    #
+    # `source` is the battler a per-battler page check is running *for*
+    # (the scene passes #acting_battler at a battler's action boundary): when
+    # one is given, the named battler's counter only answers if the source *is*
+    # that battler — EasyRPG's `AreConditionsMet`'s
+    # `if (source && source != enemy) return false;` — so a page checked at one
+    # battler's turn never fires off a *different* battler's counter. A
+    # no-source round-boundary check stays ungated, matching the reference.
+    def enemy_turn(index, source = nil)
       foe = enemy(index)
-      foe && foe.turns_taken
+      return nil unless foe
+      return nil if source && !source.equal?(foe)
+      foe.turns_taken
     end
 
-    def actor_turn(id)
+    def actor_turn(id, source = nil)
       ally = ally_by_actor_id(id)
-      ally && ally.turns_taken
+      return nil unless ally
+      return nil if source && !source.equal?(ally)
+      ally.turns_taken
     end
 
     # The party's exhaustion, 0 (untouched) to 100 (wiped out) — the RPG2003
@@ -8844,20 +8880,23 @@ module Game
       100 - Game.round_half_even(num, den)
     end
 
-    # The `command_actor` page condition (which battle command an actor just
-    # chose) is answered "unknown" (nil), which Game::BattlePage reads as
-    # "fails the page" rather than firing it unchecked. The *data* is now in
-    # place -- the scene records the chosen command onto the Combatant
-    # (`last_battle_action`, recorded at command selection) -- but EasyRPG's
-    # `AreConditionsMet` only evaluates the condition when handed a `source`
-    # battler (`if (!source) return false;`), and `Scene_Battle_Rpg2k::
-    # CheckBattleEndAndScheduleEvents` — the only page-scheduling call site
-    # RPG2000's own battle scene has — always calls with a null source. The
-    # source-threading that lets a page test *the acting battler's* command
-    # (rather than anyone's recorded one, at any boundary) is the remaining
-    # piece; until then a page gated on `command_actor` stays never satisfiable
-    # here, matching real RPG_RT's RPG2000 behaviour by keeping the answer nil.
-    def actor_command(_id); nil; end
+    # The `command_actor` page condition: which battle command the *acting*
+    # battler chose (Combatant#last_battle_action, recorded by the scene at
+    # command selection). Port of EasyRPG's `AreConditionsMet` (src/
+    # game_interpreter_battle.cpp): the condition only evaluates when handed a
+    # `source` battler (`if (!source) return false;`), the source must *be* the
+    # named actor (`if (source != actor) return false;`), and then the actor's
+    # chosen command is compared. `source` is the battler a per-battler page
+    # check runs for (the scene passes #acting_battler at a battler's action
+    # boundary); a no-source round-boundary check — the only kind RPG2000's own
+    # battle scene ever has — answers nil and the condition fails, matching
+    # real RPG_RT's RPG2000 behaviour.
+    def actor_command(actor_id, source = nil)
+      return nil unless source
+      a = source.actor
+      return nil unless a && a.respond_to?(:id) && a.id == actor_id
+      source.last_battle_action
+    end
 
     # Force Flee (1006), target 0: let the party leave whenever it next tries.
     # RPG_RT grants the escape rather than performing it, so the player still has
@@ -8926,6 +8965,7 @@ module Game
         refill_queue if @queue.empty?
         return nil if @queue.empty? # hit MAX_ROUNDS
         b = @queue.shift
+        @acting = b
         sync_allies_from_party if @party # see #step_action's own comment on why
         next if b.dead? || !b.member?
         # The battler's own turn starts here, whether or not it ends up able to
@@ -9180,6 +9220,7 @@ module Game
     # the pages read the per-battler counters instead.
     def begin_gauge_turn(b)
       @pending = []
+      @acting = b
       b.next_battle_turn
       b.queued_no_act = do_nothing_restricted?(b)
       reset_gauge(b)
@@ -9560,6 +9601,7 @@ module Game
       loop do
         return nil if finished? || @queue.empty?
         b = @queue.shift
+        @acting = b
         sync_allies_from_party if @party
         next if b.dead? || !b.member?
         # Afflicted states act at the start of the battler's turn: slip damage

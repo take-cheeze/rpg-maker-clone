@@ -1715,9 +1715,12 @@ class RPG2k
         # the previous #step_action call left nothing buffered (a dual-wield
         # swing or an all-target Skill/Item queues several hits from *one*
         # battler; the check belongs between battlers, not between hits).
+        # The acting battler rides along as the per-battler check's source, so
+        # the turn_enemy / turn_actor / command_actor conditions test the
+        # battler the check is for (Game::BattlePage.active?).
         if @ui[:battler_boundary]
           @ui[:battler_boundary] = false
-          return if run_battle_events(:animate)
+          return if run_battle_events(:animate, @ui[:battle].acting_battler)
         end
         entry = @ui[:battle].step_action
         if entry
@@ -1906,16 +1909,22 @@ class RPG2k
       # command menu), `:animate` for the between-battlers check
       # (#drive_battle_animate), which needs to pick back up mid-round rather
       # than restart the command phase.
-      def run_battle_events(return_phase = :command)
+      #
+      # `source` is the battler this page check runs *for* -- the battle's
+      # #acting_battler at a battler's action boundary (see
+      # Game::BattlePage.active?), which gates the per-battler turn_* /
+      # command_actor conditions on that battler. A round-boundary check (the
+      # default, no source) leaves them ungated.
+      def run_battle_events(return_phase = :command, source = nil)
         ui = @ui
         return false unless ui && ui[:troop].pages
         matched = Game::BattlePage.select_all(ui[:troop].pages, @state.switches,
-                                              @state.variables, ui[:battle])
+                                              @state.variables, ui[:battle], source)
         entry = matched.find { |(id, _)| !ui[:pages_run][id] }
         return false unless entry
         ui[:pages_run][entry[0]] = true
         cmds = entry[1].event
-        return run_battle_events(return_phase) if cmds.nil? || cmds.empty? # empty page: try the next
+        return run_battle_events(return_phase, source) if cmds.nil? || cmds.empty? # empty page: try the next
         ui[:events].battle = ui[:battle]
         ui[:events].start(cmds)
         ui[:event_return_phase] = return_phase

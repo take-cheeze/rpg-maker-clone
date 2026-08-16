@@ -11028,6 +11028,34 @@ def battle_scene_with_pages(pages, party: BattleStubParty.new, battleranimations
   [scene, st]
 end
 
+# The per-battler `source` the boundary page check runs with: a troop page
+# gated on `command_actor` fires when the *acting* battler chose the command
+# (Game::Battle#actor_command with the scene-passed #acting_battler) -- the
+# ADR 0054 follow-up that made the condition satisfiable at all. The
+# model-side gating is pinned in rpg2k_logic_check.rb; this drives a real
+# gauge battle through the 2003 scene so the boundary check actually hands
+# the acting battler over.
+check 'a command_actor troop page fires at the acting battler\'s turn in a gauge battle' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])],
+                            Game::BattlePage::COMMAND_ACTOR,
+                            command_actor_id: 1, command_id: 1) }
+  scene, st = battle_scene_with_pages(pages, rpg2003: true,
+                                      battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(BattleStubActor.new(agi: 20)))
+  ui = battle_until_phase(scene, :command, 250)
+  ok ui, 'the gauge battle opened to the ready actor\'s menu'
+  eq false, st.switches[5], 'the page has not fired yet'
+  press_key(scene, RGSS::Input::C) # Attack -- the fixed-four command id 1
+  eq :target, ui[:phase], 'Attack opens the target cursor'
+  press_key(scene, RGSS::Input::C) # the first Slime: the action begins
+  # The action's boundary check runs the troop's pages for the acting battler
+  # (the hero, who chose Attack = command id 1), so the command_actor page
+  # fires and its event toggles switch 5.
+  5.times { scene.update }
+  eq true, st.switches[5], 'the command_actor page fired at the acting hero\'s turn'
+end
+
 # yado.tk / 01_shoshin's 011_siyou: "Empty party doesn't itself Game Over, but
 # battling with one is instant defeat; all-KO'd ... is instant Game Over the
 # same way." #draw_battle_command's current_actor (living_allies[actor_i]) is
