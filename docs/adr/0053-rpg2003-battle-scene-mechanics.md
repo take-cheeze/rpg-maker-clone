@@ -4,8 +4,9 @@ Date: 2026-08-16
 
 ## Status
 
-Accepted — Phase 1 (rows) and the Phase 2 gauge model (fill + ready + turn
-cycle) implemented 2026-08-16; Phase 2 scene integration and Phase 3 pending.
+Accepted — Phase 1 (rows), the Phase 2 gauge model (fill + ready + turn cycle)
+and the Phase 2 scene integration all implemented 2026-08-16; Phase 3 (the
+remaining 2003 boot path) pending.
 
 ## Context
 
@@ -144,6 +145,34 @@ Verification: `scripts/rpg2k3_battle_gauge_check.rb` (6 checks) exercises the
 inert turn-based path, AGI-proportional fill, full/ready selection, ordering,
 and that a dead battler neither charges nor becomes ready; wired into the
 `ruby-checks` CI job.
+
+## Phase 2 — scene integration notes (2026-08-16)
+
+The per-frame gauge advance is now driven from the battle scene rather than
+left as a fixture-only model. A new `RPG2k::Scene.battle_scene_class(db)`
+factory (`mruby-rpg2k/mrblib/scene/base.rb`) selects the scene class for a
+fight: `RPG2k3::Scene::Battle` (a new `mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb`)
+when the database was authored in 2003 (`db.rpg2003?`), else the plain
+`RPG2k::Scene::Battle`. `Scene::Map#drive_battle` now constructs the battle
+through this factory instead of `Scene::Battle.new` directly, so the 2003 scene
+is reached the moment a 2003 project opens a fight.
+
+- `RPG2k3::Scene::Battle` subclasses the 2000 scene and overrides `#update` to
+  call `Game::Battle#advance_gauges` once per frame **before** `#super`, gated on
+  `battle_type == 2`. `advance_gauges` is itself a no-op for `battle_type != 2`,
+  so the traditional (0) and alternative (1) presentations run the unchanged
+  turn-based machine — routing every 2003 fight through this scene is safe and
+  future-proof for the 2003-specific presentation work.
+- The factory is referenced at call time (not load time), and `RPG2k3::Scene::Battle`
+  only needs to exist when the method runs, so scene-file load order does not
+  matter for correctness. `battle_rpg2k3.rb` sorts after `battle.rb` in the
+  mrblib glob, so its superclass is defined before it is parsed.
+
+Verification: `scripts/rpg2k_scene_check.rb` adds checks that `battle_scene_class`
+returns `RPG2k3::Scene::Battle` for a 2003 database, `RPG2k::Scene::Battle` for
+an RPG2000 database, and the 2000 scene for a database that implements no
+`#rpg2003?` at all (a bare fixture) — keeping the gauge engine dark for every
+fixture-driven check. The existing 660-check scene harness stays green.
 
 ## Consequences
 

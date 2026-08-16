@@ -329,5 +329,21 @@ class RPG2k
       end
     end
 
+    # The battle scene class for a fight in `db`'s edition: the RPG2003 scene
+    # (RPG2k3::Scene::Battle, mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb) when
+    # the database was authored in 2003, else the plain RPG2000 turn-based
+    # scene. The 2003 scene subclasses the 2000 one and only overrides #update
+    # to advance the active-time gauge when battle_type == 2, so routing every
+    # 2003 fight through it is safe even for the traditional (0) and
+    # alternative (1) presentations, which inherit the unchanged turn-based
+    # machine. Referenced at call time (not load time), so the RPG2k3 constant
+    # resolves however the files happen to be loaded.
+    def self.battle_scene_class(db)
+      if db.respond_to?(:rpg2003?) && db.rpg2003?
+        RPG2k3::Scene::Battle
+      else
+        Battle
+      end
+    end
   end
 end

@@ -16497,6 +16497,26 @@ check 'the window title comes from RPG_RT.ini, decoded from CP932' do
   end
 end
 
+check 'battle_scene_class routes a 2003 database to the RPG2k3 battle scene' do
+  rpg2003_db = OpenStruct.new
+  def rpg2003_db.rpg2003?; true; end
+  eq RPG2k3::Scene::Battle, RPG2k::Scene.battle_scene_class(rpg2003_db),
+     'an RPG2003 database boots the gauge-capable 2003 scene'
+
+  rpg2000_db = OpenStruct.new
+  def rpg2000_db.rpg2003?; false; end
+  eq RPG2k::Scene::Battle, RPG2k::Scene.battle_scene_class(rpg2000_db),
+     'an RPG2000 database keeps the turn-based 2000 scene'
+end
+
+# A database that does not implement #rpg2003? at all (a bare fixture) is
+# treated as RPG2000, never as the 2003 scene, so the gauge engine stays dark
+# for every fixture-driven check.
+check 'battle_scene_class treats an edition-less database as RPG2000' do
+  eq RPG2k::Scene::Battle, RPG2k::Scene.battle_scene_class(OpenStruct.new),
+     'a fixture database with no #rpg2003? keeps the 2000 scene'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
