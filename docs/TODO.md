@@ -7181,6 +7181,41 @@ not yet verified:
   inactive-handler check already passed, matching the previous hardcoded
   behaviour). `ninja -C build test` (mruby-lcf's own `lcf_test.rb`) also run
   and passing, since this fix touches `schema.rb`.
+- ✅ **RPG2003's "cursed"/forced-state armor (a shield/armor/helmet/accessory
+  item with its `reverse_state_effect` flag set) now inflicts the states its
+  own `state_set` marks the instant it's worn, and cures them the instant
+  it comes off — it used to have zero gameplay effect from this mechanic at
+  all.** Confirmed against EasyRPG's actual C++ source: `Game_Actor::
+  AdjustEquipmentStates` (`src/game_actor.cpp`) is called from every
+  equip-mutation path (`SetEquipment`, in turn `ChangeEquipment`, both the
+  equip menu and the Change Equipment event command's own route) and adds
+  every state a piece of `IsArmorType` (shield/armor/helmet/accessory,
+  never a weapon) equipment flags in its `state_set` when
+  `Player::IsRPG2k3() && item->reverse_state_effect`, removing them again
+  when the item comes off. `Actor#equip_item`/`#unequip`/`#equip`
+  (`mruby-rpg2k/mrblib/game.rb`) only ever touched `@equipment` and
+  recomputed stats — no code path called `#add_state`/`#remove_state` in
+  response to an equip change, so a classic "cursed berserker armor" (item
+  flagged to force a Berserk-like state while worn) behaved as ordinary
+  stat-boosting gear with none of its intended mechanic. Also ported: a
+  two-handed weapon bumping a cursed shield out of the other hand
+  (`#free_two_handed_slot`) cures that shield's own states too, matching
+  EasyRPG's own `ChangeEquipment(other_slot, 0)` recursion into the
+  displaced slot. Fixed by adding `Actor#adjust_equipment_states`, wired
+  into all three equip-mutation methods, reusing the existing
+  `Party::ITEM_SHIELD/ARMOR/HELMET/ACCESSORY` constants already used
+  elsewhere in this file for the identical armor-type test. The separate
+  "this state can't be healed by ordinary means while the armor stays
+  equipped" rule (EasyRPG's own `GetPermanentStates`) is not implemented
+  here — a real but distinct question this fix leaves open, the same way
+  the session's earlier attribute-defence fix left `reverse_state_effect`'s
+  sibling battle-formula question open before a follow-up closed it.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks — equip
+  inflicts and unequip cures on an RPG2003 database, the same equip is
+  inert on RPG2000, and a two-handed weapon swap cures a displaced cursed
+  shield too — two of the three confirmed to fail against the pre-fix code
+  before the fix (the RPG2000 check already passed, since the pre-fix code
+  never inflicted anything on any edition).
 - ✅ **An item's 使用回数 (`uses`, item field 6) is now honoured: a copy is spent
   only once it has been used that many times, `0` means 無制限 (never
   consumed), and the five equipment types are never consumed by use at all.**
