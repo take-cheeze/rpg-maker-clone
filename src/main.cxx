@@ -90,6 +90,17 @@ DEFINE_int32(
     "there. Combine with --iterm (or --sixel) and --timeout_ms to dump the "
     "map to the terminal and exit. 0 disables the override (default; map ids "
     "start at 1)");
+DEFINE_int32(
+    rpg2k_battle_troop,
+    0,
+    "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
+    "Game like --rpg2k_new_game, then open a battle against this troop id from "
+    "the database (a scripted Enemy Encounter with no encounter wiring in the "
+    "project -- the 2003 test beds ship no encounters), logging the fight it "
+    "reaches as [RPG2k-BATTLE]. Used to drive a real project into the battle "
+    "scene headlessly so the 2003 battle path is exercised end to end; the "
+    "fight then waits for input until the run times out. 0 disables it "
+    "(default; troop ids start at 1)");
 DEFINE_bool(
     rgss_script_host,
     true,
@@ -907,6 +918,7 @@ static void disable_non_test_play_flags() {
   reset_bool(FLAGS_rpg2k_new_game, "rpg2k_new_game");
   reset_bool(FLAGS_rpg2k_continue, "rpg2k_continue");
   reset_int(FLAGS_rpg2k_preview_map, "rpg2k_preview_map");
+  reset_int(FLAGS_rpg2k_battle_troop, "rpg2k_battle_troop");
   reset_bool(FLAGS_rgss_host_new_game, "rgss_host_new_game");
   reset_bool(FLAGS_rgss_host_move_test, "rgss_host_move_test");
   reset_bool(FLAGS_rgss_host_menu_test, "rgss_host_menu_test");
@@ -1289,6 +1301,12 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_PREVIEW_MAP"),
                 mrb_fixnum_value(FLAGS_rpg2k_preview_map));
+  // --rpg2k_battle_troop: the troop id RPG2k#start_new_game (mruby-rpg2k)
+  // should open a headless battle against once the map is up, or 0 when
+  // unset. See the flag's own definition above.
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_BATTLE_TROOP"),
+                mrb_fixnum_value(FLAGS_rpg2k_battle_troop));
   // Whether the RGSS script host runs the project's own scripts (the default)
   // or the built-in flow does. Resolved from --rgss_script_host and the
   // RGSS_SCRIPT_HOST environment variable above, because the Ruby side cannot

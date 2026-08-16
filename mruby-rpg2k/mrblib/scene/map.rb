@@ -4855,6 +4855,22 @@ class RPG2k
         @battle = nil
       end
 
+      # --rpg2k_battle boot drive (RPG2k#headless_battle_troop, the flag in
+      # src/main.cxx): arm a fight against `troop_id` on this scene's own
+      # foreground interpreter right after New Game, so the map's next frame
+      # drives it through the ordinary :battle wait exactly as a random
+      # encounter would (#drive_battle). Marked `headless: true` so the fight
+      # logs the [RPG2k-BATTLE] marker the boot check asserts on (see
+      # Scene::Battle#start) -- it is the same request shape as a wandering
+      # encounter otherwise. Only meant to be called while the interpreter is
+      # otherwise idle (the instant after New Game); a failing arm (a troop id
+      # the database no longer has, which #start_random_battle itself already
+      # reports) logs and leaves the party on the map rather than crashing.
+      def headless_battle(troop_id)
+        @interpreter.start_random_battle(troop_id, headless: true)
+      end
+      public :headless_battle
+
       # The map tree's map_properties table, or nil when this build has no tree
       # (the scene harnesses construct a map directly).
       def map_properties
@@ -7520,7 +7536,7 @@ class RPG2k
              :terrain_backdrop, :map_properties, :perform_game_over,
               :try_open_debug_menu, :build_animation, :anim_target, :drive_map_animation,
              :fire_animation_flashes, :frames_from_tenths, :load_face_bitmap,
-             :step_map_animation, :close_battle
+             :step_map_animation, :close_battle, :current_map_tone
 
       def render
         px, py = player_pixel

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 # Boot the built engine on real RPG Maker 2000/2003 data and confirm it reaches
-# the map, headlessly.
+# the map, headlessly. It also drives a real project into the *battle* scene
+# (--rpg2k_battle_troop, see the section below) so the 2003 battle path is
+# exercised end to end rather than only reached up to the map.
 #
 # Why this exists: the RPG2000 runtime is written in Ruby under mruby-rpg2k, and
 # the checks that cover it (scripts/rpg2k_logic_check.rb, rpg2k_scene_check.rb,
@@ -85,6 +87,45 @@ for game in "${GAMES[@]}" ; do
     num=$((num + 1))
 done
 
+# --rpg2k_battle: a bare boot only ever reaches the map -- the RPG2003 test
+# beds ship no encounters, so nothing drives the game into a fight on its own.
+# The flag opens a battle against a named troop once New Game's map is up, and
+# Scene::Battle#start logs the [RPG2k-BATTLE] marker when the fight's UI is
+# really on screen. This pass asserts that marker (and that the battle scene
+# never raised), exercising the 2003 battle path -- scene routing, troop
+# sprites, actor sprites, the gauge-card status panel, per-frame gauge advance
+# -- end to end against real data (ADR 0053 Phase 3). Overridable so a
+# different project/troop can be driven instead.
+BATTLE_GAME="${RPG2K_BATTLE_GAME:-data/mtf-meido-action/Debug}"
+BATTLE_TROOP="${RPG2K_BATTLE_TROOP:-14}"
+if [ -f "${BATTLE_GAME}/RPG_RT.ldb" ] ; then
+    checked=$((checked + 1))
+    log="$(mktemp)"
+    echo "== ${BATTLE_GAME} (battle --rpg2k_battle_troop=${BATTLE_TROOP})"
+    if ! xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
+            --game_dir "${BATTLE_GAME}" --test_play \
+            --rpg2k_battle_troop="${BATTLE_TROOP}" \
+            --timeout_ms="${TIMEOUT_MS}" >"${log}" 2>&1 ; then
+        echo "FAILED: ${BATTLE_GAME}: the engine exited non-zero" >&2
+        failed=$((failed + 1))
+    elif ! grep -q '\[RPG2k-BATTLE\]' "${log}" ; then
+        echo "FAILED: ${BATTLE_GAME}: never reached the battle scene" \
+             "([RPG2k-BATTLE] missing)" >&2
+        failed=$((failed + 1))
+    elif grep -q '\[RPG2k\] battle failed' "${log}" ; then
+        echo "FAILED: ${BATTLE_GAME}: the battle scene raised" >&2
+        grep '\[RPG2k\] battle failed' "${log}" >&2
+        failed=$((failed + 1))
+    else
+        grep '\[RPG2k-BATTLE\]' "${log}"
+    fi
+    grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
+    rm -f "${log}"
+    num=$((num + 1))
+else
+    echo "skip ${BATTLE_GAME}: no RPG_RT.ldb (run scripts/download-mtf-meido-action.bash first)"
+fi
+
 if [ "${checked}" -eq 0 ] ; then
     echo "FAILED: none of the requested game directories is present, so nothing" \
          "was checked: ${GAMES[*]}" >&2
@@ -92,8 +133,8 @@ if [ "${checked}" -eq 0 ] ; then
 fi
 
 if [ "${failed}" -ne 0 ] ; then
-    echo "rpg2k boot check: ${failed} of ${checked} game(s) FAILED" >&2
+    echo "rpg2k boot check: ${failed} of ${checked} run(s) FAILED" >&2
     exit 1
 fi
 
-echo "rpg2k boot check: ${checked} game(s) booted into the map"
+echo "rpg2k boot check: ${checked} run(s) reached their scene"

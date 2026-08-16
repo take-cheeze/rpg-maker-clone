@@ -4,9 +4,9 @@ Date: 2026-08-16
 
 ## Status
 
-Accepted — Phase 1 (rows), the Phase 2 gauge model (fill + ready + turn cycle)
-and the Phase 2 scene integration all implemented 2026-08-16; Phase 3 (the
-remaining 2003 boot path) pending.
+Accepted — Phase 1 (rows), the Phase 2 gauge model (fill + ready + turn cycle),
+the Phase 2 scene integration and Phase 3 (boot-to-battle) all implemented
+2026-08-16.
 
 ## Context
 
@@ -174,15 +174,67 @@ an RPG2000 database, and the 2000 scene for a database that implements no
 `#rpg2003?` at all (a bare fixture) — keeping the gauge engine dark for every
 fixture-driven check. The existing 660-check scene harness stays green.
 
+## Phase 3 — boot-to-battle notes (2026-08-16)
+
+The 2003 boot path is the piece that makes Phases 1–2 end-to-end verifiable
+against real gameplay, and it is what turned out to be blocking: the 2003 test
+beds (mtf-meido-action) ship **no encounters at all** — no Enemy Encounter
+commands, no random-encounter tables on any map — so a bare boot only ever
+reached the map, and no 2003 fight could be driven from real data.
+
+- A new `--rpg2k_battle_troop <id>` flag (RPG Maker 2000/2003, `src/main.cxx`
+  `DEFINE_int32` → the `RPG2K_BATTLE_TROOP` constant) opens a battle against the
+  named database troop right after New Game: `RPG2k#start_new_game`
+  (`mruby-rpg2k/mrblib/main.rb`) calls the map's new `Scene::Map#headless_battle`
+  once the map scene is built, which arms the fight on the map's own foreground
+  interpreter through `Game::Interpreter#start_random_battle(..., headless: true)`
+  — the same `:battle` wait a wandering encounter uses, so `#drive_battle` picks
+  it up on the map's next frame and the fight runs through the ordinary battle
+  machinery (including the `battle_scene_class` routing from the Phase 2 scene
+  integration). The battle then waits for input until the run times out.
+- The request carries a `headless: true` marker so `Scene::Battle#start` logs
+  `[RPG2k-BATTLE] troop=<id>` once the fight's whole UI — backdrop, troop
+  sprites, actor sprites, the status panel — is actually on screen. A real
+  encounter never sets the marker, so the line never appears for ordinary play.
+- `scripts/rpg2k_boot_check.bash` now runs a battle pass (mtf-meido-action,
+  troop 14, a single Behemoth) alongside the map boot, asserting the marker
+  appears and that no `[RPG2k] battle failed` line does.
+- **Latent native-only bug this exposed and fixed:** the fight's backdrop is
+  seeded from `Scene::Map#current_map_tone` behind a `respond_to?` guard. CRuby
+  excludes private methods from `respond_to?`, so the CRuby harnesses skipped
+  the call and passed; mruby's `respond_to?` ignores visibility, so **every**
+  native battle raised `NoMethodError: private method 'current_map_tone'`
+  at `Scene::Battle#build_battle_back` — the battle "failed" gracefully (logged
+  and resumed as a victory), meaning no real fight ever opened on the binary
+  since the tint commit. `current_map_tone` is now public, the way its own
+  comment and the "services the battle scene calls back into" list already
+  intended (covered by a scene check asserting the plain-call works).
+
+Verification: the battle drive reaches `[RPG2k-BATTLE]` against the real 2003
+database and stays stable (no repeated errors) for the whole run, exercising
+the 2003 scene routing, troop/actor sprites, the gauge-card status layout
+(System2 missing on the test bed degrades to the text rows it always did, and
+the missing Monster graphic to its placeholder block — both logged, never
+fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
+`Scene::Map#headless_battle`'s request shape; `rpg2k_logic_check.rb` pins the
+`headless:` marker on the request.
+
 ## Consequences
 
 - RPG2003 battles become progressively implementable without disturbing the
   already-working RPG2000 battle: Phases 1–2 are additive and gated on
   `battle_type` / row data that RPG2000 never writes.
-- The 2003 boot path (Phase 3) is the only piece that makes the work
-  end-to-end verifiable; until then Phases 1–2 are fixture-only.
+- The 2003 boot path (Phase 3) is what makes the work end-to-end verifiable;
+  its first real drive already caught a latent crash that only the native
+  binary could hit (the `current_map_tone` visibility bug above), the exact
+  mruby/CRuby divergence class the CRuby harnesses cannot see.
 - Row and timing are modelled as data on `Game::Battle::Combatant` so they are
   reusable by both the turn-based and gauge phase machines and by enemy AI.
+- The active-time turn cycle — consuming a full gauge with a command/AI action
+  and resetting it — is the remaining 2003 battle piece: the scene integration
+  advances gauges and Phase 3 reaches a real 2003 fight, but turns still run on
+  the 2000 sequential round machine. See the "next step" note on
+  `RPG2k3::Scene::Battle`.
 - Follow-up work (battle-event pages already parsed; 2003-specific battle
   commands beyond the four this engine drives; the Special command handler;
   the attacker-side back-row reach penalty) stays out of scope for these three

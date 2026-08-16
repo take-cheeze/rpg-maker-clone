@@ -1435,7 +1435,12 @@ module Game
     # scripted Enemy Encounter's can) logs and simply never arms the wait --
     # there is no event to resume here, so movement just continues
     # uninterrupted.
-    def start_random_battle(troop_id, first_strike: false)
+    #
+    # `headless: true` (Scene::Map#headless_battle, the --rpg2k_battle boot
+    # drive) marks the request so Scene::Battle#start fires the [RPG2k-BATTLE]
+    # marker the boot check asserts on -- a headless fight is otherwise
+    # indistinguishable from any other battle the same interpreter opens.
+    def start_random_battle(troop_id, first_strike: false, headless: false)
       unless party.db_enemy_group(troop_id)
         $stderr.puts "[RPG2k] Enemy Encounter: enemy group #{troop_id} not " \
                      'found, skipping random encounter'
@@ -1445,7 +1450,8 @@ module Game
       @battle_escape_aborts = false
       @battle_request = { troop_id: troop_id, allow_escape: true,
                           first_strike: first_strike,
-                          defeat_game_over: !party.death_handler?, random: true }
+                          defeat_game_over: !party.death_handler?, random: true,
+                          headless: headless ? true : false }
       @state.battle_count += 1
       @wait_kind = :battle
       @waiting = true

@@ -1690,8 +1690,11 @@ The work below is roughly ordered by the critical path to a walkable game
   false;`) — but `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents`, the
   *only* page-scheduling call site RPG2000's own battle scene has, always
   calls `ScheduleNextPage(nullptr)`. A real `source` only ever exists in
-  `Scene_Battle_Rpg2k3`, the separate ATB battle scene this runtime does not
-  model (see Toggle ATB Mode below), so a page gated on `command_actor` is
+  `Scene_Battle_Rpg2k3`, whose active-time turn cycle — the gauge-readiness
+  driver that hands the picker a concrete acting battler, still the one
+  unmodelled piece of the 2003 battle scene this runtime routes to (see ADR
+  0053 and the Toggle ATB Mode note below) — this runtime does not model, so
+  a page gated on `command_actor` is
   *never satisfiable* under RPG2000's own battle system — not a once-per-turn
   evaluation standing in for a future per-actor one. Still open: video
   playback for Play Movie (no decoder is linked in; the request is logged). **Show Battle Animation** (11210) now plays on the map — the
