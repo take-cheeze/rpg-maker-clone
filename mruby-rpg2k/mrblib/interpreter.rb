@@ -24,6 +24,7 @@ module Game
       CHANGE_BATTLE_COMMANDS = 1009
       OPEN_LOAD_MENU         = 5001
       EXIT_GAME              = 5002
+      TOGGLE_ATB_MODE        = 5003
       TOGGLE_FULLSCREEN      = 5004
       OPEN_VIDEO_OPTIONS     = 5005
       SHOW_MESSAGE     = 10110
@@ -953,6 +954,7 @@ module Game
       when Cmd::CALL_COMMON_EVENT then do_call_common_event cmd
       when Cmd::OPEN_LOAD_MENU   then do_open_load_menu cmd
       when Cmd::EXIT_GAME        then do_exit_game cmd
+      when Cmd::TOGGLE_ATB_MODE  then do_toggle_atb_mode cmd
       when Cmd::TOGGLE_FULLSCREEN then do_toggle_fullscreen cmd
       when Cmd::OPEN_VIDEO_OPTIONS then do_open_video_options cmd
       when Cmd::ERASE_EVENT      then @erase_requested = true
@@ -3001,6 +3003,18 @@ module Game
     def do_exit_game(_cmd)
       @wait_kind = :exit_game
       @waiting = true
+    end
+
+    # Toggle ATB Mode (5003): flip the save-system wait/active toggle
+    # (`SaveSystem.atb_mode`, LSD chunk 140) between wait (0) and active (1) —
+    # the same field the field menu's Wait command (id 8) flips, so a gauge
+    # battle's command menu starts freezing / keeping the gauges running
+    # accordingly (RPG2k3::Scene::Battle#atb_accumulating? reads it live).
+    # EasyRPG's own `Game_System::ToggleAtbMode()` does exactly this
+    # (`data.atb_mode = !data.atb_mode`), and RPG_RT's 2k3e "Toggle ATB Mode"
+    # command is the event-driven path to the same setting. The event runs on.
+    def do_toggle_atb_mode(_cmd)
+      @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
     end
 
     # Toggle Fullscreen (5004) / Open Video Options (5005): the 2k3e display

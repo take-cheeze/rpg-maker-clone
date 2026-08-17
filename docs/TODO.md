@@ -1653,14 +1653,12 @@ The work below is roughly ordered by the critical path to a walkable game
   Game** (5002) leave the map for the loader / quit; **Toggle Fullscreen** (5004)
   and **Open Video Options** (5005) are logged no-ops because this build's
   display backend has neither, the same answer EasyRPG gives on a platform whose
-  window cannot change mode. Still open here: **Toggle ATB Mode** (5003), which
-  would switch a gauge fight between this engine's active-time turn cycle (ADR
-  0054 — the gauge-driven battle now modelled for the gauge presentation) and
-  the round-based machine; the field-menu Wait command already flips the
-  `atb_mode` save-system field the event command would target (see the `Wait`
-  command paragraph in the field-menu section), but the battle still never
-  reads a per-fight toggle, so the *event* command stays a reported gap rather
-  than a silent no-op. The opcodes were read out of liblcf's
+  window cannot change mode. ✅ **Toggle ATB Mode (5003) is now implemented
+  too**: it flips the same save-system `atb_mode` field the field-menu Wait
+  command targets (see the `Wait` command paragraph in the field-menu
+  section), so a gauge battle switches live between wait and active mid-fight
+  — EasyRPG's `Game_System::ToggleAtbMode()` (`data.atb_mode =
+  !data.atb_mode`). The opcodes were read out of liblcf's
   `EventCommand::Code` enum, which
   also corrected `analyze_game.rb` — it had Change Class / Change Battle Commands
   at 12610 / 12710, numbers the enum does not define at all.
@@ -2432,12 +2430,12 @@ The work below is roughly ordered by the critical path to a walkable game
   through `RPG2K3_COMMAND_IDS` — a small id→command table that (at the time)
   had **no** entry for Row (battle front/back rank), Order (party reordering)
   or Wait (the ATB toggle), so a 2003 game listing them simply did not offer
-  them, the identical reported-gap precedent the Toggle ATB Mode (5003) event
-  command entry above already establishes for the same unmodelled RPG2003
-  battle system — rather than crashing or inventing a screen. Covered by new
+  them, the same reported-gap discipline the Toggle ATB Mode (5003) event
+  command followed for the same unmodelled RPG2003 battle system — rather
+  than crashing or inventing a screen. Covered by new
   `scripts/rpg2k_scene_check.rb` checks (a non-2003 fixture never offers
   Status at all; a 2003 fixture's full eight-id array offers Status and drops
-  Row/Order/Wait; a 2003 fixture that reorders and omits commands is honoured
+  Row; a 2003 fixture that reorders and omits commands is honoured
   end to end, including actually opening the reordered Status screen),
   confirmed to fail against the pre-fix code (Status always offered
   regardless of edition; a 2003 reorder/omission silently ignored) before the

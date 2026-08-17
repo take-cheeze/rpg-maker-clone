@@ -141,6 +141,9 @@ Behavioral notes and deliberate simplifications:
   combatant's action **interrupts** the menu — EasyRPG's
   `ProcessSceneActionCommand`'s `GetAtbMode() == active &&
   IsBattleActionPending()` gate (`IsAtbAccumulating` returns `active_atb`
-  during SelectCommand/Item/Skill/EnemyTarget/AllyTarget). The field-menu
-  Toggle ATB Mode event command (5003) remains unmodelled (its menu entry is
-  the interactive path to the same field).
+  during SelectCommand/Item/Skill/EnemyTarget/AllyTarget). The Toggle ATB Mode
+  event command (5003) is the event-driven path to the same field: it flips
+  `atb_mode` just like the menu Wait command, so a gauge battle switches live
+  between wait and active mid-fight — `Cmd::TOGGLE_ATB_MODE` /
+  `do_toggle_atb_mode`, matching EasyRPG's `Game_System::ToggleAtbMode()`
+  (`data.atb_mode = !data.atb_mode`).
