@@ -251,9 +251,10 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   path: a gauge fight now runs on per-combatant gauges instead of the 2000
   sequential round machine, with every other 2003 fight untouched.
 - Follow-up work (battle-event pages already parsed; 2003-specific battle
-  commands beyond the four this engine drives; the Special command handler)
-  stays out of scope for these three phases and is tracked separately. The
-  attacker-side row adjustment is now implemented (ADR 0053 Phase 1 notes,
-  2026-08-17); the per-battler row derivation from `battlecommands.placement`
-  and the condition-gated `IsRowAdjusted` branches (back-attack / surround)
-  remain open until the battle conditions are modelled.
+  commands beyond the five this engine drives) stays out of scope for these
+  three phases and is tracked separately. The Special command handler landed
+  with the command-customization follow-up (2026-08-17), and the attacker-side
+  row adjustment is implemented (ADR 0053 Phase 1 notes, 2026-08-17); the
+  per-battler row derivation from `battlecommands.placement` and the
+  condition-gated `IsRowAdjusted` branches (back-attack / surround) remain
+  open until the battle conditions are modelled.

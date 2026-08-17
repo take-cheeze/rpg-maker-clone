@@ -1016,12 +1016,14 @@ class RPG2k
       # "not impl" and skips it the same way), -1 (an empty padding slot,
       # likewise skipped), or a positive ref into the database's own
       # Battle-Commands table (`Game::Actor#battle_command_row`) naming one
-      # entry's `name` + `type`. Only the four types this engine actually
-      # drives -- Attack, (sub)Skill, Defense, Item -- become a row; Escape
-      # (the first actor's own Cancel already offers it) and Special (no
-      # handler modelled anywhere in this engine) are skipped, same as an
-      # unresolvable ref (a project whose database has no Battle-Commands
-      # table decoded, or an id it doesn't define).
+      # entry's `name` + `type`. The five types this engine actually drives --
+      # Attack, (sub)Skill, Defense, Item and Special -- become a row; Escape
+      # (the first actor's own Cancel already offers it) is skipped, same as
+      # an unresolvable ref (a project whose database has no Battle-Commands
+      # table decoded, or an id it doesn't define). Special is a turn that
+      # does nothing (EasyRPG's `Game_BattleAlgorithm::DoNothing`, queued by
+      # `Scene_Battle_Rpg2k3::SpecialSelected`) -- #select_battle_command
+      # resolves it to a forfeited turn.
       def custom_battle_commands(actor)
         return nil unless actor.respond_to?(:battle_commands)
         cmds = actor.battle_commands
@@ -1045,8 +1047,12 @@ class RPG2k
           when Game::Actor::BATTLE_COMMAND_ITEM
             out << { label: nonblank(row.name, term(:battle_item, 'Item')), action: :item,
                      command_id: cmd_id }
+          when Game::Actor::BATTLE_COMMAND_SPECIAL
+            out << { label: nonblank(row.name, 'Special'), action: :special,
+                     command_id: cmd_id }
           end
-          # Escape / Special: no menu row (see the method comment above).
+          # Escape: no menu row (see the method comment above) -- Special has
+          # one now, since #select_battle_command drives it.
         end
         rows.empty? ? nil : rows
       end
@@ -1295,6 +1301,17 @@ class RPG2k
           @ui[:battle].command_defend(current_actor)
           advance_actor
         when :item then open_battle_item
+        when :special
+          # RPG2003's Special battle command is a turn that does nothing:
+          # EasyRPG's `Scene_Battle_Rpg2k3::SpecialSelected` plays the
+          # Decision SE and queues `Game_BattleAlgorithm::DoNothing`, which
+          # consumes the actor's turn (and, in a gauge battle, its charge)
+          # with no action, message or animation -- exactly what
+          # `Game::Battle#command_skip` resolves to here (#strike returns nil
+          # for a skipped battler and the turn is passed).
+          play_system_se(SFX_DECISION)
+          @ui[:battle].command_skip(current_actor)
+          advance_actor
         end
       end
 
