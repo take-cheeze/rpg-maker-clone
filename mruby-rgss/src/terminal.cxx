@@ -153,6 +153,12 @@ std::atomic<bool> g_has_frame{false};   // true when a frame is enqueued
 std::thread g_writer_thread;
 std::atomic<bool> g_writer_running{false};
 
+// Where terminal_write sends its bytes.  Null until a terminal display exists
+// (and again once restore_terminal has torn the writer down), in which case
+// terminal_write falls back to writing stdout directly.
+using enqueue_fn = void (*)(const char* p, size_t n);
+enqueue_fn g_enqueue = nullptr;
+
 // Accumulate `n` bytes from `p` into g_encode_buf.  Called during encoding via
 // terminal_write → g_enqueue.  All writes on the render thread; no contention.
 void writer_enqueue(const char* p, size_t n) {
@@ -307,6 +313,15 @@ void restore_terminal() {
     if (g_writer_thread.joinable())
       g_writer_thread.join();
   }
+
+  // Send the teardown sequences below straight to stdout.  They must not go
+  // through the writer any more: writer_enqueue drops everything once
+  // g_writer_running is false (just cleared above), and even before that it
+  // only appends to g_encode_buf, which nothing drains after the last frame --
+  // either way the show-cursor and leave-alt-screen bytes would never reach the
+  // terminal, leaving the shell with an invisible cursor on the alternate
+  // screen.
+  g_enqueue = nullptr;
 
   // Undo the visual state first (while still in raw mode), then hand the
   // terminal back to the shell.  Leaving the alternate screen buffer restores
@@ -597,11 +612,6 @@ void terminal_append_console(std::string& s) {
     s += "\x1b[0m\r\n";
   }
 }
-
-// Callback wired during init: routes encoder output to the async writer instead
-// of direct ::write calls.
-using enqueue_fn = void (*)(const char* p, size_t n);
-enqueue_fn g_enqueue = nullptr;
 
 void terminal_write(const char* p, size_t n) {
   if (g_stats)
