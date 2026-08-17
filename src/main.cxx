@@ -1166,8 +1166,19 @@ int main(int argc, char** argv) {
     // server with no working GLX. SDL_HINT_FRAMEBUFFER_ACCELERATION=0 turns
     // that companion renderer off, so SDL_GetWindowSurface() falls back to a
     // plain CPU blit instead -- see issue #449.
+    //
+    // That "plain CPU blit" only exists where the video backend implements a
+    // window framebuffer of its own (X11 has the XImage/MIT-SHM path, Wayland
+    // the wl_shm one, and Emscripten its canvas one). SDL3's Cocoa backend has
+    // none: SDL_GetWindowSurface() there can *only* go through
+    // SDL_CreateWindowTexture, so switching the companion renderer off leaves
+    // it with nothing and the software renderer fails to come up at all
+    // ("Window framebuffer support not available"), taking the CHECK below and
+    // the whole process with it. Keep the #449 workaround off macOS.
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+#ifndef __APPLE__
     SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
+#endif
     display = std::shared_ptr<lv_display_t>(
         lv_sdl_window_create(FLAGS_width, FLAGS_height),
         [](lv_display_t*) { lv_sdl_quit(); });
