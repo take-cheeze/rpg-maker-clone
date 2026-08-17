@@ -61,6 +61,7 @@
 #include <pspiofilemgr.h>
 #include <pspkernel.h>
 #include <pspsysmem.h>
+#include <pspthreadman.h>
 
 #include "psp.hxx"
 
@@ -69,7 +70,27 @@
 PSP_MODULE_INFO("rpg2k", 0, 1, 0);
 PSP_MAIN_THREAD_ATTR(THREAD_ATTR_USER | THREAD_ATTR_VFPU);
 
+// ADR 0047's P5: the main-thread stack is an explicit, *verified* size rather
+// than pspsdk's implicit default (which is what this EBOOT relied on while it
+// was an LVGL-only bring-up, before the interpreter and the real scene tree
+// were linked in). 256 KB is the size that already runs the real RPG2k scene
+// tree here; what makes it verified rather than guessed is the heartbeat
+// below, which reports how deep the interpreter has actually recursed into it
+// (stack_free / stack_used_max), so a deeper-recursing title shows up in the
+// numbers instead of as a crash. ADR 0007 flagged mruby's init-time recursion
+// as a stack risk on constrained targets; this is the measurement that closes
+// it for the PSP.
+//
+// The macro expands to a plain `unsigned int sce_newlib_stack_kb_size` that
+// pspsdk's crt0 reads when it creates the main thread, so it has to sit at
+// file scope with a literal-ish initialiser -- hence the separate KB constant
+// used to derive the byte figure the heartbeat subtracts from.
+#define RPG2K_PSP_MAIN_STACK_KB 256
+PSP_MAIN_THREAD_STACK_SIZE_KB(RPG2K_PSP_MAIN_STACK_KB);
+
 namespace {
+
+constexpr unsigned kMainStackBytes = RPG2K_PSP_MAIN_STACK_KB * 1024u;
 
 lv_obj_t* g_status_label = nullptr;
 
@@ -465,7 +486,9 @@ int main(void) {
   // for the PSP's ~24 MB user partition, and lv_mem_monitor for LVGL's own
   // pool (app/psp/lv_conf.h's 4 MB LV_MEM_SIZE) -- currently used and the
   // max_used high-water mark, which is the number that actually matters for
-  // sizing that pool once the interpreter is linked.
+  // sizing that pool once the interpreter is linked. stack_free/stack_used_max
+  // are ADR 0047's P5, the same idea for the main-thread stack the module
+  // metadata above now sizes explicitly.
   for (uint32_t frame = 0;; ++frame) {
     if (have_game) {
       // RPG2k#main_loop (mruby-rpg2k/mrblib/main.rb) is the single-frame step
@@ -499,15 +522,33 @@ int main(void) {
     if (frame % 200 == 0) {
       lv_mem_monitor_t mon;
       lv_mem_monitor(&mon);
-      char buf[128];
+      // ADR 0047's P5. sceKernelGetThreadStackFreeSize scans the low (deep)
+      // end of the thread's stack for the 0xFF fill pspsdk leaves there at
+      // creation and reports how much of it is still untouched. Because a
+      // down-growing stack never restores those bytes to 0xFF once a frame has
+      // written over them, *any* single sample is already the high-water mark
+      // of how deep this thread has ever recursed -- not an instantaneous
+      // depth. stack_used_max still takes the running maximum so a sample that
+      // comes back negative (an error return) or from a differently-sized
+      // stack cannot walk the reported figure backwards.
+      static unsigned stack_used_max = 0;
+      const int stack_free = sceKernelGetThreadStackFreeSize(0);
+      if (stack_free >= 0 &&
+          static_cast<unsigned>(stack_free) <= kMainStackBytes) {
+        const unsigned used =
+            kMainStackBytes - static_cast<unsigned>(stack_free);
+        if (used > stack_used_max)
+          stack_used_max = used;
+      }
+      char buf[192];
       const int n = std::snprintf(
           buf, sizeof(buf),
           "RPG2K_PSP_BRINGUP frame=%u free=%u maxfree=%u lvgl_used=%u "
-          "lvgl_max=%u\n",
+          "lvgl_max=%u stack_free=%d stack_used_max=%u\n",
           frame, static_cast<unsigned>(sceKernelTotalFreeMemSize()),
           static_cast<unsigned>(sceKernelMaxFreeMemSize()),
           static_cast<unsigned>(mon.total_size - mon.free_size),
-          static_cast<unsigned>(mon.max_used));
+          static_cast<unsigned>(mon.max_used), stack_free, stack_used_max);
       if (n > 0)
         psp_write(buf, n);
     }
