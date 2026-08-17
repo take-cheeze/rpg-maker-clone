@@ -1550,7 +1550,8 @@ class RPG2k
                                           attr_ids: c[:attr_ids],
                                           stat_mod_keys: c[:stat_mod_keys],
                                           stat_effect: c[:stat_effect] || 0,
-                                          cured: c[:cured])
+                                          cured: c[:cured],
+                                          physical_rate: c[:physical_rate] || 0)
         @ui[:pending] = nil
         @ui[:phase] = :command
         advance_actor
@@ -1581,7 +1582,8 @@ class RPG2k
                                               attr_ids: meta[:attr_ids],
                                               stat_mod_keys: meta[:stat_mod_keys],
                                               stat_effect: meta[:stat_effect] || 0,
-                                              cured: meta[:cured])
+                                              cured: meta[:cured],
+                                              physical_rate: meta[:physical_rate] || 0)
         @ui[:pending] = nil
         @ui[:phase] = :command
         advance_actor

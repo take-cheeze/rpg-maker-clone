@@ -9566,7 +9566,8 @@ module Game
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
                       absorb: false, attr_shift: nil, attr_ids: nil,
-                      stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil)
+                      stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil,
+                      physical_rate: 0)
       ally.command = { kind: :skill, target: target, name: name,
                        skill_id: skill_id, absorb: absorb, attack: attack,
                        cost: cost, hp: hp, mp: mp,
@@ -9574,7 +9575,15 @@ module Game
                        attributes: attributes || [],
                        attr_shift: attr_shift, attr_ids: attr_ids || [],
                        stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect,
-                       cured: cured || [] }
+                       cured: cured || [],
+                       # #apply_skill_hit's own #shake_off_states call (a
+                       # physical skill can shake a status loose the same way a
+                       # basic attack does) reads this -- see
+                       # #battle_skill_command's own `physical_rate` comment.
+                       # Was silently dropped here entirely until this field
+                       # existed: #shake_off_states always rolled against 0,
+                       # so no skill's physical-rate cure ever fired.
+                       physical_rate: physical_rate || 0 }
       ally.action = nil; ally.defending = false
     end
 
@@ -9591,14 +9600,18 @@ module Game
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
                           variance: 0, attributes: nil, skill_id: nil,
                           absorb: false, attr_shift: nil, attr_ids: nil,
-                          stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil)
+                          stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil,
+                          physical_rate: 0)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
                        skill_id: skill_id, absorb: absorb, attack: attack, cost: cost,
                        inflict: inflict || [], chance: chance,
                        variance: variance, attributes: attributes || [],
                        attr_shift: attr_shift, attr_ids: attr_ids || [],
                        stat_mod_keys: stat_mod_keys || [], stat_effect: stat_effect,
-                       cured: cured || [] }
+                       cured: cured || [],
+                       # See #command_skill's identical field for what this
+                       # feeds and why it has to ride along here too.
+                       physical_rate: physical_rate || 0 }
       ally.action = nil; ally.defending = false
     end
 
@@ -10384,13 +10397,27 @@ module Game
     end
 
     # Wrap the party's cast numbers in the command hash #apply_command consumes.
+    #
+    # Carries `attr_shift`/`attr_ids`/`stat_mod_keys`/`stat_effect`/
+    # `physical_rate` through too -- #queue_auto_battle_group_skill already
+    # threads all five from this same `@ai.skill_command` result into
+    # #command_skill_all by hand; this single-target wrap (an enemy's own
+    # skill action and a player ally's single-target auto-battle skill) had
+    # silently dropped every one of them since #apply_command reads them by
+    # key with an absent-key default (`cmd[:attr_shift]` nil, `cmd[:stat_
+    # mod_keys]`/`cmd[:physical_rate]` empty/0), so an attribute-rank shift, a
+    # stat buff/debuff and a physical skill's shake-off-states roll never
+    # once fired through either path.
     def skill_command_hash(sk, cmd, target)
       { kind: :skill, target: target, name: skill_name_of(sk),
         absorb: cmd[:absorb] ? true : false, attack: cmd[:attack] ? true : false,
         cost: cmd[:cost] || 0, hp: cmd[:hp] || 0, mp: cmd[:mp] || 0,
         inflict: cmd[:inflict] || [], chance: cmd[:chance] || 100,
         variance: cmd[:variance] || 0, attributes: cmd[:attributes] || [],
-        cured: cmd[:cured] || [] }
+        cured: cmd[:cured] || [],
+        attr_shift: cmd[:attr_shift], attr_ids: cmd[:attr_ids] || [],
+        stat_mod_keys: cmd[:stat_mod_keys] || [], stat_effect: cmd[:stat_effect] || 0,
+        physical_rate: cmd[:physical_rate] || 0 }
     end
 
     def skill_name_of(sk)
@@ -10748,7 +10775,7 @@ module Game
                         variance: meta[:variance] || 0, attributes: meta[:attributes],
                         attr_shift: meta[:attr_shift], attr_ids: meta[:attr_ids],
                         stat_mod_keys: meta[:stat_mod_keys], stat_effect: meta[:stat_effect] || 0,
-                        cured: meta[:cured])
+                        cured: meta[:cured], physical_rate: meta[:physical_rate] || 0)
     end
 
     # `SelectAutoBattleAction`'s own closing half: an `attack_all` weapon

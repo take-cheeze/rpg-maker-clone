@@ -5763,6 +5763,33 @@ not yet verified:
   rolling it at all; and a missed attack skill never rolling the shake-off
   either, matching the shared accuracy gate), each confirmed to fail against
   the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-18): the plumbing that carries `physical_rate`
+  (and `attr_shift`/`attr_ids`/`stat_mod_keys`/`stat_effect`) from
+  `battle_skill_command`'s cast result into the queued command hash
+  `#apply_skill_hit` reads was itself broken on every real path.**
+  `Game::Battle#command_skill`/`#command_skill_all` -- the *only* two ways a
+  queued skill's command hash is ever built for a live game, whether from
+  the player's menu (`Scene::Battle#apply_pending_skill(_all)`) or a
+  monster/ally auto-battle cast -- had no `physical_rate:` keyword at all,
+  so `cmd[:physical_rate]` read its absent-key default of 0 regardless of
+  the skill's own value: the fix landed above by these checks (hand-built
+  `cmd` hashes) was never reachable through a real cast. Separately,
+  `#skill_command_hash` (the wrap `#enemy_skill_action`/
+  `#queue_single_auto_battle_skill` build their queued command from
+  directly, bypassing `#command_skill`) dropped `attr_shift`/`attr_ids`/
+  `stat_mod_keys`/`stat_effect`/`physical_rate` outright -- the same class
+  of gap, on two more paths the `#command_skill` fix does not reach, though
+  `#queue_auto_battle_group_skill`'s own hand-threading of the first four
+  (not `physical_rate`, since `#command_skill_all` didn't accept it either)
+  already hinted the omission was accidental rather than a scope decision.
+  Fixed by adding `physical_rate:` to both builders' keyword lists and
+  storing it, threading it through both scene call sites and
+  `#queue_auto_battle_group_skill`, and adding every missing field to
+  `#skill_command_hash`. Four new `rpg2k_logic_check.rb` checks drive the
+  real builders instead of a hand-built `cmd` hash: `#command_skill` and
+  `#command_skill_all` each queuing a real cast whose shake-off now actually
+  fires, and `#skill_command_hash` carrying every field through from a raw
+  AI-cast result.
 - ✅ **Simulated Attack's damage spread now uses RPG_RT's real variance
   formula, not a coarser stand-in this method's own comment misattributed to
   EasyRPG's source.** `Interpreter#do_simulated_attack` modelled its damage
