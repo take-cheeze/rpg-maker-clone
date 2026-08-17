@@ -2,10 +2,15 @@
 # encoding: UTF-8
 #
 # Host-side unit checks for the RPG2003 front/back row battle mechanic
-# (ADR 0053, Phase 1). The row is an RPG2003-only concept: a back-row
-# defender is harder to hit by a physical attack. RPG2000 never sets a row,
-# so the path is a no-op there and these checks exercise the 2003 behaviour
-# directly on the shared hit-chance helpers in mruby-rpg2k/mrblib/game.rb.
+# (ADR 0053 Phase 1, resolved against EasyRPG's Algo::IsRowAdjusted /
+# CalcNormalAttackToHit / CalcNormalAttackEffect, src/algo.cpp). The row is an
+# RPG2003-only concept: it changes how the fight treats a battler -- a back-row
+# defender is 25 harder to hit and takes -25% damage, a front-row actor deals
+# +25% damage, and an enemy attacker (or a back-row attacker) is not row-
+# adjusted at all. RPG2000 never sets a row, so the path is a no-op there and
+# these checks exercise the 2003 behaviour directly on the shared helpers in
+# mruby-rpg2k/mrblib/game.rb. Skills are deliberately NOT row-adjusted (the
+# reference gates that behind an EasyRPG-only field absent from real files).
 #
 # Usage: ruby scripts/rpg2k3_battle_row_check.rb   (exits non-zero on failure)
 
@@ -69,7 +74,7 @@ def combatant(name, atk, dfn, agi, hp)
   Game::Battle::Combatant.new(name, atk, dfn, agi, hp, hp)
 end
 
-# A minimal Party (no roster needed for the row helper / skill_to_hit).
+# A minimal Party (no roster needed for the skill_to_hit checks).
 def fake_party
   db = Object.new
   def db.system; Struct.new(:party).new([]); end
@@ -92,32 +97,84 @@ check 'setting ROW_BACK makes back_row? true' do
   eq false, front.back_row?
 end
 
-# -- Battle#to_hit integration ----------------------------------------------
+# -- row_adjusted? (the Algo::IsRowAdjusted port) ----------------------------
+# An actor-backed attacker in the front row is row-adjusted; a back-row actor
+# attacker and every enemy attacker are not; a back-row defender is.
+def actor_combatant(name, atk, dfn, agi)
+  c = combatant(name, atk, dfn, agi, 10_000)
+  c.actor = Object.new # ally?(battler) keys on a non-nil #actor
+  c
+end
+
 bat = Game::Battle.new([front], [front], Game::Rng.new(1))
-attacker = bat.allies[0]
+attacker = actor_combatant('Atk', 100, 0, 20)
 target_front = bat.enemies[0]
 target_back = target_front.dup
 target_back.row = Game::Battle::ROW_BACK
 
-check 'Battle#row_hit_modifier: 100 for a front defender' do
-  eq 100, bat.row_hit_modifier(attacker, target_front)
+check 'row_adjusted?: front-row ally attacker is adjusted' do
+  eq true, bat.row_adjusted?(attacker, true)
 end
 
-check 'Battle#row_hit_modifier: 50 for a back defender' do
-  eq Game::Battle::ROW_BACK_DEFENDER_HIT_MULT, bat.row_hit_modifier(attacker, target_back)
+check 'row_adjusted?: back-row ally attacker is not adjusted' do
+  back_attacker = attacker.dup
+  back_attacker.row = Game::Battle::ROW_BACK
+  eq false, bat.row_adjusted?(back_attacker, true)
 end
 
-check 'back-row defender is strictly harder to hit (basic attack)' do
+check 'row_adjusted?: an enemy attacker is never adjusted' do
+  eq false, bat.row_adjusted?(target_front, true)
+end
+
+check 'row_adjusted?: a back-row defender is adjusted' do
+  eq true, bat.row_adjusted?(target_back, false)
+end
+
+check 'row_adjusted?: a front-row defender is not adjusted' do
+  eq false, bat.row_adjusted?(target_front, false)
+end
+
+# -- Battle#to_hit integration ----------------------------------------------
+check 'a back-row defender is exactly 25 harder to hit (flat, not a multiplier)' do
   front_hit = bat.to_hit(attacker, target_front)
   back_hit = bat.to_hit(attacker, target_back)
   ok back_hit < front_hit, "expected back-row hit (#{back_hit}) < front hit (#{front_hit})"
-  eq (front_hit * Game::Battle::ROW_BACK_DEFENDER_HIT_MULT / 100), back_hit,
-      'back-row hit should be the front hit scaled by the row multiplier'
+  eq [front_hit - Game::Battle::ROW_HIT_PENALTY, 0].max, back_hit,
+      'back-row hit should be the front hit less the flat 25 row penalty'
 end
 
-# -- Party#skill_to_hit integration (the 2003 physical-skill path) -----------
+# -- deal_attack damage integration (CalcNormalAttackEffect order) -----------
+# Variance and criticals off so the integer damage is deterministic:
+#   attack_damage(100, 0) = 100/2 - 0/4 = 50
+#   front-row attacker: 125 * 50 / 100 = 62   (attacker row, before attribute)
+#   front defender: unchanged 62
+#   back  defender: 75 * 62 / 100 = 46        (defender row, after attribute)
+dmg_bat = Game::Battle.new([attacker], [target_front], Game::Rng.new(1),
+                           nil, false, false, false)
+
+check 'a front-row attacker deals +25% damage vs a front-row defender' do
+  entry = dmg_bat.send(:deal_attack, attacker, target_front)
+  eq 62, entry[:damage]
+end
+
+check 'a back-row defender takes -25% damage from the same swing' do
+  entry = dmg_bat.send(:deal_attack, attacker, target_back)
+  eq 46, entry[:damage]
+end
+
+check 'a back-row attacker loses the +25% bonus' do
+  back_attacker = attacker.dup
+  back_attacker.row = Game::Battle::ROW_BACK
+  front_entry = dmg_bat.send(:deal_attack, attacker, target_front) # 50 *125/100 = 62
+  back_entry = dmg_bat.send(:deal_attack, back_attacker, target_front) # base 50, no bonus
+  eq 62, front_entry[:damage]
+  eq 50, back_entry[:damage]
+end
+
+# -- skills are NOT row-adjusted (reference: gated behind an EasyRPG-only
+#    field absent from real files) -------------------------------------------
 party = fake_party
-src = combatant('Src', 50, 0, 20, 10_000)
+src = actor_combatant('Src', 50, 0, 20)
 sk = Object.new
 def sk.hit; 90; end
 def sk.failure_message; 3; end   # physical skill -> agility/evasion branch
@@ -127,14 +184,11 @@ tgt_front = combatant('TgtF', 0, 0, 5, 10_000)
 tgt_back = combatant('TgtB', 0, 0, 5, 10_000)
 tgt_back.row = Game::Battle::ROW_BACK
 
-check 'Party#row_hit_modifier: 50 for a back defender' do
-  eq Game::Battle::ROW_BACK_DEFENDER_HIT_MULT, party.row_hit_modifier(src, tgt_back)
-end
-
-check 'back-row defender is harder to hit by a physical skill' do
+check 'a physical skill is not harder to land on a back-row defender' do
   front_hit = party.skill_to_hit(sk, src, tgt_front)
   back_hit = party.skill_to_hit(sk, src, tgt_back)
-  ok back_hit < front_hit, "expected back-row skill hit (#{back_hit}) < front (#{front_hit})"
+  eq front_hit, back_hit,
+      'vanilla RPG_RT skills are not row-adjusted; the hits should match'
 end
 
 # -- from_actor defaults to the front row ------------------------------------

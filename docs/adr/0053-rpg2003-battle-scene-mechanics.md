@@ -83,25 +83,35 @@ Landed in `mruby-rpg2k/mrblib/game.rb`:
   `battlecommands.placement` (field 2) + the actor's `battle_x`/`battle_y` is
   the remaining data step and is intentionally **not** guessed here — the
   placement→row mapping is an RPG_RT 2003 presentation rule that needs the spec.
-- `Game::Battle#row_hit_modifier` / `Game::Party#row_hit_modifier` apply a
-  fixed `ROW_BACK_DEFENDER_HIT_MULT` (currently 50) to the attacker's hit rate
-  when the **target** stands in the back row. Wired into both physical hit
-  paths: `Battle#to_hit` (basic attack) and `Party#skill_to_hit` (the 2003
-  physical-skill branch). RPG2000 never sets a row, so both return 100
-  unchanged there.
-- **Open within Phase 1:** the *attacker*-side back-row reach penalty (a
-  melee back-row attacker cannot reach a front-row target / suffers reduced
-  accuracy unless the weapon is ranged) is **not** yet modelled — it needs the
-  attacker's weapon range, which this sim does not currently carry. The exact
-  `ROW_BACK_DEFENDER_HIT_MULT` value is the RPG_RT 2003 documented back-row
-  evasion and is flagged TODO against the RPG_RT 2003 specification (still
-  inaccessible; see the LCF schema work's same blocker).
+- **Row adjustments are ported from EasyRPG's `Algo` (src/algo.cpp)**, once
+  that source became reachable, which resolved the earlier guesses. The row
+  mechanic is richer than "back-row is hard to hit": `Algo::IsRowAdjusted`
+  decides whether a battler's row matters at all, by *battle condition* and
+  *role*. This engine models no battle conditions, so only the normal (`none`)
+  branch holds, and `Game::Battle#row_adjusted?(battler, offense)` is that
+  branch: an actor standing on the offense row is row-adjusted (a **front-row
+  attacker deals +25% damage** — the deferred attacker-side piece; an *enemy*
+  attacker is never row-adjusted, `allow_enemy=false`), and a **back-row
+  defender is 25 harder to hit and takes -25% damage**. This replaces the
+  pre-reference `row_hit_modifier` guess of a flat **50% multiplier**: the
+  reference's `CalcNormalAttackToHit` subtracts a flat 25 (`to_hit -= 25`,
+  `ROW_HIT_PENALTY`), and `CalcNormalAttackEffect` scales damage by 125/100
+  (attacker, before the weapon's elemental multiplier) and 75/100 (defender,
+  after it). RPG2000 never sets a row, so every term is a no-op there.
+- **Skills are deliberately not row-adjusted.** EasyRPG's `CalcSkillToHit` /
+  `CalcSkillEffect` gate their row terms behind `skill.easyrpg_affected_by_row_
+  modifiers`, an EasyRPG-only field the RPG Maker 2003 editor cannot set
+  (absent from every real 2003 file), so vanilla skills are untouched by rows;
+  the earlier `Party#skill_to_hit` row penalty is removed to match.
 
-Verification: `scripts/rpg2k3_battle_row_check.rb` (8 checks) exercises the
-row model, both `row_hit_modifier` definitions, and the back-row reduction in
-both `to_hit` and `skill_to_hit`; wired into the `ruby-checks` CI job. The
-existing 976-check `rpg2k_logic_check.rb` stays green because no fixture sets
-a back row.
+Verification: `scripts/rpg2k3_battle_row_check.rb` (13 checks) exercises the
+row model, `#row_adjusted?` (front-row ally attacker adjusted, back-row / enemy
+attacker not, back-row defender adjusted), the flat 25 hit reduction in
+`Battle#to_hit`, the 125/75 damage adjustments in `Battle#deal_attack` in the
+reference's order, that a physical skill is *not* row-adjusted, and `from_actor`
+front-row default; wired into the `ruby-checks` CI job. The existing
+`rpg2k_logic_check.rb` and `rpg2k_scene_check.rb` suites stay green because no
+fixture sets a back row.
 
 ## Phase 2 — implementation notes (2026-08-16)
 
@@ -241,6 +251,9 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   path: a gauge fight now runs on per-combatant gauges instead of the 2000
   sequential round machine, with every other 2003 fight untouched.
 - Follow-up work (battle-event pages already parsed; 2003-specific battle
-  commands beyond the four this engine drives; the Special command handler;
-  the attacker-side back-row reach penalty) stays out of scope for these three
-  phases and is tracked separately.
+  commands beyond the four this engine drives; the Special command handler)
+  stays out of scope for these three phases and is tracked separately. The
+  attacker-side row adjustment is now implemented (ADR 0053 Phase 1 notes,
+  2026-08-17); the per-battler row derivation from `battlecommands.placement`
+  and the condition-gated `IsRowAdjusted` branches (back-attack / surround)
+  remain open until the battle conditions are modelled.

@@ -163,7 +163,9 @@
   party as face/bars gauge cards from the project's System2 graphic, seats
   each member's battle sprite on the automatic placement grid the project
   configures (`battlecommands.placement` 1, keyed by the encounter terrain),
-  and applies RPG2003's front/back row accuracy, while the traditional and
+  and applies RPG2003's front/back row mechanic (a back-row defender is harder
+  to hit and takes less damage, a front-row actor deals more — ported from
+  EasyRPG's `Algo` row adjustments), while the traditional and
   alternative presentations inherit the unchanged turn-based machine. The 2003
   test beds ship no encounters, so a `--rpg2k_battle_troop=<id>` flag drives a
   real project straight into a fight against a chosen database troop after New

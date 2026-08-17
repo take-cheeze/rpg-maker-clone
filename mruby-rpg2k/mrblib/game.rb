@@ -4760,18 +4760,14 @@ module Game
     # databases, but RPG_RT still honours the bit whenever it is set (see the
     # "Not implemented: CalcSkillToHit" note in docs/TODO.md). `source` is the
     # caster, `target` the first foe the skill lands on.
-    # RPG2003 row accuracy for physical skills: mirrors Battle#row_hit_modifier
-    # -- a back-row defender is harder to hit. Defined here too because
-    # #skill_to_hit (the physical-skill hit path) lives on Party, not Battle,
-    # and both classes keep their own copy of the shared hit-chance helpers
-    # (#hit_modifier, #do_nothing_restricted?, #effective_agi). See ADR 0053.
-    ROW_BACK_DEFENDER_HIT_MULT = 50
-
-    def row_hit_modifier(_attacker, target)
-      return 100 unless target.respond_to?(:back_row?) && target.back_row?
-      ROW_BACK_DEFENDER_HIT_MULT
-    end
-
+    # RPG2003 row accuracy does **not** extend to physical skills. EasyRPG's
+    # `CalcSkillToHit` (algo.cpp) gates both its row hit and row damage terms
+    # behind `skill.easyrpg_affected_by_row_modifiers`, an EasyRPG-only field
+    # the RPG Maker 2003 editor cannot set (absent from every real 2003 file),
+    # so a vanilla skill is never row-adjusted -- only a basic attack (#to_hit /
+    # #deal_attack on Game::Battle) is. A prior draft applied the same back-row
+    # penalty a pre-reference guess had used for attacks; the reference settles
+    # it: skills are untouched by rows. See ADR 0053/0054.
     def skill_to_hit(sk, source, target)
       return skill_hit(sk) unless sk.respond_to?(:failure_message) && sk.failure_message == 3
       # The physical formula is enemy-only: an ally/self-scoped skill (scope 2/3/4)
@@ -4799,8 +4795,6 @@ module Game
       # 物理回避率アップ: a shield/armour/helmet/accessory flagged
       # `raise_evasion` subtracts a flat 25, after the AGI term.
       agi_adjusted -= 25 if target.evasion_up
-      # RPG2003 row: a back-row defender is harder to hit.
-      agi_adjusted = agi_adjusted * row_hit_modifier(source, target) / 100
       Game.clamp(agi_adjusted, 0, 100)
     end
 
@@ -8340,10 +8334,11 @@ module Game
   # elemental attributes, damage variance) into a live fight.
   class Battle
     # RPG2003 front/back row. A purely RPG2003 concept (RPG2000 never sets it):
-    # a back-row battler is harder to hit and, when attacking with a melee
-    # weapon, cannot reach a front-row target. The exact row-derived accuracy
-    # is an RPG_RT 2003 battle-system constant -- see #row_hit_modifier and
-    # ADR 0053 (the placement field that decides a battler's row for a given
+    # the row changes a battler's hit and damage the way EasyRPG's
+    # `Algo::IsRowAdjusted` / `CalcNormalAttackToHit` / `CalcNormalAttackEffect`
+    # (src/algo.cpp) describe -- a back-row defender is harder to hit and takes
+    # reduced damage, a front-row actor deals more. See #row_adjusted? and ADR
+    # 0053 (the placement field that decides a battler's row for a given
     # battle is the RPG2003 Battle Commands table, 0x1D, field 2).
     ROW_FRONT = 0
     ROW_BACK = 1
@@ -8457,8 +8452,10 @@ module Game
                             # The RPG2003 front/back row this battler stands
                             # in (see the `ROW_FRONT`/`ROW_BACK` constants
                             # above); nil defaults to the front row, the only
-                            # row RPG2000 knows. A back-row battler is harder
-                            # to hit (#row_hit_modifier) -- the row is an
+                            # row RPG2000 knows. The row changes how the fight
+                            # treats the battler (#row_adjusted?): a back-row
+                            # defender is harder to hit and takes less damage,
+                            # a front-row actor deals more -- the row is an
                             # RPG2003-only concept, so this stays front for
                             # every 2000 fight.
                             :row,
@@ -9112,17 +9109,38 @@ module Game
     # term down and always gets hit -- `CalcNormalAttackToHit`'s `if
     # (!target.CanAct()) return 100;`, ahead of every accuracy term below it.
     # RPG2003 row accuracy: a back-row defender is harder to hit by a physical
-    # attack. RPG_RT 2003 applies a fixed hit-rate reduction to any attack aimed
-    # at a back-row battler; the front/back row is an RPG2003-only concept, so
-    # RPG2000 (which never sets a row) returns 100 unconditionally here. The
-    # exact percentage is an RPG_RT 2003 battle-system constant -- TODO(ADR
-    # 0053): confirm against the RPG_RT 2003 specification (currently
-    # inaccessible); 50% is the documented behaviour.
-    ROW_BACK_DEFENDER_HIT_MULT = 50
+    # attack. EasyRPG's `CalcNormalAttackToHit` (algo.cpp) applies a flat 25 to
+    # the already agility-adjusted chance when the *defender* is row-adjusted
+    # (`to_hit -= 25`), not the 50% multiplier a pre-reference draft guessed
+    # here -- see #row_adjusted? for what "row-adjusted" means and the ADR 0053
+    # note that originally flagged the multiplier as unconfirmed. The front/
+    # back row is an RPG2003-only concept, so RPG2000 (which never sets a row)
+    # has no adjusted defender and this term is a no-op there.
+    ROW_HIT_PENALTY = 25
 
-    def row_hit_modifier(_attacker, target)
-      return 100 unless target.respond_to?(:back_row?) && target.back_row?
-      ROW_BACK_DEFENDER_HIT_MULT
+    # Port of EasyRPG's `Algo::IsRowAdjusted` (src/algo.cpp) for the only
+    # battle condition this runtime models. RPG_RT 2003's row mechanic decides
+    # whether a battler's row changes its hit / damage by the *battle condition*
+    # (normal / initiative / back-attack / surround) and by the battler's role;
+    # this engine models no battle conditions, so the normal (`none`) branch is
+    # what holds: a battler standing on the "offense" row is row-adjusted.
+    #
+    # For an attacker (`offense` true) the offense row is the front: an actor
+    # standing in the front row deals +25% damage, and an *enemy* attacker is
+    # never row-adjusted -- EasyRPG consults only the actor row there
+    # (`IsRowAdjusted(source, cond, true, /*allow_enemy=*/false)`). For a
+    # defender (`offense` false) the offense row is the back: a back-row
+    # defender is 25 harder to hit and takes -25% damage (allow_enemy true, but
+    # an enemy defaulting to the front row is never adjusted). The `row` is
+    # read through Combatant#row (nil defaults to the front row, the only row
+    # RPG2000 knows).
+    def row_adjusted?(battler, offense)
+      row = battler.respond_to?(:row) ? battler.row : ROW_FRONT
+      if offense
+        ally?(battler) && row == ROW_FRONT
+      else
+        row == ROW_BACK
+      end
     end
 
     # RPG2003 active-time (gauge) battle timing (ADR 0053, Phase 2). The gauge
@@ -9258,8 +9276,9 @@ module Game
         # term, and never reached at all by a 必中 attacker (the branch
         # above already returned).
         agi_adjusted -= 25 if target.evasion_up
-        # RPG2003 row: a back-row defender is harder to hit.
-        agi_adjusted = agi_adjusted * row_hit_modifier(attacker, target) / 100
+        # RPG2003 row: a back-row defender is harder to hit (a flat 25, after
+        # the AGI term -- EasyRPG's CalcNormalAttackToHit `to_hit -= 25`).
+        agi_adjusted -= ROW_HIT_PENALTY if row_adjusted?(target, false)
         Game.clamp(agi_adjusted, 0, 100)
       end
     end
@@ -10395,11 +10414,14 @@ module Game
     # attack_variance: false, skill_variance: true, emulate_bugs: true)` --
     # the one real, un-patched RPG_RT always runs; EasyRPG's other two named
     # algorithms, `AttackOnly` and `RpgRtImproved`, are its own optional,
-    # non-default customizations and are not modelled here). Row-based
-    # battle-formation modifiers (`Feature::HasRow()` in every formula this
-    # ports) are never applicable: this codebase has no row/formation system
-    # of any kind, so every such branch in the source is dead code for any
-    # database this build can load, not a simplification made on our end.
+    # non-default customizations and are not modelled here). The ranking
+    # deliberately mirrors EasyRPG's `CalcNormalAttackAutoBattleTargetRank` /
+    # `CalcSkillAutoBattleTargetRank` at `apply_variance: false` and does not
+    # layer the RPG2003 row modifiers (#row_adjusted?) into its per-target
+    # score -- the actual hit/damage a thrown attack lands (#deal_attack /
+    # #to_hit) is where those apply, and a ranking heuristic need not double-
+    # count them, so a front-row actor's +25% shows up in the damage it deals
+    # rather than being pre-empted in its auto-battle preference.
     def choose_auto_battle_command(b)
       best_skill = nil
       best_sid = nil
@@ -10778,9 +10800,19 @@ module Game
                  attack_animation_id: anim, target_index: target_index }
       end
       dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
+      # RPG2003 row: an actor attacking from the offense (front) row deals
+      # +25% damage -- EasyRPG's CalcNormalAttackEffect attacker adjustment,
+      # applied *before* the weapon's elemental scaling (the reference's own
+      # order). An enemy attacker is never row-adjusted. The front row is the
+      # only row RPG2000 knows, so this is a no-op there.
+      dmg = 125 * dmg / 100 if row_adjusted?(b, true)
       # An elemental weapon scales its damage by the target's resistance before
       # variance / criticals (EasyRPG's ApplyAttributeNormalAttackMultiplier).
       dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
+      # RPG2003 row: a back-row defender takes -25% damage -- the reference's
+      # defender adjustment, applied *after* the elemental scaling, again in
+      # CalcNormalAttackEffect's own order.
+      dmg = 75 * dmg / 100 if row_adjusted?(target, false)
       # No critical on a same-side hit (e.g. a confused ally striking an ally) or
       # against a target whose gear prevents criticals, matching EasyRPG.
       crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
