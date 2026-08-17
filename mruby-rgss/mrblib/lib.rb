@@ -1178,7 +1178,7 @@ module RGSS
       # is retried in NFD form, as Bitmap does.
       # Timed as `audio.resolve`: every Play SE/BGM/BGS/ME goes through here,
       # and a miss walks two roots x the kind's directories x EXT_SPELLINGS
-      # (each also in its NFD spelling), so the cost is a burst of File.exist?
+      # (each also in its NFD spelling), so the cost is a burst of File.file?
       # syscalls on the game-loop thread rather than anything audio-related.
       def resolve(filename, dirs)
         RGSS::Profiler.section("audio.resolve") { search_for(filename, dirs) }
@@ -1200,13 +1200,25 @@ module RGSS
       end
 
       # First of +base+ with each known extension appended that exists on disk
-      # (also trying the decomposed NFD form), or nil.
+      # as a *file* (also trying the decomposed NFD form), or nil.
+      #
+      # File.file?, not File.exist?: EXT_SPELLINGS leads with the empty
+      # extension and MUSIC_DIRS/SOUND_DIRS lead with the empty folder, so the
+      # very first candidate for a track named "title" is the bare
+      # `#{GAME_DIR}/title` -- and a game's asset folders sit right there.
+      # Nepheshel keeps its title-screen graphics in `Title/` beside its
+      # `Music/title.mid`, and on a case-insensitive filesystem (macOS, Windows)
+      # that directory answered File.exist? first. The search stopped on it and
+      # handed a directory to Mix_LoadMUS, which of course could not open it:
+      # "Audio: failed to load music '.../title'" on a game whose MIDI is right
+      # there in Music/. A directory is never a playable asset, so skip it and
+      # keep looking.
       def exist_with_ext(base)
         EXT_SPELLINGS.each do |ext|
           cand = "#{base}#{ext}"
-          return cand if File.exist?(cand)
+          return cand if File.file?(cand)
           nfd = RGSS.to_nfd(cand)
-          return nfd if nfd != cand && File.exist?(nfd)
+          return nfd if nfd != cand && File.file?(nfd)
         end
         nil
       end
