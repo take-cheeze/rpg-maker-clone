@@ -242,7 +242,24 @@ the interpreter-linking slice, in this order:
   `psp-smoke` job has no project there, so it only ever exercises the idle
   path — the *mruby* share of the pool remains unmeasured on-device until a
   real game database and map actually runs there, on real hardware or an
-  emulator with a Memory Stick image.
+  emulator with a Memory Stick image. **On the emulator side specifically,
+  this heartbeat has never yet produced a captured number**, in CI or
+  locally: PPSSPP-headless's own kernel-object emulation has a bug (confirmed
+  with `gdb` against a core dump — a null-pointer write inside its
+  `sceKernelCreateLwMutex`, same crash address across independent runs,
+  reproducing whether or not any of `app/psp/main.cxx`'s own code has run
+  yet, so it is inside pspsdk's C-runtime bring-up, before `main()`) that
+  segfaults the *host* `ppsspp-headless` process a few syscalls into boot,
+  before the heartbeat's first tick. One contributing bug this repo did
+  control has been fixed: pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE
+  stubs are themselves only partially implemented and left the emulator's
+  state corrupted enough to crash a few syscalls later — `main.cxx` now
+  builds every marker/heartbeat string with a small libc-free `StrBuf`
+  instead of `std::snprintf`, closing that source of flakiness (verified: the
+  EBOOT now gets measurably further under PPSSPP-headless before the
+  remaining, unrelated kernel-emulation bug still ends it). Whether real
+  hardware shares either bug is unknown; the P1 device numbers above remain
+  unconfirmed on the emulator and untried on hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

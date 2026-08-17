@@ -108,10 +108,28 @@ once one is deployed to `kGameDir` instead of just the idle HAL's. CI's
 marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
 idle path (`RPG2K_PSP_GAME_START none not_found`). The job is
-**non-blocking**:
-PPSSPP only partially implements
-pspsdk's libc stdio (plain `printf` is an unimplemented HLE import there), so
-emulator capture can be fragile — the required build gate is the `psp` job. To
+**non-blocking** — the required build gate is the `psp` job — because PPSSPP's
+headless HLE has a real bug in its own kernel-object emulation, confirmed by
+running it locally under `gdb` on the resulting core dump: `main()` never gets
+the chance to run past its first few lines before the *host* `ppsspp-headless`
+process itself segfaults, deep inside `sceKernelCreateLwMutex` (a null-pointer
+write, `rbx=0`, at the same instruction offset across independent runs).
+Confirmed by elimination, not guesswork: it reproduces identically whether or
+not the EBOOT creates its own callback thread, and whether or not any of this
+file's own code has run yet, so it is not triggered by anything in
+`app/psp/main.cxx` — it happens inside pspsdk's own C-runtime bring-up
+(`sceKernelCreateLwMutex` calls for newlib's stdio/malloc/fdman locks), which
+runs before `main()` is even called. One real bug *was* found and fixed along
+the way: pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are also only
+partially implemented, and calling into them left the emulator's own state
+corrupted badly enough to contribute to crashes reachable from this EBOOT's
+own code — `main.cxx` now builds every marker/status string with a small
+libc-free `StrBuf` instead (append-only, integers formatted by hand), the same
+reasoning the `RPG2K_PSP_BOOT` marker's string-literal already used. That
+closes the one flakiness source this EBOOT controlled, but the deeper
+kernel-emulation bug above is upstream PPSSPP-headless, not something this
+repo can fix — hence the job stays non-blocking rather than becoming a hard
+gate now that one of its causes is gone. To
 reproduce locally, run PPSSPP's headless binary with `--log` (needed to surface
 the `sceIoWrite` output). CI takes that binary from nixpkgs instead of building
 it, and the same package works locally — `nix build '.#ppsspp'` puts it at

@@ -92,6 +92,64 @@ namespace {
 
 constexpr unsigned kMainStackBytes = RPG2K_PSP_MAIN_STACK_KB * 1024u;
 
+// A tiny libc-free string builder, used for every marker/status string this
+// file writes instead of std::snprintf. Not a style preference: confirmed
+// directly (gdb on a resulting core dump, reproduced twice) that pspsdk's
+// sysclib_snprintf, which PPSSPP-headless implements only partially, leaves
+// emulator state corrupted enough that the *host* process later segfaults
+// inside PPSSPP's own sceKernelCreateLwMutex -- the very first snprintf call
+// this file made (path_exists' "%s/%s" join, before any interpreter or
+// display code even runs) was enough to trigger it a few syscalls later.
+// Nothing here needs a format string: every call site is either joining two
+// known strings or rendering a handful of small integers, both of which
+// StrBuf does with no libc call beyond memcpy (a compiler intrinsic, never
+// routed through sysclib_). Whether real hardware shares PPSSPP's bug is
+// unknown and beside the point -- there is no reason to depend on a
+// partially-implemented libc path for something this simple either way.
+class StrBuf {
+ public:
+  StrBuf(char* buf, size_t cap) : buf_(buf), cap_(cap) {}
+
+  void str(const char* s) {
+    while (*s && len_ + 1 < cap_)
+      buf_[len_++] = *s++;
+  }
+
+  void uint(unsigned v) {
+    char digits[10];  // enough for any 32-bit unsigned value
+    int n = 0;
+    do {
+      digits[n++] = static_cast<char>('0' + v % 10);
+      v /= 10;
+    } while (v);
+    while (n > 0 && len_ + 1 < cap_)
+      buf_[len_++] = digits[--n];
+  }
+
+  void sint(int v) {
+    if (v < 0) {
+      str("-");
+      // Widen to long before negating so INT_MIN doesn't overflow -v.
+      uint(static_cast<unsigned>(-static_cast<long>(v)));
+    } else {
+      uint(static_cast<unsigned>(v));
+    }
+  }
+
+  // NUL-terminates (for LVGL's lv_label_set_text) and returns the buffer.
+  const char* c_str() {
+    buf_[len_ < cap_ ? len_ : cap_ - 1] = '\0';
+    return buf_;
+  }
+
+  int length() const { return static_cast<int>(len_); }
+
+ private:
+  char* buf_;
+  size_t cap_;
+  size_t len_ = 0;
+};
+
 lv_obj_t* g_status_label = nullptr;
 
 // ADR 0047's P2 (the mruby/LVGL allocator split), decided for this target:
@@ -244,8 +302,11 @@ bool file_exists(const char* path) {
 
 bool path_exists(const char* dir, const char* rel) {
   char buf[96];
-  std::snprintf(buf, sizeof(buf), "%s/%s", dir, rel);
-  return file_exists(buf);
+  StrBuf sb(buf, sizeof(buf));
+  sb.str(dir);
+  sb.str("/");
+  sb.str(rel);
+  return file_exists(sb.c_str());
 }
 
 // An RPG Maker VX / VX Ace project: mirrors is_rpgvx_game in src/main.cxx.
@@ -359,19 +420,19 @@ void show_keys(uint32_t mask) {
   last = mask;
 
   char buf[64];
-  int n = 0;
-  n += snprintf(buf + n, sizeof(buf) - n, "Keys:");
+  StrBuf sb(buf, sizeof(buf));
+  sb.str("Keys:");
   bool any = false;
-  for (int k = 0; k < PSP_INPUT_KEY_COUNT && n < static_cast<int>(sizeof(buf));
-       ++k) {
+  for (int k = 0; k < PSP_INPUT_KEY_COUNT; ++k) {
     if (mask & (1u << k)) {
-      n += snprintf(buf + n, sizeof(buf) - n, " %s", kKeyNames[k]);
+      sb.str(" ");
+      sb.str(kKeyNames[k]);
       any = true;
     }
   }
   if (!any)
-    snprintf(buf + n, sizeof(buf) - n, " (none)");
-  lv_label_set_text(g_status_label, buf);
+    sb.str(" (none)");
+  lv_label_set_text(g_status_label, sb.c_str());
 }
 
 }  // namespace
@@ -420,10 +481,11 @@ int main(void) {
   mrb_state* const M = mrb_open();
   {
     char buf[48];
-    const int n = std::snprintf(buf, sizeof(buf), "RPG2K_PSP_MRUBY_OPEN %s\n",
-                                M ? "ok" : "FAILED");
-    if (n > 0)
-      psp_write(buf, n);
+    StrBuf sb(buf, sizeof(buf));
+    sb.str("RPG2K_PSP_MRUBY_OPEN ");
+    sb.str(M ? "ok" : "FAILED");
+    sb.str("\n");
+    psp_write(buf, sb.length());
   }
 
   // GAME_DIR/RTP_DIR are load-bearing mruby constants: mruby-rpg2k/mruby-rpgxp/
@@ -469,11 +531,13 @@ int main(void) {
       game_start_result = "not_found";
     }
     char buf[64];
-    const int n = std::snprintf(
-        buf, sizeof(buf), "RPG2K_PSP_GAME_START %s %s\n",
-        game_info ? game_info->class_name : "none", game_start_result);
-    if (n > 0)
-      psp_write(buf, n);
+    StrBuf sb(buf, sizeof(buf));
+    sb.str("RPG2K_PSP_GAME_START ");
+    sb.str(game_info ? game_info->class_name : "none");
+    sb.str(" ");
+    sb.str(game_start_result);
+    sb.str("\n");
+    psp_write(buf, sb.length());
   }
 
   // The loop runs ~200 iterations/second (5 ms delay); emit a heartbeat line
@@ -509,11 +573,11 @@ int main(void) {
         M->exc = nullptr;
         have_game = false;
         char buf[48];
-        const int n =
-            std::snprintf(buf, sizeof(buf), "RPG2K_PSP_GAME_STOP %s\n",
-                          clean_exit ? "exit" : "error");
-        if (n > 0)
-          psp_write(buf, n);
+        StrBuf sb(buf, sizeof(buf));
+        sb.str("RPG2K_PSP_GAME_STOP ");
+        sb.str(clean_exit ? "exit" : "error");
+        sb.str("\n");
+        psp_write(buf, sb.length());
       }
     } else {
       show_keys(psp_input_scan());
@@ -541,16 +605,23 @@ int main(void) {
           stack_used_max = used;
       }
       char buf[192];
-      const int n = std::snprintf(
-          buf, sizeof(buf),
-          "RPG2K_PSP_BRINGUP frame=%u free=%u maxfree=%u lvgl_used=%u "
-          "lvgl_max=%u stack_free=%d stack_used_max=%u\n",
-          frame, static_cast<unsigned>(sceKernelTotalFreeMemSize()),
-          static_cast<unsigned>(sceKernelMaxFreeMemSize()),
-          static_cast<unsigned>(mon.total_size - mon.free_size),
-          static_cast<unsigned>(mon.max_used), stack_free, stack_used_max);
-      if (n > 0)
-        psp_write(buf, n);
+      StrBuf sb(buf, sizeof(buf));
+      sb.str("RPG2K_PSP_BRINGUP frame=");
+      sb.uint(frame);
+      sb.str(" free=");
+      sb.uint(static_cast<unsigned>(sceKernelTotalFreeMemSize()));
+      sb.str(" maxfree=");
+      sb.uint(static_cast<unsigned>(sceKernelMaxFreeMemSize()));
+      sb.str(" lvgl_used=");
+      sb.uint(static_cast<unsigned>(mon.total_size - mon.free_size));
+      sb.str(" lvgl_max=");
+      sb.uint(static_cast<unsigned>(mon.max_used));
+      sb.str(" stack_free=");
+      sb.sint(stack_free);
+      sb.str(" stack_used_max=");
+      sb.uint(stack_used_max);
+      sb.str("\n");
+      psp_write(buf, sb.length());
     }
     sceKernelDelayThread(5000);  // ~5 ms, matching the Wio loop's delay(5)
   }
