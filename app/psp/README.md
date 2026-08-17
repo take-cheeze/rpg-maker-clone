@@ -92,10 +92,15 @@ right after `mrb_open()`; `RPG2K_PSP_GAME_START <maker> ok`/`not_found`/
 `kGameDir` (`<maker>` is `RPG2k`/`RPGXP`/`RPGVX`, or `none` when nothing
 matched); `RPG2K_PSP_GAME_STOP exit`/`error` if a running game later raises
 (a clean `Kernel#exit` vs. an actual crash); and `RPG2K_PSP_BRINGUP
-frame=N free=N maxfree=N lvgl_used=N lvgl_max=N` once a second, the last four
-fields being `sceKernelTotalFreeMemSize`/`sceKernelMaxFreeMemSize` (the
-device's actual free RAM) and `lv_mem_monitor`'s current/high-water-mark use
-of LVGL's own pool — real numbers for
+frame=N free=N maxfree=N lvgl_used=N lvgl_max=N stack_free=N
+stack_used_max=N` once a second. `free`/`maxfree` are
+`sceKernelTotalFreeMemSize`/`sceKernelMaxFreeMemSize` (the device's actual
+free RAM); `lvgl_used`/`lvgl_max` are `lv_mem_monitor`'s current/high-water-mark
+use of LVGL's own pool; `stack_free`/`stack_used_max` are
+`sceKernelGetThreadStackFreeSize`'s scan of the still-untouched (0xFF-filled)
+low end of the main thread's 256 KB stack and the deepest use seen so far —
+since a down-growing stack never restores those bytes, even a single sample is
+already a high-water mark (P5). All of them are real numbers for
 [ADR 0047](../../docs/adr/0047-psp-memory-budget.md)'s P1, captured from the
 `psp-smoke` log rather than estimated, and now against a real game's usage
 once one is deployed to `kGameDir` instead of just the idle HAL's. CI's

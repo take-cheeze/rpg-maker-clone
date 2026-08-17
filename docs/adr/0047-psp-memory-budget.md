@@ -308,9 +308,21 @@ the interpreter-linking slice, in this order:
   resolutions actually fit in what's left of the ~24 MB after `LV_MEM_SIZE`
   and the stack/statics — a measurement to take once P1's device numbers
   exist for a real game, not a code change.
-- **P5 — size and verify the main-thread stack** against measured mruby
-  init/interpreter recursion depth, with a high-water-mark check rather than
-  a guessed constant.
+- **P5 — done (the sizing and the measurement; the number itself still wants a
+  real game).** `app/psp/main.cxx` now declares
+  `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting pspsdk's implicit
+  default, and the `RPG2K_PSP_BRINGUP` heartbeat carries two more fields,
+  `stack_free` and `stack_used_max`. `sceKernelGetThreadStackFreeSize` reports
+  how much of the stack is still the 0xFF fill pspsdk left at thread creation;
+  because a down-growing stack never restores those bytes once a frame has
+  written over them, *any* sample is already the high-water mark of how deep
+  the interpreter has recursed, and `stack_used_max` keeps the running maximum
+  so an error return cannot walk the reported figure backwards. 256 KB is the
+  size that already runs the real RPG2k scene tree — what changes is that the
+  log now shows how much of it a title actually reaches, so a deeper-recursing
+  game is caught by the numbers rather than by a crash. Like the arena's 8 MB
+  (P2), turning 256 KB from "runs today" into a justified figure needs a real
+  game at `kGameDir`, which CI's `psp-smoke` does not have.
 
 ## Consequences
 
@@ -318,12 +330,13 @@ the interpreter-linking slice, in this order:
   lands, this revision ships small, self-contained changes alongside the ADR
   update: P1a (stripping mrbc's `-g` for the `psp` cross-build), half of P1
   (the bring-up EBOOT's heartbeat now reports real device memory numbers),
-  the tool half of P3 (`scripts/rgssad_unpack.rb`), and now the P2 allocator
+  the tool half of P3 (`scripts/rgssad_unpack.rb`), the P2 allocator
   split plus P6's three reductions (draw buffers sized to the canvas, the
-  LVGL widget/theme/example trim, and the mruby embedded tuning knobs). The
-  one pool-sizing number that still depends on the interpreter-linking slice
-  (a real database and map actually loaded) is the mruby arena's 8 MB
-  figure, which the heartbeat is now in place to validate.
+  LVGL widget/theme/example trim, and the mruby embedded tuning knobs), and
+  now P5's explicit main-thread stack size plus its heartbeat fields. The
+  two sizing numbers that still depend on a real database and map actually
+  being loaded are the mruby arena's 8 MB and the stack's 256 KB, both of
+  which the heartbeat is now in place to validate.
 - ADR 0010's "the full gem set should fit" is narrowed: it holds for gem
   *code* size, but says nothing about per-title asset memory, which Finding 2
   shows can exceed the entire 24 MB budget for an RGSSAD-packed game even
@@ -336,8 +349,10 @@ the interpreter-linking slice, in this order:
   loads) is hard-blocking for any future XP/VX PSP target; the
   tool to close it is done, but running it and excluding the packed archive
   is still a manual step per release, not something CI or the build enforces
-  — that's the remaining risk, not the unpack logic itself. P4/P5 are
-  lower-risk follow-ups once a title actually renders.
+  — that's the remaining risk, not the unpack logic itself. P4 is a
+  lower-risk follow-up once a title actually renders; P5 is now measured
+  rather than guessed, leaving only the same "needs a real game" caveat P2's
+  arena size has.
 - Follow-up: once P1's real numbers exist, replace this ADR's estimates with
   measured figures (a memory budget table, as ADR 0007 has for the Wio
   Terminal) — either as an amendment here or a superseding ADR.
