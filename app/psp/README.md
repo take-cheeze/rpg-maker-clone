@@ -108,31 +108,50 @@ once one is deployed to `kGameDir` instead of just the idle HAL's. CI's
 marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
 idle path (`RPG2K_PSP_GAME_START none not_found`). The job is
-**non-blocking** — the required build gate is the `psp` job — because PPSSPP's
-headless HLE has a real bug in its own kernel-object emulation, confirmed by
-running it locally under `gdb` on the resulting core dump: `main()` never gets
-the chance to run past its first few lines before the *host* `ppsspp-headless`
-process itself segfaults, deep inside `sceKernelCreateLwMutex` (a null-pointer
-write, `rbx=0`, at the same instruction offset across independent runs).
-Confirmed by elimination, not guesswork: it reproduces identically whether or
-not the EBOOT creates its own callback thread, and whether or not any of this
-file's own code has run yet, so it is not triggered by anything in
-`app/psp/main.cxx` — it happens inside pspsdk's own C-runtime bring-up
-(`sceKernelCreateLwMutex` calls for newlib's stdio/malloc/fdman locks), which
-runs before `main()` is even called. One real bug *was* found and fixed along
-the way: pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are also only
-partially implemented, and calling into them left the emulator's own state
-corrupted badly enough to contribute to crashes reachable from this EBOOT's
-own code — `main.cxx` now builds every marker/status string with a small
-libc-free `StrBuf` instead (append-only, integers formatted by hand), the same
-reasoning the `RPG2K_PSP_BOOT` marker's string-literal already used. That
-closes the one flakiness source this EBOOT controlled, but the deeper
-kernel-emulation bug above is upstream PPSSPP-headless, not something this
-repo can fix — hence the job stays non-blocking rather than becoming a hard
-gate now that one of its causes is gone. To
-reproduce locally, run PPSSPP's headless binary with `--log` (needed to surface
-the `sceIoWrite` output). CI takes that binary from nixpkgs instead of building
-it, and the same package works locally — `nix build '.#ppsspp'` puts it at
+**non-blocking** — the required build gate is the `psp` job. Two real bugs
+this port's own investigation found are now fixed:
+
+- pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
+  implemented under PPSSPP-headless, and calling into them left the
+  emulator's own state corrupted badly enough to contribute to crashes
+  reachable from this EBOOT's own code — `main.cxx` now builds every
+  marker/status string with a small libc-free `StrBuf` instead (append-only,
+  integers formatted by hand), the same reasoning the `RPG2K_PSP_BOOT`
+  marker's string-literal already used.
+- PPSSPP-headless's own kernel-object emulation had a real upstream bug,
+  confirmed by running it locally under `gdb` on the resulting core dump:
+  `sceKernelCreateLwMutex` (`Core/HLE/sceKernelMutex.cpp`) dereferenced its
+  caller-supplied workarea pointer without validating it first, unlike every
+  sibling `LwMutex` function in the same file — a guest passing
+  `workareaPtr=0` turned that into a null-pointer write (`rbx=0`, same
+  instruction offset across independent runs) that segfaulted the *host*
+  `ppsspp-headless` process rather than raising a guest-catchable error.
+  Not yet upstreamed to `hrydgard/ppsspp`; `flake.nix`'s own `ppsspp`
+  package output carries the fix as a local patch
+  (`nix/patches/ppsspp-lwmutex-workarea-validate.patch`), so both CI (which
+  builds this same `packages.ppsspp` — a real, if one-time, CI cost: it now
+  builds PPSSPP from source instead of fetching nixpkgs' prebuilt closure)
+  and a local `nix build '.#ppsspp'` get a binary that survives past it.
+
+What's left, once both of those are out of the way, is a **third**, separate
+bug — still unfixed, and now the thing actually stopping this EBOOT from
+booting under PPSSPP at all: `workareaPtr=0` is a real value the guest
+passes, not host-side corruption, traced to pspsdk's own
+`src/libcglue/lock.c` (its `__retarget_lock_init_recursive` calls `malloc()`
+for a new lock struct with no null-check before dereferencing it — confirmed
+reproducible, triggered by `global_stdio_init`'s lazy lock creation on this
+EBOOT's very first stdio use). Isolated to something this project's own PSP
+link pulls in beyond plain C/C++ (ruled out with standalone minimal EBOOTs:
+generic pspsdk, this port's own arena/pool `.bss` reservations, and
+`libstdc++`/global C++ objects all boot fine on their own) — mruby's psp
+cross-build, LVGL, or uni-algo, or their interaction, not yet narrowed
+further. See
+[`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
+P1 for the full trail. To
+reproduce locally, run PPSSPP's headless binary with `--log` (needed to
+surface the `sceIoWrite` output). CI and a local build both go through this
+flake's own patched `ppsspp` package output (see above) rather than
+nixpkgs' unpatched one — `nix build '.#ppsspp'` puts it at
 `./result/bin/ppsspp-headless` (it finds its own assets, so the working
 directory does not matter):
 
