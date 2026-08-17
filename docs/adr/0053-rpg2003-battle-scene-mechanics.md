@@ -275,8 +275,27 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   refusing a toggle that would empty the front row
   (`#can_leave_front_row?`, ported from EasyRPG's `RowSelected` guard) with
   the reference's own Buzzer SE. `scripts/rpg2k3_battle_row_check.rb` and
-  `rpg2k_scene_check.rb` stay green. Still open: the field menu's own Row
-  screen (id 6 of `RPG2K3_COMMAND_IDS`, a pre-battle per-actor row picker,
-  EasyRPG's `Scene_Row`) and the automatic-placement `row_x_offset` /
-  pincer-surround grid tables, both noted in `scene/menu.rb` and ADR 0054
-  respectively.
+  `rpg2k_scene_check.rb` stay green. Still open: the automatic-placement
+  `row_x_offset` (ADR 0054) and the pincer-surround grid tables, which need
+  the battle conditions this runtime does not model.
+- **The field-menu Row command landed (2026-08-18).** There is no separate
+  `Scene_Row` in the reference after all -- that earlier guess was wrong too:
+  EasyRPG's `Scene_Menu::UpdateActorSelection` handles Row inline, on the
+  exact same party-status actor-selection panel Skill/Equipment/Status
+  already share (confirmed against the reference source), just toggling the
+  picked actor's row and falling straight back to the command list instead of
+  pushing a sub-scene. `RPG2K3_COMMAND_IDS` gains id 6 (`:row`), `select_command`
+  folds `:row` into the existing Skill/Equip/Status actor-selection branch
+  (same empty-party Buzzer gate -- unlike Order's `size <= 1`, a solo
+  character's row still matters), and `confirm_actor_selection` dispatches it
+  to a new `Game::Party#toggle_actor_row` -- the field-menu counterpart to
+  `Game::Battle#toggle_row`, with the identical "don't empty the front row"
+  guard restated over the live party's actors (EasyRPG's own field-menu Row
+  case has no `IsDirectionFlipped` term and, unlike the in-battle version,
+  always plays Decision -- never Buzzer -- even when the toggle is silently
+  refused; ported exactly rather than unified with the in-battle asymmetry).
+  Covered by a new `rpg2k_logic_check.rb` check pinning the guard directly
+  against real `Game::Party`/`Game::Actor` objects, and a new
+  `rpg2k_scene_check.rb` check proving the menu dispatch reaches it (focus
+  moves to the actor panel, confirming toggles with no scene pushed, focus
+  returns to the command list).

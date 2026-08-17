@@ -9577,8 +9577,11 @@ check "Enemy Encounter scene: an actor's RPG2003 skill-only battle-command list 
   ui = battle_to_command(scene)
   labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
   eq ['Cast Magic'], labels,
-     "a customized list of just one Subskill entry (plus Row, still unimplemented) " \
-     'shows that one row alone, not the fixed four'
+     "a customized list of just one Subskill entry (plus id 0, Row -- skipped " \
+     "within the customizable list itself, see #custom_battle_commands) " \
+     'shows that one row alone, not the fixed four (this fixture is not ' \
+     'rpg2003?-flagged, so the appended Row row -- #row_command_available? -- ' \
+     'never shows either)'
   press_key(scene, RGSS::Input::C) # the only row, cmd 0, is a Skill-type command
   eq :skill, ui[:phase], 'a Subskill entry opens the Skill list the same as the generic Skill command'
 end
@@ -13785,6 +13788,9 @@ end
 class MenuStubActor
   attr_reader :name, :title, :level, :hp, :max_hp, :mp, :max_mp,
               :atk, :def, :int, :agi, :exp, :states, :equipment
+  # Mirrors Game::Actor's own RPG2003 battle-row state, for the field-menu
+  # Row command check below (Game::Party#toggle_actor_row reads/writes this).
+  attr_accessor :battle_row
   attr_accessor :faceset_name, :faceset_index
   def initialize
     @name = 'Hero'; @title = 'Wanderer'; @level = 5
@@ -13793,6 +13799,7 @@ class MenuStubActor
     @states = []
     @equipment = [0, 0, 0, 0, 0]
     @faceset_name = ''; @faceset_index = 0
+    @battle_row = Game::Battle::ROW_FRONT
   end
   def exp_to_next; 120; end
   def add_state(id); @states.push(id) unless @states.include?(id); end
@@ -13820,6 +13827,18 @@ class MenuStubParty
   def field_items(_state = nil); []; end
   def field_skills(_actor, _state = nil); []; end
   def reorder(new_order); @actors = new_order.map { |i| @actors[i] }; end
+  # Mirrors Game::Party#toggle_actor_row's own guard (see rpg2k_logic_check.rb
+  # for that method's own coverage) -- this scene-check only needs to prove
+  # Scene::Menu's `:row` dispatch actually reaches it, not re-prove the guard.
+  def toggle_actor_row(actor)
+    if actor.battle_row == Game::Battle::ROW_FRONT
+      back = @actors.count { |a| a != actor && a.battle_row == Game::Battle::ROW_BACK }
+      return if back >= @actors.size - 1
+      actor.battle_row = Game::Battle::ROW_BACK
+    else
+      actor.battle_row = Game::Battle::ROW_FRONT
+    end
+  end
 end
 
 def menu_scene(klass, state, db = fake_db)
@@ -14095,20 +14114,21 @@ check 'Scene::Menu: RPG2000 (no rpg2003? flag) never offers Status at all' do
 end
 
 check 'Scene::Menu: an RPG2003 database drives the command list from ' \
-      'System.menu_commands, Status and Order included' do
+      'System.menu_commands, Status, Row and Order included' do
   # mtf-meido-action's own array, id-for-id (confirmed by loading its real
   # RPG_RT.ldb): every one of RPG2003's eight customizable ids, in ascending
-  # order. Row (6) is an RPG2003 battle-system feature this runtime does not
-  # model and is silently skipped; Wait (8) -- the ATB toggle -- *is* modelled
-  # (it flips the save-system `atb_mode` field, ADR 0054's follow-up) and is
-  # offered with its current-mode label; Order (7) has no such dependency and
-  # is offered, same as Status; End Game is appended unconditionally, matching
+  # order. Every id is modelled now: Row (6) toggles the picked actor's row
+  # on the same actor-selection panel Skill/Equipment/Status use
+  # (`Game::Party#toggle_actor_row`); Wait (8) -- the ATB toggle -- flips the
+  # save-system `atb_mode` field (ADR 0054's follow-up) and is offered with
+  # its current-mode label; Order (7) has no battle-system dependency at all,
+  # just party reordering; End Game is appended unconditionally, matching
   # EasyRPG's own unconditional Quit push outside the customized loop.
   db = fake_db(rpg2003: true, menu_commands: [1, 2, 3, 4, 5, 6, 7, 8])
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
   keys = scene.instance_variable_get(:@commands).map(&:first)
-  eq [:item, :skill, :equip, :save, :status, :order, :wait, :end_game], keys,
-     'Status (id 5), Order (id 7) and Wait (id 8) are offered, Row (6) is dropped rather than crashing'
+  eq [:item, :skill, :equip, :save, :status, :row, :order, :wait, :end_game], keys,
+     'Status (id 5), Row (id 6), Order (id 7) and Wait (id 8) are all offered'
 end
 
 check 'Scene::Menu: the Wait command shows the current atb_mode, and toggling ' \
@@ -14171,6 +14191,35 @@ check 'Scene::Menu: choosing Order pushes Scene::Order directly, no actor-' \
   ok pushed.is_a?(RPG2k::Scene::Order), "Order pushes a live Scene::Order, got #{pushed.class}"
   eq :command, scene.instance_variable_get(:@focus),
      'no actor-selection focus change, unlike Skill/Equip/Status'
+end
+
+check 'Scene::Menu: choosing Row hands focus to the actor-selection panel, ' \
+      'and confirming an actor toggles their row with no scene pushed' do
+  # Unlike Order, Row shares Skill/Equipment/Status' actor-selection shape
+  # (the class comment, and EasyRPG's own UpdateCommand grouping) -- but
+  # unlike those three, confirming an actor never opens anything: the toggle
+  # happens right on the panel and focus falls straight back to the command
+  # list (EasyRPG's UpdateActorSelection Row case ends with the same
+  # SetActive/SetIndex(-1) every other case does).
+  db = fake_db(rpg2003: true, menu_commands: [6])
+  st = wrap_menu_state
+  scene = menu_scene(RPG2k::Scene::Menu, st, db)
+  hero, ally = st.party.actors
+  eq Game::Battle::ROW_FRONT, hero.battle_row
+
+  RGSS::Input.triggered = [RGSS::Input::C]  # Row -> actor-selection panel
+  scene.update
+  RGSS::Input.reset
+  eq :actors, scene.instance_variable_get(:@focus), 'Row hands focus to the party-status panel'
+
+  RGSS::Input.triggered = [RGSS::Input::C]  # confirm the first (highlighted) actor
+  scene.update
+  RGSS::Input.reset
+  eq Game::Battle::ROW_BACK, hero.battle_row, 'the picked actor toggled to the back row'
+  eq Game::Battle::ROW_FRONT, ally.battle_row, 'the other party member is untouched'
+  ok scene.parent.pushed.empty?, 'no sub-scene opens for Row, unlike Skill/Equip/Status'
+  eq :command, scene.instance_variable_get(:@focus),
+     'focus returns to the command list after one toggle, not another pick'
 end
 
 check 'Scene::Menu: Order refuses a single-member party with the buzzer, ' \

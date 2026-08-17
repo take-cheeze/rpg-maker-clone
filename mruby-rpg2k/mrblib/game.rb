@@ -3186,6 +3186,29 @@ module Game
       @revision += 1
     end
 
+    # RPG2003's field-menu **Row** command (`RPG2K3_COMMAND_IDS` id 6,
+    # `scene/menu.rb`): flip `actor`'s front/back row (`Game::Actor
+    # #battle_row=`), refusing to leave the whole live party in the back row
+    # -- EasyRPG's `Scene_Menu::UpdateActorSelection` Row case counts how
+    # many of `@actors` (the current party, not the full roster) are already
+    # back-row and blocks only the toggle that would push the last front-row
+    # member back, exactly `Game::Battle#can_leave_front_row?`'s in-battle
+    # guard restated the other way around (no `IsDirectionFlipped` term here
+    # -- the reference's field-menu Row case never has one either). Unlike
+    # the in-battle Row command, the reference plays its Decision SE
+    # regardless of whether the toggle actually took -- the caller's job, not
+    # this method's; this only ever silently no-ops a refused toggle.
+    def toggle_actor_row(actor)
+      return unless actor.respond_to?(:battle_row) && actor.respond_to?(:battle_row=)
+      if actor.battle_row == Battle::ROW_FRONT
+        back_count = @actors.count { |a| a != actor && a.respond_to?(:battle_row) && a.battle_row == Battle::ROW_BACK }
+        return if back_count >= @actors.size - 1
+        actor.battle_row = Battle::ROW_BACK
+      else
+        actor.battle_row = Battle::ROW_FRONT
+      end
+    end
+
     def include_actor?(id); @actors.any? { |a| a.id == id }; end
     def actor_by_id(id); @actors.find { |a| a.id == id }; end
 

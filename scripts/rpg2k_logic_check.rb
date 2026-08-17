@@ -3905,6 +3905,35 @@ check 'Party#reorder applies a picked front-to-back permutation, ' \
   eq [3, 1, 2, 4], party.actors.map(&:id), 'the identity permutation (by current index) is a no-op order'
 end
 
+check "Party#toggle_actor_row flips an actor's row and refuses to empty the front row" do
+  # RPG2003's field-menu Row command (scene/menu.rb's :row branch) --
+  # EasyRPG's own `Scene_Menu::UpdateActorSelection` Row case, restated:
+  # blocks only the toggle that would leave every live party member in the
+  # back row (no `IsDirectionFlipped` term here -- that quirk is specific to
+  # the in-battle `Scene_Battle_Rpg2k3::RowSelected`, see
+  # Game::Battle#can_leave_front_row?).
+  players = (1..3).to_h { |i| [i, FakePlayerRow.new("Actor#{i}", '', 0, 1, max_hp: 10)] }
+  db = FakeActorDB.new(players, [1, 2, 3])
+  party = Game::Party.new(db)
+  a1, a2, a3 = party.actors
+
+  eq Game::Battle::ROW_FRONT, a1.battle_row, 'a fresh actor starts front row'
+  party.toggle_actor_row(a1)
+  eq Game::Battle::ROW_BACK, a1.battle_row, 'the first toggle moves it to the back'
+  party.toggle_actor_row(a1)
+  eq Game::Battle::ROW_FRONT, a1.battle_row, 'toggling again moves it back to the front'
+
+  party.toggle_actor_row(a1)
+  party.toggle_actor_row(a2)
+  eq [Game::Battle::ROW_BACK, Game::Battle::ROW_BACK, Game::Battle::ROW_FRONT],
+     [a1.battle_row, a2.battle_row, a3.battle_row],
+     'two of three back-row is still fine -- a3 alone keeps the front row occupied'
+
+  party.toggle_actor_row(a3)
+  eq Game::Battle::ROW_FRONT, a3.battle_row,
+     'refused: moving the last front-row member back would empty the front row entirely'
+end
+
 check 'Actors builds each id once and reports a missing row as nil' do
   roster = Game::Actors.new(roster_db)
   a = roster[1]
