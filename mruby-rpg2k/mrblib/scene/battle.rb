@@ -554,9 +554,11 @@ class RPG2k
       # database-terrain fields 46-48), instead of the manual battle_x/battle_y.
       # Only grid table 0 is used -- the ordinary actor path indexes table_x 0
       # and table_y 0 (the other tables are the pincer/surround enemy paths this
-      # runtime does not model), and only the front row (the one row this
-      # runtime derives; the per-battler back-row derivation is a separate
-      # step), so `row_x_offset` is always a half-width.
+      # runtime does not model). `row_x_offset` reads the `i`-th ally's own
+      # row (`Combatant#back_row?`, ADR 0053 -- the in-battle Row command is
+      # what actually moves it off the front-row default): a half-width for
+      # front, 0 for back, exactly EasyRPG's own `row_x_offset = actor.
+      # GetBattleRow() == RowType_front ? half_width : 0`.
       #
       # Returns [x, y] for the `i`-th member of `@ui[:allies]`, or nil when
       # the database asks for manual placement (the caller falls back to
@@ -567,10 +569,12 @@ class RPG2k
         pos = battle_grid_position(i, @ui[:allies].length)
         return nil unless pos
         half = ACTOR_CHARSET_CELL / 2
-        # EasyRPG's actor-path x/y for the normal battle condition, with a
-        # front-row `row_x_offset` of a half-width, then the same x clamp
-        # (y is deliberately unclamped for actors -- the reference doesn't).
-        x = SCREEN_W - (pos[0] + half + half)
+        ally = @ui[:allies][i]
+        row_x_offset = ally && ally.back_row? ? 0 : half
+        # EasyRPG's actor-path x/y for the normal battle condition, then the
+        # same x clamp (y is deliberately unclamped for actors -- the
+        # reference doesn't).
+        x = SCREEN_W - (pos[0] + half + row_x_offset)
         y = pos[1] - half
         [Game.clamp(x, half, SCREEN_W - half), y]
       end
@@ -679,6 +683,24 @@ class RPG2k
         return unless sprites
         dispose_battle_sprite(sprites.delete_at(idx))
         reset_actor_battler_z
+      end
+
+      # `combatant`'s row just changed (the in-battle Row command) and its
+      # on-screen alternate-layout sprite needs to reflect the new
+      # automatic-placement X (`#automatic_battle_position`'s `row_x_offset`)
+      # -- rebuild it in place at the same index/Z, the same dispose-then-
+      # #build_actor_sprite-fresh shape #remove_battle_actor_sprite/
+      # #add_battle_actor_sprite already use for a roster change. A no-op
+      # when the fight draws no actor sprites at all (a traditional-layout
+      # database), or manual placement (its `battle_x`/`battle_y` never
+      # depend on row -- see `Combatant.from_actor`'s own row comment).
+      def reposition_actor_sprite(combatant)
+        sprites = @ui[:actor_sprites]
+        return unless sprites
+        i = @ui[:allies].index { |c| c.equal?(combatant) }
+        return unless i && sprites[i]
+        dispose_battle_sprite(sprites[i])
+        sprites[i] = build_actor_sprite(combatant.actor, i)
       end
 
       # Re-derive every surviving actor sprite's Z from its current index in
@@ -1354,6 +1376,11 @@ class RPG2k
             if current_actor_row && current_actor_row.respond_to?(:battle_row=)
               current_actor_row.battle_row = current_actor.row
             end
+            # The alternate-layout sprite's automatic-placement X depends on
+            # row (#automatic_battle_position) -- move it now rather than
+            # leaving the old position on screen until some unrelated
+            # roster-change redraw happens to catch it up.
+            reposition_actor_sprite(current_actor)
             play_system_se(SFX_DECISION)
             @ui[:battle].command_skip(current_actor)
             advance_actor

@@ -11190,7 +11190,7 @@ end
 # parameters (112 / 392 / 16000) so the checks' expected coordinates are
 # explicit; `battle_xy:` supplies per-actor manual coordinates for the
 # placement-0 check.
-def placement_battle(ids, placement: 1, battle_xy: {})
+def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2)
   members = ids.map do |id|
     xy = battle_xy[id] || [0, 0]
     BattleStubActor.new(id: id, agi: 20, battler_animation_id: id,
@@ -11204,14 +11204,17 @@ def placement_battle(ids, placement: 1, battle_xy: {})
   party = BattleStubParty.new(members.first, alternate_layout: true,
                               automatic_placement: placement == 1, actors: members)
   scene, = battle_scene_with_pages({}, party: party, rpg2003: true,
-                                   battlecommands: OpenStruct.new(placement: placement, battle_type: 2),
+                                   battlecommands: OpenStruct.new(placement: placement, battle_type: battle_type),
                                    battleranimations: anims)
   grid = scene.db.terrain[42]
   grid.grid_top_y = 112
   grid.grid_elongation = 392
   grid.grid_inclination = 16000
   # Drive the battle open (the actor sprites are built in Scene::Battle#start).
-  battle_until_phase(scene, :command, 250)
+  # A round-based (battle_type 0) command phase commands actor 0 first and
+  # deterministically, unlike a gauge fight's ready-first ordering, which is
+  # what the Row/row_x_offset check below needs.
+  battle_type == 0 ? battle_to_command(scene) : battle_until_phase(scene, :command, 250)
   scene
 end
 
@@ -11241,6 +11244,28 @@ check 'manual battler placement keeps the database battle_x/battle_y, unchanged'
   sprites = placement_sprites(scene)
   eq [120, 90], [sprites[0].x, sprites[0].y],
      'placement 0 reads the actor\'s own coordinates, no grid involved'
+end
+
+check 'the Row command moves an automatic-placement actor sprite by row_x_offset' do
+  # A two-member party's own grid slots (the "seats a two-member party"
+  # check above): member 0 starts front row at x=256 (320 - (grid.x 16 + a
+  # 24px half-cell + the front-row row_x_offset, also 24)). Flipping it to
+  # the back row drops row_x_offset to 0, moving the sprite to x=280 -- the
+  # same reposition #reposition_actor_sprite now drives right when the Row
+  # command's toggle succeeds, rather than leaving the old front-row sprite
+  # on screen until an unrelated redraw happens to catch it up.
+  scene = placement_battle([1, 2], battle_type: 0)
+  sprites = placement_sprites(scene)
+  eq [256, 88], [sprites[0].x, sprites[0].y], 'member 0 starts on its front-row grid slot'
+  ui = battle_ui(scene)
+  eq %w[Attack Skill Defend Item Row], ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
+  press_key(scene, RGSS::Input::C)
+  hero = ui[:allies][0]
+  eq Game::Battle::ROW_BACK, hero.row, 'member 0 moved to the back row'
+  sprites = placement_sprites(scene)
+  eq [280, 88], [sprites[0].x, sprites[0].y],
+     'the sprite followed the row change: same grid slot, row_x_offset now 0 instead of 24'
 end
 
 # yado.tk / 01_shoshin's 011_siyou: "Empty party doesn't itself Game Over, but
