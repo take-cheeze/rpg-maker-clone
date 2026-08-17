@@ -15012,6 +15012,7 @@ check 'RPG2003 event opcodes match the LCF Code enum' do
   eq 1009, IC::CHANGE_BATTLE_COMMANDS
   eq 5001, IC::OPEN_LOAD_MENU
   eq 5002, IC::EXIT_GAME
+  eq 5003, IC::TOGGLE_ATB_MODE
   eq 5004, IC::TOGGLE_FULLSCREEN
   eq 5005, IC::OPEN_VIDEO_OPTIONS
 end
@@ -15199,6 +15200,22 @@ check 'Toggle Fullscreen / Open Video Options run on without pausing' do
   it.update
   ok !it.waiting?, 'neither command blocks the event'
   eq true, st.switches[1]
+end
+
+check 'Toggle ATB Mode (5003) flips the wait/active atb_mode and runs on' do
+  st = new_state(rpg2003: true)
+  eq 0, st.atb_mode, 'a fresh state starts in wait mode'
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TOGGLE_ATB_MODE, []),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.waiting?, 'the toggle does not block the event'
+  eq 1, st.atb_mode, 'the toggle flipped wait mode to active'
+  eq true, st.switches[1], 'the event ran straight on past the toggle'
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::TOGGLE_ATB_MODE, [])])
+  it2.update
+  eq 0, st.atb_mode, 'a second toggle flips back to wait'
 end
 
 check 'Show Battle Animation (battle form) waits like the map form' do

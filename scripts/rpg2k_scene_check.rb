@@ -13101,6 +13101,26 @@ check 'wait mode: a ready enemy waits behind the command menu, no interrupt' do
      'and its gauge is left full, waiting for the menu to close'
 end
 
+check 'a battle-page Toggle ATB Mode (5003) flips the live fight to active' do
+  ic = Game::Interpreter::Cmd
+  # A TURN-gated page runs at the first turn boundary; its 5003 flips the
+  # same save-system `atb_mode` the field menu Wait command flips, live.
+  pages = { 1 => troop_page([ECmd.new(ic::TOGGLE_ATB_MODE, [])]) }
+  scene, st = battle_scene_with_pages(pages, rpg2003: true,
+                                      battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
+  eq 0, st.atb_mode, 'the fight begins in wait mode'
+  ui = battle_until_phase(scene, :command, 250)
+  ok ui, 'the gauge battle opened to the ready actor\'s menu'
+  eq 1, st.atb_mode, 'the 5003 page flipped the fight to active'
+  # And the flip is live: the enemy gauge now fills behind the menu, the
+  # active-mode behaviour pinned by the checks above.
+  enemy = ui[:battle].enemy(0)
+  enemy.gauge = Game::Battle::GAUGE_MAX / 2
+  20.times { scene.update }
+  ok enemy.gauge > Game::Battle::GAUGE_MAX / 2,
+     'and the flipped-to-active fight keeps the gauges filling behind the menu'
+end
+
 check 'an RPG2003 battle_type 0 (traditional) fight still runs the round machine, never the gauge idle loop' do
   scene, = battle_scene_with_pages({}, rpg2003: true,
                                    battlecommands: OpenStruct.new(battle_type: 0, placement: 1))
@@ -14017,11 +14037,10 @@ check 'Scene::Menu: an RPG2003 database drives the command list from ' \
   # mtf-meido-action's own array, id-for-id (confirmed by loading its real
   # RPG_RT.ldb): every one of RPG2003's eight customizable ids, in ascending
   # order. Row (6) is an RPG2003 battle-system feature this runtime does not
-  # model (the same reported-gap precedent as Toggle ATB Mode, 5003) and is
-  # silently skipped; Wait (8) -- the ATB toggle -- *is* modelled (it flips
-  # the save-system `atb_mode` field, ADR 0054's follow-up) and is offered
-  # with its current-mode label; Order (7) has no such dependency and is
-  # offered, same as Status; End Game is appended unconditionally, matching
+  # model and is silently skipped; Wait (8) -- the ATB toggle -- *is* modelled
+  # (it flips the save-system `atb_mode` field, ADR 0054's follow-up) and is
+  # offered with its current-mode label; Order (7) has no such dependency and
+  # is offered, same as Status; End Game is appended unconditionally, matching
   # EasyRPG's own unconditional Quit push outside the customized loop.
   db = fake_db(rpg2003: true, menu_commands: [1, 2, 3, 4, 5, 6, 7, 8])
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)

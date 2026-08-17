@@ -45,9 +45,10 @@ class RPG2k
       # is never itself in the list -- `Scene_Menu` appends it unconditionally
       # after the loop, which #build_commands mirrors below). Row (battle
       # front/back rank) has no entry here and is silently skipped: it is an
-      # RPG2003 battle-system feature this runtime does not model, the same
-      # reported-gap precedent the Toggle ATB Mode (5003) event command entry
-      # already establishes elsewhere. Wait (id 8) *is* modelled: it flips the
+      # RPG2003 battle-system feature this runtime does not model (Row's
+      # front/back mechanic itself is modelled -- ADR 0053 -- but the
+      # per-actor row *assignment* in the menu is not). Wait (id 8) *is*
+      # modelled: it flips the
       # save-system `atb_mode` toggle (LSD chunk 140) that makes a gauge
       # battle's command menu freeze (wait) or keep running (active) -- the
       # Wait-off (active) mode follow-up ADR 0054 named -- and its label
