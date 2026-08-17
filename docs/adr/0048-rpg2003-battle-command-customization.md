@@ -4,7 +4,8 @@ Date: 2026-08-15
 
 ## Status
 
-Accepted
+Accepted — the open chunk-29 test-bed validation follow-up is now closed
+(2026-08-17, see the Consequences below).
 
 ## Context
 
@@ -32,11 +33,14 @@ data" section, ADR 0009/0011). Chunk 29 has no page on that wiki and no test
 game close at hand to diff against here. Its field/enum ids are instead
 transcribed from liblcf's own `generator/csv/{fields,enums}.csv` — the
 reference C++ implementation's declared format, not a byte-level guess — and
-checked against a hand-built synthetic blob the same way every other chunk in
-`mruby-lcf/test/lcf_test.rb` is (`db.battlecommands.commands[id].name/.type`).
-It has **not** been validated against a real 2k3 `RPG_RT.ldb` the way
-`lcf_testbed_check.rb` validates the rest of the 2003-specific schema; that
-remains a follow-up once a customized test-bed database is available.
+ checked against a hand-built synthetic blob the same way every other chunk in
+ `mruby-lcf/test/lcf_test.rb` is (`db.battlecommands.commands[id].name/.type`).
+It
+has **now** been validated against the real 2k3 test bed (mtf-meido-action)
+the way `lcf_testbed_check.rb` validates the rest of the 2003-specific schema
+— the "customized test-bed database" that was outstanding at the ADR's writing
+is mtf-meido-action itself, whose database-wide list carries twelve commands
+and whose actors/classes reference them (see the Consequences below).
 
 ## Decision
 
@@ -79,16 +83,31 @@ RPG2000 file, and any fixture built before this change) is unaffected —
 `battle_command_row` returns nil for every id, so `custom_battle_commands`
 always returns nil and the fixed four still draws exactly as before.
 
-Chunk 29's structural correctness rests on liblcf's own declared format plus
-a synthetic round-trip test, not a real save/database byte-diff — the
-weaker of the two forms of evidence this project otherwise insists on for
-LCF chunks. `lcf_testbed_check.rb` should pick up `db.battlecommands` once a
-2003 test-bed project that actually uses this tab is available, closing that
-gap the way the rest of the 2003-specific schema is already closed.
+Chunk 29's structural correctness rested on liblcf's own declared format plus
+a synthetic round-trip test, not a real save/database byte-diff — the weaker
+of the two forms of evidence this project otherwise insists on for LCF
+chunks. **That gap is now closed (2026-08-17).** The customized test bed the
+ADR was waiting for turned out to be the engine's existing RPG2003 test bed,
+mtf-meido-action: its database-wide Battle Commands list carries twelve
+commands whose types span the whole 0–6 range (Attack/Defend/Item/Escape and
+the skill/subskill rows — Holy Magic, Magic, Special, Ninpou, Nature,
+Atmosphere), `placement` 1 (automatic) and `battle_type` 2 (gauge); and its
+actors and classes reference them through their own `battle_commands` — all
+eighteen classes name a command, while the actor table is mostly the empty
+all-`-1` state with only actor 1 carrying a real list (a genuine edge case: no
+assertion may require an actor to have one). `lcf_testbed_check.rb` now proves
+the real 2003 bytes the way it already does for the Classes (chunk 30) table:
+the list is present with a non-empty `commands` field, every positive reference
+in any actor's or class's `battle_commands` names a command in that list (0
+Row and -1 empty slot are caller-handled sentinels and correctly name no entry),
+and an RPG2000 database (Nepheshel) never carries the list at all.
 
 Covered by `mruby-lcf/test/lcf_test.rb` (chunk 29 decode), new
 `scripts/rpg2k_logic_check.rb` checks (`battle_command_row` resolving a real
-entry, an undefined id, and a database with no chunk 29 at all), and new
+entry, an undefined id, and a database with no chunk 29 at all), new
 `scripts/rpg2k_scene_check.rb` checks (a skill-only customized list; a
 shortened, reordered Item/Defense list drawing and dispatching in its own
-order; Row alone falling back to the fixed four).
+order; Row alone falling back to the fixed four), `scripts/rpg2k3_battle_
+command_check.rb` (the chunk's top-level decode against mtf), and — since the
+cross-reference was what the synthetic test could not express — the new
+`check_battlecommands` pass in `scripts/lcf_testbed_check.rb` described above.
