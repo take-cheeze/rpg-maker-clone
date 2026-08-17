@@ -9655,6 +9655,37 @@ check 'selecting a customized battle command records its own command-table ref' 
   eq 10, hero.last_battle_action, 'a customized row records its own db.commands ref'
 end
 
+check "Enemy Encounter scene: a Special battle command draws a row and forfeits the actor's turn" do
+  # RPG2003's Special (type 6) command resolves to a turn that does nothing --
+  # EasyRPG's `Scene_Battle_Rpg2k3::SpecialSelected` queues
+  # `Game_BattleAlgorithm::DoNothing`. It must be offered as a menu row (this
+  # engine used to skip it along with Escape) and, once chosen, commit at once
+  # like Defend -- no target/skill/item submenu -- and pass the actor's turn
+  # with no action: `Game::Battle#command_skip` sets the Combatant's skip
+  # flag, #strike returns nil for it, and the round machine moves on.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  actor = BattleStubActor.new(agi: 20,
+    battle_commands: [12, 0, -1, -1, -1, -1, -1],
+    battle_command_table: { 12 => BattleCommandDef.new('Stall', Game::Actor::BATTLE_COMMAND_SPECIAL) })
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq ['Stall'], labels, 'a customized list with just a Special entry shows that one row, not the fixed four'
+  hero = ui[:allies][0]
+  press_key(scene, RGSS::Input::C) # the only row, cmd 0: the Special at ref 12
+  eq 12, hero.last_battle_action, 'a Special row records its own db.commands ref (never multiplied by a combo)'
+  eq :animate, ui[:phase], 'Special commits at once -- no target/skill/item submenu, like Defend'
+  # The hero's turn is skipped, so after the round resolves the only log
+  # entries are the Slimes' attacks, never a Hero one.
+  8.times { scene.update }
+  hero_attacked = ui[:battle].log.any? { |e| e[:attacker] == 'Hero' }
+  eq false, hero_attacked, 'the Special turn produced no attack entry for the hero'
+end
+
 check "Enemy Encounter scene: a battle-command list of Row alone falls back to the fixed four" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -11054,6 +11085,30 @@ check 'a command_actor troop page fires at the acting battler\'s turn in a gauge
   # fires and its event toggles switch 5.
   5.times { scene.update }
   eq true, st.switches[5], 'the command_actor page fired at the acting hero\'s turn'
+end
+
+# The Special command in a gauge fight: choosing it forfeits the ready actor's
+# turn (EasyRPG's DoNothing), spending the held gauge and returning to the ATB
+# idle loop without any action -- the active-time counterpart to the round-
+# based Special check above.
+check "a gauge battle: the Special command spends the ready actor's turn and returns to the ATB loop" do
+  scene, st = battle_scene_with_pages({}, rpg2003: true,
+                                      battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
+  actor = BattleStubActor.new(agi: 20,
+    battle_commands: [12, 0, -1, -1, -1, -1, -1],
+    battle_command_table: { 12 => BattleCommandDef.new('Stall', Game::Actor::BATTLE_COMMAND_SPECIAL) })
+  st.instance_variable_set(:@party, BattleCustomCommandParty.new(actor))
+  ui = battle_until_phase(scene, :command, 250)
+  ok ui, 'the gauge battle opened to the ready actor\'s menu'
+  hero = ui[:allies][0]
+  eq true, hero.gauge_full?, 'the actor\'s gauge is held full while the menu is open'
+  press_key(scene, RGSS::Input::C) # the only row: the Special at ref 12
+  eq :animate, ui[:phase], 'Special commits at once -- no target/skill/item submenu'
+  scene.update
+  eq :atb, ui[:phase], 'the consumed turn returns to the active-time idle loop'
+  ok !hero.gauge_full?, 'the Special turn spent the hero\'s held-full gauge (it refills from the ATB loop)'
+  hero_attacked = ui[:battle].log.any? { |e| e[:attacker] == 'Hero' }
+  eq false, hero_attacked, 'the Special turn produced no action entry'
 end
 
 # -- automatic battler placement (`battlecommands.placement == 1`) -------------

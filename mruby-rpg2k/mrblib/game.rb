@@ -9015,8 +9015,12 @@ module Game
     end
 
     # Forfeit `ally`'s action for the round — it neither attacks nor gains a
-    # defend's damage cut — used when a failed escape costs the party its turn.
-    # Cleared with the other commands at #end_round.
+    # defend's damage cut — used when a failed escape costs the party its turn
+    # and for the RPG2003 **Special** battle command, whose turn resolves to
+    # exactly this (EasyRPG's `Game_BattleAlgorithm::DoNothing`: the actor
+    # spends its turn doing nothing, no message, no animation — see the
+    # scene's `select_battle_command` `:special` arm). Cleared with the other
+    # commands at #end_round.
     def command_skip(ally)
       ally.action = nil; ally.defending = false; ally.command = nil; ally.skip = true
     end

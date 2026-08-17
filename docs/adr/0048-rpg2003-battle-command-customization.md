@@ -52,11 +52,14 @@ remains a follow-up once a customized test-bed database is available.
   a fixture without chunk 29, or an id the table doesn't define.
 - **`Scene::Map#custom_battle_commands(actor)`** (`scene/map.rb`) walks
   `actor.battle_commands`, skipping `0`/`-1`/unresolvable refs, and turns
-  each resolved entry into a `{ label:, action: }` row for the four types
+  each resolved entry into a `{ label:, action: }` row for the five types
   this engine actually drives (Attack, Skill — Subskill folds into the same
   Skill submenu, there being no single-skill quick-cast modelled — Defense,
-  Item). Escape (already offered as Cancel on the first actor) and Special
-  (no handler anywhere in this engine) are skipped, the same "reported gap,
+  Item, Special). Special is the RPG2003 "does nothing this turn" command
+  (EasyRPG's `Game_BattleAlgorithm::DoNothing`): it is offered as a row and
+  `#select_battle_command` forfeits the actor's turn, spending it (and, in a
+  gauge battle, the charge) with no action. Escape (already offered as Cancel
+  on the first actor) is skipped, the same "reported gap,
   not silently invented" precedent the rest of this file already follows for
   unmodelled RPG2003 features. A list with nothing usable in it — no data at
   all, which reads back as `[0]`, Row alone, same as

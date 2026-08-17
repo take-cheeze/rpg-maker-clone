@@ -122,7 +122,9 @@ Behavioral notes and deliberate simplifications:
   back-row `row_x_offset` and the pincer/surround enemy tables need the row
   derivation and battle conditions this runtime does not model); `mtf-
   meido-action` uses placement 1, so its real gauge battle exercises it.
-- Follow-ups: Wait-off (active) mode and the database wait toggle; the
-  Special command handler. The attacker-side row adjustment (a front-row actor
-  dealing +25% damage and the flat-25 back-row defender hit penalty) landed
-  with ADR 0053 Phase 1's reference-aligned row model (2026-08-17).
+- Follow-ups: Wait-off (active) mode and the database wait toggle. The
+  Special command handler (a chosen Special forfeits the actor's turn,
+  EasyRPG's DoNothing) landed 2026-08-17, and the attacker-side row
+  adjustment (a front-row actor dealing +25% damage and the flat-25 back-row
+  defender hit penalty) landed with ADR 0053 Phase 1's reference-aligned row
+  model (2026-08-17).
