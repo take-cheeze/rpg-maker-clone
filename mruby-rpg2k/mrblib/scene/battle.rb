@@ -505,13 +505,11 @@ class RPG2k
       # does not implement (logged below, matching this codebase's "reported
       # gap, not silently invented" convention for unimplemented behaviour).
       #
-      # Position is the raw database `battle_x`/`battle_y`
-      # (Game_Actor::GetOriginalPosition) -- confirmed against EasyRPG's
-      # actual C++ source this is only what `battlecommands.placement`
-      # manual (0) uses; automatic (1) instead computes a real grid formula
-      # (`CalculateBaseGridPosition`, src/game_battle.cpp) this step does not
-      # implement either, so that case also just logs and falls back to the
-      # same raw coordinates rather than guessing at the formula.
+      # Position is either `battlecommands.placement` manual (0)'s raw
+      # database `battle_x`/`battle_y` (Game_Actor::GetOriginalPosition) or
+      # automatic (1)'s computed grid slot (#automatic_battle_position, the
+      # EasyRPG Calculate2k3BattlePosition port) -- confirmed against
+      # EasyRPG's actual C++ source, which splits exactly this way.
       def build_actor_sprite(actor, i)
         anim_id = actor.respond_to?(:battler_animation_id) ? (actor.battler_animation_id || 0) : 0
         table = db.respond_to?(:battleranimations) ? db.battleranimations : nil
@@ -529,20 +527,97 @@ class RPG2k
         bmp = actor_battlecharset_bitmap(pose.battler_name)
         return nil unless bmp
 
-        if @state.party.respond_to?(:automatic_battle_placement?) &&
-           @state.party.automatic_battle_placement?
-          $stderr.puts "[RPG2k] actor ##{actor.id}: automatic battler placement not yet " \
-                       "implemented, using the database's manual battle_x/battle_y"
+        x, y = automatic_battle_position(i)
+        if x.nil?
+          # Manual placement: the database's own battle_x/battle_y.
+          x = actor.respond_to?(:battle_x) ? (actor.battle_x || 0) : 0
+          y = actor.respond_to?(:battle_y) ? (actor.battle_y || 0) : 0
         end
 
         spr = Sprite.new
         spr.bitmap = bmp
         spr.src_rect = Rect.new(0, (pose.battler_index || 0) * ACTOR_CHARSET_CELL,
                                 ACTOR_CHARSET_CELL, ACTOR_CHARSET_CELL)
-        spr.x = actor.respond_to?(:battle_x) ? (actor.battle_x || 0) : 0
-        spr.y = actor.respond_to?(:battle_y) ? (actor.battle_y || 0) : 0
+        spr.x = x
+        spr.y = y
         spr.z = actor_sprite_z(i)
         spr
+      end
+
+      # -- automatic battler placement (`battlecommands.placement == 1`) --------
+      #
+      # Port of EasyRPG's `CalculateBaseGridPosition` /
+      # `Calculate2k3BattlePosition` (src/game_battle.cpp): when the database
+      # asks for automatic placement, each party member's sprite sits on a grid
+      # slot computed from its party index, the party size and the encounter's
+      # terrain (the `grid_top_y` / `grid_elongation` / `grid_inclination`
+      # database-terrain fields 46-48), instead of the manual battle_x/battle_y.
+      # Only grid table 0 is used -- the ordinary actor path indexes table_x 0
+      # and table_y 0 (the other tables are the pincer/surround enemy paths this
+      # runtime does not model), and only the front row (the one row this
+      # runtime derives; the per-battler back-row derivation is a separate
+      # step), so `row_x_offset` is always a half-width.
+      #
+      # Returns [x, y] for the `i`-th member of `@ui[:allies]`, or nil when
+      # the database asks for manual placement (the caller falls back to
+      # battle_x/battle_y) or the party outgrows the reference grid (8 rows).
+      def automatic_battle_position(i)
+        return nil unless @state.party.respond_to?(:automatic_battle_placement?) &&
+                          @state.party.automatic_battle_placement?
+        pos = battle_grid_position(i, @ui[:allies].length)
+        return nil unless pos
+        half = ACTOR_CHARSET_CELL / 2
+        # EasyRPG's actor-path x/y for the normal battle condition, with a
+        # front-row `row_x_offset` of a half-width, then the same x clamp
+        # (y is deliberately unclamped for actors -- the reference doesn't).
+        x = SCREEN_W - (pos[0] + half + half)
+        y = pos[1] - half
+        [Game.clamp(x, half, SCREEN_W - half), y]
+      end
+
+      # EasyRPG's `CalculateBaseGridPosition` grid table 0 (src/game_battle.cpp)
+      # -- the only table the ordinary actor path indexes (table_x 0, table_y
+      # 0), one row per party size, one fraction per member index.
+      GRID_TABLE_0 = [
+        [0.5],
+        [0.0, 1.0],
+        [0.0, 0.5, 1.0],
+        [0.0, 0.33, 0.66, 1.0],
+        [0.0, 0.25, 0.5, 0.75, 1.0],
+        [0.0, 0.0, 0.5, 0.5, 1.0, 1.0],
+        [0.0, 0.25, 0.33, 0.5, 0.66, 0.75, 1.0],
+        [0.0, 0.0, 0.33, 0.33, 0.66, 0.66, 1.0, 1.0]
+      ].freeze
+      # EasyRPG's no-terrain defaults (the editor's database-terrain fields
+      # default to 0 / 375 / 16400, but the reference falls back to these when
+      # no terrain is named, not to the editor defaults).
+      GRID_TOP_Y_DEFAULT = 112
+      GRID_ELONGATION_DEFAULT = 392
+      GRID_INCLINATION_DEFAULT = 16000
+
+      # The grid slot for the `i`-th of `party_size` members, or nil when the
+      # party outgrows the table. Integer-truncated like the reference's
+      # `(int)` casts.
+      def battle_grid_position(i, party_size)
+        row = GRID_TABLE_0[party_size - 1]
+        return nil unless row && row[i]
+        t = row[i]
+        grid = battle_grid_params
+        x = ((1.0 - t) * (grid[:inclination] / 1000.0)).to_i
+        y = grid[:top_y] + (Math.sin(grid[:elongation] / 1000.0) * 120.0 * t).to_i
+        [x, y]
+      end
+
+      # The encounter terrain's grid fields (database terrain chunks 46-48), or
+      # EasyRPG's no-terrain defaults when the party's tile names no terrain.
+      def battle_grid_params
+        tid = @map.respond_to?(:terrain_id) ? @map.terrain_id(@state.x, @state.y) : 0
+        row = tid && tid > 0 && db.respond_to?(:terrain) && db.terrain ? db.terrain[tid] : nil
+        return { top_y: GRID_TOP_Y_DEFAULT, elongation: GRID_ELONGATION_DEFAULT,
+                 inclination: GRID_INCLINATION_DEFAULT } unless row
+        { top_y: row.respond_to?(:grid_top_y) ? (row.grid_top_y || 0) : 0,
+          elongation: row.respond_to?(:grid_elongation) ? (row.grid_elongation || 0) : 0,
+          inclination: row.respond_to?(:grid_inclination) ? (row.grid_inclination || 0) : 0 }
       end
 
       # Interpreter#do_change_party's hook (via `@ui[:events].
