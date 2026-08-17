@@ -11,15 +11,46 @@ module RPG2k3
     # per-frame turn cycle here): every combatant's gauge fills each frame, the
     # moment one is full decides *whose turn it is* instead of the 2000
     # sequential round order, and acting resets it so it refills. A
-    # controllable party member whose gauge is full opens the command menu
-    # (the battle pauses on it -- Wait-mode behaviour); everyone else acts
-    # automatically the instant their gauge fires, enemy AI included.
+    # controllable party member whose gauge is full opens the command menu;
+    # everyone else acts automatically the instant their gauge fires, enemy AI
+    # included. How long that command menu lets the fight run is the RPG2003
+    # Wait/active toggle (`SaveSystem.atb_mode`, LSD chunk 140): in wait mode
+    # (the default) the gauges freeze while the menu is open, in active mode
+    # they keep filling and a ready non-controllable combatant's action
+    # interrupts the menu (#atb_accumulating? / #drive_battle_command's
+    # override).
     #
     # The traditional (0) and alternative (1) presentations run the inherited
     # turn-based machine unchanged -- every override below is gated on
     # `battle_type == 2`, so routing every 2003 fight through this scene stays
     # safe for them.
     class Battle < RPG2k::Scene::Battle
+      # The gauge phases that count as "the command menu is open" for the
+      # wait/active toggle (EasyRPG's State_SelectCommand / SelectItem /
+      # SelectSkill / SelectEnemyTarget / SelectAllyTarget): in wait mode
+      # gauges freeze here, in active mode they keep filling.
+      ATB_MENU_PHASES = [:command, :target, :skill, :item, :ally_target].freeze
+
+      # Whether this fight runs in RPG2003's active-during-menu (Wait-off)
+      # presentation -- the save-system `atb_mode` toggle (LSD chunk 140),
+      # flipped by the field menu's Wait command (id 8). Wait mode (the
+      # default) freezes the gauges while a command menu is open.
+      def active_atb?
+        gauge_battle? && @state.atb_mode == 1
+      end
+
+      # Whether the active-time gauges advance this frame -- EasyRPG's
+      # `IsAtbAccumulating` (src/scene_battle_rpg2k3.cpp): always in the
+      # idle loop (SelectActor / AutoBattle), only in active mode while a
+      # command/target/skill/item menu is open, and never during action
+      # resolution, the encounter banner or a battle event.
+      def atb_accumulating?
+        phase = @ui[:phase]
+        return true if phase == :atb
+        return active_atb? if ATB_MENU_PHASES.include?(phase)
+        false
+      end
+
       # Advance the active-time gauge every frame for a gauge battle, then
       # dispatch on the phase. A turn-based or alternative battle leaves the
       # gauge at 0 and runs the inherited update (and with it the whole 2000
@@ -27,7 +58,7 @@ module RPG2k3
       def update
         battle = @ui && @ui[:battle]
         if battle && battle.battle_type == 2
-          battle.advance_gauges
+          battle.advance_gauges if atb_accumulating?
           update_enemy_flashes
           update_enemy_positions
           update_enemy_shakes
@@ -138,6 +169,36 @@ module RPG2k3
       def advance_actor
         return start_gauge_action(current_actor) if gauge_battle? && current_actor
         super
+      end
+
+      # A gauge battle's command menu, with the Wait/active toggle honoured:
+      # in active mode a ready combatant whose action would fire on its own
+      # (an enemy, or a restricted / Forced-AI actor -- anyone the idle loop
+      # would act automatically rather than prompt) interrupts the menu
+      # instead of waiting behind it. EasyRPG's own `ProcessSceneActionCommand`
+      # does exactly this: `if (GetAtbMode() == AtbMode_atb_active &&
+      # IsBattleActionPending()) SetState(State_Battle)`. The interrupting
+      # turn plays out, then -- because the commanded actor's gauge is still
+      # held full -- the idle loop reopens its menu. In wait mode this check
+      # is skipped and the menu stays up until the player commits, matching
+      # the reference's `IsBattleActionPending` gate being ANDed with active
+      # mode only.
+      def drive_battle_command
+        if gauge_battle? && active_atb? && (b = interrupting_ready_combatant)
+          start_gauge_action(b)
+          return
+        end
+        super
+      end
+
+      # The ready combatant whose action is pending behind the command menu in
+      # active mode: the first full-gauge battler the idle loop would act
+      # automatically -- i.e. not the actor whose menu is up and not one a
+      # controllable party member whose own menu would simply wait its turn.
+      def interrupting_ready_combatant
+        battle = @ui[:battle]
+        cur = current_actor
+        battle.ready_combatants.find { |c| c != cur && !controllable?(c) }
       end
 
       # The gauge battle's counterpart to #start_round_animation: begin the one

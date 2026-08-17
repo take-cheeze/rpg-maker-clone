@@ -65,8 +65,9 @@ Behavioral notes and deliberate simplifications:
 - The command menu **pauses the fight** while it is open — RPG2003's Wait-mode
   behaviour — so other ready combatants queue behind the committing actor
   rather than acting mid-deliberation. The active-during-menu (Wait-off)
-  presentation, and the database's wait toggle itself (a Battle Commands field
-  the schema does not decode yet), are follow-ups.
+  presentation is the follow-up below; the wait toggle itself turns out to
+  live on the **save system**, not the Battle Commands table (the original
+  guess here was wrong — see the follow-up).
 - A gauge battle shows **no Fight/Auto/Escape options window**: the first ready
   actor's menu opens on its own. The gauge fill runs on EasyRPG's real RPG_RT
   2003 curve — `GAUGE_MAX` 300000, per-frame increment
@@ -122,9 +123,24 @@ Behavioral notes and deliberate simplifications:
   back-row `row_x_offset` and the pincer/surround enemy tables need the row
   derivation and battle conditions this runtime does not model); `mtf-
   meido-action` uses placement 1, so its real gauge battle exercises it.
-- Follow-ups: Wait-off (active) mode and the database wait toggle. The
-  Special command handler (a chosen Special forfeits the actor's turn,
-  EasyRPG's DoNothing) landed 2026-08-17, and the attacker-side row
-  adjustment (a front-row actor dealing +25% damage and the flat-25 back-row
-  defender hit penalty) landed with ADR 0053 Phase 1's reference-aligned row
-  model (2026-08-17).
+- Follow-ups: Wait-off (active) mode and the wait toggle. The Special command
+  handler (a chosen Special forfeits the actor's turn, EasyRPG's DoNothing)
+  landed 2026-08-17, and the attacker-side row adjustment (a front-row actor
+  dealing +25% damage and the flat-25 back-row defender hit penalty) landed
+  with ADR 0053 Phase 1's reference-aligned row model (2026-08-17).
+- **Wait-off (active) mode landed 2026-08-17.** The toggle is the save-system
+  `SaveSystem.atb_mode` field (LSD chunk 140; the earlier "Battle Commands
+  field" guess above was wrong — liblcf's `fields.csv` has no `wait` entry on
+  `BattleCommands`, and RPG_RT stores the mode in the save's System chunk,
+  default 0 = wait, 1 = active, RPG2003-only). The schema decodes it
+  (`SAVE_SYSTEM` field 140), `Game::State` carries it and writes it out only
+  when non-zero (an RPG2000 save never gains the 2003-only chunk), and the
+  field menu's Wait command (id 8, `Terms wait_on`/`wait_off` labels) flips
+  it. In the battle scene, wait mode freezes the gauges while a command
+  menu is open; active mode keeps them filling and a ready non-controllable
+  combatant's action **interrupts** the menu — EasyRPG's
+  `ProcessSceneActionCommand`'s `GetAtbMode() == active &&
+  IsBattleActionPending()` gate (`IsAtbAccumulating` returns `active_atb`
+  during SelectCommand/Item/Skill/EnemyTarget/AllyTarget). The field-menu
+  Toggle ATB Mode event command (5003) remains unmodelled (its menu entry is
+  the interactive path to the same field).

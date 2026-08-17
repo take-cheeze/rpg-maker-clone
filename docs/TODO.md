@@ -1656,9 +1656,12 @@ The work below is roughly ordered by the critical path to a walkable game
   window cannot change mode. Still open here: **Toggle ATB Mode** (5003), which
   would switch a gauge fight between this engine's active-time turn cycle (ADR
   0054 — the gauge-driven battle now modelled for the gauge presentation) and
-  the round-based machine; the command itself toggles a per-battle flag the
-  battle still never reads, so it stays a reported gap rather than a silent
-  no-op. The opcodes were read out of liblcf's `EventCommand::Code` enum, which
+  the round-based machine; the field-menu Wait command already flips the
+  `atb_mode` save-system field the event command would target (see the `Wait`
+  command paragraph in the field-menu section), but the battle still never
+  reads a per-fight toggle, so the *event* command stays a reported gap rather
+  than a silent no-op. The opcodes were read out of liblcf's
+  `EventCommand::Code` enum, which
   also corrected `analyze_game.rb` — it had Change Class / Change Battle Commands
   at 12610 / 12710, numbers the enum does not define at all.
   **Battle-event pages now run too**: a troop's pages (`enemy_group` chunk 11)
@@ -2397,8 +2400,10 @@ The work below is roughly ordered by the critical path to a walkable game
 #### Menus, save, battle
 - ✅ Menu scene — opens over the map (cancel button); shows party status and a
   command list. Save, End Game, **Item**, **Skill**, **Equip**, **Status** and
-  **Order** all work. (The RPG2003 Row and Wait commands stay blocked on the
-  unmodelled RPG2003 battle system; see the body.)
+  **Order** all work, and **Wait** (id 8) now does too: it flips the save-system
+  `atb_mode` field that freezes (wait) or keeps running (active) a gauge
+  battle's command menu — the RPG2003 Wait toggle, see the body. (Row alone
+  stays blocked on the unmodelled RPG2003 battle system; see the body.)
   ✅ **The command list itself now matches the editor that wrote the game**,
   rather than always showing the same fixed six. This line used to claim
   Item/Skill/Equip/Status/Save/End Game was simply "the full main-menu set,"
@@ -2440,8 +2445,12 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Order (id 7) has since gained its own entry too** — unlike Row and
   Wait it turned out to have no battle-system dependency at all, just party
   reordering; see the `Order` paragraph further down for the follow-up.
-  Row and Wait remain genuinely blocked on the unmodelled RPG2003 battle
-  system. The **Item** command opens
+  ✅ **Wait (id 8) has since gained its own entry too** — the toggle turned out
+  to live on the save system, not the Battle Commands table: it flips the
+  `SaveSystem.atb_mode` field (LSD chunk 140) that makes a gauge battle's
+  command menu freeze (wait) or keep running (active); see the `Wait` paragraph
+  further down for the follow-up. Row alone remains genuinely blocked on the
+  unmodelled RPG2003 battle system. The **Item** command opens
   `Scene::ItemMenu`: it lists the party's usable **medicines** (database item type
   6), **skill books** (type 7) and **seeds** (type 8) with their held counts. A
   medicine heals its target — a single-target item a chosen ally, an all-ally item
@@ -2653,8 +2662,10 @@ The work below is roughly ordered by the critical path to a walkable game
   Of the three ids `RPG2K3_COMMAND_IDS` used to skip wholesale (Row, Order,
   Wait), Order turned out to have no dependency on the unmodelled battle
   system at all — it is pure party-array reordering, so it was pulled out and
-  built standalone while Row (battle front/back rank) and Wait (the ATB
-  toggle) stay genuinely blocked on that gap. The interaction model was
+  built standalone while Row (battle front/back rank) stays genuinely blocked
+  on that gap (Wait is now implemented too — its toggle turned out to live on
+  the save system, not the battle system; see its own paragraph above). The
+  interaction model was
   confirmed against EasyRPG Player's own `Scene_Order` rather than guessed:
   it is a **pick-and-place build, not a swap or drag-drop** — the player picks
   party members one at a time from a left column (`UpdateOrder`'s
@@ -2687,6 +2698,31 @@ The work below is roughly ordered by the critical path to a walkable game
   time or leaves the screen with none picked; Confirm applies the picked
   order to the party and closes; Redo clears every pick without touching the
   party)
+  ✅ **Wait (RPG2003 `menu_commands` id 8, the ATB toggle) is implemented.** Of
+  the three ids `RPG2K3_COMMAND_IDS` used to skip wholesale (Row, Order,
+  Wait), the toggle turned out to live on the **save system**, not the Battle
+  Commands table: liblcf's `fields.csv` has no `wait` entry on
+  `BattleCommands`, and RPG_RT stores the wait/active choice as
+  `SaveSystem.atb_mode` (LSD chunk 140, default 0 = wait, 1 = active,
+  RPG2003-only). The schema now decodes it, `Game::State` carries it
+  (`attr_accessor :atb_mode`, written to the save only when non-zero so an
+  RPG2000 save never gains the 2003-only chunk), and `Scene::Menu`'s Wait row
+  flips it — ported from EasyRPG's own `Scene_Menu` Wait branch: the label
+  shows the *current* mode (`wait_on` / `wait_off`, `Terms` fields 121/122),
+  confirming plays the Decision SE and relabels the row. In the battle scene
+  (ADR 0054) wait mode freezes the gauges while a command menu is open;
+  active mode keeps them filling and a ready non-controllable combatant's
+  action **interrupts** the menu — `active_atb?` / `atb_accumulating?` /
+  `drive_battle_command`'s interrupt gate mirror EasyRPG's
+  `IsAtbAccumulating` and `ProcessSceneActionCommand` (`GetAtbMode() ==
+  active && IsBattleActionPending()`, with SelectActor/AutoBattle always
+  accumulating). Covered by new `scripts/rpg2k_scene_check.rb` checks (wait
+  mode freezes an enemy's gauge behind the menu; active mode keeps it filling
+  and a ready enemy's action interrupts and returns to the menu; a ready
+  enemy waits in wait mode; the menu Wait row toggles and relabels) and a
+  `scripts/rpg2k_save_load_check.rb` round-trip (`atb_mode` 1 survives).
+  Row alone remains genuinely blocked on the unmodelled RPG2003 battle
+  system.
   ✅ **A weapon/shield/armour/helmet/accessory item flagged `use_skill`
   (schema field 71) is now usable directly from the field and battle Item
   menus too, invoking its `skill_id` skill without being equipped.** The

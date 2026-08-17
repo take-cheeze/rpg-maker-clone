@@ -11880,6 +11880,13 @@ module Game
     # chunks 21 / 23); Scene::Map reloads the windowskin when the override
     # changes.
     attr_accessor :system_graphic, :font_id
+    # RPG2003's active-time wait/active toggle (`SaveSystem.atb_mode`, LSD
+    # SAVE_SYSTEM chunk 140): 0 = wait (a gauge battle's command menu pauses
+    # the fight), 1 = active (gauges keep filling while a menu is open and a
+    # ready non-controllable combatant's action interrupts it). The field
+    # menu's Wait command (id 8) flips it and the gauge battle scene reads it;
+    # default 0 (wait), matching liblcf. RPG2000 saves never carry the chunk.
+    attr_accessor :atb_mode
     # Last known-good resume position of each running Common Event Parallel
     # Process, id => a command-list index (see Game::Interpreter
     # #resumable_index). Unlike a Map Event's parallel process (which always
@@ -11971,6 +11978,8 @@ module Game
       @screen_transitions = Array.new(SCREEN_TRANSITION_SLOTS, nil)
       @system_graphic = nil
       @font_id = 0
+      # RPG2003's wait/active toggle; wait mode (0) is the default.
+      @atb_mode = 0
       @weather = Weather.new
       # The three vehicles' saved locations (boat / ship / airship), persisted in
       # `.lsd` chunks 105-107. Unplaced until a save restores them.
@@ -12340,6 +12349,10 @@ module Game
       # System windowskin / font override (Change System Graphics).
       sys[21] = @system_graphic if @system_graphic
       sys[23] = @font_id
+      # RPG2003's wait/active toggle (chunk 140). Written only when it leaves
+      # the default 0 (wait) -- the chunk is 2003-only, so an RPG2000 save
+      # must not gain a stray 0 here.
+      sys[140] = @atb_mode if @atb_mode && @atb_mode != 0
       sys[131] = save_count
       sys[132] = 1
       save[101] = sys
@@ -12657,6 +12670,9 @@ module Game
       sg = sys.system_graphic
       state.system_graphic = sg unless sg.nil? || sg.empty?
       state.font_id = sys.font || 0
+      # RPG2003's wait/active toggle. The chunk's own default is 0 (wait), so
+      # an absent chunk (RPG2000 saves, or a wait-mode 2003 save) reads wait.
+      state.atb_mode = sys.atb_mode || 0
       # The leader's display name from the file-screen title chunk. This used
       # to be treated as always redundant with chunk 109's own party list
       # (field 1: "both hold the same live name in a genuine save"), so a

@@ -44,14 +44,20 @@ class RPG2k
       # Skill=2, Equipment=3, Save=4, Status=5, Row=6, Order=7, Wait=8; Quit=9
       # is never itself in the list -- `Scene_Menu` appends it unconditionally
       # after the loop, which #build_commands mirrors below). Row (battle
-      # front/back rank) and Wait (the ATB toggle) have no entry here and are
-      # silently skipped: they are RPG2003 battle-system features this runtime
-      # does not model, the same reported-gap precedent the Toggle ATB Mode
-      # (5003) event command entry already establishes elsewhere. Order
-      # (party reordering, id 7) *is* modelled -- unlike Row/Wait it has no
-      # battle-system dependency at all, just Game::Party#reorder and
-      # Scene::Order (see #select_command's :order branch). A real RPG2003
-      # game's array (mtf-meido-action's is `[1, 2, 3, 4, 5, 6, 7, 8]`,
+      # front/back rank) has no entry here and is silently skipped: it is an
+      # RPG2003 battle-system feature this runtime does not model, the same
+      # reported-gap precedent the Toggle ATB Mode (5003) event command entry
+      # already establishes elsewhere. Wait (id 8) *is* modelled: it flips the
+      # save-system `atb_mode` toggle (LSD chunk 140) that makes a gauge
+      # battle's command menu freeze (wait) or keep running (active) -- the
+      # Wait-off (active) mode follow-up ADR 0054 named -- and its label
+      # shows the *current* mode via the `wait_on` / `wait_off` terms, exactly
+      # as EasyRPG's own Wait row does (`GetAtbMode() == wait ? wait_on :
+      # wait_off`, and #select_command's :wait branch relabels it after
+      # flipping). Order (party reordering, id 7) is also modelled -- unlike
+      # Row it has no battle-system dependency at all, just Game::Party#
+      # reorder and Scene::Order (see #select_command's :order branch). A real
+      # RPG2003 game's array (mtf-meido-action's is `[1, 2, 3, 4, 5, 6, 7, 8]`,
       # confirmed by `db.rpg2003?` and reading chunk 22 by id under the CRuby
       # host harness, where `db.system` itself collides with Kernel#system)
       # can both omit a command (hiding it, e.g. a game with no Save on
@@ -63,7 +69,8 @@ class RPG2k
         3 => [:equip, :battle_equipment, "Equip"],
         4 => [:save, :battle_save, "Save"],
         5 => [:status, :status, "Status"],
-        7 => [:order, :order, "Order"]
+        7 => [:order, :order, "Order"],
+        8 => [:wait, :wait, "Wait"]
       }.freeze
 
       def initialize parent, state
@@ -206,6 +213,11 @@ class RPG2k
       # (falsy) on the RPG2000-shaped fixtures the scene-check harness builds,
       # which is the correct reading for them too: they carry no `menu_commands`
       # chunk any more than a genuine RPG2000 database does.
+      #
+      # The Wait command's label is live: it shows the *current* active-time
+      # mode (`wait_on` when wait, `wait_off` when active), the same reading
+      # EasyRPG's own menu uses, so the row the player just picked reads
+      # "Wait On" while they are about to turn wait mode *off*.
       def build_commands
         keys = if db.rpg2003?
                  ids = db.system.menu_commands || []
@@ -213,7 +225,21 @@ class RPG2k
                else
                  RPG2K_COMMAND_KEYS
                end
-        keys.map { |key, term_name, fallback| [key, term(term_name, fallback)] }
+        keys.map { |key, term_name, fallback| [key, wait_term_for(key, term_name, fallback)] }
+      end
+
+      # The label for a command row: the Wait row is dynamic (the current
+      # mode's term), every other row is a plain Term lookup.
+      def wait_term_for(key, term_name, fallback)
+        return wait_label if key == :wait
+        term(term_name, fallback)
+      end
+
+      # The Wait command row's label: `wait_on` while the fight is set to
+      # pause on its command menu (wait mode), `wait_off` once it is active.
+      # Defaults match the terms' own RPG2003 defaults ("Wait: On" / "Wait: Off").
+      def wait_label
+        @state.atb_mode == 1 ? term(:wait_off, 'Wait Off') : term(:wait_on, 'Wait On')
       end
 
       def build_windows
@@ -257,6 +283,23 @@ class RPG2k
       def refresh_cursor
         @command.cursor_rect =
           Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
+      end
+
+      # Redraw the command window's label list. The Wait row's label is live
+      # (see #wait_label), so flipping the toggle (#select_command's :wait
+      # branch) has to repaint it -- the same redraw EasyRPG's
+      # `SetItemText(index, ...)` performs for the relabelled row, applied to
+      # the whole list here since this engine draws the command window as one
+      # bitmap rather than per-row windows. Clears and re-draws the existing
+      # contents bitmap in place, so the window object and cursor stay put.
+      def redraw_command_labels
+        cc = @command.contents
+        cc.clear
+        cc.font.color = Color.new(255, 255, 255, 255)
+        @commands.each_with_index do |(_key, label), i|
+          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, label
+        end
+        refresh_cursor
       end
 
       # Height of one party-status row (see #build_windows's own `y = i *
@@ -313,6 +356,16 @@ class RPG2k
             play_system_se(SFX_DECISION)
             @parent.push Scene::Order.new(@parent, @state)
           end
+        when :wait
+          # The active-time Wait/active toggle, ported from EasyRPG's own
+          # `Scene_Menu::UpdateCommand` Wait branch: play the Decision SE,
+          # flip `SaveSystem.atb_mode` (0 wait <-> 1 active), and relabel the
+          # row to the other mode's term. The gauge battle scene reads the
+          # same field (#atb_accumulating? in battle_rpg2k3.rb).
+          play_system_se(SFX_DECISION)
+          @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
+          @commands[@index] = [:wait, wait_label]
+          redraw_command_labels
         when :save
           # A disabled Save command (Change Save Access off) just refuses the
           # selection outright -- confirmed against EasyRPG's own
