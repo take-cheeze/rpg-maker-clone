@@ -28,14 +28,24 @@
 
 /* Built-in allocator with a static pool. Covers only LVGL's own widgets and
  * internals: mruby's heap lives in its own fixed arena (app/psp/main.cxx's
- * mrb_basic_alloc_func, ADR 0047's P2) and decoded bitmaps in the plain C
- * heap, so this pool no longer needs to double as mruby's. 4 MB is generous
- * for the widget tree alone; the BRINGUP heartbeat's lvgl_max high-water mark
- * is the number to size it against on-device. */
+ * mrb_basic_alloc_func, ADR 0047's P2), decoded bitmaps live in the plain C
+ * heap, and the LVGL partial-render draw buffers are plain std::vector
+ * (mruby-rgss/src/psp.cxx's g_buf1/g_buf2) -- none of that touches this pool,
+ * so what is actually left for it to cover is just lv_obj_t/style/internal
+ * bookkeeping for the canvas/image/label widgets this port uses (WIDGETS
+ * below), and only two lv_label objects (the idle bring-up screen) ever come
+ * from LVGL's own font/text system -- the real game draws all of its own
+ * text through the RGSS Bitmap's shinonome blitter, bypassing LVGL entirely.
+ * 256 KB is a comfortable multiple of what that object graph plausibly needs
+ * (dozens to a couple hundred live objects at a few hundred bytes each); the
+ * BRINGUP heartbeat's lvgl_max high-water mark is still the number to
+ * validate this against on-device once a real game can run there. Unlike the
+ * mruby arena, exhaustion here is not a catchable error by default -- see
+ * ASSERTS below for why that matters and what closes the gap. */
 #define LV_USE_STDLIB_MALLOC  LV_STDLIB_BUILTIN
 #define LV_USE_STDLIB_STRING  LV_STDLIB_BUILTIN
 #define LV_USE_STDLIB_SPRINTF LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE (4 * 1024U * 1024U)
+#define LV_MEM_SIZE (256U * 1024U)
 
 /*====================
    HAL / TICK
@@ -62,6 +72,19 @@
 #define LV_USE_LOG 0
 #define LV_USE_ASSERT_NULL 1
 #define LV_USE_ASSERT_MALLOC 1
+
+/* LVGL's own default LV_ASSERT_HANDLER is an unconditional `while(1);`: a
+ * silent halt that looks identical to any other hang. That is a real risk
+ * specifically for LV_MEM_SIZE (above): unlike the mruby arena, which raises
+ * a catchable NoMemoryError when its own fixed arena is exhausted, an
+ * lv_malloc() failure here would otherwise just stop the EBOOT with nothing
+ * in the log to say why -- exactly the class of bug ADR 0047 spent real
+ * effort chasing down for this port. Route it through a marker-writing halt
+ * instead (mruby-rgss/src/psp.cxx's psp_lvgl_assert_halt) so a shrunk pool
+ * that turns out too small is diagnosable from the heartbeat log rather than
+ * indistinguishable from any other stall. */
+#define LV_ASSERT_HANDLER_INCLUDE <lv_assert_handler.h>
+#define LV_ASSERT_HANDLER psp_lvgl_assert_halt();
 
 /*====================
    FONTS
