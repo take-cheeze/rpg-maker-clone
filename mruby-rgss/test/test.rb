@@ -1370,6 +1370,41 @@ assert "RGSS::Audio finds an upper-case extension on disk" do
   end
 end
 
+assert "RGSS::Audio skips a directory that shadows a track name" do
+  # EXT_SPELLINGS leads with the empty extension and MUSIC_DIRS/SOUND_DIRS with
+  # the empty folder, so the first candidate for a track called "X" is the bare
+  # name "X" under the game root -- exactly where a released game keeps its
+  # asset *folders*. Nepheshel ships `Title/` (title-screen graphics) beside
+  # `Music/title.mid`, and on a case-insensitive filesystem that folder matched
+  # the bare candidate first: the search stopped on a directory, handed it to
+  # Mix_LoadMUS, and the title MIDI was silent ("failed to load music
+  # '.../title'") for a file sitting right there in Music/. A directory is never
+  # a playable asset.
+  dir = "test-shadowed-se"
+  path = "test-shadowed-se.wav"
+  Dir.mkdir(dir) unless Dir.exist?(dir)
+  File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
+  class << RGSS::Audio
+    alias _se_play_orig4 _se_play
+    def _se_play(p, v, pi)
+      $audio_se_capture = [p, v, pi]
+      nil
+    end
+  end
+  begin
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("test-shadowed-se")
+    assert_false $audio_se_capture.nil?, "the .wav should have resolved"
+    assert_equal path, $audio_se_capture[0]
+  ensure
+    class << RGSS::Audio
+      alias _se_play _se_play_orig4
+    end
+    File.delete(path) if File.exist?(path)
+    Dir.delete(dir) if Dir.exist?(dir)
+  end
+end
+
 assert "RGSS::Audio finds an upper-case extension in the archive" do
   # The same for a packed release: an archive entry name is whatever the editor
   # wrote, so it carries the same mixed-case extensions the disk tree does.

@@ -9,6 +9,11 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # File, so the standalone mrbtest build needs mruby-io. The loader itself
   # reads files through C stdio, so this is only needed for the tests.
   add_test_dependency 'mruby-io'
+  # The audio loader's directory-shadowing test (a folder named like a track,
+  # as Nepheshel's `Title/` sits beside its `Music/title.mid`) has to create a
+  # real directory to stand in for it, and Dir lives in its own core gem.
+  # Nothing in the engine's own code needs Dir, so this is test-only.
+  add_test_dependency 'mruby-dir'
   # The wave_blt test computes its expected phase with Math::PI. Math is part
   # of the full game's gem set (build_config.rb's rpg_maker_gems), but the
   # standalone mrbtest build only pulls this gem plus its declared
