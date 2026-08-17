@@ -162,6 +162,25 @@
                 pkgs.winePackages.staging
                 pkgs.winePackages.fonts
               ];
+            # `.envrc`'s `layout python3` puts the project venv's bin/ ahead of
+            # everything else on PATH, so the venv's `python3` -- a symlink into
+            # this flake's nix store closure -- is what any `#!/usr/bin/env
+            # python3` script resolves to for the lifetime of the shell. That
+            # interpreter's loader is nix's own glibc (a hardcoded nix-store
+            # path, not /lib64/ld-linux-x86-64.so.2), which never reads the
+            # host distro's ld.so.cache or /usr/lib -- only its own RPATH
+            # closure and LD_LIBRARY_PATH. Binary wheels pulled into the venv
+            # with plain pip (numpy, which piper-tts depends on) expect the
+            # host's libstdc++/libz to be reachable the normal FHS way and
+            # fail with "cannot open shared object file" without them, as does
+            # any *other* `env python3` script picked up while cd'd into this
+            # directory (e.g. the system's /opt/rocm `amd-smi`, which needs
+            # libstdc++ the same way). Exporting these two nix-store lib dirs
+            # on LD_LIBRARY_PATH covers both cases without touching the host
+            # system.
+            shellHook = old.shellHook + ''
+              export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            '';
           });
         }
       );
