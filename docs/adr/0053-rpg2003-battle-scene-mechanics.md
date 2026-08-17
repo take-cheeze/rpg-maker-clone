@@ -255,6 +255,28 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   three phases and is tracked separately. The Special command handler landed
   with the command-customization follow-up (2026-08-17), and the attacker-side
   row adjustment is implemented (ADR 0053 Phase 1 notes, 2026-08-17); the
-  per-battler row derivation from `battlecommands.placement` and the
   condition-gated `IsRowAdjusted` branches (back-attack / surround) remain
   open until the battle conditions are modelled.
+- **The in-battle Row command landed (2026-08-18).** The earlier framing above
+  ("per-battler row derivation from `battlecommands.placement`") turned out to
+  be the wrong model once EasyRPG's actual `Game_Actor` source was reachable:
+  row is not derived from the placement table or the actor's manual
+  `battle_x`/`battle_y` at all -- it is its own persisted field
+  (`data.row`/`GetBattleRow`/`SetBattleRow`, liblcf's `SaveActor` field
+  `0x5B`), defaulting to the front row and changed only by the player, via the
+  Row battle-menu command. `Game::Actor#battle_row`/`#battle_row=` now carry
+  that state (schema.rb's `SAVE_PARTY_ACTOR` field 91, both the LCF `.lsd`
+  round-trip and the portable Marshal save), `Combatant.from_actor` seeds a
+  fight's row from it, and `Scene::Battle`'s command window appends a fixed
+  Row entry (`#row_command_available?`, gated on `battle.rpg2003?` since the
+  EasyRPG-only `easyrpg_disable_row_feature` opt-out this mirrors has no real
+  LCF field for a vanilla database to set) that flips it via the new
+  `Game::Battle#toggle_row`, a `DoNothing` turn like the Special command,
+  refusing a toggle that would empty the front row
+  (`#can_leave_front_row?`, ported from EasyRPG's `RowSelected` guard) with
+  the reference's own Buzzer SE. `scripts/rpg2k3_battle_row_check.rb` and
+  `rpg2k_scene_check.rb` stay green. Still open: the field menu's own Row
+  screen (id 6 of `RPG2K3_COMMAND_IDS`, a pre-battle per-actor row picker,
+  EasyRPG's `Scene_Row`) and the automatic-placement `row_x_offset` /
+  pincer-surround grid tables, both noted in `scene/menu.rb` and ADR 0054
+  respectively.

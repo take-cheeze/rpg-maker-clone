@@ -120,14 +120,19 @@ Behavioral notes and deliberate simplifications:
   grid fields (terrain chunks 46-48), replacing the manual battle_x/battle_y —
   ported with the reference's own grid table 0 and its no-terrain defaults
   (112 / 392 / 16000). Only the ordinary front-row actor path is done (the
-  back-row `row_x_offset` and the pincer/surround enemy tables need the row
-  derivation and battle conditions this runtime does not model); `mtf-
+  back-row `row_x_offset` needs the row-adjusted grid X once an actor's row
+  can actually change, landed below; the pincer/surround enemy tables still
+  need the battle conditions this runtime does not model); `mtf-
   meido-action` uses placement 1, so its real gauge battle exercises it.
 - Follow-ups: Wait-off (active) mode and the wait toggle. The Special command
   handler (a chosen Special forfeits the actor's turn, EasyRPG's DoNothing)
   landed 2026-08-17, and the attacker-side row adjustment (a front-row actor
   dealing +25% damage and the flat-25 back-row defender hit penalty) landed
-  with ADR 0053 Phase 1's reference-aligned row model (2026-08-17).
+  with ADR 0053 Phase 1's reference-aligned row model (2026-08-17). The
+  in-battle Row command itself (the only thing that ever moves an actor off
+  the front-row default) landed 2026-08-18 — see ADR 0053's own follow-up
+  note; `row_x_offset` is still not wired into the automatic-placement sprite
+  X this ADR's grid code computes.
 - **Wait-off (active) mode landed 2026-08-17.** The toggle is the save-system
   `SaveSystem.atb_mode` field (LSD chunk 140; the earlier "Battle Commands
   field" guess above was wrong — liblcf's `fields.csv` has no `wait` entry on
