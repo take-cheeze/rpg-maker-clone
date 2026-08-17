@@ -76,6 +76,11 @@ add_subdirectory(${REPO_ROOT}/3rd/lvgl 3rd/lvgl EXCLUDE_FROM_ALL)
 # conversion). See the LVGL comment above for why the binary dir must be
 # "3rd/uni-algo".
 add_subdirectory(${REPO_ROOT}/3rd/uni-algo 3rd/uni-algo EXCLUDE_FROM_ALL)
+# Drop the Unicode tables for the uni-algo modules nothing here calls. On the
+# PSP this is live RAM, not just image size: every PT_LOAD segment of the EBOOT
+# is mapped into the console's ~24 MB at launch. See cmake/uni-algo-trim.cmake.
+include(${REPO_ROOT}/cmake/uni-algo-trim.cmake)
+rpg2k_trim_uni_algo()
 
 # Build libmruby.a for the psp target via mruby's own rake-based build system
 # (build_config.rb's `psp` MRuby::CrossBuild), the same way the root

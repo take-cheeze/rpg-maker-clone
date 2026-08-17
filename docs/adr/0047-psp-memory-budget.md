@@ -264,7 +264,21 @@ the interpreter-linking slice, in this order:
   figure is a generous placeholder to be validated against a real game
   on-device, exactly as the BRINGUP heartbeat (P1) measures.
 - **P6 — drawn from Finding 3's "third pool" and the EBOOT's own size,
-  landed as three smaller reductions in the same slice:**
+  landed as four smaller reductions:**
+  - The uni-algo modules nothing in this project calls are switched off, so
+    their Unicode tables are never compiled in (`cmake/uni-algo-trim.cmake`,
+    mirrored into the mruby cross-builds by `build_config.rb`). The repo uses
+    exactly three uni-algo features — UTF conversion, the UTF-8 decoding view,
+    and NFD normalisation — none of which need the case/collation, code-point
+    property, script, grapheme/word segmentation or compatibility-normalisation
+    tables. Measured on the EBOOT with `nm --size-sort`: the `una::detail::*`
+    tables fall from 663 KB to 145 KB, `.rodata` from 2,238,894 B to
+    1,723,798 B, and the loaded R/E segment by 517,920 B — **~506 KB of live
+    RAM**, since the loader maps every PT_LOAD segment into the console's
+    ~24 MB at launch. Desktop and wasm shrink by the same tables for free.
+    This is also ADR 0007's P2 lever for the Wio Terminal (whose 512 KB of
+    internal flash cannot hold the full set at all), where it takes effect
+    when that port links `libmruby.a`.
   - The LVGL partial-render draw buffers are sized to the *logical* canvas at
     display-create time (`mruby-rgss/src/psp.cxx`), capped at the old
     panel-width 64 KB per buffer: RPG2k's 320×240 canvas needs ~38 KB per
@@ -331,9 +345,10 @@ the interpreter-linking slice, in this order:
   update: P1a (stripping mrbc's `-g` for the `psp` cross-build), half of P1
   (the bring-up EBOOT's heartbeat now reports real device memory numbers),
   the tool half of P3 (`scripts/rgssad_unpack.rb`), the P2 allocator
-  split plus P6's three reductions (draw buffers sized to the canvas, the
-  LVGL widget/theme/example trim, and the mruby embedded tuning knobs), and
-  now P5's explicit main-thread stack size plus its heartbeat fields. The
+  split plus P6's reductions (draw buffers sized to the canvas, the LVGL
+  widget/theme/example trim, the mruby embedded tuning knobs, and the
+  uni-algo table trim), and P5's explicit main-thread stack size plus its
+  heartbeat fields. The
   two sizing numbers that still depend on a real database and map actually
   being loaded are the mruby arena's 8 MB and the stack's 256 KB, both of
   which the heartbeat is now in place to validate.

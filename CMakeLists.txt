@@ -119,6 +119,10 @@ add_subdirectory(3rd/ng-log EXCLUDE_FROM_ALL)
 set(BUILD_TESTING ${old_build_testing})
 
 add_subdirectory(3rd/uni-algo EXCLUDE_FROM_ALL)
+# Drop the Unicode tables for the uni-algo modules nothing here calls -- see
+# cmake/uni-algo-trim.cmake for what is kept and why.
+include(cmake/uni-algo-trim.cmake)
+rpg2k_trim_uni_algo()
 
 # quickjs-ng: the embedded JavaScript engine for RPG Maker MV support (see
 # docs/adr/0004-javascript-maker-mv-quickjs.md). Only the `qjs` static library

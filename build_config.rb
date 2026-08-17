@@ -1,3 +1,28 @@
+# The uni-algo modules this project never calls, switched off so their Unicode
+# tables are never compiled in. This is the mirror of
+# cmake/uni-algo-trim.cmake's RPG2K_UNI_ALGO_TRIM_DEFINES -- that file applies
+# the same list to the CMake `uni-algo` target (which compiles the tables
+# themselves, in its src/data.cpp), this one applies it to the mruby gems that
+# include uni-algo's headers, so the two agree about which modules exist.
+# **Keep the two lists in sync**; the reasoning, the measured sizes and which
+# three uni-algo features this repo does use are all documented there rather
+# than duplicated here. Note that the NFKC/NFKD define in that file is
+# deliberately *not* mirrored here -- it is scoped to uni-algo's own data
+# translation unit because uni-algo 1.2.0 cannot compile `impl_norm.h` with it
+# set; see the comment beside RPG2K_UNI_ALGO_TRIM_DEFINES_DATA_ONLY.
+#
+# Called from rpg_maker_gems below rather than from each build block: the gems
+# that include uni-algo's headers (mruby-rgss, mruby-lcf) are exactly the ones
+# that method declares, so every build with those gems gets the flags and no
+# build block can forget them.
+UNI_ALGO_TRIM_DEFINES = %w[
+  UNI_ALGO_DISABLE_CASE
+  UNI_ALGO_DISABLE_PROP
+  UNI_ALGO_DISABLE_SCRIPT
+  UNI_ALGO_DISABLE_SEGMENT_GRAPHEME
+  UNI_ALGO_DISABLE_SEGMENT_WORD
+].freeze
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -11,6 +36,9 @@
 # to port quickjs and a software GL stack to the PSP as a side effect of
 # wiring RPG2k up.
 def rpg_maker_gems(conf, include_mvjs: true)
+  # uni-algo is C++-only, so only the C++ compiler needs these.
+  conf.cxx.defines += UNI_ALGO_TRIM_DEFINES
+
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
   # Enumerable#sort_by / min_by / max_by / group_by etc. mruby-array-ext does not

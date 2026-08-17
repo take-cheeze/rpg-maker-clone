@@ -168,6 +168,19 @@ Phase 1** rather than assumed:
 - Drop `mruby-onig-regexp` if the target games' scripts don't require regex, or
   swap in a much smaller matcher.
 - Slim `uni-algo` (only the normalization/case tables actually used).
+  **Done** — `cmake/uni-algo-trim.cmake` switches off every uni-algo module
+  this project never calls, and `build_config.rb` mirrors the same list into
+  the mruby cross-builds (the `wio` one included) so the gems that include
+  uni-algo's headers agree with the library they link. Only three uni-algo
+  features are used anywhere here — UTF conversion, the UTF-8 decoding view
+  and NFD normalisation — so the case/collation, code-point property, script,
+  grapheme/word segmentation and compatibility-normalisation tables all go.
+  Measured on the PSP EBOOT, which is the target that links uni-algo today:
+  the `una::detail::*` tables drop from 663 KB to 145 KB. The Wio firmware
+  does not link `libmruby.a` (and so uni-algo) yet, so the saving lands here
+  the moment the P1 image grows into P2 rather than being a Wio number today
+  — but the trim is in the shared build config, not a PSP-only switch, so it
+  cannot be forgotten at that point.
 - Place read-only bytecode, rodata and — importantly — the game assets in the
   **4 MB external QSPI flash** (XIP / a read-only FS), keeping internal flash for
   hot code.
@@ -214,7 +227,9 @@ are the tuning levers.
   `RGSS::Input` — with **real flash/RAM `size` numbers captured** to replace the
   estimates above.
 - **P2 — fit flash.** Trim gems (regex/uni-algo), and move rodata/bytecode/assets
-  to QSPI as needed, until the image links within budget.
+  to QSPI as needed, until the image links within budget. The `uni-algo` half is
+  done and lives in the shared build config (see the Flash budget above); the
+  regex and QSPI halves are still open.
 - **P3 — asset streaming.** Rework LCF and bitmap loading so game data is read
   from SD on demand instead of whole-file strings; target the title screen
   rendering from a real game folder.
