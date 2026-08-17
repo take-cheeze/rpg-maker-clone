@@ -123,5 +123,6 @@ Behavioral notes and deliberate simplifications:
   derivation and battle conditions this runtime does not model); `mtf-
   meido-action` uses placement 1, so its real gauge battle exercises it.
 - Follow-ups: Wait-off (active) mode and the database wait toggle; the
-  Special command handler;
-  the attacker-side back-row reach penalty.
+  Special command handler. The attacker-side row adjustment (a front-row actor
+  dealing +25% damage and the flat-25 back-row defender hit penalty) landed
+  with ADR 0053 Phase 1's reference-aligned row model (2026-08-17).
