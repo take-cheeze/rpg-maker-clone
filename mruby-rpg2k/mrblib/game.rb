@@ -3467,10 +3467,10 @@ module Game
     # RPG2003's battle-sprite placement choice (`battlecommands.placement`,
     # chunk 29 field 2 -- 0 manual, 1 automatic; see schema.rb). Manual is
     # `Game::Actor#battle_x`/`#battle_y` read as literal screen coordinates;
-    # automatic computes a grid formula this runtime does not implement yet
-    # (see the alternate-battle-sprite renderer in scene/battle.rb), so callers
-    # use this to know when to fall back to the raw coordinates and log a
-    # diagnostic instead of guessing at the formula. A bare test fixture with
+    # automatic computes a grid formula (the EasyRPG
+    # CalculateBaseGridPosition / Calculate2k3BattlePosition port in
+    # scene/battle.rb's #automatic_battle_position) keyed by party index/size
+    # and the encounter terrain. A bare test fixture with
     # no `#battlecommands` table, or an RPG2000 database (which never sets
     # this field), reads false/manual, same as `#alternate_battle_layout?`.
     def automatic_battle_placement?

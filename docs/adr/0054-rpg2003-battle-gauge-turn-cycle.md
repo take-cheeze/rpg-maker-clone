@@ -112,8 +112,16 @@ Behavioral notes and deliberate simplifications:
   the source) are pinned by `rpg2k_logic_check.rb`, and the command-id
   recording by the scene checks.
   The native boot check keeps the real 2003 battle green.
+- The **automatic battler placement** (`battlecommands.placement == 1`) is
+  implemented: each party member's battle sprite sits on the grid slot from
+  EasyRPG's `CalculateBaseGridPosition` / `Calculate2k3BattlePosition`
+  (src/game_battle.cpp), keyed by party index/size and the encounter terrain's
+  grid fields (terrain chunks 46-48), replacing the manual battle_x/battle_y —
+  ported with the reference's own grid table 0 and its no-terrain defaults
+  (112 / 392 / 16000). Only the ordinary front-row actor path is done (the
+  back-row `row_x_offset` and the pincer/surround enemy tables need the row
+  derivation and battle conditions this runtime does not model); `mtf-
+  meido-action` uses placement 1, so its real gauge battle exercises it.
 - Follow-ups: Wait-off (active) mode and the database wait toggle; the
   Special command handler;
-  the attacker-side back-row reach penalty; the automatic battler-placement
-  grid (`Calculate2k3BattlePosition`, whose reference source this ADR's work
-  also surfaced).
+  the attacker-side back-row reach penalty.

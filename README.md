@@ -160,8 +160,10 @@
   combatant's charge gauge fills each frame, the first one full opens the
   command menu for a controllable party member or fires the action of anyone
   else (enemy AI included) automatically, and acting resets it — draws the
-  party as face/bars gauge cards from the project's System2 graphic, and
-  applies RPG2003's front/back row accuracy, while the traditional and
+  party as face/bars gauge cards from the project's System2 graphic, seats
+  each member's battle sprite on the automatic placement grid the project
+  configures (`battlecommands.placement` 1, keyed by the encounter terrain),
+  and applies RPG2003's front/back row accuracy, while the traditional and
   alternative presentations inherit the unchanged turn-based machine. The 2003
   test beds ship no encounters, so a `--rpg2k_battle_troop=<id>` flag drives a
   real project straight into a fight against a chosen database troop after New

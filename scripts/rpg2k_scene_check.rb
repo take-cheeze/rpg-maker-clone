@@ -11056,6 +11056,76 @@ check 'a command_actor troop page fires at the acting battler\'s turn in a gauge
   eq true, st.switches[5], 'the command_actor page fired at the acting hero\'s turn'
 end
 
+# -- automatic battler placement (`battlecommands.placement == 1`) -------------
+#
+# Port of EasyRPG's Calculate2k3BattlePosition (src/game_battle.cpp): a
+# placement-1 database computes each party member's battle sprite position
+# from a grid keyed by party index/size and the encounter terrain, instead of
+# the manual battle_x/battle_y. The fixture terrain (fake_db's tile tag 42)
+# names no grid fields, so the reference's no-terrain defaults (112 / 392 /
+# 16000) apply; half a 48px BattleCharSet cell (24) is the row/width offset.
+
+# A placement-1 gauge battle whose actor sprites build, for the placement
+# checks. `ids` become the party (one BattleStubActor each, carrying its own
+# BattlerAnimation id so `build_actor_sprite` draws a sprite -- the harness
+# Bitmap stub stands in for the BattleCharSet sheet). The fixture terrain the
+# party stands on (tag 42) is given the reference's own no-terrain grid
+# parameters (112 / 392 / 16000) so the checks' expected coordinates are
+# explicit; `battle_xy:` supplies per-actor manual coordinates for the
+# placement-0 check.
+def placement_battle(ids, placement: 1, battle_xy: {})
+  members = ids.map do |id|
+    xy = battle_xy[id] || [0, 0]
+    BattleStubActor.new(id: id, agi: 20, battler_animation_id: id,
+                        battle_x: xy[0], battle_y: xy[1])
+  end
+  anims = {}
+  members.each do |a|
+    anims[a.id] = battle_pose_set(name: 'Fighter',
+                                  poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) })
+  end
+  party = BattleStubParty.new(members.first, alternate_layout: true,
+                              automatic_placement: placement == 1, actors: members)
+  scene, = battle_scene_with_pages({}, party: party, rpg2003: true,
+                                   battlecommands: OpenStruct.new(placement: placement, battle_type: 2),
+                                   battleranimations: anims)
+  grid = scene.db.terrain[42]
+  grid.grid_top_y = 112
+  grid.grid_elongation = 392
+  grid.grid_inclination = 16000
+  # Drive the battle open (the actor sprites are built in Scene::Battle#start).
+  battle_until_phase(scene, :command, 250)
+  scene
+end
+
+def placement_sprites(scene)
+  ui = battle_ui(scene)
+  ui && ui[:actor_sprites]
+end
+
+check 'automatic battler placement seats a lone party member on the grid, not battle_x/battle_y' do
+  scene = placement_battle([1])
+  sprites = placement_sprites(scene)
+  ok sprites && sprites[0], 'the actor sprite was built'
+  eq [264, 110], [sprites[0].x, sprites[0].y],
+     'the no-terrain grid for a party of one: 320 - (grid.x 8 + 24 + 24), grid.y 134 - 24'
+end
+
+check 'automatic battler placement seats a two-member party on its two grid slots' do
+  scene = placement_battle([1, 2])
+  sprites = placement_sprites(scene)
+  eq [[256, 88], [272, 133]],
+     [[sprites[0].x, sprites[0].y], [sprites[1].x, sprites[1].y]],
+     'member 0 at grid slot (16, 112), member 1 at (0, 157), each minus a 24px half-cell'
+end
+
+check 'manual battler placement keeps the database battle_x/battle_y, unchanged' do
+  scene = placement_battle([1], placement: 0, battle_xy: { 1 => [120, 90] })
+  sprites = placement_sprites(scene)
+  eq [120, 90], [sprites[0].x, sprites[0].y],
+     'placement 0 reads the actor\'s own coordinates, no grid involved'
+end
+
 # yado.tk / 01_shoshin's 011_siyou: "Empty party doesn't itself Game Over, but
 # battling with one is instant defeat; all-KO'd ... is instant Game Over the
 # same way." #draw_battle_command's current_actor (living_allies[actor_i]) is
