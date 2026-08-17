@@ -859,6 +859,15 @@ jobs:
           - name: RPG2k test-bed logic check
             run: ruby scripts/rpg2k_testbed_logic_check.rb
 
+          # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under
+          # CRuby through the RGSS compatibility layer
+          # (scripts/rgss_cruby_compat.rb). In the build job the same file runs
+          # inside the built mruby (the mruby_test ctest); here it guards the
+          # RGSS behavioural contract with no build, and the coverage reporter
+          # below can finally measure the RGSS mrblib lines the suite reaches.
+          - name: RGSS mrbtest suite under CRuby
+            run: ruby scripts/rgss_cruby_test_check.rb
+
       # How much of the Ruby engine the checks above actually reach. It re-runs
       # them (concurrently, like the group above) with CRuby's Coverage stdlib
       # switched on and reports the line coverage of `mruby-*/mrblib` per gem

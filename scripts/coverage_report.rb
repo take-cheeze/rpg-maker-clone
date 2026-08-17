@@ -66,7 +66,11 @@ CHECKS = [
   { name: 'rpg2k-scene',        command: %w[scripts/rpg2k_scene_check.rb] },
   { name: 'rpg2k-render',       command: %w[scripts/rpg2k_render_check.rb] },
   { name: 'rpg2k-testbed-logic', command: %w[scripts/rpg2k_testbed_logic_check.rb] },
-  { name: 'error-report',       command: %w[scripts/error_report_check.rb] }
+  { name: 'error-report',       command: %w[scripts/error_report_check.rb] },
+  # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
+  # through the RGSS compatibility layer (scripts/rgss_cruby_compat.rb), so the
+  # RGSS mrblib lines its 87 assertions reach count here instead of reading 0%.
+  { name: 'rgss-cruby-test',    command: %w[scripts/rgss_cruby_test_check.rb] }
 ].freeze
 
 # `needs:` predicates. A downloaded RPG2000/2003 game is the only prerequisite
