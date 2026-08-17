@@ -244,22 +244,43 @@ the interpreter-linking slice, in this order:
   real game database and map actually runs there, on real hardware or an
   emulator with a Memory Stick image. **On the emulator side specifically,
   this heartbeat has never yet produced a captured number**, in CI or
-  locally: PPSSPP-headless's own kernel-object emulation has a bug (confirmed
-  with `gdb` against a core dump — a null-pointer write inside its
-  `sceKernelCreateLwMutex`, same crash address across independent runs,
-  reproducing whether or not any of `app/psp/main.cxx`'s own code has run
-  yet, so it is inside pspsdk's C-runtime bring-up, before `main()`) that
-  segfaults the *host* `ppsspp-headless` process a few syscalls into boot,
-  before the heartbeat's first tick. One contributing bug this repo did
-  control has been fixed: pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE
-  stubs are themselves only partially implemented and left the emulator's
-  state corrupted enough to crash a few syscalls later — `main.cxx` now
-  builds every marker/heartbeat string with a small libc-free `StrBuf`
-  instead of `std::snprintf`, closing that source of flakiness (verified: the
-  EBOOT now gets measurably further under PPSSPP-headless before the
-  remaining, unrelated kernel-emulation bug still ends it). Whether real
-  hardware shares either bug is unknown; the P1 device numbers above remain
-  unconfirmed on the emulator and untried on hardware.
+  locally, though the reasons have narrowed a lot:
+  - Two bugs *this repo's own EBOOT code* controlled are fixed. pspsdk's
+    `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
+    implemented under PPSSPP-headless and left emulator state corrupted
+    enough to crash a few syscalls later — `main.cxx` now builds every
+    marker/heartbeat string with a small libc-free `StrBuf` instead of
+    `std::snprintf`. Separately, PPSSPP-headless's own kernel-object
+    emulation had a real upstream bug: `sceKernelCreateLwMutex`
+    (`Core/HLE/sceKernelMutex.cpp`) dereferenced its caller-supplied
+    workarea pointer without validating it first, unlike every sibling
+    LwMutex function in the same file — a guest passing `workareaPtr=0`
+    turned that into a null-pointer write that segfaulted the *host*
+    `ppsspp-headless` process (confirmed with `gdb` against a core dump,
+    same crash address across independent runs). Not yet upstreamed to
+    `hrydgard/ppsspp`; `flake.nix`'s own `ppsspp` package output now
+    carries the fix as a local patch (`nix/patches/
+    ppsspp-lwmutex-workarea-validate.patch`) so this repo's own tooling
+    gets a build that survives past it.
+  - What's left, once both of those are out of the way, is a **third**,
+    separate bug, still unfixed: a `workareaPtr=0` genuinely comes from the
+    guest side, not host memory corruption — traced to pspsdk's own
+    `src/libcglue/lock.c`, where `__retarget_lock_init_recursive` calls
+    `malloc()` for a new lock struct with no null-check before
+    dereferencing it. `malloc()` returning `NULL` there is real and
+    reproducible, triggered by `global_stdio_init`'s lazy lock creation on
+    this EBOOT's very first stdio use (`detect_game()`'s `fopen` probes).
+    Isolated with minimal standalone pspsdk EBOOTs, built and boot-tested
+    against the patched PPSSPP above: a plain C `fopen()` works fine, the
+    same call still works fine with an extra 12 MB of static `.bss`
+    (ruling out this port's own arena/pool reservations starving the
+    heap), and still works fine with `libstdc++` and global C++ objects
+    linked in. So it is specific to something this project's own PSP link
+    pulls in beyond plain C/C++ — mruby's psp cross-build, LVGL, or
+    uni-algo, or their interaction — not yet narrowed further. Whether
+    real hardware shares any of these three bugs is unknown; the P1
+    device numbers above remain unconfirmed on the emulator and untried
+    on hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
