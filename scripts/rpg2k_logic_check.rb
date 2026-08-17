@@ -14497,12 +14497,11 @@ check 'BattlePage.active? ignores command_actor on a non-RPG2003 battle, same as
 end
 
 check 'BattlePage.active? fails a command_actor condition the runtime cannot answer, on RPG2003' do
-  # On a genuine RPG2003 battle the gate now lets the check run -- but this
-  # codebase's own #actor_command (Game::Battle) always answers nil, since
-  # there is no per-battler "last chosen command" tracking implemented yet,
-  # so a command_actor condition can never be satisfied here regardless of
-  # what real RPG_RT's own 2k3 ATB scene would say for a battler that just
-  # chose that exact command.
+  # On a genuine RPG2003 battle the gate now lets the check run -- but without
+  # a `source` battler (a round-boundary check; see the source-gating checks
+  # below) Game::Battle#actor_command answers nil, so a command_actor
+  # condition is unsatisfiable there, exactly as RPG_RT's own RPG2000 scene
+  # (which never passes a source) would leave it.
   b2003 = battle_with(rpg2003: true)
   st = new_state
   eq false, BP.active?(battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1,
@@ -14513,6 +14512,58 @@ check 'BattlePage.active? fails a command_actor condition the runtime cannot ans
                        st.switches, st.variables, b2003)
   eq false, BP.active?(battle_cond(BP::TURN_ACTOR, turn_actor_id: 99),
                        st.switches, st.variables, b2003)
+end
+
+# -- the per-battler source: BattlePage checks at an action boundary -----------
+#
+# A per-battler check runs *for* a concrete battler -- the scene passes the
+# battle's #acting_battler. Port of EasyRPG's AreConditionsMet(source, ...):
+# the source gates turn_enemy/turn_actor (a page checked at one battler's turn
+# never fires off a different battler's counter) and command_actor (needs a
+# source at all, and that source must be the named actor, whose chosen command
+# is then compared against the condition).
+
+check 'a command_actor condition is satisfiable at the acting battler\'s own turn' do
+  b2003 = battle_with(rpg2003: true)
+  st = new_state
+  hero = b2003.ally_by_actor_id(1)
+  cond = battle_cond(BP::COMMAND_ACTOR, command_actor_id: 1, command_id: 3)
+  # No source (a round-boundary check) -> the condition cannot be answered.
+  eq false, BP.active?(cond, st.switches, st.variables, b2003)
+  # The acting hero chose command 3 (e.g. the fixed-four Defend id): the
+  # condition fires for that battler.
+  hero.last_battle_action = 3
+  eq true, BP.active?(cond, st.switches, st.variables, b2003, hero),
+     'the acting battler who chose the command satisfies the page'
+  # A different battler as the source does not: the source must BE the actor.
+  eq false, BP.active?(cond, st.switches, st.variables, b2003, b2003.enemy(0)),
+     'an enemy source (not the named actor) fails the condition'
+end
+
+check 'a turn_enemy / turn_actor condition is gated on the source being that battler' do
+  b2003 = battle_with(rpg2003: true)
+  st = new_state
+  foe = b2003.enemy(0)
+  hero = b2003.ally_by_actor_id(1)
+  foe.next_battle_turn # the foe has taken one turn
+  econd = battle_cond(BP::TURN_ENEMY, turn_enemy_id: 0, turn_enemy_b: 1, turn_enemy_a: 0)
+  # Ungated round-boundary check: the named foe's counter answers.
+  eq true, BP.active?(econd, st.switches, st.variables, b2003),
+     'a no-source check reads the named foe\'s own counter'
+  # Checked at the foe's own boundary: fires.
+  eq true, BP.active?(econd, st.switches, st.variables, b2003, foe),
+     'checked at the foe\'s own turn, its counter fires'
+  # Checked at the hero's boundary (the hero is the source): the foe's
+  # counter must not answer -- EasyRPG's `if (source && source != enemy)`.
+  eq false, BP.active?(econd, st.switches, st.variables, b2003, hero),
+     'checked at a different battler\'s turn, the foe\'s counter does not fire'
+
+  hero.next_battle_turn # the hero has taken one turn
+  acond = battle_cond(BP::TURN_ACTOR, turn_actor_id: 1, turn_actor_b: 1, turn_actor_a: 0)
+  eq true, BP.active?(acond, st.switches, st.variables, b2003, hero),
+     'the actor\'s own turn_actor counter fires at its boundary'
+  eq false, BP.active?(acond, st.switches, st.variables, b2003, foe),
+     'but not at the foe\'s boundary'
 end
 
 # turn_enemy / turn_actor / fatigue are RPG2003-only page conditions --

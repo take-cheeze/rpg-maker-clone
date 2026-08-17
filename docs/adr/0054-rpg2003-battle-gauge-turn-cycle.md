@@ -78,12 +78,17 @@ Behavioral notes and deliberate simplifications:
   `Game::Battle#combo_hits` multiplies the hits of an attack or skill command
   when an armed combo names that exact command — never a Defend/Item/Escape.
   The combo stays armed for the fight (no decrement), matching EasyRPG.
-- A `command_actor`-gated battle page still never fires: the scene now records
-  which command the battler chose (`Combatant#last_battle_action`), but the
-  source-threading that lets the page test *the acting battler's* command at
-  its action boundary — EasyRPG's `ScheduleNextPage(flags, source)` — is not
-  wired, so `Game::Battle#actor_command` stays nil (never satisfiable, the
-  same answer RPG_RT's RPG2000 scene gives).
+- A `command_actor`-gated battle page now fires: the battle tracks the acting
+  battler (`Combatant#acting_battler`, set as each turn resolves), the
+  boundary page check passes it as the per-battler `source` the way EasyRPG's
+  `ScheduleNextPage(flags, source)` does, and `Game::Battle#actor_command`
+  answers that battler's recorded command (`Combatant#last_battle_action`) —
+  so the condition tests the acting battler's choice, and only its own. The
+  same source also gates the `turn_enemy`/`turn_actor` conditions (`source !=
+  enemy/actor` fails the page), so a per-battler check never fires off a
+  *different* battler's counter. A no-source round-boundary check leaves
+  those ungated (turn_* read the named battler's counter, command_actor
+  fails), matching EasyRPG's RPG2000 scene.
 
 ## Consequences
 
@@ -99,15 +104,16 @@ Behavioral notes and deliberate simplifications:
   (exact increments, faster-fills-first, full-and-stays, a dead or
   do-nothing-restricted ally never charging) and `rpg2k_scene_check.rb`
   drives real gauge battles through the 2003 scene (menu-on-own, commit →
-  action → idle, ready enemy auto-fires, restricted member's silent turn, and a
-  battle_type 0 fight never entering the gauge loop). The combo's model math is
-  pinned by `rpg2k_logic_check.rb` (armed Attack combos to its full count,
-  wrong-command and Item combos never apply, a combo'd skill repeats with SP
-  spent once, all-target too) and the command-id recording by the scene checks.
+  action → idle, ready enemy auto-fires, restricted member's silent turn, a
+  battle_type 0 fight never entering the gauge loop, and a `command_actor`
+  troop page firing at the acting battler's turn). The combo's model math and
+  the per-battler page-condition gating (command_actor satisfiable only for
+  the acting battler who chose the command; turn_enemy/turn_actor gated on
+  the source) are pinned by `rpg2k_logic_check.rb`, and the command-id
+  recording by the scene checks.
   The native boot check keeps the real 2003 battle green.
 - Follow-ups: Wait-off (active) mode and the database wait toggle; the
-  source-threading that makes `command_actor` pages satisfiable; the Special
-  command handler;
+  Special command handler;
   the attacker-side back-row reach penalty; the automatic battler-placement
   grid (`Calculate2k3BattlePosition`, whose reference source this ADR's work
   also surfaced).
