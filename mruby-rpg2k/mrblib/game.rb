@@ -1416,6 +1416,13 @@ module Game
       @battler_animation_override = 0
       @class_changed = false
       @battle_commands = nil # lazily taken from the database on the first change
+      # RPG2003 battle front/back row (ADR 0053): purely runtime/save state,
+      # never derived from the database's own `battle_x`/`battle_y` manual
+      # placement -- EasyRPG's `Game_Actor` seeds a fresh actor's
+      # `data.row`/`GetOriginalPosition()` from separate fields entirely, and
+      # only the in-battle Row command (Combatant#toggle_row) or a restored
+      # save (SAVE_PARTY_ACTOR field 0x5B/91) ever moves it off the front row.
+      @row = Battle::ROW_FRONT
       @battle_combo = nil
       @exp = 0
       @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
@@ -2770,6 +2777,12 @@ module Game
     # class id.
     def class_changed?; @class_changed; end
 
+    # This actor's current RPG2003 battle row (Battle::ROW_FRONT /
+    # Battle::ROW_BACK), read by Combatant.from_actor when a fight starts and
+    # written by the in-battle Row command / a restored save.
+    def battle_row; @row; end
+    def battle_row=(row); @row = row == Battle::ROW_BACK ? Battle::ROW_BACK : Battle::ROW_FRONT; end
+
     # Replace the battle-command list (Continue restoring a saved one). nil keeps
     # whatever the database / class defines.
     def battle_commands=(ids)
@@ -3080,7 +3093,10 @@ module Game
                        # permanent edit, so it has to outlive Save / Continue the
                        # way the name and sprite overrides do.
                        class_id: a.class_id,
-                       battle_commands: a.battle_commands.dup }
+                       battle_commands: a.battle_commands.dup,
+                       # RPG2003 battle row (ADR 0053's Row command): outlives
+                       # Save/Continue the same way a live Change Class does.
+                       row: a.battle_row }
       end
       { actor_ids: @actors.map { |a| a.id }, items: @items,
         # Half-spent 使用回数 rides along with the bag, the way the save format
@@ -3147,6 +3163,7 @@ module Game
       actor.transparent = m[:transparent] unless m[:transparent].nil?
       actor.states = m[:states] if m[:states]
       actor.battle_commands = m[:battle_commands] if m[:battle_commands]
+      actor.battle_row = m[:row] if m[:row]
     end
 
     def each(&blk); @actors.each(&blk); end
@@ -8591,10 +8608,16 @@ module Game
       c.evasion_up = flag_of(a, :physical_evasion_up?)
       c.attr_base_ranks = c.attr_ranks.dup
       c.atk_states = atk_states_of(a)
-      # RPG2003 front/back row: defaults to the front row (the only row
-      # RPG2000 knows). Deriving it from the Battle Commands placement table
-      # (0x1D, field 2) and the actor's battle position is the ADR 0053
-      # Phase 1 data step -- until then every battler starts in front.
+      # RPG2003 front/back row: seeded from the actor's own persisted
+      # `#battle_row` (a fresh actor's own default -- RPG2000 never sets it,
+      # so this stays front there too). Confirmed against EasyRPG's own
+      # `Game_Actor`: row is runtime/save state (`data.row`, SaveActor field
+      # 0x5B) that the in-battle Row command toggles, not something derived
+      # from the Battle Commands placement table (0x1D field 2) or the
+      # actor's manual `battle_x`/`battle_y` -- `GetOriginalPosition()` reads
+      # those two independently of row, and `Calculate2k3BattlePosition`'s
+      # `row_x_offset` only ever *reads* the already-set row back, for the
+      # automatic-placement sprite's own on-screen X (still unmodelled here).
       c.row = a.respond_to?(:battle_row) ? a.battle_row : ROW_FRONT
       c
     end
@@ -9023,6 +9046,34 @@ module Game
     # commands at #end_round.
     def command_skip(ally)
       ally.action = nil; ally.defending = false; ally.command = nil; ally.skip = true
+    end
+
+    # Whether `ally` may leave the front row right now: RPG2003 refuses to
+    # empty the front row entirely (real RPG_RT buzzes and stays on the
+    # command menu if the player tries), ported from EasyRPG's own
+    # `Scene_Battle_Rpg2k3::RowSelected` guard. That guard also folds in
+    # `IsDirectionFlipped()` (a battler-mirroring mechanic this engine does
+    # not model, and which no ordinary actor ever sets in the reference
+    # either -- it always reads false there), so the surviving, always-true
+    # part of the condition is exactly "at least one *other* in-play ally is
+    # still in front" -- moving from back to front never needs this check at
+    # all, since it can only ever add to the front row.
+    def can_leave_front_row?(ally)
+      allies.reject(&:out_of_play?).count { |a| a != ally && !a.back_row? } >= 1
+    end
+
+    # The RPG2003 **Row** battle command: flip `ally` between front and back
+    # row (ADR 0053's row mechanic), refusing a front-row ally's toggle that
+    # would leave the front row empty (#can_leave_front_row?). Returns
+    # whether the row actually changed, so the scene can play the reference's
+    # Buzzer SE instead of committing a turn when it did not. A successful
+    # toggle still costs the ally's turn -- EasyRPG's `RowSelected` queues a
+    # `DoNothing` action the same way the Special command does -- which is
+    # the scene's job (`#command_skip`) once this returns true.
+    def toggle_row(ally)
+      return false if !ally.back_row? && !can_leave_front_row?(ally)
+      ally.row = ally.back_row? ? ROW_FRONT : ROW_BACK
+      true
     end
 
     # Average agility of every battler on `side` (EasyRPG's
@@ -12397,6 +12448,12 @@ module Game
           e[80] = a.battle_commands
           e[83] = true
         end
+        # RPG2003 battle row (0x5B/91, liblcf's `ChunkSaveActor::row`) --
+        # only written off the front-row default, the same eliding-writer
+        # convention `class_id`/`battle_commands` follow above, so an
+        # RPG2000 save (or a 2003 save whose party never touched Row) never
+        # gains the field.
+        e[91] = a.battle_row if a.battle_row != Battle::ROW_FRONT
         actors[a.id] = e
       end
       save[108] = actors
@@ -12567,6 +12624,11 @@ module Game
           # present", since an empty list is schema.rb's own declared
           # default rather than a real Change Battle Commands to nothing.
           actor.battle_commands = sa.battle_commands if sa.changed_battle_commands
+          # RPG2003 battle row (0x5B/91) -- the schema default (0/front)
+          # restores the same as never having touched it, so no changed-flag
+          # gating is needed the way battle_commands' own nil-vs-empty
+          # ambiguity requires above.
+          actor.battle_row = sa.row if sa.respond_to?(:row)
           # A Change Actor Name override on *any* roster member, not just the
           # leader (whose name chunk 100's title also carries below). ADR
           # 0014 already flagged this field's other case when it was first

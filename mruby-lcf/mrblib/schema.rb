@@ -1260,6 +1260,15 @@ module LCF
       # legitimate Change Class target in its own right, distinct from
       # "unset").
       90 => { name: :class_id, type: :int, default: -1 }, # 職業ID (Change Class)
+
+      # RPG2003 battle front/back row (Game::Actor#battle_row), toggled by the
+      # in-battle Row command (ADR 0053's row mechanic). liblcf's own
+      # `ChunkSaveActor` enum (lsd/chunks.h) numbers this field 0x5B, right
+      # after class_id (0x5A) and before the two_weapon/lock_equipment/
+      # auto_battle/super_guard/battler_animation fields this schema does not
+      # declare yet -- 0 (RowType_front) is both liblcf's own default and the
+      # only row RPG2000 ever writes.
+      91 => { name: :row, type: :int, default: 0 }, # 隊列 (2003)
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/37.html

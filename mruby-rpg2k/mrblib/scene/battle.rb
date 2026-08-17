@@ -991,17 +991,35 @@ class RPG2k
       # ids a real 2003 database's own Battle-Commands table conventionally
       # numbers its first four entries, and the ids the Enable Combo (1007)
       # command and the `command_actor` page condition refer to.
+      #
+      # RPG2003 also appends a fixed **Row** row after whichever list this
+      # resolves to (#row_command_available?), the front/back toggle
+      # (`#select_battle_command`'s `:row` arm) -- not itself a Battle-
+      # Commands table entry (see #custom_battle_commands' own comment on why
+      # id 0 is skipped there), so it always carries a nil `command_id`.
       def battle_command_rows
         actor = current_actor_row
         custom = actor && custom_battle_commands(actor)
-        return custom if custom
-
-        [
+        rows = custom || [
           { label: term(:battle_attack, 'Attack'), action: :attack, command_id: 1 },
           { label: skill_command_label, action: :skill, command_id: 2 },
           { label: term(:battle_defend, 'Defend'), action: :defend, command_id: 3 },
           { label: term(:battle_item, 'Item'), action: :item, command_id: 4 }
         ]
+        rows += [{ label: term(:row, 'Row'), action: :row, command_id: nil }] if row_command_available?
+        rows
+      end
+
+      # RPG2003's Row entry is not one of the customizable Battle-Commands
+      # list's own rows -- confirmed above and by EasyRPG's own
+      # `Game_Actor::GetBattleCommands` comment marking it "not impl" there
+      # too -- it is a fixed extra row `Scene_Battle_Rpg2k3` appends after
+      # whatever list a project customized, present on every RPG2003 fight
+      # (`Feature::HasRow`'s own `easyrpg_disable_row_feature` opt-out is an
+      # EasyRPG-only editor extension with no real LCF field, so there is
+      # nothing for a vanilla database to gate this on beyond the edition).
+      def row_command_available?
+        @ui[:battle] && @ui[:battle].respond_to?(:rpg2003?) && @ui[:battle].rpg2003?
       end
 
       # `actor`'s own RPG2003 battle-command list resolved to menu rows, or nil
@@ -1287,7 +1305,14 @@ class RPG2k
         # the battle-page `command_actor` condition both read it; RPG2000 never
         # consults either, so recording it for every battle is harmless.
         row = battle_command_rows[@ui[:cmd]]
-        current_actor.last_battle_action = row[:command_id] if current_actor && row[:command_id]
+        # Row carries no real command_id (it is not a Battle-Commands table
+        # entry -- see #battle_command_rows), so it clears any previously
+        # recorded command instead of leaving a stale one behind, mirroring
+        # EasyRPG's own `SetLastBattleAction(-1)` right before `RowSelected`.
+        if current_actor
+          current_actor.last_battle_action = row[:command_id] if row[:command_id]
+          current_actor.last_battle_action = nil if row[:action] == :row
+        end
         case row[:action]
         when :attack
           play_system_se(SFX_DECISION)
@@ -1312,6 +1337,29 @@ class RPG2k
           play_system_se(SFX_DECISION)
           @ui[:battle].command_skip(current_actor)
           advance_actor
+        when :row
+          # RPG2003's Row battle command: flip the acting ally's front/back
+          # row (ADR 0053), refused with a Buzzer if it would empty the front
+          # row (`Game::Battle#toggle_row`/`#can_leave_front_row?`, ported
+          # from EasyRPG's `Scene_Battle_Rpg2k3::RowSelected` guard) -- real
+          # RPG_RT stays on the command menu rather than committing a turn
+          # when that happens, so this only advances on success. A
+          # successful toggle is written back onto the real `Game::Actor`
+          # (`#battle_row=`) so it survives past this battle -- Combatant#row
+          # is a fight-scoped snapshot the same way #attr_ranks is (see the
+          # Combatant Struct's own field comment) -- and, like Special,
+          # consumes the turn as a `DoNothing` action
+          # (`Game::Battle#command_skip`).
+          if @ui[:battle].toggle_row(current_actor)
+            if current_actor_row && current_actor_row.respond_to?(:battle_row=)
+              current_actor_row.battle_row = current_actor.row
+            end
+            play_system_se(SFX_DECISION)
+            @ui[:battle].command_skip(current_actor)
+            advance_actor
+          else
+            play_system_se(SFX_BUZZER)
+          end
         end
       end
 

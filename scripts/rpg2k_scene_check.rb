@@ -2409,7 +2409,7 @@ end
 BattleCommandDef = Struct.new(:name, :type)
 
 class BattleStubActor
-  attr_accessor :exp, :hp, :mp
+  attr_accessor :exp, :hp, :mp, :battle_row
   attr_reader :id, :name, :atk, :def, :agi, :int, :max_hp, :max_mp, :skills, :states,
               :level, :learn_table
   # Defaults are strong enough to beat the two-Slime troop the scene db defines;
@@ -2449,6 +2449,10 @@ class BattleStubActor
     @battler_animation_id = battler_animation_id
     @battle_x = battle_x; @battle_y = battle_y
     @faceset_name = faceset_name; @faceset_index = faceset_index
+    # Mirrors Game::Actor's own RPG2003 battle-row state (#battle_row/
+    # #battle_row=): front by default, flipped by the in-battle Row command
+    # the same way a real actor's would be.
+    @battle_row = Game::Battle::ROW_FRONT
   end
   attr_reader :battler_animation_id, :battle_x, :battle_y
   # RPG2003 gauge-card status panel fixture (#draw_battle_gauge_face,
@@ -9684,6 +9688,64 @@ check "Enemy Encounter scene: a Special battle command draws a row and forfeits 
   8.times { scene.update }
   hero_attacked = ui[:battle].log.any? { |e| e[:attacker] == 'Hero' }
   eq false, hero_attacked, 'the Special turn produced no attack entry for the hero'
+end
+
+check "Enemy Encounter scene: an RPG2003 fight offers Row after the fixed four " \
+      "and refuses to empty the front row" do
+  # A lone party member can never leave the front row (Game::Battle
+  # #can_leave_front_row?, ported from EasyRPG's `RowSelected` guard) --
+  # RPG_RT buzzes and stays on the command menu rather than spending the
+  # turn, exactly like the reference's own "nothing to pick" Buzzer cases.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) }, rpg2003: true)
+  st = scene.instance_variable_get(:@state)
+  actor = BattleStubActor.new(agi: 20)
+  st.instance_variable_set(:@party, BattleStubParty.new(actor, rpg2003: true))
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[Attack Skill Defend Item Row], labels,
+     'a 2003 fight appends the fixed Row row after the ordinary fixed four'
+  4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
+  eq 4, ui[:cmd], 'the cursor lands on the appended Row row'
+  hero = ui[:allies][0]
+  press_key(scene, RGSS::Input::C)
+  eq :command, ui[:phase], 'a refused toggle stays on the command menu, not a committed turn'
+  eq Game::Battle::ROW_FRONT, hero.row, 'the sole ally is still front row'
+  eq Game::Battle::ROW_FRONT, actor.battle_row, 'the real actor was never written back to either'
+end
+
+check 'Enemy Encounter scene: Row flips a front-row ally to the back and spends the turn' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) }, rpg2003: true)
+  st = scene.instance_variable_get(:@state)
+  a1 = BattleStubActor.new(id: 1, name: 'Hero', agi: 20)
+  a2 = BattleStubActor.new(id: 2, name: 'Ally', agi: 15)
+  st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true, actors: [a1, a2]))
+  ui = battle_to_command(scene)
+  labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
+  eq %w[Attack Skill Defend Item Row], labels
+  4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
+  hero = ui[:allies][0]
+  press_key(scene, RGSS::Input::C)
+  # Row commits at once, like Special -- no target/skill/item submenu -- but
+  # with a second party member still to command, that only advances to
+  # *their* menu, not straight to the round's animation.
+  eq :command, ui[:phase], "Row spends only the acting ally's turn, moving on to the next ally's menu"
+  eq Game::Battle::ROW_BACK, hero.row, 'the fight-scoped Combatant moved to the back row'
+  eq Game::Battle::ROW_BACK, a1.battle_row, 'the real actor is written back so it outlives the battle'
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::C)    # Ally defends, committing the round
+  eq :animate, ui[:phase], "the round animates once both allies have committed"
+  # The row change cost Hero's own turn like Special does: only Ally's
+  # attacks show up in the round's log.
+  8.times { scene.update }
+  hero_attacked = ui[:battle].log.any? { |e| e[:attacker] == 'Hero' }
+  eq false, hero_attacked, 'the Row turn produced no attack entry for the hero'
 end
 
 check "Enemy Encounter scene: a battle-command list of Row alone falls back to the fixed four" do
