@@ -13,6 +13,7 @@
 #include <pspctrl.h>
 #include <pspdisplay.h>
 #include <pspge.h>
+#include <pspiofilemgr.h>
 #include <pspkernel.h>
 
 namespace {
@@ -227,6 +228,18 @@ uint64_t psp_input_scan(void) {
     mask |= (1ull << PSP_INPUT_N4);
 
   return mask;
+}
+
+// app/psp/lv_conf.h's LV_ASSERT_HANDLER. See lv_assert_handler.h for why this
+// exists instead of LVGL's own default `while(1);`: a marker naming the
+// failure (rather than a silent halt) before this loops forever, matching the
+// libc-free-write reasoning app/psp/main.cxx's StrBuf/psp_write already use.
+extern "C" void psp_lvgl_assert_halt(void) {
+  static const char kMarker[] = "RPG2K_PSP_LVGL_ASSERT\n";
+  sceIoWrite(1, kMarker, sizeof(kMarker) - 1);
+  sceIoWrite(2, kMarker, sizeof(kMarker) - 1);
+  for (;;)
+    sceKernelDelayThread(1000000);  // 1s; never returns.
 }
 
 #endif  // PSP_BUILD

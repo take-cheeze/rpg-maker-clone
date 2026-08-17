@@ -185,8 +185,21 @@ wired: mruby's entire heap lives in a fixed 8 MB arena of its own
 TLSF only 4-byte-aligns on 32-bit — too weak for mruby's word boxing) or
 growing unbounded on plain malloc, so the interpreter OOMs into a catchable
 `NoMemoryError` instead of colliding with the decoded-bitmap heap. `lv_conf.h`'s
-4 MB `LV_MEM_SIZE` therefore covers only LVGL's own widgets and internals, and
-the decoded bitmaps stay in a third, uncapped pool as before.
+`LV_MEM_SIZE` therefore covers only LVGL's own widgets and internals, and the
+decoded bitmaps stay in a third, uncapped pool as before. That pool is 256 KB,
+cut down from an original 4 MB once P2 established what is actually left for
+it to cover: neither the decoded bitmaps nor the LVGL partial-render draw
+buffers (`psp.cxx`'s `g_buf1`/`g_buf2`, plain `std::vector`) come from it, and
+the real game draws all of its own text through the RGSS `Bitmap`'s shinonome
+blitter rather than LVGL's font system — only the idle bring-up screen's two
+labels ever touch that. What is left is `lv_obj_t`/style bookkeeping for the
+canvas/image/label widgets this port uses, plausibly tens of KB even for a
+busy screen. Unlike the arena, LVGL's own default failure mode for pool
+exhaustion (`LV_ASSERT_HANDLER`) is a silent `while(1);`, indistinguishable
+from any other hang — `lv_conf.h` now points it at `psp_lvgl_assert_halt`
+(`psp.cxx`), which writes an `RPG2K_PSP_LVGL_ASSERT` marker via `sceIoWrite`
+before halting, so a pool that turns out too small shows up in the log
+instead of as an unexplained stall.
 
 Beyond the arena, this port also shrinks the live footprint in four smaller
 ways: the LVGL partial-render buffers are sized to the game's own canvas

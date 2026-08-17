@@ -280,6 +280,33 @@ the interpreter-linking slice, in this order:
   LVGL only) instead of describing the un-taken shared-pool option. The 8 MB
   figure is a generous placeholder to be validated against a real game
   on-device, exactly as the BRINGUP heartbeat (P1) measures.
+- **P2a — `LV_MEM_SIZE` cut from 4 MB to 256 KB.** Once P2 moved mruby onto
+  its own arena, checked what is actually left for LVGL's pool to cover:
+  decoded bitmaps bypass it (Finding 3), the LVGL partial-render draw buffers
+  are plain `std::vector` (`psp.cxx`'s `g_buf1`/`g_buf2`, not `lv_malloc`'d
+  either), and the real game never reaches LVGL's own font/text system at
+  all — every game screen draws through the RGSS `Bitmap`'s shinonome
+  blitter; only the idle bring-up screen's two `lv_label`s ever touch it. So
+  the pool's only job is `lv_obj_t`/style/internal bookkeeping for the
+  canvas/image/label widgets this port actually uses (already trimmed to
+  those three by P6 below) — plausibly tens of KB even for a busy screen, not
+  megabytes. 4 MB was never validated against anything; 256 KB is a
+  comfortable multiple of that estimate, still awaiting the same on-device
+  BRINGUP validation P2's 8 MB arena figure does.
+
+  This one has a sharper failure mode than the arena, though: LVGL's default
+  `LV_ASSERT_HANDLER` (fired by `LV_USE_ASSERT_MALLOC`, on for this target)
+  is an unconditional `while(1);` — pool exhaustion would have looked like
+  any other silent hang, which is exactly the class of bug the rest of this
+  ADR's Consequences spent real effort chasing. `app/psp/lv_conf.h` now
+  points `LV_ASSERT_HANDLER` at `psp_lvgl_assert_halt`
+  (`mruby-rgss/src/psp.cxx`), which writes a libc-free `RPG2K_PSP_LVGL_ASSERT`
+  marker via `sceIoWrite` before halting — the same `StrBuf`/`psp_write`
+  reasoning `main.cxx` already uses, since `sysclib_snprintf` is not to be
+  trusted here either. Verified the shrunk pool builds clean and the idle-HAL
+  screen (title + status label) does not trip that marker under
+  PPSSPP-headless; validating it against a real game's widget count still
+  needs the same on-device run P1/P2 do.
 - **P6 — drawn from Finding 3's "third pool" and the EBOOT's own size,
   landed as four smaller reductions:**
   - The uni-algo modules nothing in this project calls are switched off, so
@@ -362,13 +389,14 @@ the interpreter-linking slice, in this order:
   update: P1a (stripping mrbc's `-g` for the `psp` cross-build), half of P1
   (the bring-up EBOOT's heartbeat now reports real device memory numbers),
   the tool half of P3 (`scripts/rgssad_unpack.rb`), the P2 allocator
-  split plus P6's reductions (draw buffers sized to the canvas, the LVGL
-  widget/theme/example trim, the mruby embedded tuning knobs, and the
-  uni-algo table trim), and P5's explicit main-thread stack size plus its
-  heartbeat fields. The
-  two sizing numbers that still depend on a real database and map actually
-  being loaded are the mruby arena's 8 MB and the stack's 256 KB, both of
-  which the heartbeat is now in place to validate.
+  split plus P2a's LVGL pool cut (4 MB to 256 KB, with a marker-writing
+  assert handler replacing LVGL's silent-halt default) plus P6's reductions
+  (draw buffers sized to the canvas, the LVGL widget/theme/example trim, the
+  mruby embedded tuning knobs, and the uni-algo table trim), and P5's
+  explicit main-thread stack size plus its heartbeat fields. The three sizing
+  numbers that still depend on a real database and map actually being loaded
+  are the mruby arena's 8 MB, LVGL's 256 KB, and the stack's 256 KB, all
+  three of which the heartbeat is now in place to validate.
 - ADR 0010's "the full gem set should fit" is narrowed: it holds for gem
   *code* size, but says nothing about per-title asset memory, which Finding 2
   shows can exceed the entire 24 MB budget for an RGSSAD-packed game even
