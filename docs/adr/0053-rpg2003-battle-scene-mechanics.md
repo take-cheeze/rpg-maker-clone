@@ -275,8 +275,9 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   refusing a toggle that would empty the front row
   (`#can_leave_front_row?`, ported from EasyRPG's `RowSelected` guard) with
   the reference's own Buzzer SE. `scripts/rpg2k3_battle_row_check.rb` and
-  `rpg2k_scene_check.rb` stay green. Still open: the field menu's own Row
-  screen (id 6 of `RPG2K3_COMMAND_IDS`, a pre-battle per-actor row picker,
-  EasyRPG's `Scene_Row`) and the automatic-placement `row_x_offset` /
-  pincer-surround grid tables, both noted in `scene/menu.rb` and ADR 0054
-  respectively.
+  `rpg2k_scene_check.rb` stay green. The automatic-placement `row_x_offset`
+  landed the same day too (ADR 0054's own follow-up note). Still open: the
+  field menu's own Row screen (id 6 of `RPG2K3_COMMAND_IDS`, a pre-battle
+  per-actor row picker, EasyRPG's `Scene_Row`, noted in `scene/menu.rb`) and
+  the pincer-surround grid tables, which need the battle conditions this
+  runtime does not model.
