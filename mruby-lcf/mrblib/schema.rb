@@ -1453,8 +1453,17 @@ module LCF
       123 => { name: :save_allowed, type: :bool },
       124 => { name: :menu_allowed, type: :bool },
       125 => { name: :battle_background, type: :string },
-      131 => { name: :save_count, type: :int },
-      132 => { name: :save_slot, type: :int, default: 1 },
+       131 => { name: :save_count, type: :int },
+       132 => { name: :save_slot, type: :int, default: 1 },
+      # liblcf's `SaveSystem.atb_mode` (0x8C == 140): the RPG2003 wait/active
+      # toggle. 0 = wait (the command menu pauses the fight), 1 = active
+      # (gauges keep filling while a menu is open and a ready non-controllable
+      # combatant interrupts it). This is a *save-system* runtime field, not a
+      # Battle Commands database field -- liblcf's BattleCommands has no wait
+      # field at all, correcting the premise ADR 0054 recorded -- and it is
+      # what the field menu's Wait command (id 8) flips. RPG2000 saves never
+      # carry it (the chunk is 2003-only), so an absent chunk reads 0 (wait).
+      140 => { name: :atb_mode, type: :int, default: 0 },
     }
 
     # Fields shown on the file-select screen (chunk 100 of the save file). The

@@ -13026,6 +13026,81 @@ check 'a ready but restricted (asleep) party member\'s gauge fires a silent no-o
   eq true, hero.queued_no_act, 'the do-nothing restriction was locked in for the turn'
 end
 
+# -- Wait-off (active) mode: the command menu and the atb_mode toggle --------
+#
+# ADR 0054's follow-up: the gauge fight's Wait/active presentation. The toggle
+# is the save-system `atb_mode` field (LSD chunk 140), flipped by the field
+# menu's Wait command -- *not* a Battle Commands database field, correcting
+# the ADR's own premise. In wait mode (default) the gauges freeze while any
+# command menu is open; in active mode they keep filling and a ready
+# non-controllable combatant's action interrupts the menu (EasyRPG's
+# `ProcessSceneActionCommand`'s `GetAtbMode() == active && IsBattleActionPending()`
+# gate). These checks drive both through the 2003 scene.
+
+check 'wait mode: the command menu freezes every gauge, enemy gauges included' do
+  scene, st = battle_scene_with_pages({}, rpg2003: true,
+                                      battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
+  st.atb_mode = 0 # wait mode -- also the default
+  ui = battle_until_phase(scene, :command, 250)
+  ok ui, 'the battle opened to the ready actor\'s menu'
+  hero = ui[:allies][0]
+  eq true, hero.gauge_full?, 'the commanded actor\'s gauge is held full'
+  enemy = ui[:battle].enemy(0)
+  # Park the enemy mid-fill so the freeze is measurable: under wait mode its
+  # gauge must not move while the menu stays up.
+  enemy.gauge = Game::Battle::GAUGE_MAX / 2
+  20.times { scene.update }
+  eq Game::Battle::GAUGE_MAX / 2, enemy.gauge,
+     'wait mode: the enemy\'s gauge does not fill while the command menu is open'
+end
+
+check 'active mode: the command menu keeps the gauges filling, and a ready ' \
+      'enemy\'s action interrupts it' do
+  scene, st = battle_scene_with_pages({}, rpg2003: true,
+                                      battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
+  st.atb_mode = 1 # Wait-off (active)
+  ui = battle_until_phase(scene, :command, 250)
+  ok ui, 'the battle opened to the ready actor\'s menu'
+  enemy = ui[:battle].enemy(0)
+  enemy.gauge = Game::Battle::GAUGE_MAX / 2
+  20.times { scene.update }
+  ok enemy.gauge > Game::Battle::GAUGE_MAX / 2,
+     'active mode: the enemy\'s gauge keeps filling while the command menu is open'
+  ui = battle_ui(scene)
+  eq :command, ui[:phase], 'the menu is still up (no interrupt yet -- the enemy is not ready)'
+  # Make the enemy ready: in active mode its full gauge fires *now*, mid-menu.
+  enemy.gauge = Game::Battle::GAUGE_MAX
+  scene.update
+  ui = battle_ui(scene)
+  eq :animate, ui[:phase], 'a ready enemy\'s action interrupts the open command menu'
+  eq 0, enemy.gauge, 'the interrupting enemy\'s gauge was consumed'
+  # The interrupting turn plays out -- its action banner holds for
+  # BATTLE_ANIM_FRAMES (90) frames -- then, because the commanded actor's
+  # gauge is still held full, the idle loop reopens its menu.
+  ui = nil
+  150.times do
+    scene.update
+    ui = battle_ui(scene)
+    break if ui && ui[:phase] == :command
+  end
+  eq :command, ui[:phase], 'after the interrupt resolves, the ready actor\'s menu returns'
+end
+
+check 'wait mode: a ready enemy waits behind the command menu, no interrupt' do
+  scene, st = battle_scene_with_pages({}, rpg2003: true,
+                                      battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
+  st.atb_mode = 0 # wait mode
+  ui = battle_until_phase(scene, :command, 250)
+  ok ui, 'the battle opened to the ready actor\'s menu'
+  enemy = ui[:battle].enemy(0)
+  enemy.gauge = Game::Battle::GAUGE_MAX
+  scene.update
+  ui = battle_ui(scene)
+  eq :command, ui[:phase], 'wait mode: a ready enemy does not interrupt the open menu'
+  eq Game::Battle::GAUGE_MAX, enemy.gauge,
+     'and its gauge is left full, waiting for the menu to close'
+end
+
 check 'an RPG2003 battle_type 0 (traditional) fight still runs the round machine, never the gauge idle loop' do
   scene, = battle_scene_with_pages({}, rpg2003: true,
                                    battlecommands: OpenStruct.new(battle_type: 0, placement: 1))
@@ -13941,16 +14016,41 @@ check 'Scene::Menu: an RPG2003 database drives the command list from ' \
       'System.menu_commands, Status and Order included' do
   # mtf-meido-action's own array, id-for-id (confirmed by loading its real
   # RPG_RT.ldb): every one of RPG2003's eight customizable ids, in ascending
-  # order. Row (6) and Wait (8) are RPG2003 battle-system features this
-  # runtime does not model (the same reported-gap precedent as Toggle ATB
-  # Mode, 5003) and are silently skipped; Order (7) has no such dependency and
-  # is offered, same as Status; End Game is appended unconditionally, matching
+  # order. Row (6) is an RPG2003 battle-system feature this runtime does not
+  # model (the same reported-gap precedent as Toggle ATB Mode, 5003) and is
+  # silently skipped; Wait (8) -- the ATB toggle -- *is* modelled (it flips
+  # the save-system `atb_mode` field, ADR 0054's follow-up) and is offered
+  # with its current-mode label; Order (7) has no such dependency and is
+  # offered, same as Status; End Game is appended unconditionally, matching
   # EasyRPG's own unconditional Quit push outside the customized loop.
   db = fake_db(rpg2003: true, menu_commands: [1, 2, 3, 4, 5, 6, 7, 8])
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
   keys = scene.instance_variable_get(:@commands).map(&:first)
-  eq [:item, :skill, :equip, :save, :status, :order, :end_game], keys,
-     'Status (id 5) and Order (id 7) are offered, Row/Wait (6/8) are dropped rather than crashing'
+  eq [:item, :skill, :equip, :save, :status, :order, :wait, :end_game], keys,
+     'Status (id 5), Order (id 7) and Wait (id 8) are offered, Row (6) is dropped rather than crashing'
+end
+
+check 'Scene::Menu: the Wait command shows the current atb_mode, and toggling ' \
+      'it flips the field and relabels the row' do
+  db = fake_db(rpg2003: true, menu_commands: [1, 8])
+  st = wrap_menu_state
+  eq 0, st.atb_mode, 'a fresh state starts in wait mode'
+  scene = menu_scene(RPG2k::Scene::Menu, st, db)
+  cmds = scene.instance_variable_get(:@commands)
+  eq :wait, cmds[1].first, 'the Wait command (id 8) is offered'
+  eq ['Wait On'], [cmds[1][1]], 'wait mode labels the row with wait_on'
+  scene.instance_variable_set(:@index, 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq 1, st.atb_mode, 'confirming Wait flips atb_mode to active'
+  cmds = scene.instance_variable_get(:@commands)
+  eq ['Wait Off'], [cmds[1][1]], 'the row relabels to wait_off after the flip'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq 0, st.atb_mode, 'confirming again flips back to wait'
+  eq ['Wait On'], [cmds[1][1]], 'and the row relabels back to wait_on'
 end
 
 check 'Scene::Menu: RPG2003 System.menu_commands can reorder and omit commands' do
