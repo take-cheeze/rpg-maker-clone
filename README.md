@@ -623,9 +623,10 @@
   ```
 
   ```
-  mruby-lcf      #################.......   68.8%     271 / 394
-  mruby-rpg2k    ######################..   92.9%   11305 / 12175
-  total          ###################.....   80.5%   12733 / 15810
+  mruby-lcf      #####################...   89.3%     352 / 394
+  mruby-rgss     #############...........   53.8%     420 / 780
+  mruby-rpg2k    ######################..   93.2%   12366 / 13273
+  total          ####################....   84.2%   14259 / 16936
   ```
 
 - CI's `ruby-checks` job publishes the same table in its job summary and the
@@ -634,9 +635,13 @@
 
 - The total is a **floor**: `mruby_test` and the native smoke tests exercise the
   same sources inside mruby, where no `Coverage` module exists, so what only
-  they reach counts as uncovered here (which is why the RGSS and MV/MZ runtime
-  files read 0%). `docs/coverage.md` and `docs/adr/0049-ruby-line-coverage-from-the-host-side-checks.md`
-  cover the details and the trade-off.
+  they reach counts as uncovered here (which is why the MV/MZ runtime files read
+  0%). The RGSS runtime no longer does: the `rgss-cruby-test` check runs the
+  real mruby-rgss test suite under CRuby through a compatibility layer
+  (`scripts/rgss_cruby_compat.rb` + `scripts/rgss_cruby_test_check.rb`), lifting
+  `mruby-rgss` to ~52%. `docs/coverage.md` and
+  `docs/adr/0049-ruby-line-coverage-from-the-host-side-checks.md` cover the
+  details and the trade-off.
 
 ### Play in the browser (WebAssembly)
 

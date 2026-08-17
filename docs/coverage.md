@@ -24,7 +24,7 @@ Ruby line coverage
 
   mruby-lcf      #################.......   68.8%     271 / 394
   mruby-mvjs     ........................    0.0%       0 / 1064
-  mruby-rgss     ##......................    9.5%      72 / 761
+  mruby-rgss     #############...........   52.2%     407 / 780
   mruby-rpg2k    ######################..   92.9%   11305 / 12175
   mruby-rpgvx    ####################....   85.1%     308 / 362
   mruby-rpgxp    ##################......   73.7%     777 / 1054
@@ -62,11 +62,15 @@ and cannot be counted:
 - The native smoke tests (`scripts/*_boot_check.bash`, the MV/MZ runs in CI)
   drive the built binary, likewise inside mruby.
 
-So a file reported at 0% is not necessarily untested — `mruby-rgss/mrblib/lib.rb`
-and `mruby-mvjs/mrblib/{mv,mz}.rb` read as 0% because they need a live RGSS
-window or a JS engine, which is exactly why no CRuby harness loads them. Read
-the report as "this much of the engine is covered by the host-side checks", and
-use the per-file tail as a list of where the next host-side check would pay off.
+So a file reported at 0% is not necessarily untested — `mruby-mvjs/mrblib/{mv,mz}.rb`
+read as 0% because they need a JS engine, which is why no CRuby harness loads
+them. The RGSS runtime was in the same boat (its `mrblib` read 0% for the same
+reason); the `rgss-cruby-test` check — the mruby-rgss test suite run through the
+RGSS compatibility layer, `scripts/rgss_cruby_compat.rb` — now covers it, so a
+0% RGSS row would mean a real regression rather than "not measurable here".
+Read the report as "this much of the engine is covered by the host-side checks",
+and use the per-file tail as a list of where the next host-side check would pay
+off.
 
 C++ coverage (`src/**.cxx`) is not wired up: those files are SDL/mruby/LVGL
 glue reachable only through the display-bound smoke tests, and gcov tooling is
