@@ -170,14 +170,18 @@ growing unbounded on plain malloc, so the interpreter OOMs into a catchable
 4 MB `LV_MEM_SIZE` therefore covers only LVGL's own widgets and internals, and
 the decoded bitmaps stay in a third, uncapped pool as before.
 
-Beyond the arena, this port also shrinks the live footprint in three smaller
+Beyond the arena, this port also shrinks the live footprint in four smaller
 ways: the LVGL partial-render buffers are sized to the game's own canvas
 (RPG2k's 320×240 fits ~38 KB per buffer instead of the fixed panel-width 64 KB
 each — see `psp.cxx`), the EBOOT links none of LVGL's examples/demos and only
 the widgets the RGSS layer actually uses (canvas/image/label; the default theme
-that pulled every widget into the link is off), and the mruby cross-build runs
+that pulled every widget into the link is off), the mruby cross-build runs
 the embedded tuning knobs (`MRB_HEAP_PAGE_SIZE`/`KHASH_INITIAL_SIZE` — see
-`build_config.rb`). The `RPG2K_PSP_BRINGUP` heartbeat is the place to read the
+`build_config.rb`), and the uni-algo Unicode tables are cut to the modules this
+project calls (`cmake/uni-algo-trim.cmake`), which alone is ~506 KB — on the
+PSP every PT_LOAD segment of the EBOOT is mapped into RAM at launch, so a
+read-only table is live memory, not just file size. The
+`RPG2K_PSP_BRINGUP` heartbeat is the place to read the
 result: `free`/`maxfree` from `sceKernelTotalFreeMemSize` are the device's real
 free RAM, `lvgl_used`/`lvgl_max` are LVGL's pool, and the mruby arena's usage is
 the gap between them once a game is actually running.
