@@ -11772,6 +11772,51 @@ animation still plays nothing through `#start_battle_animation`.
   walking two tiles answers at that last-known tile and facing, not `nil`;
   a temporarily-erased event answers at the tile it was erased on, not
   `nil`), both confirmed to fail against the pre-fix code before the fix.
+  ✅ **Change Event Location / Trade Event Locations silently no-op'd on a
+  hidden or temporarily-erased map event — the write-side sibling of
+  `#event_id_at`/`#event_position`'s own fix just above, left with the
+  identical gap (2026-08-18).** Both commands are routed through
+  `#char_location`/`#set_char_location` (`mruby-rpg2k/mrblib/scene/map.rb`),
+  and both helpers searched only `@events` (the live/active-page list),
+  answering/accepting `nil` for anything else. For Change Event Location
+  this meant the command was a complete no-op against such a target. For
+  Trade Event Locations it was worse: `#apply_location_request`'s swap
+  branch resolves both sides' tiles before moving either
+  (`a = char_location(...); b = char_location(...); return unless a && b`),
+  so one hidden/erased participant aborted the *entire* swap — the other,
+  perfectly live, event failed to move too. Confirmed against EasyRPG
+  Player's actual C++ source — the same call chain traced for Store Event
+  ID/`#event_position` applies unchanged here:
+  `Game_Interpreter::CommandChangeEventLocation` and
+  `CommandTradeEventLocations` (`src/game_interpreter.cpp`) both resolve
+  their target(s) through `Game_Interpreter::GetCharacter` →
+  `Game_Character::GetCharacter` (`src/game_character.cpp`) →
+  `Game_Map::GetEvent` (`src/game_map.cpp`), the identical unconditional
+  by-id lookup with no active-state filter — RPG_RT genuinely repositions
+  such an event's single, persistent backing object, live, hidden or
+  erased alike. Fixed by giving `#char_location`/`#set_char_location` the
+  same `@event_last_position` fallback `#event_id_at`/`#event_position`
+  already use for reading, extended to the write side: repositioning a
+  hidden target updates its `@event_last_position` entry (picked up again
+  the moment its page reactivates and something re-reads its position, the
+  same way ordinary movement already keeps that table current), and
+  repositioning an erased target also updates its frozen
+  `@erased_event_positions` entry, so `#event_id_at` stops answering for it
+  at the old tile and starts at the new one — keeping the two tables
+  consistent with each other exactly as `#erase_event`'s own seeding of
+  `@erased_event_positions` already relies on. `#erase_event`'s comment
+  claiming an erased event "cannot move any further" was corrected
+  alongside the fix, since it no longer held. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (Change Event Location repositions
+  a hidden event, confirmed via `#event_id_at`/`#event_position` at both
+  the old and new tile; Trade Event Locations swaps a live event with a
+  hidden one, confirmed the live event actually moves — the case that used
+  to silently abort entirely; Change Event Location repositions an
+  already-erased event, with a `Wait 0.0` between Erase Event and the move
+  so the erasure is genuinely applied — `@events.delete` happens in a
+  separate post-step pass, not inline with the command — before the move
+  command runs), all three confirmed to fail against the pre-fix code
+  before the fix.
 
 **Database field semantics** (from the `11_db/` sweep, 48 findings — the
 single densest source in this pass; only the ones not already listed
