@@ -3666,6 +3666,25 @@ The work below is roughly ordered by the critical path to a walkable game
   already stood (no fix landed, since none was needed). **Still open**:
   `order.rb`, `debug_menu.rb`, `title.rb`, and every battle target/command
   list in `battle.rb`.
+  ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
+  back to needing the fix, both of its cursors this time.** Confirmed
+  against EasyRPG Player's actual source: `Scene_Order::vUpdate` (`src/
+  scene_order.cpp`) calls `window_left->Update()`/`window_confirm->
+  Update()` **unconditionally, every frame**, before ever checking
+  `GetActive()` — both are genuine `Window_Selectable`s, whose own
+  `Update()` is what actually drives the cursor (the standard
+  trigger-then-repeat), while `GetActive()` only gates which of
+  `UpdateOrder`/`UpdateConfirm` (the Decision/Cancel handling) runs, not
+  the cursor movement itself. So unlike `equip_menu.rb`'s/
+  `status_menu.rb`'s discrete-only actor switches, both of this screen's
+  own cursors — the left-column pick cursor (`#update_left`) and the
+  two-option Confirm/Redo prompt (`#update_confirm`) — genuinely
+  auto-repeat in the real engine, and both gained `|| Input.repeat?(...)`
+  the same way. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
+  held, repeat-only Down moves the pick cursor one row; the same, later,
+  flips the Confirm/Redo prompt to Redo), confirmed to fail against the
+  pre-fix code before the fix. **Still open**: `debug_menu.rb`, `title.rb`,
+  and every battle target/command list in `battle.rb`.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
