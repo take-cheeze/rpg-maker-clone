@@ -221,6 +221,9 @@ module Game
       # exists but is unseeded, and these runs are diffed); seeded like the map
       # scene's own RNG.
       @rng = Game::Rng.new(0x2000)
+      # See MAX_STEPS/#reset_frame_steps: this frame's shared step budget,
+      # not touched by #start (only genuinely reset once per real frame).
+      @frame_steps = 0
       reset_waits
     end
 
@@ -468,28 +471,58 @@ module Game
       name
     end
 
-    # Upper bound on commands run in a single update (one map frame): RPG_RT
-    # processes at most 10000 "steps" of event commands per 1/60s frame, after
-    # which the rest waits for the next frame -- this is what makes a
-    # tight/heavy loop visibly slow down the game instead of freezing it.
+    # Upper bound on commands run in a single real frame (1/60s): RPG_RT
+    # processes at most 10000 "steps" of event commands per frame, after which
+    # the rest waits for the next frame -- this is what makes a tight/heavy
+    # loop visibly slow down the game instead of freezing it. Verified against
+    # EasyRPG Player's actual C++ source: `Game_Interpreter::loop_count`/
+    # `loop_limit` (src/game_interpreter.h) are member variables, not a local
+    # reset on every `Update()` call -- `Game_Map::UpdateForegroundEvents`
+    # (src/game_map.cpp) resets `loop_count` to 0 exactly once per real frame
+    # and then keeps calling `Update(false)` (no reset) as it cascades through
+    # every Auto-Start event that starts and finishes within that same frame,
+    # so the whole cascade shares one 10000-step budget rather than each
+    # event getting its own fresh one. `@frame_steps` (below) is this
+    # codebase's `loop_count`: it is *not* reset here or in #start, only by
+    # #reset_frame_steps, which the owning scene calls exactly once per real
+    # frame (see Scene::Map#update / #step_parallel) -- #start deliberately
+    # leaves it alone so a cascaded Auto-Start started later in the same
+    # frame (Scene::Map#drive_autostart_cascade) keeps spending down the same
+    # frame's budget instead of getting a fresh 10000.
     MAX_STEPS = 10_000
+
+    # Reset this frame's shared step budget. Call exactly once per real frame,
+    # before the first #update call of that frame -- see #update and
+    # MAX_STEPS's own comment above.
+    def reset_frame_steps
+      @frame_steps = 0
+    end
 
     # Advance through commands until the list ends or a command asks to wait.
     # When the current (possibly called) list runs out, control returns to the
     # caller via the call stack; the process ends only once the outermost list is
-    # exhausted.
+    # exhausted. May be called more than once within the same real frame (a
+    # resumed Wait/Battle/Animation that clears mid-frame keeps going rather
+    # than losing a frame -- see Scene::Map#drive_event's own "spend this
+    # frame's step budget immediately" call sites) or after a fresh #start
+    # cascaded in from the same frame's Auto-Start scan -- @frame_steps
+    # persists across all of them, only #reset_frame_steps clears it.
     def update
       return unless @running
-      steps = 0
       until @waiting
         # Unwind any exhausted called lists back to a caller with commands left.
         return_from_call while @index >= @list.size && !@call_stack.empty?
         break if @index >= @list.size # nothing left anywhere
+        # Checked *before* running the next command (matching EasyRPG's own
+        # `for (; loop_count < loop_limit; ++loop_count)`), not after: once a
+        # frame's shared budget is spent, a fresh #update call this same
+        # frame (another cascaded event, or a same-frame resume) must not
+        # sneak in "just one more" command on top of it.
+        break if @frame_steps >= MAX_STEPS
         cmd = @list[@index]
         @index += 1
         execute cmd
-        steps += step_cost(cmd.code)
-        break if steps >= MAX_STEPS
+        @frame_steps += step_cost(cmd.code)
       end
       if finished?
         @running = false

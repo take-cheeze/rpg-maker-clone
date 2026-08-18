@@ -434,6 +434,12 @@ class RPG2k
         # visit" bullet in docs/TODO.md.
         @started_auto.clear
         @started_common.clear
+        # This real frame's foreground step budget starts fresh here (see
+        # Game::Interpreter::MAX_STEPS/#reset_frame_steps) -- every
+        # @interpreter.update call below, however many times #drive_event and
+        # #drive_autostart_cascade's own cascading call it this frame, shares
+        # this one reset rather than each getting its own fresh 10000.
+        @interpreter.reset_frame_steps
         if event_busy?
           drive_event
           # Message Options' "move other events during message" toggle: other
@@ -1674,6 +1680,16 @@ class RPG2k
       def step_parallel(p)
         return if p[:gate_switch] && !@state.switches[p[:gate_switch]]
         it = p[:interp]
+        # Each Parallel Process is its own Game_Interpreter in real RPG_RT too,
+        # so it gets its own frame-shared step budget, independent of the
+        # foreground's -- see Game::Interpreter::MAX_STEPS. #step_parallel is
+        # called at most once per real frame per process (#step_parallels'
+        # own once-a-frame loop, or #step_battle_owner_parallel's mutually
+        # exclusive stand-in for the one this fight belongs to), so resetting
+        # here is exactly the once-per-frame reset MAX_STEPS' own comment
+        # requires, however many times `it.update` below ends up called this
+        # same frame (a same-frame Wait/Animation resume can call it twice).
+        it.reset_frame_steps
         if it.waiting?
           wait_kind = it.wait_kind
           drive_parallel_wait(p, it)

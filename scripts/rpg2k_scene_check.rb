@@ -2030,6 +2030,53 @@ check 'a distinct auto-start common event cascades in behind a finishing ' \
   ok st.switches[2], 'the auto-start common event cascaded in the same frame'
 end
 
+# The cascade above (and Game::Interpreter#update generally) used to give
+# *every* #update call its own fresh MAX_STEPS budget -- a local `steps = 0`
+# reset at the top of the method -- rather than sharing one budget across a
+# whole real frame's worth of calls. Verified against EasyRPG Player's actual
+# C++ source rather than assumed from the cascading fix's own already-correct
+# writeup above: `Game_Interpreter::loop_count`/`loop_limit`
+# (src/game_interpreter.h) are member variables, not a local, and
+# `Game_Map::UpdateForegroundEvents` (src/game_map.cpp) resets `loop_count`
+# to 0 exactly once per real frame (`interp.Update(!resume_fg)`) and then
+# keeps calling `Update(false)` -- no reset -- as it cascades through every
+# Auto-Start event that starts and finishes within that same frame. So a
+# chain of several heavy, no-Wait Auto-Start events could burn up to
+# `N * 10000` steps in one real frame instead of a combined 10000, spilling
+# the rest into later frames the way a single heavy event already does.
+# Fixed by moving the counter onto `Game::Interpreter` as `@frame_steps`
+# (mruby-rpg2k/mrblib/interpreter.rb), reset only once per real frame
+# (`#reset_frame_steps`, called from `Scene::Map#update` for the foreground
+# interpreter and from `#step_parallel` for each Parallel Process's own,
+# independent budget), and checking it *before* running each command rather
+# than after, matching EasyRPG's `for (; loop_count < loop_limit; ...)`
+# exactly -- otherwise a same-frame call arriving after the budget is already
+# spent would still sneak in one more command apiece.
+check "an Auto-Start cascade shares one real frame's step budget, not a " \
+      "fresh one each (yado.tk's 10000-step budget is per frame, not per event)" do
+  Game::Interpreter.send(:remove_const, :MAX_STEPS)
+  Game::Interpreter.const_set(:MAX_STEPS, 3)
+  begin
+    p1 = page(trigger: 3) # auto-start: 3 single-cost commands, exactly the budget
+    p1.event_commands = [add_var_cmd(1), add_var_cmd(1), add_var_cmd(1)]
+    one_shot_auto(p1, 9001) # fire once: else it would win the race again next frame too
+    p2 = page(trigger: 3) # auto-start: a second, distinct event, cascaded in behind it
+    p2.event_commands = [add_var_cmd(2)]
+    scene = new_scene({ 1 => event(1, 1, p1), 2 => event(2, 2, p2) }, player: [0, 0])
+    st = scene.instance_variable_get(:@state)
+    scene.update
+    eq 3, st.variables[1], 'the first event ran to completion, spending the whole budget'
+    eq 0, st.variables[2],
+       'the cascaded second event must not get a fresh budget of its own -- ' \
+       'nothing was left this frame'
+    scene.update # a fresh real frame resets the shared budget
+    eq 1, st.variables[2], "it runs once the next frame's budget has reset"
+  ensure
+    Game::Interpreter.send(:remove_const, :MAX_STEPS)
+    Game::Interpreter.const_set(:MAX_STEPS, 10_000)
+  end
+end
+
 check 'Wait 0.0 sec doubles a parallel process lap gap to two frames' do
   # A parallel process already gets a free one-frame gap between laps with no
   # explicit wait at all (the check above). Adding a Wait 0.0 stacks one more

@@ -12817,16 +12817,28 @@ session (reading + documenting only, not fixed — see below):
   re-fires on every subsequent frame once it drains) is now implemented, as
   described in the bullet above. The *within*-frame same-event restart half
   (a no-wait Autorun re-running from the top inside the very same frame, up to
-  the 50000-step-per-frame budget) remains open: doing so faithfully needs
-  `Game::Interpreter`'s `MAX_STEPS` budget threaded *across* repeated
-  `#start`/`#update` calls within one `Scene::Map#update` (today each call
-  gets a fresh budget), and — far more disruptively — would make *every*
-  existing Auto-Start `scripts/rpg2k_scene_check.rb` fixture that does not
-  itself clear its own eligibility (turn off its gating switch, change page,
-  erase itself) before its script naturally ends start looping every frame
-  instead of running once, which is not something a single surgical session
-  can safely audit and re-baseline across ~450 existing checks. Left open, now
-  with a precise citation trail for whoever picks it up next.
+  the 10000-step-per-frame budget) remains open: doing so faithfully needs
+  `#start_autostart`'s own eligibility check to let an id it already started
+  *this same frame* be picked again the instant its script naturally ends
+  with no Wait (today `@started_auto`/`@started_common` block exactly that,
+  unconditionally, deliberately unrelated to the step budget) — and, far more
+  disruptively, would make *every* existing Auto-Start
+  `scripts/rpg2k_scene_check.rb` fixture that does not itself clear its own
+  eligibility (turn off its gating switch, change page, erase itself) before
+  its script naturally ends start looping every frame instead of running
+  once, which is not something a single surgical session can safely audit and
+  re-baseline across ~450 existing checks. Left open, now with a precise
+  citation trail for whoever picks it up next. `Game::Interpreter`'s
+  `MAX_STEPS` budget itself threaded *across* repeated `#start`/`#update`
+  calls within one real frame (previously: every call got its own fresh
+  10000, an independent bug this same restart writeup used to cite as a
+  missing prerequisite) is now fixed on its own, see the "Auto-Start cascade
+  now shares one real frame's step budget" bullet below — a building block
+  for this still-open restart feature, not the feature itself: it only
+  changes how much of a frame's budget a *different*, already-eligible
+  cascaded event gets to spend, and touches no eligibility logic at all, so
+  a same event still cannot restart within its own frame until the
+  paragraph above is separately addressed.
 
 **Untriaged backlog** (raw reference material, not checked against the
 codebase yet):
@@ -12877,6 +12889,52 @@ codebase yet):
   cascades into a distinct auto-start *common* event within the same frame),
   the first and third confirmed to fail against the pre-fix code (the second
   event's switch not yet set) before the fix.
+- ✅ **Auto-Start cascade now shares one real frame's step budget, not a
+  fresh one per event — the cascading fix just above got event *selection*
+  right but left the step-budget half of the same underlying mechanism
+  untouched (2026-08-18).** `Game::Interpreter#update`'s `MAX_STEPS` (10000)
+  budget was a plain local (`steps = 0` at the top of every call), so each
+  `#update` call — including every one `#drive_autostart_cascade`'s own loop
+  makes as it starts a second, third, ... distinct no-Wait Auto-Start event
+  within the same real frame — got its own fresh 10000, rather than the whole
+  frame sharing one. A chain of N heavy, no-Wait Auto-Start events could
+  therefore burn up to `N * 10000` steps in a single real frame instead of a
+  combined 10000 with the rest spilling into later frames, same as a lone
+  heavy event already correctly does. Verified against EasyRPG Player's
+  actual C++ source: `Game_Interpreter::loop_count`/`loop_limit`
+  (`src/game_interpreter.h`) are member variables, not locals reset on every
+  `Update()` call, and `Game_Map::UpdateForegroundEvents`
+  (`src/game_map.cpp`) resets `loop_count` to 0 exactly once per real frame
+  (`interp.Update(!resume_fg)`) then keeps calling `Update(false)` — no
+  reset — for every event it cascades into afterward, so the entire frame's
+  cascade genuinely draws from one shared pool, and `ReachedLoopLimit()`
+  (checked *before* running each command, `for (; loop_count < loop_limit;
+  ++loop_count)`) is what actually stops the whole cascade once it is spent,
+  deferring the rest to the next frame. Fixed by moving the counter onto
+  `Game::Interpreter` as `@frame_steps` (`mruby-rpg2k/mrblib/interpreter.rb`),
+  reset only by a new `#reset_frame_steps`, called exactly once per real
+  frame — from `Scene::Map#update`, right alongside its existing
+  `@started_auto`/`@started_common` per-frame reset, for the shared
+  foreground interpreter, and from `Scene::Map#step_parallel` for each
+  Parallel Process's own, independent interpreter (matching EasyRPG, where
+  each is its own separate `Game_Interpreter` object with its own
+  `loop_count`) — and by moving the budget check in `#update` from *after*
+  each command back to *before* it, so a same-frame call arriving once the
+  budget is already spent (another cascaded event, or one of
+  `Scene::Map#drive_event`'s own "spend this frame's step budget
+  immediately" resumption branches) cannot sneak in one extra command on top
+  of it. This is a narrower building block for the still-open "within-frame
+  same-event restart" question discussed above, not that feature itself —
+  see there for why eligibility (`@started_auto`), not the budget, is what
+  actually gates a same-frame restart, and remains untouched here. Covered by
+  a new `scripts/rpg2k_scene_check.rb` check that stubs `MAX_STEPS` down to 3
+  for the duration of the check (so it does not have to actually run 10000
+  commands): a one-shot Auto-Start event with exactly 3 single-cost commands
+  spends the whole frame's budget, and a second, distinct Auto-Start event
+  cascaded in behind it gets none of its own this same frame (only runs once
+  the next real frame's budget resets), confirmed to fail against the
+  pre-fix code (the second event ran immediately, on its own fresh budget)
+  before the fix.
 - ✅ **A body-less command block still spends a step — already correct, now
   confirmed against this codebase's own code and its own real-game command-
   frequency audit rather than left as a wiki restatement.** The wiki's own
