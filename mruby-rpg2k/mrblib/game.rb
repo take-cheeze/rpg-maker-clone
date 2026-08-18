@@ -1619,9 +1619,27 @@ module Game
     end
 
     # Learn / forget a skill (the Change Skill operations and levelling).
+    #
+    # Confirmed against EasyRPG's actual C++ source, fetched live:
+    # `Game_Actor::LearnSkill` (`src/game_actor.cpp`) is `data.skills.
+    # push_back(skill_id); std::sort(data.skills.begin(), data.skills.end());`
+    # -- every learn, from levelling (`LearnLevelSkills`), Change Class, or
+    # the Change Skills event command alike, re-sorts the actor's skill
+    # list into ascending id order immediately, so it is never in "learn
+    # order". This matters beyond display (`#field_skills`/`#battle_skills`
+    # already `.sort` before listing, so the menus never looked wrong):
+    # `#choose_auto_battle_command` iterates the actor's own raw `#skills`
+    # unsorted, and `#auto_battle_skill_rank` draws one `@rng.random(100)`
+    # jitter roll per candidate skill -- so learning a low-id skill after a
+    # higher-id one (an entirely ordinary Change Skills event, or a growth
+    # table not monotonic in skill id) consumed the shared RNG stream in a
+    # different order than real RPG_RT, drifting every roll for the rest of
+    # a seeded fight, and could pick a different skill outright on a
+    # near-tie.
     def learn_skill(skill_id)
       return if skill_id.nil? || skill_id == 0 || @skills.include?(skill_id)
       @skills.push(skill_id)
+      @skills.sort!
     end
 
     def forget_skill(skill_id)
