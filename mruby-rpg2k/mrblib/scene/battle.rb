@@ -1008,6 +1008,22 @@ class RPG2k
 
       # Redraw troop slot `i` with `foe`'s current battler graphic, keeping its
       # place and depth, and release the sprite and bitmap the old one held.
+      #
+      # This is only ever reached for an actual Transform (see
+      # #refresh_battle_sprites' own comment: a battler_name/hue change is
+      # its one signal that one ran), so the near-white flash RPG_RT itself
+      # plays at the moment of the swap belongs here too. Confirmed against
+      # EasyRPG's actual C++ source, fetched live:
+      # `Game_BattleAlgorithm::Transform::ApplyCustomEffect`
+      # (`src/game_battlealgorithm.cpp`) calls `enemy->Transform(new_id);
+      # enemy->Flash(31,31,31,31,20);` right after the swap, unconditionally
+      # -- this codebase's own prior fix for this same method (see the
+      # `#enemy_transform_action` doc comment) quoted `ApplyCustomEffect`
+      # for its HP/SP-clamp behaviour but stopped short of this second line,
+      # so the swap itself has always been a silent instant cut rather than
+      # RPG_RT's recognisable flash-of-light cue. Scaled by the same 0..31
+      # to 0..255 convention `Interpreter::FLASH_SCALE`/#fire_target_flash
+      # already use for a raw RGSS `Color`.
       def rebuild_battler_sprite(i, foe)
         sprites = @ui[:enemy_sprites]
         member = @ui[:troop].members[i]
@@ -1021,6 +1037,7 @@ class RPG2k
         spr.z = battler_z(i)
         spr.opacity = battler_opacity(member)
         spr.visible = !foe.out_of_play?
+        spr.flash(Color.new(31 * 8, 31 * 8, 31 * 8, 31 * 8), 20)
         sprites[i] = spr
         dispose_battle_sprite(old)
       end
