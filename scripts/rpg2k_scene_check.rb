@@ -11190,7 +11190,7 @@ end
 # parameters (112 / 392 / 16000) so the checks' expected coordinates are
 # explicit; `battle_xy:` supplies per-actor manual coordinates for the
 # placement-0 check.
-def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2)
+def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2, poses: nil)
   members = ids.map do |id|
     xy = battle_xy[id] || [0, 0]
     BattleStubActor.new(id: id, agi: 20, battler_animation_id: id,
@@ -11199,7 +11199,7 @@ def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2)
   anims = {}
   members.each do |a|
     anims[a.id] = battle_pose_set(name: 'Fighter',
-                                  poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) })
+                                  poses: poses || { 0 => battle_pose(battler_name: 'Party', battler_index: 0) })
   end
   party = BattleStubParty.new(members.first, alternate_layout: true,
                               automatic_placement: placement == 1, actors: members)
@@ -11266,6 +11266,65 @@ check 'the Row command moves an automatic-placement actor sprite by row_x_offset
   sprites = placement_sprites(scene)
   eq [280, 88], [sprites[0].x, sprites[0].y],
      'the sprite followed the row change: same grid slot, row_x_offset now 0 instead of 24'
+end
+
+check 'a defending actor draws the Defend pose, reverting to Idle once the round ends' do
+  # EasyRPG's Sprite_Actor::DoIdleAnimation checks IsDefending() before
+  # anything else -- ported as #build_actor_sprite's `defending:` keyword
+  # (Pose id 7), driven by #reposition_actor_sprite right when Defend
+  # commits and again once Game::Battle#end_round clears the flag.
+  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
+           7 => battle_pose(battler_name: 'Party', battler_index: 3) }
+  scene = placement_battle([1, 2], placement: 0, battle_type: 0, poses: poses)
+  ui = battle_ui(scene)
+  # The sprite's src_rect Y is `pose.battler_index * ACTOR_CHARSET_CELL`
+  # (the sheet row the pose itself names, `poses` above) -- not the pose id
+  # (7 for Defend) directly.
+  idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  defend_y = 3 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+
+  sprites = placement_sprites(scene)
+  eq [idle_y, idle_y], [sprites[0].src_rect.y, sprites[1].src_rect.y], 'both start on the Idle pose'
+
+  2.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend
+  press_key(scene, RGSS::Input::C)                # member 0 defends
+  sprites = placement_sprites(scene)
+  eq defend_y, sprites[0].src_rect.y, "member 0's sprite swaps to Defend the instant it commits"
+  eq idle_y, sprites[1].src_rect.y, "member 1 hasn't acted yet, still Idle"
+
+  # #finish_round_animation itself (not the many real frames a full round of
+  # message banners and enemy turns takes to animate out) is what reverts
+  # the sprite -- called directly, the same way other checks drive a scene's
+  # private step methods rather than re-proving the whole round machine's
+  # own timing here.
+  ui[:allies][1].defending = true # member 1 defends too, without driving its own menu
+  scene.instance_variable_get(:@battle).send(:finish_round_animation)
+  sprites = placement_sprites(scene)
+  eq [idle_y, idle_y], [sprites[0].src_rect.y, sprites[1].src_rect.y],
+     "both revert to Idle once the round ends and Game::Battle#end_round clears defending"
+end
+
+check 'a gauge battle: Defend swaps the sprite too, via the RPG2k3 scene\'s own #finish_round_animation' do
+  # `RPG2k3::Scene::Battle#finish_round_animation` fully overrides the base
+  # (calling `super` only when `!gauge_battle?`) and calls `Game::Battle
+  # #end_round` itself -- needs the identical defenders-snapshot fix, not
+  # just the base class.
+  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
+           7 => battle_pose(battler_name: 'Party', battler_index: 3) }
+  scene = placement_battle([1], battle_type: 2, poses: poses)
+  ui = battle_ui(scene)
+  idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  defend_y = 3 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+
+  eq idle_y, placement_sprites(scene)[0].src_rect.y
+
+  2.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend
+  press_key(scene, RGSS::Input::C)
+  eq defend_y, placement_sprites(scene)[0].src_rect.y, 'Defend swaps the pose in a gauge fight too'
+
+  scene.instance_variable_get(:@battle).send(:finish_round_animation)
+  eq idle_y, placement_sprites(scene)[0].src_rect.y,
+     "the RPG2k3 scene's own override reverts it once the gauge turn ends"
 end
 
 # yado.tk / 01_shoshin's 011_siyou: "Empty party doesn't itself Game Over, but
