@@ -272,21 +272,35 @@ class RPG2k
       # placeholder text at all), and an occupied one shows neither gold nor
       # the current map, and HP with no `/max`, unlike this screen's own
       # previous single-list-window layout.
+      #
+      # Every line renders through `#draw_system_text` (the windowskin
+      # system-colour swatch blend, with RPG_RT's own one-pixel shadow) now,
+      # not a flat `draw_text` -- EasyRPG's `Window_SaveFile::Refresh`
+      # (`src/window_savefile.cpp`) draws every text element in the box
+      # through `TextDraw(x, y, fc, text)`, never a raw colour, with `fc`
+      # itself `has_save ? Font::ColorDefault : Font::ColorDisabled` (system
+      # colour index 0 or 3, `src/font.h`) for the file label specifically --
+      # the same disabled-swatch convention `Scene::Title`'s own Continue
+      # entry already reads (see docs/TODO.md). This screen used to draw
+      # every line flat white regardless of a windowskin's own palette *or*
+      # whether the slot was empty, so an empty slot's "File N" label never
+      # read as dimmed/disabled the way a genuine RPG_RT save screen's does,
+      # and an occupied slot's name/level/HP never took the windowskin's
+      # shading at all.
       def draw_slot_box(win, inner_w, slot_index)
         label = slot_label(slot_index)
         c = Bitmap.new(inner_w, LINE_H * SLOT_LINES)
-        c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, LINE_H, label
         state = @slots[slot_index]
+        draw_system_text c, 0, 0, inner_w, LINE_H, label, @skin, state ? 0 : 3
         if state
           leader = state.party.leader
           name = leader ? leader.name.to_s : ''
           level = leader ? leader.level : 0
           hp = leader ? leader.hp : 0
-          c.draw_text 0, LINE_H, inner_w, LINE_H, name
-          c.draw_text 0, LINE_H * 2, inner_w, LINE_H,
-                      "#{term(:level_short, 'Lv')}#{level}    " \
-                      "#{term(:hp_short, 'HP')}#{hp}"
+          draw_system_text c, 0, LINE_H, inner_w, LINE_H, name, @skin
+          draw_system_text c, 0, LINE_H * 2, inner_w, LINE_H,
+                            "#{term(:level_short, 'Lv')}#{level}    " \
+                            "#{term(:hp_short, 'HP')}#{hp}", @skin
           draw_slot_faces(c, inner_w, state.party.actors)
         end
         win.contents = c
