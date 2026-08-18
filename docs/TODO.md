@@ -7553,6 +7553,32 @@ not yet verified:
   transforming a 950-HP/40-SP monster into a 100-max-HP/10-max-SP form and
   asserting both current values survive exactly, confirmed to fail against
   the pre-fix code (`expected 950, got 100`) before the fix.
+  ✅ **The same Transform action was also missing RPG_RT's own visual cue
+  for it — a near-white flash the instant the sprite swaps to the new form
+  (2026-08-18).** The bullet above already quotes `Game_BattleAlgorithm::
+  Transform::ApplyCustomEffect` (`src/game_battlealgorithm.cpp`) for its
+  HP/SP-clamp behaviour, but that citation stopped one line short: the real
+  function is `enemy->Transform(new_monster_id); enemy->Flash(31,31,31,31,
+  20);` — confirmed against EasyRPG's actual C++ source, fetched live —
+  and `Game_Battler::Flash` (`src/game_battler.cpp`) just stores those five
+  numbers verbatim (`flash.red`/`green`/`blue`/`current_level`/`time_left`)
+  for the renderer to fade out over the next 20 frames. `Scene::Battle
+  #rebuild_battler_sprite` (`mruby-rpg2k/mrblib/scene/battle.rb`) — the only
+  place a transformed combatant's sprite is ever rebuilt, called from
+  `#refresh_battle_sprites` precisely when `battler_name`/`hue` change,
+  which its own comment already documents as "this method's only signal
+  that a Transform ran" — swapped in the new graphic with no flash at all,
+  so every Transform played as a silent instant cut instead of RPG_RT's
+  recognisable flash-of-light. Fixed by calling the native RGSS `Sprite
+  #flash` primitive (already ported and used for Battle Animation target
+  flashes, `#fire_target_flash` a little further down the same file) right
+  after building the new sprite, with `Color.new(31 * 8, 31 * 8, 31 * 8,
+  31 * 8)` for 20 frames — the same 0..31-to-0..255 scale
+  `Interpreter::FLASH_SCALE`/`#fire_target_flash` already apply elsewhere.
+  Covered by extending the existing "a transformed monster is redrawn"
+  `scripts/rpg2k_scene_check.rb` check with an assertion on the rebuilt
+  sprite's own `flash_color`, confirmed to fail against the pre-fix code
+  (no flash armed at all) before the fix.
 - ✅ **A KO'd party member no longer earns EXP from a battle victory.**
   Confirmed against EasyRPG's actual C++ source: `Scene_Battle_Rpg2k
   ::ProcessSceneActionVictory` (`src/scene_battle_rpg2k.cpp`) grants the

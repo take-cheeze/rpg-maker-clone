@@ -18299,6 +18299,18 @@ check 'a transformed monster is redrawn with its new battler graphic' do
   ok !ui[:enemy_sprites][0].equal?(before), 'its sprite is rebuilt'
   eq 'Dragon', ui[:sprite_names][0], 'and tracked against the new battler'
   ok ui[:enemy_sprites][0].visible, 'still on the field'
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_BattleAlgorithm::Transform::ApplyCustomEffect`
+  # (src/game_battlealgorithm.cpp) calls `enemy->Flash(31,31,31,31,20)`
+  # unconditionally right after the swap -- the near-white "flash of
+  # light" every RPG_RT transformation shows, on the 0..31 raw scale this
+  # codebase already multiplies by 8 elsewhere (Interpreter::FLASH_SCALE).
+  new_spr = ui[:enemy_sprites][0]
+  ok new_spr.flash_color, 'the transform flashes the new sprite'
+  eq [248, 248, 248, 248],
+     [new_spr.flash_color.red, new_spr.flash_color.green,
+      new_spr.flash_color.blue, new_spr.flash_color.alpha],
+     'near-white, matching Flash(31,31,31,31,...) scaled by 8'
   # A second refresh with nothing changed must not churn the sprite again.
   same = ui[:enemy_sprites][0]
   scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
