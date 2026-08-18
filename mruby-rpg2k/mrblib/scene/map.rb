@@ -2799,9 +2799,13 @@ class RPG2k
         @erased_events[ev[:id]] = true
         tile = [ev[:char].x, ev[:char].y]
         deindex_event_tile(ev, tile[0], tile[1])
-        # Frozen at the tile it occupied right before erasure -- an erased
-        # event cannot move any further, and #event_id_at still needs it (see
-        # there) even though it no longer blocks or draws.
+        # Starts frozen at the tile it occupied right before erasure --
+        # #event_id_at still needs it (see there) even though the event no
+        # longer blocks or draws. Not immutable, though: Change Event
+        # Location / Trade Event Locations can still reposition an erased
+        # event's single backing object (see #set_char_location), and keep
+        # this table in sync when they do, the same way ordinary movement
+        # keeps @event_last_position current for a merely-hidden one.
         @erased_event_positions[ev[:id]] = tile
         @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
       end
@@ -3494,7 +3498,17 @@ class RPG2k
       end
 
       # The current tile of a target character (the same target ids as Move
-      # Event), or nil for the player-less vehicle slots / a missing event.
+      # Event), or nil for the player-less vehicle slots / a wholly unknown
+      # event id. A hidden (page condition unmet) or temporarily-erased map
+      # event still answers here, from @event_last_position -- the same
+      # fallback #event_position already uses, for the identical reason (see
+      # its own comment): `Game_Interpreter::GetCharacter` ->
+      # `Game_Character::GetCharacter` -> `Game_Map::GetEvent`
+      # (src/game_character.cpp / src/game_map.cpp) is an unconditional
+      # lookup by id with no active-state filter, so Change Event Location /
+      # Trade Event Locations (both routed through here) genuinely read and
+      # reposition such an event's real, single backing object in RPG_RT --
+      # they are not restricted to only ever touching a currently-visible one.
       def char_location(target, this_event)
         case target
         when MOVE_TARGET_PLAYER
@@ -3506,7 +3520,12 @@ class RPG2k
           [v.x, v.y]
         else
           ev = @events.find { |e| e[:id] == target }
-          ev ? [ev[:char].x, ev[:char].y] : nil
+          if ev
+            [ev[:char].x, ev[:char].y]
+          else
+            pos = @event_last_position[target]
+            pos && [pos[0], pos[1]]
+          end
         end
       end
 
@@ -3516,6 +3535,17 @@ class RPG2k
       # alone, matching Teleport's own "0 means keep it" convention. Trade
       # Event Locations carries no facing at all, so it always calls this
       # with `dir` left at its default).
+      #
+      # A hidden or temporarily-erased map event target (no live
+      # Game::Character to move) is repositioned in @event_last_position
+      # instead -- the same table #char_location's own identical fallback
+      # reads -- so a later page refresh that reactivates it, or a Show
+      # Hidden Monster-style un-erase this codebase might add, resumes at
+      # wherever the command actually sent it rather than a stale pre-move
+      # tile. An erased target's frozen @erased_event_positions entry (what
+      # #event_id_at reads for it -- see #erase_event) is updated the same
+      # way, so a tile-occupancy query at the *old* location stops answering
+      # for it and the *new* one starts.
       def set_char_location(target, this_event, x, y, dir = nil)
         case target
         when MOVE_TARGET_PLAYER
@@ -3535,6 +3565,10 @@ class RPG2k
           if ev
             move_event_to(ev, x, y)
             ev[:char].face!(dir) if dir && dir > 0
+          elsif @event_last_position[target]
+            prior_dir = @event_last_position[target][2]
+            @event_last_position[target] = [x, y, (dir && dir > 0) ? dir : prior_dir]
+            @erased_event_positions[target] = [x, y] if @erased_events[target]
           end
         end
       end

@@ -3363,6 +3363,73 @@ check 'Trade Event Locations swaps two events' do
   eq [2, 2], [b.x, b.y], 'event 2 took event 1 old tile'
 end
 
+# Change Event Location / Trade Event Locations are #event_position's write-
+# side siblings, both routed through #char_location/#set_char_location, and
+# had the identical gap: only @events (the live/active-page list) was
+# searched, so targeting a hidden (page condition unmet) or temporarily-
+# erased event silently did nothing at all -- worse for Trade Event
+# Locations, whose #apply_location_request aborts the *entire* swap
+# (`return unless a && b`) the moment either side resolves to nil, so even
+# the live participant failed to move. Verified against EasyRPG Player's
+# actual C++ source: CommandChangeEventLocation and
+# CommandTradeEventLocations (src/game_interpreter.cpp) both resolve their
+# target(s) through the same unconditional-by-id Game_Interpreter::
+# GetCharacter -> Game_Character::GetCharacter -> Game_Map::GetEvent chain
+# #event_position's own fix already relies on, so RPG_RT genuinely
+# repositions such an event's single, persistent backing object. Fixed by
+# giving #char_location/#set_char_location the same @event_last_position
+# fallback #event_id_at/#event_position already use, keeping
+# @erased_event_positions in sync too for an erased target so #event_id_at
+# answers correctly at the new tile afterward.
+check 'Change Event Location repositions a hidden event, not just a live one' do
+  ic = Game::Interpreter::Cmd
+  hidden = page(trigger: 0)
+  hidden.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
+  auto = page(trigger: 3) # auto-start: move hidden event 2 to (6, 6)
+  auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [2, 0, 6, 6])]
+  scene = new_scene({ 1 => event(0, 4, auto), 2 => event(2, 2, hidden) },
+                    player: [5, 5])
+  5.times { scene.update }
+  ok event_hashes(scene)[2].nil?, 'event 2 has no active page, so it is not on the map'
+  eq 2, scene.event_id_at(6, 6), 'it was still repositioned, to its new tile'
+  eq 0, scene.event_id_at(2, 2), 'and no longer answers at its old tile'
+  pos = scene.event_position(2)
+  eq [6, 6], [pos[:x], pos[:y]], 'and #event_position agrees'
+end
+
+check 'Trade Event Locations swaps a live event with a hidden one' do
+  ic = Game::Interpreter::Cmd
+  hidden = page(trigger: 0)
+  hidden.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
+  auto = page(trigger: 3) # auto-start: swap this event (1) with hidden event 2
+  auto.event_commands = [ECmd.new(ic::TRADE_EVENT_LOCATIONS, [10005, 2])]
+  scene = new_scene({ 1 => event(2, 2, auto), 2 => event(6, 6, hidden) },
+                    player: [5, 5])
+  5.times { scene.update }
+  a = chars(scene)[1]
+  eq [6, 6], [a.x, a.y], "the live event took the hidden event's old tile " \
+                         '(pre-fix, the whole swap silently aborted)'
+  ok event_hashes(scene)[2].nil?, 'event 2 is still hidden'
+  eq 2, scene.event_id_at(2, 2), "and now answers at event 1's old tile instead"
+  eq 1, scene.event_id_at(6, 6),
+     "its own old tile now answers for the live event that moved onto it"
+end
+
+check 'Change Event Location repositions an already-erased event too' do
+  ic = Game::Interpreter::Cmd
+  erasing = page(trigger: 3)
+  erasing.event_commands = [
+    ECmd.new(ic::ERASE_EVENT, []),
+    ECmd.new(ic::WAIT, [0]), # let Erase Event actually apply before moving on
+    ECmd.new(ic::CHANGE_EVENT_LOCATION, [1, 0, 7, 7]),
+  ]
+  scene = new_scene({ 1 => event(2, 1, erasing) }, player: [5, 5])
+  10.times { scene.update }
+  ok event_hashes(scene)[1].nil?, 'the event is erased'
+  eq 1, scene.event_id_at(7, 7), 'it was still repositioned after erasure, to its new tile'
+  eq 0, scene.event_id_at(2, 1), 'and no longer answers at the tile it was erased on'
+end
+
 check 'Change Map Tileset rebuilds the map chipset from the new id' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
