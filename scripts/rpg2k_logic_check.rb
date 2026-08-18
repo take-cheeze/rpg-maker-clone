@@ -12031,6 +12031,59 @@ check "battle: a skill's status-shake roll is gated behind the same hit as its d
   ok foe.state?(8), 'a missed skill never rolls the shake-off either'
 end
 
+# The three checks above prove #apply_skill_hit's own physical_rate handling
+# against a hand-built cmd hash -- which is exactly how the real bug hid:
+# #command_skill/#command_skill_all (the only two ways a queued skill's
+# command hash is ever built for #apply_command to read) had no
+# physical_rate: keyword at all until now, so it silently read 0 off every
+# real cast regardless of the skill's own physical_rate, no matter which
+# path queued it. These drive the real builders instead.
+check '#command_skill carries physical_rate through to a real queued cast' do
+  states = { 8 => fake_state(release_by_attack: 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  bat.command_skill(hero, foe, name: 'Slash', cost: 0, hp: -20, chance: 100,
+                    attack: true, physical_rate: 100)
+  eq 100, hero.command[:physical_rate], 'the field survives from the keyword into the queued command hash'
+  bat.send(:apply_command, hero)
+  ok !foe.state?(8), 'the real #command_skill-queued cast now rolls the shake-off, not just a hand-built cmd hash'
+end
+
+check '#command_skill_all carries physical_rate through to a real queued group cast' do
+  states = { 8 => fake_state(release_by_attack: 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  bat.command_skill_all(hero, [{ target: foe, hp: -20, mp: 0 }], name: 'Slash', cost: 0,
+                        chance: 100, attack: true, physical_rate: 100)
+  eq 100, hero.command[:physical_rate]
+  bat.send(:apply_command, hero)
+  ok !foe.state?(8), 'the all-target builder rolls the shake-off too, matching the single-target one'
+end
+
+# #skill_command_hash is the single-target-only wrap #enemy_skill_action (a
+# monster's own skill) and #queue_single_auto_battle_skill (an ally's
+# auto-battle skill) both build a queued command from directly, bypassing
+# #command_skill entirely -- it silently dropped attr_shift/attr_ids/
+# stat_mod_keys/stat_effect/physical_rate outright, the same class of bug,
+# on two more paths #command_skill's own fix does not reach.
+check '#skill_command_hash carries every AI-computed effect field through, not just hp/mp/inflict' do
+  bat = Game::Battle.new([], [], Game::Rng.new(1))
+  raw = { hp: -20, mp: 0, attack: true, chance: 90, variance: 5, attributes: [3],
+         absorb: true, cured: [2], attr_shift: -1, attr_ids: [4], stat_mod_keys: [:atk],
+         stat_effect: 20, physical_rate: 100 }
+  sk = fake_skill(name: 'Slash')
+  h = bat.send(:skill_command_hash, sk, raw, nil)
+  eq(-1, h[:attr_shift])
+  eq [4], h[:attr_ids]
+  eq [:atk], h[:stat_mod_keys]
+  eq 20, h[:stat_effect]
+  eq 100, h[:physical_rate]
+end
+
 check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
   # Sleep inflicts state 4; the state table marks 4 as restriction 1 (do nothing).
   skills = { 7 => fake_skill(name: 'Sleep', scope: 0, sp_cost: 3, power: 1,
