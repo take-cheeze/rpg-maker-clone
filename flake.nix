@@ -133,11 +133,11 @@
           # Linux-only, matching the package's own meta.platforms: forcing this
           # attribute on darwin (e.g. `nix flake show`) would otherwise throw.
           #
-          # Carries three local patches on top of nixpkgs' build, all found
+          # Carries several local patches on top of nixpkgs' build, all found
           # and root-caused while trying to read the PSP EBOOT's own boot log
           # under PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md and
           # app/psp/README.md); none are upstreamed to hrydgard/ppsspp yet,
-          # so all three are applied here so this flake's own `ppsspp`/
+          # so all of them are applied here so this flake's own `ppsspp`/
           # `ppsspp-headless` survive past them. nix/patches/ has the full
           # patches and each one's own note on when it is safe to drop.
           #
@@ -160,12 +160,25 @@
           #     counterparts -- so a bad access from an ordinary byte
           #     store/load hard-stops emulation instead of being skipped like
           #     every other access width already is.
+          #   - Four SysclibForKernel imports (strtoul/strncat/memchr/
+          #     tolower) this EBOOT pulls in have no HLE handler at all,
+          #     silently no-opping and leaving register garbage instead of
+          #     doing the real operation.
+          #   - sysclib_memset/sysclib_memmove (also SysclibForKernel) return
+          #     0 instead of their destination pointer, unlike every sibling
+          #     pointer-returning function in the same file (sysclib_memcpy,
+          #     sysclib_strcat, ...) -- breaking any caller relying on real
+          #     memset()/memmove()'s C-standard return value, including GCC's
+          #     own "memset(p, ...); return p;" idiom optimization, which
+          #     silently becomes "return memset(...)" and returns PPSSPP's
+          #     wrong 0 instead of the real pointer.
           ppsspp = pkgs.ppsspp.overrideAttrs (old: {
             patches = (old.patches or [ ]) ++ [
               ./nix/patches/ppsspp-lwmutex-workarea-validate.patch
               ./nix/patches/ppsspp-mfic-mtic-interrupt-mask.patch
               ./nix/patches/ppsspp-x64analyzer-8bit-mov.patch
               ./nix/patches/ppsspp-sysclibforkernel-missing-functions.patch
+              ./nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch
             ];
           });
         }
