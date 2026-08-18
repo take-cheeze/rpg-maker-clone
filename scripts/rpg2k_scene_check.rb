@@ -6416,6 +6416,36 @@ check 'Enemy Encounter scene: selecting Escape from the options window runs Esca
   ok st.switches[2], 'the Escape handler ran'
 end
 
+# EasyRPG's Scene_Battle::TryEscape checks its own `first_strike` flag first,
+# before ever touching `escape_chance` -- so a first-strike encounter's
+# opening Escape always succeeds, even against enemies fast enough to floor
+# the roll at 0%. Scene::Battle#try_battle_escape used to call
+# Game::Battle#attempt_escape with no argument at all (defaulting `preemptive`
+# to false), so it silently fell back to the ordinary roll regardless of
+# first_strike, and a 0%-chance escape here could never succeed.
+check 'Enemy Encounter scene: a first-strike encounter always escapes on the ' \
+      'opening Escape, even against enemies fast enough to floor the roll at 0%' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, escape_mode: 2, first_strike: true)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  # Both Slimes are agi 5 (fake_db); a far slower hero floors escape_chance
+  # at 0, so only the first-strike guarantee -- never the roll -- can succeed.
+  st.instance_variable_set(:@party, BattleStubParty.new(BattleStubActor.new(agi: 1)))
+  ui = battle_until_phase(scene, :battle_options)
+  ok ui, 'the options window opened'
+
+  2.times { RGSS::Input.triggered = [RGSS::Input::DOWN]; scene.update } # Fight -> Auto Battle -> Escape
+  RGSS::Input.triggered = []
+  eq 2, ui[:opt], 'the cursor landed on Escape'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm Escape
+  scene.update
+  RGSS::Input.triggered = []
+  eq :result, ui[:phase], 'the escape attempt resolved immediately, no failure banner'
+  eq :escape, ui[:result], 'and it succeeded -- the ambush round guarantees it'
+end
+
 check 'Enemy Encounter scene: selecting Auto Battle queues the AI pick for every ' \
       'commandable living ally and starts the round without further input' do
   ic = Game::Interpreter::Cmd

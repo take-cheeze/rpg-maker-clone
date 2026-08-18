@@ -1353,10 +1353,16 @@ class RPG2k
       # flee once it is dismissed; on a failed roll the party forfeits the
       # round — every member skips and only the enemies act, bannered with
       # `escape_failure` the same way a landed hit is — and the next attempt is
-      # likelier (Game::Battle#attempt_escape).
+      # likelier (Game::Battle#attempt_escape). Still within the opening
+      # first-strike ambush round (`#first_strike?`), the attempt is
+      # unconditionally handed a `preemptive` escape instead of a roll --
+      # EasyRPG's `Scene_Battle::TryEscape` (`src/scene_battle.cpp`) checks its
+      # own `first_strike` flag first, before ever touching `escape_chance`, so
+      # a first-strike encounter's opening Escape always succeeds even against
+      # enemies fast enough to floor the roll at 0%.
       def try_battle_escape
         battle = @ui[:battle]
-        if battle.attempt_escape
+        if battle.attempt_escape(battle.first_strike?)
           # A dedicated Escape SE, not Decision -- confirmed against
           # EasyRPG's own ProcessSceneActionEscape: the success branch plays
           # `GetSystemSE(SFX_Escape)` right before ending the battle. A

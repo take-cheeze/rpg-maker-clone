@@ -1385,7 +1385,40 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_logic_check.rb` checks (a fallen ally still pulling the
   average down; the 143-vs-142 rounding case; a state applied after
   construction not moving an already-read `escape_chance`), confirmed to
-  fail against the pre-fix code before the fix. Basic
+  fail against the pre-fix code before the fix.
+  ✅ **The preemptive first-strike guarantee this same formula summary
+  claims was never actually reachable — `Scene::Battle`'s own Escape
+  command always rolled the ordinary chance, first strike or not
+  (2026-08-18).** `Game::Battle#attempt_escape` correctly implements
+  `preemptive` (see the summary above), and even has its own passing
+  `scripts/rpg2k_logic_check.rb` coverage — but `Scene::Battle
+  #try_battle_escape` (`mruby-rpg2k/mrblib/scene/battle.rb`) called it with
+  **no argument at all**, so `preemptive` defaulted to `false` on every
+  real Escape a player could ever press. `Game::Battle` did not even expose
+  the `@first_strike` flag it was already storing (threaded in from the
+  Enemy Encounter event command's own field, `mruby-rpg2k/mrblib/scene/
+  battle.rb`'s `@req[:first_strike]`) for the scene to read at all. Confirmed
+  against EasyRPG Player's actual source: `Scene_Battle::TryEscape`
+  (`src/scene_battle.cpp`) checks its own `first_strike` member *before* ever
+  touching `escape_chance` — `if (first_strike || ...IsForceFleeEnabled() ||
+  Rand::PercentChance(escape_chance)) return true;` — and that member stays
+  `true` for the whole of the ambush round, cleared only once, right before
+  round 2's own command phase opens (`Scene_Battle_Rpg2k::
+  ProcessSceneActionOption`'s `ePost` substate, `src/scene_battle_rpg2k.cpp`).
+  So a first-strike encounter's opening Escape is unconditionally guaranteed
+  in the real engine — which this codebase's own model layer already knew
+  how to do, it was simply never told to. Fixed with a new `Game::Battle
+  #first_strike?` (`@first_strike && @rounds.zero?` — `@rounds` starts at 0
+  and `#begin_round` only bumps it once every actor already has a command
+  for round 1, including a possible Escape, so it is still 0 for that whole
+  opening command phase and 1-or-higher for every round after, the same
+  window EasyRPG's own flag covers), and `#try_battle_escape` now calls
+  `battle.attempt_escape(battle.first_strike?)`. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (`#first_strike?`'s true/false
+  transitions) and a new `scripts/rpg2k_scene_check.rb` check (a first-strike
+  encounter's Escape succeeds against enemies fast enough to floor the roll
+  at 0%, driven through the real options-window UI), both confirmed to fail
+  against the pre-fix code before the fix. Basic
   attacks can also **miss**: `Battle#to_hit` takes the attacker's base hit rate
   (weapon / unarmed 90, a "miss"-flagged enemy 70) and applies EasyRPG's
   agility-ratio adjustment (`100 - (100 - base)*(srcAgi + tgtAgi)/(2*srcAgi)`),
