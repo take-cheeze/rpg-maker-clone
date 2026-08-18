@@ -13016,6 +13016,51 @@ above are repeated here)
   catches up — confirmed the faster ally still leads `#ready_combatants`
   once both are tied at `GAUGE_MAX`, and confirmed to fail against the
   pre-fix code (`[SeatSlow, SeatFast]`, plain seat order) before the fix.
+  ✅ **A living-but-afflicted party member's own alternate-battle-layout
+  sprite (RPG2003's per-actor battler graphic, `db.battleranimations`) now
+  shows that state's own configured pose, not always plain Idle
+  (2026-08-18).** `Scene::Battle#build_actor_sprite` only ever picked
+  between Idle, Defend and Dead — the code's own comments already flagged
+  this exact gap, citing the same reference this session independently
+  re-fetched and confirmed: `Sprite_Actor::DoIdleAnimation` (`src/
+  sprite_actor.cpp`) checks `IsDefending()` first, unconditionally, but its
+  *remaining* branch for a living party member (one with a real
+  `battler_animation_id`, i.e. not a monster) is `idling_anim = state ?
+  state->battler_animation_id + 1 : AnimationState_Idle` — RPG_RT reads the
+  battler's own *significant active state* (`GetSignificantState`, already
+  the exact function `Game::States.significant` ports) and shows *that
+  state's own configured pose*, falling back to a generic "bad status" pose
+  when the state names none of its own (`if (idling_anim == 101) idling_anim
+  = 7;` — `AnimationState_BadStatus`). Death is not special-cased here at
+  all for an actor: it reaches the identical state-driven branch (a real
+  database's Death row conventionally already points its own
+  `battler_animation_id` at the Dead pose), it is only the *monster* branch
+  (no pose table to consult) that hardcodes Death straight to
+  `AnimationState_Dead`. So Poison, Sleep, Confusion, Blindness or any other
+  active status this codebase's own `dead:`/`defending:` special-casing
+  never covered left a living, afflicted party member's on-screen battler
+  sprite indistinguishable from a perfectly healthy one. Fixed with a new
+  `Game::States.animation_pose(id, table)` (`mruby-rpg2k/mrblib/game.rb`),
+  reading a state row's own `battler_animation_id` field (liblcf schema
+  field 39 on the `situation` chunk, whose own default — `6` — is already
+  this codebase's 0-based pose-array equivalent of the C++ side's raw
+  pre-translation sentinel `100`, so no further `+1`/`101→7` arithmetic is
+  needed on this side), and a new `ACTOR_BAD_STATUS_POSE` (6, the same
+  Null-head-subtracted shift the existing Idle/Dead/Defend constants
+  already use) fallback constant. `#build_actor_sprite` gained a `states:`
+  keyword (the *battle* `Combatant`'s own live states, not the field-side
+  `Actor#states` this class never carries a battle ailment onto) threaded
+  through from all three call sites — `#build_actor_sprites` (initial
+  build), `#add_battle_actor_sprite` (a mid-battle rejoin), and
+  `#reposition_actor_sprite` (a round-end refresh) — consulted only once
+  neither `defending:` nor `dead:` already picked a pose, matching the
+  reference's own check order exactly. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (a party member entering the fight
+  already carrying a state whose own `battler_animation_id` names a real
+  pose draws that pose, not Idle; a state naming none of its own falls back
+  to the generic bad-status pose, still not Idle), both confirmed to fail
+  against the pre-fix code (both drew the Idle pose regardless) before the
+  fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

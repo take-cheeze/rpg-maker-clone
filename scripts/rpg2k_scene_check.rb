@@ -10551,6 +10551,63 @@ check "Enemy Encounter scene: a party member already KO'd going into the fight d
      'the living member still gets the Idle pose'
 end
 
+# Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
+# source: `Sprite_Actor::DoIdleAnimation` (src/sprite_actor.cpp) does not
+# stop at Defend/Dead -- once neither applies, it reads the battler's
+# significant active state (`GetSignificantState`) and shows *that state's
+# own* configured pose (`state->battler_animation_id`), not plain Idle.
+# `#build_actor_sprite` used to have no branch for this at all, so a living
+# but afflicted party member (Poison, Sleep, Confusion, ...) always drew
+# identically to a perfectly healthy one.
+check "Enemy Encounter scene: a living party member carrying a non-death " \
+      "state draws that state's own pose, not Idle" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  anims = { 5 => battle_pose_set(poses: {
+    0 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
+    3 => battle_pose(battler_name: 'Hero', battler_index: 9)  # Poison's own pose
+  }) }
+  scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
+  scene.db.situation[3].battler_animation_id = 3 # Poison (priority 30) -> pose id 3
+  st = scene.instance_variable_get(:@state)
+  poisoned = BattleStubActor.new(id: 1, battler_animation_id: 5, states: [3])
+  st.instance_variable_set(:@party, BattleStubParty.new(poisoned, alternate_layout: true))
+  ui = battle_to_command(scene)
+
+  sprites = ui[:actor_sprites]
+  ok sprites, 'built when the layout is alternative/gauge'
+  cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  eq RGSS::Rect.new(0, 9 * cell, cell, cell), sprites[0].src_rect,
+     "the poisoned member's sprite uses Poison's own configured pose " \
+     '(battler_index 9), not the Idle pose'
+end
+
+check 'Enemy Encounter scene: a state naming no pose of its own falls back ' \
+      "to the generic 'bad status' pose, not Idle" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  anims = { 5 => battle_pose_set(poses: {
+    0 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
+    6 => battle_pose(battler_name: 'Hero', battler_index: 9)  # generic "bad status" pose
+  }) }
+  scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
+  # Poison's own battler_animation_id is left unset in the fixture, matching
+  # a state the author never gave an explicit pose of its own --
+  # Game::States::DEFAULT_ANIMATION_POSE (6) is the fallback.
+  st = scene.instance_variable_get(:@state)
+  poisoned = BattleStubActor.new(id: 1, battler_animation_id: 5, states: [3])
+  st.instance_variable_set(:@party, BattleStubParty.new(poisoned, alternate_layout: true))
+  ui = battle_to_command(scene)
+
+  sprites = ui[:actor_sprites]
+  ok sprites, 'built when the layout is alternative/gauge'
+  cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  eq RGSS::Rect.new(0, 9 * cell, cell, cell), sprites[0].src_rect,
+     'falls back to the generic bad-status pose (battler_index 9), not Idle'
+end
+
 check 'Enemy Encounter scene: the traditional (RPG2000) layout draws no actor sprites' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

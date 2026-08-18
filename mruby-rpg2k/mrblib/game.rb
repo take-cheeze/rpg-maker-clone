@@ -8188,6 +8188,28 @@ module Game
       c.nil? ? DEFAULT_COLOR : c
     end
 
+    # RPG2003's per-state battle-sprite pose: which pose (0-indexed, the same
+    # scheme `Scene::Battle::ACTOR_*_POSE` constants use) a `db.battleranimations`
+    # entry should show while this state is the significant one on a living
+    # party member. Verified against RPG_RT's actual behavior via EasyRPG
+    # Player's own C++ source: `Sprite_Actor::DoIdleAnimation`
+    # (`src/sprite_actor.cpp`) reads `state->battler_animation_id` directly as
+    # the pose to show (its own `+1`/`101->7` dance is that function
+    # translating into the *runtime* `AnimationState` enum, which carries an
+    # extra `Null` head element ahead of `Idle` that this schema's own 0-based
+    # `battler_animation_id` field never had to begin with -- liblcf's own
+    # schema default for this field, field 39 on the `situation` chunk, is
+    # already `6`, this codebase's own `ACTOR_BAD_STATUS_POSE` index, not the
+    # C++ side's raw pre-translation sentinel `100`). DEFAULT_ANIMATION_POSE
+    # is that same fallback for a fixture/older-save row that omits the field
+    # outright.
+    DEFAULT_ANIMATION_POSE = 6
+    def self.animation_pose(id, table)
+      r = row(id, table)
+      p = r && r.respond_to?(:battler_animation_id) ? r.battler_animation_id : nil
+      p.nil? ? DEFAULT_ANIMATION_POSE : p
+    end
+
     # RPG_RT's sentence for a state landing on `battler_name`. The database
     # stores the *predicate* only ("は毒にかかった！"), which RPG2000 prints
     # straight after the battler's name — EasyRPG's GetStateMessage, whose
