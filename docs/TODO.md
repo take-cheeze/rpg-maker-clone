@@ -1561,6 +1561,29 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmed to fail against the pre-fix code before the fix. The other
   System BGM slots (battle / victory / inn / boat / ship / airship) are
   still save-fidelity-only, per the note above.
+  ✅ **The Game Over screen dismissed on Cancel as well as Decision — real
+  RPG_RT only accepts Decision (2026-08-18).**
+  `Scene::GameOver#update` (`mruby-rpg2k/mrblib/scene/game_over.rb`)
+  returned to the title on `Input.trigger?(Input::C) ||
+  Input.trigger?(Input::B)`, the same "either button" idiom this codebase's
+  message/choice/menu windows correctly use — but the Game Over screen is
+  not one of those. Verified against EasyRPG Player's actual C++ source
+  (fetched live rather than paraphrased): `Scene_Gameover::vUpdate`
+  (`src/scene_gameover.cpp`) is `if (Input::IsTriggered(Input::DECISION))
+  { Scene::ReturnToTitleScene(); }` — the entire file contains no reference
+  to `Input::CANCEL` anywhere. Pressing Cancel on the real screen does
+  nothing at all; only Decision returns to the title. Fixed by dropping the
+  `Input::B` half of the dismiss check (the pre-arming debounce, which
+  watches both keys purely to swallow whatever key was still held from the
+  battle result that led here, was left alone — delaying arming by a frame
+  is harmless, unlike actually dismissing on the wrong key). An existing
+  check ("a game with no game-over picture still reaches the screen") had
+  been asserting the buggy behavior itself, dismissing with `Input::B` —
+  switched to `Input::C` to keep testing what it was meant to test (a
+  missing picture does not block dismissal) rather than the bug. Covered by
+  a new `scripts/rpg2k_scene_check.rb` check confirming Cancel is inert and
+  Decision still works right after, confirmed to fail against the pre-fix
+  code before the fix.
   **The battle backdrop is chosen from the game's own data now** rather than
   always being the flat void. RPG2000 keeps it on the map-tree node, not the map:
   `Game::Backdrop.name_for` reads the node's `backdrop_type`, a tri-state the

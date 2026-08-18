@@ -6879,6 +6879,28 @@ check 'a button still held from the battle does not skip the Game Over screen' d
   Input.reset
 end
 
+# Verified against EasyRPG Player's actual C++ source rather than assumed
+# from this screen's own resemblance to a message/choice/menu window (every
+# one of which does accept Cancel): `Scene_Gameover::vUpdate`
+# (src/scene_gameover.cpp) checks only `Input::IsTriggered(Input::DECISION)`
+# -- there is no reference to `Input::CANCEL` anywhere in the file. Pressing
+# Cancel on the real Game Over screen does nothing at all.
+check 'the Cancel button does not dismiss the Game Over screen -- only Decision does' do
+  parent = fake_parent(fake_db)
+  Input.reset
+  scene = RPG2k::Scene::GameOver.new(parent)
+  scene.update # arm: no key held yet
+  Input.triggered = [Input::B]
+  scene.update
+  ok !parent.returned_to_title, 'Cancel is not a dismiss trigger for this screen'
+  Input.reset
+  scene.update
+  Input.triggered = [Input::C]
+  scene.update
+  ok parent.returned_to_title, 'Decision still dismisses it, right after'
+  Input.reset
+end
+
 check 'a game with no game-over picture still reaches the screen' do
   db = fake_db
   db.system.gameover_name = ''
@@ -6887,7 +6909,7 @@ check 'a game with no game-over picture still reaches the screen' do
   scene = RPG2k::Scene::GameOver.new(parent)
   eq nil, scene.instance_variable_get(:@picture).bitmap, 'nothing to show'
   scene.update
-  Input.triggered = [Input::B]
+  Input.triggered = [Input::C]
   scene.update
   ok parent.returned_to_title, 'and it still dismisses to the title'
   Input.reset
