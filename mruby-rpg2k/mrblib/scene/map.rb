@@ -2207,9 +2207,17 @@ class RPG2k
         false
       end
 
-      # Mark the party aboard `type` and switch to the vehicle's BGM.
+      # Mark the party aboard `type` and switch to the vehicle's BGM. Boarding
+      # the airship also snaps the hero to face left -- verified against
+      # RPG_RT's actual behavior via EasyRPG Player's own C++ source, fetched
+      # live: `Game_Player::GetOnVehicle`'s airship branch (`src/
+      # game_player.cpp`) calls `SetFacing(Left)` unconditionally the instant
+      # boarding begins, with its own comment noting this bypasses Direction
+      # Fix ("RPG_RT ignores the lock_facing flag here!") -- the boat/ship
+      # branch has no equivalent call at all, so this is airship-specific.
       def board_as(type)
         @state.boarded = type
+        @state.direction = 4 if type == :airship
         play_vehicle_bgm(type)
       end
 
@@ -2218,10 +2226,13 @@ class RPG2k
       # party vacates; the airship instead lands in place — RPG_RT tests the
       # terrain directly under it, not the tile ahead, since it has no "shore"
       # to step onto. Either way a no-op when the landing spot is blocked (the
-      # party stays aboard).
+      # party stays aboard). Disembarking the airship also snaps the hero to
+      # face left, mirroring `Game_Player::GetOffVehicle`'s own unconditional
+      # `SetFacing(Left)` right before `StartDescent()` -- see #board_as.
       def disembark_vehicle
         if @state.boarded == :airship
           return unless airship_landable?(@state.x, @state.y)
+          @state.direction = 4
           follow_vehicle # the airship is left where it touched down
           @state.boarded = nil
           restore_pre_vehicle_bgm # the map BGM resumes

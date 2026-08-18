@@ -7964,6 +7964,53 @@ check 'the airship lands in place where the terrain allows it' do
   eq [0, 0], [air.x, air.y], 'the airship stayed where it landed'
 end
 
+check 'boarding and landing the airship snaps the hero to face left, matching RPG_RT ' \
+      '(2026-08-18)' do
+  # Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
+  # source, fetched live: Game_Player::GetOnVehicle's airship branch (src/
+  # game_player.cpp) calls SetFacing(Left) unconditionally the instant
+  # boarding begins ("RPG_RT ignores the lock_facing flag here!"), and
+  # GetOffVehicle's own InAirship branch does the identical SetFacing(Left)
+  # right before StartDescent() -- the boat/ship branches have no equivalent
+  # call at all, so this is airship-specific.
+  scene = new_scene({}, player: [0, 0], airship_land: true)
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # facing down beforehand
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship'
+  eq 4, st.direction, 'boarding snapped the hero to face left'
+
+  st.direction = 8 # face a different direction mid-flight
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'landed'
+  eq 4, st.direction, 'landing snapped the hero to face left too'
+end
+
+check 'boarding a boat/ship does not force any particular facing' do
+  # Control for the airship-specific check above: EasyRPG's boat/ship
+  # boarding branch never calls SetFacing on the player at all.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward the boat
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+  eq 2, st.direction, 'still facing down -- boarding a boat does not touch facing'
+end
+
 check 'boarding the airship doubles the party\'s per-frame slide speed; boat/ship do not' do
   # Confirmed against EasyRPG's actual C++ source: Game_Vehicle's constructor
   # (src/game_vehicle.cpp) gives Boat/Ship `MoveSpeed_normal` -- identical to

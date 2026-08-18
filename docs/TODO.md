@@ -6077,6 +6077,34 @@ Everything below is unverified against the codebase.
   tile would; one parked on a different map reads nil again; a boarded one
   reports the identical screen position the hero riding it does), confirmed
   to fail against the pre-fix code before the fix.
+  ✅ **Boarding or landing the airship now snaps the hero to face left, the
+  same way it already forces the party off the manual command menu — this
+  build never touched the hero's facing at either transition (2026-08-18).**
+  Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
+  source, fetched live: `Game_Player::GetOnVehicle`'s airship branch
+  (`src/game_player.cpp`) calls `SetFacing(Left)` unconditionally the
+  instant boarding begins — its own comment is explicit that this bypasses
+  Direction Fix entirely (`"Note: RPG_RT ignores the lock_facing flag
+  here!"`) — and `GetOffVehicle`'s `InAirship()` branch does the identical
+  `SetFacing(Left)` right before `StartDescent()`. Neither the boat nor the
+  ship branch of either function has any equivalent call at all (boat/ship
+  disembarking instead calls `vehicle->SetDefaultDirection()` on the
+  *vehicle*, not the player), so this is airship-specific. `Scene::Map
+  #board_as`/`#disembark_vehicle` (`mruby-rpg2k/mrblib/scene/map.rb`) never
+  touched `@state.direction` at all: a party walking downward that boarded
+  a placed airship kept facing down through the whole flight and after
+  landing, instead of RPG_RT's real behaviour of snapping to face left the
+  instant boarding starts (and again the instant landing does) regardless
+  of whatever direction the hero was last actually facing or moving.
+  Fixed by setting `@state.direction = 4` (numpad left) in `#board_as` when
+  `type == :airship`, and again in `#disembark_vehicle`'s airship branch once
+  `#airship_landable?` passes — matching `SetFacing(Left)`'s own placement
+  in both EasyRPG functions exactly, and leaving the boat/ship paths
+  completely untouched. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (boarding and then landing the airship both snap a differently-
+  facing hero to face left; the control case confirms boarding a boat never
+  touches facing at all), the airship one confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **Battle Event** — separate command set from Map/Common events
   entirely (`Game::Interpreter`'s battle-only opcodes — `CHANGE_MONSTER_HP`/
   `MP`/`CONDITION`, `SHOW_HIDDEN_MONSTER`, `FORCE_FLEE`, `TERMINATE_BATTLE`,
