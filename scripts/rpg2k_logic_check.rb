@@ -15690,6 +15690,89 @@ check 'battle Conditional Branch actor sub-test 3 (can use battle command) match
   eq 1, st.variables[1], '...yet a confused ally likewise still "can act"'
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Game_Interpreter_Battle::CommandConditionalBranchBattle`
+# (src/game_interpreter_battle.cpp) reads only `com.parameters[1]` for its
+# actor (case 2) and enemy (case 3) branches -- `result = actor->CanAct();`
+# / `result = enemy->CanAct();`. `parameters[2]`/`[3]` are never read at
+# all: the real editor's Actor/Enemy tab offers a single "can act"
+# condition, not a menu, and always writes the same param(2). A prior
+# version of this codebase instead branched on param(2) as if it selected
+# among sub-tests ("is in the party" / "afflicted by a status" / "can use a
+# battle command" for an actor; "is present" / "afflicted by a status" for
+# an enemy) -- and its param(2) == 0 case ("is in the party"/"is present")
+# short-circuited straight to `true` without ever consulting the
+# do-nothing restriction, so an ordinary database author's "if Hero can
+# act..." branch (which always compiles to param(2) == 0, the only value
+# the real editor ever emits) would see a slept/paralysed ally reported
+# able to act.
+check 'battle Conditional Branch "can act" test ignores param(2) entirely and ' \
+      'still catches a do-nothing-restricted battler through it' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing (asleep/paralysed)
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL_B, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)]
+  end
+
+  hero.states = [8]
+  it.start(branch.call([2, 1, 0])) # the editor's only actor condition -- param(2) always 0
+  it.update
+  eq 2, st.variables[1], 'a do-nothing restricted ally fails, matching real CanAct'
+
+  slime.states = [8]
+  it.start(branch.call([3, 0, 0])) # the editor's only enemy condition -- param(2) always 0
+  it.update
+  eq 2, st.variables[1], 'same for a do-nothing restricted enemy'
+end
+
+# `Game::Battle#deal_attack` mutates a Combatant's hp directly (`target.hp
+# -= dmg`) with no matching `#inflict_state(target, DEATH_ID)` call, unlike
+# EasyRPG's own `Game_Battler::ChangeHp` (which folds `AddState(kDeathID)`
+# into every HP-zeroing path) -- so `#dead?`, an explicit HP check, has to
+# be tested alongside the do-nothing-restriction scan in
+# `#battle_actor_condition`/`#battle_enemy_condition` rather than assumed
+# subsumed by it the way it safely is for `Game::Actor` (whose own
+# `#add_state`/`#remove_state` keep `DEATH_STATE` and `@hp` in sync).
+check 'battle Conditional Branch "can act" test also fails a combatant killed by ' \
+      'plain HP loss, not only one carrying an explicit state' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL_B, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)]
+  end
+
+  slime.hp = 0 # plain HP mutation -- no Death state ever lands in .states
+  ok (slime.states || []).empty?, 'sanity: no state was inflicted, just HP zeroed'
+  it.start(branch.call([3, 0, 0]))
+  it.update
+  eq 2, st.variables[1], 'a dead-by-HP enemy still fails the can-act test'
+
+  hero.hp = 0
+  ok (hero.states || []).empty?, 'sanity: same for the ally'
+  it.start(branch.call([2, 1, 0]))
+  it.update
+  eq 2, st.variables[1], 'a dead-by-HP ally still fails the can-act test'
+end
+
 check 'troop-member numbering stays stable when a middle member dies or is hidden' do
   # docs/TODO.md's render-order fix left this "still open": does killing or
   # hiding troop member 1 (the middle of three) shift member 2 down into

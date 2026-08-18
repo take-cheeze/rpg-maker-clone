@@ -12198,6 +12198,52 @@ not yet verified:
   (`command_restricted?` flags a do-nothing, a confused and a berserk ally,
   and clears an unafflicted one), all three confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **The battle-event Conditional Branch's Actor/Enemy "can act" test
+  (13310, RPG2003) had invented an entire menu of `param(2)` sub-tests the
+  real command has no such thing (2026-08-18).** `Interpreter
+  #battle_actor_condition`/`#battle_enemy_condition`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) branched on `cmd.param(2)` as if
+  it selected among "is in the party" / "afflicted by a status" / "can use
+  a battle command" for an actor, or "is present" / "afflicted by a
+  status" for an enemy — and, worse, the `param(2) == 0` case ("is in the
+  party"/"is present") short-circuited straight to `true` without ever
+  consulting the do-nothing restriction. Confirmed against EasyRPG's
+  actual C++ source, fetched live: `Game_Interpreter_Battle::
+  CommandConditionalBranchBattle` (`src/game_interpreter_battle.cpp`)
+  reads only `com.parameters[1]` (the actor/enemy id) for its actor
+  (case 2) and enemy (case 3) branches — `result = actor->CanAct();` /
+  `result = enemy->CanAct();`, `Game_Battler::CanAct` (`src/game_battler.cpp`)
+  — `parameters[2]`/`[3]` are never touched. The real RPG2003 editor's
+  Actor/Enemy tab offers exactly one condition each ("Hero can act" /
+  "Monster can act"), not a menu, and always compiles to the same
+  `param(2)`; this codebase's own adjacent comment already stated the
+  correct behavior ("EasyRPG's actual actor case never sub-dispatches on a
+  second parameter at all") while the code directly below it did something
+  else entirely. Concretely: an ordinary boss-AI page gated on "if Hero
+  [X] can act, taunt them; else target someone else" kept treating a
+  slept/paralysed party member as able to act, since the party's real
+  param(2) value (whatever the editor always writes) almost never equalled
+  the one case (`3` for an actor, previously undocumented as arbitrary)
+  this codebase happened to wire up to the real do-nothing check. Fixed by
+  dropping the fabricated sub-dispatch entirely: both methods now always
+  compute the actor/enemy's own "can act" state regardless of `param(2)`.
+  A second, independent gap surfaced while fixing this: EasyRPG's own
+  `Game_Battler::ChangeHp` folds `AddState(kDeathID)` into every
+  HP-zeroing path, so a dead battler there always already carries the
+  Death state and `CanAct`'s do-nothing scan alone is enough — but this
+  port's own `Game::Battle#deal_attack` mutates a `Combatant`'s `hp`
+  directly (`target.hp -= dmg`) with no matching `#inflict_state(target,
+  DEATH_ID)` call, so `.states` is not a reliable death signal here the
+  way it safely is for `Game::Actor` (whose own `#add_state`/
+  `#remove_state` keep `DEATH_STATE` and `@hp` in sync — see `Actor#dead?`'s
+  identical belt-and-suspenders check). Both fixed methods therefore check
+  `#dead?` explicitly alongside the do-nothing scan rather than assuming a
+  states-only check subsumes it, closing that gap too. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks — a do-nothing-restricted ally/enemy
+  now correctly fails the test under `param(2) == 0` (the value the real
+  editor always emits), and a combatant killed by plain HP loss (no
+  explicit state ever inflicted) still fails it too — both confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ **"Hero X is in the party" always addresses by database ID, not
   current seat/slot order; there is no built-in way to read a member's
   current seat position — confirmed correct.**

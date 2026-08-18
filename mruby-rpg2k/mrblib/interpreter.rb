@@ -2619,16 +2619,24 @@ module Game
     # Conditional Branch (battle form, 13310). param0 selects the test:
     #   0 switch param1 is on (param2 == 0) / off
     #   1 variable param1 compared against param2/param3 by param4
-    #   2 actor param1 — sub-test param2: 0 in the party, 1 named param(?),
-    #     2 afflicted by state param3, 3 can use battle command param3
-    #   3 troop member param1 — sub-test param2: 0 present, 1 afflicted by
-    #     state param3
+    #   2 actor param1 can act
+    #   3 troop member param1 can act
     #   4 the currently-targeted troop member is param1
     #   5 actor param1's chosen command is param2
     # Tests 4 and 5 read live battle-UI state the runtime does not model; they
-    # report false rather than guessing, so the else branch runs. Actor
-    # sub-test 3 ("can use battle command") is implemented; sub-test 1
-    # ("named") is not -- see #battle_actor_condition for why.
+    # report false rather than guessing, so the else branch runs. Confirmed
+    # against EasyRPG's actual C++ source, fetched live:
+    # `Game_Interpreter_Battle::CommandConditionalBranchBattle`
+    # (`src/game_interpreter_battle.cpp`) reads only `com.parameters[1]` (the
+    # actor/enemy id) for cases 2 and 3 -- `result = actor->CanAct();` /
+    # `result = enemy->CanAct();` -- `parameters[2]`/`[3]` do not exist as
+    # far as this command is concerned; the editor's own Actor/Enemy tab
+    # offers a single "can act" condition, not a menu of sub-tests. A prior
+    # version of this codebase invented a `param(2)` sub-dispatch ("is in
+    # the party" / "afflicted by state" / "can use battle command" for an
+    # actor; "is present" / "afflicted by state" for an enemy) that has no
+    # counterpart in the real command at all -- see #battle_actor_condition
+    # for why.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
       skip_to([Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B], cmd.indent)
@@ -2649,45 +2657,51 @@ module Game
       end
     end
 
-    # An actor sub-condition: is the actor in this fight, is it afflicted by
-    # the given status, and can it currently be handed a battle command?
+    # Whether actor `cmd.param(1)` can act right now -- true unless it is
+    # dead or carries a "do nothing" restriction (asleep / paralysed), and
+    # false if it is not even in this fight. Mirrors EasyRPG's
+    # `Game_Battler::CanAct` (via `Game_Interpreter_Battle::
+    # CommandConditionalBranchBattle`'s actor case, `result =
+    # actor->CanAct();`): a Berserk (attack_enemy) or Confusion (attack_ally)
+    # restriction does NOT fail this test -- such an ally still "can act",
+    # it just acts on a forced target instead of the chosen command, which
+    # is why this calls Game::Battle's do_nothing-only check rather than its
+    # broader #command_restricted? (which also flags Berserk/Confusion
+    # because it answers a different question: "does this ally get a normal
+    # command menu"). A prior version of this method branched on
+    # `cmd.param(2)` as if the real command offered a menu of sub-tests ("is
+    # in the party" / "afflicted by a status" / "can use a battle command")
+    # -- the real command has no such thing; RPG_RT's own editor Actor tab
+    # offers only this one condition, and the real C++ source never reads a
+    # second parameter for it at all.
     #
-    # Sub-test 3 mirrors EasyRPG's `Game_Battler::CanAct` (via
-    # `Game_Interpreter_Battle::CommandConditionalBranchBattle`'s actor case):
-    # true unless the ally carries a "do nothing" restriction (asleep /
-    # paralysed). A Berserk (attack_enemy) or Confusion (attack_ally)
-    # restriction does NOT fail this test -- such an ally still "can act", it
-    # just acts on a forced target instead of the chosen command, which is why
-    # this calls Game::Battle's do_nothing-only check rather than its broader
-    # #command_restricted? (which also flags Berserk/Confusion because it
-    # answers a different question: "does this ally get a normal command
-    # menu").
-    #
-    # Sub-test 1 ("named") has no real counterpart to implement: EasyRPG's
-    # actual actor case never sub-dispatches on a second parameter at all --
-    # it unconditionally resolves to CanAct() using only the actor id. There
-    # is no known "named" behavior to match, so it reports false.
+    # The explicit `!ally.dead?` term has no counterpart in EasyRPG's own
+    # `CanAct` -- there, `AddState(kDeathID)` is an inseparable side effect
+    # of every HP-zeroing path (`Game_Battler::ChangeHp`), so a dead battler
+    # always already carries the Death state and the do-nothing scan alone
+    # is enough. This port's own `Game::Battle#deal_attack` instead mutates
+    # a `Combatant`'s `hp` directly (`target.hp -= dmg`) without a matching
+    # `#inflict_state(target, DEATH_ID)` call, so `.states` is not a
+    # reliable death signal here the way it is for `Game::Actor` (whose own
+    # `#add_state`/`#remove_state` do keep `DEATH_STATE` and `@hp` in sync,
+    # see `Actor#dead?`'s identical belt-and-suspenders check) -- checking
+    # `#dead?` explicitly closes that gap rather than assuming it away.
     def battle_actor_condition(cmd)
       ally = @battle && @battle.ally_by_actor_id(cmd.param(1))
-      return false unless ally
-      case cmd.param(2)
-      when 0 then true                                  # is in the party
-      when 2 then ally.state?(cmd.param(3))              # is afflicted by a status
-      when 3 then !@battle.do_nothing_restricted?(ally)  # can use a battle command
-      else false
-      end
+      ally ? !ally.dead? && !@battle.do_nothing_restricted?(ally) : false
     end
 
-    # A troop-member sub-condition: is the member still standing, and is it
-    # afflicted by the given status?
+    # The troop-member analogue of #battle_actor_condition above: whether
+    # enemy `cmd.param(1)` can act right now, matching EasyRPG's
+    # `enemy->CanAct()` (same function, same `com.parameters[1]`-only
+    # signature) -- not, as a prior version of this method modelled it, a
+    # `cmd.param(2)`-selected choice between "is present" and "afflicted by
+    # a status". See #battle_actor_condition just above for why the
+    # `#dead?` term is still spelled out explicitly rather than folded into
+    # a states-only scan.
     def battle_enemy_condition(cmd)
       foe = @battle && @battle.enemy(cmd.param(1))
-      return false unless foe
-      case cmd.param(2)
-      when 0 then !foe.dead?
-      when 1 then foe.state?(cmd.param(3))
-      else false
-      end
+      foe ? !foe.dead? && !@battle.do_nothing_restricted?(foe) : false
     end
 
     # -- conditional branch ---------------------------------------------------
