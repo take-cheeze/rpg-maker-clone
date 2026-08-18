@@ -1015,11 +1015,13 @@ def check_bush(dir)
   end
 end
 
-# Curative items, against the real item table. A fixture cannot catch a field
-# read with the wrong polarity — it is written to match whatever the code does —
-# so only a real game's antidotes can say which way round `reverse_state_effect`
-# goes. Nepheshel's アンチドーテ and ユニコーンの角 name all fifteen states and
-# 気付け薬 names 戦闘不能 alone; none of them sets the flag.
+# Curative items, against the real item table. `reverse_state_effect` is dead
+# on a medicine in the real engine (EasyRPG's `Item::vExecute` never reads it
+# -- see `Game::Party#item_cured_states`'s own comment), so every medicine
+# naming states cures them regardless of the flag; `reversed` below is only
+# tallied for visibility; the assertions apply equally to it. Nepheshel's
+# アンチドーテ and ユニコーンの角 name all fifteen states and 気付け薬 names
+# 戦闘不能 alone; none of them actually sets the flag either way.
 def check_items(dir)
   name = File.basename(dir)
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
