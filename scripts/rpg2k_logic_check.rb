@@ -15601,38 +15601,49 @@ check 'a charge doubles the enemy next attack, then is spent' do
   ok !foe.charged, 'and the charge is spent'
 end
 
-check 'a charge is wasted by an intervening non-attack action, not just an attack' do
-  # EasyRPG's Game_BattleAlgorithm::AlgorithmBase::Start() calls
-  # source->SetCharged(false) unconditionally, for every algorithm kind, not
-  # only inside Normal (the plain-attack algorithm) -- confirmed against
-  # game_battlealgorithm.cpp. #perform_enemy_action ports that: it
-  # snapshots-and-clears `b.charged` before dispatching, so an intervening
-  # Defend spends the charge exactly as an intervening Attack would, and it
-  # never survives to a later turn.
+check 'a charged enemy is forced to attack, never running a pattern action ' \
+      'like Defend even when the pattern would otherwise choose it' do
+  # EasyRPG's EnemyAi::SetStateRestrictedAction (src/enemyai.cpp) checks
+  # source.IsCharged() right after its attack_ally/attack_enemy restriction
+  # branches and, if set, calls MakeAttack(source, 1) and returns *before*
+  # SetEnemyAiAction (the rating-weighted pattern picker) is ever consulted
+  # (scene_battle_rpg2k.cpp's `if (!SetStateRestrictedAction(*enemy)) ...
+  # SetEnemyAiAction(...)`) -- so a charged enemy can never end up Defending
+  # (or casting a Skill, self-destructing, ...); it is guaranteed exactly one
+  # doubled Attack. #strike now skips #choose_enemy_action outright while
+  # charged, matching that gate -- it used to run the pattern normally, so a
+  # single-entry Defend pattern would win the draw and spend the charge for
+  # nothing (Game_BattleAlgorithm::AlgorithmBase::Start()'s own unconditional
+  # SetCharged(false) still fires for *any* algorithm once one actually runs,
+  # confirmed against game_battlealgorithm.cpp and ported by
+  # #perform_enemy_action -- that part was already correct, it just used to
+  # be reachable by the wrong action kind).
   foe = combatant('Slime', 40, 0, 5, 500)
   charge = enemy_action(kind: 0, basic: 4)
   defend = enemy_action(kind: 0, basic: 2)
-  attack = enemy_action(kind: 0, basic: 0)
   b = ai_battle([charge], nil, foe: foe)
   b.begin_round; b.step_action
   eq true, b.step_action[:charge], 'the monster gathers strength'
   ok foe.charged, 'the charge is held'
+  # A pattern of nothing but Defend would win the draw outright if consulted.
   foe.actions = [defend]
   b.end_round; b.begin_round; b.step_action
-  eq true, b.step_action[:defend], 'a Defend runs instead of an Attack'
-  ok !foe.charged, 'and the charge is already gone, spent by the Defend'
-  foe.actions = [attack]
-  b.end_round; b.begin_round; b.step_action
   e = b.step_action
-  eq 20, e[:damage], 'the later attack lands at base damage -- no stale charge left to double it'
-  ok !e[:charged]
+  ok !e[:defend], 'the Defend pattern never runs while charged'
+  eq 40, e[:damage], 'a plain Attack runs instead, doubled by the charge'
+  ok !foe.charged, 'and the charge is spent by it'
 end
 
-check 'a charged dual attack doubles both swings, not only the first' do
-  # EasyRPG's own dual attack is one Normal algorithm with a repeat count of
-  # 2 (enemyai.cpp's MakeAttack(enemy, 2)), not two separate algorithm
-  # instances -- Init() (and so the captured charged_attack flag) runs once
-  # for the whole action, so a charge doubles every swing it covers.
+check 'a charged enemy is forced to a single Attack even when its pattern ' \
+      'would otherwise choose Attack Twice' do
+  # EasyRPG's EnemyAi::SetStateRestrictedAction forces a hardcoded
+  # MakeAttack(source, 1) while charged -- a fixed one-hit repeat count, not
+  # whatever #enemy.GetEnemyAi() would have picked -- so a charged enemy
+  # can never reach a genuine "Attack Twice" pattern action either, the same
+  # way it can never reach Defend (see the check above). A dual attack
+  # *pattern action* stays otherwise correct and reachable while not
+  # charged -- see "a dual attack strikes twice in one turn" below -- this
+  # is specifically about the two never coinciding.
   foe = combatant('Slime', 40, 0, 5, 500)
   charge = enemy_action(kind: 0, basic: 4)
   dual = enemy_action(kind: 0, basic: 1)
@@ -15643,10 +15654,9 @@ check 'a charged dual attack doubles both swings, not only the first' do
   foe.actions = [dual]
   b.end_round; b.begin_round; b.step_action
   first = b.step_action
-  second = b.step_action
-  eq 40, first[:damage], 'first swing doubled'
-  eq 40, second[:damage], 'second swing doubled too'
-  ok !foe.charged, 'spent by the action as a whole, not per swing'
+  eq 40, first[:damage], 'a single doubled swing runs'
+  ok !foe.charged, 'and the charge is spent by it'
+  ok b.step_action.nil?, 'no second swing from the bypassed dual-attack pattern -- the round is over'
 end
 
 check 'a dual attack strikes twice in one turn' do
