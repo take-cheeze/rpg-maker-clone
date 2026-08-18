@@ -133,11 +133,28 @@ module Game
           when 'c', 'C' # colour change: close the current run, switch colour
             segs << { text: cur, color: color } unless cur.empty?
             cur = ''
-            color = arg ? arg.to_i : 0
+            # An out-of-range index (>19, the highest real palette colour)
+            # resets to colour 0 rather than staying out of range -- EasyRPG's
+            # Window_Message::UpdateMessage (src/window_message.cpp): `text_color
+            # = pres.value > 19 ? 0 : pres.value` (the vanilla, non-Maniac-patch
+            # path, so this applies to every ordinary RPG2000/2003 game). Left
+            # unclamped, an out-of-range colour used to fail the renderer's own
+            # 0..19 validity check and fall back to a flat approximation colour
+            # instead of the windowskin's own (properly shaded) swatch 0 -- see
+            # Scene::Map::MessagePalette.valid?/#message_color. `resolve_arg`
+            # (not a bare `arg.to_i`) so a variable-driven `\C[\V[n]]` resolves
+            # the same way `\N[]`/`\V[]` already do -- EasyRPG's ParseColor is
+            # the exact same ParseParam nested-`\V[]` machinery as ParseActor/
+            # ParseVariable, not special-cased.
+            v = resolve_arg(arg, variables)
+            color = v > 19 ? 0 : v
           when 's', 'S' # speed change: how fast the typewriter reveals from
             # here on, clamped to RPG_RT's 1..20 (EasyRPG Player's
             # window_message.cpp: `speed = Utils::Clamp(pres.value, 1, 20)`).
-            speeds << { at: count, speed: Game.clamp(arg ? arg.to_i : 1, 1, 20) }
+            # `resolve_arg`, not a bare `arg.to_i`, for the same `\S[\V[n]]`
+            # reason as `\C[]` just above (ParseSpeed shares the same
+            # ParseParam nested-variable machinery).
+            speeds << { at: count, speed: Game.clamp(resolve_arg(arg, variables), 1, 20) }
           when '.'      then pauses << { at: count, kind: :quarter }
           when '|'      then pauses << { at: count, kind: :full }
           when '!'      then pauses << { at: count, kind: :key }
