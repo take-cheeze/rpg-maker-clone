@@ -6432,6 +6432,50 @@ not yet verified:
   5001) and one real-data test-bed check
   (`scripts/rpg2k_testbed_logic_check.rb`), each confirmed to fail against
   the pre-fix code before the fix.
+- ✅ **`#critical?` and `#shake_off_states` now burn an RNG draw even when the
+  computed chance is exactly 0, matching RPG_RT's own unconditional roll —
+  previously both skipped the draw outright, desyncing this build's shared
+  RNG stream from a genuine seeded RPG_RT replay one draw earlier than
+  necessary on almost every fight (2026-08-18).** Found by re-reading
+  `Rand::PercentChance`/`Rand::ChanceOf` (`src/rand.cpp`, fetched live) and
+  their two call sites in `Game_BattleAlgorithm` (`src/game_battlealgorithm.cpp`)
+  character-by-character rather than trusting this file's own doc comments,
+  which (until this fix) incorrectly described the two as rolling
+  unconditionally already. `Rand::PercentChance(int rate)` is
+  `GetRandomNumber(0, 99) < rate` with no gate of any kind — `vExecute`'s two
+  critical-hit call sites (`Normal`/`Skill`, both in `game_battlealgorithm.cpp`)
+  call it as `Rand::PercentChance(crit_chance)` straight off
+  `Algo::CalcCriticalHitChance`'s return value, which is routinely exactly
+  0 (any battler with no crit ability at all — most enemies, and any actor
+  before equipping a crit-capable weapon; also forced to 0 whenever the
+  target `PreventsCritical()` or the two sides share a battler type).
+  `Game::Battle#critical?` (`mruby-rpg2k/mrblib/game.rb`) instead read
+  `chance && chance > 0 && @rng.random(100) < chance` — the `chance > 0 &&`
+  clause skipped the draw entirely at exactly the rate that is the *common*
+  case, not an edge case, so this build's RNG stream fell one draw behind
+  RPG_RT's own on the very first such landed hit and stayed offset for
+  every subsequent roll in the run (that attack's own damage variance, the
+  next actor's to-hit, state infliction, later encounter rolls — one shared
+  stream, so the divergence never resyncs on its own). `#shake_off_states`
+  had the identical bug shape one level down: EasyRPG's
+  `BattlePhysicalStateHeal` (same file) gates its roll only on
+  `state->release_by_damage > 0`, then calls
+  `Rand::ChanceOf(release_chance, 100)` unconditionally even when
+  `release_chance` (`release_by_damage * physical_rate / 100`) itself rounds
+  down to 0 via integer division — this build's own `next unless chance > 0
+  && @rng.random(100) < chance` skipped the draw in that case too, past an
+  already-correct outer `base > 0` gate that already matched
+  `release_by_damage > 0` exactly. Fixed by dropping the `chance > 0 &&`
+  clause from both (`critical?` now `@rng.random(100) < (b.crit_chance ||
+  0)`, keeping only a defensive `|| 0` for a test double whose `crit_chance`
+  can be nil, since a real `Game::Actor`/`Game::Enemy` always returns an
+  Integer) — the roll's own outcome is unchanged (a threshold of 0 can never
+  be beaten by a 0..99 draw either way), only whether the draw itself
+  happens. Covered by two new `scripts/rpg2k_logic_check.rb` checks, each
+  comparing the battle's own `@rng` against a second, independently-seeded
+  reference `Game::Rng` advanced by hand to prove the shared stream's
+  position after the roll, not just the roll's boolean outcome; both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A Skill/Item's own core effect — HP/SP change and each of the ATK/DEF/
   SPI/AGI stat modifiers — now rolls its own accuracy, instead of applying
   unconditionally on every cast.** Only state infliction ever consulted a

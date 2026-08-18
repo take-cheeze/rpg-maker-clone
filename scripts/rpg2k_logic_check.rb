@@ -9918,6 +9918,30 @@ check 'battle: a crit chance is paid out at the rate it states' do
      "a 1-in-20 chance crit #{crits} times in #{trials}, wanted about #{want.round}"
 end
 
+check 'battle: critical? draws from the RNG even at an exact 0% crit chance, matching RPG_RT (2026-08-18)' do
+  # EasyRPG's Rand::PercentChance(crit_chance) rolls unconditionally, even
+  # when crit_chance is exactly 0 -- Game_BattleAlgorithm's vExecute call
+  # sites (src/game_battlealgorithm.cpp, both the basic-attack and skill
+  # ones) carry no `crit_chance > 0` guard around the roll. So a battler with
+  # no crit ability at all (the common case: most enemies, and any actor
+  # before equipping a crit-capable weapon) still burns one draw from the
+  # shared RNG stream on every landed hit. A `chance > 0 &&` short-circuit
+  # here used to skip that draw entirely, leaving this build's own RNG stream
+  # one draw behind RPG_RT's for the rest of a seeded run.
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.crit_chance = 0
+  foe = combatant('Foe', 0, 0, 5, 100)
+  seed = 1
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(seed), nil, false, true)
+  eq false, bat.send(:critical?, hero), 'a 0% chance still never crits'
+
+  reference = Game::Rng.new(seed)
+  reference.random(100) # the one draw a 0-chance PercentChance still consumes
+
+  eq reference.random(100), bat.instance_variable_get(:@rng).random(100),
+     "the battle's own RNG stream did not advance for a 0% crit-chance roll"
+end
+
 check 'battle: a critical hit triples the damage when the fight rolls one' do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.crit_chance = 100                             # certainty -> always crits
@@ -12263,6 +12287,30 @@ check "battle: a purely magical skill's physical_rate of 0 never shakes a status
   bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
   bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
   ok foe.state?(8), 'physical_rate 0 never rolls, matching a magical spell'
+end
+
+check 'battle: shake_off_states still draws from the RNG when release_by_attack*rate/100 rounds down to 0, matching RPG_RT (2026-08-18)' do
+  # EasyRPG's BattlePhysicalStateHeal (src/game_battlealgorithm.cpp) only
+  # gates the roll on release_by_damage > 0 (the `base > 0` check below) --
+  # once past that outer gate it calls Rand::ChanceOf(release_chance, 100)
+  # unconditionally, even when release_chance itself (release_by_damage *
+  # physical_rate / 100) rounds down to 0 via integer division. A
+  # `chance > 0 &&` short-circuit here used to skip that draw too, the same
+  # bug as #critical?'s own 0%-chance case just above.
+  states = { 8 => fake_state(release_by_attack: 1) }
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  seed = 1
+  bat = Game::Battle.new([combatant('Hero', 40, 0, 20, 100)], [foe], Game::Rng.new(seed), states)
+  woke = bat.send(:shake_off_states, foe, 1) # base 1 * rate 1 / 100 = 0 -- never wakes
+  eq [], woke
+  ok foe.state?(8), 'a chance this low never actually shakes the state off'
+
+  reference = Game::Rng.new(seed)
+  reference.random(100) # the one draw a 0-computed chance still consumes
+
+  eq reference.random(100), bat.instance_variable_get(:@rng).random(100),
+     "the battle's own RNG stream did not advance for a chance that rounded down to 0"
 end
 
 check "battle: a skill's status-shake roll is gated behind the same hit as its damage" do
