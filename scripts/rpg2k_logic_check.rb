@@ -951,6 +951,27 @@ check 'Screen tint with non-divisible steps still lands exactly' do
   ok !s.tinting?
 end
 
+check "Screen tint interpolates in float precision, not by feeding the previous " \
+      "frame's truncated integer back in, matching RPG_RT (2026-08-18)" do
+  # EasyRPG's Game_Screen::UpdateScreenEffects (src/game_screen.cpp)
+  # interpolates the tint in a double (tint_current_red et al. -- confirmed
+  # against liblcf's own generated SaveScreen struct, where those four
+  # fields are double while tint_finish_* stays int32_t) across every frame,
+  # via interpolate(d, x0, x1) = (x0*(d-1) + x1) / d, and only ever
+  # truncates to a whole number where the tint is actually consumed. #update
+  # used to feed the *already-truncated* Integer @r back into the next
+  # call's `(target - cur) / @frames` (plain integer division), compounding
+  # the rounding error frame over frame instead of resetting each time --
+  # the same bug already fixed for Game::Picture#step.
+  s = Game::Screen.new
+  s.tint_to(0, 100, 100, 100, 7) # red 100 -> 0 over 7 frames
+  seen = []
+  7.times { s.update; seen.push(s.tint[0]) }
+  eq [85, 71, 57, 42, 28, 14, 0], seen,
+     "RPG_RT's real per-frame sequence -- the pre-fix code produced [85, 70, 56, 42, 28, 14, 0] instead"
+  ok !s.tinting?
+end
+
 check 'Screen tint with zero duration applies immediately' do
   s = Game::Screen.new
   s.tint_to(0, 50, 200, 100, 0)
