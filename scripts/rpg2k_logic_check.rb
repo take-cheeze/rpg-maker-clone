@@ -3384,7 +3384,7 @@ end
 
 class FakeActorDB
   attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands,
-              :enemy_group, :battleranimations
+              :enemy_group, :battleranimations, :term
   # `enemy_group` defaults to "every id exists" (Hash.new(true)) since most
   # checks using this fixture have nothing to do with troop validity; pass an
   # explicit hash (e.g. {}) to exercise the missing-troop-id diagnostic path.
@@ -3395,7 +3395,7 @@ class FakeActorDB
   def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
                  property = nil, rpg2003: false, battlecommands: nil,
                  enemy_group: Hash.new(true), battleranimations: nil,
-                 equipment_setting: nil)
+                 equipment_setting: nil, term: nil)
     @player = players
     @system = FakeActorSystem.new(party_ids, equipment_setting)
     @item = items
@@ -3407,6 +3407,7 @@ class FakeActorDB
     @battlecommands = battlecommands
     @enemy_group = enemy_group
     @battleranimations = battleranimations
+    @term = term
   end
 
   # Mirrors LCF::Schema::Database#rpg2003? (Classes-chunk presence) for tests
@@ -4600,6 +4601,29 @@ check 'Change Class shows one level-up line when it taught skills' do
   it.resume
   it.update
   ok !it.waiting?, 'a class change announces one line, not one per level'
+end
+
+check "level_up_message/skill_learned_message compose from the database's own terms" do
+  # Ported from Scene::Battle's identical battle_level_up_message/
+  # battle_skill_learned_message (already term-based for the post-battle
+  # result screen) -- these map-side lines (Change EXP/Level/Class) used to
+  # stay on a plain English line regardless of the database.
+  terms = Struct.new(:level_up, :level, :skill_learned).new('になった！', 'Lv', 'を覚えた！')
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1], term: terms)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  hero = st.party.actors.first
+  eq 'HeroはLv 5 になった！', it.send(:level_up_message, hero, 5)
+  eq 'Fireballを覚えた！', it.send(:skill_learned_message, hero, fake_skill(name: 'Fireball'))
+end
+
+check 'level_up_message/skill_learned_message fall back to English when the database leaves the terms blank' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  hero = st.party.actors.first
+  eq 'Hero is now level 5!', it.send(:level_up_message, hero, 5)
+  eq 'Hero learned Fireball!', it.send(:skill_learned_message, hero, fake_skill(name: 'Fireball'))
 end
 
 check 'Change Class stays quiet when the level held and no skills moved' do

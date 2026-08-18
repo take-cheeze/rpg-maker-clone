@@ -4207,6 +4207,19 @@ module Game
       @db.skill[id]
     end
 
+    # `db.term.<name>`, or `fallback` when the field is blank or the database
+    # carries no term table at all -- mirrors every scene's own `#term`
+    # (`Scene::Base`), the shared reader for vocabulary a project can rename.
+    # `Game::Interpreter` has no scene of its own to ask (it can run outside
+    # one entirely, e.g. a common event), so it reads the database's words
+    # through its party instead.
+    def term(name, fallback)
+      t = @db.respond_to?(:term) ? @db.term : nil
+      s = t && t.respond_to?(name) ? t.send(name) : nil
+      s = s.to_s
+      s.empty? ? fallback : s
+    end
+
     # The database's state (`situation`) table, for Game::States lookups --
     # priority, display name/colour, message text. nil for a fixture without
     # one, which every Game::States accessor already tolerates.
