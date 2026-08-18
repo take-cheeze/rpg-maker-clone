@@ -44,6 +44,7 @@ class RPG2k
         @mode = :items          # :items list, :target selection, or :teleport_target
         @item_index = 0
         @target_index = 0
+        @target_lock = nil
         @teleport_index = 0
         @pending_item = nil
         @message = nil
@@ -164,16 +165,20 @@ class RPG2k
             # #use_medicine reads the whole party off `@actors`, ignoring the
             # argument), a special item's `actor` argument is the *caster*
             # #use_special_item casts the skill from (mirroring
-            # Scene::SkillMenu, which always has a caster selected). Passing
-            # nil here left every self/all-ally special item uncastable
-            # through this menu -- #use_special_item's own `return [] unless
-            # actor` guard rejected it before the skill's scope ever mattered.
-            apply_item(id, @state.party.leader)
+            # Scene::SkillMenu, which always has a caster selected) -- the
+            # party leader, the only actor this menu ever casts a special
+            # item's skill from. A self (2) lock highlights the leader's own
+            # row; an all-ally (4) lock highlights the whole list -- see
+            # #enter_target_confirm's own doc comment for why this codebase
+            # still shows the confirm screen for both rather than skipping it.
+            @pending_item = id
+            enter_target_confirm(sk.scope == 2 ? :self : :party)
           else
             prompt_item_target(id)
           end
         elsif it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
-          apply_item(id, nil)
+          @pending_item = id
+          enter_target_confirm(:party)
         else
           prompt_item_target(id)
         end
@@ -182,10 +187,39 @@ class RPG2k
       # Ask which party member the pending item is used on.
       def prompt_item_target(id)
         @pending_item = id
+        enter_target_confirm(nil)
+      end
+
+      # Open the target-confirm screen (`@mode = :target`), locking the
+      # cursor when `lock` names who the effect already, unavoidably, lands
+      # on: `:self` to the party leader's own row, `:party` to the whole list
+      # (an all-ally medicine or all-ally invoked skill). See
+      # Scene::SkillMenu#enter_target_confirm's identical doc comment for the
+      # full RPG_RT citation -- this mirrors it exactly.
+      #
+      # Both locked cases pin `@target_index` to the leader, not just `:self`:
+      # #update_target's Decision handler always passes `party[@target_index]`
+      # on to #apply_item as its `actor` argument, and for a special/
+      # use_skill item that argument is the *caster* #use_special_item casts
+      # from (mirroring Scene::SkillMenu, which always has a caster
+      # selected) -- the party leader, whatever their roster slot. A plain
+      # all-ally medicine ignores the argument entirely (#use_medicine's own
+      # `it.scope == 1 ? @actors : ...`), so the leader is a harmless choice
+      # there too.
+      def enter_target_confirm(lock)
         @mode = :target
-        @target_index = 0
+        @target_lock = lock
+        @target_index = lock ? leader_target_index : 0
         build_target_window
         refresh_desc
+      end
+
+      # The party roster index of the leader -- who a special/use_skill
+      # item's invoked self-scope skill always casts from (see #choose_item).
+      # 0 (the roster's own front slot) if the leader is somehow not found in
+      # it, which should not happen on real data.
+      def leader_target_index
+        @state.party.actors.index(@state.party.leader) || 0
       end
 
       # A switch item turns on its game switch (the menu owns the switch table)
@@ -325,12 +359,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_target_mode
-        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+        elsif !@target_lock && (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN))
           @target_index += 1
           @target_index %= party.size
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+        elsif !@target_lock && (Input.trigger?(Input::UP) || Input.repeat?(Input::UP))
           @target_index -= 1
           @target_index %= party.size
           refresh_target_cursor
@@ -359,6 +393,7 @@ class RPG2k
 
       def leave_target_mode
         @pending_item = nil
+        @target_lock = nil
         @mode = :items
         if @target_window
           @target_window.dispose
@@ -486,9 +521,17 @@ class RPG2k
 
       def refresh_target_cursor
         return unless @target_window
-        @target_window.cursor_rect =
-          Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
-                   LINE_H * 2)
+        # A :party lock (an all-ally medicine or invoked skill) highlights
+        # every row at once -- see Scene::SkillMenu#refresh_target_cursor's
+        # identical comment/RPG_RT citation.
+        if @target_lock == :party
+          @target_window.cursor_rect =
+            Rect.new(0, 0, @target_window.contents.width, @target_window.contents.height)
+        else
+          @target_window.cursor_rect =
+            Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
+                     LINE_H * 2)
+        end
       end
 
       def drive_message
