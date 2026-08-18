@@ -129,21 +129,30 @@
           # Linux-only, matching the package's own meta.platforms: forcing this
           # attribute on darwin (e.g. `nix flake show`) would otherwise throw.
           #
-          # Carries one local patch on top of nixpkgs' build: PPSSPP's own
-          # sceKernelCreateLwMutex (Core/HLE/sceKernelMutex.cpp) dereferences
-          # its caller-supplied workarea pointer without validating it first,
-          # unlike every sibling LwMutex function in the same file -- a guest
-          # passing workareaPtr=0 turns that into a null-pointer write that
-          # segfaults the *host* emulator process rather than raising a
-          # guest-catchable error. Found and root-caused while trying to read
-          # the PSP EBOOT's own boot log under PPSSPP-headless (see
-          # docs/adr/0047-psp-memory-budget.md and app/psp/README.md); not yet
-          # upstreamed to hrydgard/ppsspp, so applied here so this flake's own
-          # `ppsspp`/`ppsspp-headless` survive past it. nix/patches/ has the
-          # full patch and its own note on when it is safe to drop.
+          # Carries two local patches on top of nixpkgs' build, both found
+          # and root-caused while trying to read the PSP EBOOT's own boot log
+          # under PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md and
+          # app/psp/README.md); neither is upstreamed to hrydgard/ppsspp yet,
+          # so both are applied here so this flake's own `ppsspp`/
+          # `ppsspp-headless` survive past them. nix/patches/ has the full
+          # patches and each one's own note on when it is safe to drop.
+          #
+          #   - sceKernelCreateLwMutex (Core/HLE/sceKernelMutex.cpp)
+          #     dereferences its caller-supplied workarea pointer without
+          #     validating it first, unlike every sibling LwMutex function in
+          #     the same file -- a guest passing workareaPtr=0 turns that
+          #     into a null-pointer write that segfaults the *host* emulator
+          #     process rather than raising a guest-catchable error.
+          #   - The interpreter's mfic/mtic (Core/MIPS/MIPSInt.cpp) are
+          #     no-ops instead of touching the interruptsEnabled flag PPSSPP
+          #     already tracks for the equivalent syscalls, so pspsdk's own
+          #     fast interrupt-disable/enable (built directly on those two
+          #     instructions, used to guard its non-reentrant C-runtime
+          #     state) provides no real protection under PPSSPP.
           ppsspp = pkgs.ppsspp.overrideAttrs (old: {
             patches = (old.patches or [ ]) ++ [
               ./nix/patches/ppsspp-lwmutex-workarea-validate.patch
+              ./nix/patches/ppsspp-mfic-mtic-interrupt-mask.patch
             ];
           });
         }

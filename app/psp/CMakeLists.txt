@@ -136,6 +136,24 @@ target_include_directories(rpg2k_psp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 # explicit libraries below, so that first definition is newlib's real one.
 target_link_options(rpg2k_psp PRIVATE -Wl,--allow-multiple-definition)
 
+# pspkernel.a and pspuser.a both provide sceKernelCreateCallback,
+# sceKernelSleepThreadCB, and sceKernelMaxFreeMemSize -- as their genuinely
+# distinct "ForKernel" and "ForUser" NIDs, not a benign duplicate the way the
+# libc collision above is. Listing pspkernel first (as this used to) meant ld
+# kept ITS "ForKernel" stub for the three under --allow-multiple-definition's
+# same first-definition-wins rule, so this user-mode EBOOT's imports named the
+# kernel-mode NID for each. PPSSPP's loader has no HLE implementation registered
+# under those modules for a plain homebrew EBOOT, so every call came back
+# SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED -- silently, since none of the three's
+# callers (setup_callbacks' callback_thread, and _sbrk's heap-size probe in
+# libcglue) check the return value. That's what was actually behind the PSP boot
+# hanging under PPSSPP-headless past RPG2K_PSP_BOOT: _sbrk() re-ran its
+# heap-init probe on every call forever (heap_bottom never left NULL, since
+# sceKernelMaxFreeMemSize's bogus return made sceKernelAllocPartitionMemory fail
+# too), so the first real malloc() never returned. pspuser first makes its
+# correct "ForUser" definitions win instead, the same fix the libc case already
+# relies on -- pspkernel stays linked after it for whatever else in this list
+# still needs it.
 target_link_libraries(
   rpg2k_psp
   mruby
@@ -148,8 +166,8 @@ target_link_libraries(
   pspaudio
   m
   stdc++
-  pspkernel
-  pspuser)
+  pspuser
+  pspkernel)
 
 # Wrap the ELF into an EBOOT.PBP the PSP can run. create_pbp_file comes from the
 # pspdev CMake toolchain; fail loudly if the project was configured without it.

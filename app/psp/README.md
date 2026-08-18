@@ -108,8 +108,10 @@ once one is deployed to `kGameDir` instead of just the idle HAL's. CI's
 marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
 idle path (`RPG2K_PSP_GAME_START none not_found`). The job is
-**non-blocking** — the required build gate is the `psp` job. Two real bugs
-this port's own investigation found are now fixed:
+**non-blocking** — the required build gate is the `psp` job, because the
+EBOOT still does not boot to completion under PPSSPP-headless. Six
+independent bugs have been found and root-caused chasing that, three of
+them fixed:
 
 - pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
   implemented under PPSSPP-headless, and calling into them left the
@@ -123,37 +125,39 @@ this port's own investigation found are now fixed:
   `sceKernelCreateLwMutex` (`Core/HLE/sceKernelMutex.cpp`) dereferenced its
   caller-supplied workarea pointer without validating it first, unlike every
   sibling `LwMutex` function in the same file — a guest passing
-  `workareaPtr=0` turned that into a null-pointer write (`rbx=0`, same
-  instruction offset across independent runs) that segfaulted the *host*
-  `ppsspp-headless` process rather than raising a guest-catchable error.
-  Not yet upstreamed to `hrydgard/ppsspp`; `flake.nix`'s own `ppsspp`
-  package output carries the fix as a local patch
-  (`nix/patches/ppsspp-lwmutex-workarea-validate.patch`), so both CI (which
-  builds this same `packages.ppsspp` — a real, if one-time, CI cost: it now
-  builds PPSSPP from source instead of fetching nixpkgs' prebuilt closure)
-  and a local `nix build '.#ppsspp'` get a binary that survives past it.
+  `workareaPtr=0` turned that into a null-pointer write that segfaulted the
+  *host* `ppsspp-headless` process rather than raising a guest-catchable
+  error. Not yet upstreamed to `hrydgard/ppsspp`;
+  `nix/patches/ppsspp-lwmutex-workarea-validate.patch` applies it locally.
+- Separately, PPSSPP's interpreter treated the Allegrex `mfic`/`mtic`
+  instructions ("move from/to interrupt controller") as no-ops. pspsdk's own
+  `pspSdkDisableInterrupts()`/`EnableInterrupts()` are built directly on
+  those two instructions to guard its non-reentrant C-runtime state without
+  syscall overhead; as no-ops, they gave no real protection, letting a
+  timer/thread interrupt land mid-"critical section". Also not yet
+  upstreamed; `nix/patches/ppsspp-mfic-mtic-interrupt-mask.patch` applies it
+  locally, alongside the LwMutex one.
+- `app/psp/CMakeLists.txt` used to link `pspkernel` before `pspuser`. Both
+  provide `sceKernelCreateCallback`/`sceKernelSleepThreadCB`/
+  `sceKernelMaxFreeMemSize` as distinct `ForKernel`/`ForUser` NIDs, and with
+  `pspkernel` first the linker kept its (wrong, for a user-mode EBOOT)
+  `ForKernel` stub for all three — every call silently returned an error
+  none of the callers checked, which is what was actually hanging boot past
+  `RPG2K_PSP_BOOT` (`_sbrk`'s heap-init probe re-ran forever). Linking
+  `pspuser` first fixed it.
 
-What's left, once both of those are out of the way, is a **third**, separate
-bug — still unfixed, and now the thing actually stopping this EBOOT from
-booting under PPSSPP at all: `workareaPtr=0` is a real value the guest
-passes, not host-side corruption, traced to pspsdk's own
-`src/libcglue/lock.c` (its `__retarget_lock_init_recursive` calls `malloc()`
-for a new lock struct with no null-check before dereferencing it — confirmed
-reproducible, triggered by `global_stdio_init`'s lazy lock creation on this
-EBOOT's very first stdio use). Isolated to something this project's own PSP
-link pulls in beyond plain C/C++ (ruled out with standalone minimal EBOOTs:
-generic pspsdk, this port's own arena/pool `.bss` reservations, and
-`libstdc++`/global C++ objects all boot fine on their own) — mruby's psp
-cross-build, LVGL, or uni-algo, or their interaction, not yet narrowed
-further. See
+Two more bugs are found but **not** fixed, one of them genuinely
+pspsdk-side and real, the other a build-toolchain limitation this session
+tried and failed to patch around safely — see
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full trail. To
-reproduce locally, run PPSSPP's headless binary with `--log` (needed to
-surface the `sceIoWrite` output). CI and a local build both go through this
-flake's own patched `ppsspp` package output (see above) rather than
-nixpkgs' unpatched one — `nix build '.#ppsspp'` puts it at
-`./result/bin/ppsspp-headless` (it finds its own assets, so the working
-directory does not matter):
+P1 for the full trail on both, including why the tempting-looking
+`psp-fixup-imports` metadata patch was reverted (it silently misdirects
+syscalls rather than failing cleanly). To reproduce any of this locally, run
+PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
+output). CI and a local build both go through this flake's own patched
+`ppsspp` package output (see above) rather than nixpkgs' unpatched one —
+`nix build '.#ppsspp'` puts it at `./result/bin/ppsspp-headless` (it finds
+its own assets, so the working directory does not matter):
 
 ```sh
 nix build '.#ppsspp'
