@@ -3695,6 +3695,41 @@ The work below is roughly ordered by the critical path to a walkable game
   several more input branches (Decision on confirm/append, Cancel-then-
   backspace vs. Cancel-with-empty-text Buzzer, an overflowing name) and
   deserves its own dedicated, focused fix.
+- ✅ **That follow-up: the Enter Hero Name widget now plays RPG_RT's system
+  SE on every interaction too (2026-08-18).** Re-verified against EasyRPG
+  Player's own C++ source, fetched live, rather than trusting the note
+  above at face value: `Scene_Name::vUpdate` (`src/scene_name.cpp`) plays
+  Decision **unconditionally the instant Decision is pressed**, before ever
+  dispatching on which cell is highlighted — the same for OK/DONE, a
+  hiragana/katakana page toggle, or an ordinary character — and its Cancel
+  branch is a genuinely separate input path: `if
+  (name_window->Get().size() > 0) { ...Cancel...; Erase(); } else {
+  ...Buzzer...; }` (`Erase()` removes exactly one trailing character, a
+  backspace, confirmed by reading `Window_Name::Erase`,
+  `src/window_name.cpp`, not "clear the whole field"). `Window_Keyboard
+  ::Update`'s own `play_cursor` flag (`src/window_keyboard.cpp`) plays
+  Cursor SE on every grid move. `Window_Name::Append` plays Buzzer and
+  silently drops the character the instant appending it would overflow the
+  field — layered *after* the unconditional Decision already played for
+  that same keypress, not instead of it. This codebase's own grid adds an
+  on-screen "BS" cell real RPG_RT's keyboard has no equivalent of; treated
+  as an ordinary Decision-dispatched cell (Decision SE only, no extra SE of
+  its own), distinct from the *physical* Cancel key,
+  which now gets the real Cancel/Buzzer branch. Fixed by adding
+  `play_system_se(SFX_CURSOR)` to every grid-move branch in both
+  `#handle_name_input`/`#handle_kana_name_input`, `play_system_se
+  (SFX_DECISION)` unconditionally in each Decision branch before
+  dispatching to `#name_input_confirm`/`#kana_name_input_confirm`,
+  `play_system_se(SFX_BUZZER)` in each of their character-cell branches
+  when the field is already full, and a new `#name_input_cancel` (Cancel
+  SE + backspace when non-empty, Buzzer-only when empty) replacing the
+  bare, silent `#name_input_backspace` call on the physical Cancel key —
+  the on-screen "BS" cell now calls the renamed `#backspace_name_input`
+  directly, since the Decision that dispatched to it already played its
+  own SE. Covered by a new `scripts/rpg2k_scene_check.rb` check (cursor
+  move, character confirm, Cancel-with-a-character, Cancel-with-none, and
+  an overflowing character's Decision-then-Buzzer pair all get their
+  correct SE), confirmed to fail against the pre-fix code.
   ✅ **A disabled Continue's own *rendering* — not just its SE — was also
   still wrong, found in a separate later pass: it drew a hardcoded flat gray
   instead of reading the windowskin's own disabled-colour swatch, unlike

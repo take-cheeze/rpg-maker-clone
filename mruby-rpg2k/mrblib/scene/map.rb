@@ -5285,6 +5285,16 @@ class RPG2k
         [NAME_COLS, NAME_CELLS.length - row * NAME_COLS].min
       end
 
+      # Confirmed against EasyRPG's Scene_Name::vUpdate (src/scene_name.cpp):
+      # every cursor move plays Cursor SE (Window_Keyboard::Update's own
+      # `play_cursor`, src/window_keyboard.cpp), and Decision plays
+      # unconditionally the instant C is pressed, before dispatching on
+      # which cell is highlighted -- the same for OK/DONE, a page toggle or
+      # an ordinary character. Cancel is a genuinely separate branch from
+      # Decision in real RPG_RT, not this codebase's on-screen "BS" cell
+      # (which real RPG_RT's own keyboard grid has no equivalent of): it
+      # erases one character with its own Cancel SE, or Buzzer with nothing
+      # to erase -- see #name_input_cancel.
       def handle_name_input
         ui = @name_ui
         row = ui[:sel] / NAME_COLS
@@ -5293,38 +5303,66 @@ class RPG2k
         if Input.trigger?(Input::RIGHT)
           ui[:sel] = row * NAME_COLS + (col + 1) % name_row_len(row)
           draw_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::LEFT)
           ui[:sel] = row * NAME_COLS + (col - 1) % name_row_len(row)
           draw_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::DOWN)
           new_row = (row + 1) % rows
           ui[:sel] = new_row * NAME_COLS + col % name_row_len(new_row)
           draw_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           new_row = (row - 1) % rows
           ui[:sel] = new_row * NAME_COLS + col % name_row_len(new_row)
           draw_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           name_input_confirm
         elsif Input.trigger?(Input::B)
-          name_input_backspace
+          name_input_cancel
         end
       end
 
-      # Act on the highlighted cell: OK commits, BS backspaces, any other cell
-      # types its character (up to NAME_MAX).
+      # Act on the highlighted cell: OK commits, BS backspaces (no SE of its
+      # own -- the Decision that dispatched here, #handle_name_input, already
+      # played one), any other cell types its character (up to NAME_MAX) or,
+      # once full, rejects it with Buzzer -- matching EasyRPG's
+      # Window_Name::Append (src/window_name.cpp), which plays Buzzer and
+      # drops the appended text the instant it would overflow the field.
       def name_input_confirm
         cell = NAME_CELLS[@name_ui[:sel]]
         case cell
         when 'OK' then commit_name_input
-        when 'BS' then name_input_backspace
+        when 'BS' then backspace_name_input
         else
-          @name_ui[:name] += cell if @name_ui[:name].length < NAME_MAX
+          if @name_ui[:name].length < NAME_MAX
+            @name_ui[:name] += cell
+          else
+            play_system_se(SFX_BUZZER)
+          end
           draw_name_input
         end
       end
 
-      def name_input_backspace
+      # The physical Cancel key (not the on-screen "BS" cell, see
+      # #handle_name_input's own doc comment): erase one character with its
+      # own Cancel SE, or Buzzer when the name is already empty -- matching
+      # EasyRPG's Scene_Name::vUpdate Cancel branch exactly (`if
+      # (name_window->Get().size() > 0) { ...Cancel...; Erase(); } else {
+      # ...Buzzer...; }`).
+      def name_input_cancel
+        if @name_ui[:name].empty?
+          play_system_se(SFX_BUZZER)
+        else
+          play_system_se(SFX_CANCEL)
+          backspace_name_input
+        end
+      end
+
+      def backspace_name_input
         @name_ui[:name] = @name_ui[:name].chop
         @name_ui[:kana] ? draw_kana_name_input : draw_name_input
       end
@@ -5377,27 +5415,35 @@ class RPG2k
         if Input.trigger?(Input::RIGHT)
           ui[:sel] = row * NAME_KANA_COLS + (col + 1) % rows[row].length
           draw_kana_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::LEFT)
           ui[:sel] = row * NAME_KANA_COLS + (col - 1) % rows[row].length
           draw_kana_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::DOWN)
           new_row = (row + 1) % rows.length
           ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
           draw_kana_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           new_row = (row - 1) % rows.length
           ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
           draw_kana_name_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           kana_name_input_confirm
         elsif Input.trigger?(Input::B)
-          name_input_backspace
+          name_input_cancel
         end
       end
 
       # Act on the highlighted cell: :confirm commits, :toggle swaps the
       # hiragana/katakana page, any kana cell types its character (up to
-      # NAME_KANA_MAX).
+      # NAME_KANA_MAX) or, once full, rejects it with Buzzer -- see
+      # #name_input_confirm's identical doc comment, which this mirrors (the
+      # kana grid has no on-screen backspace cell of its own, only the
+      # physical Cancel key, #name_input_cancel).
       def kana_name_input_confirm
         ui = @name_ui
         rows = name_kana_rows(ui[:page])
@@ -5408,7 +5454,11 @@ class RPG2k
           ui[:page] = ui[:page] == :hiragana ? :katakana : :hiragana
           draw_kana_name_input
         else
-          ui[:name] += cell if ui[:name].length < NAME_KANA_MAX
+          if ui[:name].length < NAME_KANA_MAX
+            ui[:name] += cell
+          else
+            play_system_se(SFX_BUZZER)
+          end
           draw_kana_name_input
         end
       end
