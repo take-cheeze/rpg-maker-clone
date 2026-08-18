@@ -99,9 +99,17 @@ class RPG2k
       def update
         @window.update
 
-        if Input.trigger?(Input::DOWN)
+        # Holding Down/Up auto-repeats the cursor after the initial delay,
+        # not just a single step per tap -- confirmed against EasyRPG's
+        # actual source: `Scene_Title::vUpdate` (`src/scene_title.cpp`)
+        # calls `command_window->Update()` unconditionally every frame, a
+        # genuine `Window_Command` (`Window_Selectable` subclass) whose own
+        # `Update()` is what drives the cursor via the standard
+        # trigger-then-repeat (see `Scene::ItemMenu#update_items`'s fuller
+        # writeup and docs/TODO.md).
+        if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           move_selection 1
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_selection(-1)
         end
 

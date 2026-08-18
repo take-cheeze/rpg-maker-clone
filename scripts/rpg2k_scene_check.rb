@@ -10630,6 +10630,22 @@ check 'no save data: Continue is flagged unavailable and reachable by the cursor
      'moving down from New Game still lands on Continue'
 end
 
+# See Scene::ItemMenu's identical check for the fuller writeup
+# (Window_Selectable::Update falls through to Input::IsRepeated right after
+# IsTriggered). `RGSS::Input.repeated` (distinct from `.triggered`) lets
+# this check hold a key across frames without it also reading as a fresh
+# trigger.
+check 'holding Down auto-repeats the title command cursor, not just a ' \
+      'single step per tap' do
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@selected_index),
+     'a held (repeated, not triggered) Down still moves the cursor one step'
+end
+
 check 'no save data: pressing the selection key on Continue plays Buzzer and opens nothing' do
   parent = TitleParent.new(fake_db, nil, false, false)
   scene = RPG2k::Scene::Title.new(parent)

@@ -3685,6 +3685,28 @@ The work below is roughly ordered by the critical path to a walkable game
   flips the Confirm/Redo prompt to Redo), confirmed to fail against the
   pre-fix code before the fix. **Still open**: `debug_menu.rb`, `title.rb`,
   and every battle target/command list in `battle.rb`.
+  ✅ **`title.rb` next (2026-08-18).** Confirmed against EasyRPG Player's
+  actual source: `Scene_Title::vUpdate` (`src/scene_title.cpp`) calls
+  `command_window->Update()` unconditionally every frame, a genuine
+  `Window_Command` whose own `Update()` drives the cursor via the standard
+  trigger-then-repeat — no custom DOWN/UP handling of its own in
+  `vUpdate()` at all, since the window already does it. Fixed the same
+  `|| Input.repeat?(...)` way as every other plain command list. Covered
+  by a new `scripts/rpg2k_scene_check.rb` check (a held, repeat-only Down
+  moves the title cursor one step), confirmed to fail against the pre-fix
+  code before the fix. **`debug_menu.rb` deliberately skipped, not merely
+  not-yet-reached**: it is real RPG_RT's own F9 test-play menu (see the
+  file's own class comment), but EasyRPG Player's current `Scene_Debug`
+  (`src/scene_debug.cpp`) has since grown into a materially different,
+  modernised debug tool — a range/var/string-view/interpreter-view suite
+  with its own UI vocabulary — not a faithful port of the classic
+  Switch/Variable two-page F9 browser this codebase's own `debug_menu.rb`
+  models, so its current source cannot answer what the *original* engine's
+  F9 menu does here; applying the same fix without a genuine reference
+  would be guessing, not verifying, contrary to this whole series' own
+  method. **Still open**: `debug_menu.rb` (needs a different kind of
+  reference than EasyRPG's current source before it can be checked at
+  all) and every battle target/command list in `battle.rb`.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
