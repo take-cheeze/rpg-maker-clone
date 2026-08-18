@@ -448,35 +448,58 @@ the interpreter-linking slice, in this order:
   already gets.
 
   Applying that fix does **not** get this EBOOT booting further, though —
-  and comparing all four of PPSSPP's CPU-core modes against the identical
-  patched EBOOT turned up evidence against the original "JIT
-  mistranslation" diagnosis: the byte-for-byte *same* fault address
-  sequence (0x18, 0x14, 0x2c, 0x28, ...) reproduces under the old x86 JIT,
-  under `JIT_IR` (an independently-implemented native backend), *and*
-  under `--ir` (`IR_INTERPRETER`, which shares `JIT_IR`'s MIPS-to-IR
-  frontend but does no native code generation at all — it segfaults the
-  *host* process outright at the same point, since the IR interpreter has
-  no `bIgnoreBadMemAccess`-style recovery path). Two independently-coded
-  native backends agreeing byte-for-byte, plus the IR interpreter hitting
-  the identical point despite generating no machine code, is hard to
-  explain as a backend-specific register-allocation bug; it fits a lot
-  better as something shared by every "compile/analyze a block ahead of
-  time" execution mode, and *not* shared by the one mode that's genuinely
-  different — the plain MIPS interpreter, which single-steps each
-  instruction directly against `currentMIPS`'s live state rather than
-  translating a block up front. That points at a timing-sensitive
-  condition (an interrupt or HLE callback racing unprotected/non-reentrant
-  guest state, matching this whole trail's running "memory corruption over
-  logic bugs" theme, and echoing bug 4's own interrupt-masking fix) as the
-  more likely next lead, over a genuine JIT translation bug — but this
-  pass did not chase that down further; it is a real, open question, not
-  a new final diagnosis. With the x64Analyzer fix applied, this EBOOT's
-  own boot still does not complete: execution proceeds past the fault
-  point instead of halting, but the underlying corruption persists, and
-  the guest program calls `sceKernelExitGame()` on its own partway through
-  `mrb_open` without ever printing `RPG2K_PSP_MRUBY_OPEN` — consistent
-  with the corruption leading to wild/divergent control flow rather than
-  a successful `mrb_open()`.
+  and a third pass overturned the "timing-sensitive guest-side race"
+  lead the second pass had proposed (see `-i`'s use above). The `-i`
+  comparison that motivated it was re-run with instrumentation and a
+  much longer timeout (180s instead of the harness's 15s, to rule out
+  the interpreter simply being too slow to arrive) and turns out **not**
+  to be evidence of a race at all: `-i` reaches the *exact same* point —
+  identical allocation count (632), identical final `strlen(0000011e)`
+  call, byte-for-byte identical LwMutex-teardown/`sceKernelExitGame`
+  sequence — as the JIT/`JIT_IR` runs, just without PPSSPP's
+  `bIgnoreBadMemAccess` logger printing anything along the way (its slow,
+  per-instruction memory path evidently doesn't route small guest reads
+  through the same "bad access" check the JIT's fast path does). Since
+  all four CPU-core modes converge on the identical outcome at the
+  identical point regardless of execution strategy, this rules out a
+  JIT-specific or timing-dependent cause entirely: it is a **deterministic
+  guest-side logic bug**, not a race.
+
+  That final `strlen(0000011e)` call is the decisive clue. `0x11e` (286)
+  is not a plausible string pointer, but it *exactly* matches this
+  32-bit build's `mruby/boxing_word.h` symbol encoding for symbol id 71:
+  `(71 << WORDBOX_SYMBOL_SHIFT) | WORDBOX_SYMBOL_FLAG` = `(71 << 2) | 2`
+  = `0x11e` (this build defines no `MRB_*_BOXING` macro, so it takes
+  `mrbconf.h`'s default, `MRB_WORD_BOXING`; `MRB_32BIT` then auto-defines
+  `MRB_WORDBOX_NO_INLINE_FLOAT`, which is the specific sub-encoding
+  `WORDBOX_SYMBOL_SHIFT=2`/`WORDBOX_SYMBOL_FLAG=2` matches). Some code on
+  this boot path is passing a **boxed `mrb_value` holding a `Symbol`
+  directly where a raw `const char*` is expected** — `strlen()` on a
+  tagged 32-bit word not a string. The earlier "near-null" fault
+  addresses this whole bug was named for fit the same pattern from the
+  other end: `0x0`/`0x4`/`0xc`/`0x14` are this same boxing scheme's `Qnil`/
+  `Qfalse`/`Qtrue`/`Qundef` constants (`mruby/boxing_word.h`'s
+  `mrb_special_consts`) being dereferenced as pointers, not corrupted
+  heap addresses at all — i.e. bug 8 was never heap corruption in the
+  TLSF-adjacent sense bugs 6/7 were; it is a **boxed-value/raw-pointer
+  type confusion**, recurring at several points through `mrb_open`'s
+  core/symbol-table init, of which the `strlen` call is only the last
+  (fatal) instance before teardown. Not yet localized to a specific
+  call site in `3rd/mruby/src/{gc,state,symbol}.c` (or a caller passing
+  the wrong argument shape into one of them) — every other target this
+  same vendored mruby core serves (desktop, wasm) uses a *different*
+  `mrb_basic_alloc_func` (LVGL's pool desktop-side, plain malloc on
+  wasm) and neither hits this, so the leading suspects are either
+  something specific to routing every allocation through this project's
+  own fixed arena (`app/psp/main.cxx`'s `mrb_arena_alloc`/`_realloc`) or
+  a MIPS o32 ABI/calling-convention edge case in how a `mrb_value`
+  (a 32-bit tagged word on this build) gets passed/returned versus a
+  `const char*` at some call site that only diverges in codegen on this
+  toolchain. With the x64Analyzer fix applied, this EBOOT's own boot
+  still does not complete: execution proceeds through the type-confused
+  reads instead of halting on the first one, but never prints
+  `RPG2K_PSP_MRUBY_OPEN` — consistent with `mrb_open` itself never
+  returning cleanly.
 
   Not upstreamed to `hrydgard/ppsspp` yet. The x64Analyzer fix is worth
   upstreaming on its own regardless of this EBOOT's own outcome — it is a
@@ -484,14 +507,19 @@ the interpreter-linking slice, in this order:
   behavior, useful to any guest code that trips a byte-sized bad access
   under the JIT. `-i` (interpreter mode) is not viable as a shipping
   workaround (far too slow for real gameplay) but remains useful for
-  diagnosis.
+  diagnosis — though, per above, it no longer looks like a useful
+  differential signal for this specific bug, since it reaches the same
+  broken end state.
 
-  Whether real hardware shares bugs 7 or 8 is unknown (bugs 3 and 6 are
-  moot on this boot path either way, one because it stopped triggering,
-  the other because it's fixed); bug 8's underlying corruption may or may
-  not be emulator-specific — unresolved by this pass. The P1 device
-  numbers above remain unconfirmed on the emulator and untried on
-  hardware.
+  Whether real hardware shares bug 7 is unknown (bugs 3 and 6 are moot on
+  this boot path either way, one because it stopped triggering, the other
+  because it's fixed). Bug 8, now characterized as a deterministic
+  guest-side type confusion rather than anything JIT- or timing-related,
+  is likely **not** emulator-specific — a real MIPS CPU would presumably
+  hit the identical confused read real hardware has no equivalent of
+  PPSSPP's `bIgnoreBadMemAccess` recovery for, making it fatal there too,
+  though this remains untried on hardware. The P1 device numbers above
+  remain unconfirmed on the emulator and untried on hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
