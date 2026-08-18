@@ -2428,7 +2428,10 @@ The work below is roughly ordered by the critical path to a walkable game
   with the current renderer. **Flash Screen** (11040) drives `Game::Screen` too:
   a colour + strength that fades to zero over the duration, and it **is** drawn:
   a screen-sized colour sprite above everything, shown at the flash's strength
-  through `Sprite#opacity`. **Pan Screen** (11060) drives
+  through `Sprite#opacity`. **The command's own raw 0..31 parameters used to
+  reach that sprite unscaled instead of the 0..255 range every other flash
+  caller uses — see the dedicated ✅ bullet under the RPG2003 Flash Screen
+  cluster further down this document.** **Pan Screen** (11060) drives
   `Game::Screen` as well: lock / unlock freeze or resume the camera's hero
   follow, and pan / reset scroll a pixel offset toward a target that `Scene::Map`
   adds to the camera (so — like the shake — the pan **is** visible; while locked
@@ -7367,6 +7370,44 @@ not yet verified:
   proving a non-RPG2003 party ignores a stray 7th parameter and always
   settles — the `Game::Screen` test and the two interpreter dispatch tests
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **`Interpreter#do_flash_screen` now scales Flash Screen's own raw 0..31
+  colour/strength parameters to the 0..255 range every other flash caller in
+  this codebase already uses, instead of feeding them through unscaled
+  (2026-08-18).** `Game::Screen#flash`/`#flash_begin`
+  (`mruby-rpg2k/mrblib/game.rb`) store whatever `r`/`g`/`b`/`power` they are
+  given verbatim, with no internal scaling, and `Scene::Map#update_screen_
+  overlay`'s own comment is explicit that both halves of the screen-overlay
+  pipeline are "0..255 already" — every *other* caller already honours that:
+  `Scene::Map::STEP_DAMAGE_FLASH = [31 * 8, 10 * 8, 10 * 8, 20 * 8, 6]` and
+  both `#fire_animation_flashes`/`#fire_map_target_flash` scale a troop's raw
+  `flash_red`/`flash_green`/`flash_blue`/`flash_power` fields by 8 before
+  ever calling `#flash`. `Interpreter#do_flash_screen` — the handler for the
+  **Flash Screen** (11040) event command itself, the one path a real project
+  actually authors directly — was simply missed when that convention was
+  established: it passed `cmd.param(0..3)` straight through unscaled in both
+  its mode-0 (one-shot) and mode-1 (Begin) branches. Verified against RPG_RT's
+  actual behavior via EasyRPG Player's own C++ source, fetched live:
+  `Game_Screen::FlashMapStepDamage` (`src/game_screen.cpp`) itself calls
+  `FlashOnce(31, 10, 10, 20, 6)` — confirming the command's own parameters
+  are genuinely stored on the raw 0..31 scale internally, exactly matching
+  this codebase's pre-`* 8` convention — and `Flash::MakeColor`
+  (`src/flash.h`) is where the multiply happens, at render time only:
+  `Color(r * 8, g * 8, b * 8, current_level * 8)`. A Flash Screen command
+  using RPG_RT's own classic "damage flash" values (R=31, G=0, B=0, Power=20
+  — identical to `FlashMapStepDamage`'s own call) should show a strong red
+  overlay at peak opacity 160/255; unscaled, this codebase showed an
+  essentially-black (31,0,0) overlay at 20/255 (≈8%) opacity — nearly
+  invisible instead of a strong red pulse, for every ordinary use of the
+  command (damage flashes, warning strobes, RPG2003 Begin-mode strobes).
+  Fixed by multiplying `cmd.param(0..3)` by a new `FLASH_SCALE = 8` constant
+  in both branches. Two existing `scripts/rpg2k_logic_check.rb` checks
+  ("Flash Screen without a wait starts a flash and does not pause", "RPG2003
+  Flash Screen mode 1 (Begin) strobes indefinitely and never pauses") had
+  been passing raw command parameters already at the 0..255 scale (255 for
+  "white", far past the command's own 0..31 range) and asserting them
+  unscaled — corrected to realistic 0..31 inputs and their now-correctly-
+  scaled 0..255 expectations, both confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
   status effect from landing at all, instead of only its A-E susceptibility
   rank ever mattering.** Confirmed against EasyRPG's actual C++ source:

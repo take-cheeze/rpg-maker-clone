@@ -3211,19 +3211,29 @@ module Game
     # RPG2000 project, or an RPG2003 one never given the extended layout) always
     # falls back to a plain one-shot flash, mode 0. Only mode 0 ever waits — Begin
     # and End never suspend the interpreter, since the strobe runs indefinitely.
+    #
+    # param0..3 store the raw RPG2000/2003 0..31 flash scale (confirmed against
+    # EasyRPG's own `Game_Screen::FlashMapStepDamage`, `FlashOnce(31, 10, 10, 20,
+    # 6)`), which real RPG_RT only ever multiplies by 8 at render time
+    # (`Flash::MakeColor`, `src/flash.h`: `Color(r*8, g*8, b*8, level*8)`) --
+    # `Game::Screen#flash`/`#flash_begin` instead expect the already-scaled 0..255
+    # values every other caller in this codebase already passes (`Scene::Map::
+    # STEP_DAMAGE_FLASH`, `#fire_animation_flashes`/`#fire_map_target_flash`, all
+    # `* 8`), so the raw command params are scaled here to match.
+    FLASH_SCALE = 8
     def do_flash_screen(cmd)
       mode = @state.party.rpg2003? && cmd.parameters.size > 6 ? cmd.param(6) : 0
       case mode
       when 1
         frames = cmd.param(4) * FRAMES_PER_TENTH
-        @state.screen.flash_begin(cmd.param(0), cmd.param(1), cmd.param(2),
-                                  cmd.param(3), frames)
+        @state.screen.flash_begin(cmd.param(0) * FLASH_SCALE, cmd.param(1) * FLASH_SCALE,
+                                  cmd.param(2) * FLASH_SCALE, cmd.param(3) * FLASH_SCALE, frames)
       when 2
         @state.screen.flash_end
       else
         frames = cmd.param(4) * FRAMES_PER_TENTH
-        @state.screen.flash(cmd.param(0), cmd.param(1), cmd.param(2),
-                            cmd.param(3), frames)
+        @state.screen.flash(cmd.param(0) * FLASH_SCALE, cmd.param(1) * FLASH_SCALE,
+                            cmd.param(2) * FLASH_SCALE, cmd.param(3) * FLASH_SCALE, frames)
         return unless cmd.param(5) != 0 && @state.screen.flashing?
         @wait_kind = :screen
         @waiting = true
