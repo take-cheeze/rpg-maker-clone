@@ -7821,6 +7821,21 @@ module Game
     def attack_hit_rate; @miss ? 70 : 90; end
 
     def dead?; @hp <= 0; end
+
+    # Re-seeds this troop member's own reward fields from `into` (a fresh
+    # `Enemy` for whatever database row a mid-fight Transform just repointed
+    # the parallel `Game::Battle::Combatant` at) -- what `RPG2k::Scene::
+    # Battle#sync_troop_member_rewards` calls once it notices a combatant's
+    # battler no longer matches the sprite it was drawn from. Only the fields
+    # `#total_exp`/`#total_gold`/`#drops` actually read; everything else this
+    # class carries (position, `levitate`, `hidden`) is transform-invariant --
+    # a Transform keeps its place and never revives a hidden member.
+    def reseed_rewards(into)
+      @exp = into.exp
+      @gold = into.gold
+      @drop_id = into.drop_id
+      @drop_prob = into.drop_prob
+    end
   end
 
   # An enemy troop (敵グループ, chunk 15) instantiated for a battle: the live
