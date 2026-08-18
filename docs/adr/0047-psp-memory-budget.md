@@ -263,9 +263,11 @@ the interpreter-linking slice, in this order:
      `hrydgard/ppsspp`; `flake.nix`'s `ppsspp` package output carries the
      fix as a local patch (`nix/patches/
      ppsspp-lwmutex-workarea-validate.patch`).
-  3. **Real, confirmed, not yet fixed.** With bugs 1–2 out of the way, a
-     `workareaPtr=0` genuinely comes from the guest side, not host memory
-     corruption — traced to pspsdk's own `src/libcglue/lock.c`, where
+  3. **Real bug, confirmed present in pspsdk, but no longer reachable on
+     this boot path — not fixed, and no longer blocking anything by
+     itself.** With bugs 1–2 out of the way, a `workareaPtr=0` genuinely
+     came from the guest side, not host memory corruption — traced to
+     pspsdk's own `src/libcglue/lock.c`, where
      `__retarget_lock_init_recursive` calls `malloc()` for a new lock
      struct with no null-check before dereferencing it, triggered by
      `global_stdio_init`'s lazy lock creation on this EBOOT's very first
@@ -275,10 +277,15 @@ the interpreter-linking slice, in this order:
      container library as the cause — an earlier, since-retracted theory
      in this section blamed a stale library and a downstream JIT/heap
      crash; both were artifacts of this investigation's own diagnostic
-     instrumentation perturbing timing, not genuine behavior. The real,
-     confirmed behavior with a clean toolchain is that execution continues
-     past this bug — the three affected LwMutex creates simply fail and are
-     otherwise unused early in boot — into bug 4 below).
+     instrumentation perturbing timing, not genuine behavior). That
+     `malloc()` was failing because of bug 5 below (the same broken
+     `_sbrk()` heap init) — with bug 5 fixed, `malloc()` for the lock
+     struct now succeeds and this null-check gap simply never triggers on
+     this boot path anymore (confirmed: re-tested the full boot with bug
+     5's fix applied, zero `ILLEGAL_ADDR=sceKernelCreateLwMutex` calls,
+     versus dozens before). The missing null-check is still a real latent
+     bug in pspsdk itself and worth reporting upstream, but it is not
+     something this repo needs to work around right now.
   4. **Fixed, PPSSPP-side.** The interpreter's `mfic`/`mtic` (Allegrex "move
      from/to interrupt controller", `Core/MIPS/MIPSInt.cpp`) were pure
      no-ops. pspsdk's `pspSdkDisableInterrupts()`/`EnableInterrupts()`
@@ -307,39 +314,97 @@ the interpreter-linking slice, in this order:
      it — confirmed via PPSSPP's syscall log: the "unknown syscall"/failed
      LwMutex counts, which used to run into the hundreds of thousands over
      a 15s boot attempt, dropped to zero.
-  6. **Found, not fixed — a toolchain limitation, not a quick patch.** With
-     bug 5 fixed, `psp-fixup-imports` (pspsdk's post-link import-table
-     tool) warns `stubs out of order` on this binary. It requires every
-     stub reference to a given PSP module to be physically contiguous in
-     the linked binary's import metadata; this project's `main.cxx` and
-     LVGL's PSP display driver each call into several different PSP
-     modules in ordinary control-flow order, so the linker's relocation
-     order doesn't group by module. When out of order, the tool still
-     marks entries processed but assigns some of them the wrong
-     `(module, function)` index, so PPSSPP resolves several genuine,
+  6. **Fixed, via a patched pspsdk host tool.** With bug 5 fixed,
+     `psp-fixup-imports` (pspsdk's post-link import-table tool) warned
+     `stubs out of order` on this binary. It requires every stub reference
+     to a given PSP module to be physically contiguous in the linked
+     binary's import metadata. When out of order, the tool still marked
+     entries processed but assigned some of them the wrong
+     `(module, function)` index, so PPSSPP resolved several genuine,
      correctly-named imports (confirmed present as real `ForUser`-module
      NIDs) as if they belonged to an unrelated module, and calls into them
-     return `SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED` — again silently, and
-     this is what's now hanging boot just past bug 5's fix. Re-linking
-     `main.cxx` at `-O0` does not change the warning (ruled out compiler
-     reordering as the cause; it's inherent to the source's own call
-     order). A patch that stably regroups the tool's `(stub_addr, nid)`
-     metadata by owning module was written and tested, but is **unsafe and
-     was not merged**: `stub_addr` doubles as the fixed trampoline address
-     every `jal` instruction elsewhere in the binary already targets at
-     link time, so moving which function's metadata occupies which slot
+     returned `SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED` — again silently,
+     and this was what hung boot just past bug 5's fix.
+
+     Traced to its actual source, not just its symptom: `app/psp/main.cxx`
+     alone accounts for the overwhelming majority of this EBOOT's ~88
+     total PSP imports across 15 modules; `mruby-rgss/src/psp.cxx` (built
+     into `libmruby.a`, the only other object file in the whole archive —
+     all 160 of them — that calls a raw PSP syscall at all) contributes
+     just 9, of which 2 (`sceIoWrite`, `sceKernelDelayThread`) overlap with
+     `main.cxx` and 7 are unique to it. A minimal, hand-written pspsdk
+     homebrew calling into three different modules (`ThreadManForUser`,
+     `sceDisplay`, `sceCtrl`) from a single file — deliberately structured
+     like `main.cxx`'s own mix — built clean with no warning, which ruled
+     out "any file touching multiple modules" as the trigger, and matched
+     `psp.cxx`'s own 7 module-unique calls also causing no trouble on
+     their own. The actual splits are things like `ThreadManForUser`:
+     `setup_callbacks()` calls `sceKernelCreateThread`/`sceKernelStartThread`
+     once, early, and the separate, ongoing `RPG2K_PSP_BRINGUP` heartbeat
+     calls `sceKernelGetThreadStackFreeSize` (same module) once per second
+     from inside the main loop — two genuinely different call sites,
+     necessarily far apart in `main.cxx`'s own control flow, with unrelated
+     modules' calls (`IoFileMgrForUser`, `SysMemUserForUser`, ...) between
+     them. Re-linking `main.cxx` at `-O0` did not change the warning either
+     (ruled out compiler reordering). So this was never an accident
+     reorder-away-able fix: it reflects how this EBOOT's own logic is
+     actually laid out, not a stray ordering slip — no restructuring of
+     which compilation units call which PSP modules would have avoided it
+     either, only deferred it to the next place two calls to the same
+     module happen to land far apart.
+
+     A patch that just stably regroups the tool's `(stub_addr, nid)`
+     metadata by owning module was written and tested first, and found
+     **unsafe**: `stub_addr` doubles as the fixed trampoline address every
+     `jal` instruction elsewhere in the binary already targets at link
+     time, so moving which function's metadata occupies which slot
      decouples the two — confirmed by testing it, which produced a binary
      where `sceKernelCreateThread` and `sceIoRemove` both resolved to the
      same trampoline address, and the guest's own crt0 sequence ended up
-     calling `sceIoRemove("user_main")`. A correct fix needs a full
-     relocation-aware rewrite (scan `.text` for every `jal` targeting a
-     moved slot and repoint it), a substantially bigger undertaking than
-     the fixes above; the alternative is restructuring which compilation
-     units call which PSP modules so each object file's own stubs are
-     naturally contiguous. Neither has been attempted.
+     calling `sceIoRemove("user_main")`. The actual fix does the full
+     relocation-aware rewrite that implies: after grouping, scan every
+     executable section for `jal` instructions targeting a slot that
+     moved, and repoint each one at the function's new address (an
+     ET_EXEC binary carries no relocation entries left to do this through
+     any other way). `patches/psp-fixup-imports-jal-relocation-aware.patch`
+     (pinned against a specific pspsdk commit, matching what
+     `pspdev/pspdev:latest`'s own prebuilt tool was built from) carries the
+     fix; `scripts/build_psp_fixup_imports.bash` fetches pspsdk at that
+     pin, applies it, and drops the rebuilt tool in place of the
+     toolchain's own copy — wired into the `psp` CI job
+     (`.github/workflows/build.yml`) ahead of `psp-cmake`/`cmake --build`.
+     Confirmed on this project's own EBOOT: 88 imports across 15 modules,
+     78 of which needed to move, 1620–1625 `jal` instructions repointed to
+     match (the exact count moves slightly run to run with unrelated
+     binary layout changes, e.g. bug 5's fix shrinking the .bss zero-fill
+     shifted a few unrelated addresses), zero `stubs out of order`
+     warnings afterward.
 
-  Whether real hardware shares any of bugs 3 or 6 is unknown; the P1 device
-  numbers above remain unconfirmed on the emulator and untried on hardware.
+  With bug 6 fixed, this EBOOT boots dramatically further than at any
+  earlier point on this whole P1 trail: past `RPG2K_PSP_BOOT`, through
+  `_sbrk`'s heap init (correctly allocating the full requested size this
+  time, confirmed via PPSSPP's own memory-partition log line), through
+  `mrb_open`, into real LVGL widget creation in `build_ui()`. It then hits
+  a **seventh bug, found and not yet fixed**: LVGL's builtin TLSF
+  allocator's `lv_tlsf_realloc` (`3rd/lvgl/src/stdlib/builtin/lv_tlsf.c`)
+  asserts `block already marked as free` — a use-after-free/double-free
+  detector, not a sizing issue (confirmed: bumping `LV_MEM_SIZE` 8x, from
+  256 KB to 2 MB, made no difference at all to whether or where the assert
+  fired, which a genuine capacity problem would not do). Traced to its
+  caller via a temporary `__builtin_return_address(0)` capture in
+  `psp_lvgl_assert_halt` (not kept — diagnostic only): `lv_tlsf_realloc`
+  itself, most plausibly reached from `build_ui()`'s second
+  `lv_label_set_text(g_status_label, ...)` call (the per-frame pressed-keys
+  status update; LVGL labels reallocate their internal text buffer on
+  change) reallocating a block some other write already corrupted the
+  free/used bit of, rather than a bug in LVGL's own allocator itself
+  (matching this whole trail's running theme of memory corruption over
+  logic bugs). Not yet root-caused further.
+
+  Whether real hardware shares bug 7 is unknown (bugs 3 and 6 are moot on
+  this boot path either way, one because it stopped triggering, the other
+  because it's fixed); the P1 device numbers above remain unconfirmed on
+  the emulator and untried on hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

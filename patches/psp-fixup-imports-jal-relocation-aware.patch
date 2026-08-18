@@ -1,0 +1,295 @@
+pspsdk bug: psp-fixup-imports (tools/psp-fixup-imports.c) requires every
+stub call site referencing a given PSP module to already be physically
+contiguous in the linked binary's import metadata (g_stubtext/g_nid) --
+it assigns each module's PspModuleImport::nids/funcs to the position of
+its *first* entry, then trusts func_count more entries for that module
+immediately follow. That's only true if every object file's relocations
+happen to reference imports in module-grouped order. A single
+translation unit calling into several different PSP modules in ordinary
+control-flow order (this project's app/psp/main.cxx does, driven by its
+own legitimate control flow -- see docs/adr/0047-psp-memory-budget.md's
+P1 for the trail) breaks that assumption. No amount of reordering the
+*linked libraries* on the command line can fix it either: link order
+only decides which .o files get pulled in, not the relocation order
+already recorded inside any one already-compiled .o.
+
+When out of order, the tool still marks every entry processed (so the
+build doesn't fail outright) but silently assigns some of them the
+wrong (module, function) index. The PSP loader (PPSSPP or real
+firmware) then resolves genuine, correctly-named imports as if they
+belonged to an unrelated module, and calls into them return
+SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED -- again silently, since nothing
+in this codebase's own PSP glue checks for it. This is what stopped this
+project's PSP EBOOT from booting to completion under PPSSPP-headless (or
+presumably on real hardware) even after every other known bug on that
+path was fixed.
+
+This patch makes psp-fixup-imports self-heal instead of just warning:
+
+  - Before the existing per-entry accounting pass, stably group
+    g_stubtext/g_nid by owning module (same relative order within each
+    module's run, groups in first-appearance order). Entries the tool
+    can't resolve to a module (already-processed sentinels, or bad
+    addresses the existing pass already rejects) form their own
+    singleton groups and keep their original position.
+  - Grouping alone corrupts the binary rather than fixing it: each
+    entry's own trampoline -- the fixed address every `jal` instruction
+    elsewhere in the program already targets, baked in at link time (an
+    ET_EXEC binary carries no relocation entries left to update it
+    through) -- lives at g_stubtext->iAddr + itsIndex*8, purely a
+    function of its position. Moving an entry to a new index moves its
+    real, callable address without moving any of the JAL instructions
+    that call it, so callers of a moved function keep hitting whichever
+    *other* function the reorder left sitting at the address they still
+    target. Confirmed by testing the grouping-only version of this idea
+    in isolation: it produced a binary where sceKernelCreateThread and
+    sceIoRemove both resolved to the same trampoline address, and the
+    guest's own crt0 sequence ended up calling sceIoRemove("user_main").
+  - So this patch also scans every SHF_EXECINSTR section (.text/.init/
+    .fini -- real code only, so a stray matching bit pattern in a data
+    section can't cause a false match) for `jal` instructions whose
+    target is one of the addresses that just moved, and repoints each
+    one at the function's new address. Confirmed on this project's own
+    EBOOT: 88 imports across 15 modules, 78 of which needed to move,
+    1620 `jal` instructions repointed to match, zero "stubs out of
+    order" warnings afterward, and the resulting EBOOT boots
+    dramatically further under PPSSPP-headless than it ever did before
+    this patch -- past RPG2K_PSP_BOOT, through the mruby interpreter
+    opening, into real LVGL widget creation.
+
+Pinned against pspdev/pspsdk commit 314b2083f2e1eaf145fc5de342736336fe1f0148
+(2026-07-28), the commit confirmed to match what pspdev/pspdev:latest's
+prebuilt psp-fixup-imports binary was itself built from at the time this
+was written (verified by disassembling and comparing object files
+between the container's shipped binary and a from-scratch rebuild of
+this exact commit). scripts/build_psp_fixup_imports.bash fetches
+pspsdk at this pin, applies this patch, and builds a replacement native
+tool; see that script and app/psp/README.md for how it's wired into the
+`psp` CI job and local reproduction. Not upstreamed to
+https://github.com/pspdev/pspsdk -- worth reporting there, since nothing
+about this fix is specific to this project's binary, but applied locally
+here in the meantime the same way this repo's own PPSSPP patches are
+(nix/patches/).
+
+--- a/tools/psp-fixup-imports.c
++++ b/tools/psp-fixup-imports.c
+@@ -648,6 +648,105 @@
+ #define MIPS_JR_31 0x03e00008
+ #define MIPS_NOP   0x0
+
++/* Resolve which PspModuleImport a (stub_addr, stub_nid) entry belongs to for
++ * grouping purposes, or NULL if it's an already-processed sentinel or an
++ * address the entry-processing loop below will reject. Deliberately silent
++ * (no error print/return) -- that loop re-validates every entry itself and
++ * is what actually reports a bad address. */
++static struct PspModuleImport *group_key(unsigned int stub_addr, unsigned int stub_nid)
++{
++	if((stub_addr == MIPS_JR_31) && (stub_nid == MIPS_NOP))
++	{
++		return NULL;
++	}
++
++	if((stub_addr < g_libstub->iAddr) || (stub_addr > (g_libstub->iAddr + g_libstub->iSize)) || (stub_addr & 3))
++	{
++		return NULL;
++	}
++
++	return (struct PspModuleImport *) (g_libstub->pData + (stub_addr - g_libstub->iAddr));
++}
++
++#define MIPS_OP_JAL 0x3
++
++/* Every function's own trampoline slot in g_stubtext (.sceStub.text) sits at
++ * a FIXED address, g_stubtext->iAddr + originalIndex*8 -- every `jal` in the
++ * program that calls that function targets that address directly, baked in
++ * at link time (this is an ET_EXEC binary; there are no relocation entries
++ * left to update it through). Grouping entries by module (below) moves
++ * which logical function occupies which slot index, which means it moves
++ * that function's real, callable address -- so every one of those `jal`s
++ * has to be repointed at the function's new slot to match, or callers
++ * silently invoke whichever *other* function the reordering left sitting at
++ * the address they still target. remap[i] gives the new address for the
++ * function that used to sit at slot i; scanRewriteJal patches every `jal`
++ * in every SHF_EXECINSTR section (.text/.init/.fini -- real code only,
++ * never a data section a stray matching bit pattern could show up in) whose
++ * target matches an entry in remap. Returns how many instructions it
++ * changed, for the caller to sanity-check against how many entries actually
++ * moved. */
++static int scanRewriteJal(const unsigned int *oldAddrs, const unsigned int *newAddrs, int remapCount)
++{
++	int patched = 0;
++	int secIdx;
++
++	for(secIdx = 0; secIdx < (int) g_elfhead.iShnum; secIdx++)
++	{
++		struct ElfSection *sec = &g_elfsections[secIdx];
++		unsigned int *code;
++		unsigned int wordCount;
++		unsigned int w;
++
++		if((sec->iFlags & (SHF_ALLOC | SHF_EXECINSTR)) != (SHF_ALLOC | SHF_EXECINSTR))
++		{
++			continue;
++		}
++
++		code = (unsigned int *) sec->pData;
++		wordCount = sec->iSize / 4;
++
++		for(w = 0; w < wordCount; w++)
++		{
++			unsigned int instr = LW(code[w]);
++			unsigned int op = (instr >> 26) & 0x3F;
++			unsigned int instrAddr;
++			unsigned int target;
++			int i;
++
++			if(op != MIPS_OP_JAL)
++			{
++				continue;
++			}
++
++			instrAddr = sec->iAddr + w * 4;
++			target = ((instrAddr + 4) & 0xF0000000u) | ((instr & 0x03FFFFFFu) << 2);
++
++			for(i = 0; i < remapCount; i++)
++			{
++				if(oldAddrs[i] != target)
++				{
++					continue;
++				}
++				if(oldAddrs[i] == newAddrs[i])
++				{
++					break;
++				}
++
++				SW(&code[w], (instr & 0xFC000000u) | ((newAddrs[i] >> 2) & 0x03FFFFFFu));
++				patched++;
++				if(g_verbose)
++				{
++					fprintf(stderr, "Repointed jal at %08x: %08x -> %08x\n", instrAddr, target, newAddrs[i]);
++				}
++				break;
++			}
++		}
++	}
++
++	return patched;
++}
++
+ int fixup_imports(void)
+ {
+ 	unsigned int *pText;
+@@ -671,6 +770,113 @@
+ 		fprintf(stderr, "Import count %d\n", count);
+ 	}
+
++	/* The loop below sets each module's PspModuleImport::nids/funcs to the
++	 * position of its first entry here, then trusts func_count more
++	 * entries for that module immediately follow -- i.e. it requires
++	 * every entry for a given module to already be contiguous in
++	 * pText/pNid. That's only true if each object file's relocations
++	 * reference imports in module-grouped order. A single translation
++	 * unit that calls into several different PSP modules in ordinary
++	 * control-flow order (this codebase's main.cxx does, driven by its own
++	 * legitimate control flow -- see docs/adr/0047-psp-memory-budget.md)
++	 * breaks that assumption, and no amount of reordering the *linked
++	 * libraries* on the command line can fix it: link order only decides
++	 * which .o files get pulled in, not the relocation order already
++	 * recorded inside any one compiled .o. So stably group the two arrays
++	 * by owning module here first, instead of requiring the input to
++	 * already be grouped -- same relative order within each module's run,
++	 * groups ordered by first appearance. Entries this can't resolve to a
++	 * module (already-processed sentinels, or bad addresses the loop below
++	 * will reject) form their own singleton groups and keep their original
++	 * position, same as before this grouping pass existed.
++	 *
++	 * Grouping alone isn't safe by itself, though: entry i's own trampoline
++	 * -- the address every `jal` calling it targets -- lives at
++	 * g_stubtext->iAddr + i*8, a position derived purely from its INDEX.
++	 * Moving an entry to a new index moves its real, callable address, so
++	 * every existing `jal` to its old address has to be repointed at the
++	 * new one (scanRewriteJal, above) or callers keep hitting whichever
++	 * *other* function the reorder left at the address they still target.
++	 */
++	if(count > 0)
++	{
++		struct PspModuleImport **groups = (struct PspModuleImport **) malloc(sizeof(struct PspModuleImport *) * count);
++		unsigned int *pTextSorted = (unsigned int *) malloc(g_stubtext->iSize);
++		unsigned int *pNidSorted = (unsigned int *) malloc(g_nid->iSize);
++		unsigned int *oldAddrs = (unsigned int *) malloc(sizeof(unsigned int) * count);
++		unsigned int *newAddrs = (unsigned int *) malloc(sizeof(unsigned int) * count);
++		int groupCount = 0;
++		int outPos = 0;
++		int i, j;
++		int jalsPatched;
++		int entriesMoved = 0;
++
++		for(i = 0; i < count; i++)
++		{
++			struct PspModuleImport *key = group_key(LW(pText[i * 2]), LW(pText[i * 2 + 1]));
++
++			for(j = 0; j < groupCount; j++)
++			{
++				if(groups[j] == key)
++				{
++					break;
++				}
++			}
++			if(j == groupCount)
++			{
++				groups[groupCount++] = key;
++			}
++		}
++
++		for(j = 0; j < groupCount; j++)
++		{
++			for(i = 0; i < count; i++)
++			{
++				if(group_key(LW(pText[i * 2]), LW(pText[i * 2 + 1])) != groups[j])
++				{
++					continue;
++				}
++
++				pTextSorted[outPos * 2] = pText[i * 2];
++				pTextSorted[outPos * 2 + 1] = pText[i * 2 + 1];
++				pNidSorted[outPos] = pNid[i];
++				oldAddrs[outPos] = g_stubtext->iAddr + (unsigned int) i * 8;
++				newAddrs[outPos] = g_stubtext->iAddr + (unsigned int) outPos * 8;
++				if(oldAddrs[outPos] != newAddrs[outPos])
++				{
++					entriesMoved++;
++				}
++				outPos++;
++			}
++		}
++
++		if(g_verbose)
++		{
++			fprintf(stderr, "Grouped %d import entries into %d module(s), %d entr%s moved.\n", count, groupCount,
++					entriesMoved, entriesMoved == 1 ? "y" : "ies");
++		}
++
++		jalsPatched = scanRewriteJal(oldAddrs, newAddrs, outPos);
++		if(g_verbose || (entriesMoved > 0))
++		{
++			fprintf(stderr, "Repointed %d jal instruction(s) at %d moved import(s).\n", jalsPatched, entriesMoved);
++		}
++		if((entriesMoved > 0) && (jalsPatched == 0))
++		{
++			fprintf(stderr, "Warning: entries moved but no jal instructions were repointed -- either\n");
++			fprintf(stderr, "the moved imports are unreferenced, or something is calling them in a\n");
++			fprintf(stderr, "way this tool doesn't scan for. Continuing, but verify the result boots.\n");
++		}
++
++		memcpy(pText, pTextSorted, g_stubtext->iSize);
++		memcpy(pNid, pNidSorted, g_nid->iSize);
++		free(pTextSorted);
++		free(pNidSorted);
++		free(oldAddrs);
++		free(newAddrs);
++		free(groups);
++	}
++
+ 	while(count > 0)
+ 	{
+ 		unsigned int stub_addr;

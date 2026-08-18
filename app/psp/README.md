@@ -70,9 +70,14 @@ What runs today:
 ## Building
 
 Requires the [pspdev toolchain](https://github.com/pspdev/pspdev) with `$PSPDEV`
-set (it provides `psp-gcc`, the CMake toolchain file and `create_pbp_file`):
+set (it provides `psp-gcc`, the CMake toolchain file and `create_pbp_file`).
+Run `scripts/build_psp_fixup_imports.bash` first — it replaces the
+toolchain's own `psp-fixup-imports` (normally at `$PSPDEV/bin/`) with a
+patched build; see the seven-bug trail lower in this section for why this
+EBOOT needs it to actually boot:
 
 ```sh
+scripts/build_psp_fixup_imports.bash "$PSPDEV/bin/psp-fixup-imports"
 cmake -S app/psp -B build-psp \
   -DCMAKE_TOOLCHAIN_FILE=$PSPDEV/psp/share/pspdev.cmake
 cmake --build build-psp          # -> build-psp/EBOOT.PBP
@@ -109,8 +114,8 @@ marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
 idle path (`RPG2K_PSP_GAME_START none not_found`). The job is
 **non-blocking** — the required build gate is the `psp` job, because the
-EBOOT still does not boot to completion under PPSSPP-headless. Six
-independent bugs have been found and root-caused chasing that, three of
+EBOOT still does not boot to completion under PPSSPP-headless. Seven
+independent bugs have been found and root-caused chasing that, five of
 them fixed:
 
 - pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
@@ -146,13 +151,47 @@ them fixed:
   `RPG2K_PSP_BOOT` (`_sbrk`'s heap-init probe re-ran forever). Linking
   `pspuser` first fixed it.
 
-Two more bugs are found but **not** fixed, one of them genuinely
-pspsdk-side and real, the other a build-toolchain limitation this session
-tried and failed to patch around safely — see
+A third bug — a real one, in pspsdk's own `__retarget_lock_init_recursive`
+(missing a null-check after `malloc()`) — is confirmed present but no
+longer reachable on this boot path: it only ever triggered because of the
+`_sbrk`/`sceKernelMaxFreeMemSize` bug just above, and with that fixed,
+`malloc()` for the affected lock struct no longer fails. Worth reporting
+upstream, not worth working around here.
+
+- A fourth bug, also fixed: `psp-fixup-imports` (pspsdk's post-link import
+  tool) requires every call site referencing a given PSP module to be
+  physically contiguous in the linked binary, and traced to its source (not
+  just the "stubs out of order" symptom it prints) this turns out to
+  reflect genuinely necessary separation in `main.cxx`'s own control flow —
+  e.g. `setup_callbacks()`'s one-time `ThreadManForUser` calls versus the
+  ongoing per-second heartbeat's own, much later call into the same module
+  — not an accidental ordering slip a source reorder could fix. A patch
+  that just regroups the tool's metadata by module was tried first and
+  found unsafe (it silently misdirects syscalls — confirmed: it produced a
+  binary where `sceKernelCreateThread` and `sceIoRemove` resolved to the
+  same trampoline address); the real fix additionally scans every
+  executable section for `jal` instructions targeting a moved slot and
+  repoints them, the same relocation work a real ET_EXEC loader would do
+  and this prebuilt-binary tool skips.
+  `scripts/build_psp_fixup_imports.bash` fetches pspsdk at the pinned
+  commit `patches/psp-fixup-imports-jal-relocation-aware.patch` targets,
+  applies it, and drops the rebuilt tool in place of the container's own —
+  wired into the `psp` CI job ahead of `psp-cmake`/`cmake --build`. Not yet
+  upstreamed to `pspdev/pspsdk`.
+
+With that fixed, this EBOOT now boots dramatically further than at any
+earlier point on this whole trail — past `RPG2K_PSP_BOOT`, through
+`_sbrk`'s heap init, through `mrb_open`, into real LVGL widget creation —
+and hits a **seventh bug, found and not yet fixed**: LVGL's builtin TLSF
+allocator asserts `block already marked as free` inside `lv_tlsf_realloc`,
+most plausibly reached from `build_ui()`'s per-frame
+`lv_label_set_text(g_status_label, ...)` update. Confirmed not a sizing
+issue (bumping `LV_MEM_SIZE` 8x made no difference), so more likely
+something elsewhere corrupting a TLSF block's free/used bit than a bug in
+the allocator itself — matching this whole trail's running theme of memory
+corruption over logic bugs. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full trail on both, including why the tempting-looking
-`psp-fixup-imports` metadata patch was reverted (it silently misdirects
-syscalls rather than failing cleanly). To reproduce any of this locally, run
+P1 for the full seven-bug trail. To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
 `ppsspp` package output (see above) rather than nixpkgs' unpatched one —
