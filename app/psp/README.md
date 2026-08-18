@@ -146,13 +146,27 @@ them fixed:
   `RPG2K_PSP_BOOT` (`_sbrk`'s heap-init probe re-ran forever). Linking
   `pspuser` first fixed it.
 
-Two more bugs are found but **not** fixed, one of them genuinely
-pspsdk-side and real, the other a build-toolchain limitation this session
-tried and failed to patch around safely — see
+A third bug — a real one, in pspsdk's own `__retarget_lock_init_recursive`
+(missing a null-check after `malloc()`) — is confirmed present but no
+longer reachable on this boot path: it only ever triggered because of the
+`_sbrk`/`sceKernelMaxFreeMemSize` bug just above, and with that fixed,
+`malloc()` for the affected lock struct no longer fails. Worth reporting
+upstream, not worth working around here.
+
+What's still actually blocking boot is a fourth bug, found but **not**
+fixed: `psp-fixup-imports` (pspsdk's post-link import tool) requires every
+call site referencing a given PSP module to be physically contiguous in the
+linked binary, and traced to its source (not just the "stubs out of order"
+symptom) this turns out to reflect genuinely necessary separation in
+`main.cxx`'s own control flow — e.g. `setup_callbacks()`'s one-time
+`ThreadManForUser` calls versus the ongoing per-second heartbeat's own,
+much later call into the same module — not an accidental ordering slip a
+reorder could fix. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full trail on both, including why the tempting-looking
-`psp-fixup-imports` metadata patch was reverted (it silently misdirects
-syscalls rather than failing cleanly). To reproduce any of this locally, run
+P1 for the full trail, including why a tempting-looking `psp-fixup-imports`
+metadata patch was written, tested, and reverted (it silently misdirects
+syscalls rather than failing cleanly) rather than merged. To reproduce any
+of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
 `ppsspp` package output (see above) rather than nixpkgs' unpatched one —
