@@ -491,26 +491,93 @@ the interpreter-linking slice, in this order:
   numbers above remain unconfirmed on the emulator and untried on
   hardware.
 
-  With bug 8 fixed, this EBOOT reaches a **ninth bug, found and not yet
-  fixed**: `3rd/mruby/src/gc.c:691`'s `mrb_assert(is_gray(obj))` inside
-  `gc_mark_children` now fires for real (visible as a genuine
-  `assertion "((obj)->gc_color == 0)" failed` message printed to
-  stderr, captured via the same `sceIoWrite` path every other marker in
-  this trail uses — the first time this whole investigation has reached
-  a *real, unambiguous mruby-internal assertion message* rather than a
-  raw fault address to reverse-engineer). `is_gray`/`GC_GRAY` (`gc.c`
-  around line 188-207) expects every object handed to
-  `gc_mark_children` to still be in the just-pushed-onto-the-mark-stack
-  GRAY state; this one is not, meaning something re-enters the mark
-  routine for an object whose `gc_color` has already moved past GRAY —
-  a double-mark or stale-mark-stack-entry bug. Not yet root-caused:
-  worth checking whether the fixed arena's allocator
-  (`app/psp/main.cxx`'s `mrb_arena_realloc`, which can move a live
-  object's backing memory) interacts badly with GC state that assumes
-  an object's address is stable once marked, since that is the one
-  mechanism this PSP target's allocator wiring introduces that neither
-  desktop's LVGL-pool routing nor wasm's plain-malloc routing has to
-  contend with.
+  With bug 8 fixed, this EBOOT reaches a **ninth bug, extensively
+  characterized but not yet fixed**: `3rd/mruby/src/gc.c`'s
+  `mrb_assert(is_gray(obj))` inside `gc_mark_children` fires for real
+  (a genuine `assertion "((obj)->gc_color == 0)" failed` message,
+  printed to stderr via the same `sceIoWrite` path every other marker in
+  this trail uses — the first time this whole investigation reached a
+  *real, unambiguous mruby-internal assertion message* rather than a raw
+  fault address to reverse-engineer). `is_gray`/`GC_GRAY` expects every
+  object handed to `gc_mark_children` to still be in the
+  just-pushed-onto-the-mark-stack GRAY state; this one is not — something
+  re-enters the mark routine for an object whose `gc_color` has already
+  moved past GRAY.
+
+  A deep trace pass (temporary instrumentation in `3rd/mruby/src/gc.c`
+  and `app/psp/main.cxx`, none kept) ruled out several plausible-looking
+  explanations with direct evidence, in order:
+
+  - **Not the fixed arena returning null.** `mrb_arena_alloc` was traced
+    on every call over 4 KB; the large allocations `add_heap` needs
+    (`sizeof(mrb_heap_page)`, ~5–9 KB depending on `MRB_HEAP_PAGE_SIZE`)
+    always succeeded, with megabytes of arena headroom free at the time.
+  - **Not a null `mrb_heap_page`.** `add_heap`'s own `mrb_calloc` result
+    was printed directly on multiple runs; it is a real, valid,
+    non-null pointer inside the arena, not the address-0-based
+    `init_heap_page` walk a null page would produce (an earlier pass's
+    leading theory, since the classic symptom — small, steadily
+    incrementing "bad memory access" addresses at a stride matching
+    `sizeof(RVALUE)` — looks identical to what a null-based array walk
+    would produce).
+  - **A real, reproducible, different mechanism found instead:**
+    `add_heap` was observed being called *twice* in immediate
+    succession, both times returning the *identical* page address.
+    Since a live page is never freed back to the arena while still in
+    use, this can only happen if the *first* page — created directly by
+    `mrb_gc_init()`, before a single object has ever been allocated
+    from it — gets reclaimed by a full-GC sweep before anything
+    populates it: every slot in a freshly-initialized page has
+    `tt == MRB_TT_FREE` (set by `init_heap_page`'s own loop, not because
+    anything died), and `is_dead()` (`(o)->tt == MRB_TT_FREE` is
+    sufficient on its own, no color check) cannot distinguish "freshly
+    carved, never used" from "genuinely swept clean" — so
+    `incremental_sweep_phase`'s dead-page reclamation
+    (`if (dead_slot && !page->region) { ...; mrb_free(mrb, page); }`)
+    can free a brand new, about-to-be-used page out from under its own
+    creator, and the very next `add_heap` call (triggered because
+    `gc->free_heaps` is now null again) gets the identical address back
+    from the arena's free list. This is a strong, concrete lead for how
+    a *stale* reference (a gray-stack entry, or a cached pointer to
+    "the page I was about to allocate from") could end up pointing at
+    memory that has since been reused for something else with an
+    unrelated `gc_color` — exactly the shape of the observed assertion.
+  - **Confirmed reproducible under `MRB_GC_STRESS`** (forces a full GC
+    before every single object allocation — `mrb_obj_alloc`'s own
+    `#ifdef MRB_GC_STRESS mrb_full_gc(mrb); #endif`, no `MRB_DEBUG`
+    needed), which manufactures exactly the "sweep runs before the
+    first page is populated" window on the very first allocation. This
+    is a real, verified mechanism, not speculation — but it does not
+    yet explain the *non*-stress case: with `MRB_GC_STRESS` off (the
+    normal build), reaching a full sweep this early would need an
+    allocation to genuinely fail first (`mrb_realloc_simple`'s
+    fail-then-`mrb_full_gc`-then-retry path), which the arena's ample
+    headroom this early in boot makes implausible. The non-stress
+    trigger for the same underlying vulnerability, if that is indeed
+    what it is, remains open.
+  - **Ruled out: `MRB_HEAP_PAGE_SIZE`.** This target overrides the
+    default 1024-object heap page down to 256 (`build_config.rb`) to
+    save memory; a plausible theory was that the smaller page size
+    (more, smaller pages; add_heap/sweep cycles four times as often)
+    increases exposure to whatever the real race is. Tested directly by
+    rebuilding with the default `MRB_HEAP_PAGE_SIZE=1024` (matching
+    desktop/wasm) — bug 9 reproduced identically (99 bad-memory-access
+    events, `RPG2K_PSP_MRUBY_OPEN` never printed). Page size is not the
+    differentiator.
+
+  What *does* differ from desktop/wasm, and remains the leading
+  suspect, is this target's own fixed-arena allocator (`app/psp/main.cxx`'s
+  `mrb_arena_alloc`/`mrb_arena_realloc`/`mrb_arena_free`,
+  ADR 0047's P2) routing every mruby allocation — desktop uses LVGL's
+  pool, wasm uses plain `malloc`, and neither has been observed to hit
+  this. Whether the mechanism is the premature-page-reclamation path
+  above, some other interaction specific to the arena's
+  allocate/split/coalesce bookkeeping, or a MIPS o32/pspdev-toolchain
+  codegen difference for this specific mruby code shape (echoing bug 8's
+  own false leads before its real cause was found) is not yet
+  distinguished. This whole trail's running theme — memory corruption
+  found through patient, evidence-based elimination rather than
+  intuition — held again here; it just did not reach a fix this pass.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
