@@ -2885,6 +2885,21 @@ module Game
     def battle_row; @row; end
     def battle_row=(row); @row = row == Battle::ROW_BACK ? Battle::ROW_BACK : Battle::ROW_FRONT; end
 
+    # This actor's RPG2003 active-time (gauge) battle charge (0..
+    # Battle::GAUGE_MAX), read by Combatant.from_actor when a fight starts and
+    # written back by Battle#apply_to_party when it ends -- the same
+    # persist-across-fights shape #battle_row already has, for a different,
+    # RPG2003-gauge-presentation-only field. EasyRPG's own
+    # `Game_Battler::ResetBattle` (`src/game_battler.cpp`) explicitly does
+    # *not* reset the gauge: "ATB gauge is not reset here. This is on purpose
+    # because RPG_RT will freeze the gauge and carry it between battles if
+    # !CanActOrRecoverable()" -- only `AddState`'s own Knockout branch zeroes
+    # it (`if (state_id == kDeathID) { SetAtbGauge(0); ... }`), matched here
+    # by #apply_to_party writing back 0 for an ally who ended the fight dead
+    # rather than whatever gauge value it happened to be sitting at.
+    def atb_gauge; @atb_gauge || 0; end
+    def atb_gauge=(v); @atb_gauge = Game.clamp(v || 0, 0, Battle::GAUGE_MAX); end
+
     # Replace the battle-command list (Continue restoring a saved one). nil keeps
     # whatever the database / class defines.
     def battle_commands=(ids)
@@ -8841,6 +8856,11 @@ module Game
       # `row_x_offset` only ever *reads* the already-set row back, for the
       # automatic-placement sprite's own on-screen X (still unmodelled here).
       c.row = a.respond_to?(:battle_row) ? a.battle_row : ROW_FRONT
+      # RPG2003 active-time gauge: seeded from the actor's own persisted
+      # #atb_gauge, the same way #row is -- see Actor#atb_gauge's own
+      # citation for why RPG_RT carries this across fights instead of
+      # starting every battle from empty.
+      c.gauge = a.respond_to?(:atb_gauge) ? a.atb_gauge : 0
       c
     end
 
@@ -9194,6 +9214,10 @@ module Game
         c.actor.states = surviving_states(c.states) if c.states && c.actor.respond_to?(:states=)
         c.actor.set_hp(c.hp)
         c.actor.mp = Game.clamp(c.mp, 0, c.actor.max_mp) if c.mp
+        # A survivor's active-time gauge carries into the next fight; one who
+        # ended this fight dead carries 0 instead, matching AddState's own
+        # Knockout-zeroes-the-gauge rule -- see Actor#atb_gauge.
+        c.actor.atb_gauge = c.hp > 0 ? c.gauge : 0 if c.actor.respond_to?(:atb_gauge=)
       end
     end
 

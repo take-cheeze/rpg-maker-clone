@@ -13455,6 +13455,43 @@ above are repeated here)
   catches up — confirmed the faster ally still leads `#ready_combatants`
   once both are tied at `GAUGE_MAX`, and confirmed to fail against the
   pre-fix code (`[SeatSlow, SeatFast]`, plain seat order) before the fix.
+  ✅ **An ally's active-time gauge now carries into the next fight instead of
+  always restarting from empty — a survivor keeps the charge it had when
+  the last battle ended, and only a knockout zeroes it (2026-08-18).**
+  `Game::Battle::Combatant.from_actor` (`mruby-rpg2k/mrblib/game.rb`) builds
+  a brand-new `Combatant` from `Game::Actor` at the start of every
+  `Game::Battle.new`, and `Game::Actor` had no field of its own for the
+  gauge to live in between fights, so every actor's charge silently reset
+  to 0 at the start of every encounter — HP/SP/states/row all round-trip
+  through the actor between battles, but the gauge fell through the gap.
+  Confirmed against RPG_RT's own behavior via EasyRPG's actual C++ source
+  (fetched live): `Game_Battler::ResetBattle` (`src/game_battler.cpp`)
+  explicitly does **not** touch the gauge, with its own comment spelling out
+  why — `"ATB gauge is not reset here. This is on purpose because RPG_RT
+  will freeze the gauge and carry it between battles if
+  !CanActOrRecoverable()"` — and the only place a gauge is ever zeroed is
+  `Game_Battler::AddState`'s own Knockout branch (`if (state_id == kDeathID)
+  { SetAtbGauge(0); SetHp(0); ... }`), fired the instant the Knockout state
+  lands, not merely inspected after the fact. Fixed with a new persisted
+  `Game::Actor#atb_gauge`/`#atb_gauge=` (0..`Battle::GAUGE_MAX`, mirroring
+  the existing `#battle_row` persist-across-fights shape for a different,
+  RPG2003-gauge-presentation-only field): `Combatant.from_actor` now seeds
+  `#gauge` from it the same way `#row` is already seeded, and
+  `Battle#apply_to_party` writes it back at battle end — 0 for an ally who
+  ended the fight dead (`c.hp > 0 ? c.gauge : 0`, evaluated once at
+  write-back time rather than threading a death check through every
+  individual damage-dealing call site, since a `Combatant`'s `#dead?` is
+  purely HP-driven and `c.hp` is already authoritative by then regardless of
+  which of this file's several damage paths caused it) rather than whatever
+  gauge value it happened to be sitting at. Harmless for RPG2000/alternate-
+  layout (`battle_type` 0/1) games: `#advance_gauges` is already a no-op for
+  them, so the gauge never leaves 0 regardless. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a survivor's gauge round-trips
+  through a real `Battle.from_actor` → `#apply_to_party` → `Battle.
+  from_actor` cycle unchanged; a knocked-out ally's gauge comes back 0
+  instead of whatever it was charged to), both confirmed to fail against
+  the pre-fix code (`NoMethodError`, the accessor did not exist at all)
+  before the fix.
   ✅ **A living-but-afflicted party member's own alternate-battle-layout
   sprite (RPG2003's per-actor battler graphic, `db.battleranimations`) now
   shows that state's own configured pose, not always plain Idle

@@ -11405,6 +11405,39 @@ check 'Battle#apply_to_party ignores combatants with no source actor' do
   ok true, 'write-back skipped bare combatants without error'
 end
 
+check "Battle#apply_to_party carries a survivor's active-time gauge into the next fight, matching RPG_RT (2026-08-18)" do
+  # EasyRPG's Game_Battler::ResetBattle deliberately does not reset the ATB
+  # gauge -- "ATB gauge is not reset here. This is on purpose because RPG_RT
+  # will freeze the gauge and carry it between battles if
+  # !CanActOrRecoverable()" -- only Knockout (AddState's own kDeathID
+  # branch) zeroes it. Combatant.from_actor previously never seeded #gauge
+  # from anything persistent, so every fight started every actor's gauge at
+  # 0 regardless of how charged they were when the last one ended.
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  eq 0, hero.atb_gauge, 'a fresh actor has never charged'
+
+  hc = Game::Battle.from_actor(hero)
+  hc.gauge = 250_000                 # charged most of the way up mid-fight
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 250_000, hero.atb_gauge, "the survivor's charge carries into the next fight"
+
+  hc2 = Game::Battle.from_actor(hero)
+  eq 250_000, hc2.gauge, 'and the next fight starts from that charge, not from empty'
+end
+
+check 'Battle#apply_to_party zeroes the active-time gauge for an ally who ended the fight dead' do
+  st = party_state
+  ally = st.party.actor_by_id(2)
+  ac = Game::Battle.from_actor(ally)
+  ac.gauge = 180_000                 # was charging when the killing blow landed
+  ac.hp = -5                         # knocked out
+  bat = Game::Battle.new([ac], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq 0, ally.atb_gauge, 'a knocked-out ally does not carry a charge into the next fight'
+end
+
 check 'Battle#step_action walks a round one attack at a time for animation' do
   # Two fast heroes vs two slow slimes: agility order is Ace, Bee, then the
   # slimes. #step_action surfaces the round one entry at a time (as the on-screen
