@@ -9994,6 +9994,34 @@ check 'Enemy Encounter scene: the alternative/gauge layout draws a positioned Id
   ok spr.z < 300, 'sits below the UI windows (z >= 300)'
 end
 
+# EasyRPG's Sprite_Actor::DoIdleAnimation resolves a monster's Knockout state
+# straight to AnimationState_Dead rather than hiding it; a party member is
+# treated the same way here (#build_actor_sprite's `dead:` keyword, Pose id
+# 4) -- so a member already KO'd the instant the fight opens gets that pose
+# rather than no sprite at all, the gap this check pins.
+check "Enemy Encounter scene: a party member already KO'd going into the fight draws the Dead pose, not no sprite" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Hero', battler_index: 2),
+                                          4 => battle_pose(battler_name: 'Hero', battler_index: 6) }) }
+  scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
+  st = scene.instance_variable_get(:@state)
+  fallen = BattleStubActor.new(id: 1, battler_animation_id: 5, hp: 0)
+  alive = BattleStubActor.new(id: 2, battler_animation_id: 5)
+  st.instance_variable_set(:@party, BattleStubParty.new(actors: [fallen, alive], alternate_layout: true))
+  ui = battle_to_command(scene)
+
+  sprites = ui[:actor_sprites]
+  ok sprites, 'built when the layout is alternative/gauge'
+  eq 2, sprites.compact.length, 'both members get a sprite, including the already-fallen one'
+  cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  eq RGSS::Rect.new(0, 6 * cell, cell, cell), sprites[0].src_rect,
+     "the fallen member's sprite uses the entry's Dead pose cell (battler_index 6), not Idle"
+  eq RGSS::Rect.new(0, 2 * cell, cell, cell), sprites[1].src_rect,
+     'the living member still gets the Idle pose'
+end
+
 check 'Enemy Encounter scene: the traditional (RPG2000) layout draws no actor sprites' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -11328,6 +11356,45 @@ check 'a gauge battle: Defend swaps the sprite too, via the RPG2k3 scene\'s own 
   scene.instance_variable_get(:@battle).send(:finish_round_animation)
   eq idle_y, placement_sprites(scene)[0].src_rect.y,
      "the RPG2k3 scene's own override reverts it once the gauge turn ends"
+end
+
+check 'a party member killed mid-round switches to the Dead pose once the round ends' do
+  # #finish_round_animation's own dead-select-after-#end_round addition
+  # (mirrors its existing defenders snapshot, but read after rather than
+  # before since `dead?` survives `#end_round` untouched) is what catches a
+  # felled ally's sprite up -- `hp` is set directly here rather than driving
+  # a full damage exchange, the same "simulate the moment, not the whole
+  # pipeline" idiom the Defend checks above use for `defending`.
+  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
+           4 => battle_pose(battler_name: 'Party', battler_index: 6) }
+  scene = placement_battle([1, 2], placement: 0, battle_type: 0, poses: poses)
+  idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  dead_y = 6 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+
+  sprites = placement_sprites(scene)
+  eq [idle_y, idle_y], [sprites[0].src_rect.y, sprites[1].src_rect.y], 'both start on the Idle pose'
+
+  ui = battle_ui(scene)
+  ui[:allies][1].hp = 0 # felled mid-round
+  scene.instance_variable_get(:@battle).send(:finish_round_animation)
+  sprites = placement_sprites(scene)
+  eq idle_y, sprites[0].src_rect.y, 'the survivor stays on the Idle pose'
+  eq dead_y, sprites[1].src_rect.y, 'the felled member switches to the Dead pose'
+end
+
+check 'a gauge battle: a felled ally switches to the Dead pose too, via the RPG2k3 scene\'s own #finish_round_animation' do
+  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
+           4 => battle_pose(battler_name: 'Party', battler_index: 6) }
+  scene = placement_battle([1, 2], battle_type: 2, poses: poses)
+  idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  dead_y = 6 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+
+  ui = battle_ui(scene)
+  ui[:allies][0].hp = 0 # the other member stays alive, so the fight (and @ui) survives
+  scene.instance_variable_get(:@battle).send(:finish_round_animation)
+  sprites = placement_sprites(scene)
+  eq dead_y, sprites[0].src_rect.y, "the RPG2k3 scene's own override catches the Dead pose up too"
+  eq idle_y, sprites[1].src_rect.y, 'the survivor is untouched'
 end
 
 # yado.tk / 01_shoshin's 011_siyou: "Empty party doesn't itself Game Over, but

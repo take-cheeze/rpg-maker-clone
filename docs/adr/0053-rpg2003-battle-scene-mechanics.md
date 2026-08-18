@@ -300,3 +300,32 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   `rpg2k_scene_check.rb` check proving the menu dispatch reaches it (focus
   moves to the actor panel, confirming toggles with no scene pushed, focus
   returns to the command list).
+- **A knocked-out party member's battle sprite landed (2026-08-18).** Idle
+  and Defend were the only two poses `#build_actor_sprite` picked between; a
+  dead member fell through to no sprite at all, `next nil if ally.dead?`
+  right alongside a hidden troop member never getting one either. EasyRPG's
+  `Sprite_Actor::DoIdleAnimation` (`src/sprite_actor.cpp`, confirmed against
+  the reference source) checks `IsDefending()` first, then resolves the
+  battler's `GetSignificantState()`: for a monster (no battler-animation
+  table to consult) that is a direct `state->ID == 1 ? AnimationState_Dead :
+  AnimationState_Idle`, still drawn rather than hidden. A defeated party
+  member is now treated the same unambiguous way -- `#build_actor_sprite`
+  gained a `dead:` keyword selecting Pose id 4 (Dead), alongside the
+  existing `defending:` -> Pose id 7, both falling back to Idle when the
+  entry defines no such pose of its own. The reference's *other* branch --
+  an actor's own active state (not just Death) swapping in that state's own
+  `situation.battler_animation_id` pose (`+1`/the `101` "no override" ->
+  `AnimationState_BadStatus` sentinel, worked out from `sprite_actor.h`'s
+  `AnimationState` enum but not yet exercised here) -- stays unimplemented,
+  same deferral this ADR's Phase 1 notes already used for the condition-gated
+  row rules. `Game::Battle::Combatant#states` is not itself kept in sync with
+  the Knockout state id the way `Game::Actor#states` is (nothing here needed
+  it to be, since `Combatant#dead?` is plain `hp <= 0`), so the new code
+  reads `dead?` directly rather than through `Game::States.significant`.
+  Wired into `#build_actor_sprites` (initial build), `#add_battle_actor_sprite`
+  (mid-battle rejoin) and both scenes' `#finish_round_animation` (a felled
+  ally's sprite catches up once the round/turn that killed them ends, the
+  same targeted-repositioning shape the Defend-pose landing above already
+  established for its own snapshot-then-revert). Three new
+  `rpg2k_scene_check.rb` checks cover the already-KO'd-at-open case and both
+  scenes' round-end catch-up.
