@@ -221,19 +221,33 @@ Verified: rebuilding PPSSPP with this patch drops the `Unknown syscall`
 count from ~90 to 1 and eliminates the `Bad memory access` flood
 entirely.
 
-With bug 8 fixed, the EBOOT reaches a **ninth bug, found and not yet
-fixed**: `3rd/mruby/src/gc.c:691`'s `mrb_assert(is_gray(obj))` inside
-`gc_mark_children` fires for real — the first genuine mruby-internal
-assertion message this whole trail has reached (`assertion
-"((obj)->gc_color == 0)" failed`, captured via `sceIoWrite` the same
-way every other marker here is). Something re-enters GC marking for an
-object whose color has already moved past `GRAY`; not yet root-caused,
-but worth checking whether the fixed arena's `mrb_arena_realloc`
-(`app/psp/main.cxx`, which can move a live object's backing memory)
-interacts badly with GC state that assumes a marked object's address
-stays put — the one allocator-wiring difference this PSP target has
-that neither desktop's LVGL-pool routing nor wasm's plain-malloc
-routing needs to contend with. See
+With bug 8 fixed, the EBOOT reaches a **ninth bug, extensively
+characterized but not yet fixed**: `3rd/mruby/src/gc.c`'s
+`mrb_assert(is_gray(obj))` inside `gc_mark_children` fires for real —
+the first genuine mruby-internal assertion message this whole trail has
+reached (`assertion "((obj)->gc_color == 0)" failed`, captured via
+`sceIoWrite` the same way every other marker here is). A deep trace
+pass ruled out a null `mrb_heap_page` (add_heap's own allocation is
+always a real, valid, non-null pointer) and ruled out
+`MRB_HEAP_PAGE_SIZE=256` (this target's smaller-than-default heap page,
+tested directly against the desktop/wasm-matching default 1024 — bug 9
+reproduces identically either way) — but found a real, different,
+reproducible mechanism instead: under `MRB_GC_STRESS` (forces a full GC
+before every allocation), `add_heap` was observed being called twice in
+immediate succession, both times returning the *identical* page
+address — meaning the very first heap page, created before any object
+is ever allocated from it, gets reclaimed by a full-GC sweep while
+still empty (every slot's `tt == MRB_TT_FREE` from initialization looks
+identical to "genuinely swept dead" to `is_dead()`), and the next
+`add_heap` call gets the same freed memory straight back. That is a
+concrete way a stale reference could end up pointing at reused memory
+with an unrelated color — matching the assertion's shape — but does not
+yet explain the *non*-stress trigger, which remains open. What does
+differ from desktop/wasm, and remains the leading suspect, is this
+target's own fixed-arena allocator (`app/psp/main.cxx`'s
+`mrb_arena_alloc`/`_realloc`/`_free`) — neither desktop's LVGL-pool
+routing nor wasm's plain-malloc routing has been observed to hit this.
+See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
 P1 for the full nine-bug trail. To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
