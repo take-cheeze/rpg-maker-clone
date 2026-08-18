@@ -15511,6 +15511,30 @@ check 'Scene::SkillMenu: the skill grid cursor does not wrap, caster is fixed, '
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
 end
 
+# See Scene::ItemMenu's identical check for the fuller writeup
+# (Window_Selectable::Update falls through to Input::IsRepeated for all
+# four directions right after IsTriggered). `RGSS::Input.repeated`
+# (distinct from `.triggered`) lets this check hold a key across frames
+# without it also reading as a fresh trigger.
+check 'Scene::SkillMenu: holding Right auto-repeats the skill grid cursor, and ' \
+      'holding Down auto-repeats the actor-target cursor' do
+  scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
+  RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@skill_index),
+     'a held (repeated, not triggered) Right still moves the skill cursor one cell'
+
+  scene.instance_variable_set(:@mode, :target)
+  scene.instance_variable_set(:@target_index, 0)
+  scene.send(:build_target_window)
+  RGSS::Input.repeated = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@target_index),
+     'a held (repeated, not triggered) Down still moves the target cursor one step'
+end
+
 # A party whose only two skills are Escape (30) and Teleport (31), each
 # offered once #escape_access / #teleport_access and a target are set on the
 # real Game::State that holds it -- Game::Party's own decision logic

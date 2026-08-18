@@ -3615,6 +3615,17 @@ The work below is roughly ordered by the critical path to a walkable game
   `skill_menu.rb`, `equip_menu.rb`, `status_menu.rb`, `order.rb`,
   `debug_menu.rb`, `title.rb`, and every battle target/command list in
   `battle.rb`.
+  ✅ **Next: `skill_menu.rb` (2026-08-18).** The identical three cursor
+  spots as `item_menu.rb` — the skill grid's own two-column DOWN/UP/RIGHT/
+  LEFT (`#update_skills`), the actor-target list's DOWN/UP (`#update_
+  target`), and the registered-teleport-destination list's DOWN/UP
+  (`#update_teleport_target`) — fixed the same `|| Input.repeat?(...)` way.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a held, repeat-only
+  Right moves the skill grid cursor one cell; a held, repeat-only Down
+  moves the actor-target cursor one step), confirmed to fail against the
+  pre-fix code before the fix. **Still open**: `equip_menu.rb`,
+  `status_menu.rb`, `order.rb`, `debug_menu.rb`, `title.rb`, and every
+  battle target/command list in `battle.rb`.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
