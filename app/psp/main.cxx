@@ -282,7 +282,9 @@ void* mrb_arena_realloc(void* p, size_t n) {
 
 // Names for the RGSS key ids, indexed by PspKey, for the on-screen echo.
 const char* const kKeyNames[PSP_INPUT_KEY_COUNT] = {
-    "Up", "Down", "Left", "Right", "A", "B", "C"};
+    "Up", "Down", "Left", "Right", "A",  "B",  "C",  "",  "",  "",   "",   "",
+    "",   "",     "",     "",      "",   "",   "",   "",  "",  "N0", "N1", "N2",
+    "N3", "N4",   "N5",   "N6",    "N7", "N8", "N9", "+", "-", "*",  "/",  "."};
 
 // The Memory Stick install location this build looks for a project at --
 // matching app/psp/README.md's own install instructions (copy EBOOT.PBP to
@@ -413,8 +415,8 @@ void build_ui(void) {
 }
 
 // Rebuild the "Keys:" line from the current pad bitmask.
-void show_keys(uint32_t mask) {
-  static uint32_t last = 0xffffffffu;
+void show_keys(uint64_t mask) {
+  static uint64_t last = 0xffffffffffffffffull;
   if (mask == last)
     return;
   last = mask;
@@ -424,7 +426,9 @@ void show_keys(uint32_t mask) {
   sb.str("Keys:");
   bool any = false;
   for (int k = 0; k < PSP_INPUT_KEY_COUNT; ++k) {
-    if (mask & (1u << k)) {
+    if (mask & (1ull << k)) {
+      if (kKeyNames[k][0] == '\0')
+        continue;
       sb.str(" ");
       sb.str(kKeyNames[k]);
       any = true;
