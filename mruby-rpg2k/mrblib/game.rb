@@ -10537,6 +10537,17 @@ module Game
       b.max_hp = into.max_hp; b.max_mp = into.max_sp
       b.crit_chance = Battle.crit_chance_of(into)
       b.attr_ranks = Battle.attr_ranks_of(into)
+      # #apply_attr_shift caps a later attribute-defence shift to +-1 of
+      # `attr_base_ranks`, snapshotted once at spawn (Combatant.from_actor/
+      # from_enemy) since this port represents the shift as an absolute rank
+      # rather than EasyRPG's own persistent delta (`Game_Battler::
+      # attribute_shift`, added onto a *live* `GetBaseAttributeRate` that
+      # reads straight off the currently-transformed `enemy` row -- see
+      # `Game_Enemy::GetBaseAttributeRate`, `src/game_enemy.cpp`). A
+      # transform changes what "the base" is, exactly the event a snapshot
+      # needs to be told about; left stale, a later shift is capped against
+      # the pre-transform monster's own resistance instead of this one's.
+      b.attr_base_ranks = b.attr_ranks.dup
       b.state_ranks = Battle.state_ranks_of(into)
       b.hit_rate = Battle.hit_rate_of(into)
       b.actions = into.actions

@@ -1641,6 +1641,23 @@ The work below is roughly ordered by the critical path to a walkable game
   position, `levitate` and `hidden` are untouched, since a Transform keeps
   its place and never revives a hidden member. One new
   `rpg2k_scene_check.rb` check, confirmed to fail against the pre-fix code.
+  ✅ **A transformation also reseeds `attr_base_ranks` now, so a later
+  attribute-defence shift caps against the new form's own rank, not the
+  original monster's (2026-08-18).** EasyRPG's real mechanism is a
+  persistent shift *delta* (`Game_Battler::attribute_shift`, clamped to
+  +-1 total) added onto a *live* base (`Game_Enemy::GetBaseAttributeRate`,
+  `src/game_enemy.cpp`, reads straight off the currently-transformed
+  `enemy` pointer) -- there being only the one pointer, a Transform can
+  never make it stale there. This port instead represents the shift as an
+  absolute rank, capped against a base *snapshotted once at spawn*
+  (`Combatant#attr_base_ranks`), so any event that changes what "the
+  current form" is has to explicitly re-seed that snapshot -- exactly the
+  event `#enemy_transform_action` already updates `attr_ranks`'s own
+  sibling field for and forgot to update `attr_base_ranks` alongside, the
+  identical shape as the reward-sync bug fixed just above. One new
+  `rpg2k_logic_check.rb` check (transforms into a monster with a different
+  attribute rank, then applies a shift and confirms the cap follows the
+  new form), confirmed to fail against the pre-fix code.
   ✅ **Charge was only ever spent by the enemy's own next Attack, not by
   anything else it might do first (2026-08-18).** `Game_BattleAlgorithm::
   AlgorithmBase::Start()` (`src/game_battlealgorithm.cpp`, confirmed against
