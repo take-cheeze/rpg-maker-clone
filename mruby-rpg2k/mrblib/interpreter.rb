@@ -1758,8 +1758,18 @@ module Game
 
     # Operand type 7: a miscellaneous game quantity selected by param5 (0 party
     # gold, 1 timer seconds, 2 party members, 3 save count, 4 battle count,
-    # 5 win count, 6 defeat count, 7 escape/run count). Remaining RPG2003-only
-    # selectors are not modelled and read as 0.
+    # 5 win count, 6 defeat count, 7 escape/run count, 8 BGM play position).
+    # Selector 8 is not RPG2003-only despite reading that way at a glance --
+    # EasyRPG's `ControlVariables::Other` (src/game_interpreter_control_
+    # variables.cpp) gates cases 10+ behind the Maniac Patch but not this one,
+    # so it is base-engine behaviour. It reads `Audio().BGM_GetTicks()`
+    # there, milliseconds into the current track; `RGSS::Audio#bgm_pos` is
+    # this engine's own millisecond BGM clock (src/sdl_audio.cxx's `bgm_pos`,
+    # already read the same way by Scene::Map#watch_bgm_loop for the "BGM
+    # played once" branch), so it is read the same defensive way here --
+    # `respond_to?`-gated for a backend that cannot report one. Remaining
+    # selectors (9+ other than the RPG2003 second timer below) are not
+    # modelled and read as 0.
     def other_operand(cmd)
       case cmd.param(5)
       when 0 then party.gold
@@ -1770,6 +1780,7 @@ module Game
       when 5 then @state.win_count
       when 6 then @state.defeat_count
       when 7 then @state.escape_count
+      when 8 then RGSS::Audio.respond_to?(:bgm_pos) ? RGSS::Audio.bgm_pos.to_i : 0
       when 9 then @state.timer(1).seconds # RPG2003's second timer
       else 0
       end
