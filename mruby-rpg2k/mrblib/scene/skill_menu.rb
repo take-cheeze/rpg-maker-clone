@@ -286,8 +286,13 @@ class RPG2k
       end
 
       # Queue the warp for Scene::Map (see Game::State#pending_teleport) and pop
-      # every menu on top of it in one step.
+      # every menu on top of it in one step. A registered target's own switch
+      # (Set Teleport Target / Set Escape Target's optional flag) turns on the
+      # instant the warp is queued, matching real RPG_RT's own
+      # `Game_Player::ReserveTeleport(const SaveTarget&)` -- see
+      # Game::Party#cast_escape_skill/#cast_teleport_skill.
       def queue_teleport(target)
+        @state.switches[target[:switch_id]] = true if target[:switch_id]
         @state.pending_teleport = [target[:map_id], target[:x], target[:y], 0]
         @parent.pop_to_map
       end

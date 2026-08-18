@@ -5906,7 +5906,7 @@ check 'an Escape skill is hidden with no runtime state, then gated on access ' \
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   eq [[6, 4]], st.party.field_skills(hero, st)
   before = hero.mp
-  eq({ map_id: 3, x: 4, y: 5 }, st.party.cast_escape_skill(hero, 6, st))
+  eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.cast_escape_skill(hero, 6, st))
   eq before - 4, hero.mp, "the warp costs the skill's SP like any other cast"
   # Flying (boarded the airship) bars it even with access and a target set --
   # EasyRPG's Algo::IsSkillUsable Type_escape arm reads Game_Player::IsFlying.
@@ -5931,7 +5931,7 @@ check 'a Teleport skill lists every registered destination and warps to the ' \
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
   eq [[7, 3]], st.party.field_skills(hero, st), 'access plus any target offers it'
   before = hero.mp
-  eq({ map_id: 5, x: 8, y: 9 }, st.party.cast_teleport_skill(hero, 7, st, 5))
+  eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.cast_teleport_skill(hero, 7, st, 5))
   eq before - 3, hero.mp
   # An id that was never registered casts nothing and spends nothing.
   before = hero.mp
@@ -6133,7 +6133,7 @@ check 'a special item invoking an Escape skill is hidden with no runtime ' \
   ok st.party.field_usable?(3, st)
   eq [[3, 2]], st.party.field_items(st)
   before = hero.mp
-  eq({ map_id: 3, x: 4, y: 5 }, st.party.use_special_escape_item(3, hero, st))
+  eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.use_special_escape_item(3, hero, st))
   eq before, hero.mp, 'free -- the item pays, not the caster'
   eq 1, st.party.item_count(3), 'one was consumed'
   # Flying bars it even with access and a target set, same as the skill path.
@@ -6157,7 +6157,7 @@ check 'a special item invoking a Teleport skill offers every registered ' \
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
   ok st.party.field_usable?(4, st), 'access plus any target offers it'
   before = hero.mp
-  eq({ map_id: 5, x: 8, y: 9 }, st.party.use_special_teleport_item(4, hero, st, 5))
+  eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.use_special_teleport_item(4, hero, st, 5))
   eq before, hero.mp, 'free -- no SP spent for an item cast'
   eq 0, st.party.item_count(4), 'consumed'
   # An id that was never registered casts nothing and consumes nothing --
@@ -6186,7 +6186,7 @@ check 'a use_skill equipment item invoking an Escape skill warps for free like a
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   ok st.party.field_usable?(3, st)
   before = hero.mp
-  eq({ map_id: 3, x: 4, y: 5 }, st.party.use_special_escape_item(3, hero, st))
+  eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.use_special_escape_item(3, hero, st))
   eq before, hero.mp, 'free -- the item pays, not the caster'
   eq 2, st.party.item_count(3), 'equipment is not consumed -- a reusable tool, like #use_equip_skill_item'
   # A plain weapon (no use_skill flag) must never be treated as an escape item.
@@ -6213,7 +6213,7 @@ check 'a use_skill equipment item invoking a Teleport skill warps for free like 
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
   ok st.party.field_usable?(4, st), 'access plus any target offers it'
   before = hero.mp
-  eq({ map_id: 5, x: 8, y: 9 }, st.party.use_special_teleport_item(4, hero, st, 5))
+  eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.use_special_teleport_item(4, hero, st, 5))
   eq before, hero.mp, 'free -- no SP spent for an item cast'
   eq 1, st.party.item_count(4), 'equipment is not consumed -- a reusable tool'
 end
