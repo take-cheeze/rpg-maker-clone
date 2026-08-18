@@ -843,7 +843,10 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::State`, decoded with EasyRPG's parameter layout (literal or
   variable-sourced coordinates, transparency → opacity); Move eases every
   parameter to its target over the duration and its wait flag suspends the
-  interpreter (`:picture`) until the move settles; `Scene::Map` composites the
+  interpreter (`:picture`) until the move settles — **the easing itself used
+  to compound its own rounding error frame over frame instead of resetting
+  each time, now fixed; see the dedicated ✅ bullet under "Pictures" further
+  down this document.** `Scene::Map` composites the
   pictures (id-ordered, zoomed via `stretch_blt`, at their opacity) into a layer
   above the map and below the message window. Picture **tone** is **drawn** now:
   the source is toned through the native `Bitmap#tone_blt` before compositing,
@@ -9575,6 +9578,44 @@ not yet verified:
   fail against the pre-fix code.
 
 **Pictures**
+- ✅ **Move Picture's own per-frame easing now keeps full float precision
+  between frames instead of feeding the previous frame's already-truncated
+  Integer position back into the next frame's own division — RPG_RT's real
+  rounding never compounds this way (2026-08-18).** `Game::Picture#step`
+  (`mruby-rpg2k/mrblib/game.rb`) computed `cur + (target - cur) / @frames`
+  with plain Ruby integer division and wrote the truncated result straight
+  back into `@x`/`@y`/`@zoom`/`@opacity`/`@red`/`@green`/`@blue`/
+  `@saturation`, which the *next* frame's own `step` call then read as
+  `cur` — so each frame's truncation error carried into the next frame's
+  arithmetic and kept accumulating, rather than resetting. Verified against
+  RPG_RT's actual behavior via EasyRPG Player's own C++ source, fetched
+  live: `Game_Pictures::Picture::Update` (`src/game_pictures.cpp`) keeps the
+  running interpolated value in a `double` (`data.current_x` et al.,
+  `interpolate`'s `(finish - current) / dt + current`, `dt` the frames
+  remaining) across every frame, and only ever truncates to a whole pixel at
+  *display* time (`sprite_picture.cpp`'s `int x = data.current_x`) — that
+  truncated value is never written back into `data.current_x` itself, so
+  the real rounding error never compounds: each frame's fraction is (up to
+  float precision) exactly `1/remaining` of the *true* remaining distance,
+  not of the previously-truncated one. A move from x=0 to x=10 over 7 frames
+  is the smallest clean repro: this build's old per-frame sequence was `1,
+  2, 3, 4, 6, 8, 10`; RPG_RT's real one (float state, truncate only for
+  display) is `1, 2, 4, 5, 7, 8, 10` — both agree on the first two frames
+  and the final landing frame, but diverge by a full pixel on frames 3
+  through 6, a visibly different (and slightly laggier) motion path for
+  nearly every real Move Picture call, since an exactly-divisible distance
+  is the unusual case. Fixed by keeping `@x`/`@y`/etc as the full-precision
+  (now `Float`) running state internally, dividing by `@frames.to_f` instead
+  of the bare Integer, and exposing every one of the eight parameters
+  through a new explicit reader (`def x; @x.to_i; end`, etc., replacing the
+  old direct `attr_reader`) that truncates toward zero right at the point of
+  read — matching `int x = data.current_x`'s own truncation exactly (`Float
+  #to_i` in Ruby also truncates toward zero, not floors) — so every other
+  caller (rendering, the LSD writer) still only ever sees a plain `Integer`,
+  unchanged. Covered by a new `scripts/rpg2k_logic_check.rb` check asserting
+  the exact `1, 2, 4, 5, 7, 8, 10` per-frame sequence for the 0-to-10-over-
+  7-frames example above, confirmed to fail against the pre-fix code (it
+  produced `1, 2, 3, 4, 6, 8, 10` instead) before the fix.
 - ✅ **50 concurrent picture slots; higher id always draws on top,
   independent of show order — confirmed already correct.**
   `Scene::Map#draw_pictures` composites `@state.pictures.keys.sort`, so the
