@@ -181,13 +181,20 @@ module RGSS
     N5 = 25; N6 = 26; N7 = 27; N8 = 28; N9 = 29
     PLUS = 30; MINUS = 31; MULTIPLY = 32; DIVIDE = 33; PERIOD = 34
     class << self
-      attr_accessor :dir_value, :triggered
+      attr_accessor :dir_value, :triggered, :repeated
     end
-    def self.reset; @dir_value = 0; @triggered = []; end
+    def self.reset; @dir_value = 0; @triggered = []; @repeated = []; end
     def self.trigger?(k); Array(@triggered).include?(k); end
-    # The scene treats a held key like a triggered one for widget navigation; the
-    # stub answers both from the same `triggered` set.
-    def self.repeat?(k); Array(@triggered).include?(k); end
+    # A genuinely independent signal from #trigger? -- a check can simulate a
+    # key held across several frames via `Input.repeated = [...]` without it
+    # also reading as a fresh #trigger? on that same frame, mirroring how the
+    # real RGSS::Input (mruby-rgss/mrblib/lib.rb) keeps its own
+    # @pressed/@count-driven @repeated array apart from @triggered. Used to be
+    # a bare alias of #trigger?'s own `@triggered` set, which made it
+    # impossible for a check to exercise the repeat-only branch a widget's own
+    # `Input.trigger?(k) || Input.repeat?(k)` gate takes once a key has been
+    # held long enough to auto-repeat.
+    def self.repeat?(k); Array(@repeated).include?(k); end
     def self.press?(k); Array(@triggered).include?(k); end
     def self.dir4; @dir_value || 0; end
     def self.update; end
@@ -14851,6 +14858,23 @@ check 'Scene::SaveLoad: Down/Up move and wrap across all MAX_SAVE_SLOTS' do
   RGSS::Input.reset
   eq RPG2k::MAX_SAVE_SLOTS - 1, scene.instance_variable_get(:@index),
      'UP from slot 1 wraps to the last slot'
+end
+
+# EasyRPG's Window_Selectable::Update (src/window_selectable.cpp) falls
+# through to Input::IsRepeated(DOWN/UP) right after its own IsTriggered
+# check, so holding a direction auto-scrolls the cursor after the initial
+# delay, not just once per tap. `RGSS::Input.repeated` (distinct from
+# `.triggered`, mirroring the real engine's own separate trigger/repeat
+# signals) lets this check hold a key across frames without it also reading
+# as a fresh trigger, exercising the `#repeat?` half of the gate on its own.
+check 'Scene::SaveLoad: holding Down auto-repeats the cursor, not just a ' \
+      'single step per tap' do
+  scene, = save_load_scene(:load)
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@index),
+     'a held (repeated, not triggered) Down still moves the cursor one slot'
 end
 
 check 'Scene::SaveLoad: cancelling (B) pops back without touching the parent app' do

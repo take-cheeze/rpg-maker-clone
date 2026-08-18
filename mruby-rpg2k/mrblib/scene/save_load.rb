@@ -121,9 +121,23 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN)
+        # Holding Down/Up auto-repeats the cursor after the initial delay, not
+        # just a single step per tap -- EasyRPG's `Window_Selectable::Update`
+        # (`src/window_selectable.cpp`), which this screen's file list is a
+        # subclass of, falls through to `Input::IsRepeated` right after its
+        # own `IsTriggered` check. The timing genuinely matches this build's
+        # own `Input.repeat?` already: EasyRPG's `start_repeat_time = 23`/
+        # `repeat_time = 4` (`src/input.cpp`) first fires once `press_time`
+        # reaches 24 (23 is not a multiple of 4, 24 is) and every 4 frames
+        # after, exactly the 24-then-every-4 timing `Input.repeat?`
+        # documents (`mruby-rgss/mrblib/lib.rb`), already measured against
+        # genuine RPG_RT.exe -- so this is a pure wiring gap, not a new
+        # timing to invent, matching the identical `#trigger? ||
+        # #repeat?` gate `Scene::Map#drive_number_input`'s Enter Number
+        # digit widget already uses for the same reason.
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           move_selection 1
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_selection(-1)
         elsif Input.trigger?(Input::C)
           confirm_selection

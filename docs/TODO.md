@@ -3543,6 +3543,45 @@ The work below is roughly ordered by the critical path to a walkable game
   cell geometry the same way the title-screen check above does),
   confirmed to fail against the pre-fix code (the occupied-slot assertion
   failed first, since neither slot ever blended anything) before the fix.
+  ✅ **`Scene::SaveLoad`'s own cursor never auto-repeated while Down/Up was
+  held — one slot per tap only, forever, no matter how long the key stayed
+  down (2026-08-18).** Confirmed against EasyRPG Player's actual source:
+  `Window_Selectable::Update` (`src/window_selectable.cpp`) — the base
+  class the real save/load file list is built on — checks `IsTriggered`
+  first and falls through to `IsRepeated(DOWN/UP)` right after, so holding
+  a direction auto-scrolls the list after an initial delay, the same as
+  every other `Window_Selectable`-based list in the real engine (items,
+  skills, ...). `Scene::SaveLoad#update` (`mruby-rpg2k/mrblib/scene/
+  save_load.rb`) only ever checked `Input.trigger?(DOWN/UP)` — a discrete
+  single-frame edge — leaving `Input.repeat?` (this build's own repeat
+  signal, `mruby-rgss/mrblib/lib.rb`) unconsulted. The timing genuinely
+  matches already, not just superficially: EasyRPG's `start_repeat_time =
+  23`/`repeat_time = 4` (`src/input.cpp`) first fires once a button's
+  held-frame count reaches 24 (23 is not a multiple of 4; 24 is) and every
+  4 frames after, exactly the "moves once immediately, then again after 24
+  frames, then every 4 frames" `Input.repeat?` already documents as
+  measured against genuine `RPG_RT.exe` under wine — so this is a pure
+  wiring gap, not a new timing to invent, and matches the identical
+  `#trigger? || #repeat?` gate `Scene::Map#drive_number_input`'s Enter
+  Number digit widget already uses for the same reason. Fixed by ORing
+  `Input.repeat?(DOWN)`/`Input.repeat?(UP)` into the existing trigger
+  checks. **This same gap is systemic across essentially every RPG2000
+  menu/list screen** (`item_menu.rb`, `skill_menu.rb`, `equip_menu.rb`,
+  `status_menu.rb`, `menu.rb`, `order.rb`, `debug_menu.rb`, `title.rb`, and
+  every battle target/command list in `battle.rb`) — each with its own,
+  independently-duplicated cursor code and no shared helper to fix once —
+  deliberately scoped to `Scene::SaveLoad` alone here rather than attempted
+  everywhere in one pass; a future session can lift the same one-line
+  change into each remaining screen. `scripts/rpg2k_scene_check.rb`'s own
+  scriptable `RGSS::Input` stub gained an independent `.repeated` accessor
+  (previously a bare alias of `.triggered`, which made it structurally
+  impossible for a check to hold a key across frames without also reading
+  as a fresh trigger — the exact distinction this fix's own regression
+  check needs to exercise the `#repeat?` half of the gate on its own, not
+  just incidentally pass via `#trigger?`). Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (`Input.repeated` set with
+  `Input.triggered` empty still advances the cursor one slot), confirmed
+  to fail against the pre-fix code before the fix.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
