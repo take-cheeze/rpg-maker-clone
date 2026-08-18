@@ -1,21 +1,23 @@
 class RPG2k
   module Scene
     # Main menu, opened over the map with the cancel button. Shows party status
-    # and a command list. Item, Save and Order act immediately; Skill, Equip
-    # and Status instead hand input focus to the party-status panel so the
-    # player picks *which actor* first (UP/DOWN, confirmed with C) before
-    # the corresponding scene (Scene::SkillMenu / EquipMenu / StatusMenu)
-    # opens for that one -- confirmed against EasyRPG's own
-    # `Scene_Menu::UpdateCommand`/`UpdateActorSelection` (`Skill`/
-    # `Equipment`/`Status`/`Row` all share this shape; RPG2003's Row, the
-    # battle front/back toggle, is not modelled here, but Order -- which acts
-    # on the whole party at once, not one actor -- pushes Scene::Order
-    # directly, the same `UpdateCommand` shape Item/Save already use).
-    # Cancelling back out of actor selection returns focus to the command
-    # list. End Game opens a Yes/No confirmation (see #open_end_game_confirm);
-    # only confirming "Yes" there returns to the title. Any further command
-    # (there are none left in the built command list today) falls back to a
-    # "not implemented yet" message.
+    # and a command list. Item, Save and Order act immediately; Skill, Equip,
+    # Status and Row instead hand input focus to the party-status panel so the
+    # player picks *which actor* first (UP/DOWN, confirmed with C) -- Skill/
+    # Equip/Status then open the corresponding scene (Scene::SkillMenu /
+    # EquipMenu / StatusMenu) for that one, while Row instead toggles the
+    # picked actor's front/back row right there and returns to the command
+    # list without opening anything -- confirmed against EasyRPG's own
+    # `Scene_Menu::UpdateCommand`/`UpdateActorSelection`, where all four cases
+    # share this one actor-selection panel (there is no separate `Scene_Row`;
+    # the Row toggle is inline in `UpdateActorSelection`'s own `switch`).
+    # Order -- which acts on the whole party at once, not one actor -- pushes
+    # Scene::Order directly instead, the same `UpdateCommand` shape Item/Save
+    # already use. Cancelling back out of actor selection returns focus to
+    # the command list. End Game opens a Yes/No confirmation (see
+    # #open_end_game_confirm); only confirming "Yes" there returns to the
+    # title. Any further command (there are none left in the built command
+    # list today) falls back to a "not implemented yet" message.
     class Menu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -43,14 +45,12 @@ class RPG2k
       # arranges them -- matching EasyRPG's `CommandOptionType` enum (Item=1,
       # Skill=2, Equipment=3, Save=4, Status=5, Row=6, Order=7, Wait=8; Quit=9
       # is never itself in the list -- `Scene_Menu` appends it unconditionally
-      # after the loop, which #build_commands mirrors below). Row (battle
-      # front/back rank) has no entry here and is silently skipped: this
-      # field-menu screen (a per-actor row picker, EasyRPG's `Scene_Row`) is
-      # not modelled, even though row assignment itself now is -- the
-      # in-battle Row command flips `Game::Actor#battle_row`
-      # (`scene/battle.rb`'s `:row` command, ADR 0053) the same
-      # `Game::Battle#toggle_row` a field-menu Row screen would eventually
-      # drive too, just without this menu's own dedicated entry point yet.
+      # after the loop, which #build_commands mirrors below). Row (id 6, the
+      # battle front/back toggle) is modelled the same actor-selection-panel
+      # way Skill/Equipment/Status are (see the class comment) -- picking an
+      # actor there flips `Game::Actor#battle_row` via `Game::Party
+      # #toggle_actor_row`, the field-menu counterpart to the in-battle Row
+      # command's `Game::Battle#toggle_row` (`scene/battle.rb`, ADR 0053).
       # Wait (id 8) *is* modelled: it flips the
       # save-system `atb_mode` toggle (LSD chunk 140) that makes a gauge
       # battle's command menu freeze (wait) or keep running (active) -- the
@@ -73,6 +73,7 @@ class RPG2k
         3 => [:equip, :battle_equipment, "Equip"],
         4 => [:save, :battle_save, "Save"],
         5 => [:status, :status, "Status"],
+        6 => [:row, :row, "Row"],
         7 => [:order, :order, "Order"],
         8 => [:wait, :wait, "Wait"]
       }.freeze
@@ -200,6 +201,14 @@ class RPG2k
         when :skill  then @parent.push Scene::SkillMenu.new(@parent, @state, index)
         when :equip  then @parent.push Scene::EquipMenu.new(@parent, @state, index)
         when :status then @parent.push Scene::StatusMenu.new(@parent, @state, index)
+        when :row
+          # No sub-scene: EasyRPG's own Row case toggles the picked actor's
+          # row right on the actor-selection panel and falls straight back to
+          # the command list, playing Decision regardless of whether the
+          # toggle actually took (`Game::Party#toggle_actor_row` silently
+          # no-ops a refused one -- see its own comment on the "don't empty
+          # the front row" guard).
+          @state.party.toggle_actor_row(actor) if @state.party.respond_to?(:toggle_actor_row)
         end
       end
 
@@ -342,7 +351,14 @@ class RPG2k
             play_system_se(SFX_DECISION)
             @parent.push Scene::ItemMenu.new(@parent, @state)
           end
-        when :skill, :equip, :status
+        when :skill, :equip, :status, :row
+          # Row shares the exact same empty-party gate as Skill/Equipment/
+          # Status here -- EasyRPG's `UpdateCommand` groups all four cases
+          # under one `if (actors.empty()) Buzzer else { Decision; activate
+          # the actor panel }` block. Unlike Order's `size <= 1` gate, a
+          # single-member party's Row toggle is still meaningful (front vs.
+          # back matters for a solo character), so it is not specially
+          # blocked here.
           if @state.party.actors.empty?
             play_system_se(SFX_BUZZER)
           else
