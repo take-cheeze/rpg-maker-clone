@@ -9132,7 +9132,7 @@ class BattleMagicParty
   def battle_skills(actor, _caster); actor.skills.include?(1) ? [[1, 3]] : []; end
   def db_skill(id); id == 1 ? OpenStruct.new(name: 'Fire', scope: 0) : nil; end
   def battle_skill_target(sk); sk.scope == 0 ? :enemy : :ally; end
-  def battle_skill_command(_sk, _caster, _target); { cost: 3, hp: -15, mp: 0 }; end
+  def battle_skill_command(_sk, _caster, _target, free: false); { cost: free ? 0 : 3, hp: -15, mp: 0 }; end
   # A skill's weapon-type Attribute requirement -- true (unrestricted) by
   # default, so every check predating the equip-gate stays on its own path;
   # see BattleWeaponGateParty below for a check that flips this.
@@ -9144,6 +9144,9 @@ class BattleMagicParty
   def battle_item_command(_it, _target); { hp: 20, mp: 0 }; end
   def item_all_allies?(it); it.respond_to?(:scope) && it.scope == 1; end
   def switch_item?(_id); false; end
+  # This stub's one item (Potion) is a plain medicine, never skill-invoking;
+  # see BattleSkillItemParty below for a stub covering the opposite case.
+  def skill_invoking_item?(_it); false; end
   # These checks drive an already-opening or already-open battle, not the
   # missing-troop-id diagnostic path -- every id reads as present.
   def db_enemy_group(_id); true; end
@@ -9405,6 +9408,81 @@ check 'Enemy Encounter scene: an item-triggered heal bypasses the weapon-Attribu
   eq :ally_target, ui[:phase]
   press_key(scene, RGSS::Input::C)    # heal the Hero -> round animates
   eq :animate, ui[:phase], 'the item cast went through with the weapon requirement still unmet'
+end
+
+# A party whose bag also holds a type-9 special item invoking an enemy-scope
+# attack skill (Nepheshel's own thrown-bomb line, per docs/TODO.md) --
+# Game::Party's own decision logic (#skill_invoking_item?/
+# #battle_skill_command's `free:`) is covered by rpg2k_logic_check.rb; this
+# stub only has to hand the scene something that behaves the same way, so
+# this check stays about the RGSS wiring: does confirming the item in the
+# battle Item menu route to *enemy* target selection and deal real skill
+# damage, instead of the pre-fix behaviour of prompting for an *ally* and
+# running the plain #battle_item_command medicine math (which this item's
+# database row carries none of, so it silently did nothing at all).
+class BattleSkillItemParty < BattleMagicParty
+  BOMB_ID = 7
+
+  def initialize(hurt: false)
+    super
+    @items[BOMB_ID] = 2
+  end
+
+  def db_item(id)
+    return OpenStruct.new(name: 'Fire Bomb', type: Game::Party::ITEM_SPECIAL, skill_id: 2) if id == BOMB_ID
+
+    super
+  end
+
+  def skill_invoking_item?(it)
+    it.respond_to?(:type) && it.type == Game::Party::ITEM_SPECIAL
+  end
+
+  def db_skill(id)
+    return OpenStruct.new(name: 'Firebolt', scope: 0) if id == 2
+
+    super
+  end
+
+  def battle_skill_command(sk, caster, target, free: false)
+    return { cost: free ? 0 : 5, hp: -25, mp: 0, attack: true } if sk.respond_to?(:name) && sk.name == 'Firebolt'
+
+    super(sk, caster, target, free: free)
+  end
+end
+
+check 'Enemy Encounter scene: a special item invoking an enemy-scope skill ' \
+      'routes to enemy target selection and deals real damage, not an inert ' \
+      'ally-targeted medicine cast' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleSkillItemParty.new)
+  ui = battle_to_command(scene)
+
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+  press_key(scene, RGSS::Input::DOWN) # Potion (id 5) -> Fire Bomb (id 7, sorted second)
+  press_key(scene, RGSS::Input::C)    # choose the Fire Bomb
+  eq :target, ui[:phase], 'an enemy-scope item skill prompts for an enemy, not an ally'
+
+  foe_hp = ui[:foes].first.hp
+  press_key(scene, RGSS::Input::C)    # confirm the first foe -> round animates
+  eq :animate, ui[:phase]
+  eq 2, st.party.item_count(BattleSkillItemParty::BOMB_ID),
+     'not spent yet -- an item action is only consumed once it lands'
+
+  scene.update                        # the Hero's action lands
+  entry = ui[:battle].log.first
+  eq 25, foe_hp - ui[:foes].first.hp, 'the skill\'s real damage landed, not a 0-effect medicine cast'
+  eq 1, st.party.item_count(BattleSkillItemParty::BOMB_ID), 'one Fire Bomb consumed'
+  eq 10, ui[:allies].first.mp, 'the caster\'s own MP is untouched -- the item paid, not the caster'
+  ok entry[:item_id] == BattleSkillItemParty::BOMB_ID, "the log entry carries the item's id"
 end
 
 # A party whose Hero knows no battle skill at all, so Skill's own list opens
