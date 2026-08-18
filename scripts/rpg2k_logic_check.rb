@@ -10630,6 +10630,26 @@ check 'a preemptive escape always succeeds regardless of the roll' do
   eq :escaped, b.result
 end
 
+check 'Battle#first_strike? is true only for the opening ambush round, ' \
+      'and only when the encounter is actually a first strike' do
+  # `@rounds` is 0 for the whole of round 1's command phase (before
+  # #begin_round has ever run -- Scene::Battle only calls it once every
+  # actor already has a command, including a possible Escape) and 1 or
+  # higher for every round after, mirroring EasyRPG's own `first_strike`
+  # flag: set for the whole of round 1 and cleared right before round 2's
+  # command phase opens (`Scene_Battle_Rpg2k::ProcessSceneActionOption`'s
+  # `ePost` substate, src/scene_battle_rpg2k.cpp).
+  hero = combatant('Hero', 40, 0, 5, 100)
+  foe = combatant('Slime', 30, 0, 20, 100)
+  fs = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false, false, true)
+  ok fs.first_strike?, 'true before round 1 has begun'
+  fs.begin_round
+  ok !fs.first_strike?, 'false once round 1 has actually begun'
+
+  no_fs = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  ok !no_fs.first_strike?, 'false for an ordinary (non-first-strike) encounter'
+end
+
 check 'attempt_escape is a no-op once the battle is already decided' do
   hero = combatant('Hero', 40, 0, 20, 100)
   downed = combatant('Slime', 0, 0, 5, 0)            # already wiped -> victory

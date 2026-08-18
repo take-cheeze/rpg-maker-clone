@@ -9193,6 +9193,20 @@ module Game
       Game.clamp(150 - base, 0, 100)
     end
 
+    # Whether the fight is still within its opening first-strike ambush round --
+    # the one window `#attempt_escape`'s own `preemptive` guarantee is meant for.
+    # `@rounds` starts at 0 and is bumped to 1 by `#begin_round` (called once
+    # every actor's command, including a possible Escape, is already chosen for
+    # round 1), so it is still 0 for the whole of that opening command phase and
+    # 1-or-higher for every round after -- the same "still round 1, before it's
+    # actually begun" window EasyRPG's own `first_strike` flag covers
+    # (`Scene_Battle_Rpg2k::ProcessSceneActionOption`'s `ePost` substate clears
+    # it to `false` right before opening round 2's own command phase,
+    # `src/scene_battle_rpg2k.cpp`).
+    def first_strike?
+      @first_strike && @rounds.zero?
+    end
+
     # Attempt to flee the fight. A `preemptive` first strike always succeeds, as
     # does an escape a Force Flee battle page has granted; otherwise a 0..99 roll
     # under #escape_chance wins. Success ends the battle as :escaped (#finished? /
