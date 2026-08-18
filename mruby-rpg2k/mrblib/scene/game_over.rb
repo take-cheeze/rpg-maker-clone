@@ -1,8 +1,8 @@
 class RPG2k
   module Scene
     # The RPG2000 Game Over screen: the database's `GameOver/<name>` picture
-    # filling the screen with its game-over music playing, dismissed by a button
-    # press, which returns to a fresh title.
+    # filling the screen with its game-over music playing, dismissed by the
+    # Decision key, which returns to a fresh title.
     #
     # RPG_RT reaches this the same two ways this build does — the Game Over event
     # command (12420) and a battle defeat whose encounter says "game over" rather
@@ -42,7 +42,11 @@ class RPG2k
           @armed = true unless Input.press?(Input::C) || Input.press?(Input::B)
           return
         end
-        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        # EasyRPG's `Scene_Gameover::vUpdate` (src/scene_gameover.cpp) checks
+        # only `Input::IsTriggered(Input::DECISION)` -- no Cancel anywhere in
+        # the file. Unlike the message/choice/menu windows this screen
+        # otherwise resembles, Cancel does not also dismiss it.
+        return unless Input.trigger?(Input::C)
         parent.return_to_title
       end
 
