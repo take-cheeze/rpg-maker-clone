@@ -49,13 +49,23 @@ class RPG2k
 
       private
 
+      # Holding Down/Up auto-repeats both cursors here after the initial
+      # delay, not just a single step per tap -- confirmed against
+      # EasyRPG's actual source: `Scene_Order::vUpdate` (`src/
+      # scene_order.cpp`) calls `window_left->Update()`/`window_confirm->
+      # Update()` unconditionally, every frame, before ever checking which
+      # one is active -- both are genuine `Window_Selectable`s, whose own
+      # `Update()` is what actually drives the cursor (trigger-then-repeat,
+      # see `Scene::ItemMenu#update_items`'s fuller writeup); `GetActive()`
+      # only gates the *Decision/Cancel* handling in `UpdateOrder`/
+      # `UpdateConfirm`, not the cursor movement itself.
       def update_left
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @counter == 0 ? @parent.pop : undo_last_pick
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           move_cursor(1)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_cursor(-1)
         elsif Input.trigger?(Input::C)
           pick_current
@@ -110,7 +120,8 @@ class RPG2k
       def update_confirm
         if Input.trigger?(Input::B)
           redo_picks
-        elsif Input.trigger?(Input::DOWN) || Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::DOWN) || Input.trigger?(Input::UP) ||
+              Input.repeat?(Input::DOWN) || Input.repeat?(Input::UP)
           @confirm_index = @confirm_index == 0 ? 1 : 0
           refresh_confirm_cursor
           play_system_se(SFX_CURSOR)

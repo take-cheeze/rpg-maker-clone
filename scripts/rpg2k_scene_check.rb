@@ -14683,6 +14683,43 @@ check 'Scene::Order: Redo clears every pick and returns to the left column, ' \
   eq original_order, state.party.actors.map(&:object_id), 'the party is untouched'
 end
 
+# EasyRPG's Scene_Order::vUpdate (src/scene_order.cpp) calls window_left->
+# Update()/window_confirm->Update() unconditionally, every frame -- both
+# genuine Window_Selectables whose own Update() drives the cursor
+# (trigger-then-repeat), before GetActive() ever gates which of
+# UpdateOrder/UpdateConfirm runs. So both cursors here auto-repeat, unlike
+# equip_menu.rb's/status_menu.rb's discrete-only actor switches.
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold
+# a key across frames without it also reading as a fresh trigger.
+check 'Scene::Order: holding Down auto-repeats both the left-column pick ' \
+      'cursor and the Confirm/Redo prompt cursor' do
+  scene, = order_scene
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@cursor_index),
+     'a held (repeated, not triggered) Down still moves the pick cursor one row'
+
+  scene.instance_variable_set(:@cursor_index, 0)
+  RGSS::Input.triggered = [RGSS::Input::C] # pick Hero
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # onto the only unpicked row
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # pick Ally -- both picked, prompt opens
+  scene.update
+  RGSS::Input.reset
+  eq :confirm, scene.instance_variable_get(:@focus)
+  eq 0, scene.instance_variable_get(:@confirm_index), 'defaults to Confirm'
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@confirm_index),
+     'a held (repeated, not triggered) Down still flips the prompt cursor to Redo'
+end
+
 # -- Scene::SaveLoad: the save/load file-select screen -------------------------
 #
 # Scene::Menu's Save command and Scene::Title's Continue entry both used to
