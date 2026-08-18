@@ -4777,8 +4777,25 @@ module Game
       sk.respond_to?(:absorb_damage) ? (sk.absorb_damage ? true : false) : false
     end
 
-    def skill_hit(sk)
+    # `sk.hit == -1` is a sentinel meaning "use the caster's own weapon-based
+    # hit chance" rather than a fixed rate -- EasyRPG's `Algo::CalcSkillToHit`
+    # (`src/algo.cpp`) reads it as its very first line, unconditionally, for
+    # every skill (not gated behind any EasyRPG-only extension flag the way
+    # the row terms a few lines further down are): `skill.hit == -1 ?
+    # source.GetHitChance(Game_Battler::WeaponAll) : skill.hit`. A `Combatant`
+    # snapshot (every real caller today) already carries that merged figure
+    # as its own `hit_rate` -- the same field `Game::Battle#to_hit` reads for
+    # an ordinary Attack; a bare `Game::Actor`/`Game::Enemy`, should one ever
+    # reach this, falls back to `Battle.hit_rate_of` instead, the identical
+    # `attack_hit_rate`-reading helper a fresh `Combatant` is seeded from.
+    def skill_hit(sk, source)
+      return skill_hit_weapon_fallback(source) if sk.respond_to?(:hit) && sk.hit == -1
       sk.respond_to?(:hit) ? (sk.hit || 100) : 100
+    end
+
+    def skill_hit_weapon_fallback(source)
+      return source.hit_rate || 90 if source.respond_to?(:hit_rate)
+      Battle.hit_rate_of(source)
     end
 
     # A Skill's to-hit chance, ported from EasyRPG's `Algo::CalcSkillToHit`
@@ -4801,7 +4818,7 @@ module Game
     # penalty a pre-reference guess had used for attacks; the reference settles
     # it: skills are untouched by rows. See ADR 0053/0054.
     def skill_to_hit(sk, source, target)
-      return skill_hit(sk) unless sk.respond_to?(:failure_message) && sk.failure_message == 3
+      return skill_hit(sk, source) unless sk.respond_to?(:failure_message) && sk.failure_message == 3
       # The physical formula is enemy-only: an ally/self-scoped skill (scope 2/3/4)
       # always falls back to the flat rate regardless of the flag — EasyRPG's
       # `CalcSkillToHit` guards the whole physical branch behind
@@ -4809,9 +4826,9 @@ module Game
       # can no longer even set the flag, so the branch is reached only by skills
       # that still target the opposing side (scope 0 single / 1 all enemy).
       scope = sk.respond_to?(:scope) ? sk.scope.to_i : 0
-      return skill_hit(sk) unless scope == 0 || scope == 1
+      return skill_hit(sk, source) unless scope == 0 || scope == 1
 
-      to_hit = skill_hit(sk)
+      to_hit = skill_hit(sk, source)
       # A do-nothing-restricted target cannot dodge: the attack always connects.
       return 100 if do_nothing_restricted?(target)
       # The caster's own statuses (e.g. Blind) sour its aim first, before the
