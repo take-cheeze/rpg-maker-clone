@@ -11193,6 +11193,19 @@ now passed to both rather than queried twice. Covered by three new
 firing once per tile walked; an RPG2000 fixture never playing one even when
 the field is set; and an RPG2003 fixture with `on_damage_se` set staying
 silent on a harmless tile while playing on every tile of a damaging one.
+✅ **Riding the airship now skips terrain damage and the footstep SE
+entirely (2026-08-18).** `#note_party_step` looked up and applied the
+stepped-on tile's terrain regardless of what the party was riding.
+EasyRPG's real `Game_Player::Move` returns via its own `InAirship()` check
+*before* it ever looks up the terrain row at all -- neither the HP damage
+nor the RPG2003 footstep SE fire while airborne, and the exemption is
+airship-specific (`InAirship()`, not a general `boarded?` test): a
+boat/ship still sails the water layer's own terrain and takes it exactly
+like walking does. The status-condition map-step slip
+(`Party#apply_map_step_damage`) has no such gate in the reference
+(`UpdateNextMovementAction`'s own `ApplyStateDamage` call is
+unconditional) and is untouched. One new `rpg2k_scene_check.rb` check,
+confirmed to fail against the pre-fix code.
 ✅ **A dangling chipset id no longer renders a map blank and fully passable
 with no trace** — the "chipset" case from the "invalid hero, skill, item,
 enemy, enemy group, battle animation, terrain, chipset, common event" list

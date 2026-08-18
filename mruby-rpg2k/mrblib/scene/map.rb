@@ -7230,11 +7230,25 @@ class RPG2k
         # to say so" moment -- except a heal never flashes red or counts as
         # "damaged" for the footstep SE below, matching EasyRPG's own
         # `Game_Player::Move`, which only sets `red_flash` for positive damage.
-        row = terrain_row_at(@state.x, @state.y)
-        terrain_hit = terrain_step_damage(row)
-        terrain_damaged = !terrain_hit.empty? && row && row.respond_to?(:damage) &&
-                          row.damage && row.damage > 0
-        play_terrain_footstep_se(row, terrain_damaged)
+        #
+        # Skipped entirely while riding the airship: `Game_Player::Move`
+        # returns via `InAirship()`'s own early check *before* it ever looks
+        # up the stepped-on tile's terrain row, so an airborne party takes
+        # neither the HP damage nor (RPG2003) the footstep SE for whatever is
+        # below it -- unlike a boat/ship, which still sails the water layer's
+        # own terrain and is not exempted (`InAirship()` alone, not a general
+        # `boarded?` check). The status-condition slip above has no such
+        # gate in the reference (`UpdateNextMovementAction`'s own
+        # `ApplyStateDamage` call runs unconditionally), so it stays outside
+        # this guard.
+        terrain_damaged = false
+        unless @state.boarded == :airship
+          row = terrain_row_at(@state.x, @state.y)
+          terrain_hit = terrain_step_damage(row)
+          terrain_damaged = !terrain_hit.empty? && row && row.respond_to?(:damage) &&
+                            row.damage && row.damage > 0
+          play_terrain_footstep_se(row, terrain_damaged)
+        end
         return if hit.empty? && !terrain_damaged
         @state.screen.flash(*STEP_DAMAGE_FLASH) if state_damaged || terrain_damaged
       end

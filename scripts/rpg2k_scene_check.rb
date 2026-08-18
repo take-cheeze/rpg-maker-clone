@@ -16136,6 +16136,35 @@ check 'on_damage_se withholds the footstep on a harmless step, and plays it on a
   eq 2, RGSS::Audio.se_calls.count { |c| c[0] == 'Hurt1' }, 'and plays it on every step that does'
 end
 
+# Riding the airship skips terrain damage and the footstep SE entirely --
+# EasyRPG's `Game_Player::Move` returns via `InAirship()`'s own early check
+# *before* it ever looks up the stepped-on tile's terrain row, so neither
+# fires while airborne. `InAirship()` alone, not a general `boarded?`
+# check: a boat/ship still sails the water layer's own terrain and is not
+# exempted (`check_random_encounter`'s own "riding the airship skips the
+# roll entirely" check above is the same exemption for a different step
+# effect). #note_party_step's status-condition slip damage has no such
+# gate in the reference (`UpdateNextMovementAction`'s `ApplyStateDamage`
+# call is unconditional), so it is untouched by this and not exercised here.
+check 'riding the airship skips terrain damage and the RPG2003 footstep SE' do
+  RGSS::Audio.reset_se
+  grounded = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [grounded], rpg2003: true,
+                     terrain_damage: 3, footstep: 'Step1')
+  walk(scene, 2)
+  ok grounded.hp < 100, 'on foot, the damaging terrain hurts as usual'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Step1' }, 'and the footstep plays'
+
+  RGSS::Audio.reset_se
+  airborne = SlipActor.new([])
+  scene2 = new_scene({}, player: [0, 0], members: [airborne], rpg2003: true,
+                      terrain_damage: 3, footstep: 'Step1')
+  scene2.instance_variable_get(:@state).boarded = :airship
+  walk(scene2, 2)
+  eq 100, airborne.hp, 'riding the airship, the same terrain does nothing'
+  ok RGSS::Audio.se_calls.none? { |c| c[0] == 'Step1' }, 'and no footstep plays either'
+end
+
 # -- bush depth (下半身消去) ---------------------------------------------------
 
 # Every tile of the synthetic map is terrain 42, so `bush_depth:` sets what the
