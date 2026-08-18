@@ -114,8 +114,8 @@ marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
 idle path (`RPG2K_PSP_GAME_START none not_found`). The job is
 **non-blocking** — the required build gate is the `psp` job, because the
-EBOOT still does not boot to completion under PPSSPP-headless. Eight
-independent bugs have been found and root-caused chasing that, six of
+EBOOT still does not boot to completion under PPSSPP-headless. Nine
+independent bugs have been found and root-caused chasing that, seven of
 them fixed:
 
 - pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
@@ -194,37 +194,48 @@ does not share the bug). The resulting null/wild buffer, fed into
 `lv_display_set_buffers`, is what corrupted LVGL's own TLSF pool further
 down the boot path. With that fixed, the EBOOT boots past display
 creation and into `mrb_open`'s GC init before hitting an **eighth bug,
-partially fixed and re-characterized twice**: PPSSPP reports `Bad memory
-access detected! 00000014` (or a nearby address) — a near-null write —
-inside `mrb_gc_init`. First characterized as PPSSPP's x86-64 JIT
-mistranslating the guest code; a follow-up pass found and fixed a real,
-separate bug along the way (`Common/x64Analyzer.cpp` was missing the
-8-bit-register MOV opcodes, `0x88`/`0x8A`, from its crash-recovery
-disassembler, turning what should have been a gracefully-ignored bad
-access into a fatal halt — `nix/patches/ppsspp-x64analyzer-8bit-mov.patch`,
-verified against both of PPSSPP's native JIT backends), but applying it
-does not get this EBOOT booting further. That pass also proposed a
-timing-sensitive guest-side race as the next lead, from comparing four
-PPSSPP CPU-core modes — a third pass overturned that: re-run with a much
-longer timeout (180s, ruling out the interpreter simply being too slow to
-arrive), `-i` reaches the *exact same* point (632 allocations, an
-identical final `strlen(0000011e)` call, byte-for-byte identical teardown)
-as the JIT modes, just without PPSSPP's bad-access logger printing along
-the way — so all four modes agree, ruling out a race. `0x11e` (286) turns
-out to exactly match this build's `mruby/boxing_word.h` word-boxing
-encoding for symbol id 71 (`(71 << 2) | 2`); the earlier "near-null" fault
-addresses (`0x0`/`0x4`/`0xc`/`0x14`) match the same scheme's `Qnil`/
-`Qfalse`/`Qtrue`/`Qundef` constants. Bug 8 is a **deterministic boxed-value/
-raw-pointer type confusion** — a boxed `mrb_value` (holding a `Symbol` in
-the fatal case) passed where a raw `const char*` was expected somewhere in
-`mrb_open`'s core/symbol-table init — not a JIT bug, a race, or heap
-corruption in the TLSF-adjacent sense bugs 6/7 were. Not yet localized to
-a specific call site; the same vendored mruby core runs fine on desktop
-and wasm (different allocator wiring), so the leading suspects are this
-project's own fixed arena allocator or a MIPS o32 ABI edge case specific
-to this toolchain. See
+fixed**: PPSSPP reported `Bad memory access detected! 00000014` (or a
+nearby address) and separately spammed `Unknown syscall ... (module: 255
+func: 4095)` dozens of times during boot. Three earlier passes
+misdiagnosed this (as a PPSSPP JIT bug, then a timing race, then a
+boxed-`mrb_value`/`const char*` type confusion inside mruby); a fourth
+pass, instrumenting `psp-fixup-imports` itself to print its own grouping
+decisions, found the real cause: the grouping is fully correct (the
+earlier `psp-nm`/`psp-objdump` cross-references were reading *stale*
+symbol addresses, from before the tool's own intentional reorder), and
+the actual function at the faulting slot was `strtoul`
+(`SysclibForKernel`, NID `0x6A7900E1`) — one of four `SysclibForKernel`
+imports (`strtoul`, `strncat` `0xD3D1A3B9`, `memchr` `0x68A78817`,
+`tolower` `0x3EC5BBF6`) that PPSSPP's own loader correctly recognizes by
+NID but has no HLE handler for, out of the sixteen this EBOOT pulls in
+(the other twelve, e.g. `strlen`/`memcpy`/`memset`, PPSSPP does
+implement). Every call to one of the four missing functions silently
+did nothing and returned whatever garbage was already in the return
+register — that is what produced this whole bug's symptoms (the
+near-null reads, which happen to match `mruby/boxing_word.h`'s special
+constants coincidentally rather than from any real type confusion, and
+the eventual fatal `strlen` call on garbage). Fixed by adding all four
+to PPSSPP's `SysclibForKernel` HLE table, matching its existing
+entries' style — `nix/patches/ppsspp-sysclibforkernel-missing-functions.patch`.
+Verified: rebuilding PPSSPP with this patch drops the `Unknown syscall`
+count from ~90 to 1 and eliminates the `Bad memory access` flood
+entirely.
+
+With bug 8 fixed, the EBOOT reaches a **ninth bug, found and not yet
+fixed**: `3rd/mruby/src/gc.c:691`'s `mrb_assert(is_gray(obj))` inside
+`gc_mark_children` fires for real — the first genuine mruby-internal
+assertion message this whole trail has reached (`assertion
+"((obj)->gc_color == 0)" failed`, captured via `sceIoWrite` the same
+way every other marker here is). Something re-enters GC marking for an
+object whose color has already moved past `GRAY`; not yet root-caused,
+but worth checking whether the fixed arena's `mrb_arena_realloc`
+(`app/psp/main.cxx`, which can move a live object's backing memory)
+interacts badly with GC state that assumes a marked object's address
+stays put — the one allocator-wiring difference this PSP target has
+that neither desktop's LVGL-pool routing nor wasm's plain-malloc
+routing needs to contend with. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full eight-bug trail. To reproduce any of this locally, run
+P1 for the full nine-bug trail. To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
 `ppsspp` package output (see above) rather than nixpkgs' unpatched one —

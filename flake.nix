@@ -165,6 +165,7 @@
               ./nix/patches/ppsspp-lwmutex-workarea-validate.patch
               ./nix/patches/ppsspp-mfic-mtic-interrupt-mask.patch
               ./nix/patches/ppsspp-x64analyzer-8bit-mov.patch
+              ./nix/patches/ppsspp-sysclibforkernel-missing-functions.patch
             ];
           });
         }
