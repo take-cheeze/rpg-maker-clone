@@ -2827,6 +2827,56 @@ check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BG
   ok st.switches[1], 'the Stay branch ran (a free stay always stays)'
 end
 
+# EasyRPG's `Game_Interpreter_Map::CommandShowInn`
+# (src/game_interpreter_map.cpp) is the exact same method for the foreground
+# and every Parallel Process's own interpreter, like Open Shop/Enter Hero
+# Name -- but it carries one extra, deliberately-preserved nuance of its own
+# (EasyRPG's own comment: "Emulates RPG_RT behavior (Bug?) Inn's called by
+# parallel events overwrite the current message"): a *priced* stay is gated
+# `main_flag && !Game_Message::CanShowMessage(main_flag)`, which is always
+# false for a non-foreground interpreter, so the message-active check is
+# skipped entirely -- unlike Open Shop, which keeps the ordinary
+# `IsMessageActive()` gate for every caller alike. Before `Scene::Map
+# #drive_parallel_wait` had an `:inn` branch at all, a Parallel Process's own
+# Show Inn fell into the generic "background: resume" default and read as a
+# complete no-op, the same defect Open Shop/Enter Hero Name had before their
+# own fixes -- so this covers both halves: the missing branch, and the
+# priced-vs-free asymmetry once it exists.
+check 'Show Inn (priced) issued from a Parallel Process barges over an open ' \
+      'message window instead of waiting for it' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4) # Parallel Process
+  par.event_commands = inn_commands(ic, 100)
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, InnStubParty.new(1000))
+  scene.send(:open_message, ['an unrelated message window is up'], false)
+  inn_window = nil
+  6.times { scene.update; inn_window = scene.instance_variable_get(:@inn_window); break if inn_window }
+  ok inn_window, 'the priced inn prompt opened for a Parallel-Process-issued ' \
+                 'command despite an open, unrelated message window -- matches ' \
+                 "EasyRPG's own documented RPG_RT quirk rather than silently " \
+                 'no-opping (the pre-fix behavior) or blocking on the message ' \
+                 '(a plausible-looking but wrong fix)'
+end
+
+check 'Show Inn (free stay) issued from a Parallel Process still waits for an ' \
+      'open message window to clear, unlike the priced case just above' do
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4) # Parallel Process
+  par.event_commands = inn_commands(ic, 0) # price 0: free stay, no prompt
+  scene = new_scene({ 1 => event(2, 2, par) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, InnStubParty.new(1000))
+  scene.send(:open_message, ['an unrelated message window is up'], false)
+  5.times { scene.update }
+  ok !st.screen.fading?, 'a free stay must not auto-accept while a message window is still open'
+  ok !st.switches[1], 'the Stay branch has not run yet either'
+  scene.send(:close_message)
+  40.times { scene.update } # the free stay proceeds, fades out (35 frames) and resolves
+  ok st.switches[1], 'the free stay ran through to its Stay branch once the message cleared'
+end
+
 check 'Key Input Proc waits for a key, stores its code, then continues' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
