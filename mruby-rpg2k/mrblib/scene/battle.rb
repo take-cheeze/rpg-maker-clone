@@ -1480,7 +1480,7 @@ class RPG2k
           play_system_se(SFX_DECISION)
           target = foes[@ui[:target_i]]
           close_battle_target
-          if pending_kind == :skill
+          if pending_skill?
             apply_pending_skill(target)
           else
             @ui[:battle].command_attack(current_actor, target)
@@ -1494,6 +1494,9 @@ class RPG2k
           if pending_kind == :skill
             @ui[:phase] = :skill
             draw_battle_skill
+          elsif pending_skill? # an item-invoked skill: back out to the item list
+            @ui[:phase] = :item
+            draw_battle_item
           else
             @ui[:pending] = nil
             @ui[:phase] = :command
@@ -1503,6 +1506,16 @@ class RPG2k
       end
 
       def pending_kind; @ui[:pending] && @ui[:pending][:kind]; end
+
+      # Whether the pending action casts a skill -- either chosen from the
+      # Skill menu (`kind: :skill`) or invoked by a special/use_skill battle
+      # item (`kind: :item` with a resolved `sk`, see #drive_battle_item's
+      # confirm branch) -- as opposed to a plain medicine/switch item or a
+      # basic Attack, both of which leave `sk` unset. #apply_pending_skill/
+      # #apply_pending_skill_all read `@ui[:pending][:item_id]` themselves to
+      # tell the two skill sources apart where that still matters (the SP
+      # cost and the log entry's bag-consumption id).
+      def pending_skill?; @ui[:pending] && @ui[:pending][:sk]; end
 
       # -- Skill sub-menu ------------------------------------------------------
 
@@ -1597,13 +1610,21 @@ class RPG2k
       end
 
       # Commit the pending skill on `target` (SP cost / effect from the model),
-      # then move to the next actor.
+      # then move to the next actor. `item_id` set (a special/use_skill battle
+      # item invoking this skill, see #drive_battle_item's confirm branch)
+      # makes the item pay instead of the caster's own SP -- EasyRPG's
+      # `Game_BattleAlgorithm::Skill::vStart` (`src/game_battlealgorithm.cpp`)
+      # consumes the item rather than calling `ChangeSp` whenever one backs
+      # the cast -- and rides onto the built command for
+      # #drive_battle_animate's bag consumption and #reflects_skill?'s own
+      # item-casts-are-never-reflected exclusion.
       def apply_pending_skill(target)
         sk = @ui[:pending][:sk]
         sid = @ui[:pending][:sid]
-        c = @state.party.battle_skill_command(sk, current_actor, target)
+        item_id = @ui[:pending][:item_id]
+        c = @state.party.battle_skill_command(sk, current_actor, target, free: !item_id.nil?)
         @ui[:battle].command_skill(current_actor, target,
-                                          name: sk.name, skill_id: sid,
+                                          name: sk.name, skill_id: sid, item_id: item_id,
                                           absorb: c[:absorb] ? true : false,
                                           # Left as `c[:attack]` verbatim (not coerced to a
                                           # boolean): a stub `battle_skill_command` in the test
@@ -1633,17 +1654,20 @@ class RPG2k
       # living enemies for an attack skill, all living allies for a heal): build
       # one per-target effect from the model (attack damage varies with each
       # target's defence) and queue them as a single volley. The shared SP cost /
-      # infliction ride along once.
+      # infliction ride along once. `item_id`: see #apply_pending_skill's
+      # identical comment -- the item pays instead of SP, and rides the
+      # command for bag consumption / reflect exclusion.
       def apply_pending_skill_all(targets)
         sk = @ui[:pending][:sk]
         sid = @ui[:pending][:sid]
-        meta = @state.party.battle_skill_command(sk, current_actor, targets.first)
+        item_id = @ui[:pending][:item_id]
+        meta = @state.party.battle_skill_command(sk, current_actor, targets.first, free: !item_id.nil?)
         effects = targets.map do |t|
-          c = @state.party.battle_skill_command(sk, current_actor, t)
+          c = @state.party.battle_skill_command(sk, current_actor, t, free: !item_id.nil?)
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
         @ui[:battle].command_skill_all(current_actor, effects,
-                                              name: sk.name, skill_id: sid,
+                                              name: sk.name, skill_id: sid, item_id: item_id,
                                               absorb: meta[:absorb] ? true : false,
                                               attack: meta[:attack], # see #apply_pending_skill's comment
                                               cost: meta[:cost],
@@ -1697,7 +1721,37 @@ class RPG2k
           it = @state.party.db_item(item_id)
           @ui[:pending] = { kind: :item, item_id: item_id, it: it }
           close_battle_item
-          if @state.party.switch_item?(item_id)
+          # A type-9 special item, or an equipment item flagged `use_skill`,
+          # invokes the skill named in its `skill_id` instead of being plain
+          # medicine -- the invoked skill's own scope decides where this goes
+          # next, exactly like #confirm_battle_skill dispatches an ordinary
+          # skill chosen from the Skill menu (`Scene_Battle::AssignSkill`,
+          # `src/scene_battle.cpp`, dispatches an item-backed skill through
+          # the identical scope switch). `#battle_usable?` already excluded
+          # this item from the list entirely unless its skill is battle-usable
+          # in the first place (never Escape/Teleport, see #battle_skill?), so
+          # every skill reached here is one #battle_skill_target can resolve.
+          sk = @state.party.skill_invoking_item?(it) ? @state.party.db_skill(it.skill_id) : nil
+          if sk
+            @ui[:pending][:sk] = sk
+            @ui[:pending][:sid] = it.skill_id
+            case @state.party.battle_skill_target(sk)
+            when :self
+              apply_pending_skill(current_actor)
+            when :enemy
+              @ui[:target_i] = 0
+              @ui[:phase] = :target
+              draw_battle_target
+            when :all_enemy
+              apply_pending_skill_all(living_foes)
+            when :all_ally
+              apply_pending_skill_all(living_allies)
+            else # :ally
+              @ui[:ally_i] = 0
+              @ui[:phase] = :ally_target
+              draw_battle_ally_target
+            end
+          elsif @state.party.switch_item?(item_id)
             apply_pending_switch_item
           elsif @state.party.item_all_allies?(it)
             # The whole roster, dead included -- EasyRPG's own entire_party
@@ -1741,7 +1795,7 @@ class RPG2k
           play_system_se(SFX_DECISION)
           target = allies[@ui[:ally_i]]
           close_battle_ally_target
-          if pending_kind == :skill
+          if pending_skill?
             apply_pending_skill(target)
           else
             apply_pending_item(target)

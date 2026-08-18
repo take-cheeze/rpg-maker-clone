@@ -2848,6 +2848,70 @@ The work below is roughly ordered by the critical path to a walkable game
    invoking an Escape/Teleport skill warps for free and a plain weapon is
    never treated as one), confirmed to fail against the pre-fix code. See
    `changelog.d/menu-use-skill-equipment-item.fixed.md`.
+   ✅ **The battle-scene half of this same fix was still missing its own
+   dispatch, so an enemy-scope item skill (Nepheshel's whole thrown-bomb
+   line — 火炎玉, 爆裂玉, 氷結玉, 雷撃玉 and the rest — is exactly this
+   shape) was selectable from the in-fight Item menu but did nothing at
+   all (2026-08-18).** The fix above landed `#battle_usable?`/
+   `#battle_skill?` (the model layer both scenes share, which is why such
+   an item correctly appeared in the battle Item list to begin with) and
+   `Scene::ItemMenu#choose_item`'s own scope dispatch, but that dispatch
+   lives on the **field** menu class; the in-fight Item menu is a
+   different scene entirely (`RPG2k::Scene::Battle`, split out from
+   `Scene::Map` by ADR 0052, `mruby-rpg2k/mrblib/scene/battle.rb`), and
+   its own `#drive_battle_item` confirm branch was never given the
+   equivalent special-case. It always fell into the generic
+   ally-target/`#battle_item_command` path — pure medicine arithmetic
+   (`#item_recovery` reading `recover_hp`/`recover_sp` and friends, fields
+   a skill-invoking item's row never sets) — so confirming such an item
+   prompted for an *ally* and then computed a 0 HP/0 SP, no-cure "use"
+   that consumed nothing and changed nothing, regardless of what its
+   invoked skill actually did. Confirmed against EasyRPG Player's real
+   source: `Scene_Battle::ItemSelected` (`src/scene_battle.cpp`) resolves
+   the item's `skill_id` and calls `AssignSkill(skill, item)` — the
+   identical dispatch an ordinary Skill-menu pick goes through
+   (`SkillSelected` calls `AssignSkill(skill, nullptr)`), which switches on
+   the skill's own `scope` to pick enemy/ally/self/all-enemy/all-ally
+   target selection; `Game_BattleAlgorithm::Skill::vStart`
+   (`src/game_battlealgorithm.cpp`) is what actually charges for it —
+   `if (item) ConsumeItemUse(item->ID); else source->ChangeSp(-cost)` — so
+   the item pays and no SP moves, never both. Fixed by giving
+   `#drive_battle_item`'s confirm branch the same scope-based dispatch
+   `#confirm_battle_skill` already uses for an ordinary skill pick
+   (`Game::Party#battle_skill_target`), reached via a new
+   `Game::Party#skill_invoking_item?` (the exact `it.type == ITEM_SPECIAL
+   || (it.use_skill && (1..5).cover?(it.type))` test `Scene::ItemMenu
+   #choose_item` already inlines, shared here rather than duplicated a
+   third time). `Game::Party#battle_skill_command` gained a `free:`
+   keyword (mirroring `vStart`'s own item-vs-SP branch: `cost` is 0 when
+   set, matching `#use_special_item`/`#use_equip_skill_item`'s identical
+   "the item is the cost" rule on the field side) and `Game::Party
+   #command_skill`/`#command_skill_all` gained an `item_id:` field
+   alongside their existing `skill_id:`, threaded onto the produced log
+   entry as `Game::Battle#apply_skill_hit`'s already-existing recovery
+   branch does for `command_item` (its attack branch was missing the
+   identical field entirely — a latent asymmetry never exercised until
+   this fix needed it on an *attack*-shaped item cast — added to match).
+   That `item_id:` is what makes the item consume from the bag when the
+   action lands (`#drive_battle_animate`'s existing `entry[:item_id]`
+   check, shared with an ordinary medicine) and, matching
+   `Skill::IsReflected`'s own `if (item) return false;`, is what
+   `Game::Battle#reflects_skill?`'s pre-existing `cmd[:skill_id] &&
+   !cmd[:item_id]` guard already relies on to keep an item-cast skill from
+   ever bouncing off a Reflect-warded target the way a caster's own cast
+   would. `Scene::Battle#apply_pending_skill`/`#apply_pending_skill_all`
+   (already shared by the Skill menu's own single- and all-target casts)
+   now read an optional `item_id` off the pending action and pass it
+   through unchanged rather than needing a parallel copy of either method.
+   Escape/Teleport-type item skills need no new handling here — they were
+   already excluded from the battle item list entirely by `#battle_skill?`
+   before this fix, unchanged. Covered by a new `scripts/rpg2k_scene_check.rb`
+   check (a special item invoking a single-enemy attack skill routes to
+   enemy target selection rather than an ally prompt, deals the skill's
+   real damage rather than a 0-effect medicine cast, consumes the item
+   only once the action lands, and leaves the caster's own MP untouched),
+   confirmed to fail against the pre-fix code (asserting `:target`,
+   getting `:ally_target`) before the fix.
 - ✅ Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. (One research question remains: a

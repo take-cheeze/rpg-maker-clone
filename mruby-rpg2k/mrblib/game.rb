@@ -4967,8 +4967,15 @@ module Game
     # Both branches carry the skill's own `variance` now — `Game::Battle#apply_
     # skill_hit` is what actually spreads either sign of effect by it, this
     # method just reports the number the skill row names.
-    def battle_skill_command(sk, caster, target)
-      cost = skill_cost(sk, caster)
+    #
+    # `free:` is for a skill invoked by a special/use_skill item rather than
+    # chosen from the caster's own skill list — EasyRPG's own
+    # `Game_BattleAlgorithm::Skill::vStart` (`src/game_battlealgorithm.cpp`)
+    # branches on whether an item backs the cast: `if (item)
+    # ConsumeItemUse(item->ID); else source->ChangeSp(-cost)` — the item pays
+    # instead of the caster's own SP, never both.
+    def battle_skill_command(sk, caster, target, free: false)
+      cost = free ? 0 : skill_cost(sk, caster)
       base = skill_effect(sk, caster)
       # Attribute-defence shifting isn't scoped to attack skills -- a "raise
       # my own resistance" buff and a "lower the enemy's" debuff are both this
@@ -5064,6 +5071,16 @@ module Game
           # RPG2003 reverse case above turns this into an inflict instead.
           cured: cure_ids, inflict: inflict_ids, chance: skill_to_hit(sk, caster, target) }
       end
+    end
+
+    # Whether item `it` invokes a skill directly (a type-9 Special item, or an
+    # equipment item flagged `use_skill`, field 71) rather than being a plain
+    # medicine/switch item — the same test `Scene::ItemMenu#choose_item`
+    # inlines for the field menu's own dispatch, shared here for the battle
+    # menu's identical one (see #battle_usable? just below, which already
+    # gates such an item on its invoked skill being battle-usable at all).
+    def skill_invoking_item?(it)
+      it && (it.type == ITEM_SPECIAL || (it.use_skill && (1..5).cover?(it.type)))
     end
 
     # Whether item `id` can be used in battle: a medicine flagged occasion_battle
@@ -9610,13 +9627,20 @@ module Game
     # (rather than defaulted `false`) when the caller does not pass it, so
     # #apply_skill_hit still falls back to the sign of `hp` for a command built
     # by hand with a negative `hp` and no explicit `attack:`.
+    #
+    # `item_id:` is for a skill invoked by a special/use_skill battle item
+    # rather than chosen from the caster's own list (see #battle_skill_command's
+    # `free:`, which such a caller pairs this with) -- carried through to the
+    # produced log entry exactly like #command_item's own field, for
+    # #drive_battle_animate's bag consumption and #reflects_skill?'s
+    # item-casts-are-never-reflected exclusion.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
                       absorb: false, attr_shift: nil, attr_ids: nil,
                       stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil,
-                      physical_rate: 0)
+                      physical_rate: 0, item_id: nil)
       ally.command = { kind: :skill, target: target, name: name,
-                       skill_id: skill_id, absorb: absorb, attack: attack,
+                       skill_id: skill_id, item_id: item_id, absorb: absorb, attack: attack,
                        cost: cost, hp: hp, mp: mp,
                        inflict: inflict || [], chance: chance, variance: variance,
                        attributes: attributes || [],
@@ -9644,13 +9668,18 @@ module Game
     # property of the skill itself, not of who it lands on. #apply_command
     # produces one log entry per living target, drained one at a time by
     # #step_action.
+    #
+    # `item_id:` mirrors #command_skill's own identical field, for the same
+    # item-invoked-skill case's bag consumption -- #apply_command_all already
+    # keeps it on the volley's first produced entry only, the same
+    # single-consumption rule #command_item_all's own `item_id:` follows.
     def command_skill_all(ally, targets, name:, cost:, inflict: nil, chance: 100,
                           variance: 0, attributes: nil, skill_id: nil,
                           absorb: false, attr_shift: nil, attr_ids: nil,
                           stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil,
-                          physical_rate: 0)
+                          physical_rate: 0, item_id: nil)
       ally.command = { kind: :skill, all: true, targets: targets, name: name,
-                       skill_id: skill_id, absorb: absorb, attack: attack, cost: cost,
+                       skill_id: skill_id, item_id: item_id, absorb: absorb, attack: attack, cost: cost,
                        inflict: inflict || [], chance: chance,
                        variance: variance, attributes: attributes || [],
                        attr_shift: attr_shift, attr_ids: attr_ids || [],
@@ -11539,7 +11568,13 @@ module Game
           attr_shifted: shifted, attr_shift_dir: cmd[:attr_shift],
           stat_changed: stat_changed,
           target_ally: ally?(target), skill: cmd[:name],
-          skill_id: cmd[:skill_id], target_index: @enemies.index(target),
+          # `cmd[:item_id]` mirrors the recovery branch's own identical field
+          # just below -- an attack-flavoured skill invoked by a battle item
+          # (a thrown bomb) needs it on the log entry exactly as much as a
+          # medicine's own recovery does, for the same bag-consumption
+          # (#drive_battle_animate) and reflect-exclusion (#reflects_skill?)
+          # reasons.
+          item_id: cmd[:item_id], skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed, sp_damage: sp_dmg,
           target_mp: target.mp }
       else
