@@ -1666,6 +1666,50 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check that drives a Tint Screen through
   `#update_map_tone` with a fight open and asserts the backdrop tone tracks
   the map layer (and is left alone once the fight is closed).
+  ✅ **Enemy Encounter's own per-fight backdrop override (param2) is now
+  read — it used to be silently discarded, every scripted encounter falling
+  back to the map/terrain default above regardless of what the event author
+  actually chose (2026-08-18).** RPG_RT's own editor gives this command a
+  third choice beyond the map's own automatic backdrop: an explicit
+  background image named directly on the command, or an explicit terrain id
+  to read the backdrop from instead of wherever the party happens to be
+  standing. Confirmed against RPG_RT's actual behavior via EasyRPG Player's
+  own C++ source (fetched live): `Game_Interpreter_Map
+  ::CommandEnemyEncounter` (`src/game_interpreter_map.cpp`) `switch`es on
+  `com.parameters[2]` — 0 (the only case this codebase modelled) calls
+  `Game_Map::SetupBattle`, the map-tree walk already ported as
+  `Game::Backdrop.name_for`; 1 sets `args.background` from the command's own
+  free-text `string` field; 2 sets `args.terrain_id` from `parameters[8]`.
+  `Spriteset_Battle`'s constructor (`src/spriteset_battle.cpp`) proves an
+  explicit background name wins outright (`if (!background_name.empty())
+  ... else Background(terrain_id)`), and `Background(int terrain_id)`
+  (`src/background.cpp`) resolves that terrain's own row directly — no
+  map-tree walk at all, unlike the param2==0 default.
+  `Interpreter#do_enemy_encounter` (`mruby-rpg2k/mrblib/interpreter.rb`)
+  never read `param(2)`, `cmd.string` or `param(8)`, so every fight this
+  command opened used the automatic map/terrain default even when the
+  author had explicitly picked a different one. Fixed by threading
+  `param(2)`'s selection onto `@battle_request` as `:background`
+  (param2==1, `cmd.string`) or `:terrain_id` (param2==2, `param(8)`), and
+  giving `Scene::Battle#encounter_backdrop`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) first refusal on either key before
+  falling back to `Game::Backdrop.name_for` as before. The terrain-id
+  override needed a new `Scene::Map#backdrop_for_terrain_id(tid)`
+  (`mruby-rpg2k/mrblib/scene/map.rb`), factored out of the existing
+  `#terrain_backdrop(x, y)`'s own tile-position lookup so it can read a
+  terrain row directly by id, matching `Background(int terrain_id)`'s own
+  bypass of the map-tree walk. Deliberately scoped to the backdrop alone —
+  RPG2003's own additional `param(6)`/`param(7)` fields this same command
+  carries (battle condition/formation) are a separate, already-documented,
+  deliberately-deferred gap (`game.rb`'s "RPG2003 battle conditions are
+  entirely unmodeled" note), left untouched here. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (param2==1 makes the resulting
+  battle's backdrop the command's own named background; param2==2 makes it
+  the named terrain id's own backdrop, deliberately a different terrain
+  than the one the fixture party is actually standing on, so the check only
+  passes if the override genuinely bypasses positional lookup), both
+  confirmed to fail against the pre-fix code (both returned the empty/flat
+  default) before the fix.
   **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
   than only ever attacking — the single biggest silent gap left in the battle
   system, since **510 of the 959 enemy actions across the two test beds are

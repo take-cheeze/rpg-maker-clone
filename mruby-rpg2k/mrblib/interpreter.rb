@@ -1406,6 +1406,20 @@ module Game
     # resume_battle. The turn-based battle itself is not built yet. A troop id
     # the database no longer has never arms the wait at all -- see
     # #skip_invalid_troop.
+    #
+    # param2 selects the battle backdrop's own source, verified against
+    # EasyRPG Player's actual C++ source rather than assumed:
+    # `Game_Interpreter_Map::CommandEnemyEncounter` (`src/
+    # game_interpreter_map.cpp`) `switch`es on it -- 0 (the ordinary,
+    # previously the only case modelled) leaves no override at all, so
+    # `Scene::Battle#encounter_backdrop` falls back to the map/terrain
+    # default it already computes; 1 names an explicit background image
+    # directly on the command (`cmd.string`, RPG_RT's own free-text field for
+    # this command, ignored entirely by every param0/1/3/4/5 read above); 2
+    # names an explicit terrain id instead (param8), read off that terrain's
+    # own row directly rather than wherever the party happens to be standing.
+    # Threaded onto `@battle_request` as `:background`/`:terrain_id`, read
+    # back by `Scene::Battle#encounter_backdrop`.
     def do_enemy_encounter(cmd)
       escape_mode = cmd.param(3)
       troop_id = cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)]
@@ -1420,6 +1434,10 @@ module Game
         allow_escape: escape_mode != 0, first_strike: cmd.param(5) != 0,
         defeat_game_over: cmd.param(4) == 0
       }
+      case cmd.param(2)
+      when 1 then @battle_request[:background] = cmd.string.to_s
+      when 2 then @battle_request[:terrain_id] = cmd.param(8)
+      end
       @state.battle_count += 1 # a battle was entered (Control Variables "Other")
       @wait_kind = :battle
       @waiting = true

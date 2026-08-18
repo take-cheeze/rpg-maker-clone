@@ -783,10 +783,27 @@ class RPG2k
       # so a page talking mid-round does not fight it for the same row.
       BATTLE_EVENT_MSG_Y = 8
 
-      # The backdrop this encounter fights over: whatever Game::Backdrop resolves
-      # for the current map, given the terrain the party is standing on. '' when
-      # nothing names one, which draws the flat field.
+      # The backdrop this encounter fights over. Enemy Encounter's own param2
+      # selector can override the ordinary map/terrain default per fight,
+      # verified against EasyRPG Player's actual C++ source rather than
+      # assumed: `Game_Interpreter_Map::CommandEnemyEncounter`
+      # (`src/game_interpreter_map.cpp`) sets `args.background` to the
+      # command's own string literal for param2==1, or `args.terrain_id` to an
+      # explicit terrain id (param8) for param2==2 -- `Interpreter
+      # #do_enemy_encounter` threads these onto `@battle_request` as
+      # `:background`/`:terrain_id`. An explicit background name wins outright
+      # (`Spriteset_Battle`'s constructor, `src/spriteset_battle.cpp`: `if
+      # (!background_name.empty()) ... else Background(terrain_id)`); an
+      # explicit terrain id reads straight off that terrain's own row
+      # (`Background(int terrain_id)`, `src/background.cpp`) -- bypassing the
+      # map-tree walk entirely, unlike the ordinary default below. Only when
+      # neither key is present (param2==0, the ordinary case) does this fall
+      # back to whatever `Game::Backdrop` resolves for the current map, given
+      # the terrain the party is standing on. '' when nothing names one, which
+      # draws the flat field.
       def encounter_backdrop
+        return @req[:background].to_s if @req.key?(:background)
+        return @map.backdrop_for_terrain_id(@req[:terrain_id]) if @req.key?(:terrain_id)
         Game::Backdrop.name_for(@state.map_id, @map.map_properties,
                                 @map.terrain_backdrop(@state.x, @state.y))
       end
