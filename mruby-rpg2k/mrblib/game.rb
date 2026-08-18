@@ -3515,8 +3515,27 @@ module Game
           @item_usage[id] = 0
         end
       end
-      return c if @items[id] == c
-      @items[id] = c
+      # Losing the last copy erases the bag entry outright, the same way
+      # EasyRPG's `Game_Party::AddItem` (`src/game_party.cpp`) does when
+      # `total_items <= 0` -- it removes the id/count/usage triple from its
+      # arrays rather than storing a 0 count, and never inserts one at all
+      # for an item that was never held in the first place (its own early
+      # `!has` branch only inserts when `amount > 0`). Storing `@items[id] =
+      # 0` here instead used to leave a phantom zero-count key sitting in
+      # the bag hash forever -- invisible in ordinary play, since every
+      # reader already guards on `count > 0`, but not invisible in the save
+      # file: `#to_h`'s inventory writer builds chunk 109's `item_ids`/
+      # `item_counts` straight off `@party.items.keys`, so the junk id got
+      # written into SAVE_INVENTORY and read straight back by `.from_lsd`,
+      # accumulating one row per item ever fully depleted for the life of
+      # the save.
+      if c == 0
+        return c unless @items.key?(id)
+        @items.delete(id)
+      else
+        return c if @items[id] == c
+        @items[id] = c
+      end
       @revision += 1
       c
     end

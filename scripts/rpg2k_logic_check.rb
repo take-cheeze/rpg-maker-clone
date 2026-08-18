@@ -5480,6 +5480,29 @@ check 'gain_item clamps at 99, silently, past a single gain or several ' \
   eq 49, st.party.item_count(5), 'losing still works normally once below the cap again'
 end
 
+check "gain_item erases the bag entry outright at count 0, matching RPG_RT's " \
+      "own array-backed inventory (2026-08-18)" do
+  # EasyRPG's Game_Party::AddItem (src/game_party.cpp) erases the id/count/
+  # usage triple from its arrays the instant `total_items <= 0`, and its own
+  # `!has` branch only ever inserts a fresh entry when `amount > 0` -- an
+  # item never held at all, losing a copy of, gets no entry created either.
+  # This codebase's own #gain_item instead used to store `@items[id] = 0`
+  # unconditionally, leaving a phantom zero-count key in the bag hash
+  # forever -- invisible to every reader (all guard on count > 0), but not
+  # invisible in the save file: #to_h's own inventory writer builds chunk
+  # 109's item_ids/item_counts straight off `@party.items.keys`, so the
+  # junk id would have been written into a real save.
+  st = item_party({ 5 => fake_item(type: 6, rhp: 50) })
+  st.party.gain_item(5, 3)
+  st.party.lose_item(5, 3)
+  eq 0, st.party.item_count(5)
+  ok !st.party.items.key?(5), 'losing the last copy erases the bag entry, not just zeroes it'
+
+  st.party.lose_item(9, 1) # item 9 was never held at all
+  eq 0, st.party.item_count(9)
+  ok !st.party.items.key?(9), 'losing an item never held creates no phantom entry either'
+end
+
 # -- 使用回数 (item uses count, item field 6) ---------------------------------
 
 check 'an item with 使用回数 N is only consumed once a copy has been used N times' do

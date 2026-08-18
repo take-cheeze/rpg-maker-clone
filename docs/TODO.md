@@ -5420,6 +5420,37 @@ Everything below is unverified against the codebase.
   item the party never held at all still equips it (conjured, not drawn
   from a bag that had none), and unequipping does not add a copy back
   either. **Every sub-claim in this bullet is now confirmed correct.**
+- ✅ **`#gain_item` now erases a bag entry outright once its count reaches 0,
+  instead of leaving a phantom zero-count key behind forever (2026-08-18).**
+  `Game::Party#gain_item`/`#lose_item` (`mruby-rpg2k/mrblib/game.rb`)
+  unconditionally did `@items[id] = c` even when `c` (the new count) landed
+  on exactly 0 — losing the last copy of an item (selling it, a Take Item
+  event draining the last one, a shop purchase's own change-making) or
+  losing a copy of an item never held at all (`item_count` reads 0, `n < 0`,
+  the clamp floors the sum back to 0) both left `@items[id] == 0` sitting in
+  the bag hash rather than removing the id from it entirely. Every in-session
+  reader already guards on `count > 0` (`#has_item?`, `#field_items`,
+  `#battle_items`, the shop screens), so this was invisible in ordinary
+  play — but not invisible in the save file: `Game::State#to_h`'s inventory
+  writer builds chunk 109's `item_ids`/`item_counts` (`LCF::Schema::
+  SAVE_INVENTORY`) straight off `@party.items.keys.sort`, with no filtering,
+  so a phantom 0-count id was written into a real SAVE_INVENTORY chunk and
+  read straight back in by `.from_lsd` — something an authentic RPG_RT save
+  never contains, and a leak that accumulates one row per item ever fully
+  depleted for the life of a save file. Verified against RPG_RT's actual
+  behavior via EasyRPG Player's own C++ source, fetched live:
+  `Game_Party::AddItem` (`src/game_party.cpp`) erases the id/count/usage
+  triple from its arrays outright the instant `total_items <= 0`
+  (`data.item_ids.erase(...)` etc.), and its own `!has` early branch only
+  ever *inserts* a fresh entry when `amount > 0` — losing a copy of an item
+  never held at all reaches neither branch and creates nothing. Fixed by
+  branching `#gain_item` on `c == 0`: `@items.delete(id)` (only when the id
+  was actually present, so a never-held item losing a copy stays a true
+  no-op rather than bumping `@revision` for nothing) instead of storing a
+  zero. Covered by a new `scripts/rpg2k_logic_check.rb` check (losing the
+  last copy of a held item erases its bag key entirely, not just zeroes it;
+  losing a copy of an item never held creates no phantom entry either),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **Call Event** — every checkable engine-behavior sub-claim is confirmed
   correct: it doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself
