@@ -1680,6 +1680,39 @@ The work below is roughly ordered by the critical path to a walkable game
   two independent `#deal_attack` calls each re-read (and the first one
   cleared) `b.charged`, so only the first swing of a charged dual attack
   ever doubled.
+  ✅ **A charged enemy could still run its ordinary AI pattern and end up
+  Defending, casting a Skill or otherwise not attacking at all — real
+  RPG_RT forces a plain single Attack instead, bypassing pattern selection
+  entirely (2026-08-18).** The two fixes just above corrected what happens
+  once *some* action runs while charged; this is the earlier step neither
+  addressed: whether the pattern gets consulted at all. Confirmed against
+  EasyRPG Player's actual source: `EnemyAi::SetStateRestrictedAction`
+  (`src/enemyai.cpp`) checks `source.IsCharged()` right after its
+  attack_ally/attack_enemy forced-restriction branches (both already
+  correctly ported in `#strike`, see the "forced action" comment there)
+  and, if set, calls `MakeAttack(source, 1)` and returns — `Scene_Battle::
+  UpdateBattleAlgorithm`'s own `if (!SetStateRestrictedAction(*enemy)) ...
+  SetEnemyAiAction(...)` (`scene_battle_rpg2k.cpp`) only ever consults
+  `GetEnemyAi()`'s rating-weighted pattern picker when that returns false —
+  so a charged enemy is *guaranteed* exactly one doubled Attack, never a
+  Defend, Skill, Observe, another Charge, Self-Destruct, Transform or even
+  a pattern-chosen Attack Twice. `Game::Battle#strike`'s enemy branch used
+  to call `#choose_enemy_action` unconditionally and only fell back to a
+  plain Attack when the pattern yielded nothing at all — so a
+  single-entry Defend (or any other non-Attack) pattern could win the draw
+  while charged and simply waste it for nothing, contradicting the
+  regression check this very investigation had itself added for the two
+  fixes above (which asserted a Defend running while charged, the wrong
+  behaviour, as if it were the fix). Fixed by skipping
+  `#choose_enemy_action` outright when `b.charged`, falling straight
+  through to the same forced-Attack fallback path an *empty* pattern
+  already used — which already reads and spends `b.charged` itself via
+  `#deal_attack_with_current_weapon`'s own `charged.nil?` branch, so no
+  further threading was needed. The mis-asserting regression check was
+  corrected to assert the opposite (a Defend pattern never runs while
+  charged; a plain doubled Attack does instead), and a second new check
+  confirms the same for an Attack Twice pattern specifically (only one
+  swing runs, not two), both confirmed to fail against the pre-fix code.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM

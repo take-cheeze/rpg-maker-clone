@@ -10122,12 +10122,27 @@ module Game
       # reads 1.
       return apply_command(b, combo_hits(b, :skill)) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
-      # An enemy with a 行動パターン chooses from it rather than always swinging.
+      # An enemy with a 行動パターン chooses from it rather than always swinging
+      # -- except while charged, which forces a plain single Attack instead,
+      # bypassing the pattern draw entirely. EasyRPG's own
+      # `EnemyAi::SetStateRestrictedAction` (src/enemyai.cpp) checks
+      # `source.IsCharged()` right after its attack_ally/attack_enemy
+      # restriction branches (both already handled above) and, if set, calls
+      # `MakeAttack(source, 1)` and returns *before* `SetEnemyAiAction` (the
+      # rating-weighted pattern picker) is ever consulted
+      # (`scene_battle_rpg2k.cpp`'s `if (!SetStateRestrictedAction(*enemy))
+      # ... SetEnemyAiAction(...)`) -- so a charged enemy can never end up
+      # Defending, casting a Skill, self-destructing, or gathering another
+      # Charge; it is guaranteed exactly one doubled swing. `choose_enemy_action`
+      # is skipped outright rather than filtered afterward, falling through to
+      # the same forced-attack path below an empty pattern already uses --
+      # which already reads and spends `b.charged` itself
+      # (#deal_attack_with_current_weapon's own `charged.nil?` fallback).
       if side_of(b) == :enemy
         # A guard raised last turn expires as this one begins (the allies' is
         # cleared by #end_round; an enemy acts on its own schedule).
         b.defending = false
-        act = choose_enemy_action(b)
+        act = b.charged ? nil : choose_enemy_action(b)
         return perform_enemy_action(b, act) if act
       end
       target = attack_target(b)
