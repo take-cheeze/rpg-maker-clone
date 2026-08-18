@@ -3778,14 +3778,38 @@ module Game
         return false
       end
       return false unless item_count(id) > 0
+      return use_skill_item_usable?(it, false) if it.use_skill
       case it.type
       when ITEM_MEDICINE, ITEM_SKILL_BOOK, ITEM_SEED then true
       when ITEM_SWITCH then item_field_occasion?(it)
       when ITEM_SPECIAL then field_skill?(db_skill(it.skill_id), state)
-      when Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR, ITEM_HELMET, ITEM_ACCESSORY
-        it.use_skill && field_skill?(db_skill(it.skill_id), state)
       else false
       end
+    end
+
+    # RPG_RT's own extra usability gate an item flagged `use_skill` (field
+    # 71) gets, checked *before* any of the item's own type-specific
+    # occasion rules apply -- and a much looser test than the ordinary
+    # #field_skill?/#battle_skill? usability check a type-9 Special item
+    # goes through: no affect_hp / affect_sp / inflicted-state requirement
+    # at all, just the invoked skill's scope. Confirmed against EasyRPG's
+    # actual C++ source, fetched live: `Game_Party::IsItemUsable`
+    # (`src/game_party.cpp`) tests `item->use_skill` *ahead of* its own
+    # `switch (item->type)` -- its own comment even flags the result as
+    # "RPG_RT BUG: Does not check if skill is usable" -- returning `skill &&
+    # (in_battle || scope == Scope_self || scope == Scope_ally || scope ==
+    # Scope_party)` (liblcf's `Scope_self`/`_ally`/`_party` are `2`/`3`/`4`,
+    # i.e. `scope >= 2`). #field_usable?/#battle_usable? used to instead
+    # route a use_skill equipment item through the same full usability check
+    # a type-9 Special item gets, silently hiding a use_skill item whose
+    # invoked skill only modifies stats (no HP/SP/state effect at all) even
+    # though real RPG_RT offers it. `UseItem`'s own *effect*-dispatch flag
+    # (`do_skill`, this codebase's #skill_invoking_item?/#use_item) is a
+    # separate, correctly-already-five-types-restricted check -- only this
+    # *usability* gate is type-unrestricted in RPG_RT.
+    def use_skill_item_usable?(it, in_battle)
+      sk = db_skill(it.skill_id)
+      sk && (in_battle || sk.scope >= 2)
     end
 
     # An item's occasion flags, read by the **field name the format actually
@@ -5283,12 +5307,11 @@ module Game
         return false
       end
       return false unless item_count(id) > 0
+      return use_skill_item_usable?(it, true) if it.use_skill
       case it.type
       when ITEM_MEDICINE then !item_field_only?(it)
       when ITEM_SWITCH then item_battle_occasion?(it)
       when ITEM_SPECIAL then battle_skill?(db_skill(it.skill_id))
-      when Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR, ITEM_HELMET, ITEM_ACCESSORY
-        it.use_skill && battle_skill?(db_skill(it.skill_id))
       else false
       end
     end

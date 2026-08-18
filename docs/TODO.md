@@ -3272,6 +3272,49 @@ The work below is roughly ordered by the critical path to a walkable game
    only once the action lands, and leaves the caster's own MP untouched),
    confirmed to fail against the pre-fix code (asserting `:target`,
    getting `:ally_target`) before the fix.
+   ✅ **A `use_skill` equipment item's own menu-*usability* check was still
+   routed through the full skill-usability test a type-9 Special item gets,
+   instead of RPG_RT's own separate, much looser `use_skill` shortcut — so
+   a stat-buff-only skill (no HP/SP/state effect) behind such an item was
+   silently hidden from both menus, and an Escape/Teleport-invoking one was
+   wrongly gated on access/target *before* it even appeared in the list
+   (2026-08-18).** The `use_skill` fix above wired `#field_usable?`/
+   `#battle_usable?`'s equipment-type branch to `#field_skill?`/
+   `#battle_skill?` — "the same shape a type-9 special item already gets
+   here" — reusing that precedent without separately checking it against
+   real RPG_RT's own *usability* function. Confirmed against EasyRPG
+   Player's real source, fetched live: `Game_Party::IsItemUsable`
+   (`src/game_party.cpp`) tests `item->use_skill` **before** its own
+   `switch (item->type)` at all — a completely different, self-contained
+   branch from the one a type-9 Special item takes (`Type_special` calls
+   `Algo::IsSkillUsable`, further down in the same switch, which *is* what
+   `#field_skill?`/`#battle_skill?` already correctly mirror) — and its own
+   comment names the difference outright: `// RPG_RT BUG: Does not check if
+   skill is usable`, followed by `return skill && (in_battle ||
+   scope == Scope_self || scope == Scope_ally || scope == Scope_party);`.
+   No `affect_hp`/`affect_sp`/inflicted-state requirement at all (unlike
+   `Algo::IsSkillUsable`), and no Escape/Teleport-specific access-or-target
+   check either (unlike `Game_Party::IsSkillUsable`, the *ordinary* Skill-menu
+   usability test, itself a third, distinct function) — RPG_RT lists a
+   `use_skill` item as soon as its skill's scope is self/ally/party (or
+   unconditionally in battle), full stop; only the actual *cast* — a
+   separate step this codebase's `#cast_escape_skill`/`#cast_teleport_skill`
+   already independently gate on `#escape_skill_available?`/
+   `#teleport_skill_available?`, unchanged by this fix — can still fail if
+   access or a target isn't there yet. Fixed by adding a new
+   `Game::Party#use_skill_item_usable?(it, in_battle)` implementing that
+   literal `skill && (in_battle || scope >= 2)` test, checked first in both
+   `#field_usable?`/`#battle_usable?` (ahead of their `case it.type`, so it
+   applies regardless of type exactly like RPG_RT's own ordering, though in
+   practice the RPG2000/2003 editor only exposes the `use_skill` checkbox
+   for the five equipment types). Covered by rewriting the two existing
+   `scripts/rpg2k_logic_check.rb` Escape/Teleport `use_skill` checks (which
+   had asserted the opposite — that access/target gated *listing*, not just
+   *casting* — reusing `#field_skill?`'s general Escape/Teleport handling
+   without having checked this specific branch of `IsItemUsable` against the
+   real source) and a new check for a pure `affect_attack`-only "Battle
+   Horn" accessory, all three confirmed to fail against the pre-fix code.
+   See `changelog.d/use-skill-item-usability-scope-only.fixed.md`.
 - ✅ Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. (One research question remains: a
