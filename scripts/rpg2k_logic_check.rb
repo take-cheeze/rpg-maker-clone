@@ -7433,6 +7433,21 @@ check 'Conditional Branch orientation: "this event" (type 6, ref 10005 / 0)' do
   eq true, run_cond_with_mapinfo([6, 10005, 1]).switches[2]
 end
 
+check 'Conditional Branch orientation: a vehicle ref (type 6, ref 10002-10004)' do
+  # #character_facing used to only resolve CHAR_PLAYER and a map event id --
+  # a vehicle ref (10002 boat / 10003 ship / 10004 airship) fell through to
+  # nil and the condition silently read false, unlike Control Variables'
+  # identical operand 6 attr 3 (#vehicle_operand, already correct). Mirrors
+  # that check's own vehicle setup.
+  st = run_actor_cond([6, 10002, 2]) { |s| s.vehicle(:boat).direction = 2 } # boat facing down
+  eq true, st.switches[1]                             # facing down -> if-branch
+  st = run_actor_cond([6, 10003, 0]) { |s| s.vehicle(:ship).direction = 2 } # ship facing down, asked up
+  eq true, st.switches[2]                             # not facing up -> else
+  # An unplaced vehicle defaults to facing down (numpad 2, direction 8's
+  # own #new default) -- reads a real direction, not nil/false regardless.
+  eq true, run_actor_cond([6, 10004, 2]).switches[1]  # airship, never placed, still faces down
+end
+
 # -- Input Number -------------------------------------------------------------
 
 check 'Input Number pauses with a :number request, resume stores the value' do
