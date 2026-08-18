@@ -2617,9 +2617,9 @@ module Game
         cmd.param(2) == 0 ? has : !has
       when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
         actor_condition(cmd)
-      when 6 # orientation: is character param1 (10001 the hero, 0 / 10005 this
-             # event, any other positive id a map event) facing direction param2
-             # (0 up / 1 right / 2 down / 3 left)?
+      when 6 # orientation: is character param1 (10001 the hero, 10002-10004 a
+             # vehicle, 0 / 10005 this event, any other positive id a map
+             # event) facing direction param2 (0 up / 1 right / 2 down / 3 left)?
         facing = character_facing(cmd.param(1))
         !facing.nil? && facing == FACING_NUMPAD[cmd.param(2)]
       when 7 # vehicle: true when the party is riding vehicle param1 (0 boat /
@@ -2673,6 +2673,13 @@ module Game
       return nil if id.nil?
       if id == CHAR_PLAYER
         @state.direction
+      elsif id >= CHAR_BOAT && id <= CHAR_AIRSHIP
+        # A vehicle ref, mirroring #vehicle_operand's identical lookup
+        # (Control Variables operand 6 attr 3) -- read straight off
+        # `Game::State` rather than through `@map_info`, since a vehicle is
+        # tracked independently of whatever map is currently loaded.
+        v = @state.vehicle(Vehicle::TYPES[id - CHAR_BOAT])
+        v && v.direction
       elsif id > 0 && id < 10000 && @map_info.respond_to?(:event_position)
         pos = @map_info.event_position(id)
         pos && pos[:direction]
