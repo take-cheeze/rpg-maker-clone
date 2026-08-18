@@ -14996,15 +14996,43 @@ check 'Change Monster HP heals, reads a variable and a percentage' do
   it.update
   eq 45, b.enemy(0).hp
 
-  # percentage operand (2): 10% of max_hp (100) = 10
+  # percentage operand (2): 10% of the target's *current* hp (45, not max_hp
+  # 100) = 4, per EasyRPG's CommandChangeMonsterHP (src/
+  # game_interpreter_battle.cpp), which reads `hp = enemy->GetHp()` and
+  # computes the percentage from that captured value, not GetMaxHp().
   it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 2, 10, 1])])
   it.update
-  eq 55, b.enemy(0).hp
+  eq 49, b.enemy(0).hp
 
   # Healing never exceeds the maximum.
   it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 0, 999, 1])])
   it.update
   eq 100, b.enemy(0).hp
+end
+
+# Verified against EasyRPG's own CommandChangeMonsterHP
+# (src/game_interpreter_battle.cpp): `if (enemy->IsDead()) return true;` runs
+# before anything else -- direction, amount source (param2/param3) and the
+# lethal flag (param4) are never even read once the target is already dead.
+# A further *hit* on a 0-HP target used to fall through to `hp = 0 + amount`,
+# then get re-clamped *up* to the lethal-off floor of 1 -- silently reviving
+# a downed enemy. Only the healing direction was previously guarded.
+check 'Change Monster HP leaves an already-downed target untouched entirely' do
+  b = battle_with(foe_hp: 100)
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  b.enemy(0).hp = 0
+  ok b.enemy(0).dead?, 'the target starts downed'
+  # lose direction (1), lethal off (param4 == 0): used to re-clamp to the
+  # lethal-off floor of 1.
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 30, 0])])
+  it.update
+  eq 0, b.enemy(0).hp, 'a downed target stays at 0, not revived to the lethal-off floor'
+  ok b.enemy(0).dead?, 'and stays downed'
+  # A heal is untouched too (already correctly guarded before this fix).
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 0, 30, 1])])
+  it.update
+  eq 0, b.enemy(0).hp, 'a heal on a downed target is still a no-op'
 end
 
 check 'Change Monster MP adjusts SP and clamps to its range' do

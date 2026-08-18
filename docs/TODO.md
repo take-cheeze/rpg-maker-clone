@@ -10224,9 +10224,11 @@ not yet verified:
   positive amount on a 0 HP enemy (`dead?` is `hp <= 0` for a Combatant)
   unconditionally raised it back above 0, silently reviving it — fixed by
   making a positive amount a no-op once the target is already dead,
-  mirroring `Actor#change_hp`; a further (negative) hit on an already-dead
-  enemy is untouched by the guard and simply re-clamps to the command's
-  existing lethal-flag floor as before. The **in-battle Skill/Item
+  mirroring `Actor#change_hp`. **A further (negative) hit on an
+  already-dead enemy was believed untouched by this guard, simply
+  re-clamping to the command's existing lethal-flag floor — this turned out
+  to be wrong, see below: it silently revived the enemy too, the opposite
+  direction from this bullet's own fix.** The **in-battle Skill/Item
   command** path (a heal spell/item cast mid-fight) was checked too and
   found already correct: `Game::Battle#apply_command` / `#apply_command_all`
   gate every Skill/Item command — single- and all-target alike — on
@@ -10241,6 +10243,36 @@ not yet verified:
   member and a wounded one confirms the Skill/Item path skips the downed
   member entirely while still healing the wounded member normally (true
   both before and after, since that path was never broken).
+  ✅ **A further Change Monster HP hit on an already-downed enemy revived
+  it — the bullet above's own guess about this direction was wrong,
+  corrected here against RPG_RT's actual behavior (2026-08-18).**
+  EasyRPG's `Game_Interpreter_Battle::CommandChangeMonsterHP` (`src/
+  game_interpreter_battle.cpp`, re-fetched and read live this session
+  rather than left as the earlier bullet's unverified guess) checks `if
+  (enemy->IsDead()) return true;` as the very first thing — *before*
+  reading the direction, amount source or lethal flag at all, so nothing
+  past that point ever runs against a dead enemy, whichever direction. This
+  codebase's `Interpreter#do_change_monster_hp`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) only guarded the healing direction
+  (`return if target.dead? && amount > 0`); a further *hit* on a 0-HP
+  target fell through to `hp = 0 + amount` (negative), which then got
+  re-clamped *up* to the lethal-off floor of 1 — the exact silent revival
+  the healing-direction guard was written to prevent, just reached from the
+  other side. Fixed by moving the dead check to the top, unconditional,
+  before `amount` is even computed, matching RPG_RT's own early return
+  exactly. A second, related inaccuracy in the same command was fixed
+  alongside it: `#monster_change_amount`'s percentage mode (param2==2)
+  read `battler.max_hp`, but `CommandChangeMonsterHP`'s own `case 2:
+  change = com.parameters[3] * hp / 100;` computes it from `hp =
+  enemy->GetHp()` — the target's *current* HP, captured once at the top —
+  not its maximum (`CommandChangeMonsterMP` has no percentage case at all,
+  so this only ever mattered for HP). An existing
+  `scripts/rpg2k_logic_check.rb` check had encoded the old, incorrect
+  max_hp-based percentage directly in its own expected value — corrected
+  to the current-HP-based one. Covered by a new check confirming a downed
+  enemy stays at 0 HP (not revived to the lethal-off floor) after a
+  further hit, and a heal on it remains a no-op too, both confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ Damage Processing (the raw event command, Simulated Attack 10500) uses a
   **different formula** from the built-in normal attack: normal attack =
   `(ATK÷2) − (DEF÷4)`, but this command computes `AttackPower − (DEF÷4)`
