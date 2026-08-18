@@ -17542,6 +17542,26 @@ check 'equipping a second weapon from the bag lands it in the shield slot' do
   eq 2, hero.strike_count, 'two ordinary weapons still add up to two swings'
 end
 
+check 'a weapon with its own genuine 0% hit rate is used as-is, not treated ' \
+      'as unequipped' do
+  # Confirmed against EasyRPG's actual C++ source: Game_Actor::GetHitChance
+  # (src/game_actor.cpp) uses INT_MIN as its own "nothing equipped" sentinel
+  # (`hit = std::max(hit, item.hit)`, `if (hit != INT_MIN) return hit;`), so
+  # a "cursed" weapon whose own `hit` field is a genuine 0 -- intentionally
+  # unable to land a hit, not a missing field -- is returned as 0, not
+  # folded into the "nothing found" case and defaulted back up to 90.
+  items = { 1 => fake_item(type: 1, atk: 5, hit: 0) } # a cursed blade
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 8 })
+  db = FakeActorDB.new({ 1 => row }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  ok st.party.equip_from_bag(hero, 1, Game::Actor::WEAPON_SLOT)
+  eq 0, hero.attack_hit_rate, 'the weapon\'s own 0% hit rate, not the 90% ' \
+     'unarmed default'
+end
+
 check 'a single weapon (no second hand filled) still swings once unless it is ' \
       'itself 二刀流' do
   st = double_hand_party
