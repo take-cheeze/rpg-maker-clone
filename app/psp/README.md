@@ -73,7 +73,7 @@ Requires the [pspdev toolchain](https://github.com/pspdev/pspdev) with `$PSPDEV`
 set (it provides `psp-gcc`, the CMake toolchain file and `create_pbp_file`).
 Run `scripts/build_psp_fixup_imports.bash` first — it replaces the
 toolchain's own `psp-fixup-imports` (normally at `$PSPDEV/bin/`) with a
-patched build; see the seven-bug trail lower in this section for why this
+patched build; see the bug trail lower in this section for why this
 EBOOT needs it to actually boot:
 
 ```sh
@@ -112,11 +112,14 @@ once one is deployed to `kGameDir` instead of just the idle HAL's. CI's
 `psp-smoke` job boots the EBOOT under PPSSPP headless and checks that a
 marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
-idle path (`RPG2K_PSP_GAME_START none not_found`). The job is
-**non-blocking** — the required build gate is the `psp` job, because the
-EBOOT still does not boot to completion under PPSSPP-headless. Nine
-independent bugs have been found and root-caused chasing that, seven of
-them fixed:
+idle path (`RPG2K_PSP_GAME_START none not_found`). The job is currently
+**non-blocking** (the required build gate is the `psp` job) — a holdover
+from when the EBOOT did not boot to completion under PPSSPP-headless; now
+that it does (see below), promoting `psp-smoke` to a required check is
+worth revisiting. Nine independent bugs were found and root-caused
+chasing that boot-to-completion goal; eight of them fixed, the remaining
+one (pspsdk's own upstream bug) no longer reachable — **boot now
+completes**:
 
 - pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
   implemented under PPSSPP-headless, and calling into them left the
@@ -221,35 +224,47 @@ Verified: rebuilding PPSSPP with this patch drops the `Unknown syscall`
 count from ~90 to 1 and eliminates the `Bad memory access` flood
 entirely.
 
-With bug 8 fixed, the EBOOT reaches a **ninth bug, extensively
-characterized but not yet fixed**: `3rd/mruby/src/gc.c`'s
-`mrb_assert(is_gray(obj))` inside `gc_mark_children` fires for real —
-the first genuine mruby-internal assertion message this whole trail has
+With bug 8 fixed, the EBOOT reached a **ninth bug — fixed, the last
+blocker on this whole trail**: `3rd/mruby/src/gc.c`'s
+`mrb_assert(is_gray(obj))` inside `gc_mark_children` fired for real —
+the first genuine mruby-internal assertion message this whole trail
 reached (`assertion "((obj)->gc_color == 0)" failed`, captured via
-`sceIoWrite` the same way every other marker here is). A deep trace
-pass ruled out a null `mrb_heap_page` (add_heap's own allocation is
-always a real, valid, non-null pointer) and ruled out
-`MRB_HEAP_PAGE_SIZE=256` (this target's smaller-than-default heap page,
-tested directly against the desktop/wasm-matching default 1024 — bug 9
-reproduces identically either way) — but found a real, different,
-reproducible mechanism instead: under `MRB_GC_STRESS` (forces a full GC
-before every allocation), `add_heap` was observed being called twice in
-immediate succession, both times returning the *identical* page
-address — meaning the very first heap page, created before any object
-is ever allocated from it, gets reclaimed by a full-GC sweep while
-still empty (every slot's `tt == MRB_TT_FREE` from initialization looks
-identical to "genuinely swept dead" to `is_dead()`), and the next
-`add_heap` call gets the same freed memory straight back. That is a
-concrete way a stale reference could end up pointing at reused memory
-with an unrelated color — matching the assertion's shape — but does not
-yet explain the *non*-stress trigger, which remains open. What does
-differ from desktop/wasm, and remains the leading suspect, is this
-target's own fixed-arena allocator (`app/psp/main.cxx`'s
-`mrb_arena_alloc`/`_realloc`/`_free`) — neither desktop's LVGL-pool
-routing nor wasm's plain-malloc routing has been observed to hit this.
-See
+`sceIoWrite` the same way every other marker here is). Several deep
+trace passes ruled out a null `mrb_heap_page`, `MRB_HEAP_PAGE_SIZE=256`
+(tested against the desktop/wasm-matching default 1024 — reproduced
+identically either way), and the fixed arena allocator itself
+(confirmed completely healthy across the whole crash window with
+unconditional tracing) before the real cause turned up: patching
+PPSSPP to log the guest PC/registers on every bad-memory-access event
+showed every fault's `a0` register was exactly zero at
+`init_heap_page`'s object-init loop (inlined into `mrb_gc_init`) — a
+null `page` argument, despite `add_heap`'s `mrb_calloc` call having
+just returned a real, valid, non-null pointer moments earlier in the
+same run. The corruption was inside `mrb_calloc` itself
+(`p = mrb_malloc(...); memset(p, 0, size); return p;`): GCC recognizes
+this "memset then return the same pointer" idiom and, per its builtin
+knowledge that a standard-conforming `memset()` always returns its
+first argument, optimizes it into `return memset(p, 0, size);`. PSP's
+`memset` is a kernel syscall under this toolchain, and PPSSPP's HLE
+implementation of it (`sysclib_memset`,
+`Core/HLE/sceKernelInterrupt.cpp`) returned `0` instead of the
+destination pointer — unlike its sibling `sysclib_memcpy`, which
+correctly returns `dst` — so GCC's optimization silently turned every
+`mrb_calloc` call on this target into one returning PPSSPP's wrong `0`.
+`sysclib_memmove` had the identical bug, fixed alongside it. Fixed by
+adding the destination pointer as both functions' returned value,
+matching their sibling `sysclib_memcpy`/`sysclib_strcat` and the real C
+contract — `nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch`.
+**Verified: this is the fix that gets the EBOOT booting to
+completion** — rebuilding PPSSPP with this patch and re-running the
+identical EBOOT under normal `ppsspp-headless` JIT mode produces
+`RPG2K_PSP_BOOT` → `RPG2K_PSP_MRUBY_OPEN ok` → `RPG2K_PSP_GAME_START
+none not_found` → a continuous `RPG2K_PSP_BRINGUP` heartbeat, running
+cleanly for over 850,000 frames with zero errors, stopped only by the
+test harness's own timeout. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full nine-bug trail. To reproduce any of this locally, run
+P1 for the full nine-bug trail, including the eliminated theories along
+the way. To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
 `ppsspp` package output (see above) rather than nixpkgs' unpatched one —

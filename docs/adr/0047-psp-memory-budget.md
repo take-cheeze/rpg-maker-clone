@@ -226,7 +226,11 @@ unaddressed cost:
 Answer these questions, and capture real numbers, as part of — not after —
 the interpreter-linking slice, in this order:
 
-- **P1 — measure before sizing.** Partially done. Finding 1's ~1.2–1.4 MB and
+- **P1 — measure before sizing.** Substantially done — boot now completes
+  under PPSSPP-headless and the idle-path heartbeat captures real device
+  numbers (see below); still partial in that the *mruby* share only
+  reflects the idle path until a real game runs on-device. Finding 1's
+  ~1.2–1.4 MB and
   Finding 5's ~240–350 KB figures are a host x86-64 proxy, not device
   numbers — still worth having over pure guesswork, but not a substitute for
   the device side. That side is now landed too: the bring-up EBOOT's
@@ -242,12 +246,14 @@ the interpreter-linking slice, in this order:
   `psp-smoke` job has no project there, so it only ever exercises the idle
   path — the *mruby* share of the pool remains unmeasured on-device until a
   real game database and map actually runs there, on real hardware or an
-  emulator with a Memory Stick image. **On the emulator side specifically,
-  this heartbeat has never yet produced a captured number**, in CI or
-  locally, though the reasons have narrowed a lot:
-  Nine independent bugs have been found and root-caused on this path so
-  far, seven of them fixed; boot still does not complete. In the order
-  the EBOOT actually hits them:
+  emulator with a Memory Stick image. **The emulator side is now
+  unblocked**: the idle path's own heartbeat numbers are captured below,
+  and CI's `psp-smoke` job (still no project at `kGameDir`) exercises the
+  same idle path automatically on every push.
+  Nine independent bugs were found and root-caused on this path; eight
+  of them fixed, the remaining one (bug 3, pspsdk's own upstream bug) no
+  longer reachable — **boot now completes**. In the order the EBOOT hits
+  them:
   1. **Fixed.** pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are
      only partially implemented under PPSSPP-headless and left emulator
      state corrupted enough to crash a few syscalls later — `main.cxx` now
@@ -491,93 +497,139 @@ the interpreter-linking slice, in this order:
   numbers above remain unconfirmed on the emulator and untried on
   hardware.
 
-  With bug 8 fixed, this EBOOT reaches a **ninth bug, extensively
-  characterized but not yet fixed**: `3rd/mruby/src/gc.c`'s
-  `mrb_assert(is_gray(obj))` inside `gc_mark_children` fires for real
-  (a genuine `assertion "((obj)->gc_color == 0)" failed` message,
-  printed to stderr via the same `sceIoWrite` path every other marker in
-  this trail uses — the first time this whole investigation reached a
-  *real, unambiguous mruby-internal assertion message* rather than a raw
-  fault address to reverse-engineer). `is_gray`/`GC_GRAY` expects every
-  object handed to `gc_mark_children` to still be in the
-  just-pushed-onto-the-mark-stack GRAY state; this one is not — something
-  re-enters the mark routine for an object whose `gc_color` has already
-  moved past GRAY.
+  With bug 8 fixed, this EBOOT reached a **ninth bug — fixed, the last
+  blocker on this whole P1 trail**: `3rd/mruby/src/gc.c`'s
+  `mrb_assert(is_gray(obj))` inside `gc_mark_children` fired for real (a
+  genuine `assertion "((obj)->gc_color == 0)" failed` message, printed
+  to stderr via the same `sceIoWrite` path every other marker in this
+  trail uses — the first time this whole investigation reached a *real,
+  unambiguous mruby-internal assertion message* rather than a raw fault
+  address to reverse-engineer). `is_gray`/`GC_GRAY` expects every object
+  handed to `gc_mark_children` to still be in the
+  just-pushed-onto-the-mark-stack GRAY state; this one was not.
 
-  A deep trace pass (temporary instrumentation in `3rd/mruby/src/gc.c`
-  and `app/psp/main.cxx`, none kept) ruled out several plausible-looking
-  explanations with direct evidence, in order:
+  Several deep trace passes (temporary instrumentation in
+  `3rd/mruby/src/gc.c` and `app/psp/main.cxx`, none kept) ruled out a
+  string of plausible-looking explanations with direct evidence before
+  the real cause turned up — worth recording, since each elimination
+  narrowed the search and the pattern (misdiagnose, get real evidence,
+  correct course) is this whole trail's own method working as intended,
+  same as bug 8's three earlier passes:
 
-  - **Not the fixed arena returning null.** `mrb_arena_alloc` was traced
-    on every call over 4 KB; the large allocations `add_heap` needs
-    (`sizeof(mrb_heap_page)`, ~5–9 KB depending on `MRB_HEAP_PAGE_SIZE`)
-    always succeeded, with megabytes of arena headroom free at the time.
-  - **Not a null `mrb_heap_page`.** `add_heap`'s own `mrb_calloc` result
-    was printed directly on multiple runs; it is a real, valid,
-    non-null pointer inside the arena, not the address-0-based
-    `init_heap_page` walk a null page would produce (an earlier pass's
-    leading theory, since the classic symptom — small, steadily
-    incrementing "bad memory access" addresses at a stride matching
-    `sizeof(RVALUE)` — looks identical to what a null-based array walk
-    would produce).
-  - **A real, reproducible, different mechanism found instead:**
-    `add_heap` was observed being called *twice* in immediate
-    succession, both times returning the *identical* page address.
-    Since a live page is never freed back to the arena while still in
-    use, this can only happen if the *first* page — created directly by
-    `mrb_gc_init()`, before a single object has ever been allocated
-    from it — gets reclaimed by a full-GC sweep before anything
-    populates it: every slot in a freshly-initialized page has
-    `tt == MRB_TT_FREE` (set by `init_heap_page`'s own loop, not because
-    anything died), and `is_dead()` (`(o)->tt == MRB_TT_FREE` is
-    sufficient on its own, no color check) cannot distinguish "freshly
-    carved, never used" from "genuinely swept clean" — so
-    `incremental_sweep_phase`'s dead-page reclamation
-    (`if (dead_slot && !page->region) { ...; mrb_free(mrb, page); }`)
-    can free a brand new, about-to-be-used page out from under its own
-    creator, and the very next `add_heap` call (triggered because
-    `gc->free_heaps` is now null again) gets the identical address back
-    from the arena's free list. This is a strong, concrete lead for how
-    a *stale* reference (a gray-stack entry, or a cached pointer to
-    "the page I was about to allocate from") could end up pointing at
-    memory that has since been reused for something else with an
-    unrelated `gc_color` — exactly the shape of the observed assertion.
-  - **Confirmed reproducible under `MRB_GC_STRESS`** (forces a full GC
-    before every single object allocation — `mrb_obj_alloc`'s own
-    `#ifdef MRB_GC_STRESS mrb_full_gc(mrb); #endif`, no `MRB_DEBUG`
-    needed), which manufactures exactly the "sweep runs before the
-    first page is populated" window on the very first allocation. This
-    is a real, verified mechanism, not speculation — but it does not
-    yet explain the *non*-stress case: with `MRB_GC_STRESS` off (the
-    normal build), reaching a full sweep this early would need an
-    allocation to genuinely fail first (`mrb_realloc_simple`'s
-    fail-then-`mrb_full_gc`-then-retry path), which the arena's ample
-    headroom this early in boot makes implausible. The non-stress
-    trigger for the same underlying vulnerability, if that is indeed
-    what it is, remains open.
-  - **Ruled out: `MRB_HEAP_PAGE_SIZE`.** This target overrides the
-    default 1024-object heap page down to 256 (`build_config.rb`) to
-    save memory; a plausible theory was that the smaller page size
-    (more, smaller pages; add_heap/sweep cycles four times as often)
-    increases exposure to whatever the real race is. Tested directly by
-    rebuilding with the default `MRB_HEAP_PAGE_SIZE=1024` (matching
-    desktop/wasm) — bug 9 reproduced identically (99 bad-memory-access
-    events, `RPG2K_PSP_MRUBY_OPEN` never printed). Page size is not the
-    differentiator.
+  - Not the fixed arena returning null for `add_heap`'s allocation
+    (traced directly; always succeeded, with megabytes of headroom).
+  - Not a null `mrb_heap_page` in the general case (`add_heap`'s own
+    `mrb_calloc` result printed directly on several runs — always a
+    real, valid, non-null pointer).
+  - A real, reproducible premature-heap-page-reclamation mechanism *was*
+    found under `MRB_GC_STRESS` (forces a full GC before every
+    allocation): a freshly-`init_heap_page`'d page, whose every slot
+    starts `tt == MRB_TT_FREE` from initialization rather than genuine
+    death, is indistinguishable from "swept clean" to `is_dead()` and
+    can be reclaimed by a sweep before anything is ever allocated from
+    it. This is a real, latent bug class in `incremental_sweep_phase`'s
+    dead-page detection, worth keeping in mind for the future — but
+    proved not to be bug 9's actual (non-stress) trigger.
+  - `MRB_HEAP_PAGE_SIZE` (this target's memory-saving override, 256
+    instead of the default 1024) was ruled out directly: rebuilding with
+    the desktop/wasm-matching default reproduced bug 9 identically.
+  - `mrb_arena_alloc` itself was confirmed completely healthy across the
+    entire crash window with unconditional (not size-filtered)
+    instrumentation — every allocation, including the specific 16-byte
+    `iv_rehash` call a prior pass had (wrongly) suspected of
+    deterministically returning null, succeeded with a real, valid,
+    sane pointer. Zero `mrb_arena_free` calls happened before the crash
+    either, ruling out a use-after-free via this project's own
+    allocator.
 
-  What *does* differ from desktop/wasm, and remains the leading
-  suspect, is this target's own fixed-arena allocator (`app/psp/main.cxx`'s
-  `mrb_arena_alloc`/`mrb_arena_realloc`/`mrb_arena_free`,
-  ADR 0047's P2) routing every mruby allocation — desktop uses LVGL's
-  pool, wasm uses plain `malloc`, and neither has been observed to hit
-  this. Whether the mechanism is the premature-page-reclamation path
-  above, some other interaction specific to the arena's
-  allocate/split/coalesce bookkeeping, or a MIPS o32/pspdev-toolchain
-  codegen difference for this specific mruby code shape (echoing bug 8's
-  own false leads before its real cause was found) is not yet
-  distinguished. This whole trail's running theme — memory corruption
-  found through patient, evidence-based elimination rather than
-  intuition — held again here; it just did not reach a fix this pass.
+  **The actual cause**, found by patching PPSSPP itself to log the guest
+  program counter and registers on every "bad memory access" event
+  (mirroring how bug 7's TLSF diagnosis and bug 8's crash log were each
+  solved by getting real dynamic data instead of guessing from static
+  code or stale symbol tables): every fault's `a0` register — the first
+  argument to whatever function was executing — was exactly zero, and
+  the guest PC symbolized cleanly (regular compiled code, not an import
+  stub — the stale-symbol trap that misled three passes on bug 8 does
+  not apply here) to `init_heap_page`'s object-initialization loop,
+  inlined into `mrb_gc_init`. That loop's `page` argument was zero —
+  despite `mrb_arena_alloc` printing the *correct*, non-null pointer
+  (`0x08c31d20`) as `add_heap`'s `mrb_calloc` call's own return value,
+  moments earlier, in the very same run.
+
+  The corruption happens inside `mrb_calloc` itself
+  (`3rd/mruby/src/gc.c`):
+
+  ```c
+  p = mrb_malloc(mrb, size);
+  memset(p, 0, size);
+  return p;
+  ```
+
+  GCC recognizes the "call `memset(p, ...)`, then `return p`" idiom and
+  — per its builtin knowledge that a standard-conforming `memset()`
+  always returns its first argument — optimizes this into the
+  equivalent of `return memset(p, 0, size);`. That is a valid,
+  semantics-preserving transformation for any real `memset`. But PSP's
+  `memset` is a *kernel syscall* (`SysclibForKernel`, NID `0x10F3BB61`)
+  under this toolchain, and PPSSPP's HLE implementation of it
+  (`Core/HLE/sceKernelInterrupt.cpp`'s `sysclib_memset`) returned `0`
+  instead of the destination pointer — unlike its own sibling
+  `sysclib_memcpy` a few lines above, which correctly returns `dst`.
+  GCC's optimization silently turned every `mrb_calloc` call on this
+  target into one that returns PPSSPP's wrong `0`, no matter how the
+  underlying allocation actually went. `sysclib_memmove` had the
+  identical bug (also returning `0` instead of `dst`, where real
+  `memmove()` returns its destination too) — not yet observed to be hit
+  on this boot path, but fixed alongside `memset` since it is the exact
+  same class of gap.
+
+  Fixed by adding `destAddr`/`dst` as the returned value in both
+  functions, matching their sibling `sysclib_memcpy`/`sysclib_strcat`
+  and the real C `memset()`/`memmove()` contract —
+  `nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch`. Not
+  upstreamed to `hrydgard/ppsspp` yet, but — like bugs 4 and 8 before it
+  — a strong candidate: nothing about this gap is project-specific, and
+  any guest code compiled with a GCC that performs this same idiom
+  optimization (a common, standard one) would silently get a wrong
+  `memset`/`memmove` return value under PPSSPP.
+
+  **Verified: this is the fix that gets the EBOOT booting to
+  completion.** Rebuilding PPSSPP with this patch and re-running the
+  identical EBOOT under `ppsspp-headless` in normal JIT mode (not `-i`,
+  not `MRB_GC_STRESS`) produces, in order: `RPG2K_PSP_BOOT`,
+  `RPG2K_PSP_MRUBY_OPEN ok`, `RPG2K_PSP_GAME_START none not_found` (no
+  project at `kGameDir` in this smoke-test environment, the expected
+  idle path), then a continuous `RPG2K_PSP_BRINGUP` heartbeat every 200
+  frames — running cleanly for over 850,000 frames with **zero** bad
+  memory accesses, assertions, or errors of any kind, stopped only by
+  the test harness's own 15-second timeout. This is the first time
+  since this whole P1 investigation began that the EBOOT has booted all
+  the way to the idle heartbeat loop under PPSSPP-headless.
+
+  Whether real hardware shares bug 9 is unknown but irrelevant either
+  way: real firmware's own `memset`/`memmove` correctly return their
+  destination pointer (this was purely an emulator-side gap), so real
+  hardware was never going to hit this. With bug 9 fixed, the P1 device
+  numbers this section has been chasing since its very first line are
+  finally reachable on the emulator — first captured
+  `RPG2K_PSP_BRINGUP` line, idle path, `psp-smoke`'s environment (no
+  project at `kGameDir`):
+
+  ```
+  RPG2K_PSP_BRINGUP frame=0 free=782336 maxfree=524288 lvgl_used=2184
+  lvgl_max=2756 stack_free=257872 stack_used_max=4272
+  ```
+
+  `free`/`maxfree` (`sceKernelTotalFreeMemSize`/`sceKernelMaxFreeMemSize`)
+  and `lvgl_used`/`lvgl_max` hold rock-steady across every subsequent
+  heartbeat with no game driving any allocation — expected for the idle
+  path, and itself a useful device-side confirmation that the idle HAL
+  (LVGL + the two status labels, no mruby object churn) has no leak.
+  `stack_used_max` (4272 of the 256 KB `PSP_MAIN_THREAD_STACK_SIZE_KB`
+  budget) reflects only `mrb_open()`'s own init recursion on this idle
+  path — the *real* game-driving depth (P5) remains unmeasured until a
+  project is deployed to `kGameDir`, on real hardware or an emulator
+  with a Memory Stick image.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
