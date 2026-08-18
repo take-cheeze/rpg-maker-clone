@@ -194,9 +194,18 @@ does not share the bug). The resulting null/wild buffer, fed into
 `lv_display_set_buffers`, is what corrupted LVGL's own TLSF pool further
 down the boot path. With that fixed, the EBOOT boots past display
 creation and into `mrb_open`'s GC init before hitting an **eighth bug,
-found and not yet fixed**: PPSSPP reports `Bad memory access detected!
-00000014` — a near-null pointer write — inside `mrb_gc_init`. Not yet
-root-caused. See
+root-caused but not fixed**: PPSSPP reports `Bad memory access detected!
+00000014` (or a nearby address) — a near-null write — inside
+`mrb_gc_init`. Root-caused to PPSSPP's own x86-64 JIT mistranslating the
+guest code, not this project's: the fault address is layout-sensitive
+(moves between builds that differ only in unrelated diagnostic code),
+PPSSPP's crash log shows the faulting *host* instruction using what looks
+like a null base register despite the *source* pointer being valid the
+whole way through (traced allocation-by-allocation), and forcing PPSSPP's
+interpreter instead of its JIT (`ppsspp-headless -i`) runs hundreds of
+allocations past this point with zero bad-memory-access errors on the
+exact same EBOOT. Not fixed here — patching PPSSPP's dynarec is out of
+scope for this project; worth reporting upstream. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
 P1 for the full eight-bug trail. To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
