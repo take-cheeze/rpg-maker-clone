@@ -470,14 +470,15 @@ class RPG2k
                       @state.party.alternate_battle_layout?
         @ui[:actor_sprites] = @ui[:allies].each_with_index.map do |ally, i|
           next nil if ally.dead?
-          build_actor_sprite(ally.actor, i)
+          build_actor_sprite(ally.actor, i, defending: ally.defending)
         end
       end
 
-      # Idle pose id within a `db.battleranimations` entry's `poses` table
-      # (lcf::rpg::BattlerAnimation::Pose_Idle -- schema.rb's own comment on
-      # chunk 32 lists the full 12-pose order).
+      # Idle and Defend pose ids within a `db.battleranimations` entry's
+      # `poses` table (lcf::rpg::BattlerAnimation::Pose_Idle/Pose_Defend --
+      # schema.rb's own comment on chunk 32 lists the full 12-pose order).
       ACTOR_IDLE_POSE = 0
+      ACTOR_DEFEND_POSE = 7
       # `poses[id].animation_type` values: 0 a BattleCharSet sprite sheet
       # (implemented below), 1 a full Battle/<name> (CBA) animation sequence
       # played in place of a static sprite (not implemented here -- see
@@ -495,32 +496,47 @@ class RPG2k
         200 + i
       end
 
-      # A living party member's Idle-pose sprite, or nil when this step
-      # cannot draw one: `actor.battler_animation_id` names no
+      # A living party member's Idle- or Defend-pose sprite, or nil when this
+      # step cannot draw one: `actor.battler_animation_id` names no
       # `db.battleranimations` entry (Game::Actor#battler_animation_id
-      # already logs that diagnostic itself), the resolved entry defines no
-      # Idle pose at all (silent -- an entry legitimately covering only some
-      # of the 12 poses is normal authoring, not a dangling reference), or
-      # the pose uses the `animation_type == 1` battle/CBA format this step
-      # does not implement (logged below, matching this codebase's "reported
-      # gap, not silently invented" convention for unimplemented behaviour).
+      # already logs that diagnostic itself), the resolved entry defines
+      # neither pose at all (silent -- an entry legitimately covering only
+      # some of the 12 poses is normal authoring, not a dangling reference),
+      # or the pose uses the `animation_type == 1` battle/CBA format this
+      # step does not implement (logged below, matching this codebase's
+      # "reported gap, not silently invented" convention for unimplemented
+      # behaviour).
+      #
+      # `defending:` selects Pose id 7 (Defend, schema.rb's own comment on
+      # chunk 32 lists the full 12-pose order) over Idle -- ported from
+      # EasyRPG's `Sprite_Actor::DoIdleAnimation`, whose very first check is
+      # `battler->IsDefending()`, ahead of every state-mapped pose (the
+      # other half of that function's own idle-vs-something dispatch, still
+      # unimplemented here -- this only ever picks Idle or Defend). Falls
+      # back to Idle when the entry defines no Defend pose of its own,
+      # exactly like an entry with no Idle pose falls back to no sprite at
+      # all: a partially-authored table is normal, not an error.
       #
       # Position is either `battlecommands.placement` manual (0)'s raw
       # database `battle_x`/`battle_y` (Game_Actor::GetOriginalPosition) or
       # automatic (1)'s computed grid slot (#automatic_battle_position, the
       # EasyRPG Calculate2k3BattlePosition port) -- confirmed against
       # EasyRPG's actual C++ source, which splits exactly this way.
-      def build_actor_sprite(actor, i)
+      def build_actor_sprite(actor, i, defending: false)
         anim_id = actor.respond_to?(:battler_animation_id) ? (actor.battler_animation_id || 0) : 0
         table = db.respond_to?(:battleranimations) ? db.battleranimations : nil
         entry = (table && anim_id > 0) ? table[anim_id] : nil
         return nil unless entry
-        pose = entry.respond_to?(:poses) && entry.poses ? entry.poses[ACTOR_IDLE_POSE] : nil
+        poses = entry.respond_to?(:poses) ? entry.poses : nil
+        return nil unless poses
+        used_defend_pose = defending && poses[ACTOR_DEFEND_POSE] ? true : false
+        pose = used_defend_pose ? poses[ACTOR_DEFEND_POSE] : poses[ACTOR_IDLE_POSE]
         return nil unless pose
 
         if pose.animation_type == ACTOR_POSE_TYPE_BATTLE
-          $stderr.puts "[RPG2k] actor ##{actor.id}: idle pose uses a battle-animation (CBA) " \
-                       "sheet, not a BattleCharSet -- not yet implemented, sprite not drawn"
+          $stderr.puts "[RPG2k] actor ##{actor.id}: #{used_defend_pose ? 'defend' : 'idle'} pose " \
+                       "uses a battle-animation (CBA) sheet, not a BattleCharSet -- not yet " \
+                       "implemented, sprite not drawn"
           return nil
         end
 
@@ -664,7 +680,7 @@ class RPG2k
         @ui[:allies].push(combatant)
         return unless @ui[:actor_sprites]
         i = @ui[:allies].length - 1
-        @ui[:actor_sprites].push(combatant.dead? ? nil : build_actor_sprite(combatant.actor, i))
+        @ui[:actor_sprites].push(combatant.dead? ? nil : build_actor_sprite(combatant.actor, i, defending: combatant.defending))
         reset_actor_battler_z
       end
 
@@ -700,7 +716,7 @@ class RPG2k
         i = @ui[:allies].index { |c| c.equal?(combatant) }
         return unless i && sprites[i]
         dispose_battle_sprite(sprites[i])
-        sprites[i] = build_actor_sprite(combatant.actor, i)
+        sprites[i] = build_actor_sprite(combatant.actor, i, defending: combatant.defending)
       end
 
       # Re-derive every surviving actor sprite's Z from its current index in
@@ -1346,6 +1362,13 @@ class RPG2k
         when :defend
           play_system_se(SFX_DECISION)
           @ui[:battle].command_defend(current_actor)
+          # The alternate-layout sprite swaps to its Defend pose the instant
+          # the command commits (EasyRPG's own Sprite_Actor::DoIdleAnimation
+          # checks IsDefending() continuously; this codebase rebuilds
+          # instead, so the trigger has to be explicit) -- #finish_round_
+          # animation reverts it once Game::Battle#end_round clears
+          # `defending` back to false for the next round.
+          reposition_actor_sprite(current_actor)
           advance_actor
         when :item then open_battle_item
         when :special
@@ -2049,7 +2072,14 @@ class RPG2k
       # and branch to the result window or the next command phase.
       def finish_round_animation
         battle = @ui[:battle]
+        # `end_round` clears every ally's `defending` for the new round --
+        # revert any sprite still showing the Defend pose from the round
+        # that just ended, snapshotted here since `#end_round` itself wipes
+        # the flag this reads (#reposition_actor_sprite is a no-op when
+        # there are no alternate-layout actor sprites to begin with).
+        defenders = @ui[:allies].select(&:defending)
         battle.end_round
+        defenders.each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?
           enter_battle_result(battle.result)
