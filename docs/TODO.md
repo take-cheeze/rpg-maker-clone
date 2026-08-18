@@ -3477,6 +3477,45 @@ The work below is roughly ordered by the critical path to a walkable game
   that they run cleanly); the full `rpg2k_scene_check.rb` (485),
   `rpg2k_logic_check.rb` (773), `rpg2k_save_load_check.rb`, and
   `rpg2k_testbed_logic_check.rb` (125) suites all still pass.
+  ✅ **A disabled Continue's own *rendering* — not just its SE — was also
+  still wrong, found in a separate later pass: it drew a hardcoded flat gray
+  instead of reading the windowskin's own disabled-colour swatch, unlike
+  every other grayed-out RPG_RT menu label (2026-08-18).** `Scene::Title`'s
+  constructor (`mruby-rpg2k/mrblib/scene/title.rb`) already renders the
+  New Game/Continue/Shutdown labels through `#draw_system_text` — the same
+  windowskin-swatch-blend helper `#draw_actor_state` and every field window
+  use for a `\c[n]`-style colour — for every *enabled* label, but the
+  disabled-Continue branch bypassed it entirely for a bare
+  `contents.draw_text` in `Color.new(128, 128, 128, 255)`, a leftover from
+  before this method existed at all; a prior comment on the line rationalised
+  this as deliberate ("the same fallback path `draw_system_text` itself
+  takes when there is no windowskin, reused here on purpose") but that
+  reasoning was never actually checked against the real engine. Confirmed
+  against EasyRPG Player's actual source: `Window_Command::DrawItem`
+  (`src/window_command.cpp`) draws *every* command — enabled or not — through
+  the identical `TextDraw(x, y, color, text)` windowskin-swatch path, the
+  only difference being which `Font::SystemColor` index it passes:
+  `ColorDefault` (0) when enabled, `ColorDisabled` (3, `src/font.h`) when not
+  — set via `Scene_Title::Update`'s own `command_window->SetItemEnabled(1,
+  continue_enabled)` (`src/scene_title.cpp`), which routes through
+  `SetItemEnabled`/`DrawItem` exactly the same as every other `Window_Command`
+  instance in the engine (the field menu, the battle command list, ...).
+  There is no hardcoded gray anywhere in the reference — a windowskin whose
+  own disabled swatch is tinted (blue-ish, brownish, whatever the artist
+  chose) shows that tint on real RPG_RT, complete with the same one-pixel
+  drop-shadow every other label gets, not flat neutral gray. Fixed by
+  passing `#draw_system_text` the disabled swatch's index (3) on that one
+  branch instead of falling straight to `draw_text`; the `font.color` set
+  immediately before it is untouched and still supplies `#draw_system_text`'s
+  own correct fallback (flat, same gray as before) for the no-windowskin
+  case, so a game with no `System/` graphic renders identically to before
+  this fix. Covered by a new `scripts/rpg2k_scene_check.rb` check (a title
+  screen built with a loaded windowskin and no save data blends the disabled
+  Continue label from swatch cell (48, 48) — colour index 3's geometry,
+  pinned the same way the message-text swatch check elsewhere in the same
+  file already does), confirmed to fail against the pre-fix code (zero
+  matching blend calls, since the flat-gray branch never blends at all)
+  before the fix.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
