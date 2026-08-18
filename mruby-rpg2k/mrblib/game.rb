@@ -1511,6 +1511,25 @@ module Game
       @exp = exp_for_level(@level) # EXP consistent with the starting level
       @hp = @max_hp
       @mp = @max_mp
+      # RPG2003 "cursed" starting gear (an item flagged Curse/
+      # reverse_state_effect with its own state_set) inflicts its forced
+      # states from the very first frame, not only once equipped through a
+      # later Equip command. Confirmed against EasyRPG's actual C++ source,
+      # fetched live: `Game_Actor::Game_Actor(int actor_id)`
+      # (src/game_actor.cpp) calls `SetEquipment(i + 1, ids[i])` for every
+      # one of the five initial-equipment slots -- the exact same function
+      # (and therefore the exact same `AdjustEquipmentStates` call) an
+      # ordinary mid-game equip change goes through -- so an actor whose
+      # starting shield/armor/helmet/accessory is cursed begins the game
+      # already afflicted, visible in the status window from turn one.
+      # #equip_item/#unequip/#equip below already call
+      # #adjust_equipment_states for every later change; only the
+      # constructor's own starting loadout skipped it. Placed after HP/MP
+      # are set to their max above, matching EasyRPG's own ordering
+      # (`SetHp`/`SetSp` precede the equip loop there), so a (deliberately
+      # extreme) cursed item whose state_set includes the Death state still
+      # leaves the actor at 0 HP rather than being overwritten back to full.
+      @equipment.each { |id| adjust_equipment_states(id, true) }
     end
 
     attr_writer :exp
