@@ -2434,12 +2434,17 @@ module Game
 
     # The amount a Change Monster HP / MP command applies. param2 selects how
     # param3 is read: 0 a constant, 1 the value of that variable, 2 (HP only) a
-    # percentage of the target's maximum. Mirrors EasyRPG's
-    # CommandChangeMonsterHP / CommandChangeMonsterMP.
+    # percentage of the target's *current* HP, not its maximum -- EasyRPG's
+    # `Game_Interpreter_Battle::CommandChangeMonsterHP` (`src/
+    # game_interpreter_battle.cpp`) reads `hp = enemy->GetHp()` once up top
+    # and computes `change = com.parameters[3] * hp / 100` from that captured
+    # value for case 2; `CommandChangeMonsterMP` has no percentage case at
+    # all (param2 is only ever 0/1 there -- the editor offers no % option for
+    # Change Monster MP), so this only ever matters for the HP path.
     def monster_change_amount(cmd, battler)
       case cmd.param(2)
       when 1 then variables[cmd.param(3)]
-      when 2 then cmd.param(3) * (battler.max_hp || 0) / 100
+      when 2 then cmd.param(3) * (battler.hp || 0) / 100
       else cmd.param(3)
       end
     end
@@ -2447,18 +2452,22 @@ module Game
     # Change Monster HP (13110): heal or hurt troop member param0. param1 is the
     # direction (non-zero = lose HP), param2/param3 the amount (see above) and
     # param4 whether the damage may be lethal — when it may not, the monster is
-    # left on 1 HP instead of going down.
+    # left on 1 HP instead of going down. An already-downed target is left
+    # untouched entirely, whichever direction: EasyRPG's own
+    # `CommandChangeMonsterHP` (`src/game_interpreter_battle.cpp`) checks
+    # `if (enemy->IsDead()) return true;` *before* reading param2/param3 or
+    # the direction/lethal flags at all, so nothing past that point ever
+    # runs against a dead enemy -- not just a further heal (this codebase's
+    # own prior guard only covered that half), a further *hit* on a
+    # 0-HP target used to fall through to `hp = 0 + amount`, then get
+    # re-clamped *up* to the lethal-off floor of 1 -- silently reviving a
+    # downed enemy back to 1 HP.
     def do_change_monster_hp(cmd)
       target = @battle && @battle.enemy(cmd.param(0))
       return unless target
+      return if target.dead?
       amount = monster_change_amount(cmd, target)
       amount = -amount if cmd.param(1) != 0
-      # yado.tk quirk: a downed (0 HP) enemy stays down. A positive amount
-      # here is a no-op on an already-dead target -- like Game::Actor#change_hp,
-      # clearing the KO needs Change State / Full Recovery even after this
-      # would otherwise put it back above 0. A further (negative) hit on a
-      # dead target is left alone: it just re-clamps to the same floor below.
-      return if target.dead? && amount > 0
       hp = target.hp + amount
       floor = cmd.param(4) != 0 ? 0 : 1
       hp = floor if hp < floor
