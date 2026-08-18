@@ -245,42 +245,101 @@ the interpreter-linking slice, in this order:
   emulator with a Memory Stick image. **On the emulator side specifically,
   this heartbeat has never yet produced a captured number**, in CI or
   locally, though the reasons have narrowed a lot:
-  - Two bugs *this repo's own EBOOT code* controlled are fixed. pspsdk's
-    `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
-    implemented under PPSSPP-headless and left emulator state corrupted
-    enough to crash a few syscalls later — `main.cxx` now builds every
-    marker/heartbeat string with a small libc-free `StrBuf` instead of
-    `std::snprintf`. Separately, PPSSPP-headless's own kernel-object
-    emulation had a real upstream bug: `sceKernelCreateLwMutex`
-    (`Core/HLE/sceKernelMutex.cpp`) dereferenced its caller-supplied
-    workarea pointer without validating it first, unlike every sibling
-    LwMutex function in the same file — a guest passing `workareaPtr=0`
-    turned that into a null-pointer write that segfaulted the *host*
-    `ppsspp-headless` process (confirmed with `gdb` against a core dump,
-    same crash address across independent runs). Not yet upstreamed to
-    `hrydgard/ppsspp`; `flake.nix`'s own `ppsspp` package output now
-    carries the fix as a local patch (`nix/patches/
-    ppsspp-lwmutex-workarea-validate.patch`) so this repo's own tooling
-    gets a build that survives past it.
-  - What's left, once both of those are out of the way, is a **third**,
-    separate bug, still unfixed: a `workareaPtr=0` genuinely comes from the
-    guest side, not host memory corruption — traced to pspsdk's own
-    `src/libcglue/lock.c`, where `__retarget_lock_init_recursive` calls
-    `malloc()` for a new lock struct with no null-check before
-    dereferencing it. `malloc()` returning `NULL` there is real and
-    reproducible, triggered by `global_stdio_init`'s lazy lock creation on
-    this EBOOT's very first stdio use (`detect_game()`'s `fopen` probes).
-    Isolated with minimal standalone pspsdk EBOOTs, built and boot-tested
-    against the patched PPSSPP above: a plain C `fopen()` works fine, the
-    same call still works fine with an extra 12 MB of static `.bss`
-    (ruling out this port's own arena/pool reservations starving the
-    heap), and still works fine with `libstdc++` and global C++ objects
-    linked in. So it is specific to something this project's own PSP link
-    pulls in beyond plain C/C++ — mruby's psp cross-build, LVGL, or
-    uni-algo, or their interaction — not yet narrowed further. Whether
-    real hardware shares any of these three bugs is unknown; the P1
-    device numbers above remain unconfirmed on the emulator and untried
-    on hardware.
+  Five independent bugs have been found and root-caused on this path so far,
+  three of them fixed; boot still does not complete. In the order the EBOOT
+  actually hits them:
+  1. **Fixed.** pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are
+     only partially implemented under PPSSPP-headless and left emulator
+     state corrupted enough to crash a few syscalls later — `main.cxx` now
+     builds every marker/heartbeat string with a small libc-free `StrBuf`
+     instead of `std::snprintf`.
+  2. **Fixed, PPSSPP-side.** `sceKernelCreateLwMutex`
+     (`Core/HLE/sceKernelMutex.cpp`) dereferenced its caller-supplied
+     workarea pointer without validating it first, unlike every sibling
+     LwMutex function in the same file — a guest passing `workareaPtr=0`
+     turned that into a null-pointer write that segfaulted the *host*
+     `ppsspp-headless` process (confirmed with `gdb` against a core dump,
+     same crash address across independent runs). Not yet upstreamed to
+     `hrydgard/ppsspp`; `flake.nix`'s `ppsspp` package output carries the
+     fix as a local patch (`nix/patches/
+     ppsspp-lwmutex-workarea-validate.patch`).
+  3. **Real, confirmed, not yet fixed.** With bugs 1–2 out of the way, a
+     `workareaPtr=0` genuinely comes from the guest side, not host memory
+     corruption — traced to pspsdk's own `src/libcglue/lock.c`, where
+     `__retarget_lock_init_recursive` calls `malloc()` for a new lock
+     struct with no null-check before dereferencing it, triggered by
+     `global_stdio_init`'s lazy lock creation on this EBOOT's very first
+     stdio use (`detect_game()`'s `fopen` probes). Confirmed present in
+     both the pspdev/pspdev container's shipped `libcglue.a` and a
+     from-scratch rebuild of unmodified pspsdk source (ruling out a stale
+     container library as the cause — an earlier, since-retracted theory
+     in this section blamed a stale library and a downstream JIT/heap
+     crash; both were artifacts of this investigation's own diagnostic
+     instrumentation perturbing timing, not genuine behavior. The real,
+     confirmed behavior with a clean toolchain is that execution continues
+     past this bug — the three affected LwMutex creates simply fail and are
+     otherwise unused early in boot — into bug 4 below).
+  4. **Fixed, PPSSPP-side.** The interpreter's `mfic`/`mtic` (Allegrex "move
+     from/to interrupt controller", `Core/MIPS/MIPSInt.cpp`) were pure
+     no-ops. pspsdk's `pspSdkDisableInterrupts()`/`EnableInterrupts()`
+     (`src/sdk/interrupt.S`) are built directly on these two instructions,
+     used to guard its own non-reentrant C-runtime state (the `pte_os*`/
+     newlib glue in `src/libpthreadglue/osal.c`) without syscall overhead;
+     with them doing nothing, those critical sections gave no real
+     protection under PPSSPP. Not yet upstreamed; `nix/patches/
+     ppsspp-mfic-mtic-interrupt-mask.patch` applies it locally alongside
+     the LwMutex patch.
+  5. **Fixed, this repo's build config.** `app/psp/CMakeLists.txt` linked
+     `pspkernel` before `pspuser`. Both static libraries provide
+     `sceKernelCreateCallback`, `sceKernelSleepThreadCB`, and
+     `sceKernelMaxFreeMemSize` as distinct `ForKernel`/`ForUser` NIDs; with
+     `pspkernel` first, `ld` kept its `ForKernel` stub for all three under
+     `--allow-multiple-definition`'s first-definition-wins rule, so this
+     user-mode EBOOT's imports named the kernel-mode NID for each. PPSSPP's
+     loader has no HLE implementation registered under those modules for a
+     plain homebrew EBOOT, so every call silently returned
+     `SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED` — none of the three's
+     callers (`setup_callbacks`'s `callback_thread`, and `_sbrk`'s
+     heap-size probe) check the return value. This was the actual cause of
+     the EBOOT hanging under PPSSPP-headless past `RPG2K_PSP_BOOT`:
+     `_sbrk()` re-ran its heap-init probe on every call forever, so the
+     first real `malloc()` never returned. Linking `pspuser` first fixed
+     it — confirmed via PPSSPP's syscall log: the "unknown syscall"/failed
+     LwMutex counts, which used to run into the hundreds of thousands over
+     a 15s boot attempt, dropped to zero.
+  6. **Found, not fixed — a toolchain limitation, not a quick patch.** With
+     bug 5 fixed, `psp-fixup-imports` (pspsdk's post-link import-table
+     tool) warns `stubs out of order` on this binary. It requires every
+     stub reference to a given PSP module to be physically contiguous in
+     the linked binary's import metadata; this project's `main.cxx` and
+     LVGL's PSP display driver each call into several different PSP
+     modules in ordinary control-flow order, so the linker's relocation
+     order doesn't group by module. When out of order, the tool still
+     marks entries processed but assigns some of them the wrong
+     `(module, function)` index, so PPSSPP resolves several genuine,
+     correctly-named imports (confirmed present as real `ForUser`-module
+     NIDs) as if they belonged to an unrelated module, and calls into them
+     return `SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED` — again silently, and
+     this is what's now hanging boot just past bug 5's fix. Re-linking
+     `main.cxx` at `-O0` does not change the warning (ruled out compiler
+     reordering as the cause; it's inherent to the source's own call
+     order). A patch that stably regroups the tool's `(stub_addr, nid)`
+     metadata by owning module was written and tested, but is **unsafe and
+     was not merged**: `stub_addr` doubles as the fixed trampoline address
+     every `jal` instruction elsewhere in the binary already targets at
+     link time, so moving which function's metadata occupies which slot
+     decouples the two — confirmed by testing it, which produced a binary
+     where `sceKernelCreateThread` and `sceIoRemove` both resolved to the
+     same trampoline address, and the guest's own crt0 sequence ended up
+     calling `sceIoRemove("user_main")`. A correct fix needs a full
+     relocation-aware rewrite (scan `.text` for every `jal` targeting a
+     moved slot and repoint it), a substantially bigger undertaking than
+     the fixes above; the alternative is restructuring which compilation
+     units call which PSP modules so each object file's own stubs are
+     naturally contiguous. Neither has been attempted.
+
+  Whether real hardware shares any of bugs 3 or 6 is unknown; the P1 device
+  numbers above remain unconfirmed on the emulator and untried on hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
