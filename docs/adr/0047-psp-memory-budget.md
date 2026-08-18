@@ -314,18 +314,17 @@ the interpreter-linking slice, in this order:
      it — confirmed via PPSSPP's syscall log: the "unknown syscall"/failed
      LwMutex counts, which used to run into the hundreds of thousands over
      a 15s boot attempt, dropped to zero.
-  6. **Found, not fixed — inherent to this EBOOT's control flow, not a
-     quick patch.** With bug 5 fixed, `psp-fixup-imports` (pspsdk's
-     post-link import-table tool) warns `stubs out of order` on this
-     binary. It requires every stub reference to a given PSP module to be
-     physically contiguous in the linked binary's import metadata. When
-     out of order, the tool still marks entries processed but assigns some
-     of them the wrong `(module, function)` index, so PPSSPP resolves
-     several genuine, correctly-named imports (confirmed present as real
-     `ForUser`-module NIDs) as if they belonged to an unrelated module, and
-     calls into them return `SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED` —
-     again silently, and this is what's now hanging boot just past bug 5's
-     fix.
+  6. **Fixed, via a patched pspsdk host tool.** With bug 5 fixed,
+     `psp-fixup-imports` (pspsdk's post-link import-table tool) warned
+     `stubs out of order` on this binary. It requires every stub reference
+     to a given PSP module to be physically contiguous in the linked
+     binary's import metadata. When out of order, the tool still marked
+     entries processed but assigned some of them the wrong
+     `(module, function)` index, so PPSSPP resolved several genuine,
+     correctly-named imports (confirmed present as real `ForUser`-module
+     NIDs) as if they belonged to an unrelated module, and calls into them
+     returned `SCE_KERNEL_ERROR_LIBRARY_NOT_YET_LINKED` — again silently,
+     and this was what hung boot just past bug 5's fix.
 
      Traced to its actual source, not just its symptom: `app/psp/main.cxx`
      alone accounts for the overwhelming majority of this EBOOT's ~88
@@ -336,8 +335,8 @@ the interpreter-linking slice, in this order:
      `main.cxx` and 7 are unique to it. A minimal, hand-written pspsdk
      homebrew calling into three different modules (`ThreadManForUser`,
      `sceDisplay`, `sceCtrl`) from a single file — deliberately structured
-     like `main.cxx`'s own mix — built clean with no warning, which rules
-     out "any file touching multiple modules" as the trigger, and matches
+     like `main.cxx`'s own mix — built clean with no warning, which ruled
+     out "any file touching multiple modules" as the trigger, and matched
      `psp.cxx`'s own 7 module-unique calls also causing no trouble on
      their own. The actual splits are things like `ThreadManForUser`:
      `setup_callbacks()` calls `sceKernelCreateThread`/`sceKernelStartThread`
@@ -346,26 +345,65 @@ the interpreter-linking slice, in this order:
      from inside the main loop — two genuinely different call sites,
      necessarily far apart in `main.cxx`'s own control flow, with unrelated
      modules' calls (`IoFileMgrForUser`, `SysMemUserForUser`, ...) between
-     them. Re-linking `main.cxx` at `-O0` does not change the warning
-     either (rules out compiler reordering). So this isn't an accident
+     them. Re-linking `main.cxx` at `-O0` did not change the warning either
+     (ruled out compiler reordering). So this was never an accident
      reorder-away-able fix: it reflects how this EBOOT's own logic is
-     actually laid out, not a stray ordering slip.
+     actually laid out, not a stray ordering slip — no restructuring of
+     which compilation units call which PSP modules would have avoided it
+     either, only deferred it to the next place two calls to the same
+     module happen to land far apart.
 
-     A patch that stably regroups the tool's `(stub_addr, nid)` metadata by
-     owning module was written and tested, but is **unsafe and was not
-     merged**: `stub_addr` doubles as the fixed trampoline address every
+     A patch that just stably regroups the tool's `(stub_addr, nid)`
+     metadata by owning module was written and tested first, and found
+     **unsafe**: `stub_addr` doubles as the fixed trampoline address every
      `jal` instruction elsewhere in the binary already targets at link
      time, so moving which function's metadata occupies which slot
      decouples the two — confirmed by testing it, which produced a binary
      where `sceKernelCreateThread` and `sceIoRemove` both resolved to the
      same trampoline address, and the guest's own crt0 sequence ended up
-     calling `sceIoRemove("user_main")`. A correct fix needs a full
-     relocation-aware rewrite (scan `.text` for every `jal` targeting a
-     moved slot and repoint it) — a substantially bigger undertaking than
-     the fixes above, not attempted.
+     calling `sceIoRemove("user_main")`. The actual fix does the full
+     relocation-aware rewrite that implies: after grouping, scan every
+     executable section for `jal` instructions targeting a slot that
+     moved, and repoint each one at the function's new address (an
+     ET_EXEC binary carries no relocation entries left to do this through
+     any other way). `patches/psp-fixup-imports-jal-relocation-aware.patch`
+     (pinned against a specific pspsdk commit, matching what
+     `pspdev/pspdev:latest`'s own prebuilt tool was built from) carries the
+     fix; `scripts/build_psp_fixup_imports.bash` fetches pspsdk at that
+     pin, applies it, and drops the rebuilt tool in place of the
+     toolchain's own copy — wired into the `psp` CI job
+     (`.github/workflows/build.yml`) ahead of `psp-cmake`/`cmake --build`.
+     Confirmed on this project's own EBOOT: 88 imports across 15 modules,
+     78 of which needed to move, 1620–1625 `jal` instructions repointed to
+     match (the exact count moves slightly run to run with unrelated
+     binary layout changes, e.g. bug 5's fix shrinking the .bss zero-fill
+     shifted a few unrelated addresses), zero `stubs out of order`
+     warnings afterward.
 
-  Whether real hardware shares bug 6 is unknown (bug 3 is now moot on this
-  boot path either way); the P1 device numbers above remain unconfirmed on
+  With bug 6 fixed, this EBOOT boots dramatically further than at any
+  earlier point on this whole P1 trail: past `RPG2K_PSP_BOOT`, through
+  `_sbrk`'s heap init (correctly allocating the full requested size this
+  time, confirmed via PPSSPP's own memory-partition log line), through
+  `mrb_open`, into real LVGL widget creation in `build_ui()`. It then hits
+  a **seventh bug, found and not yet fixed**: LVGL's builtin TLSF
+  allocator's `lv_tlsf_realloc` (`3rd/lvgl/src/stdlib/builtin/lv_tlsf.c`)
+  asserts `block already marked as free` — a use-after-free/double-free
+  detector, not a sizing issue (confirmed: bumping `LV_MEM_SIZE` 8x, from
+  256 KB to 2 MB, made no difference at all to whether or where the assert
+  fired, which a genuine capacity problem would not do). Traced to its
+  caller via a temporary `__builtin_return_address(0)` capture in
+  `psp_lvgl_assert_halt` (not kept — diagnostic only): `lv_tlsf_realloc`
+  itself, most plausibly reached from `build_ui()`'s second
+  `lv_label_set_text(g_status_label, ...)` call (the per-frame pressed-keys
+  status update; LVGL labels reallocate their internal text buffer on
+  change) reallocating a block some other write already corrupted the
+  free/used bit of, rather than a bug in LVGL's own allocator itself
+  (matching this whole trail's running theme of memory corruption over
+  logic bugs). Not yet root-caused further.
+
+  Whether real hardware shares bug 7 is unknown (bugs 3 and 6 are moot on
+  this boot path either way, one because it stopped triggering, the other
+  because it's fixed); the P1 device numbers above remain unconfirmed on
   the emulator and untried on hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
