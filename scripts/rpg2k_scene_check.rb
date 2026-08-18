@@ -15995,6 +15995,39 @@ check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around'
   eq 0, scene.instance_variable_get(:@cand_index), 'Down from the last candidate wraps to the first'
 end
 
+# The slot and candidate cursors live on genuine Window_Selectable
+# subclasses (Window_Equip/Window_EquipItem) whose own Update() auto-repeats
+# DOWN/UP the same as every other list -- see Scene::ItemMenu#update_items's
+# fuller writeup. The actor switch (RIGHT/LEFT) is confirmed NOT to: real
+# EasyRPG's Scene_Equip::UpdateEquipSelection (src/scene_equip.cpp) checks
+# Input::IsTriggered(RIGHT/LEFT) only, no IsRepeated, since each switch
+# pushes a whole new Scene_Equip rather than moving a cursor.
+check 'Scene::EquipMenu: holding Down auto-repeats the slot and candidate ' \
+      'cursors, but holding Right does not switch actors' do
+  scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@slot_index),
+     'a held (repeated, not triggered) Down still moves the slot cursor one step'
+
+  RGSS::Input.repeated = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index),
+     'a held (repeated, not triggered) Right does NOT switch actors -- matches ' \
+     'the real engine\'s own discrete-only IsTriggered gate'
+
+  scene.instance_variable_set(:@mode, :items)
+  scene.instance_variable_set(:@cand_index, 0)
+  scene.send(:build_cand_window)
+  RGSS::Input.repeated = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@cand_index),
+     'a held (repeated, not triggered) Down still moves the candidate cursor one step'
+end
+
 check 'Scene::EquipMenu: 装備固定 refuses to open the item list for that actor' do
   state = wrap_menu_state
   state.party.actors.first.equipment_fixed_flag = true

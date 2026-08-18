@@ -3626,6 +3626,30 @@ The work below is roughly ordered by the critical path to a walkable game
   pre-fix code before the fix. **Still open**: `equip_menu.rb`,
   `status_menu.rb`, `order.rb`, `debug_menu.rb`, `title.rb`, and every
   battle target/command list in `battle.rb`.
+  ✅ **Next: `equip_menu.rb` (2026-08-18) — and the first of this whole
+  series where the fix is *not* uniformly "add `|| #repeat?`
+  everywhere."** The slot list (`#update_slots`'s DOWN/UP) and the
+  equip-candidate item list (`#update_items`'s DOWN/UP) both auto-repeat,
+  living on genuine `Window_Equip`/`Window_EquipItem` — real
+  `Window_Selectable` subclasses — the same as every list fixed so far.
+  But `#update_slots`'s RIGHT/LEFT, which switches which party member is
+  being equipped, does **not**: confirmed against EasyRPG Player's actual
+  source, `Scene_Equip::UpdateEquipSelection` (`src/scene_equip.cpp`)
+  checks `Input::IsTriggered(Input::RIGHT/LEFT)` only, with no
+  `IsRepeated` fallthrough at all, because a switch pushes a **whole new
+  `Scene_Equip` instance** for the new actor rather than moving a cursor
+  within the current one — there is no live scene object left to keep
+  auto-repeating past the first tap. So `#update_slots`'s DOWN/UP gained
+  `|| Input.repeat?(...)` while its RIGHT/LEFT stayed untouched — the
+  first genuinely-checked-and-confirmed exception in this series, not
+  merely an oversight. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (a held, repeat-only Down moves both the slot and candidate
+  cursors one step each; a held, repeat-only Right does *not* switch
+  actors), confirmed to fail against the pre-fix code (the slot-cursor
+  assertion) before the fix. **Still open**: `status_menu.rb`, `order.rb`,
+  `debug_menu.rb`, `title.rb`, and every battle target/command list in
+  `battle.rb` — each worth the same actual-source check `equip_menu.rb`
+  just got, not an assumed blanket `|| #repeat?`.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it

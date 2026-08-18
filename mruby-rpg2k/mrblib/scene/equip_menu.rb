@@ -92,17 +92,28 @@ class RPG2k
                      "database, showing a placeholder label"
       end
 
+      # The slot cursor (DOWN/UP) auto-repeats while held -- it lives on a
+      # genuine `Window_Equip`, a `Window_Selectable` subclass, whose own
+      # `Update()` falls through to `Input::IsRepeated` the same as every
+      # other list here (see Scene::ItemMenu#update_items's fuller
+      # writeup). The actor switch (RIGHT/LEFT) does **not**: confirmed
+      # against EasyRPG's actual source -- `Scene_Equip::
+      # UpdateEquipSelection` (`src/scene_equip.cpp`) checks
+      # `Input::IsTriggered(Input::RIGHT/LEFT)` only, no `IsRepeated` at
+      # all, since each switch pushes a whole new `Scene_Equip` rather than
+      # moving a cursor within one -- left as a discrete-only, one-tap
+      # action, unlike the DOWN/UP slot cursor right beside it.
       def update_slots
         party = @state.party.actors
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @slot_index += 1
           @slot_index %= @slots.size
           refresh_slot_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @slot_index -= 1
           @slot_index %= @slots.size
           refresh_slot_cursor
@@ -146,12 +157,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_items
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @cand_index += 1
           @cand_index %= candidates.size
           refresh_cand_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @cand_index -= 1
           @cand_index %= candidates.size
           refresh_cand_cursor
