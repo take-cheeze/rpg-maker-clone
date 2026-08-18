@@ -11316,6 +11316,22 @@ above are repeated here)
   EXP threshold and one learn-table entry line up with the two-Slime troop's
   10 total EXP; a blank database falls back to the composed English for
   both), both confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-18): the interpreter path caught up too.**
+  `#level_up_message`/`#skill_learned_message` (Change EXP/Change Level/
+  Change Class's own map-side lines) had stayed on the "plain English line
+  for now" simplification this entry itself documented as left untouched --
+  now ported from `#battle_level_up_message`/`#battle_skill_learned_message`
+  exactly, down to the same "は"/term/space composition and the same
+  falls-back-to-English-when-blank rule. `Game::Party` gains a `#term(name,
+  fallback)` reader (mirroring every scene's own `Scene::Base#term`, since
+  `Game::Interpreter` has no scene of its own to ask -- it can run inside a
+  common event, outside any scene at all) that `Game::Interpreter` reads
+  through a `respond_to?`-guarded `#party_term` helper, so a bare fixture
+  party with no `#term` still falls back to English rather than raising.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (a database
+  setting `level`/`level_up`/`skill_learned` composes the same line the
+  battle-result screen would; a blank database falls back to the identical
+  English both methods already used).
 - ✅ **Sell price = `floor(list price / 2)`; price 0 = unsellable in a shop
   but free if placed in a shop's own buy list — confirmed already
   correct**, all three facts, no code change needed. `Game::Shop#sell_price`

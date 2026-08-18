@@ -1973,18 +1973,39 @@ module Game
     end
 
     # The one line a level-up announces. RPG_RT phrases it from the database
-    # terms; this build uses a plain English line for now.
+    # terms -- ported from Scene::Battle's identical #battle_level_up_message
+    # (mruby-rpg2k/mrblib/scene/battle.rb), which already reads them for the
+    # post-battle result screen; this map-side path (Change EXP / Change
+    # Level / Change Class) used to stay on a plain English line regardless
+    # of the database. Falls back to English when the database leaves
+    # `level_up` blank (a raw `level_up` term with no `level` term set still
+    # gets the 'Lv' stand-in rather than losing the whole line).
     def level_up_message(actor, level)
-      "#{actor.name} is now level #{level}!"
+      up = party_term(:level_up, nil)
+      return "#{actor.name} is now level #{level}!" unless up
+      "#{actor.name}は#{party_term(:level, 'Lv')} #{level} #{up}"
     end
 
     # The one line a newly-learned skill announces, immediately following its
-    # level's own level-up line. RPG_RT glues the skill's own name onto the
-    # `skill_learned` database term (EasyRPG's ActorMessage::GetLearningMessage,
-    # `src/game_message_terms.cpp`); this build uses a plain English line for
-    # now, matching #level_up_message's own documented simplification.
+    # level's own level-up line -- ported from Scene::Battle's identical
+    # #battle_skill_learned_message the same way #level_up_message is.
+    # EasyRPG's stock/CP932 `GetLearningMessage` branch names only the skill,
+    # never the actor, since it always trails that actor's own level-up line
+    # the way it does here too. Falls back to composed English (which does
+    # name the actor, since a database leaving `skill_learned` blank gets no
+    # level-up line's context to lean on either) when the term is blank.
     def skill_learned_message(actor, sk)
-      "#{actor.name} learned #{sk.name}!"
+      learned = party_term(:skill_learned, nil)
+      return "#{actor.name} learned #{sk.name}!" unless learned
+      "#{sk.name}#{learned}"
+    end
+
+    # `@state.party.term`, or `fallback` when the live party is a bare
+    # fixture that implements no `#term` at all (this codebase's usual
+    # optional-interface guard, matching `db.respond_to?(:term)` elsewhere).
+    def party_term(name, fallback)
+      party = @state.party
+      party.respond_to?(:term) ? party.term(name, fallback) : fallback
     end
 
     # Enter the next queued level-up message as a :message wait; returns false
