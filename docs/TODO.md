@@ -2113,9 +2113,43 @@ The work below is roughly ordered by the critical path to a walkable game
   the swatch's shading reads as a top-to-bottom gradient on the text the way
   RPG2000 draws it (`Game::MessagePalette` locates each swatch — a 10×2 grid of
   16×16 cells from y = 48, per EasyRPG's layout), falling back to a flat colour
-  only when no windowskin loaded or for an out-of-range index. When the message
-  is **not pinned** (`position_fixed` off, the RPG2000 default) the window
-  relocates to keep clear of the hero.
+  only when no windowskin is loaded (an out-of-range `\c[n]` index used to
+  reach this same fallback too — see the dedicated ✅ bullet below, which
+  clamps it back into range the same way real RPG_RT does, so a windowskin
+  swatch draws instead). When the message is **not pinned** (`position_fixed`
+  off, the RPG2000 default) the window relocates to keep clear of the hero.
+- ✅ **An out-of-range `\c[n]` colour code (n > 19, past the last real
+  palette slot) stayed out of range instead of resetting to colour 0 —
+  falling back to a flat, non-blended approximation instead of the
+  windowskin's own shaded swatch 0, a visibly different colour for almost
+  any custom windowskin (2026-08-18).** Verified against RPG_RT's actual
+  behavior via EasyRPG Player's own C++ source, fetched live:
+  `Window_Message::UpdateMessage`'s `case 'c': case 'C':` branch
+  (`src/window_message.cpp`) does `text_color = pres.value > 19 ? 0 :
+  pres.value` on the vanilla (non-Maniac-patch) path, i.e. every ordinary
+  RPG2000/2003 game. `Game::Message.scan`'s own `'c', 'C'` case
+  (`mruby-rpg2k/mrblib/game.rb`) stored the raw parsed value unclamped,
+  which later failed `MessagePalette.valid?`'s `0..19` range check at draw
+  time and fell through to `#message_color`'s flat `MSG_COLORS` fallback
+  instead of ever being swatch 0 — reachable with any literal `\c[20]` or
+  higher, and more realistically via a variable-driven `\c[\v[n]]` whose
+  variable's value can exceed 19. Fixed by clamping the same way RPG_RT
+  does at the point the value is parsed, so the renderer never sees an
+  out-of-range value from this code path again. While fixing this, also
+  found and fixed a related gap in the same case: `\c[]`/`\s[]` read their
+  bracket argument with a bare `arg.to_i`, never through the existing
+  `#resolve_arg` helper `\n[]`/`\v[]` already use to unwrap a nested
+  `\v[]` (yado.tk indirect addressing, e.g. `\n[\v[1]]`) — confirmed
+  against EasyRPG's own `Game_Message::ParseColor`/`ParseSpeed`, both of
+  which share the exact same `ParseParam` nested-`\v[]` machinery as
+  `ParseActor`/`ParseVariable`, not special-cased for color/speed at all —
+  so a real `\c[\v[n]]` or `\s[\v[n]]` silently misread the literal text
+  `"\v[n]"` as a raw number (`.to_i` on a non-numeric string is 0) instead
+  of resolving the named variable. Both now route through `#resolve_arg`.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (an out-of-range
+  literal clamps to 0 while 19 itself stays untouched; a nested `\v[]`
+  argument resolves inside both `\c[]` and `\s[]`), confirmed to fail
+  against the pre-fix code.
   ✅ **The exact zone boundary is no longer approximate.** Confirmed against
   EasyRPG's own `Game_Message::GetRealPosition()`, fetched verbatim: the real
   thresholds are `16 * 7` = 112px and `16 * 10` = 160px (7 and 10 map tiles

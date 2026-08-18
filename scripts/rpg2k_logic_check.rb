@@ -792,6 +792,30 @@ check 'Message.scan threads a starting/ending colour for a caller to chain acros
   eq 0, Game::Message.scan('x', vars, names)[:end_color]
 end
 
+check 'Message.scan clamps an out-of-range \c[n] colour back to 0, matching RPG_RT' do
+  vars = Game::Variables.new
+  names = {}
+  s = Game::Message.scan('a\c[19]b\c[20]c\c[999]d', vars, names)
+  eq [{ text: 'a', color: 0 }, { text: 'b', color: 19 }, { text: 'c', color: 0 },
+      { text: 'd', color: 0 }], s[:segments],
+     '19 is still the highest valid palette index; 20 and anything beyond ' \
+     'resets to colour 0 (EasyRPG\'s window_message.cpp: `text_color = ' \
+     'pres.value > 19 ? 0 : pres.value`), not left out of range'
+end
+
+check 'Message.scan resolves a nested \V[] argument inside \c[]/\s[] too ' \
+      '(yado.tk indirect addressing, the same as \n[]/\v[])' do
+  vars = Game::Variables.new
+  vars[1] = 5   # \c[\V[1]] should pick colour 5
+  vars[2] = 25  # \c[\V[2]] is out of range -> clamps to 0
+  vars[3] = 12  # \s[\V[3]] should set speed 12
+  names = {}
+  s = Game::Message.scan('a\c[\V[1]]b\c[\V[2]]c', vars, names)
+  eq [{ text: 'a', color: 0 }, { text: 'b', color: 5 }, { text: 'c', color: 0 }], s[:segments]
+  s2 = Game::Message.scan('a\s[\V[3]]b', vars, names)
+  eq [{ at: 1, speed: 12 }], s2[:speeds]
+end
+
 check 'Message.scan flags \$ (show gold) and drops it from the text' do
   vars = Object.new
   def vars.[](_i); 0; end
