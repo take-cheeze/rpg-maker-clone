@@ -11742,6 +11742,36 @@ animation still plays nothing through `#start_battle_animation`.
   at that last-known tile, not its original spawn tile; a hidden event still
   outranks a lower-id live event sharing its old tile), all three of the new
   ones confirmed to fail against the pre-fix code before the fix.
+  ✅ **`#event_position` — the sibling query behind Control Variables'
+  "Characters" X/Y/Direction operand and Conditional Branch's "Character
+  Direction is" test — had the identical gap `#event_id_at` just above was
+  fixed for, and was simply never given the same treatment
+  (2026-08-18).** It searched only `@events` (the live/active-page list)
+  and returned `nil` for anything else, so a Control Variables read of an
+  erased or currently-inactive-page event's position/facing logged a "map
+  event not found" warning and read 0 instead of a real number, and a
+  Conditional Branch testing such an event's direction always took the
+  else branch regardless of what its frozen facing actually was. Confirmed
+  against EasyRPG Player's actual C++ source rather than left a guess —
+  the same call chain `#event_id_at`'s own writeup already traced for
+  Store Event ID applies here unchanged: `Game_Interpreter::GetCharacter`
+  (`src/game_interpreter.cpp`) → `Game_Character::GetCharacter`
+  (`src/game_character.cpp`) → `Game_Map::GetEvent` (`src/game_map.cpp`)
+  is an unconditional lookup by id with no active-state filter at all, and
+  `CommandEraseEvent` (`src/game_interpreter.cpp`) only flips the event's
+  own active flag — it never removes the `Game_Event` from the map's own
+  event list — so `ControlVariables::Event`'s X/Y/Direction cases
+  (`src/game_interpreter_control_variables.cpp`) and Conditional Branch's
+  own "Orientation of char" case keep reading a real, frozen last
+  position/facing off it. Fixed by giving `#event_position` the exact same
+  fallback to `@event_last_position` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  `#event_id_at` already has — no new state needed, since that table
+  already exists and is already kept current for this purpose. Covered by
+  two new `scripts/rpg2k_scene_check.rb` checks, mirroring `#event_id_at`'s
+  own sibling checks (a hidden event whose page stopped matching after
+  walking two tiles answers at that last-known tile and facing, not `nil`;
+  a temporarily-erased event answers at the tile it was erased on, not
+  `nil`), both confirmed to fail against the pre-fix code before the fix.
 
 **Database field semantics** (from the `11_db/` sweep, 48 findings — the
 single densest source in this pass; only the ones not already listed

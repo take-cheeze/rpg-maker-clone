@@ -4451,6 +4451,53 @@ check 'a hidden event still outranks a lower-id live event sharing its old tile'
      'the higher-id hidden event still wins over the live lower-id event'
 end
 
+# #event_position (Control Variables' "Characters" X/Y/Direction operand and
+# Conditional Branch's "Character Direction is" test) used to search only
+# @events -- the live/active-page list -- and answer nil for anything else,
+# unlike its sibling #event_id_at just above, which already falls back to
+# @event_last_position for the identical reason. Verified against EasyRPG
+# Player's actual C++ source: Game_Interpreter::GetCharacter ->
+# Game_Character::GetCharacter -> Game_Map::GetEvent (src/game_map.cpp) is an
+# unconditional lookup by id with no active-state filter, and
+# CommandEraseEvent (src/game_interpreter.cpp) only flips the event's own
+# active flag -- it never removes the Game_Event from the map's own event
+# list -- so ControlVariables::Event's X/Y/Direction cases
+# (src/game_interpreter_control_variables.cpp) and Conditional Branch's own
+# "Orientation of char" case keep reading a real, frozen last position/facing
+# off it rather than nothing.
+check '#event_position resolves a hidden event at wherever it stood before ' \
+      'its page stopped matching, not nil' do
+  gated = page(trigger: 0, x_move_type: Game::MoveType::CUSTOM,
+               route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false))
+  gated.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
+  scene = new_scene({ 2 => event(2, 2, gated) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.switches[5] = true
+  40.times { scene.update } # walks right twice and settles at (4, 2), facing right
+  eq [4, 2], [chars(scene)[2].x, chars(scene)[2].y], 'the route finished'
+
+  st.switches[5] = false
+  5.times { scene.update }
+  ok event_hashes(scene)[2].nil?, 'the condition no longer holds, so it drops off the map'
+  pos = scene.event_position(2)
+  ok pos, 'still answers instead of nil'
+  eq [4, 2], [pos[:x], pos[:y]], 'at its last-known tile, not its spawn tile'
+  eq 6, pos[:direction], 'and its last-known facing (right, from the MOVE_RIGHT route)'
+end
+
+check '#event_position resolves a temporarily-erased event at its frozen ' \
+      'position for the rest of the visit' do
+  ic = Game::Interpreter::Cmd
+  erasing = page(trigger: 3)
+  erasing.event_commands = [ECmd.new(ic::ERASE_EVENT, [])]
+  scene = new_scene({ 3 => event(2, 1, erasing) }, player: [5, 5])
+  10.times { scene.update }
+  ok event_hashes(scene)[3].nil?, 'the event is erased'
+  pos = scene.event_position(3)
+  ok pos, 'still answers instead of nil'
+  eq [2, 1], [pos[:x], pos[:y]], 'at the tile it was erased on'
+end
+
 check 'Proceed With Movement holds the interpreter until a forced route finishes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

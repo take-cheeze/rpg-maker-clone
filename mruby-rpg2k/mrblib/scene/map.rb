@@ -3987,13 +3987,36 @@ class RPG2k
       public :event_id_at
 
       # Position of the map event with the given id (its tile x/y and facing), for
-      # the Control Variables "character" operand, or nil when there is no such
-      # event. Queried by the interpreter via map_info.
+      # the Control Variables "character" operand and the Conditional Branch
+      # "Character Direction is" test, or nil when the id names no event at all.
+      # Queried by the interpreter via map_info.
+      #
+      # Falls back to @event_last_position -- the same frozen-position table
+      # #event_id_at already falls back to, for the identical reason -- for an
+      # event whose current page doesn't match any condition, or one Erase
+      # Event has removed for the rest of this visit: verified against
+      # EasyRPG Player's actual C++ source rather than left a guess.
+      # `Game_Interpreter::GetCharacter` (src/game_interpreter.cpp) ->
+      # `Game_Character::GetCharacter` (src/game_character.cpp) ->
+      # `Game_Map::GetEvent` (src/game_map.cpp) is an unconditional lookup by
+      # id with no active-state filter at all, and `CommandEraseEvent`
+      # (src/game_interpreter.cpp) only flips the event's own active flag --
+      # it never removes the `Game_Event` from the map's own event list -- so
+      # both `ControlVariables::Event`'s X/Y/Direction cases
+      # (src/game_interpreter_control_variables.cpp) and Conditional Branch's
+      # own "Orientation of char" case (src/game_interpreter.cpp) keep reading
+      # a real, frozen last position/facing off it, not nothing. `@events`
+      # (the live/active-page list this method used to search exclusively) is
+      # exactly what #event_id_at's own identical fallback already had to
+      # solve this same gap for.
       def event_position(id)
         ev = @events.find { |e| e[:id] == id }
-        return nil unless ev
-        c = ev[:char]
-        { x: c.x, y: c.y, direction: c.direction }
+        if ev
+          c = ev[:char]
+          return { x: c.x, y: c.y, direction: c.direction }
+        end
+        pos = @event_last_position[id]
+        pos && { x: pos[0], y: pos[1], direction: pos[2] }
       end
       public :event_position
 
