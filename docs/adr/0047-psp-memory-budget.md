@@ -414,71 +414,84 @@ the interpreter-linking slice, in this order:
   share the bug and to zero-initialize the same way.
 
   With bug 7 fixed, the EBOOT boots past display creation and into
-  `mrb_open`'s GC init before hitting an **eighth bug, root-caused and
-  characterized but not fixed**: PPSSPP reports `Bad memory access
-  detected! 00000014` (or a nearby small address — see below) — a
-  near-null write — inside `mrb_gc_init`. Root-caused to **PPSSPP's x86-64
-  JIT (dynarec) itself mistranslating the guest MIPS code**, not a bug in
-  this EBOOT, mruby, or the fixed-arena allocator (ADR 0047's P2):
+  `mrb_open`'s GC init before hitting an **eighth bug, partially fixed and
+  re-characterized**: PPSSPP reports `Bad memory access detected!
+  00000014` (or a nearby small address — see below) — a near-null write —
+  inside `mrb_gc_init`. A first pass at this root-caused it to "PPSSPP's
+  x86-64 JIT mistranslating the guest MIPS code", based on: every
+  allocation up to the crash point tracing as valid (a temporary
+  instrumentation pass through the fixed arena and vendored
+  `mrb_gc_init`/`add_heap`/`init_heap_page`/`shape_root`,
+  `3rd/mruby/src/{gc,state,variable}.c`, none kept); the crash log's own
+  disassembly of the faulting *host* instruction, `mov [rbx+r9+0x4],
+  r10b`, inside the JIT block for `mrb_gc_init` (the compiler had inlined
+  `add_heap`'s `init_heap_page` loop into it — `page->objects[i].as.free.tt
+  = MRB_TT_FREE`, a small per-object byte-store loop, is the only matching
+  source shape); and `ppsspp-headless -i` (forces the plain MIPS
+  interpreter, bypassing the JIT entirely) running the identical EBOOT
+  784+ allocations further with zero bad-memory-access errors.
 
-  - The custom arena allocator (`app/psp/main.cxx`'s `mrb_arena_alloc`/
-    `mrb_arena_realloc`) was traced allocation-by-allocation with a
-    temporary instrumentation pass (every call's requested size and
-    returned pointer, plus extra trace points added directly to the
-    vendored `mrb_gc_init`/`add_heap`/`init_heap_page`/`shape_root` in
-    `3rd/mruby/src/{gc,state,variable}.c`, none kept). Every allocation up
-    to and past the crash point returns a valid, correctly-sized, 16-byte
-    aligned pointer inside the 8 MB arena; `mrb_calloc`'s `memset` on the
-    freshly allocated `mrb_heap_page` completes cleanly. The corruption is
-    not caused by anything in this trace.
-  - The crash address itself is not a plausible corrupted pointer (which
-    would look like leftover heap garbage) but a small, suspiciously
-    round number matching a struct/loop-offset size (0x14 = 20 =
-    `sizeof(mrb_iv_shape)` in one build; 0x18/0x50 in others) — and it
-    **moves between builds that differ only in added instrumentation
-    elsewhere in the binary**, changing which specific write manifests
-    the fault (sometimes a fatal unhandled access, sometimes one PPSSPP
-    logs as "ignored" and recovers from, in one case letting the process
-    limp forward into an infinite loop until the harness's own timeout
-    force-exits it). That layout-sensitivity is the signature of a
-    miscompiled/mistranslated instruction stream, not a fixed logic bug
-    at a fixed call site.
-  - Direct confirmation: PPSSPP's own crash log, with a JIT block active,
-    includes the disassembled *host* x86-64 instruction at the fault:
-    `mov [rbx+r9+0x4], r10b` inside the JIT block covering
-    `mrb_gc_init` (which the C compiler had inlined `add_heap`'s
-    `init_heap_page` loop into — `page->objects[i].as.free.tt =
-    MRB_TT_FREE`, a small per-object byte-store loop, is the only
-    matching source shape). The computed guest address is consistent
-    with `rbx` (the register holding the `page` base pointer) being
-    zero at that point in the *compiled* code, despite the *source*
-    value being a valid, non-null pointer the whole way through (per the
-    allocator trace above) — i.e. the JIT's register allocation/codegen
-    for this block loses track of the base pointer.
-  - Decisive test: re-running the identical EBOOT under
-    `ppsspp-headless -i` (forces the interpreter, bypassing the JIT
-    entirely) reaches the same code path and executes 784+ further
-    allocations with **zero** bad-memory-access errors (cut off only by
-    the harness's own timeout, since interpreted execution is far
-    slower) — the same guest code that reliably faults under the JIT
-    runs cleanly under the interpreter. This is the strongest evidence
-    the bug is PPSSPP's dynarec, not this project's code.
+  A second pass found a real, separate PPSSPP bug along the way — **fixed**:
+  `Common/x64Analyzer.cpp`'s `X86AnalyzeMOV`, which `Core/MemFault.cpp`
+  uses to recover from a bad guest access when `bIgnoreBadMemAccess` is
+  set (headless mode's default), only recognized the 32/64-bit-register
+  MOV opcodes (`0x89`/`0x8B`), not the 8-bit-register forms (`0x88`/`0x8A`)
+  the JIT emits for exactly this kind of byte store — hitting one during
+  recovery hit `X86AnalyzeMOV`'s own `default:` case and got treated as
+  unrecoverable, halting emulation outright instead of being skipped like
+  every other access width already is. `nix/patches/
+  ppsspp-x64analyzer-8bit-mov.patch` adds both missing opcodes; confirmed
+  it eliminates the fatal halt (`Stopping emulation`) under *both* of
+  PPSSPP's native JIT backends (the old per-arch `Core/MIPS/x86/Jit.cpp`
+  and the newer IR-based `Core/MIPS/x86/X64IRJit.cpp`), converting the
+  crash into the same graceful "ignored" recovery every other store width
+  already gets.
 
-  Not fixed here: this is a PPSSPP JIT correctness bug, not a one-line
-  semantic fix like bugs 2/4 (both plain HLE no-ops/missing null checks);
-  actually patching it needs someone to dig into PPSSPP's MIPS-to-x86
-  register allocator for whatever code shape this loop produces, out of
-  scope for this pass. `-i` (interpreter mode) is not viable as a
-  shipping workaround (far too slow for real gameplay) but is useful for
-  future diagnosis. Worth reporting upstream to `hrydgard/ppsspp` with
-  this trail as a repro.
+  Applying that fix does **not** get this EBOOT booting further, though —
+  and comparing all four of PPSSPP's CPU-core modes against the identical
+  patched EBOOT turned up evidence against the original "JIT
+  mistranslation" diagnosis: the byte-for-byte *same* fault address
+  sequence (0x18, 0x14, 0x2c, 0x28, ...) reproduces under the old x86 JIT,
+  under `JIT_IR` (an independently-implemented native backend), *and*
+  under `--ir` (`IR_INTERPRETER`, which shares `JIT_IR`'s MIPS-to-IR
+  frontend but does no native code generation at all — it segfaults the
+  *host* process outright at the same point, since the IR interpreter has
+  no `bIgnoreBadMemAccess`-style recovery path). Two independently-coded
+  native backends agreeing byte-for-byte, plus the IR interpreter hitting
+  the identical point despite generating no machine code, is hard to
+  explain as a backend-specific register-allocation bug; it fits a lot
+  better as something shared by every "compile/analyze a block ahead of
+  time" execution mode, and *not* shared by the one mode that's genuinely
+  different — the plain MIPS interpreter, which single-steps each
+  instruction directly against `currentMIPS`'s live state rather than
+  translating a block up front. That points at a timing-sensitive
+  condition (an interrupt or HLE callback racing unprotected/non-reentrant
+  guest state, matching this whole trail's running "memory corruption over
+  logic bugs" theme, and echoing bug 4's own interrupt-masking fix) as the
+  more likely next lead, over a genuine JIT translation bug — but this
+  pass did not chase that down further; it is a real, open question, not
+  a new final diagnosis. With the x64Analyzer fix applied, this EBOOT's
+  own boot still does not complete: execution proceeds past the fault
+  point instead of halting, but the underlying corruption persists, and
+  the guest program calls `sceKernelExitGame()` on its own partway through
+  `mrb_open` without ever printing `RPG2K_PSP_MRUBY_OPEN` — consistent
+  with the corruption leading to wild/divergent control flow rather than
+  a successful `mrb_open()`.
+
+  Not upstreamed to `hrydgard/ppsspp` yet. The x64Analyzer fix is worth
+  upstreaming on its own regardless of this EBOOT's own outcome — it is a
+  genuine gap relative to PPSSPP's own intended `bIgnoreBadMemAccess`
+  behavior, useful to any guest code that trips a byte-sized bad access
+  under the JIT. `-i` (interpreter mode) is not viable as a shipping
+  workaround (far too slow for real gameplay) but remains useful for
+  diagnosis.
 
   Whether real hardware shares bugs 7 or 8 is unknown (bugs 3 and 6 are
   moot on this boot path either way, one because it stopped triggering,
-  the other because it's fixed); bug 8 in particular, being a PPSSPP-only
-  JIT bug, may well be emulator-specific and not present on real hardware
-  at all. The P1 device numbers above remain unconfirmed on the emulator
-  and untried on hardware.
+  the other because it's fixed); bug 8's underlying corruption may or may
+  not be emulator-specific — unresolved by this pass. The P1 device
+  numbers above remain unconfirmed on the emulator and untried on
+  hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
