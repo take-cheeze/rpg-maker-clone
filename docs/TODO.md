@@ -2115,6 +2115,42 @@ The work below is roughly ordered by the critical path to a walkable game
   still announces each skill on its own level's page; a skill taught early
   via Change Skills still stays quiet once the level that would have taught
   it is reached.)
+  ✅ **A learned skill's own position in the actor's skill list is now
+  kept in ascending id order, not learn order (2026-08-18).**
+  `Actor#learn_skill` (`mruby-rpg2k/mrblib/game.rb`) simply `push`ed the new
+  id onto `@skills`, leaving the array in whatever order the skills were
+  actually taught — levelling through a growth table not itself
+  monotonic in skill id, or an ordinary Change Skills (10440) event
+  teaching a low-numbered spell after a high-numbered one, both entirely
+  normal authoring. Confirmed against EasyRPG's actual C++ source, fetched
+  live: `Game_Actor::LearnSkill` (`src/game_actor.cpp`) is `data.skills.
+  push_back(skill_id); std::sort(data.skills.begin(), data.skills.end());`
+  — called identically from levelling (`LearnLevelSkills`), Change Class,
+  and the Change Skills event command alike — so RPG_RT's own skill list
+  is *always* ascending-id-sorted, never in learn order. This stayed
+  invisible in every skill *menu*: `Game::Party#field_skills`/
+  `#battle_skills` (`game.rb`) already call `.sort` before listing, so the
+  Skill command always looked right. It was not invisible to
+  `Game::Battle#choose_auto_battle_command`, which iterates an actor's own
+  raw, unsorted `#skills` and calls `#auto_battle_skill_rank` per
+  candidate — a function that draws one `@rng.random(100)` jitter roll per
+  skill with a positive rank. Consuming that shared RNG stream in a
+  different order than real RPG_RT drifts every subsequent roll for the
+  rest of a seeded fight (hit/miss, damage variance, enemy AI alike), and
+  can pick a different skill outright on a near-tie — an externally
+  observable AI decision difference for any Forced-AI actor or any
+  RPG2003 player using the in-battle Auto Battle command, the moment that
+  actor knows two or more skills learned out of numeric order. Fixed by
+  adding `@skills.sort!` after the push in `#learn_skill`. Covered by
+  strengthening the existing "Actor learns skills from the growth table up
+  to its level" `scripts/rpg2k_logic_check.rb` check, whose own learn
+  table (25@L1, 32@L1, 27@L5) already exercises the out-of-order case —
+  its assertions used to defensively call `.sort` on the result, masking
+  exactly this bug, and now assert the raw `#skills` order directly (plus
+  two new assertions covering a subsequent high-id and low-id
+  `#learn_skill` call each sorting into place), confirmed to fail against
+  the pre-fix code (`expected [25, 27, 32], got [25, 32, 27]`) before the
+  fix.
 - ✅ **Message window** — renders text lines and a choice cursor and expands the
   common message control codes (`\v[n]` variable, `\n[n]` actor name, `\\`,
   `\_` space). `\n[n]` names the **live** actor out of the roster rather than the

@@ -4610,19 +4610,28 @@ end
 
 check 'Actor learns skills from the growth table up to its level' do
   # 25@L1, 32@L1, 27@L5 -- mirrors a real actor whose L5 skill set is 25/27/32.
+  # Deliberately learned out of numeric order (27 joins last, place-wise, yet
+  # sorts before 32): confirmed against EasyRPG's actual C++ source, fetched
+  # live -- `Game_Actor::LearnSkill` (src/game_actor.cpp) is `data.skills.
+  # push_back(skill_id); std::sort(data.skills.begin(), data.skills.end());`,
+  # so RPG_RT's own skill list is always ascending-id-sorted, never in learn
+  # order. Asserted directly against `#skills` (not `#skills.sort`, which
+  # would hide the exact ordering bug this pins) for that reason.
   learns = [[25, 1], [32, 1], [27, 5]]
   db = FakeActorDB.new(
     { 1 => SkillRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4], learns) }, [1])
   a = Game::Party.new(db).leader
-  eq [25, 32], a.skills.sort            # only the L1 skills at level 1
+  eq [25, 32], a.skills                 # only the L1 skills at level 1
   a.set_level(5)
-  eq [25, 27, 32], a.skills.sort        # 27 joins at level 5
+  eq [25, 27, 32], a.skills             # 27 joins at level 5, sorted in, not appended
   a.set_level(1)
-  eq [25, 27, 32], a.skills.sort        # levelling down keeps learnt skills
+  eq [25, 27, 32], a.skills             # levelling down keeps learnt skills
   ok a.knows_skill?(27)
   ok !a.knows_skill?(99)
-  # learn / forget mutate the set.
+  # learn / forget mutate the set, #learn_skill keeping it sorted throughout.
   a.learn_skill(99); ok a.knows_skill?(99)
+  eq [25, 27, 32, 99], a.skills, 'learning a high id keeps the low ids in front'
+  a.learn_skill(1); eq [1, 25, 27, 32, 99], a.skills, 'and a low id sorts to the very front'
   a.forget_skill(27); ok !a.knows_skill?(27)
   # restoring a saved set replaces it.
   a.skills = [1, 2, 2, 0]
