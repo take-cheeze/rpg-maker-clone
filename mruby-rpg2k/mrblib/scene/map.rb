@@ -228,6 +228,7 @@ class RPG2k
         @inn_window = nil
         @inn_bgm_started = false
         @inn_fading_out = false
+        @inn_interp = nil
         @shop = nil
         # The running fight, or nil between encounters -- see Scene::Battle.
         @battle = nil
@@ -1978,6 +1979,38 @@ class RPG2k
           # closes, then drive this one.
           if (@shop.nil? || @shop[:interp].equal?(it)) && @message.nil? && @name_ui.nil?
             drive_shop(it)
+          end
+        elsif it.wait_kind == :inn
+          # Show Inn issued from a Parallel Process: EasyRPG's
+          # `Game_Interpreter_Map::CommandShowInn` (src/game_interpreter_map.cpp)
+          # is the very same method for the foreground and every Parallel
+          # Process's own interpreter -- but unlike Open Shop/Enter Hero
+          # Name just above, it carries one extra, deliberately-preserved
+          # nuance of its own, called out in EasyRPG's own comment
+          # ("Emulates RPG_RT behavior (Bug?)"): a *priced* stay
+          # (`inn_price > 0`, this codebase's `req[:prompt]`) is gated
+          # `main_flag && !Game_Message::CanShowMessage(main_flag)` --
+          # `main_flag` is false for every non-foreground interpreter, so
+          # that whole condition is always false for a Parallel Process,
+          # skipping the message-active check entirely and opening the inn
+          # prompt immediately, barging over whatever message window
+          # happens to be up right now. A *free* stay (`inn_price == 0`)
+          # keeps the ordinary `IsMessageActive()` gate for every caller
+          # alike, foreground or not (`CommandShowInn`'s own separate
+          # `if (inn_price == 0) { if (IsMessageActive()) return false; ...`
+          # branch, with no `main_flag` mentioned at all). Before this
+          # branch existed this fell into the generic #resume below, so a
+          # Parallel Process's own Show Inn silently never opened the inn
+          # screen at all -- the command read as a no-op, and any
+          # [Stay]/[No Stay] handler right after it in `it`'s own list
+          # never ran. The single inn screen is shared the same way the
+          # shop/name-input screens are (`@inn_interp` mirrors
+          # `@shop[:interp]`, see #drive_inn/#finish_inn): a second,
+          # distinct interpreter's own Show Inn waits for this one's flow
+          # to finish before starting its own.
+          if @inn_interp.nil? || @inn_interp.equal?(it)
+            req = it.inn_request
+            drive_inn(it) if (req && req[:prompt]) || @message.nil?
           end
         elsif it.wait_kind == :return_title
           # Return to Title Screen issued from a Parallel Process: EasyRPG's
@@ -4365,20 +4398,29 @@ class RPG2k
       # no-op leave the screen alone, matching real RPG_RT (its inn fade only
       # runs down the accepted-stay `AsyncOp::eCallInn` path -- a cancelled
       # prompt never reaches it).
-      def drive_inn
-        req = @interpreter.inn_request
-        return @interpreter.resume_inn(false) unless req
+      #
+      # `it` defaults to the foreground @interpreter, but #drive_parallel_wait
+      # calls this with a Parallel Process's own instead (mirroring
+      # #drive_shop/#drive_name_input's own `it` idiom) -- @inn_interp records
+      # whichever one currently owns the in-progress inn flow, from here until
+      # #finish_inn, so a second, distinct interpreter's own Show Inn request
+      # waits its turn instead of colliding with this one's window/fade state
+      # (all of it plain scene ivars, not per-interpreter).
+      def drive_inn(it = @interpreter)
+        req = it.inn_request
+        return it.resume_inn(false) unless req
+        @inn_interp = it
         if @inn_fading_out
           return if @state.screen.fading?
           @inn_fading_out = false
-          finish_inn(true)
+          finish_inn(true, it)
           return
         end
         unless @inn_bgm_started
           play_inn_bgm
           @inn_bgm_started = true
         end
-        return start_inn_fade_out unless req[:prompt]
+        return start_inn_fade_out(it) unless req[:prompt]
 
         if @inn_window.nil?
           open_inn_window(req) # opened this frame; take input from the next one
@@ -4397,15 +4439,15 @@ class RPG2k
             # Accept: only honoured when the party can pay; otherwise ignored.
             if req[:can_afford]
               close_inn_window
-              start_inn_fade_out
+              start_inn_fade_out(it)
             end
           else
             close_inn_window
-            finish_inn(false)
+            finish_inn(false, it)
           end
         elsif Input.trigger?(Input::B)
           close_inn_window
-          finish_inn(false)
+          finish_inn(false, it)
         end
       end
 
@@ -4416,12 +4458,12 @@ class RPG2k
       # erased (e.g. an event faded to black right before the Show Inn command)
       # is a no-op transition, per #Game::Screen#erase, so it resolves at once
       # exactly like Erase Screen onto Erase Screen does.
-      def start_inn_fade_out
+      def start_inn_fade_out(it = @interpreter)
         @state.screen.erase(Game::Transition::FADE_OUT)
         if @state.screen.fading?
           @inn_fading_out = true
         else
-          finish_inn(true)
+          finish_inn(true, it)
         end
       end
 
@@ -4432,11 +4474,12 @@ class RPG2k
       # RPG_RT's FinishInn, the fade-in only starts, it does not block: the
       # interpreter resumes immediately below and the screen brightens over the
       # following frames while the game keeps running.
-      def finish_inn(stayed)
+      def finish_inn(stayed, it = @interpreter)
         @inn_bgm_started = false
+        @inn_interp = nil
         restore_pre_inn_bgm
         @state.screen.show(Game::Transition::FADE_IN) if stayed
-        @interpreter.resume_inn(stayed)
+        it.resume_inn(stayed)
       end
 
       # RPG2000 inn term set (A or B) selected by the command's type parameter.

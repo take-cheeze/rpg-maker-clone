@@ -7060,7 +7060,8 @@ not yet verified:
   `main_flag`/`CanShowMessage` "Emulates RPG_RT behavior (Bug?)" nuance for
   a Parallel-Process caller specifically (it *skips* the message-active
   check rather than honouring it) — both left open for a future, separately
-  well-scoped fix rather than folded into this one.
+  well-scoped fix rather than folded into this one. Both are now fixed, see
+  below.
 - ✅ **Open Shop (10720) issued from a Parallel Process now actually opens the
   shop screen, instead of silently doing nothing.** The exact sibling defect
   to the Enter Hero Name fix just above, now closed the same way. Confirmed
@@ -7091,6 +7092,52 @@ not yet verified:
   Open Shop through open → buy → confirm → leave → resume into its
   [Transaction] branch, confirmed to fail against the pre-fix code (the shop
   screen never opened at all) before the fix.
+- ✅ **Show Inn (10730) issued from a Parallel Process now actually opens the
+  inn screen too, including reproducing EasyRPG's own documented
+  Parallel-Process-specific quirk rather than smoothing it away
+  (2026-08-18).** The last of this family, deliberately left open by the
+  Enter Hero Name/Open Shop bullets above pending its own well-scoped fix,
+  since it is not a plain sibling of those two: EasyRPG's
+  `Game_Interpreter_Map::CommandShowInn` (`src/game_interpreter_map.cpp`,
+  re-fetched and re-read live this session) is still the exact same method
+  for the foreground and every Parallel Process's own interpreter, but a
+  *priced* stay (`inn_price > 0`) is gated `main_flag &&
+  !Game_Message::CanShowMessage(main_flag)` — `main_flag` is false for
+  every non-foreground interpreter, so that whole condition is always false
+  for a Parallel Process, skipping the message-active check entirely.
+  EasyRPG's own comment calls this out explicitly: `// Emulates RPG_RT
+  behavior (Bug?) Inn's called by parallel events overwrite the current
+  message.` `CanShowMessage` itself (`src/game_message.cpp`) is a thin
+  wrapper over `Game_Message::Window::GetAllowNextMessage`, purely a
+  message-window check, unrelated to the shop/name-input widgets. A *free*
+  stay (`inn_price == 0`) keeps the ordinary `IsMessageActive()` gate for
+  every caller alike — `CommandShowInn`'s own separate `if (inn_price == 0)
+  { if (IsMessageActive()) return false; ...` branch never mentions
+  `main_flag` at all. This build's `Interpreter#do_show_inn`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) already recorded the request and
+  suspended on an `:inn` wait regardless of caller, but `Scene::Map
+  #drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`) had no `:inn`
+  branch at all, so a Parallel Process's own Show Inn fell into the generic
+  `else` → unconditional `it.resume`, the identical no-op defect Enter Hero
+  Name/Open Shop had. Fixed by threading the owning interpreter through
+  `#drive_inn(it = @interpreter)`, `#start_inn_fade_out(it = @interpreter)`
+  and `#finish_inn(stayed, it = @interpreter)` (mirroring `#drive_shop`'s
+  own `it` idiom), recording it in a new `@inn_interp` ivar (mirroring
+  `@shop[:interp]`, but a standalone ivar rather than a hash field since the
+  inn flow's own state is already spread across several loose ivars, not
+  one shop-style hash) so a second, distinct interpreter's own Show Inn
+  request waits for this one's flow to finish first, and adding the missing
+  `:inn` branch to `#drive_parallel_wait` — but unlike every other branch in
+  this family, it does *not* uniformly block on `@message.nil?`: a priced
+  request (`req[:prompt]`) drives immediately regardless of any open
+  message window, reproducing the emulated bug exactly, while a free stay
+  keeps the ordinary message gate. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (a priced Show Inn from a Parallel
+  Process opens its prompt despite an open, unrelated message window; a
+  free-stay one from a Parallel Process instead waits for that same open
+  message to clear before proceeding), both confirmed to fail against the
+  pre-fix code (neither ever opened/proceeded at all — the plain no-op, not
+  a subtler timing miss) before the fix.
 - ✅ **Return to Title Screen (12510) and Exit Game (5002) now actually fire
   when issued from a Parallel Process, instead of silently doing nothing.**
   The same missing-branch defect as Enter Hero Name / Open Shop above, but
@@ -7101,9 +7148,9 @@ not yet verified:
   (`src/game_interpreter.cpp`) are both plain `Game_Interpreter` methods
   gated only on `Game_Message::IsMessageActive()`, with no `main_flag`
   reference anywhere in either body — same as Open Shop/Enter Hero Name.
-  Show Inn is the one exception in this whole family (its own
-  `main_flag`/`CanShowMessage` nuance is why it stays deliberately
-  unfixed); these two have no such asymmetry to reproduce at all.
+  Show Inn was the one exception in this whole family (its own
+  `main_flag`/`CanShowMessage` nuance, now fixed too, see above); these two
+  have no such asymmetry to reproduce at all.
   `Scene::Map#drive_parallel_wait` (`mruby-rpg2k/mrblib/scene/map.rb`) had
   no `:return_title`/`:exit_game` branches, so both fell into the generic
   `else` → unconditional `it.resume`, silently discarding the request and
