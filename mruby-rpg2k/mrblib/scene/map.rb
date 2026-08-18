@@ -18,30 +18,37 @@ class RPG2k
       COLS = SCREEN_W / TILE + 1
       ROWS = SCREEN_H / TILE + 1
       # Sub-pixel movement model. RPG2000's Move Speed (1..6) is no longer dead:
-      # the per-frame slide advance for a character of move_speed `s` is
-      # `1 << s` quarter-tile units (a full tile is SLIDE_UNITS), so
-      # frames-per-tile is 64 / (1 << s) = 32, 16, 8, 4, 2, 1 for s = 1..6. The
-      # default (s = 3) yields 8 frames/tile, identical to the old hardcoded
-      # 2px/frame, so the baseline is untouched -- only the previously-ignored
-      # non-default speeds (and the SPEED_UP / SPEED_DOWN move-route commands)
-      # now take effect. The port's move_speed is +1 from EasyRPG's 1-indexed
-      # convention, which is why the formula is `1 << s` rather than EasyRPG's
-      # `1 << (1 + s)`; see docs/TODO.md "Move Speed is dead code".
+      # the per-frame slide advance for a character of internal move_speed `s`
+      # is `1 << s` quarter-tile units (a full tile is SLIDE_UNITS), so
+      # frames-per-tile is 64 / (1 << s) = 32, 16, 8, 4, 2, 1 for s = 0..5. The
+      # default (s = 2, i.e. real Move Speed 3, "Normal") yields 8 frames/tile,
+      # identical to the old hardcoded 2px/frame, so the baseline is untouched
+      # -- only the previously-ignored non-default speeds (and the SPEED_UP /
+      # SPEED_DOWN move-route commands) now take effect. The port's internal
+      # move_speed is real RPG_RT's own 1-indexed Move Speed minus 1 (matching
+      # EasyRPG's `1 << (1 + GetMoveSpeed())`, `src/game_character.cpp`), which
+      # is why the formula here is plain `1 << s`; see #page_move_speed for
+      # where that conversion happens and docs/TODO.md "Move Speed is dead
+      # code".
       SLIDE_UNITS = TILE * 4   # quarter-tile units per tile (64)
 
-      # Jump slide advance (quarter-tile units/frame) by move_speed, port 1..6.
-      # From EasyRPG's jump_speed[] = {8,12,16,24,32,64} (over a 256-unit tile),
-      # ÷4 into quarter-tile units and shifted by the port's +1 offset so it
-      # lines up with the walk `1 << s` above; the top speed clamps to the last.
-      JUMP_SLIDE_STEP = { 1 => 3, 2 => 4, 3 => 6, 4 => 8, 5 => 16, 6 => 16 }.freeze
+      # Jump slide advance (quarter-tile units/frame) by move_speed, port 0..5.
+      # From EasyRPG's jump_speed[] = {8,12,16,24,32,64} (over a 256-unit tile,
+      # 0-indexed by the port's own real-minus-1 offset), ÷4 into quarter-tile
+      # units; the top speed clamps to the last.
+      JUMP_SLIDE_STEP = { 0 => 2, 1 => 3, 2 => 4, 3 => 6, 4 => 8, 5 => 16 }.freeze
 
-      # Walk-animation frame cadence by move_speed, port 1..6, matching EasyRPG's
-      # GetStationaryAnimFrames shifted by the same +1 offset; the default (3)
-      # keeps the prior 6-frame period, so existing animation pacing is unchanged.
-      ANIM_STATIONARY_FRAMES = { 1 => 10, 2 => 8, 3 => 6, 4 => 5, 5 => 4, 6 => 4 }.freeze
+      # Walk-animation frame cadence by move_speed, port 0..5, matching EasyRPG's
+      # GetStationaryAnimFrames (limits[] = {12,10,8,6,5,4}, 0-indexed by the
+      # same real-minus-1 offset); the default (2) keeps the prior 6-frame
+      # period, so existing animation pacing is unchanged.
+      ANIM_STATIONARY_FRAMES = { 0 => 12, 1 => 10, 2 => 8, 3 => 6, 4 => 5, 5 => 4 }.freeze
 
-      # Clamp a (possibly out-of-range) move_speed to the valid RPG2000 1..6.
-      def clamp_speed(s); v = s.to_i; v < 1 ? 1 : v > 6 ? 6 : v; end
+      # Clamp a (possibly out-of-range) internal move_speed to the port's own
+      # 0..5 scale -- the real RPG2000 Move Speed field is 1..6 (see
+      # #page_move_speed), one notch above this internal scale, matching
+      # EasyRPG's own Utils::Clamp(GetMoveSpeed(), 1, 6).
+      def clamp_speed(s); v = s.to_i; v < 0 ? 0 : v > 5 ? 5 : v; end
 
       # Quarter-tile units advanced per frame while walking at `s`.
       def walk_slide_step(s); 1 << clamp_speed(s); end
@@ -1336,7 +1343,14 @@ class RPG2k
       # Converted to the runtime numpad convention by build_event.
       def page_direction(page); page_field(:direction, 2) { d = page.direction; (0..3).include?(d) ? d : 2 }; end
       def page_move_type(page); page_field(:move_type, 0) { page.move_type || 0 }; end
-      def page_move_speed(page); page_field(:move_speed, 3) { page.move_speed || 3 }; end
+      # The page's stored Move Speed is real RPG_RT's own 1..6 scale (liblcf
+      # default 3, "Normal"); converted to this engine's internal 0..5 scale
+      # (real minus 1, see the SLIDE_UNITS comment above) so it lines up with
+      # #walk_slide_step/#jump_slide_step/#anim_frame_period, which otherwise
+      # treated a raw event's Move Speed as one full notch faster than real
+      # RPG_RT -- e.g. the default "Normal" (3) walked at the player's own
+      # default rate (real 4) instead of the correct half-speed.
+      def page_move_speed(page); page_field(:move_speed, 2) { (page.move_speed || 3) - 1 }; end
       def page_move_frequency(page); page_field(:move_frequency, 3) { page.move_frequency || 3 }; end
       def page_move_route(page); page_field(:move_route, nil) { page.move_route }; end
       def page_charset_name(page); page_field(:charset_name, nil) { page.charset_name }; end

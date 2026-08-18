@@ -632,14 +632,16 @@ end
 
 check 'speed/frequency/through/transparency flags clamp at their bounds' do
   c = Game::Character.new(0, 0)
-  c.move_speed = 6
+  # 5 is the internal scale's own max (real RPG_RT Move Speed 6, its own
+  # max, minus this engine's -1 offset -- see Scene::Map::SLIDE_UNITS).
+  c.move_speed = 5
   c.move_frequency = 1
   cmds = [mc(R::SPEED_UP), mc(R::FREQ_DOWN), mc(R::THROUGH_ON),
           mc(R::LOCK_FACING), mc(R::TRANSP_UP)]
   route = R.new(cmds, repeat: false)
   w = FakeWorld.new
   cmds.size.times { route.step(c, w) }
-  eq 6, c.move_speed          # clamped at the max
+  eq 5, c.move_speed          # clamped at the max
   eq 1, c.move_frequency      # clamped at the min
   eq true, c.through
   eq true, c.facing_locked

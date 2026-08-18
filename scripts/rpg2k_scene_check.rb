@@ -625,9 +625,9 @@ end
 def page(x_move_type: Game::MoveType::STATIONARY, route: nil, trigger: 0,
          frequency: 6, direction: 2, charset_name: '', charset_index: 0,
          layer: 0, pattern: 1, animation_type: 0, translucent: false,
-         overlap_forbidden: false)
+         overlap_forbidden: false, move_speed: 3)
   OpenStruct.new(
-    condition: nil, direction: direction, move_type: x_move_type, move_speed: 3,
+    condition: nil, direction: direction, move_type: x_move_type, move_speed: move_speed,
     move_frequency: frequency, charset_name: charset_name,
     charset_index: charset_index, trigger: trigger, event_commands: nil,
     move_route: route, layer: layer, pattern: pattern,
@@ -5401,7 +5401,10 @@ check 'a wandering event cycles its walk phase; a stationary one rests' do
   scene = new_scene({ 1 => mover, 2 => still }, player: [5, 4])
   eh = event_hashes(scene)
   slid = false
-  200.times { scene.update; slid ||= eh[1][:moving] }
+  # 400, not 200: a default-speed event now correctly takes 16 frames to
+  # cross a tile (internal move_speed 2, i.e. real RPG_RT's own default
+  # event speed 3) instead of the old, unconverted 8 -- see #page_move_speed.
+  400.times { scene.update; slid ||= eh[1][:moving] }
   ok slid, 'a random mover slides between tiles at some point'
   ok [eh[1][:char].x, eh[1][:char].y] != [3, 2], 'the mover changed tiles'
   ok eh[1][:anim_phase] != 0, 'the mover advanced its walk animation while sliding'
@@ -7754,19 +7757,41 @@ end
 
 check 'Move Speed is no longer dead: it drives the per-frame slide, jump and anim' do
   scene = new_scene({}, player: [0, 0])
-  # walk_slide_step returns quarter-tile units/frame. Default (3) -> 8 -> 8
-  # frames/tile (unchanged baseline); fastest (6) -> 64 -> 1 frame/tile;
-  # slowest (1) -> 2 -> 32 frames/tile. Before this fix every speed ignored
-  # move_speed and advanced a hardcoded 2 TILE-units (= 8 quarter-units)/frame.
+  # walk_slide_step/jump_slide_step/anim_frame_period take the *internal*
+  # (real RPG_RT Move Speed - 1) scale -- see #page_move_speed. Internal 0..5
+  # maps to real Move Speed 1..6, giving frames/tile 64,32,16,8,4,2 (matching
+  # EasyRPG's `1 << (1 + GetMoveSpeed())`, src/game_character.cpp, exactly).
+  # Internal 3 (real 4, the player's own default) keeps the prior hardcoded
+  # 8-frames/tile baseline unchanged; internal 0 (real 1, the slowest) used
+  # to be unreachable (clamp_speed floored at 1, i.e. real 2).
+  eq 1,  scene.send(:walk_slide_step, 0)
   eq 2,  scene.send(:walk_slide_step, 1)
   eq 8,  scene.send(:walk_slide_step, 3)
-  eq 64, scene.send(:walk_slide_step, 6)
-  # Jump uses its own table (default 3 -> 6 quarter-units/frame, ~11 frames),
+  eq 32, scene.send(:walk_slide_step, 5)
+  # Jump uses its own table (internal 3 -> 6 quarter-units/frame, ~11 frames),
   # not the walk rate.
   eq 6,  scene.send(:jump_slide_step, 3)
-  # Animation cadence is move_speed-dependent; default (3) keeps the prior 6.
+  # Animation cadence is move_speed-dependent; internal 3 keeps the prior 6.
   eq 6,  scene.send(:anim_frame_period, 3)
   eq 4,  scene.send(:anim_frame_period, 5)
+end
+
+check "an event's database Move Speed converts from RPG_RT's real 1..6 scale, not fed through raw" do
+  # Real RPG_RT's Game_Player ctor defaults the *hero* to Move Speed 4, but
+  # liblcf's EventPage.move_speed field defaults to 3 ("Normal") -- so an
+  # ordinary, unconfigured NPC event walks at half the hero's default rate in
+  # a real game (16 frames/tile vs. the hero's 8). Before this fix
+  # #page_move_speed fed the raw 1..6 LCF value straight into
+  # Character#move_speed, so a default event paced the hero exactly instead.
+  ev = event(0, 0, page) # page's default move_speed: 3, i.e. real "Normal"
+  scene = new_scene({ 1 => ev })
+  eq 2, chars(scene)[1].move_speed, 'real Move Speed 3 becomes internal 2 (real - 1)'
+  eq 4, scene.send(:walk_slide_step, chars(scene)[1].move_speed),
+     "half the hero's own default 8 quarter-units/frame walk rate"
+
+  slow = event(0, 0, page(move_speed: 1)) # the slowest real setting
+  scene2 = new_scene({ 1 => slow })
+  eq 0, chars(scene2)[1].move_speed, 'real Move Speed 1 becomes internal 0, not clamped up to 1'
 end
 
 check 'the airship crosses a tile in half the frames walking on foot takes' do

@@ -5260,6 +5260,41 @@ Everything below is unverified against the codebase.
   readers of `Character#move_speed`, and the subpixel requirement were the
   three reasons this was deferred before the subpixel accumulator made a
   single-pass, non-re-baselining fix possible.
+- ✅ **A map event's own database Move Speed was never converted into this
+  engine's internal scale, so every ordinary NPC paced the hero exactly —
+  real RPG_RT's own well-known "NPCs default to walking slower than the
+  hero" trait was invisible.** The bullet above fixed the per-frame slide
+  *formula* to be `move_speed`-driven and established the port's internal
+  convention (stored `move_speed` = real RPG_RT's own 1-indexed Move Speed
+  **minus 1**, so `1 << s` reproduces EasyRPG's `1 << (1 + GetMoveSpeed())`
+  exactly, `src/game_character.cpp`) — but the one place that loads an
+  ordinary map event's *own* database Move Speed, `Scene::Map#page_move_speed`
+  (`mruby-rpg2k/mrblib/scene/map.rb`), still handed the raw liblcf field
+  straight through unconverted: `page.move_speed || 3`. Real RPG_RT's player
+  defaults to Move Speed **4** (`Game_Player`'s constructor: `SetMoveSpeed(4)`)
+  while liblcf's own `EventPage.move_speed` field defaults to **3**
+  ("Normal") — so a real, unconfigured NPC walks at half the hero's default
+  rate (16 vs. 8 frames/tile). Feeding the raw `3` straight into this
+  engine's internal (real-minus-1) scale made that default NPC resolve to
+  internal `3` too — the *hero's own* rate — pacing the player exactly,
+  every explicit non-default Move Speed off by the same one full notch (an
+  exact 2× pixel-rate error at every level, since the formula is a power of
+  two), and skewing that event's walk-animation cadence and jump distance
+  identically since they key off the same unconverted `move_speed`. Fixed by
+  converting at the one load site (`page_move_speed`: `(page.move_speed ||
+  3) - 1`); `clamp_speed`'s floor widened from 1 to 0 (and the `SPEED_UP`/
+  `SPEED_DOWN` move-route commands' clamp bounds shifted from 1..6 to 0..5
+  to match, mirroring EasyRPG's own `SetMoveSpeed(min(GetMoveSpeed() + 1,
+  6))`/`max(GetMoveSpeed() - 1, 1)`) so real Move Speed 1 (the slowest, LCF's
+  own floor) is reachable instead of silently clamping up to real Move Speed
+  2; `JUMP_SLIDE_STEP`/`ANIM_STATIONARY_FRAMES` gained the matching internal-0
+  entries (`2` and `12`, from the same `jump_speed[]`/`GetStationaryAnimFrames`
+  arrays cited above, at their own index 0). Covered by new
+  `scripts/rpg2k_scene_check.rb` checks (a default-page event resolves to
+  internal `2`, the slowest real setting to internal `0` rather than
+  clamping up) and a corrected existing `scripts/rpg2k_logic_check.rb`
+  clamp-bounds check; the full scene suite (725 checks) and logic suite
+  (1006 checks) still pass.
 - ✅ **Repeat/Loop** — loops forever without an explicit Break Loop.
   `Interpreter#do_end_loop` unconditionally scans back to the matching
   `Loop` marker and jumps `@index` there every single time it is reached —
