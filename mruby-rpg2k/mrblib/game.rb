@@ -7129,8 +7129,14 @@ module Game
       @fade_transition = 0 # RPG2000 transition style (see Erase/Show Screen)
     end
 
-    # Current tint as [red, green, blue, saturation] (each 0..200, 100 neutral).
-    def tint; [@r, @g, @b, @sat]; end
+    # Current tint as [red, green, blue, saturation] (each 0..200, 100
+    # neutral), truncated to a whole number here -- matching EasyRPG's own
+    # `tint_current_red` et al. (`double` fields, truncated only where they
+    # are actually consumed, e.g. building the render `Tone`) -- while
+    # #update_tint keeps the full float precision internally between frames.
+    # See #update_tint's own comment for why the two must not be the same
+    # value.
+    def tint; [@r.to_i, @g.to_i, @b.to_i, @sat.to_i]; end
 
     # True while a tint transition is still in progress.
     def tinting?; @frames > 0; end
@@ -7407,12 +7413,27 @@ module Game
       @transition = nil
     end
 
+    # EasyRPG's `Game_Screen::UpdateScreenEffects` (`src/game_screen.cpp`)
+    # interpolates the tint in a `double` (`tint_current_red` et al. --
+    # confirmed against liblcf's own generated `SaveScreen` struct, where
+    # those four fields are `double` while the `tint_finish_*` targets stay
+    # `int32_t`) across every frame of the transition, via `interpolate(d,
+    # x0, x1) = (x0*(d-1) + x1) / d` -- algebraically `x0 + (x1-x0)/d` -- and
+    # only ever truncates to a whole number where the tint is actually read
+    # (#tint, mirroring EasyRPG's own render-time cast). A prior version of
+    # this method instead used plain Ruby integer division and wrote the
+    # truncated result straight back into `@r`/`@g`/`@b`/`@sat`, which the
+    # *next* frame's own step then read back as its own starting point --
+    # the same "feed the previous frame's truncated value back into the next
+    # frame's own division" bug already fixed for `Game::Picture#step`
+    # (rounding error compounding across the whole transition instead of
+    # resetting each frame), just never applied here.
     def update_tint
       return if @frames <= 0
-      @r += (@tr - @r) / @frames
-      @g += (@tg - @g) / @frames
-      @b += (@tb - @b) / @frames
-      @sat += (@tsat - @sat) / @frames
+      @r += (@tr - @r) / @frames.to_f
+      @g += (@tg - @g) / @frames.to_f
+      @b += (@tb - @b) / @frames.to_f
+      @sat += (@tsat - @sat) / @frames.to_f
       @frames -= 1
       return unless @frames.zero?
       @r = @tr; @g = @tg; @b = @tb; @sat = @tsat # land exactly on the target

@@ -2416,7 +2416,11 @@ The work below is roughly ordered by the critical path to a walkable game
   RPG2000 channels (red/green/blue/saturation, 0..200) toward their target over
   the command's duration (advanced each frame by `Scene::Map`), and the wait
   flag pauses the interpreter until the effect settles (a `:screen` wait,
-  resumed by the scene once `Game::Screen#busy?` clears). The **darkening** half
+  resumed by the scene once `Game::Screen#busy?` clears). **That
+  interpolation used to compound its own rounding error frame over frame
+  instead of resetting each time, now fixed; see the dedicated ✅ bullet
+  further down this document, right where the identical `Game::Picture` bug
+  was fixed.** The **darkening** half
   of the tint now draws: `Scene::Map` overlays a black screen sprite (below the
   flash / fade overlays) whose opacity approximates how far the tone averages
   below neutral, so a night / cave tint dims the map. A full tone — the colour
@@ -9685,6 +9689,42 @@ not yet verified:
   the exact `1, 2, 4, 5, 7, 8, 10` per-frame sequence for the 0-to-10-over-
   7-frames example above, confirmed to fail against the pre-fix code (it
   produced `1, 2, 3, 4, 6, 8, 10` instead) before the fix.
+- ✅ **Tint Screen's own per-frame interpolation had the identical
+  compounding-rounding-error bug as Move Picture just above — never applied
+  the same fix when that one landed (2026-08-18).** `Game::Screen
+  #update_tint` (`mruby-rpg2k/mrblib/game.rb`) computed `@r += (@tr - @r) /
+  @frames` with plain Ruby integer division and wrote the truncated result
+  straight back into `@r`/`@g`/`@b`/`@sat`, which the *next* frame's own
+  call then read back as its own starting point — the same "feed the
+  previous frame's already-truncated value back into the next frame's own
+  division" shape `Game::Picture#step` had, just never noticed here.
+  Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
+  source, fetched live: `Game_Screen::UpdateScreenEffects`
+  (`src/game_screen.cpp`) interpolates via a free `interpolate(d, x0, x1) =
+  (x0*(d-1) + x1) / d` — algebraically identical to `x0 + (x1-x0)/d` — and
+  confirmed directly against liblcf's own generated `SaveScreen` struct
+  (`src/generated/lcf/rpg/savescreen.h`) rather than assumed from the
+  formula alone: `tint_current_red`/`green`/`blue`/`sat` are `double`, while
+  `tint_finish_red`/`green`/`blue`/`sat` (the targets) stay `int32_t` — the
+  running value is genuinely float-precision internally and only ever
+  truncated where the tint is actually consumed (building the render
+  `Tone`), the same split `Game::Picture`'s own fix already ported. A tint
+  from red 100 to 0 over 7 frames is the smallest clean repro, the exact
+  same shape as Move Picture's own 0-to-10-over-7 example: this build's old
+  per-frame sequence was `85, 70, 56, 42, 28, 14, 0`; RPG_RT's real one
+  (float state, truncate only for display) is `85, 71, 57, 42, 28, 14, 0` —
+  frames 2 and 3 land one channel unit higher, a small but real, directly
+  observable divergence in the value driving `Scene::Map`'s own darkening-
+  overlay opacity during any non-power-of-two-length Tint Screen. Fixed by
+  dividing by `@frames.to_f` instead of the bare Integer (keeping `@r`/`@g`/
+  `@b`/`@sat` as the full-precision running state, now `Float` mid-
+  transition) and truncating only in `#tint`'s own reader (`@r.to_i`, etc.,
+  replacing the old bare `[@r, @g, @b, @sat]`) — every other caller still
+  only ever sees a plain `Integer`, unchanged. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check asserting the exact `85, 71, 57, 42,
+  28, 14, 0` per-frame sequence for the 100-to-0-over-7-frames example
+  above, confirmed to fail against the pre-fix code (it produced `85, 70,
+  56, 42, 28, 14, 0` instead) before the fix.
 - ✅ **50 concurrent picture slots; higher id always draws on top,
   independent of show order — confirmed already correct.**
   `Scene::Map#draw_pictures` composites `@state.pictures.keys.sort`, so the
