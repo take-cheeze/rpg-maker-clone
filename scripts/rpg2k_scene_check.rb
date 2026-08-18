@@ -9249,6 +9249,58 @@ check 'Enemy Encounter scene: casting an attack Skill damages a foe and spends S
   eq 7, ui[:allies].first.mp, 'the caster spent 3 SP (10 -> 7)'
 end
 
+# EasyRPG's Scene_Battle::UpdateUi (src/scene_battle.cpp), called
+# unconditionally every frame from Scene_Battle_Rpg2k::vUpdate, calls
+# .Update() on every one of command_window/status_window/item_window/
+# skill_window/target_window/options_window -- all genuine
+# Window_Selectables, whose own Update() drives the cursor via the
+# standard trigger-then-repeat, before SetActive/GetActive ever gates which
+# one's Decision/Cancel handling runs (see Scene::Order's identical shape).
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold
+# a key across frames without it also reading as a fresh trigger.
+check 'Enemy Encounter scene: holding Down auto-repeats the battle options, ' \
+      'command and enemy-target cursors alike' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleMagicParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  ok ui, 'the options window opened'
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, ui[:opt], 'a held (repeated, not triggered) Down still moves the options cursor'
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # back onto Fight
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss with Fight -> command phase
+  scene.update
+  RGSS::Input.reset
+  eq :command, ui[:phase]
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 1, ui[:cmd], 'a held (repeated, not triggered) Down still moves the command cursor'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # Skill -> Fire (enemy-scope) -> target
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :target, ui[:phase]
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 1, ui[:target_i], 'a held (repeated, not triggered) Down still moves the enemy-target cursor'
+end
+
 check 'Enemy Encounter scene: using an Item heals and consumes one from the bag' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

@@ -1182,14 +1182,25 @@ class RPG2k
         end
       end
 
-      # Per-actor command menu: Attack, Skill, Defend or Item.
+      # Per-actor command menu: Attack, Skill, Defend or Item. Holding Down/Up
+      # auto-repeats the cursor after the initial delay -- confirmed against
+      # EasyRPG's actual source: `Scene_Battle::UpdateUi` (`src/
+      # scene_battle.cpp`), called unconditionally every frame from
+      # `Scene_Battle_Rpg2k::vUpdate`, calls `.Update()` on every one of
+      # `command_window`/`status_window`/`item_window`/`skill_window`/
+      # `target_window`/`options_window` -- all genuine `Window_Selectable`s,
+      # whose own `Update()` is what drives the cursor via the standard
+      # trigger-then-repeat (see `Scene::ItemMenu#update_items`'s fuller
+      # writeup and docs/TODO.md), before `SetActive`/`GetActive` ever gates
+      # which one's Decision/Cancel handling actually runs. So every cursor
+      # spot in this scene gains `|| #repeat?` the same way.
       def drive_battle_command
-        if Input.trigger?(Input::DOWN)
+        if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @ui[:cmd] += 1
           @ui[:cmd] %= battle_commands.length
           draw_battle_command
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @ui[:cmd] -= 1
           @ui[:cmd] %= battle_commands.length
           draw_battle_command
@@ -1281,12 +1292,12 @@ class RPG2k
       # back to).
       def drive_battle_options
         rows = battle_option_rows
-        if Input.trigger?(Input::DOWN)
+        if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @ui[:opt] += 1
           @ui[:opt] %= rows.length
           draw_battle_options
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @ui[:opt] -= 1
           @ui[:opt] %= rows.length
           draw_battle_options
@@ -1472,12 +1483,12 @@ class RPG2k
       # enemy-scope Skill) hits.
       def drive_battle_target
         foes = living_foes
-        if Input.trigger?(Input::DOWN) && !foes.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !foes.empty?
           @ui[:target_i] += 1
           @ui[:target_i] %= foes.length
           draw_battle_target
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) && !foes.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !foes.empty?
           @ui[:target_i] -= 1
           @ui[:target_i] %= foes.length
           draw_battle_target
@@ -1558,12 +1569,12 @@ class RPG2k
 
       def drive_battle_skill
         skills = @ui[:skills]
-        if Input.trigger?(Input::DOWN) && !skills.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !skills.empty?
           @ui[:skill_i] += 1
           @ui[:skill_i] %= skills.length
           draw_battle_skill
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) && !skills.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !skills.empty?
           @ui[:skill_i] -= 1
           @ui[:skill_i] %= skills.length
           draw_battle_skill
@@ -1711,12 +1722,12 @@ class RPG2k
 
       def drive_battle_item
         items = @ui[:items]
-        if Input.trigger?(Input::DOWN) && !items.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !items.empty?
           @ui[:item_i] += 1
           @ui[:item_i] %= items.length
           draw_battle_item
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) && !items.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !items.empty?
           @ui[:item_i] -= 1
           @ui[:item_i] %= items.length
           draw_battle_item
@@ -1783,12 +1794,12 @@ class RPG2k
 
       def drive_battle_ally_target
         allies = battle_ally_targets
-        if Input.trigger?(Input::DOWN) && !allies.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !allies.empty?
           @ui[:ally_i] += 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) && !allies.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !allies.empty?
           @ui[:ally_i] -= 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target
