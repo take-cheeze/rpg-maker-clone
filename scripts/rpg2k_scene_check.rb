@@ -3585,6 +3585,46 @@ check 'Input Number opens a widget; confirming stores the entered value' do
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
+check 'Input Number plays the Cursor SE on every digit move and Decision on confirm' do
+  # Confirmed against EasyRPG's Window_NumberInput::Update (src/
+  # window_numberinput.cpp, every UP/DOWN/LEFT/RIGHT plays SFX_Cursor) and
+  # Window_Message::InputNumber (src/window_message.cpp, Decision on
+  # confirm) -- the same SE Show Choices already plays, just missing here.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::INPUT_NUMBER, [2, 5])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+
+  ni = nil
+  12.times { scene.update; ni = scene.instance_variable_get(:@number_input); break if ni }
+  ok ni, 'the number-entry widget opened'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'UP plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'DOWN plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'RIGHT plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'LEFT plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming plays the decision SE'
+end
+
 check 'a message types out gradually, then a button completes and dismisses it' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

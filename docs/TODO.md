@@ -3666,6 +3666,35 @@ The work below is roughly ordered by the critical path to a walkable game
   that they run cleanly); the full `rpg2k_scene_check.rb` (485),
   `rpg2k_logic_check.rb` (773), `rpg2k_save_load_check.rb`, and
   `rpg2k_testbed_logic_check.rb` (125) suites all still pass.
+- ✅ **That same SFX audit scoped itself to the separate `Scene::*` menu
+  screens and missed `Scene::Map`'s own embedded Input Number widget, which
+  played no sound effects at all (2026-08-18).** Verified against RPG_RT's
+  actual behavior via EasyRPG Player's own C++ source, fetched live:
+  `Window_NumberInput::Update` (`src/window_numberinput.cpp`) plays the
+  Cursor system SE on every UP/DOWN/LEFT/RIGHT digit adjustment (and numpad
+  digit entry, which this codebase's widget does not support a way to
+  reach at all — a distinct, smaller gap not addressed here), and
+  `Window_Message::InputNumber` (`src/window_message.cpp`) plays Decision
+  right before committing the entered value on confirm. `Scene::Map
+  #drive_number_input` (`mruby-rpg2k/mrblib/scene/map.rb`) had zero
+  `play_system_se` calls anywhere in its body — silent on every
+  interaction — unlike the structurally identical Show Choices handler a
+  few lines up in the very same file (`#drive_message`'s choice-list
+  branch), which already plays `SFX_CURSOR`/`SFX_DECISION` correctly.
+  Fixed by adding the same two calls `#drive_message` already uses, in the
+  same places. Input Number is a common RPG2000/2003 event command
+  (variable-entry shops, quiz puzzles, code locks), so this was reachable
+  in essentially any game that uses it, not a hypothetical edge case.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (each of UP/DOWN/
+  LEFT/RIGHT plays the Cursor SE, confirming plays Decision), confirmed to
+  fail against the pre-fix code. The Enter Hero Name widget
+  (`#handle_name_input`/`#handle_kana_name_input`/`#name_input_confirm`/
+  `#name_input_backspace`, same file) has an identical gap — verified
+  against `src/scene_name.cpp`/`src/window_name.cpp`, also fetched this
+  pass — left as a follow-up rather than bundled in here, since it touches
+  several more input branches (Decision on confirm/append, Cancel-then-
+  backspace vs. Cancel-with-empty-text Buzzer, an overflowing name) and
+  deserves its own dedicated, focused fix.
   ✅ **A disabled Continue's own *rendering* — not just its SE — was also
   still wrong, found in a separate later pass: it drew a hardcoded flat gray
   instead of reading the windowskin's own disabled-colour swatch, unlike
