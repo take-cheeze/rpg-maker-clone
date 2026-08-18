@@ -2489,17 +2489,24 @@ module Game
     end
 
     # Change Monster Condition (13130): inflict (param1 == 0) or cure the status
-    # param2 on troop member param0.
+    # param2 on troop member param0. Routed through Game::Battle#inflict_state/
+    # #cure_state rather than a raw states-array push/delete: RPG_RT's own
+    # CommandChangeMonsterCondition (src/game_interpreter_battle.cpp) calls
+    # `enemy->AddState(state_id, true)` / `enemy->RemoveState(state_id, false)`
+    # directly, the exact same functions a skill/weapon's own state effects
+    # go through -- inflicting state 1 (Knockout) this way genuinely knocks
+    # the target's HP to 0, and curing it while downed revives it to 1,
+    # rather than merely toggling an id in its states list with no HP effect
+    # at all.
     def do_change_monster_condition(cmd)
       target = @battle && @battle.enemy(cmd.param(0))
       return unless target
       state_id = cmd.param(2)
       return if state_id.nil? || state_id <= 0
-      states = target.states ||= []
       if cmd.param(1) != 0
-        states.delete(state_id)
-      elsif !states.include?(state_id)
-        states.push(state_id)
+        @battle.cure_state(target, state_id)
+      else
+        @battle.inflict_state(target, state_id)
       end
     end
 

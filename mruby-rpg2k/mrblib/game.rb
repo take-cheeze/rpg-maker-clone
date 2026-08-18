@@ -11654,7 +11654,7 @@ module Game
         else
           inflicted, already = roll_inflict(target, cmd)
           cured = (cmd[:cured] || []).select { |s| target.state?(s) }
-          target.states = (target.states || []) - cured unless cured.empty?
+          cured.each { |s| cure_state(target, s) }
           shifted = apply_attr_shift(target, cmd)
           stat_keys = (cmd[:stat_mod_keys] || []).select { skill_effect_hits?(cmd) }
           stat_changed = apply_stat_mods(target, stat_keys, stat_amount)
@@ -11726,7 +11726,22 @@ module Game
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0 && skill_effect_hits?(cmd)
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp && skill_effect_hits?(cmd)
         # Cure the item's status conditions from the target (an antidote / herb),
-        # unconditionally, matching the field item cure.
+        # unconditionally, matching the field item cure. Deliberately not
+        # routed through #cure_state: unlike every other cure site in this
+        # class, this branch's own `hp` (the skill's raw HP effect, already
+        # variance/attribute-adjusted above) already reaches a downed target
+        # directly -- the `target.hp = ...` line just above carries no
+        # `!target.dead?` guard -- so a revival skill's own configured heal
+        # amount already lands here without #cure_state's own hp-to-1
+        # fallback, and adding it on top risks *overwriting* a larger heal
+        # down to 1 rather than complementing it. RPG_RT's own two-step
+        # mechanism for this exact interaction (`AlgorithmBase::
+        # ApplyStateEffect`, src/game_battlealgorithm.cpp: cure first sets
+        # HP to 1, then a second, additive `ChangeHp(GetAffectedHp() - 1,
+        # false)` layers the skill's own heal on top) is closely related but
+        # not equivalent to this branch's current heal-then-cure ordering,
+        # and deserves its own dedicated, separately-verified fix rather
+        # than folding an approximation into this session's narrower one.
         cured = (cmd[:cured] || []).select { |s| target.state?(s) }
         target.states = (target.states || []) - cured unless cured.empty?
         # An RPG2003 reverse_state_effect ally/self-scoped skill flips
@@ -11834,6 +11849,42 @@ module Game
       pct
     end
 
+    # Add a state to `target`, applying RPG_RT's own inseparable Knockout
+    # side effect the instant the state added is id 1 -- verified against
+    # RPG_RT's actual behavior via EasyRPG's own `Game_Battler::AddState`
+    # (`src/game_battler.cpp`): `if (state_id == kDeathID) { SetHp(0); ...
+    # }`, an unconditional side effect fired from *every* battle-time
+    # infliction path alike (a skill's own state-effect list, a weapon's
+    # `state_set`, Change Monster Condition -- all three route through this
+    # one function). It is not something `#dead?` merely inspects after the
+    # fact; landing the state *is* what knocks the target out.
+    # `Game::Actor#add_state` already carries the identical rule for the
+    # field/menu path -- this is its `Combatant` counterpart. Also applies
+    # RPG_RT's crowding-out rule (`Game::States::PRUNE_GAP`): the state that
+    # just landed may itself immediately push out one already held, or be
+    # pushed out by one already held that outranks it.
+    def inflict_state(target, sid)
+      return if target.state?(sid)
+      target.states = Game::States.prune((target.states || []) + [sid], @states)
+      target.hp = 0 if sid == Game::States::DEATH_ID
+    end
+
+    # Cure a state from `target`, reviving it to 1 HP when curing state 1 is
+    # what actually took it off the downed list -- the mirror image of
+    # #inflict_state's own HP-zeroing side effect. EasyRPG's
+    # `Game_Battler::RemoveState` (via the shared `RemoveStates` helper,
+    # `src/game_battler.cpp`) snapshots whether the battler carries
+    # `kDeathID` before the removal and sets HP to 1 the instant that flips
+    # to false afterward -- since removing any *other* id can never change
+    # whether `kDeathID` is still carried, checking `sid` itself is an
+    # equivalent, simpler test for the same transition.
+    def cure_state(target, sid)
+      return unless target.state?(sid)
+      target.states = (target.states || []) - [sid]
+      target.hp = 1 if sid == Game::States::DEATH_ID
+    end
+    public :inflict_state, :cure_state
+
     # Inflict a skill command's `inflict` states on `target`, each landing only if
     # a 0..99 roll comes in under the skill's `chance` (its accuracy) scaled by
     # the target's per-state susceptibility.
@@ -11856,10 +11907,7 @@ module Game
         end
         prob = chance * state_susceptibility(target, sid) / 100
         next unless @rng.random(100) < prob
-        # RPG_RT's crowding-out rule (Game::States::PRUNE_GAP): the state
-        # that just landed may itself immediately push out one already
-        # held, or be pushed out by one already held that outranks it.
-        target.states = Game::States.prune((target.states || []) + [sid], @states)
+        inflict_state(target, sid)
         inflicted << sid
       end
       [inflicted, already]
@@ -11887,14 +11935,14 @@ module Game
         next if target.state?(sid)
         prob = chance * state_susceptibility(target, sid) / 100
         next unless @rng.random(100) < prob
-        target.states = Game::States.prune((target.states || []) + [sid], @states)
+        inflict_state(target, sid)
         inflicted << sid
       end
       healed = []
       (states[:heal] || {}).each do |sid, chance|
         next unless target.state?(sid)
         next unless @rng.random(100) < chance
-        target.states = (target.states || []) - [sid]
+        cure_state(target, sid)
         healed << sid
       end
       [inflicted, healed]

@@ -10352,6 +10352,66 @@ not yet verified:
   `#knock_out!`; a state within Death's own priority gap survives
   alongside it — all three confirmed to fail against the pre-fix code
   before the fix.
+  ✅ **Inflicting the Knockout state (id 1) mid-battle — via a skill/weapon's
+  own state-effect list, or the Change Monster Condition event command —
+  never actually felled the target, only the previous bullets' HP-driven
+  paths (Change HP, Simulated Attack, a battle write-back) did
+  (2026-08-18).** Distinct from those: this is about state infliction
+  *causing* death, not death crowding out a lesser state once it has
+  already happened. Verified against RPG_RT's actual behavior via EasyRPG
+  Player's own C++ source (fetched live): `Game_Battler::AddState`
+  (`src/game_battler.cpp`) treats state 1 as an inseparable HP side effect,
+  not mere states-list bookkeeping — `if (state_id == kDeathID) { SetHp(0);
+  SetAtbGauge(0); ...}` — and `RemoveState` (via the shared `RemoveStates`
+  helper) revives to 1 HP the instant curing it takes the battler off the
+  downed list (`if (is_dead != check_dead()) SetHp(1)`). Every battle-time
+  infliction path routes through these two functions: `Game_BattleAlgorithm
+  ::AlgorithmBase::ApplyStateEffect` (`src/game_battlealgorithm.cpp`) —
+  backing both a skill's own state-effect list and a weapon's `state_set` —
+  calls `AddState`/`RemoveState` for its `Inflicted`/`Healed` cases, and
+  `Game_Interpreter_Battle::CommandChangeMonsterCondition` (`src/
+  game_interpreter_battle.cpp`) calls the identical pair directly. This
+  codebase's three matching call sites — `Game::Battle#roll_inflict`
+  (skill state infliction), `#roll_weapon_states` (a basic Attack's own
+  weapon-granted states), and `Interpreter#do_change_monster_condition`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) — all just pushed/deleted the id on
+  the target's `states` array with no HP write either direction, so an
+  "instant death" skill/weapon, or a troop page's Change Monster Condition,
+  that only inflicted the state (no separate HP damage) silently did
+  nothing observable: the target kept its current HP, kept taking its
+  turn, and was never counted as defeated (`Combatant#dead?`/
+  `#out_of_play?` are `hp <= 0`-only). Fixed by adding
+  `Game::Battle#inflict_state`/`#cure_state` — the `Combatant` counterpart
+  to `Actor#add_state`/`#remove_state`'s own identical Death special-case
+  — and routing `#roll_inflict`, `#roll_weapon_states` (both directions)
+  and `#do_change_monster_condition` through them. Two further raw-mutation
+  sites inside `#apply_skill_hit` (a skill's own `cured:` list, both the
+  attack and recovery branches) were left as they were: the attack branch's
+  is provably unreachable for state 1 (it only runs on a target already
+  confirmed alive, and a live target cannot be carrying Death if HP/state
+  stay in sync), and the recovery branch's already lands a revival
+  skill's own configured HP amount directly against a downed target
+  (no `!target.dead?` guard on its own heal line) — a related but distinct
+  interaction with RPG_RT's own two-step revival mechanism
+  (`ApplyStateEffect`'s own `if (was_dead && !target->IsDead()) { auto hp =
+  GetAffectedHp(); target->ChangeHp(hp - 1, false); }`, additive on top of
+  the state cure's own HP-to-1) that risks *overwriting* a larger heal down
+  to 1 if folded in naively — left for its own dedicated, separately-
+  verified fix rather than approximated here. An existing
+  `scripts/rpg2k_logic_check.rb` check ("a two-weapon actor's swings each
+  carry their own weapon's elemental attribute and state") had
+  unintentionally used state id 1 as a generic stand-in state, not
+  realizing id 1 is always reserved as Knockout in every real database —
+  under the fix, inflicting it correctly ends the swing sequence early
+  (matching real RPG_RT) rather than the fixture's old assumption that
+  both scripted swings always land; shifted the fixture's own two test
+  states to ids 3/4 to keep testing what it was meant to (each swing
+  carries only its own weapon's state) rather than an artificial
+  Knockout collision. Covered by two new checks (a battle skill inflicting
+  state 1 forces HP to 0 the same instant, matching `#dead?`; Change
+  Monster Condition inflicting state 1 does too, and curing it while
+  downed revives to 1), both confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ A weapon-type Attribute (as opposed to a magic-type one) gates skill
   usability on having a matching-attribute **weapon** equipped — armor
   with the same attribute does not satisfy it (already flagged as a

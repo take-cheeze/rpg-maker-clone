@@ -13278,6 +13278,33 @@ check "a battle attack skill inflicting a state prunes the target's state set" d
   eq [3], foe.states, 'the battle-inflicted Petrify displaced the held Poison'
 end
 
+# Verified against RPG_RT's actual behavior via EasyRPG's own
+# Game_Battler::AddState (src/game_battler.cpp): inflicting state 1
+# (Knockout) forces HP to 0 as an unconditional side effect of the state
+# landing at all -- the same function every battle-time infliction path
+# routes through (a skill's own state-effect list included) -- not
+# something #dead? merely notices after the fact. Before this fix,
+# #roll_inflict only ever pushed the id onto the target's states array, so
+# a state-inflicting skill/weapon that named state 1 left the target alive
+# and still taking its turn.
+check "a battle skill inflicting state 1 (Knockout) actually knocks the " \
+      'target out' do
+  skills = { 7 => fake_skill(name: 'Death Touch', scope: 0, sp_cost: 3, power: 20,
+                             mrate: 40, state_effects: [1], hit: 100) } # -> state 1
+  st = party_state_with_states({}, skills)
+  mage = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  c = st.party.battle_skill_command(st.party.db_skill(7), mage, foe)
+  eq [1], c[:inflict]
+  bat.command_skill(mage, foe, name: 'Death Touch', cost: c[:cost],
+                    hp: c[:hp], mp: c[:mp], inflict: c[:inflict], chance: c[:chance])
+  bat.run_round
+  ok foe.state?(1), 'Knockout landed'
+  eq 0, foe.hp, 'and HP was forced to 0 the same instant the state landed'
+  ok foe.dead?
+end
+
 # Change HP / Simulated Attack (via #change_hp) and a battle write-back (via
 # #set_hp) are the two places `Actor#add_state(DEATH_STATE)` can fire outside
 # a skill/weapon infliction -- unlike those (`#cast_skill`/`#roll_inflict`/
@@ -15063,6 +15090,37 @@ check 'Change Monster Condition inflicts and cures a status' do
   it.start([FakeCmd.new(IC::CHANGE_MONSTER_CONDITION, [0, 1, 4])])
   it.update
   ok !b.enemy(0).state?(4), 'and it was cured'
+end
+
+# Verified against RPG_RT's actual behavior via EasyRPG's own
+# Game_Battler::AddState/RemoveState (src/game_battler.cpp): state 1
+# (Knockout) is not mere states-list bookkeeping -- inflicting it forces HP
+# to 0 as an explicit, unconditional side effect (`if (state_id ==
+# kDeathID) { SetHp(0); ... }`), and curing it while downed revives to 1
+# (the shared `RemoveStates` helper's own `if (is_dead != check_dead())
+# SetHp(1)`). Change Monster Condition routes through those same two
+# functions in real RPG_RT (`CommandChangeMonsterCondition`, src/
+# game_interpreter_battle.cpp: `enemy->AddState(...)`/`enemy->
+# RemoveState(...)`), so inflicting/curing state 1 through this command
+# must carry the identical HP side effect -- before this fix it only
+# pushed/deleted the id from the states array, leaving HP (and #dead?)
+# completely untouched either direction.
+check 'Change Monster Condition inflicting state 1 (Knockout) actually ' \
+      'knocks the target out, and curing it revives' do
+  b = battle_with(foe_hp: 100)
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_CONDITION, [0, 0, 1])])
+  it.update
+  ok b.enemy(0).state?(1), 'Knockout was inflicted'
+  eq 0, b.enemy(0).hp, 'and HP was forced to 0 the same instant'
+  ok b.enemy(0).dead?
+
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_CONDITION, [0, 1, 1])])
+  it.update
+  ok !b.enemy(0).state?(1), 'Knockout was cured'
+  eq 1, b.enemy(0).hp, 'reviving it to 1 HP the same instant'
+  ok !b.enemy(0).dead?
 end
 
 check 'Show Hidden Monster and Change Battle Background raise one-shot requests' do
@@ -17171,10 +17229,15 @@ check "battle: a two-weapon actor's swings each carry their own weapon's " \
   # weapon, per EasyRPG's src/attribute.cpp and src/game_battlealgorithm.cpp).
   # Both weapons hit 100 so accuracy never interferes; element 1 is immune
   # (rank 4 -> 0%) and element 2 is normal (rank 2 -> 100%) on the target.
+  # The weapon states are 3 and 4, deliberately not 1: state id 1 is always
+  # Knockout (Game::States::DEATH_ID) in every real database, so inflicting
+  # it -- as this test briefly did by accident, before #inflict_state
+  # correctly started zeroing HP on landing it -- would fell the target on
+  # the very first swing and never reach the second at all.
   items = { 1 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [true, false],
-                           state_set: [1, 0], state_chance: 100),   # element 1, state 1
+                           state_set: [0, 0, 1, 0], state_chance: 100),  # element 1, state 3
             2 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [false, true],
-                           state_set: [0, 1], state_chance: 100) }  # element 2, state 2
+                           state_set: [0, 0, 0, 1], state_chance: 100) } # element 2, state 4
   row = FakePlayerRow.new('Hero', '', 0, 5,
                           { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
   row.double_hand = true
@@ -17188,13 +17251,14 @@ check "battle: a two-weapon actor's swings each carry their own weapon's " \
   hero = Game::Battle.from_actor(actor)
   foe = combatant('Foe', 0, 0, 10, 999)
   foe.attr_ranks = { 1 => 4, 2 => 2 } # immune to 1, normal to 2
-  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), { 1 => fake_state, 2 => fake_state },
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1),
+                        { 3 => fake_state, 4 => fake_state },
                         false, false, false)
   first, second = bat.send(:swing, hero, foe)
   eq 0, first[:damage], "swing 1's own element (1) is immune on the target"
   ok first[:damage] < second[:damage], "swing 2's own element (2) is unscaled, unlike swing 1's"
-  eq [1], first[:inflicted], "swing 1 only rolls its own weapon's state (1)"
-  eq [2], second[:inflicted], "swing 2 only rolls its own weapon's state (2), not both"
+  eq [3], first[:inflicted], "swing 1 only rolls its own weapon's state (3)"
+  eq [4], second[:inflicted], "swing 2 only rolls its own weapon's state (4), not both"
 end
 
 check 'battle: #swing actually lands three attacks when strike_count is three, ' \
