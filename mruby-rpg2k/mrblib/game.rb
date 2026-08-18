@@ -5686,8 +5686,12 @@ module Game
       when END_JUMP   then [:effect, true] # an End Jump with no Begin: skipped
       when LOCK_FACING   then character.facing_locked = true;  [:effect, true]
       when UNLOCK_FACING then character.facing_locked = false; [:effect, true]
-      when SPEED_UP   then character.move_speed = [character.move_speed + 1, 6].min; [:effect, true]
-      when SPEED_DOWN then character.move_speed = [character.move_speed - 1, 1].max; [:effect, true]
+      # Bounds are the internal 0..5 scale (real Move Speed 1..6 minus 1; see
+      # Scene::Map::SLIDE_UNITS/#page_move_speed), matching EasyRPG's own
+      # `SetMoveSpeed(min(GetMoveSpeed() + 1, 6))` / `max(GetMoveSpeed() - 1, 1)`
+      # (src/game_character.cpp) shifted down by that same offset.
+      when SPEED_UP   then character.move_speed = [character.move_speed + 1, 5].min; [:effect, true]
+      when SPEED_DOWN then character.move_speed = [character.move_speed - 1, 0].max; [:effect, true]
       when FREQ_UP    then character.move_frequency = [character.move_frequency + 1, 8].min; [:effect, true]
       when FREQ_DOWN  then character.move_frequency = [character.move_frequency - 1, 1].max; [:effect, true]
       when SWITCH_ON  then world.set_switch(cmd.parameter_a, true);  [:effect, true]
