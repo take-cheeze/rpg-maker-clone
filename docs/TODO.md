@@ -8280,6 +8280,39 @@ not yet verified:
   Encounter Rate, then a Teleport back to the same map id, falls back to
   the map tree node's own `encount_steps`), confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **Tile Substitution never survived a Save/Continue on the same map,
+  unlike real RPG_RT.** The bullet above confirms this codebase correctly
+  *resets* it on an ordinary leaving-and-returning visit (`Game::Map`'s
+  substitution table is never carried by `perform_teleport`'s fresh
+  `load_map`) — but a genuine Save/Continue is a *different* case in real
+  RPG_RT: its `SaveMapInfo.lower_tiles`/`upper_tiles`
+  (`Game_Map::SetupFromSave`, `src/game_map.cpp`, verified against EasyRPG's
+  own fetched source) restore whatever a live Tile Substitution had
+  rewritten, the same way the currently-loaded map's own live event
+  positions round-trip through a save (`#map_event_positions`). This
+  codebase's own `LCF::Schema::SAVE_MAP_EVENT` already parses fields 21/22
+  (`chip_replacement_lower`/`chip_replacement_upper`, `mruby-lcf/mrblib/
+  schema.rb`, confirmed against a real save fixture in `mruby-lcf/test/
+  lcf_test.rb`) — but nothing in `mruby-rpg2k/mrblib` ever wrote or read
+  them, so every Save/Continue silently dropped the table, matching this
+  codebase's own "leaving and returning" reset instead of real RPG_RT's
+  "Continue restores it" behaviour. Fixed by mirroring the exact pattern
+  `#map_event_positions` already uses: `Game::State#tile_substitutions`
+  (`[{old_id => new_id} for the lower layer, same for upper]`), snapshotted
+  every frame from the live `Game::Map` (`Game::Map#substitution_snapshot`,
+  called by the new `Scene::Map#record_tile_substitutions`), round-tripped
+  through both the portable Marshal save (`#to_h`/`.load`) and a real
+  `.lsd` (`#to_lsd`/`.from_lsd`, chunk 111 fields 21/22, converted to/from
+  liblcf's own 144-entry identity-by-default byte array via two new
+  `Game::State.tile_replacement_bytes`/`.tile_replacement_hash` class
+  methods), and reapplied onto the freshly-loaded `Game::Map` by
+  `RPG2k#continue_game` (`main.rb`) via a new `Game::Map#restore_
+  substitutions`. Covered by new `scripts/rpg2k_logic_check.rb` checks (both
+  save formats round-trip the table, an old save missing the field restores
+  the empty default) and a new `scripts/rpg2k_scene_check.rb` check
+  (a substitution snapshotted mid-play restores onto a freshly-built
+  `Game::Map`, contrasted with the existing "leaving and returning drops it"
+  check just above), all confirmed to fail against the pre-fix code.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**
