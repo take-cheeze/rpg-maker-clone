@@ -16791,6 +16791,40 @@ check 'a transformed monster is redrawn with its new battler graphic' do
   ok ui[:enemy_sprites][0].equal?(same), 'an unchanged battler is left alone'
 end
 
+# A Transform repoints the combatant at a new database enemy row
+# (Game::Battle#enemy_transform_action), but the troop's own Enemy object at
+# the same slot -- the one #total_exp/#total_gold/#drops actually read
+# exp/gold/drop_id/drop_prob from -- is a separate object nothing else keeps
+# in sync. EasyRPG's own Game_Enemy::Transform repoints a single backing
+# data pointer, so reward accessors read the new monster too; this port's
+# parallel Combatant/Troop::Enemy split needs an explicit mirror, which
+# #refresh_battle_sprites now performs (#sync_troop_member_rewards) right
+# alongside its existing battler-swap detection.
+check 'a transformed monster pays out its new form\'s EXP/gold/drop, not its original form\'s' do
+  scene, _st = battle_scene_with_pages(nil)
+  90.times do
+    ui = battle_ui(scene)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    scene.update
+    RGSS::Input.triggered = []
+    ui = battle_ui(scene)
+    break if ui && ui[:phase] == :command
+  end
+  ui = battle_ui(scene)
+  member = ui[:troop].members[0]
+  eq 5, member.exp, "starts as the default fixture's Slime (id 2)"
+  eq 10, member.gold
+  # What Game::Battle's transform action does to the combatant: repoint it at
+  # enemy id 3, the default fixture's own Bat (exp 4, gold 8, no drop).
+  ui[:foes][0].battler_name = 'Bat'
+  ui[:foes][0].name = 'Bat'
+  ui[:foes][0].enemy_id = 3
+  scene.instance_variable_get(:@battle).send(:refresh_battle_sprites)
+  eq 4, member.exp, "the troop member's own reward fields follow the transform"
+  eq 8, member.gold
+  eq 0, member.drop_id, 'Bat carries no drop, unlike Slime'
+end
+
 # -- random ("wandering monster") encounters ----------------------------------
 #
 # Map-tree node field 41 (enemy_groups) / 44 (encount_steps), read the same

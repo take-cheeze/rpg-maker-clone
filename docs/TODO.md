@@ -1623,6 +1623,24 @@ The work below is roughly ordered by the critical path to a walkable game
   combatant carries its `battler_name`, and `Scene::Map#refresh_battle_sprites`
   rebuilds any sprite whose battler no longer matches the one it was drawn from
   (an unchanged battler is left alone, so the field does not churn every frame).
+  ✅ **A transformed monster now also pays out its new form's EXP/gold/drop
+  on defeat, not its original form's (2026-08-18).** The battle math runs on
+  a `Game::Battle::Combatant` (`enemy_transform_action` already repointed
+  its stats and `battler_name`/`battler_hue`), but `#total_exp`/`#total_gold`/
+  `#drops` read `exp`/`gold`/`drop_id`/`drop_prob` off a separate object --
+  the troop's own `Game::Enemy` at the same slot -- that nothing ever told
+  about the transform. EasyRPG's actual `Game_Enemy::Transform`
+  (`src/game_enemy.cpp`) repoints a single backing database-row pointer, so
+  every accessor, combat and reward alike, reads the new monster from that
+  one point on; this port's parallel Combatant/`Troop::Enemy` split needs an
+  explicit mirror instead. `#refresh_battle_sprites`'s existing battler-swap
+  detection (the same signal that already triggers a sprite rebuild) now
+  also calls a new `#sync_troop_member_rewards`, which re-seeds the troop
+  member's reward fields (`Game::Enemy#reseed_rewards`) from a fresh
+  `Game::Enemy` built off the combatant's own already-updated `enemy_id` --
+  position, `levitate` and `hidden` are untouched, since a Transform keeps
+  its place and never revives a hidden member. One new
+  `rpg2k_scene_check.rb` check, confirmed to fail against the pre-fix code.
   ✅ **Charge was only ever spent by the enemy's own next Attack, not by
   anything else it might do first (2026-08-18).** `Game_BattleAlgorithm::
   AlgorithmBase::Start()` (`src/game_battlealgorithm.cpp`, confirmed against

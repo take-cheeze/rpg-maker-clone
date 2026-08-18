@@ -930,7 +930,20 @@ class RPG2k
         hues = (@ui[:sprite_hues] ||= [])
         @ui[:foes].each_with_index do |foe, i|
           changed = names[i] != foe.battler_name || hues[i] != (foe.battler_hue || 0)
-          rebuild_battler_sprite(i, foe) if sprites[i] && changed
+          next unless changed
+          rebuild_battler_sprite(i, foe) if sprites[i]
+          # Recorded here rather than only inside #rebuild_battler_sprite, so a
+          # transformed slot with no sprite object to rebuild (a bare fixture,
+          # say) still stops re-triggering this every frame.
+          names[i] = foe.battler_name
+          hues[i] = foe.battler_hue || 0
+          # The battler swap is this method's only signal that a Transform ran
+          # (Game::Battle#enemy_transform_action updates the combatant's stats
+          # including battler_name/hue, but has no other hook into the scene) --
+          # sync the troop's own Enemy object's reward fields off it too, same
+          # as #total_exp/#total_gold/#drops' `hidden` mirroring a few lines
+          # below.
+          sync_troop_member_rewards(i, foe)
         end
         @ui[:foes].each_with_index do |foe, i|
           spr = sprites[i]
@@ -968,8 +981,27 @@ class RPG2k
         spr.visible = !foe.out_of_play?
         sprites[i] = spr
         dispose_battle_sprite(old)
-        @ui[:sprite_names][i] = foe.battler_name
-        @ui[:sprite_hues][i] = foe.battler_hue || 0
+      end
+
+      # A Transform repoints the combatant at a new database enemy row
+      # (#enemy_transform_action already updates its combat stats), but the
+      # troop's own Enemy object at the same slot -- the one #total_exp/
+      # #total_gold/#drops actually read exp/gold/drop_id/drop_prob from,
+      # entirely separate from the Combatant this scene fights with -- is
+      # never told: EasyRPG's own `Game_Enemy::Transform` (src/game_enemy.cpp)
+      # repoints a single backing data pointer, so every accessor, combat and
+      # reward alike, reads the new monster from that one point on; this port
+      # keeps two parallel objects for one troop slot instead, and only the
+      # combat side was ever kept in sync. Re-seeds the troop member's reward
+      # fields (position/levitate/hidden are untouched -- a Transform keeps
+      # its place, and never revives a hidden member) from a fresh
+      # `Game::Enemy` built off the combatant's own already-updated
+      # `enemy_id`, the identical constructor `EnemyAi#enemy` used to resolve
+      # what the combatant just turned into.
+      def sync_troop_member_rewards(i, foe)
+        member = @ui[:troop].members[i]
+        return unless member && foe.respond_to?(:enemy_id) && foe.enemy_id
+        member.reseed_rewards(Game::Enemy.new(db, foe.enemy_id))
       end
 
       def living_allies; @ui[:allies].reject(&:dead?); end
