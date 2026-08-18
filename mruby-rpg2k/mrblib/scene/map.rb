@@ -7258,22 +7258,34 @@ class RPG2k
         end
       end
 
+      # Confirmed against EasyRPG's Window_NumberInput::Update (src/
+      # window_numberinput.cpp): every digit adjustment/cursor move plays the
+      # Cursor system SE, and Window_Message::InputNumber (src/
+      # window_message.cpp) plays Decision on confirm -- the same shape
+      # Show Choices already gets a few lines up in this same method's
+      # sibling handler (#drive_message's choice-list branch), just missed
+      # here.
       def drive_number_input
         ni = @number_input
         model = ni[:model]
         if Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           model.inc
           draw_number_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           model.dec
           draw_number_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
           model.left
           draw_number_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           model.right
           draw_number_input
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           value = model.value
           embedded = ni[:embedded]
           interp = ni[:interp] || @interpreter
