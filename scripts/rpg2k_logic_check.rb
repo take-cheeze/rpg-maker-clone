@@ -1170,6 +1170,48 @@ check 'Message.expand resolves a nested \V[] argument inside \N[]/\V[] (yado.tk 
   eq 'Aria!', Game::Message.expand('\N[\V[1]]!', vars, names)
 end
 
+check 'Message.expand concatenates a \V[] reference\'s decimal digits onto a ' \
+      'literal prefix, matching RPG_RT\'s own arithmetic' do
+  # Confirmed against EasyRPG's Game_Message::ParseParam (src/
+  # game_message.cpp): a bracket argument is not "a literal number OR one
+  # whole nested \V[]" -- RPG_RT scans it character by character, so a
+  # literal digit run and a \V[] reference in the same bracket combine:
+  # `\N[1\V[2]]` with variable 2 = 45 becomes 145 (`value = value * m +
+  # var_val`, m the smallest power of ten >= var_val), not "1" (the old
+  # behaviour, which fell through to String#to_i on the raw substring and
+  # silently dropped the \V[] reference entirely) and not "45".
+  vars = Game::Variables.new
+  vars[2] = 45
+  vars[145] = 7 # \V[1\V[2]] should display variable #145's value
+  names = { 145 => 'Aria' } # \N[1\V[2]] should name actor #145
+  eq 'Aria', Game::Message.expand('\N[1\V[2]]', vars, names)
+  eq '7', Game::Message.expand('\V[1\V[2]]', vars, names)
+end
+
+check 'Message.expand only recurses one \V[] level deep inside \N[]/\V[], matching RPG_RT' do
+  # RPG_RT's own recursion limit is exactly 1 level (EasyRPG's own
+  # `rpg_rt_default_max_recursion = 1`, vs. its looser 8-level extension
+  # this port intentionally does not take): `\N[\V[\V[1]]]`'s *inner*
+  # `\V[1]` is never evaluated at all -- parsing it stops immediately
+  # (nothing recognised past the second `\V[`), leaving that whole nested
+  # argument at index 0, so the *outer* reference reads variable 0's value,
+  # not variable 1's (7) and not variable 7's (99, what a naive unlimited-
+  # recursion implementation would wrongly reach through \V[1] -> 7 -> var 7).
+  #
+  # RPG_RT's own char-by-char scan has no real bracket-depth matching of its
+  # own -- once recursion is exhausted it just fast-forwards to the very
+  # next literal `]` it meets (the *inner* \V[1]'s own bracket, one level
+  # too deep to belong to the frame that hits it), so the outer bracket's
+  # true closing `]` is left behind unconsumed -- a real RPG_RT quirk this
+  # port reproduces faithfully, not a defect to paper over here.
+  vars = Game::Variables.new
+  vars[0] = 3
+  vars[1] = 7
+  vars[7] = 99
+  names = { 3 => 'Aria' }
+  eq 'Aria]', Game::Message.expand('\N[\V[\V[1]]]', vars, names)
+end
+
 check 'Message.parse splits colour runs and expands codes within them' do
   vars = Game::Variables.new
   vars[3] = 7
