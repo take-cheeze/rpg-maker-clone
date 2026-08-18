@@ -10635,6 +10635,28 @@ check 'no save data: pressing the selection key on Continue plays Buzzer and ope
   eq 1, scene.instance_variable_get(:@selected_index), 'the selection is left untouched'
 end
 
+# EasyRPG's Window_Command::DrawItem (src/window_command.cpp) draws every
+# command through the windowskin's own system-colour palette, chosen by
+# Font::ColorDisabled (index 3, src/font.h) once Scene_Title disables
+# Continue (command_window->SetItemEnabled(1, continue_enabled),
+# src/scene_title.cpp) -- never a hardcoded flat gray. A custom windowskin
+# whose disabled swatch is tinted shows that tint on real RPG_RT, with the
+# same drop-shadow every other label gets.
+check 'no save data, with a windowskin loaded: the disabled Continue label ' \
+      'blends from the windowskin\'s own disabled-colour swatch (index 3), ' \
+      'not a hardcoded flat gray' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> load_windowskin returns a real Bitmap
+  parent = TitleParent.new(db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  bc = scene.instance_variable_get(:@window).contents.blend_calls || []
+  # colour 3 -> swatch cell (3%10*16, 3/10*16+48) = (48, 48), the same
+  # geometry the message-text swatch check above pins.
+  ok bc.any? { |call| call[6] == 48 && call[7] == 48 },
+     'the disabled Continue label blends from swatch index 3 (48, 48), ' \
+     'the same convention every other disabled command uses in real RPG_RT'
+end
+
 check 'a save exists: Continue is flagged available and its selection key opens ' \
       'the file-select screen' do
   # Continue used to call parent.continue_game straight from the title screen

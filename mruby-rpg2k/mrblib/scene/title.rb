@@ -66,16 +66,25 @@ class RPG2k
         @window.open_animation(hide_title? ? 0 : OPEN_ANIM_FRAMES)
 
         # Render the (unchanging) menu labels once, in the windowskin's own
-        # default text colour with RPG_RT's one-pixel shadow. A disabled
-        # Continue is drawn flat gray instead -- the same fallback draw_text
-        # path draw_system_text itself takes when there is no windowskin,
-        # reused here on purpose to read as dimmed rather than styled.
+        # default text colour (system-colour swatch 0) with RPG_RT's
+        # one-pixel shadow. A disabled Continue reads the windowskin's own
+        # *disabled* swatch instead -- EasyRPG's `Window_Command::DrawItem`
+        # (`src/window_command.cpp`), which `Scene_Title` drives via
+        # `command_window->SetItemEnabled(1, continue_enabled)`
+        # (`src/scene_title.cpp`), always looks up `Font::ColorDisabled`
+        # (`src/font.h`, swatch index 3) rather than hardcoding a flat gray --
+        # a custom windowskin whose disabled swatch is tinted (not neutral
+        # gray) shows that tint on real RPG_RT, with the same drop-shadow
+        # every other label gets. `draw_system_text`'s own no-windowskin
+        # fallback (plain `draw_text` in the current font colour) still
+        # supplies the flat gray when there is no skin to sample, so the
+        # `font.color` set below is unchanged, just no longer the only path.
         contents = Bitmap.new content_w, content_h
         @menu_items.each_with_index do |item, index|
           y = index * LINE_HEIGHT + TEXT_PAD_Y
           if index == 1 && !@continue_available
             contents.font.color = Color.new(128, 128, 128, 255)
-            contents.draw_text 0, y, content_w, LINE_HEIGHT, item
+            draw_system_text contents, 0, y, content_w, LINE_HEIGHT, item, skin, 3
           else
             contents.font.color = Color.new(255, 255, 255, 255)
             draw_system_text contents, 0, y, content_w, LINE_HEIGHT, item, skin
