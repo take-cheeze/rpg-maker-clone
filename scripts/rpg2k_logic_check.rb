@@ -3422,10 +3422,16 @@ class JobRow
               # 62, into db.battleranimations) -- Actor#battler_animation_id's
               # "Change Class actually ran" branch. Defaults to 1, the schema
               # default for this field.
-              :battler_animation
+              :battler_animation,
+              # The class's own overrides for the same four actor/class-
+              # overridable booleans FakePlayerRow already carries --
+              # #strong_defence?/#force_ai?/#double_hand?/#equipment_fixed?'s
+              # own "only once Change Class has actually run" gate.
+              :strong_defence, :force_ai, :double_hand, :equipment_fixed
   def initialize(name, curve, learns = [], battle_commands = nil,
                  exp_basic: 30, exp_increase: 30, exp_correction: 0,
-                 battler_animation: 1)
+                 battler_animation: 1, strong_defence: nil, force_ai: nil,
+                 double_hand: nil, equipment_fixed: nil)
     @name = name
     @curve = curve
     @skills = FakeLearnTable.new(learns)
@@ -3434,6 +3440,10 @@ class JobRow
     @exp_increase = exp_increase
     @exp_correction = exp_correction
     @battler_animation = battler_animation
+    @strong_defence = strong_defence
+    @force_ai = force_ai
+    @double_hand = double_hand
+    @equipment_fixed = equipment_fixed
   end
 
   def int16_values(idx); idx == 31 ? @curve : nil; end
@@ -4585,11 +4595,31 @@ def class_state(class_id = 0, actor_learns = [[10, 1]])
   Game::State.new(Game::Party.new(class_db(class_id, actor_learns)), 1, 0, 0)
 end
 
-check 'an actor with a startup class reads its curve, learn table and EXP from it' do
+check "an actor with a startup class reads class_id immediately, but its curve, " \
+      "learn table and EXP stay on the actor's own row until an actual Change Class " \
+      "runs (2026-08-18)" do
+  # RPG2003 lets an actor start in a class (chunk 11 field 57) with no Change
+  # Class event ever firing -- EasyRPG's own comment on this is explicit
+  # ("The class settings are not applied when the actor has a class on
+  # startup but only when the 'Change Class' event command is used",
+  # Game_Actor::ChangeClass, src/game_actor.cpp), and confirmed directly
+  # against the C++ source for the growth-curve accessors too
+  # (Game_Actor::GetBaseMaxHp et al., all gated on the *runtime*
+  # `data.class_id > 0`, which the constructor never seeds from the
+  # database's own `dbActor->class_id` -- only ChangeClass itself ever
+  # writes it). #battler_animation_id already got this rule right (see its
+  # own near-identical check); #curve_row/#learn_table/#calc_exp did not,
+  # until now.
   a = class_state(1).party.actor_by_id(1)
-  eq 1, a.class_id
-  eq 220, a.max_hp, "class 1's level-3 max HP, not the actor row's 120"
-  eq [21, 22], a.skills.sort, "the class's learn table, not the actor's skill 10"
+  eq 1, a.class_id, "the starting class is live (Actor#class_id reads it back)"
+  eq 120, a.max_hp, "yet the actor's own row wins -- the class's level-3 max HP " \
+                     "(220) is never consulted without a real Change Class event"
+  eq [10], a.skills, "the actor's own known skill, not the class's learn table"
+
+  a.change_class(1, 3, Game::Actor::CLASS_SKILL_RESET, Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  eq 220, a.max_hp, "a real Change Class now activates the class's own curve"
+  eq [21, 22], a.skills.sort, "...and its learn table"
+
   # A database with no class table (every RPG2000 game) leaves the actor
   # class-less, so nothing changes for 2000 data.
   b = party_state.party.actor_by_id(1)
@@ -4682,7 +4712,8 @@ check 'Change Class to level 1 rewinds the level; an unknown class is a no-op' d
   b = class_state(1).party.actor_by_id(1)
   eq false, b.change_class(99, 3, 0, 0), 'an undefined class changes nothing'
   eq 1, b.class_id
-  eq 220, b.max_hp, 'and leaves the stats it had'
+  eq 120, b.max_hp, 'and leaves the stats it had -- the startup class (id 1) was ' \
+                    'never actually activated by a real Change Class either'
 end
 
 check 'Change Class shows one level-up line when it taught skills' do
@@ -4820,6 +4851,22 @@ check 'a class change takes the class battle commands' do
   a = class_state.party.actor_by_id(1)
   a.change_class(1, 3, 0, 0)
   eq [3, 0, -1, -1, -1, -1, -1], a.battle_commands
+end
+
+check "battle_commands ignores a database-default starting class too, until a real Change " \
+      "Class runs (2026-08-18)" do
+  # The same #curve_row bug shape: EasyRPG's data.battle_commands is copied
+  # in from cls->battle_commands only inside ChangeClass itself, from
+  # dbActor->battle_commands at plain construction and every other time --
+  # #battle_commands' own lazy #class_battle_commands materialisation used
+  # to consult the class row the instant @class_id was nonzero, regardless
+  # of whether a real Change Class had ever run.
+  a = class_state(1).party.actor_by_id(1)
+  eq 1, a.class_id, 'the starting class is live'
+  eq [1, 2, 0, -1, -1, -1, -1], a.battle_commands, "the actor's own row wins, not class 1's " \
+                                                    '[3, 0, -1, -1, -1, -1, -1]'
+  a.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
+  eq [3, 0, -1, -1, -1, -1, -1], a.battle_commands, 'a real Change Class now activates it'
 end
 
 check 'a class change and its battle commands survive Save / Continue' do
@@ -5006,6 +5053,41 @@ check "Game::Actor#battler_animation_id ignores a database-default starting clas
   eq 1, a.class_id, "the starting class is live (Actor#class_id reads it back)"
   eq 3, a.battler_animation_id, "yet the actor's own database default wins -- the class's " \
                                 '(4) is never consulted without a real Change Class event'
+end
+
+check "Game::Actor#strong_defence?/#force_ai?/#double_hand?/#equipment_fixed? all ignore a " \
+      "database-default starting class the same way, until a real Change Class event " \
+      "runs (2026-08-18)" do
+  # The identical bug shape as #curve_row/#battler_animation_id, confirmed
+  # against RPG_RT's actual behavior via EasyRPG Player's own C++ source,
+  # fetched live: Game_Actor::ChangeClass (src/game_actor.cpp) is the *only*
+  # place data.super_guard/lock_equipment/two_weapon/auto_battle are ever
+  # copied in from a class row (cls->...) -- the constructor seeds all four
+  # from dbActor->... alone and never looks at a class at all, matching the
+  # method's own explicit comment: "The class settings are not applied when
+  # the actor has a class on startup but only when the 'Change Class' event
+  # command is used."
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 1) }
+  players[1].strong_defence = false
+  players[1].force_ai = false
+  players[1].double_hand = false
+  players[1].equipment_fixed = false
+  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [],
+                           strong_defence: true, force_ai: true,
+                           double_hand: true, equipment_fixed: true) }
+  db = FakeActorDB.new(players, [1], {}, {}, jobs)
+  a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
+  eq 1, a.class_id, 'the starting class is live'
+  ok !a.strong_defence?, "the actor's own row (false) wins over the class's (true)"
+  ok !a.force_ai?, "the actor's own row (false) wins over the class's (true)"
+  ok !a.double_hand?, "the actor's own row (false) wins over the class's (true)"
+  ok !a.equipment_fixed?, "the actor's own row (false) wins over the class's (true)"
+
+  a.change_class(1, 5, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
+  ok a.strong_defence?, 'a real Change Class now activates the class row'
+  ok a.force_ai?
+  ok a.double_hand?
+  ok a.equipment_fixed?
 end
 
 check "Game::Actor#battler_animation_id falls back to 1 when Change Class leaves the actor " \

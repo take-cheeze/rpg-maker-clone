@@ -2321,9 +2321,15 @@ module Game
     # 強力防御 — an actor whose Defend halves damage a *second* time (a quarter
     # rather than a half, per EasyRPG's `AdjustDamageForDefend`). This one is a
     # property of the actor row (field 24), not of gear, and an RPG2003 class can
-    # override it the way it overrides the growth curves.
+    # override it the way it overrides the growth curves -- but, like the growth
+    # curves themselves (#curve_row), only once an actual Change Class event has
+    # run: `Game_Actor::ChangeClass` (`src/game_actor.cpp`) is where
+    # `data.super_guard` (this trait) is copied in from `cls->super_guard`; the
+    # constructor seeds it from `dbActor->super_guard` and never consults a
+    # class row at all, so a class merely named on the actor's own row is inert
+    # for this trait too until Change Class actually fires.
     def strong_defence?
-      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
       row.respond_to?(:strong_defence) ? (row.strong_defence ? true : false) : false
     end
@@ -2341,7 +2347,12 @@ module Game
     # `data.auto_battle` passthrough, seeded from `dbActor->auto_battle` (or
     # `cls->auto_battle` once a class overrides it, `src/game_actor.cpp`) —
     # the identical row-then-class precedence this reader already follows for
-    # every other actor/class-overridable trait. `Scene_Battle_Rpg2k::
+    # every other actor/class-overridable trait, and, like every one of them
+    # (#strong_defence?/#curve_row), only "once a class overrides it" via an
+    # actual Change Class event -- `data.auto_battle` is seeded from
+    # `dbActor->auto_battle` at construction and only overwritten with
+    # `cls->auto_battle` inside `ChangeClass` itself, never merely because the
+    # actor's own row names a starting class. `Scene_Battle_Rpg2k::
     # SelectNextActor` (`src/scene_battle_rpg2k.cpp`) checks it right after
     # the CanAct()/forced-restriction gates and, if set, calls the default
     # AutoBattle algorithm's `SetAutoBattleAction` instead of ever opening
@@ -2349,7 +2360,7 @@ module Game
     # this codebase's own port of that same algorithm (`AutoBattle::
     # RpgRtCompat`, the one real, un-patched RPG_RT always runs).
     def force_ai?
-      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
       row.respond_to?(:force_ai) ? (row.force_ai ? true : false) : false
     end
@@ -2367,8 +2378,12 @@ module Game
     # scan every equipped slot for an item whose own *type* is a weapon rather
     # than hard-coding slot 0, so once a second weapon sits in the shield slot
     # they pick it up (and the better of the two) with no change of their own.
+    # Like every other class-overridable trait here, inert until an actual
+    # Change Class event runs (`data.two_weapon` is copied in from `cls->
+    # two_weapon` only inside `ChangeClass`, never merely because the actor's
+    # own row names a starting class) -- see #curve_row.
     def double_hand?
-      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
       row.respond_to?(:double_hand) ? (row.double_hand ? true : false) : false
     end
@@ -2394,9 +2409,14 @@ module Game
     # still forces past both halves either way (`Game_Actor::ChangeEquipment`
     # never consults this method at all), so nothing in `Game::Party` reads
     # this -- the bag-swapping methods stay usable for a caller that already
-    # knows better, the same way they do not re-check `menu_access`.
+    # knows better, the same way they do not re-check `menu_access`. The
+    # class half is, like every other class-overridable trait here, inert
+    # until an actual Change Class event runs (`data.lock_equipment` is
+    # copied in from `cls->lock_equipment` only inside `ChangeClass`, never
+    # merely because the actor's own row names a starting class) -- see
+    # #curve_row.
     def equipment_fixed?
-      row = class_row_for(@class_id) if @class_id && @class_id > 0
+      row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
       return true if row.respond_to?(:equipment_fixed) && row.equipment_fixed
       state_cursed?
@@ -2865,9 +2885,14 @@ module Game
     # intermediate value for a caller that has none to restore.
     def restore_class(id)
       set_class_id(id)
+      # Must be set before #set_level runs: #curve_row now reads it to decide
+      # whether the class row is live at all, and #set_level's own
+      # #base_stats call goes through #curve_row to rescale at the restored
+      # level -- setting this after would compute the restored level's stats
+      # off the actor's own row instead of the just-restored class's.
+      @class_changed = true
       set_level(@level, preserve_mod: false)
       @battle_commands = nil
-      @class_changed = true
     end
 
     # Whether a Change Class (or a restored one, see #restore_class) has ever
@@ -3006,9 +3031,17 @@ module Game
 
     # The battle-command list the actor's current class (or, class-less, its
     # database row) defines. An edition / fixture row without the field yields
-    # the RPG2003 default of Row alone.
+    # the RPG2003 default of Row alone. Only ever called once an actual
+    # Change Class has happened (from #change_class itself, after
+    # `@class_changed` is already set) or from #battle_commands' own lazy
+    # materialisation on first read -- gated on `@class_changed` the same way
+    # #curve_row is, since an actor's database-declared starting class does
+    # not make its command list live either: EasyRPG's `data.battle_commands`
+    # is copied in from `cls->battle_commands` only inside `ChangeClass`,
+    # from `dbActor->battle_commands` at plain construction and every other
+    # time.
     def class_battle_commands
-      row = @class_row || @db_row
+      row = @class_changed && @class_id > 0 && @class_row ? @class_row : @db_row
       list = row.respond_to?(:battle_commands) ? row.battle_commands : nil
       list.is_a?(Array) && !list.empty? ? list.dup : [0]
     end
@@ -3067,11 +3100,17 @@ module Game
     end
 
     # The database row the level-scaled tables are read from: the class row (職業)
-    # when the actor has a class, the actor row otherwise. Only the growth curve,
-    # the learn table and the EXP curve follow the class -- the attribute / state
-    # ranks stay on the actor row, which is where RPG_RT keeps reading them.
+    # once an actual Change Class event has run, the actor row otherwise --
+    # RPG_RT ignores a class merely *named* on the actor's own database row
+    # (chunk 11 field 57, a game's "starting class") until Change Class (1008)
+    # actually fires; see #battler_animation_id's own citation of EasyRPG's
+    # `Game_Actor::ChangeClass` comment, which this mirrors via the identical
+    # `@class_changed` gate rather than `@class_id > 0` alone. Only the growth
+    # curve, the learn table and the EXP curve follow the class -- the
+    # attribute / state ranks stay on the actor row, which is where RPG_RT
+    # keeps reading them.
     def curve_row
-      @class_row || @db_row
+      @class_changed && @class_id > 0 && @class_row ? @class_row : @db_row
     end
 
     # Point the actor at class `id` (0 = none), resolving its database row. A

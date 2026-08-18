@@ -1886,8 +1886,10 @@ The work below is roughly ordered by the critical path to a walkable game
   `LearnLevelSkills` / `CalculateExp` branch on `class_id > 0`), EXP resets to
   the new level's threshold, and the command's skill mode (keep / reset / add)
   and parameter mode (keep / halve / the class's level-1 or current-level values)
-  both apply; an actor whose row names a class reads its curves from startup, and
-  the change survives Save / Continue. **Change Battle Commands** (1009) edits
+  both apply; the change survives Save / Continue. **An actor whose row merely
+  *names* a starting class does *not* read its curves from startup — see the
+  dedicated ✅ bullet below correcting this claim, further down this document.**
+  **Change Battle Commands** (1009) edits
   the actor's 戦闘コマンド list with RPG_RT's six-plus-Row capacity rule.
   **Force Flee** (1006), **Enable Combo** (1007) and **Call Common Event** (1005)
   run inside a battle-event page — Force Flee either grants the party a
@@ -13452,6 +13454,66 @@ above are repeated here)
   already queued), all confirmed to fail against the pre-fix code (a bare
   `NoMethodError: undefined method 'force_ai?'`/`'choose_auto_battle_command'`)
   before the fix.
+- ✅ **The RPG2003 class-row-then-actor-row lookup this bullet, `#strong_defence?`
+  and the Change Class writeup near the top of this document all describe as
+  the correct precedence was itself missing a gate — an actor's database-
+  declared *starting* class (chunk 11 field 57) never actually took effect
+  for any of these traits, or for the growth curve / learn table / EXP curve
+  / battle-command list, until a real Change Class event ran; this build
+  applied the class row the instant `class_id` was merely nonzero
+  (2026-08-18).** `Game::Actor#curve_row`/`#strong_defence?`/`#force_ai?`/
+  `#double_hand?`/`#equipment_fixed?`/`#class_battle_commands`
+  (`mruby-rpg2k/mrblib/game.rb`) all read `class_row_for(@class_id) if
+  @class_id && @class_id > 0` (or the equivalent `@class_row || @db_row`) —
+  live from `@class_id`, which `#initialize`/`set_class_id` seeds straight
+  from the actor's own database row the instant the actor is built, whether
+  or not any Change Class command has ever run. Only `#battler_animation_id`
+  got this right, gated on a separate `@class_changed` flag instead — its own
+  comment already carries the full citation this fix now applies everywhere
+  else too: EasyRPG's `Game_Actor::ChangeClass` (`src/game_actor.cpp`) has an
+  explicit code comment, *"The class settings are not applied when the actor
+  has a class on startup but only when the 'Change Class' event command is
+  used"* — confirmed directly against the C++ source rather than trusted on
+  the comment's word alone: the constructor (`Game_Actor::Game_Actor`) seeds
+  `data.super_guard`/`lock_equipment`/`two_weapon`/`auto_battle` from
+  `dbActor->...` alone and never touches `data.class_id` at all (it stays
+  liblcf's own "-1, never changed" sentinel until `ChangeClass` explicitly
+  writes it), and `ChangeClass` is the *only* place any of those four fields,
+  `battler_animation`, or `battle_commands` are ever copied in from a class
+  row (`cls->...`) instead of the actor's own (`dbActor->...`) — matching,
+  fully independently, `GetBaseMaxHp`/`GetBaseMaxSp`/`GetBaseAtk`/
+  `GetBaseDef`/`GetBaseSpi`/`GetBaseAgi`/the skill list/`CalculateExp`, which
+  all gate on the identical runtime `data.class_id > 0` (not
+  `GetClass()`'s own separate `dbActor->class_id` fallback, which exists only
+  for *identity* purposes — an actor's name/skill-list source — not curve
+  purposes). A database that gives an actor a starting class (a common
+  RPG2003 authoring pattern, letting a game skip an explicit Change Class at
+  party-join time) had every one of these traits, and the actor's HP/SP/ATK/
+  DEF/SPI/AGI growth, EXP thresholds, learnable skills and battle-command
+  list, silently drawn from the class from the very first frame — RPG_RT
+  instead keeps reading the actor's own row for all of it until a real
+  Change Class fires, exactly as `#battler_animation_id` already modelled.
+  Fixed by gating every one of these six accessors on `@class_changed &&
+  @class_id > 0 && @class_row`, the identical condition
+  `#battler_animation_id` already used, instead of `@class_id > 0` alone —
+  `#restore_class` (Continue's own "a saved class was already live" path)
+  needed its own internal reordering to match, setting `@class_changed =
+  true` *before* the `#set_level` call that rescales stats through
+  `#curve_row`, not after, so a restored live class change still computes
+  the restored level's stats off the right curve. Two existing
+  `scripts/rpg2k_logic_check.rb` checks encoded the old (incorrect) behaviour
+  as intentional and needed correcting rather than just adding new coverage
+  alongside them: "an actor with a startup class reads its curve, learn
+  table and EXP from it" (now split into asserting the actor's own row wins
+  immediately, then the class's own after an explicit `#change_class` call)
+  and "Change Class to level 1 rewinds the level; an unknown class is a
+  no-op" (whose second half's expected max HP after a *failed* class change
+  dropped from the class's 220 to the actor's own 120, since the startup
+  class was never actually activated either). Covered by two further new
+  `scripts/rpg2k_logic_check.rb` checks (all four boolean traits read the
+  actor's own row immediately and the class's only after `#change_class`;
+  `#battle_commands`' own lazy materialisation does the same), all four
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An enemy's battle-graphic hue shift (field 3, `battler_hue`) is now
   implemented — the same "parsed by the schema but read nowhere in
   `mruby-rpg2k`" shape as `levitate`/`avoid_attacks`/`reflect_magic`/
