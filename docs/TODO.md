@@ -5661,6 +5661,21 @@ not yet verified:
    losing 25, a `do_nothing`-restricted target always hit, and an
    evasion-ignoring caster skipping the AGI term), each confirmed to fail
    against the pre-fix code.
+   ✅ **`skill.hit == -1` ("use the caster's own weapon-based hit chance"
+   instead of a fixed rate) is now honoured too (2026-08-18).** `Algo::
+   CalcSkillToHit`'s very first line, unconditional for every skill (not
+   gated behind an EasyRPG-only extension flag the way the row terms are):
+   `skill.hit == -1 ? source.GetHitChance(WeaponAll) : skill.hit`.
+   `Game::Party#skill_hit` previously read the raw `-1` through unchanged,
+   which flowed into `cmd[:chance]` and then `@rng.random(100) < -1` --
+   always false, so such a skill missed every affect_hp/affect_sp/state roll
+   unconditionally instead of using the caster's real weapon hit rate.
+   `#skill_hit` now takes the caster too, resolving the sentinel to a
+   `Combatant`'s own `hit_rate` (the identical field `Game::Battle#to_hit`
+   reads for an ordinary Attack), falling back to `Battle.hit_rate_of` for
+   the bare-Actor/-Enemy case no current caller actually reaches. Two new
+   `rpg2k_logic_check.rb` checks (one non-physical, one physical-flagged),
+   both confirmed to fail against the pre-fix code.
 - ✅ **`Game::Battle#fatigue` (the RPG2003 `fatigue` page condition) now
   rounds an exact tie to the nearest *even* whole percent, not always up.**
   A prior version of this method's own comment claimed it used "the same

@@ -10359,6 +10359,34 @@ end
    eq 90, c[:chance]                            # no agility term, just skill.hit
  end
 
+ # `hit == -1` is a sentinel meaning "use the caster's own weapon-based hit
+ # chance" -- EasyRPG's Algo::CalcSkillToHit reads it unconditionally, as its
+ # very first line, for every skill (not gated behind any EasyRPG-only
+ # extension flag, unlike the row terms). Previously read literally: -1 as a
+ # flat percent compares false against every possible `@rng.random(100)`
+ # roll (0..99), so such a skill missed unconditionally instead of using the
+ # caster's real hit rate.
+ check "a skill with hit -1 uses the caster's own weapon-based hit rate, not a literal -1" do
+   skills = { 7 => fake_skill(name: 'Bolt', scope: 0, hit: -1, failure_message: 0) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.hit_rate = 77
+   foe = combatant('Foe', 0, 0, 10, 100)
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   eq 77, c[:chance], "the caster's hit_rate, not a literal -1 that would always miss"
+ end
+
+ check 'a physical-flagged (failure_message 3) skill with hit -1 also uses the weapon hit rate as its base' do
+   skills = { 7 => fake_skill(name: 'Punch', scope: 0, hit: -1, failure_message: 3) }
+   st = skill_party(skills)
+   hero = Game::Battle.from_actor(st.party.actor_by_id(1))
+   hero.hit_rate = 80
+   hero.agi = 7
+   foe = combatant('Foe', 0, 0, 7, 100) # equal agility -> AGI term reduces to identity
+   c = st.party.battle_skill_command(st.party.db_skill(7), hero, foe)
+   eq 80, c[:chance], 'the -1 sentinel resolves before the agility-adjusted physical formula runs'
+ end
+
  check 'an ally-scoped physical-flagged skill stays on the flat hit rate' do
    skills = { 7 => fake_skill(name: 'Mend', scope: 3, hit: 90, failure_message: 3) }
    st = skill_party(skills)
