@@ -245,9 +245,9 @@ the interpreter-linking slice, in this order:
   emulator with a Memory Stick image. **On the emulator side specifically,
   this heartbeat has never yet produced a captured number**, in CI or
   locally, though the reasons have narrowed a lot:
-  Five independent bugs have been found and root-caused on this path so far,
-  three of them fixed; boot still does not complete. In the order the EBOOT
-  actually hits them:
+  Eight independent bugs have been found and root-caused on this path so
+  far, six of them fixed; boot still does not complete. In the order the
+  EBOOT actually hits them:
   1. **Fixed.** pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are
      only partially implemented under PPSSPP-headless and left emulator
      state corrupted enough to crash a few syscalls later — `main.cxx` now
@@ -384,27 +384,45 @@ the interpreter-linking slice, in this order:
   earlier point on this whole P1 trail: past `RPG2K_PSP_BOOT`, through
   `_sbrk`'s heap init (correctly allocating the full requested size this
   time, confirmed via PPSSPP's own memory-partition log line), through
-  `mrb_open`, into real LVGL widget creation in `build_ui()`. It then hits
-  a **seventh bug, found and not yet fixed**: LVGL's builtin TLSF
-  allocator's `lv_tlsf_realloc` (`3rd/lvgl/src/stdlib/builtin/lv_tlsf.c`)
-  asserts `block already marked as free` — a use-after-free/double-free
-  detector, not a sizing issue (confirmed: bumping `LV_MEM_SIZE` 8x, from
-  256 KB to 2 MB, made no difference at all to whether or where the assert
-  fired, which a genuine capacity problem would not do). Traced to its
-  caller via a temporary `__builtin_return_address(0)` capture in
-  `psp_lvgl_assert_halt` (not kept — diagnostic only): `lv_tlsf_realloc`
-  itself, most plausibly reached from `build_ui()`'s second
-  `lv_label_set_text(g_status_label, ...)` call (the per-frame pressed-keys
-  status update; LVGL labels reallocate their internal text buffer on
-  change) reallocating a block some other write already corrupted the
-  free/used bit of, rather than a bug in LVGL's own allocator itself
-  (matching this whole trail's running theme of memory corruption over
-  logic bugs). Not yet root-caused further.
+  `mrb_open`, into real LVGL widget creation in `build_ui()`. It then hit
+  a **seventh bug — fixed**: LVGL's builtin TLSF allocator's
+  `lv_tlsf_realloc` (`3rd/lvgl/src/stdlib/builtin/lv_tlsf.c`) asserted
+  `block already marked as free` — a use-after-free/double-free detector,
+  not a sizing issue (confirmed: bumping `LV_MEM_SIZE` 8x, from 256 KB to
+  2 MB, made no difference at all to whether or where the assert fired,
+  which a genuine capacity problem would not do). Root-caused with a
+  print-capable `LV_ASSERT_HANDLER` (routed through
+  `lv_log_register_print_cb`, printing LVGL's own formatted file+line
+  assert message instead of guessing from a return address) to
+  `psp_display_create` (`mruby-rgss/src/psp.cxx`): the two LVGL
+  partial-render draw buffers were sized with
+  `std::vector<uint8_t>::assign(n, 0)`, which is broken on this pspdev
+  g++/libstdc++ build specifically when growing an empty (0-capacity)
+  vector — it allocates the buffer correctly but leaves the vector's own
+  begin pointer null while its end pointer holds the real allocated
+  address, so `.data()` comes back null and `.size()` comes back as that
+  allocated pointer's raw integer value reinterpreted as a count
+  (confirmed in isolation against the same toolchain: `vector(n, 0)`'s
+  constructor and `vector::resize(n)` do not share the bug, only
+  `assign()` does). The null/wild pointer fed straight into
+  `lv_display_set_buffers` either tripped its own `buf1 != NULL` assert
+  directly, or — on binary layouts where the corrupted pointer wasn't
+  exactly null — let LVGL and `flush_cb` write display pixels through it
+  into unrelated memory, corrupting LVGL's own TLSF pool; that corruption
+  is what the `block already marked as free` assert actually traced back
+  to. Fixed by switching both buffers to `.resize(n)`, confirmed not to
+  share the bug and to zero-initialize the same way.
 
-  Whether real hardware shares bug 7 is unknown (bugs 3 and 6 are moot on
-  this boot path either way, one because it stopped triggering, the other
-  because it's fixed); the P1 device numbers above remain unconfirmed on
-  the emulator and untried on hardware.
+  With bug 7 fixed, the EBOOT boots past display creation and into
+  `mrb_open`'s GC init before hitting an **eighth bug, found and not yet
+  fixed**: PPSSPP reports `Bad memory access detected! 00000014` — a
+  near-null pointer write — inside `mrb_gc_init`, reproducible identically
+  across repeated runs. Not yet root-caused.
+
+  Whether real hardware shares bugs 7 or 8 is unknown (bugs 3 and 6 are
+  moot on this boot path either way, one because it stopped triggering,
+  the other because it's fixed); the P1 device numbers above remain
+  unconfirmed on the emulator and untried on hardware.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

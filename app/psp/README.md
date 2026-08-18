@@ -114,8 +114,8 @@ marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
 idle path (`RPG2K_PSP_GAME_START none not_found`). The job is
 **non-blocking** — the required build gate is the `psp` job, because the
-EBOOT still does not boot to completion under PPSSPP-headless. Seven
-independent bugs have been found and root-caused chasing that, five of
+EBOOT still does not boot to completion under PPSSPP-headless. Eight
+independent bugs have been found and root-caused chasing that, six of
 them fixed:
 
 - pspsdk's `sysclib_snprintf`/`sysclib_sprintf` HLE stubs are only partially
@@ -179,19 +179,26 @@ upstream, not worth working around here.
   wired into the `psp` CI job ahead of `psp-cmake`/`cmake --build`. Not yet
   upstreamed to `pspdev/pspsdk`.
 
-With that fixed, this EBOOT now boots dramatically further than at any
-earlier point on this whole trail — past `RPG2K_PSP_BOOT`, through
-`_sbrk`'s heap init, through `mrb_open`, into real LVGL widget creation —
-and hits a **seventh bug, found and not yet fixed**: LVGL's builtin TLSF
-allocator asserts `block already marked as free` inside `lv_tlsf_realloc`,
-most plausibly reached from `build_ui()`'s per-frame
-`lv_label_set_text(g_status_label, ...)` update. Confirmed not a sizing
-issue (bumping `LV_MEM_SIZE` 8x made no difference), so more likely
-something elsewhere corrupting a TLSF block's free/used bit than a bug in
-the allocator itself — matching this whole trail's running theme of memory
-corruption over logic bugs. See
+With that fixed, this EBOOT boots dramatically further than at any earlier
+point on this whole trail — past `RPG2K_PSP_BOOT`, through `_sbrk`'s heap
+init, through `mrb_open`, into real LVGL widget creation — and hit a
+**seventh bug, also fixed**: LVGL's builtin TLSF allocator asserted `block
+already marked as free` inside `lv_tlsf_realloc`. Confirmed not a sizing
+issue (bumping `LV_MEM_SIZE` 8x made no difference); root-caused with a
+print-capable `LV_ASSERT_HANDLER` to `psp_display_create`
+(`mruby-rgss/src/psp.cxx`), where `std::vector<uint8_t>::assign(n, 0)` —
+used to size and zero the two LVGL draw buffers — is broken on this pspdev
+g++/libstdc++ build specifically when growing an empty vector: it
+allocates correctly but leaves the vector's `data()` null (`resize(n)`
+does not share the bug). The resulting null/wild buffer, fed into
+`lv_display_set_buffers`, is what corrupted LVGL's own TLSF pool further
+down the boot path. With that fixed, the EBOOT boots past display
+creation and into `mrb_open`'s GC init before hitting an **eighth bug,
+found and not yet fixed**: PPSSPP reports `Bad memory access detected!
+00000014` — a near-null pointer write — inside `mrb_gc_init`. Not yet
+root-caused. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full seven-bug trail. To reproduce any of this locally, run
+P1 for the full eight-bug trail. To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
 `ppsspp` package output (see above) rather than nixpkgs' unpatched one —

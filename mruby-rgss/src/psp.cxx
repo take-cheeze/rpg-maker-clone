@@ -159,8 +159,28 @@ lv_display_t* psp_display_create(int32_t hor_res, int32_t ver_res) {
   if (rows == 0)
     rows = 1;
   const size_t buf_bytes = rows * static_cast<size_t>(hor_res) * kBpp;
-  g_buf1.assign(buf_bytes, 0);
-  g_buf2.assign(buf_bytes, 0);
+  // std::vector<uint8_t>::assign(n, 0) on this pspdev g++/libstdc++ build is
+  // broken specifically when growing an empty (0-capacity) vector: it
+  // allocates the buffer correctly but leaves the vector's own begin pointer
+  // null while its end pointer is set to the real allocated address, so
+  // data() comes back null and size() comes back as the raw allocated
+  // pointer's integer value reinterpreted as a count (confirmed by isolated
+  // testing -- vector(n, 0)'s constructor and vector::resize(n) both do not
+  // have this bug on the same toolchain, only assign() does). g_buf1/g_buf2
+  // are always empty here (this runs once, at display creation), so resize()
+  // -- which zero-initializes new elements the same as assign(n, 0) would --
+  // is a correct, working substitute rather than a real behavior change.
+  // This was P1's bug 7: passing the resulting null buf1 straight through to
+  // lv_display_set_buffers tripped its own `buf1 != NULL` assert once traced
+  // with a print-capable LV_ASSERT_HANDLER; on binary layouts where the same
+  // vector bug instead leaves a wild, non-null-but-wrong pointer in play
+  // (confirmed layout-dependent -- the exact corruption point moved when
+  // unrelated diagnostic code shifted the binary), LVGL and later flush_cb
+  // calls write through it into unrelated memory instead, corrupting LVGL's
+  // own TLSF pool -- which is what the original "block already marked as
+  // free" assert deeper in this ADR's P1 trail actually traced back to.
+  g_buf1.resize(buf_bytes);
+  g_buf2.resize(buf_bytes);
 
   lv_display_set_buffers(disp, g_buf1.data(), g_buf2.data(),
                          static_cast<uint32_t>(buf_bytes),
