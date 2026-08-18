@@ -10264,19 +10264,62 @@ not yet verified:
   Unlike `#significant`, ties don't matter for pruning — only the *value* of
   the top priority does, so several states sharing it all survive; "ties go
   to the higher state ID" is about which one **displays**, not which ones
-  live. State #1 (Knockout) is exempt on both sides — it is never pruned and
-  its own priority is never consulted as "the current highest" either,
-  matching `#significant`'s existing death special-case; knockout is tracked
-  through HP/`Actor#dead?`, not through this ranking. Wired into every
-  infliction path: `Game::Actor#add_state` callers (`Change Condition`, field
-  `cast_skill`) via a new `Game::Party#state_table` accessor, and
-  `Game::Battle#roll_inflict` via the battle's own state table. One
-  simplification, not confirmed against real RPG_RT: a state's accuracy-roll
-  "landed" report is unconditional even where pruning removes it again the
-  same instant — no test bed exercises two states with a large enough
-  priority gap to say whether the real messaging differs. Covered by new
-  `scripts/rpg2k_logic_check.rb` checks (the pure `States.prune` rule, and
-  one per infliction path), confirmed to fail against the pre-fix code.
+  live. State #1 (Knockout) was originally believed exempt on both sides —
+  never pruned and its own priority never consulted as "the current
+  highest" — matching `#significant`'s own death special-case; **this
+  turned out to be wrong on the second half, corrected below.** Wired into
+  every infliction path: `Game::Actor#add_state` callers (`Change
+  Condition`, field `cast_skill`) via a new `Game::Party#state_table`
+  accessor, and `Game::Battle#roll_inflict` via the battle's own state
+  table. One simplification, not confirmed against real RPG_RT: a state's
+  accuracy-roll "landed" report is unconditional even where pruning removes
+  it again the same instant — no test bed exercises two states with a large
+  enough priority gap to say whether the real messaging differs. Covered by
+  new `scripts/rpg2k_logic_check.rb` checks (the pure `States.prune` rule,
+  and one per infliction path), confirmed to fail against the pre-fix code.
+  ✅ **Death is not actually exempt from the crowding-out rule — it *is*
+  the rule, and the bullet just above had it backwards
+  (2026-08-18).** Re-verified against RPG_RT's actual behavior via EasyRPG
+  Player's own C++ source (fetched live rather than paraphrased):
+  `State::Add` (`src/state.cpp`) computes `sig_state =
+  GetSignificantState(states)` *after* inserting the newly-added id, then
+  clears every state whose own `priority <= sig_state->priority - 10`.
+  `GetSignificantState` returns Death's own row the instant it sees it,
+  before ever comparing priorities — so when Death is carried, `sig_state`
+  in `Add()` is Death, and the threshold becomes *Death's own configured
+  priority* minus 10, applied uniformly to every state including Death
+  itself (which always survives its own threshold trivially, `p <= p - 10`
+  is never true — no special-case needed for that half). A real database
+  conventionally gives Death a high priority (100 by RPG2000's own default)
+  specifically so this wipes a lower-priority ailment (Poison, Blind, ...)
+  the instant a lethal hit lands — real RPG_RT never shows "Dead,
+  Poisoned". `Game::States.prune` (`mruby-rpg2k/mrblib/game.rb`) explicitly
+  excluded `DEATH_ID` from the ranked set before computing `top`, per the
+  bullet above's own (incorrect) reading — the exact opposite of `Add()`'s
+  real behavior. Worse, the one path that actually *adds* Death —
+  `Actor#change_hp`/`#set_hp`, via `#add_state(DEATH_STATE)` — never called
+  `Game::States.prune` at all, unlike every other infliction path already
+  covered by the fix above (`#cast_skill`, `#roll_inflict`,
+  `#roll_weapon_states`), so a lethal Change HP (10630) or Simulated Attack
+  (10500) — or a battle defeat writing HP back onto the party via `#set_hp`
+  — left Death sitting alongside whatever ailment the actor already
+  carried instead of clearing it. Fixed by rewriting `#prune` to reuse
+  `#significant` for `top` (which already returns `DEATH_ID` correctly when
+  present, so Death's own priority participates for free, no id
+  special-cased on either side any more), and adding a new
+  `Actor#knock_out!` — `#add_state(DEATH_STATE)` followed immediately by
+  `Game::States.prune`, the same shape `#cast_skill` already uses for a
+  landed non-death state — called from both `#change_hp` and `#set_hp`
+  wherever they used to call `#add_state(DEATH_STATE)` directly. The
+  existing "death is exempt both ways" `scripts/rpg2k_logic_check.rb` check
+  asserted the old, incorrect claim directly — rewritten to assert the real
+  rule instead (a low-priority state is cleared, a near-Death-priority one
+  survives, Death itself always survives). Covered by three further new
+  checks: a lethal `#change_hp` clears a lower-priority state; a lethal
+  `#set_hp` (the battle write-back path) does too, through the same
+  `#knock_out!`; a state within Death's own priority gap survives
+  alongside it — all three confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ A weapon-type Attribute (as opposed to a magic-type one) gates skill
   usability on having a matching-attribute **weapon** equipped — armor
   with the same attribute does not satisfy it (already flagged as a

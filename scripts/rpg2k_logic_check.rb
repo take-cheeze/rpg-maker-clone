@@ -13176,14 +13176,32 @@ check 'States.prune: states sharing the top priority all survive' do
   eq [2, 3], Game::States.prune([2, 3, 5], table)
 end
 
-check 'States.prune: death is exempt both ways' do
-  table = { 4 => display_state(name: 'Poison', priority: 30) }
-  # Carrying death alongside a low-priority state does not drop the state --
-  # death's priority is never consulted, matching #significant.
-  eq [1, 4], Game::States.prune([1, 4], table)
-  # And death itself is never dropped, however it compares.
-  table[9] = display_state(name: 'Overwhelm', priority: 999)
+# Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
+# source rather than assumed: `State::Add` (src/state.cpp) computes
+# `sig_state = GetSignificantState(states)` *after* inserting the new id,
+# then clears every state whose own priority sits 10+ below
+# `sig_state->priority`. Death is not exempt from this at all -- when
+# carried, `GetSignificantState` returns Death's own row the instant it
+# sees it (before ever comparing priorities), so `sig_state->priority` in
+# `Add()` is *Death's own configured priority*, used as the real threshold
+# for every other state. This is why a lethal hit clears a lower-priority
+# ailment (Poison, Blind, ...) immediately -- a real database's Death
+# priority is conventionally set high (100, RPG2000's own default)
+# specifically so this rule wipes weaker states the instant it lands.
+check 'States.prune: death is not exempt -- its own priority becomes the ' \
+      'pruning threshold' do
+  table = { 1 => display_state(name: 'Dead', priority: 100),
+           4 => display_state(name: 'Poison', priority: 30) }
+  # Poison (30) trails Death's own priority (100) by 70, well past the
+  # 10-point gap, so it is cleared the instant Death lands -- a knocked-out
+  # battler never shows "Dead, Poisoned".
+  eq [1], Game::States.prune([1, 4], table)
+  # A state within 10 of Death's own priority survives alongside it.
+  table[9] = display_state(name: 'NearDeath', priority: 95)
   eq [1, 9], Game::States.prune([1, 4, 9], table)
+  # Death itself is never dropped by its own threshold (p <= p - 10 is
+  # never true).
+  eq [1, 9], Game::States.prune([1, 9], table)
 end
 
 check 'States.prune: a single (or no) non-death state has nothing to compare' do
@@ -13258,6 +13276,46 @@ check "a battle attack skill inflicting a state prunes the target's state set" d
                     hp: c[:hp], mp: c[:mp], inflict: c[:inflict], chance: c[:chance])
   bat.run_round
   eq [3], foe.states, 'the battle-inflicted Petrify displaced the held Poison'
+end
+
+# Change HP / Simulated Attack (via #change_hp) and a battle write-back (via
+# #set_hp) are the two places `Actor#add_state(DEATH_STATE)` can fire outside
+# a skill/weapon infliction -- unlike those (`#cast_skill`/`#roll_inflict`/
+# `#roll_weapon_states`, tested just above), neither used to call
+# `Game::States.prune` at all, so a lethal hit left Death sitting alongside
+# whatever ailment the actor already carried instead of clearing it the way
+# RPG_RT's own `State::Add` does (see `Game::States.prune`'s own comment).
+check 'a lethal Change HP clears a lower-priority state the instant death lands' do
+  states = { 1 => display_state(name: 'Dead', priority: 100),
+            2 => display_state(name: 'Poison', priority: 30) }
+  st = party_state_with_states(states)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2) # seed with the low-priority state directly
+  hero.change_hp(-9999) # lethal
+  eq true, hero.dead?
+  eq [1], hero.states, 'Death (100) pushed the far-lower-priority Poison (30) out on landing'
+end
+
+check 'a lethal set_hp (a battle write-back) clears a lower-priority state too' do
+  states = { 1 => display_state(name: 'Dead', priority: 100),
+            2 => display_state(name: 'Poison', priority: 30) }
+  st = party_state_with_states(states)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2)
+  hero.set_hp(0)
+  eq true, hero.dead?
+  eq [1], hero.states, 'set_hp knocks the actor out through the same #knock_out! path'
+end
+
+check "a state within Death's own 10-priority gap survives death alongside it" do
+  states = { 1 => display_state(name: 'Dead', priority: 100),
+            2 => display_state(name: 'NearDeath', priority: 95) }
+  st = party_state_with_states(states)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(2)
+  hero.change_hp(-9999)
+  eq true, hero.dead?
+  eq [2, 1], hero.states, 'a state within the gap of Death\'s own priority is not pruned'
 end
 
 check 'States.name / color fall back when the row does not say' do

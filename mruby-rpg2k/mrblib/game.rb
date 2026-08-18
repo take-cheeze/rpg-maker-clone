@@ -2469,7 +2469,7 @@ module Game
       return @hp if dead?
       floor = allow_death ? 0 : 1
       @hp = Game.clamp(@hp + delta, floor, @max_hp)
-      add_state(DEATH_STATE) if @hp <= 0
+      knock_out! if @hp <= 0
       @hp
     end
 
@@ -2545,11 +2545,34 @@ module Game
     def set_hp(value)
       @hp = Game.clamp(value, 0, @max_hp)
       if @hp <= 0
-        add_state(DEATH_STATE)
+        knock_out!
       else
         remove_state(DEATH_STATE)
       end
       @hp
+    end
+
+    # Inflict the death state and immediately apply RPG_RT's own
+    # crowding-out rule to the result (`State::Add`, `src/state.cpp`, runs
+    # this same pass after *every* state it adds, not just Death) -- a
+    # lethal hit does not merely add Death alongside whatever ailments the
+    # actor already carried, it also clears any of them 10+ priority below
+    # Death's own configured priority, the same instant Death lands. Shared
+    # by #change_hp and #set_hp, RPG2000's two HP-changing entry points that
+    # can inflict it (a raw #add_state elsewhere is never followed by this on
+    # its own -- see #cast_skill/#roll_inflict/#roll_weapon_states, which
+    # already call #Game::States.prune themselves right after inflicting a
+    # non-death state, the identical rule from the other direction).
+    def knock_out!
+      add_state(DEATH_STATE)
+      @states = Game::States.prune(@states, state_table)
+    end
+
+    # The database's state (`situation`) table, for Game::States lookups.
+    # nil for a fixture without one, which every Game::States accessor
+    # already tolerates.
+    def state_table
+      @db.respond_to?(:situation) ? @db.situation : nil
     end
 
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
@@ -8123,22 +8146,31 @@ module Game
     # auto-removed).
     PRUNE_GAP = 10
 
-    # `ids` after RPG_RT's crowding-out rule: any state 10+ priority below the
-    # current highest-priority state it carries is dropped. Only the *value*
-    # of the top priority matters here (unlike #significant, no id is singled
-    # out), so ties do not change what survives -- everything within the gap
-    # of the top, however many states share it, stays. Death (DEATH_ID) is
-    # exempt on both sides: it never gets pruned, and (matching #significant,
-    # which never even reads its priority) it does not count toward "the
-    # current highest" either -- knockout is tracked through HP/#dead?, not
-    # through this ranking. `ids` with one or fewer non-death entries has
-    # nothing to compare, and comes back unchanged.
+    # `ids` after RPG_RT's crowding-out rule: any state 10+ priority below
+    # the *significant* one it carries is dropped. Verified against RPG_RT's
+    # actual behavior via EasyRPG Player's own C++ source rather than
+    # assumed: `State::Add` (`src/state.cpp`) computes `sig_state =
+    # GetSignificantState(states)` *after* inserting the new id, then clears
+    # every state whose own `priority <= sig_state->priority - 10`. Death is
+    # not exempt from this at all -- when carried, it *is* the significant
+    # state (`GetSignificantState` returns Death's own row the instant it
+    # sees it, before ever comparing priorities), so the threshold becomes
+    # *Death's own configured priority* minus 10, which is why a lethal hit
+    # clears a lower-priority ailment (Poison, Blind, ...) immediately: a
+    # real database's Death priority is conventionally set high (RPG2000's
+    # own default is 100) specifically so this rule wipes weaker states the
+    # instant it lands, while Death itself always survives its own threshold
+    # trivially (`p <= p - 10` is never true). #significant already returns
+    # DEATH_ID the moment it is present, so reusing it here for `top` gets
+    # this right for free -- no id needs to be singled out or exempted.
+    # `ids` with one or fewer entries has nothing to compare, and comes back
+    # unchanged.
     def self.prune(ids, table)
       return ids if ids.nil? || ids.size <= 1
-      ranked = ids.reject { |id| id == DEATH_ID }
-      return ids if ranked.size <= 1
-      top = ranked.map { |id| priority_of(id, table) }.max
-      ids.select { |id| id == DEATH_ID || priority_of(id, table) > top - PRUNE_GAP }
+      sig = significant(ids, table)
+      return ids if sig.nil?
+      top = priority_of(sig, table)
+      ids.select { |id| priority_of(id, table) > top - PRUNE_GAP }
     end
 
     # The state's display name, or nil when the table does not name it (a
