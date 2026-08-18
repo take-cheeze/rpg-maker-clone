@@ -2699,6 +2699,37 @@ The work below is roughly ordered by the critical path to a walkable game
   troop, an empty list never firing, `terrain_set` filtering, the airship
   exemption, a forced route never rolling despite a guaranteed-roll setup, and
   the step-count lookup / override / default / disable cases)
+  ✅ **A chipset cell whose terrain id has no database row now never rolls
+  for a random encounter at all, instead of substituting a fabricated
+  `encounter_rate` of 100 and rolling anyway (2026-08-18).**
+  `Scene::Map#check_random_encounter` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  read the stepped-on tile's terrain row via `#terrain_row_at` (already nil
+  for a chipset cell tagged with an id a database shrink has since removed
+  — see `#warn_stale_terrain`'s "log once, not once per frame" diagnostic,
+  and its own already-correct nil handling in the terrain-damage caller
+  right next to this one), but then substituted `rate = 100` and continued
+  straight through the accumulation and roll for that step regardless.
+  Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
+  source, fetched live: `Game_Player::UpdateEncounterSteps`
+  (`src/game_player.cpp`) does `if (!terrain) { Output::Warning(...);
+  return; }` — no fallback rate, no `total_encounter_rate` increment, no
+  roll for that step, exactly as if it never happened, with no counterpart
+  anywhere in the reference source for a substituted default. A map whose
+  chipset assigns a tile a terrain id the database `terrain` table no
+  longer defines a row for could still trigger — and did trigger —
+  wandering-monster battles from that tile, something real RPG_RT can
+  never do there. Fixed by returning immediately when `#terrain_row_at`
+  comes back nil, before the rate/accumulation/roll logic runs at all — the
+  separate, untouched `terrain.respond_to?(:encounter_rate) ? ... : 100`
+  fallback for a terrain row that *is* found but happens not to define the
+  field stays exactly as it was, since that is this build's own
+  test-fixture tolerance for a bare `OpenStruct` row that omits it, not
+  something a real LCF terrain row (which always carries the field) can
+  actually do. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (deleting a fixture's terrain row under an otherwise-guaranteed-roll
+  setup — the same dangling-reference simulation the stale-terrain
+  diagnostic check already uses — never starts a battle and never
+  accumulates), confirmed to fail against the pre-fix code before the fix.
 
 #### Menus, save, battle
 - ✅ Menu scene — opens over the map (cancel button); shows party status and a
