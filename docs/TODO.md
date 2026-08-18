@@ -1623,6 +1623,28 @@ The work below is roughly ordered by the critical path to a walkable game
   combatant carries its `battler_name`, and `Scene::Map#refresh_battle_sprites`
   rebuilds any sprite whose battler no longer matches the one it was drawn from
   (an unchanged battler is left alone, so the field does not churn every frame).
+  ✅ **Charge was only ever spent by the enemy's own next Attack, not by
+  anything else it might do first (2026-08-18).** `Game_BattleAlgorithm::
+  AlgorithmBase::Start()` (`src/game_battlealgorithm.cpp`, confirmed against
+  the actual source) calls `source->SetCharged(false)` unconditionally, for
+  every algorithm kind — Skill, SelfDestruct, Defend, Transform, Normal, all
+  of them — not only the plain-attack one that reads it. This codebase had
+  only ever cleared `b.charged` from inside the attack path
+  (`#deal_attack_with_current_weapon`), so a charge set one turn silently
+  survived any number of intervening skill casts, Defends or Observes and
+  still doubled whatever ordinary attack eventually happened, turns later.
+  `#perform_enemy_action` now snapshots and clears `b.charged` once, up
+  front, before dispatching to any action kind, and threads the snapshot
+  explicitly into `#deal_attack` for every path that can still substitute an
+  attack (the basic Attack/dual-attack arms, and `#enemy_fallback_attack`'s
+  degrade-on-unresolved-skill-or-transform). Fixed the same investigation
+  turned up a second, narrower bug in the same mechanism: EasyRPG's own
+  dual attack is *one* `Normal` algorithm with a repeat count of 2
+  (`enemyai.cpp`'s `MakeAttack(enemy, 2)`), so `Init()` captures the charge
+  flag once for the whole action and both swings see it — this codebase's
+  two independent `#deal_attack` calls each re-read (and the first one
+  cleared) `b.charged`, so only the first swing of a charged dual attack
+  ever doubled.
   **Every RPG2000 map / common-event command now has a handler.** The last gaps
   closed were Change Skills (10440), Simulated Attack (10500), Change Actor Face
   (10640), Enter/Exit Vehicle (10840), Flash Sprite (11320), Fade Out BGM

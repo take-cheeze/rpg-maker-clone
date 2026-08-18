@@ -15573,6 +15573,54 @@ check 'a charge doubles the enemy next attack, then is spent' do
   ok !foe.charged, 'and the charge is spent'
 end
 
+check 'a charge is wasted by an intervening non-attack action, not just an attack' do
+  # EasyRPG's Game_BattleAlgorithm::AlgorithmBase::Start() calls
+  # source->SetCharged(false) unconditionally, for every algorithm kind, not
+  # only inside Normal (the plain-attack algorithm) -- confirmed against
+  # game_battlealgorithm.cpp. #perform_enemy_action ports that: it
+  # snapshots-and-clears `b.charged` before dispatching, so an intervening
+  # Defend spends the charge exactly as an intervening Attack would, and it
+  # never survives to a later turn.
+  foe = combatant('Slime', 40, 0, 5, 500)
+  charge = enemy_action(kind: 0, basic: 4)
+  defend = enemy_action(kind: 0, basic: 2)
+  attack = enemy_action(kind: 0, basic: 0)
+  b = ai_battle([charge], nil, foe: foe)
+  b.begin_round; b.step_action
+  eq true, b.step_action[:charge], 'the monster gathers strength'
+  ok foe.charged, 'the charge is held'
+  foe.actions = [defend]
+  b.end_round; b.begin_round; b.step_action
+  eq true, b.step_action[:defend], 'a Defend runs instead of an Attack'
+  ok !foe.charged, 'and the charge is already gone, spent by the Defend'
+  foe.actions = [attack]
+  b.end_round; b.begin_round; b.step_action
+  e = b.step_action
+  eq 20, e[:damage], 'the later attack lands at base damage -- no stale charge left to double it'
+  ok !e[:charged]
+end
+
+check 'a charged dual attack doubles both swings, not only the first' do
+  # EasyRPG's own dual attack is one Normal algorithm with a repeat count of
+  # 2 (enemyai.cpp's MakeAttack(enemy, 2)), not two separate algorithm
+  # instances -- Init() (and so the captured charged_attack flag) runs once
+  # for the whole action, so a charge doubles every swing it covers.
+  foe = combatant('Slime', 40, 0, 5, 500)
+  charge = enemy_action(kind: 0, basic: 4)
+  dual = enemy_action(kind: 0, basic: 1)
+  b = ai_battle([charge], nil, foe: foe)
+  b.begin_round; b.step_action
+  b.step_action
+  ok foe.charged, 'the charge is held'
+  foe.actions = [dual]
+  b.end_round; b.begin_round; b.step_action
+  first = b.step_action
+  second = b.step_action
+  eq 40, first[:damage], 'first swing doubled'
+  eq 40, second[:damage], 'second swing doubled too'
+  ok !foe.charged, 'spent by the action as a whole, not per swing'
+end
+
 check 'a dual attack strikes twice in one turn' do
   b = ai_battle([enemy_action(kind: 0, basic: 1)])
   b.begin_round

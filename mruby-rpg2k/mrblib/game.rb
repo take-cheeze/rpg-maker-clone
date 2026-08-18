@@ -10270,13 +10270,27 @@ module Game
 
     # Run the action `b` chose and return its log entry (or entries). Any switch
     # the action flips is applied once it has run.
+    #
+    # `b.charged` is snapshotted and cleared right here, before dispatching to
+    # any action kind -- EasyRPG's `Game_BattleAlgorithm::AlgorithmBase::
+    # Start()` calls `source->SetCharged(false)` unconditionally, for every
+    # algorithm (Skill, SelfDestruct, Defend, Transform, Normal, all of them),
+    # confirmed against the actual `game_battlealgorithm.cpp` source -- not
+    # only in the Normal (plain-attack) algorithm this codebase previously
+    # cleared it from inside. A charge is spent (or simply wasted) by
+    # whatever this enemy does next, attack or not; it never survives to a
+    # later turn. The snapshot rides along as the `charged:` a plain-attack
+    # branch below hands to #deal_attack explicitly, since by the time any of
+    # them would run, `b.charged` here has already been cleared.
     def perform_enemy_action(b, act)
+      charged = b.charged ? true : false
+      b.charged = false
       entry = if act.skill?
-                enemy_skill_action(b, act)
+                enemy_skill_action(b, act, charged)
               elsif act.transform?
-                enemy_transform_action(b, act)
+                enemy_transform_action(b, act, charged)
               else
-                enemy_basic_action(b, act)
+                enemy_basic_action(b, act, charged)
               end
       apply_action_switches(act)
       entry
@@ -10293,15 +10307,23 @@ module Game
     # The basic actions (kind 0). Attack and dual attack go through the ordinary
     # attack path (so accuracy, criticals, elements and variance all apply);
     # the rest have no damage of their own and read as a plain note on the log.
-    def enemy_basic_action(b, act)
+    # `charged` is #perform_enemy_action's already-snapshotted-and-cleared
+    # `b.charged` -- handed to #deal_attack explicitly rather than read off
+    # `b` again here, since it is already gone by this point either way.
+    def enemy_basic_action(b, act, charged)
       case act.basic
       when EnemyAction::BASIC_DUAL_ATTACK
         target = attack_target(b)
         return nil unless target
-        first = deal_attack(b, target)
+        # EasyRPG's own dual attack is one `Normal` algorithm with a repeat
+        # count of 2 (`enemyai.cpp`'s `MakeAttack(enemy, 2)`), not two
+        # separate algorithm instances -- `Init()` (and so `charged_attack`)
+        # runs once for the whole action, so a charge doubles *both* swings,
+        # not only the one that happens to run first.
+        first = deal_attack(b, target, 0, charged: charged)
         # The second swing only lands if the first did not fell the target.
         return [first] if target.dead?
-        second = deal_attack(b, target)
+        second = deal_attack(b, target, 1, charged: charged)
         # RPG_RT's enemy-attack SE plays once per action (at its very start),
         # not once per swing -- EasyRPG's ProcessBattleActionUsage calls
         # GetStartSe only before the first Execute, a repeat re-enters at
@@ -10316,7 +10338,8 @@ module Game
         { attacker: b.name, observe: true }
       when EnemyAction::BASIC_CHARGE
         # The next attack this enemy lands does double damage (EasyRPG's
-        # IsCharged, spent in #deal_attack).
+        # IsCharged, spent in #deal_attack) -- any stale charge already spent
+        # by #perform_enemy_action above starts fresh here regardless.
         b.charged = true
         { attacker: b.name, charge: true }
       when EnemyAction::BASIC_AUTODESTRUCT
@@ -10330,7 +10353,7 @@ module Game
         { attacker: b.name, nothing: true }
       else
         target = attack_target(b)
-        target ? deal_attack(b, target) : nil
+        target ? deal_attack(b, target, 0, charged: charged) : nil
       end
     end
 
@@ -10385,13 +10408,13 @@ module Game
     # states exactly like a hero's — which is what finally lets an enemy poison or
     # sleep the party. A skill whose scope names the caster's own side heals /
     # buffs a fellow monster instead.
-    def enemy_skill_action(b, act)
+    def enemy_skill_action(b, act, charged)
       sk = @ai && @ai.skill(act.skill_id)
-      return enemy_fallback_attack(b) unless sk
+      return enemy_fallback_attack(b, charged) unless sk
       targets = enemy_skill_targets(b, sk)
-      return enemy_fallback_attack(b) if targets.empty?
+      return enemy_fallback_attack(b, charged) if targets.empty?
       cmd = @ai.skill_command(sk, b, targets.first)
-      return enemy_fallback_attack(b) unless cmd
+      return enemy_fallback_attack(b, charged) unless cmd
       b.command = skill_command_hash(sk, cmd, targets.first)
       b.command[:skill_id] = act.skill_id
       if targets.size > 1
@@ -10401,7 +10424,7 @@ module Game
           c = @ai.skill_command(sk, b, t)
           c ? { target: t, hp: c[:hp] || 0, mp: c[:mp] || 0 } : nil
         end.compact
-        return enemy_fallback_attack(b) if per.empty?
+        return enemy_fallback_attack(b, charged) if per.empty?
         b.command[:all] = true
         b.command[:targets] = per
         b.command[:target] = nil
@@ -10474,9 +10497,9 @@ module Game
     # "damage carries across a transformation" design this build's own
     # clamp made impossible by silently full-healing every downward
     # transform.
-    def enemy_transform_action(b, act)
+    def enemy_transform_action(b, act, charged)
       into = @ai && @ai.enemy(act.enemy_id)
-      return enemy_fallback_attack(b) unless into
+      return enemy_fallback_attack(b, charged) unless into
       b.name = into.name
       b.atk = into.atk; b.def = into.def; b.agi = into.agi; b.spi = into.spi
       b.max_hp = into.max_hp; b.max_mp = into.max_sp
@@ -10493,9 +10516,11 @@ module Game
 
     # A skill / transformation that could not be resolved (no database to hand)
     # degrades to a plain attack rather than costing the enemy its turn.
-    def enemy_fallback_attack(b)
+    # `charged` (already snapshotted by #perform_enemy_action) rides along
+    # into the substituted attack, same as an ordinary chosen one.
+    def enemy_fallback_attack(b, charged)
       target = attack_target(b)
-      target ? deal_attack(b, target) : nil
+      target ? deal_attack(b, target, 0, charged: charged) : nil
     end
 
     # -- forced AI (強制AI) ---------------------------------------------------
@@ -10855,7 +10880,14 @@ module Game
     # most one equipped weapon) has no override to make, so this is a no-op
     # for them -- the merged fields already correctly describe their one
     # weapon.
-    def deal_attack(b, target, swing_index = 0)
+    # `charged:` lets a caller that has already resolved whether this attack
+    # is charged (#perform_enemy_action, which must snapshot-and-clear
+    # `b.charged` before dispatching to any action kind -- see its own
+    # comment) hand the value in explicitly, rather than have this method
+    # read (and clear) `b.charged` itself. nil -- every other caller,
+    # including an ally's own #swing, which never sets `b.charged` at all --
+    # keeps the old self-contained behaviour.
+    def deal_attack(b, target, swing_index = 0, charged: nil)
       wdata = b.respond_to?(:actor) && b.actor.respond_to?(:swing_weapon_data) ? b.actor.swing_weapon_data(swing_index) : nil
       saved = wdata ? [b.hit_rate, b.atk_attrs, b.atk_states, b.crit_chance] : nil
       if wdata
@@ -10864,12 +10896,12 @@ module Game
         b.atk_states = wdata[:atk_states]
         b.crit_chance = wdata[:crit_chance]
       end
-      deal_attack_with_current_weapon(b, target)
+      deal_attack_with_current_weapon(b, target, charged: charged)
     ensure
       b.hit_rate, b.atk_attrs, b.atk_states, b.crit_chance = saved if saved
     end
 
-    def deal_attack_with_current_weapon(b, target)
+    def deal_attack_with_current_weapon(b, target, charged: nil)
       # `attacker_ally` (unlike `target_ally`, which every hit already carries)
       # only appears on a plain Attack's own entry -- it is how
       # Scene::Map#play_battle_action_se tells a normal swing apart from a
@@ -10915,9 +10947,14 @@ module Game
       crit = critical?(b) && side_of(b) != side_of(target) && !target.prevents_crit
       # A charged-up attack (the enemy's Charge basic action) hits twice as hard,
       # but a critical takes precedence over it — EasyRPG's CalcNormalAttackEffect
-      # applies one or the other, never both. The charge is spent either way.
-      charged = b.charged ? true : false
-      b.charged = false if charged
+      # applies one or the other, never both. `charged` (the parameter) already
+      # carries the resolved answer when the caller passed one; otherwise fall
+      # back to reading (and spending) `b.charged` directly, matching the old
+      # self-contained behaviour.
+      if charged.nil?
+        charged = b.charged ? true : false
+        b.charged = false if charged
+      end
       if crit
         dmg *= 3
       elsif charged
