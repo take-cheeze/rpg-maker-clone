@@ -5742,33 +5742,37 @@ check 'a heal+cure item counts either the heal or the cure as a use' do
   eq 1, st.party.item_count(5)
 end
 
-check 'a reverse medicine inflicts its listed states instead of curing them' do
-  # The flag flips a medicine from curing to inflicting, the same way it already
-  # does for a field skill (#skill_inflicted_states / #cast_skill) -- the same
-  # EasyRPG reverse_state_effect branch, just on the item side. No item in
-  # either test bed sets it, but the mechanism is the identical, already-tested
-  # one the skill side runs.
+check "reverse_state_effect is dead on a medicine -- it still cures, the flag does nothing" do
+  # Unlike a weapon's own `state_set` (RPG2003, #weapon_states) or a skill's
+  # (#skill_cured_states/#skill_inflicted_states), EasyRPG's
+  # Game_BattleAlgorithm::Item::vExecute (Type_medicine branch,
+  # src/game_battlealgorithm.cpp) never once reads item.reverse_state_effect
+  # -- confirmed against the actual source, exhaustively (the whole file has
+  # exactly two occurrences of the field, one in the weapon block of
+  # ::Normal::vExecute, one in ::Skill::vExecute; Item::vExecute has none). A
+  # medicine's `state_set` is always a cure list, full stop -- the flag is
+  # real data an item row can carry, but the editor's checkbox just does
+  # nothing for a medicine in the real engine, so this codebase's own
+  # previous inflict/cure split on the flag (#item_inflicted_states, since
+  # removed) modelled behaviour that was never actually real.
   st = item_party({})
   it = fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true)
-  eq [], st.party.item_cured_states(it)
-  eq [3], st.party.item_inflicted_states(it)
+  eq [3], st.party.item_cured_states(it), 'the flag makes no difference -- still a cure list'
   eq [3], st.party.item_cured_states(fake_item(type: 6, state_set: [0, 0, 1])),
-     'the same row without the flag does cure'
-  eq [], st.party.item_inflicted_states(fake_item(type: 6, state_set: [0, 0, 1])),
-     'and does not also inflict'
+     'the same row without the flag cures identically'
 end
 
-check 'a reverse medicine actually inflicts on use, and is greyed out once landed' do
+check 'a medicine flagged reverse_state_effect still cures on use, exactly like an unflagged one' do
   items = { 5 => fake_item(type: 6, state_set: [0, 0, 1], reverse_state: true) }
   st = item_party(items)
   st.party.gain_item(5, 2)
   hero = st.party.leader
-  eq false, hero.state?(3)
+  hero.add_state(3)
   eq true, st.party.item_effective?(5, hero)
   eq [hero], st.party.use_item(5, hero)
-  eq true, hero.state?(3)                       # inflicted
+  eq false, hero.state?(3)                      # cured, not inflicted
   eq 1, st.party.item_count(5)                  # consumed
-  eq false, st.party.item_effective?(5, hero), 'already afflicted -> no longer effective'
+  eq false, st.party.item_effective?(5, hero), 'already cured -> no longer effective'
   eq [], st.party.use_item(5, hero)
   eq 1, st.party.item_count(5), 'a no-op use does not consume another'
 end
@@ -10432,8 +10436,9 @@ end
 check "battle: an RPG2003 weapon's reverse_state_effect heals instead of inflicts" do
   # Same weapon, `reverse_state_effect` set: on RPG2003 this flips the weapon
   # from inflicting its named states to curing them (EasyRPG's
-  # `is2k3 && w->reverse_state_effect` branch) -- the same flip
-  # `#item_inflicted_states`/`#skill_state_ids` already model for items/skills.
+  # `is2k3 && w->reverse_state_effect` branch) -- a weapon-only flip; the
+  # identical field on a *medicine* item is dead in the real engine (see
+  # `Game::Party#item_cured_states`'s own comment).
   items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1],
                             state_chance: 100, reverse_state: true) }
   st = skill_party({}, items, rpg2003: true)

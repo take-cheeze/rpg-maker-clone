@@ -732,6 +732,29 @@ The work below is roughly ordered by the critical path to a walkable game
   checks built the same way the mirrored skill-side inflict behaviour already
   was, confirmed to fail against the pre-fix code (a `NoMethodError` for the
   missing accessor, then a wrong-effective-flag failure) before the fix.
+  ❌ **The inflict half above was itself wrong, and has been removed
+  (2026-08-18).** It assumed `Item::vExecute` mirrors the skill side's
+  `reverse_state_effect` branch "the same way" without the reference
+  function ever actually being read — once EasyRPG's real
+  `Game_BattleAlgorithm::Item::vExecute` (`src/game_battlealgorithm.cpp`)
+  became reachable, its `Type_medicine` branch turned out to apply
+  `state_set` as an unconditional cure list with **no** `reverse_state_effect`
+  check at all; the field is real data an item row carries (chunk 13 field
+  68), but the editor's checkbox does nothing for a medicine in the real
+  engine. Exhaustively confirmed: the whole of `game_battlealgorithm.cpp`
+  references the field exactly twice, once in the weapon block of
+  `Normal::vExecute` (RPG2003 only) and once in `Skill::vExecute` — never in
+  `Item::vExecute`. `Game::Party#item_inflicted_states` is deleted;
+  `#item_cured_states` no longer checks the flag at all, curing
+  unconditionally regardless of it (matching what the reference actually
+  does, not what its own comment assumed); `#use_medicine`'s inflict branch
+  and `#item_effective?`'s inflict-side offer clause are gone with it.
+  `rpg2k_logic_check.rb`'s two checks proving the (wrong) inflict mechanism
+  are replaced with checks proving the flag is inert on a medicine either
+  way. The weapon-side flip above (`is2k3 && w->reverse_state_effect`,
+  RPG2003 only) and the field-skill flip (`Game_Battler::UseSkill`) are
+  untouched — both really are read by the reference, just not by the item
+  algorithm.
   The **death state (戦闘不能, id 1)** is **coupled to HP** (EasyRPG's
   `kDeathID`): lethal `change_hp` knocks the actor out and inflicts state 1
   (zeroing HP), a downed actor can't be healed by HP changes, and curing the

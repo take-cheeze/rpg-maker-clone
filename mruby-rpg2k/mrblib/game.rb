@@ -1989,11 +1989,14 @@ module Game
     # state, or the same one at a different chance -- EasyRPG takes the
     # higher chance when both weapons flag the same state ("we take the max
     # probability as RPG_RT does"), which is what the `< chance` compare
-    # below does per state id. `reverse_state_effect` (field 20) flips a
+    # below does per state id. `reverse_state_effect` (field 68) flips a
     # weapon's own states from inflicting to curing, but **only on RPG2003**
     # (`is2k3 && w->reverse_state_effect`) -- on RPG2000 the field has no
-    # effect here, matching the flag's own item-menu/skill-menu handling
-    # elsewhere in this file (`#item_inflicted_states`, `#skill_state_ids`).
+    # effect here. This is the one place the item table's `reverse_state_
+    # effect` field actually does anything at all: a *medicine*'s identical
+    # field (same chunk, same field number, read only when `item.type` is
+    # medicine rather than weapon) is dead in the real engine --
+    # `Item::vExecute` never once reads it (see #item_cured_states).
     #
     # No item table (a fixture) or an unarmed actor carries none of either.
     def weapon_states
@@ -3670,49 +3673,41 @@ module Game
 
     # The status-condition ids a medicine cures. RPG2000 items list affected
     # states in `state_set` (a 0/1 byte per state, index i -> state id i+1), and a
-    # medicine **cures** them; `reverse_state_effect` is what flips it into
-    # inflicting them, exactly as it does for a skill (see #skill_state_ids).
-    # Curing is unconditional, matching EasyRPG's item algorithm.
+    # medicine **cures** them, unconditionally, matching EasyRPG's own item
+    # algorithm exactly: `Game_BattleAlgorithm::Item::vExecute`
+    # (src/game_battlealgorithm.cpp, confirmed against the actual source)
+    # calls `State::Remove` for every flagged bit inside its `Type_medicine`
+    # branch with no other condition attached at all -- unlike a weapon's own
+    # `state_set` (#weapon_states) or a skill's (#skill_cured_states/
+    # #skill_inflicted_states), `item.reverse_state_effect` (field 68) is
+    # never once read there. `reverse_state_effect` is real data an item row
+    # can carry, but it is a dead field for a medicine in the real engine --
+    # the editor exposes the checkbox, RPG_RT/EasyRPG simply never consult it
+    # for this item type. This method previously mirrored it into an
+    # inflict/cure split anyway (see #item_inflicted_states, since removed);
+    # nothing in either test bed sets the flag on an item, so nothing was
+    # ever known to depend on that behaviour.
     #
-    # The polarity used to be read the other way round -- cures only when the
-    # flag is *set* -- which meant no shipped curative item cured anything.
-    # Neither test bed sets the flag on any item at all, while Nepheshel has 13
-    # medicines naming states without it and mtf-meido-action one: アンチドーテ
-    # and ユニコーンの角 name all fifteen states, and 気付け薬 / ドラゴンブラッド
-    # name state 1 alone, which is 戦闘不能 -- they are revives. Reading those as
-    # "cures nothing" made every antidote and every revive item in both games
-    # inert, in the menu and in a fight alike.
-    #
-    # A medicine that really does *inflict* (the flag set): see
-    # #item_inflicted_states below, which mirrors this the same way
-    # #skill_inflicted_states mirrors #skill_cured_states for a field skill.
+    # The polarity used to be read backwards too, at one point -- cures only
+    # when the flag was *set* -- which meant no shipped curative item cured
+    # anything. Neither test bed sets the flag on any item at all, while
+    # Nepheshel has 13 medicines naming states without it and mtf-meido-action
+    # one: アンチドーテ and ユニコーンの角 name all fifteen states, and 気付け薬 /
+    # ドラゴンブラッド name state 1 alone, which is 戦闘不能 -- they are revives.
+    # Reading those as "cures nothing" made every antidote and every revive
+    # item in both games inert, in the menu and in a fight alike.
     def item_cured_states(it)
-      return [] if it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
       item_state_ids(it)
     end
 
     # The states item `it` names in its `state_set` (a 0/1 byte per state, index
-    # i -> state id i+1), regardless of polarity. Shared by #item_cured_states
-    # and #item_inflicted_states, mirroring #skill_state_ids.
+    # i -> state id i+1). Shared by #item_cured_states, mirroring #skill_state_ids.
     def item_state_ids(it)
       set = it.state_set
       return [] unless set
       out = []
       set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
       out
-    end
-
-    # The states item `it` inflicts (the reverse case, `reverse_state_effect`
-    # set): the opposite polarity to #item_cured_states, exactly as
-    # #skill_inflicted_states is to #skill_cured_states for a field skill (both
-    # port EasyRPG's identical `reverse_state_effect` branch, `Item::vExecute`
-    # for an item and `Game_Battler::UseSkill` for a skill). No item in either
-    # test bed sets the flag, so this was previously left unbuilt entirely --
-    # unlike the skill side, which already has the mechanism -- even though
-    # using the item this way was reachable and silently did nothing at all.
-    def item_inflicted_states(it)
-      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
-      item_state_ids(it)
     end
 
     # 蘇生専用 (`ko_only`): an item that does nothing at all to a target who is
@@ -3809,8 +3804,7 @@ module Game
         return false if ko_only_blocked?(it, actor)
         hp, mp = item_recovery(it, actor)
         (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
-          item_cured_states(it).any? { |s| actor.state?(s) } ||
-          item_inflicted_states(it).any? { |s| !actor.state?(s) }
+          item_cured_states(it).any? { |s| actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it.skill_id
         !s.nil? && s != 0 && !actor.knows_skill?(s)
@@ -3997,7 +3991,6 @@ module Game
     def use_medicine(it, id, actor)
       targets = it.scope == 1 ? @actors : [actor].compact
       cured = item_cured_states(it)
-      inflicted = item_inflicted_states(it)
       affected = []
       targets.each do |t|
         # A 蘇生専用 item passes over anyone still standing without touching
@@ -4015,20 +4008,6 @@ module Game
             changed = true
           end
         end
-        landed = false
-        inflicted.each do |s|
-          unless t.state?(s)
-            t.add_state(s)
-            changed = true
-            landed = true
-          end
-        end
-        # RPG_RT's crowding-out rule (see Game::States::PRUNE_GAP): a state a
-        # poison item just inflicted may itself immediately push out one
-        # already held, or be pushed out by one already held that outranks it
-        # -- the same prune #cast_skill applies for a skill's own inflicted
-        # states.
-        t.states = Game::States.prune(t.states, state_table) if landed
         hp, mp = item_recovery(it, t)
         before_hp = t.hp
         before_mp = t.mp
