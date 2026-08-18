@@ -4634,6 +4634,56 @@ The work below is roughly ordered by the critical path to a walkable game
   the first skill's text, follows the cursor onto the second, and keeps
   showing it once a target is being picked), confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **A special/`use_skill` battle item invoking a skill now opens the
+  battle log with the *item's own* line when the item leaves its
+  `using_message` field at the database default, instead of always taking
+  the skill's own sentence (2026-08-18).** Item schema field 51
+  `using_message` (`mruby-lcf/mrblib/schema.rb`) is an **int**, distinct
+  from the skill-only `using_message1`/`using_message2` **string** fields of
+  the same near-name, and until now was never once read —
+  `Scene::Battle#battle_action_body` (`mruby-rpg2k/mrblib/scene/battle.rb`)
+  dispatched on `e[:skill_id]` before ever checking `e[:item_id]`, so a
+  skill cast through a battle item (a type-9 special item, or a weapon/
+  shield/armour/helmet/accessory flagged `use_skill`) always took
+  `#battle_skill_body`'s own `using_message1`/`using_message2` sentence,
+  the same as a skill picked from the Skill menu. Verified against EasyRPG
+  Player's actual C++ source: `Game_BattleAlgorithm::Skill::GetStartMessage`
+  (`src/game_battlealgorithm.cpp`) checks `item && item->using_message == 0`
+  **first**, unconditionally, before ever reading the skill's own message
+  fields — `if (item && item->using_message == 0) { ... return
+  BattleMessage::GetItemStartMessage2k(*GetSource(), *item); ... }` — and
+  falls through to the skill's own sentence only once that guard fails,
+  i.e. only when the item's own `using_message` is nonzero. Since the
+  schema default for an item's `using_message` field is 0, an ordinary
+  skill-casting item left at its editor default (the common case) is
+  supposed to open with its own name ("リトはやくそうを使った！"), never the
+  skill's borrowed sentence — this build showed the skill's sentence for
+  *every* such item regardless of the flag. `EasyRPG`'s own
+  `GetFailureMessage` reads only the skill, never the item
+  (`BattleMessage::GetSkillFailureMessage(*GetSource(), *GetTarget(),
+  skill)`), so the fix is scoped to the opening line(s) only — the damage /
+  recovery / absorb / failure lines that follow are untouched. Fixed with a
+  new `Scene::Battle#skill_start_lines(e, row, caster)`, called from
+  `#battle_skill_body` in place of the previous bare `bt.skill_start(row,
+  caster)`: when `e[:item_id]` resolves to a real database row (through
+  `@state.party.db_item`) whose `using_message` is 0/unset, it builds the
+  item's own generic line (`Game::States::BattleText.item_start`, the same
+  helper `#battle_item_body` already uses for a plain, non-skill item)
+  instead; a skill cast with no `item_id` at all (the Skill menu) or an
+  item that explicitly sets `using_message` nonzero both fall through to
+  the skill's own `#skill_start` sentence unchanged. A dangling `item_id`
+  (a database row `db_item` can no longer resolve) degrades to the skill's
+  own sentence too, rather than a blank item name — there is no real item
+  struct to read a `using_message` flag off, and this codebase's usual
+  dangling-id rule is to degrade gracefully rather than print something
+  the game itself never could. Covered by four new
+  `scripts/rpg2k_scene_check.rb` checks (an item-invoked skill at the
+  `using_message` 0 default opens with the item's own line; the same skill
+  keeps its own two sentences once the item sets `using_message` nonzero; a
+  dangling `item_id` degrades to the skill's sentence rather than a blank
+  item name; a Skill-menu cast with no `item_id` is untouched), the first
+  confirmed to fail against the pre-fix code (`expected` the item's own
+  line, `got` the skill's two sentences instead) before the fix.
 
 ### yado.tk quirks backlog
 

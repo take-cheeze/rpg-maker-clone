@@ -8374,9 +8374,11 @@ module Game
 
       # An item has no sentence of its own — it borrows the `use_item` term, and
       # is the one line RPG2000 builds from *two* names: 「リトはポーションを使っ
-      # た！」 is the caster, は, the item, and the term. (`item.using_message` is
-      # an int selecting a battle animation layout, not a string; no RPG2000 item
-      # carries a sentence.)
+      # た！」 is the caster, は, the item, and the term. `item.using_message`
+      # (schema field 51) is an int, not a string — but it is not dead data: a
+      # skill-casting item (special/use_skill) reads as 0 or nonzero, gating
+      # whether *this* generic line or the invoked skill's own sentence(s)
+      # opens the log entry — see Scene::Battle#skill_start_lines.
       def self.item_start(terms, caster_name, item_name)
         t = term(terms, :use_item)
         t && "#{caster_name}#{ALLY_PARTICLE.strip}#{item_name}#{t}"

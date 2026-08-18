@@ -2574,7 +2574,7 @@ class RPG2k
         bt = Game::States::BattleText
         row = db.respond_to?(:skill) && db.skill ? db.skill[e[:skill_id]] : nil
         caster = (e[:recover] ? e[:actor] : e[:attacker]).to_s
-        lines = bt.skill_start(row, caster)
+        lines = skill_start_lines(e, row, caster)
         return [battle_action_line(e)] if lines.empty?
         t = db.respond_to?(:term) ? db.term : nil
         rest = battle_skill_result(t, row, e)
@@ -2583,6 +2583,56 @@ class RPG2k
       rescue StandardError => ex
         $stderr.puts "[RPG2k] skill message lookup failed: #{ex.message}"
         [battle_action_line(e)]
+      end
+
+      # The opening line(s) of a skill's log entry: the *casting item's own*
+      # generic "used it!" line when a special/use_skill battle item invoked
+      # this skill and left its own `using_message` field (item schema field
+      # 51 -- distinct from the skill-only `using_message1`/`using_message2`
+      # string fields) at the database default 0, else the skill's own
+      # sentence(s) (`#skill_start`).
+      #
+      # Confirmed against EasyRPG Player's actual C++ source:
+      # `Game_BattleAlgorithm::Skill::GetStartMessage`
+      # (`src/game_battlealgorithm.cpp`) checks `item && item->using_message
+      # == 0` **before** ever looking at the skill's own `using_message1`/
+      # `using_message2`:
+      #   if (item && item->using_message == 0) {
+      #     ...
+      #     return BattleMessage::GetItemStartMessage2k(*GetSource(), *item);
+      #     ...
+      #   }
+      # falling through to the skill's own sentence only once that guard
+      # fails -- i.e. only when the item sets `using_message` nonzero. Since
+      # `mruby-lcf/mrblib/schema.rb`'s item `using_message` field defaults to
+      # 0, an ordinary skill-casting item left at its editor default (the
+      # common case) opens with its own name ("リトはやくそうを使った！"), not
+      # the skill's borrowed sentence. This used to unconditionally take the
+      # skill's own two sentences for *every* item-invoked skill regardless
+      # of the item's `using_message` flag -- the item's own message was
+      # database data this build read (`Game::Party#skill_hit`'s `sk.hit ==
+      # -1` fallback already proves the pattern of respecting such sentinels)
+      # but never actually consulted here.
+      #
+      # A skill cast from the Skill menu itself carries no `item_id` at all,
+      # so it is untouched: it always takes its own sentence, matching
+      # `GetStartMessage`'s `item` being null in that case. An `item_id` the
+      # database no longer has a row for (a dangling id) falls back the same
+      # way -- there is no real `item` to read `using_message` off, so this
+      # degrades to the skill's own sentence rather than a blank item name,
+      # matching this codebase's usual dangling-id-degrades-gracefully rule.
+      def skill_start_lines(e, row, caster)
+        bt = Game::States::BattleText
+        it = e[:item_id] && @state.party.db_item(e[:item_id])
+        if it
+          uses_skill_message = it.respond_to?(:using_message) && (it.using_message || 0) != 0
+          unless uses_skill_message
+            t = db.respond_to?(:term) ? db.term : nil
+            line = bt.item_start(t, caster, it.name.to_s)
+            return line ? [line] : []
+          end
+        end
+        bt.skill_start(row, caster)
       end
 
       # What the skill did: the damage / dodge line for an attack, nothing extra
@@ -2672,9 +2722,9 @@ class RPG2k
       end
 
       # Which term words this entry's "so-and-so did a thing" line, or nil when
-      # RPG2000 has none for it — a skill or an item names itself instead (its
-      # own `using_message` is a separate field, still unread), and "does
-      # nothing" is a state's own sentence rather than a term.
+      # RPG2000 has none for it — a skill or an item names itself instead
+      # (`#battle_skill_body`/`#skill_start_lines`, `#battle_item_body`), and
+      # "does nothing" is a state's own sentence rather than a term.
       def battle_start_field(e)
         return nil if e[:recover] || e[:skill] || e[:nothing]
         return :enemy_transform if e[:transform]
