@@ -49,6 +49,7 @@ class RPG2k
         @caster_index = actor_index
         @skill_index = 0
         @target_index = 0
+        @target_lock = nil
         @teleport_index = 0
         @pending_skill = nil
         @mode = :skills          # :skills list, :target selection, or :teleport_target
@@ -134,8 +135,10 @@ class RPG2k
         sk = @state.party.db_skill(sid)
         # A switch skill has no target at all; Escape warps straight to its one
         # registered target; Teleport opens a list of every registered target;
-        # a self (2) or all-ally (4) skill needs no target prompt; a
-        # single-ally skill (3) asks which ally.
+        # a self (2), all-ally (4) or single-ally (3) skill all open the same
+        # target-confirm screen -- see #enter_target_confirm's own doc comment
+        # for why self/all-ally still need one, cursor locked to who it will
+        # land on rather than skipped outright.
         if sk && sk.type == Game::Party::SKILL_SWITCH
           apply_switch_skill(sid)
         elsif sk && sk.type == Game::Party::SKILL_ESCAPE
@@ -146,15 +149,33 @@ class RPG2k
           @teleport_index = 0
           build_teleport_window
           refresh_desc
-        elsif sk && (sk.scope == 2 || sk.scope == 4)
-          apply_skill(sid, nil)
         else
           @pending_skill = sid
-          @mode = :target
-          @target_index = 0
-          build_target_window
-          refresh_desc
+          enter_target_confirm(sk && sk.scope == 2 ? :self : sk && sk.scope == 4 ? :party : nil)
         end
+      end
+
+      # Open the target-confirm screen (`@mode = :target`), locking the
+      # cursor when `lock` names who the effect already, unavoidably, lands
+      # on: `:self` to the caster's own row, `:party` to the whole list.
+      # Real RPG_RT's `Scene_ActorTarget`/`Window_ActorTarget` do the same --
+      # `Window_Selectable::Update`'s entire cursor-movement block is gated
+      # on `index >= 0` (`src/window_selectable.cpp`), and a self/all-ally
+      # skill starts that index negative (`Window_ActorTarget`'s
+      # `SetIndex(-actor_index-1)` / `SetIndex(-100)`,
+      # `src/scene_actortarget.cpp`) precisely so UP/DOWN never takes effect
+      # -- Decision (cast) and Cancel (back out) are the only inputs that do
+      # anything, but the screen, and its cancel opportunity, is never
+      # skipped. `#apply_skill`'s own `target` argument is irrelevant either
+      # way for scope 2/4 (`Game::Party#skill_targets` resolves `[caster]`/
+      # `@actors` regardless of what is passed), so locking is purely a UI
+      # gate, not a targeting change.
+      def enter_target_confirm(lock)
+        @mode = :target
+        @target_lock = lock
+        @target_index = lock == :self ? @caster_index : 0
+        build_target_window
+        refresh_desc
       end
 
       def update_target
@@ -162,12 +183,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_target
-        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+        elsif !@target_lock && (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN))
           @target_index += 1
           @target_index %= party.size
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+        elsif !@target_lock && (Input.trigger?(Input::UP) || Input.repeat?(Input::UP))
           @target_index -= 1
           @target_index %= party.size
           refresh_target_cursor
@@ -227,6 +248,7 @@ class RPG2k
 
       def leave_target
         @pending_skill = nil
+        @target_lock = nil
         @mode = :skills
         if @target_window
           @target_window.dispose
@@ -429,9 +451,19 @@ class RPG2k
 
       def refresh_target_cursor
         return unless @target_window
-        @target_window.cursor_rect =
-          Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
-                   LINE_H * 2)
+        # A :party lock (an all-ally skill) highlights every row at once --
+        # EasyRPG's own Window_ActorTarget::UpdateCursorRect draws exactly
+        # this for its `index < -10` ("Entire Party") case -- rather than
+        # the single-row rect a :self lock or an ordinary single-ally pick
+        # uses.
+        if @target_lock == :party
+          @target_window.cursor_rect =
+            Rect.new(0, 0, @target_window.contents.width, @target_window.contents.height)
+        else
+          @target_window.cursor_rect =
+            Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
+                     LINE_H * 2)
+        end
       end
 
       # The registered teleport destinations as `[map_id, name]` pairs,

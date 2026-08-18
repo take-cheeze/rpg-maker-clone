@@ -2710,8 +2710,11 @@ The work below is roughly ordered by the critical path to a walkable game
   read-only per-member detail (name/title, level, EXP and EXP-to-next, HP/MP, the
   six stats and the equipped items; LEFT/RIGHT cycle members). The **Skill**
   command opens `Scene::SkillMenu`: it lists a caster's known field-usable normal
-  skills (LEFT/RIGHT cycle casters) with their SP cost; casting a self / all-ally
-  skill applies at once and a single-ally skill asks who to target, spending SP
+  skills (LEFT/RIGHT cycle casters) with their SP cost; every skill — self,
+  all-ally or single-ally scope alike — opens the same target-confirm screen
+  before casting, cursor locked for the first two (see the dedicated ✅
+  bullet below for the citation trail; this line used to read "casting a
+  self / all-ally skill applies at once", which was wrong), spending SP
   and restoring HP/SP by the RPG2000 effect formula (`power +
   physical_rate*atk/20 + magical_rate*spirit/40`, deterministic in the field —
   battle adds variance). The decision logic is on `Game::Party` (`field_items` /
@@ -2751,6 +2754,56 @@ The work below is roughly ordered by the critical path to a walkable game
   pre-fix code (recording the `nil` actor `#use_special_item` was called
   with) before the fix. **Switch skills** (type 3) flip their switch: that is
   how a Nepheshel player summons and dismisses a companion.
+- ✅ **A self- or all-ally-scope field skill/item never actually showed the
+  mandatory second target-confirm screen real RPG_RT always pushes, applying
+  on the very first Decision press instead — correcting every "applies at
+  once"/"no target prompt" claim in the two bullets above and below, which
+  this file had wrongly stated as already-correct RPG_RT behavior.**
+  Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
+  source, fetched live: `Scene_Skill::vUpdate`'s dispatch
+  (`src/scene_skill.cpp`) is `Algo::IsNormalOrSubskill(*skill)` — purely
+  `type`-based (`type == Type_normal || type >= Type_subskill`), independent
+  of `scope` (`src/algo.h`) — which unconditionally pushes a
+  `Scene_ActorTarget`, exactly the same for a self/all-ally skill as a
+  single-ally one; `src/scene_item.cpp`'s `Scene_Item::vUpdate` shows the
+  identical shape for every non-switch, non-Escape/Teleport-skill,
+  non-Switch-skill item. `Scene_ActorTarget::Start()`
+  (`src/scene_actortarget.cpp`) only *pre-locks the cursor* for those two
+  scopes — `target_window->SetIndex(-actor_index-1)` for self, `-100` for
+  the whole party — it never skips the screen; the actual cast happens only
+  on a **second**, explicit `Input::IsTriggered(Input::DECISION)` in
+  `Scene_ActorTarget::UpdateSkill()`/`UpdateItem()`, and Cancel there
+  (`Scene_ActorTarget::vUpdate`) backs out with nothing spent, consumed, or
+  cast. The lock itself is real: `Window_Selectable::Update`
+  (`src/window_selectable.cpp`) gates its *entire* cursor-movement block on
+  `index >= 0`, so UP/DOWN provably do nothing once the index starts
+  negative — confirming this is a genuine, reachable cancel opportunity
+  RPG_RT gives the player on essentially every self-buff skill and every
+  all-ally-scope medicine, not a hypothetical edge case. `Scene::SkillMenu
+  #choose_skill` and `Scene::ItemMenu#choose_item` both called `apply_skill`/
+  `apply_item` immediately for `sk.scope == 2 || sk.scope == 4`, with no way
+  to back out. Fixed by extending the existing single-ally `:target` mode
+  machinery (already built for scope 3, and already shared with the
+  self/all-ally special-item dispatch the bullet above and below cover) with
+  a `@target_lock` (`nil`/`:self`/`:party`): entering it still opens the
+  same party-status target window, just with `@target_index` preset to the
+  caster's row (`:self`) and cursor movement disabled while locked (matching
+  the real `index < 0` gate), or the whole list highlighted at once
+  (`:party`, mirroring `Window_ActorTarget::UpdateCursorRect`'s own
+  `index < -10` "Entire Party" branch) — Decision still casts, Cancel still
+  backs out untouched, and `apply_skill`/`apply_item`'s own `target`/`actor`
+  argument is unaffected either way (`Game::Party#skill_targets` already
+  resolves `[caster]`/`@actors` from the *skill's* scope alone, ignoring
+  whatever is passed, for exactly these two scopes), so this is purely a UI
+  gate, not a targeting change. `Scene::ItemMenu`'s `:self` lock always
+  resolves to the party leader's roster row regardless of scope (`:self` or
+  `:party` alike), matching the *caster* a special/`use_skill` item's
+  invoked skill always casts from; a plain all-ally medicine ignores that
+  argument entirely, so the choice is harmless there. Covered by seven new
+  `scripts/rpg2k_scene_check.rb` checks across both menus (the confirm
+  screen opens instead of an immediate cast; the lock holds against UP/DOWN;
+  Decision on the locked screen casts; Cancel backs out with nothing spent),
+  all confirmed to fail against the pre-fix code.
 
   What decides usability is the **type**, not the occasion flags, and getting
   that wrong used to leave the battle skill menu **empty in both test beds** —
@@ -3032,9 +3085,12 @@ The work below is roughly ordered by the critical path to a walkable game
    is now special-cased the way a type-9 special item is: `choose_item`
    routes a `use_skill` equipment item (any of types 1..5 with schema field
    71 set) through the same branch a special item takes, so a self (2) /
-   all-ally (4) scope skill casts from the party leader with no target prompt
-   and an Escape/Teleport skill warps straight away -- a single-ally scope
-   still prompts for a target, which was already correct. The warp path
+   all-ally (4) scope skill casts from the party leader -- through the same
+   locked target-confirm screen every self/all-ally skill or item now shows,
+   see the dedicated ✅ bullet above; this line used to read "with no target
+   prompt", which was wrong -- and an Escape/Teleport skill warps straight
+   away; a single-ally scope still prompts for a target, which was already
+   correct. The warp path
    needed `#use_special_escape_item` / `#use_special_teleport_item`'s own type
    guard relaxed from `== ITEM_SPECIAL` to also admit a `use_skill`
    equipment item (the cast is identical -- free, the caster need not know the

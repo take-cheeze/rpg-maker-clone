@@ -15912,11 +15912,79 @@ check 'Scene::ItemMenu: an all-ally special item is cast by the party leader, ' 
       'not left uncastable with no actor at all' do
   st = Game::State.new(SpecialItemStubParty.new, 1, 0, 0)
   scene = menu_scene(RPG2k::Scene::ItemMenu, st)
-  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- no target prompt
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- opens the (locked) target-confirm screen
+  scene.update
+  RGSS::Input.reset
+  eq [], st.party.use_item_calls, 'the item is not yet cast -- confirmation is still one Decision away'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the locked target-confirm screen
   scene.update
   RGSS::Input.reset
   eq [[SpecialItemStubParty::SPECIAL_ID, st.party.leader]], st.party.use_item_calls,
      'the party leader casts it, rather than a nil actor #use_special_item rejects outright'
+end
+
+check 'Scene::ItemMenu: cancelling an all-ally special item\'s target-confirm ' \
+      'screen backs out with nothing cast' do
+  st = Game::State.new(SpecialItemStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- opens the (locked) target-confirm screen
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+  RGSS::Input.triggered = [RGSS::Input::B] # cancel back out
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
+  ok st.party.use_item_calls.empty?, 'nothing was cast'
+end
+
+# A party whose only item is a plain, non-special all-ally medicine (scope 1,
+# ITEM_MEDICINE) -- Game::Party's own decision logic (#use_medicine) is
+# covered by scripts/rpg2k_logic_check.rb; this stub only has to hand the
+# scene something that behaves the same way, so the check below stays about
+# the RGSS wiring (does the confirm screen show, and does it still apply once
+# confirmed, matching a real all-ally potion?).
+class AllAllyMedicineStubParty < MenuStubParty
+  MEDICINE_ID = 41
+
+  attr_reader :use_item_calls
+
+  def initialize
+    super
+    @use_item_calls = []
+  end
+
+  def field_items(_state = nil); [[MEDICINE_ID, 3]]; end
+
+  def db_item(id)
+    return nil unless id == MEDICINE_ID
+    OpenStruct.new(name: 'Elixir', type: Game::Party::ITEM_MEDICINE, scope: 1)
+  end
+
+  # `actor` is whatever #enter_target_confirm resolved for the locked
+  # cursor -- irrelevant to a real all-ally medicine (#use_medicine reads the
+  # whole party off its own scope-1 branch), recorded only so the check can
+  # confirm a cast actually reached here.
+  def use_item(id, actor = nil)
+    @use_item_calls << [id, actor]
+    [@actors.first].compact
+  end
+end
+
+check 'Scene::ItemMenu: a plain all-ally medicine still shows the (locked) ' \
+      'target-confirm screen rather than applying on the first Decision' do
+  st = Game::State.new(AllAllyMedicineStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode), 'the confirm screen opened, not an immediate apply'
+  ok st.party.use_item_calls.empty?, 'not cast yet'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the locked target-confirm screen
+  scene.update
+  RGSS::Input.reset
+  eq [[AllAllyMedicineStubParty::MEDICINE_ID, st.party.actors.first]], st.party.use_item_calls,
+     'now it casts, exactly as it always did once confirmed'
 end
 
 # A party whose only item is an *equipment* item (type 1) flagged `use_skill`
@@ -15959,10 +16027,14 @@ class EquipUseSkillItemStubParty < MenuStubParty
 end
 
 check 'Scene::ItemMenu: a use_skill equipment item is cast like a special item ' \
-      '(all-ally scope needs no target prompt, leader is the caster)' do
+      '(all-ally scope still confirms, cursor locked to the whole party; leader is the caster)' do
   st = Game::State.new(EquipUseSkillItemStubParty.new, 1, 0, 0)
   scene = menu_scene(RPG2k::Scene::ItemMenu, st)
-  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- no target prompt
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the only item -- opens the (locked) target-confirm screen
+  scene.update
+  RGSS::Input.reset
+  eq [], st.party.use_item_calls, 'the item is not yet cast -- confirmation is still one Decision away'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the locked target-confirm screen
   scene.update
   RGSS::Input.reset
   eq [[EquipUseSkillItemStubParty::EQUIP_ID, st.party.leader]], st.party.use_item_calls,
@@ -16312,6 +16384,105 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   eq :skills, scene.instance_variable_get(:@mode)
   ok state.pending_teleport.nil?
   ok !parent.pop_to_map_called
+end
+
+# A party whose two field skills are self (2) and all-ally (4) scope -- real
+# RPG_RT (`Scene_Skill::vUpdate`'s `Algo::IsNormalOrSubskill` branch,
+# scope-independent, `src/scene_skill.cpp`) still pushes a target-confirm
+# screen for both, cursor locked to who the effect already lands on
+# (`Scene_ActorTarget::Start`, `src/scene_actortarget.cpp`), rather than
+# applying on the very first Decision -- Game::Party's own scope-resolution
+# logic (#skill_targets) is covered by scripts/rpg2k_logic_check.rb; this
+# stub only has to hand the scene something that behaves the same way, so
+# the checks below stay about the RGSS wiring (does the confirm screen show,
+# with the cursor locked, and does Decision/Cancel there do the right thing?).
+class SelfAllySkillStubParty < MenuStubParty
+  SELF_SID = 70
+  PARTY_SID = 71
+
+  attr_reader :cast_skill_calls
+
+  def initialize
+    super
+    @actors = [MenuStubActor.new, MenuStubActor.new]
+    @cast_skill_calls = []
+  end
+
+  def field_skills(_actor, _state = nil); [[SELF_SID, 5], [PARTY_SID, 3]]; end
+
+  def db_skill(id)
+    case id
+    when SELF_SID  then OpenStruct.new(name: 'Guard Up', type: Game::Party::SKILL_NORMAL, scope: 2)
+    when PARTY_SID then OpenStruct.new(name: 'Heal All', type: Game::Party::SKILL_NORMAL, scope: 4)
+    end
+  end
+
+  def cast_skill(caster, sid, target = nil, _free = false)
+    @cast_skill_calls << [caster, sid, target]
+    [caster].compact
+  end
+end
+
+check 'Scene::SkillMenu: a self-scope skill still confirms, cursor locked to the ' \
+      'caster\'s own row, before casting' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SelfAllySkillStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the first row, Guard Up (self)
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode), 'a confirm screen opened, not an immediate apply'
+  eq :self, scene.instance_variable_get(:@target_lock)
+  eq 0, scene.instance_variable_get(:@target_index), 'locked to the caster\'s own row (actor index 0)'
+  ok state.party.cast_skill_calls.empty?, 'not cast yet'
+  # UP/DOWN do nothing while locked -- matches real RPG_RT's own
+  # Window_Selectable::Update, whose entire cursor-movement block is gated on
+  # `index >= 0` (see #enter_target_confirm's own doc comment).
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@target_index), 'the lock held -- DOWN did nothing'
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the locked target-confirm screen
+  scene.update
+  RGSS::Input.reset
+  eq [[state.party.actors[0], SelfAllySkillStubParty::SELF_SID, state.party.actors[0]]],
+     state.party.cast_skill_calls, 'now it casts, on the caster'
+end
+
+check 'Scene::SkillMenu: an all-ally-scope skill locks the cursor to the whole ' \
+      'party and casting is still one Decision away' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SelfAllySkillStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto Heal All (all-ally)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the (locked) target-confirm screen
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+  eq :party, scene.instance_variable_get(:@target_lock)
+  ok state.party.cast_skill_calls.empty?, 'not cast yet'
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the locked target-confirm screen
+  scene.update
+  RGSS::Input.reset
+  eq 1, state.party.cast_skill_calls.size, 'now it casts'
+  eq SelfAllySkillStubParty::PARTY_SID, state.party.cast_skill_calls.first[1]
+end
+
+check 'Scene::SkillMenu: cancelling a self-scope skill\'s target-confirm screen ' \
+      'backs out with nothing cast' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SelfAllySkillStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the first row, Guard Up (self)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::B] # cancel back out
+  scene.update
+  RGSS::Input.reset
+  eq :skills, scene.instance_variable_get(:@mode)
+  ok state.party.cast_skill_calls.empty?, 'nothing was cast'
 end
 
 # A party whose four field skills exercise #apply_switch_skill /
