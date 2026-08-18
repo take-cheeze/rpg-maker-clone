@@ -6363,24 +6363,32 @@ check 'a special item invoking a Teleport skill offers every registered ' \
   eq 1, st.party.item_count(4), 'an unregistered destination consumes nothing'
 end
 
-check 'a use_skill equipment item invoking an Escape skill warps for free like a ' \
-      'special item, and a plain weapon does not' do
-  # #use_special_escape_item used to reject anything whose type was not 9
-  # (ITEM_SPECIAL), so an equipment item flagged `use_skill` (field 71) invoking
-  # an Escape skill could never warp through it -- the identical gap the field
-  # Item menu's #choose_item used to have for such an item. The guard now also
-  # admits a use_skill equipment item (types 1..5), matching #use_equip_skill_item.
+check 'a use_skill equipment item invoking an Escape skill is menu-usable purely by ' \
+      "scope, matching real RPG_RT's own use_skill shortcut -- access/target only " \
+      'gate the cast itself, and a plain weapon is never treated as one' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Party::IsItemUsable` (src/game_party.cpp) checks `item->use_skill`
+  # *before* its own `switch (item->type)`, and its own comment flags the
+  # result as "RPG_RT BUG: Does not check if skill is usable" -- `skill &&
+  # (in_battle || scope == Scope_self/_ally/_party)`, nothing about escape
+  # access or a registered target at all; those only gate the actual warp
+  # (`#cast_escape_skill`'s own `#escape_skill_available?`, unchanged here).
+  # A prior version of this test asserted the opposite -- that #field_usable?
+  # itself withheld the item until access/target existed -- reusing
+  # #field_skill?'s general Escape-type handling without checking this
+  # use_skill-specific branch of IsItemUsable against the real source.
   skills = { 6 => fake_skill(name: 'Blade Escape',
                              type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
   items = { 3 => fake_item(type: 1, skill_id: 6, use_skill: true, name: 'Escape Blade') }
   st = skill_party(skills, items)
   hero = st.party.actor_by_id(1)
   st.party.gain_item(3, 2)
-  ok !st.party.field_usable?(3, st), 'no access/target yet'
+  ok st.party.field_usable?(3, st), 'listed by scope alone, before access/target exist at all'
+  ok st.party.use_special_escape_item(3, hero, st).nil?, 'the cast itself still needs access'
   st.escape_access = true
-  ok !st.party.field_usable?(3, st), 'access alone is not enough -- no target yet'
-  st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   ok st.party.field_usable?(3, st)
+  ok st.party.use_special_escape_item(3, hero, st).nil?, 'access alone is not enough -- no target yet'
+  st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   before = hero.mp
   eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.use_special_escape_item(3, hero, st))
   eq before, hero.mp, 'free -- the item pays, not the caster'
@@ -6395,23 +6403,46 @@ check 'a use_skill equipment item invoking an Escape skill warps for free like a
      'and is not cast as an escape item'
 end
 
-check 'a use_skill equipment item invoking a Teleport skill warps for free like a ' \
-      'special item' do
+check 'a use_skill equipment item invoking a Teleport skill is menu-usable purely by ' \
+      'scope, matching real RPG_RT -- destinations only gate the cast itself' do
   skills = { 7 => fake_skill(name: 'Blade Teleport',
                              type: Game::Party::SKILL_TELEPORT, sp_cost: 3) }
   items = { 4 => fake_item(type: 1, skill_id: 7, use_skill: true, name: 'Warp Blade') }
   st = skill_party(skills, items)
   hero = st.party.actor_by_id(1)
   st.party.gain_item(4, 1)
-  ok !st.party.field_usable?(4, st), 'no destinations registered yet'
+  ok st.party.field_usable?(4, st), 'listed by scope alone, before any destination is registered'
+  ok st.party.use_special_teleport_item(4, hero, st, 5).nil?, 'the cast itself still needs a destination'
   st.teleport_access = true
   st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
-  ok st.party.field_usable?(4, st), 'access plus any target offers it'
+  ok st.party.field_usable?(4, st)
   before = hero.mp
   eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.use_special_teleport_item(4, hero, st, 5))
   eq before, hero.mp, 'free -- no SP spent for an item cast'
   eq 1, st.party.item_count(4), 'equipment is not consumed -- a reusable tool'
+end
+
+check 'a use_skill equipment item invoking a pure stat-buff skill (no HP/SP/state ' \
+      'effect at all) is still menu-usable, not silently hidden' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Party::IsItemUsable` (src/game_party.cpp) checks `item->use_skill`
+  # *before* its own `switch (item->type)`, returning `skill && (in_battle
+  # || scope == Scope_self/_ally/_party)` -- nothing about affect_hp /
+  # affect_sp / an inflicted state at all, unlike the full usability check a
+  # type-9 Special item goes through (`Algo::IsSkillUsable`, which does
+  # require one of those). #field_usable?/#battle_usable? used to route a
+  # use_skill equipment item through that same full check (reused from the
+  # Special-item precedent, never verified against IsItemUsable's own
+  # separate use_skill branch), so a "Battle Horn"-style accessory whose
+  # skill only raises ATK (affect_attack, no affect_hp/sp, no state) was
+  # silently excluded from both menus even though real RPG_RT offers it.
+  skills = { 8 => fake_skill(name: 'War Horn', scope: 3, affect_attack: true) }
+  items = { 9 => fake_item(type: 5, skill_id: 8, use_skill: true, name: 'War Horn') }
+  st = skill_party(skills, items)
+  st.party.gain_item(9, 1)
+  ok st.party.field_usable?(9, st), 'a pure stat buff is menu-usable in the field too'
+  ok st.party.battle_usable?(9), 'and from the battle Item menu'
 end
 
 check 'a field heal skill restores HP by the RPG2000 formula and spends SP' do
