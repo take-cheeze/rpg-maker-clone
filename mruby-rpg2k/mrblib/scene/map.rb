@@ -2228,6 +2228,10 @@ class RPG2k
       def airship_landable?(x, y)
         return false unless @map.in_bounds?(x, y)
         return false if blockers_at(x, y).any? { |b| !b[:char].through }
+        # A Boat/Ship parked on the ground blocks a landing too, matching
+        # `Game_Map::CanLandAirship`'s own `for (auto vid: { Boat, Ship })`
+        # loop (`src/game_map.cpp`) -- see `#vehicle_blocks?`.
+        return false if vehicle_blocks?(x, y, block_airship: false)
         row = terrain_row_at(x, y)
         return true if row.nil?
         row.airship_land ? true : false
@@ -2511,6 +2515,15 @@ class RPG2k
           return row.airship_pass ? true : false
         end
         return false if blockers_at(x, y).any? { |b| !b[:char].through }
+        # A moving Boat/Ship also collides with a *different* parked
+        # Boat/Ship, and with a grounded Airship -- `Game_Map::
+        # CheckOrMakeWayEx` (`src/game_map.cpp`) loops `{ Boat, Ship }` for
+        # any non-Airship mover, then also checks the Airship whenever the
+        # mover is not the on-foot player (true for a ridden Boat/Ship,
+        # which moves as its own `Vehicle`-typed character, not `Player`).
+        # See `#vehicle_blocks?`, already used for the opposite direction (a
+        # non-vehicle character walking onto a *parked* vehicle's tile).
+        return false if vehicle_blocks?(x, y, block_airship: true)
         return passable?(x, y, dir) unless row
         type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
       end
@@ -3910,11 +3923,13 @@ class RPG2k
       # character (a map event's autonomous/custom-route movement, or the
       # player's own forced Set Move Route mirror, `@player_char`). A vehicle
       # currently being ridden still counts here: it tracks the party's own
-      # tile every frame (`#follow_vehicle`), so this only ever blocks a
-      # *different* character trying to step onto the party's own tile, never
-      # the ridden vehicle's own movement (driven through the entirely
-      # separate `#vehicle_passable?`/`VehicleWorld`, never through this
-      # method or `#char_passable?`/`#passable?`).
+      # tile every frame (`#follow_vehicle`), so checking it against a target
+      # tile that is not the party's own current one only ever matches a
+      # *different*, genuinely parked vehicle -- never the mover's own tile.
+      # Called from both directions: `#char_passable?`/`#passable?` for a
+      # non-vehicle character walking onto a parked vehicle's tile, and
+      # `#vehicle_passable?`/`#airship_landable?` for the ridden vehicle's own
+      # steering colliding with a *different* parked one.
       def vehicle_blocks?(x, y, block_airship:)
         types = block_airship ? Game::Vehicle::TYPES : %i[boat ship]
         types.any? do |type|
