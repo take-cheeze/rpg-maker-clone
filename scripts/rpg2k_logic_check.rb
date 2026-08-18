@@ -20,7 +20,7 @@
 module RGSS
   module Audio
     class << self
-      attr_accessor :log
+      attr_accessor :log, :bgm_pos
       def bgm_play(*a); (@log ||= []) << [:bgm, *a]; end
       def bgm_volume(*a); (@log ||= []) << [:bgm_volume, *a]; end
       def bgm_pan(*a); (@log ||= []) << [:bgm_pan, *a]; end
@@ -6979,6 +6979,22 @@ check 'Control Variables reads the save / battle / win / defeat / escape counts'
   eq 6, st.variables[3]
   eq 1, st.variables[4]
   eq 2, st.variables[5]
+end
+
+check 'Control Variables reads the BGM play position (operand type 7, selector 8)' do
+  # Not RPG2003/Maniac-Patch-only despite the "remaining selectors" doc
+  # comment's general framing -- EasyRPG's ControlVariables::Other gates
+  # cases 10+ behind the Maniac Patch but not this one. RGSS::Audio#bgm_pos
+  # is this engine's own millisecond BGM clock (already read the same
+  # `respond_to?`-gated way by Scene::Map#watch_bgm_loop).
+  st = new_state
+  it = Game::Interpreter.new(st)
+  RGSS::Audio.bgm_pos = 1234
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 7, 8])])
+  it.update
+  eq 1234, st.variables[1]
+ensure
+  RGSS::Audio.bgm_pos = nil
 end
 
 check 'battle counters advance: Enemy Encounter and its outcome' do
