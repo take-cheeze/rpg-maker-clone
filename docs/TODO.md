@@ -3601,6 +3601,20 @@ The work below is roughly ordered by the critical path to a walkable game
   fix. **Still open, tracked the same way**: `item_menu.rb`, `skill_menu.rb`,
   `equip_menu.rb`, `status_menu.rb`, `order.rb`, `debug_menu.rb`,
   `title.rb`, and every battle target/command list in `battle.rb`.
+  ✅ **Next up the same list: `item_menu.rb` (2026-08-18).** Three cursor
+  spots, all fixed the same way (`|| Input.repeat?(...)` alongside the
+  existing `Input.trigger?` checks): the item grid's own two-column
+  DOWN/UP/RIGHT/LEFT (`#update_items`, `Window_Selectable::Update` handling
+  all four directions identically, not just the two a single-column list
+  needs), the actor-target list's DOWN/UP (`#update_target`), and the
+  registered-teleport-destination list's DOWN/UP (`#update_teleport_
+  target`). Covered by a new `scripts/rpg2k_scene_check.rb` check (a held,
+  repeat-only Right moves the item grid cursor one cell; a held,
+  repeat-only Down moves the actor-target cursor one step), confirmed to
+  fail against the pre-fix code before the fix. **Still open**:
+  `skill_menu.rb`, `equip_menu.rb`, `status_menu.rb`, `order.rb`,
+  `debug_menu.rb`, `title.rb`, and every battle target/command list in
+  `battle.rb`.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it

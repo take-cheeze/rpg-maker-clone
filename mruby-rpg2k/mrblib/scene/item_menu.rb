@@ -81,17 +81,26 @@ class RPG2k
         @items = nil
       end
 
+      # Holding a direction auto-repeats the cursor after the initial delay,
+      # not just a single step per tap -- `Window_Selectable::Update`
+      # (`src/window_selectable.cpp`), the base every real RPG2000 list is
+      # built on, falls through to `Input::IsRepeated` for all four
+      # directions right after its own `IsTriggered` check. `Input.repeat?`'s
+      # own timing already matches EasyRPG's repeat constants exactly -- see
+      # `Scene::SaveLoad`'s identical fix and its fuller writeup in
+      # docs/TODO.md -- so every check below just gains an `|| #repeat?`
+      # alongside it, the same pure-wiring shape.
       def update_items
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           move_item_cursor(COLUMN_MAX)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_item_cursor(-COLUMN_MAX)
-        elsif Input.trigger?(Input::RIGHT)
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           move_item_cursor(1) if (@item_index + 1) % COLUMN_MAX != 0
-        elsif Input.trigger?(Input::LEFT)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
           move_item_cursor(-1) if @item_index % COLUMN_MAX != 0
         elsif Input.trigger?(Input::C)
           choose_item
@@ -239,12 +248,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_teleport_target
-        elsif Input.trigger?(Input::DOWN) && !targets.empty?
+        elsif (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !targets.empty?
           @teleport_index += 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) && !targets.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !targets.empty?
           @teleport_index -= 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
@@ -315,12 +324,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_target_mode
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @target_index += 1
           @target_index %= party.size
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @target_index -= 1
           @target_index %= party.size
           refresh_target_cursor
