@@ -133,11 +133,11 @@
           # Linux-only, matching the package's own meta.platforms: forcing this
           # attribute on darwin (e.g. `nix flake show`) would otherwise throw.
           #
-          # Carries two local patches on top of nixpkgs' build, both found
+          # Carries three local patches on top of nixpkgs' build, all found
           # and root-caused while trying to read the PSP EBOOT's own boot log
           # under PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md and
-          # app/psp/README.md); neither is upstreamed to hrydgard/ppsspp yet,
-          # so both are applied here so this flake's own `ppsspp`/
+          # app/psp/README.md); none are upstreamed to hrydgard/ppsspp yet,
+          # so all three are applied here so this flake's own `ppsspp`/
           # `ppsspp-headless` survive past them. nix/patches/ has the full
           # patches and each one's own note on when it is safe to drop.
           #
@@ -153,10 +153,18 @@
           #     fast interrupt-disable/enable (built directly on those two
           #     instructions, used to guard its non-reentrant C-runtime
           #     state) provides no real protection under PPSSPP.
+          #   - Common/x64Analyzer.cpp's crash-recovery disassembler (used by
+          #     Core/MemFault.cpp when bIgnoreBadMemAccess lets a bad guest
+          #     access be skipped instead of halting) has no case for the
+          #     0x88/0x8A 8-bit-register MOV opcodes, only their 32/64-bit
+          #     counterparts -- so a bad access from an ordinary byte
+          #     store/load hard-stops emulation instead of being skipped like
+          #     every other access width already is.
           ppsspp = pkgs.ppsspp.overrideAttrs (old: {
             patches = (old.patches or [ ]) ++ [
               ./nix/patches/ppsspp-lwmutex-workarea-validate.patch
               ./nix/patches/ppsspp-mfic-mtic-interrupt-mask.patch
+              ./nix/patches/ppsspp-x64analyzer-8bit-mov.patch
             ];
           });
         }

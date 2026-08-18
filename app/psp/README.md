@@ -194,18 +194,22 @@ does not share the bug). The resulting null/wild buffer, fed into
 `lv_display_set_buffers`, is what corrupted LVGL's own TLSF pool further
 down the boot path. With that fixed, the EBOOT boots past display
 creation and into `mrb_open`'s GC init before hitting an **eighth bug,
-root-caused but not fixed**: PPSSPP reports `Bad memory access detected!
-00000014` (or a nearby address) — a near-null write — inside
-`mrb_gc_init`. Root-caused to PPSSPP's own x86-64 JIT mistranslating the
-guest code, not this project's: the fault address is layout-sensitive
-(moves between builds that differ only in unrelated diagnostic code),
-PPSSPP's crash log shows the faulting *host* instruction using what looks
-like a null base register despite the *source* pointer being valid the
-whole way through (traced allocation-by-allocation), and forcing PPSSPP's
-interpreter instead of its JIT (`ppsspp-headless -i`) runs hundreds of
-allocations past this point with zero bad-memory-access errors on the
-exact same EBOOT. Not fixed here — patching PPSSPP's dynarec is out of
-scope for this project; worth reporting upstream. See
+partially fixed and re-characterized**: PPSSPP reports `Bad memory access
+detected! 00000014` (or a nearby address) — a near-null write — inside
+`mrb_gc_init`. First characterized as PPSSPP's x86-64 JIT mistranslating
+the guest code; a follow-up pass found and fixed a real, separate bug
+along the way (`Common/x64Analyzer.cpp` was missing the 8-bit-register MOV
+opcodes, `0x88`/`0x8A`, from its crash-recovery disassembler, turning what
+should have been a gracefully-ignored bad access into a fatal halt —
+`nix/patches/ppsspp-x64analyzer-8bit-mov.patch`, verified against both of
+PPSSPP's native JIT backends), but applying it does not get this EBOOT
+booting further, and new evidence from comparing all four of PPSSPP's
+CPU-core modes argues *against* the original JIT-mistranslation diagnosis:
+the identical fault reproduces under two independently-implemented native
+backends *and* the IR interpreter (no native codegen at all), while only
+the true single-instruction MIPS interpreter avoids it — pointing toward a
+timing-sensitive guest-side race rather than a JIT bug, though this was
+not chased down further. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
 P1 for the full eight-bug trail. To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
