@@ -455,13 +455,43 @@ The work below is roughly ordered by the critical path to a walkable game
   character stepping onto the party's own tile, never the ridden vehicle's
   own movement (driven entirely separately, through `#vehicle_passable?`/
   `VehicleWorld`, which this fix leaves untouched — a moving vehicle's own
-  collision against a *different* parked vehicle remains unmodelled, a
-  narrower, rarer edge case than hero/event collision with a parked one).
+  collision against a *different* parked vehicle remained unmodelled at the
+  time, a narrower, rarer edge case than hero/event collision with a parked
+  one; closed below).
   Covered by two new `scripts/rpg2k_scene_check.rb` checks (a hero on foot
   is blocked by a parked boat but walks straight over a parked airship; a
   map event's own custom-route movement is blocked by both a parked boat
   and a parked airship, unlike the hero's own airship exemption), both
   confirmed to fail against the pre-fix code before the fix.
+  ✅ **The "moving vehicle vs. a different parked vehicle" edge case the
+  paragraph above deliberately left open is now closed too
+  (2026-08-18).** Real RPG_RT lets a moving Boat/Ship collide with a
+  parked Ship/Boat, and refuses an Airship landing on a parked Boat/Ship's
+  tile — confirmed against RPG_RT's actual behavior via EasyRPG Player's
+  own C++ source rather than assumed from the sibling fix above:
+  `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) loops `{ Boat, Ship }`
+  for any non-Airship mover (a moving Boat/Ship is one — it steers as its
+  own `Vehicle`-typed character, not `Player`), then also checks a grounded
+  Airship whenever the mover is not the on-foot Player — true here too, the
+  same `self.GetType() != Game_Character::Player` gate the sibling fix
+  above already traced. `Game_Map::CanLandAirship` separately loops
+  `{ Boat, Ship }` and refuses a landing on either one's tile.
+  `#vehicle_passable?`/`#airship_landable?` (`mruby-rpg2k/mrblib/scene/
+  map.rb`) never consulted another vehicle's own position at all, so a
+  party riding a Boat could sail straight through a parked Ship or a
+  grounded Airship, and a landing Airship could set down right on top of a
+  parked Boat/Ship. Fixed by reusing `#vehicle_blocks?` — already built and
+  tested for the opposite direction above — from both: `block_airship: true`
+  in `#vehicle_passable?`'s boat/ship branch (matching `CheckOrMakeWayEx`'s
+  own Airship-included loop for a non-Airship mover), `block_airship: false`
+  in `#airship_landable?` (matching `CanLandAirship`'s Boat/Ship-only loop).
+  `#vehicle_blocks?`'s own doc comment, which used to claim it was "never"
+  reached for the ridden vehicle's own movement, was corrected to match.
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (a boat under
+  way collides with a different parked ship, then with a grounded airship
+  once the ship is moved aside; an airship cannot land on a parked boat's
+  tile but lands normally once it moves away), both confirmed to fail
+  against the pre-fix code before the fix.
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented

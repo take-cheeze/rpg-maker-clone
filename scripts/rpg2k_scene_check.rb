@@ -7853,6 +7853,85 @@ check 'an unridden boat/ship/airship all block a map event\'s own custom-route m
      'an unridden airship stops the event too, unlike its hero-on-foot exemption above'
 end
 
+# Real RPG_RT lets a moving Boat/Ship collide with a *different*, parked
+# vehicle, and refuses an Airship landing on top of one -- the direction the
+# checks above never exercised (an unridden vehicle blocking a walking hero
+# or a map event), and one this codebase's own #vehicle_passable? /
+# #airship_landable? never checked at all before this fix: neither ever
+# consulted another vehicle's own position, so a party riding a Boat could
+# sail straight through a parked Ship or a grounded Airship, and a landing
+# Airship could set down right on top of a parked Boat/Ship. Verified
+# against RPG_RT's actual behavior via EasyRPG Player's own C++ source
+# (src/game_map.cpp): `Game_Map::CheckOrMakeWayEx` loops `{ Boat, Ship }` for
+# any non-Airship mover, then also checks a grounded Airship whenever the
+# mover is not the on-foot Player -- true for a ridden Boat/Ship, which
+# moves as its own `Vehicle`-typed character, never `Player` -- and
+# `Game_Map::CanLandAirship` separately loops `{ Boat, Ship }` and refuses a
+# landing on either's tile. Fixed by reusing `#vehicle_blocks?` (already
+# used for the opposite direction, tested above) from both
+# `#vehicle_passable?` and `#airship_landable?`.
+check 'a moving boat collides with a different parked ship, and with a ' \
+      'grounded airship' do
+  scene = new_scene({}, player: [0, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 0 # under the party; board in place
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat in place'
+
+  ship = st.vehicle(:ship)
+  ship.map_id = st.map_id
+  ship.x = 1
+  ship.y = 0
+  RGSS::Input.dir_value = 6 # hold right, straight into the parked ship
+  10.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'a different parked vehicle (the ship) blocks the boat'
+
+  # Move the ship out of the way and put a grounded airship there instead.
+  ship.map_id = 0
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 1
+  air.y = 0
+  RGSS::Input.dir_value = 6
+  10.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [0, 0], [st.x, st.y], 'a grounded airship blocks the boat too'
+end
+
+check 'the airship cannot land on a parked boat/ship\'s tile' do
+  scene = new_scene({}, player: [0, 0], airship_land: true)
+  st = scene.instance_variable_get(:@state)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 0
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'boarded the airship'
+
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 0 # right where the airship would land in place
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq :airship, st.boarded, 'a parked boat under the airship blocks the landing'
+
+  boat.map_id = 0 # move it away: landing now succeeds
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'landing succeeds once the tile is clear'
+end
+
 check 'Show Battle Animation with the wait flag holds the event then resumes' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
