@@ -16224,6 +16224,37 @@ check 'a transformation carries current HP/SP over unchanged, not reclamped to t
   eq 40, foe.mp, 'current SP carries over unchanged too'
 end
 
+# EasyRPG's own attribute-rank shift is a persistent delta (Game_Battler::
+# attribute_shift, clamped to +-1 total) added onto a *live* base
+# (Game_Enemy::GetBaseAttributeRate reads straight off the currently-
+# transformed `enemy` row, src/game_enemy.cpp) -- a Transform can never make
+# it stale, there being only the one pointer. This port instead snapshots the
+# base once (Combatant#attr_base_ranks, set at spawn) to cap an absolute
+# rank value, so a Transform has to explicitly re-seed it -- exactly the
+# `attr_ranks`/`attr_base_ranks` pair #enemy_transform_action already
+# updates the sibling of, just as the reward-sync fix's `exp`/`gold` pair was.
+check "a transformation reseeds attr_base_ranks, so a later shift caps against the new form's rank" do
+  row = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                   :agility, :exp, :gold, :attribute_ranks).new(
+    'Dragon', 900, 50, 90, 40, 30, 25, 0, 0, [4]) # attribute 1 at rank E (4)
+  db = Struct.new(:enemy).new({ 1 => row })
+  ai = Game::EnemyAi.new(db, new_state)
+  foe = combatant('Slime', 40, 0, 5, 500)
+  foe.attr_ranks = { 1 => 0 }
+  foe.attr_base_ranks = { 1 => 0 } # attribute 1 at rank A (0), pre-transform
+  b = ai_battle([enemy_action(kind: 2, enemy_id: 1)], ai, foe: foe)
+  b.begin_round
+  b.step_action # the hero
+  e = b.step_action
+  eq true, e[:transform]
+  eq({ 1 => 4 }, foe.attr_base_ranks, "the new form's own rank, not the stale pre-transform one")
+  # A -1 shift caps against the *new* base (4, window 3..4) -- 4 - 1 = 3.
+  # Against the stale pre-transform base (0, window 0..1) it would clamp to 1.
+  moved = b.send(:apply_attr_shift, foe, { attr_shift: -1, attr_ids: [1] })
+  eq [1], moved
+  eq 3, foe.attr_ranks[1], "capped against the new form's own rank, not the stale pre-transform one"
+end
+
 # -- the database path ---------------------------------------------------------
 
 check 'Game::Enemy decodes its action pattern off the database row' do
