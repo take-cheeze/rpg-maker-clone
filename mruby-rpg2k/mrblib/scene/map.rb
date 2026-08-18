@@ -4469,22 +4469,32 @@ class RPG2k
           @inn_choice += 1
           @inn_choice %= 2
           set_inn_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP)
           @inn_choice -= 1
           @inn_choice %= 2
           set_inn_cursor
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
           if @inn_choice.zero?
-            # Accept: only honoured when the party can pay; otherwise ignored.
+            # Accept: only honoured when the party can pay -- otherwise the
+            # choice is disabled, matching EasyRPG's own `pm.PushChoice(accept,
+            # can_afford)` (src/game_interpreter_map.cpp), and confirming a
+            # disabled choice plays Buzzer rather than Decision.
             if req[:can_afford]
+              play_system_se(SFX_DECISION)
               close_inn_window
               start_inn_fade_out(it)
+            else
+              play_system_se(SFX_BUZZER)
             end
           else
+            play_system_se(SFX_DECISION)
             close_inn_window
             finish_inn(false, it)
           end
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           close_inn_window
           finish_inn(false, it)
         end
@@ -4817,28 +4827,48 @@ class RPG2k
         win.contents = c
       end
 
+      # Confirmed against EasyRPG's Window_Shop::Update (src/window_shop.cpp):
+      # the Buy/Sell/Leave list plays Decision unconditionally on any
+      # confirm (all three commands always succeed, so there is no Buzzer
+      # case here) and Cancel on B (Scene_Shop::UpdateCommandSelection),
+      # matching every other RPG2000 command list.
       def drive_shop_command
         lines = shop_lines
         if shop_move_cursor(lines)
           # cursor moved
         elsif Input.trigger?(Input::C)
+          play_system_se(SFX_DECISION)
           case lines[@shop[:index]][1]
           when :buy  then shop_switch(:buy)
           when :sell then shop_switch(:sell)
           when :leave then leave_shop
           end
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           leave_shop
         end
       end
 
+      # Confirmed against EasyRPG's Scene_Shop::UpdateBuySelection/
+      # UpdateSellSelection (src/scene_shop.cpp): Decision opens the
+      # quantity counter for an item the party can actually buy/sell right
+      # now, Buzzer instead the instant that check fails (`buy_window->
+      # CheckEnable`/`item->price > 0`) -- #open_shop_quantity's own `max <
+      # 1` guard is that same check -- and Cancel on B either way
+      # (Scene_Shop::UpdateBuySelection/UpdateSellSelection's own Cancel
+      # branch).
       def drive_shop_list
         lines = shop_lines
         if shop_move_cursor(lines)
           # cursor moved
         elsif Input.trigger?(Input::C) && !lines.empty?
-          open_shop_quantity(lines[@shop[:index]][1])
+          if open_shop_quantity(lines[@shop[:index]][1])
+            play_system_se(SFX_DECISION)
+          else
+            play_system_se(SFX_BUZZER)
+          end
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           @shop[:has_menu] ? shop_switch(:command) : leave_shop
         end
       end
@@ -4869,10 +4899,11 @@ class RPG2k
       def open_shop_quantity(id)
         model = @shop[:model]
         max = @shop[:screen] == :buy ? model.max_buy(id) : model.max_sell(id)
-        return if max < 1
+        return false if max < 1
         @shop[:quantity] = { id: id, count: 1, max: max, mode: @shop[:screen] }
         @shop[:screen] = :quantity
         draw_shop
+        true
       end
 
       # Drive the quantity counter: RIGHT / LEFT by one, UP / DOWN by ten (both
@@ -4882,6 +4913,7 @@ class RPG2k
         q = @shop[:quantity]
         if shop_quantity_move(q)
           draw_shop
+          play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
           model = @shop[:model]
           mode = q[:mode]
@@ -4889,7 +4921,9 @@ class RPG2k
           @shop[:quantity] = nil
           @shop[:screen] = mode == :buy ? :purchased : :sold
           draw_shop
+          play_system_se(SFX_DECISION)
         elsif Input.trigger?(Input::B)
+          play_system_se(SFX_CANCEL)
           close_shop_quantity
         end
       end
@@ -4920,17 +4954,25 @@ class RPG2k
         draw_shop
       end
 
-      # Move the shop cursor with Up / Down; returns true if it moved.
+      # Move the shop cursor with Up / Down; returns true if it moved. Plays
+      # Cursor SE on every successful move, the same base `Window_Selectable
+      # ::Update` behaviour every other RPG2000 list window gets (see the
+      # field-menu SFX audit elsewhere in this file/docs/TODO.md) -- shared
+      # by the command list and the buy/sell list alike, both backed by a
+      # `Window_Selectable` subclass in real RPG_RT (`Window_Shop`/
+      # `Window_ShopBuy`/`Window_ShopSell`).
       def shop_move_cursor(lines)
         if Input.trigger?(Input::DOWN) && !lines.empty?
           @shop[:index] += 1
           @shop[:index] %= lines.length
           draw_shop
+          play_system_se(SFX_CURSOR)
           true
         elsif Input.trigger?(Input::UP) && !lines.empty?
           @shop[:index] -= 1
           @shop[:index] %= lines.length
           draw_shop
+          play_system_se(SFX_CURSOR)
           true
         else
           false

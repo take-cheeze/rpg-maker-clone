@@ -2765,6 +2765,43 @@ check 'Show Inn scene: an unaffordable Accept is ignored' do
   ok st.switches[2], 'the No Stay branch ran on cancel'
 end
 
+check 'Show Inn scene: plays the RPG_RT system SE on every interaction' do
+  # Confirmed against EasyRPG's Window_Selectable-style Cursor plays and
+  # Scene::Map's own Show Choices, plus CommandShowInn's own
+  # `pm.PushChoice(accept, can_afford)` (src/game_interpreter_map.cpp): a
+  # disabled Accept plays Buzzer rather than Decision.
+  scene, = inn_scene(50, inn_commands(Game::Interpreter::Cmd, 100)) # 50g < 100g
+  5.times { scene.update } # cursor starts on Cancel (unaffordable)
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::UP] # move to Accept
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'moving the cursor plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm Accept -- unaffordable, disabled
+  scene.update
+  eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'confirming a disabled Accept plays buzzer'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to Cancel
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm Cancel
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming Cancel (a valid choice) plays decision'
+end
+
+check 'Show Inn scene: the physical Cancel key plays the RPG_RT cancel SE' do
+  scene, = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update }
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'Cancel1', RGSS::Audio.se_calls.last&.first
+end
+
 check 'Show Inn scene: the Accept / Cancel cursor wraps around' do
   scene, _st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
   5.times { scene.update } # inn command runs; the greeting prompt opens
@@ -5948,6 +5985,102 @@ check 'Open Shop scene: an unaffordable good never opens the counter' do
   eq :buy, shop[:screen], 'still on the list'
   ok shop[:quantity].nil?, 'no counter for something out of reach'
   eq 50, st.party.gold
+end
+
+check 'Open Shop scene: the command list plays the RPG_RT system SE' do
+  # Confirmed against EasyRPG's Window_Shop::Update (src/window_shop.cpp):
+  # Cursor on every move, Decision on any of Buy/Sell/Leave (all three
+  # always succeed, so there is no Buzzer case here); Cancel on B
+  # (Scene_Shop::UpdateCommandSelection, src/scene_shop.cpp).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0), # buy+sell
+                         ECmd.new(ic::SHOP_END, [], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # opens on the Buy/Sell/Leave command list
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'moving the cursor plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm Sell
+  scene.update
+  eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming a command plays decision'
+
+  eq :sell, scene.instance_variable_get(:@shop)[:screen]
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B] # leave the sell list, back to the command list
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'Cancel1', RGSS::Audio.se_calls.last&.first, 'B plays the cancel SE'
+end
+
+check 'Open Shop scene: the buy list plays cursor/decision SE, buzzer for an unaffordable good' do
+  # Confirmed against EasyRPG's Scene_Shop::UpdateBuySelection
+  # (src/scene_shop.cpp): Decision opens the quantity counter for an
+  # affordable good, Buzzer instead the moment `buy_window->CheckEnable`
+  # fails -- #open_shop_quantity's own `max < 1` guard is that same check.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0), # buy-only
+                         ECmd.new(ic::SHOP_END, [], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(50)) # good 3 costs 100, good 5 does not
+  3.times { scene.update } # opens straight onto the buy list (buy-only)
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'moving the cursor plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::UP] # back to good 3 (100g, unaffordable at 50g)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'an unaffordable good plays buzzer, not decision'
+  eq :buy, scene.instance_variable_get(:@shop)[:screen], 'the counter never opened'
+end
+
+check 'Open Shop scene: the quantity counter plays cursor/decision/cancel SE' do
+  # Confirmed against EasyRPG's Window_ShopNumber::Update
+  # (src/window_shopnumber.cpp, cursor only when the count actually
+  # changed) and Scene_Shop::UpdateNumberInput (src/scene_shop.cpp,
+  # decision on commit, cancel on B).
+  scene, = shop_quantity_scene(500)
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'a changed count plays the cursor SE'
+
+  RGSS::Input.triggered = [RGSS::Input::LEFT] # back to 1, the floor -- changes count 2 -> 1
+  scene.update
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT] # already at the floor -- no change this time
+  scene.update
+  RGSS::Input.triggered = []
+  eq [], RGSS::Audio.se_calls, 'an unchanged count plays nothing'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the purchase
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming the counter plays decision'
+
+  scene2, = shop_quantity_scene(500)
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B] # cancel out
+  scene2.update
+  RGSS::Input.triggered = []
+  eq 'Cancel1', RGSS::Audio.se_calls.last&.first, 'cancelling the counter plays cancel'
 end
 
 check 'Open Shop scene: leaving without buying runs the No Transaction branch' do

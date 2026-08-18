@@ -3730,6 +3730,53 @@ The work below is roughly ordered by the critical path to a walkable game
   move, character confirm, Cancel-with-a-character, Cancel-with-none, and
   an overflowing character's Decision-then-Buzzer pair all get their
   correct SE), confirmed to fail against the pre-fix code.
+- ✅ **The same "silent embedded widget" family, found once more: Open Shop
+  and Show Inn played zero sound effects at all (2026-08-18).** Verified
+  against RPG_RT's actual behavior via EasyRPG Player's own C++ source,
+  fetched live. `Window_Shop::Update` (`src/window_shop.cpp`) plays Cursor
+  on every Buy/Sell/Leave move and Decision unconditionally on any confirm
+  (all three commands always succeed, so there is no Buzzer case for the
+  command list). `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`
+  (`src/scene_shop.cpp`) play Decision when an item can actually be
+  bought/sold right now and Buzzer instead the moment that check fails —
+  this codebase's own `#open_shop_quantity`'s `max < 1` guard is that same
+  check, just never wired to a sound. `Window_ShopNumber::Update`
+  (`src/window_shopnumber.cpp`) plays Cursor **only when the quantity
+  counter's value actually changed** (`if (last_number != number)`) — RIGHT
+  past the affordable/held max, or LEFT below one, are silent since the
+  clamp leaves the count unchanged. `Scene_Shop::UpdateNumberInput` plays
+  Decision on committing the stack and Cancel on backing out; every Cancel
+  key elsewhere in the shop (`UpdateCommandSelection`/`UpdateBuySelection`/
+  `UpdateSellSelection`) plays Cancel too. Show Inn (`CommandShowInn`,
+  `src/game_interpreter_map.cpp`) is implemented in real RPG_RT on top of
+  the ordinary Show Message + Show Choices machinery
+  (`pm.PushChoice(accept, can_afford); pm.PushChoice(cancel);`) — the same
+  generic choice window every other yes/no prompt already gets Cursor/
+  Decision/Cancel from — with the Accept choice explicitly **disabled**
+  when the party can't afford it, so confirming it plays Buzzer rather than
+  Decision, the same "confirming a disabled choice" rule established
+  elsewhere in this codebase's own field-menu SFX work. This codebase's own
+  Inn/Shop are custom `Scene::Map`-embedded widgets, not routed through the
+  generic Show Choices code at all, so none of the above carried over
+  automatically. Fixed by adding the same `play_system_se`/`SFX_*` calls
+  already used throughout this file's other embedded widgets:
+  `#shop_move_cursor` (shared by the command list and the buy/sell list —
+  both a `Window_Selectable` subclass in real RPG_RT) plays `SFX_CURSOR` on
+  every successful move; `#drive_shop_command` plays `SFX_DECISION`
+  unconditionally on confirm and `SFX_CANCEL` on B; `#drive_shop_list`
+  plays `SFX_DECISION` when `#open_shop_quantity` (now returning a proper
+  boolean) actually opens the counter, `SFX_BUZZER` when it does not, and
+  `SFX_CANCEL` on B; `#drive_shop_quantity` plays `SFX_CURSOR` only when
+  `#shop_quantity_move` reports the count changed, `SFX_DECISION` on
+  commit, `SFX_CANCEL` on B; `#drive_inn` plays `SFX_CURSOR` on UP/DOWN,
+  `SFX_DECISION` on confirming Accept-when-affordable or Cancel,
+  `SFX_BUZZER` on confirming Accept-when-unaffordable (previously a silent
+  no-op, matching the ignored-but-inert behaviour already there — now heard
+  as well as ignored), and `SFX_CANCEL` on B. Both are common RPG2000/2003
+  event commands, reachable in essentially any game that uses them, not a
+  hypothetical edge case. Covered by five new `scripts/rpg2k_scene_check.rb`
+  checks across Inn and Shop's command list/buy list/quantity counter, all
+  confirmed to fail against the pre-fix code.
   ✅ **A disabled Continue's own *rendering* — not just its SE — was also
   still wrong, found in a separate later pass: it drew a hardcoded flat gray
   instead of reading the windowskin's own disabled-colour swatch, unlike
