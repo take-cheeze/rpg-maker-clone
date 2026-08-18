@@ -1350,11 +1350,14 @@ jobs:
     # renderer) and look for the bring-up markers it writes via sceIoWrite --
     # RPG2K_PSP_BOOT (a libc-free string literal, emitted before any init) and
     # the per-second RPG2K_PSP_BRINGUP heartbeat. This exercises the EBOOT on an
-    # emulator, beyond the compile-only `psp` job. The emulator comes from
-    # nixpkgs (`packages.ppsspp` in flake.nix) rather than a source build: the
-    # channel this flake pins has it prebuilt on cache.nixos.org, so the job
-    # substitutes a closure in place of a from-source PPSSPP compile plus the
-    # hand-rolled tree cache that used to carry it between runs.
+    # emulator, beyond the compile-only `psp` job. The emulator is nixpkgs'
+    # `packages.ppsspp` (see flake.nix) carrying one local patch, so it no
+    # longer matches what cache.nixos.org has prebuilt for the pinned channel
+    # -- every `nix build '.#ppsspp'` compiles PPSSPP from source rather than
+    # substituting a closure. The Nix store cache below (same
+    # `cache-nix-action` step every other job in this file uses) is what turns
+    # that from a from-source PPSSPP compile on every run into a one-time cost,
+    # replacing the hand-rolled tree cache PPSSPP used to be built from.
     #
     # NON-BLOCKING (continue-on-error): PPSSPP's headless HLE only partially
     # implements pspsdk's libc stdio (printf/strlen resolve to firmware stubs),
@@ -1384,11 +1387,19 @@ jobs:
 
       - uses: nixbuild/nix-quick-install-action@v35
 
-      # Deliberately no cache-nix-action here, unlike the jobs that enter the
-      # dev shell: the only thing this job realises is PPSSPP, which
-      # cache.nixos.org already has built for the pinned channel. Pushing its
-      # ~1 GiB closure through the Actions cache every run would cost more than
-      # substituting it, and would evict the caches that do earn their keep.
+      # The patched `ppsspp` (see flake.nix) no longer matches nixpkgs'
+      # prebuilt closure, so every `nix build` here compiles PPSSPP from
+      # source -- a multi-minute C++ build -- unless the result is cached.
+      # Keyed on the patch alongside flake.*: the patch changes PPSSPP's
+      # output hash without touching either flake file, and a key that missed
+      # that would silently keep restoring the pre-patch closure's build
+      # instead of ever caching the patched one.
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'nix/patches/ppsspp-lwmutex-workarea-validate.patch') }}
+          restore-prefixes-first-match: nix-ppsspp-${{ runner.os }}-
+
       - name: Fetch PPSSPP
         # `packages.ppsspp` is nixpkgs' default (non-Qt) build, which configures
         # with -DHEADLESS=ON and ships `bin/ppsspp-headless`; see flake.nix. The

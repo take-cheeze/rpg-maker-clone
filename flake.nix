@@ -112,11 +112,15 @@
           };
         }
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-          # The emulator the `psp-smoke` CI job boots the EBOOT under, taken
-          # from nixpkgs instead of built from source: cache.nixos.org has it
-          # prebuilt for the channel this flake pins, so the job substitutes a
-          # closure rather than compiling PPSSPP (and hand-caching the tree)
-          # itself.
+          # The emulator the `psp-smoke` CI job boots the EBOOT under. Based on
+          # nixpkgs' own package, but the local patch below changes its output
+          # hash, so it no longer matches what cache.nixos.org has prebuilt for
+          # the channel this flake pins -- every `nix build '.#ppsspp'` compiles
+          # PPSSPP from source instead of substituting a closure. That is a
+          # multi-minute C++ build, so the `psp-smoke` job caches the Nix store
+          # across runs (the same `cache-nix-action` step every other job in
+          # `.github/workflows/build.yml` already uses) to avoid paying it on
+          # every push.
           #
           # The default (non-Qt) build is the one that carries what the smoke
           # test needs: it configures with -DHEADLESS=ON and installs the
