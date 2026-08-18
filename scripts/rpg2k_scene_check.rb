@@ -14224,6 +14224,24 @@ check 'Scene::Menu: the main command cursor wraps around' do
   eq 0, scene.instance_variable_get(:@index), 'Down from the last command wraps to the first'
 end
 
+# EasyRPG's Window_Selectable::Update (the base every real RPG2000 command
+# list is built on) falls through to Input::IsRepeated right after its own
+# IsTriggered check, so holding Down/Up auto-scrolls the cursor after the
+# initial delay -- see Scene::SaveLoad's identical fix for the fuller
+# writeup. `RGSS::Input.repeated` (distinct from `.triggered`) lets this
+# check hold a key across frames without it also reading as a fresh
+# trigger, exercising the `#repeat?` half of the gate on its own.
+check 'Scene::Menu: holding Down auto-repeats the main command cursor, not ' \
+      'just a single step per tap' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  eq 0, scene.instance_variable_get(:@index), 'starts on the first command'
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@index),
+     'a held (repeated, not triggered) Down still moves the cursor one step'
+end
+
 check 'Scene::Menu: choosing Item pushes Scene::ItemMenu directly' do
   # RPG2K_COMMAND_KEYS order is Item, Skill, Equip, Save, End Game -- RPG2000
   # has no Status entry at all (see Scene::Menu's own doc comment, ported from
@@ -14287,6 +14305,21 @@ check 'Scene::Menu: cancelling actor selection returns focus to the command list
   RGSS::Input.reset
   eq :command, scene.instance_variable_get(:@focus)
   ok scene.parent.pushed.empty?, 'nothing was ever pushed'
+end
+
+check 'Scene::Menu: holding Down auto-repeats the party-status actor cursor too' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 1) # Skill -> hands focus to the actor list
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :actors, scene.instance_variable_get(:@focus)
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@actor_index),
+     'a held (repeated, not triggered) Down still moves the actor cursor one step'
 end
 
 check 'Scene::Menu: a restricted actor cannot be given the Skill command, ' \

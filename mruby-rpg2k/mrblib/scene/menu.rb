@@ -138,13 +138,24 @@ class RPG2k
 
       private
 
+      # Holding Down/Up auto-repeats the cursor after the initial delay, not
+      # just a single step per tap -- `Window_Selectable::Update`
+      # (`src/window_selectable.cpp`), the base every real RPG2000 command
+      # list is built on, falls through to `Input::IsRepeated` right after
+      # its own `IsTriggered` check. `Input.repeat?`'s own timing (this
+      # build's own `mruby-rgss/mrblib/lib.rb`) already matches EasyRPG's
+      # `start_repeat_time`/`repeat_time` constants (`src/input.cpp`) exactly
+      # -- see `Scene::SaveLoad`'s own identical fix and its fuller writeup
+      # in docs/TODO.md for the frame-by-frame confirmation -- so every
+      # `#trigger?` check below just gains an `|| #repeat?` alongside it,
+      # the same pure-wiring shape.
       def update_command
-        if Input.trigger?(Input::DOWN)
+        if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @index += 1
           @index %= @commands.size
           refresh_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @index -= 1
           @index %= @commands.size
           refresh_cursor
@@ -166,12 +177,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_actor_selection
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @actor_index += 1
           @actor_index %= party.size
           refresh_status_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @actor_index -= 1
           @actor_index %= party.size
           refresh_status_cursor
@@ -478,7 +489,8 @@ class RPG2k
       # uses. "No" and Cancel are otherwise identical: both just close the
       # prompt back to the command list, no title, no BGM fade.
       def update_end_game_confirm
-        if Input.trigger?(Input::DOWN) || Input.trigger?(Input::UP)
+        if Input.trigger?(Input::DOWN) || Input.trigger?(Input::UP) ||
+           Input.repeat?(Input::DOWN) || Input.repeat?(Input::UP)
           @confirm_index = (@confirm_index == END_GAME_YES) ? END_GAME_NO : END_GAME_YES
           refresh_end_game_cursor
           play_system_se(SFX_CURSOR)

@@ -3582,6 +3582,25 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check (`Input.repeated` set with
   `Input.triggered` empty still advances the cursor one slot), confirmed
   to fail against the pre-fix code before the fix.
+  ✅ **The same auto-repeat gap, lifted into `Scene::Menu` (the main field
+  menu) next, as flagged above (2026-08-18).** All three of its own cursor
+  spots only ever checked `Input.trigger?`: `#update_command` (the five
+  RPG2000 field commands — Item/Skill/Equip/Save/End Game), `#update_
+  actor_selection` (the party-status panel Skill/Equip/Status hands focus
+  to), and `#update_end_game_confirm` (the Yes/No quit prompt). Confirmed
+  the last of these needed it too, not just the two list cursors: EasyRPG's
+  `Scene_End::vUpdate` (`src/scene_end.cpp`) drives its Yes/No prompt
+  through a genuine `Window_Command`'s own `Update()` — the identical
+  `Window_Selectable` base every other list here already inherits, not a
+  lightweight two-state toggle — so it auto-repeats too. Fixed the same
+  way as `Scene::SaveLoad`: every `Input.trigger?(DOWN/UP)` check gained an
+  `|| Input.repeat?(DOWN/UP)` alongside it, no new timing logic. Covered by
+  two new `scripts/rpg2k_scene_check.rb` checks (the main command cursor
+  and the party-status actor cursor each advance one step on a held,
+  repeat-only Down), confirmed to fail against the pre-fix code before the
+  fix. **Still open, tracked the same way**: `item_menu.rb`, `skill_menu.rb`,
+  `equip_menu.rb`, `status_menu.rb`, `order.rb`, `debug_menu.rb`,
+  `title.rb`, and every battle target/command list in `battle.rb`.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
