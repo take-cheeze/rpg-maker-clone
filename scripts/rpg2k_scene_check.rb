@@ -15965,7 +15965,7 @@ class EscapeTeleportItemStubParty < MenuStubParty
     return nil unless id == TELEPORT_ID
     target = state.teleport_targets[map_id]
     return nil unless target
-    { map_id: map_id, x: target[:x], y: target[:y] }
+    { map_id: map_id, x: target[:x], y: target[:y], switch_id: target[:switch_id] }
   end
 end
 
@@ -16148,7 +16148,7 @@ class EscapeTeleportStubParty < MenuStubParty
     return nil unless sid == TELEPORT_SID
     target = state.teleport_targets[map_id]
     return nil unless target
-    { map_id: map_id, x: target[:x], y: target[:y] }
+    { map_id: map_id, x: target[:x], y: target[:y], switch_id: target[:switch_id] }
   end
 end
 
@@ -16172,6 +16172,24 @@ check 'Scene::SkillMenu: an Escape skill queues its target and closes the menu' 
   RGSS::Input.reset
   eq [9, 1, 2, 0], state.pending_teleport, 'queued straight from the one registered escape target'
   ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+end
+
+check 'Scene::SkillMenu: an Escape skill turns on its registered target\'s switch, matching RPG_RT' do
+  # Real RPG_RT: Game_Player::ReserveTeleport(const SaveTarget&) -- the
+  # overload Scene_Skill's Escape branch calls -- does
+  # `if (target.switch_on) Main_Data::game_switches->Set(target.switch_id, true)`
+  # as a side effect of the warp landing, not a picker-list filter (that
+  # distinction is what this repo's own docs/TODO.md previously missed).
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  state.escape_target = { map_id: 9, x: 1, y: 2, switch_id: 14 }
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  ok !state.switches[14], 'the switch starts off'
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the first row, Escape
+  scene.update
+  RGSS::Input.reset
+  eq [9, 1, 2, 0], state.pending_teleport
+  ok state.switches[14], 'landing at the registered escape target turned its switch on'
 end
 
 check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues the chosen one' do
@@ -16201,6 +16219,28 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
   RGSS::Input.reset
   eq [20, 21, 22, 0], state.pending_teleport
   ok parent.pop_to_map_called
+end
+
+check 'Scene::SkillMenu: a Teleport skill turns on the chosen destination\'s own switch, ' \
+      'a destination with no switch touches nothing' do
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  state.teleport_targets[20] = { x: 21, y: 22, switch_id: 7 } # only this one carries a switch
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto Teleport
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm map 20, the one with a switch
+  scene.update
+  RGSS::Input.reset
+  eq [20, 21, 22, 0], state.pending_teleport
+  ok state.switches[7], 'landing at map 20\'s registered target turned its switch on'
 end
 
 check 'Scene::SkillMenu: cancelling the destination list returns to the skill list' do

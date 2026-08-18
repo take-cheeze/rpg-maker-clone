@@ -2787,10 +2787,13 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::State#teleport_targets` entry and named through the map tree's own
   `map_properties` (`Game_Map::GetMapName`), the same source the battle
   backdrop's terrain walk already reads. A registered target's own `switch_id`
-  is round-tripped through the save but — like EasyRPG's `Window_Teleport`,
-  `Game_Targets` and `Scene_Teleport`, none of which read it back — still left
-  unconsumed here too; nothing in the reference implementation gates the list
-  by it, so filtering here would be a guess the real binary does not make.
+  is round-tripped through the save; `Window_Teleport`, `Game_Targets` and
+  `Scene_Teleport` indeed never read it back for the picker list, so
+  filtering the list by it would be a guess the real binary does not make —
+  **but this note previously over-generalised that into "unconsumed here
+  too" full stop, which was wrong: real RPG_RT does consume it, as a switch
+  flip the instant the warp itself lands, not a list filter — now fixed, see
+  the dedicated bullet below.**
   Casting either skill also forces the party off a ridden boat or ship first
   (mirroring `Game_Player::ForceGetOffVehicle`), leaving the vehicle parked
   where it was boarded; the airship is not forced off because it is not
@@ -2801,7 +2804,40 @@ The work below is roughly ordered by the critical path to a walkable game
   legitimately state-gated" from "no menu reaches this skill" on its own, and
   keeps deferring those two types to this note instead of flagging them as
   unreachable.
-  ✅ **The battle-time skill variance is built now, for a recovery skill too —
+- ✅ **A registered Escape/Teleport target's own switch never actually turned
+  on when the party warped there via the corresponding field skill or
+  special item — corrected from this file's own earlier, too-narrow
+  investigation above.** Real RPG_RT's `Game_Player::ReserveTeleport(const
+  lcf::rpg::SaveTarget& target)` (`src/game_player.cpp`, verified against
+  RPG_RT's actual behavior via EasyRPG Player's own C++ source, fetched
+  live) — the overload both `Scene_Teleport::vUpdate` (Decision, picking a
+  destination from the list) and `Scene_Skill`'s Escape branch call — does,
+  right after reserving the warp itself: `if (target.switch_on) {
+  Main_Data::game_switches->Set(target.switch_id, true); ...}`. This is a
+  real, reachable side effect of *landing* at the destination, entirely
+  separate from the (correctly unimplemented) picker-list filtering the
+  bullet above already covers — the earlier investigation checked only
+  whether `switch_id` gates the list and, finding it does not, wrongly
+  concluded the field goes unconsumed everywhere; it missed this second,
+  genuine consumer in `game_player.cpp`, a file that pass never checked.
+  `Interpreter#do_set_teleport_target`/`#do_set_escape_target`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) already stored the switch id
+  correctly (nil when the command's own flag is off), and `Game::Party
+  #cast_escape_skill`/`#cast_teleport_skill` (`game.rb`) already resolved
+  the registered target — but both dropped `switch_id` from the
+  `{map_id:, x:, y:}` hash they returned to the scene, so
+  `Scene::SkillMenu#queue_teleport`/`Scene::ItemMenu#queue_teleport` (which
+  only ever set `Game::State#pending_teleport`) had nothing to act on.
+  Fixed by including `switch_id:` in both cast methods' return hashes and
+  having `#queue_teleport` (both scenes) flip `@state.switches[target
+  [:switch_id]] = true` before queuing the warp, mirroring the existing
+  Switch-type field skill/item's own `@state.switches[sid] = true` pattern.
+  Covered by new `scripts/rpg2k_scene_check.rb` checks (an Escape skill's
+  own switch turns on; a Teleport skill's chosen destination's own switch
+  turns on) and corrected pre-existing `scripts/rpg2k_logic_check.rb`
+  exact-hash-equality checks (now including `switch_id:`), all confirmed to
+  fail against the pre-fix code.
+- ✅ **The battle-time skill variance is built now, for a recovery skill too —
   not just an attack one.** This line used to end "Left unbuilt still: the
   battle-time skill variance," describing only the missing half:
   `Game::Party#battle_skill_command`'s attack branch (enemy-scope skills) has

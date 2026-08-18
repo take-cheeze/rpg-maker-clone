@@ -4381,10 +4381,14 @@ module Game
     end
 
     # Cast an Escape (type 1) skill: spend `caster`'s SP and return the
-    # registered escape destination as `{map_id:, x:, y:}` for the scene to jump
-    # to, or nil when `sid` is not a castable, available Escape skill. Matches
-    # EasyRPG's Scene_Skill, which jumps straight to `Game_Targets`' single
-    # escape target with no picker.
+    # registered escape destination as `{map_id:, x:, y:, switch_id:}` for the
+    # scene to jump to (switch_id nil when the target has none), or nil when
+    # `sid` is not a castable, available Escape skill. Matches EasyRPG's
+    # Scene_Skill, which jumps straight to `Game_Targets`' single escape
+    # target with no picker; `switch_id` mirrors `Game_Player::
+    # ReserveTeleport(const SaveTarget&)`'s own `if (target.switch_on)
+    # Main_Data::game_switches->Set(target.switch_id, true)`, applied by the
+    # scene's own #queue_teleport once the warp itself lands.
     #
     # `free`, like #cast_skill's own flag, casts without the knows-it /
     # can-afford-it gate and without spending SP — used by
@@ -4398,7 +4402,7 @@ module Game
       target = state.escape_target
       return nil unless target
       caster.change_mp(-skill_cost(sk, caster)) unless free
-      { map_id: target[:map_id], x: target[:x], y: target[:y] }
+      { map_id: target[:map_id], x: target[:x], y: target[:y], switch_id: target[:switch_id] }
     end
 
     # Cast a Teleport (type 2) skill to the registered destination named by
@@ -4417,7 +4421,7 @@ module Game
       target = state.teleport_targets[map_id]
       return nil unless target
       caster.change_mp(-skill_cost(sk, caster)) unless free
-      { map_id: map_id, x: target[:x], y: target[:y] }
+      { map_id: map_id, x: target[:x], y: target[:y], switch_id: target[:switch_id] }
     end
 
     # Whether `sk`'s field-menu offer depends on runtime state (`Game::State`)

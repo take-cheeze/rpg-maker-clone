@@ -236,9 +236,10 @@ class RPG2k
       end
 
       # Queue the warp for Scene::Map (see Game::State#pending_teleport) and pop
-      # every menu on top of it in one step -- the same shape
-      # Scene::SkillMenu#queue_teleport uses.
+      # every menu on top of it in one step -- the same shape (switch flip
+      # included) Scene::SkillMenu#queue_teleport uses.
       def queue_teleport(target)
+        @state.switches[target[:switch_id]] = true if target[:switch_id]
         @state.pending_teleport = [target[:map_id], target[:x], target[:y], 0]
         @parent.pop_to_map
       end
