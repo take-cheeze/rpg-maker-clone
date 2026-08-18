@@ -10697,9 +10697,12 @@ module Game
         dmg = effective_atk(b) - effective_def(t) / 2
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
+        # No floor on either halving -- see #deal_attack_with_current_weapon's
+        # own citation of `AdjustDamageForDefend` (`src/algo.cpp`): a bare
+        # `dmg /= 2`, twice for strong defence, with no `std::max` at all.
         if t.defending && dmg > 0
-          dmg = [dmg / 2, 1].max
-          dmg = [dmg / 2, 1].max if t.strong_defence
+          dmg /= 2
+          dmg /= 2 if t.strong_defence
         end
         cap = damage_cap
         dmg = cap if dmg > cap
@@ -11302,10 +11305,16 @@ module Game
       # Defending halves the blow, and 強力防御 halves it again — a quarter, not a
       # half (EasyRPG's `AdjustDamageForDefend` applies the second `dmg /= 2`
       # for a battler with strong defence). Seven of Nepheshel's 50 actors have
-      # it, including its hero.
+      # it, including its hero. Neither halving carries a floor of its own --
+      # `AdjustDamageForDefend` (`src/algo.cpp`) is a bare `dmg /= 2` (twice,
+      # for strong defence) with no `std::max` of any kind, unlike the base
+      # formula's own `std::max(0, atk/2 - def/4)` floor (already correctly
+      # ported as `Battle.attack_damage`'s `d < 0 ? 0 : d`) -- a defending,
+      # let alone a strong-defending, target can and does take a genuine 0
+      # from a weak hit that would otherwise have landed for 1.
       if target.defending && dmg > 0
-        dmg = [dmg / 2, 1].max
-        dmg = [dmg / 2, 1].max if target.strong_defence
+        dmg /= 2
+        dmg /= 2 if target.strong_defence
       end
       # RPG_RT's damage popup tops out at a fixed width -- a crit/charge blow
       # that would compute past it still only ever takes #damage_cap.

@@ -6738,7 +6738,42 @@ not yet verified:
   real builders instead of a hand-built `cmd` hash: `#command_skill` and
   `#command_skill_all` each queuing a real cast whose shake-off now actually
   fires, and `#skill_command_hash` carrying every field through from a raw
-  AI-cast result.
+  AI-cast result. **The `dmg = [dmg/2,1].max if t.defending` shape quoted
+  above as already correct turned out to itself carry a bug — a floor
+  `AdjustDamageForDefend` does not have — fixed separately, see the
+  dedicated ✅ bullet below.**
+- ✅ **Defend-halving (`AdjustDamageForDefend`) carried a floor of its own
+  that real RPG_RT does not — a defending, let alone a strong-defence,
+  target could never actually take 0 damage from a weak hit, only ever a
+  minimum of 1 (2026-08-18).** `Game::Battle#deal_attack_with_current_weapon`
+  and `#enemy_autodestruct` (`mruby-rpg2k/mrblib/game.rb`) both applied
+  Defend's halving as `dmg = [dmg / 2, 1].max` (twice, for 強力防御) — the
+  same shape the self-destruct double-halving fix just above quotes and
+  treats as the correct baseline it was only missing a second application
+  of. Verified against RPG_RT's actual behavior via EasyRPG Player's own
+  C++ source, fetched live: `Algo::AdjustDamageForDefend` (`src/algo.cpp`)
+  is a bare `dmg /= 2` (twice for `HasStrongDefense()`), with no
+  `std::max` of any kind — unlike the *base* damage formula's own
+  `std::max(0, atk/2 - def/4)` floor (`CalcNormalAttackEffect`, already
+  correctly ported as `Battle.attack_damage`'s `d < 0 ? 0 : d`), which is
+  presumably where the `,1` here was copied from without re-deriving it
+  against `AdjustDamageForDefend` specifically, which both
+  `Normal::vExecute` and `SelfDestruct::vExecute`
+  (`src/game_battlealgorithm.cpp`) call verbatim with no floor added back
+  afterward. A defending target facing a hit whose base damage (post
+  variance, pre-defend) is exactly 1 — a real, reachable value for a
+  low-ATK attacker against a high-DEF guard — took a guaranteed 1 "chip"
+  through a full guard here instead of RPG_RT's genuine 0; the gap widens
+  for a 強力防御 target, where a base of 2 or 3 also floors to a nonzero
+  hit here (`[[2/2,1].max=1]`/`[[3/2,1].max=1]→[1/2,1].max=1`) against
+  RPG_RT's real 0/0. Fixed by dropping the `, 1` from both call sites —
+  plain `dmg /= 2`, twice for strong defence, matching the C++ exactly (Ruby
+  integer division floors the same way C++'s truncation does for the
+  non-negative `dmg` both callers already guarantee at this point). Covered
+  by two new `scripts/rpg2k_logic_check.rb` checks (a defending target's
+  base-damage-1 hit lands for 0, both with and without 強力防御's second
+  halving; the identical pair for `#enemy_autodestruct`), all confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ **Simulated Attack's damage spread now uses RPG_RT's real variance
   formula, not a coarser stand-in this method's own comment misattributed to
   EasyRPG's source.** `Interpreter#do_simulated_attack` modelled its damage

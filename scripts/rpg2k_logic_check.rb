@@ -11364,6 +11364,28 @@ check 'Battle: a defending ally takes half damage and does not attack' do
   eq 90, hero.hp, 'took half of 20 = 10'
 end
 
+check "battle: defend-halving carries no floor of its own, matching RPG_RT's AdjustDamageForDefend (2026-08-18)" do
+  # EasyRPG's AdjustDamageForDefend (src/algo.cpp) is a bare `dmg /= 2` (twice
+  # for strong defence), with no std::max of any kind -- unlike the base
+  # damage formula's own std::max(0, atk/2 - def/4) floor (already correctly
+  # ported as Battle.attack_damage's own 0 floor). A defending target facing
+  # a weak enough hit can and does take a genuine 0, not a guaranteed minimum
+  # of 1 chipping through a full guard.
+  hero = combatant('Hero', 6, 0, 5, 100)
+  foe = combatant('Foe', 0, 8, 5, 100)     # base: 6/2 - 8/4 = 1
+  foe.defending = true
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1)) # 3-arg: variance off
+  eq 0, bat.send(:deal_attack, hero, foe)[:damage],
+     'base damage 1, halved by Defend -> 0, not floored to 1'
+
+  guarded = combatant('Guarded', 0, 8, 5, 100)
+  guarded.defending = true
+  guarded.strong_defence = true
+  bat2 = Game::Battle.new([hero], [guarded], Game::Rng.new(1))
+  eq 0, bat2.send(:deal_attack, hero, guarded)[:damage],
+     'base damage 1, halved twice (Defend + 強力防御) -> still 0, not floored to 1'
+end
+
 check 'Battle#apply_to_party writes post-battle HP back, KOing at 0' do
   st = party_state
   hero = st.party.actor_by_id(1)   # hp 100
@@ -13282,6 +13304,25 @@ check "battle: a self-destruct's 強力防御 halves a defending target's blow t
   bat2 = Game::Battle.new([guarded], [bomber], Game::Rng.new(1))
   eq 12, bat2.send(:enemy_autodestruct, bomber).first[:damage],
      'base 50, halved twice: once for Defend, again for 強力防御 (25 -> 12)'
+end
+
+check "battle: a self-destruct's defend-halving carries no floor either, matching RPG_RT (2026-08-18)" do
+  # Same AdjustDamageForDefend bare `dmg /= 2` this method shares verbatim
+  # with #deal_attack -- no std::max floor of any kind.
+  weak_bomber = combatant('Bomber', 1, 0, 5, 1) # base: atk 1 - def 0 / 2 = 1
+  plain = combatant('Plain', 0, 0, 5, 100)
+  plain.defending = true
+  bat1 = Game::Battle.new([plain], [weak_bomber], Game::Rng.new(1))
+  eq 0, bat1.send(:enemy_autodestruct, weak_bomber).first[:damage],
+     'base 1, halved by Defend -> 0, not floored to 1'
+
+  bomber = combatant('Bomber', 3, 0, 5, 1) # base: atk 3 - def 0 / 2 = 3
+  guarded = combatant('Guarded', 0, 0, 5, 100)
+  guarded.defending = true
+  guarded.strong_defence = true
+  bat2 = Game::Battle.new([guarded], [bomber], Game::Rng.new(1))
+  eq 0, bat2.send(:enemy_autodestruct, bomber).first[:damage],
+     'base 3, halved twice (3 -> 1 -> 0), not floored to 1 at either step'
 end
 
 check 'battle: a self-destruct shakes loose a survivor\'s status the same as a basic attack' do
