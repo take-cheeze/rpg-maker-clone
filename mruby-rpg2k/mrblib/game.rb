@@ -7507,7 +7507,19 @@ module Game
   # but not yet drawn.
   class Picture
     attr_reader :id, :name, :fixed_to_map, :use_transparent_color
-    attr_reader :x, :y, :zoom, :opacity, :red, :green, :blue, :saturation
+
+    # Every interpolated field is truncated to a whole number here (matching
+    # EasyRPG's own `int x = data.current_x;`, `sprite_picture.cpp`) but held
+    # at full float precision internally between frames -- see #step's own
+    # comment for why the two must not be the same value.
+    def x; @x.to_i; end
+    def y; @y.to_i; end
+    def zoom; @zoom.to_i; end
+    def opacity; @opacity.to_i; end
+    def red; @red.to_i; end
+    def green; @green.to_i; end
+    def blue; @blue.to_i; end
+    def saturation; @saturation.to_i; end
 
     def initialize(id, opts = {})
       @id = id
@@ -7537,8 +7549,24 @@ module Game
     def moving?; @frames > 0; end
 
     # Advance one frame of the in-flight move (a no-op when at rest). Every
-    # parameter eases a `1/remaining` fraction toward its target, so integer
-    # division still lands exactly on the target on the final frame.
+    # parameter eases a `1/remaining` fraction toward its target, in float
+    # precision, so it still lands exactly on the target on the final frame
+    # (`(target - cur) / 1.0` is exactly `target - cur`).
+    #
+    # EasyRPG's own `Game_Pictures::Picture::Update` (`src/game_pictures.cpp`)
+    # keeps this same running fraction in a double (`data.current_x` et al.,
+    # `interpolate`'s `(finish - current) / dt + current`) across every frame
+    # and truncates only for display (`sprite_picture.cpp`'s `int x =
+    # data.current_x`) -- the truncation never feeds back into the next
+    # frame's own calculation. A prior version of this method instead fed the
+    # *already-truncated* `@x` (an Integer, via plain `/` integer division)
+    # back into the next call, so the rounding error compounded frame over
+    # frame instead of resetting each time: a 0->10 move over 7 frames here
+    # produced 1, 2, 3, 4, 6, 8, 10 where real RPG_RT's own (float-precision,
+    # truncate-for-display-only) sequence is 1, 2, 4, 5, 7, 8, 10 -- a
+    # visibly different, laggier path any time the move distance is not an
+    # exact multiple of the frame count, which is nearly every real Move
+    # Picture call.
     def update
       return unless moving?
       @x = step(@x, @tx); @y = step(@y, @ty)
@@ -7550,7 +7578,7 @@ module Game
 
     private
 
-    def step(cur, target); cur + (target - cur) / @frames; end
+    def step(cur, target); cur + (target - cur) / @frames.to_f; end
 
     def finish_move
       @x = @tx; @y = @ty; @zoom = @tzoom; @opacity = @topacity

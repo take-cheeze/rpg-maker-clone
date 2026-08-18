@@ -7826,6 +7826,26 @@ check 'Game::Picture with non-divisible steps still lands exactly' do
   ok !p.moving?
 end
 
+check "Game::Picture interpolates in float precision, not by feeding the previous " \
+      "frame's truncated integer back in, matching RPG_RT (2026-08-18)" do
+  # EasyRPG's Game_Pictures::Picture::Update (src/game_pictures.cpp) keeps
+  # the running interpolated position in a double (`data.current_x`,
+  # `interpolate`'s `(finish - current) / dt + current`) across every frame
+  # and truncates only for display (sprite_picture.cpp's `int x =
+  # data.current_x`) -- the truncation never feeds back into the next
+  # frame's own calculation. #step used to feed the *already-truncated*
+  # Integer @x back into the next call's `(target - cur) / @frames` (plain
+  # integer division), compounding the rounding error frame over frame
+  # instead of resetting each time.
+  p = Game::Picture.new(1, x: 0, y: 0)
+  p.move_to(10, 0, 100, 255, 100, 100, 100, 100, 7) # 0 -> 10 over 7 frames
+  seen = []
+  7.times { p.update; seen.push(p.x) }
+  eq [1, 2, 4, 5, 7, 8, 10], seen,
+     'RPG_RT\'s real per-frame sequence -- the pre-fix code produced [1, 2, 3, 4, 6, 8, 10] instead'
+  ok !p.moving?
+end
+
 check 'Game::Picture with zero duration applies immediately' do
   p = Game::Picture.new(1, x: 5, y: 5, opacity: 0)
   p.move_to(99, 88, 150, 128, 100, 100, 100, 100, 0)
