@@ -90,17 +90,22 @@ class RPG2k
         n.nil? || n.empty? ? "Skill #{sid}" : n
       end
 
+      # Holding a direction auto-repeats the cursor after the initial delay,
+      # not just a single step per tap -- see Scene::ItemMenu#update_items's
+      # identical comment (`Window_Selectable::Update`, `src/
+      # window_selectable.cpp`, and docs/TODO.md for the fuller writeup);
+      # every check below just gains an `|| #repeat?` alongside it.
       def update_skills
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @parent.pop
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           move_skill_cursor(COLUMN_MAX)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_skill_cursor(-COLUMN_MAX)
-        elsif Input.trigger?(Input::RIGHT)
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           move_skill_cursor(1) if (@skill_index + 1) % COLUMN_MAX != 0
-        elsif Input.trigger?(Input::LEFT)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
           move_skill_cursor(-1) if @skill_index % COLUMN_MAX != 0
         elsif Input.trigger?(Input::C)
           choose_skill
@@ -157,12 +162,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_target
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @target_index += 1
           @target_index %= party.size
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @target_index -= 1
           @target_index %= party.size
           refresh_target_cursor
@@ -235,12 +240,12 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_teleport_target
-        elsif Input.trigger?(Input::DOWN) && !targets.empty?
+        elsif (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !targets.empty?
           @teleport_index += 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP) && !targets.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !targets.empty?
           @teleport_index -= 1
           @teleport_index %= targets.size
           refresh_teleport_cursor
