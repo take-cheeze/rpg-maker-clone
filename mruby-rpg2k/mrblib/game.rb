@@ -124,10 +124,21 @@ module Game
         if ch == "\\" && i + 1 < n
           code = text[i + 1]
           i += 2
-          arg, i = read_bracket(text, i)
           case code
-          when 'v', 'V' then (s = variables[resolve_arg(arg, variables)].to_s; cur << s; count += s.length) if arg
-          when 'n', 'N' then (s = (names[resolve_arg(arg, variables)] || '').to_s; cur << s; count += s.length) if arg
+          when 'v', 'V'
+            if text[i] == '['
+              val, i = parse_bracket_value(text, i, variables)
+              s = variables[val].to_s
+              cur << s
+              count += s.length
+            end
+          when 'n', 'N'
+            if text[i] == '['
+              val, i = parse_bracket_value(text, i, variables)
+              s = (names[val] || '').to_s
+              cur << s
+              count += s.length
+            end
           when "\\"     then cur << "\\"; count += 1
           when '_'      then cur << ' '; count += 1 # half-width space
           when 'c', 'C' # colour change: close the current run, switch colour
@@ -141,20 +152,31 @@ module Game
             # unclamped, an out-of-range colour used to fail the renderer's own
             # 0..19 validity check and fall back to a flat approximation colour
             # instead of the windowskin's own (properly shaded) swatch 0 -- see
-            # Scene::Map::MessagePalette.valid?/#message_color. `resolve_arg`
+            # Scene::Map::MessagePalette.valid?/#message_color. `#parse_bracket_value`
             # (not a bare `arg.to_i`) so a variable-driven `\C[\V[n]]` resolves
             # the same way `\N[]`/`\V[]` already do -- EasyRPG's ParseColor is
             # the exact same ParseParam nested-`\V[]` machinery as ParseActor/
-            # ParseVariable, not special-cased.
-            v = resolve_arg(arg, variables)
-            color = v > 19 ? 0 : v
+            # ParseVariable, not special-cased. No bracket at all resets to 0
+            # too (`\C` alone), matching the pre-existing default.
+            if text[i] == '['
+              v, i = parse_bracket_value(text, i, variables)
+              color = v > 19 ? 0 : v
+            else
+              color = 0
+            end
           when 's', 'S' # speed change: how fast the typewriter reveals from
             # here on, clamped to RPG_RT's 1..20 (EasyRPG Player's
             # window_message.cpp: `speed = Utils::Clamp(pres.value, 1, 20)`).
-            # `resolve_arg`, not a bare `arg.to_i`, for the same `\S[\V[n]]`
-            # reason as `\C[]` just above (ParseSpeed shares the same
-            # ParseParam nested-variable machinery).
-            speeds << { at: count, speed: Game.clamp(resolve_arg(arg, variables), 1, 20) }
+            # `#parse_bracket_value`, not a bare `arg.to_i`, for the same
+            # `\S[\V[n]]` reason as `\C[]` just above (ParseSpeed shares the
+            # same ParseParam nested-variable machinery). No bracket at all
+            # defaults to full speed (1), matching the pre-existing default.
+            if text[i] == '['
+              v, i = parse_bracket_value(text, i, variables)
+              speeds << { at: count, speed: Game.clamp(v, 1, 20) }
+            else
+              speeds << { at: count, speed: 1 }
+            end
           when '.'      then pauses << { at: count, kind: :quarter }
           when '|'      then pauses << { at: count, kind: :full }
           when '!'      then pauses << { at: count, kind: :key }
@@ -209,35 +231,72 @@ module Game
       end
     end
 
-    # Read an optional "[digits]" argument at position i; returns [value, new_i].
-    # Brackets nest (yado.tk: `\N[]`/`\V[]` accept a `\V[n]` argument in place
-    # of a literal number, e.g. `\N[\V[1]]`), so an inner `[`/`]` pair widens
-    # the scan rather than closing it early -- otherwise `\N[\V[1]]` would read
-    # its argument as only `\V[1` (stopping at the *inner* `]`) and leave the
-    # outer `]` behind as stray literal text.
-    def self.read_bracket(text, i)
-      return [nil, i] unless i < text.length && text[i] == '['
-      j = i + 1
-      depth = 1
-      while j < text.length && depth > 0
-        depth += 1 if text[j] == '['
-        depth -= 1 if text[j] == ']'
-        j += 1 if depth > 0
+    # Parse a `\N[]`/`\V[]`/`\C[]`/`\S[]` bracket argument to the integer it
+    # names, starting at `text[i]` (which must be the opening `[` -- callers
+    # check that themselves, since "no bracket at all" has a different
+    # default per code and is not this method's concern). Returns
+    # `[value, new_i]`, `new_i` positioned just past the matching `]`.
+    #
+    # Confirmed against EasyRPG's `Game_Message::ParseParam`
+    # (`src/game_message.cpp`), which backs all four codes identically
+    # (`ParseColor`/`ParseSpeed`/`ParseActor`/`ParseVariable` are thin
+    # wrappers over the same function) -- this is a straight port of its
+    # character-scanning loop, not the "extract a balanced-bracket substring,
+    # then regex it" approach this used to take:
+    #
+    # - Digits accumulate positionally (`value = value * 10 + digit`).
+    # - A nested `\v[]`/`\V[]` reference (yado.tk: `\N[\V[1]]` substitutes
+    #   variable 1's own *value* in place of a literal number) recurses one
+    #   level deep at most -- RPG_RT's own limit (EasyRPG's
+    #   `rpg_rt_default_max_recursion = 1`, vs. its own looser 8-level
+    #   `easyrpg_default_max_recursion` extension this port does not take);
+    #   `\N[\V[\V[1]]]`'s inner `\V[1]` is simply never reached, same as
+    #   real RPG_RT. The recursion resolves the *inner* bracket to a variable
+    #   *index*, then reads that variable's own value and concatenates its
+    #   decimal digits onto whatever was already accumulated -- `\N[1\V[2]]`
+    #   with variable 2 = 45 becomes 145, not "1" or "45" -- via RPG_RT's own
+    #   `m = 10; m *= 10 while m < var_val; value = value * m + var_val`
+    #   arithmetic, ported verbatim (including its own quirk of only ever
+    #   widening `m` in powers of 10 relative to the newly-read value, not
+    #   the exact combined digit width -- this is RPG_RT's real arithmetic,
+    #   not an approximation to smooth over).
+    # - The first character that is neither a digit nor a recognised nested
+    #   reference stops further accumulation but *keeps* whatever was
+    #   already read (RPG_RT: "stop parsing until the next closing bracket"),
+    #   rather than resetting to 0 -- unlike this method's own predecessor,
+    #   which fell through to `String#to_i` and silently dropped everything
+    #   from the first non-leading-digit character on.
+    def self.parse_bracket_value(text, i, variables, depth = 1)
+      n = text.length
+      # No bracket at all (reachable recursively too -- a malformed nested
+      # reference like `\N[\V]`, `\v` with no `[` following): RPG_RT's own
+      # ParseParam returns 0 without consuming anything, matching `if (iter
+      # == end || *iter != '[') { return { iter, 0 }; }`.
+      return [0, i] unless i < n && text[i] == '['
+      i += 1
+      value = 0
+      stop_parsing = false
+      while i < n && text[i] != ']'
+        if stop_parsing
+          i += 1
+          next
+        end
+        ch = text[i]
+        if ch >= '0' && ch <= '9'
+          value = value * 10 + ch.to_i
+          i += 1
+        elsif depth > 0 && ch == '\\' && i + 1 < n && (text[i + 1] == 'V' || text[i + 1] == 'v')
+          var_id, i = parse_bracket_value(text, i + 2, variables, depth - 1)
+          var_val = variables[var_id].to_i
+          m = 10
+          m *= 10 while value != 0 && m < var_val
+          value = value * m + var_val
+        else
+          stop_parsing = true
+        end
       end
-      val = text[(i + 1)...j]
-      j += 1 if j < text.length # consume the matching ']'
-      [val, j]
-    end
-
-    # Resolve a control code's bracket argument to the integer it names,
-    # recursively unwrapping a nested `\v[]`/`\V[]` (yado.tk: `\N[\V[1]]`
-    # substitutes variable 1's *value* as the actor id, not the literal text
-    # "\V[1]"; `\V[\V[1]]` reads the same way for indirect variable display).
-    # A plain numeric argument resolves the same as before (`"3".to_i`).
-    def self.resolve_arg(arg, variables)
-      return 0 if arg.nil?
-      m = /\A\\[vV]\[(.*)\]\z/m.match(arg)
-      m ? variables[resolve_arg(m[1], variables)].to_i : arg.to_i
+      i += 1 if i < n # consume the matching ']'
+      [value, i]
     end
   end
 

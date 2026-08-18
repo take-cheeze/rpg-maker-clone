@@ -9361,7 +9361,47 @@ not yet verified:
   case this fix covers). An out-of-range `\N[]` argument crashing real
   RPG_RT is a genuine engine crash, not reproduced here. Covered by a new
   `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the
-  pre-fix code.
+  pre-fix code. **`#read_bracket`/`#resolve_arg` were later replaced
+  entirely by a proper character-scanning port, `#parse_bracket_value` —
+  see the dedicated ✅ bullet below — which the "balance nested `[`/`]`
+  pairs, then regex-match the extracted substring" approach described
+  above turned out not to actually match RPG_RT's own algorithm.**
+- ✅ **The nested-`\V[]` fix just above got the *shape* right (a bracket
+  argument can contain a `\V[]` reference) but not RPG_RT's actual
+  character-scanning algorithm underneath it, in three separate ways
+  (2026-08-18).** Verified against RPG_RT's actual behavior via EasyRPG
+  Player's own C++ source, fetched live: `Game_Message::ParseParam`
+  (`src/game_message.cpp`, the single function backing `\N[]`/`\V[]`/
+  `\C[]`/`\S[]` alike — `ParseColor`/`ParseSpeed`/`ParseActor`/
+  `ParseVariable` are thin wrappers over it) does not treat a bracket
+  argument as "one literal number OR one whole nested `\V[]`" the way
+  `#read_bracket`+`#resolve_arg` did — it scans character by character:
+  (1) a literal digit run and a `\V[]` reference in the *same* bracket
+  **concatenate** (`\N[1\V[2]]` with variable 2 = 45 becomes 145, not "1" —
+  the old code fell through to `String#to_i` on the raw extracted
+  substring, silently dropping the `\V[]` reference entirely, matching
+  only the leading digit run), via RPG_RT's own `m = 10; m *= 10 while m <
+  var_val; value = value * m + var_val` arithmetic; (2) the recursion
+  depth is capped at exactly **one** level (EasyRPG's own
+  `rpg_rt_default_max_recursion = 1`, distinct from its own looser
+  8-level `easyrpg_default_max_recursion` extension this port does not
+  take) — `\N[\V[\V[1]]]`'s inner `\V[1]` is never evaluated, unlike the
+  old `#resolve_arg`, which recursed without any limit; (3) the first
+  character that is neither a digit nor a recognised nested reference
+  stops further accumulation but **keeps** whatever was already read
+  (RPG_RT: "stop parsing until the next closing bracket"), which
+  `#read_bracket`'s own generic `[`/`]`-balancing (treating *every*
+  bracket pair as nesting, not just ones following a recognised `\v`/`\V`)
+  could not express at all. Fixed by replacing `#read_bracket`/
+  `#resolve_arg` with a single `Game::Message.parse_bracket_value`, a
+  direct port of `ParseParam`'s scanning loop operating on the shared
+  scan index directly rather than a two-phase extract-then-reparse.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (a literal
+  digit run concatenates with a `\V[]` reference's value; a
+  doubly-nested `\V[\V[1]]]` inside `\N[]`/`\V[]` only recurses one level,
+  reproducing RPG_RT's own quirk of leaving a stray `]` behind when
+  nested past that limit rather than resolving cleanly), confirmed to
+  fail against the pre-fix code.
 
 **Pictures**
 - ✅ **50 concurrent picture slots; higher id always draws on top,
