@@ -2195,14 +2195,16 @@ end
 check 'Flash Screen without a wait starts a flash and does not pause' do
   st = new_state
   it = Game::Interpreter.new(st)
-  # white flash, strength 31, 5 tenths (30 frames), wait 0.
-  it.start([FakeCmd.new(IC::FLASH_SCREEN, [255, 255, 255, 31, 5, 0]),
+  # white flash, strength 31 (the command's own raw 0..31 scale), 5 tenths
+  # (30 frames), wait 0.
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [31, 31, 31, 31, 5, 0]),
             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
   it.update
   ok !it.waiting?, 'a no-wait flash keeps running'
   eq true, st.switches[1], 'the command after the flash still ran'
   ok st.screen.flashing?, 'a flash is in progress'
-  eq [255, 255, 255, 31], st.screen.flash_color
+  eq [248, 248, 248, 248], st.screen.flash_color,
+     "scaled to the 0..255 range every #flash caller uses (EasyRPG's Flash::MakeColor: r*8, g*8, b*8, level*8)"
 end
 
 check 'Flash Screen with a wait pauses until the flash fades out' do
@@ -2224,18 +2226,20 @@ end
 check 'RPG2003 Flash Screen mode 1 (Begin) strobes indefinitely and never pauses' do
   st = new_state(rpg2003: true)
   it = Game::Interpreter.new(st)
-  # red, peak strength 20, 2 tenths (12 frames), wait 0, mode 1 (Begin).
-  it.start([FakeCmd.new(IC::FLASH_SCREEN, [255, 0, 0, 20, 2, 0, 1]),
+  # red, peak strength 20 (the command's own raw 0..31 scale, scaled to 160
+  # of 255 -- EasyRPG's Flash::MakeColor: r*8, g*8, b*8, level*8), 2 tenths
+  # (12 frames), wait 0, mode 1 (Begin).
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [31, 0, 0, 20, 2, 0, 1]),
             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
   it.update
   ok !it.waiting?, 'Begin never pauses the interpreter'
   eq true, st.switches[1], 'the command after Begin still ran'
   ok st.screen.flashing?
-  eq 20, st.screen.flash_color[3]
+  eq 160, st.screen.flash_color[3]
   11.times { st.screen.update }
-  ok st.screen.flash_color[3] < 20, 'decaying before the period ends'
+  ok st.screen.flash_color[3] < 160, 'decaying before the period ends'
   st.screen.update # the 12th update: the period lapses
-  eq 20, st.screen.flash_color[3], 're-armed to peak instead of settling at 0'
+  eq 160, st.screen.flash_color[3], 're-armed to peak instead of settling at 0'
   ok st.screen.flashing?, 'still strobing after one full period'
 end
 
