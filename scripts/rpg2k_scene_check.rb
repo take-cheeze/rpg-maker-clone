@@ -7141,6 +7141,54 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
+check 'Enter Hero Name plays the RPG_RT system SE on every interaction' do
+  # Confirmed against EasyRPG's Scene_Name::vUpdate (src/scene_name.cpp,
+  # Cursor on every grid move, Decision unconditionally on every C press
+  # before dispatching on the highlighted cell), Window_Name::Append (src/
+  # window_name.cpp, Buzzer when a character would overflow the field) and
+  # the same vUpdate's Cancel branch (Cancel with a character to erase,
+  # Buzzer with none) -- this widget used to play nothing at all.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0)] # actor 1, letters, no seed
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  ui = nil
+  6.times { scene.update; ui = scene.instance_variable_get(:@name_ui); break if ui }
+  ok ui, 'the name-entry widget opened'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'moving the cursor plays the cursor SE'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # types a character
+  scene.update
+  eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming a character cell plays decision'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B] # backspace it -- name is non-empty
+  scene.update
+  eq 'Cancel1', RGSS::Audio.se_calls.last&.first, 'Cancel with a character to erase plays cancel'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::B] # backspace again -- now empty
+  scene.update
+  eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'Cancel with nothing to erase plays buzzer instead'
+
+  ui[:name] = 'A' * RPG2k::Scene::Map::NAME_MAX # fill the field
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # try to type one more -- rejected
+  scene.update
+  RGSS::Input.triggered = []
+  eq ['Decision1', 'Buzzer1'], RGSS::Audio.se_calls.map(&:first),
+     'an overflowing character still plays decision first (RPG_RT plays it ' \
+     'unconditionally before dispatch), then buzzer for the rejected append'
+  eq RPG2k::Scene::Map::NAME_MAX, ui[:name].length, 'the character was not appended'
+end
+
 # EasyRPG's `Game_Interpreter_Map::CommandEnterHeroName`
 # (src/game_interpreter_map.cpp) is the exact same method for the foreground
 # and every Parallel Process's own interpreter -- gated only on
