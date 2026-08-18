@@ -1999,6 +1999,34 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmed to fail against the pre-fix code (`8` instead of `16`) before
   the fix. Boarding **plays the vehicle's own BGM** (the database System
   boat / ship / airship music) and disembarking restores the map BGM.
+  ✅ **A vehicle (or map) with no configured BGM at all now silences
+  whatever was playing instead of leaving it running — the claim just above
+  ("boarding plays the vehicle's own BGM... disembarking restores the map
+  BGM") only ever covered the case where there is a track to switch to
+  (2026-08-18).** `Scene::Map#play_vehicle_bgm`/`#restore_pre_vehicle_bgm`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) both used to `return` outright when
+  the target BGM (`#vehicle_bgm(type)` / the remembered pre-boarding track)
+  was nil or blank, leaving the audio backend untouched — boarding a
+  vehicle whose database field is blank (and no Change System BGM override
+  is set) left the field's own track playing right through the ride, and
+  disembarking onto a map with no field BGM at all left the vehicle's own
+  track playing instead of falling silent. Verified against RPG_RT's actual
+  behavior via EasyRPG Player's own C++ source, fetched live:
+  `Game_Player::GetOnVehicle`/`GetOffVehicle` (`src/game_player.cpp`) both
+  call `Game_System::BgmPlay` **unconditionally** (`BgmPlay(vehicle->
+  GetBGM())` boarding, `BgmPlay(GetBeforeVehicleMusic())` disembarking), and
+  `BgmPlay` (`src/game_system.cpp`) itself branches on the track's own name
+  — `"(OFF) means play nothing"` — calling `BgmStop()` for a blank/`"(OFF)"`
+  track rather than treating the call as a no-op. Fixed with a new shared
+  `#play_bgm_or_stop(music)`, a direct port of that same branch (`#play_bgm`
+  when `music` names a real file, else `RGSS::Audio.bgm_stop` +
+  `@state.current_bgm = nil`), that both `#play_vehicle_bgm` and
+  `#restore_pre_vehicle_bgm` now route every call through instead of
+  early-returning past the equivalent of `BgmPlay` entirely. Covered by two
+  new `scripts/rpg2k_scene_check.rb` checks (boarding a vehicle with a blank
+  database BGM field stops the field's own currently-playing track;
+  disembarking onto a field with no BGM stops the vehicle's own track the
+  same way), both confirmed to fail against the pre-fix code before the fix.
   ✅ **A Change System BGM override for a vehicle's slot is now honoured
   too**, ahead of the database default. `Scene::Map#vehicle_bgm` used to read
   `db.system.send("#{type}_music")` unconditionally, so an event that ran

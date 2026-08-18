@@ -222,6 +222,7 @@ module RGSS
       @bgm_fade_calls = []
       @me_calls = []
       @me_stop_calls = 0
+      @bgm_stop_calls = 0
     end
     # Recorded separately from bgm_calls: a same-file Play BGM re-trigger
     # calls this instead of bgm_play (see Game::Interpreter#play_audio /
@@ -237,7 +238,12 @@ module RGSS
     # fired -- e.g. the End Game confirmation's Game_System::BgmFade(400).
     class << self; attr_accessor :bgm_fade_calls; end
     def self.bgm_fade(*a); (@bgm_fade_calls ||= []) << a; end
-    def self.bgm_stop(*); end
+    # Record bgm_stop calls too (a blank vehicle/restore BGM's own "play
+    # nothing" branch -- see Scene::Map#play_bgm_or_stop) so a check can
+    # assert the native backend actually got told to stop, not just that
+    # bgm_play was skipped.
+    class << self; attr_accessor :bgm_stop_calls; end
+    def self.bgm_stop(*); @bgm_stop_calls = (@bgm_stop_calls || 0) + 1; end
     # Scriptable playback position, so the "BGM played once" watcher can be
     # driven: a value that jumps backwards is how SDL_mixer reports a loop.
     class << self; attr_accessor :pos; end
@@ -9707,6 +9713,68 @@ check 'boarding a vehicle plays a Change System BGM override instead of the data
   eq 'CustomBoat', st.current_bgm[:name], 'the override plays instead of the database BoatBGM'
   eq 55, st.current_bgm[:volume]
   eq 90, st.current_bgm[:tempo]
+end
+
+check 'boarding a vehicle with no configured BGM stops the field music instead of leaving it ' \
+      'playing, matching RPG_RT (2026-08-18)' do
+  # EasyRPG's Game_System::BgmPlay (src/game_system.cpp) is unconditional --
+  # a blank/"(OFF)" track still hits its own `else { BgmStop(); }` branch
+  # ("(OFF) means play nothing"), silencing whatever was already playing.
+  # Boarding a vehicle whose database BGM field is blank (and no Change
+  # System BGM override is set) used to leave the field's own currently-
+  # playing track running right through the ride, since #play_vehicle_bgm
+  # simply returned without touching the audio backend at all.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  db = scene.instance_variable_get(:@db)
+  db.system.boat_music.file = '' # no boat BGM configured, database or override
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
+  st.direction = 2
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Audio.reset_bgm
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded
+  eq [], RGSS::Audio.bgm_calls, 'no new track started'
+  eq 1, RGSS::Audio.bgm_stop_calls, 'but the field music was stopped'
+  eq nil, st.current_bgm, 'silence, not the map track still nominally "current"'
+end
+
+check 'disembarking back onto a map with no field BGM stops the vehicle music the same way ' \
+      '(2026-08-18)' do
+  # The mirror image of the check just above: #restore_pre_vehicle_bgm ports
+  # the identical unconditional `BgmPlay(GetBeforeVehicleMusic())` call
+  # (`src/game_player.cpp`), so a pre-boarding field with no BGM playing at
+  # all must silence the vehicle's own track on disembark, not leave it
+  # running now that the party is back on foot.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.current_bgm = nil # the field had no BGM playing when the party boarded
+  st.direction = 2
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded
+  eq 'BoatBGM', st.current_bgm[:name], 'boarded normally, the database boat music started'
+  st.direction = 8 # face back toward the shore
+  RGSS::Audio.reset_bgm
+  RGSS::Input.triggered = [RGSS::Input::C] # disembark
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'disembarked back onto foot'
+  eq [], RGSS::Audio.bgm_calls, 'no track restored'
+  eq 1, RGSS::Audio.bgm_stop_calls, 'the vehicle music stopped instead of continuing'
+  eq nil, st.current_bgm
 end
 
 check 'Enemy Encounter scene: the round animates action by action, not at once' do

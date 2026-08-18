@@ -2293,28 +2293,44 @@ class RPG2k
         @state.current_bgm = music
       end
 
+      # EasyRPG's Game_System::BgmPlay (src/game_system.cpp) is unconditional
+      # wherever RPG_RT calls it -- a blank/"(OFF)" track still hits its own
+      # `else { BgmStop(); }` branch ("(OFF) means play nothing"), silencing
+      # whatever was already playing, rather than leaving the call a no-op.
+      # #play_vehicle_bgm and #restore_pre_vehicle_bgm both port one such
+      # unconditional call (boarding's `BgmPlay(vehicle->GetBGM())`,
+      # disembarking's `BgmPlay(GetBeforeVehicleMusic())`, both
+      # `src/game_player.cpp`), so both route through this shared stop-or-play
+      # helper instead of silently no-op'ing when the target track is
+      # nil/blank -- a vehicle with no configured BGM used to leave whatever
+      # was already playing running right through the ride, and disembarking
+      # back into a map that itself had no BGM used to leave the vehicle's own
+      # track still playing, neither of which real RPG_RT does.
+      def play_bgm_or_stop(music)
+        if music && music[:name] && !music[:name].to_s.empty?
+          play_bgm(music)
+        else
+          RGSS::Audio.bgm_stop
+          @state.current_bgm = nil
+        end
+      end
+
       # Play the vehicle's own BGM — a Change System BGM (10660) override for
       # its slot when one is set, else the database System boat / ship /
       # airship music — remembering the BGM that was playing so
-      # #restore_pre_vehicle_bgm can bring it back on disembark. A vehicle
-      # with no configured BGM (override or database) leaves the current
-      # music playing.
+      # #restore_pre_vehicle_bgm can bring it back on disembark.
       def play_vehicle_bgm(type)
-        music = vehicle_bgm(type)
-        return unless music
         @pre_vehicle_bgm = @state.current_bgm
-        play_bgm(music)
+        play_bgm_or_stop(vehicle_bgm(type))
       rescue StandardError => e
         $stderr.puts "[RPG2k] vehicle BGM failed: #{e.message}"
       end
 
       # Restore the BGM that was playing before the party boarded (the map BGM).
-      # A no-op when boarding did not switch the music.
       def restore_pre_vehicle_bgm
         bgm = @pre_vehicle_bgm
         @pre_vehicle_bgm = nil
-        return unless bgm && bgm[:name] && !bgm[:name].empty?
-        play_bgm(bgm)
+        play_bgm_or_stop(bgm)
       rescue StandardError => e
         $stderr.puts "[RPG2k] restoring BGM failed: #{e.message}"
       end
