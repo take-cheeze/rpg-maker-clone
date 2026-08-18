@@ -8695,6 +8695,41 @@ not yet verified:
   `#clear_states`/Full Recovery leaves the forced state in place, and a
   curative medicine item can't touch it either — all three confirmed to
   fail against the pre-fix code before the fix.
+  ✅ **RPG2003 cursed armor set as an actor's own *starting* equipment
+  never inflicted its forced state at all — only equipping the exact same
+  item later, through the equip menu or a Change Equipment command,
+  reached `#adjust_equipment_states` (2026-08-18).** Both fixes above
+  correctly wired `#equip_item`/`#unequip`/`#equip`, but `Actor#initialize`
+  (`mruby-rpg2k/mrblib/game.rb`) sets `@equipment`/`@states` directly from
+  the database row and never calls any of them, so a hero whose starting
+  shield/armor/helmet/accessory in Database > Actors already carries the
+  Curse flag booted up with the item worn but the state simply absent —
+  `#permanent_states` would correctly refuse to let it be cured, but there
+  was nothing to cure in the first place. Confirmed against EasyRPG's
+  actual C++ source, fetched live: `Game_Actor::Game_Actor(int actor_id)`
+  (`src/game_actor.cpp`) calls `SetEquipment(i + 1, ids[i])` for every one
+  of the five initial-equipment slots at construction — the exact same
+  function, and so the exact same `AdjustEquipmentStates` call, an ordinary
+  mid-game equip change goes through; RPG_RT does not special-case the
+  starting loadout at all. A "cursed berserker" or "anti-hero with a
+  drawback" starting-gear design — an intentional, editor-supported
+  RPG2003 pattern — silently lost its entire hook under this gap, and it
+  only self-healed the moment the item was manually taken off and put back
+  on (which does go through `#unequip`/`#equip` correctly). Fixed by
+  calling `@equipment.each { |id| adjust_equipment_states(id, true) }` at
+  the end of `#initialize`, placed after HP/MP are already set to their
+  max — matching `Game_Actor::Game_Actor`'s own ordering (`SetHp`/`SetSp`
+  precede the equip loop there), so a maximally cursed starting item whose
+  `state_set` includes the Death state itself still leaves the actor at 0
+  HP rather than having that overwritten back to full by a later
+  full-heal-on-spawn step. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (a fresh actor constructed with cursed armor already in its
+  `initial_equipment` starts with the forced state already present, and
+  can still be cured normally by taking the armor back off after), using a
+  new `InitialEquipmentRow` fixture (no existing fixture row exposed field
+  51 at all, so every prior actor fixture started unarmed regardless of
+  what a real database's `initial_equipment` might specify), confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player

@@ -3223,6 +3223,19 @@ class SkillRow < CurveRow
 
   def skills; FakeLearnTable.new(@learns); end
 end
+# Like FakePlayerRow but exposing the database's own starting loadout (field
+# 51, `initial_equipment`, an EQUIP_ORDER-shaped array of up to five item
+# ids) -- an ordinary FakePlayerRow has no such field at all, so
+# Actor#initialize's `a.respond_to?(:initial_equipment)` guard always reads
+# false for one and every existing fixture actor starts unarmed and unworn.
+class InitialEquipmentRow < FakePlayerRow
+  def initialize(name, cs, ci, level, status, equip)
+    super(name, cs, ci, level, status)
+    @equip = equip
+  end
+
+  def initial_equipment; @equip; end
+end
 # `equipment_setting` mirrors System field 97 (Game::Party#equip_by_class?'s
 # own source) -- nil, the default, reads as "by Actor" the same way a
 # genuine database's own field default (0) does.
@@ -4303,6 +4316,29 @@ check 'equipping RPG2003 cursed armor inflicts its own states; unequipping cures
   eq [4], a.states, 'the state came on the instant it was worn'
   a.unequip(2) # armor slot
   eq [], a.states, 'and left the instant it came off'
+end
+
+check 'RPG2003 cursed armor set as *starting* gear inflicts its state from the ' \
+      'very first frame, not only once equipped through a later Equip command' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Actor::Game_Actor(int actor_id)` (src/game_actor.cpp) calls
+  # `SetEquipment(i + 1, ids[i])` for every one of the five
+  # initial-equipment slots -- the exact same function (and so the exact
+  # same `AdjustEquipmentStates` call) an ordinary mid-game Equip command
+  # goes through -- so a hero whose *starting* armor/shield/helmet/
+  # accessory is cursed begins the game already afflicted, visible in the
+  # status window from turn one. #equip_item/#unequip/#equip already
+  # called #adjust_equipment_states for every later change; only
+  # Actor#initialize's own starting loadout skipped it.
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  row = InitialEquipmentRow.new('Hero', '', 0, 5, { max_hp: 100 },
+                                [0, 0, 20, 0, 0]) # weapon/shield/ARMOR/helmet/accessory
+  db = FakeActorDB.new({ 1 => row }, [1], items, rpg2003: true)
+  a = Game::Party.new(db).leader
+  eq 20, a.equipment[2], 'wearing the cursed armor from construction, not equipped after'
+  eq [4], a.states, 'already afflicted before any Equip command ever ran'
+  a.unequip(2) # armor slot
+  eq [], a.states, 'and can still be cured normally by taking the armor back off'
 end
 
 check 'cursed armor state infliction is RPG2003-only' do
