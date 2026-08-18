@@ -16228,6 +16228,26 @@ check 'Scene::StatusMenu: the actor cursor wraps around' do
   eq 0, scene.instance_variable_get(:@actor_index), 'Right from the last actor wraps to the first'
 end
 
+# Confirmed already correct, no code change needed -- checked while auditing
+# this screen for the same key-repeat gap already fixed on every other menu
+# screen (see docs/TODO.md). Unlike a genuine cursor inside a
+# Window_Selectable list, this screen has no list at all: LEFT/RIGHT just
+# rebuild the whole panel for a different party member, and EasyRPG's real
+# Scene_Status::vUpdate (src/scene_status.cpp) checks
+# Input::IsTriggered(RIGHT/LEFT) only -- no IsRepeated fallthrough anywhere
+# in the method -- so holding the key never auto-cycles members in the real
+# engine either. This check pins that as a checked invariant rather than an
+# unverified assumption.
+check 'Scene::StatusMenu: holding Right does NOT auto-cycle the actor -- ' \
+      'confirmed matching the real engine\'s own discrete-only gate' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, wrap_menu_state)
+  RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index),
+     'a held (repeated, not triggered) Right does not cycle the actor'
+end
+
 check 'Scene::StatusMenu: a dangling equipped item id logs once, not per rebuild, ' \
       'while the slot still shows the "Item #<id>" placeholder' do
   state = Game::State.new(DanglingItemParty.new, 1, 0, 0)

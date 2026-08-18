@@ -3650,6 +3650,22 @@ The work below is roughly ordered by the critical path to a walkable game
   `debug_menu.rb`, `title.rb`, and every battle target/command list in
   `battle.rb` — each worth the same actual-source check `equip_menu.rb`
   just got, not an assumed blanket `|| #repeat?`.
+  ✅ **`status_menu.rb` checked next (2026-08-18) — confirmed already
+  correct, no code change needed.** Unlike every screen fixed so far, this
+  one has no list/grid cursor at all: it is a read-only single-member
+  detail panel, and LEFT/RIGHT just rebuild the whole thing for a
+  different party member rather than moving a cursor within a
+  `Window_Selectable`. Confirmed against EasyRPG Player's actual source:
+  `Scene_Status::vUpdate` (`src/scene_status.cpp`) checks
+  `Input::IsTriggered(RIGHT/LEFT)` only — no `IsRepeated` fallthrough
+  anywhere in the method — the identical discrete-only shape
+  `equip_menu.rb`'s own actor switch was just confirmed to have. Pinned as
+  a checked invariant rather than left an unverified assumption: a new
+  `scripts/rpg2k_scene_check.rb` check asserts a held, repeat-only Right
+  does *not* cycle the actor, passing against the code exactly as it
+  already stood (no fix landed, since none was needed). **Still open**:
+  `order.rb`, `debug_menu.rb`, `title.rb`, and every battle target/command
+  list in `battle.rb`.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
