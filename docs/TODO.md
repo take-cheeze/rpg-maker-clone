@@ -3516,6 +3516,33 @@ The work below is roughly ordered by the critical path to a walkable game
   file already does), confirmed to fail against the pre-fix code (zero
   matching blend calls, since the flat-gray branch never blends at all)
   before the fix.
+  ✅ **The same disabled-swatch gap existed on the save/load file-select
+  screen too, and there every line was flat, not just the disabled one
+  (2026-08-18).** `Scene::SaveLoad#draw_slot_box` (`mruby-rpg2k/mrblib/
+  scene/save_load.rb`) never called `#draw_system_text` at all — every
+  line (the file label, and, for an occupied slot, the leader's name and
+  level/HP) drew through a bare `draw_text` in a hardcoded flat white,
+  with no distinction between an empty slot and an occupied one.
+  Confirmed against EasyRPG Player's actual source: `Window_SaveFile::
+  Refresh` (`src/window_savefile.cpp`) draws every text element through
+  `TextDraw(x, y, fc, text)` — the windowskin-swatch path, never a flat
+  colour — where `fc` is `has_save ? Font::ColorDefault :
+  Font::ColorDisabled` (system-colour swatch index 0 or 3, `src/font.h`)
+  for the file label specifically; the name/level/HP lines only ever draw
+  at all once `has_party` is true (an early `return` otherwise, matching
+  this codebase's own "an empty slot shows only the label" comment), so
+  `fc` is always index 0 there regardless — but real RPG_RT still reaches
+  them through the swatch-blend path, windowskin shading and all, not a
+  flat colour. Fixed by converting every `draw_text` call in
+  `#draw_slot_box` to `#draw_system_text`, with the file label's index
+  chosen by `state ? 0 : 3` (`state` being the loaded `Game::State` for an
+  occupied slot, `nil` for an empty one) and the name/level/HP lines left
+  at the default index 0 they were always going to resolve to. Covered by
+  a new `scripts/rpg2k_scene_check.rb` check (an occupied slot's label
+  blends from swatch index 0, an empty slot's from index 3, both pinned by
+  cell geometry the same way the title-screen check above does),
+  confirmed to fail against the pre-fix code (the occupied-slot assertion
+  failed first, since neither slot ever blended anything) before the fix.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it

@@ -14711,6 +14711,31 @@ check 'Scene::SaveLoad: an occupied slot shows the leader, level and HP -- no go
                                               'reference capture, unlike this screen\'s old layout'
 end
 
+# EasyRPG's Window_SaveFile::Refresh (src/window_savefile.cpp) draws every
+# text element through TextDraw(x, y, fc, text) -- never a flat colour --
+# with `fc` itself `has_save ? Font::ColorDefault : Font::ColorDisabled`
+# (system-colour swatch index 0 or 3, src/font.h) for the file label. The
+# same disabled-swatch convention Scene::Title's own Continue entry already
+# reads (see the title checks above).
+check 'Scene::SaveLoad: an empty slot\'s file label blends from the windowskin\'s ' \
+      'own disabled-colour swatch (index 3); an occupied slot\'s uses the default ' \
+      '(index 0)' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> a real (fixture) windowskin loads
+  st = menu_state
+  st.party.leader = st.party.actors.first
+  parent = fake_parent(db)
+  parent.save_states[1] = st # slot 1 (window index 0) occupied; slot 2 (index 1) stays empty
+  scene, = save_load_scene(:load, nil, nil, parent: parent)
+  occupied_bc = scene.instance_variable_get(:@slot_windows)[0].contents.blend_calls || []
+  empty_bc = scene.instance_variable_get(:@slot_windows)[1].contents.blend_calls || []
+  # colour idx -> swatch cell (idx%10*16, idx/10*16+48): 0 -> (0, 48), 3 -> (48, 48).
+  ok occupied_bc.any? { |call| call[6] == 0 && call[7] == 48 },
+     "the occupied slot's label blends from swatch index 0 (the default)"
+  ok empty_bc.any? { |call| call[6] == 48 && call[7] == 48 },
+     "the empty slot's label blends from swatch index 3 (disabled), not the default"
+end
+
 check 'Scene::SaveLoad: an occupied slot draws each party member\'s own face thumbnail, ' \
       'right-anchored in seat order' do
   # Game::State#to_lsd already exports up to four faceset_name/faceset_index
