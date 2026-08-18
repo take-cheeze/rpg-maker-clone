@@ -1973,18 +1973,39 @@ module Game
     end
 
     # The one line a level-up announces. RPG_RT phrases it from the database
-    # terms; this build uses a plain English line for now.
+    # terms -- ported from Scene::Battle's identical #battle_level_up_message
+    # (mruby-rpg2k/mrblib/scene/battle.rb), which already reads them for the
+    # post-battle result screen; this map-side path (Change EXP / Change
+    # Level / Change Class) used to stay on a plain English line regardless
+    # of the database. Falls back to English when the database leaves
+    # `level_up` blank (a raw `level_up` term with no `level` term set still
+    # gets the 'Lv' stand-in rather than losing the whole line).
     def level_up_message(actor, level)
-      "#{actor.name} is now level #{level}!"
+      up = party_term(:level_up, nil)
+      return "#{actor.name} is now level #{level}!" unless up
+      "#{actor.name}は#{party_term(:level, 'Lv')} #{level} #{up}"
     end
 
     # The one line a newly-learned skill announces, immediately following its
-    # level's own level-up line. RPG_RT glues the skill's own name onto the
-    # `skill_learned` database term (EasyRPG's ActorMessage::GetLearningMessage,
-    # `src/game_message_terms.cpp`); this build uses a plain English line for
-    # now, matching #level_up_message's own documented simplification.
+    # level's own level-up line -- ported from Scene::Battle's identical
+    # #battle_skill_learned_message the same way #level_up_message is.
+    # EasyRPG's stock/CP932 `GetLearningMessage` branch names only the skill,
+    # never the actor, since it always trails that actor's own level-up line
+    # the way it does here too. Falls back to composed English (which does
+    # name the actor, since a database leaving `skill_learned` blank gets no
+    # level-up line's context to lean on either) when the term is blank.
     def skill_learned_message(actor, sk)
-      "#{actor.name} learned #{sk.name}!"
+      learned = party_term(:skill_learned, nil)
+      return "#{actor.name} learned #{sk.name}!" unless learned
+      "#{sk.name}#{learned}"
+    end
+
+    # `@state.party.term`, or `fallback` when the live party is a bare
+    # fixture that implements no `#term` at all (this codebase's usual
+    # optional-interface guard, matching `db.respond_to?(:term)` elsewhere).
+    def party_term(name, fallback)
+      party = @state.party
+      party.respond_to?(:term) ? party.term(name, fallback) : fallback
     end
 
     # Enter the next queued level-up message as a :message wait; returns false
@@ -2617,9 +2638,9 @@ module Game
         cmd.param(2) == 0 ? has : !has
       when 5 # actor: param1 id, param2 sub-condition (see actor_condition)
         actor_condition(cmd)
-      when 6 # orientation: is character param1 (10001 the hero, 0 / 10005 this
-             # event, any other positive id a map event) facing direction param2
-             # (0 up / 1 right / 2 down / 3 left)?
+      when 6 # orientation: is character param1 (10001 the hero, 10002-10004 a
+             # vehicle, 0 / 10005 this event, any other positive id a map
+             # event) facing direction param2 (0 up / 1 right / 2 down / 3 left)?
         facing = character_facing(cmd.param(1))
         !facing.nil? && facing == FACING_NUMPAD[cmd.param(2)]
       when 7 # vehicle: true when the party is riding vehicle param1 (0 boat /
@@ -2673,6 +2694,13 @@ module Game
       return nil if id.nil?
       if id == CHAR_PLAYER
         @state.direction
+      elsif id >= CHAR_BOAT && id <= CHAR_AIRSHIP
+        # A vehicle ref, mirroring #vehicle_operand's identical lookup
+        # (Control Variables operand 6 attr 3) -- read straight off
+        # `Game::State` rather than through `@map_info`, since a vehicle is
+        # tracked independently of whatever map is currently loaded.
+        v = @state.vehicle(Vehicle::TYPES[id - CHAR_BOAT])
+        v && v.direction
       elsif id > 0 && id < 10000 && @map_info.respond_to?(:event_position)
         pos = @map_info.event_position(id)
         pos && pos[:direction]

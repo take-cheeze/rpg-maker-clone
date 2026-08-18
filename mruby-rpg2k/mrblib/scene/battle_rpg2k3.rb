@@ -230,7 +230,12 @@ module RPG2k3
       def finish_round_animation
         return super unless gauge_battle?
         battle = @ui[:battle]
+        # See the base #finish_round_animation's identical comment: snapshot
+        # who is showing the Defend pose before `end_round` clears the flag,
+        # so their sprite can revert to Idle.
+        defenders = @ui[:allies].select(&:defending)
         battle.end_round
+        defenders.each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?
           enter_battle_result(battle.result)

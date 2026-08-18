@@ -3384,7 +3384,7 @@ end
 
 class FakeActorDB
   attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands,
-              :enemy_group, :battleranimations
+              :enemy_group, :battleranimations, :term
   # `enemy_group` defaults to "every id exists" (Hash.new(true)) since most
   # checks using this fixture have nothing to do with troop validity; pass an
   # explicit hash (e.g. {}) to exercise the missing-troop-id diagnostic path.
@@ -3395,7 +3395,7 @@ class FakeActorDB
   def initialize(players, party_ids, items = {}, skills = {}, jobs = {}, situation = nil,
                  property = nil, rpg2003: false, battlecommands: nil,
                  enemy_group: Hash.new(true), battleranimations: nil,
-                 equipment_setting: nil)
+                 equipment_setting: nil, term: nil)
     @player = players
     @system = FakeActorSystem.new(party_ids, equipment_setting)
     @item = items
@@ -3407,6 +3407,7 @@ class FakeActorDB
     @battlecommands = battlecommands
     @enemy_group = enemy_group
     @battleranimations = battleranimations
+    @term = term
   end
 
   # Mirrors LCF::Schema::Database#rpg2003? (Classes-chunk presence) for tests
@@ -4629,6 +4630,29 @@ check 'Change Class shows one level-up line when it taught skills' do
   it.resume
   it.update
   ok !it.waiting?, 'a class change announces one line, not one per level'
+end
+
+check "level_up_message/skill_learned_message compose from the database's own terms" do
+  # Ported from Scene::Battle's identical battle_level_up_message/
+  # battle_skill_learned_message (already term-based for the post-battle
+  # result screen) -- these map-side lines (Change EXP/Level/Class) used to
+  # stay on a plain English line regardless of the database.
+  terms = Struct.new(:level_up, :level, :skill_learned).new('になった！', 'Lv', 'を覚えた！')
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1], term: terms)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  hero = st.party.actors.first
+  eq 'HeroはLv 5 になった！', it.send(:level_up_message, hero, 5)
+  eq 'Fireballを覚えた！', it.send(:skill_learned_message, hero, fake_skill(name: 'Fireball'))
+end
+
+check 'level_up_message/skill_learned_message fall back to English when the database leaves the terms blank' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  hero = st.party.actors.first
+  eq 'Hero is now level 5!', it.send(:level_up_message, hero, 5)
+  eq 'Hero learned Fireball!', it.send(:skill_learned_message, hero, fake_skill(name: 'Fireball'))
 end
 
 check 'Change Class stays quiet when the level held and no skills moved' do
@@ -7460,6 +7484,21 @@ check 'Conditional Branch orientation: "this event" (type 6, ref 10005 / 0)' do
   eq true, run_cond_with_mapinfo([6, 0, 1], event_id: 7).switches[1] # 0 is the same ref
   # A common event has no "this event", so the test cannot hold.
   eq true, run_cond_with_mapinfo([6, 10005, 1]).switches[2]
+end
+
+check 'Conditional Branch orientation: a vehicle ref (type 6, ref 10002-10004)' do
+  # #character_facing used to only resolve CHAR_PLAYER and a map event id --
+  # a vehicle ref (10002 boat / 10003 ship / 10004 airship) fell through to
+  # nil and the condition silently read false, unlike Control Variables'
+  # identical operand 6 attr 3 (#vehicle_operand, already correct). Mirrors
+  # that check's own vehicle setup.
+  st = run_actor_cond([6, 10002, 2]) { |s| s.vehicle(:boat).direction = 2 } # boat facing down
+  eq true, st.switches[1]                             # facing down -> if-branch
+  st = run_actor_cond([6, 10003, 0]) { |s| s.vehicle(:ship).direction = 2 } # ship facing down, asked up
+  eq true, st.switches[2]                             # not facing up -> else
+  # An unplaced vehicle defaults to facing down (numpad 2, direction 8's
+  # own #new default) -- reads a real direction, not nil/false regardless.
+  eq true, run_actor_cond([6, 10004, 2]).switches[1]  # airship, never placed, still faces down
 end
 
 # -- Input Number -------------------------------------------------------------
@@ -12058,6 +12097,59 @@ check "battle: a skill's status-shake roll is gated behind the same hit as its d
   e = bat.send(:apply_skill_hit, hero, foe, -20, 0, cmd)
   eq true, e[:missed]
   ok foe.state?(8), 'a missed skill never rolls the shake-off either'
+end
+
+# The three checks above prove #apply_skill_hit's own physical_rate handling
+# against a hand-built cmd hash -- which is exactly how the real bug hid:
+# #command_skill/#command_skill_all (the only two ways a queued skill's
+# command hash is ever built for #apply_command to read) had no
+# physical_rate: keyword at all until now, so it silently read 0 off every
+# real cast regardless of the skill's own physical_rate, no matter which
+# path queued it. These drive the real builders instead.
+check '#command_skill carries physical_rate through to a real queued cast' do
+  states = { 8 => fake_state(release_by_attack: 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  bat.command_skill(hero, foe, name: 'Slash', cost: 0, hp: -20, chance: 100,
+                    attack: true, physical_rate: 100)
+  eq 100, hero.command[:physical_rate], 'the field survives from the keyword into the queued command hash'
+  bat.send(:apply_command, hero)
+  ok !foe.state?(8), 'the real #command_skill-queued cast now rolls the shake-off, not just a hand-built cmd hash'
+end
+
+check '#command_skill_all carries physical_rate through to a real queued group cast' do
+  states = { 8 => fake_state(release_by_attack: 100) }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [8]
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), states)
+  bat.command_skill_all(hero, [{ target: foe, hp: -20, mp: 0 }], name: 'Slash', cost: 0,
+                        chance: 100, attack: true, physical_rate: 100)
+  eq 100, hero.command[:physical_rate]
+  bat.send(:apply_command, hero)
+  ok !foe.state?(8), 'the all-target builder rolls the shake-off too, matching the single-target one'
+end
+
+# #skill_command_hash is the single-target-only wrap #enemy_skill_action (a
+# monster's own skill) and #queue_single_auto_battle_skill (an ally's
+# auto-battle skill) both build a queued command from directly, bypassing
+# #command_skill entirely -- it silently dropped attr_shift/attr_ids/
+# stat_mod_keys/stat_effect/physical_rate outright, the same class of bug,
+# on two more paths #command_skill's own fix does not reach.
+check '#skill_command_hash carries every AI-computed effect field through, not just hp/mp/inflict' do
+  bat = Game::Battle.new([], [], Game::Rng.new(1))
+  raw = { hp: -20, mp: 0, attack: true, chance: 90, variance: 5, attributes: [3],
+         absorb: true, cured: [2], attr_shift: -1, attr_ids: [4], stat_mod_keys: [:atk],
+         stat_effect: 20, physical_rate: 100 }
+  sk = fake_skill(name: 'Slash')
+  h = bat.send(:skill_command_hash, sk, raw, nil)
+  eq(-1, h[:attr_shift])
+  eq [4], h[:attr_ids]
+  eq [:atk], h[:stat_mod_keys]
+  eq 20, h[:stat_effect]
+  eq 100, h[:physical_rate]
 end
 
 check 'a skill-inflicted "do nothing" state then skips the enemy turn' do
