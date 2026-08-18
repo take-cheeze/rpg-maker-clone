@@ -11329,6 +11329,17 @@ module Game
     # matter how hard it was hit: Nepheshel's 睡眠 wakes on 80% of blows and its
     # 混乱 clears on 30%; mtf-meido-action's Sleep is 50% and Provoke / Confuse
     # 25%.
+    #
+    # The roll itself is gated only on `release_by_damage > 0` (the `base > 0`
+    # check below), matching EasyRPG's own `BattlePhysicalStateHeal`
+    # (`src/game_battlealgorithm.cpp`) exactly: once inside that outer gate it
+    # calls `Rand::ChanceOf(release_chance, 100)` unconditionally, with no
+    # further `release_chance > 0` check -- `release_chance` itself (this
+    # method's own `chance`, `release_by_damage * rate / 100`) can still round
+    # down to 0 when `rate` is small, and RPG_RT still burns a roll for it (it
+    # just never passes). A `chance > 0` short-circuit here used to skip that
+    # roll entirely, leaving this build's shared RNG stream one draw ahead of
+    # RPG_RT's own from that point on for the rest of the seeded run.
     def shake_off_states(target, rate)
       woke = []
       return woke if rate <= 0
@@ -11337,7 +11348,7 @@ module Game
         base = d ? state_field(d, :release_by_attack) : 0
         next unless base > 0
         chance = base * rate / 100
-        next unless chance > 0 && @rng.random(100) < chance
+        next unless @rng.random(100) < chance
         target.states.delete(sid)
         (target.state_turns || {}).delete(sid) if target.state_turns
         woke.push(sid)
@@ -11345,12 +11356,22 @@ module Game
       woke
     end
 
-    # Whether `b`'s attack criticals: enabled for the fight, the attacker has a
-    # non-zero `crit_chance`, and a 0..99 roll lands under it -- EasyRPG's
-    # `Rand::PercentChance(int rate)`, `GetRandomNumber(0, 99) < rate`, the
-    # exact overload `Algo::CalcCriticalHitChance`'s already-truncated whole
-    # percent is rolled through. A chance at or above 100 always crits, which
-    # is what a weapon carrying 100% means.
+    # Whether `b`'s attack criticals: enabled for the fight, and a 0..99 roll
+    # lands under `b`'s `crit_chance` -- EasyRPG's `Rand::PercentChance(int
+    # rate)`, `GetRandomNumber(0, 99) < rate`, the exact overload
+    # `Algo::CalcCriticalHitChance`'s already-truncated whole percent is
+    # rolled through. A chance at or above 100 always crits, which is what a
+    # weapon carrying 100% means; a chance of exactly 0 (the common case for
+    # any battler with no crit ability at all) never crits either, but real
+    # RPG_RT still rolls for it -- `Game_BattleAlgorithm`'s `vExecute` calls
+    # `Rand::PercentChance(crit_chance)` with no `crit_chance > 0` guard
+    # (`src/game_battlealgorithm.cpp`, both the basic-attack and skill call
+    # sites). A `chance > 0 &&` short-circuit here used to skip that roll
+    # whenever it computed to exactly 0, leaving this build's shared RNG
+    # stream one draw behind RPG_RT's own for the rest of the seeded run --
+    # every attacker with no crit ability at all (most enemies, and any actor
+    # before equipping a crit-capable weapon) silently desynced it on their
+    # very first landed hit.
     #
     # Drawn with #random, not #scaled: #scaled exists because a modulus of the
     # generator's prime period over-represents the low values a *large*-scale
@@ -11360,8 +11381,7 @@ module Game
     # caller in this file.
     def critical?(b)
       return false unless @criticals
-      chance = b.crit_chance
-      chance && chance > 0 && @rng.random(100) < chance
+      @rng.random(100) < (b.crit_chance || 0)
     end
 
     # Whether `attacker`'s basic attack lands on `target`: a 0..99 roll under the
