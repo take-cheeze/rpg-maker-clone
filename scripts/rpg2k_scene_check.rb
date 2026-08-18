@@ -18392,6 +18392,28 @@ check 'standing on an Event Touch tile still rolls for a random encounter' do
   eq 1, ui[:troop].id, "the map tree node's own troop"
 end
 
+check "a chipset cell whose terrain id has no database row never rolls for a random " \
+      "encounter, matching RPG_RT (2026-08-18)" do
+  # EasyRPG's Game_Player::UpdateEncounterSteps (src/game_player.cpp) returns
+  # outright when the tile's terrain row can't be resolved at all --
+  # `if (!terrain) { Output::Warning(...); return; }` -- no fallback rate, no
+  # encounter_total increment, no roll, as if the step never happened. This
+  # build's own #check_random_encounter used to fall through to a fabricated
+  # rate of 100 instead, still rolling (and, with this guaranteed-roll setup,
+  # still starting) a fight real RPG_RT can never trigger from that tile.
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+  scene = new_scene({}, player: [0, 0], map_tree: tree)
+  st = scene.instance_variable_get(:@state)
+  # Simulate a database shrink: every tile of the fixture map's chip 0 is
+  # tagged terrain 42 (see fake_chipset), but the row itself is now gone --
+  # the same dangling reference the stale-terrain diagnostic check above uses.
+  scene.db.terrain.delete(42)
+  scene.send(:check_random_encounter)
+  scene.update # give it a frame too, in case a battle wait was queued anyway
+  ok battle_ui(scene).nil?, 'no resolvable terrain row -> no roll, no battle'
+  eq 0, st.encounter_total, 'the step never accumulated either'
+end
+
 check "current_encounter_steps reads the map tree node's own setting, " \
      'overridden by Change Encounter Rate' do
   tree = fake_map_tree(1 => FakeEncounterNode.new({}, 25))

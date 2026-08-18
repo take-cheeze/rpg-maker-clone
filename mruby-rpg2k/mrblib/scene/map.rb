@@ -7679,8 +7679,22 @@ class RPG2k
           @encounter_idx = 0
           return
         end
+        # EasyRPG's Game_Player::UpdateEncounterSteps (src/game_player.cpp)
+        # returns outright when the tile's terrain row can't be resolved at
+        # all (`if (!terrain) { Output::Warning(...); return; }`) -- no
+        # fallback rate, no encounter_total increment, no roll for that step,
+        # exactly as if it never happened. A chipset cell whose terrain id a
+        # database shrink has since removed (#terrain_row_at's own "stale
+        # terrain" diagnostic) used to fall through to a fabricated `rate =
+        # 100` here instead, still rolling for a fight on a tile real RPG_RT
+        # can never trigger one from. `terrain.respond_to?(:encounter_rate)`
+        # below is unrelated and untouched: that's this build's own
+        # test-fixture tolerance for a bare OpenStruct row that omits the
+        # field, not something a real LCF terrain row (which always carries
+        # it) can actually do.
         terrain = terrain_row_at(@state.x, @state.y)
-        rate = terrain && terrain.respond_to?(:encounter_rate) ? terrain.encounter_rate : 100
+        return unless terrain
+        rate = terrain.respond_to?(:encounter_rate) ? terrain.encounter_rate : 100
         @state.encounter_total += rate
         ratio = @state.encounter_total / steps
         @encounter_idx += 1 while ratio >= ENCOUNTER_TABLE[@encounter_idx + 1][0]
