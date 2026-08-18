@@ -14472,6 +14472,55 @@ check 'an item that did nothing keeps the composed line' do
      .first.include?('no effect')
 end
 
+# A special/use_skill battle item invoking a skill: verified against EasyRPG
+# Player's actual C++ source, `Game_BattleAlgorithm::Skill::GetStartMessage`
+# (`src/game_battlealgorithm.cpp`) -- `if (item && item->using_message == 0)
+# ... return BattleMessage::GetItemStartMessage2k(...)`, checked *before* ever
+# reading the skill's own `using_message1`/`using_message2`. The item
+# schema's own `using_message` field (`mruby-lcf/mrblib/schema.rb`, distinct
+# from the skill-only string fields of the same near-name) defaults to 0, so
+# an item left at that default opens with its own name, not the skill's
+# sentence -- previously this build always took the skill's two sentences
+# for *every* item-invoked skill, the item's own `using_message` flag never
+# once read.
+check 'an item-invoking skill left at using_message\'s 0 default opens with ' \
+      'the item\'s own line, not the skill\'s' do
+  party = BattleStubParty.new(item_db: { 20 => OpenStruct.new(name: 'Fire Bomb', using_message: 0) })
+  scene, = battle_at_command(nil, party: party)
+  eq ['HeroはFire Bombを使った！', 'Slimeに 42 のダメージを与えた！'],
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 42, skill: 'Fire',
+                  skill_id: 8, item_id: 20, target_ally: false })
+end
+
+check 'the same item-invoked skill keeps its own two sentences once the ' \
+      'item sets using_message nonzero' do
+  party = BattleStubParty.new(item_db: { 21 => OpenStruct.new(name: 'Fire Scroll', using_message: 1) })
+  scene, = battle_at_command(nil, party: party)
+  eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！', 'Slimeに 42 のダメージを与えた！'],
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 42, skill: 'Fire',
+                  skill_id: 8, item_id: 21, target_ally: false })
+end
+
+check 'a skill invoked by an item id the database no longer has a row for ' \
+      'degrades to the skill\'s own sentence, not a blank item name' do
+  party = BattleStubParty.new(item_db: {})
+  scene, = battle_at_command(nil, party: party)
+  eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！', 'Slimeに 42 のダメージを与えた！'],
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 42, skill: 'Fire',
+                  skill_id: 8, item_id: 999, target_ally: false })
+end
+
+check 'a skill cast from the Skill menu (no item_id at all) is untouched' do
+  scene, = battle_at_command
+  eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！', 'Slimeに 42 のダメージを与えた！'],
+     scene.instance_variable_get(:@battle).send(:battle_action_lines,
+                { attacker: 'Hero', target: 'Slime', damage: 42, skill: 'Fire',
+                  skill_id: 8, target_ally: false })
+end
+
 check 'a drain adds its own line after the damage' do
   scene, = battle_at_command
   eq ['Heroは炎を放った！', 'あたりが真っ赤に染まる！',
