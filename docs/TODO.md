@@ -3707,6 +3707,37 @@ The work below is roughly ordered by the critical path to a walkable game
   method. **Still open**: `debug_menu.rb` (needs a different kind of
   reference than EasyRPG's current source before it can be checked at
   all) and every battle target/command list in `battle.rb`.
+  ✅ **`battle.rb` last (2026-08-18) — closes out this whole series.** All
+  six of its own cursor spots (`#drive_battle_options`, `#drive_battle_
+  command`, `#drive_battle_target` (enemy), `#drive_battle_skill`, `#drive_
+  battle_item`, `#drive_battle_ally_target`) only ever checked
+  `Input.trigger?(DOWN/UP)`. Confirmed against EasyRPG Player's actual
+  source: `Scene_Battle::UpdateUi` (`src/scene_battle.cpp`, the *shared*
+  base class, not the RPG2000-specific subclass), called unconditionally
+  every frame from `Scene_Battle_Rpg2k::vUpdate` (`grep`-confirmed: no
+  `IsTriggered(Input::DOWN/UP)` anywhere in `scene_battle_rpg2k.cpp`
+  itself at all — the base class's `UpdateUi` is the only place any of it
+  happens), calls `.Update()` on every one of `command_window`/
+  `status_window`/`item_window`/`skill_window`/`target_window`/
+  `options_window` — all genuine `Window_Selectable`s, whose own
+  `Update()` drives the cursor via the standard trigger-then-repeat, the
+  same as every menu screen in this series, before `SetActive`/
+  `GetActive` (confirmed via `status_window->SetActive(true)` right where
+  ally-target selection begins) ever gates which window's own Decision/
+  Cancel handling actually runs — the identical "cursor movement isn't
+  gated by which window is active" shape `Scene_Order` already established.
+  No exception this time, unlike `equip_menu.rb`/`status_menu.rb`'s
+  discrete-only actor switches: every one of the six spots gained
+  `|| Input.repeat?(...)` alongside its existing trigger checks. Covered by
+  a new `scripts/rpg2k_scene_check.rb` check (a held, repeat-only Down
+  moves the options cursor, the per-actor command cursor, and the
+  enemy-target cursor each one step, driven through a real encounter from
+  the options window onward), confirmed to fail against the pre-fix code
+  before the fix. **This closes the whole key-repeat series** — every
+  RPG2000/2003 menu and battle list screen has now either been fixed the
+  same `|| Input.repeat?(...)` way or explicitly confirmed (with a citation
+  and a regression test) to be correctly discrete-only, except
+  `debug_menu.rb`, left open pending a genuine classic-F9-menu reference.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
