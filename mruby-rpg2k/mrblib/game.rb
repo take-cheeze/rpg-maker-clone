@@ -2133,7 +2133,15 @@ module Game
     # The actor's basic-attack base hit rate (percent): the highest `hit` among
     # the equipped weapons (item field 17), or the RPG2000 unarmed default of 90
     # when nothing is equipped or the row omits it. Feeds the battle's to-hit
-    # roll (EasyRPG's Game_Actor::GetHitChance).
+    # roll. Confirmed against EasyRPG Player's actual C++ source rather than
+    # assumed: `Game_Actor::GetHitChance` (`src/game_actor.cpp`) uses `INT_MIN`
+    # as its own "nothing equipped" sentinel (`hit = std::max(hit, item.hit)`,
+    # `if (hit != INT_MIN) return hit;`), so an equipped weapon whose own `hit`
+    # field is a genuine 0 -- a real, intentional "never lands a hit" item, not
+    # a missing field -- is returned as-is; only a truly empty weapon slot falls
+    # back to 90. A prior version of this method instead folded that
+    # found-but-zero case into the nothing-found one (`best && best > 0 ? best
+    # : 90`), silently treating a 0%-hit weapon as if it were unequipped.
     def attack_hit_rate
       best = nil
       if @db.respond_to?(:item)
@@ -2145,7 +2153,7 @@ module Game
           best = h if h && (best.nil? || h > best)
         end
       end
-      best && best > 0 ? best : 90
+      best.nil? ? 90 : best
     end
 
     # The battle animation a basic Attack plays with this actor's current gear:

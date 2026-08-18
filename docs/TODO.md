@@ -9725,6 +9725,29 @@ not yet verified:
   28, 14, 0` per-frame sequence for the 100-to-0-over-7-frames example
   above, confirmed to fail against the pre-fix code (it produced `85, 70,
   56, 42, 28, 14, 0` instead) before the fix.
+- ✅ **A weapon's own genuine 0% hit rate is no longer folded into the
+  "nothing equipped" case and silently promoted to the 90% unarmed default
+  (2026-08-18).** `Game::Actor#attack_hit_rate` (`mruby-rpg2k/mrblib/
+  game.rb`) took the highest `hit` field among the actor's equipped weapons
+  and then wrote `best && best > 0 ? best : 90` — so a "cursed" weapon
+  whose own `hit` field is a deliberate, database-authored 0 (a real item a
+  project can build: a weapon that atk-boosts but genuinely never lands a
+  hit) got treated exactly like an *empty* weapon slot, silently handed the
+  90% unarmed default instead of its own intended 0%. Verified against
+  RPG_RT's actual behavior via EasyRPG Player's own C++ source, fetched
+  live: `Game_Actor::GetHitChance` (`src/game_actor.cpp`) folds every
+  equipped weapon's `hit` field through `hit = std::max(hit, item.hit)`
+  starting from `hit = INT_MIN`, then `if (hit != INT_MIN) return hit;` —
+  RPG_RT uses `INT_MIN` itself as the "nothing equipped" sentinel, not `<=
+  0`, so a real weapon whose `hit` happens to be exactly 0 is returned
+  as-is; only a truly empty weapon slot (no weapon ever raised `hit` above
+  `INT_MIN`) falls through to the unarmed default. Fixed by tracking `best`
+  as `nil` when unset instead of comparing it against 0, and returning `90`
+  only when `best.nil?` — a found weapon's own hit rate, zero included, now
+  passes straight through. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (a single weapon with `hit: 0` equipped, asserting `attack_hit_rate
+  == 0`), confirmed to fail against the pre-fix code (it returned `90`
+  instead) before the fix.
 - ✅ **50 concurrent picture slots; higher id always draws on top,
   independent of show order — confirmed already correct.**
   `Scene::Map#draw_pictures` composites `@state.pictures.keys.sort`, so the
