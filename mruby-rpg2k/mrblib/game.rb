@@ -9320,11 +9320,56 @@ module Game
       end
     end
 
-    # The combatants whose gauge is full, in descending gauge order (ties broken
-    # by side then by the order they were added), so the active-time turn picker
-    # can pull the next actor off the front. Empty for a turn-based battle.
+    # Party-member FIFO of who became ready (full gauge, alive, actionable)
+    # and is still waiting for a turn -- RPG_RT 2003's own
+    # `Scene_Battle_Rpg2k3::atb_order` (src/scene_battle_rpg2k3.cpp),
+    # confirmed against the real source rather than assumed: `UpdateReadyActors`
+    # walks only `Main_Data::game_party->GetActors()` -- never the enemy troop
+    # -- appending an id the frame `BattlerReadyToAct()` (`IsAtbGaugeFull() &&
+    # Exists() && CanAct()`) first turns true and erasing it the frame it turns
+    # false, and `GetNextReadyActor()` always returns `atb_order.front()`: the
+    # ally who has been waiting *longest*, not whichever has the highest gauge
+    # value. That distinction only ever matters at a tie -- and every ready
+    # gauge is always exactly GAUGE_MAX (#advance_gauges clamps it), so ties
+    # among simultaneously-ready allies are the *only* case that ever reaches
+    # here in real play. Diffed against the ready set on every call rather
+    # than hooked into a specific point in the frame loop, so it stays correct
+    # regardless of how many times (or how sparsely) #ready_combatants itself
+    # is polled.
+    def update_ally_ready_order
+      @ally_ready_order ||= []
+      (@allies || []).each do |a|
+        ready = !a.out_of_play? && a.gauge_full?
+        already = @ally_ready_order.include?(a)
+        if ready && !already
+          @ally_ready_order.push(a)
+        elsif !ready && already
+          @ally_ready_order.delete(a)
+        end
+      end
+    end
+
+    # The combatants whose gauge is full, so the active-time turn picker can
+    # pull the next one off the front. Sorted by descending gauge first (in
+    # real play every ready gauge is clamped to the identical GAUGE_MAX, so
+    # this is always a full tie -- a manually-inflated gauge, past what
+    # #advance_gauges would ever produce, is the only way to actually rank
+    # here); ties are broken by side (allies before enemies, matching
+    # #all_combatants' own ordering) and then, among allies specifically, by
+    # #update_ally_ready_order's FIFO -- whoever has been ready longest, not
+    # whoever sits earlier in the party roster (see there for why: this is
+    # the one part of the tie-break RPG_RT actually specifies). Enemies keep
+    # their existing troop-order tie-break; only the ally half of this was
+    # ever wrong. Empty for a turn-based battle.
     def ready_combatants
-      all_combatants.reject(&:out_of_play?).select(&:gauge_full?).sort_by { |c| -c.gauge }
+      update_ally_ready_order
+      all_combatants.reject(&:out_of_play?).select(&:gauge_full?).sort_by do |c|
+        if side_of(c) == :ally
+          [-c.gauge, 0, @ally_ready_order.index(c) || 0]
+        else
+          [-c.gauge, 1, (@enemies || []).index(c) || 0]
+        end
+      end
     end
 
     # Every combatant in the fight (allies then enemies), for gauge bookkeeping.
