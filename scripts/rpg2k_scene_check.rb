@@ -15166,6 +15166,31 @@ check 'Scene::ItemMenu: the item grid cursor does not wrap, the target cursor do
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
 end
 
+# EasyRPG's Window_Selectable::Update (the base every real RPG2000 list is
+# built on) falls through to Input::IsRepeated for all four directions
+# right after its own IsTriggered check, so holding a direction
+# auto-repeats the cursor after the initial delay -- see Scene::SaveLoad's
+# identical fix for the fuller writeup. `RGSS::Input.repeated` (distinct
+# from `.triggered`) lets this check hold a key across frames without it
+# also reading as a fresh trigger, exercising the `#repeat?` half of the
+# gate on its own.
+check 'Scene::ItemMenu: holding Right auto-repeats the item grid cursor, and ' \
+      'holding Down auto-repeats the actor-target cursor' do
+  scene = menu_scene(RPG2k::Scene::ItemMenu, wrap_menu_state)
+  RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index),
+     'a held (repeated, not triggered) Right still moves the item cursor one cell'
+
+  scene.send(:prompt_item_target, 1)
+  RGSS::Input.repeated = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@target_index),
+     'a held (repeated, not triggered) Down still moves the target cursor one step'
+end
+
 # A party whose only item is a switch (type 10) one -- Game::Party's own
 # decision logic (#use_switch_item) is covered by scripts/rpg2k_logic_check.rb;
 # this stub only has to hand the scene something that behaves the same way, so
