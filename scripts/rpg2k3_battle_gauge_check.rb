@@ -125,6 +125,31 @@ check 'ready_combatants is ordered by gauge descending' do
   eq [slow, fast], bat.ready_combatants
 end
 
+# RPG_RT 2003's own Scene_Battle_Rpg2k3::atb_order (src/scene_battle_rpg2k3.cpp,
+# confirmed against the real source): among several simultaneously-ready party
+# members -- every ready gauge is clamped to the identical GAUGE_MAX by
+# #advance_gauges, so there is never a real gauge-value difference to sort by
+# -- RPG_RT hands the next turn to whoever has been waiting *longest*, not
+# whoever sits earlier in the party roster. #ready_combatants used to fall
+# back to plain array position once tied, so a slower, earlier-seated ally
+# would jump the queue in front of a faster ally that had already been
+# sitting ready for many frames.
+check 'among tied allies, the one ready longest goes first, not the one ' \
+      'sitting earlier in the party roster' do
+  seat_slow = combatant('SeatSlow', 1, 1, 10, 1) # seat 0, agi 10 (slower)
+  seat_fast = combatant('SeatFast', 1, 1, 20, 1) # seat 1, agi 20 (faster)
+  bat3 = Game::Battle.new([seat_slow, seat_fast], [], Game::Rng.new(1))
+  bat3.battle_type = 2
+  bat3.advance_gauges(143) # 143 ticks: seat 1 (faster) crosses first, same as `fast` above
+  eq [seat_fast], bat3.ready_combatants, 'only seat 1 (faster) is ready so far'
+  bat3.advance_gauges(130) # 273 ticks total: seat 0 catches up, both now tied at max
+  eq Game::Battle::GAUGE_MAX, seat_slow.gauge
+  eq Game::Battle::GAUGE_MAX, seat_fast.gauge
+  eq [seat_fast, seat_slow], bat3.ready_combatants,
+     'seat 1 still goes first -- it became ready first and has been waiting ' \
+     'longer, even though seat 0 sits earlier in the party roster'
+end
+
 check 'a dead battler does not charge or become ready' do
   dead = combatant('Dead', 1, 1, 50, 1)
   dead.hp = 0

@@ -12763,6 +12763,50 @@ above are repeated here)
   line kinds follow the damage line in the same entry, like every other
   landed condition), all confirmed to fail against the pre-fix code (`got
   []`/a missing final line) before the fix.
+  ✅ **A tied active-time (gauge) turn among several ready party members now
+  goes to whoever has been waiting longest, not whoever sits earliest in the
+  party roster (2026-08-18).** RPG_RT's RPG2003 gauge presentation
+  (battle_type 2) always clamps a ready gauge to the exact same maximum —
+  `#advance_gauges` never lets one exceed `GAUGE_MAX` — so several party
+  members becoming ready in the same stretch of frames are always tied on
+  gauge *value* alone; RPG_RT still has to pick one of them first, and it
+  does so by readiness order, not roster position. `Game::Battle
+  #ready_combatants` (`mruby-rpg2k/mrblib/game.rb`) sorted the ready pool by
+  `-gauge` and left ties to fall out however Ruby's `sort_by` happened to
+  place equal keys — in practice, plain array position (`@allies` seat
+  order), since every real tie is a dead heat. So a slow, early-seated ally
+  that only just crossed the threshold could jump the queue in front of a
+  fast ally that had already been sitting ready, full-gauge, for many
+  frames. Confirmed against RPG_RT's own behavior via EasyRPG Player's
+  actual C++ source (fetched live rather than assumed):
+  `Scene_Battle_Rpg2k3::UpdateReadyActors`/`GetNextReadyActor`
+  (`src/scene_battle_rpg2k3.cpp`) maintain a FIFO, `atb_order`, walking only
+  `Main_Data::game_party->GetActors()` (never the enemy troop — an enemy
+  troop's own readiness is handled by an entirely separate, immediate
+  per-frame pass, `CreateEnemyActions`, with no queue involved) — an actor's
+  id is pushed the frame `BattlerReadyToAct()`
+  (`IsAtbGaugeFull() && Exists() && CanAct()`) first turns true and erased
+  the frame it turns false, and `GetNextReadyActor()` always returns
+  `atb_order.front()`: whoever has been in the queue longest. Fixed by
+  adding `#update_ally_ready_order`, a party-only FIFO diffed against the
+  ready set on every `#ready_combatants` call (self-maintaining — no
+  specific frame-loop hook needed, since a call anywhere in the frame sees
+  the same, correctly-ordered queue), and using it as the tie-break for
+  allies specifically once `-gauge` itself ties — enemies keep their
+  existing troop-order tie-break, since RPG_RT's own separation of the two
+  paths means the ally fix has nothing to say about enemy ordering, which
+  this pass did not re-verify. `RPG2k3::Scene::Battle#drive_battle_atb`
+  (`mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb`) and `#interrupting_ready_
+  combatant`, the only two consumers of `#ready_combatants`, both needed no
+  changes — they already just take the front of whatever order it returns.
+  Covered by a new `scripts/rpg2k3_battle_gauge_check.rb` check: two allies
+  with seat order and AGI order deliberately reversed (the faster one seated
+  *later*), ticked to the two already-established crossing frame counts (143
+  then 273, from the existing sibling check just above) so the faster,
+  later-seated ally is ready well before the slower, earlier-seated one
+  catches up — confirmed the faster ally still leads `#ready_combatants`
+  once both are tied at `GAUGE_MAX`, and confirmed to fail against the
+  pre-fix code (`[SeatSlow, SeatFast]`, plain seat order) before the fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for
