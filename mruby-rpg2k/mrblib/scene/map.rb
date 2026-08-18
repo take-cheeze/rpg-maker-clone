@@ -5076,7 +5076,20 @@ class RPG2k
       # terrain row's `background_name` (field 4). '' when the tile, the terrain
       # table or the field is missing.
       def terrain_backdrop(x, y)
-        tid = terrain_id(x, y)
+        backdrop_for_terrain_id(terrain_id(x, y))
+      end
+
+      # The backdrop named by terrain id `tid` directly, bypassing tile lookup
+      # entirely -- Enemy Encounter's own explicit-terrain override (param2==2,
+      # `Interpreter#do_enemy_encounter`'s `terrain_id:` request field) reads a
+      # terrain the party may not even be standing on, matching EasyRPG's
+      # `Background(int terrain_id)` (`src/background.cpp`), which resolves the
+      # terrain table directly with no map-tree/tile involvement at all --
+      # unlike the ordinary (param2==0) path, which walks the map tree first
+      # and only reads a tile's terrain as one fallback among several (see
+      # `Game::Backdrop.name_for`). '' when the id, the terrain table or the
+      # field is missing.
+      def backdrop_for_terrain_id(tid)
         return '' unless tid && tid > 0 && db.respond_to?(:terrain)
         row = db.terrain[tid]
         return '' unless row && row.respond_to?(:background_name)
@@ -7678,7 +7691,7 @@ class RPG2k
       # Scene::Battle with an explicit `@map.` receiver, which -- like any
       # cross-object call -- only reaches a public method.
       public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
-             :terrain_backdrop, :map_properties, :perform_game_over,
+             :terrain_backdrop, :backdrop_for_terrain_id, :map_properties, :perform_game_over,
               :try_open_debug_menu, :build_animation, :anim_target, :drive_map_animation,
              :fire_animation_flashes, :frames_from_tenths, :load_face_bitmap,
              :step_map_animation, :close_battle, :current_map_tone

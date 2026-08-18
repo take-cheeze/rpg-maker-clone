@@ -5997,6 +5997,56 @@ def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil, troop_id:
   ]
 end
 
+# Enemy Encounter's own param2 selects the battle backdrop's source, verified
+# against EasyRPG Player's actual C++ source rather than assumed:
+# `Game_Interpreter_Map::CommandEnemyEncounter` (`src/game_interpreter_map.cpp`)
+# `switch`es on it -- 0 (the only case previously modelled) leaves the ordinary
+# map/terrain default in place; 1 names an explicit background image directly
+# on the command (its own free-text `string` field, entirely separate from
+# every numeric param); 2 names an explicit terrain id instead (param8), read
+# off that terrain's own row directly rather than wherever the party happens
+# to be standing (`Background(int terrain_id)`, `src/background.cpp` --
+# confirmed to bypass the map-tree walk `Game_Map::SetupBattle` uses for the
+# param2==0 default entirely). `Interpreter#do_enemy_encounter` used to read
+# neither at all, so a scripted encounter always fell back to the map/terrain
+# default regardless of what the event author actually chose.
+check 'Enemy Encounter (param2=1) names an explicit battle background, ' \
+      'overriding the map/terrain default' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # troop 1, backdrop source 1 (explicit name); the string names it directly.
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 1, 0, 0, 0], indent: 0, string: 'ExplicitBack')
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  5.times { scene.update }
+  battle = scene.instance_variable_get(:@battle)
+  ok battle, 'the battle opened'
+  eq 'ExplicitBack', battle.send(:encounter_backdrop),
+     "param2==1's own string names the backdrop directly"
+end
+
+check 'Enemy Encounter (param2=2) reads an explicit terrain id for the ' \
+      "backdrop, not wherever the party is standing" do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # troop 1, backdrop source 2 (explicit terrain); param8 (index 8) names
+  # terrain id 7 -- not 42, the terrain every tile of the fixture map is
+  # tagged with (see fake_db), so this only passes if the override actually
+  # bypasses the party's own standing terrain.
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 2, 0, 0, 0, 0, 0, 7], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.db.terrain[7] = OpenStruct.new(background_name: 'OverrideTerrainBack')
+  5.times { scene.update }
+  battle = scene.instance_variable_get(:@battle)
+  ok battle, 'the battle opened'
+  eq 'OverrideTerrainBack', battle.send(:encounter_backdrop),
+     "param2==2's own terrain id (7) is read directly, not the party's own " \
+     'terrain (42, which names no background at all)'
+end
+
 # Drive a battle by having each living actor Attack the first enemy every round
 # until the result window appears (command / target cursors start on Attack /
 # the first target). The budget is generous: between command phases each round
