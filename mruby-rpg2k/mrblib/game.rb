@@ -5224,6 +5224,24 @@ module Game
       !@substitutions[0].empty? || !@substitutions[1].empty?
     end
 
+    # A snapshot ({old_id => new_id} per layer) safe to stash on Game::State
+    # for a Save/Continue -- see Scene::Map#record_tile_substitutions -- dup'd
+    # so later #substitute_tile calls on the live map cannot mutate a saved
+    # copy out from under it.
+    def substitution_snapshot
+      [@substitutions[0].dup, @substitutions[1].dup]
+    end
+
+    # Reapply a snapshot taken by #substitution_snapshot (real RPG_RT's own
+    # SaveMapInfo.lower_tiles/upper_tiles: a Save/Continue on the same map
+    # restores whatever Tile Substitution had rewritten, unlike an ordinary
+    # map re-visit -- see RPG2k#continue_game, main.rb). A no-op for a
+    # fresh/never-substituted state (both hashes empty).
+    def restore_substitutions(lower, upper)
+      @substitutions = [lower || {}, upper || {}]
+      @revision += 1
+    end
+
     private
 
     def tile(layer, index, x, y)
@@ -12320,6 +12338,20 @@ module Game
     # unread and harmless -- and round-trips through both the portable
     # Marshal save and a real `.lsd` the same way #map_event_positions does.
     attr_accessor :map_event_route_index
+    # The current map's own live Tile Substitution table (11750), [{old_id
+    # => new_id} for the lower layer, same for upper] -- see Game::Map
+    # #substitution_snapshot/#restore_substitutions. Real RPG_RT's SaveMapInfo
+    # carries this (`lower_tiles`/`upper_tiles`) alongside the live event
+    # table, so it survives a Save/Continue on the same map exactly like
+    # #map_event_positions, while an ordinary map re-visit (leave and return
+    # with no save involved) still resets it -- already-confirmed, separate
+    # behaviour (docs/TODO.md). Scoped identically to #map_event_positions in
+    # every other way: per-map, reset on #perform_teleport (a fresh
+    # Game::Map's own #initialize starts with no substitutions), snapshotted
+    # every frame by Scene::Map#record_tile_substitutions. Round-trips through
+    # both the portable Marshal save (#to_h/.load) and a real `.lsd` (chunk
+    # 111, LCF::Schema::SAVE_MAP_EVENT fields 21/22 -- see #to_lsd/.from_lsd).
+    attr_accessor :tile_substitutions
 
     def initialize(party, map_id, x, y)
       @party = party
@@ -12359,6 +12391,7 @@ module Game
       @common_event_progress = {}
       @map_event_positions = {}
       @map_event_route_index = {}
+      @tile_substitutions = [{}, {}]
       @system_bgm = {}
       @system_sfx = {}
       # nil = "not configured yet"; #seed_screen_transitions fills each slot in
@@ -12581,6 +12614,7 @@ module Game
         common_event_progress: @common_event_progress,
         map_event_positions: @map_event_positions,
         map_event_route_index: @map_event_route_index,
+        tile_substitutions: @tile_substitutions,
         steps: @steps, last_battle_turns: @last_battle_turns,
         save_count: @save_count, battle_count: @battle_count,
         win_count: @win_count, defeat_count: @defeat_count,
@@ -12828,31 +12862,62 @@ module Game
 
       # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) is the currently-loaded map's
       # own live event table, mirrored straight from #map_event_positions/
-      # #map_event_route_index -- both already scoped to the current map
-      # only, see their own doc comments above. Camera scroll (SAVE_MAP_EVENT
-      # fields 1/2) is not modelled by this codebase, so it stays absent,
-      # matching the "view derives from the hero" fallback ADR 0021
-      # documents. Omitted entirely on a State that has not recorded any
-      # positions yet (e.g. a fresh, unplayed save), the same "absent means
-      # nothing to restore" rule the unplaced-vehicle chunks above use.
-      unless @map_event_positions.empty?
+      # #map_event_route_index, plus its Tile Substitution table
+      # (#tile_substitutions, fields 21/22) -- all three already scoped to the
+      # current map only, see their own doc comments above. Camera scroll
+      # (SAVE_MAP_EVENT fields 1/2) is not modelled by this codebase, so it
+      # stays absent, matching the "view derives from the hero" fallback ADR
+      # 0021 documents. Omitted entirely on a State with neither recorded
+      # positions nor a live substitution (e.g. a fresh, unplayed save), the
+      # same "absent means nothing to restore" rule the unplaced-vehicle
+      # chunks above use.
+      lower_subs, upper_subs = @tile_substitutions
+      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty?
         mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
-        events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
-        @map_event_positions.each do |id, pos|
-          x, y, direction = pos
-          e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
-          e[12] = x
-          e[13] = y
-          e[22] = CharSet::DIR_ROW[direction] || 2
-          idx = @map_event_route_index[id]
-          e[43] = idx if idx
-          events[id] = e
+        unless @map_event_positions.empty?
+          events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+          @map_event_positions.each do |id, pos|
+            x, y, direction = pos
+            e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
+            e[12] = x
+            e[13] = y
+            e[22] = CharSet::DIR_ROW[direction] || 2
+            idx = @map_event_route_index[id]
+            e[43] = idx if idx
+            events[id] = e
+          end
+          mapev[11] = events
         end
-        mapev[11] = events
+        mapev[21] = self.class.tile_replacement_bytes(lower_subs) unless lower_subs.empty?
+        mapev[22] = self.class.tile_replacement_bytes(upper_subs) unless upper_subs.empty?
         save[111] = mapev
       end
 
       save
+    end
+
+    # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
+    # A Tile Substitution layer's {old_id => new_id} table as real RPG_RT's
+    # own SAVE_MAP_EVENT fields 21/22 store it: a 144-entry byte array where
+    # index `i` is "what tile does chip `i` currently display/act as",
+    # identity (`i`) everywhere untouched -- see Game::Map#substitute_tile's
+    # own doc comment for why this port keeps only the diff rather than the
+    # full table live.
+    TILE_REPLACEMENT_SLOTS = 144
+    # Class methods (not instance) so both #to_lsd (an instance method) and
+    # .from_lsd (a class method, see below) can reach them.
+    def self.tile_replacement_bytes(subs)
+      bytes = (0...TILE_REPLACEMENT_SLOTS).to_a
+      subs.each { |old_id, new_id| bytes[old_id] = new_id if old_id >= 0 && old_id < TILE_REPLACEMENT_SLOTS }
+      bytes
+    end
+
+    # The inverse of .tile_replacement_bytes: every index whose stored value
+    # differs from its own identity is a live substitution.
+    def self.tile_replacement_hash(bytes)
+      h = {}
+      bytes.each_with_index { |v, i| h[i] = v if v != i }
+      h
     end
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
@@ -13142,6 +13207,16 @@ module Game
         state.map_event_positions = positions
         state.map_event_route_index = route_index
       end
+      # The same chunk's Tile Substitution table (fields 21/22): absent on a
+      # save that never rewrote a tile, or one written before this landed.
+      if map_events
+        lower = map_events.chip_replacement_lower
+        upper = map_events.chip_replacement_upper
+        state.tile_substitutions = [
+          lower ? tile_replacement_hash(lower) : {},
+          upper ? tile_replacement_hash(upper) : {},
+        ]
+      end
       state
     end
 
@@ -13271,6 +13346,7 @@ module Game
       state.common_event_progress = h[:common_event_progress] || {}
       state.map_event_positions = h[:map_event_positions] || {}
       state.map_event_route_index = h[:map_event_route_index] || {}
+      state.tile_substitutions = h[:tile_substitutions] || [{}, {}]
       state.escape_target = h[:escape_target]
       state.system_bgm = h[:system_bgm] || {}
       state.system_sfx = h[:system_sfx] || {}

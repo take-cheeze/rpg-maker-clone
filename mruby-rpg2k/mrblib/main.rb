@@ -830,6 +830,12 @@ class RPG2k
       return
     end
     state.map = load_map state.map_id
+    # Reapply the Tile Substitution table the save carried for this map --
+    # #load_map always builds a fresh, unsubstituted Game::Map (correct for
+    # an ordinary map re-visit), but a genuine Continue on the same map
+    # restores it, matching real RPG_RT's own SaveMapInfo.lower_tiles/
+    # upper_tiles. See Game::State#tile_substitutions.
+    state.map.restore_substitutions(*state.tile_substitutions)
     # apply_access: false -- a resumed save already carries its own
     # save/teleport/escape access (restored by Game::State.load / .from_lsd
     # from whatever a prior Change Save/Teleport/Escape Access command left

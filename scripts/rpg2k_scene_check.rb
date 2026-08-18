@@ -11666,6 +11666,32 @@ check 'Tile Substitution does not survive leaving and returning to the map' do
      'a fresh map load on Teleport drops the substitution'
 end
 
+check 'Tile Substitution survives a Save/Continue on the same map, unlike an ordinary re-visit' do
+  # Real RPG_RT's own SaveMapInfo.lower_tiles/upper_tiles: a Save/Continue
+  # restores whatever Tile Substitution had rewritten (see
+  # Game::State#tile_substitutions), the opposite of the "leaving and
+  # returning" check just above. #update now snapshots the live map's
+  # substitution table onto Game::State every frame
+  # (Scene::Map#record_tile_substitutions); RPG2k#continue_game (main.rb)
+  # replays it onto the freshly-loaded Game::Map via
+  # Game::Map#restore_substitutions -- reproduced here directly since this
+  # harness has no save-file machinery of its own.
+  cmds = [ECmd.new(IC2::TILE_SUBSTITUTION, [0, 0, 41])]
+  scene = new_scene(parallel_event(cmds), player: [0, 0])
+  scene.update
+  st = scene.instance_variable_get(:@state)
+  eq 41, st.map.lower(3, 3), 'the substitution took on the original map'
+  eq [{ 0 => 41 }, {}], st.tile_substitutions,
+     'the live substitution table was snapshotted onto Game::State'
+
+  # A genuine Continue rebuilds Game::Map from scratch (identical to a
+  # Teleport's own fresh load) and then reapplies the saved table.
+  fresh = Game::Map.new(st.map_id, st.map.unit)
+  eq 0, fresh.lower(3, 3), 'a freshly-built map starts unsubstituted'
+  fresh.restore_substitutions(*st.tile_substitutions)
+  eq 41, fresh.lower(3, 3), 'Continue restores the substitution onto the fresh map'
+end
+
 check 'Enter/Exit Vehicle boards the vehicle the party stands on' do
   cmds = [ECmd.new(IC2::ENTER_EXIT_VEHICLE, [])]
   scene = new_scene(parallel_event(cmds), player: [0, 0])

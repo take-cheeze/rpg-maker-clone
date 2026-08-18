@@ -7854,6 +7854,24 @@ check 'map_event_positions (a wandered NPC\'s live tile + facing) round-trips th
   eq({}, Game::State.load(db, legacy).map_event_positions)
 end
 
+check 'tile_substitutions (a live Tile Substitution table) round-trips through the save' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.tile_substitutions = [{ 4 => 9 }, { 12 => 30 }]
+  loaded = Game::State.load(db, st.to_h)
+  eq [{ 4 => 9 }, { 12 => 30 }], loaded.tile_substitutions
+  # A save written before this field existed restores no substitutions, so
+  # every tile shows its own database graphic -- the same behaviour as
+  # before this change existed at all.
+  legacy = st.to_h
+  legacy.delete(:tile_substitutions)
+  eq [{}, {}], Game::State.load(db, legacy).tile_substitutions
+end
+
 check 'Return to Title Screen raises a :return_title request' do
   st = party_state
   it = Game::Interpreter.new(st)
@@ -9604,6 +9622,29 @@ check 'to_lsd/from_lsd round-trips a map event\'s custom-route index' do
   old = Game::State.from_lsd(db, legacy)
   eq [5, 7, 6], old.map_event_positions[3], 'position still round-trips without a route index'
   eq nil, old.map_event_route_index[3], 'no saved cursor means the route restarts at 0'
+end
+
+check 'to_lsd/from_lsd round-trips a live Tile Substitution table (chunk 111 fields 21/22)' do
+  # Real RPG_RT's SaveMapInfo.lower_tiles/upper_tiles restore a Save/Continue
+  # on the same map to whatever Tile Substitution (11750) had rewritten;
+  # #to_lsd/.from_lsd previously never touched fields 21/22 at all.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.tile_substitutions = [{ 4 => 9 }, { 12 => 30, 40 => 41 }]
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq [{ 4 => 9 }, { 12 => 30, 40 => 41 }], round.tile_substitutions
+
+  # A save written before this landed simply omits fields 21/22 (or chunk 111
+  # entirely, if no event ever recorded a position either); from_lsd must
+  # leave a freshly-constructed State's empty default alone rather than crash
+  # reading an absent field.
+  legacy = st.to_lsd
+  legacy[111].delete(21)
+  legacy[111].delete(22)
+  old = Game::State.from_lsd(db, legacy)
+  eq [{}, {}], old.tile_substitutions, 'no saved table means every tile shows its own graphic'
 end
 
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is

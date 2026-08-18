@@ -483,6 +483,7 @@ class RPG2k
           end
         end
         record_map_event_positions
+        record_tile_substitutions
         RGSS::Profiler.section("map.animate_events") { animate_events }
         RGSS::Profiler.section("map.render") { render }
       end
@@ -1267,6 +1268,15 @@ class RPG2k
           # event fallback -- see #build_events' seeding comment.
           @event_last_position[e[:id]] = [ch.x, ch.y, ch.direction]
         end
+      end
+
+      # Snapshot the current map's live Tile Substitution table onto
+      # Game::State every frame, the same "survives a Save/Continue on this
+      # map, resets on an ordinary re-visit" pattern #record_map_event_positions
+      # keeps for event positions -- see Game::State#tile_substitutions and
+      # Game::Map#substitution_snapshot.
+      def record_tile_substitutions
+        @state.tile_substitutions = @map.substitution_snapshot
       end
 
       # Build the Call Event resolver for the current map: common events keyed by
