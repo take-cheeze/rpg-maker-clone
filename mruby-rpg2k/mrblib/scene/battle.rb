@@ -448,36 +448,37 @@ class RPG2k
         refresh_battle_sprites
       end
 
-      # RPG2003's alternative/gauge battle layouts draw each living party
-      # member as a sprite too (unlike RPG2000's status-window-only layout --
-      # see Game::Party#alternate_battle_layout?), sourced from the
-      # database's Battler Animation table (chunk 32, db.battleranimations --
-      # decoded in a prior change, nothing read it until now). Scoped to the
-      # plain Idle pose only (Pose id 0): no active state, not defending --
-      # EasyRPG's Sprite_Actor::DoIdleAnimation (src/sprite_actor.cpp) swaps
-      # in a Defend or state-mapped pose in those two cases, which is
-      # follow-up work for a later change, not this one. A dead party member
-      # gets no sprite (mirrors a hidden troop member never getting one
-      # either in #build_battle_sprites above); the party status window keeps
-      # showing everyone regardless, so a member left spriteless here (dead,
-      # or any of the gaps #build_actor_sprite itself documents) is never
-      # invisible to the player. A traditional-layout database (or a bare
-      # test fixture whose party doesn't even answer #alternate_battle_layout?)
-      # builds nothing, matching current behaviour exactly.
+      # RPG2003's alternative/gauge battle layouts draw each party member as
+      # a sprite too (unlike RPG2000's status-window-only layout -- see
+      # Game::Party#alternate_battle_layout?), sourced from the database's
+      # Battler Animation table (chunk 32, db.battleranimations). Idle,
+      # Defend and Dead are the three poses #build_actor_sprite picks
+      # between (EasyRPG's Sprite_Actor::DoIdleAnimation, src/sprite_actor.cpp
+      # -- its remaining branch, any *other* active state swapping in its own
+      # `situation.battler_animation_id` pose, is still unimplemented here).
+      # A fallen member still gets a sprite (the Dead pose, or Idle when the
+      # entry defines no Dead pose of its own) rather than none at all -- the
+      # party status window shows everyone regardless either way, so this
+      # only changes what a downed member's own battler sprite looks like.
+      # A traditional-layout database (or a bare test fixture whose party
+      # doesn't even answer #alternate_battle_layout?) builds nothing,
+      # matching current behaviour exactly.
       def build_actor_sprites
         @ui[:actor_sprites] = nil
         return unless @state.party.respond_to?(:alternate_battle_layout?) &&
                       @state.party.alternate_battle_layout?
         @ui[:actor_sprites] = @ui[:allies].each_with_index.map do |ally, i|
-          next nil if ally.dead?
-          build_actor_sprite(ally.actor, i, defending: ally.defending)
+          build_actor_sprite(ally.actor, i, defending: ally.defending, dead: ally.dead?)
         end
       end
 
-      # Idle and Defend pose ids within a `db.battleranimations` entry's
-      # `poses` table (lcf::rpg::BattlerAnimation::Pose_Idle/Pose_Defend --
-      # schema.rb's own comment on chunk 32 lists the full 12-pose order).
+      # Idle, Dead and Defend pose ids within a `db.battleranimations` entry's
+      # `poses` table (lcf::rpg::BattlerAnimation::Pose_Idle/Pose_Dead/
+      # Pose_Defend -- schema.rb's own comment on chunk 32 lists the full
+      # 12-pose order, and matches EasyRPG's own `AnimationState` enum once
+      # its one-off `AnimationState_Null` head element is subtracted out).
       ACTOR_IDLE_POSE = 0
+      ACTOR_DEAD_POSE = 4
       ACTOR_DEFEND_POSE = 7
       # `poses[id].animation_type` values: 0 a BattleCharSet sprite sheet
       # (implemented below), 1 a full Battle/<name> (CBA) animation sequence
@@ -496,45 +497,58 @@ class RPG2k
         200 + i
       end
 
-      # A living party member's Idle- or Defend-pose sprite, or nil when this
+      # A party member's Idle-, Defend- or Dead-pose sprite, or nil when this
       # step cannot draw one: `actor.battler_animation_id` names no
       # `db.battleranimations` entry (Game::Actor#battler_animation_id
       # already logs that diagnostic itself), the resolved entry defines
-      # neither pose at all (silent -- an entry legitimately covering only
-      # some of the 12 poses is normal authoring, not a dangling reference),
-      # or the pose uses the `animation_type == 1` battle/CBA format this
-      # step does not implement (logged below, matching this codebase's
-      # "reported gap, not silently invented" convention for unimplemented
-      # behaviour).
+      # none of the three poses at all (silent -- an entry legitimately
+      # covering only some of the 12 poses is normal authoring, not a
+      # dangling reference), or the pose uses the `animation_type == 1`
+      # battle/CBA format this step does not implement (logged below,
+      # matching this codebase's "reported gap, not silently invented"
+      # convention for unimplemented behaviour).
       #
-      # `defending:` selects Pose id 7 (Defend, schema.rb's own comment on
-      # chunk 32 lists the full 12-pose order) over Idle -- ported from
-      # EasyRPG's `Sprite_Actor::DoIdleAnimation`, whose very first check is
-      # `battler->IsDefending()`, ahead of every state-mapped pose (the
-      # other half of that function's own idle-vs-something dispatch, still
-      # unimplemented here -- this only ever picks Idle or Defend). Falls
-      # back to Idle when the entry defines no Defend pose of its own,
-      # exactly like an entry with no Idle pose falls back to no sprite at
-      # all: a partially-authored table is normal, not an error.
+      # `defending:`/`dead:` select Pose id 7 (Defend) / 4 (Dead) over Idle
+      # -- ported from EasyRPG's `Sprite_Actor::DoIdleAnimation`, whose very
+      # first check is `battler->IsDefending()`, ahead of every state-mapped
+      # pose, and whose monster branch (the one unambiguous case without a
+      # `situation.battler_animation_id` table to consult) resolves the
+      # Knockout state straight to `AnimationState_Dead`; a defeated actor
+      # is treated the same way here rather than through its own state's
+      # configurable pose (the other, still-unimplemented half of that
+      # function's dispatch -- see #build_actor_sprites). Defending wins
+      # over dead, matching the reference's check order, though the two
+      # never actually coincide (a downed actor never has a command to
+      # defend with). Either falls back to Idle when the entry defines no
+      # pose of its own for it, exactly like an entry with no Idle pose
+      # falls back to no sprite at all: a partially-authored table is normal,
+      # not an error.
       #
       # Position is either `battlecommands.placement` manual (0)'s raw
       # database `battle_x`/`battle_y` (Game_Actor::GetOriginalPosition) or
       # automatic (1)'s computed grid slot (#automatic_battle_position, the
       # EasyRPG Calculate2k3BattlePosition port) -- confirmed against
       # EasyRPG's actual C++ source, which splits exactly this way.
-      def build_actor_sprite(actor, i, defending: false)
+      def build_actor_sprite(actor, i, defending: false, dead: false)
         anim_id = actor.respond_to?(:battler_animation_id) ? (actor.battler_animation_id || 0) : 0
         table = db.respond_to?(:battleranimations) ? db.battleranimations : nil
         entry = (table && anim_id > 0) ? table[anim_id] : nil
         return nil unless entry
         poses = entry.respond_to?(:poses) ? entry.poses : nil
         return nil unless poses
-        used_defend_pose = defending && poses[ACTOR_DEFEND_POSE] ? true : false
-        pose = used_defend_pose ? poses[ACTOR_DEFEND_POSE] : poses[ACTOR_IDLE_POSE]
+        pose_id = if defending && poses[ACTOR_DEFEND_POSE]
+                    ACTOR_DEFEND_POSE
+                  elsif dead && poses[ACTOR_DEAD_POSE]
+                    ACTOR_DEAD_POSE
+                  else
+                    ACTOR_IDLE_POSE
+                  end
+        pose = poses[pose_id]
         return nil unless pose
 
         if pose.animation_type == ACTOR_POSE_TYPE_BATTLE
-          $stderr.puts "[RPG2k] actor ##{actor.id}: #{used_defend_pose ? 'defend' : 'idle'} pose " \
+          label = { ACTOR_DEFEND_POSE => 'defend', ACTOR_DEAD_POSE => 'dead' }.fetch(pose_id, 'idle')
+          $stderr.puts "[RPG2k] actor ##{actor.id}: #{label} pose " \
                        "uses a battle-animation (CBA) sheet, not a BattleCharSet -- not yet " \
                        "implemented, sprite not drawn"
           return nil
@@ -680,7 +694,7 @@ class RPG2k
         @ui[:allies].push(combatant)
         return unless @ui[:actor_sprites]
         i = @ui[:allies].length - 1
-        @ui[:actor_sprites].push(combatant.dead? ? nil : build_actor_sprite(combatant.actor, i, defending: combatant.defending))
+        @ui[:actor_sprites].push(build_actor_sprite(combatant.actor, i, defending: combatant.defending, dead: combatant.dead?))
         reset_actor_battler_z
       end
 
@@ -701,22 +715,25 @@ class RPG2k
         reset_actor_battler_z
       end
 
-      # `combatant`'s row just changed (the in-battle Row command) and its
-      # on-screen alternate-layout sprite needs to reflect the new
+      # `combatant`'s row, Defend or Dead status just changed and its
+      # on-screen alternate-layout sprite needs to catch up -- the new
       # automatic-placement X (`#automatic_battle_position`'s `row_x_offset`)
-      # -- rebuild it in place at the same index/Z, the same dispose-then-
-      # #build_actor_sprite-fresh shape #remove_battle_actor_sprite/
-      # #add_battle_actor_sprite already use for a roster change. A no-op
-      # when the fight draws no actor sprites at all (a traditional-layout
-      # database), or manual placement (its `battle_x`/`battle_y` never
-      # depend on row -- see `Combatant.from_actor`'s own row comment).
+      # for a row change, or the Idle/Defend/Dead pose #build_actor_sprite
+      # picks between otherwise -- rebuilt in place at the same index/Z, the
+      # same dispose-then-#build_actor_sprite-fresh shape
+      # #remove_battle_actor_sprite/#add_battle_actor_sprite already use for
+      # a roster change. A no-op when the fight draws no actor sprites at
+      # all (a traditional-layout database); manual placement's row_x_offset
+      # is a no-op too, since its `battle_x`/`battle_y` never depend on row
+      # (see `Combatant.from_actor`'s own row comment) -- only the pose can
+      # still change there.
       def reposition_actor_sprite(combatant)
         sprites = @ui[:actor_sprites]
         return unless sprites
         i = @ui[:allies].index { |c| c.equal?(combatant) }
         return unless i && sprites[i]
         dispose_battle_sprite(sprites[i])
-        sprites[i] = build_actor_sprite(combatant.actor, i, defending: combatant.defending)
+        sprites[i] = build_actor_sprite(combatant.actor, i, defending: combatant.defending, dead: combatant.dead?)
       end
 
       # Re-derive every surviving actor sprite's Z from its current index in
@@ -2076,10 +2093,14 @@ class RPG2k
         # revert any sprite still showing the Defend pose from the round
         # that just ended, snapshotted here since `#end_round` itself wipes
         # the flag this reads (#reposition_actor_sprite is a no-op when
-        # there are no alternate-layout actor sprites to begin with).
+        # there are no alternate-layout actor sprites to begin with). Anyone
+        # felled during the round just gone needs the same catch-up onto
+        # the Dead pose -- `dead?` itself survives `#end_round` untouched,
+        # so it is read after rather than snapshotted before.
         defenders = @ui[:allies].select(&:defending)
         battle.end_round
-        defenders.each { |ally| reposition_actor_sprite(ally) }
+        (defenders + @ui[:allies].select(&:dead?)).uniq { |a| a.object_id }
+          .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?
           enter_battle_result(battle.result)

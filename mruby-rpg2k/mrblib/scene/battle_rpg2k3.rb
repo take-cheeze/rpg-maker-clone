@@ -232,10 +232,12 @@ module RPG2k3
         battle = @ui[:battle]
         # See the base #finish_round_animation's identical comment: snapshot
         # who is showing the Defend pose before `end_round` clears the flag,
-        # so their sprite can revert to Idle.
+        # so their sprite can revert to Idle, and catch up anyone felled
+        # this action onto the Dead pose.
         defenders = @ui[:allies].select(&:defending)
         battle.end_round
-        defenders.each { |ally| reposition_actor_sprite(ally) }
+        (defenders + @ui[:allies].select(&:dead?)).uniq { |a| a.object_id }
+          .each { |ally| reposition_actor_sprite(ally) }
         close_battle_action
         if battle.finished?
           enter_battle_result(battle.result)
