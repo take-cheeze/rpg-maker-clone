@@ -13727,26 +13727,38 @@ module Game
     end
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
-    # `{ name:, volume:, tempo: }` hash: file (1), volume (3) and pitch (4). Used
-    # for the system chunk's current-BGM (75) and stored-BGM (78) slots, and
-    # (below) every Change System BGM override slot.
+    # `{ name:, volume:, tempo:, balance: }` hash: file (1), volume (3), pitch
+    # (4) and balance (5). Used for the system chunk's current-BGM (75) and
+    # stored-BGM (78) slots, and (below) every Change System BGM override
+    # slot. Balance confirmed as a first-class field of RPG_RT's own `Music`
+    # struct via `Game_Interpreter::CommandPlayBGM` (`src/
+    # game_interpreter.cpp`: `music.balance = ValueOrVariableBitfield(com, 4,
+    # 4, 3);`), round-tripped whole by `Game_System::MemorizeBGM`/
+    # `PlayMemorizedBGM` (`src/game_system.h`) the same way every other field
+    # here already is.
     def bgm_chunk(bgm)
       b = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
       b[1] = bgm[:name] || ''
       b[3] = bgm[:volume] || 100
       b[4] = bgm[:tempo] || 100
+      b[5] = bgm[:balance] || 50
       b
     end
 
     # Build an SE chunk (an LCF::Array1D over the SE schema) from our stored
-    # `{ name:, volume:, tempo: }` hash: file (1), volume (3) and pitch (4).
-    # #bgm_chunk's SE counterpart, used for every Change System SFX override
-    # slot.
+    # `{ name:, volume:, tempo:, balance: }` hash: file (1), volume (3),
+    # pitch (4) and balance (5). #bgm_chunk's SE counterpart, used for every
+    # Change System SFX override slot -- the same balance field #bgm_chunk's
+    # own fix just above restores, and `#do_change_system_sfx`
+    # (`mruby-rpg2k/mrblib/interpreter.rb`) already tracks it in-memory
+    # (`balance: cmd.param(3)`), so only this save-side round-trip was
+    # dropping it.
     def se_chunk(se)
       s = LCF::Array1D.new('', { elements: LCF::Schema::SE })
       s[1] = se[:name] || ''
       s[3] = se[:volume] || 100
       s[4] = se[:tempo] || 100
+      s[5] = se[:balance] || 50
       s
     end
 
@@ -14087,14 +14099,16 @@ module Game
       NO_CLOCK_TIMESTAMP
     end
 
-    # Rebuild our `{ name:, volume:, tempo: }` BGM hash from a parsed BGM chunk
-    # (an LCF::Array1D over the BGM schema). Returns nil for an absent chunk or an
-    # empty file name (the "use the database value" sentinel).
+    # Rebuild our `{ name:, volume:, tempo:, balance: }` BGM hash from a
+    # parsed BGM chunk (an LCF::Array1D over the BGM schema). Returns nil for
+    # an absent chunk or an empty file name (the "use the database value"
+    # sentinel).
     def self.bgm_from_chunk(chunk)
       return nil unless chunk
       name = chunk.file
       return nil if name.nil? || name.empty?
-      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100 }
+      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
+        balance: chunk.balance || 50 }
     end
 
     # #bgm_from_chunk's SE counterpart: rebuild our `{ name:, volume:, tempo: }`
@@ -14103,7 +14117,8 @@ module Game
       return nil unless chunk
       name = chunk.file
       return nil if name.nil? || name.empty?
-      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100 }
+      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
+        balance: chunk.balance || 50 }
     end
 
     # Rebuild a State from a saved hash. Actors are re-created from the database
