@@ -10029,6 +10029,48 @@ def combatant_mp(name, atk, dfn, agi, hp, mp)
   c
 end
 
+# The Actor-side checks above cover the field-side prune/cure paths; every
+# `Game_BattleAlgorithm` subclass's own state mutation
+# (src/game_battlealgorithm.cpp) threads the identical
+# `target->GetPermanentStates()` into every in-battle `State::Add`/
+# `State::Remove` too -- `Game::Battle#inflict_state`/`#cure_state` had no
+# such wiring at all, so the exact same cursed state that already survived
+# a lethal hit and resisted Full Recovery on the field could still be
+# stripped by a lethal in-battle hit, or cured outright by a curative
+# skill/item used in battle. `Game_Enemy` never overrides
+# `GetPermanentStates` at all (the base `Game_Battler` version always
+# returns empty), so only an ally Combatant's own back-referenced `Actor`
+# carries a real set here.
+check 'battle: a lethal state infliction does not strip a state RPG2003 ' \
+      'cursed armor is still forcing' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  situation = { 1 => fake_state(priority: 100), 4 => fake_state(priority: 50) }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, situation, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  c = Game::Battle.from_actor(a)
+  eq [4], c.states, 'the cursed state carried into battle with the actor'
+  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 5, 100)], Game::Rng.new(1), situation)
+  bat.send(:inflict_state, c, Game::States::DEATH_ID)
+  ok c.states.include?(1), 'sanity: Death landed'
+  ok c.states.include?(4),
+     "the cursed state survived Death's own in-battle crowding-out pass too"
+end
+
+check "battle: a curative state removal cannot cure a state RPG2003 " \
+      'cursed armor is still forcing' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, nil, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  c = Game::Battle.from_actor(a)
+  bat = Game::Battle.new([c], [combatant('Foe', 0, 0, 5, 100)], Game::Rng.new(1))
+  bat.send(:cure_state, c, 4)
+  eq [4], c.states, 'refused in battle too -- the armor is still equipped'
+end
+
 check 'to_lsd/from_lsd round-trips the latest battle\'s turn count' do
   # Field 41 ("turns passed in latest battle") used to stay deliberately
   # undecoded: there was no per-battle turn tracker on the Ruby side to

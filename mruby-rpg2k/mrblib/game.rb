@@ -12445,9 +12445,28 @@ module Game
       target.attr_ranks = {} if target.respond_to?(:attr_ranks=)
     end
 
+    # `target`'s live RPG2003 cursed-armor-forced states (`Actor
+    # #permanent_states`), or `[]` for an enemy Combatant (no `:actor` field
+    # at all) -- matching real RPG_RT's own split: `Game_Actor::
+    # GetPermanentStates` is overridden with the real cursed-armor set,
+    # while the base `Game_Battler::GetPermanentStates` (which `Game_Enemy`
+    # never overrides) always returns an empty `PermanentStates()`, so a
+    # monster never carries one at all. `#inflict_state`/`#cure_state` need
+    # this the same way every `Game_BattleAlgorithm` subclass's own state
+    # mutations do -- `target_perm_states = target->GetPermanentStates()`,
+    # threaded into every in-battle `State::Add`/`State::Remove`
+    # (`src/game_battlealgorithm.cpp`), not just the field-side equivalents
+    # (`Actor#knock_out!`, `Party#cast_skill`, `Interpreter#
+    # do_change_condition`) this codebase already fixed.
+    def combatant_permanent_states(target)
+      actor = target.respond_to?(:actor) ? target.actor : nil
+      actor && actor.respond_to?(:permanent_states) ? actor.permanent_states : []
+    end
+
     def inflict_state(target, sid)
       return if target.state?(sid)
-      target.states = Game::States.prune((target.states || []) + [sid], @states)
+      target.states = Game::States.prune((target.states || []) + [sid], @states,
+                                          keep: combatant_permanent_states(target))
       target.hp = 0 if sid == Game::States::DEATH_ID
       apply_knockout_reset(target)
     end
@@ -12461,8 +12480,17 @@ module Game
     # to false afterward -- since removing any *other* id can never change
     # whether `kDeathID` is still carried, checking `sid` itself is an
     # equivalent, simpler test for the same transition.
+    #
+    # A state one of `target`'s worn cursed items is still actively forcing
+    # cannot be cured this way either -- `State::Remove` (`src/state.cpp`)
+    # hard-refuses (`if (ps.Has(state_id)) { return false; }`) exactly like
+    # it does for `Actor#remove_state`'s own already-ported lock; unlike
+    # that method, this one has no `always_remove_battle_states:`
+    # equivalent to bypass it with, since RPG_RT's own in-battle callers
+    # never pass one either.
     def cure_state(target, sid)
       return unless target.state?(sid)
+      return if combatant_permanent_states(target).include?(sid)
       target.states = (target.states || []) - [sid]
       target.hp = 1 if sid == Game::States::DEATH_ID
     end
