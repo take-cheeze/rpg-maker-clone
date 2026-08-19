@@ -1686,6 +1686,30 @@ module Game
       end
     end
 
+    # Whether one of this actor's own currently-inflicted states seals skill
+    # row `sk` -- RPG2000 gives a state two independent seals, each with a
+    # threshold: `restrict_skill` bars any skill whose `physical_rate` reaches
+    # `restrict_skill_level`, and `restrict_magic` bars any whose
+    # `magical_rate` reaches `restrict_magic_level` (EasyRPG's
+    # `Game_Battler::IsSkillUsable`, `src/game_battler.cpp` -- the same check
+    # `Game::Battle#skill_sealed?` already ports for the in-battle skill menu;
+    # this is its field-side twin, since `IsSkillUsable` runs identically for
+    # both -- `Window_Skill::CheckEnable` is one shared window class, and
+    # nothing in the reference gates this loop on being in a fight at all).
+    # 封印 / Silence are what these fields are *for*.
+    def skill_sealed?(sk)
+      return false unless sk
+      table = state_table
+      @states.any? do |sid|
+        d = Game::States.row(sid, table)
+        next false unless d
+        (d.respond_to?(:restrict_skill) && d.restrict_skill &&
+         (sk.physical_rate || 0) >= (d.respond_to?(:restrict_skill_level) ? (d.restrict_skill_level || 0) : 0)) ||
+        (d.respond_to?(:restrict_magic) && d.restrict_magic &&
+         (sk.magical_rate || 0) >= (d.respond_to?(:restrict_magic_level) ? (d.restrict_magic_level || 0) : 0))
+      end
+    end
+
     # Inflict a status condition (no-ops for an absent/duplicate id). Inflicting
     # the death state (戦闘不能) knocks the actor out, zeroing HP.
     def add_state(state_id)
@@ -4786,12 +4810,21 @@ module Game
     end
 
     # Whether `caster` can cast skill `sid` right now: it knows the skill, can
-    # pay its SP cost, and (see #weapon_attribute_ready?) is not missing a
-    # required weapon-type Attribute.
+    # pay its SP cost, (see #weapon_attribute_ready?) is not missing a
+    # required weapon-type Attribute, and (see Actor#skill_sealed?) is not
+    # currently under a state that seals it -- EasyRPG's `Game_Battler::
+    # IsSkillUsable` (`src/game_battler.cpp`) checks the identical seal
+    # unconditionally, in or out of a fight, and this is the field-menu's own
+    # gate through which every field skill-cast path (#field_skill?/
+    # #field_skills, #skill_effective?, #cast_skill/#cast_switch_skill)
+    # already funnels. `Game::Battle#skill_sealed?` is this method's own
+    # in-battle twin, already correct; a field-cast skill had no such check
+    # at all until now.
     def can_cast?(caster, sid)
       sk = db_skill(sid)
       !sk.nil? && caster && caster.knows_skill?(sid) &&
-        caster.mp >= skill_cost(sk, caster) && weapon_attribute_ready?(caster, sk)
+        caster.mp >= skill_cost(sk, caster) && weapon_attribute_ready?(caster, sk) &&
+        !(caster.respond_to?(:skill_sealed?) && caster.skill_sealed?(sk))
     end
 
     # Whether `caster` satisfies `sk`'s weapon-type Attribute requirement, if
