@@ -15191,7 +15191,7 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   (Integer/Float/String/true/false/nil), raising `RuntimeError` on a JS
   exception. `MV.js_available?` reports the engine's presence; `runtime_available?`
   stays false until the game host (M3/M4) lands. Covered by `mruby-mvjs/test`.
-- 🚧 **M3 — Boot to title.** Host-global shims (`window`/`document`/`navigator`/
+- ✅ **M3 — Boot to title.** Host-global shims (`window`/`document`/`navigator`/
   `location`/`requestAnimationFrame`/`setTimeout`/`XMLHttpRequest`/`Image`/
   `localStorage`/`require('fs'|'path')`), the asset/JSON IO bridge, and the
   rAF/event-loop pump — enough to load the core scripts and reach `Scene_Title`.
@@ -15205,10 +15205,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   - ✅ NW.js `require('fs'|'path')` (local-file saves), `MV::JS.eval_file`, and
     `MV#boot`/`MV#main_loop` wired to evaluate `MV::CORE_SCRIPTS` and pump the
     host (dormant behind `runtime_available?` until M4 rendering).
-  - Remaining: `document`/`Image` (canvas-related, land with rendering in M4),
-    then flip `runtime_available?` on so the boot actually reaches
-    `Scene_Title`.
-- 🚧 **M4 — Rendering.** The Canvas2D → `Bitmap` bridge behind PIXI's Canvas
+  - ✅ `document`/`Image` landed with M4 below, and `MV.runtime_available?` is
+    on — the boot reaches `Scene_Title` for real (see M5's real-game play
+    smoke, which gets past the title into New Game).
+- ✅ **M4 — Rendering.** The Canvas2D → `Bitmap` bridge behind PIXI's Canvas
   renderer, so the title screen and map actually draw through `mruby-rgss`.
   - ✅ `document`/`HTMLCanvasElement`/`CanvasRenderingContext2D` backed by native
     RGBA buffers (`mvcanvas.cxx`): `fillRect`/`clearRect`/`drawImage`/
@@ -15227,13 +15227,30 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     and `drawImage` inverse-maps through it so PIXI's sprites (positioned via
     `setTransform` + draw-at-origin) land correctly; `fillRect`/`clearRect` map
     their rect through the matrix.
-  - Remaining: `putImageData`/typed-array `ImageData`, and path-based fills
-    (`beginPath`/`fill`) that PIXI's Graphics uses for solid shapes — then the
-    title screen should composite. This is the point to boot the real MV test
-    bed and iterate on whatever the corescript exercises next.
-- 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
+  - ✅ **`putImageData`/typed-array `ImageData`, and path-based fills** — done,
+    despite this section still reading "Remaining" until now.
+    `Ctx.prototype.putImageData` (`mvcanvas.cxx`) writes an `ImageData`'s pixels
+    straight back with clamping (`Bitmap.adjustTone`'s use), and
+    `beginPath`/`moveTo`/`lineTo`/`rect`/`arc`/`fill`/`stroke` build one polygon
+    and scanline-fill or stroke it through `__mv_canvasFillPolygon`, transform-
+    and composite-mode-aware — enough for `Bitmap.drawCircle` (arc + fill, used
+    by `Weather`'s snow) and the simple vector fills PIXI's `Graphics` and
+    plugin HUDs draw. Covered by `mruby-mvjs/test/canvas_test.rb` (pixel
+    readback for `putImageData`, including the out-of-range-channel clamp and
+    the transform being ignored per spec; rasterised polygons for a triangle,
+    a tessellated circle via `arc`, an unclosed path, and a stroked segment).
+    `closePath`/`arcTo`/`clip` and multi-subpath fills stay no-ops — no core MV
+    consumer has needed them yet.
+- ✅ **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
   `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
-  in the SDL window and the sixel/iTerm2 terminals.
+  in the SDL window and the sixel/iTerm2 terminals. Input is wired too, despite
+  no dedicated bullet below having said so: `MV#sync_input`/`#sync_touch`
+  (`mruby-mvjs/mrblib/mv.rb`, both explicitly commented `# M5:`) push
+  `RGSS::Input`/mouse into `Input._currentState`/`TouchInput` every frame
+  before the scene updates, which is what the real-game play smoke's own
+  movement probe exercises. Audible playback itself is the one thing that
+  stays unverified here — dispatch and asset resolution are checked, but
+  CI has no sound device to actually listen with.
   - ✅ Test-bed data guard: `scripts/mv_testbed_check.rb` validates the MV
     `data/*.json` boot invariants under CRuby (no JS engine) — start map size
     (`width*height*6`), tileset/actor/class cross-references, party members —
