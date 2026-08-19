@@ -289,6 +289,77 @@ class MZ
     "addLoadListener: function(){}, volume: 0, pitch: 0, pan: 0, seek: 0 }; }; " \
     "})(globalThis);".freeze
 
+  # Replaces `window.effekseer` (defined by the vendored `effekseer.min.js`,
+  # still evaluated harmlessly as part of CORE_SCRIPTS) with a diagnostic stub.
+  #
+  # `Graphics._createEffekseerContext` (rmmz_core.js) already degrades
+  # gracefully when `effekseer.createContext()` returns null, which is exactly
+  # what the real library does when its WASM runtime was never initialised
+  # (see the CORE_SCRIPTS comment on M6.2): `Graphics.effekseer` stays
+  # undefined, `EffectManager.load` never calls `startLoading`, and
+  # `Sprite_Animation` takes its own no-handle branch — sound/flash timings
+  # still fire and the animation still completes, just with nothing drawn.
+  # That path is real and was traced end to end (rmmz_managers.js:986-1045,
+  # rmmz_sprites.js:1243-1330); it is also completely silent — an MZ project
+  # whose animations are all Effekseer looks like it is running fine with no
+  # indication anything was skipped.
+  #
+  # This stub does not draw particles (that needs a native Effekseer port
+  # targeting the WebGL bridge in mvgl.cxx/mvwebgl.cxx — a multi-week project
+  # of its own, tracked separately) but it does the two things a stub can do
+  # honestly in one step: it makes `Graphics.effekseer` non-null so the load
+  # path actually runs, and it reads the real `.efkefc` bytes off disk
+  # (through the same `__mv_existsSync`/`__mv_readFileBytes` natives every
+  # other asset uses) to confirm the file exists and looks like a real effect
+  # container (`"EFKEFC"` magic) before logging exactly what was skipped and
+  # why. A missing effect file still reports through `onError`/`checkErrors`
+  # the same way the real engine's fetch failure would (rmmz_managers.js's
+  # `EffectManager.throwLoadError`), rather than being swallowed twice over.
+  #
+  # `play()` hands back a handle with a short fixed lifetime (decremented by
+  # `update()`, which `SceneManager.updateEffekseer` already calls once a
+  # frame) so `Sprite_Animation.checkEnd` still sees `_handle.exists` go
+  # false and ends the animation normally instead of hanging on it forever.
+  EFFEKSEER_SHIM_JS =
+    "(function(g){ " \
+    "function makeContext(){ var ctx = { _handles: [] }; " \
+    "ctx.init = function(){}; " \
+    "ctx.loadEffect = function(url, mag, onLoad, onError){ " \
+    "var exists = (typeof g.__mv_existsSync === 'function') && " \
+    "g.__mv_existsSync(url); " \
+    "if (!exists) { if (onError) onError('not found', url); " \
+    "return { isLoaded: false, url: url }; } " \
+    "var bytes = new Uint8Array(g.__mv_readFileBytes(url)); " \
+    "var magic = 'EFKEFC'; var magicOk = bytes.length >= magic.length; " \
+    "for (var i = 0; magicOk && i < magic.length; i++) { " \
+    "if (bytes[i] !== magic.charCodeAt(i)) magicOk = false; } " \
+    "if (typeof console !== 'undefined' && console.warn) { " \
+    "console.warn('[Effekseer] effect requested but native particle ' + " \
+    "'rendering is not implemented: ' + url + ' (' + bytes.length + " \
+    "' bytes' + (magicOk ? '' : ', unrecognized format') + ')'); } " \
+    "if (onLoad) onLoad(); " \
+    "return { isLoaded: true, url: url, byteLength: bytes.length, " \
+    "magicOk: magicOk }; }; " \
+    "ctx.releaseEffect = function(){}; " \
+    "ctx.update = function(){ var alive = []; " \
+    "for (var i = 0; i < this._handles.length; i++) { " \
+    "var h = this._handles[i]; h._life--; " \
+    "if (h._life <= 0) h.exists = false; else alive.push(h); } " \
+    "this._handles = alive; }; " \
+    "ctx.stopAll = function(){ for (var i = 0; i < this._handles.length; i++) " \
+    "this._handles[i].exists = false; this._handles = []; }; " \
+    "ctx.play = function(){ var h = { exists: true, _life: 20, " \
+    "setLocation: function(){}, setRotation: function(){}, " \
+    "setScale: function(){}, setSpeed: function(){}, " \
+    "stop: function(){ this.exists = false; } }; " \
+    "this._handles.push(h); return h; }; " \
+    "ctx.beginDraw = function(){}; ctx.drawHandle = function(){}; " \
+    "ctx.endDraw = function(){}; ctx.setProjectionMatrix = function(){}; " \
+    "ctx.setCameraMatrix = function(){}; " \
+    "return ctx; } " \
+    "g.effekseer = { createContext: makeContext }; " \
+    "})(globalThis);".freeze
+
   # Installed only for headless/CI runs (see #render_skip_enabled?, gated on
   # the same --no_render_wait flag as RGSS::Graphics.update's frame-pacing
   # skip). Wraps PIXI's real render call so #main_loop can suppress it on
@@ -339,6 +410,12 @@ class MZ
     # the MZ-only overrides above (see AUDIO_BRIDGE_EXTRA_JS).
     def audio_bridge_js
       "#{MV::AUDIO_BRIDGE_JS}\n#{AUDIO_BRIDGE_EXTRA_JS}"
+    end
+
+    # The JS that replaces window.effekseer with the diagnostic stub (see
+    # EFFEKSEER_SHIM_JS) instead of the real, unusable-here WASM runtime.
+    def effekseer_shim_js
+      EFFEKSEER_SHIM_JS
     end
 
     # The subset of CORE_SCRIPTS the host reuse (M6.2) actually evaluates to
@@ -2512,6 +2589,11 @@ class MZ
     # even the title BGM a game starts with is queued rather than lost to the
     # silent Web Audio stub.
     MV::JS.eval(self.class.audio_bridge_js)
+
+    # Replaces window.effekseer with the diagnostic stub (see
+    # EFFEKSEER_SHIM_JS) before Graphics.initialize runs -- SceneManager.run
+    # below is what calls it, via Graphics._createEffekseerContext.
+    MV::JS.eval(self.class.effekseer_shim_js)
 
     # Replace catchException so a boot error is captured (not swallowed) and run
     # the boot. `SceneManager.run` starts PIXI's ticker and returns; the scene is

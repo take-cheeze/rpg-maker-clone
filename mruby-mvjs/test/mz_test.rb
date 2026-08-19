@@ -189,6 +189,91 @@ assert 'the MZ audio bridge queues ops and neutralises the eager preload' do
   assert_equal "audio/se/Beep", call[1]
 end
 
+assert 'MZ.effekseer_shim_js replaces window.effekseer with the diagnostic stub' do
+  js = MZ.effekseer_shim_js
+  assert_true js.include?("g.effekseer = { createContext: makeContext }")
+  assert_true js.include?("EFKEFC")
+end
+
+assert 'the Effekseer stub loads a real effect file and reports it, honestly' do
+  # Exercised against the real host and real files on disk, through the same
+  # __mv_existsSync/__mv_readFileBytes natives every other MZ asset uses.
+  MV::JS.base_dir = "mvjs_effekseer_fixture"
+  begin
+    Dir.mkdir("mvjs_effekseer_fixture") rescue nil
+    Dir.mkdir("mvjs_effekseer_fixture/effects") rescue nil
+    File.open("mvjs_effekseer_fixture/effects/Real.efkefc", "wb") do |f|
+      f.write("EFKEFC\x01\x00garbage")
+    end
+    File.open("mvjs_effekseer_fixture/effects/Bogus.efkefc", "wb") do |f|
+      f.write("not an effect file")
+    end
+
+    MV::JS.eval(MZ.effekseer_shim_js)
+    MV::JS.eval("globalThis.__ctx = effekseer.createContext(); __ctx.init();")
+
+    # A real, well-formed file: onLoad fires, isLoaded is true, and the magic
+    # check passes.
+    MV::JS.eval(
+      "globalThis.__loaded = false; globalThis.__errored = false; " \
+      "globalThis.__effect = __ctx.loadEffect('effects/Real.efkefc', 1, " \
+      "function(){ __loaded = true; }, function(){ __errored = true; });"
+    )
+    assert_equal true, MV::JS.eval("__loaded")
+    assert_equal false, MV::JS.eval("__errored")
+    assert_equal true, MV::JS.eval("__effect.isLoaded")
+    assert_equal true, MV::JS.eval("__effect.magicOk")
+
+    # A file that exists but is not an .efkefc container: still loaded (so the
+    # animation completes rather than throwing) but flagged, not silently
+    # treated as a real effect.
+    MV::JS.eval(
+      "globalThis.__effect2 = __ctx.loadEffect('effects/Bogus.efkefc', 1, " \
+      "function(){}, function(){});"
+    )
+    assert_equal true, MV::JS.eval("__effect2.isLoaded")
+    assert_equal false, MV::JS.eval("__effect2.magicOk")
+
+    # A genuinely missing effect reports through onError, same as the real
+    # engine's fetch failure would -- not swallowed twice over.
+    MV::JS.eval(
+      "globalThis.__loaded3 = false; globalThis.__errored3 = false; " \
+      "globalThis.__effect3 = __ctx.loadEffect('effects/Missing.efkefc', 1, " \
+      "function(){ __loaded3 = true; }, function(){ __errored3 = true; });"
+    )
+    assert_equal false, MV::JS.eval("__loaded3")
+    assert_equal true, MV::JS.eval("__errored3")
+    assert_equal false, MV::JS.eval("__effect3.isLoaded")
+  ensure
+    File.delete("mvjs_effekseer_fixture/effects/Real.efkefc") rescue nil
+    File.delete("mvjs_effekseer_fixture/effects/Bogus.efkefc") rescue nil
+    Dir.delete("mvjs_effekseer_fixture/effects") rescue nil
+    Dir.delete("mvjs_effekseer_fixture") rescue nil
+    MV::JS.base_dir = ""
+  end
+end
+
+assert 'the Effekseer stub retires play() handles instead of hanging forever' do
+  MV::JS.eval(MZ.effekseer_shim_js)
+  MV::JS.eval("globalThis.__ctx2 = effekseer.createContext(); __ctx2.init();")
+
+  # Sprite_Animation.checkEnd (rmmz_sprites.js) waits for handle.exists to go
+  # false before it considers the animation finished; without a bounded
+  # lifetime here that wait would never end.
+  MV::JS.eval("globalThis.__h = __ctx2.play({});")
+  assert_equal true, MV::JS.eval("__h.exists")
+
+  MV::JS.eval("for (var i = 0; i < 25; i++) __ctx2.update();")
+  assert_equal false, MV::JS.eval("__h.exists")
+
+  # stopAll (SceneManager.updateEffekseer, on scene change) retires every live
+  # handle immediately rather than waiting out their lifetimes.
+  MV::JS.eval("globalThis.__h2 = __ctx2.play({});")
+  assert_equal true, MV::JS.eval("__h2.exists")
+  MV::JS.eval("__ctx2.stopAll();")
+  assert_equal false, MV::JS.eval("__h2.exists")
+end
+
 assert 'MZ.render_skip_bridge_js only wraps once Graphics._app exists' do
   js = MZ.render_skip_bridge_js
   assert_true js.include?("Graphics._app")
