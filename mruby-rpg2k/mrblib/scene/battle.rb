@@ -1720,7 +1720,8 @@ class RPG2k
                                           stat_mod_keys: c[:stat_mod_keys],
                                           stat_effect: c[:stat_effect] || 0,
                                           cured: c[:cured],
-                                          physical_rate: c[:physical_rate] || 0)
+                                          physical_rate: c[:physical_rate] || 0,
+                                          switch_id: c[:switch_id])
         @ui[:pending] = nil
         @ui[:phase] = :command
         advance_actor

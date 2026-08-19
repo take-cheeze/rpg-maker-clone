@@ -4983,6 +4983,39 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::Party#item_effective?` already does for the field menu). Covered by
   a new `scripts/rpg2k_scene_check.rb` check, confirmed to fail against the
   pre-fix code (the switch stayed off, the item still vanished) before the fix.
+  ✅ **Follow-up (2026-08-19): a battle-cast switch *skill* had the identical
+  gap the switch item just above did — its `switch_id` never reached the
+  command at all, so a fight-cast "summon companion" skill spent its SP and
+  did nothing.** Confirmed directly against RPG_RT's live source: `Game_
+  BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`) is `if
+  (skill.type == Type_switch) { SetAffectedSwitch(skill.switch_id); return
+  SetIsSuccess(); }` — checked before any of the ordinary hit/damage/state
+  logic, so a switch skill's only real effect, cast from a fight exactly as
+  from the field menu (`#cast_switch_skill`, already correct), is turning on
+  its configured switch after paying its SP. `Game::Party#battle_skill_
+  command` (`mruby-rpg2k/mrblib/game.rb`) had no such case at all and fell
+  into the ordinary self/ally-scope branch, producing a command with `cured:
+  []`/`inflict: []`/`hp: 0`/`mp: 0` and no `switch_id` key anywhere — the
+  consuming side already existed and already worked (`Game::Battle#apply_
+  skill_hit`'s recovery branch already read `cmd[:switch_id]` onto its log
+  entry, and `Scene::Battle#drive_battle_animate` already flipped
+  `@state.switches[entry[:switch_id]]` the moment an entry lands, both wired
+  up by the switch-item fix directly above), but nothing ever set `cmd[:
+  switch_id]` for a Skill. Fixed with an early return in `#battle_skill_
+  command` (`{ cost:, switch_id: sk.switch_id }` for `sk.type == SKILL_
+  SWITCH`, mirroring `#command_item`'s existing `switch_id:` field for a
+  switch item) and a new `switch_id:` keyword on `Game::Battle#command_skill`,
+  threaded from `Scene::Battle#apply_pending_skill`. `#command_skill_all` was
+  left alone, matching `#command_item_all`'s own precedent — a switch
+  skill/item is a self-only, no-target effect in both this port and the
+  reference, so the all-target volley path never legitimately carries one.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check exercising the full
+  `battle_skill_command` → `command_skill` → `step_action` pipeline (the
+  command carries exactly `{cost:, switch_id:}`, no HP/SP/state fields at
+  all; the produced log entry carries the switch through; the SP is still
+  spent), confirmed to fail against the pre-fix code (`expected {cost: 6,
+  switch_id: 17}, got {cost: 6, hp: 0, mp: 0, ...}`, no `switch_id` key at
+  all) before the fix.
 - ✅ **物理回避率アップ** (the item row's `raise_evasion`, field 26) — unread, so
   a shield/armour/helmet/accessory bought specifically for its evasion bonus
   was purely a stat stick against a normal attack. `ruby

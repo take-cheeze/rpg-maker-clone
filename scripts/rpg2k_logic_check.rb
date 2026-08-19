@@ -10987,6 +10987,35 @@ end
    eq 90, c[:chance]                            # no agility term, just skill.hit
  end
 
+ # 3 (Switch): EasyRPG's `Game_BattleAlgorithm::Skill::vExecute`
+ # (`src/game_battlealgorithm.cpp`) special-cases a switch skill before any of
+ # the ordinary hit/damage/state logic -- `SetAffectedSwitch(skill.switch_id);
+ # return SetIsSuccess();` -- so casting one in a fight, exactly like on the
+ # field (`#cast_switch_skill`), only ever spends its SP and flips its switch.
+ # `Game::Party#battle_skill_command` previously had no such case at all and
+ # fell into the ordinary self/ally-scope branch, producing a command with no
+ # `switch_id` anywhere on it -- a battle-cast switch skill spent its SP and
+ # did nothing else.
+ check 'a switch skill cast in battle only ever spends its SP and flips its switch' do
+   skills = { 7 => fake_skill(name: 'Summon', type: 3, sp_cost: 6, switch_id: 17) }
+   st = skill_party(skills)
+   hero = st.party.actor_by_id(1)
+   hero.learn_skill(7)
+   caster = Game::Battle.from_actor(hero)
+   foe = combatant('Foe', 0, 0, 5, 100)
+
+   c = st.party.battle_skill_command(st.party.db_skill(7), caster, caster)
+   eq({ cost: 6, switch_id: 17 }, c, 'no HP/SP/state effect at all -- just the switch and its cost')
+
+   b = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+   b.command_skill(caster, caster, name: 'Summon', cost: c[:cost], switch_id: c[:switch_id])
+   b.begin_round
+   before = caster.mp
+   e = b.step_action
+   eq 17, e[:switch_id], 'the produced log entry carries the switch through to the scene'
+   eq before - 6, caster.mp, 'and the SP is spent, same as any other skill'
+ end
+
  # `hit == -1` is a sentinel meaning "use the caster's own weapon-based hit
  # chance" -- EasyRPG's Algo::CalcSkillToHit reads it unconditionally, as its
  # very first line, for every skill (not gated behind any EasyRPG-only
