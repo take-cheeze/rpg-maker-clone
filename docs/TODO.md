@@ -11269,6 +11269,48 @@ not yet verified:
   reaches `bgm_pan` with that value; an omitted balance defaults to 50),
   confirmed to fail against the pre-fix code (`NoMethodError`/no `bgm_pan`
   call at all) before the fix.
+  ✅ **Follow-up (2026-08-19): the live-apply half of pan/balance was fixed
+  above, but the *tracking* half wasn't — Memorize BGM couldn't stash a
+  track's balance (it was never written into `current_bgm` in the first
+  place), so Play Memorized BGM never restored it, and the same shared
+  serializer gap silently dropped balance from the current-BGM/stored-BGM
+  and Change System BGM/SFX save-chunk round-trip too.** Confirmed
+  directly against RPG_RT's live source: `Game_System::MemorizeBGM`/
+  `PlayMemorizedBGM` (`src/game_system.h`) are `data.stored_music =
+  data.current_music;` / `BgmPlay(data.stored_music);` — the *whole*
+  `Music` struct is copied and replayed, balance included — and
+  `Game_System::BgmPlay` (`src/game_system.cpp`) re-applies
+  `Audio().BGM_Balance(...)` even on its own same-track path (`if
+  (previous_music.balance != data.current_music.balance) { ... }`).
+  `#play_audio`'s `:bgm` branch (`mruby-rpg2k/mrblib/interpreter.rb`)
+  already called `RGSS::Audio.bgm_pan(balance)` live on every Play BGM —
+  that part was correct — but built `@state.current_bgm` as `{ name:,
+  volume:, tempo: }` with no `balance:` key at all, so `#do_memorize_bgm`
+  (a bare `.dup` of `current_bgm`) had nothing to stash, and
+  `#do_play_memorized_bgm` never called `bgm_pan` regardless. The
+  identical gap existed a layer down in `Game::State#bgm_chunk`/
+  `.bgm_from_chunk` (`mruby-rpg2k/mrblib/game.rb` — the LCF chunk builder/
+  reader shared by the current-BGM (75) and stored-BGM (78) save slots),
+  which only wrote/read fields 1/3/4 (file/volume/pitch), silently
+  dropping field 5 (balance) — corrupting the `.lsd` round-trip even where
+  the in-memory hash *did* carry it correctly, as `#do_change_system_bgm`'s
+  own `system_bgm` hashes already do (`balance: cmd.param(4)`, confirmed
+  already correct). `#se_chunk`/`.se_from_chunk`, `#bgm_chunk`'s SE
+  counterpart used by every Change System SFX override slot, had the
+  identical field-5 gap. Fixed by adding `balance:` to `#play_audio`'s
+  `current_bgm` hash, an unconditional `RGSS::Audio.bgm_pan(bgm[:balance]
+  || 50)` call in `#do_play_memorized_bgm` (mirroring `#play_audio`'s own
+  placement outside the same-file branch), and `b[5]`/`s[5]` write plus
+  `chunk.balance` read in both chunk builder/reader pairs. Covered by two
+  new `scripts/rpg2k_logic_check.rb` checks (Play BGM "town" at balance
+  20, Memorize BGM, Play BGM "fanfare" at balance 90, Play Memorized BGM
+  restores balance 20 into state and re-applies it live — both to a
+  different track and to one that never stopped playing), plus balance
+  assertions added to the existing Change System BGM/SFX and current/
+  memorized-BGM `to_lsd`/`from_lsd` round-trip checks (using a non-centre
+  value, not just the default, so a chunk that silently fell back to 50
+  couldn't pass by accident), all confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **A map's own configured BGM now actually auto-plays, on the initial map
   load and every Transfer Player alike — a genuine, previously-undocumented
   gap found while cross-checking this same BGM cluster for anything else the

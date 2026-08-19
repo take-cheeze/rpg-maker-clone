@@ -3002,6 +3002,44 @@ check 'Memorize/Play Memorized BGM stashes and restores the current BGM' do
   eq %w[town fanfare town], names, 'the backend played town, fanfare, then town'
 end
 
+check 'Memorize/Play Memorized BGM stashes and re-applies the current ' \
+      'BGM\'s balance too, not just volume' do
+  # `Game_System::MemorizeBGM`/`PlayMemorizedBGM` (`src/game_system.h`) copy
+  # and replay RPG_RT's whole `Music` struct, balance included --
+  # `Game_System::BgmPlay` (`src/game_system.cpp`) re-applies
+  # `Audio().BGM_Balance(...)` even on its same-track path.
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100, 20], string: 'town'), # balance 20
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100, 90], string: 'fanfare'), # balance 90
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  eq 20, st.current_bgm[:balance], 'the memorized balance is restored into state'
+  pans = RGSS::Audio.log.select { |e| e[0] == :bgm_pan }.map { |e| e[1] }
+  eq [20, 90, 20], pans, 'town, fanfare, then back to town -- each with its own balance'
+end
+
+check 'Play Memorized BGM re-applies its stashed balance even to a track ' \
+      'that never stopped playing' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100, 20], string: 'town'), # balance 20
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100, 90], string: 'town'), # still town, balance bumped
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  pans = RGSS::Audio.log.select { |e| e[0] == :bgm_pan }.map { |e| e[1] }
+  eq [20, 90, 20], pans, 'even a same-file replay re-applies the memorized balance live'
+  eq 20, st.current_bgm[:balance]
+end
+
 check 'Play Memorized BGM with nothing memorized does nothing' do
   RGSS::Audio.log = []
   st = new_state
@@ -3798,25 +3836,47 @@ check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrid
   # slot too, via SAVE_SYSTEM's BGM fields 72-74/79-82 and SE fields 91-102.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  st.system_bgm[0] = { name: 'Battle1', fadein: 500, volume: 90, tempo: 110, balance: 50 }
+  st.system_bgm[0] = { name: 'Battle1', fadein: 500, volume: 90, tempo: 110, balance: 20 }
   st.system_bgm[6] = { name: 'GameOver1', fadein: 0, volume: 80, tempo: 100, balance: 50 }
-  st.system_sfx[0] = { name: 'Cursor1', volume: 95, tempo: 105, balance: 50 }
+  st.system_sfx[0] = { name: 'Cursor1', volume: 95, tempo: 105, balance: 80 }
   st.system_sfx[4] = { name: 'BattleStart1', volume: 85, tempo: 95, balance: 50 }
 
   round = Game::State.from_lsd(db, st.to_lsd)
   eq 'Battle1', round.system_bgm[0][:name], 'Change System BGM slot 0 (battle) round-trips'
   eq 90, round.system_bgm[0][:volume]
   eq 110, round.system_bgm[0][:tempo]
+  eq 20, round.system_bgm[0][:balance], 'a non-centre balance round-trips too, not just the default'
   eq 'GameOver1', round.system_bgm[6][:name], 'Change System BGM slot 6 (game over) round-trips'
   eq 'Cursor1', round.system_sfx[0][:name], 'Change System SFX slot 0 (cursor) round-trips'
   eq 95, round.system_sfx[0][:volume]
   eq 105, round.system_sfx[0][:tempo]
+  eq 80, round.system_sfx[0][:balance], 'SFX balance round-trips the same way'
   eq 'BattleStart1', round.system_sfx[4][:name], 'Change System SFX slot 4 (battle start) round-trips'
 
   # A slot never touched by Change System BGM/SFX stays absent, not a
   # spurious empty-string override.
   eq nil, round.system_bgm[1], 'an untouched BGM slot round-trips as absent, not an empty override'
   eq nil, round.system_sfx[1], 'an untouched SFX slot round-trips as absent, not an empty override'
+end
+
+check 'to_lsd/from_lsd round-trips the current and memorized BGM\'s balance, ' \
+      'not just name/volume/tempo' do
+  # #bgm_chunk/.bgm_from_chunk (the current-BGM/stored-BGM chunk 75/78
+  # round-trip) used to write/read only file (1), volume (3) and pitch (4) --
+  # balance (5) is a first-class field of RPG_RT's own `Music` struct
+  # (`Game_Interpreter::CommandPlayBGM`'s `music.balance =
+  # ValueOrVariableBitfield(...)`, `src/game_interpreter.cpp`), copied whole
+  # by `Game_System::MemorizeBGM`/`PlayMemorizedBGM` (`src/game_system.h`).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.current_bgm = { name: 'town', volume: 80, tempo: 100, balance: 30 }
+  st.memorized_bgm = { name: 'field', volume: 70, tempo: 90, balance: 60 }
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq 'town', round.current_bgm[:name], 'current BGM round-trips'
+  eq 30, round.current_bgm[:balance], 'and its balance round-trips too'
+  eq 'field', round.memorized_bgm[:name], 'memorized BGM round-trips'
+  eq 60, round.memorized_bgm[:balance], 'and its balance round-trips too'
 end
 
 check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
@@ -4169,8 +4229,8 @@ check 'State save round-trips the message configuration' do
   st.message_config.face_index = 2
   st.menu_access = false
   st.save_access = false
-  st.current_bgm = { name: 'town', volume: 80, tempo: 100 }
-  st.memorized_bgm = { name: 'field', volume: 70, tempo: 90 }
+  st.current_bgm = { name: 'town', volume: 80, tempo: 100, balance: 30 }
+  st.memorized_bgm = { name: 'field', volume: 70, tempo: 90, balance: 60 }
   loaded = Game::State.load(db, st.to_h)
   eq true, loaded.message_config.transparent
   eq Game::MessageConfig::POS_TOP, loaded.message_config.position
