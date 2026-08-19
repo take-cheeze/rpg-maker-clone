@@ -30,6 +30,22 @@ class RPG2k
     # Teleport-command machinery (reloading the map, replaying its access/BGM
     # setup) on its very next #update, rather than this scene hand-mutating
     # `@state.x`/`@state.y` and leaving that machinery unrun.
+    #
+    # L enters Edit mode instead -- this engine's actual Map Editor -- the same
+    # cursor repurposed to paint. CTRL picks up the tile under the cursor (on
+    # the active layer) as the brush; SHIFT swaps which layer (lower/upper) is
+    # active; C stamps the brush onto the cursor's tile via Game::Map#set_lower
+    # / #set_upper (an outright rewrite of that one cell, unlike Tile
+    # Substitution's map-wide "every tile with this id" rewrite); R writes the
+    # edited map back to its .lmu file. Edits are live the instant they're
+    # painted either way (Scene::Map reads the same @lower/@upper arrays), so R
+    # is only about persisting past this session, not about the edit taking
+    # effect. Brushes only ever come from the eyedropper, never typed as a raw
+    # id, so a painted tile is always one that already validly exists
+    # somewhere on this map. This viewer still only ever shows passable/
+    # blocked colour blocks, not real tile art (see #tile_color) -- painting
+    # between two tiles with the same passability will not visibly change
+    # anything here even though the underlying id did change.
     class MapViewer < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -62,7 +78,10 @@ class RPG2k
         @view_w = @contents.width
         @view_h = @contents.height - HEADER_H - FOOTER_H
         @pannable = @map && (@map.width > @view_w || @map.height > @view_h)
-        @select = false
+        @mode = :pan
+        @brush_layer = :lower
+        @brush = 0
+        @dirty = false
         @ox = 0
         @oy = 0
         center_on_player
@@ -75,7 +94,11 @@ class RPG2k
       end
 
       def update
-        @select ? update_select : update_pan
+        case @mode
+        when :select then update_select
+        when :edit then update_edit
+        else update_pan
+        end
       end
 
       private
@@ -88,6 +111,8 @@ class RPG2k
           refresh
         elsif Input.trigger?(Input::R)
           enter_select_mode
+        elsif Input.trigger?(Input::L)
+          enter_edit_mode
         elsif @pannable
           refresh if pan
         end
@@ -95,7 +120,7 @@ class RPG2k
 
       def update_select
         if Input.trigger?(Input::B) || Input.trigger?(Input::R)
-          @select = false
+          @mode = :pan
           refresh
         elsif Input.trigger?(Input::C)
           teleport_to_cursor
@@ -104,13 +129,64 @@ class RPG2k
         end
       end
 
+      def update_edit
+        if Input.trigger?(Input::B) || Input.trigger?(Input::L)
+          @mode = :pan
+          refresh
+        elsif Input.trigger?(Input::C)
+          paint_cursor
+        elsif Input.trigger?(Input::CTRL)
+          pick_brush
+        elsif Input.trigger?(Input::SHIFT)
+          @brush_layer = @brush_layer == :lower ? :upper : :lower
+          refresh
+        elsif Input.trigger?(Input::R)
+          save_to_disk
+        elsif move_cursor
+          refresh
+        end
+      end
+
       def enter_select_mode
         return unless @map
-        @select = true
+        @mode = :select
         @cx = @state.x
         @cy = @state.y
         ensure_cursor_visible
         refresh
+      end
+
+      def enter_edit_mode
+        return unless @map
+        @mode = :edit
+        @cx = @state.x
+        @cy = @state.y
+        ensure_cursor_visible
+        refresh
+      end
+
+      def paint_cursor
+        if @brush_layer == :lower
+          @map.set_lower(@cx, @cy, @brush)
+        else
+          @map.set_upper(@cx, @cy, @brush)
+        end
+        @dirty = true
+        refresh
+      end
+
+      def pick_brush
+        @brush = @brush_layer == :lower ? @map.lower(@cx, @cy) : @map.upper(@cx, @cy)
+        refresh
+      end
+
+      def save_to_disk
+        @map.sync_layers_to_unit
+        @map.unit.save_to(@parent.map_path(@map.id))
+        @dirty = false
+        refresh
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] map editor save failed: #{e.message}"
       end
 
       # One tile per press/repeat, unlike #pan's fixed pixel step -- the
@@ -222,7 +298,11 @@ class RPG2k
 
       def draw_header
         @contents.font.color = TEXT_COLOR
-        text = @select ? select_header_text : player_header_text
+        text = case @mode
+               when :select then select_header_text
+               when :edit then edit_header_text
+               else player_header_text
+               end
         @contents.draw_text 0, 0, @contents.width, HEADER_H, text
       end
 
@@ -242,6 +322,11 @@ class RPG2k
         "Cursor x:#{@cx} y:#{@cy}  #{word}#{ev_text}"
       end
 
+      def edit_header_text
+        dirty = @dirty ? '  *unsaved*' : ''
+        "Edit x:#{@cx} y:#{@cy}  layer:#{@brush_layer}  brush:#{@brush}#{dirty}"
+      end
+
       # The id and name of the map event standing at (x, y), or nil -- shares
       # #each_event_position's live-position-over-spawn-point rule with
       # #draw_events, so the cursor reports the same place the marker is
@@ -254,12 +339,14 @@ class RPG2k
 
       def draw_footer
         @contents.font.color = HINT_COLOR
-        hint = if @select
+        hint = case @mode
+               when :select
                  'Arrows:Move  C:Teleport  B:Cancel'
-               elsif @pannable
-                 'Arrows:Pan  C:Center  R:Select  B:Close'
+               when :edit
+                 'Arrows:Move  C:Paint  CTRL:Pick  SHIFT:Layer  R:Save  B:Exit'
                else
-                 'R:Select  B:Close'
+                 @pannable ? 'Arrows:Pan  C:Center  R:Select  L:Edit  B:Close' \
+                            : 'R:Select  L:Edit  B:Close'
                end
         @contents.draw_text 0, HEADER_H + @view_h, @contents.width, FOOTER_H, hint
       end
@@ -346,7 +433,7 @@ class RPG2k
       # marker, which it starts right on top of (Select mode opens on the
       # player's own tile).
       def draw_cursor
-        return unless @select
+        return unless @mode == :select || @mode == :edit
         vx = @cx - @ox
         vy = @cy - @oy
         return if vx.negative? || vy.negative? || vx >= @view_w || vy >= @view_h

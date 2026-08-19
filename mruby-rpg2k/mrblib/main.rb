@@ -637,6 +637,18 @@ class RPG2k
     pop while @scenes.size > 1
   end
 
+  # The base Scene::Map underneath whatever menus/debug tools are currently
+  # pushed on top -- always @scenes.first, since only #return_to_title and
+  # #show_game_over ever replace @scenes wholesale (both away from a running
+  # game entirely), and only #push/#pop touch it otherwise. Debug tools that
+  # need to reach into the live map scene itself (not just Game::State) go
+  # through this -- e.g. Scene::DebugMenu's Animation page, which fires a
+  # battle-animation preview by calling Scene::Map's own animation-player
+  # methods directly, the same way Scene::Battle does.
+  def map_scene
+    @scenes.first
+  end
+
   # Tear down all scenes and return to a fresh title screen.
   def return_to_title
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
@@ -654,12 +666,18 @@ class RPG2k
     @scenes = [Scene::GameOver.new(self, state)]
   end
 
-  # Load one map (.lmu) by id. Map files are named Map0001.lmu, Map0002.lmu, ...
-  def load_map id
+  # Map0001.lmu, Map0002.lmu, ... -- shared by #load_map and the debug Map
+  # Editor's own save-back-to-disk action (Scene::MapViewer), which needs the
+  # same path a second time to write to rather than only to read from.
+  def map_path(id)
     num = id.to_s
     num = "0#{num}" while num.size < 4
-    path = "#{GAME_DIR}/Map#{num}.lmu"
-    Game::Map.new id, LCF::MapUnit.new(File.open(path))
+    "#{GAME_DIR}/Map#{num}.lmu"
+  end
+
+  # Load one map (.lmu) by id.
+  def load_map id
+    Game::Map.new id, LCF::MapUnit.new(File.open(map_path(id)))
   end
 
   # New Game: build the initial party from the database, read the start

@@ -713,6 +713,12 @@ class FakeParent
   # missing-graphic debug marker; Ctrl/Shift/F9's debug behaviour); every
   # other check wants the same default (false) a plainly-launched game gets.
   attr_accessor :test_play
+  # Directory Scene::MapViewer's Map Editor #save_to_disk writes into (see
+  # #map_path below). nil by default -- every check that never saves a map
+  # never needs it -- so a check exercising the save path must set this to
+  # its own Dir.mktmpdir first, the same way it would ask a real GAME_DIR to
+  # write somewhere it controls rather than a bare filesystem root.
+  attr_accessor :map_dir
   def initialize(db, &map_maker)
     @db = db
     @map_tree = nil
@@ -722,6 +728,10 @@ class FakeParent
   end
 
   def load_map(id); @map_maker.call(id); end
+  # Map0001.lmu, Map0002.lmu, ... under #map_dir -- mirrors RPG2k#map_path
+  # (mruby-rpg2k/mrblib/main.rb) closely enough for the Map Editor's own
+  # save-to-disk check to round-trip through a real file.
+  def map_path(id); File.join(@map_dir, format('Map%04d.lmu', id)); end
   # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
   def push(scene); @pushed << scene; end
   # Scene::SaveLoad (and every field submenu) pops itself on cancel / once its
@@ -770,6 +780,32 @@ end
 
 def fake_parent(db)
   FakeParent.new(db) { |id| fake_map(id, {}) }
+end
+
+# Stands in for the real LCF::MapUnit a Game::Map wraps, for the Map Editor's
+# own checks: records #[]= calls and #save_to writes instead of doing real LCF
+# binary encoding, so these checks prove the *wiring* (Game::Map#sync_layers_
+# to_unit and Scene::MapViewer#save_to_disk call the right methods with the
+# right values) without redoing what scripts/lcf_text_convert_check.rb already
+# proves about the real binary writer.
+class FakeMapUnit
+  attr_reader :sets, :saved_to
+  def initialize(fields)
+    @fields = fields
+    @sets = {}
+  end
+  def method_missing(sym, *args)
+    return @fields[sym] if args.empty? && @fields.key?(sym)
+    super
+  end
+  def respond_to_missing?(sym, include_private = false)
+    @fields.key?(sym) || super
+  end
+  def []=(idx, value); @sets[idx] = value; end
+  def save_to(path)
+    @saved_to = path
+    File.write(path, 'fake .lmu')
+  end
 end
 
 # A party member reduced to what map-step slip damage touches. Building a
@@ -19439,13 +19475,13 @@ check 'R enters MapViewer Select mode on the player tile; B backs out to pan mod
 
   RGSS::Input.triggered = [RGSS::Input::R]
   scene.update
-  ok scene.instance_variable_get(:@select), 'R enters Select mode'
+  eq :select, scene.instance_variable_get(:@mode), 'R enters Select mode'
   eq 2, scene.instance_variable_get(:@cx), 'the cursor opens on the player tile, x'
   eq 3, scene.instance_variable_get(:@cy), 'the cursor opens on the player tile, y'
 
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
-  ok !scene.instance_variable_get(:@select), 'B backs out of Select mode'
+  eq :pan, scene.instance_variable_get(:@mode), 'B backs out of Select mode'
   ok !scene.parent.pop_called, 'B in Select mode does not close the whole viewer'
 
   RGSS::Input.triggered = [RGSS::Input::B]
@@ -19522,6 +19558,95 @@ check 'the cursor auto-scrolls the MapViewer viewport to stay in view while movi
   ox = scene.instance_variable_get(:@ox)
   ok ox > ox_before, 'the viewport scrolled right to keep up with the cursor'
   ok cx >= ox && cx < ox + view_w, 'the cursor stays inside the (now-scrolled) viewport'
+end
+
+check 'Game::Map#set_lower/#set_upper rewrite one cell directly, and ' \
+     '#sync_layers_to_unit pushes the edited layers back into the unit via chunks 71/72' do
+  w = 6; h = 5
+  lower = Array.new(w * h, 0)
+  upper = Array.new(w * h, 0)
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: lower, upper_layer: upper, events: {})
+  map = Game::Map.new(1, unit)
+
+  map.set_lower(2, 1, 5000)
+  eq 5000, map.lower(2, 1), 'the edited cell reads back the new id'
+  eq 0, map.lower(0, 0), 'an untouched cell is unaffected'
+
+  rev_before = map.revision
+  map.set_upper(3, 2, 4001)
+  ok map.revision > rev_before, '#set_upper bumps the cache-invalidation revision too'
+
+  map.sync_layers_to_unit
+  eq lower, unit.sets[71], 'the whole edited lower array (not just the one cell) reached chunk 71'
+  eq upper, unit.sets[72], 'and the upper array reached chunk 72'
+end
+
+check 'MapViewer Edit mode: CTRL picks up a tile as the brush, C paints it ' \
+     'elsewhere, and SHIFT swaps the active layer' do
+  w = 6; h = 5
+  lower = Array.new(w * h, 0)
+  lower[0] = 7000 # tile (0, 0)
+  upper = Array.new(w * h, 0)
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: lower, upper_layer: upper, events: {})
+  st = menu_state
+  st.map = Game::Map.new(1, unit)
+  st.x = 0; st.y = 0
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update
+  eq :edit, scene.instance_variable_get(:@mode), 'L enters Edit mode'
+  eq 0, scene.instance_variable_get(:@cx), 'the cursor opens on the player tile, same as Select'
+
+  RGSS::Input.triggered = [RGSS::Input::CTRL]
+  scene.update
+  eq 7000, scene.instance_variable_get(:@brush),
+     'CTRL picked up the tile under the cursor as the brush'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # cursor -> (1, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 7000, st.map.lower(1, 0), 'C stamped the brush onto the cursor tile'
+  ok scene.instance_variable_get(:@dirty), 'painting marks the map dirty'
+
+  RGSS::Input.triggered = [RGSS::Input::SHIFT]
+  scene.update
+  eq :upper, scene.instance_variable_get(:@brush_layer), 'SHIFT swaps to the upper layer'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 7000, st.map.upper(1, 0), 'a second C now paints the upper layer instead'
+  eq 7000, st.map.lower(1, 0), 'and left the earlier lower-layer paint untouched'
+end
+
+check 'MapViewer Edit mode R saves the map back to its .lmu path via the parent, ' \
+     'and clears the unsaved-changes flag' do
+  w = 6; h = 5
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+                          events: {})
+  st = menu_state
+  st.map = Game::Map.new(7, unit)
+  parent = fake_parent(fake_db)
+  Dir.mktmpdir('map-editor-save-check') do |dir|
+    parent.map_dir = dir
+    scene = RPG2k::Scene::MapViewer.new(parent, st)
+
+    RGSS::Input.triggered = [RGSS::Input::L]
+    scene.update
+    RGSS::Input.triggered = [RGSS::Input::C] # paint brush 0 onto (0, 0): a no-op value-wise,
+    scene.update                             # but still exercises the dirty flag honestly
+    ok scene.instance_variable_get(:@dirty), 'painting marks the map dirty'
+
+    RGSS::Input.triggered = [RGSS::Input::R]
+    scene.update
+    eq File.join(dir, 'Map0007.lmu'), unit.saved_to,
+       "saved to the map_path the parent computed for id 7"
+    ok !scene.instance_variable_get(:@dirty), 'saving clears the unsaved-changes flag'
+  end
 end
 
 check "a troop's terrain_set excludes it from a tile it does not cover" do

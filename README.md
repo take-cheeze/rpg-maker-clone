@@ -55,7 +55,15 @@
   the viewport auto-scrolling to keep it in view) that reports the tile
   underneath — coordinates, passable/blocked, and any map event standing
   there — and warps the player onto it with C, through the same queued-warp
-  mechanism a Teleport field skill uses rather than editing position by hand
+  mechanism a Teleport field skill uses rather than editing position by hand.
+  **L** instead enters Edit mode — this engine's own in-game Map Editor:
+  **Ctrl** picks up the tile under the cursor as the brush, **Shift** swaps
+  which layer (lower/upper) is active, **C** stamps the brush onto the
+  cursor's tile (rewriting that one cell — unlike Tile Substitution's
+  map-wide "every tile with this id" rewrite), and **R** writes the edited
+  map back to its `.lmu` file. A brush only ever comes from the eyedropper,
+  never a typed id, so a painted tile is always one that already validly
+  exists somewhere on the map
 - `--rpg2k_preview_map=<id>` starts New Game on a chosen map, centred on its
   middle tile, instead of the database's configured start position — a quick
   way to inspect one map's rendering without a save file positioned there.
