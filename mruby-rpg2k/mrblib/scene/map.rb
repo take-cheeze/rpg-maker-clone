@@ -5011,15 +5011,21 @@ class RPG2k
       # field-menu SFX audit elsewhere in this file/docs/TODO.md) -- shared
       # by the command list and the buy/sell list alike, both backed by a
       # `Window_Selectable` subclass in real RPG_RT (`Window_Shop`/
-      # `Window_ShopBuy`/`Window_ShopSell`).
+      # `Window_ShopBuy`/`Window_ShopSell`). Both directions also auto-repeat
+      # while held, not just a fresh press -- confirmed against RPG_RT's own
+      # live source: `Window_Shop::Update` (`src/window_shop.cpp`, the
+      # command list) gates its Up/Down entirely on `Input::IsRepeated`, and
+      # `Window_Selectable::Update` (`src/window_selectable.cpp`, the
+      # buy/sell item lists) moves on `IsTriggered` *or* `IsRepeated` --
+      # every RPG2000 list cursor in real RPG_RT auto-repeats.
       def shop_move_cursor(lines)
-        if Input.trigger?(Input::DOWN) && !lines.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !lines.empty?
           @shop[:index] += 1
           @shop[:index] %= lines.length
           draw_shop
           play_system_se(SFX_CURSOR)
           true
-        elsif Input.trigger?(Input::UP) && !lines.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !lines.empty?
           @shop[:index] -= 1
           @shop[:index] %= lines.length
           draw_shop

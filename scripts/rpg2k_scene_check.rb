@@ -5961,6 +5961,33 @@ check 'Open Shop scene: the buy list cursor wraps around' do
   eq 0, shop[:index], 'Down from the last good wraps to the first'
 end
 
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
+# key across frames without it also reading as a fresh trigger.
+check 'Open Shop scene: holding a direction auto-repeats the buy list ' \
+      'cursor, not just a fresh press' do
+  # Confirmed against RPG_RT's own live source: `Window_Shop::Update`
+  # (src/window_shop.cpp, the command list) and `Window_Selectable::Update`
+  # (src/window_selectable.cpp, the buy/sell item lists) both move the
+  # cursor on a held (repeated) Down/Up, not only a fresh trigger.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 5], indent: 0), # buy-only, goods 3/5
+    ECmd.new(ic::SHOP_END, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the shop opens straight to the buy list (buy-only)
+  shop = scene.instance_variable_get(:@shop)
+  eq 0, shop[:index], 'starts on the first good'
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, shop[:index], 'a held (repeated) Down still moves the buy list cursor'
+end
+
 # Open a buy-only shop stocking goods 3 (100g) and 5, with `gold` on hand, and
 # advance to the quantity counter for the first good.
 def shop_quantity_scene(gold)
