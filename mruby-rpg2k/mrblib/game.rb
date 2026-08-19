@@ -12896,13 +12896,6 @@ module Game
   class Timer
     FPS = 60
 
-    # RPG_RT's timer display never grows past two minute digits, so 99:59
-    # (5999 s) is the largest value it can show; a Timer Operation "set"
-    # sourced from a Control Variables value (arbitrary, player-reachable —
-    # e.g. an accidental or intentional overflowed computation) is clamped to
-    # this ceiling rather than wrapping or overflowing the frame counter.
-    MAX_SECONDS = 5999
-
     # Remaining time in frames; whether it is counting; whether it is drawn; and
     # whether it keeps counting (and drawing) during a battle — the Timer
     # Operation start command's second flag.
@@ -12915,11 +12908,25 @@ module Game
       @in_battle = false
     end
 
-    # Timer Operation, "set": load the timer with `seconds` (see the note above
-    # about the extra 59 frames). Clamped to MAX_SECONDS (99:59) since this can
-    # be fed an out-of-range Variable value via Control Variables.
+    # Timer Operation, "set": load the timer with `seconds` (see the note
+    # above about the extra 59 frames). Not clamped -- confirmed against
+    # RPG_RT's own live source: `Game_Party::SetTimer` (`src/game_party.cpp`)
+    # is `data.timer1_frames = seconds * DEFAULT_FPS + (DEFAULT_FPS - 1);`
+    # with no upper bound at all, and `Game_Interpreter::
+    # CommandTimerOperation` (`src/game_interpreter.cpp`) passes its
+    # `ValueOrVariable`-sourced seconds straight through with no clamp
+    # either -- so a Control Variables value above 99:59 (5999 s, an
+    # arbitrary, player-reachable overflow) genuinely reaches the frame
+    # counter uncapped in real RPG_RT. `Sprite_Timer::Draw`
+    # (`src/sprite_timer.cpp`) indexes its digit strip at an unbounded
+    # `32 + 8 * (mins / 10)` with no ceiling either, so real RPG_RT's own
+    # on-screen minutes display genuinely garbles past 99 rather than
+    # capping cleanly -- this port's own pixel-digit renderer
+    # (`Scene::Map#draw_timer_digits`, `mruby-rpg2k/mrblib/scene/map.rb`)
+    # already indexes its own windowskin digit strip the identical
+    # unbounded way, so it reproduces the same garbled-past-99 quirk for
+    # free once this class stops clamping first.
     def set(seconds)
-      seconds = MAX_SECONDS if seconds > MAX_SECONDS
       @frames = seconds * FPS + (FPS - 1)
     end
 

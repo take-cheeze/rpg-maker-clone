@@ -2728,28 +2728,26 @@ check 'a timer only counts in battle when it carries the battle flag' do
   ok t.drawn?(true), 'and keeps drawing'
 end
 
-check 'Timer Operation "set" clamps to 99:59 (5999 s) when a Variable feeds it an out-of-range value' do
+check 'Timer Operation "set" is not clamped to 99:59, even when a Variable ' \
+      'feeds it a value past it -- confirmed against RPG_RT\'s own ' \
+      'Game_Party::SetTimer, which has no upper bound at all' do
   t = Game::Timer.new
-  # Direct clamp check: RPG_RT's timer display never grows past two minute
-  # digits, so a value above the 99:59 ceiling is clamped, not wrapped.
   t.set(9999)
-  eq 5999, t.seconds, '9999 s clamps down to the 99:59 ceiling'
-  eq '99:59', t.display_text
-  eq Game::Timer::MAX_SECONDS * 60 + 59, t.frames
+  eq 9999, t.seconds, '9999 s lands exactly, not clamped down to 99:59'
+  eq 9999 * Game::Timer::FPS + (Game::Timer::FPS - 1), t.frames
 
   st = new_state
   st.variables[1] = 9999 # a Control Variables value the player could reach
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::TIMER_OPERATION, [0, 1, 1])]) # set = var 1
   it.update
-  eq 5999, st.timer(0).seconds, 'a variable-sourced set clamps the same way'
-  eq '99:59', st.timer_display_text
+  eq 9999, st.timer(0).seconds, 'a variable-sourced set is unclamped the same way'
 
-  # An ordinary in-range set (constant or variable) is unaffected.
+  # An ordinary in-range set (constant or variable) still works as before.
   st.variables[2] = 30
   it.start([FakeCmd.new(IC::TIMER_OPERATION, [0, 1, 2])]) # set = var 2
   it.update
-  eq 30, st.timer(0).seconds, 'a normal small value is untouched by the clamp'
+  eq 30, st.timer(0).seconds, 'a normal small value is unaffected'
 end
 
 check "Timer Operation addresses RPG2003's second timer through param5" do
