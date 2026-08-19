@@ -2169,6 +2169,22 @@ class RPG2k
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
         return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
+        # A same-layer Player Touch / Event Touch event on the faced tile
+        # answers the action button too, not just an action-triggered one --
+        # confirmed against RPG_RT's own live source: `Game_Player::
+        # CheckActionEvent` (src/game_player.cpp) checks
+        # `{Trigger_touched, Trigger_collision}` on the front tile
+        # unconditionally, before it ever looks for an action-triggered
+        # event there (`result |= CheckEventTriggerThere({Trigger_touched,
+        # Trigger_collision}, front_x, front_y, true);`, a single,
+        # unconditional line, no version gating). Unlike #touch_trigger?
+        # (which also answers hero *contact*, walking onto the tile),
+        # Parallel Process is not in this set -- it never answers the
+        # action button, only the two touch triggers do. This check is
+        # local to the immediate front tile only, not extended through the
+        # counter-tile chain below (which stays action-only, matching the
+        # reference's own separate `got_action` loop).
+        return start_event(ev, true) if action_touch_trigger?(ev)
 
         # Nothing on the faced tile: if it is a **counter** — a shop or inn
         # counter, marked in the chipset's upper-layer passage table — look
@@ -2185,6 +2201,16 @@ class RPG2k
       # Whether an event can answer the action button.
       def actionable?(ev)
         ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands] ? true : false
+      end
+
+      # Whether a same-layer Player Touch / Event Touch event on the faced
+      # tile can also answer the action button -- see #try_action_trigger's
+      # own citation. Deliberately narrower than #touch_trigger? (which also
+      # covers Parallel Process, for hero-*contact* purposes): Parallel is
+      # not in RPG_RT's own `{Trigger_touched, Trigger_collision}` set here.
+      def action_touch_trigger?(ev)
+        ev && ev[:layer] == LAYER_SAME && ev[:commands] &&
+          (ev[:trigger] == TRIGGER_PLAYER_TOUCH || ev[:trigger] == TRIGGER_EVENT_TOUCH) ? true : false
       end
 
       # Whether a trigger is one the party can set off by walking into the event

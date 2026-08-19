@@ -1848,6 +1848,58 @@ check 'action (trigger 0) does not fire on mere contact' do
   ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Player::CheckActionEvent`
+# (src/game_player.cpp) checks `{Trigger_touched, Trigger_collision}`
+# (Player Touch / Event Touch) on the faced tile unconditionally, before it
+# ever looks for an action-triggered event there -- a same-layer touch event
+# the party is merely facing, not standing on, still answers the action
+# button, not just Decision-key-only (trigger 0) events.
+check 'the action button also answers a same-layer Player Touch (trigger 1) ' \
+      'event it is only facing, not standing on' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 1, layer: RPG2k::Scene::Map::LAYER_SAME)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6 # face east, toward (1, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok st.switches[4], 'the action button reached the Player Touch event it was facing'
+  eq [0, 0], [st.x, st.y], 'the party never stepped onto its tile'
+end
+
+check 'the action button also answers a same-layer Event Touch (trigger 2) ' \
+      'event it is only facing, not standing on' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 2, layer: RPG2k::Scene::Map::LAYER_SAME)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok st.switches[4], 'the action button reached the Event Touch event it was facing'
+end
+
+check 'the action button does not answer a below-characters touch event ' \
+      'from an adjacent facing tile, only same-layer' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 1, layer: RPG2k::Scene::Map::LAYER_BELOW) # not LAYER_SAME
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'a below-characters touch event needs actual overlap, not just facing it'
+end
+
 # A scene on a map with counter tiles, for the talk-across-a-counter checks.
 def counter_scene(events, counters, player:)
   db = fake_db
