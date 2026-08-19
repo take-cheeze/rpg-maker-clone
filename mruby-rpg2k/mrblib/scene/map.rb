@@ -4518,12 +4518,19 @@ class RPG2k
           open_inn_window(req) # opened this frame; take input from the next one
           return
         end
-        if Input.trigger?(Input::DOWN)
+        # Auto-repeats while held, same as #drive_message's own choice
+        # cursor just above -- real RPG_RT implements this exact Accept/
+        # Cancel prompt as an ordinary Show Choices pair
+        # (`Game_Interpreter_Map::CommandShowInn`, `src/
+        # game_interpreter_map.cpp`: `pm.PushChoice(ToString(accept),
+        # can_afford); pm.PushChoice(ToString(cancel));`), so it inherits
+        # the identical `Window_Selectable`-backed auto-repeat.
+        if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @inn_choice += 1
           @inn_choice %= 2
           set_inn_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @inn_choice -= 1
           @inn_choice %= 2
           set_inn_cursor
@@ -7210,13 +7217,23 @@ class RPG2k
               return
             end
           end
-          if Input.trigger?(Input::DOWN)
+          # Both directions auto-repeat while held, not just a fresh press --
+          # RPG_RT's own `Window_Message` (`src/window_message.h`) is a plain
+          # `Window_Selectable` subclass, and `Window_Message::Update`
+          # (`src/window_message.cpp`) calls the base `Window_Selectable::
+          # Update()` unconditionally every frame, before ever dispatching
+          # to its own choice-specific `InputChoice` -- so a held Down/Up
+          # scrolls the choice cursor exactly like any other list window
+          # (`Window_Selectable::Update`, `src/window_selectable.cpp`, gates
+          # on `Input::IsRepeated`, with `endless_scrolling = true` by
+          # default and never overridden here).
+          if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
             @choice_index += 1
             @choice_index %= @message[:count]
             page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
-          elsif Input.trigger?(Input::UP)
+          elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
             @choice_index -= 1
             @choice_index %= @message[:count]
             page_to_choice

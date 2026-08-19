@@ -2872,6 +2872,22 @@ check 'Show Inn scene: the Accept / Cancel cursor wraps around' do
   eq 0, scene.instance_variable_get(:@inn_choice), 'Down from Cancel wraps back to Accept'
 end
 
+check 'Show Inn scene: the Accept / Cancel cursor auto-repeats while held, ' \
+      'not just a fresh press' do
+  # Real RPG_RT implements this exact prompt as an ordinary Show Choices
+  # pair (`Game_Interpreter_Map::CommandShowInn`, `src/
+  # game_interpreter_map.cpp`), so it inherits the same `Window_Selectable`
+  # auto-repeat every other list cursor gets.
+  scene, _st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  eq 0, scene.instance_variable_get(:@inn_choice), 'affordable: cursor starts on Accept'
+
+  RGSS::Input.repeated = [RGSS::Input::UP] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@inn_choice), 'a held (repeated) Up still moves the cursor'
+end
+
 check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' do
   scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
   st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's own BGM
@@ -9636,6 +9652,38 @@ check 'the choice window cursor wraps around, like Scene::Title (98dad9b)' do
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@choice_index), 'Down from the last choice wraps to the first'
+end
+
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
+# key across frames without it also reading as a fresh trigger.
+check 'the choice window cursor auto-repeats while a direction is held, ' \
+      'not just a fresh press' do
+  # Confirmed against RPG_RT's own live source: `Window_Message` (`src/
+  # window_message.h`) is a plain `Window_Selectable` subclass, and
+  # `Window_Message::Update` (`src/window_message.cpp`) calls the base
+  # `Window_Selectable::Update()` unconditionally every frame before its
+  # own choice-specific dispatch -- so a held Down/Up scrolls the choice
+  # cursor exactly like any other list window.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'Yes'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'No'),
+    ECmd.new(ic::CHOICE_OPTION, [2], indent: 0, string: 'Maybe'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
+  ok(msg && msg[:choice], 'choice window opened')
+  eq 0, scene.instance_variable_get(:@choice_index), 'starts on the first choice'
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@choice_index),
+     'a held (repeated) Down still moves the choice cursor'
 end
 
 check 'character_screen_position measures against the live camera' do

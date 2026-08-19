@@ -11700,6 +11700,34 @@ not yet verified:
   window's own available width rather than the full string), both confirmed
   to fail against the pre-fix code (a `NoMethodError`, and the full
   unclipped string) before the fix.
+- ✅ **The message-attached choice cursor (Show Choices, and the Show Inn
+  Accept/Cancel prompt built on the identical mechanism) only moved on a
+  fresh key press, never auto-repeating while Up/Down was held — the same
+  gap already fixed this pass on the shop lists, hero-name grid, and
+  quantity counter, just never checked on the choice list itself
+  (2026-08-19).** Confirmed directly against RPG_RT's live source:
+  `Window_Message` (`src/window_message.h`) is a plain `Window_Selectable`
+  subclass, and `Window_Message::Update` (`src/window_message.cpp`) calls
+  the base `Window_Selectable::Update()` unconditionally every frame,
+  before ever dispatching to its own choice-specific `InputChoice` — so a
+  held Down/Up scrolls the choice cursor exactly like any other list
+  window (`Window_Selectable::Update`, `src/window_selectable.cpp`, gates
+  on `Input::IsRepeated`, `endless_scrolling = true` by default and never
+  overridden for messages). `Game_Interpreter_Map::CommandShowInn`
+  (`src/game_interpreter_map.cpp`) builds its Accept/Cancel prompt as an
+  ordinary choice pair (`pm.PushChoice(ToString(accept), can_afford);
+  pm.PushChoice(ToString(cancel));`), so it inherits the identical
+  behavior. `Scene::Map#drive_message`'s choice branch and `#drive_inn`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) both checked only `Input.trigger?`
+  on Up/Down, so a player had to tap the direction once per option
+  instead of holding it down — arguably the highest-impact instance of
+  this bug class this session, since Show Choices appears in nearly every
+  RPG Maker game's dialogue. Fixed by adding `|| Input.repeat?(...)` to
+  both direction branches in each method. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (`RGSS::Input.repeated`, not
+  `.triggered`, still moves both the Show Choices and the Inn Accept/
+  Cancel cursor), both confirmed to fail against the pre-fix code
+  (`expected 1, got 0`) before the fix.
 
 **Battle system (default)**
 - ✅ **Battle pages are checked far more often than once per turn** — the
