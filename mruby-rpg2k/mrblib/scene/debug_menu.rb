@@ -1,12 +1,15 @@
 class RPG2k
   module Scene
     # RPG_RT's F9 debug menu (see Scene::Map#try_open_debug_menu -- Test Play
-    # only, opened from the field map). Two flip-able pages, Switch and
-    # Variable, each listing ten ids at a time: Left/Right flips between the
-    # two pages, Up/Down moves the cursor by one row (scrolling into the
-    # neighbouring block of ten at either edge), L/R jumps a full block of ten,
-    # C acts on the selected row (toggle a switch instantly, or open a signed
-    # number editor for a variable) and B closes the menu.
+    # only, opened from the field map). Three flip-able pages, Switch,
+    # Variable and Map, cycled with Left/Right. On the Switch/Variable pages,
+    # each listing ten ids at a time, Up/Down moves the cursor by one row
+    # (scrolling into the neighbouring block of ten at either edge), L/R jumps
+    # a full block of ten, and C acts on the selected row (toggle a switch
+    # instantly, or open a signed number editor for a variable). The Map page
+    # (this codebase's own addition -- not part of genuine RPG_RT's F9 menu)
+    # has no row list; C on it opens Scene::MapViewer, a whole-map debug
+    # overview (see there). B closes the menu.
     #
     # The id range shown extends to cover every switch/variable the project
     # actually names (its LDB "switch"/"variable" tables, chunks 23/24 --
@@ -23,6 +26,7 @@ class RPG2k
       LINE_H = 16
       NAME_COL_W = 208
       FLOOR_ID = 100
+      MODES = [:switch, :variable, :map].freeze
 
       def initialize(parent, state)
         super parent
@@ -46,11 +50,12 @@ class RPG2k
         return update_editor if @editor
         if Input.trigger?(Input::B)
           @parent.pop
-        elsif Input.trigger?(Input::LEFT) || Input.trigger?(Input::RIGHT)
-          @mode = @mode == :switch ? :variable : :switch
-          @page = 0
-          @cursor = 0
-          refresh
+        elsif Input.trigger?(Input::RIGHT)
+          cycle_mode(1)
+        elsif Input.trigger?(Input::LEFT)
+          cycle_mode(-1)
+        elsif @mode == :map
+          activate_row if Input.trigger?(Input::C)
         elsif Input.trigger?(Input::DOWN)
           move_cursor(1)
         elsif Input.trigger?(Input::UP)
@@ -65,6 +70,14 @@ class RPG2k
       end
 
       private
+
+      def cycle_mode(delta)
+        idx = (MODES.index(@mode) + delta) % MODES.length
+        @mode = MODES[idx]
+        @page = 0
+        @cursor = 0
+        refresh
+      end
 
       def max_page
         (max_id - 1) / PAGE_SIZE
@@ -113,6 +126,10 @@ class RPG2k
       end
 
       def activate_row
+        if @mode == :map
+          @parent.push Scene::MapViewer.new(@parent, @state)
+          return
+        end
         id = current_id
         if @mode == :switch
           @state.switches[id] = !@state.switches[id]
@@ -157,6 +174,7 @@ class RPG2k
         return unless @contents
         @contents.clear
         @contents.font.color = Color.new(255, 255, 255, 255)
+        return refresh_map_page if @mode == :map
         title = @mode == :switch ? 'Switch' : 'Variable'
         first = @page * PAGE_SIZE + 1
         last = [first + PAGE_SIZE - 1, max_id].min
@@ -171,6 +189,17 @@ class RPG2k
                               row_value_text(id), 2
         end
         @window.cursor_rect = Rect.new(0, (@cursor + 1) * LINE_H, @contents.width, LINE_H)
+      end
+
+      # No row list to select from, so no cursor bar either -- clear whatever
+      # the Switch/Variable pages last left behind.
+      def refresh_map_page
+        @window.cursor_rect = Rect.new(0, 0, 0, 0)
+        @contents.draw_text 0, 0, @contents.width, LINE_H, 'Map'
+        info = @state.map ? "Map #{@state.map.id}  #{@state.map.width}x#{@state.map.height}  " \
+                            "x:#{@state.x} y:#{@state.y}" : 'No map loaded'
+        @contents.draw_text 0, LINE_H, @contents.width, LINE_H, info
+        @contents.draw_text 0, LINE_H * 2, @contents.width, LINE_H, 'C: open map viewer'
       end
 
       # -- Variable value editor, opened by C on a Variable row ----------------
