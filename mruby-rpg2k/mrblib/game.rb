@@ -2926,10 +2926,24 @@ module Game
     # list back to Row alone. Ported from EasyRPG's
     # Game_Actor::ChangeBattleCommands, including its capacity rule: the list
     # holds at most six real commands plus Row, so a seventh add is dropped.
+    #
+    # An add also validates `id` against the database-wide Battle Commands
+    # table first -- EasyRPG's own source: `const auto* cmd =
+    # GetElement(Data::battlecommands.commands, id); if (!cmd) { Warning(...);
+    # return; }`, entirely before the capacity/duplicate checks. An id the
+    # table doesn't define never occupies a slot, unlike this port's own
+    # earlier version, which only checked `id > 0` and let any positive
+    # integer through -- a handful of bogus adds could silently exhaust the
+    # six-slot capacity, starving a later, genuinely valid add of a slot it
+    # should have had. Reusing #battle_command_row (already the exact
+    # existence check this needs) also makes the command correctly inert on
+    # a genuine RPG2000 database with no `battlecommands` table at all --
+    # matching `Player::IsRPG2k3Commands()`'s own gate on the real event
+    # command, which #do_change_battle_commands does not separately enforce.
     def change_battle_commands(add, id)
       cmds = battle_commands
       if add
-        return if id.nil? || id <= 0 || cmds.include?(id)
+        return if id.nil? || id <= 0 || cmds.include?(id) || !battle_command_row(id)
         kept = cmds.reject { |c| c == 0 || c == -1 }
         return if kept.size >= 6
         @battle_commands = kept + [id, 0]
