@@ -630,6 +630,51 @@ the interpreter-linking slice, in this order:
   path — the *real* game-driving depth (P5) remains unmeasured until a
   project is deployed to `kGameDir`, on real hardware or an emulator
   with a Memory Stick image.
+
+  With the nine-bug idle-path trail closed, this EBOOT was tested for
+  the first time against a real project — `data/Nepheshel206beta`, this
+  repo's own test fixture, copied to `kGameDir` — rather than the empty
+  `kGameDir` `psp-smoke` always exercises. This immediately found a
+  **tenth bug, partially fixed**: `RPG2k#initialize`
+  (`mruby-rpg2k/mrblib/main.rb`) calls `native_test_play?`, which
+  references the `TEST_PLAY` mruby constant directly (rescuing
+  `NameError` if undefined) — every other target's entry point defines
+  it (`src/main.cxx`), the PSP build never did. Fixed by setting it to
+  `false` in `app/psp/main.cxx`, matching `GAME_DIR`/`RTP_DIR`'s
+  existing pattern.
+
+  That fix alone is **not sufficient**: constructing `RPG2k` with a real
+  project still crashes shortly after, in a genuinely different way — a
+  `mrb_assert()` inside mruby's bytecode interpreter (`mrb_vm_exec`,
+  `3rd/mruby/src/vm.c`), reached only after several real method calls
+  already execute correctly (including at least one full `OP_ENTER`
+  argument-binding pass). An extensive trace pass (temporary
+  instrumentation across `mrb_funcall_with_block`, `mrb_vm_run`,
+  `mrb_vm_exec`'s entry sequence, and `OP_ENTER`'s own handling, none
+  kept) ruled out, with direct evidence: `CI_PROC_SET`'s
+  `!MRB_PROC_ALIAS_P` assert (the proc is real, non-null, not an alias);
+  `MRB_TRY`'s `setjmp` (succeeds normally — `MRB_USE_CXX_EXCEPTION` is
+  not defined for this build, so this is the plain `setjmp`/`longjmp`
+  path, not C++ exceptions); the computed-goto dispatch table being out
+  of bounds (the decoded opcode, `OP_ENTER` = 57, is well within the
+  119-entry table, and no `__cxa_guard_acquire` call exists anywhere in
+  the compiled `vm.c` object despite it being compiled as C++,
+  confirmed via disassembly); and — tested directly, not just
+  theorized — the `TEST_PLAY` fix above being sufficient on its own (it
+  is not; the crash persists with it applied). The exact failing
+  `mrb_assert()` was not pinned to one of the ~25 candidate call sites
+  within `mrb_vm_exec`'s many opcode handlers before this pass's time
+  budget ran out; a per-opcode trace (needed to see the last few
+  instructions executed before the crash) was attempted but proved too
+  slow to reach the crash point before the test harness's own timeout,
+  since each traced instruction costs a real syscall.
+
+  This is a real, separate, not-yet-fixed bug — the first ever found
+  that specifically requires driving this EBOOT with actual game data
+  rather than the idle path, since nothing before this pass ever tested
+  that. Not part of the original nine-bug boot-blocker count above,
+  which is unaffected and remains fully closed for the idle path
+  `psp-smoke` verifies.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
