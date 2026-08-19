@@ -7954,6 +7954,34 @@ check 'Move Event drives an unboarded boat along a route, respecting vehicle_pas
   eq 6, boat.direction, 'facing the direction it moved (MOVE_RIGHT)'
 end
 
+check "a vehicle's forced Move Route frequency reverts once the (non-" \
+      "repeating) route finishes, not stuck forever" do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # ForceMoveRoute` (src/game_character.cpp) snapshots the frequency in
+  # effect before the route starts (`if (!IsMoveRouteOverwritten())
+  # original_move_frequency = GetMoveFrequency();`), and `CancelMoveRoute`
+  # restores it (`SetMoveFrequency(original_move_frequency)`) the instant a
+  # non-repeating route's last command lands. `Game_Vehicle` inherits both
+  # unchanged, so a boat/ship/airship gets this restore for free just like
+  # a map event already does here (#step_event's own "revert to page
+  # movement" comment).
+  scene = new_scene({}, player: [5, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  route = Game::MoveRoute.new([Game::MoveCommand.new(R::MOVE_RIGHT)],
+                              repeat: false, skippable: true)
+  scene.send(:force_vehicle_route, :boat, route, 8) # freq 8, faster than the default 3
+  ch = scene.instance_variable_get(:@vehicle_chars)[:boat]
+  eq 3, scene.instance_variable_get(:@vehicle_orig_freq)[:boat],
+     "the pre-route frequency (the mirror's own default, 3) was snapshotted"
+  40.times { scene.update }
+  eq nil, scene.instance_variable_get(:@vehicle_routes)[:boat], 'the route finished'
+  eq 3, ch.move_frequency, 'frequency reverted to what it was before the route, not stuck at 8'
+end
+
 check "a boat's move route is blocked by terrain the same way ordinary sailing is" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

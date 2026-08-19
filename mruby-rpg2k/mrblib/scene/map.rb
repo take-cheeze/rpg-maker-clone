@@ -282,6 +282,7 @@ class RPG2k
         @vehicle_chars = {}
         @vehicle_routes = {}
         @vehicle_route_timers = {}
+        @vehicle_orig_freq = {}
         # Move Event targets that resolved to a currently-hidden map event
         # (see #apply_move_request) -- once stuck, permanently so, matching a
         # freeze that never clears on its own.
@@ -3810,6 +3811,14 @@ class RPG2k
         ch.x = v.x
         ch.y = v.y
         ch.direction = v.direction
+        # Snapshot the frequency in effect before this route starts overriding
+        # it -- but only if a route is not already running, matching RPG_RT's
+        # own `if (!IsMoveRouteOverwritten()) original_move_frequency =
+        # GetMoveFrequency();` (`Game_Character::ForceMoveRoute`, `src/
+        # game_character.cpp`) -- so a second Set Move Route issued mid-route
+        # does not clobber the *original* pre-route value with whatever the
+        # first route's own Frequency Up/Down had already left behind.
+        @vehicle_orig_freq[type] = ch.move_frequency unless @vehicle_routes[type]
         ch.move_frequency = valid_move_freq(freq) || ch.move_frequency
         @vehicle_routes[type] = route
         @vehicle_route_timers[type] = 0
@@ -3838,7 +3847,21 @@ class RPG2k
         v.x = ch.x
         v.y = ch.y
         v.direction = ch.direction
-        @vehicle_routes[type] = nil if route.done?
+        if route.done?
+          @vehicle_routes[type] = nil
+          # The frequency in effect before this route started reasserts
+          # itself the instant a non-repeating route finishes -- matching
+          # `Game_Character::CancelMoveRoute`'s own `SetMoveFrequency(
+          # original_move_frequency)` (`src/game_character.cpp`), fired the
+          # moment the last command of a non-repeating route lands
+          # (`UpdateMovement`). A Frequency Up/Down sub-command inside that
+          # route must not go on pacing the vehicle once control reverts,
+          # only for the duration of the route that issued it -- the same
+          # rule #step_event already applies to a Move Event's own forced
+          # route.
+          orig = @vehicle_orig_freq.delete(type)
+          ch.move_frequency = orig if orig
+        end
       rescue StandardError => e
         $stderr.puts "[RPG2k] vehicle move route failed: #{e.message}"
         @vehicle_routes[type] = nil # drop a broken route so Proceed does not hang
@@ -6628,6 +6651,7 @@ class RPG2k
         @vehicle_chars = {}
         @vehicle_routes = {}
         @vehicle_route_timers = {}
+        @vehicle_orig_freq = {}
         @stuck_move_targets = [] # a stuck target was on the map being left
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.

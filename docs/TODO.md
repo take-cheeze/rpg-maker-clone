@@ -402,6 +402,38 @@ The work below is roughly ordered by the critical path to a walkable game
   Change Event Location repositioning a vehicle; Proceed With Movement
   waiting on a vehicle route; the Change Graphic override reverting on
   Transfer Player), each confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-19): a vehicle's forced Move Route left its Move
+  Frequency permanently overwritten once the route finished, instead of
+  reverting to whatever it was before the route started — the exact same
+  gap this write-up's own scope already fixed for a map event's forced
+  route, just never mirrored onto vehicles.** Confirmed directly against
+  RPG_RT's live source: `Game_Character::ForceMoveRoute`
+  (`src/game_character.cpp`) snapshots the frequency in effect before the
+  route starts overriding it (`if (!IsMoveRouteOverwritten())
+  original_move_frequency = GetMoveFrequency();`), and `CancelMoveRoute`
+  restores it (`SetMoveFrequency(original_move_frequency)`) the instant a
+  non-repeating route's last command lands (`UpdateMovement`, the same
+  place `#step_event`'s own "revert to page movement" comment already
+  cites). `Game_Vehicle` inherits both methods unchanged — a single,
+  unconditional code path, no version gating — so a boat/ship/airship
+  gets this restore for free in real RPG_RT, identical to the player or a
+  map event. `#force_vehicle_route`/`#step_vehicle_route`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) had no equivalent: a Frequency Up/
+  Down sub-command (or the route's own explicit frequency parameter)
+  permanently overwrote the persistent per-type mirror's
+  `move_frequency`, since `@vehicle_chars[type]` is memoized for as long
+  as the map stays loaded and nothing ever wrote it back. Fixed by adding
+  `@vehicle_orig_freq`, snapshotted in `#force_vehicle_route` only when a
+  route is not already running (mirroring `!IsMoveRouteOverwritten()`, so
+  a second Set Move Route issued mid-route doesn't clobber the *original*
+  pre-route value with whatever the first route's own Frequency Up/Down
+  had already left behind), and restored in `#step_vehicle_route` the
+  instant a non-repeating route's `#done?` goes true. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (force a boat's route at frequency
+  8, run it to completion, confirm the mirror's frequency reverts to its
+  pre-route value of 3 rather than sticking at 8), confirmed to fail
+  against the pre-fix code (`NoMethodError`, since `@vehicle_orig_freq`
+  did not exist at all) before the fix.
   ✅ **A ridden vehicle now walk-cycles with the party**, closing half of the
   walk-cycle gap the paragraph above flagged. `#draw_vehicle_frame` always
   passed pattern `1` (the standing frame) to `Game::CharSet.frame_rect`, so a
