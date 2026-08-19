@@ -11456,6 +11456,40 @@ not yet verified:
   Monster Condition inflicting state 1 does too, and curing it while
   downed revives to 1), both confirmed to fail against the pre-fix code
   before the fix.
+  ✅ **The recovery branch's revival interaction deferred just above is now
+  fixed: a revival skill/item could silently fail to revive an ally who'd
+  taken heavy overkill damage, even though the item was consumed and the
+  log reported the state cured (2026-08-19).** Re-verified directly against
+  RPG_RT's live source: `AlgorithmBase::ApplyHpEffect`
+  (`src/game_battlealgorithm.cpp`) is a hard no-op on an already-dead
+  target (`if (target->IsDead()) return 0;`) — the heal never touches a
+  corpse's raw HP at all — and reviving is handled entirely by
+  `ApplyStateEffect`'s own two-step mechanism quoted above: the state cure
+  sets HP to 1 first, then (only if that cure actually revived the target)
+  `ChangeHp(GetAffectedHp() - 1, false)` layers the skill's heal on top,
+  floored at 1 by `ChangeHp`'s own non-lethal clamp. `Game::Battle
+  #apply_skill_hit`'s recovery branch (`mruby-rpg2k/mrblib/game.rb`) did
+  the opposite: it added the heal directly onto the target's stale HP
+  first (nothing floors HP at 0 mid-fight, so an overkill hit can leave it
+  deeply negative, e.g. -200), *then* cured the state as a bare
+  `states -= cured` array edit with no HP-to-1 side effect at all — so a
+  50-HP revival item on a target sitting at -200 HP wrote `-200 + 50 =
+  -150` and left them just as dead as before, silently. Fixed by: skipping
+  the initial heal write entirely while the target is still dead (matching
+  `ApplyHpEffect`'s no-op); routing the cure through `#cure_state` (as the
+  attack branch already does) so curing Death sets HP to 1 the same way
+  every other cure site in this class does; and, only when that cure just
+  revived the target, adding the skill's heal on top of that 1 with the
+  same `[.., 1].max` floor `ChangeHp`'s own non-lethal clamp gives. A
+  revival item configured with no heal at all (`hp: 0`) now correctly
+  lands on exactly 1, matching `#cure_state`'s own bare-revival fallback
+  used everywhere else, instead of adding 0 to a still-negative total.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks (a revival
+  skill on a target at -200 HP revives to the heal amount, not the heal
+  added to -200; a revival item with no heal configured lands on exactly
+  1 from a target at -50 HP; an ordinary heal on a still-standing target
+  is unaffected), the first two confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ A weapon-type Attribute (as opposed to a magic-type one) gates skill
   usability on having a matching-attribute **weapon** equipped — armor
   with the same attribute does not satisfy it (already flagged as a
