@@ -17114,7 +17114,16 @@ check 'Scene::ItemMenu: a special item invoking Teleport opens a destination ' \
      'both registered destinations, ascending by map id (this fixture parent carries no map tree)'
   ok state.pending_teleport.nil?, 'opening the list does not warp yet'
 
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  # The destination list is itself a two-column grid (confirmed against
+  # genuine RPG_RT's live source: `Window_Teleport` sets `column_max = 2`,
+  # `src/window_teleport.cpp`) -- with only two destinations, DOWN is a
+  # no-op (nothing in the row below) and RIGHT is what reaches the second
+  # one, not DOWN.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # no cell below -- a no-op
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@teleport_index), 'Down has nothing to move onto'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination (map 20)
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm it
@@ -17312,7 +17321,11 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
      '(this fixture parent carries no map tree)'
   ok state.pending_teleport.nil?, 'opening the list does not warp yet'
 
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  # The destination list is itself a two-column grid (confirmed against
+  # genuine RPG_RT's live source: `Window_Teleport` sets `column_max = 2`,
+  # `src/window_teleport.cpp`) -- RIGHT is what reaches the second
+  # destination, not DOWN.
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination (map 20)
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm it
@@ -17334,7 +17347,7 @@ check 'Scene::SkillMenu: a Teleport skill turns on the chosen destination\'s own
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
   scene.update
   RGSS::Input.reset
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination (map 20)
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm map 20, the one with a switch

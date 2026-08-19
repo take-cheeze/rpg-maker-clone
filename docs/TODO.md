@@ -3098,6 +3098,38 @@ The work below is roughly ordered by the critical path to a walkable game
   turns on) and corrected pre-existing `scripts/rpg2k_logic_check.rb`
   exact-hash-equality checks (now including `switch_id:`), all confirmed to
   fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-19): the Teleport destination picker (the third
+  list this bullet chain describes above) laid its entries out and moved
+  its cursor as a single stacked column, when real RPG_RT's own list here is
+  a two-column grid, the same shape this codebase's own item/skill lists
+  already port.** Confirmed directly against RPG_RT's live source:
+  `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2` on
+  construction; `Window_Selectable::Update` (`src/window_selectable.cpp`)
+  moves DOWN/UP by a whole `column_max`-wide row (a no-op with no row
+  below/above) and only moves RIGHT/LEFT by one cell, gated on `column_max
+  >= wrap_limit` (`wrap_limit` defaults to 2, so a 2-column list qualifies).
+  `Scene::ItemMenu#update_teleport_target`/`Scene::SkillMenu#update_teleport_target`
+  (`mruby-rpg2k/mrblib/scene/{item,skill}_menu.rb`) instead wired only
+  DOWN/UP to a plain `%= targets.size` wrap, with no RIGHT/LEFT handling at
+  all — so with exactly two destinations (the repo's own existing test
+  fixture), DOWN reached the second one and RIGHT did nothing, the inverse
+  of genuine RPG_RT, where DOWN is the no-op and RIGHT reaches it; the
+  repo's own pre-existing test asserted this inverted behavior as correct,
+  with no citation of `window_teleport.cpp` (unlike the item-list grid test
+  right above it in the same file). Fixed by mirroring
+  `#move_item_cursor`/`#move_skill_cursor`'s already-correct, already
+  wine-verified grid-cursor pattern (both classes already define
+  `COLUMN_MAX = 2` for their own lists) into a new `#move_teleport_cursor`
+  in each scene, and laying `#build_teleport_window`'s entries out in the
+  same `(i % COLUMN_MAX) * col_w, (i / COLUMN_MAX) * LINE_H` grid the item/
+  skill windows already use. The repo's own pre-existing teleport-picker
+  tests (`scripts/rpg2k_scene_check.rb`, both `Scene::ItemMenu` and
+  `Scene::SkillMenu`) were corrected from DOWN to RIGHT to reach the second
+  destination, and a new assertion that DOWN is a no-op from the first
+  destination was added — confirmed to fail against the pre-fix code (3 of
+  784 checks failed: the corrected `Scene::ItemMenu` check and both
+  `Scene::SkillMenu` Teleport checks, each expecting the still-first
+  destination or its switch state instead of the second).
 - ✅ **The battle-time skill variance is built now, for a recovery skill too —
   not just an attack one.** This line used to end "Left unbuilt still: the
   battle-time skill variance," describing only the missing half:

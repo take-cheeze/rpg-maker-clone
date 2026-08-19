@@ -278,26 +278,47 @@ class RPG2k
         refresh_desc
       end
 
+      # The destination list is a two-column grid too, not a single stacked
+      # column -- confirmed against genuine RPG_RT's own live source:
+      # `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2`
+      # (`Window_Selectable`'s `wrap_limit` default is also 2, the exact
+      # threshold `Window_Selectable::Update`'s RIGHT/LEFT handling gates on),
+      # the identical shape this class's own skill list already ports (see
+      # `COLUMN_MAX`'s comment). With exactly two destinations, DOWN/UP are
+      # no-ops (nothing in the row below/above) and RIGHT reaches the second
+      # one -- not DOWN, which this scene wrongly wired to a single-column
+      # modulo wrap with no RIGHT/LEFT handling at all.
       def update_teleport_target
         targets = teleport_targets
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_teleport_target
-        elsif (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !targets.empty?
-          @teleport_index += 1
-          @teleport_index %= targets.size
-          refresh_teleport_cursor
-          play_system_se(SFX_CURSOR)
-        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !targets.empty?
-          @teleport_index -= 1
-          @teleport_index %= targets.size
-          refresh_teleport_cursor
-          play_system_se(SFX_CURSOR)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          move_teleport_cursor(COLUMN_MAX)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          move_teleport_cursor(-COLUMN_MAX)
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          move_teleport_cursor(1) if (@teleport_index + 1) % COLUMN_MAX != 0
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          move_teleport_cursor(-1) if @teleport_index % COLUMN_MAX != 0
         elsif Input.trigger?(Input::C) && !targets.empty?
           play_system_se(SFX_DECISION)
           map_id, = targets[@teleport_index]
           apply_teleport_skill(@pending_skill, map_id)
         end
+      end
+
+      # Move the teleport-target cursor by `delta` grid cells, ignored if that
+      # cell is off the grid -- mirrors #move_skill_cursor exactly (see its
+      # own comment).
+      def move_teleport_cursor(delta)
+        targets = teleport_targets
+        return if targets.empty?
+        target = @teleport_index + delta
+        return if target < 0 || target >= targets.size
+        @teleport_index = target
+        refresh_teleport_cursor
+        play_system_se(SFX_CURSOR)
       end
 
       # Escape (type 1) warps to the single registered escape target with no
@@ -506,11 +527,18 @@ class RPG2k
         name.nil? || name.empty? ? "Map #{map_id}" : name
       end
 
+      # Column width for the teleport-destination grid (see #update_teleport_target's
+      # grid comment above; identical formula to #skill_col_w).
+      def teleport_col_w
+        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+      end
+
       def build_teleport_window
         @teleport_window.dispose if @teleport_window
         rows = teleport_targets
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = [rows.size, 1].max * LINE_H
+        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
+        h = grid_rows * LINE_H
         @teleport_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
                                       SCREEN_W, h + Window::BORDER * 2)
         @teleport_window.z = 450
@@ -520,8 +548,11 @@ class RPG2k
         if rows.empty?
           c.draw_text 0, 0, inner_w, LINE_H, "No destinations"
         else
+          col_w = teleport_col_w
           rows.each_with_index do |(_id, name), i|
-            c.draw_text 0, i * LINE_H, inner_w, LINE_H, name
+            x = (i % COLUMN_MAX) * col_w
+            y = (i / COLUMN_MAX) * LINE_H
+            c.draw_text x, y, col_w, LINE_H, name
           end
         end
         @teleport_window.contents = c
@@ -531,8 +562,9 @@ class RPG2k
       def refresh_teleport_cursor
         return unless @teleport_window
         h = teleport_targets.empty? ? 0 : LINE_H
-        @teleport_window.cursor_rect =
-          Rect.new(0, @teleport_index * LINE_H, @teleport_window.contents.width, h)
+        x = (@teleport_index % COLUMN_MAX) * teleport_col_w
+        y = (@teleport_index / COLUMN_MAX) * LINE_H
+        @teleport_window.cursor_rect = Rect.new(x, y, teleport_col_w, h)
       end
 
       def drive_message
