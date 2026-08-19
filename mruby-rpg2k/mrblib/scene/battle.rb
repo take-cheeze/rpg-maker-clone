@@ -2976,14 +2976,18 @@ class RPG2k
       BATTLE_LINE_H = 16
       BATTLE_PANEL_Y = SCREEN_H - 80
       BATTLE_PANEL_H = 80
-      # The actor-command window is a fixed 76px (`option_command_mov` in
-      # EasyRPG), docked to the right edge; the status window takes the rest of
-      # the row (`MENU_WIDTH - option_command_mov`).
+      # The actor-command window (and the Battle/Auto Battle/Escape options
+      # window, which shares its rect) is a fixed 76px (`option_command_mov`
+      # in EasyRPG); the status window takes the rest of the row (`MENU_WIDTH
+      # - option_command_mov`).
       BATTLE_CMD_W = 76
       BATTLE_STATUS_W = SCREEN_W - BATTLE_CMD_W
       # The enemy target list (`CreateBattleTargetWindow`) is a fixed 136px, and
-      # only ever covers the status window's footprint -- the command window
-      # stays on screen beside it.
+      # only ever covers the status window's footprint -- the per-actor command
+      # window stays on screen beside it. Target selection only ever happens
+      # from the per-actor command phase (Attack/a targeted Skill/Item), never
+      # from the options window, so the status window's footprint here is
+      # always its command-phase one (#battle_status_x's `0`).
       BATTLE_TARGET_W = 136
       # How many rows show at once before a longer list (an 8-monster troop, a
       # long skill list) scrolls: the panel's fixed 64px content area (80 minus
@@ -3012,6 +3016,21 @@ class RPG2k
       STATUS_STATE_X = 86
       STATUS_HP_X    = 142
       STATUS_MP_X    = 202
+
+      # The status panel's own x, mirroring EasyRPG's `SetCommandWindowsX`:
+      # three windows -- the options window, the status window, then the
+      # per-actor command window -- sit left-to-right, but only one of the
+      # two 76px command-shaped windows is ever showing at once, so the
+      # status window slides to whichever side is free. During the top-level
+      # Battle/Auto Battle/Escape choice (`@ui[:phase] == :battle_options`)
+      # the options window takes the left slot (x=0) and the status window
+      # is pushed to `BATTLE_CMD_W`; once an actor is choosing Attack/Skill/
+      # Defend/Item the per-actor command window takes the *right* slot
+      # instead (`#draw_battle_command`'s own `BATTLE_STATUS_W`) and the
+      # status window returns to x=0.
+      def battle_status_x
+        @ui[:phase] == :battle_options ? BATTLE_CMD_W : 0
+      end
 
       # Rebuild the status panel: the party's HP and SP, each with the one
       # condition RPG_RT shows — the significant state, or the database's
@@ -3104,7 +3123,7 @@ class RPG2k
         return nil unless system2
         inner_w = BATTLE_STATUS_W - Window::BORDER * 2
         inner_h = BATTLE_PANEL_H - Window::BORDER * 2
-        win = Window.new(0, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
+        win = Window.new(battle_status_x, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
         win.z = 300
         win.transparent = true
         c = Bitmap.new(inner_w, inner_h)
@@ -3258,14 +3277,20 @@ class RPG2k
         refresh_battle_status
       end
 
-      # The Battle/Auto Battle/Escape options window -- the same panel and
-      # rect the per-actor command window uses (only one of the two is ever
-      # on screen at a time), just with `#battle_option_rows`' three entries
-      # instead of the usual four.
+      # The Battle/Auto Battle/Escape options window -- the same 76px shape
+      # the per-actor command window uses (only one of the two is ever on
+      # screen at a time), with `#battle_option_rows`' three entries instead
+      # of the usual four, but docked to the *left* edge (x=0) rather than
+      # the command window's right one -- EasyRPG's `SetCommandWindowsX` lays
+      # the options window before the status window (`options_window->SetX`
+      # first, then `status_window->SetX` past it), while the per-actor
+      # command window comes after the status window instead. See
+      # `#battle_status_x`, which pushes the status panel to `BATTLE_CMD_W`
+      # to make room for this window here.
       def draw_battle_options
         @ui[:cmd_win].dispose if @ui[:cmd_win]
         labels = battle_option_rows.map { |r| r[:label] }
-        win = Window.new(BATTLE_STATUS_W, BATTLE_PANEL_Y, BATTLE_CMD_W, BATTLE_PANEL_H)
+        win = Window.new(0, BATTLE_PANEL_Y, BATTLE_CMD_W, BATTLE_PANEL_H)
         win.z = 320
         win.windowskin = windowskin
         inner_w = BATTLE_CMD_W - Window::BORDER * 2
@@ -3571,8 +3596,9 @@ class RPG2k
       # segments rather than one string, so a row can mix colours. Drawn through
       # `draw_system_text`, which fills the glyphs from the System graphic's own
       # palette swatch (and falls back to flat white text when the project ships
-      # no windowskin) — the way RPG_RT colours a state name. Fixed at the
-      # bottom-left of the panel (`Window_BattleStatus`'s own rect), with a
+      # no windowskin) — the way RPG_RT colours a state name. Docked to
+      # `#battle_status_x` (0, beside the per-actor command window, or
+      # `BATTLE_CMD_W`, beside the options window -- see that method), with a
       # cursor on `cursor_idx`'s row when the acting actor is one of these rows.
       #
       # Each segment is clipped (`#clip_text_to_width`, Scene::Base) to the gap
@@ -3586,7 +3612,7 @@ class RPG2k
       # (SP) clips to the panel's own inner edge instead, same as before.
       def battle_status_window(rows, cursor_idx = nil)
         inner_w = BATTLE_STATUS_W - Window::BORDER * 2
-        win = Window.new(0, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
+        win = Window.new(battle_status_x, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
         win.z = 300
         win.windowskin = windowskin
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)

@@ -14275,6 +14275,32 @@ check 'the battle status panel clips each column to the gap before its own neigh
      'rather than bleeding off the panel'
 end
 
+check 'the status panel swaps sides with whichever 76px window is showing beside it' do
+  battle_mod = RPG2k::Scene::Battle
+  # During the top-level Battle/Auto Battle/Escape choice, EasyRPG's
+  # SetCommandWindowsX lays the options window at x=0 and pushes the status
+  # window to its right (BATTLE_CMD_W); the per-actor command window (off
+  # screen here) would take the *far* right slot instead, past the status
+  # window.
+  scene, = battle_scene_with_pages(nil, party: BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  ok ui, 'the battle opened'
+  eq 0, ui[:cmd_win].x, 'the options window (Fight/Auto Battle/Escape) docks to the left edge'
+  eq battle_mod::BATTLE_CMD_W, ui[:status_win].x,
+     'the status window is pushed right, out of the options window\'s 76px'
+  eq battle_mod::BATTLE_CMD_W, ui[:cmd_win].width,
+     'the options window keeps the same 76px shape the per-actor command window uses'
+
+  # Once an actor is choosing Attack/Skill/Defend/Item instead, the roles
+  # swap: the command window takes the *right* slot the same way it always
+  # has, and the status window returns to x=0.
+  scene, ui2 = battle_at_command(nil, party: BattleStubParty.new)
+  ok ui2, 'the fight reached the per-actor command phase'
+  eq 0, ui2[:status_win].x, 'the status window returns to the left edge, beside the command window'
+  eq battle_mod::BATTLE_STATUS_W, ui2[:cmd_win].x,
+     'the per-actor command window docks to the right edge, unlike the options window'
+end
+
 check 'Change Monster Condition on a battle page updates the troop, off-panel' do
   ic = Game::Interpreter::Cmd
   # Inflict state 3 (Poison) on troop member 0 the moment the fight opens.
