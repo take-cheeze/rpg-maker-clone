@@ -1699,11 +1699,44 @@ module Game
     # Refuses a state #permanent_states names -- RPG2003 cursed armor
     # currently forcing it -- the same way EasyRPG's `State::Remove`
     # (src/state.cpp) does: `if (ps.Has(state_id)) return false;`.
-    def remove_state(state_id)
-      return nil if permanent_states.include?(state_id)
+    #
+    # `always_remove_battle_states:` mirrors EasyRPG's own
+    # `Game_Battler::RemoveState`'s second parameter of the identical name
+    # (`src/game_battler.cpp`): the Change Condition event command
+    # (`Interpreter#do_change_condition`) passes it true when run outside
+    # battle, and RPG_RT's own `RemoveState` then skips the cursed-armor
+    # lock entirely -- but only for a state whose own database Persistence
+    # field is "Ends" (0, the schema default for most non-Poison-style
+    # ailments), never a "Continues after battle" one (1) -- confirmed
+    # against the actual C++ source, fetched live: `if (!
+    # (always_remove_battle_states && state && state->type ==
+    # Persistence_ends)) { ps = GetPermanentStates(); }`, with the source's
+    # own comment on the call site spelling out why: "RPG_RT: On the map,
+    # will remove battle states even if actor has state inflicted by
+    # equipment." Every other cure path -- an item, a skill, Full Recovery,
+    # or Change Condition while a fight is actually running -- always
+    # passes `false` in real RPG_RT too, so this bypass is exactly as
+    # narrow there as it is here.
+    def remove_state(state_id, always_remove_battle_states: false)
+      bypass = always_remove_battle_states && !state_persists_type?(state_id)
+      return nil if !bypass && permanent_states.include?(state_id)
       removed = @states.delete(state_id)
       @hp = 1 if removed == DEATH_STATE && @hp <= 0
       removed
+    end
+
+    # Whether `state_id`'s own database row is flagged "Continues after
+    # battle" (liblcf's `Persistence_persists`, matching `Battle::
+    # STATE_PERSISTS_ON_MAP`) -- #remove_state's own
+    # `always_remove_battle_states:` bypass only ever applies to the
+    # opposite, schema-default case. A dangling/unknown state id, or a bare
+    # fixture with no `:type` field at all, reads as persisting (never
+    # bypassed) -- the same conservative refusal #remove_state already gave
+    # before this parameter existed.
+    def state_persists_type?(state_id)
+      table = @db.respond_to?(:situation) ? @db.situation : nil
+      row = Game::States.row(state_id, table)
+      !(row && row.respond_to?(:type) && (row.type || 0) != Battle::STATE_PERSISTS_ON_MAP)
     end
 
     # Cure every status condition (RPG2000 Full Recovery clears them). If the

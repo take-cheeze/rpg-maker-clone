@@ -4395,6 +4395,72 @@ check "#remove_state refuses a state RPG2003 cursed armor is still forcing" do
   eq [], a.states
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Game_Interpreter::CommandChangeCondition` (src/game_interpreter.cpp)
+# calls `actor->RemoveState(state_id, !Game_Battle::IsBattleRunning())`,
+# and `Game_Battler::RemoveState`'s own `always_remove_battle_states`
+# parameter (src/game_battler.cpp) skips the cursed-armor lock entirely --
+# but only for a state whose own database Persistence field is "Ends" (0,
+# the schema default) rather than "Continues after battle" (1) -- with the
+# source's own comment on the call site spelling out why: "RPG_RT: On the
+# map, will remove battle states even if actor has state inflicted by
+# equipment." Every other cure path (an item, a skill, Full Recovery, or
+# Change Condition while a fight is actually running) always passes
+# `false` in real RPG_RT too, matching every *other* #remove_state call in
+# this file.
+check '#remove_state can lift a cursed-armor-forced state outside battle, but ' \
+      'only when the state itself is not flagged to continue after battle' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  situation = { 4 => fake_state(type: 0) } # "Ends" (battle-only), the schema default
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, situation, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  eq [4], a.states
+  eq nil, a.remove_state(4), 'still refused in battle (the default) -- armor is still equipped'
+  eq [4], a.states
+  eq 4, a.remove_state(4, always_remove_battle_states: true),
+     "a map-side cure -- Change Condition run outside battle -- lifts it anyway, RPG_RT's own exemption"
+  eq [], a.states
+
+  # The opposite case: a "Continues after battle" state gets no exemption
+  # even outside battle.
+  situation2 = { 4 => fake_state(type: 1) }
+  db2 = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                        [1], items, {}, {}, situation2, rpg2003: true)
+  a2 = Game::Party.new(db2).leader
+  a2.equip_item(20)
+  eq nil, a2.remove_state(4, always_remove_battle_states: true),
+     'a "continues after battle" state is never map-exempted, cursed armor or not'
+  eq [4], a2.states
+end
+
+check "Interpreter#do_change_condition passes RPG_RT's own map-only cursed-armor " \
+      'exemption through, gated on whether a battle is actually running' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) }
+  situation = { 4 => fake_state(type: 0) }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, situation, rpg2003: true)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  a.equip_item(20)
+  eq [4], a.states
+  ic = Game::Interpreter::Cmd
+
+  # In battle (@battle set): the ordinary refusal still applies.
+  it_battle = Game::Interpreter.new(st)
+  it_battle.battle = Game::Battle.new([], [], Game::Rng.new(1))
+  it_battle.start([FakeCmd.new(ic::CHANGE_CONDITION, [1, 1, 1, 4])])
+  it_battle.update
+  eq [4], a.states, 'in-battle Change Condition cannot lift it either'
+
+  # On the map (@battle nil, the default): RPG_RT's own exemption applies.
+  it_map = Game::Interpreter.new(st)
+  it_map.start([FakeCmd.new(ic::CHANGE_CONDITION, [1, 1, 1, 4])])
+  it_map.update
+  eq [], a.states, 'a map-side Change Condition lifts it'
+end
+
 check "#clear_states (Full Recovery) leaves a cursed-armor-forced state in place" do
   items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) }
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
