@@ -719,6 +719,11 @@ class FakeParent
   # its own Dir.mktmpdir first, the same way it would ask a real GAME_DIR to
   # write somewhere it controls rather than a bare filesystem root.
   attr_accessor :map_dir
+  # The live Scene::Map a check wants Scene::DebugMenu's Animation page (or
+  # any future debug tool reaching through RPG2k#map_scene) to find. nil by
+  # default; a check exercising it sets this to a real Scene::Map or a
+  # narrow double answering just the methods under test.
+  attr_accessor :map_scene
   def initialize(db, &map_maker)
     @db = db
     @map_tree = nil
@@ -732,6 +737,9 @@ class FakeParent
   # (mruby-rpg2k/mrblib/main.rb) closely enough for the Map Editor's own
   # save-to-disk check to round-trip through a real file.
   def map_path(id); File.join(@map_dir, format('Map%04d.lmu', id)); end
+  # RPG_RT.ldb under #map_dir -- mirrors RPG2k#db_path for Scene::
+  # ChipsetEditor's own save-to-disk check.
+  def db_path; File.join(@map_dir, 'RPG_RT.ldb'); end
   # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
   def push(scene); @pushed << scene; end
   # Scene::SaveLoad (and every field submenu) pops itself on cancel / once its
@@ -805,6 +813,34 @@ class FakeMapUnit
   def save_to(path)
     @saved_to = path
     File.write(path, 'fake .lmu')
+  end
+end
+
+# Stands in for the real LCF::Array1D a chipset row is, for Scene::
+# ChipsetEditor's own checks. It reads/writes by integer chunk id (4 =
+# passable_data_lower, 5 = passable_data_upper) exactly the way a real
+# Array1D does -- and the way the editor itself always talks to a chipset row
+# (see its own comment on why: `obj.field = value` is not something Array1D
+# actually supports) -- so its code runs completely unmodified under test.
+class FakeChipsetRow
+  FIELD_IDX = { passable_data_lower: 4, passable_data_upper: 5 }.freeze
+  def initialize(fields)
+    @fields = fields
+  end
+  def method_missing(sym, *args)
+    return @fields[sym] if args.empty? && @fields.key?(sym)
+    super
+  end
+  def respond_to_missing?(sym, include_private = false)
+    @fields.key?(sym) || super
+  end
+  def [](idx)
+    name = FIELD_IDX.key(idx)
+    name ? @fields[name] : nil
+  end
+  def []=(idx, value)
+    name = FIELD_IDX.key(idx)
+    @fields[name] = value if name
   end
 end
 
@@ -19647,6 +19683,100 @@ check 'MapViewer Edit mode R saves the map back to its .lmu path via the parent,
        "saved to the map_path the parent computed for id 7"
     ok !scene.instance_variable_get(:@dirty), 'saving clears the unsaved-changes flag'
   end
+end
+
+check "ChipsetEditor's C toggles passability (all four direction bits at once) " \
+     "without disturbing an upper cell's star/counter bits" do
+  db = fake_db
+  db.chipset[1] = FakeChipsetRow.new(
+    passable_data_lower: Array.new(162, 0),
+    passable_data_upper: Array.new(144, Game::ChipSet::ABOVE_BIT | Game::ChipSet::COUNTER_BIT)
+  )
+  st = menu_state
+  st.map = fake_map(1, {}) # chipset_id 1
+  scene = RPG2k::Scene::ChipsetEditor.new(fake_parent(db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq Game::ChipSet::ALL_DIRS, db.chipset[1].passable_data_lower[0],
+     'C toggled lower cell 0 from blocked to fully passable'
+
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update
+  eq :upper, scene.instance_variable_get(:@tab), 'L switches to the Upper tab'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  byte = db.chipset[1].passable_data_upper[0]
+  ok (byte & Game::ChipSet::ALL_DIRS) != 0, 'the upper cell is now passable too'
+  ok (byte & Game::ChipSet::ABOVE_BIT) != 0, "toggling passability left the star bit alone"
+  ok (byte & Game::ChipSet::COUNTER_BIT) != 0, 'and left the counter bit alone too'
+end
+
+check "ChipsetEditor's R saves the database and rebuilds the live map's chipset" do
+  db = fake_db
+  db.chipset[1] = FakeChipsetRow.new(passable_data_lower: Array.new(162, 0),
+                                     passable_data_upper: Array.new(144, 0))
+  saved_to = nil
+  db.define_singleton_method(:save_to) { |path| saved_to = path }
+  st = menu_state
+  st.map = fake_map(1, {})
+  parent = fake_parent(db)
+  Dir.mktmpdir('chipset-editor-save-check') do |dir|
+    parent.map_dir = dir
+    rebuilt = false
+    map_scene = Object.new
+    map_scene.define_singleton_method(:rebuild_chipset) { rebuilt = true }
+    parent.map_scene = map_scene
+    scene = RPG2k::Scene::ChipsetEditor.new(parent, st)
+
+    RGSS::Input.triggered = [RGSS::Input::C] # toggle a cell so there is something to save
+    scene.update
+
+    RGSS::Input.triggered = [RGSS::Input::R]
+    scene.update
+    eq File.join(dir, 'RPG_RT.ldb'), saved_to, 'saved via the parent-computed db_path'
+    ok rebuilt, "the live map scene's chipset was rebuilt so the edit shows immediately"
+    ok !scene.instance_variable_get(:@dirty), 'saving clears the unsaved flag'
+  end
+end
+
+check 'the debug menu Animation page adjusts an id (Up/Down by one, L/R by ten) and ' \
+     'C plays it back on the live map scene, then closes to the map' do
+  st = menu_state
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  4.times do # Switch -> Variable -> Map -> Chipset -> Animation
+    RGSS::Input.triggered = [RGSS::Input::RIGHT]
+    scene.update
+  end
+  eq :animation, scene.instance_variable_get(:@mode), 'four Rights cycle to the Animation page'
+
+  RGSS::Input.triggered = [RGSS::Input::R] # +10
+  scene.update
+  eq 11, scene.instance_variable_get(:@anim_id)
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # +1
+  scene.update
+  eq 12, scene.instance_variable_get(:@anim_id)
+
+  built = nil
+  map_scene = Object.new
+  map_scene.define_singleton_method(:anim_target) { |*args, **kwargs| [args, kwargs] }
+  map_scene.define_singleton_method(:build_animation) do |id, targets, battle|
+    built = [id, targets, battle]
+    :the_animation
+  end
+  map_scene.instance_variable_set(:@map_animation, nil)
+  map_scene.define_singleton_method(:map_animation=) { |v| @map_animation = v }
+  map_scene.define_singleton_method(:map_animation) { @map_animation }
+  scene.parent.map_scene = map_scene
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 12, built[0], 'C built animation #12 (the adjusted id)'
+  eq true, built[2], 'as a battle-style (screen-space) play, matching a real battle round'
+  eq :the_animation, map_scene.map_animation, 'and assigned it as the live map animation'
+  ok scene.parent.pop_to_map_called, 'and closed the whole debug menu back to the map'
 end
 
 check "a troop's terrain_set excludes it from a tile it does not cover" do

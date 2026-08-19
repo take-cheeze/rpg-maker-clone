@@ -540,7 +540,7 @@ class RPG2k
     @test_play = args.include?('TestPlay') || native_test_play?
     @hide_title = args.include?('HideTitle')
 
-    @db = LCF::Database.new File.open "#{GAME_DIR}/RPG_RT.ldb"
+    @db = LCF::Database.new File.open db_path
     @map_tree = LCF::MapTree.new File.open "#{GAME_DIR}/RPG_RT.lmt"
     # Put the game's own name on the window (and on the browser tab in the web
     # build), the way RPG_RT.exe titles its own.
@@ -673,6 +673,13 @@ class RPG2k
     num = id.to_s
     num = "0#{num}" while num.size < 4
     "#{GAME_DIR}/Map#{num}.lmu"
+  end
+
+  # RPG_RT.ldb -- shared by #initialize's own @db load and
+  # Scene::ChipsetEditor's save-back-to-disk action, the database's
+  # counterpart to #map_path above.
+  def db_path
+    "#{GAME_DIR}/RPG_RT.ldb"
   end
 
   # Load one map (.lmu) by id.

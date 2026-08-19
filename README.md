@@ -63,7 +63,17 @@
   map-wide "every tile with this id" rewrite), and **R** writes the edited
   map back to its `.lmu` file. A brush only ever comes from the eyedropper,
   never a typed id, so a painted tile is always one that already validly
-  exists somewhere on the map
+  exists somewhere on the map. A fourth page, Chipset, opens a passability
+  editor for the current map's chipset: a coloured grid (green passable, dark
+  red blocked) over its 162 lower / 144 upper cells — **L** switches between
+  them, arrow keys move the cell cursor, **C** toggles passability on the
+  selected cell (all four direction bits at once, leaving an upper cell's
+  own "star"/counter flags untouched), and **R** writes the database back to
+  its `.ldb` file and refreshes the live map's chipset so the edit is visible
+  immediately. A fifth page, Animation, previews a battle animation: Up/Down
+  steps the id by one and L/R by ten, and **C** plays it back on the field
+  map through the same animation player a real battle round uses, closing
+  the debug menu so it's what's on screen
 - `--rpg2k_preview_map=<id>` starts New Game on a chosen map, centred on its
   middle tile, instead of the database's configured start position — a quick
   way to inspect one map's rendering without a save file positioned there.

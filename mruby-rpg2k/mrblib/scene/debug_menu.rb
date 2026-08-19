@@ -1,15 +1,20 @@
 class RPG2k
   module Scene
     # RPG_RT's F9 debug menu (see Scene::Map#try_open_debug_menu -- Test Play
-    # only, opened from the field map). Three flip-able pages, Switch,
-    # Variable and Map, cycled with Left/Right. On the Switch/Variable pages,
-    # each listing ten ids at a time, Up/Down moves the cursor by one row
-    # (scrolling into the neighbouring block of ten at either edge), L/R jumps
-    # a full block of ten, and C acts on the selected row (toggle a switch
-    # instantly, or open a signed number editor for a variable). The Map page
-    # (this codebase's own addition -- not part of genuine RPG_RT's F9 menu)
-    # has no row list; C on it opens Scene::MapViewer, a whole-map debug
-    # overview (see there). B closes the menu.
+    # only, opened from the field map). Five flip-able pages, Switch,
+    # Variable, Map, Chipset and Animation, cycled with Left/Right. On the
+    # Switch/Variable pages, each listing ten ids at a time, Up/Down moves the
+    # cursor by one row (scrolling into the neighbouring block of ten at
+    # either edge), L/R jumps a full block of ten, and C acts on the selected
+    # row (toggle a switch instantly, or open a signed number editor for a
+    # variable). Map, Chipset and Animation (this codebase's own additions --
+    # not part of genuine RPG_RT's F9 menu) have no row list: C on Map opens
+    # Scene::MapViewer (a whole-map debug overview and, in its own Edit mode,
+    # the actual Map Editor); C on Chipset opens Scene::ChipsetEditor (the
+    # current map's chipset passability grid); Animation instead lets Up/Down
+    # step an animation id by one and L/R by ten, with C playing it back on
+    # the field map through Scene::Map's own animation player (see
+    # #play_animation). B closes the menu.
     #
     # The id range shown extends to cover every switch/variable the project
     # actually names (its LDB "switch"/"variable" tables, chunks 23/24 --
@@ -26,7 +31,7 @@ class RPG2k
       LINE_H = 16
       NAME_COL_W = 208
       FLOOR_ID = 100
-      MODES = [:switch, :variable, :map].freeze
+      MODES = [:switch, :variable, :map, :chipset, :animation].freeze
 
       def initialize(parent, state)
         super parent
@@ -36,6 +41,7 @@ class RPG2k
         @mode = :switch
         @page = 0
         @cursor = 0
+        @anim_id = 1
         @editor = nil
         build_window
       end
@@ -54,8 +60,10 @@ class RPG2k
           cycle_mode(1)
         elsif Input.trigger?(Input::LEFT)
           cycle_mode(-1)
-        elsif @mode == :map
+        elsif @mode == :map || @mode == :chipset
           activate_row if Input.trigger?(Input::C)
+        elsif @mode == :animation
+          update_animation
         elsif Input.trigger?(Input::DOWN)
           move_cursor(1)
         elsif Input.trigger?(Input::UP)
@@ -125,9 +133,41 @@ class RPG2k
         ids.max
       end
 
+      def update_animation
+        if Input.trigger?(Input::C)
+          play_animation
+        elsif Input.trigger?(Input::UP) || Input.trigger?(Input::DOWN)
+          @anim_id = [@anim_id + (Input.trigger?(Input::UP) ? 1 : -1), 1].max
+          refresh
+        elsif Input.trigger?(Input::R) || Input.trigger?(Input::L)
+          @anim_id = [@anim_id + (Input.trigger?(Input::R) ? 10 : -10), 1].max
+          refresh
+        end
+      end
+
+      # Play @anim_id back on the live field map, screen-centred, the same way
+      # Scene::Battle#start_battle_animation fires one mid-fight -- through
+      # Scene::Map's own public animation-player API (see its "reached from
+      # Scene::ChipsetEditor"/battle-callback `public` blocks), reached via
+      # RPG2k#map_scene since this menu itself only has @state, not the live
+      # map scene. Closes the whole debug menu (#pop_to_map) so the animation
+      # is what's on screen next, the same way opening the Map Editor's
+      # teleport does.
+      def play_animation
+        scene = @parent.respond_to?(:map_scene) ? @parent.map_scene : nil
+        return unless scene.respond_to?(:build_animation)
+        target = scene.anim_target(SCREEN_W / 2, SCREEN_H / 2, height: nil, index: nil,
+                                                                flash_target: nil)
+        scene.map_animation = scene.build_animation(@anim_id, [target], true)
+        @parent.pop_to_map
+      end
+
       def activate_row
         if @mode == :map
           @parent.push Scene::MapViewer.new(@parent, @state)
+          return
+        elsif @mode == :chipset
+          @parent.push Scene::ChipsetEditor.new(@parent, @state)
           return
         end
         id = current_id
@@ -175,6 +215,8 @@ class RPG2k
         @contents.clear
         @contents.font.color = Color.new(255, 255, 255, 255)
         return refresh_map_page if @mode == :map
+        return refresh_chipset_page if @mode == :chipset
+        return refresh_animation_page if @mode == :animation
         title = @mode == :switch ? 'Switch' : 'Variable'
         first = @page * PAGE_SIZE + 1
         last = [first + PAGE_SIZE - 1, max_id].min
@@ -200,6 +242,32 @@ class RPG2k
                             "x:#{@state.x} y:#{@state.y}" : 'No map loaded'
         @contents.draw_text 0, LINE_H, @contents.width, LINE_H, info
         @contents.draw_text 0, LINE_H * 2, @contents.width, LINE_H, 'C: open map viewer'
+      end
+
+      def refresh_chipset_page
+        @window.cursor_rect = Rect.new(0, 0, 0, 0)
+        @contents.draw_text 0, 0, @contents.width, LINE_H, 'Chipset'
+        id = @state.map ? @state.map.chipset_id : 1
+        @contents.draw_text 0, LINE_H, @contents.width, LINE_H, "Current map's chipset: ##{id}"
+        @contents.draw_text 0, LINE_H * 2, @contents.width, LINE_H, 'C: open chipset editor'
+      end
+
+      def refresh_animation_page
+        @window.cursor_rect = Rect.new(0, 0, 0, 0)
+        @contents.draw_text 0, 0, @contents.width, LINE_H, 'Animation'
+        id_line = "##{@anim_id} #{animation_name(@anim_id)}"
+        @contents.draw_text 0, LINE_H, @contents.width, LINE_H, id_line
+        hint = 'Up/Down:+-1  L/R:+-10  C:Play'
+        @contents.draw_text 0, LINE_H * 2, @contents.width, LINE_H, hint
+      end
+
+      # Same respond_to?/nil-guarded lookup Scene::Map#animation_row uses, so
+      # a bare test fixture with no battle_anime table at all stays silent and
+      # only a genuine dangling id gets its own "(not found)".
+      def animation_name(id)
+        return '' unless db.respond_to?(:battle_anime) && db.battle_anime
+        row = db.battle_anime[id]
+        row && row.respond_to?(:name) ? row.name : '(not found)'
       end
 
       # -- Variable value editor, opened by C on a Variable row ----------------
