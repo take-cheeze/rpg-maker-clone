@@ -6449,6 +6449,42 @@ Everything below is unverified against the codebase.
   facing hero to face left; the control case confirms boarding a boat never
   touches facing at all), the airship one confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-19): a Decision press aboard a boat/ship that fails
+  to disembark — an NPC standing on the landing tile, say — was always
+  swallowed outright, instead of falling through to the ordinary
+  action-trigger check on that same tile the way RPG_RT's own press does.**
+  Confirmed directly against RPG_RT's live source: `Game_Player::Update`
+  (`src/game_player.cpp`) is `if (Input::IsTriggered(Input::DECISION)) { if
+  (!GetOnOffVehicle()) { CheckActionEvent(); } }` — the action-trigger check
+  only runs when the on/off-vehicle attempt itself *failed*.
+  `GetOffVehicle`'s boat/ship branch returns `false` right away when
+  `!Game_Map::CanDisembarkShip(*this, front_x, front_y)`, and
+  `CanDisembarkShip` (`src/game_map.cpp`) itself returns `false` whenever an
+  active same-layer event occupies the landing tile — exactly the case
+  meant to fall through to `CheckActionEvent`, letting a shore NPC be
+  talked to directly from the boat. (The airship needs no equivalent fix:
+  `CheckActionEvent` opens with an unconditional `if (IsFlying()) { return
+  false; }`, so an airship rider's press never reaches the action check
+  regardless of whether `GetOffVehicle` succeeds — this build's existing
+  always-swallow behavior for the airship was already accidentally
+  correct.) `Scene::Map#try_board_vehicle`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) hardcoded `true` on its boat/ship
+  disembark branch regardless of whether `#disembark_vehicle` actually
+  succeeded, so its own caller (`try_action_trigger unless
+  try_board_vehicle`) never ran the fallback — and `#disembark_vehicle`'s
+  own boat/ship success path had no explicit `true` return to give that
+  caller anyway (its implicit return was whatever
+  `#restore_pre_vehicle_bgm` happened to return). Fixed by having
+  `#disembark_vehicle` return an explicit `false`/`true` for the boat/ship
+  branch, and `#try_board_vehicle` return that value directly instead of a
+  hardcoded `true` — while still always claiming the button for the
+  airship branch, since `#try_action_trigger`'s own callers gain nothing
+  from a real success signal there. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check: boarding a boat, then facing a
+  shore NPC and pressing Decision, leaves the party aboard (disembarking
+  failed) but still runs the NPC's event — confirmed to fail against the
+  pre-fix code (the NPC's Control Switches command never ran) before the
+  fix.
 - ✅ **Battle Event** — separate command set from Map/Common events
   entirely (`Game::Interpreter`'s battle-only opcodes — `CHANGE_MONSTER_HP`/
   `MP`/`CONDITION`, `SHOW_HIDDEN_MONSTER`, `FORCE_FLEE`, `TERMINATE_BATTLE`,
