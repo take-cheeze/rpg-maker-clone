@@ -3351,6 +3351,56 @@ The work below is roughly ordered by the critical path to a walkable game
    real source) and a new check for a pure `affect_attack`-only "Battle
    Horn" accessory, all three confirmed to fail against the pre-fix code.
    See `changelog.d/use-skill-item-usability-scope-only.fixed.md`.
+- 🚧 **Known, researched gap, deliberately deferred to its own investigation
+  (2026-08-19): the field/battle Item menu excludes every held item that
+  fails `#field_usable?`/`#battle_usable?` from the list entirely, instead
+  of listing it disabled the way RPG_RT does.** Confirmed directly against
+  RPG_RT's live source: `Window_Item::Refresh` (`src/window_item.cpp`) fills
+  its list straight from `Game_Party::GetItems` (`src/game_party.cpp`,
+  pushes every entry of `data.item_ids` unconditionally) filtered only by
+  `CheckInclude` (`item_id > 0`, i.e. every genuinely-held item id
+  qualifies, no type/usability test at all) — usability
+  (`CheckEnable`/`Game_Party::IsItemUsable`) is a separate concern consulted
+  only for (a) greying the drawn name and (b) gating Decision in
+  `Scene_Item::vUpdate`/`Scene_Battle`'s own item-select handler (buzz and
+  stay on the list when disabled, exactly the `Window_Skill::CheckEnable`
+  pattern the field/battle Skill menu fixes just above already ported).
+  `src/scene_battle.h` confirms the battle Item window is the *same*
+  `Window_Item` class the field menu uses, so this applies identically to
+  both. `Game::Party#field_usable?`/`#battle_usable?`
+  (`mruby-rpg2k/mrblib/game.rb`) conflate RPG_RT's two separate gates into
+  one — an ordinary weapon/shield/armor/helmet/accessory sitting unequipped
+  in the bag, a battle-only medicine viewed from the field menu, or a
+  field-only switch item viewed from the battle menu is invisible in this
+  codebase's menu instead of appearing as a listed-but-disabled entry (this
+  is a *deliberate, tested* design choice here, not an oversight —
+  `scripts/rpg2k_logic_check.rb` explicitly asserts e.g. "no use_skill flag
+  -- ordinary equipment, not menu-usable" for `#field_usable?`/
+  `#battle_usable?` returning false on a plain weapon, encoding "not usable"
+  and "not listed" as the same thing, which the fetched source shows they
+  are not). **Deliberately not fixed in this pass**: a correct port needs
+  `#field_items`/`#battle_items` to list *every* held item id (mirroring
+  `CheckInclude`), keeping `#field_usable?`/`#battle_usable?` only as the
+  separate enablement check `Scene::ItemMenu`'s own Decision handler (and
+  the battle item-select flow) would gate on — the same shape as the
+  Skill-menu fix, but at more call sites, and it touches roughly a dozen
+  existing `scripts/rpg2k_logic_check.rb` checks that currently assert
+  *exact* `field_items`/`battle_items` list contents under the old
+  (usable-only) semantics, each of which would need its fixture's full held-
+  item set re-examined and its expected list rewritten to include the
+  now-visible-but-disabled entries — a multi-file, higher-risk change than
+  this investigation lineage's usual single-sitting scope, deferred rather
+  than rushed. No grey-out/disabled-color rendering exists anywhere in this
+  codebase's menus today (neither the Item nor the just-fixed Skill menu
+  models font color at all), so a correct fix likely also needs to either
+  accept that gap (list it plain, buzz on Decision, no visual cue — the same
+  boundary the Skill-menu fix already accepted) or scope in a new rendering
+  feature; worth deciding explicitly before implementing rather than
+  guessing. Files: `Game::Party#field_usable?`/`#field_items`
+  (`mruby-rpg2k/mrblib/game.rb`), `#battle_usable?`/`#battle_items` (same
+  file), `Scene::ItemMenu`'s choose-item dispatch
+  (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
+  selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
 - ✅ Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. (One research question remains: a
