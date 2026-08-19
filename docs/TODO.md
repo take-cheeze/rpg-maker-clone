@@ -14362,6 +14362,42 @@ above are repeated here)
   a direct `#cast_skill` call, while leaving a purely physical skill
   castable), confirmed to fail against the pre-fix code (`expected false,
   got true`) before the fix.
+  ✅ **Follow-up (2026-08-19): the field Skill menu itself never consulted
+  `#can_cast?` at all — choosing a currently unaffordable or sealed skill
+  still played the Decision SE and opened the full target-confirm screen (or,
+  for a switch skill, cast it outright), with the refusal only ever
+  surfacing afterward as `#apply_skill`'s own "It had no effect." message,
+  instead of an immediate buzzer at the skill list the way RPG_RT shows for
+  a genuinely disabled entry.** Confirmed directly against RPG_RT's live
+  source: `Scene_Skill::vUpdate` (`src/scene_skill.cpp`) gates its entire
+  Decision branch — including the Decision SE itself — on `Window_Skill::
+  CheckEnable(skill_id)` (`IsSkillLearned && IsSkillUsable`,
+  `src/window_skill.cpp`), the same window class the field and battle skill
+  menus both use; only the `else` (disabled) branch plays Buzzer, and
+  nothing else happens — no `Scene_ActorTarget` push, no switch/Escape/
+  Teleport dispatch. `Scene::SkillMenu#choose_skill`
+  (`mruby-rpg2k/mrblib/scene/skill_menu.rb`) played `SFX_DECISION`
+  unconditionally and always dispatched to one of the switch/escape/
+  teleport/target-confirm branches — `Game::Party#can_cast?` is referenced
+  only in this file's own class doc comment, never actually called anywhere
+  in it. `#skills` (`Game::Party#field_skills`) already filters the listing
+  by `#field_skill?` — the same per-type availability RPG_RT's own
+  `Algo::IsSkillUsable` covers (Escape/Teleport access and a registered
+  target, a switch skill's own occasion flag, an ordinary skill's
+  affect-something check) — so `#can_cast?` (affordability, the seal, weapon-
+  Attribute gating) was the one remaining piece `Game_Battler::
+  IsSkillUsable`'s own pre-`Algo::IsSkillUsable` checks cover, and the one
+  piece this scene never checked. Fixed by gating `#choose_skill` on
+  `#can_cast?` before playing any SE or dispatching anywhere — a disabled
+  entry now just buzzes and stays on the list, matching `CheckEnable`'s own
+  ordering exactly (guarded `#respond_to?(:can_cast?)`, so a bare test-double
+  party naming no such method keeps its old always-enabled behavior).
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a party exposing a
+  real `#can_cast?`: the disabled skill buzzes only, opens no target-confirm
+  screen, and is never actually cast; the enabled skill right next to it
+  still plays Decision and opens the confirm screen normally), confirmed to
+  fail against the pre-fix code (`expected :skills, got :target`) before the
+  fix.
   ✅ **The all-enemies/all-allies-scope half is now implemented too,
   verified against EasyRPG Player's actual C++ source rather than the
   "on top of, not instead of" guess this entry originally carried — which

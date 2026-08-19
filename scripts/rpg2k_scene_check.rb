@@ -17004,6 +17004,74 @@ check 'Scene::SkillMenu: cancelling a self-scope skill\'s target-confirm screen 
   ok state.party.cast_skill_calls.empty?, 'nothing was cast'
 end
 
+# A party exposing a real #can_cast?, to prove Scene::SkillMenu now gates
+# Decision on it -- EasyRPG's `Scene_Skill::vUpdate` (`src/scene_skill.cpp`)
+# gates its whole Decision branch on `Window_Skill::CheckEnable`
+# (`IsSkillLearned && IsSkillUsable`) before playing any SE or opening the
+# target-confirm screen at all; the disabled case just buzzes and stays put.
+# Previously this scene never consulted `#can_cast?`, so choosing a currently
+# unusable skill (out of SP, or sealed by a Silence/Seal-type state) still
+# played Decision and opened the full confirm screen, with the failure only
+# surfacing afterward as `#apply_skill`'s own "It had no effect." message.
+class SkillGateStubParty < MenuStubParty
+  READY_SID = 80
+  SEALED_SID = 81
+
+  attr_reader :cast_skill_calls
+
+  def initialize
+    super
+    @cast_skill_calls = []
+  end
+
+  def field_skills(_actor, _state = nil); [[READY_SID, 3], [SEALED_SID, 5]]; end
+
+  def db_skill(id)
+    case id
+    when READY_SID  then OpenStruct.new(name: 'Heal', type: Game::Party::SKILL_NORMAL, scope: 2)
+    when SEALED_SID then OpenStruct.new(name: 'Bolt', type: Game::Party::SKILL_NORMAL, scope: 2)
+    end
+  end
+
+  def can_cast?(_caster, sid); sid == READY_SID; end
+
+  def cast_skill(caster, sid, target = nil, _free = false)
+    @cast_skill_calls << [caster, sid, target]
+    [caster].compact
+  end
+end
+
+check 'Scene::SkillMenu: choosing a currently-unusable skill just buzzes and stays ' \
+      'on the list, matching RPG_RT\'s own CheckEnable gate' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SkillGateStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  party = state.party
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT] # move onto the sealed/unaffordable skill
+  scene.update
+  RGSS::Input.reset
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :skills, scene.instance_variable_get(:@mode), 'no target-confirm screen opens'
+  eq [], party.cast_skill_calls, 'the skill is never actually cast'
+  eq [['Buzzer1', 100, 100]], RGSS::Audio.se_calls, 'buzzer only -- no Decision SE plays at all'
+
+  # The castable skill right next to it still works normally.
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode), 'a usable skill still opens target-confirm'
+  eq [['Decision1', 100, 100]], RGSS::Audio.se_calls
+end
+
 # A party whose four field skills exercise #apply_switch_skill /
 # #apply_escape_skill's own `sound_effect` playback (schema.rb field 16) --
 # one Switch skill with a configured SE, one Switch skill with a blank one

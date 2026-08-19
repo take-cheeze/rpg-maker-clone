@@ -130,9 +130,30 @@ class RPG2k
           play_system_se(SFX_BUZZER)
           return
         end
-        play_system_se(SFX_DECISION)
         sid, = skills[@skill_index]
         sk = @state.party.db_skill(sid)
+        # A greyed-out (currently unusable) entry is selectable but not
+        # activatable -- EasyRPG's `Scene_Skill::vUpdate` (`src/scene_skill.cpp`)
+        # gates its whole Decision branch on `Window_Skill::CheckEnable`
+        # (`IsSkillLearned && IsSkillUsable`, `src/window_skill.cpp`) before
+        # playing any SE or pushing `Scene_ActorTarget`/dispatching a
+        # switch skill at all; the `else` (disabled) branch just buzzes and
+        # stays on the list. `#skills` (`Game::Party#field_skills`) already
+        # filters the listing by `#field_skill?` -- the same per-type
+        # availability `Algo::IsSkillUsable` covers on the reference's own
+        # `IsSkillUsable` -- so `Game::Party#can_cast?` (affordability, the
+        # 封印/Silence seal, weapon-Attribute gating) is everything left to
+        # check here, the same predicate `Game_Battler::IsSkillUsable`'s own
+        # pre-`Algo::IsSkillUsable` checks cover. Previously nothing gated
+        # this at all: choosing an unaffordable or sealed skill still played
+        # Decision and opened the full target-confirm screen (or, for a
+        # switch skill, cast it outright), with the failure only ever
+        # surfacing afterward as #apply_skill's "It had no effect." message.
+        if @state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         # A switch skill has no target at all; Escape warps straight to its one
         # registered target; Teleport opens a list of every registered target;
         # a self (2), all-ally (4) or single-ally (3) skill all open the same
