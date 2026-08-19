@@ -526,6 +526,28 @@ int main(void) {
     // Test Play flag on, so it is always false.
     mrb_const_set(M, mrb_obj_value(M->object_class),
                   mrb_intern_lit(M, "TEST_PLAY"), mrb_false_value());
+    // RPG2K_NEW_GAME/RPG2K_CONTINUE/RPG2K_PREVIEW_MAP/RPG2K_BATTLE_TROOP:
+    // Scene::Title (mruby-rpg2k/mrblib/scene/title.rb) and RPG2k#headless_
+    // battle_troop/#preview_map_id (mruby-rpg2k/mrblib/main.rb) reference
+    // these directly, each wrapped in its own `rescue StandardError` since
+    // src/main.cxx (the only other target that defines them, from its own
+    // CLI flags) is the one place they normally come from -- this build has
+    // no command line, so they are always "unset", the same defaults
+    // src/main.cxx's own flags fall back to. Defining them (rather than
+    // relying on the rescue to catch their absence, the same as every other
+    // undefined-optional-constant site in this file) sidesteps a separate,
+    // deeper issue: raising the first real exception of the process's life
+    // here doesn't reliably unwind on this target -- see ADR 0047's bug-10
+    // follow-up finding -- so leaving these undefined crashes instead of
+    // being caught.
+    mrb_const_set(M, mrb_obj_value(M->object_class),
+                  mrb_intern_lit(M, "RPG2K_NEW_GAME"), mrb_false_value());
+    mrb_const_set(M, mrb_obj_value(M->object_class),
+                  mrb_intern_lit(M, "RPG2K_CONTINUE"), mrb_false_value());
+    mrb_const_set(M, mrb_obj_value(M->object_class),
+                  mrb_intern_lit(M, "RPG2K_PREVIEW_MAP"), mrb_fixnum_value(0));
+    mrb_const_set(M, mrb_obj_value(M->object_class),
+                  mrb_intern_lit(M, "RPG2K_BATTLE_TROOP"), mrb_fixnum_value(0));
 
     const char* game_start_result;
     if (game_info) {
