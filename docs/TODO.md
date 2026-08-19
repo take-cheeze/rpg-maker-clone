@@ -5936,6 +5936,34 @@ Everything below is unverified against the codebase.
   #do_change_actor_name` only accepts a literal command string, never
   another actor's own name, so no built-in command can copy one. (Party caps
   at 4, Change Party Member no-ops past that — now fixed, see above.)
+  ✅ **`#do_change_actor_name` itself had its own separate bug, unrelated to
+  the claim just above: a blank Change Actor Name command silently left
+  the actor's old name in place, instead of genuinely blanking it the way
+  real RPG_RT does (2026-08-19).** Confirmed directly against RPG_RT's
+  live source: `Game_Interpreter::CommandChangeHeroName`
+  (`src/game_interpreter.cpp`, code 10610) calls `actor->SetName(...)`
+  completely unconditionally, with no guard against an empty resolved
+  string anywhere in the command. `Game_Actor::SetName`/`GetName`
+  (`src/game_actor.h`) have no blank-string fallback to the database name
+  either -- `SetName`'s only special case is the string exactly matching
+  the actor's own database name (a save-space sentinel,
+  `SaveActor::kEmptyName`, unrelated to blankness), and `GetName()` reads
+  `data.name` straight back once it holds anything else, empty string
+  included. `Interpreter#do_change_actor_name`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) had `return if name.nil? ||
+  name.empty?` -- an early-return with its own doc comment asserting
+  "RPG_RT keeps the previous name", an unverified assumption that turned
+  out backwards, unlike the sibling `#do_change_actor_title` right below
+  it in the same file, which was already correctly unconditional. Fixed
+  by making `#do_change_actor_name` symmetric with
+  `#do_change_actor_title`: `actor.name = cmd.string || '' if actor`, no
+  blank guard. Covered by correcting the existing
+  `scripts/rpg2k_logic_check.rb` check (previously named "...a blank name
+  is ignored", asserting the old actor name survived a blank Change Actor
+  Name -- renamed and reversed to assert the name genuinely blanks,
+  matching the already-correct Title check right beside it), confirmed to
+  fail against the pre-fix code (`expected "", got "Zelda"`) before the
+  fix.
 - ✅ **Processing order** — map/common events process in ascending id order;
   a process that hits Wait/Show-Text yields to the others that tick. **The
   "only one event/parallel-process advances per tick engine-wide (round
