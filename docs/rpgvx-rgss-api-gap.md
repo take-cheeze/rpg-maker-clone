@@ -378,24 +378,84 @@ engine's reach. `Module#private_method_defined?`/`#protected_method_defined?`/
 `#public_method_defined?` are filled in for real (mruby-metaprog already
 tracks the data `private_instance_methods` needs) rather than stubbed.
 
-**Still open: `module_function` with no arguments is a documented no-op in
-this mruby version.** CRuby's "declaration mode" `module_function` — call it
-bare, and every subsequent `def` in that scope becomes both a private
-instance method *and* a public singleton method — needs compiler-level
-"default definee" tracking that upstream mruby's own source marks
-unimplemented (`mrb_mod_module_function` in `3rd/mruby/src/class.c`: `if
-(argc == 0) { /* set MODFUNC SCOPE if implemented */ return mod; }`). The
-explicit-argument form (`module_function :name`, converting an
-already-defined method) works correctly and is what most RGSS scripts use for
-a single utility method, but a module built entirely under a bare
-`module_function` declaration — e.g. the same real game's bundled error-log
-utility, `TKG::ErrorLog`, whose `save` is only ever reachable as
-`TKG::ErrorLog.save(...)` — silently defines no singleton methods at all,
-raising `NoMethodError` the first time the game tries to call one. This is an
-upstream mruby limitation (reproduced and confirmed in isolation, not
-specific to this project's config or build), not something to patch in the
-vendored submodule for one script's sake; real content that needs it working
-would want this revisited.
+**Fixed: bare `module_function` was a documented no-op in this mruby
+version.** CRuby's "declaration mode" `module_function` — call it bare, and
+every subsequent `def` in that scope becomes both a private instance method
+*and* a public singleton method — needs compiler-level "default definee"
+tracking that upstream mruby's own source marks unimplemented
+(`mrb_mod_module_function` in `3rd/mruby/src/class.c`: `if (argc == 0) { /*
+set MODFUNC SCOPE if implemented */ return mod; }`). The explicit-argument
+form (`module_function :name`, converting an already-defined method) works
+correctly and is what most RGSS scripts use for a single utility method, but
+a module built entirely under a bare `module_function` declaration — e.g. the
+same real game's bundled error-log utility, `TKG::ErrorLog`, whose `save` is
+only ever reachable as `TKG::ErrorLog.save(...)` — silently defined no
+singleton methods at all, raising `NoMethodError` the first time the game
+tried to call one.
+
+Reimplemented without touching the vendored mruby core: `method_added` fires
+reliably for every `def` (the VM only skips calling it while it is still the
+built-in no-op — `mrb_method_added` in class.c — so overriding it once here
+costs nothing for classes that never trigger it), and the explicit-argument
+form already promotes an existing method correctly. Bare `module_function`
+now just flips a per-module flag; `method_added` — called after the method is
+already registered — hands the new name to the explicit-argument path to
+promote it, one step behind CRuby's compile-time version but the same
+result. Bare `private`/`public` (which this mruby version *does* implement
+correctly, via real per-scope visibility tracking — `find_visibility_scope`
+in class.c) end the declaration, so a script returning to ordinary instance
+methods afterward is not stuck being module_function forever. What this does
+not reproduce: CRuby's version is true lexical-scope state, reset on leaving
+the enclosing `module`/`class` body; this is a per-module flag that persists
+until explicitly turned off, so a script that reopens the *same* module later
+without an intervening bare `private` would see those methods wrongly
+promoted too — narrow in practice, since RGSS scripts overwrite this as one
+contiguous run.
+
+**Fixed: `Time#strftime` did not exist.** mruby-time uses the C library's
+`strftime()` internally for `Time#to_s`, but never bound a Ruby-level method
+taking a format string — and formatting a timestamp for a log line or a save
+filename is completely ordinary (the same error-log utility:
+`"Log/error_log" + Time.now.strftime("%Y%m%d%H%M%S") + ".txt"`). Implemented
+in pure Ruby over the component accessors `Time` already exposes
+(`year`/`mon`/`day`/`hour`/`min`/`sec`/`wday`/`yday`/`usec`/`utc_offset`),
+covering the common date/time directive set real scripts use — not the full
+CRuby spec (no `%V`/`%U`/`%W` week-of-year, no locale forms, no field-width
+modifiers). An unrecognised directive passes through literally.
+
+**Still open, and deeper than `module_function`: mruby's VM has no `$!`
+("currently handled exception") at all.** `rescue => e` binds the exception
+to the clause's own local variable, but the special global CRuby code
+routinely reads instead — `$!`, what `Exception#message`/`#backtrace`
+resolve through implicitly when a method's default argument or a nested
+`raise` (no arguments — CRuby re-raises `$!`) needs "whatever is currently
+being rescued" without it being threaded through as an explicit parameter —
+is simply never written anywhere accessible from Ruby. Traced to the VM
+opcode itself: `OP_EXCEPT` in `3rd/mruby/src/vm.c` copies the caught
+exception into a bytecode *register* (a local stack slot) and immediately
+clears `mrb->exc` to `NULL`, with no call to `mrb_gv_set` or any other
+globally-visible store. Confirmed with an isolated reproduction — even a bare
+`rescue => e; $! ...` inside the *same* method reads `nil`, so this is not
+specific to crossing a call boundary. It is why the same error-log utility's
+`save(filename = nil, exception = $!)` — called as `TKG::ErrorLog.save()`
+from directly inside `rescue; TKG::ErrorLog.save(); raise; end` — receives
+`exception = nil` and crashes on `exception.message`, one step past the
+`module_function` fix above. mruby's bare `raise` (no arguments) has the same
+root cause from the other side: real Ruby re-raises `$!`, but mruby's
+`mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
+fresh, empty `RuntimeError` instead of re-raising what was actually caught.
+Both are fixable *only* by hooking `Kernel#raise` itself (there is no other
+point where the about-to-be-raised object is observable in time to stash it)
+— wrapping every `raise` call in the whole engine in an extra begin/rescue to
+capture and stash the exception before it propagates, on every platform this
+build targets, PSP included, where call-stack depth is already the tightest
+constraint. That blast radius — every exception, in every maker's runtime,
+sharing this one build — is a different order of risk than a script that
+opts into the bare `module_function` idiom or calls `Time#strftime`, for a
+fix whose payoff is mostly log-message fidelity in one utility script's
+crash handler. Left alone rather than patched; a project that genuinely needs
+`$!` semantics would want this revisited with its own scoped, targeted
+design rather than a global `raise` wrapper.
 
 ## What this means for turning the host on
 
@@ -409,5 +469,6 @@ tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
 its windows, and — packed or loose — finds its graphics and its music, and
 reopens its own stock `RPG::` script sections without a superclass mismatch.
 Tilemap item 1's remaining polish (the flat "above characters" layer) is the
-only item left in the six sections above; item 7's `module_function` gap is
-the newest and, per a real release, potentially the most consequential.
+only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
+the newest and, per a real release, the next (and likely last, for that one
+game's bundled utility scripts) wall.

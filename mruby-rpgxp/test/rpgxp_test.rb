@@ -361,6 +361,36 @@ assert "Module visibility-filtered method_defined? variants answer correctly" do
   assert_false m.private_method_defined?(:nope)
 end
 
+# Bare (argument-less) module_function -- CRuby's "declaration mode", where
+# every `def` that follows in the same scope becomes both a private instance
+# method and a public singleton method. Reimplemented via method_added (see
+# the comment above `class Module` / `alias_method :__mrb_native_module_
+# function` in rgss_library.rb, next to the private_method_defined? fix
+# above); the explicit-argument form (module_function :name) is native and
+# unchanged. A real bundled error-log utility script defines its entire
+# public surface (only ever reachable as `TKG::ErrorLog.save(...)`) this way.
+assert "bare module_function promotes subsequent defs to singleton methods" do
+  m = Module.new
+  m.module_eval do
+    module_function
+    def foo(x); x * 2; end
+    def bar(x); x * 3; end
+    public
+    def baz(x); x * 4; end
+  end
+
+  assert_equal 6, m.foo(3)
+  assert_equal 9, m.bar(3)
+  # `public` (bare) ends the module_function declaration, same as in CRuby --
+  # baz is an ordinary instance method, not reachable on the module itself.
+  assert_false m.respond_to?(:baz), "baz should not have become a module function"
+  assert_true m.respond_to?(:foo)
+  # module_function's own explicit-argument form still keeps working.
+  n = Module.new
+  n.module_eval { def qux(x); x + 1; end; module_function :qux }
+  assert_equal 6, n.qux(5)
+end
+
 # Win32API: real games bind Windows-only DLL calls unconditionally at script
 # load time (a very common pattern for an *optional* feature, e.g. CACAO's
 # widely bundled screenshot-saving utility binds MultiByteToWideChar/
@@ -505,6 +535,28 @@ assert "Time is available for the script host" do
   assert_equal 0, epoch.to_i
   # The comparison Scene_Load makes against each slot's mtime.
   assert_true Time.at(1) > epoch
+end
+
+# strftime, filled in above in rgss_library.rb (mruby-time has no such method
+# — see the comment on `class Time` there). A real bundled utility script
+# (an error logger) formats both a save filename and a log line with it.
+assert "Time#strftime covers the directives real scripts use" do
+  # 2024-03-05 09:07:03 UTC, a Tuesday (picked so month/day/hour/minute/second
+  # are all distinguishable from each other and none needs padding dropped).
+  t = Time.utc(2024, 3, 5, 9, 7, 3)
+  assert_equal "20240305090703", t.strftime("%Y%m%d%H%M%S")
+  assert_equal "2024-03-05T09:07:03", t.strftime("%Y-%m-%dT%H:%M:%S")
+  assert_equal "24", t.strftime("%y")
+  assert_equal "Tue", t.strftime("%a")
+  assert_equal "Tuesday", t.strftime("%A")
+  assert_equal "Mar", t.strftime("%b")
+  assert_equal "March", t.strftime("%B")
+  assert_equal "AM", t.strftime("%p")
+  assert_equal "09:07:03", t.strftime("%T")
+  assert_equal "2024-03-05", t.strftime("%F")
+  assert_equal "100%done", t.strftime("100%%done")
+  # An unrecognised directive passes through literally rather than raising.
+  assert_equal "%Q", t.strftime("%Q")
 end
 
 assert "eval, Fiber and Kernel#exit / SystemExit are available for the script host" do

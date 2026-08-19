@@ -16206,10 +16206,24 @@ screen (544×416). Full rationale:
     just graphics) too small for this game's database alone — raised to
     256 MB — and filled in `Win32API`/`String#encode`/
     `Module#private_method_defined?` (and friends), which the game's bundled
-    community utility scripts assumed. **Still open:** bare (argument-less)
-    `module_function` is a documented no-op in this mruby version (upstream,
-    not project-specific — see the item 7 write-up), which still blocks this
-    same game's error-logging utility script.
+    community utility scripts assumed. Continuing the dig also fixed two more
+    real mruby gaps: bare (argument-less) `module_function` was a documented
+    no-op upstream (`3rd/mruby/src/class.c`'s own comment: `/* set MODFUNC
+    SCOPE if implemented */`) — reimplemented via `method_added`, without
+    touching the vendored core — and `Time#strftime` did not exist at all
+    (implemented in pure Ruby over `Time`'s existing component accessors).
+    **Still open, and deeper:** mruby's VM has no `$!` ("currently handled
+    exception") — `OP_EXCEPT` in vm.c copies the caught exception into a
+    bytecode register and clears `mrb->exc`, never writing it anywhere
+    Ruby-visible — so the same game's error-log utility, which reads `$!` as
+    a method's default argument and relies on bare `raise` re-raising it,
+    still crashes one step further in. Fixable only by wrapping
+    `Kernel#raise` itself (the sole point where the about-to-be-raised object
+    is observable), which would add overhead and stack depth to *every*
+    exception in the shared build across every maker and every platform
+    (PSP's stack headroom included) for what is mostly log-message fidelity
+    in one utility script — see the item 7 write-up for the full reasoning
+    on why that trade isn't taken here.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).
