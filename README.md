@@ -51,7 +51,11 @@
   whole-map viewer: every tile of the current map at one pixel per tile
   (green passable, dark red blocked), with a marker for the player and every
   active map event, panned with the arrow keys and recentred on the player
-  with C
+  with C. **R** enters Select mode, a single-tile cursor (arrow keys move it,
+  the viewport auto-scrolling to keep it in view) that reports the tile
+  underneath — coordinates, passable/blocked, and any map event standing
+  there — and warps the player onto it with C, through the same queued-warp
+  mechanism a Teleport field skill uses rather than editing position by hand
 - `--rpg2k_preview_map=<id>` starts New Game on a chosen map, centred on its
   middle tile, instead of the database's configured start position — a quick
   way to inspect one map's rendering without a save file positioned there.
