@@ -14451,6 +14451,52 @@ above are repeated here)
   attack-branch Skill's cure rolls independently of its own damage roll),
   two confirmed to fail against the pre-fix code (`expected [], got [3]`)
   before the fix.
+  ✅ **A revival skill/item whose own "Affect HP" flag is off — a common
+  "cure Death, heal a % of max HP" design, distinct from a flat-amount
+  reviver — always revived to a flat 1 HP instead of a percentage of max
+  HP, both in battle and from the field menu (2026-08-19).** Confirmed
+  directly against RPG_RT's live source, in two independent functions:
+  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`,
+  the in-battle path) is `if (IsRevived() && effect > 0) { if
+  (skill.affect_hp) { SetAffectedHp(std::max(0, effect)); } else {
+  SetAffectedHp(target->GetMaxHp() * effect / 100); } }` — reading a
+  *percentage* of max HP instead of the flat-1 the earlier revival fix
+  (just above, `apply_skill_hit`'s cure-then-additive-heal) otherwise
+  falls through to whenever Affect HP is off. `Game_Battler::UseSkill`
+  (`src/game_battler.cpp`, the out-of-battle/field-menu path) implements
+  the identical rule independently via its own `cure_hp_percentage` bool
+  ("If Death is cured and HP is not selected, we set a bool so it later
+  heals HP percentage"), confirming this is a general RPG_RT mechanic, not
+  a battle-only quirk. `Game::Battle#battle_skill_command`
+  (`mruby-rpg2k/mrblib/game.rb`) forces `hp: 0` in its recovery-branch hash
+  whenever a skill's own `affect_hp` is off, regardless of its configured
+  Power/rate — so `#apply_skill_hit`'s revival block (added by the earlier
+  fix above) always saw `hp == 0` for such a skill and floored to 1,
+  identical to a skill/item with no heal configured at all. `Game::Party
+  #cast_skill` (the field-menu path) had the matching gap: `t.change_hp
+  (amount) if sk.affect_hp && amount > 0` never ran at all when `affect_hp`
+  was off, leaving the target on `#remove_state`'s own bare revival floor
+  of 1 with no percentage heal on top. Fixed in both places: `apply_skill_
+  hit`'s revival block now computes `affected_hp = hp`, falling back to
+  `target.max_hp * cmd[:stat_effect] / 100` (`cmd[:stat_effect]` already
+  the skill's raw, un-gated magnitude — `#battle_skill_command`'s own
+  `base`, the same figure the ATK/DEF/SPI/AGI stat-mod effect already
+  reuses) whenever `hp` is 0 but that raw magnitude is positive — which can
+  only happen when Affect HP was off, since an on-flag skill's own `hp`
+  already equals that scaled figure whenever it's nonzero, so no extra
+  flag has to ride along in `cmd` to tell the two cases apart; `cast_skill`
+  gained a parallel `elsif revived && amount > 0 && t.max_hp` branch
+  mirroring `UseSkill`'s own `ChangeHp(GetMaxHp() * effect / 100 -
+  revived, false)`. An Item is unaffected either way — `#command_item`
+  never sets `cmd[:stat_effect]` at all, so the percentage branch can never
+  trigger for one, matching how `Item::vExecute` has no such override to
+  begin with (it reads `item.recover_hp_rate` directly, a separate,
+  already-correct mechanism). Covered by four new
+  `scripts/rpg2k_logic_check.rb` checks (a battle-path and a field-menu-path
+  check each for the percentage landing correctly, and for it capping at
+  max HP rather than overshooting), all four confirmed to fail against the
+  pre-fix code (`expected 25, got 1` / `expected 50, got 1` / `expected
+  50, got 1` / `expected 100, got 1`) before the fix.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor
