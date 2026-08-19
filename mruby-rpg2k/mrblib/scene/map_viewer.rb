@@ -17,19 +17,33 @@ class RPG2k
     # would.
     #
     # Arrow keys pan the viewport when the map doesn't fit on screen at once;
-    # C recentres on the player; B closes back to the debug menu.
+    # C recentres on the player; R enters Select mode, a single-tile cursor
+    # (arrow keys move it, viewport auto-scrolling to follow) that reports the
+    # tile under it -- coordinates, passable/blocked, and the map event there,
+    # if any -- and can teleport the player onto it with C. B backs out of
+    # Select mode, or closes the viewer back to the debug menu if it is
+    # already in pan mode.
+    #
+    # The teleport goes through Game::State#pending_teleport, the same queued-
+    # warp mechanism a Teleport field skill uses (see Scene::ItemMenu/
+    # SkillMenu#queue_teleport) -- Scene::Map picks it up and runs the real
+    # Teleport-command machinery (reloading the map, replaying its access/BGM
+    # setup) on its very next #update, rather than this scene hand-mutating
+    # `@state.x`/`@state.y` and leaving that machinery unrun.
     class MapViewer < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       HEADER_H = 16
       FOOTER_H = 16
       PAN_STEP = 8
+      CURSOR_MARGIN = 2
 
       PASSABLE_COLOR = Color.new(64, 160, 64, 255)
       BLOCKED_COLOR = Color.new(160, 48, 48, 255)
       UNKNOWN_COLOR = Color.new(96, 96, 96, 255)
       PLAYER_COLOR = Color.new(255, 255, 0, 255)
       EVENT_COLOR = Color.new(80, 200, 255, 255)
+      CURSOR_COLOR = Color.new(255, 255, 255, 255)
       TEXT_COLOR = Color.new(255, 255, 255, 255)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
@@ -48,6 +62,7 @@ class RPG2k
         @view_w = @contents.width
         @view_h = @contents.height - HEADER_H - FOOTER_H
         @pannable = @map && (@map.width > @view_w || @map.height > @view_h)
+        @select = false
         @ox = 0
         @oy = 0
         center_on_player
@@ -60,17 +75,87 @@ class RPG2k
       end
 
       def update
+        @select ? update_select : update_pan
+      end
+
+      private
+
+      def update_pan
         if Input.trigger?(Input::B)
           @parent.pop
         elsif Input.trigger?(Input::C)
           center_on_player
           refresh
+        elsif Input.trigger?(Input::R)
+          enter_select_mode
         elsif @pannable
           refresh if pan
         end
       end
 
-      private
+      def update_select
+        if Input.trigger?(Input::B) || Input.trigger?(Input::R)
+          @select = false
+          refresh
+        elsif Input.trigger?(Input::C)
+          teleport_to_cursor
+        elsif move_cursor
+          refresh
+        end
+      end
+
+      def enter_select_mode
+        return unless @map
+        @select = true
+        @cx = @state.x
+        @cy = @state.y
+        ensure_cursor_visible
+        refresh
+      end
+
+      # One tile per press/repeat, unlike #pan's fixed pixel step -- the
+      # cursor is choosing a tile to inspect or warp to, not scrolling.
+      def move_cursor
+        moved = false
+        max_cx = @map.width - 1
+        max_cy = @map.height - 1
+        if (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && @cx.positive?
+          @cx -= 1
+          moved = true
+        elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && @cx < max_cx
+          @cx += 1
+          moved = true
+        end
+        if (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && @cy.positive?
+          @cy -= 1
+          moved = true
+        elsif (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && @cy < max_cy
+          @cy += 1
+          moved = true
+        end
+        ensure_cursor_visible if moved
+        moved
+      end
+
+      def ensure_cursor_visible
+        @ox = clamp(scroll_to_fit(@cx, @ox, @view_w), 0, max_ox)
+        @oy = clamp(scroll_to_fit(@cy, @oy, @view_h), 0, max_oy)
+      end
+
+      # The smallest scroll offset change that brings `pos` back inside
+      # [offset, offset + extent) -- unchanged if it's in view already.
+      def scroll_to_fit(pos, offset, extent)
+        return pos if pos < offset
+        return pos - extent + 1 if pos >= offset + extent
+        offset
+      end
+
+      # Direction 0 leaves the player's facing as it was, the same convention
+      # Scene::ItemMenu/SkillMenu#queue_teleport use for their own warps.
+      def teleport_to_cursor
+        @state.pending_teleport = [@map.id, @cx, @cy, 0]
+        @parent.pop_to_map
+      end
 
       def build_chipset
         return nil unless @map
@@ -131,19 +216,51 @@ class RPG2k
         draw_tiles
         draw_events
         draw_player
+        draw_cursor
         draw_footer
       end
 
       def draw_header
         @contents.font.color = TEXT_COLOR
-        text = @map ? "Map #{@map.id}  #{@map.width}x#{@map.height}  " \
-                      "x:#{@state.x} y:#{@state.y}" : 'No map loaded'
+        text = @select ? select_header_text : player_header_text
         @contents.draw_text 0, 0, @contents.width, HEADER_H, text
+      end
+
+      def player_header_text
+        return 'No map loaded' unless @map
+        "Map #{@map.id}  #{@map.width}x#{@map.height}  x:#{@state.x} y:#{@state.y}"
+      end
+
+      def select_header_text
+        color = tile_color(@cx, @cy)
+        word = if color.equal?(BLOCKED_COLOR) then 'blocked'
+               elsif color.equal?(PASSABLE_COLOR) then 'passable'
+               else 'unknown'
+               end
+        ev = event_at(@cx, @cy)
+        ev_text = ev ? "  Event ##{ev[0]} #{ev[1]}" : ''
+        "Cursor x:#{@cx} y:#{@cy}  #{word}#{ev_text}"
+      end
+
+      # The id and name of the map event standing at (x, y), or nil -- shares
+      # #each_event_position's live-position-over-spawn-point rule with
+      # #draw_events, so the cursor reports the same place the marker is
+      # actually drawn.
+      def event_at(x, y)
+        found = nil
+        each_event_position { |id, name, ex, ey| found = [id, name] if ex == x && ey == y }
+        found
       end
 
       def draw_footer
         @contents.font.color = HINT_COLOR
-        hint = @pannable ? 'Arrows:Pan  C:Center  B:Close' : 'B:Close'
+        hint = if @select
+                 'Arrows:Move  C:Teleport  B:Cancel'
+               elsif @pannable
+                 'Arrows:Pan  C:Center  R:Select  B:Close'
+               else
+                 'R:Select  B:Close'
+               end
         @contents.draw_text 0, HEADER_H + @view_h, @contents.width, FOOTER_H, hint
       end
 
@@ -188,13 +305,19 @@ class RPG2k
         passable ? PASSABLE_COLOR : BLOCKED_COLOR
       end
 
-      # Every event the map unit names, at its live wandered position when one
-      # has been recorded (Scene::Map#record_map_event_positions) or its
-      # authored spawn point otherwise. This state has no record of which
-      # events an Erase Event command removed this visit (that flag lives on
-      # the running Scene::Map, not Game::State), so a freshly-erased event
-      # can still show a marker here until the map is re-entered.
       def draw_events
+        each_event_position { |_id, _name, x, y| mark(x, y, EVENT_COLOR) }
+      end
+
+      # Yields [id, name, x, y] for every event the map unit names, at its
+      # live wandered position when one has been recorded
+      # (Scene::Map#record_map_event_positions) or its authored spawn point
+      # otherwise. Shared by #draw_events and #event_at so both agree on
+      # where an event actually is. Neither knows which events an Erase Event
+      # command removed this visit (that flag lives on the running Scene::Map,
+      # not Game::State), so a freshly-erased event can still show up here
+      # until the map is re-entered.
+      def each_event_position
         return unless @map
         events = @map.unit.events
         return unless events
@@ -203,7 +326,7 @@ class RPG2k
           pos = positions[id]
           x = pos ? pos[0] : ev.x
           y = pos ? pos[1] : ev.y
-          mark(x, y, EVENT_COLOR)
+          yield id, ev.name, x, y
         end
       end
 
@@ -216,6 +339,24 @@ class RPG2k
         vy = y - @oy
         return if vx.negative? || vy.negative? || vx >= @view_w || vy >= @view_h
         @contents.fill_rect vx - 1, HEADER_H + vy - 1, 3, 3, color
+      end
+
+      # A hollow box around the cursor tile, not a filled block like #mark --
+      # it needs to stay legible sitting on top of the player or an event
+      # marker, which it starts right on top of (Select mode opens on the
+      # player's own tile).
+      def draw_cursor
+        return unless @select
+        vx = @cx - @ox
+        vy = @cy - @oy
+        return if vx.negative? || vy.negative? || vx >= @view_w || vy >= @view_h
+        x = vx - CURSOR_MARGIN
+        y = HEADER_H + vy - CURSOR_MARGIN
+        size = CURSOR_MARGIN * 2 + 1
+        @contents.fill_rect x, y, size, 1, CURSOR_COLOR
+        @contents.fill_rect x, y + size - 1, size, 1, CURSOR_COLOR
+        @contents.fill_rect x, y, 1, size, CURSOR_COLOR
+        @contents.fill_rect x + size - 1, y, 1, size, CURSOR_COLOR
       end
     end
   end

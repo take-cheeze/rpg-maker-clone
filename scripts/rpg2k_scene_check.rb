@@ -18980,6 +18980,100 @@ check 'MapViewer pans a map bigger than the viewport, clamped to its edges, and 
   eq 200 - view_w / 2, scene.instance_variable_get(:@ox), 'C recentres back on the player'
 end
 
+check 'R enters MapViewer Select mode on the player tile; B backs out to pan mode ' \
+     'without closing the viewer' do
+  st = menu_state
+  st.map = fake_map(1, {})
+  st.x = 2; st.y = 3
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update
+  ok scene.instance_variable_get(:@select), 'R enters Select mode'
+  eq 2, scene.instance_variable_get(:@cx), 'the cursor opens on the player tile, x'
+  eq 3, scene.instance_variable_get(:@cy), 'the cursor opens on the player tile, y'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok !scene.instance_variable_get(:@select), 'B backs out of Select mode'
+  ok !scene.parent.pop_called, 'B in Select mode does not close the whole viewer'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  eq 1, scene.parent.pop_called, 'a second B, now back in pan mode, closes it'
+end
+
+check 'MapViewer Select mode reports the tile under the cursor: coordinates, ' \
+     'passability, and any event standing there' do
+  ev = event(4, 1, page)
+  st = menu_state
+  st.map = fake_map(1, { 1 => ev })
+  st.x = 0; st.y = 1
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update # enter Select mode, cursor opens at the player's (0, 1)
+  4.times do
+    RGSS::Input.triggered = [RGSS::Input::RIGHT]
+    scene.update
+  end
+  eq 4, scene.instance_variable_get(:@cx), 'four RIGHT presses moved the cursor one tile each'
+  eq 1, scene.instance_variable_get(:@cy)
+
+  text = scene.send(:select_header_text)
+  ok text.include?('x:4 y:1'), "header names the cursor's tile: #{text.inspect}"
+  ok text.include?('passable'), 'fake_chipset has no passability table: reads passable'
+  ok text.include?('Event #1'), 'the event standing on this tile is named in the header'
+end
+
+check 'C in MapViewer Select mode queues a teleport to the cursor tile and returns ' \
+     'to the map' do
+  st = menu_state
+  st.map = fake_map(1, {})
+  st.x = 1; st.y = 1
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  eq 2, scene.instance_variable_get(:@cx)
+  eq 2, scene.instance_variable_get(:@cy)
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq [1, 2, 2, 0], st.pending_teleport,
+     'queues the same [map_id, x, y, dir] shape Scene::ItemMenu/SkillMenu#queue_teleport use'
+  ok scene.parent.pop_to_map_called,
+     'C pops the whole scene stack back to the map, not just this viewer, so Scene::Map ' \
+     'picks the teleport up on its next #update'
+end
+
+check 'the cursor auto-scrolls the MapViewer viewport to stay in view while moving ' \
+     'in Select mode' do
+  st = menu_state
+  st.map = big_map(1, 400, 300)
+  st.x = 200; st.y = 150
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  view_w = scene.instance_variable_get(:@view_w)
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update # cursor opens on the player tile, already in view
+  ox_before = scene.instance_variable_get(:@ox)
+
+  # Walk the cursor past the current viewport's right edge.
+  ((view_w / 2) + 1).times do
+    RGSS::Input.triggered = [RGSS::Input::RIGHT]
+    scene.update
+  end
+  cx = scene.instance_variable_get(:@cx)
+  ox = scene.instance_variable_get(:@ox)
+  ok ox > ox_before, 'the viewport scrolled right to keep up with the cursor'
+  ok cx >= ox && cx < ox + view_w, 'the cursor stays inside the (now-scrolled) viewport'
+end
+
 check "a troop's terrain_set excludes it from a tile it does not cover" do
   scene = new_scene({})
   scene.db.enemy_group[9] = OpenStruct.new(name: 'Wolves', members: {}, terrain_set: [0])
