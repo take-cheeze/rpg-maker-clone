@@ -536,6 +536,33 @@
   ./rpg_maker_clone --sixel --test_play --term_console_lines=8 --game_dir path/to/game
   ```
 
+### Editing project data as text
+
+- `scripts/lcf_text_convert.rb` converts a project's `.ldb` (database),
+  `.lmu` (map unit) or `.lsd` (save) between the original binary format and a
+  human-editable YAML text form, schema-checked against `mruby-lcf/mrblib/
+  schema.rb` in both directions — the map itself stays a visual, in-engine
+  edit (see the F9 debug menu's Map viewer above; tile painting has no good
+  text form), but everything else — actor/item/skill tables, map dimensions,
+  event pages, system settings — round-trips through text:
+
+  ```sh
+  ruby scripts/lcf_text_convert.rb to_text   RPG_RT.ldb database.yml
+  # edit database.yml in any text editor
+  ruby scripts/lcf_text_convert.rb check     database.yml   # validate without writing
+  ruby scripts/lcf_text_convert.rb to_binary database.yml   RPG_RT.ldb
+  ```
+
+  An unedited file round-trips byte-exact; an edited one is validated first
+  (unknown fields, wrong types, malformed event/move-command entries — every
+  problem found is reported, not just the first) and only written once it's
+  clean. This is still the *original* RPG Maker 2000/2003 LCF format on
+  disk — the text form is a local editing convenience, never a competing
+  project format. `.lmt` (the map tree) is text-exportable but not yet
+  binary-writable (see `docs/adr/0055-lcf-text-convert.md`). Covered end to
+  end, with no test-bed project required, by `scripts/
+  lcf_text_convert_check.rb`.
+
 ### Profiling
 
 - Debugging tooling, so it only runs during test play: either the project's

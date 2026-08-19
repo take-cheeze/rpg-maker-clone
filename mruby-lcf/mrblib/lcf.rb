@@ -128,6 +128,24 @@ module LCF
   MOVE_CHANGE_GRAPHIC = 34  # + charset name (string) + charset index
   MOVE_PLAY_SOUND = 35      # + file name (string) + volume, tempo, balance
 
+  # Encode a list of EventCommand (or {code:, indent:, string:, parameters:}
+  # Hashes -- what a text-authored event page decodes to) back to the packed
+  # blob #parse_event_commands reads. Its exact inverse: a list parsed then
+  # re-encoded without edits reproduces the original bytes.
+  def encode_event_commands(cmds)
+    out = String.new
+    cmds.each do |c|
+      code = c.respond_to?(:code) ? c.code : c[:code]
+      indent = c.respond_to?(:indent) ? c.indent : c[:indent]
+      str = binstr(utf8_to_cp932((c.respond_to?(:string) ? c.string : c[:string]) || ''))
+      params = c.respond_to?(:parameters) ? c.parameters : c[:parameters]
+      out = out + write_ber(code) + write_ber(indent) +
+            write_ber(str.bytesize) + str + write_ber(params.size)
+      params.each { |p| out = out + write_ber(p) }
+    end
+    out
+  end
+
   # Decode a packed move-command list (the `:move_commands` schema type used by
   # event-page and common-event move routes). Unlike event commands, each entry
   # is a bare command id optionally followed by a length-prefixed cp932 string
@@ -157,6 +175,34 @@ module LCF
       cmds.push MoveCommand.new(id, str, a, b, c)
     end
     cmds
+  end
+
+  # Encode a list of MoveCommand (or {command_id:, parameter_string:,
+  # parameter_a:, parameter_b:, parameter_c:} Hashes) back to the packed blob
+  # #parse_move_commands reads -- its exact inverse. Only the fields the
+  # command's own id actually carries get written, mirroring the reader's own
+  # `case id` dispatch (a bare command carries nothing past its id).
+  def encode_move_commands(cmds)
+    out = String.new
+    cmds.each do |c|
+      id = c.respond_to?(:command_id) ? c.command_id : c[:command_id]
+      str_field = c.respond_to?(:parameter_string) ? c.parameter_string : c[:parameter_string]
+      a = (c.respond_to?(:parameter_a) ? c.parameter_a : c[:parameter_a]) || 0
+      b = (c.respond_to?(:parameter_b) ? c.parameter_b : c[:parameter_b]) || 0
+      cc = (c.respond_to?(:parameter_c) ? c.parameter_c : c[:parameter_c]) || 0
+      out = out + write_ber(id)
+      case id
+      when MOVE_SWITCH_ON, MOVE_SWITCH_OFF
+        out = out + write_ber(a)
+      when MOVE_CHANGE_GRAPHIC
+        str = binstr(utf8_to_cp932(str_field || ''))
+        out = out + write_ber(str.bytesize) + str + write_ber(a)
+      when MOVE_PLAY_SOUND
+        str = binstr(utf8_to_cp932(str_field || ''))
+        out = out + write_ber(str.bytesize) + str + write_ber(a) + write_ber(b) + write_ber(cc)
+      end
+    end
+    out
   end
 
   # Holds the sequential sections of a multi-section file (e.g. the map tree,
@@ -373,13 +419,12 @@ module LCF
   end
 
   # Encode a Ruby value back to the raw chunk bytes for a schema field -- the
-  # inverse of to_rb. Only the scalar and simple-array types a save actually
-  # needs to be re-authored are handled; the packed command/tree types are still
-  # round-tripped as their original raw bytes (never re-encoded from decoded
-  # values), so they are intentionally left out. A nested :Array1D / :Array2D
-  # value is serialised through its own #to_lcf. Strings go back out as cp932 via
-  # LCF.utf8_to_cp932 (the build's uni-algo encoder; the CRuby harnesses provide
-  # a Windows-31J stand-in), mirroring cp932_to_utf8 on read.
+  # inverse of to_rb. A nested :Array1D / :Array2D value is serialised through
+  # its own #to_lcf. Strings go back out as cp932 via LCF.utf8_to_cp932 (the
+  # build's uni-algo encoder; the CRuby harnesses provide a Windows-31J
+  # stand-in), mirroring cp932_to_utf8 on read. :Tree is not handled here: it
+  # is a whole-file section type (LCF::MapTree's multi-section root), never a
+  # field type an Array1D chunk carries, so it never reaches #[]=.
   def encode value, type
     case type
     when :int ; write_ber value
@@ -391,6 +436,8 @@ module LCF
     when :int16_array ; pack_int16 value
     when :int32_array ; pack_int32 value
     when :string ; utf8_to_cp932 value
+    when :event ; encode_event_commands value
+    when :move_commands ; encode_move_commands value
     when :Array1D, :Array2D
       return binstr(value) if value.is_a? String
       value.to_lcf
@@ -400,7 +447,8 @@ module LCF
   end
 
   module_function :read_ber, :write_ber, :to_rb, :read_section,
-                  :parse_event_commands, :parse_move_commands,
+                  :parse_event_commands, :encode_event_commands,
+                  :parse_move_commands, :encode_move_commands,
                   :unpack_int32, :unpack_double, :pack_int32, :pack_int16,
                   :pack_double, :encode, :binstr
 
