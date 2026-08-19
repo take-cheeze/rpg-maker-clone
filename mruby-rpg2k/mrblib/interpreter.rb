@@ -638,6 +638,20 @@ module Game
       @index
     end
 
+    # Where this interpreter currently sits, for a diagnostic report
+    # (RPG2k#bug_report_text) rather than a resume point -- unlike
+    # #resumable_index this answers mid-Call-Event and mid-wait too, since a
+    # report wants "where is this thing stuck", not a safe place to restart
+    # from. `index`/`size` describe the *innermost* running list (a Call
+    # Event pushes the caller's list onto @call_stack and starts a fresh
+    # `@index` against the callee), `call_depth` is how many callers are
+    # stacked beneath it. nil for an interpreter that has never been given a
+    # command list at all.
+    def diagnostic_position
+      return nil if @list.empty? && @call_stack.empty?
+      { index: @index, size: @list.size, call_depth: @call_stack.size }
+    end
+
     # Start (or restart) at a previously #resumable_index-captured position
     # instead of the top of the list. `commands` must be the same command list
     # (or an equivalent rebuild of it, e.g. the same common event reloaded from

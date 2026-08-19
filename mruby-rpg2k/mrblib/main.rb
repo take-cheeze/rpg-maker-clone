@@ -885,7 +885,16 @@ class RPG2k
   # `@scenes` for the current Scene::Map rather than assuming @scenes.last is
   # one, since a menu/battle/debug-menu screen can be on top of it; a title or
   # game-over screen has no Scene::Map at all, so that section is skipped
-  # rather than raising.
+  # rather than raising. Each event line also carries its active page number
+  # (Scene::Map#events' page_number:) and which interpreter, if any, is
+  # currently running its commands (#bug_report_interp_text) -- a Parallel
+  # Process's own background one (Scene::Map#parallel_interpreter_for) or the
+  # foreground one (Scene::Map#interpreter) when this event is the one an On
+  # Touch/On Talk/auto-start trigger most recently started; a plain marker
+  # (page:, walking around) has neither and reads "idle". The foreground
+  # interpreter also gets its own summary line, since it can be stuck on a
+  # message/wait with no single event obviously to blame (a common event, a
+  # battle-event page).
   def bug_report_text
     r = "# RPG Maker Clone bug report\n\n"
     r += "Paste this whole block into the bug report.\n\n"
@@ -905,14 +914,27 @@ class RPG2k
         r += "- #{a.name}: HP #{a.hp}/#{a.display_max_hp}" \
              " MP #{a.mp}/#{a.display_max_mp} Lv#{a.level}\n"
       end
+      fg = map_scene.interpreter
+      r += "\n## Interpreter\n\n"
+      r += "- foreground: #{bug_report_interp_text(fg)}" \
+           " event=#{fg.running? ? (fg.event_id || "(none)") : "-"}\n"
       r += "\n## Events on this map\n\n"
       if map_scene.events.empty?
         r += "(none)\n\n"
       else
         map_scene.events.each do |e|
           ch = e[:char]
+          interp = map_scene.parallel_interpreter_for(e[:id])
+          kind = if interp
+                   "parallel"
+                 elsif fg.running? && fg.event_id == e[:id]
+                   interp = fg
+                   "foreground"
+                 end
           r += "- id=#{e[:id]} x=#{ch.x} y=#{ch.y} direction=#{ch.direction}" \
-               " graphic=#{ch.graphic_name.inspect}(#{ch.graphic_index})\n"
+               " graphic=#{ch.graphic_name.inspect}(#{ch.graphic_index})" \
+               " page=#{e[:page_number]}" \
+               " interpreter=#{kind ? "#{kind} #{bug_report_interp_text(interp)}" : "idle"}\n"
         end
         r += "\n"
       end
@@ -923,6 +945,19 @@ class RPG2k
     log = RGSS::ErrorReport.log_tail
     r += "## Recent log\n\n```\n#{log}```\n\n" unless log.empty?
     r
+  end
+
+  # "running idx=4/12 call_depth=0", "waiting(:message) idx=..." or "idle" for
+  # an interpreter that has never started / has nothing left to run --
+  # Game::Interpreter#diagnostic_position's raw [index, size, call_depth]
+  # turned into the one-line summary #bug_report_text puts next to the
+  # foreground interpreter and each event that owns one.
+  def bug_report_interp_text(interp)
+    return "idle" unless interp && interp.running?
+    pos = interp.diagnostic_position
+    return "idle" unless pos
+    state = interp.waiting? ? "waiting(#{interp.wait_kind})" : "running"
+    "#{state} idx=#{pos[:index]}/#{pos[:size]} call_depth=#{pos[:call_depth]}"
   end
 
   # "YYYYMMDD_HHMMSS", filesystem-safe and sortable, so repeated F8 presses in
