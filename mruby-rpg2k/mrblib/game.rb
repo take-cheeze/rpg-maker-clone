@@ -12180,6 +12180,16 @@ module Game
     # (A..E) range. Returns the attribute ids actually moved -- an attribute
     # already at its cap, or a skill that doesn't touch attribute defence at
     # all, moves nothing.
+    #
+    # RPG_RT rolls its own independent hit chance per targeted attribute id
+    # here (`Game_BattleAlgorithm::Skill::vExecute`, src/game_battlealgorithm.cpp:
+    # `Rand::PercentChance(to_hit_attribute_shift)` inside the `for` loop over
+    # `skill.attribute_effects`, evaluated separately for every `id` even
+    # though every id shares the same skill-wide `to_hit`) -- the same
+    # "rolled fresh per affected field" idiom `#skill_effect_hits?` already
+    # gives `stat_mod_keys` above (see its doc comment), reused verbatim here
+    # rather than applying the shift unconditionally to every id the skill
+    # lists.
     def apply_attr_shift(target, cmd)
       shift = cmd[:attr_shift]
       ids = cmd[:attr_ids]
@@ -12188,6 +12198,7 @@ module Game
       base = target.attr_base_ranks || {}
       moved = []
       ids.each do |aid|
+        next unless skill_effect_hits?(cmd)
         b = Game.clamp(base[aid] || 2, 0, 4)
         cur = target.attr_ranks[aid] || b
         nxt = Game.clamp(cur + shift, Game.clamp(b - 1, 0, 4), Game.clamp(b + 1, 0, 4))
