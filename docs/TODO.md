@@ -8949,6 +8949,45 @@ not yet verified:
   inflicts a higher-priority Death, and still resists a subsequent Full
   Recovery — only unequipping the armor clears it), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **The in-battle `#inflict_state`/`#cure_state` call sites the fix
+  above deliberately left out of scope turned out to be a genuine gap
+  too, not a design boundary: `Game_Battler::GetPermanentStates()` (base
+  class) always returns empty and `Game_Enemy` never overrides it, but
+  `Game_Actor::GetPermanentStates()` does — and every
+  `Game_BattleAlgorithm` subclass threads that same
+  `target->GetPermanentStates()` into every in-battle
+  `State::Add`/`State::Remove` call, exactly like the field-side paths
+  already fixed (2026-08-19).** Confirmed directly against RPG_RT's live
+  source across `src/game_battlealgorithm.cpp`,
+  `src/game_battler.cpp:65-66` (the base, always-empty
+  `GetPermanentStates`) and `src/game_actor.cpp:1446`/`src/game_enemy.{h,cpp}`
+  (the override that exists only on `Game_Actor`, confirming a monster
+  genuinely has no such concept, so only an ally's own back-referenced
+  `Actor` matters here). `Game::Battle#inflict_state`
+  (`mruby-rpg2k/mrblib/game.rb`) called `Game::States.prune` with no
+  `keep:` at all, so the exact same cursed state that now survives a
+  lethal hit and Full Recovery on the field could still be silently
+  stripped by a lethal *in-battle* hit or state infliction. `#cure_state`
+  had a second, independent gap the field-side fix's own citation already
+  named but didn't need to act on there: real RPG_RT's `State::Remove`
+  hard-refuses (`if (ps.Has(state_id)) { return false; }`) removing a
+  cursed-forced state at all, in battle or out — `Actor#remove_state`
+  already carries this lock, but `Game::Battle#cure_state` (used by every
+  in-battle curative skill/item) had none, so a battle-side Antidote or
+  curative skill could cure a state the worn armor was still actively
+  forcing, something no path on the field could ever do. Fixed by adding
+  a small `combatant_permanent_states(target)` helper (an ally
+  Combatant's own `.actor.permanent_states`, `[]` for an enemy with no
+  `:actor` at all) and threading it into both methods: `keep:` on
+  `#inflict_state`'s `prune` call, and an early refusal in `#cure_state`
+  mirroring `Actor#remove_state`'s own lock (with no
+  `always_remove_battle_states:`-style bypass, since RPG_RT's own
+  in-battle callers never pass one either). Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a cursed-armor-forced state
+  survives a lethal in-battle Death infliction; a battle-side
+  `#cure_state` call is refused on the same state while the armor stays
+  equipped), both confirmed to fail against the pre-fix code before the
+  fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player
