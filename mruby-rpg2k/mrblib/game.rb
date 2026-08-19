@@ -12353,7 +12353,7 @@ module Game
       target.states = (target.states || []) - [sid]
       target.hp = 1 if sid == Game::States::DEATH_ID
     end
-    public :inflict_state, :cure_state
+    public :inflict_state, :cure_state, :apply_knockout_reset
 
     # Inflict a skill command's `inflict` states on `target`, each landing only if
     # a 0..99 roll comes in under the skill's `chance` (its accuracy) scaled by

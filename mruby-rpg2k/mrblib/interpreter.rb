@@ -2496,6 +2496,18 @@ module Game
     # 0-HP target used to fall through to `hp = 0 + amount`, then get
     # re-clamped *up* to the lethal-off floor of 1 -- silently reviving a
     # downed enemy back to 1 HP.
+    # RPG_RT routes this through `Game_Battler::ChangeHp`, which itself calls
+    # `AddState(kDeathID, true)` the instant the new HP reaches 0
+    # (src/game_battler.cpp) -- the same Knockout branch that zeroes the ATB
+    # gauge, the four ATK/DEF/SPI/AGI battle modifiers, and any
+    # attribute-defence rank shift (see Game::Battle#apply_knockout_reset,
+    # ported from that exact branch). The three raw `hp -=` sites in
+    # game.rb and Change Monster Condition's own #inflict_state already call
+    # it; this command's `target.hp = hp` was a fifth HP-to-0 path that
+    # missed it -- a troop member zeroed by a scripted Change Monster HP,
+    # then revived later in the same fight, kept its stale pre-death
+    # modifiers/gauge instead of the clean slate every other death path
+    # already gives.
     def do_change_monster_hp(cmd)
       target = @battle && @battle.enemy(cmd.param(0))
       return unless target
@@ -2507,6 +2519,7 @@ module Game
       hp = floor if hp < floor
       hp = target.max_hp if target.max_hp && hp > target.max_hp
       target.hp = hp
+      @battle.apply_knockout_reset(target)
     end
 
     # Change Monster MP (13120): the SP counterpart. Same operand layout minus

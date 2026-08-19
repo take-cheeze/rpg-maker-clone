@@ -15765,6 +15765,37 @@ check 'Change Monster HP leaves an already-downed target untouched entirely' do
   eq 0, b.enemy(0).hp, 'a heal on a downed target is still a no-op'
 end
 
+# RPG_RT routes this command through Game_Battler::ChangeHp, which itself
+# calls AddState(kDeathID, true) the instant HP reaches 0
+# (src/game_battler.cpp) -- the same Knockout branch that already zeroes
+# the ATB gauge, ATK/DEF/SPI/AGI modifiers and attribute-rank shifts for
+# every other lethal-HP path in this codebase (#deal_attack_with_current_
+# weapon, #apply_skill_hit, #enemy_autodestruct, Change Monster
+# Condition's own #inflict_state). Change Monster HP's own `target.hp =
+# hp` was a fifth such path that missed it.
+check 'Change Monster HP resets stat modifiers, attribute ranks and gauge ' \
+      'the instant it kills a troop member, matching every other lethal path' do
+  b = battle_with(foe_hp: 100)
+  foe = b.enemy(0)
+  foe.atk_mod = 5
+  foe.def_mod = 3
+  foe.spi_mod = 2
+  foe.agi_mod = 4
+  foe.attr_ranks = { 1 => 3 }
+  foe.gauge = 12_345 if foe.respond_to?(:gauge=)
+  it = Game::Interpreter.new(new_state)
+  it.battle = b
+  it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 1, 0, 999, 1])]) # lethal
+  it.update
+  ok foe.dead?, 'sanity: the hit was lethal'
+  eq 0, foe.atk_mod
+  eq 0, foe.def_mod
+  eq 0, foe.spi_mod
+  eq 0, foe.agi_mod
+  eq({}, foe.attr_ranks, 'the attribute-rank shift was cleared too')
+  eq 0, foe.gauge, 'and the ATB gauge zeroed with it' if foe.respond_to?(:gauge)
+end
+
 check 'Change Monster MP adjusts SP and clamps to its range' do
   b = battle_with(foe_mp: 8)
   it = Game::Interpreter.new(new_state)

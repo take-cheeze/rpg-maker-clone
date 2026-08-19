@@ -14320,6 +14320,37 @@ above are repeated here)
   visible in the same C++ block) is a separate, not-yet-investigated
   question — deliberately out of scope here to keep this fix to the single
   confirmed gap.
+  ✅ **A troop member killed by Change Monster HP (13110) kept its stale
+  pre-death stat modifiers, attribute-rank shift and ATB gauge charge
+  through a same-fight revival — a fifth Knockout-reset call site both
+  earlier fix passes above missed (2026-08-19).** Confirmed directly
+  against RPG_RT's actual source, fetched live:
+  `Game_Interpreter_Battle::CommandChangeMonsterHP`
+  (`src/game_interpreter_battle.cpp`) doesn't set HP directly at all — it
+  calls `enemy->ChangeHp(change, lethal)`, and `Game_Battler::ChangeHp`
+  (`src/game_battler.cpp`) itself calls `AddState(kDeathID, true)` the
+  instant the new HP reaches 0, running the exact same Knockout branch
+  quoted twice already in the two fixes just above (gauge, then stat
+  mods/attribute ranks). `Game::Interpreter#do_change_monster_hp`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) never went through that shared
+  path: it ends with a bare `target.hp = hp` Struct write, the same kind
+  of raw assignment the two earlier fixes had already found and patched at
+  every site enumerated *from `game.rb`'s own perspective* (the three raw
+  `hp -=` sites plus `#inflict_state`'s `DEATH_ID` branch) — but
+  `do_change_monster_hp` lives in `interpreter.rb`, so it fell outside
+  that enumeration both times. Fixed by calling the already-existing
+  `Game::Battle#apply_knockout_reset(target)` right after the HP write (a
+  no-op unless `target.dead?`, so it's safe to call unconditionally,
+  matching how `#inflict_state` already calls it); `apply_knockout_reset`
+  was `private` and had to be added to `Game::Battle`'s existing `public
+  :inflict_state, :cure_state` allowlist so `interpreter.rb` could reach
+  it, the same pattern that already exposes `inflict_state`/`cure_state`
+  to this command's sibling, Change Monster Condition. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a troop member given nonzero
+  ATK/DEF/SPI/AGI modifiers, an attribute-rank shift and a charged gauge,
+  then killed via a lethal Change Monster HP: all reset immediately),
+  confirmed to fail against the pre-fix code (`expected 0, got 5`) before
+  the fix.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor
