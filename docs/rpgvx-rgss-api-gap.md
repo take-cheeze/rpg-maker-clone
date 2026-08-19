@@ -496,11 +496,11 @@ not a one-time cosmetic loss: every fatal exception this game hits, of any
 origin, is masked behind the identical `NoMethodError: undefined method
 'message' for NilClass` crash in the error-log utility, until whatever real
 exception triggered it is fixed and the *next* one takes its place. Diagnosing
-each of the fixes above (and the three below) required a temporary,
+each of the fixes above (and the five below) required a temporary,
 never-committed `fprintf` at the `OP_EXCEPT` opcode itself (in the local
 `3rd/mruby` submodule checkout, reverted before every commit) to read the
-masked exception directly off the VM — six separate real bugs found this way,
-one at a time, each hidden behind the identical crash until fixed:
+masked exception directly off the VM — eight separate real bugs found this
+way, one at a time, each hidden behind the identical crash until fixed:
 
 - **Fixed: `Window#contents` started `nil` instead of a real `Bitmap`.**
   Another native `mruby-rgss` binding bug (`window_init` in
@@ -550,14 +550,63 @@ one at a time, each hidden behind the identical crash until fixed:
   against both XP test beds, never call either predicate — the fix is
   scoped to `mruby-rpgvx` only.
 
-With all six gaps above closed, the same real VX Ace release now reaches
-past `Scene_Title`'s title-command window, its title music, and
-`DataManager.setup_new_game`'s common-event setup, into actual gameplay
-(`Graphics.brightness=`, a scene-transition primitive, is the next stub it
-calls) before hitting a seventh masked exception — not yet diagnosed. The
+- **Fixed: `Bitmap#draw_text` raised `TypeError` on a non-`String` text
+  argument.** A native `mruby-rgss` binding bug (`bmp_draw_text` in
+  `mruby-rgss/src/lib.cxx`). Real RGSS3 accepts *any* object as the text
+  argument — games routinely `draw_text` an `Integer` directly, exactly as
+  this same release's own stock `Window_Gold#refresh` →
+  `#draw_currency_value` does (`draw_text(x, y, w, h, $game_party.gold,
+  2)`), relying on the same implicit `#to_s` real Ruby's `String()` gives
+  it. `mrb_get_args`' `"s"` format demands an actual `String`, so every VX
+  Ace game whose `Scene_Map` builds its `Window_Message` (which builds a
+  `Window_Gold` among its child windows) raised `TypeError: Integer cannot
+  be converted to String` right there. Fixed by parsing the text argument
+  as a generic object (`"o"`) instead of `"s"`, coercing it via
+  `mrb_obj_as_string` only after that single parse completes if it is not
+  already a `String`. **Not** by grabbing a raw `argv` pointer via
+  `mrb_get_args(M, "*", …)`, coercing in place, then calling
+  `mrb_get_args` a *second* time with the strict format against that same
+  pointer — the first attempt at this fix did exactly that, and segfaulted:
+  `mrb_obj_as_string` can run arbitrary Ruby (`#to_s`) and potentially grow
+  the VM's value stack, which would leave the first `argv` pointer
+  dangling, and the second `mrb_get_args` call read through it. Caught by
+  `scripts/rpgxp_boot_check.bash`, which every windowed screen a real
+  project draws exercises directly.
+
+- **Fixed: `RPG::EventCommand` had no `#initialize` at all.** A real
+  data-layer gap in both `mruby-rpgvx/mrblib/rgss2_data.rb` and
+  `mruby-rpgxp/mrblib/rgss_data.rb`: `EventCommand` only ever carried a
+  bare `attr_accessor` for `code`/`indent`/`parameters`, falling back to
+  `Object`'s own zero-argument default constructor. Real RGSS documents
+  `EventCommand.new(code = 0, indent = 0, parameters = [])` for scripts
+  that synthesize new event commands directly — this same release's own
+  error-log utility does exactly that
+  (`RPG::EventCommand.new(355, 0, ["@commonevent_id = #{@id}"])`, stamping
+  a synthetic "script call" onto the front of every common event's own
+  `#list` so a crash can name which one was running), which raised
+  `ArgumentError: wrong number of arguments (given 3, expected 0)` the
+  first time any VX Ace game calls a common event. Fixed by adding the real
+  constructor to both makers' `EventCommand`; Marshal deserialization of
+  existing `Data/*.rvdata(2)` — which allocates and restores instance
+  variables directly, never calling `#initialize` — is unaffected, confirmed
+  by `scripts/rpgxp_testbed_check.rb`/`rpgvx_testbed_check.rb` re-parsing
+  real event-command data (15,797 XP event commands) cleanly afterward.
+
+With all eight gaps above closed, the same real VX Ace release now reaches
+past `Scene_Title`'s title-command window, its title music,
+`DataManager.setup_new_game`'s common-event setup, and its first common
+event call, into a bundled community bubble-window script's own text
+layout (`エラーログ出力` aside, the script host reaches
+`吹きだしウィンドウ`'s `get_tale_pos_normal_updown`) before hitting a ninth
+masked exception — `NoMethodError: undefined method 'height' for
+RGSS::Sprite`. Not yet diagnosed as an engine gap or a script bug: real
+RGSS3's own documented `Sprite` API has no `#height` either, so this may be
+the community script itself relying on something beyond stock RGSS (a
+different add-on's monkey-patch this release also bundles, perhaps) rather
+than a gap in this engine — left for a future pass to determine which. The
 pattern established here (temporary VM probe → real gap → mrblib or native
-fix → regression test) applies to it too, left for a future pass. mruby's
-bare `raise` (no arguments) has the same
+fix → regression test) applies regardless. mruby's bare `raise` (no
+arguments) has the same
 root cause from the other side: real Ruby re-raises `$!`, but mruby's
 `mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
 fresh, empty `RuntimeError` instead of re-raising what was actually caught.
@@ -589,10 +638,11 @@ Tilemap item 1's remaining polish (the flat "above characters" layer) is the
 only item left in the six sections above; item 7's `$!`/bare-`raise` gap
 stands, and per a real release it is the reason each fix above only reveals
 the *next* wall one at a time rather than the game running to completion in
-one pass. Six real bugs have been found and fixed this way so far
+one pass. Eight real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
-`Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`)
+`Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
+`Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`)
 without needing `$!` itself fixed — the temporary VM probe finds the real
-exception directly regardless. A seventh wall, past
-`DataManager.setup_new_game` and into actual gameplay, is where the game
-stands now: not yet diagnosed.
+exception directly regardless. A ninth wall, inside a bundled community
+script's own text layout past the game's first common event call, is where
+the game stands now — not yet diagnosed as an engine gap or a script bug.

@@ -16451,10 +16451,32 @@ screen (544×416). Full rationale:
     directly — every VX Ace game raised `NoMethodError` the moment a player
     pressed New Game. Fixed by adding both predicates
     (`mruby-rpgvx/mrblib/rgss2_data.rb`; confirmed XP's own stock scripts
-    never call either, so the fix is VX/VX Ace-only). A seventh masked
-    exception is already known this way and not yet fixed — past
-    `DataManager.setup_new_game`, into actual gameplay (`Graphics.brightness=`
-    is the next stub the game calls before it). Fixing `$!` itself is
+    never call either, so the fix is VX/VX Ace-only). Continuing further,
+    two more: `Bitmap#draw_text` raised `TypeError` on a non-`String` text
+    argument — real RGSS3 accepts any object (games routinely `draw_text` an
+    `Integer` directly, like this same release's own stock
+    `Window_Gold#refresh`), relying on implicit `#to_s`. Fixed in
+    `mruby-rgss/src/lib.cxx`'s `bmp_draw_text` by parsing the text argument
+    as a generic object and coercing via `mrb_obj_as_string` only after that
+    single parse completes — the first attempt instead grabbed a raw `argv`
+    pointer, coerced through it, then re-parsed with a second
+    `mrb_get_args` call, and **segfaulted**: the coercion can run arbitrary
+    Ruby and grow the VM's value stack, leaving that pointer dangling by the
+    second call. Caught by `scripts/rpgxp_boot_check.bash`. `RPG::EventCommand`
+    had no `#initialize` at all, falling back to `Object`'s zero-argument
+    default — real RGSS documents `EventCommand.new(code = 0, indent = 0,
+    parameters = [])` for scripts that synthesize event commands directly,
+    which this same release's error-log utility does to stamp a synthetic
+    command onto every common event's own list. Fixed in both
+    `mruby-rpgvx/mrblib/rgss2_data.rb` and `mruby-rpgxp/mrblib/rgss_data.rb`;
+    Marshal deserialization of existing `Data/*.rvdata(2)` (which bypasses
+    `#initialize` entirely) is unaffected, confirmed by re-parsing 15,797 real
+    XP event commands cleanly afterward. A ninth masked exception is already
+    known this way and not yet fixed — inside a bundled community
+    bubble-window script's own text layout, past the game's first common
+    event call: `NoMethodError: undefined method 'height' for RGSS::Sprite`,
+    not yet diagnosed as an engine gap or a script bug (real RGSS3's own
+    `Sprite` API has no `#height` either). Fixing `$!` itself is
     fixable only by wrapping `Kernel#raise` itself (the sole point where the
     about-to-be-raised object is observable), which would add overhead and
     stack depth to *every* exception in the shared build across every maker

@@ -2651,21 +2651,34 @@ void measure_text(std::string_view s, int& width, unsigned& height) {
 mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   auto& bmp = bmp_self(M, self);
 
-  mrb_int x, y, w, h, len;
+  // Real RGSS3 accepts any object as the text argument, not just a String --
+  // games routinely draw_text an Integer directly (HP/MP/gold: this game's
+  // own stock Window_Gold#refresh -> #draw_currency_value among them),
+  // relying on the same implicit #to_s Ruby's own String() gives it. Parsed
+  // as a generic object ("o") rather than mrb_get_args' own "s" (which
+  // demands an actual String) and coerced after: mrb_obj_as_string can run
+  // arbitrary Ruby (#to_s) and possibly grow the VM's value stack, which
+  // would leave a raw argv pointer obtained before it dangling -- calling
+  // mrb_get_args a second time to re-parse against such a pointer read
+  // freed memory. One parse, then a local mrb_value, sidesteps that.
+  mrb_int x, y, w, h;
   mrb_int align = 0;
-  const char* s;
+  mrb_value text_obj;
   if (mrb_get_argc(M) <= 3) {
     V r;
-    mrb_get_args(M, "os|i", &r, &s, &len, &align);
+    mrb_get_args(M, "oo|i", &r, &text_obj, &align);
     Rect& rc = DataType<Rect>::get(M, r);
     x = rc.x;
     y = rc.y;
     w = rc.width;
     h = rc.height;
   } else {
-    mrb_get_args(M, "iiiis|i", &x, &y, &w, &h, &s, &len, &align);
+    mrb_get_args(M, "iiiio|i", &x, &y, &w, &h, &text_obj, &align);
   }
-  const std::string_view sv(s, len);
+  if (!mrb_string_p(text_obj)) {
+    text_obj = mrb_obj_as_string(M, text_obj);
+  }
+  const std::string_view sv(RSTRING_PTR(text_obj), RSTRING_LEN(text_obj));
 
   // Prefer the game's TrueType font (RPG Maker XP/VX ship one under Fonts/),
   // rasterising at the font's pixel size. Fall back to the fixed-size shinonome
