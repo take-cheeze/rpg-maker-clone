@@ -675,6 +675,89 @@ the interpreter-linking slice, in this order:
   that. Not part of the original nine-bug boot-blocker count above,
   which is unaffected and remains fully closed for the idle path
   `psp-smoke` verifies.
+
+  **Bug 10 — fixed.** A local, non-Docker/non-Nix reproduction of this
+  investigation's build pipeline (the pspdev toolchain and a patched
+  PPSSPP built from source directly on the host, since this session's
+  environment could not pull either as container images) reproduced the
+  crash exactly (`strlen(0000011e)`) against the real
+  `data/Nepheshel206beta` fixture, then pinned the failing `mrb_assert()`
+  precisely with temporary ring-buffer instrumentation in
+  `3rd/mruby/src/vm.c` (all reverted; none of it is in the tree — get a
+  fresh copy from this ADR's own git history if the technique is needed
+  again) reading directly from the PPSSPP host side, the same technique
+  the rest of this section describes:
+
+  - The last opcode executed before the crash is always `Class#new`'s own
+    embedded bytecode (`3rd/mruby/src/class.c`'s `new_iseq`) dispatching
+    `:initialize` via `OP_SSENDB` with `c=255` (`CALL_MAXARGS`) — this
+    holds for every `SomeClass.new(...)` call in the program, not just
+    the crashing one, so on its own this only reconfirms where earlier
+    passes already got to.
+  - Both `RARRAY_LEN`-on-a-non-Array theories floated earlier this
+    section (`check_argument_count`'s read of `ci->stack[1]`, and the
+    structurally identical unguarded read in `OP_ENTER` at `argc == 15`)
+    are **refuted with direct evidence**: at the crashing call,
+    `ci->stack[1]` genuinely is a real `Array` (`mrb_type` reports
+    `MRB_TT_ARRAY`, `mrb_array_p` is true), with length 0, and the
+    resolved `initialize`'s arity (`min=0, max=1`) accepts that — so
+    `check_argument_count` returns normally and never raises.
+  - The crash is instead inside the resolved method itself: capturing
+    `MRB_METHOD_FUNC(m)` right before the call and symbolizing it with
+    `psp-addr2line` (reliable for regular compiled code, as noted below)
+    identifies it as `(anonymous namespace)::spr_init` —
+    `RGSS::Sprite#initialize` (`mruby-rgss/src/lib.cxx:3204`) — called on
+    a receiver of class `RGSS::Sprite`. `spr_init` calls `get_display()`
+    (`mruby-rgss/src/lib.cxx`), which does
+    `mrb_assert(mrb_cptr_p(v))` on the `RGSS::_display` constant. This
+    build defines `MRB_DEBUG` (confirmed in the `psp` cross-build's own
+    compile flags), so `mrb_assert` compiles to a real C `assert()` —
+    and `RGSS::_display` was never set, so `mrb_cptr_p(v)` is false and
+    the assert fires. That assert's own abort path is exactly what the
+    rest of this section's `strlen(0x11e)` symptom traces back to
+    (pspsdk's `__assert_func` → `_exit` → `__libcglue_deinit` calling
+    `strlen` on a boxed mruby value as a side effect of tearing down).
+  - Root cause: `RGSS::_display` is wired by calling
+    `rgss_set_display(M, display)` right after `mrb_open()` succeeds —
+    every other target's entry point does this
+    (`src/main.cxx:1252`, matching the desktop/Emscripten/Wio builds),
+    but `app/psp/main.cxx` never did. It called `psp_display_create(...)`
+    for its side effect (standing up the LVGL display) and discarded the
+    return value, so nothing downstream ever learned the display existed.
+    The bug reproduces the moment any RGSS call reaches `get_display()`
+    for the first time; a `Sprite` happens to be the first such call
+    while constructing this fixture's initial scene, but any RGSS class
+    touching the display first would trip the same assert.
+  - Fix: `app/psp/main.cxx` now keeps `psp_display_create`'s return value
+    (`lv_display_t* const display`) and calls `rgss_set_display(M,
+    display)` immediately after confirming `mrb_open()` succeeded, before
+    setting `GAME_DIR`/`RTP_DIR`/`TEST_PLAY` — the same position
+    `src/main.cxx` uses.
+  - Verified against the real fixture: `RPG2K_PSP_GAME_START RPG2k ok`
+    now prints (it never did before this fix — the process crashed
+    during `RPG2k.new` before reaching that line), and the crash's own
+    `strlen(0000011e)` line no longer appears anywhere near game
+    construction. (It still appears once, right at the test harness's
+    own `--timeout` cutoff, in *both* the game-data run and the plain
+    idle-path `psp-smoke` run with no project at all — i.e. it is a
+    generic PPSSPP-headless forced-shutdown artifact when a game never
+    calls `sceKernelExitGame` on its own, unrelated to this bug; the
+    existing `psp-smoke` job already tolerates this class of flakiness
+    by staying non-blocking.)
+  - **New, separate finding — not yet investigated:** with bug 10 fixed,
+    the frame loop's very first `main_loop` call (`app/psp/main.cxx`)
+    appears to stall before the first `RPG2K_PSP_BRINGUP` heartbeat would
+    print (`frame % 200 == 0`, so it should fire immediately at
+    `frame=0`) — the log between `GAME_START ok` and the eventual
+    `--timeout` teardown shows only a handful of syscalls, including a
+    `sceKernelCreateSema` (`pthread_sem7`) immediately followed by a
+    `sceKernelWaitSema` that never returns, rather than ~4,000 frames'
+    worth of activity. Plausible cause: some first-frame subsystem init
+    (audio is the leading suspect, given the semaphore-creation naming
+    pattern) blocks on a callback/thread that never signals back under
+    PPSSPP-headless's software/no-audio-output configuration. This is a
+    later-stage, separate bug from bug 10's construction-time crash and
+    has not been root-caused.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

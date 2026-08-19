@@ -441,6 +441,17 @@ void show_keys(uint64_t mask) {
 
 }  // namespace
 
+// Wires RGSS::_display (mruby-rgss/src/lib.cxx's get_display) to the LVGL
+// display psp_display_create stood up below -- every other target's entry
+// point calls this right after mrb_open() (src/main.cxx), but the PSP one
+// never did, leaving RGSS::_display nil. get_display()'s mrb_assert on it
+// compiles to a real assert() under -DMRB_DEBUG (this build's flags), so the
+// first RGSS call that touches the display (e.g. Sprite.new, via LVGL's
+// canvas creation) aborted the process; the abort path's own cleanup code
+// then calls strlen() on a boxed mruby value, which is the
+// sysclib_strlen(0x11e) crash ADR 0047's bug 10 was tracking.
+extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
+
 // mruby 4.0 has no per-state allocator hook; a program overrides the global
 // mrb_basic_alloc_func to supply its own allocator. Defining it here means the
 // linker never pulls mruby's default (plain realloc) from libmruby.a -- the
@@ -474,8 +485,9 @@ int main(void) {
   const GameInfo* const game_info = detect_game();
 
   lv_init();
-  psp_display_create(game_info ? game_info->width : PSP_SCR_WIDTH,
-                     game_info ? game_info->height : PSP_SCR_HEIGHT);
+  lv_display_t* const display =
+      psp_display_create(game_info ? game_info->width : PSP_SCR_WIDTH,
+                         game_info ? game_info->height : PSP_SCR_HEIGHT);
   psp_input_init();
   build_ui();
 
@@ -501,6 +513,8 @@ int main(void) {
   mrb_value game_obj = mrb_nil_value();
   bool have_game = false;
   if (M) {
+    rgss_set_display(M, display);
+
     mrb_const_set(M, mrb_obj_value(M->object_class),
                   mrb_intern_lit(M, "GAME_DIR"), mrb_str_new_cstr(M, kGameDir));
     mrb_const_set(M, mrb_obj_value(M->object_class),
