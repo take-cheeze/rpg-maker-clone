@@ -2283,11 +2283,35 @@ module Game
     # `Game_Actor::GetNumberOfAttacks`'s ordinary single-weapon max does --
     # so a two-weapon actor swings **at least twice** even when *neither*
     # individual weapon is itself flagged 二刀流, the common case for a
-    # dual-wield setup built from two ordinary weapons.
+    # dual-wield setup built from two ordinary weapons. Each weapon's own
+    # `#weapon_attack_multiplier` (RPG2003's 攻撃の回数 Battle Animation field)
+    # scales its own term before the two are summed, exactly as EasyRPG's
+    # `Algo::GetNumberOfAttacks` scales `dual_attack ? 2 : 1` by `cba_hits`
+    # before `Game_Actor::GetNumberOfAttacks` maxes/sums per weapon.
     def strike_count
       weapons = equipped_weapons
-      return dual_attack? ? 2 : 1 unless weapons.size >= 2
-      weapons[0, 2].reduce(0) { |s, it| s + (it.respond_to?(:dual_attack) && it.dual_attack ? 2 : 1) }
+      return (dual_attack? ? 2 : 1) * weapon_attack_multiplier(weapons.first) unless weapons.size >= 2
+      weapons[0, 2].reduce(0) do |s, it|
+        s + (it.respond_to?(:dual_attack) && it.dual_attack ? 2 : 1) * weapon_attack_multiplier(it)
+      end
+    end
+
+    # The RPG2003-only 攻撃の回数 (Number of Attacks) multiplier `it` (an
+    # equipped weapon, or nil when unarmed) contributes to this actor's own
+    # basic-attack swing count -- EasyRPG's `Algo::GetNumberOfAttacks`
+    # (`src/algo.cpp`): `Player::IsRPG2k3()` gates a lookup into the weapon's
+    # own per-actor Battle Animation table (`weapon.animation_data`, this
+    # schema's `attack_times` field on each row, keyed by actor id) and
+    # multiplies the swing count by `cba[actor_id - 1].attacks + 1` when this
+    # actor has a row there. RPG2000 has no such table at all, and a weapon
+    # naming no row for this actor (or no table at all) contributes no
+    # multiplier -- both read as the neutral `1`, matching a project that
+    # never touched the Battle Animation tab.
+    def weapon_attack_multiplier(it)
+      return 1 unless it && rpg2003?
+      table = it.respond_to?(:animation_data) ? it.animation_data : nil
+      row = table ? table[id] : nil
+      row && row.respond_to?(:attack_times) ? (row.attack_times || 0) + 1 : 1
     end
 
     # The equipped weapon-type items, in slot order (the weapon slot first,
@@ -2316,7 +2340,7 @@ module Game
       weapons = equipped_weapons
       return nil unless weapons.size >= 2
       w1, w2 = weapons[0, 2]
-      w1_hits = w1.respond_to?(:dual_attack) && w1.dual_attack ? 2 : 1
+      w1_hits = (w1.respond_to?(:dual_attack) && w1.dual_attack ? 2 : 1) * weapon_attack_multiplier(w1)
       weapon_roll_data(i < w1_hits ? w1 : w2)
     end
 
