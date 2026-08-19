@@ -97,6 +97,40 @@ check 'setting ROW_BACK makes back_row? true' do
   eq false, front.back_row?
 end
 
+# -- can_leave_front_row?/toggle_row (RowSelected's front_row_battlers
+#    headcount, EasyRPG's own `Game_Party::GetActors()` loop -- unfiltered by
+#    HP/hidden, only a party member who has actually left the roster drops
+#    out) -------------------------------------------------------------------
+check 'a KO\'d front-row ally still counts toward keeping the front row ' \
+      'non-empty, so a living front-row ally may still step back' do
+  alive = combatant('Alive', 10, 5, 8, 100)
+  alive.row = Game::Battle::ROW_FRONT
+  dead = combatant('Dead', 10, 5, 8, 100)
+  dead.row = Game::Battle::ROW_FRONT
+  dead.hp = 0
+
+  bat = Game::Battle.new([alive, dead], [combatant('Enemy', 5, 5, 5, 50)], Game::Rng.new(1))
+
+  eq true, bat.can_leave_front_row?(alive)
+  eq true, bat.toggle_row(alive)
+  eq Game::Battle::ROW_BACK, alive.row
+end
+
+check 'a lone living front-row ally may not step back merely because a ' \
+      'dead ally is also nominally front-row' do
+  alive = combatant('Alive', 10, 5, 8, 100)
+  alive.row = Game::Battle::ROW_FRONT
+  dead = combatant('Dead', 10, 5, 8, 100)
+  dead.row = Game::Battle::ROW_BACK
+  dead.hp = 0
+
+  bat = Game::Battle.new([alive, dead], [combatant('Enemy', 5, 5, 5, 50)], Game::Rng.new(1))
+
+  eq false, bat.can_leave_front_row?(alive)
+  eq false, bat.toggle_row(alive)
+  eq Game::Battle::ROW_FRONT, alive.row
+end
+
 # -- row_adjusted? (the Algo::IsRowAdjusted port) ----------------------------
 # An actor-backed attacker in the front row is row-adjusted; a back-row actor
 # attacker and every enemy attacker are not; a back-row defender is.
