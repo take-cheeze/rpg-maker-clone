@@ -4319,7 +4319,12 @@ end
 # (armor field 68, reverse_state_effect) inflicts every state its own
 # state_set flags; unequipping cures them. Confirmed against the actual
 # C++: gated on `Player::IsRPG2k3()`, and `IsArmorType` excludes
-# `Type_weapon`, so a weapon never carries this effect either way.
+# `Type_weapon`, so a weapon never carries this effect either way. (This
+# fixture's own state row is a bare test double naming no Persistence field
+# at all -- `#state_persists_type?`'s own conservative "unknown reads as
+# persisting" default -- so it is unaffected by the equip-side Persistence
+# gate the check below this one covers; a real database row is never that
+# bare.)
 check 'equipping RPG2003 cursed armor inflicts its own states; unequipping cures them' do
   items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
@@ -4330,6 +4335,45 @@ check 'equipping RPG2003 cursed armor inflicts its own states; unequipping cures
   eq [4], a.states, 'the state came on the instant it was worn'
   a.unequip(2) # armor slot
   eq [], a.states, 'and left the instant it came off'
+end
+
+# EasyRPG's `Game_Actor::SetEquipment` (`src/game_actor.cpp`) -- the single
+# function the equip menu, Change Equipment, and even an actor's own
+# starting gear all funnel through -- hard-codes `allow_battle_states:
+# false` on every equip-triggered `AdjustEquipmentStates` call:
+# `AdjustEquipmentStates(old_item, false, false); AdjustEquipmentStates(
+# new_item, true, false);`. `AddState`'s own `allow_battle_states` guard
+# (`src/state.cpp`'s `State::Add`) is `if (!allow_battle_states &&
+# state->type == Persistence_ends) { return false; }` -- `Persistence_ends`
+# (0) is the schema default most non-Poison-style states are left at. So a
+# state whose own Persistence was simply never touched in the editor is
+# never actually inflicted by equipping cursed armor at all in real
+# RPG_RT, unlike a state explicitly flagged "Continues after battle" (1),
+# which equips normally.
+check 'equipping RPG2003 cursed armor does NOT inflict a state left at its ' \
+      'default ("Ends") Persistence, but does inflict one flagged "continues ' \
+      'after battle"' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  situation = { 4 => fake_state(type: 0) } # "Ends", the schema default
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, situation, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  eq [], a.states, 'an "Ends"-type state is never inflicted through equipping alone'
+
+  situation2 = { 4 => fake_state(type: 1) } # "continues after battle"
+  db2 = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                        [1], items, {}, {}, situation2, rpg2003: true)
+  a2 = Game::Party.new(db2).leader
+  a2.equip_item(20)
+  eq [4], a2.states, 'a "continues after battle" state is inflicted by equipping, as before'
+
+  # Once present by any other, ordinary means, the armor still locks it in
+  # -- #permanent_states reads the currently-equipped item alone, regardless
+  # of how the state actually landed.
+  a.add_state(4)
+  eq [4], a.states, 'an "Ends"-type state landed by ordinary infliction is still forced'
+  eq nil, a.remove_state(4), 'and an ordinary cure still cannot touch it while the armor is worn'
 end
 
 check 'RPG2003 cursed armor set as *starting* gear inflicts its state from the ' \
@@ -4422,7 +4466,12 @@ end
 check "a lethal hit does not strip a state RPG2003 cursed armor is still " \
       'forcing, even though the hit also inflicts a higher-priority Death' do
   items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
-  situation = { 1 => fake_state(priority: 100), 4 => fake_state(priority: 50) }
+  # type: 1 ("continues after battle") so equipping alone actually inflicts
+  # it -- an "Ends" (the schema default) state is never inflicted by
+  # equipping at all (RPG_RT's own SetEquipment always passes allow_
+  # battle_states: false; see the dedicated equip-side checks below), which
+  # is not what this check is about.
+  situation = { 1 => fake_state(priority: 100), 4 => fake_state(priority: 50, type: 1) }
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
                        [1], items, {}, {}, situation, rpg2003: true)
   a = Game::Party.new(db).leader
@@ -4461,6 +4510,14 @@ check '#remove_state can lift a cursed-armor-forced state outside battle, but ' 
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
                        [1], items, {}, {}, situation, rpg2003: true)
   a = Game::Party.new(db).leader
+  # An "Ends"-type state is never inflicted by equipping the cursed armor
+  # alone (RPG_RT's own SetEquipment always passes allow_battle_states:
+  # false -- see the dedicated equip-side checks below) -- get it on by
+  # ordinary means first (an unrestricted #add_state, the same as any real
+  # in-battle/skill infliction), then equip: #permanent_states locks it in
+  # regardless of how it landed, matching real RPG_RT's own equipment-only,
+  # infliction-agnostic PermanentStates check.
+  a.add_state(4)
   a.equip_item(20)
   eq [4], a.states
   eq nil, a.remove_state(4), 'still refused in battle (the default) -- armor is still equipped'
@@ -4499,6 +4556,10 @@ check "Interpreter#do_change_condition passes RPG_RT's own map-only cursed-armor
                        [1], items, {}, {}, situation, rpg2003: true)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   a = st.party.actor_by_id(1)
+  # An "Ends"-type state is never inflicted by equipping alone -- see the
+  # dedicated equip-side checks below -- so get it on first, the same way
+  # the #remove_state check right above this one does.
+  a.add_state(4)
   a.equip_item(20)
   eq [4], a.states
   ic = Game::Interpreter::Cmd
@@ -10165,7 +10226,8 @@ end
 check 'battle: a lethal state infliction does not strip a state RPG2003 ' \
       'cursed armor is still forcing' do
   items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
-  situation = { 1 => fake_state(priority: 100), 4 => fake_state(priority: 50) }
+  # type: 1 -- see the field-side crowding-out check's identical comment.
+  situation = { 1 => fake_state(priority: 100), 4 => fake_state(priority: 50, type: 1) }
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
                        [1], items, {}, {}, situation, rpg2003: true)
   a = Game::Party.new(db).leader

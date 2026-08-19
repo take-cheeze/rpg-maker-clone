@@ -1712,8 +1712,28 @@ module Game
 
     # Inflict a status condition (no-ops for an absent/duplicate id). Inflicting
     # the death state (戦闘不能) knocks the actor out, zeroing HP.
-    def add_state(state_id)
+    #
+    # `allow_battle_states:` mirrors EasyRPG's own `Game_Battler::AddState`'s
+    # identical-named parameter (`src/game_battler.cpp`) -- `false` refuses
+    # to add a state whose own database Persistence field is left at its
+    # "Ends" default (`#state_persists_type?`'s own inverse), the same test
+    # `#remove_state`'s `always_remove_battle_states:` already ports for the
+    # cure side. Only `#adjust_equipment_states`' equip branch passes
+    # `false`: RPG_RT's `Game_Actor::SetEquipment` (`src/game_actor.cpp`)
+    # hard-codes `allow_battle_states: false` on every equip-triggered
+    # `AdjustEquipmentStates` call (the equip menu, Change Equipment, and
+    # even an actor's own starting gear all funnel through it) -- so
+    # equipping a cursed item whose forced state was left at its default
+    # Persistence never actually inflicts it in real RPG_RT at all. Every
+    # other caller (`#knock_out!`, `#full_heal`, `Party#cast_skill`'s target
+    # loop) keeps the default `true`, matching EasyRPG's own ordinary
+    # in-battle/skill infliction paths (`game_battlealgorithm.cpp`'s
+    # `AddState(se.state_id, true)`) and Change Condition
+    # (`game_interpreter.cpp`'s `AddState(state_id, true)`), neither of
+    # which this restriction ever applies to.
+    def add_state(state_id, allow_battle_states: true)
       return if state_id.nil? || state_id == 0 || @states.include?(state_id)
+      return if !allow_battle_states && !state_persists_type?(state_id)
       @states.push(state_id)
       @hp = 0 if state_id == DEATH_STATE
     end
@@ -2012,7 +2032,9 @@ module Game
     # tries to cure the very state it inflicted, or the cure would refuse
     # itself.
     def adjust_equipment_states(item_id, add)
-      cursed_armor_state_ids(item_id).each { |id| add ? add_state(id) : remove_state(id) }
+      cursed_armor_state_ids(item_id).each do |id|
+        add ? add_state(id, allow_battle_states: false) : remove_state(id)
+      end
     end
 
     # The states an actor's currently-equipped cursed armor (see

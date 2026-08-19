@@ -9210,6 +9210,57 @@ not yet verified:
   one more assertion — calling `#full_heal` right after the exemption lifts
   the state, armor still worn, restores it — confirmed to fail against the
   pre-fix code (`expected [4], got []`) before the fix.
+  ✅ **Follow-up (2026-08-19): equipping cursed armor unconditionally
+  inflicted its forced state, even when the state's own database
+  Persistence was left at its "Ends" default — real RPG_RT silently
+  refuses to add it in that exact case, and only that case.** Confirmed
+  directly against RPG_RT's live source: `Game_Actor::SetEquipment`
+  (`src/game_actor.cpp`) — the single function the equip menu, Change
+  Equipment, and even an actor's own starting-gear loop all funnel through
+  — hard-codes `allow_battle_states: false` on both of its own
+  `AdjustEquipmentStates` calls (`AdjustEquipmentStates(old_item, false,
+  false); AdjustEquipmentStates(new_item, true, false);`), which forwards
+  straight to `AddState(i + 1, allow_battle_states)`. `State::Add`
+  (`src/state.cpp`) opens with `if (!allow_battle_states && state->type ==
+  Persistence_ends) { return false; }` — `Persistence_ends` (0) is the
+  schema default most non-Poison-style states are left at. So equipping a
+  cursed item whose forced state was never explicitly flipped to
+  "Continues after battle" never actually inflicts anything in real
+  RPG_RT at all; only a state an author deliberately set to Persistence 1
+  lands from equipping alone. By contrast, ordinary in-battle/skill
+  infliction (`game_battlealgorithm.cpp`'s `AddState(se.state_id, true)`)
+  and the Change Condition event command (`game_interpreter.cpp`'s
+  `AddState(state_id, true)`) both always pass `true` — this restriction
+  is unique to the equip-triggered path, the add-side mirror of the
+  remove-side `always_remove_battle_states:` exemption two fixes above
+  already ports. `Game::Actor#add_state` (`mruby-rpg2k/mrblib/game.rb`)
+  had no persistence gate at all, and `#adjust_equipment_states`'s add
+  branch called it with nothing analogous to `allow_battle_states: false`
+  — confirmed by this codebase's own prior test coverage, which built a
+  cursed-armor state explicitly left at `type: 0` ("Ends", the schema
+  default, the exact case that should refuse) and then asserted equipping
+  *did* inflict it, the opposite of real RPG_RT. Fixed by giving
+  `#add_state` a new `allow_battle_states:` keyword (default `true`, so
+  `#knock_out!`, `#full_heal`, and `Party#cast_skill`'s target loop — the
+  other three call sites, all correctly wanting unrestricted infliction,
+  matching each one's own real-RPG_RT counterpart passing `true` — are
+  untouched) and passing `allow_battle_states: false` from
+  `#adjust_equipment_states`'s own add branch, mirroring `#remove_state`'s
+  existing, already-proven `state_persists_type?` pattern in the same
+  file. A state already present by *other* means (an ordinary in-battle
+  infliction, say) is still locked in the instant the cursed armor is
+  equipped regardless of its own Persistence — `#permanent_states` reads
+  only the currently-equipped item, not how the state actually landed —
+  so four existing checks that had relied on equipping alone to inflict an
+  `type: 0` state needed their setup adjusted (an explicit `#add_state`
+  before equipping, or — where the check was never about the Persistence
+  distinction at all — the fixture's state simply flipped to `type: 1`) to
+  keep testing what they were actually about. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (an "Ends"-type state is never
+  inflicted through equipping alone; a "continues after battle" one still
+  is, unchanged; a state already present by ordinary means is still locked
+  in by the armor either way), confirmed to fail against the pre-fix code
+  (`expected [], got [4]`) before the fix.
   ✅ **Change Battle Commands (1009) never validated an added command id
   against the database's own Battle Commands table, so any positive
   integer — however bogus — could occupy one of the six real slots
