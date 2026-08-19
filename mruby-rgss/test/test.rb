@@ -1485,7 +1485,7 @@ end
 # directly, and the 4th argument raised ArgumentError before this method
 # accepted it.
 assert "RGSS::Audio.bgm_play accepts RGSS3's 4th (pos) argument" do
-  assert_nothing_raised { RGSS::Audio.bgm_play("Theme1", 80, 90, 5) }
+  assert_nil RGSS::Audio.bgm_play("Theme1", 80, 90, 5)
 end
 
 assert "RGSS::Audio.se_play resolves a name to a real file" do
