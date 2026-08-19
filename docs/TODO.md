@@ -15588,6 +15588,48 @@ codebase yet):
   existed), the last a pure ordering pin. Dual-wielding's off-hand attack
   animation is offset by a few frames from the main hand's remains
   unverified, a presentation-only question outside this fix's scope.
+  ✅ **Follow-up (2026-08-19): a Skill's own damage/defence/to-hit formula
+  ignored the caster's or target's already-active ATK/DEF/SPI/AGI
+  modifier — only a basic Attack read it, even though real RPG_RT computes
+  both through the identical stat accessor.** `Game::Party#skill_effect`/
+  `#skill_defence_term`/`#skill_to_hit` (the methods `#battle_skill_command`
+  calls to build a live battle Skill's own power/defence/accuracy, fed a
+  real `Combatant` caster/target) call `Party`'s *own*
+  `#effective_atk`/`#effective_int`/`#effective_def`/`#effective_spi`/
+  `#effective_agi` — a second, separate copy of these methods from
+  `Game::Battle`'s own already-`atk_mod`-aware ones the bullet above this
+  one fixed, left behind when `atk_mod`/`def_mod`/`spi_mod`/`agi_mod` were
+  added to `Combatant`. Confirmed directly against RPG_RT's live source:
+  `Game_Battler::GetAtk`/`GetDef`/`GetSpi`/`GetAgi` (`src/game_battler.cpp`)
+  all route through the identical `AdjustParam(base, modifier, maxval,
+  states, affect_flag)` — the per-battle modifier is added *before* a
+  state's own halve/double, exactly what `Battle#effective_atk` already
+  does — and `Algo::CalcSkillEffect` (`src/algo.cpp`) reads `source.
+  GetAtk()`/`source.GetSpi()`/`target.GetDef()`/`target.GetSpi()`, the
+  *exact same* accessors `Algo::CalcNormalAttackEffect` (a basic Attack)
+  reads: there is no separate, unmodified accessor for a Skill in the
+  reference at all. So casting a Weaken-type skill on a foe (lowering its
+  `def_mod`) correctly blunted a later basic Attack against it, but a
+  second attack *skill* cast at the same foe still computed its own
+  defence term off the foe's unmodified base DEF, as if the debuff were
+  not there — and symmetrically for a Strengthen-type ATK buff boosting a
+  caster's own attack skills, and for the RPG2003 physical-style skill
+  accuracy formula (`#skill_to_hit`), which reads `#effective_agi` too.
+  Fixed by giving `Party`'s five `#effective_*` methods the identical
+  `modified_stat`-style offset `Battle`'s own already apply — a new
+  `#modified_stat(base, b, mod_field)` helper reading `b.send(mod_field)`
+  behind a `respond_to?` guard (a no-op 0 for a bare field-side `Game::
+  Actor`, which carries no such field at all, matching the reference's own
+  single-accessor design working identically in and out of battle) and
+  clamping to `Battle::MAX_STAT_BATTLE_VALUE` before the halve/double, the
+  same order `Battle#modified_stat` already uses. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (an enemy-scope Crack-Armor-style
+  skill lowers a foe's `def_mod`, clamped exactly as the existing Weaken
+  check already proves; a second attack skill's own `#skill_defence_term`
+  against that same foe now reflects the lowered DEF instead of the stale
+  unbuffed value, and `Party#effective_def` agrees with `Battle#
+  effective_def` instead of diverging from it), confirmed to fail against
+  the pre-fix code (`expected 2, got 5`) before the fix.
   **Change Parameters' hidden
   unclamped total is now tracked.** `Game::Actor#change_param`
   (`mruby-rpg2k/mrblib/game.rb`) clamped and overwrote `@base[type]` on

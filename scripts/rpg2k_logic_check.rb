@@ -12810,6 +12810,51 @@ check 'an affect_attack attack skill lowers the target\'s per-battle ATK ' \
   eq(-10, foe.atk_mod, 'still -10, no further movement once capped')
 end
 
+# `Game::Party#skill_effect`/`#skill_defence_term` -- what powers a Skill's
+# own damage, called from live battle with a real Combatant caster/target --
+# used to read `Party`'s own `#effective_atk`/`#effective_def`/`#effective_
+# spi`/`#effective_agi`, a second, separate copy of these methods from
+# `Game::Battle`'s own (already-`atk_mod`-aware) ones, left behind when
+# `atk_mod`/`def_mod`/`spi_mod`/`agi_mod` were added to `Combatant` and wired
+# into `Game::Battle#effective_atk` and friends -- so a Weaken/Strengthen-type
+# skill's own per-battle stat offset correctly blunted/boosted a basic
+# Attack (`Battle#effective_atk`), but a *second Skill* cast against the same
+# already-buffed/debuffed battler still computed its own damage/defence term
+# off the battler's unmodified base stat, as if no buff or debuff were
+# active at all -- confirmed against EasyRPG's actual C++ source: `Algo::
+# CalcSkillEffect` (`src/algo.cpp`) reads `source.GetAtk()`/`target.GetDef()`/
+# `GetSpi()`, the exact same `Game_Battler` accessors (`src/game_battler.cpp`)
+# a basic Attack's own `CalcNormalAttackEffect` reads -- there is no
+# separate, unmodified accessor for a Skill at all in the reference.
+check "a target's own per-battle DEF modifier (already lowered by an " \
+      "earlier skill) now reduces a later attack skill's own defence term " \
+      'too, matching Battle#effective_def' do
+  crack_armor = fake_skill(name: 'Crack Armor', scope: 0, sp_cost: 0, power: 40,
+                           prate: 0, mrate: 0, affect_defense: true)
+  fireball = fake_skill(name: 'Fireball', scope: 0, sp_cost: 0, power: 0,
+                        prate: 10, mrate: 0)
+  st = skill_party({ 7 => crack_armor, 8 => fireball })
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1))
+  foe = combatant('Foe', 0, 20, 5, 1000) # def 20
+
+  eq 5, st.party.skill_defence_term(st.party.db_skill(8), foe),
+     "sanity: Fireball's own defence term against the unbuffed foe (10*20/40)"
+
+  c = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  bat.command_skill(caster, foe, name: 'Crack Armor', cost: c[:cost], hp: c[:hp],
+                    mp: c[:mp], attack: c[:attack], stat_mod_keys: c[:stat_mod_keys],
+                    stat_effect: c[:stat_effect])
+  bat.run_round
+  eq(-10, foe.def_mod, "sanity: def_mod clamped at -(base/2) = -(20/2)")
+
+  eq 2, st.party.skill_defence_term(st.party.db_skill(8), foe),
+     "Fireball's own defence term now reflects the lowered DEF (10*10/40), " \
+     'not the stale unbuffed value'
+  eq bat.effective_def(foe), st.party.effective_def(foe),
+     "Party's own #effective_def agrees with Battle's, instead of diverging"
+end
+
 check 'ability-value decrease rounds toward zero (up) on an odd base, not ' \
       'a Ruby-style floor' do
   # -(5 / 2) truncates toward zero to -2 in both this Ruby code (dividing the

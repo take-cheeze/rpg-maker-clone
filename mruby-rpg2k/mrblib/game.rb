@@ -4911,20 +4911,42 @@ module Game
       end
     end
 
-    def effective_atk(b); adjust_stat(b.atk, stat_mode(b, :affect_attack)); end
-    def effective_int(b); adjust_stat(b.int, stat_mode(b, :affect_spirit)); end
+    # `base` plus `b`'s own `mod_field` offset (a battle `Combatant`'s
+    # `#atk_mod`/`#def_mod`/`#spi_mod`/`#agi_mod`, see `Game::Battle
+    # #apply_stat_mods` -- a bare field-side `Game::Actor` has no such field
+    # and reads a no-op 0 offset instead), clamped to 1..`Battle::
+    # MAX_STAT_BATTLE_VALUE` the same way EasyRPG's `AdjustParam(base, mod,
+    # ...)` does before a state's own halve/double gets a say -- mirroring
+    # `Game::Battle#modified_stat`'s identical clamp-then-adjust order, since
+    # `Game_Battler::GetAtk`/`GetDef`/`GetSpi` are the one accessor every
+    # context (a basic Attack, a Skill, in battle or, for HP/SP only, out of
+    # it) reads through.
+    def modified_stat(base, b, mod_field)
+      mod = b.respond_to?(mod_field) ? (b.send(mod_field) || 0) : 0
+      Game.clamp(base + mod, 1, Battle::MAX_STAT_BATTLE_VALUE)
+    end
+
+    def effective_atk(b)
+      adjust_stat(modified_stat(b.atk, b, :atk_mod), stat_mode(b, :affect_attack))
+    end
+
+    def effective_int(b)
+      adjust_stat(modified_stat(b.int, b, :spi_mod), stat_mode(b, :affect_spirit))
+    end
 
     def effective_def(b)
-      adjust_stat((b.respond_to?(:def) ? b.def : 0) || 0, stat_mode(b, :affect_defense))
+      base = (b.respond_to?(:def) ? b.def : 0) || 0
+      adjust_stat(modified_stat(base, b, :def_mod), stat_mode(b, :affect_defense))
     end
 
     def effective_spi(b)
-      adjust_stat((b.respond_to?(:spi) ? b.spi : 0) || 0, stat_mode(b, :affect_spirit))
+      base = (b.respond_to?(:spi) ? b.spi : 0) || 0
+      adjust_stat(modified_stat(base, b, :spi_mod), stat_mode(b, :affect_spirit))
     end
 
     def effective_agi(b)
-      adjust_stat((b.respond_to?(:agi) ? b.agi : 0) || 0,
-                  stat_mode(b, :affect_agility))
+      base = (b.respond_to?(:agi) ? b.agi : 0) || 0
+      adjust_stat(modified_stat(base, b, :agi_mod), stat_mode(b, :affect_agility))
     end
 
     # The base HP/SP amount a recovery skill restores, per RPG2000's formula
