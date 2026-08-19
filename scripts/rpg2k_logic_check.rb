@@ -3302,7 +3302,10 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       # before it is spent, 0 meaning 無制限
                       # (Game::Party#consume_item_use). The schema's default is
                       # 1, which is what `fake_item` passes when it is not named.
-                      :uses)
+                      :uses,
+                      # 消費SP (weapon field 16): the SP a basic Attack costs
+                      # while this weapon is equipped (Actor#weapon_sp_cost).
+                      :sp_cost)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -3312,7 +3315,8 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               half_sp_cost: false, hit: 0, critical_hit: 0, ko_only: false,
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
               cursed: false, raise_evasion: false, animation_id: nil,
-              state_chance: 0, use_skill: false, class_set: nil, uses: 1)
+              state_chance: 0, use_skill: false, class_set: nil, uses: 1,
+              sp_cost: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
@@ -3320,7 +3324,7 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
                ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
                raise_evasion, animation_id, state_chance, use_skill, class_set,
-               uses)
+               uses, sp_cost)
 end
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
@@ -14968,6 +14972,66 @@ check 'battle: a 二刀流 weapon swings twice' do
   bat3 = Game::Battle.new([Game::Battle.from_actor(hero)], [dying], Game::Rng.new(1))
   e3 = bat3.send(:swing, bat3.allies[0], dying)
   ok e3.is_a?(Hash), 'a felled target is not struck again'
+end
+
+# 消費SP (weapon field 16): a basic Attack now spends the equipped weapon's
+# own SP cost, matching EasyRPG's `Normal::vStart`
+# (`source->ChangeSp(-source->CalculateWeaponSpCost(weapon))`, unconditional
+# every action, hit or miss). Previously unwired entirely -- `Actor#half_sp_cost?`
+# only ever discounted a *skill's* SP, and no weapon-side accessor existed at
+# all (docs/TODO.md).
+check 'battle: a basic Attack spends its weapon\'s own SP cost, once per action' do
+  items = { 7 => fake_item(type: 1, atk: 5, sp_cost: 6),
+            8 => fake_item(type: 1, atk: 5, sp_cost: 5, half_sp_cost: true),
+            9 => fake_item(type: 1, atk: 5, sp_cost: 3, dual_attack: true),
+            10 => fake_item(type: 1, atk: 5) } # no sp_cost named -> 0
+  st = geared_party(items)
+  hero = st.party.leader
+  eq 50, hero.mp, 'starts at the level-1 curve\'s own max SP'
+
+  hero.equip([7, 0, 0, 0, 0])
+  foe = combatant('Foe', 0, 0, 5, 10_000) # never dies
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
+  bat.command_attack(bat.allies[0], foe)
+  bat.send(:strike, bat.allies[0])
+  eq 44, hero.mp, 'a single plain weapon: its own sp_cost, once'
+
+  # Halved (rounding up) by MP消費半分 gear, same as a skill's own #skill_cost.
+  hero.equip([8, 0, 0, 0, 0])
+  hero.mp = 50
+  foe2 = combatant('Foe', 0, 0, 5, 10_000)
+  bat2 = Game::Battle.new([Game::Battle.from_actor(hero)], [foe2], Game::Rng.new(1))
+  bat2.command_attack(bat2.allies[0], foe2)
+  bat2.send(:strike, bat2.allies[0])
+  eq 47, hero.mp, 'half_sp_cost rounds (5+1)/2 = 3 SP up, not down'
+
+  # A 二刀流 weapon still swings twice, but only pays once -- vStart runs
+  # before any swing, not once per hit.
+  hero.equip([9, 0, 0, 0, 0])
+  hero.mp = 50
+  foe3 = combatant('Foe', 0, 0, 5, 10_000)
+  bat3 = Game::Battle.new([Game::Battle.from_actor(hero)], [foe3], Game::Rng.new(1))
+  eq 2, bat3.allies[0].strike_count
+  bat3.command_attack(bat3.allies[0], foe3)
+  entries = bat3.send(:strike, bat3.allies[0])
+  eq 2, entries.size, 'both swings still land'
+  eq 47, hero.mp, 'the 二刀流 weapon\'s own sp_cost is spent exactly once, not per swing'
+
+  # An item naming no sp_cost costs nothing, same as being unarmed.
+  hero.equip([10, 0, 0, 0, 0])
+  hero.mp = 50
+  foe4 = combatant('Foe', 0, 0, 5, 10_000)
+  bat4 = Game::Battle.new([Game::Battle.from_actor(hero)], [foe4], Game::Rng.new(1))
+  bat4.command_attack(bat4.allies[0], foe4)
+  bat4.send(:strike, bat4.allies[0])
+  eq 50, hero.mp, 'no sp_cost named on the weapon -> no SP spent'
+
+  # An enemy's own basic Attack never spends SP at all (Game_Battler's own
+  # CalculateWeaponSpCost defaults to 0; Game_Enemy never overrides it).
+  attacker = combatant_mp('Foe', 20, 0, 999, 100, 30)
+  rev = Game::Battle.new([bat4.allies[0]], [attacker], Game::Rng.new(1))
+  rev.send(:strike, rev.enemies[0])
+  eq 30, attacker.mp, 'an enemy attacker\'s own SP is untouched'
 end
 
 check 'battle: a 必中 weapon ignores the target\'s evasion' do

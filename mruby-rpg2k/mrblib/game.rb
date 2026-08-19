@@ -2372,6 +2372,29 @@ module Game
     # the weapon (Nepheshel's 賢者の指輪 is an accessory).
     def half_sp_cost?; equipment_flag?(:half_sp_cost); end
 
+    # The SP a basic Attack itself costs -- EasyRPG's
+    # `Game_Actor::CalculateWeaponSpCost` (`src/game_actor.cpp`), which
+    # `Normal::vStart` (`src/game_battlealgorithm.cpp`) spends unconditionally
+    # via `ChangeSp(-CalculateWeaponSpCost(weapon))` once per action, before
+    # any swing resolves -- not per swing, so a 二刀流 weapon's extra hit
+    # (`#strike_count`) never doubles the bill. `weapon` there is whichever
+    # slot governs the action's very first swing (`Normal::GetWeapon()`'s
+    # `GetCurrentRepeat() >= weapon_style` check reads false at the
+    # still-zero repeat count `vStart` runs at): the weapon-slot item alone
+    # for a `#double_hand?` two-weapon actor (this engine's only route to a
+    # real `weapon_style`, since ordinary single-weapon gear always leaves it
+    # at `WeaponAll`, which reduces to that one weapon's own cost anyway) --
+    # `#equipped_weapons`' own weapon-slot-first ordering, so `.first` is
+    # always the right item either way. Halved (rounding up, matching
+    # `#skill_cost`'s own fixed-cost branch) by the same MP消費半分 gear. 0 for
+    # an unarmed actor.
+    def weapon_sp_cost
+      it = equipped_weapons.first
+      return 0 unless it
+      cost = it.respond_to?(:sp_cost) ? (it.sp_cost || 0) : 0
+      half_sp_cost? ? (cost + 1) / 2 : cost
+    end
+
     # 地形ダメージ無効 — gear that makes its wearer immune to the damage a tile's
     # terrain deals as they walk over it (Party#apply_terrain_damage). Any slot:
     # mtf-meido-action's is a pair of boots, Nepheshel's four include a swimsuit.
@@ -10627,6 +10650,7 @@ module Game
         # one, same as an unforced Attack would (デフォ戦botまとめ: "Berserk
         # additionally collapses an 'attack all' weapon down to a single
         # target").
+        pay_weapon_sp_cost(b)
         hits = combo_hits(b, :attack)
         return swing_side(b, side_targets(target), hits) if r == RESTRICTION_ATTACK_ALLY && b.attack_all
         return swing(b, target, hits)
@@ -10661,9 +10685,23 @@ module Game
       end
       target = attack_target(b)
       return nil unless target
+      pay_weapon_sp_cost(b)
       hits = combo_hits(b, :attack)
       return swing_side(b, side_targets(target), hits) if b.attack_all
       swing(b, target, hits)
+    end
+
+    # Spend `b`'s own weapon SP cost for the basic Attack it is about to make
+    # -- EasyRPG's `Normal::vStart` (see `Actor#weapon_sp_cost`'s own doc
+    # comment), called exactly once per action from both of `#strike`'s
+    # attack-dispatch points, before the swing count (dual-wield, combo) is
+    # even resolved. A no-op for an enemy attacker (`b.actor` is nil --
+    # `Game_Battler::CalculateWeaponSpCost` defaults to 0 and `Game_Enemy`
+    # never overrides it) or a bare fixture Combatant with no `#actor` link
+    # at all.
+    def pay_weapon_sp_cost(b)
+      actor = b.respond_to?(:actor) ? b.actor : nil
+      actor.change_mp(-actor.weapon_sp_cost) if actor && actor.respond_to?(:weapon_sp_cost)
     end
 
     # -- RPG2003 battle combo (Enable Combo / 1007) -----------------------------
