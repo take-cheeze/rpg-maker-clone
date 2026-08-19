@@ -210,5 +210,53 @@ check 'from_actor leaves a battler in the front row by default' do
   eq false, c.back_row?
 end
 
+# -- row safety net (EasyRPG's Scene_Battle_Rpg2k3::InitActors "ROW
+#    ADJUSTMENT"): a fight that would start with nobody able to act in the
+#    front row forces everyone to the front, so back-row survivors are never
+#    stuck behind a wiped-out front row for the rest of the fight. ----------
+
+check 'an rpg2003 battle forces every ally to the front row when the whole ' \
+      'front row starts dead and only back-row allies are alive' do
+  dead_front = combatant('Front', 10, 5, 8, 100)
+  dead_front.row = Game::Battle::ROW_FRONT
+  dead_front.hp = 0
+  alive_back = combatant('Back', 10, 5, 8, 100)
+  alive_back.row = Game::Battle::ROW_BACK
+
+  Game::Battle.new([dead_front, alive_back], [combatant('Enemy', 5, 5, 5, 50)],
+                    Game::Rng.new(1), rpg2003: true)
+
+  eq Game::Battle::ROW_FRONT, dead_front.row, 'the dead front-row ally is left front'
+  eq Game::Battle::ROW_FRONT, alive_back.row, 'the living survivor is snapped to front'
+end
+
+check 'an rpg2003 battle leaves rows untouched when a living ally already ' \
+      'occupies the front row' do
+  alive_front = combatant('Front', 10, 5, 8, 100)
+  alive_front.row = Game::Battle::ROW_FRONT
+  alive_back = combatant('Back', 10, 5, 8, 100)
+  alive_back.row = Game::Battle::ROW_BACK
+
+  Game::Battle.new([alive_front, alive_back], [combatant('Enemy', 5, 5, 5, 50)],
+                    Game::Rng.new(1), rpg2003: true)
+
+  eq Game::Battle::ROW_FRONT, alive_front.row
+  eq Game::Battle::ROW_BACK, alive_back.row, 'a living front-row ally means no forcing happens'
+end
+
+check 'an rpg2000 (non-2003) battle never forces rows, even with an ' \
+      'all-dead front row' do
+  dead_front = combatant('Front', 10, 5, 8, 100)
+  dead_front.row = Game::Battle::ROW_FRONT
+  dead_front.hp = 0
+  alive_back = combatant('Back', 10, 5, 8, 100)
+  alive_back.row = Game::Battle::ROW_BACK
+
+  Game::Battle.new([dead_front, alive_back], [combatant('Enemy', 5, 5, 5, 50)],
+                    Game::Rng.new(1))
+
+  eq Game::Battle::ROW_BACK, alive_back.row, 'the row-forcing rule is 2003-only'
+end
+
 puts "rpg2k3 battle row check: #{$checks} checks, #{$failures} failures"
 exit($failures.zero? ? 0 : 1)
