@@ -14418,6 +14418,39 @@ above are repeated here)
   Monster HP plays the `EnemyKill` SE, matching an ordinary lethal
   Attack/Skill), confirmed to fail against the pre-fix code before the
   fix.
+  ✅ **A curative battle skill's status cure landed unconditionally, with no
+  accuracy roll at all — a Silence/Poison-cure skill whose own `hit` field
+  is below 100 always cured the status, never missing
+  (2026-08-19).** Confirmed directly against RPG_RT's live source: `Game_
+  BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`) gates
+  *every* state a skill's `state_effects` list touches — heal or inflict
+  alike — behind its own `Rand::PercentChance(to_hit_states)` roll before
+  it takes effect (`if (!Rand::PercentChance(to_hit_states)) { continue; }`,
+  checked *before* branching on `heals_states`), the same fresh-per-field
+  idiom this codebase's `#skill_effect_hits?` already gives HP/SP/stat-mod
+  effects. `Game::Battle#apply_skill_hit`'s `cured` selection (both the
+  attack branch's own `cured.each` and the recovery branch's identical
+  line) applied every listed, currently-carried state with no roll of any
+  kind — the recovery branch's own doc comment even said so explicitly,
+  "unconditionally, matching the field item cure", conflating two
+  genuinely different mechanics: `Game_BattleAlgorithm::Item::vExecute`
+  really does cure with no roll at all (`for (...) if (item.state_set[i])
+  if (State::Remove(...)) ...`, no `PercentChance` anywhere in its cure
+  loop), but `Skill::vExecute`'s is roll-gated. Both algorithms share this
+  codebase's `#apply_skill_hit` (`#command_item`/`#command_skill` both
+  feed the same `cmd[:hp]`/`cmd[:cured]` machinery through
+  `#apply_command`), so the fix had to stay correct for both at once —
+  done by reusing `#skill_effect_hits?(cmd)` per cured state exactly the
+  way `stat_mod_keys`/`apply_attr_shift` already do, since an Item command
+  (`#command_item`) never sets `cmd[:chance]` at all, and the helper's own
+  `cmd[:chance] || 100` fallback makes an absent chance an unconditional
+  hit — transparently reproducing Item's roll-free cure while genuinely
+  gating a Skill's. Covered by three new `scripts/rpg2k_logic_check.rb`
+  checks (a Skill's cure rolls its own accuracy and can miss; an Item's
+  cure — no `chance` key — always lands regardless of the roll; an
+  attack-branch Skill's cure rolls independently of its own damage roll),
+  two confirmed to fail against the pre-fix code (`expected [], got [3]`)
+  before the fix.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor

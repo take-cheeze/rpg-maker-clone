@@ -12061,7 +12061,11 @@ module Game
           stat_changed = {}
         else
           inflicted, already = roll_inflict(target, cmd)
-          cured = (cmd[:cured] || []).select { |s| target.state?(s) }
+          # Each cured state rolls its own independent `to_hit_states`
+          # accuracy check, exactly like a stat mod/attribute shift's own
+          # `skill_effect_hits?` gate just below -- see the comment on the
+          # recovery branch's own `cured` line for the full citation.
+          cured = (cmd[:cured] || []).select { |s| target.state?(s) && skill_effect_hits?(cmd) }
           cured.each { |s| cure_state(target, s) }
           shifted = apply_attr_shift(target, cmd)
           stat_keys = (cmd[:stat_mod_keys] || []).select { skill_effect_hits?(cmd) }
@@ -12140,12 +12144,25 @@ module Game
         was_dead = target.dead?
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0 && !was_dead && skill_effect_hits?(cmd)
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp && skill_effect_hits?(cmd)
-        # Cure the item's status conditions from the target (an antidote /
-        # herb), unconditionally, matching the field item cure -- routed
-        # through #cure_state (like the attack branch's own `cured.each`
-        # above) so curing Death also sets HP to 1 the same way every other
-        # cure site in this class does.
-        cured = (cmd[:cured] || []).select { |s| target.state?(s) }
+        # Cure the target's status conditions, routed through #cure_state
+        # (like the attack branch's own `cured.each` above) so curing Death
+        # also sets HP to 1 the same way every other cure site in this class
+        # does. Rolled the same `skill_effect_hits?(cmd)` per-state check the
+        # attack branch's own cure just above uses -- this branch is shared
+        # by both a recovery Skill and an Item (#apply_command's own
+        # `cmd[:hp]`/`cmd[:cured]` machinery, fed by #command_item /
+        # #command_skill alike), and EasyRPG genuinely treats the two
+        # differently here: `Game_BattleAlgorithm::Skill::vExecute`
+        # (src/game_battlealgorithm.cpp) gates every cured state behind its
+        # own `Rand::PercentChance(to_hit_states)`, while `Item::vExecute`'s
+        # cure loop rolls nothing at all (`for (...) if (item.state_set[i])
+        # if (State::Remove(...)) AddAffectedState(...)`) -- reusing
+        # `skill_effect_hits?` here is correct for both, since an Item
+        # command never sets `cmd[:chance]` at all (only a Skill's own
+        # `#battle_skill_command` does), and the helper's own `cmd[:chance]
+        # || 100` fallback makes an absent chance an unconditional hit,
+        # exactly matching Item's own roll-free cure.
+        cured = (cmd[:cured] || []).select { |s| target.state?(s) && skill_effect_hits?(cmd) }
         cured.each { |s| cure_state(target, s) }
         # A revival (this skill's own cure just took Death off the target)
         # layers the skill's heal on top of that HP-to-1 instead of the heal
