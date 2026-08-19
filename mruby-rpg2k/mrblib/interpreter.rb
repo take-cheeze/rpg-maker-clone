@@ -2247,8 +2247,10 @@ module Game
           a.add_state(state_id)
           # RPG_RT's crowding-out rule (Game::States::PRUNE_GAP): a state
           # just inflicted may push out (or itself be pushed out by) one
-          # already held that outranks it by 10+ priority.
-          a.states = Game::States.prune(a.states, party.state_table)
+          # already held that outranks it by 10+ priority -- except a state
+          # a's own worn cursed armor is forcing on (`keep:`, see #prune's
+          # own citation), which the same C++ pass exempts from the wipe.
+          a.states = Game::States.prune(a.states, party.state_table, keep: a.permanent_states)
         end
       end
       check_game_over

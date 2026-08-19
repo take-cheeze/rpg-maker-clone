@@ -2739,7 +2739,7 @@ module Game
     # non-death state, the identical rule from the other direction).
     def knock_out!
       add_state(DEATH_STATE)
-      @states = Game::States.prune(@states, state_table)
+      @states = Game::States.prune(@states, state_table, keep: permanent_states)
     end
 
     # The database's state (`situation`) table, for Game::States lookups.
@@ -4998,7 +4998,7 @@ module Game
         # RPG_RT's crowding-out rule (see Game::States::PRUNE_GAP): a state
         # just landed may itself immediately push out one already held, or
         # be pushed out by one already held that outranks it.
-        t.states = Game::States.prune(t.states, state_table) if landed
+        t.states = Game::States.prune(t.states, state_table, keep: t.permanent_states) if landed
         before_hp = t.hp
         before_mp = t.mp
         if sk.affect_hp && amount > 0
@@ -8524,12 +8524,26 @@ module Game
     # this right for free -- no id needs to be singled out or exempted.
     # `ids` with one or fewer entries has nothing to compare, and comes back
     # unchanged.
-    def self.prune(ids, table)
+    #
+    # `keep:` is RPG2003 cursed armor's own exemption from this same pass --
+    # `State::Add`'s loop reads `if (priority <= sig->priority - 10 &&
+    # !ps.Has(i + 1)) { states[i] = 0; }`, `ps` being the caller's
+    # `PermanentStates` (`Game_Actor::GetPermanentStates`,
+    # src/game_actor.cpp): a state a worn cursed item is actively forcing on
+    # survives the crowding-out pass even when it sits well below the
+    # landing state's priority. Without it, a lethal hit (Death landing at
+    # its own conventionally-high priority) stripped a low-priority cursed
+    # state from `@states` outright -- and since every cure path can only
+    # ever *keep* an id already present, never re-add a missing one, the
+    # state stayed gone until the player physically unequipped and
+    # re-equipped the cursed item, instead of the state persisting (as worn)
+    # the whole time the way real RPG_RT's own exemption guarantees.
+    def self.prune(ids, table, keep: [])
       return ids if ids.nil? || ids.size <= 1
       sig = significant(ids, table)
       return ids if sig.nil?
       top = priority_of(sig, table)
-      ids.select { |id| priority_of(id, table) > top - PRUNE_GAP }
+      ids.select { |id| keep.include?(id) || priority_of(id, table) > top - PRUNE_GAP }
     end
 
     # The state's display name, or nil when the table does not name it (a

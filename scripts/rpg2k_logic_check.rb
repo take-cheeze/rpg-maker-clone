@@ -4395,6 +4395,38 @@ check "#remove_state refuses a state RPG2003 cursed armor is still forcing" do
   eq [], a.states
 end
 
+# RPG_RT's own crowding-out pass (`State::Add`, src/state.cpp) exempts a
+# cursed-armor-forced state from being wiped by a bigger, later-landing one:
+# `if (priority <= sig->priority - 10 && !ps.Has(i + 1)) { states[i] = 0; }`
+# -- `Game::States.prune` (game.rb) had no such exemption at all, so a
+# lethal hit (Death landing at a conventionally high priority) stripped a
+# low-priority cursed state outright. Since #remove_state/#clear_states can
+# only ever *keep* an id already present, never re-add a missing one, the
+# state stayed gone -- even through Full Recovery -- until the player
+# physically unequipped and re-equipped the cursed item, instead of
+# persisting the whole time real RPG_RT guarantees it does.
+check "a lethal hit does not strip a state RPG2003 cursed armor is still " \
+      'forcing, even though the hit also inflicts a higher-priority Death' do
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  situation = { 1 => fake_state(priority: 100), 4 => fake_state(priority: 50) }
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, situation, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.equip_item(20)
+  eq [4], a.states, 'cursed armor state landed'
+  a.change_hp(-9999)
+  ok a.dead?, 'sanity: the hit was lethal'
+  ok a.states.include?(1), 'sanity: Death landed too'
+  ok a.states.include?(4),
+     "the cursed state survived Death's own crowding-out pass, matching " \
+     "the armor's own PermanentStates exemption"
+  # Full Recovery still cannot cure it -- the armor is still equipped.
+  a.full_heal
+  ok a.states.include?(4), 'Full Recovery does not touch it either'
+  a.unequip(2) # armor slot
+  eq [], a.states, 'only taking the armor off actually clears it'
+end
+
 # Confirmed against EasyRPG's actual C++ source, fetched live:
 # `Game_Interpreter::CommandChangeCondition` (src/game_interpreter.cpp)
 # calls `actor->RemoveState(state_id, !Game_Battle::IsBattleRunning())`,
