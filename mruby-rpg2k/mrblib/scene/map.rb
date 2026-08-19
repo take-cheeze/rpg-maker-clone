@@ -319,6 +319,11 @@ class RPG2k
       end
 
       attr_reader :state
+      # The current map's live event list -- see #build_events for the shape
+      # of each entry ({ id:, char:, page:, ... }). Read by RPG2k
+      # #dump_bug_report (main.rb) to list every event's position/direction
+      # alongside the hero's.
+      attr_reader :events
 
       # Services Scene::Battle calls back into ----------------------------
       #

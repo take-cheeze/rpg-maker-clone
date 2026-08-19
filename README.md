@@ -56,6 +56,13 @@
   underneath — coordinates, passable/blocked, and any map event standing
   there — and warps the player onto it with C, through the same queued-warp
   mechanism a Teleport field skill uses rather than editing position by hand
+- **F8 dumps a bug report** — unlike the Test Play keys above this works in a
+  released game too, from any scene (map, menu, battle, ...): a Markdown block
+  with the current map id, the hero's x/y/direction, each party member's
+  HP/MP/level, every live event on the map (id, position, facing, graphic) and
+  the recent runtime log, printed to stderr between fence markers (so it can be
+  copied straight out of a terminal) and saved to a timestamped
+  `bugreport_<stamp>.md` next to the save data
 - `--rpg2k_preview_map=<id>` starts New Game on a chosen map, centred on its
   middle tile, instead of the database's configured start position — a quick
   way to inspect one map's rendering without a save file positioned there.
