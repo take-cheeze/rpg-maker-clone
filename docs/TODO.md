@@ -15133,41 +15133,6 @@ above are repeated here)
   party` runs, and a subsequent fight's own `Combatant` reads no combo
   bonus at all), confirmed to fail against the pre-fix code before the
   fix.
-  ✅ **Follow-up (2026-08-19): Enable Combo skipped RPG_RT's own "actor must
-  be a current party member" gate, unlike every other fixed-id battle-page
-  command — a combo targeted at a roster actor who simply wasn't in the
-  active party was armed anyway.** Confirmed directly against RPG_RT's
-  live source: `Game_Interpreter_Battle::CommandEnableCombo` (`src/
-  game_interpreter_battle.cpp`) is `if (!Main_Data::game_party->
-  IsActorInParty(actor_id)) { return true; }`, checked before
-  `Game_Actors::GetActor` is even consulted — unlike Change Class, Change
-  Battle Commands, and Change Actor Name/Title/Sprite/Face, which all
-  resolve their fixed-id actor through the roster alone (so an away
-  companion is still renamed/re-dressed/re-classed and has it waiting when
-  they rejoin, `Interpreter#identity_target`'s own doc comment), Enable
-  Combo is the *one* identity-targeted command with this extra membership
-  requirement. `IsActorInParty` appears in exactly one other place in the
-  whole reference — the Conditional Branch "actor in party" test, already
-  correctly ported as `Game::Party#include_actor?` and wired to that
-  command — confirming this is a narrow, deliberate exception rather than
-  a general rule this port simply generalized correctly elsewhere.
-  `Interpreter#do_enable_combo` reused `#identity_target` unmodified, the
-  same roster-only resolution every *other* identity command correctly
-  uses, so a combo named by a genuine roster actor id who wasn't currently
-  in the party was armed anyway — and since nothing clears a `battle_combo`
-  for an actor who was never `@allies` in the fight that armed it (the
-  fix directly above this one only clears it for actual fight
-  participants), it sat unconsumed until that actor eventually joined the
-  party for real, at which point it would incorrectly fire in a battle
-  real RPG_RT never armed it for at all. Fixed by adding `return unless
-  party.include_actor?(cmd.param(0))` ahead of the existing roster lookup.
-  Covered by rewriting the existing `scripts/rpg2k_logic_check.rb` check,
-  which had used a dangling id (99, absent from the fake database
-  entirely) that only exercised the pre-existing "no such actor in the
-  roster at all" nil-guard, not this membership gate — replaced with a
-  genuine second roster actor who exists but is deliberately left out of
-  the active party, confirmed to fail against the pre-fix code (`expected
-  nil, got {command_id: 1, multiple: 2}`) before the fix.
   ✅ **A living-but-afflicted party member's own alternate-battle-layout
   sprite (RPG2003's per-actor battler graphic, `db.battleranimations`) now
   shows that state's own configured pose, not always plain Idle

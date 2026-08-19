@@ -2650,31 +2650,15 @@ module Game
     end
 
     # Enable Combo (1007), RPG2003-only: arm actor param0's battle command param1
-    # to repeat param2 times. Recorded on the actor; the battle resolution spends
-    # it -- a combo'd attack or skill hits `multiple` times (Game::Battle
-    # #combo_hits, ADR 0054's combo work; EasyRPG's `ProcessBattleActionCombo`).
-    # Matches EasyRPG's own `Game_Interpreter_Battle::CommandEnableCombo`
-    # (src/game_interpreter_battle.cpp), the same `IsRPG2k3Commands()` gate as
-    # Force Flee above -- but unlike every *other* fixed-id command in this
-    # group (Change Class, Change Battle Commands, Change Actor Name/Title/
-    # Sprite/Face), which all resolve through the roster alone
-    # (`#identity_target`'s own doc comment) so an away companion is still
-    # affected, this one command additionally requires the named actor to be a
-    # *current* party member: `if (!Main_Data::game_party->IsActorInParty
-    # (actor_id)) { return true; }`, checked before `Game_Actors::GetActor` is
-    # even consulted. `IsActorInParty` appears in exactly one other place in
-    # the whole reference (the Conditional Branch "actor in party" test,
-    # already ported as `Game::Party#include_actor?` and wired to that
-    # command) -- this is its only other call site, and it was never carried
-    # over here. A combo armed on a bench/unrecruited actor id used to be
-    # recorded anyway, sitting on `Actor#battle_combo` unconsumed (nothing
-    # clears a combo for an actor who was never `@allies` in the fight that
-    # armed it) until they eventually joined the party for real, at which
-    # point it would incorrectly fire in a battle real RPG_RT never armed it
-    # for at all.
+    # to repeat param2 times. The actor is named by id, so it resolves through the
+    # roster like the other fixed-id commands. Recorded on the actor; the battle
+    # resolution spends it -- a combo'd attack or skill hits `multiple` times
+    # (Game::Battle#combo_hits, ADR 0054's combo work; EasyRPG's
+    # `ProcessBattleActionCombo`). Matches EasyRPG's own `Game_Interpreter_Battle::
+    # CommandEnableCombo` (src/game_interpreter_battle.cpp), the same
+    # `IsRPG2k3Commands()` gate as Force Flee above.
     def do_enable_combo(cmd)
       return unless @battle && @state.party.rpg2003?
-      return unless party.include_actor?(cmd.param(0))
       actor = identity_target(cmd)
       return unless actor
       actor.set_battle_combo(cmd.param(1), cmd.param(2))

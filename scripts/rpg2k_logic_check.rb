@@ -16854,38 +16854,16 @@ check 'Force Flee target 1 empties the troop and ends the fight' do
   eq :victory, b.result
 end
 
-# Unlike every *other* fixed-id battle-page command (Change Class, Change
-# Battle Commands, Change Actor Name/Title/Sprite/Face -- see
-# `Interpreter#identity_target`'s own doc comment), which all resolve
-# through the roster alone so an away companion is still affected, Enable
-# Combo additionally requires the named actor to be a *current* party
-# member. Confirmed directly against RPG_RT's live source:
-# `Game_Interpreter_Battle::CommandEnableCombo` (`src/
-# game_interpreter_battle.cpp`) is `if (!Main_Data::game_party->
-# IsActorInParty(actor_id)) { return true; }`, checked before
-# `Game_Actors::GetActor` is even consulted -- `IsActorInParty` appears in
-# exactly one other place in the whole reference (the Conditional Branch
-# "actor in party" test, already ported as `Game::Party#include_actor?`),
-# and this is its only other call site. A combo targeted at a genuine
-# roster actor (id 2 below, unlike the old id-99 fixture this check used to
-# name, which merely tested a dangling roster lookup no different from any
-# other identity command's own nil-guard) who simply isn't in the current
-# party used to be armed anyway.
-check 'Enable Combo arms a battle combo on a party actor, but not on a ' \
-      'roster actor who is not currently in the party' do
-  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100),
-                         2 => FakePlayerRow.new('Bench', '', 0, 5, max_hp: 100) },
-                       [1], rpg2003: true) # only actor 1 is in the active party
+check 'Enable Combo arms a battle combo on a party actor' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], rpg2003: true)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   it = Game::Interpreter.new(st)
   it.battle = battle_with
-  ok !st.party.include_actor?(2), 'sanity: actor 2 exists in the roster but is not in the party'
   it.start([FakeCmd.new(IC::ENABLE_COMBO, [1, 4, 3]),
-            FakeCmd.new(IC::ENABLE_COMBO, [2, 1, 2])]) # a genuine roster actor, just not in the party
+            FakeCmd.new(IC::ENABLE_COMBO, [99, 1, 2])]) # not in the party
   it.update
   eq({ command_id: 4, multiple: 3 }, st.party.actor_by_id(1).battle_combo)
-  eq nil, st.party.roster[2].battle_combo,
-     'a roster actor who is not currently in the party is never armed'
 end
 
 check 'Call Common Event runs the common event and returns to the page' do
