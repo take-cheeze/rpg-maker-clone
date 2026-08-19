@@ -4976,12 +4976,17 @@ module Game
       affected = []
       skill_targets(sk, caster, target).each do |t|
         changed = false
+        was_dead = t.dead?
         cured.each do |s|
           if t.state?(s)
             t.remove_state(s)
             changed = true
           end
         end
+        # Whether curing Death just revived `t` -- #remove_state's own
+        # bare-revival fallback already floors it to 1 HP the instant Death
+        # comes off, matching EasyRPG's `RemoveState`.
+        revived = was_dead && !t.dead?
         landed = false
         inflicted.each do |s|
           unless t.state?(s)
@@ -4996,7 +5001,21 @@ module Game
         t.states = Game::States.prune(t.states, state_table) if landed
         before_hp = t.hp
         before_mp = t.mp
-        t.change_hp(amount) if sk.affect_hp && amount > 0
+        if sk.affect_hp && amount > 0
+          t.change_hp(amount)
+        elsif revived && amount > 0 && t.max_hp
+          # A revival skill with Affect HP off heals a percentage of max HP
+          # instead of leaving `t` on the bare revival floor of 1 --
+          # `Game_Battler::UseSkill` (src/game_battler.cpp), the out-of-
+          # battle counterpart to `Skill::vExecute`'s identical in-battle
+          # rule (see Game::Battle#apply_skill_hit's own citation): "If
+          # Death is cured and HP is not selected, we set a bool so it later
+          # heals HP percentage" -- `ChangeHp(GetMaxHp() * effect / 100 -
+          # revived, false)`, additive on top of the cure's own HP-to-1
+          # (`revived` there is the literal int 1, the same role `- 1`
+          # plays here).
+          t.change_hp(t.max_hp * amount / 100 - 1)
+        end
         t.change_mp(amount) if sk.affect_sp && amount > 0
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
@@ -12165,17 +12184,46 @@ module Game
         cured = (cmd[:cured] || []).select { |s| target.state?(s) && skill_effect_hits?(cmd) }
         cured.each { |s| cure_state(target, s) }
         # A revival (this skill's own cure just took Death off the target)
-        # layers the skill's heal on top of that HP-to-1 instead of the heal
-        # being skipped above, matching EasyRPG's own two-step mechanism
-        # exactly: `AlgorithmBase::ApplyStateEffect`'s `if (was_dead &&
+        # layers a heal on top of that HP-to-1 instead of the heal being
+        # skipped above, matching EasyRPG's own two-step mechanism exactly:
+        # `AlgorithmBase::ApplyStateEffect`'s `if (was_dead &&
         # !target->IsDead()) target->ChangeHp(GetAffectedHp() - 1, false)`
         # -- `ChangeHp`'s own non-lethal floor (`req_new_hp = std::max(1,
         # req_new_hp)`) is why this reads `[.., 1].max` below rather than
-        # simply adding `hp - 1`. A revival item with no heal configured
-        # (`hp` 0) lands on exactly 1, matching #cure_state's own bare
+        # simply adding `affected_hp - 1`. A revival item with no heal
+        # configured (`hp` 0, and no `cmd[:stat_effect]` at all -- items
+        # never set it) lands on exactly 1, matching #cure_state's own bare
         # revival fallback used everywhere else.
+        #
+        # `affected_hp` is `hp` itself when the skill's own Affect HP flag
+        # was on (`hp` already the correct, gated magnitude) -- but a
+        # revival *skill* with Affect HP off (a common "cure Death, heal a
+        # % of max HP" design, distinct from a flat-amount reviver, which
+        # would check Affect HP) forces `hp` to 0 in #battle_skill_command
+        # regardless of the skill's own Power/rate, and EasyRPG's own
+        # `Skill::vExecute` reads a *percentage* in that exact case instead
+        # of the flat-1 floor: `if (IsRevived() && effect > 0) { if
+        # (skill.affect_hp) { SetAffectedHp(std::max(0, effect)); } else {
+        # SetAffectedHp(target->GetMaxHp() * effect / 100); } }` --
+        # `effect` there is the skill's own raw, un-gated magnitude
+        # (`Algo::CalcSkillEffect`, before any affect_hp gating), matching
+        # this codebase's `cmd[:stat_effect]` (`#battle_skill_command`'s own
+        # `base`, already the ATK/DEF/SPI/AGI stat-mod's identical raw
+        # figure). `hp` being 0 with `cmd[:stat_effect]` positive can only
+        # happen when Affect HP was off (an on-flag skill's own `hp` already
+        # equals `stat_effect`'s scaled figure whenever it's nonzero), so no
+        # separate flag has to ride along in `cmd` to tell the two apart.
+        # `Game_Battler::UseSkill`'s own `cure_hp_percentage` bool
+        # (src/game_battler.cpp) implements the identical rule for the
+        # out-of-battle/menu skill-cast path independently, confirming this
+        # is a general RPG_RT mechanic and not a battle-only quirk -- though
+        # only the battle path is fixed here.
         if was_dead && !target.dead?
-          revived = target.hp + (hp - 1)
+          affected_hp = hp
+          if affected_hp.zero? && (cmd[:stat_effect] || 0) > 0 && target.max_hp
+            affected_hp = target.max_hp * cmd[:stat_effect] / 100
+          end
+          revived = target.hp + (affected_hp - 1)
           revived = 1 if revived < 1
           target.hp = target.max_hp ? [revived, target.max_hp].min : revived
         end

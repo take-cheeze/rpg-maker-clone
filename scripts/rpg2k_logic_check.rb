@@ -6864,6 +6864,39 @@ check 'a revive skill cures the death state, then its HP recovery lands' do
   eq 33, ally.hp                               # revived to 1, then +32
 end
 
+check 'a revival skill with Affect HP off heals a percentage of max HP, ' \
+      'not a flat 1' do
+  # RPG_RT's Game_Battler::UseSkill (src/game_battler.cpp) sets a
+  # `cure_hp_percentage` bool the instant a Death cure revives the target
+  # while the skill's own Affect HP flag is off, then heals
+  # `GetMaxHp() * effect / 100` instead of leaving the target on the bare
+  # revival floor of 1 -- the field-menu counterpart to
+  # Game::Battle#apply_skill_hit's identical in-battle fix.
+  skills = { 8 => fake_skill(name: 'Half Life', scope: 3, sp_cost: 6,
+                              power: 50, hp: false, state_effects: [1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(8)
+  ally.change_hp(-9999)
+  eq true, ally.dead?
+  eq [ally], st.party.cast_skill(hero, 8, ally)
+  eq false, ally.dead?
+  eq 25, ally.hp, "50% of Ally's 50 max HP, not the flat-1 floor a flat-amount reviver gets"
+end
+
+check 'a percentage revival from the field menu still caps at max HP' do
+  skills = { 9 => fake_skill(name: 'Full Life', scope: 3, sp_cost: 8,
+                              power: 200, hp: false, state_effects: [1]) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(9)
+  ally.change_hp(-9999)
+  st.party.cast_skill(hero, 9, ally)
+  eq 50, ally.hp, "capped at Ally's 50 max HP, not 100"
+end
+
 check 'a plain heal skill cannot revive a downed ally' do
   skills = { 7 => fake_skill(name: 'Heal', scope: 3, sp_cost: 5,
                              power: 20, mrate: 40, hp: true) }
@@ -12835,6 +12868,45 @@ check 'battle: a revival skill with no heal configured still lands the ' \
   bat.send(:apply_skill_hit, hero, foe, 0, 0, cmd)
   ok !foe.dead?, 'revived even with hp: 0'
   eq 1, foe.hp
+end
+
+# RPG_RT's `Skill::vExecute` (src/game_battlealgorithm.cpp) reads a
+# *percentage* of max HP for a revival whose Affect HP flag is off, instead
+# of the flat-1 floor a flat-amount reviver (Affect HP on) lands on: `if
+# (IsRevived() && effect > 0) { if (skill.affect_hp) {
+# SetAffectedHp(std::max(0, effect)); } else { SetAffectedHp(
+# target->GetMaxHp() * effect / 100); } }` -- a common "cure Death, heal a
+# % of max HP" skill design. #battle_skill_command forces `hp` to 0 whenever
+# Affect HP is off regardless of the skill's own Power, so the revival block
+# used to always floor such a skill to 1 HP, identical to a skill/item with
+# no heal configured at all.
+check 'battle: a revival skill with Affect HP off heals a percentage of ' \
+      'max HP, not a flat 1 (RPG_RT)' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.max_hp = 100
+  foe.hp = -30
+  foe.states = [1]
+  # hp: 0 (Affect HP off) but stat_effect: 50 -- the skill's own raw
+  # magnitude, still present the same way a buff-only skill's stat-mod
+  # effect is (see #battle_skill_command's own `stat_effect: base` comment).
+  cmd = { cured: [1], chance: 100, stat_effect: 50 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.send(:apply_skill_hit, hero, foe, 0, 0, cmd)
+  ok !foe.dead?, 'revived'
+  eq 50, foe.hp, "50% of a 100 max HP, not the flat-1 floor a flat-amount reviver gets"
+end
+
+check "battle: a percentage revival still caps at the target's max HP" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.max_hp = 100
+  foe.hp = -10
+  foe.states = [1]
+  cmd = { cured: [1], chance: 100, stat_effect: 300 } # 300% would overshoot
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.send(:apply_skill_hit, hero, foe, 0, 0, cmd)
+  eq 100, foe.hp, 'capped at max HP, not 300'
 end
 
 check "battle: a heal on a still-standing target is unaffected by the " \
