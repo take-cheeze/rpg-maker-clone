@@ -938,6 +938,76 @@ the interpreter-linking slice, in this order:
       would force the same one-time pthread/TLS bootstrap to happen in a
       controlled spot instead of wherever the first real exception happens
       to land.
+  - **New, separate finding — workaround applied, not yet hardware-verified
+    (bug 12).** With bugs 10 and 11 fixed, a *third* boot-time failure
+    surfaced: the real Nepheshel fixture booted (`RPG2K_PSP_BRINGUP`
+    heartbeats, a stable rendered title screen) under interactive PPSSPP but
+    never advanced past it — PPSSPP logged a real (non-poison) `ACCESS_ERROR
+    =sceKernelLockLwMutex(...)：Bad workarea pointer for LwMutex` and hung;
+    real hardware (ARK CFW) crashed back to the game list at the same point
+    instead of hanging, confirming a genuine bug rather than a PPSSPP-only
+    artifact (see `nix/patches/ppsspp-diagnostic-lwmutex-caller.patch`,
+    pushed temporarily to capture guest PCs; still present as of this
+    writing, to be dropped once bug 12 is confirmed fixed on real hardware).
+    - **Root cause, resolved via the guest PCs against the reporter's own
+      build:** the fatal lock is called from newlib's `_fopen_r`
+      (`fopen.c:140`) — but every "Bad memory access" hit in the ~150-strong
+      flurry immediately before it resolves to unrelated-looking C-runtime
+      bootstrap code: newlib's `malloc`/`free`/`calloc` internals
+      (`_mallocr.c`), `pthread_mutex_init`/`_lock`, libgcc's
+      `__register_frame_info_bases` (the same `.eh_frame`-registration
+      function implicated in bug 11's residual note above), pspsdk's
+      `pte_osSemaphoreCreate`, `setenv`, and — the clearest single tell — a
+      ~30-word tight loop entirely inside pspsdk's own
+      `libpthreadglue/tls-helper.c:__pteTlsAlloc`, reading nothing but
+      garbage through `__keysUsed[i]`. Every one of these bad addresses
+      shares one specific shape: `00b4xxxx` where a real heap pointer on
+      this build looks like `08b4xxxx`/`09b4xxxx` — the same missing top
+      byte, everywhere, across otherwise-unrelated subsystems. That is not
+      independent corruption in four different places; it is one corrupted
+      pointer being read by four different consumers of the same heap
+      state. Tracing `__keysUsed`'s origin (`pteTlsGlobalInit`, only real
+      writer) lands on `pthread-embedded/pthread_init.c`'s `pthread_init()`:
+      ```c
+      if (pte_processInitialized) return PTE_TRUE;  // checked, no lock
+      pte_processInitialized = PTE_TRUE;             // set, no lock
+      pte_osInit();                                  // -> pteTlsGlobalInit()
+      ```
+      a plain check-then-act with no lock or atomic guarding either the
+      flag or the `malloc()`+assignment inside `pte_osInit()`. In normal
+      pspsdk boot this runs exactly once, single-threaded, from
+      `crt0`/`__libcglue_init` before `main()` — safe by construction. This
+      port's own `main()` broke that invariant: `setup_callbacks()`, the
+      *first* thing it called, spawns `update_thread` via a raw
+      `sceKernelCreateThread` before anything else runs, so from the very
+      start of `main()` there were two live PSP kernel threads free to race
+      whichever of them first touches pthread/libc machinery. (Which second
+      caller actually raced `pthread_init()` — pspsdk's own internal
+      `__fdman_init` I/O-manager thread is the leading suspect, since it is
+      spun up between `__locks_init`/`__init_mutex` and
+      `__libpthreadglue_init` in `crt0`'s own sequence — was not pinned
+      down further; the fix below is correct regardless of which thread it
+      was.)
+    - **Fix.** `app/psp/main.cxx` adds `prime_pthread_init()`: spawns one
+      throwaway `pthread_create`/`pthread_join` pair as the very first thing
+      `main()` does, *before* `setup_callbacks()`. `pthread_create()`
+      reliably drives `pthread_init()` to completion in every
+      pthread-embedded port, so this forces the one-time TLS/lock bootstrap
+      to run to completion, single-threaded, before `update_thread` (or any
+      other thread this port creates) can exist to race it — the same
+      "prime it deliberately early, in a controlled spot" shape as the
+      untried mitigation bug 11's residual note above proposed for the
+      first-throw problem, applied here to a distinct but neighboring
+      pspsdk bootstrap race instead.
+    - **Verification status:** rebuilds cleanly, and a headless PPSSPP
+      re-run shows no regression (982 clean `RPG2K_PSP_BRINGUP` heartbeats,
+      `RPG2K_PSP_GAME_START RPG2k ok`, the same single pre-existing harmless
+      poison-pointer `ACCESS_ERROR` this build always logs) — but headless
+      never reproduced bug 12 in the first place, so this is not evidence
+      the race is actually fixed, only that the workaround does not break
+      anything. Confirming the fix requires the interactive-PPSSPP and
+      real-hardware repros that originally caught it; not yet done as of
+      this writing.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

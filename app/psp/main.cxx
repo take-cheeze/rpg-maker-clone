@@ -62,6 +62,7 @@
 #include <pspkernel.h>
 #include <pspsysmem.h>
 #include <pspthreadman.h>
+#include <pthread.h>
 
 #include "psp.hxx"
 
@@ -398,6 +399,33 @@ void setup_callbacks(void) {
     sceKernelStartThread(thid, 0, nullptr);
 }
 
+// pspsdk's pthread_init() (pthread-embedded's pthread_init.c) guards its
+// one-time setup with a plain "if (pte_processInitialized) return; ..."
+// check-then-act, not a compare-and-swap or a lock. That setup mallocs and
+// assigns pspsdk's global TLS key-usage table (__keysUsed -- see
+// libpthreadglue/tls-helper.c's pteTlsGlobalInit/__pteTlsAlloc) with nothing
+// guarding the assignment either. If two PSP kernel threads both reach the
+// first real pthread/libc call before the guard flag is set, both pass the
+// check and both run the one-time init, racing on the same global pointer --
+// see docs/adr/0047-psp-memory-budget.md's LwMutex/heap-corruption finding,
+// which traced a hang (interactive PPSSPP) and a crash (real hardware, ARK
+// CFW) back to __keysUsed holding a corrupted pointer, first surfacing much
+// later as a spurious fopen() failure. setup_callbacks() above spawns
+// update_thread as the very first thing main() does; forcing pthread_init()
+// to run to completion here -- before that thread, or any other, exists --
+// makes the one-time init strictly single-threaded no matter which thread
+// would otherwise have raced it. A real pthread_create()/join() (rather than
+// e.g. pthread_self()) is used because pthread_init() is only guaranteed to
+// run from the codepaths that assume the library is not yet initialized;
+// pthread_create() is one of them in every pthread-embedded port.
+void prime_pthread_init(void) {
+  pthread_t t;
+  if (pthread_create(
+          &t, nullptr, [](void*) -> void* { return nullptr; }, nullptr) == 0) {
+    pthread_join(t, nullptr);
+  }
+}
+
 void build_ui(void) {
   lv_obj_t* scr = lv_screen_active();
   lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
@@ -474,6 +502,10 @@ int main(void) {
   // of any libc call, so it survives PPSSPP's partial libc HLE.
   static const char kBootMarker[] = "RPG2K_PSP_BOOT\n";
   psp_write(kBootMarker, static_cast<int>(sizeof(kBootMarker) - 1));
+
+  // Must run before setup_callbacks() spawns update_thread -- see
+  // prime_pthread_init()'s own comment for why.
+  prime_pthread_init();
 
   setup_callbacks();
 
