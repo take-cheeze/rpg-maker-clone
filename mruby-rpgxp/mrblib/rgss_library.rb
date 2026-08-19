@@ -120,6 +120,163 @@ unless Module.method_defined?(:private_method_defined?)
   end
 end
 
+# Ruby's own bare (argument-less) `module_function` — CRuby's "declaration
+# mode", where every `def` that follows in the same scope becomes both a
+# private instance method and a public singleton method. This mruby version
+# ships the explicit-argument form (`module_function :name`, converting an
+# already-defined method — 3rd/mruby/src/class.c's `mrb_mod_module_function`)
+# but the bare form is a documented no-op there: `if (argc == 0) { /* set
+# MODFUNC SCOPE if implemented */ return mod; }`. A module built entirely
+# under a bare declaration — e.g. a bundled error-log utility whose public
+# entry point is only ever reachable as `TKG::ErrorLog.save(...)` — silently
+# defines no singleton methods at all, so the first call raises NoMethodError
+# and ends the whole script host.
+#
+# Reimplemented here without touching the vendored mruby core: mruby's
+# `method_added` hook *does* fire reliably for every `def` (the VM checks
+# whether it is still the built-in no-op before bothering to call it — see
+# `mrb_method_added` — so overriding it here has no cost for classes that
+# never trigger it), and the explicit-argument form already promotes an
+# existing method correctly. So `module_function` with no arguments just
+# flips a per-module flag, and `method_added` — called after the method is
+# already registered — hands the newly-added name to the real
+# explicit-argument path to promote it, exactly mirroring what CRuby does in
+# one step. `private`/`public` with no arguments (which this mruby build
+# implements correctly, via the same kind of scope tracking CRuby uses —
+# `find_visibility_scope` in class.c) end the declaration the same way they
+# do in CRuby, so a script that returns to normal instance methods after its
+# module-function block is not stuck being module_function forever.
+#
+# What this does not reproduce: CRuby's version is a true lexical-scope
+# state (reset on leaving the enclosing `module`/`class` body), where this is
+# a per-module flag that persists until explicitly turned off. A script that
+# reopens the *same* module later in the bundle, defining ordinary instance
+# methods without an intervening bare `private`, would see those wrongly
+# promoted too — a real gap, but a narrow one: RGSS scripts overwhelmingly
+# write a `module_function` block as one contiguous run, the way the bundled
+# utility this was found against does.
+unless Module.method_defined?(:__mrb_native_module_function)
+  class Module
+    alias_method :__mrb_native_module_function, :module_function
+
+    def module_function(*syms)
+      if syms.empty?
+        @__mrb_module_function_scope = true
+        self
+      else
+        @__mrb_module_function_scope = false
+        __mrb_native_module_function(*syms)
+      end
+    end
+
+    alias_method :__mrb_native_private, :private
+    def private(*syms)
+      @__mrb_module_function_scope = false if syms.empty?
+      __mrb_native_private(*syms)
+    end
+
+    alias_method :__mrb_native_public, :public
+    def public(*syms)
+      @__mrb_module_function_scope = false if syms.empty?
+      __mrb_native_public(*syms)
+    end
+
+    def method_added(name)
+      __mrb_native_module_function(name) if @__mrb_module_function_scope
+    end
+
+    # `module_function`/`private`/`public`/`method_added` are all private
+    # methods on `Module` in real Ruby (so e.g. `some_mod.private(:x)` from
+    # outside does not work); `def` here defaulted the overrides above to
+    # public, so restore that. This call goes through the override (explicit
+    # symbols, so it forwards straight to `__mrb_native_private`), which sets
+    # real visibility either way — the fix applies regardless of which
+    # `private` answers it.
+    private :module_function, :private, :public, :method_added
+  end
+end
+
+# Ruby's own `Time#strftime`, which this mruby build's Time (mruby-time) does
+# not expose — it uses the C library's strftime() internally for `#to_s`, but
+# never binds a Ruby-level method taking a format string, so any script that
+# formats a timestamp for a log line or a save filename (a very ordinary
+# thing to do — e.g. the same bundled error-log utility used above,
+# `"Log/error_log" + Time.now.strftime("%Y%m%d%H%M%S") + ".txt"`) hits
+# NoMethodError. Implemented in pure Ruby over the component accessors Time
+# already exposes (`year`/`mon`/`day`/`hour`/`min`/`sec`/`wday`/`yday`/
+# `usec`/`utc_offset`), covering the directives real scripts actually use —
+# the common date/time/zero-padded-numeric set, not the full CRuby spec
+# (no `%V`/`%U`/`%W` week-of-year, no locale-dependent forms, no field-width
+# modifiers). An unrecognised directive passes through literally rather than
+# raising, matching how a real `strftime("%Q")` degrades on an unknown
+# specifier being kinder than crashing the whole script host over a log
+# timestamp.
+unless Time.method_defined?(:strftime)
+  class Time
+    MONTHNAMES = [nil, "January", "February", "March", "April", "May", "June",
+                  "July", "August", "September", "October", "November",
+                  "December"].freeze
+    ABBR_MONTHNAMES = MONTHNAMES.map { |m| m && m[0, 3] }.freeze
+    DAYNAMES = %w[Sunday Monday Tuesday Wednesday Thursday Friday
+                  Saturday].freeze
+    ABBR_DAYNAMES = DAYNAMES.map { |d| d[0, 3] }.freeze
+
+    def strftime(fmt)
+      out = +""
+      i = 0
+      while i < fmt.length
+        c = fmt[i]
+        if c != "%" || i == fmt.length - 1
+          out << c
+          i += 1
+          next
+        end
+        spec = fmt[i + 1]
+        i += 2
+        case spec
+        when "Y" then out << year.to_s
+        when "y" then out << format("%02d", year % 100)
+        when "m" then out << format("%02d", mon)
+        when "d" then out << format("%02d", day)
+        when "e" then out << format("%2d", day)
+        when "H" then out << format("%02d", hour)
+        when "I" then out << format("%02d", ((hour % 12).zero? ? 12 : hour % 12))
+        when "M" then out << format("%02d", min)
+        when "S" then out << format("%02d", sec)
+        when "L" then out << format("%03d", usec / 1000)
+        when "N" then out << format("%09d", usec * 1000)
+        when "j" then out << format("%03d", yday)
+        when "p" then out << (hour < 12 ? "AM" : "PM")
+        when "P" then out << (hour < 12 ? "am" : "pm")
+        when "A" then out << DAYNAMES[wday]
+        when "a" then out << ABBR_DAYNAMES[wday]
+        when "B" then out << MONTHNAMES[mon]
+        when "b", "h" then out << ABBR_MONTHNAMES[mon]
+        when "z"
+          off = utc_offset
+          sign = off < 0 ? "-" : "+"
+          off = off.abs
+          out << format("%s%02d%02d", sign, off / 3600, (off / 60) % 60)
+        when "Z" then out << zone.to_s
+        when "%" then out << "%"
+        when "n" then out << "\n"
+        when "t" then out << "\t"
+        when "F" then out << strftime("%Y-%m-%d")
+        when "T", "X" then out << strftime("%H:%M:%S")
+        when "D", "x" then out << strftime("%m/%d/%y")
+        when "s" then out << to_i.to_s
+        else
+          # Unrecognised: pass the directive through literally rather than
+          # raising or silently dropping it, so the mistake is visible in the
+          # output instead of ending the script host.
+          out << "%" << spec.to_s
+        end
+      end
+      out
+    end
+  end
+end
+
 # Ruby's own `String#encode`, which this mruby build does not ship (no
 # mruby-encoding gem is vendored or configured — mruby strings carry no
 # per-instance encoding metadata at all). A Japanese project's scripts
