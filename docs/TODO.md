@@ -16301,18 +16301,35 @@ screen (544×416). Full rationale:
     SCOPE if implemented */`) — reimplemented via `method_added`, without
     touching the vendored core — and `Time#strftime` did not exist at all
     (implemented in pure Ruby over `Time`'s existing component accessors).
+    Continuing further, past a `NoMemoryError` the game's own error-log
+    utility could not report either (same `$!` gap, see below): the desktop
+    LVGL heap needed a second bump, 256 MB → 512 MB, this time for scene
+    construction rather than database load; `Dir.glob` turned out to not
+    exist anywhere in the vendored `mruby-dir` gem at all (fixed in pure
+    Ruby over `Dir.entries`), which blocked the stock `DataManager`'s own
+    Continue-screen check; and `Color.new`/`Tone.new` wrongly required 3
+    arguments in `mruby-rgss`'s native binding, when RGSS3's own stock
+    `Game_Screen#clear_tone`/`#clear_flash` — in *every* VX Ace project, not
+    a community script — call both with zero, which is likely the single
+    most-hit gap of the lot since it fires on any VX Ace game reaching
+    `Game_Screen.new`.
     **Still open, and deeper:** mruby's VM has no `$!` ("currently handled
     exception") — `OP_EXCEPT` in vm.c copies the caught exception into a
     bytecode register and clears `mrb->exc`, never writing it anywhere
     Ruby-visible — so the same game's error-log utility, which reads `$!` as
     a method's default argument and relies on bare `raise` re-raising it,
-    still crashes one step further in. Fixable only by wrapping
-    `Kernel#raise` itself (the sole point where the about-to-be-raised object
-    is observable), which would add overhead and stack depth to *every*
-    exception in the shared build across every maker and every platform
-    (PSP's stack headroom included) for what is mostly log-message fidelity
-    in one utility script — see the item 7 write-up for the full reasoning
-    on why that trade isn't taken here.
+    crashes on *every* fatal exception the game hits, masking each one in
+    turn behind the same `NoMethodError: undefined method 'message' for
+    NilClass`. All three fixes above were found this way — a temporary,
+    never-committed VM-level probe read the real masked exception one at a
+    time. A fourth is already known this way and not yet fixed:
+    `NoMethodError: undefined method 'dispose' for NilClass`. Fixable only
+    by wrapping `Kernel#raise` itself (the sole point where the
+    about-to-be-raised object is observable), which would add overhead and
+    stack depth to *every* exception in the shared build across every maker
+    and every platform (PSP's stack headroom included) for what is mostly
+    log-message fidelity in one utility script — see the item 7 write-up for
+    the full reasoning on why that trade isn't taken here.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).

@@ -67,6 +67,24 @@ assert "RGSS::Tone basics and clamping" do
   assert_true loaded == t
 end
 
+# RGSS3's own stock Game_Screen#clear_tone / #clear_flash — present in every
+# VX Ace project's default Scripts.rvdata2, not a community add-on — call
+# `Tone.new` and `Color.new` with zero arguments: real RGSS defaults every
+# component to 0 (opaque black / no tone shift) rather than requiring them.
+assert "RGSS::Color.new and RGSS::Tone.new default to all-zero with no args" do
+  c = RGSS::Color.new
+  assert_equal 0.0, c.red
+  assert_equal 0.0, c.green
+  assert_equal 0.0, c.blue
+  assert_equal 255.0, c.alpha # alpha's own default, same as the 3-arg form
+
+  t = RGSS::Tone.new
+  assert_equal 0.0, t.red
+  assert_equal 0.0, t.green
+  assert_equal 0.0, t.blue
+  assert_equal 0.0, t.gray
+end
+
 assert "RGSS::Rect basics" do
   r = RGSS::Rect.new(1, 2, 3, 4)
   assert_equal 1, r.x

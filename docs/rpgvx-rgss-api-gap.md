@@ -423,6 +423,56 @@ covering the common date/time directive set real scripts use — not the full
 CRuby spec (no `%V`/`%U`/`%W` week-of-year, no locale forms, no field-width
 modifiers). An unrecognised directive passes through literally.
 
+**Fixed: `Dir.glob` did not exist.** `Dir` is present in this build at all
+only incidentally — `build_config.rb`'s `enable_test` pulls the vendored
+`mruby-dir` gem in as a host-build test dependency, and the same shared
+`libmruby.a` backs the actual game binary too — but `mruby-dir` itself
+(`3rd/mruby/mrbgems/mruby-dir`) never implements `.glob` at any layer: its
+mrblib only supplies `#each`, `#each_child`, `.foreach`, `.open` and
+`.chdir`; its C HAL only wraps opendir/readdir/mkdir/rmdir. `Dir.glob` is not
+an obscure feature real scripts reach for on purpose: the stock RPG Maker VX
+Ace `DataManager` checks `!Dir.glob('Save0*.rvdata2').empty?` to decide
+whether the title screen offers "Continue", `Game_System` globs a shared
+options file the same way, and a released game routinely adds a
+`Dir.glob('Game.rgss3a').empty?` check to tell a packed release apart from
+an unpacked project — none of that is optional or RTP-shaped, so
+`NoMethodError` here failed the whole script host before a single frame
+drew. Implemented in pure Ruby (`mruby-rpgxp/mrblib/rgss_library.rb`) over
+`Dir.entries` (which the HAL does supply) and a glob → `Regexp` translator
+covering literal names, `*`, `?` and `[...]` character classes — not the
+full glob spec (no `**`, brace expansion or flags) — walking a pattern one
+`/`-separated path component at a time so a prefix like
+`Data/Map[0-9]*[0-9].rvdata2` only lists `Data/`'s own entries.
+
+**Fixed: `Color.new` / `Tone.new` wrongly required arguments.** Not a script
+gap at all — this is a bug in `mruby-rgss`'s own native binding
+(`mruby-rgss/src/lib.cxx`), the class library this engine supplies natively
+rather than through mrblib. Real RGSS3's *own* stock, unmodified
+`Game_Screen#clear_tone` / `#clear_flash` — present in every VX Ace
+project's default `Scripts.rvdata2`, not a community add-on — call
+`Tone.new` and `Color.new` with **zero** arguments, relying on every
+component defaulting to 0 (opaque black / no tone shift). `color_init` and
+`tone_init` read their arguments with `mrb_get_args(M, "fff|f", …)` — 3
+required, 1 optional — so `Color.new`/`Tone.new` raised
+`ArgumentError: wrong number of arguments (given 0, expected 3..4)` on
+every VX Ace game that constructs a `Game_Screen`, which is to say every VX
+Ace game the script host boots far enough to reach it. The C++ locals
+already had the right defaults (`r = g = b = 0`) sitting dead behind the
+argument-count check; changed the format to `"|ffff"` (all four optional)
+and the `MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1)` declarations to
+`MRB_ARGS_OPT(4)` for both `initialize`s. `Color#set` / `Tone#set` are
+untouched — real scripts always call those with explicit arguments.
+
+**Changed: the desktop LVGL heap grows again, 256 MB → 512 MB.** The first
+bump (`changelog.d/desktop-lvgl-heap-256mb.changed.md`) was measured against
+this same real VX Ace release's *database* load alone. Past the two fixes
+above, the script host now reaches actual scene construction — building the
+title screen's own windows, sprites and bitmaps — which is a second, larger
+memory consumer 256 MB did not cover: the game aborted with
+`NoMemoryError` mid-boot even with a fully loaded database. 512 MB cleared
+it. Desktop-only, same as before (`include/lv_conf.h`; the PSP and Wio
+builds keep their own separately-tuned pools).
+
 **Still open, and deeper than `module_function`: mruby's VM has no `$!`
 ("currently handled exception") at all.** `rescue => e` binds the exception
 to the clause's own local variable, but the special global CRuby code
@@ -439,8 +489,24 @@ globally-visible store. Confirmed with an isolated reproduction — even a bare
 specific to crossing a call boundary. It is why the same error-log utility's
 `save(filename = nil, exception = $!)` — called as `TKG::ErrorLog.save()`
 from directly inside `rescue; TKG::ErrorLog.save(); raise; end` — receives
-`exception = nil` and crashes on `exception.message`, one step past the
-`module_function` fix above. mruby's bare `raise` (no arguments) has the same
+`exception = nil` and crashes on `exception.message`.
+
+That `SceneManager.run` rescue wraps the game's *entire* run loop, so this is
+not a one-time cosmetic loss: every fatal exception this game hits, of any
+origin, is masked behind the identical `NoMethodError: undefined method
+'message' for NilClass` crash in the error-log utility, until whatever real
+exception triggered it is fixed and the *next* one takes its place. Diagnosing
+each of the fixes above required a temporary, never-committed `fprintf` at
+the `OP_EXCEPT` opcode itself (in the local `3rd/mruby` submodule checkout,
+reverted before every commit) to read the masked exception directly off the
+VM — the `Dir.glob` and `Color.new`/`Tone.new` gaps above were both found
+this way, one at a time, three separate real bugs in a row hidden behind the
+same crash. A fourth is already known and not yet fixed: with all three
+gaps above closed, the game now reaches
+`NoMethodError: undefined method 'dispose' for NilClass`, masked the same
+way. Left for a future pass — the pattern established here (temporary VM
+probe → real gap → mrblib or native fix → regression test) applies to it
+too. mruby's bare `raise` (no arguments) has the same
 root cause from the other side: real Ruby re-raises `$!`, but mruby's
 `mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
 fresh, empty `RuntimeError` instead of re-raising what was actually caught.
@@ -469,6 +535,8 @@ tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
 its windows, and — packed or loose — finds its graphics and its music, and
 reopens its own stock `RPG::` script sections without a superclass mismatch.
 Tilemap item 1's remaining polish (the flat "above characters" layer) is the
-only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
-the newest and, per a real release, the next (and likely last, for that one
-game's bundled utility scripts) wall.
+only item left in the six sections above; item 7's `$!`/bare-`raise` gap
+stands, and per a real release it is the reason each fix above only reveals
+the *next* wall one at a time rather than the game running to completion in
+one pass — `NoMethodError: undefined method 'dispose' for NilClass`, found
+but not yet fixed, is where it stands now.

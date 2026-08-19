@@ -580,3 +580,49 @@ assert "eval, Fiber and Kernel#exit / SystemExit are available for the script ho
   assert_equal :frame, f.resume
   assert_equal :done, f.resume
 end
+
+assert "Dir.glob covers the patterns real scripts use for save/protect checks" do
+  root = "tmp_rgss_glob_test"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    ["Save01.rvdata2", "Save02.rvdata2", "SaveOption.rvdata2",
+     "Other.txt"].each do |name|
+      File.open("#{root}/#{name}", "w") { |f| f.print "x" }
+    end
+    Dir.mkdir("#{root}/Data") unless FileTest.directory?("#{root}/Data")
+    ["Map001.rvdata2", "Map012.rvdata2", "System.rvdata2"].each do |name|
+      File.open("#{root}/Data/#{name}", "w") { |f| f.print "x" }
+    end
+
+    # Literal name, no wildcard: matches iff the file exists (the released-game
+    # packed-archive check's shape, `Dir.glob('Game.rgss3a').empty?`).
+    assert_equal ["#{root}/SaveOption.rvdata2"],
+                  Dir.glob("#{root}/SaveOption.rvdata2")
+    assert_equal [], Dir.glob("#{root}/NoSuchFile.rvdata2")
+
+    # `*` wildcard: DataManager's own continue-screen check, `Dir.glob('Save0*
+    # .rvdata2')`.
+    assert_equal ["#{root}/Save01.rvdata2", "#{root}/Save02.rvdata2"],
+                  Dir.glob("#{root}/Save0*.rvdata2").sort
+
+    # `[0-9]` character class combined with `*`, spanning a literal directory
+    # prefix: an event-log utility's own `Dir.glob("Data/Map[0-9]*[0-9]
+    # .rvdata2")`.
+    assert_equal ["#{root}/Data/Map001.rvdata2", "#{root}/Data/Map012.rvdata2"],
+                  Dir.glob("#{root}/Data/Map[0-9]*[0-9].rvdata2").sort
+
+    # Block form returns nil and yields each match, like real Dir.glob.
+    seen = []
+    result = Dir.glob("#{root}/Save0*.rvdata2") { |path| seen << path }
+    assert_true result.nil?
+    assert_equal ["#{root}/Save01.rvdata2", "#{root}/Save02.rvdata2"], seen.sort
+  ensure
+    ["Save01.rvdata2", "Save02.rvdata2", "SaveOption.rvdata2",
+     "Other.txt"].each { |name| File.delete("#{root}/#{name}") }
+    ["Map001.rvdata2", "Map012.rvdata2", "System.rvdata2"].each do |name|
+      File.delete("#{root}/Data/#{name}")
+    end
+    Dir.delete("#{root}/Data")
+    Dir.delete(root)
+  end
+end
