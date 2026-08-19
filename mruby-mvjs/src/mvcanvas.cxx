@@ -981,14 +981,17 @@ JSValue js_get_pixel(JSContext* ctx,
 }
 
 // __mv_canvasPutData(handle, dx, dy, w, h, data)
-// Write a w*h block of RGBA bytes (a flat [r,g,b,a,...] array as produced by
-// getImageData) into the canvas at (dx, dy). Per the canvas spec putImageData
-// *replaces* pixels (no source-over blend) and ignores the current transform,
-// so this is a straight copy, clipped to the canvas bounds. Values are clamped
-// to 0-255 to mimic the Uint8ClampedArray a real ImageData exposes (our
-// getImageData hands back a plain array, so MV's `pixels[i] += tone` can run
-// out of range). MV drives this from Bitmap.adjustTone / rotateHue, which read
-// the pixels back, recolour them and write them out.
+// Write a w*h block of RGBA bytes (a flat [r,g,b,a,...] array-like, as
+// produced by getImageData or handed in raw) into the canvas at (dx, dy). Per
+// the canvas spec putImageData *replaces* pixels (no source-over blend) and
+// ignores the current transform, so this is a straight copy, clipped to the
+// canvas bounds. Values are clamped to 0-255 defensively -- getImageData's own
+// Uint8ClampedArray already clamps `pixels[i] += tone` writes at assignment
+// (MV drives this from Bitmap.adjustTone / rotateHue, which read the pixels
+// back, recolour them and write them out), but `data` is read generically
+// (js_num_array, by .length and index) so a caller handing in a plain array
+// or object literal directly -- as a synthetic ImageData, or a value read
+// back out of range some other way -- still gets a spec-correct result.
 JSValue js_put_data(JSContext* ctx,
                     JSValueConst,
                     int argc,
@@ -1301,11 +1304,17 @@ const char* kCanvasPreamble = R"MVJS(
   };
   Ctx.prototype.getImageData = function (x, y, w, h) {
     w = w | 0; h = h | 0;
-    var data = [];
+    // A real Uint8ClampedArray, not a plain Array: third-party code (PIXI's
+    // extract.canvas, which Bitmap.snap/snapToBitmap goes through) calls
+    // typed-array-only methods like .set() on it, which a plain Array does
+    // not have -- see the TypeError this used to throw, caught booting a real
+    // MV game (Lunatic-Core) into its title-screen snapshot transition.
+    var data = new Uint8ClampedArray(w * h * 4);
+    var idx = 0;
     for (var j = 0; j < h; j++) {
       for (var i = 0; i < w; i++) {
         var p = g.__mv_canvasGetPixel(this.__h, (x | 0) + i, (y | 0) + j);
-        data.push(p[0], p[1], p[2], p[3]);
+        data[idx++] = p[0]; data[idx++] = p[1]; data[idx++] = p[2]; data[idx++] = p[3];
       }
     }
     return { width: w, height: h, data: data };
