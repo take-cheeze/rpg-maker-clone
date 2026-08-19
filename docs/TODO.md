@@ -14966,7 +14966,23 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   and a follow camera. Remaining: per-row priority interleaving rather than one
   flat above-layer (ADR 0022), and the character effects the sprites ignore —
   opacity, blend mode, hue and step animation.
-- 🚧 **Event system** — event pages select their active page by condition
+- ~~🚧 **Event system**~~ — **superseded, not current.** This bullet describes
+  the reimplemented `mruby-rpgxp/mrblib/interpreter.rb` `Game::Interpreter` /
+  `game.rb` party-actor model that used to stand in for a game's own scripts;
+  [ADR 0030](adr/0030-rgss-only-the-games-own-engine.md) deleted them (part of
+  the ~4,600 lines removed alongside `scene.rb`, same as the "Map scene" bullet
+  above) once the script host became the only boot path, so none of the
+  `Game::`/`command_*` machinery below still exists in the repository. Left for
+  history rather than rewritten. The current state: a real XP/VX/VX Ace
+  project's own bundled `Game_Interpreter`/`Game_Party`/`Game_Actor` Ruby
+  classes run unmodified against the native RGSS class library (see "✅ Run the
+  bundled RGSS scripts" below), so every event command, actor stat and party
+  operation a game's own scripts use works exactly as the genuine engine runs
+  it — not as a fixed list of natively-reimplemented command handlers. What is
+  and is not covered is tracked as class-library gaps in
+  [`docs/rpgxp-rgss-api-gap.md`](rpgxp-rgss-api-gap.md), not as event-command
+  coverage.
+  Event pages select their active page by condition
   (`Game::EventPage`: switch / variable / self-switch, highest match wins) and a
   `Game::Interpreter` runs the XP command list with a suspend/resume model: Show
   Text / Choices, Conditional Branch / Else / End, Loop / Break / Repeat, Label /
@@ -15212,8 +15228,13 @@ screen (544×416). Full rationale:
     animation cycle × the table flag (66,400 cases) match byte for byte. The
     decode is exposed as `Tilemap.vx_tile_quads` so `mruby-rgss/test` pins it
     without a display, as sample cases plus a checksum over the whole sweep.
-    Left as polish: the flat "above the characters" layer (the same
-    approximation ADR 0022 describes for XP) and the A2 table-edge tile.
+    The A2 "table" tile's leg (the 8px overhang into the row below a counter
+    tile, so an item can sit believably on top of it) is now implemented too
+    — `Tilemap.vx_table_leg_quads`, ported from mkxp, with its own sample
+    cases and a full-sweep checksum. Left as polish: the flat "above the
+    characters" layer (the same approximation ADR 0022 describes for XP —
+    and, per mkxp's own fixed z=200 flat layer for this, not actually a gap
+    versus the reference behavior; see `docs/rpgvx-rgss-api-gap.md`).
   - ✅ **`Viewport#tone`** — the screen tint. Unlike `color` a tone rescales
     what is already drawn, so it cannot be a layer: every display object in the
     viewport folds the viewport's tone into its own composite as its last step
