@@ -3004,6 +3004,21 @@ module Game
       @battle_combo = { command_id: command_id, multiple: multiple }
     end
 
+    # Clear a combo Enable Combo armed, at a fight's end -- matching
+    # EasyRPG's own `Game_Battler::ResetBattle` (`src/game_battler.cpp`):
+    # `battle_combo_command_id = -1; battle_combo_times = 1;`, called for
+    # every actor at both a battle's start and its end
+    # (`Game_Battle::Init`/`Quit`, via `Game_Actors::ResetBattle`,
+    # `src/game_battle.cpp`/`src/game_actors.cpp`) -- so a combo armed for
+    # one fight never carries into the next. #set_battle_combo's own doc
+    # comment already claimed the combo stays armed "until battle end", but
+    # nothing actually enforced that boundary until this existed; see
+    # `Game::Battle#apply_to_party`, the one place a fight's outcome is
+    # written back onto the persistent Actor objects, for the call site.
+    def clear_battle_combo
+      @battle_combo = nil
+    end
+
     # Whether this actor uses the RPG2000 "custom battle command" name
     # (独自戦闘コマンド有効, database field 66) instead of the database's
     # generic Skill term. A class change never touches this — EasyRPG's own
@@ -9393,6 +9408,9 @@ module Game
         # ended this fight dead carries 0 instead, matching AddState's own
         # Knockout-zeroes-the-gauge rule -- see Actor#atb_gauge.
         c.actor.atb_gauge = c.hp > 0 ? c.gauge : 0 if c.actor.respond_to?(:atb_gauge=)
+        # An Enable Combo (1007) armed for this fight never carries into the
+        # next one -- see Actor#clear_battle_combo.
+        c.actor.clear_battle_combo if c.actor.respond_to?(:clear_battle_combo)
       end
     end
 
