@@ -580,4 +580,3 @@ assert "eval, Fiber and Kernel#exit / SystemExit are available for the script ho
   assert_equal :frame, f.resume
   assert_equal :done, f.resume
 end
-
