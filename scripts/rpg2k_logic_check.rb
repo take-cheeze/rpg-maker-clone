@@ -12699,6 +12699,60 @@ check 'battle: a heal skill restoring both HP and SP rolls each independently' d
   eq 10, hero.mp
 end
 
+# RPG_RT's `Game_BattleAlgorithm::Skill::vExecute` (src/game_battlealgorithm.cpp)
+# gates every state a skill would cure behind its own `Rand::PercentChance(
+# to_hit_states)` roll -- the same fresh-per-field idiom `#skill_effect_hits?`
+# already gives HP/SP/stat-mod effects -- while `Item::vExecute`'s own cure
+# loop rolls nothing at all. `#apply_skill_hit`'s `cured` selection used to
+# apply unconditionally in both branches, with no roll of any kind -- correct
+# for an Item, silently wrong for a Skill whose own `hit` (accuracy) is below
+# 100.
+check "battle: a skill's status cure rolls its own accuracy, and can miss" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [3]
+  cmd = { cured: [3], chance: 50 }
+  bat = Game::Battle.new([hero], [foe], FixedRng.new(49), nil, false, false, true)
+  e = bat.send(:apply_skill_hit, hero, foe, 0, 0, cmd)
+  eq [3], e[:cured], 'a roll under the chance cures the state'
+  ok !foe.state?(3)
+
+  miss_foe = combatant('Foe', 0, 0, 5, 100)
+  miss_foe.states = [3]
+  bat2 = Game::Battle.new([hero], [miss_foe], FixedRng.new(50), nil, false, false, true)
+  e2 = bat2.send(:apply_skill_hit, hero, miss_foe, 0, 0, cmd)
+  eq [], e2[:cured], 'a roll at or above the chance misses -- the state stays'
+  ok miss_foe.state?(3)
+end
+
+check "battle: an item's status cure has no chance to roll against, so " \
+      'it always lands' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [3]
+  # No `chance:` key at all -- #command_item never sets one, unlike
+  # #command_skill's own `chance: skill_to_hit(...)`.
+  cmd = { cured: [3] }
+  bat = Game::Battle.new([hero], [foe], FixedRng.new(99), nil, false, false, true)
+  e = bat.send(:apply_skill_hit, hero, foe, 0, 0, cmd)
+  eq [3], e[:cured], "an item's cure lands regardless of the roll, unlike a skill's"
+  ok !foe.state?(3)
+end
+
+check "battle: a skill's status cure on an offensive (attack-branch) hit " \
+      'rolls independently of its damage roll' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.states = [3]
+  cmd = { attack: true, chance: 50, cured: [3] }
+  # First roll (damage) at 10 hits; second roll (the state cure) at 90 misses.
+  bat = Game::Battle.new([hero], [foe], SequenceRng.new([10, 90]), nil, false, false, true)
+  e = bat.send(:apply_skill_hit, hero, foe, -10, 0, cmd)
+  eq 10, e[:damage], 'damage roll (10 < 50) landed'
+  eq [], e[:cured], 'the cure roll (90 >= 50) missed, independently of the damage roll'
+  ok foe.state?(3)
+end
+
 check "battle: a skill's stat-mod effect rolls independently of its HP effect" do
   hero = combatant('Hero', 40, 0, 20, 100)
   foe = combatant('Foe', 0, 0, 5, 100)
