@@ -9993,6 +9993,34 @@ not yet verified:
   28, 14, 0` per-frame sequence for the 100-to-0-over-7-frames example
   above, confirmed to fail against the pre-fix code (it produced `85, 70,
   56, 42, 28, 14, 0` instead) before the fix.
+- ✅ **A Show Picture not fixed to the map held rock-steady through a Shake
+  Screen instead of jittering with the rest of the view, unlike a
+  map-fixed one (2026-08-19).** Confirmed directly against RPG_RT's live
+  source: `ShowParams`'s own default flags (`src/game_pictures.h`) are
+  `int flags = 1 | 32 | 64; // erase_on_map_change | affected_by_flash |
+  affected_by_shake` — every picture is affected by screen shake by
+  default (RPG2000 and pre-1.12 RPG2003 have no per-picture way to turn it
+  off at all), and `Sprite_Picture::Draw` (`src/sprite_picture.cpp`)
+  applies it unconditionally of `fixed_to_map`: `if
+  (data.flags.affected_by_shake) { x -= GetShakeOffsetX(); y -=
+  GetShakeOffsetY(); }`. `Scene::Map#draw_picture`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) only ever subtracted the shake
+  offset for a `fixed_to_map` picture, and only as an accidental side
+  effect of `#camera_position` already folding `screen.shake_offset` into
+  its own `cam_x`/`cam_y` for the *map-scroll* subtraction — a picture
+  shown with the overwhelmingly common "not fixed to map" default got no
+  shake offset applied at all, so a full-screen "impact" graphic, a
+  portrait during dialogue, or a HUD element sat perfectly still while
+  Shake Screen visibly jittered everything else on screen. Fixed by adding
+  an `else` branch that subtracts `@state.screen.shake_offset` directly
+  from a non-map-fixed picture's own draw position, alongside (not instead
+  of) the existing `fixed_to_map` branch — the two are mutually exclusive
+  ways the same offset reaches the screen, so this does not double-apply
+  it to a map-fixed picture. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (a non-map-fixed picture's drawn `dest_rect.x` shifts by exactly
+  the screen's own `shake_offset` once a Shake Screen is under way, the
+  same relationship a map-fixed picture already had via `cam_x`),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A weapon's own genuine 0% hit rate is no longer folded into the
   "nothing equipped" case and silently promoted to the 90% unarmed default
   (2026-08-18).** `Game::Actor#attack_hit_rate` (`mruby-rpg2k/mrblib/

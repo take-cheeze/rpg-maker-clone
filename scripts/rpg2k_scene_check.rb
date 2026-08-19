@@ -5636,6 +5636,40 @@ check 'pictures composite in ascending id order, independent of show order' do
      'lower id drawn first, higher id drawn last (on top), regardless of show order'
 end
 
+# RPG_RT's `ShowParams` (src/game_pictures.h) defaults every picture's
+# `affected_by_shake` flag on (RPG2000/pre-1.12 RPG2003 games have no way to
+# turn it off at all), and `Sprite_Picture::Draw` (src/sprite_picture.cpp)
+# applies the shake offset to a picture's screen position unconditionally of
+# `fixed_to_map`: `if (data.flags.affected_by_shake) { x -=
+# GetShakeOffsetX(); ... }`. A picture NOT fixed to the map used to hold
+# rock-steady through a Shake Screen instead of jittering with the rest of
+# the view -- only a map-fixed picture's own scroll subtraction happened to
+# fold the shake in too, as a side effect of #camera_position already
+# including it.
+check 'a picture not fixed to the map still shakes with Shake Screen (RPG_RT)' do
+  scene = new_scene({})
+  st = scene.instance_variable_get(:@state)
+  st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
+  bmp = scene.instance_variable_get(:@picture_bmp)
+
+  bmp.clear_stretch_calls
+  scene.update
+  baseline_x = bmp.stretch_calls.first[0].x
+
+  st.screen.shake(6, 5, 30) # power 6, speed 5, 30 frames
+  5.times { scene.update }
+  ok st.screen.shaking?, 'sanity: still shaking'
+
+  bmp.clear_stretch_calls
+  scene.update
+  shaken_x = bmp.stretch_calls.first[0].x
+  offset = st.screen.shake_offset # the offset this same render used
+  ok offset != 0, 'sanity: the shake actually has a nonzero offset by now'
+  eq baseline_x - offset, shaken_x,
+     "the picture's drawn position shifted by the shake offset, matching a " \
+     'map-fixed picture'
+end
+
 check 'a toned picture is tinted before it is composited' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)

@@ -8249,8 +8249,24 @@ class RPG2k
         dx = pic.x - zw / 2
         dy = pic.y - zh / 2
         if pic.fixed_to_map
+          # `cam_x` (#camera_position) already folds in the screen-shake
+          # offset alongside the map scroll, so a map-fixed picture gets
+          # both from this one subtraction.
           dx -= cam_x
           dy -= cam_y
+        else
+          # A picture that is *not* fixed to the map still shakes with the
+          # screen by default in real RPG_RT: `ShowParams`'s own default
+          # flags (`src/game_pictures.h`) set `affected_by_shake` on for
+          # every picture (RPG2000 and pre-1.12 RPG2003 have no way to turn
+          # it off at all), and `Sprite_Picture::Draw` (src/sprite_
+          # picture.cpp) applies it unconditionally of `fixed_to_map`: `if
+          # (data.flags.affected_by_shake) { x -= GetShakeOffsetX(); ... }`.
+          # Previously a non-map-fixed picture (a full-screen "impact"
+          # graphic, a portrait during dialogue, a HUD) held rock-steady
+          # through a Shake Screen instead of jittering with the rest of
+          # the view.
+          dx -= @state.screen.shake_offset
         end
         @picture_bmp.stretch_blt Rect.new(dx, dy, zw, zh), src,
                                  Rect.new(0, 0, src.width, src.height),
