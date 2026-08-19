@@ -7076,8 +7076,10 @@ class RPG2k
       # Graphic (`#open_message`'s `text_w`) leaves `FACE_SIZE + FACE_MARGIN` of
       # *bitmap* width beyond the intended text boundary for the portrait,
       # so an overflowing run kept drawing straight over it instead of
-      # disappearing there. `#clip_text_to_width` measures and slices the run
-      # to `w` itself before either draw path ever sees it, matching the
+      # disappearing there. `#clip_text_to_width` (Scene::Base -- shared with
+      # Scene::Battle's status panel, which hits the same unclipped-overflow
+      # gap between its own name/state/HP/MP columns) measures and slices the
+      # run to `w` itself before either draw path ever sees it, matching the
       # boundary this codebase's own message layout defines rather than
       # whatever the contents bitmap happens to be sized to.
       def draw_message_run(c, x, y, w, seg)
@@ -7089,22 +7091,6 @@ class RPG2k
           c.font.color = message_color(idx)
           c.draw_text x, y, w, MSG_LINE_H, text
         end
-      end
-
-      # Slice `text` down to however many leading characters fit within `w`
-      # pixels of `c`'s own font metrics, dropping the rest outright -- RPG_RT
-      # truncates an overlong line rather than wrapping it. Walks one character
-      # (not byte) at a time so a multi-byte codepoint is never split mid-way.
-      def clip_text_to_width(c, text, w)
-        return '' if w <= 0
-        return text if c.text_size(text).width <= w
-        out = ''
-        text.each_char do |ch|
-          candidate = out + ch
-          break if c.text_size(candidate).width > w
-          out = candidate
-        end
-        out
       end
 
       # Blit the already-cropped (and possibly mirrored, see #build_face_cell)

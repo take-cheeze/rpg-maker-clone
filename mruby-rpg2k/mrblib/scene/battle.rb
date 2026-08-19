@@ -2997,6 +2997,17 @@ class RPG2k
       # `draw_text` of a whole line cannot do. (EasyRPG's
       # `Window_BattleStatus::Refresh`, RPG2k branch: name at 4, state at 86,
       # HP at 142, SP at 202 for a party with no maxima over 999.)
+      #
+      # "For a party with no maxima over 999" is a real ceiling, not a rounding
+      # note: the panel itself is a fixed 244px (`BATTLE_STATUS_W`, RPG_RT's own
+      # screen width minus its fixed 76px command box), so the SP column only
+      # ever has `inner content width (228) - 202 = 26px` before the panel's own
+      # right border -- nowhere near "SP 999/999"'s ~66px, and not even quite
+      # enough for a plain "SP 50/50". `#battle_status_window` clips every
+      # column's text to the gap before the *next* column (or the panel's own
+      # edge, for SP) rather than trusting it to fit, so an actor with generous
+      # HP/SP -- or simply a widescreen font -- truncates cleanly instead of
+      # spilling into its neighbour's cell.
       STATUS_NAME_X  = 4
       STATUS_STATE_X = 86
       STATUS_HP_X    = 142
@@ -3563,6 +3574,16 @@ class RPG2k
       # no windowskin) — the way RPG_RT colours a state name. Fixed at the
       # bottom-left of the panel (`Window_BattleStatus`'s own rect), with a
       # cursor on `cursor_idx`'s row when the acting actor is one of these rows.
+      #
+      # Each segment is clipped (`#clip_text_to_width`, Scene::Base) to the gap
+      # before the *next* segment in the same row, not to the panel's own right
+      # edge — `draw_system_text`'s own `w`/`h` only ever feed centre/right
+      # alignment (see its comment), so an uncapped width let an actor's name,
+      # state or HP text run straight through its neighbour's column instead of
+      # stopping at it. `battle_status_row`/`battle_state_segment` always
+      # returns these four segments in ascending-x order, so "the next
+      # segment's x" is always the next column's own origin; the last segment
+      # (SP) clips to the panel's own inner edge instead, same as before.
       def battle_status_window(rows, cursor_idx = nil)
         inner_w = BATTLE_STATUS_W - Window::BORDER * 2
         win = Window.new(0, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
@@ -3571,9 +3592,12 @@ class RPG2k
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         rows.each_with_index do |segments, i|
-          segments.each do |text, x, color|
-            draw_system_text c, x, i * BATTLE_LINE_H, inner_w - x,
-                             BATTLE_LINE_H, text.to_s, windowskin, color
+          segments.each_with_index do |(text, x, color), j|
+            next_x = j + 1 < segments.size ? segments[j + 1][1] : inner_w
+            w = next_x - x
+            draw_system_text c, x, i * BATTLE_LINE_H, w, BATTLE_LINE_H,
+                             clip_text_to_width(c, text.to_s, w), windowskin,
+                             color
           end
         end
         win.contents = c
