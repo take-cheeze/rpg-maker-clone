@@ -63,7 +63,11 @@ class RPG2k
       TEXT_COLOR = Color.new(255, 255, 255, 255)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
-      def initialize(parent, state)
+      # `start_mode:` lets a caller that already knows it wants Edit (or
+      # Select) mode skip the usual pan-mode landing page -- used by
+      # RPG2k#open_map_editor (the --rpg2k_map_editor flag), which exists
+      # specifically to skip navigating here by hand.
+      def initialize(parent, state, start_mode: :pan)
         super parent
         @state = state
         @map = state.map
@@ -85,6 +89,14 @@ class RPG2k
         @ox = 0
         @oy = 0
         center_on_player
+        # #enter_edit_mode/#enter_select_mode already refresh when @map is
+        # present, but a no-op (no map at all -- not the normal case, only
+        # reachable if this scene is ever built without one) still needs the
+        # unconditional #refresh below to draw its "No map loaded" screen.
+        case start_mode
+        when :edit then enter_edit_mode
+        when :select then enter_select_mode
+        end
         refresh
       end
 

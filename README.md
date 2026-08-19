@@ -88,6 +88,18 @@
   the named database troop (the 2003 test beds ship no encounters, so a bare
   boot never reaches a fight on its own) — a headless way to drive a real
   project into the battle scene, logging the fight as `[RPG2k-BATTLE]`
+- `--rpg2k_map_editor`, `--rpg2k_chipset_editor` and
+  `--rpg2k_preview_animation=<id>` each start New Game and immediately push
+  the F9 debug menu's Map Editor, Chipset editor or Animation preview
+  (see "Map exploration" above) straight onto the screen, skipping opening F9
+  and paging to them by hand. Combine with `--rpg2k_preview_map` to choose
+  which map (and so which chipset) is open, and with the terminal backends
+  below and `--timeout_ms` for a headless screenshot:
+
+  ```sh
+  ./rpg_maker_clone --iterm --game_dir path/to/game --rpg2k_preview_map=5 \
+      --rpg2k_map_editor --timeout_ms=2000
+  ```
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,

@@ -102,6 +102,34 @@ DEFINE_int32(
     "fight then waits for input until the run times out. 0 disables it "
     "(default; troop ids start at 1)");
 DEFINE_bool(
+    rpg2k_map_editor,
+    false,
+    "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
+    "Game like --rpg2k_new_game, then push the F9 debug menu's Map viewer "
+    "straight into its Edit mode (the in-game Map Editor) on top of the map, "
+    "skipping navigating there through F9 by hand. Combine with "
+    "--rpg2k_preview_map to choose which map opens, and with --iterm/--sixel "
+    "and --timeout_ms for a headless screenshot. False disables it (default)");
+DEFINE_bool(
+    rpg2k_chipset_editor,
+    false,
+    "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
+    "Game like --rpg2k_new_game, then push the F9 debug menu's chipset "
+    "passability editor for the starting map's chipset on top of the map. "
+    "Combine with --rpg2k_preview_map to choose which map (and so which "
+    "chipset) opens. False disables it (default)");
+DEFINE_int32(
+    rpg2k_preview_animation,
+    0,
+    "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
+    "Game like --rpg2k_new_game, then immediately play this database battle "
+    "animation id back on the field map, screen-centred, the same way a "
+    "battle round would -- a quick way to inspect one animation's frames and "
+    "flashes without a save file positioned near an encounter, or a real "
+    "fight, to trigger it. Combine with --iterm/--sixel and --timeout_ms to "
+    "capture it headlessly. 0 disables it (default; animation ids start "
+    "at 1)");
+DEFINE_bool(
     rgss_script_host,
     true,
     "For the RGSS makers (XP / VX / VX Ace): run the project's own bundled "
@@ -919,6 +947,9 @@ static void disable_non_test_play_flags() {
   reset_bool(FLAGS_rpg2k_continue, "rpg2k_continue");
   reset_int(FLAGS_rpg2k_preview_map, "rpg2k_preview_map");
   reset_int(FLAGS_rpg2k_battle_troop, "rpg2k_battle_troop");
+  reset_bool(FLAGS_rpg2k_map_editor, "rpg2k_map_editor");
+  reset_bool(FLAGS_rpg2k_chipset_editor, "rpg2k_chipset_editor");
+  reset_int(FLAGS_rpg2k_preview_animation, "rpg2k_preview_animation");
   reset_bool(FLAGS_rgss_host_new_game, "rgss_host_new_game");
   reset_bool(FLAGS_rgss_host_move_test, "rgss_host_move_test");
   reset_bool(FLAGS_rgss_host_menu_test, "rgss_host_menu_test");
@@ -1318,6 +1349,18 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_BATTLE_TROOP"),
                 mrb_fixnum_value(FLAGS_rpg2k_battle_troop));
+  // --rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation:
+  // RPG2k#start_new_game opens the named debug tool once the map is up. See
+  // each flag's own definition above.
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_MAP_EDITOR"),
+                mrb_bool_value(FLAGS_rpg2k_map_editor));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_CHIPSET_EDITOR"),
+                mrb_bool_value(FLAGS_rpg2k_chipset_editor));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_PREVIEW_ANIMATION"),
+                mrb_fixnum_value(FLAGS_rpg2k_preview_animation));
   // Whether the RGSS script host runs the project's own scripts (the default)
   // or the built-in flow does. Resolved from --rgss_script_host and the
   // RGSS_SCRIPT_HOST environment variable above, because the Ruby side cannot

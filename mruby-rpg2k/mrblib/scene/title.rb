@@ -177,6 +177,12 @@ class RPG2k
             $stderr.puts "[RPG2k] --rpg2k_preview_map=#{map_id}: selecting New Game"
           elsif battle_troop
             $stderr.puts "[RPG2k] --rpg2k_battle_troop=#{battle_troop}: selecting New Game"
+          elsif map_editor_flag?
+            $stderr.puts '[RPG2k] --rpg2k_map_editor: selecting New Game'
+          elsif chipset_editor_flag?
+            $stderr.puts '[RPG2k] --rpg2k_chipset_editor: selecting New Game'
+          elsif (anim_id = preview_animation_id)
+            $stderr.puts "[RPG2k] --rpg2k_preview_animation=#{anim_id}: selecting New Game"
           else
             $stderr.puts '[RPG2k] --rpg2k_new_game: selecting New Game'
           end
@@ -200,7 +206,8 @@ class RPG2k
       # one outer rescue would do -- resolving the bare, undefined
       # RPG2K_NEW_GAME raises before `||` ever reaches preview_map_id.
       def auto_new_game?
-        new_game_flag? || preview_map_id || battle_troop
+        new_game_flag? || preview_map_id || battle_troop ||
+          map_editor_flag? || chipset_editor_flag? || preview_animation_id
       end
 
       def new_game_flag?
@@ -232,6 +239,28 @@ class RPG2k
       # #preview_map_id just above.
       def battle_troop
         parent.headless_battle_troop
+      rescue StandardError
+        nil
+      end
+
+      # --rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation
+      # also auto-select New Game (see #auto_new_game? above): each debug tool
+      # needs the map up first, which New Game is what provides. Guarded the
+      # same way as #preview_map_id/#battle_troop just above.
+      def map_editor_flag?
+        parent.map_editor?
+      rescue StandardError
+        false
+      end
+
+      def chipset_editor_flag?
+        parent.chipset_editor?
+      rescue StandardError
+        false
+      end
+
+      def preview_animation_id
+        parent.preview_animation_id
       rescue StandardError
         nil
       end

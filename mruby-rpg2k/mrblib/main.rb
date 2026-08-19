@@ -727,9 +727,49 @@ class RPG2k
     # random encounter's would; the battle then waits for input until the run
     # times out. A no-op when the flag is unset.
     scene.headless_battle(headless_battle_troop) if headless_battle_troop
+    # --rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation:
+    # jump straight to the named debug tool once the map is up, the same way
+    # --rpg2k_battle_troop jumps straight to a fight -- skips navigating
+    # there through F9 by hand. Each is independent and all three can combine
+    # (a chipset editor pushed on top of a map editor, say); none touch the
+    # others' own state.
+    open_map_editor(state) if map_editor?
+    open_chipset_editor(state) if chipset_editor?
+    fire_preview_animation(scene) if preview_animation_id
   rescue StandardError => e
     # Never let a data problem crash the title screen; report and stay put.
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
+  end
+
+  # --rpg2k_map_editor: push Scene::MapViewer straight into Edit mode on top
+  # of the just-built map scene, the same scene F9's Map page would push, just
+  # skipping the menu navigation to get there.
+  def open_map_editor(state)
+    push Scene::MapViewer.new(self, state, start_mode: :edit)
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] --rpg2k_map_editor failed to open: #{e.message}"
+  end
+
+  # --rpg2k_chipset_editor: push Scene::ChipsetEditor for the starting map's
+  # chipset, the same scene F9's Chipset page would push.
+  def open_chipset_editor(state)
+    push Scene::ChipsetEditor.new(self, state)
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] --rpg2k_chipset_editor failed to open: #{e.message}"
+  end
+
+  # --rpg2k_preview_animation: play the named battle animation back on `scene`
+  # (the just-built map scene) screen-centred, through the same
+  # build_animation/anim_target/map_animation= trio Scene::DebugMenu's own
+  # Animation page and a real battle round both use. Unlike the two editors
+  # above this pushes nothing -- the animation plays right on the field map,
+  # which is still the top of the scene stack.
+  def fire_preview_animation(scene)
+    target = scene.anim_target(RPG2k::WIDTH / 2, RPG2k::HEIGHT / 2, height: nil,
+                                                                     index: nil, flash_target: nil)
+    scene.map_animation = scene.build_animation(preview_animation_id, [target], true)
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] --rpg2k_preview_animation failed: #{e.message}"
   end
 
   # --rpg2k_battle: the troop id to open a headless battle against right after
@@ -750,6 +790,32 @@ class RPG2k
   # to nil.
   def preview_map_id
     RPG2K_PREVIEW_MAP.zero? ? nil : RPG2K_PREVIEW_MAP
+  rescue StandardError
+    nil
+  end
+
+  # --rpg2k_map_editor / --rpg2k_chipset_editor: whether to open the named
+  # debug tool right after New Game. Guarded the same way as #preview_map_id:
+  # an undefined RPG2K_MAP_EDITOR/RPG2K_CHIPSET_EDITOR (the CRuby-only host
+  # harnesses that load this file never define them) raises NameError,
+  # rescued to false.
+  def map_editor?
+    RPG2K_MAP_EDITOR
+  rescue StandardError
+    false
+  end
+
+  def chipset_editor?
+    RPG2K_CHIPSET_EDITOR
+  rescue StandardError
+    false
+  end
+
+  # --rpg2k_preview_animation: the animation id to play back right after New
+  # Game, or nil when unset (0, the default -- see src/main.cxx; animation
+  # ids start at 1). Guarded the same way as #preview_map_id.
+  def preview_animation_id
+    RPG2K_PREVIEW_ANIMATION.zero? ? nil : RPG2K_PREVIEW_ANIMATION
   rescue StandardError
     nil
   end

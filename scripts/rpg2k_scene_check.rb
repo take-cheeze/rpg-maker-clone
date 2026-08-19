@@ -11769,6 +11769,70 @@ check 'RPG2k#headless_battle_troop reads RPG2K_BATTLE_TROOP, 0 meaning unset' do
   Object.send(:remove_const, :RPG2K_BATTLE_TROOP) if Object.const_defined?(:RPG2K_BATTLE_TROOP)
 end
 
+# -- --rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation --
+#
+# Same shape as --rpg2k_preview_map/--rpg2k_battle_troop just above: these
+# pin the flag plumbing (the RPG2k accessor reading its constant, and
+# Scene::Title auto-selecting New Game for it) in CRuby, without a real
+# database/.lmu -- RPG2k#start_new_game's own push/animation calls are only
+# exercised by the native boot check against real game data.
+check 'RPG2k#map_editor?/#chipset_editor? read their constants, false meaning unset' do
+  read = lambda do |const, method, v|
+    Object.send(:remove_const, const) if Object.const_defined?(const)
+    Object.const_set(const, v) unless v.nil?
+    RPG2k.allocate.send(method)
+  end
+  eq false, read.call(:RPG2K_MAP_EDITOR, :map_editor?, nil),
+     'undefined constant (the CRuby-only checks) -> false'
+  eq false, read.call(:RPG2K_MAP_EDITOR, :map_editor?, false), 'false, the flag default'
+  eq true, read.call(:RPG2K_MAP_EDITOR, :map_editor?, true)
+  Object.send(:remove_const, :RPG2K_MAP_EDITOR) if Object.const_defined?(:RPG2K_MAP_EDITOR)
+
+  eq false, read.call(:RPG2K_CHIPSET_EDITOR, :chipset_editor?, nil)
+  eq true, read.call(:RPG2K_CHIPSET_EDITOR, :chipset_editor?, true)
+  Object.send(:remove_const, :RPG2K_CHIPSET_EDITOR) if Object.const_defined?(:RPG2K_CHIPSET_EDITOR)
+end
+
+check 'RPG2k#preview_animation_id reads RPG2K_PREVIEW_ANIMATION, 0 meaning unset' do
+  read = lambda do |v|
+    if Object.const_defined?(:RPG2K_PREVIEW_ANIMATION)
+      Object.send(:remove_const, :RPG2K_PREVIEW_ANIMATION)
+    end
+    Object.const_set(:RPG2K_PREVIEW_ANIMATION, v) unless v.nil?
+    RPG2k.allocate.send(:preview_animation_id)
+  end
+  eq nil, read.call(nil), 'undefined constant (the CRuby-only checks) -> nil'
+  eq nil, read.call(0), '0, the flag default -> nil'
+  eq 5, read.call(5)
+  if Object.const_defined?(:RPG2K_PREVIEW_ANIMATION)
+    Object.send(:remove_const, :RPG2K_PREVIEW_ANIMATION)
+  end
+end
+
+check '--rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation each ' \
+     'auto-select New Game on their own, like --rpg2k_new_game' do
+  build = lambda do |parent_fields|
+    clear_title_flags
+    parent = OpenStruct.new(map_editor?: false, chipset_editor?: false, preview_animation_id: nil,
+                            **parent_fields)
+    scene = RPG2k::Scene::Title.allocate
+    scene.instance_variable_set(:@auto_started, false)
+    scene.instance_variable_set(:@selected_index, 0)
+    scene.instance_variable_set(:@parent, parent)
+    scene
+  end
+
+  scene = build.call(map_editor?: true)
+  ok scene.send(:auto_select?), '--rpg2k_map_editor fires the auto-select'
+  eq 0, scene.instance_variable_get(:@selected_index), 'New Game is entry 1'
+
+  scene = build.call(chipset_editor?: true)
+  ok scene.send(:auto_select?), '--rpg2k_chipset_editor fires the auto-select'
+
+  scene = build.call(preview_animation_id: 5)
+  ok scene.send(:auto_select?), '--rpg2k_preview_animation fires the auto-select'
+end
+
 # Scene::Map#headless_battle (the --rpg2k_battle boot drive) arms the same
 # :battle wait a random encounter does, marked `headless: true` so
 # Scene::Battle#start fires the [RPG2k-BATTLE] marker the boot check asserts
@@ -19500,6 +19564,15 @@ check 'MapViewer pans a map bigger than the viewport, clamped to its edges, and 
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   eq 200 - view_w / 2, scene.instance_variable_get(:@ox), 'C recentres back on the player'
+end
+
+check "MapViewer.new(..., start_mode: :edit) lands directly in Edit mode, skipping " \
+     "the usual pan-mode landing page -- what --rpg2k_map_editor uses to jump " \
+     "straight there" do
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st, start_mode: :edit)
+  eq :edit, scene.instance_variable_get(:@mode)
 end
 
 check 'R enters MapViewer Select mode on the player tile; B backs out to pan mode ' \
