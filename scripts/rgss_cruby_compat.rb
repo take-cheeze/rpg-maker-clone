@@ -2068,6 +2068,32 @@ module RGSS
       end
       out
     end
+
+    # Ported from src/lib.cxx's vx_table_leg_quads: the A2 table tile's "leg",
+    # which spills 8px past the tile's own box into the map row below. See
+    # that function's comment for the derivation.
+    def self.vx_table_leg_quads(tile_id)
+      out = []
+      return out if tile_id < VX_TILE_ID_A2 || tile_id >= VX_TILE_ID_A3
+      half = TILE_SIZE / 2
+      kind = (tile_id - VX_TILE_ID_A1) / 48
+      shape = (tile_id - VX_TILE_ID_A1) % 48
+      return out if shape >= 48
+      tx = kind % 8
+      ty = kind / 8
+      bx = tx * 2
+      by = (ty - 2) * 3
+      [[0, 2], [1, 3]].each do |c, corner|
+        qsx = VX_FLOOR_QUADS[shape][corner][0]
+        qsy = VX_FLOOR_QUADS[shape][corner][1]
+        next unless [1, 5].include?(qsy)
+        sx = (bx * 2 + qsx) * half
+        sy = (by * 2 + qsy) * half
+        dx = c.zero? ? 0 : half
+        out << [1, sx, sy, dx, TILE_SIZE - half / 2, half, half]
+      end
+      out
+    end
   end
 
   class Window
