@@ -14149,6 +14149,36 @@ check 'battle: a self-destruct shakes loose a survivor\'s status the same as a b
   eq [8], entry[:woke]
 end
 
+# RPG_RT's own `SelfDestruct::GetStartSe` (src/game_battlealgorithm.cpp)
+# plays the explosion SE unconditionally, once per action, the instant it
+# starts -- not once per target hit. `Scene::Battle#play_battle_action_se`
+# reads `entry[:autodestruct_se]` for this, which must therefore ride on
+# exactly one of a multi-target blast's buffered entries, the same
+# "SE plays once per action, not once per repeat" idiom a dual-wield
+# attack's own entries already use for `attacker_ally`.
+check 'battle: a self-destruct against several targets marks only its ' \
+      'first entry for the explosion SE, not every one' do
+  bomber = combatant('Bomber', 40, 0, 5, 1)
+  a1 = combatant('A1', 0, 0, 5, 100)
+  a2 = combatant('A2', 0, 0, 5, 100)
+  bat = Game::Battle.new([a1, a2], [bomber], Game::Rng.new(1))
+  entries = bat.send(:enemy_autodestruct, bomber)
+  eq 2, entries.size, 'one entry per living target'
+  eq true, entries[0][:autodestruct_se], 'only the first entry triggers the SE'
+  eq nil, entries[1][:autodestruct_se], 'the second entry does not repeat it'
+end
+
+check "battle: a self-destruct that finds nobody still marks its lone " \
+      'fizzle entry for the explosion SE' do
+  bomber = combatant('Bomber', 40, 0, 5, 1)
+  fled = combatant('Fled', 0, 0, 5, 100)
+  fled.hidden = true
+  bat = Game::Battle.new([fled], [bomber], Game::Rng.new(1))
+  entry = bat.send(:enemy_autodestruct, bomber)
+  eq true, entry[:autodestruct_se],
+     'the blast still goes off even with no living target to hit'
+end
+
 # -- the state table's display side (Game::States) ----------------------------
 # The simulation acts on state *ids*; putting one on screen needs the row. These
 # pin the reading of the row the battle status window and action banner use.
