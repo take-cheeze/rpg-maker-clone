@@ -335,6 +335,68 @@ music does not free the stream, and `Mix_GetMusicPosition` kept answering for a
 stopped one; a game saving `bgm_pos` to resume a track later would have recorded
 a position for music that was not playing. Fixed while building the probe.
 
+### 7. The RGSS3 `BaseItem` superclass chain, and what a real game's own community scripts need ✅ (mostly)
+
+Everything above was measured against the synthetic test bed
+(`scripts/rpgvx_testbed_check.rb`) and small hand-authored projects. Neither
+ever *reopens* a stock `RPG::` class the way a real VX Ace project does, so
+this whole class of gap was invisible until a real, large freeware VX Ace
+release (a ~60-hour RPG, 468 maps, 930 skills, 610 enemies) was booted through
+the script host.
+
+**`TypeError: superclass mismatch for RPG::Actor` ended every real VX Ace
+game's boot.** The editor exposes `BaseItem`/`UsableItem`/`EquipItem`/
+`Actor`/`Class`/`Item`/`Skill`/`Weapon`/`Armor`/`State`/`Enemy` as ordinary,
+editable script sections (its "RPG" folder) — unlike XP, which compiles the
+equivalent classes into the DLL. Every one of these sections' first line
+reasserts its stock superclass, e.g. `class RPG::Actor < RPG::BaseItem`, even
+when a game's own customisation only touches the body below it. `mruby-rpgxp`
+(loaded first, shared by all three RGSS makers) declared these classes flat —
+no superclass — because it predates VX Ace and a class's superclass cannot
+change once set. `mruby-rpgvx/mrblib/rgss2_data.rb` worked around that by
+composing the RGSS3 fields through `*Fields` modules instead of real
+inheritance, which was invisible to every check *until a real game's own
+section reasserted the superclass it never got*. Fixed by giving
+`mruby-rpgxp/mrblib/rgss_data.rb` the real chain from each class's first
+declaration (see the comment on `class BaseItem` there) — this is very likely
+the single biggest reason a real VX Ace release could not boot at all.
+
+**The 64 MB LVGL heap** (which backs mruby's whole VM heap on desktop, not
+just graphics) was too small for this game's database alone — `NoMemoryError`
+during `Data/*.rvdata2` loading, before a single scene ran. Raised to 256 MB
+for desktop (PSP/Wio keep their own separate, already-tuned pools).
+
+**Community utility scripts assume more Ruby/Windows surface than this build
+ships**, found by continuing past the superclass fix into the game's own
+bundled scripts: `Win32API` (RGSS's DLL-call class — many optional-feature
+utility scripts, e.g. the widely bundled CACAO 画像保存 screenshot saver,
+bind several calls unconditionally at load time) and `String#encode` (this
+mruby build has no transcoding tables) are now filled in as inert
+warn-once-and-degrade shims — matching the existing `Errno` fill-in's
+philosophy of "must exist, does not have to work" for something outside this
+engine's reach. `Module#private_method_defined?`/`#protected_method_defined?`/
+`#public_method_defined?` are filled in for real (mruby-metaprog already
+tracks the data `private_instance_methods` needs) rather than stubbed.
+
+**Still open: `module_function` with no arguments is a documented no-op in
+this mruby version.** CRuby's "declaration mode" `module_function` — call it
+bare, and every subsequent `def` in that scope becomes both a private
+instance method *and* a public singleton method — needs compiler-level
+"default definee" tracking that upstream mruby's own source marks
+unimplemented (`mrb_mod_module_function` in `3rd/mruby/src/class.c`: `if
+(argc == 0) { /* set MODFUNC SCOPE if implemented */ return mod; }`). The
+explicit-argument form (`module_function :name`, converting an
+already-defined method) works correctly and is what most RGSS scripts use for
+a single utility method, but a module built entirely under a bare
+`module_function` declaration — e.g. the same real game's bundled error-log
+utility, `TKG::ErrorLog`, whose `save` is only ever reachable as
+`TKG::ErrorLog.save(...)` — silently defines no singleton methods at all,
+raising `NoMethodError` the first time the game tries to call one. This is an
+upstream mruby limitation (reproduced and confirmed in isolation, not
+specific to this project's config or build), not something to patch in the
+vendored submodule for one script's sake; real content that needs it working
+would want this revisited.
+
 ## What this means for turning the host on
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
@@ -344,6 +406,8 @@ notice is what a project without scripts, or a boot with `RGSS_SCRIPT_HOST=0`,
 gets instead). A bundle now **runs**: it loads its database,
 plays its music, reads input, drives frames, lays out its windows, draws its map,
 tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
-its windows, and — packed or loose — finds its graphics and its music. What is
-left is the two tilemap polish items in item 1 — the flat "above characters"
-layer and the A2 table edge.
+its windows, and — packed or loose — finds its graphics and its music, and
+reopens its own stock `RPG::` script sections without a superclass mismatch.
+Tilemap item 1's remaining polish (the flat "above characters" layer) is the
+only item left in the six sections above; item 7's `module_function` gap is
+the newest and, per a real release, potentially the most consequential.

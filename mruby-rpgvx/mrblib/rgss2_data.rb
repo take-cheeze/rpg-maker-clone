@@ -25,16 +25,23 @@
 # than declaring a competing schema; a record only ever carries the ivars its own
 # stream wrote, so the unused accessors simply read back nil.
 #
-# For the same reason the RGSS3 superclass chain (BaseItem → UsableItem /
-# EquipItem → Skill / Item / Weapon / Armor / …) cannot be expressed with real
-# superclasses: mruby-rpgxp already declares those concrete classes flat, and a
-# class's superclass cannot change when it is reopened. The inherited fields are
-# carried by the `*Fields` modules below instead, which the (otherwise unused)
-# abstract classes include as well — so `RPG::BaseItem` still documents the RGSS3
-# shape while `RPG::Skill` answers `#features`. Everything here is deliberately
-# behaviour-free: these are attribute holders that mirror the editor's data model
-# 1:1, so the runtime and the host-side check (scripts/rpgvx_testbed_check.rb,
-# which loads this exact file under CRuby) read the same fields.
+# The RGSS3 superclass chain (BaseItem → UsableItem / EquipItem → Skill / Item /
+# Weapon / Armor / Actor / Class / Enemy / State) is real inheritance, not just
+# documented in a comment: a genuine VX Ace project exposes these as editable
+# script sections (the editor's "RPG" folder), and every one of them reasserts
+# its superclass on its very first line, e.g. `class RPG::Actor <
+# RPG::BaseItem`. Since a class's superclass cannot change once set, and
+# mruby-rpgxp/mrblib/rgss_data.rb declares these classes first (XP has no
+# BaseItem concept, but the build is shared), the chain has to start there —
+# see the comment above `class BaseItem` in that file. This file only reopens
+# them to add the RGSS2/RGSS3 fields (via the `*Fields` modules, still needed
+# for BaseItem/UsableItem/EquipItem's own fields) rather than declaring a
+# competing schema; a record only ever carries the ivars its own stream wrote,
+# so the unused accessors simply read back nil. Everything here is deliberately
+# behaviour-free: these are attribute holders that mirror the editor's data
+# model 1:1, so the runtime and the host-side check
+# (scripts/rpgvx_testbed_check.rb, which loads this exact file under CRuby)
+# read the same fields.
 #
 # Field names and their nesting follow the RGSS2 / RGSS3 references (the VX and
 # VX Ace help files' "RPG module" chapters); see
@@ -136,9 +143,10 @@ module RPG
 
   # ---- Database records -----------------------------------------------------
 
+  # BaseItem's fields (id/name/icon_index/description/features/note) come from
+  # `< BaseItem`, set by mruby-rpgxp/mrblib/rgss_data.rb's first declaration —
+  # see the comment there.
   class Actor
-    include BaseItemFields
-
     attr_accessor :class_id, :initial_level, :character_name, :character_index,
                   :face_name, :face_index
     # (VX) stats live on the actor, as in XP, and equipment is five id fields.
@@ -152,8 +160,6 @@ module RPG
   end
 
   class Class
-    include BaseItemFields
-
     attr_accessor :learnings
     # (VX)
     attr_accessor :position, :weapon_set, :armor_set, :element_ranks,
@@ -167,8 +173,6 @@ module RPG
   end
 
   class Skill
-    include UsableItemFields
-
     attr_accessor :mp_cost, :message1, :message2
     attr_accessor :hit # (VX)
     # (Ace)
@@ -176,8 +180,6 @@ module RPG
   end
 
   class Item
-    include UsableItemFields
-
     attr_accessor :price, :consumable
     # (VX)
     attr_accessor :hp_recovery_rate, :hp_recovery, :mp_recovery_rate,
@@ -186,8 +188,6 @@ module RPG
   end
 
   class Weapon
-    include EquipItemFields
-
     attr_accessor :animation_id
     # (VX)
     attr_accessor :hit, :atk, :def, :spi, :agi, :two_handed, :fast_attack,
@@ -196,8 +196,6 @@ module RPG
   end
 
   class Armor
-    include EquipItemFields
-
     # (VX) — `kind` is the slot (shield/helmet/body/accessory) VX Ace renamed to
     # `etype_id`, with `atype_id` becoming the armour *type*.
     attr_accessor :kind, :eva, :atk, :def, :spi, :agi, :prevent_critical,
@@ -207,8 +205,6 @@ module RPG
   end
 
   class Enemy
-    include BaseItemFields
-
     attr_accessor :battler_name, :battler_hue, :exp, :gold, :actions
     # (VX)
     attr_accessor :maxhp, :maxmp, :atk, :def, :spi, :agi, :hit, :eva,
@@ -231,8 +227,6 @@ module RPG
   end
 
   class State
-    include BaseItemFields
-
     attr_accessor :restriction, :priority, :message1, :message2, :message3,
                   :message4
     # (VX)

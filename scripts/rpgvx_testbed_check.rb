@@ -204,6 +204,15 @@ ROOT = File.expand_path("..", __dir__)
 load File.join(ROOT, "mruby-rpgxp", "mrblib", "rgssad.rb")
 # The VX shell runs a project's own scripts through the shared RGSS script host.
 load File.join(ROOT, "mruby-rpgxp", "mrblib", "script_host.rb")
+# mruby-rpgxp/mrblib/rgss_data.rb declares the RPG:: schema first (Actor,
+# Class, Item, Skill, Weapon, Armor, State, Enemy, and — since a genuine VX
+# Ace project's own script sections reassert it — the real BaseItem/
+# UsableItem/EquipItem superclass chain over them); mruby-rpgvx/mrbgem.rake
+# depends on mruby-rpgxp for exactly this load-order reason, so this harness
+# has to mirror it or these classes come out flat, missing the fields their
+# real superclass would have carried. See the comment on `class BaseItem` in
+# that file.
+load File.join(ROOT, "mruby-rpgxp", "mrblib", "rgss_data.rb")
 load File.join(ROOT, "mruby-rpgvx", "mrblib", "lib.rb")
 load File.join(ROOT, "mruby-rpgvx", "mrblib", "rgss2_data.rb")
 load File.join(ROOT, "mruby-rpgvx", "mrblib", "rgss2_runtime.rb")

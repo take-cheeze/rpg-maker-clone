@@ -258,6 +258,62 @@ assert "VX Ace records carry BaseItem features" do
   assert_equal 0.95, loaded.features[0].value
 end
 
+# Regression test for the real RGSS3 superclass chain: a genuine VX Ace
+# project exposes BaseItem/UsableItem/EquipItem/Actor/Class/Item/Skill/
+# Weapon/Armor/State/Enemy as real, editable script sections (the editor's
+# "RPG" folder), and every one of them reasserts its stock superclass on its
+# very first line -- `class RPG::Actor < RPG::BaseItem`, and so on. Before
+# this was real inheritance (rather than composed `*Fields` modules), that
+# reassertion raised `TypeError: superclass mismatch for RPG::Actor` the
+# moment any unmodified VX Ace game's own "RPG::Actor" section ran --
+# breaking the script host for what is likely *every* real VX Ace game, since
+# script authors routinely customise a section's body without ever touching
+# its class declaration line. Found booting a real, large freeware VX Ace
+# release (not the synthetic test bed, which never reopens these sections the
+# way a real project does). See the comment on `class BaseItem` in
+# mruby-rpgxp/mrblib/rgss_data.rb for the full story.
+assert "VX Ace RPG:: classes reopen with their real stock superclass" do
+  # Mirrors exactly what a stock, unmodified VX Ace project's own script
+  # sections declare -- reopening (not defining for the first time) must not
+  # raise TypeError: superclass mismatch.
+  assert_nothing_raised do
+    eval <<~RUBY
+      class RPG::BaseItem; end
+      class RPG::UsableItem < RPG::BaseItem; end
+      class RPG::EquipItem < RPG::BaseItem; end
+      class RPG::Actor < RPG::BaseItem; end
+      class RPG::Class < RPG::BaseItem; end
+      class RPG::Item < RPG::UsableItem; end
+      class RPG::Skill < RPG::UsableItem; end
+      class RPG::Weapon < RPG::EquipItem; end
+      class RPG::Armor < RPG::EquipItem; end
+      class RPG::State < RPG::BaseItem; end
+      class RPG::Enemy < RPG::BaseItem; end
+    RUBY
+  end
+
+  # mruby's Module has no `<` ancestry operator, so compare via #ancestors.
+  assert_true RPG::Actor.ancestors.include?(RPG::BaseItem)
+  assert_true RPG::Class.ancestors.include?(RPG::BaseItem)
+  assert_true RPG::State.ancestors.include?(RPG::BaseItem)
+  assert_true RPG::Enemy.ancestors.include?(RPG::BaseItem)
+  assert_true RPG::Item.ancestors.include?(RPG::UsableItem)
+  assert_true RPG::Skill.ancestors.include?(RPG::UsableItem)
+  assert_true RPG::Weapon.ancestors.include?(RPG::EquipItem)
+  assert_true RPG::Armor.ancestors.include?(RPG::EquipItem)
+  assert_true RPG::UsableItem.ancestors.include?(RPG::BaseItem)
+  assert_true RPG::EquipItem.ancestors.include?(RPG::BaseItem)
+
+  # Fields inherited via the real superclass, not a redundant `include`.
+  actor = RPG::Actor.new
+  actor.id = 3
+  actor.name = "Inherited"
+  actor.features = []
+  assert_equal 3, actor.id
+  assert_equal "Inherited", actor.name
+  assert_equal [], actor.features
+end
+
 assert "VX Ace RPG::Class holds the exp curve and the stat table" do
   klass = RPG::Class.new
   klass.id = 1

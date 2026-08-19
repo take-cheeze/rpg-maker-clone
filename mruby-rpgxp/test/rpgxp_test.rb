@@ -333,6 +333,57 @@ assert "Errno::ENOENT exists so a game's `rescue Errno::ENOENT` resolves" do
   assert_true passed_through, "a foreign exception did not survive the rescue clause"
 end
 
+# Module#private_method_defined? / #protected_method_defined? /
+# #public_method_defined?, filled in from mruby-metaprog's existing
+# private_instance_methods/protected_instance_methods/public_instance_methods
+# (a real answer, not a stub -- see the comment above `class Module` in
+# rgss_library.rb).
+assert "Module visibility-filtered method_defined? variants answer correctly" do
+  m = Module.new
+  m.module_eval do
+    def pub_m; end
+    private def priv_m; end
+    protected def prot_m; end
+  end
+
+  assert_true m.public_method_defined?(:pub_m)
+  assert_false m.public_method_defined?(:priv_m)
+  assert_false m.public_method_defined?(:prot_m)
+
+  assert_true m.private_method_defined?(:priv_m)
+  assert_false m.private_method_defined?(:pub_m)
+  assert_false m.private_method_defined?(:prot_m)
+
+  assert_true m.protected_method_defined?(:prot_m)
+  assert_false m.protected_method_defined?(:pub_m)
+  assert_false m.protected_method_defined?(:priv_m)
+
+  assert_false m.private_method_defined?(:nope)
+end
+
+# Win32API: real games bind Windows-only DLL calls unconditionally at script
+# load time (a very common pattern for an *optional* feature, e.g. CACAO's
+# widely bundled screenshot-saving utility binds MultiByteToWideChar/
+# FindWindow/BitBlt/... just by being included in a project). There is no
+# real Win32 to call into on this engine's targets (also Linux/PSP/wasm), so
+# construction must not raise -- only #call is reached if the game actually
+# tries to use the feature, and even then it degrades to a warning + 0 rather
+# than ending the whole script host over an optional Windows integration.
+assert "Win32API binds without raising and #call degrades to a warning" do
+  api = Win32API.new("user32", "FindWindow", "pp", "l")
+  assert_equal 0, api.call("class", "title")
+end
+
+# String#encode: this mruby build has no real transcoding tables, but a
+# Japanese project's scripts routinely call it at a boundary this engine
+# never observes (e.g. the same screenshot utility encodes a window title
+# before handing it to the now-inert Win32API FindWindow above). Answering
+# the receiver unchanged, rather than raising, is what keeps that boundary
+# from ending the whole script host.
+assert "String#encode is a no-op that does not raise" do
+  assert_equal "hello", "hello".encode("SHIFT_JIS")
+end
+
 assert "RPG::Weather offers the surface Spriteset_Map drives" do
   methods = RPG::Weather.instance_methods
   %i[type= max= ox= oy= update dispose type max ox oy].each do |name|
@@ -463,12 +514,14 @@ assert "eval, Fiber and Kernel#exit / SystemExit are available for the script ho
   # first booted game.
   assert_true Kernel.method_defined?(:eval), "Kernel#eval missing (mruby-eval)"
   assert_true Object.const_defined?(:Fiber), "Fiber missing (mruby-fiber)"
-  # mruby-exit defines Kernel#exit (a private method) alongside SystemExit, so the
-  # constant's presence proves the gem is linked. mruby's Module has no
-  # #private_method_defined? (it is CRuby-only), so we do not reflect on the
-  # private method here.
+  # mruby-exit defines Kernel#exit (a private method) alongside SystemExit;
+  # rgss_library.rb fills in Module#private_method_defined? (this mruby build
+  # has no such gem), so this can check the private method directly, not just
+  # the constant's presence.
   assert_true Object.const_defined?(:SystemExit),
               "SystemExit / Kernel#exit missing (mruby-exit)"
+  assert_true Kernel.private_method_defined?(:exit),
+              "Kernel#exit missing or not private (mruby-exit)"
   # A Fiber round-trips a value through yield/resume, the mechanism the driver
   # relies on to advance one frame per resume.
   f = Fiber.new { Fiber.yield(:frame); :done }

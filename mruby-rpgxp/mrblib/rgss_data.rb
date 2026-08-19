@@ -29,7 +29,25 @@ module RPG
     attr_accessor :name, :volume, :pitch
   end
 
-  class Actor
+  # RGSS3 (VX Ace) introduces a BaseItem -> UsableItem/EquipItem superclass
+  # chain over Actor/Class/Item/Skill/Weapon/Armor/State/Enemy, exposed as
+  # real, editable script sections in the editor's "RPG" folder (XP and plain
+  # VX have no such concept -- these classes are compiled into the DLL, never
+  # user-editable script sections). A genuine VX Ace project ships those
+  # sections unmodified, and each one's very first line reasserts its
+  # superclass, e.g. `class RPG::Actor < RPG::BaseItem`. A class's superclass
+  # cannot change once set, so that only works if it already matches by the
+  # time the game's own section runs -- which means it has to be set here, at
+  # each class's *first* declaration in this shared build, even though XP
+  # itself never uses BaseItem. mruby-rpgvx/mrblib/rgss2_data.rb reopens
+  # BaseItem/UsableItem/EquipItem to add their real (RGSS3) fields; Actor and
+  # friends below just declare the correct ancestor and are reopened the same
+  # way, no superclass clause needed since one is now already set.
+  class BaseItem; end
+  class UsableItem < BaseItem; end
+  class EquipItem < BaseItem; end
+
+  class Actor < BaseItem
     attr_accessor :id, :name, :class_id, :initial_level, :final_level,
                   :exp_basis, :exp_inflation, :character_name, :character_hue,
                   :battler_name, :battler_hue, :parameters,
@@ -37,7 +55,7 @@ module RPG
                   :weapon_fix, :armor1_fix, :armor2_fix, :armor3_fix, :armor4_fix
   end
 
-  class Class
+  class Class < BaseItem
     attr_accessor :id, :name, :position, :weapon_set, :armor_set,
                   :element_ranks, :state_ranks, :learnings
 
@@ -46,7 +64,7 @@ module RPG
     end
   end
 
-  class Item
+  class Item < UsableItem
     attr_accessor :id, :name, :icon_name, :description, :scope, :occasion,
                   :animation1_id, :animation2_id, :menu_se, :common_event_id,
                   :price, :consumable, :parameter_type, :parameter_points,
@@ -55,7 +73,7 @@ module RPG
                   :plus_state_set, :minus_state_set
   end
 
-  class Skill
+  class Skill < UsableItem
     attr_accessor :id, :name, :icon_name, :description, :scope, :occasion,
                   :animation1_id, :animation2_id, :menu_se, :common_event_id,
                   :sp_cost, :power, :atk_f, :eva_f, :str_f, :dex_f, :agi_f,
@@ -63,20 +81,20 @@ module RPG
                   :plus_state_set, :minus_state_set
   end
 
-  class Weapon
+  class Weapon < EquipItem
     attr_accessor :id, :name, :icon_name, :description, :animation1_id,
                   :animation2_id, :price, :atk, :pdef, :mdef, :str_plus,
                   :dex_plus, :agi_plus, :int_plus, :element_set,
                   :plus_state_set, :minus_state_set
   end
 
-  class Armor
+  class Armor < EquipItem
     attr_accessor :id, :name, :icon_name, :description, :kind, :auto_state_id,
                   :price, :pdef, :mdef, :eva, :str_plus, :dex_plus, :agi_plus,
                   :int_plus, :guard_element_set, :guard_state_set
   end
 
-  class State
+  class State < BaseItem
     attr_accessor :id, :name, :animation_id, :restriction, :nonresistance,
                   :zero_hp, :cant_get_exp, :cant_evade, :slip_damage,
                   :rating, :hit_rate, :maxhp_rate, :maxsp_rate, :str_rate,
@@ -163,7 +181,7 @@ module RPG
     attr_accessor :code, :parameters
   end
 
-  class Enemy
+  class Enemy < BaseItem
     attr_accessor :id, :name, :battler_name, :battler_hue, :maxhp, :maxsp,
                   :str, :dex, :agi, :int, :atk, :pdef, :mdef, :eva,
                   :animation1_id, :animation2_id, :element_ranks, :state_ranks,
