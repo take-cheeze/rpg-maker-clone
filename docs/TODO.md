@@ -8887,6 +8887,40 @@ not yet verified:
   `@battle` set but can once it is nil — both confirmed to fail against
   the pre-fix code (an `ArgumentError` for the new keyword, and the state
   surviving a map-side cure) before the fix.
+  ✅ **A lethal hit stripped a cursed-armor-forced state outright instead
+  of leaving it in place, the sibling exemption every fix above this one
+  quoted the surrounding `State::Add` crowding-out loop for but never
+  actually ported (2026-08-19).** Confirmed directly against RPG_RT's live
+  source, the very same function this cluster's fixes already cite:
+  `State::Add` (`src/state.cpp`)'s crowding-out pass is `if
+  (priority <= sig_state->priority - 10 && !ps.Has(i + 1)) { states[i] =
+  0; }` — `ps` being the caller's `PermanentStates`
+  (`Game_Actor::GetPermanentStates`), already ported as `Actor
+  #permanent_states` for `#remove_state`/`#clear_states` above. The
+  `!ps.Has(i + 1)` clause exempts a cursed-item-forced state from this
+  same wipe, so it survives even when it sits well below whatever just
+  landed — most commonly Death itself, conventionally the highest-priority
+  state in a real database. `Game::States.prune`
+  (`mruby-rpg2k/mrblib/game.rb`) had no such exemption at all: a lethal
+  hit (`Actor#knock_out!`, `Party#cast_skill`'s own prune call, and
+  `Interpreter#do_change_condition`'s own inflict-side prune, all three
+  calling `#prune` right after landing a state) stripped a low-priority
+  cursed state from `@states` the instant a higher-priority one (usually
+  Death) landed alongside it — and since every cure path can only ever
+  *keep* an id already present in `@states`, never re-add a missing one,
+  the state stayed gone permanently, not even restorable by Full Recovery,
+  until the player physically unequipped and re-equipped the cursed item.
+  Real RPG_RT never loses it in the first place. Fixed by giving
+  `Game::States.prune` a new `keep:` parameter (default `[]`) and passing
+  `permanent_states` through at all three Actor-side call sites (a fourth,
+  `Game::Battle`'s own in-battle `#inflict_state` prune call on a
+  `Combatant`, has no `permanent_states` concept modelled at all and is
+  deliberately left out of scope here — a separate question for its own
+  investigation). Covered by a new `scripts/rpg2k_logic_check.rb` check (a
+  cursed-armor-forced low-priority state survives a lethal hit that also
+  inflicts a higher-priority Death, and still resists a subsequent Full
+  Recovery — only unequipping the armor clears it), confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player
