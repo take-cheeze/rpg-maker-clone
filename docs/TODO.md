@@ -16578,9 +16578,26 @@ screen (544×416). Full rationale:
     first time the game showed a message. `Window` and `Graphics` both
     already had `#width`/`#height`; only `Sprite` was missing them. Fixed
     in `mruby-rgss/mrblib/lib.rb` by delegating to the sprite's own
-    `bitmap.width`/`bitmap.height` (`0` with none set). A tenth masked
-    exception is already known this way and not yet fixed — past the
-    bundled speech-bubble add-on's own text layout, not yet diagnosed.
+    `bitmap.width`/`bitmap.height` (`0` with none set).
+
+    Two corrections to the diagnostic method itself, past that: a short
+    `--timeout_ms` firing `RGSS::Timeout` is this engine's own safety valve
+    (`gfx_update` in `mruby-rgss/src/lib.cxx`), not a bug — the headless
+    driver taps confirm only once per real second, and this release's own
+    opening has enough dialogue to eat a short budget on its own, so a
+    minute-plus budget is needed before a probe run reaches new content
+    reliably. Past that: a tenth masked exception, traced but not fixed —
+    a real bundled add-on's `module BMSP; @@includes ||= {}` (the sole
+    touch of that class variable in the whole 213-section bundle) is
+    caught cleanly by mruby's own compiler-generated rescue for `@@cvar
+    ||=` (confirmed matching real Ruby's behavior, and confirmed present
+    in `3rd/mruby`'s own compiler source), and execution visibly
+    continues well past it — yet a plain `::MapFog = self` a few lines
+    later never takes effect (`Object.const_defined?(:MapFog)` reads
+    `false` even after execution reaches unrelated code far past it), so
+    a later event's own "Script" command that expects `MapFog` fails.
+    Narrowed this far across two rounds of isolated reproduction without
+    fully explaining it; see the item 7 write-up for the full trace.
     Fixing `$!` itself is
     fixable only by wrapping `Kernel#raise` itself (the sole point where the
     about-to-be-raised object is observable), which would add overhead and
