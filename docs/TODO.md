@@ -3999,6 +3999,31 @@ The work below is roughly ordered by the critical path to a walkable game
   move, character confirm, Cancel-with-a-character, Cancel-with-none, and
   an overflowing character's Decision-then-Buzzer pair all get their
   correct SE), confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-19): the same widget's character-grid cursor only
+  moved on a fresh key press, never auto-repeating while a direction was
+  held — the SE pass just above already had `Window_Keyboard::Update` open
+  and quoted its `play_cursor` flag, but never noticed the same function
+  gates every grid move on `Input::IsRepeated` alone.** Confirmed directly
+  against RPG_RT's live source: `Window_Keyboard::Update`
+  (`src/window_keyboard.cpp`) is four `if (Input::IsRepeated(...))` checks,
+  one per direction, with no `IsTriggered` anywhere — and
+  `Input::UpdateSystem` (`src/input.cpp`) defines `repeated[i] =
+  press_time[i] == 1 || (press_time[i] >= start_repeat_time && ...)`, so
+  `IsRepeated` alone fires on both the very first pressed frame and the
+  later repeat cadence — exactly the union this codebase's own split
+  `Input.trigger?` (fresh press only) / `Input.repeat?` (delayed
+  auto-repeat, never frame 1) idiom already covers everywhere else (see the
+  shop quantity counter and shop list cursor fixes elsewhere in this
+  document). `#handle_name_input`/`#handle_kana_name_input`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) checked only `Input.trigger?` on each
+  of the four directions, so a player had to tap each arrow once per cell
+  instead of holding it down the way real RPG_RT's name-entry grid already
+  allows. Fixed by adding `|| Input.repeat?(...)` to all four direction
+  branches in both methods. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (`RGSS::Input.repeated`, not
+  `.triggered`, still moves both the ASCII and kana grid cursors), both
+  confirmed to fail against the pre-fix code (`expected 1, got 0`) before
+  the fix.
 - ✅ **The same "silent embedded widget" family, found once more: Open Shop
   and Show Inn played zero sound effects at all (2026-08-18).** Verified
   against RPG_RT's actual behavior via EasyRPG Player's own C++ source,

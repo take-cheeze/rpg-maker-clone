@@ -7577,6 +7577,37 @@ check 'Enter Hero Name: the character grid cursor wraps around' do
   eq 66, ui[:sel], 'Up from row 0 wraps to row 5, column 10 % 3 == 1'
 end
 
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
+# key across frames without it also reading as a fresh trigger.
+check 'Enter Hero Name: holding a direction auto-repeats the character grid ' \
+      'cursor, not just a fresh press' do
+  # Confirmed against RPG_RT's own live source: `Window_Keyboard::Update`
+  # (src/window_keyboard.cpp) gates all four grid directions on
+  # `Input::IsRepeated` alone, which fires on both the first pressed frame
+  # and every later repeat tick.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0), # actor 1, letters, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  eq 0, ui[:sel], 'starts on the first cell'
+
+  RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, ui[:sel], 'a held (repeated) Right still moves the grid cursor'
+end
+
 check 'Enter Hero Name: hiragana/katakana grid opens on the requested page, seeded' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -7753,6 +7784,28 @@ check 'Enter Hero Name: the kana grid cursor wraps around' do
   scene.update
   RGSS::Input.triggered = []
   eq last_row * cols + 1, ui[:sel], 'Up from row 0 wraps to the last row, column 9 % 8 == 1'
+end
+
+check 'Enter Hero Name: holding a direction auto-repeats the kana grid ' \
+      'cursor too' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  eq 0, ui[:sel], 'starts on the first cell'
+
+  RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, ui[:sel], 'a held (repeated) Right still moves the kana grid cursor'
 end
 
 # A party whose actor levels up on demand, for the level-up-message check.
