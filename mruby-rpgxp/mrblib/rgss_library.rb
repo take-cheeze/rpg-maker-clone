@@ -301,6 +301,112 @@ unless String.method_defined?(:encode)
   end
 end
 
+# `Dir.glob`, which the vendored `mruby-dir` gem (3rd/mruby/mrbgems/mruby-dir)
+# never implements at any layer — its mrblib only supplies #each, #each_child,
+# .foreach, .open and .chdir; its C HAL only opendir/readdir/mkdir/rmdir; no
+# pattern matching anywhere. `Dir` is only present at all here because
+# build_config.rb's `enable_test` pulls it in as a test-suite dependency of the
+# host build, incidentally linking it into the shared game binary too — a real
+# project never opts into it, but several bundled community scripts assume the
+# full `Dir` a real Ruby install has. The stock RPG Maker VX Ace `DataManager`
+# checks `!Dir.glob('Save0*.rvdata2').empty?` to decide whether to draw
+# "Continue" on the title screen, `Game_System` globs a shared options file the
+# same way, and released games routinely add a `Dir.glob('Game.rgss3a').empty?`
+# check to tell a packed release apart from an unpacked project (e.g. to
+# disable a test-mode menu) — none of that is optional or RTP-shaped, so
+# `NoMethodError` here fails the whole script host before a single frame draws.
+#
+# Implemented over `Dir.entries` (which the HAL does supply) and a glob ->
+# Regexp translator covering what these scripts actually write: literal
+# names, `*` (any run of characters, one path component), `?` (one character)
+# and `[...]` character classes — not the full glob spec (no `**`, brace
+# expansion, or flags). A pattern is split on `/` and walked one directory
+# level at a time so a prefix like `Data/Map[0-9]*[0-9].rvdata2` only lists
+# `Data/`'s own entries, not every subdirectory the way a single flattened
+# regex over the whole path would. Dotfiles are excluded unless the pattern's
+# own component starts with a literal `.`, matching Ruby's default.
+unless Dir.respond_to?(:glob)
+  class Dir
+    class << self
+      private
+
+      def __rgss_glob_translate(part)
+        out = +"\\A"
+        i = 0
+        while i < part.length
+          c = part[i]
+          case c
+          when "*"
+            out << ".*"
+          when "?"
+            out << "."
+          when "["
+            close = part.index("]", i + 1)
+            if close
+              out << part[i..close]
+              i = close
+            else
+              out << "\\["
+            end
+          else
+            out << Regexp.escape(c)
+          end
+          i += 1
+        end
+        out << "\\z"
+        Regexp.new(out)
+      end
+
+      def __rgss_glob_walk(base, parts)
+        part = parts[0]
+        rest = parts[1..-1]
+        dir = base.empty? ? "." : base
+        return [] unless FileTest.directory?(dir)
+
+        if part =~ /[*?\[]/
+          re = __rgss_glob_translate(part)
+          names = Dir.entries(dir).select do |name|
+            next false if name == "." || name == ".."
+            next false if name.start_with?(".") && !part.start_with?(".")
+            re.match?(name)
+          end.sort
+        else
+          names = Dir.entries(dir).include?(part) ? [part] : []
+        end
+
+        if rest.empty?
+          names.map { |name| base.empty? ? name : "#{base}/#{name}" }
+        else
+          # Not `flat_map`: mruby-array-ext does not carry it, and neither
+          # does the Enumerable mixin reach Array's own natively-implemented
+          # methods in this build.
+          result = []
+          names.each do |name|
+            result.concat(__rgss_glob_walk(base.empty? ? name : "#{base}/#{name}", rest))
+          end
+          result
+        end
+      end
+    end
+
+    def self.glob(pattern, flags = 0, &block)
+      if pattern.is_a?(Array)
+        result = []
+        pattern.each { |p| result.concat(glob(p, flags)) }
+        return result
+      end
+
+      results = __rgss_glob_walk("", pattern.split("/")).sort
+      if block
+        results.each(&block)
+        nil
+      else
+        results
+      end
+    end
+  end
+end
+
 # RGSS's Win32API: a general FFI mechanism for calling arbitrary Win32 DLL
 # entry points by name, which a project routinely uses for one *optional*
 # Windows-only feature — e.g. CACAO's widely bundled 画像保存

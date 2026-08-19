@@ -289,7 +289,7 @@ void unpack_doubles(const char* p, mrb_int len, double* out, int n) {
 
 mrb_value color_init(mrb_state* M, V self) {
   mrb_float r = 0, g = 0, b = 0, a = 255;
-  mrb_get_args(M, "fff|f", &r, &g, &b, &a);
+  mrb_get_args(M, "|ffff", &r, &g, &b, &a);
   Color& c = DataType<Color>::alloc_obj(M, self);
   c.red = clamp255(r);
   c.green = clamp255(g);
@@ -359,7 +359,7 @@ mrb_value color_load(mrb_state* M, V self) {
 
 mrb_value tone_init(mrb_state* M, V self) {
   mrb_float r = 0, g = 0, b = 0, gray = 0;
-  mrb_get_args(M, "fff|f", &r, &g, &b, &gray);
+  mrb_get_args(M, "|ffff", &r, &g, &b, &gray);
   Tone& t = DataType<Tone>::alloc_obj(M, self);
   t.red = clamp_signed255(r);
   t.green = clamp_signed255(g);
@@ -6564,8 +6564,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* color = mrb_define_class_under(M, m, "Color", M->object_class);
   MRB_SET_INSTANCE_TT(color, MRB_TT_DATA);
-  mrb_define_method(M, color, "initialize", color_init,
-                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, color, "initialize", color_init, MRB_ARGS_OPT(4));
   // #clone / #dup, which a game's scripts use on these constantly.
   mrb_define_method(M, color, "initialize_copy", data_init_copy<Color>,
                     MRB_ARGS_REQ(1));
@@ -6597,8 +6596,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* tone = mrb_define_class_under(M, m, "Tone", M->object_class);
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
-  mrb_define_method(M, tone, "initialize", tone_init,
-                    MRB_ARGS_REQ(3) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, tone, "initialize", tone_init, MRB_ARGS_OPT(4));
   mrb_define_method(M, tone, "initialize_copy", data_init_copy<Tone>,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, tone, "set", tone_set,
