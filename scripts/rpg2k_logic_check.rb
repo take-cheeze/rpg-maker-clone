@@ -11829,6 +11829,48 @@ check "a lethal attack zeroes the target's active-time gauge immediately, not " 
   eq 0, foe.gauge, 'revival does not restore the pre-death charge'
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Game_Battler::AddState`'s Knockout branch (src/game_battler.cpp) also
+# resets `SetAtkModifier(0)`/`SetDefModifier(0)`/`SetSpiModifier(0)`/
+# `SetAgiModifier(0)` and clears `attribute_shift` the instant Death
+# lands -- the exact same branch the gauge check just above already
+# proved this codebase now honours for `#gauge`, but the fix that added
+# it only ever touched `#gauge`. `#atk_mod`/`#def_mod`/`#spi_mod`/
+# `#agi_mod` (a buff/debuff skill's own per-battle stat offset,
+# #apply_stat_mods) and `#attr_ranks` (an attribute-defence rank shift,
+# #apply_attr_shift) have no other reset path once a fight is under way,
+# so an ally buffed (or debuffed) mid-fight, then killed, then revived by
+# an ordinary Full Heal/revival item within the same fight kept fighting
+# with the stale pre-death modifier still active -- real RPG_RT gives a
+# revived battler a clean slate on every one of these fields, not just
+# the gauge.
+check 'a lethal attack also resets stat modifiers and attribute-rank shifts, ' \
+      'the same Knockout branch the gauge fix above already covers' do
+  hero = combatant('Hero', 999, 0, 5, 100)
+  foe = combatant('Foe', 10, 8, 5, 1)
+  foe.spi = 6
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.send(:apply_stat_mods, foe, %i[atk def spi agi], 4) # a buff skill's own effect
+  foe.attr_base_ranks = { 1 => 2 }
+  bat.send(:apply_attr_shift, foe, { attr_shift: 1, attr_ids: [1] }) # a resistance-up skill
+  ok foe.atk_mod > 0 && foe.def_mod > 0 && foe.spi_mod > 0 && foe.agi_mod > 0,
+     'sanity: the buff actually landed on all four stats'
+  eq({ 1 => 3 }, foe.attr_ranks, 'sanity: the attribute shift actually landed')
+
+  bat.send(:deal_attack, hero, foe)
+  ok foe.dead?, 'the hit was lethal'
+  eq 0, foe.atk_mod
+  eq 0, foe.def_mod
+  eq 0, foe.spi_mod
+  eq 0, foe.agi_mod
+  eq({}, foe.attr_ranks, 'the attribute shift was cleared too, not just the raw stat mods')
+
+  # Revival does not restore any of it either, matching the gauge above.
+  foe.hp = 10
+  ok !foe.dead?
+  eq 0, foe.atk_mod, 'a revived ally does not keep its stale pre-death buff'
+end
+
 check "Battle#apply_to_party clears a battle combo Enable Combo armed, matching RPG_RT (2026-08-19)" do
   # Confirmed against EasyRPG's actual C++ source, fetched live:
   # `Game_Battler::ResetBattle` (src/game_battler.cpp) is `battle_combo_

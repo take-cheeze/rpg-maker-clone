@@ -14237,7 +14237,49 @@ above are repeated here)
   250,000-charged target's gauge immediately; reviving it by directly
   raising HP back above 0, as an ordinary revival item would, does not
   restore the stale charge), confirmed to fail against the pre-fix code
-  (`expected 0, got 250000`) before the fix.
+  (`expected 0, got 250000`) before the fix. (This method was renamed to
+  `#apply_knockout_reset` by the very next fix below, which widens it to
+  more of the same Knockout branch's fields — the name and call sites
+  quoted here reflect the state immediately after this specific fix.)
+  ✅ **The fix directly above only ported one field out of the several
+  EasyRPG's own Knockout branch resets — a buff/debuff skill's per-battle
+  ATK/DEF/SPI/AGI modifier and any attribute-defence rank shift survived a
+  mid-fight death and revival exactly as unfixed as the gauge had been
+  (2026-08-19).** The previous fix's own citation already quoted the full
+  branch verbatim without acting on most of it: `Game_Battler::AddState`'s
+  Knockout branch (`src/game_battler.cpp`) is `SetAtbGauge(0); SetHp(0);
+  SetAtkModifier(0); SetDefModifier(0); SetSpiModifier(0);
+  SetAgiModifier(0); SetIsDefending(false); SetCharged(false);
+  attribute_shift.clear();` — all fired unconditionally the instant Death
+  lands. `#atk_mod`/`#def_mod`/`#spi_mod`/`#agi_mod` (a buff/debuff
+  skill's own per-battle stat offset, `#apply_stat_mods`) and `#attr_ranks`
+  (an attribute-defence rank shift, `#apply_attr_shift`) have no other
+  reset path once a fight is under way — unlike the fresh-`Combatant`-
+  per-fight reasoning this class's own doc comment gives for why most of
+  its fields need no explicit reset, which only covers *cross-battle*
+  persistence, not a *mid-battle* death-then-revival. Concretely: an ally
+  buffed by an ordinary ATK-Up-style skill, then killed, then revived
+  within the same fight by an ordinary Full Heal/revival item kept
+  fighting with the stale pre-death buff (or debuff) still active, instead
+  of the clean slate real RPG_RT gives a revived battler — the same
+  "died mid-fight, revived mid-fight" scenario the gauge fix above covers,
+  just for the sibling fields that fix's own citation quoted but didn't
+  act on. `#defending`/`#charged` (`SetIsDefending`/`SetCharged`) are
+  deliberately *not* ported: this codebase already resets both to `false`
+  at the start of every command a battler is given, dead or not, so there
+  is no gap for a Knockout-time reset to close there. Fixed by renaming
+  `#zero_gauge_on_death` to `#apply_knockout_reset` and widening it to
+  also zero the four stat-mod fields and reset `#attr_ranks` to an empty
+  Hash (matching `attribute_shift.clear()` — every reader of `#attr_ranks`
+  already treats a missing key as "no shift, use base" via its own
+  `ranks[aid] || 2`/`base[aid] || 2` fallback, so an empty Hash is exactly
+  equivalent to a cleared shift). Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a foe buffed on all four stats via
+  `#apply_stat_mods` and given an attribute-rank shift via
+  `#apply_attr_shift`, then killed: all four mods and the shift reset to
+  their base values immediately, and stay reset through a same-fight
+  revival), confirmed to fail against the pre-fix code (`expected 0, got
+  4`) before the fix.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor
