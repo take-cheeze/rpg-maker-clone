@@ -14318,6 +14318,83 @@ check 'the condition shown is the significant state, in the state colour' do
   eq 4, Game::States.color(4, scene.db.situation), 'Sleep in colour 4'
 end
 
+check 'the battle status panel clips each column to the gap before its own neighbour, not the panel edge' do
+  battle_mod = RPG2k::Scene::Battle
+  inner_w = battle_mod::BATTLE_STATUS_W - RPG2k::Window::BORDER * 2
+  hp_gap = battle_mod::STATUS_MP_X - battle_mod::STATUS_HP_X
+  mp_gap = inner_w - battle_mod::STATUS_MP_X
+  # A generous HP/SP pair (RPG2000's own 999 ceiling) so both columns'
+  # "current/max" text is longer than either gap -- the exact shape of the
+  # bleed the screenshot this fix comes from showed, an ally's "HP xxx/xxx"
+  # running into "SP" and "SP xxx/xxx" running off the panel's own edge.
+  actor = BattleStubActor.new(hp: 999, mp: 999)
+  party = BattleStubParty.new(actor)
+  scene, ui = battle_at_command(nil, party: party)
+  # #refresh_battle_status throws its old status window away and builds a
+  # fresh Bitmap for the new one (see #battle_status_window) -- unlike the
+  # message window's own long-lived contents bitmap, there is no single
+  # instance to patch #text_size onto ahead of the draw, so the stub class
+  # itself is patched for the duration of this check instead. The shared
+  # stub's own #text_size is a flat 0px (see #clip_text_to_width's own check
+  # above), which would never trigger a clip either way.
+  original_text_size = RGSS::Bitmap.instance_method(:text_size)
+  RGSS::Bitmap.send(:define_method, :text_size) { |s| RGSS::Rect.new(0, 0, s.length * 6, 0) }
+  begin
+    scene.instance_variable_get(:@battle).send(:refresh_battle_status)
+  ensure
+    RGSS::Bitmap.send(:define_method, :text_size, original_text_size)
+  end
+  calls = ui[:status_win].contents.draw_calls
+  hp_call = calls.find { |a| a[4].start_with?('HP') }
+  mp_call = calls.find { |a| a[4].start_with?('MP') }
+  ok hp_call, 'the HP segment was drawn'
+  ok mp_call, 'the SP segment was drawn'
+
+  eq hp_gap, hp_call[2],
+     "HP's own width is the #{hp_gap}px gap up to the SP column, not the panel's own edge"
+  eq mp_gap, mp_call[2],
+     "SP's own width is the #{mp_gap}px gap up to the panel's own inner edge"
+
+  ok hp_call[4].length * 6 <= hp_gap,
+     "HP's drawn text (#{hp_call[4].inspect}) was sliced to fit its own #{hp_gap}px column " \
+     "instead of overrunning into SP's"
+  ok mp_call[4].length * 6 <= mp_gap,
+     "SP's drawn text (#{mp_call[4].inspect}) was sliced to fit its own tiny #{mp_gap}px " \
+     'column instead of running off the panel'
+  eq 'HP 999/999', hp_call[4],
+     "HP's own 60px column is exactly enough for RPG2000's own 999 ceiling -- " \
+     "the comment on STATUS_NAME_X's own block -- so this drew whole, untruncated"
+  ok mp_call[4].length < 'MP 999/999'.length,
+     "SP 999/999 does not fit #{mp_gap}px at 6px/character, so it was genuinely truncated " \
+     'rather than bleeding off the panel'
+end
+
+check 'the status panel swaps sides with whichever 76px window is showing beside it' do
+  battle_mod = RPG2k::Scene::Battle
+  # During the top-level Battle/Auto Battle/Escape choice, EasyRPG's
+  # SetCommandWindowsX lays the options window at x=0 and pushes the status
+  # window to its right (BATTLE_CMD_W); the per-actor command window (off
+  # screen here) would take the *far* right slot instead, past the status
+  # window.
+  scene, = battle_scene_with_pages(nil, party: BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  ok ui, 'the battle opened'
+  eq 0, ui[:cmd_win].x, 'the options window (Fight/Auto Battle/Escape) docks to the left edge'
+  eq battle_mod::BATTLE_CMD_W, ui[:status_win].x,
+     'the status window is pushed right, out of the options window\'s 76px'
+  eq battle_mod::BATTLE_CMD_W, ui[:cmd_win].width,
+     'the options window keeps the same 76px shape the per-actor command window uses'
+
+  # Once an actor is choosing Attack/Skill/Defend/Item instead, the roles
+  # swap: the command window takes the *right* slot the same way it always
+  # has, and the status window returns to x=0.
+  scene, ui2 = battle_at_command(nil, party: BattleStubParty.new)
+  ok ui2, 'the fight reached the per-actor command phase'
+  eq 0, ui2[:status_win].x, 'the status window returns to the left edge, beside the command window'
+  eq battle_mod::BATTLE_STATUS_W, ui2[:cmd_win].x,
+     'the per-actor command window docks to the right edge, unlike the options window'
+end
+
 check 'Change Monster Condition on a battle page updates the troop, off-panel' do
   ic = Game::Interpreter::Cmd
   # Inflict state 3 (Poison) on troop member 0 the moment the fight opens.

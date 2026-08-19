@@ -73,6 +73,35 @@ class RPG2k
         bmp.blend_text x, y, w, h, text, skin, sx, sy, cell, cell, align
       end
 
+      # Slice `text` down to however many leading characters fit within `w`
+      # pixels of `c`'s own font metrics, dropping the rest outright -- RPG_RT
+      # truncates an overlong run rather than wrapping it. Walks one character
+      # (not byte) at a time so a multi-byte codepoint is never split mid-way.
+      #
+      # Neither `Bitmap#draw_text` nor `#blend_text` (mruby-rgss/src/lib.cxx)
+      # clip to the `w`/`h` they are given -- those only ever feed centre/right
+      # alignment math -- so nothing stops an overflowing run from drawing
+      # straight past its own column's boundary and onto whatever sits beyond
+      # it. Originally written for the message window's face-graphic margin
+      # (Scene::Map#draw_message_run, where an overflowing line used to draw
+      # straight over the portrait instead of stopping at the text column's own
+      # edge); shared here because the battle status panel's fixed name/state/
+      # HP/MP columns (Scene::Battle#battle_status_window) hit the exact same
+      # gap -- an oversized name or a 3-digit HP/MP pair drawing unclipped
+      # straight into its neighbour's column, rather than the neighbour's own
+      # text simply overlapping it.
+      def clip_text_to_width(c, text, w)
+        return '' if w <= 0
+        return text if c.text_size(text).width <= w
+        out = ''
+        text.each_char do |ch|
+          candidate = out + ch
+          break if c.text_size(candidate).width > w
+          out = candidate
+        end
+        out
+      end
+
       # The condition a battler carrying `states` shows, as [text, palette colour
       # index]: the significant state's name in its own colour, or the database's
       # "normal" term when there is none. A state the database does not name
