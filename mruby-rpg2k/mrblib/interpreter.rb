@@ -3374,11 +3374,13 @@ module Game
 
     # Show Battle Animation (11210): play battle animation param0 over a target
     # character on the map. param1 is the target id (the player, an event, or
-    # this event — the Move Event target scheme) and param2 the "wait until it
-    # finishes" flag. EasyRPG's own `Game_Interpreter_Map::
-    # CommandShowBattleAnimation` (src/game_interpreter_map.cpp) always starts the
-    # animation through `Game_Screen::ShowBattleAnimation` regardless of the wait
-    # flag — only whether `_state.wait_time` is then set (pausing the interpreter)
+    # this event — the Move Event target scheme), param2 the "wait until it
+    # finishes" flag, and param3 whether the editor's "Whole screen" target
+    # option was chosen instead of a single character. EasyRPG's own
+    # `Game_Interpreter_Map::CommandShowBattleAnimation`
+    # (src/game_interpreter_map.cpp) always starts the animation through
+    # `Game_Screen::ShowBattleAnimation` regardless of the wait flag — only
+    # whether `_state.wait_time` is then set (pausing the interpreter)
     # depends on it — so a fire-and-forget play is not merely non-blocking, it is
     # still expected to render. With the wait flag set, this suspends on an
     # :animation wait so the owning scene can hold the event for the animation's
@@ -3386,9 +3388,20 @@ module Game
     # wait); with it unset, `@battle_animation_pending` flags this request for
     # #take_battle_animation_request instead, since nothing will ever visit an
     # :animation wait for it otherwise.
+    #
+    # `param3` (`global`) is confirmed against EasyRPG's actual C++ source,
+    # fetched live: `bool global = com.parameters[3] > 0;`, threaded through
+    # `Game_Screen::ShowBattleAnimation`/`BattleAnimationMap` unchanged, and
+    # this command's own `CmdSetup<..., 4>` requires all four parameters —
+    # it is not a 2003-only extension. A prior version of this method never
+    # read it at all, so every "Whole screen" animation (the standard,
+    # editor-authored way to do a screen-wide explosion/flash cutscene
+    # effect) rendered anchored to the target character instead of tiled
+    # across the visible screen (`Scene::Map#global_animation_targets`,
+    # matching `BattleAnimationMap::DrawGlobal`).
     def do_show_battle_animation(cmd)
       @battle_animation = { animation: cmd.param(0), target: cmd.param(1),
-                            wait: cmd.param(2) != 0 }
+                            wait: cmd.param(2) != 0, global: cmd.param(3) != 0 }
       if cmd.param(2) != 0
         @wait_kind = :animation
         @waiting = true
