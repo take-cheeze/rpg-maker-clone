@@ -4756,7 +4756,14 @@ def class_db(class_id = 0, actor_learns = [[10, 1]])
     1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
     2 => JobRow.new('Mage', job2, [[31, 1]]),
   }
-  FakeActorDB.new(players, [1], {}, {}, jobs)
+  # A real Battle Commands table (chunk 29) defining ids 1..8, so
+  # #change_battle_commands' own existence check (see its citation) does
+  # not reject every add the Change Battle Commands checks below make --
+  # a genuine RPG2003 database always carries this table for any project
+  # that uses the command at all.
+  commands = (1..8).each_with_object({}) { |i, h| h[i] = FakeBattleCommand.new("Cmd#{i}", 1) }
+  FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil,
+                  battlecommands: FakeBattleCommandsTable.new(commands, 0))
 end
 
 def class_state(class_id = 0, actor_learns = [[10, 1]])
@@ -5013,6 +5020,30 @@ check 'Change Battle Commands stops at six commands plus Row' do
   a = class_state.party.actor_by_id(1)
   (3..8).each { |id| a.change_battle_commands(true, id) }
   eq [1, 2, 3, 4, 5, 6, 0], a.battle_commands, 'the seventh add is dropped'
+end
+
+# RPG_RT's own `Game_Actor::ChangeBattleCommands` (src/game_actor.cpp)
+# looks `id` up in the database-wide Battle Commands table before anything
+# else: `const auto* cmd = GetElement(Data::battlecommands.commands, id);
+# if (!cmd) { Warning(...); return; }` -- an id the table does not define
+# never occupies a slot, entirely separate from the capacity/duplicate
+# checks below it. Previously #change_battle_commands only checked `id >
+# 0` and "already in the list", so a handful of bogus adds could silently
+# exhaust the six-slot capacity, starving a later genuinely valid add of a
+# slot it should have had.
+check "Change Battle Commands rejects an id the database's own table " \
+      "doesn't define, and can't be capacity-starved by bogus ids" do
+  a = class_state.party.actor_by_id(1)
+  eq nil, a.battle_command_row(99), 'sanity: id 99 is not in the table'
+  a.change_battle_commands(true, 99)
+  eq [1, 2, 0, -1, -1, -1, -1], a.battle_commands, 'an unknown id never lands at all'
+
+  # Six bogus adds (ids the table doesn't define) must not consume any of
+  # the six real slots -- a later valid add still has room.
+  (90..95).each { |id| a.change_battle_commands(true, id) }
+  eq [1, 2, 0, -1, -1, -1, -1], a.battle_commands, 'none of the six bogus ids landed'
+  a.change_battle_commands(true, 5)
+  eq [1, 2, 5, 0], a.battle_commands, 'a genuinely valid add still has a slot free'
 end
 
 check 'a class change takes the class battle commands' do

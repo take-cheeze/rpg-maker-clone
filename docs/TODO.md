@@ -8988,6 +8988,40 @@ not yet verified:
   `#cure_state` call is refused on the same state while the armor stays
   equipped), both confirmed to fail against the pre-fix code before the
   fix.
+  ✅ **Change Battle Commands (1009) never validated an added command id
+  against the database's own Battle Commands table, so any positive
+  integer — however bogus — could occupy one of the six real slots
+  (2026-08-19).** This document's own earlier claim (well above, the
+  paragraph introducing Change Battle Commands) only credits "RPG_RT's
+  six-plus-Row capacity rule" as ported, never mentioning the existence
+  check that runs first. Confirmed directly against RPG_RT's live source:
+  `Game_Actor::ChangeBattleCommands` (`src/game_actor.cpp`) is `const
+  auto* cmd = GetElement(Data::battlecommands.commands, id); if (!cmd) {
+  Warning(...); return; }`, entirely before the capacity/duplicate checks
+  below it — an id the table doesn't define never occupies a slot at all.
+  `Game::Actor#change_battle_commands`
+  (`mruby-rpg2k/mrblib/game.rb`) only ever checked `id > 0` and
+  "already in the list," so a handful of adds naming ids the table
+  doesn't define could silently exhaust the six-slot capacity, starving a
+  later, genuinely valid add of a slot it should have had. Fixed by
+  reusing the already-existing `#battle_command_row(id)` (the exact
+  existence check this needs, ported for the menu's own display logic) as
+  an added guard on the `add` branch. As a side effect this also makes
+  the command correctly inert on a genuine RPG2000 database with no
+  `battlecommands` table at all — matching real RPG_RT's own
+  `Player::IsRPG2k3Commands()` gate on the event command itself, which
+  `Interpreter#do_change_battle_commands` does not separately enforce.
+  Two of the three existing `scripts/rpg2k_logic_check.rb` checks for this
+  command turned out to have been unknowingly relying on the bug: their
+  shared `class_state`/`class_db` fixture built no `battlecommands` table
+  at all, so every add the checks made was, under a faithful port, invalid
+  and should have been rejected outright — corrected by giving the
+  fixture a real table defining ids 1..8 (a genuine RPG2003 database
+  always carries one for any project that uses the command). Covered by a
+  new check (an id the table doesn't define never lands, and six bogus
+  adds cannot starve a later valid one of its slot), confirmed to fail
+  against the pre-fix code (`expected [1, 2, 0, -1, -1, -1, -1], got [1,
+  2, 99, 0]`) before the fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player
