@@ -9085,6 +9085,48 @@ not yet verified:
   its lone fizzle entry) and one new `scripts/rpg2k_scene_check.rb` check
   (the `EnemyKill` SE actually plays), all three confirmed to fail against
   the pre-fix code before the fix.
+  ✅ **A basic Attack never spent the equipped weapon's own SP cost —
+  every 消費SP-flagged weapon in the database was effectively free to swing,
+  forever (2026-08-19).** Confirmed directly against RPG_RT's live source:
+  `Game_BattleAlgorithm::Normal::vStart` (`src/game_battlealgorithm.cpp`) is
+  `source->ChangeSp(-source->CalculateWeaponSpCost(weapon));` — spent
+  unconditionally, once per action (called from `AlgorithmBase::Start()`
+  before any swing/repeat resolves), regardless of whether the swing hits or
+  misses. `Game_Actor::CalculateWeaponSpCost` (`src/game_actor.cpp`) sums
+  `sp_cost` over the weapon slot(s) `weapon` (`WeaponAll`, i.e. every
+  equipped weapon-type item, for an ordinary single-weapon actor; just the
+  weapon-slot item for a `#double_hand?` two-weapon actor, since
+  `Normal::GetWeapon()`'s `GetCurrentRepeat() >= weapon_style` check reads
+  `false` at the still-zero repeat count `vStart` runs at, resolving to
+  `WeaponPrimary`), then halves it (rounding up, `(cost + 1) / 2`) under
+  MP消費半分 gear (`HasHalfSpCost`) — the identical halving `Game_Battler::
+  CalculateSkillCost` already applies to a skill's own fixed SP cost, ported
+  here as `Game::Party#skill_cost`. `Game_Battler::CalculateWeaponSpCost`
+  (the base class) defaults to 0 and `Game_Enemy` never overrides it, so
+  this only ever fires for a party member. `sp_cost` (item field 16) and
+  `half_sp_cost` are genuine, already-parsed RPG2000/2003 database fields
+  (`mruby-lcf/mrblib/schema.rb`) — `Actor#half_sp_cost?`
+  (`mruby-rpg2k/mrblib/game.rb`) already existed and was already wired up,
+  but only ever consulted for a *skill's* own cost (`#skill_cost`); no
+  weapon-side accessor existed at all, and the basic-attack execution path
+  (`Game::Battle#command_attack`/`#swing`/`#deal_attack`) never deducted
+  anything for the attacker. Fixed with a new `Actor#weapon_sp_cost`
+  (`.first` of `#equipped_weapons`, its own weapon-slot-first ordering
+  already making that the correct item for both the single-weapon and
+  two-weapon cases), and a new `Game::Battle#pay_weapon_sp_cost(b)` called
+  once from each of `#strike`'s two attack-dispatch points — before the
+  combo hit count and 二刀流/`#double_hand?` swing count are even resolved,
+  matching `vStart`'s own once-per-action, not once-per-swing timing (a
+  二刀流 weapon's second swing must not double the bill, the same discipline
+  the sibling Escape/Auto Destruction SE fixes just above already
+  established for this codebase's own entry-flag plumbing). A no-op for an
+  enemy attacker (`b.actor` is nil) or a bare fixture Combatant with no
+  `#actor` link. Covered by a new `scripts/rpg2k_logic_check.rb` check (a
+  plain weapon's own `sp_cost`; MP消費半分 gear's rounded-up half; a 二刀流
+  weapon's cost spent exactly once despite both swings landing; an
+  unflagged weapon costing nothing; an enemy attacker's own SP left
+  untouched), confirmed to fail against the pre-fix code (`expected 44, got
+  50`) before the fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player
