@@ -2390,6 +2390,8 @@ class RPG2k
         fled = it.take_fled_monsters
         fled.each { |i| remove_fled_monster(i) }
         play_escape_se unless fled.empty?
+        kills = it.take_monster_kills
+        kills.each { play_monster_kill_se }
         name = it.take_battle_background
         rebuild_battle_back(name) unless name.nil?
         refresh_battle_status
@@ -2433,6 +2435,17 @@ class RPG2k
       # The escape sound RPG_RT plays when a Force Flee sends enemies running.
       def play_escape_se
         play_system_se(SFX_ESCAPE)
+      end
+
+      # The kill sound RPG_RT's own `CommandChangeMonsterHP`
+      # (src/game_interpreter_battle.cpp) plays directly the instant a
+      # scripted Change Monster HP finishes a troop member off
+      # (`SePlay(GetSystemSE(SFX_EnemyKill))`) -- the same cue an ordinary
+      # lethal Attack/Skill already gets via #play_battle_action_se's own
+      # `entry[:defeated]` check, which this event-command path never
+      # produces an `entry` for.
+      def play_monster_kill_se
+        play_system_se(SFX_ENEMY_DEATH)
       end
 
       # Terminate Battle: leave the fight with no victory / defeat processing.
