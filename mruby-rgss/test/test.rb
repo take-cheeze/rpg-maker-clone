@@ -739,9 +739,26 @@ assert "RGSS::Sprite API surface" do
   # exercised by the game runs.
   %i[bitmap= x= y= z= visible visible= opacity= zoom_x= zoom_y= angle= mirror=
      tone= color= src_rect= update blend_type= bush_depth= flash dispose
-     disposed?].each do |m|
+     disposed? width height].each do |m|
     assert_true RGSS::Sprite.method_defined?(m), "Sprite##{m} missing"
   end
+end
+
+# RGSS3 (VX Ace) added width/height over XP/VX's Sprite -- the graphic's own
+# pixel size, mirroring its bitmap, 0 with none set. A real VX Ace release's
+# own bundled speech-bubble add-on centres its tail sprite this way
+# (`self.y - @tail.height / 2`), which raised NoMethodError before this.
+# Pure Ruby (mrblib), needs no live display -- unlike construction, reading
+# it back doesn't touch the native canvas.
+assert "RGSS::Sprite#width/#height mirror the bitmap, 0 with none set" do
+  sprite = RGSS::Sprite.allocate
+  assert_equal 0, sprite.width
+  assert_equal 0, sprite.height
+
+  bmp = RGSS::Bitmap.new(40, 24)
+  sprite.instance_variable_set(:@bitmap, bmp)
+  assert_equal 40, sprite.width
+  assert_equal 24, sprite.height
 end
 
 assert "RGSS::Font defaults" do

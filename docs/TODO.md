@@ -16517,12 +16517,18 @@ screen (544×416). Full rationale:
     `mruby-rpgvx/mrblib/rgss2_data.rb` and `mruby-rpgxp/mrblib/rgss_data.rb`;
     Marshal deserialization of existing `Data/*.rvdata(2)` (which bypasses
     `#initialize` entirely) is unaffected, confirmed by re-parsing 15,797 real
-    XP event commands cleanly afterward. A ninth masked exception is already
-    known this way and not yet fixed — inside a bundled community
-    bubble-window script's own text layout, past the game's first common
-    event call: `NoMethodError: undefined method 'height' for RGSS::Sprite`,
-    not yet diagnosed as an engine gap or a script bug (real RGSS3's own
-    `Sprite` API has no `#height` either). Fixing `$!` itself is
+    XP event commands cleanly afterward. `Sprite` had no `#width`/`#height`
+    at all — RGSS3 (VX Ace) added them over XP/VX's `Sprite`, read-only,
+    mirroring the sprite's own `bitmap` dimensions, which this same
+    release's bundled speech-bubble add-on reads directly to centre its
+    tail sprite (`self.y - @tail.height / 2`), raising `NoMethodError` the
+    first time the game showed a message. `Window` and `Graphics` both
+    already had `#width`/`#height`; only `Sprite` was missing them. Fixed
+    in `mruby-rgss/mrblib/lib.rb` by delegating to the sprite's own
+    `bitmap.width`/`bitmap.height` (`0` with none set). A tenth masked
+    exception is already known this way and not yet fixed — past the
+    bundled speech-bubble add-on's own text layout, not yet diagnosed.
+    Fixing `$!` itself is
     fixable only by wrapping `Kernel#raise` itself (the sole point where the
     about-to-be-raised object is observable), which would add overhead and
     stack depth to *every* exception in the shared build across every maker
