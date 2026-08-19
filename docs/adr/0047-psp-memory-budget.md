@@ -744,15 +744,14 @@ the interpreter-linking slice, in this order:
     calls `sceKernelExitGame` on its own, unrelated to this bug; the
     existing `psp-smoke` job already tolerates this class of flakiness
     by staying non-blocking.)
-  - **New, separate finding — mechanism confirmed, exact trigger still
-    open.** With bug 10 fixed, the frame loop's very first `main_loop`
-    call (`app/psp/main.cxx`) still crashes before the first
-    `RPG2K_PSP_BRINGUP` heartbeat, during `Scene::Title#initialize`
-    (`mruby-rpg2k/mrblib/scene/title.rb`) — **not a stall**: reproducing
-    with `--timeout=20` and `--timeout=90` produces byte-identical logs
-    (same line count, same final syscalls), so the process exits on its
-    own well inside either window; nothing here is waiting on the harness
-    to kill it.
+  - **New, separate finding — resolved (bug 11).** With bug 10 fixed, the
+    frame loop's very first `main_loop` call (`app/psp/main.cxx`) still
+    crashed before the first `RPG2K_PSP_BRINGUP` heartbeat, during
+    `Scene::Title#initialize` (`mruby-rpg2k/mrblib/scene/title.rb`) — **not
+    a stall**: reproducing with `--timeout=20` and `--timeout=90` produced
+    byte-identical logs (same line count, same final syscalls), so the
+    process exited on its own well inside either window; nothing here was
+    waiting on the harness to kill it.
     - **Confirmed mechanism**, via a `WalkCurrentStack`/`FormatStackTrace`
       diagnostic patched into PPSSPP's `sceKernelCreateSema` HLE handler
       (same technique as bug 10's own diagnostics; reproduced twice, on
@@ -790,12 +789,11 @@ the interpreter-linking slice, in this order:
       apparently does get that branch, whatever `MRB_USE_CXX_EXCEPTION`
       reads as here). That in turn means C++ exceptions are mruby's
       *normal*, everyday `raise`/`rescue` mechanism on this build, not a
-      rare path — which narrows what "unwind fails" can mean here: not
-      "this code path never gets exercised" (ordinary rescued exceptions
-      elsewhere in the same boot plainly work, or the title screen would
-      never have gotten this far), but something specific to *this one*
-      raise — its call depth, its particular stack layout, or the exact
-      exception class/allocation involved.
+      rare path in principle — though it later turned out (see "Root
+      cause" below) that this crash is in fact the *first* one this
+      process's whole life, which is exactly what "unwind fails" turned
+      out to mean here: not a property of this specific exception's class
+      or stack depth, but of it being the first ever, full stop.
     - **Ruled out with direct evidence**, not speculation:
       - **Not simple arena exhaustion.** A `g_mrb_free` free-list walk
         (the same technique bug 10 used) at the exact `pthread_sem7`
@@ -869,31 +867,77 @@ the interpreter-linking slice, in this order:
            call unless something else independently confirms the callee
            actually ran.** Check 1 is that independent confirmation here,
            and it says no.
-    - **Not yet found:** the actual `throw` site. The naive techniques
-      that worked for bug 10 (reading a return address off the stack,
-      `psp-addr2line`) have now both produced confident-looking wrong
-      answers for this bug specifically, which is itself informative:
-      whatever's happening here involves either heavier inlining/ICF at
-      this call site than bug 10's, or a genuinely deeper/less-recoverable
-      unwind state by the time `sceKernelCreateSema` fires. Suggested next
-      steps, roughly in order of promise: (1) rebuild the specific
-      suspect object files at `-O0` (temporarily, diagnostically) —
-      eliminates tail-call/sibling-call optimization and identical-code
-      folding as confounds, so a stack-scan or `$ra`-slot read means what
-      it looks like it means; (2) grep every `throw` statement reachable
-      from `Scene::Title#initialize`'s call graph — not just
-      `mruby-rgss/src/*.cxx`, but LVGL, uni-algo, and the
-      `Bitmap`/font-rendering path exercised by `draw_system_text` and
-      `load_windowskin`, since those run *before* the BGM/save-slot
-      searches and could be the true shared cause both bisections missed
-      by only cutting out code that runs *after* them; (3) confirm
-      whether `std::string`/STL exceptions (`std::out_of_range`,
-      `std::bad_alloc`, …) are reachable at all from the cross-compiled
-      `psp-g++` build's actual linked exception-personality routine, since
-      a mismatched `-fexceptions` setting between object files linked into
-      `rpg2k_psp` (some parts of this tree are compiled without it) is
-      exactly the kind of thing that produces a phase-1/phase-2 unwind
-      mismatch like the one observed here.
+    - **The actual `throw` site, found.** The naive techniques that worked
+      for bug 10 (reading a return address off the stack, `psp-addr2line`)
+      kept producing confident-looking wrong answers here — three separate
+      attempts, all eventually traced to `.eh_frame` (the DWARF unwind-table
+      section) data sitting on the stack at the exact address each read
+      targeted, a coincidence of this specific call site's optimized code
+      layout rather than a real return address. What broke the pattern:
+      temporarily forcing `-O0` for the whole `psp` mruby cross-build
+      (`build_config.rb`, reverted after) to remove tail-call/sibling-call
+      elimination and identical-code folding as confounds, *and* switching
+      technique entirely — instead of reading raw stack memory after the
+      fact, `__builtin_return_address(0)` (a compiler builtin with
+      ISA-guaranteed-correct semantics, immune to every failure mode above)
+      captured directly inside `3rd/mruby/src/error.c`'s `mrb_exc_raise`
+      (the one choke point every `raise` passes through) into a small ring
+      buffer. The ring held exactly **one entry** for the whole run — this
+      is the *first exception the process ever raises* — of class
+      `NameError`. The same technique one level up (inside `mrb_name_error`
+      itself) captured the missing symbol directly: `RPG2K_NEW_GAME`.
+    - **Root cause.** `Scene::Title#new_game_flag?`/`#auto_continue?`
+      (`mruby-rpg2k/mrblib/scene/title.rb`) and `RPG2k#headless_battle_troop`/
+      `#preview_map_id` (`mruby-rpg2k/mrblib/main.rb`) each reference one of
+      `RPG2K_NEW_GAME`/`RPG2K_CONTINUE`/`RPG2K_PREVIEW_MAP`/
+      `RPG2K_BATTLE_TROOP` directly, every reference already wrapped in its
+      own `rescue StandardError` — the same deliberate, working pattern
+      `TEST_PLAY` uses (see bug 10's fix above), because these four are
+      genuinely optional: `src/main.cxx` (the desktop/CLI target) is the
+      *only* target that ever defines them, from its own `--rpg2k_new_game`
+      etc. flags, and every non-CLI target is expected to leave them unset
+      and let the `rescue` catch it. `app/psp/main.cxx` never defined any of
+      the four (only `TEST_PLAY`), so the very first one `Scene::Title`
+      touches raises — and that `rescue` clause, though correct, never
+      catches it: this is the *first* real C++ exception the process has
+      ever thrown, and on this toolchain the one-time pthread/TLS lazy
+      bootstrap `__cxa_throw` needs the first time it runs
+      (`pthread_setspecific` inside `__cxa_get_globals`, allocating its
+      first internal semaphore — the `pthread_sem7`/`sceKernelCreateSema`
+      call this whole investigation kept keying diagnostics off of) does not
+      complete correctly, so the exception never reaches the `rescue` at
+      all — it aborts via libgcc's `_Unwind_RaiseException_Phase2` failure
+      path instead, the same `sysclib_strlen(0x11e)` symptom bug 10 traced.
+    - **Fix.** `app/psp/main.cxx` now defines all four constants right after
+      `TEST_PLAY`, matching `src/main.cxx`'s own defaults for an unset flag
+      (`RPG2K_NEW_GAME`/`RPG2K_CONTINUE` `false`, `RPG2K_PREVIEW_MAP`/
+      `RPG2K_BATTLE_TROOP` `0`) — sidestepping the fragile first-throw path
+      entirely rather than trying to fix it (a toolchain-level fix, if one
+      is even needed elsewhere, is a separate, larger undertaking; see
+      below).
+    - **Verified against the real fixture:** `RPG2K_PSP_GAME_START RPG2k ok`
+      still prints, and — for the first time in this entire investigation —
+      `RPG2K_PSP_BRINGUP` heartbeats now flow continuously (`frame=0`, `200`,
+      `400`, … up to `176800` over the run), with zero occurrences of
+      `strlen(0000011e)` anywhere in the log. `RPG_RT.lmt` (the map tree)
+      is now read too, confirming the boot gets well past `Scene::Title`.
+    - **Residual, deliberately out of scope here:** *why* the first-ever
+      `__cxa_throw` on this toolchain fails to unwind is still not
+      understood, only worked around. Nothing else in this bring-up's own
+      code currently depends on a `rescue` catching a truly first-of-its-
+      kind exception (every other `rescue` site either isn't first or isn't
+      reached before something else already threw once), but that is
+      incidental, not guaranteed — a future change that adds a new,
+      genuinely-could-be-first raise on some other path could hit the same
+      failure mode. If it recurs, this section's diagnostic trail (ring
+      buffer at `mrb_exc_raise`, `__builtin_return_address(0)`, `-O0` to
+      defeat ICF/tail-calls) is the fastest way back to a real answer;
+      "prime" the exception machinery deliberately early in `main()` (throw
+      and catch something trivial before any real game code runs) is the
+      most promising untried fix if a case ever needs it for real, since it
+      would force the same one-time pthread/TLS bootstrap to happen in a
+      controlled spot instead of wherever the first real exception happens
+      to land.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
