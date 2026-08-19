@@ -592,21 +592,32 @@ way, one at a time, each hidden behind the identical crash until fixed:
   by `scripts/rpgxp_testbed_check.rb`/`rpgvx_testbed_check.rb` re-parsing
   real event-command data (15,797 XP event commands) cleanly afterward.
 
-With all eight gaps above closed, the same real VX Ace release now reaches
+- **Fixed: `Sprite` had no `#width` / `#height`.** A real gap in
+  `mruby-rgss/mrblib/lib.rb`: the native `Sprite` class binding
+  (`src/lib.cxx`) never exposed them, and neither did the mrblib
+  reopening that already fills in `x`/`y`/`z`/`opacity`/`ox`/`oy` and the
+  rest of what the native `#initialize` never sets. RGSS3 (VX Ace) added
+  `Sprite#width`/`#height` over XP/VX's `Sprite` — read-only, mirroring
+  the sprite's own `bitmap` dimensions, `0` with none set — so scripts can
+  position something relative to a sprite without tracking its bitmap
+  size separately. This same release's own bundled speech-bubble add-on
+  (`吹きだしウィンドウ`, "bubble window") does exactly that, centring its
+  tail sprite under a message window (`self.y - @tail.height / 2` in
+  `get_tale_pos_normal_updown`, `@tail` a real `Sprite.new`), which raised
+  `NoMethodError: undefined method 'height' for RGSS::Sprite` the first
+  time the game showed a message. `Window` and `Graphics` both already
+  had `#width`/`#height` — only `Sprite` was missing them. Fixed by
+  adding both, delegating to `bitmap.width`/`bitmap.height` when a bitmap
+  is set.
+
+With all nine gaps above closed, the same real VX Ace release now reaches
 past `Scene_Title`'s title-command window, its title music,
-`DataManager.setup_new_game`'s common-event setup, and its first common
-event call, into a bundled community bubble-window script's own text
-layout (`エラーログ出力` aside, the script host reaches
-`吹きだしウィンドウ`'s `get_tale_pos_normal_updown`) before hitting a ninth
-masked exception — `NoMethodError: undefined method 'height' for
-RGSS::Sprite`. Not yet diagnosed as an engine gap or a script bug: real
-RGSS3's own documented `Sprite` API has no `#height` either, so this may be
-the community script itself relying on something beyond stock RGSS (a
-different add-on's monkey-patch this release also bundles, perhaps) rather
-than a gap in this engine — left for a future pass to determine which. The
-pattern established here (temporary VM probe → real gap → mrblib or native
-fix → regression test) applies regardless. mruby's bare `raise` (no
-arguments) has the same
+`DataManager.setup_new_game`'s common-event setup, its first common event
+call, and the bundled speech-bubble add-on's own text layout — into
+further gameplay, before hitting a tenth masked exception, not yet
+diagnosed. The pattern established here (temporary VM probe → real gap →
+mrblib or native fix → regression test) applies to it too, left for a
+future pass. mruby's bare `raise` (no arguments) has the same
 root cause from the other side: real Ruby re-raises `$!`, but mruby's
 `mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
 fresh, empty `RuntimeError` instead of re-raising what was actually caught.
@@ -638,11 +649,11 @@ Tilemap item 1's remaining polish (the flat "above characters" layer) is the
 only item left in the six sections above; item 7's `$!`/bare-`raise` gap
 stands, and per a real release it is the reason each fix above only reveals
 the *next* wall one at a time rather than the game running to completion in
-one pass. Eight real bugs have been found and fixed this way so far
+one pass. Nine real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
-`Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`)
-without needing `$!` itself fixed — the temporary VM probe finds the real
-exception directly regardless. A ninth wall, inside a bundled community
-script's own text layout past the game's first common event call, is where
-the game stands now — not yet diagnosed as an engine gap or a script bug.
+`Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
+`Sprite#width`/`#height`) without needing `$!` itself fixed — the temporary
+VM probe finds the real exception directly regardless. A tenth wall, past
+the bundled speech-bubble add-on's own text layout, is where the game
+stands now — not yet diagnosed.

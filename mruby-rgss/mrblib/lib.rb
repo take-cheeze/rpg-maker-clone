@@ -723,6 +723,20 @@ module RGSS
   class Sprite
     attr_reader :bitmap
 
+    # RGSS3 (VX Ace) added these over XP/VX's Sprite: the graphic's own pixel
+    # size, read-only, 0 with no bitmap set. Real scripts read them to
+    # position something relative to a sprite without tracking its bitmap
+    # dimensions separately -- a real VX Ace release's own bundled
+    # speech-bubble add-on centres its tail sprite this way
+    # (`self.y - @tail.height / 2`).
+    def width
+      bitmap ? bitmap.width : 0
+    end
+
+    def height
+      bitmap ? bitmap.height : 0
+    end
+
     # The viewport the sprite was created in (the native #initialize stores it to
     # keep it alive). RPG::Sprite reads it to put its damage pop-up and animation
     # cells in the same viewport as the battler — RGSS exposes it, and without the
