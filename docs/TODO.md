@@ -9290,9 +9290,16 @@ not yet verified:
   is now also implemented (`Scene::Map#debug_through?`).
 
 **Move Route / Character Movement command**
-- Only **one pending move route per character** — issuing a second while
+- ✅ Only **one pending move route per character** — issuing a second while
   the first is still running **discards the first outright** (not queued,
-  not layered).
+  not layered). **Confirmed already correct**, all three targets: a fresh
+  Set Move Route is a plain overwrite with no queueing anywhere in
+  `mruby-rpg2k/mrblib/scene/map.rb` — `force_event_route`'s
+  `ev[:forced_route] = route`, `start_player_route`'s (`Scene::Map`)
+  `@player_route = route`, and `force_vehicle_route`'s
+  `@vehicle_routes[type] = route` all simply replace whatever route (if any)
+  was already running, dropping its remaining queued commands outright. No
+  code carries a second route alongside the first for any of the three.
 - Move-route commands are asynchronous/fire-and-forget by default: the
   interpreter advances immediately while the character keeps sliding in
   the background; only "Proceed With Movement"/"Run All Designated Moves"
