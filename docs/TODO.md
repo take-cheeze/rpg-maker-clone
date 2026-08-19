@@ -4046,6 +4046,27 @@ The work below is roughly ordered by the critical path to a walkable game
   hypothetical edge case. Covered by five new `scripts/rpg2k_scene_check.rb`
   checks across Inn and Shop's command list/buy list/quantity counter, all
   confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-19): the shop's own command list and buy/sell item
+  list only moved the cursor on a fresh key press, never auto-repeating
+  while Up/Down was held — the same class of gap the shop quantity
+  counter had, and missed by the very pass just above despite already
+  having `Window_Shop::Update`'s source in hand.** That earlier pass
+  quoted `Window_Shop::Update` (`src/window_shop.cpp`) for its SFX-on-move
+  behavior but never noticed the same quoted function gates its Up/Down
+  entirely on `Input::IsRepeated`, not `IsTriggered` — and the buy/sell
+  item lists (`Window_Selectable::Update`, `src/window_selectable.cpp`,
+  the base class both `Window_ShopBuy` and `Window_ShopSell` share) move
+  on `IsTriggered` *or* `IsRepeated` too, the same repeat-while-held
+  cursor every RPG2000 list window gets. `#shop_move_cursor`
+  (`mruby-rpg2k/mrblib/scene/map.rb`, shared by `#drive_shop_command` and
+  `#drive_shop_list`) checked only `Input.trigger?` on each direction, so
+  a player had to tap Up/Down once per line instead of holding it down.
+  Fixed by adding `|| Input.repeat?(...)` to both branches, matching the
+  idiom already used everywhere else in this file (including the shop
+  quantity counter's own fix just above). Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (`RGSS::Input.repeated`, not
+  `.triggered`, still moves the buy list cursor), confirmed to fail
+  against the pre-fix code (`expected 1, got 0`) before the fix.
   ✅ **A disabled Continue's own *rendering* — not just its SE — was also
   still wrong, found in a separate later pass: it drew a hardcoded flat gray
   instead of reading the windowskin's own disabled-colour swatch, unlike
