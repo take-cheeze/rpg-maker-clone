@@ -9261,6 +9261,36 @@ not yet verified:
   is, unchanged; a state already present by ordinary means is still locked
   in by the armor either way), confirmed to fail against the pre-fix code
   (`expected [], got [4]`) before the fix.
+  ✅ **Follow-up (2026-08-19): an RPG2003 fight that started with every
+  front-row ally already incapacitated (dead/hidden) never snapped
+  back-row survivors to the front, leaving them fighting a whole battle
+  from the back row real RPG_RT would have moved them out of.** Confirmed
+  directly against RPG_RT's live source: `Scene_Battle_Rpg2k3::InitActors`
+  (`src/scene_battle_rpg2k3.cpp`) runs a "ROW ADJUSTMENT" pass before every
+  fight — `force_front_row` starts `true` and is cleared the instant any
+  actor is found `GetBattleRow() == RowType_front && !IsHidden() &&
+  CanActOrRecoverable()`; if it survives the loop over the whole party,
+  every actor's row is force-set to front (`SetBattleRow(RowType_front)`)
+  for the duration. `CanActOrRecoverable` (`src/game_battler.cpp`) is
+  false only for a state with `restriction == Restriction_do_nothing &&
+  auto_release_prob == 0` — the exact concept this codebase already models
+  as `#incapacitated?` (dead/hidden via `#out_of_play?`, plus the same
+  permanent-restriction check), just never wired into battle setup.
+  `Game::Battle#initialize` (`mruby-rpg2k/mrblib/game.rb`) seeded every
+  ally's row straight from the actor's persisted `#battle_row` with no
+  such safety net, so a party whose front line had wiped in a prior fight
+  stayed split forever — the back-row survivors kept the -25% damage-dealt
+  penalty (`#row_adjusted?`/ADR 0053 Phase 1) with no way back to front
+  short of the manual Row command. Fixed by adding the same check to
+  `#initialize`, RPG2003-only: if no ally is simultaneously front-row and
+  not `#incapacitated?`, every ally's row (and, mirroring the in-battle Row
+  command's own write-back — see Scene::Battle's `:row` handler — the
+  underlying `Game::Actor#battle_row`) is forced to front. Covered by three
+  new `scripts/rpg2k3_battle_row_check.rb` checks — an all-dead front row
+  forces a living back-row survivor to front; a front row with a living
+  member is left untouched; an RPG2000 (non-`rpg2003:`) battle never forces
+  rows at all — the first confirmed to fail against the pre-fix code
+  (`expected 0, got 1`) before the fix.
   ✅ **Change Battle Commands (1009) never validated an added command id
   against the database's own Battle Commands table, so any positive
   integer — however bogus — could occupy one of the six real slots

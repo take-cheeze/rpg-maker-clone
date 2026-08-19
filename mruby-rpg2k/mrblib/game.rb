@@ -9429,6 +9429,26 @@ module Game
       # fight rather than what the roster carried when the fight began.
       @escape_chance = compute_escape_chance
       @force_flee = false  # a battle page granted the party a guaranteed escape
+      # RPG2003 row safety net: if the fight would start with nobody in the
+      # front row able to act or eventually recover (every front-row ally is
+      # hidden, dead, or locked into a permanent do-nothing state), RPG_RT
+      # snaps every ally to the front row rather than leaving survivors
+      # stuck in the back -- EasyRPG's Scene_Battle_Rpg2k3::InitActors ("ROW
+      # ADJUSTMENT" comment): `force_front_row` starts true and is cleared
+      # the moment any ally is found `!IsHidden() && CanActOrRecoverable()`
+      # while in the front row; if the loop never clears it, every actor's
+      # row is force-set to front. `#incapacitated?` is this codebase's own
+      # `!(!hidden && CanActOrRecoverable)` (it already folds hidden/dead in
+      # via `#out_of_play?`, plus the same permanent-restriction check).
+      # The write is persistent the same way the in-battle Row command's own
+      # write-back is (`Game_Actor::SetBattleRow` -- see Scene::Battle's
+      # `:row` handler) -- RPG_RT does not undo it at battle end.
+      if @rpg2003 && @allies.none? { |a| a.row == ROW_FRONT && !incapacitated?(a) }
+        @allies.each do |a|
+          a.row = ROW_FRONT
+          a.actor.battle_row = ROW_FRONT if a.actor.respond_to?(:battle_row=)
+        end
+      end
       @log = []      # one entry per landed attack, in order (see #strike)
       @queue = []    # battlers still to act this round, in agility order
       @pending = []  # extra hits of an all-target action, drained one per #step
