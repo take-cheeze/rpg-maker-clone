@@ -2200,12 +2200,24 @@ module Game
     # the operation (0 add / inflict, non-zero remove / cure) and param3 the state
     # id. Removing the death state (戦闘不能) revives a downed actor; inflicting it
     # knocks the actor out — the HP coupling lives in Game::Actor.
+    #
+    # A cure run outside battle can lift a cursed-equipment-forced state
+    # RPG_RT would otherwise refuse -- confirmed against EasyRPG's actual
+    # C++ source, fetched live: `Game_Interpreter::CommandChangeCondition`
+    # (src/game_interpreter.cpp) calls `actor->RemoveState(state_id,
+    # !Game_Battle::IsBattleRunning())`, and `Game_Battler::RemoveState`'s
+    # own `always_remove_battle_states` bypass (see `Actor#remove_state`'s
+    # doc comment) only ever applies to a state whose own database
+    # Persistence field is "Ends" (not "Continues after battle"). `@battle`
+    # (nil outside a battle-event page, the same flag every other
+    # battle-context check in this file already reads) is this port's own
+    # `!Game_Battle::IsBattleRunning()`.
     def do_change_condition(cmd)
       state_id = cmd.param(3)
       remove = cmd.param(2) != 0
       stat_targets(cmd).each do |a|
         if remove
-          a.remove_state(state_id)
+          a.remove_state(state_id, always_remove_battle_states: @battle.nil?)
         else
           a.add_state(state_id)
           # RPG_RT's crowding-out rule (Game::States::PRUNE_GAP): a state

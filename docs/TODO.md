@@ -8845,6 +8845,48 @@ not yet verified:
   51 at all, so every prior actor fixture started unarmed regardless of
   what a real database's `initial_equipment` might specify), confirmed to
   fail against the pre-fix code before the fix.
+  ✅ **A map-side Change Condition (10480) cannot lift a cursed-armor-forced
+  state even though real RPG_RT specifically carves out an exemption for
+  exactly this case (2026-08-19).** The two fixes above correctly made
+  `#remove_state` refuse a cursed-armor-forced state unconditionally, but
+  RPG_RT's own refusal is not actually unconditional. Confirmed against
+  EasyRPG's actual C++ source, fetched live: `Game_Interpreter::
+  CommandChangeCondition` (`src/game_interpreter.cpp`) calls `actor->
+  RemoveState(state_id, !Game_Battle::IsBattleRunning())`, and
+  `Game_Battler::RemoveState`'s own `always_remove_battle_states`
+  parameter (`src/game_battler.cpp`) is `if (!(always_remove_battle_states
+  && state && state->type == Persistence_ends)) { ps =
+  GetPermanentStates(); }` — the permanent-states lock is skipped entirely
+  when both true: the cure is running outside battle, *and* the state's
+  own database Persistence field is "Ends" (0, the schema default for
+  most non-Poison-style ailments) rather than "Continues after battle"
+  (1). The call site's own comment states the intent outright: "RPG_RT:
+  On the map, will remove battle states even if actor has state inflicted
+  by equipment." Every *other* cure path — an item, a skill, Full
+  Recovery, or Change Condition while a fight is actually running —
+  always passes `false` there, so this exemption is specific to exactly
+  one command run outside battle, not a general softening of the lock.
+  Concretely: an actor whose starting/equipped armor forces Confusion (a
+  state left at its schema-default Persistence) via the Curse flag stays
+  confused forever under the two fixes above — a shrine/blessing map event
+  built around "if cursed, use Change Condition to lift it" (an entirely
+  ordinary editor-authored design, not requiring the player to think to
+  unequip the item) silently failed to do anything. Fixed by giving
+  `Actor#remove_state` a new `always_remove_battle_states:` keyword
+  (mirroring EasyRPG's own parameter name) and a new
+  `#state_persists_type?` helper reading the state's own `situation` row
+  the same way `#can_act?` already does; `Interpreter#do_change_condition`
+  passes `@battle.nil?` — this port's own `!Game_Battle::IsBattleRunning()`
+  — through on every remove. Every other `#remove_state` call site
+  (`#use_medicine`, `#cast_skill`) is untouched, keeping its implicit
+  `false` default. Covered by two new `scripts/rpg2k_logic_check.rb`
+  checks — `#remove_state(state_id, always_remove_battle_states: true)`
+  lifts a battle-only-type cursed-armor-forced state but still refuses a
+  "continues after battle" one even outside battle; a full `Interpreter#
+  do_change_condition` run confirms the same state cannot be lifted with
+  `@battle` set but can once it is nil — both confirmed to fail against
+  the pre-fix code (an `ArgumentError` for the new keyword, and the state
+  surviving a map-side cure) before the fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player
