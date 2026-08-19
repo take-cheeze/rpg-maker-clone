@@ -6024,6 +6024,29 @@ check 'Open Shop scene: the counter steps by ten on the vertical axis' do
   eq 99, shop[:quantity][:count], 'clamped at the cap'
 end
 
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
+# key across frames without it also reading as a fresh trigger.
+check 'Open Shop scene: holding a direction auto-repeats the quantity counter, ' \
+      'not just a fresh press' do
+  # Confirmed against RPG_RT's own live source: Window_ShopNumber::Update
+  # (src/window_shopnumber.cpp) gates all four directions on
+  # Input::IsRepeated, not IsTriggered -- the same repeat-while-held cursor
+  # semantics every other in-game list uses.
+  scene, _st = shop_quantity_scene(999_999)
+  shop = scene.instance_variable_get(:@shop)
+  eq 99, shop[:quantity][:max], 'rich enough to hit the item cap'
+
+  RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 2, shop[:quantity][:count], 'a held (repeated) Right still steps the count by one'
+
+  RGSS::Input.repeated = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 12, shop[:quantity][:count], 'a held (repeated) Up still steps the count by ten'
+end
+
 check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   scene, st = shop_quantity_scene(500)
   press(scene, RGSS::Input::RIGHT)
