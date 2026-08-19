@@ -3628,13 +3628,14 @@ check 'Input Number opens a widget; confirming stores the entered value' do
   end
   ok ni, 'the number-entry widget opened'
 
-  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  RGSS::Input.triggered = [RGSS::Input::UP] # ones digit 0 -> 1 (value 1) -- the
+  # cursor starts on the rightmost/least-significant cell, matching RPG_RT
   scene.update
   RGSS::Input.triggered = [RGSS::Input::C]  # confirm
   scene.update
   ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
   5.times { RGSS::Input.reset; scene.update }
-  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  eq 1, st.variables[5], 'the entered value landed in variable 5'
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
@@ -3961,14 +3962,15 @@ check 'a Show Text keeps its window open when an Input Number follows directly' 
   ok scene.instance_variable_get(:@message)[:window].equal?(win),
      'the same window is reused, not closed and reopened'
 
-  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  RGSS::Input.triggered = [RGSS::Input::UP] # ones digit 0 -> 1 (value 1) -- the
+  # cursor starts on the rightmost/least-significant cell, matching RPG_RT
   scene.update
   RGSS::Input.triggered = [RGSS::Input::C]  # confirm
   scene.update
   ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
   ok !scene.instance_variable_get(:@message), 'and the message window closed with it'
   5.times { RGSS::Input.reset; scene.update }
-  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  eq 1, st.variables[5], 'the entered value landed in variable 5'
   ok st.switches[1], 'the interpreter resumed and ran the next command'
 end
 
@@ -5255,13 +5257,14 @@ check "a Common Event Parallel Process's own standalone Input Number now actuall
   ok !st.switches[1],
      'the command after Input Number has not run yet -- the process is blocked on the widget'
 
-  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  RGSS::Input.triggered = [RGSS::Input::UP] # ones digit 0 -> 1 (value 1) -- the
+  # cursor starts on the rightmost/least-significant cell, matching RPG_RT
   scene.update
   RGSS::Input.triggered = [RGSS::Input::C] # confirm
   scene.update
   ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
   5.times { RGSS::Input.reset; scene.update }
-  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  eq 1, st.variables[5], 'the entered value landed in variable 5'
   ok st.switches[1], 'the Parallel Process resumed and ran the command after Input Number'
 end
 
@@ -5303,14 +5306,15 @@ check "a Map Event Parallel Process's own Show Text + Input Number merges into t
   ok ni[:embedded], 'merged onto the preceding Show Text, not a fresh standalone panel'
   ok scene.instance_variable_get(:@message), 'the message window is still the one carrying it'
 
-  RGSS::Input.triggered = [RGSS::Input::UP] # tens digit 0 -> 1 (value 10)
+  RGSS::Input.triggered = [RGSS::Input::UP] # ones digit 0 -> 1 (value 1) -- the
+  # cursor starts on the rightmost/least-significant cell, matching RPG_RT
   scene.update
   RGSS::Input.triggered = [RGSS::Input::C] # confirm
   scene.update
   ok !scene.instance_variable_get(:@number_input), 'the widget closed on confirm'
   ok !scene.instance_variable_get(:@message), 'the merged message window closed with it'
   5.times { RGSS::Input.reset; scene.update }
-  eq 10, st.variables[5], 'the entered value landed in variable 5'
+  eq 1, st.variables[5], 'the entered value landed in variable 5'
   ok st.switches[1], 'the Parallel Process resumed and ran the command after Input Number'
 end
 
