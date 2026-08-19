@@ -6787,6 +6787,35 @@ check "can_cast?: a weapon-type Attribute skill needs a weapon carrying it equip
   eq true, st.party.can_cast?(hero, 8)
 end
 
+# 封印 / Silence: EasyRPG's Game_Battler::IsSkillUsable (src/game_battler.cpp)
+# checks restrict_skill/restrict_magic unconditionally, in or out of a fight
+# -- Window_Skill::CheckEnable is one shared window class for the field and
+# battle skill menus alike. Game::Battle#skill_sealed? already ports this for
+# the in-battle menu; Game::Party#can_cast? -- the gate #field_skill?/
+# #field_skills, #skill_effective? and #cast_skill/#cast_switch_skill all
+# funnel through -- had no such check at all, so a sealed actor could still
+# cast a magic-type field skill from the menu; the seal only bit in battle.
+check 'can_cast?: a sealing state blocks a field skill above its threshold, ' \
+      'matching the battle-side seal' do
+  situation = { 12 => fake_state(restrict_magic: true, restrict_magic_level: 1) }
+  skills = { 7 => fake_skill(name: 'Fire', scope: 2, sp_cost: 1, power: 10,
+                             mrate: 3, prate: 0, hp: true),
+             8 => fake_skill(name: 'Slash', scope: 2, sp_cost: 1, power: 10,
+                             mrate: 0, prate: 4, hp: true) }
+  st = skill_party(skills, {}, situation: situation)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(7)
+  hero.learn_skill(8)
+  hero.change_hp(-50)
+
+  eq true, st.party.can_cast?(hero, 7), 'unafflicted: nothing is sealed'
+  hero.add_state(12)
+  eq false, st.party.can_cast?(hero, 7), 'silence seals the magic skill'
+  eq true, st.party.can_cast?(hero, 8), 'but not the purely physical one'
+  eq [], st.party.cast_skill(hero, 7), 'casting the sealed skill directly does nothing'
+  eq true, st.party.cast_skill(hero, 8).any?, 'the physical skill still casts normally'
+end
+
 check 'a special item invoking a weapon-Attribute-gated skill bypasses the ' \
       'equip gate entirely' do
   # デフォ戦bot: an ally *casting* a weapon-Attribute skill needs the matching

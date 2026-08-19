@@ -14328,6 +14328,40 @@ above are repeated here)
   both confirmed to fail against the pre-fix code before the fix (an
   unrelated-state target dodging/reflecting exactly like a genuinely flagged
   one would).
+  ✅ **Follow-up (2026-08-19): `#skill_sealed?`'s own seal — 封印 / Silence —
+  never reached the field (out-of-battle) Skill menu at all; only the
+  in-battle one enforced it.** Confirmed directly against RPG_RT's live
+  source: `Game_Battler::IsSkillUsable` (`src/game_battler.cpp`) checks
+  `restrict_skill`/`restrict_magic` unconditionally — there is no in-battle
+  guard anywhere around that loop — and `Window_Skill::CheckEnable`
+  (`src/window_skill.cpp`), the *one* window class the field and battle
+  skill menus both use, is simply `IsSkillLearned && IsSkillUsable` with no
+  context distinction either: a state that seals magic greys out and blocks
+  a skill identically whether the actor is in a fight or standing on the
+  map. `Game::Battle#skill_sealed?` already ports this correctly for the
+  in-battle menu, but `Game::Party#can_cast?` — the gate `#field_skill?`/
+  `#field_skills`, `#skill_effective?` and `#cast_skill`/`#cast_switch_skill`
+  all funnel through — never called it (nor anything that does); `Party` and
+  `Battle` are different classes with no shared seal check between them. So
+  an actor carrying a Silence/Seal-type state that persists outside battle
+  (`type` field 1, "also persists on the map" — see the state-type bullet
+  elsewhere in this file) could still see and successfully cast a magic-type
+  field skill from the menu, with the seal only ever biting once a fight
+  started. Fixed with a new `Game::Actor#skill_sealed?(sk)` (mirroring
+  `Battle#skill_sealed?`'s own `restrict_skill`/`restrict_magic`-vs-
+  `physical_rate`/`magical_rate` threshold check, reading `#state_table` the
+  same way `#can_act?` already does for its own state-table lookup), and a
+  new clause on `Party#can_cast?`. `#field_skills`/`#battle_skills` (the
+  listings) are unchanged, matching how the in-battle menu already worked:
+  a sealed skill stays listed, only casting it is refused — RPG_RT greys the
+  entry out rather than removing it, and this codebase's existing
+  battle-side behavior already matched that; only the field-side gate itself
+  had no check to grey it out *with*. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (an unafflicted actor casts freely; a
+  Silence-type state blocks the magic-type skill outright, including through
+  a direct `#cast_skill` call, while leaving a purely physical skill
+  castable), confirmed to fail against the pre-fix code (`expected false,
+  got true`) before the fix.
   ✅ **The all-enemies/all-allies-scope half is now implemented too,
   verified against EasyRPG Player's actual C++ source rather than the
   "on top of, not instead of" guess this entry originally carried — which
