@@ -767,19 +767,35 @@ the interpreter-linking slice, in this order:
       <- __cxa_get_globals <- __cxa_throw`. Some code throws a real C++
       exception (`__cxa_throw`) for the first time in the process's life
       at this point. That throw cannot safely unwind past mruby's own
-      `vm.c` dispatch loop, which is compiled as C++ (see Finding
-      3/`OP_ENTER` discussion above) but *not* with
-      `MRB_USE_CXX_EXCEPTION`/full exception-table support for its own
-      control flow (mruby uses `setjmp`/`longjmp` internally instead) —
-      so the unwind fails inside libgcc's `_Unwind_RaiseException_Phase2`,
-      which calls `abort()`. pspsdk's `_kill()` (`glue.c`, `abort()`'s
-      `SIGABRT` handler) implements "kill the process" as
-      `sceKernelDeleteThread` on its *own* current thread, which the PSP
-      kernel correctly refuses (`SCE_KERNEL_ERROR_NOT_DORMANT`) — and
-      that refused delete is what cascades into the same
-      `sysclib_strlen(0x11e)` symptom bug 10's own diagnostics keyed off
-      of, confirming this is a different bug wearing the same visible
-      symptom, not a regression of bug 10 itself.
+      `vm.c` dispatch loop (compiled as C++, see Finding 3/`OP_ENTER`
+      discussion above, but without exception-table coverage for its own
+      `NEXT`/`JUMP` dispatch macros — a `setjmp`-based loop, not a
+      `try`/`catch` one), so the unwind fails inside libgcc's
+      `_Unwind_RaiseException_Phase2`, which calls `abort()`. pspsdk's
+      `_kill()` (`glue.c`, `abort()`'s `SIGABRT` handler) implements "kill
+      the process" as `sceKernelDeleteThread` on its *own* current thread,
+      which the PSP kernel correctly refuses
+      (`SCE_KERNEL_ERROR_NOT_DORMANT`) — and that refused delete is what
+      cascades into the same `sysclib_strlen(0x11e)` symptom bug 10's own
+      diagnostics keyed off of, confirming this is a different bug wearing
+      the same visible symptom, not a regression of bug 10 itself.
+      **Correction to an earlier assumption in this same investigation:**
+      `MRB_THROW` on this build is **not** a plain `longjmp` as first
+      stated below (and as an earlier, unverified pass through this
+      codebase assumed) — disassembling `exc_throw`'s compiled body
+      (`psp-objdump`) shows its `mrb->jmp`-set branch genuinely calls
+      `__cxa_allocate_exception` then `__cxa_throw`, wrapping the
+      `mrb_jmpbuf*` itself as the thrown object (matching
+      `mruby/throw.h`'s `#define MRB_THROW(buf) throw(buf)` — this build
+      apparently does get that branch, whatever `MRB_USE_CXX_EXCEPTION`
+      reads as here). That in turn means C++ exceptions are mruby's
+      *normal*, everyday `raise`/`rescue` mechanism on this build, not a
+      rare path — which narrows what "unwind fails" can mean here: not
+      "this code path never gets exercised" (ordinary rescued exceptions
+      elsewhere in the same boot plainly work, or the title screen would
+      never have gotten this far), but something specific to *this one*
+      raise — its call depth, its particular stack layout, or the exact
+      exception class/allocation involved.
     - **Ruled out with direct evidence**, not speculation:
       - **Not simple arena exhaustion.** A `g_mrb_free` free-list walk
         (the same technique bug 10 used) at the exact `pthread_sem7`
@@ -803,30 +819,70 @@ the interpreter-linking slice, in this order:
         `write(2, ...)`, the same primitive `psp_write` already uses
         successfully throughout this whole bring-up); crash persisted
         unchanged.
-      - **Not mruby's own OOM-fallback abort path.** The stack trace's
-        `__cxa_throw` frame was initially (and, on later direct
-        verification, **incorrectly**) attributed by `psp-addr2line` to
-        `mrb_core_init_abort` (`3rd/mruby/src/error.c`) — the function
+      - **Not mruby's own OOM-fallback abort path — checked twice, two
+        different ways, both negative.** The stack trace's `__cxa_throw`
+        frame is consistently attributed by `psp-addr2line`/`WalkCurrentStack`
+        to `mrb_core_init_abort` (`3rd/mruby/src/error.c`) — the function
         `mrb_raise_nomemory` falls back to when `mrb->nomem_err` is
-        unexpectedly unset, itself the only caller of a real `__cxa_throw`
-        in mruby's own source (`exc_throw`'s `!mrb->jmp` branch calls
-        `mrb_print_error` then plain `abort()`, not a C++ throw; when
-        `mrb->jmp` is set as expected, `MRB_THROW` is a `longjmp`, not a
-        throw, on this build). A call counter patched directly into
-        `mrb_core_init_abort` came back **`call_count=0`** after a full
-        crashing run: it was never entered. The `addr2line` attribution
-        was a nearest-preceding-symbol artifact, not the real call site —
-        worth recording plainly since it side-tracked a chunk of this
-        session's investigation and would do the same to the next one.
-    - **Not yet found:** the actual `throw` site. Suggested next steps,
-      roughly in order of promise: (1) get a raw disassembly around the
-      exact PC libgcc's personality routine returns to (rather than
-      trusting `addr2line`'s nearest-symbol guess a second time — a
-      function compiled with `-O3` can have its no-return tail folded
-      into another one via identical-code-folding, which is the likely
-      explanation for the first misattribution); (2) grep every `throw`
-      statement reachable from `Scene::Title#initialize`'s call graph —
-      not just `mruby-rgss/src/*.cxx`, but LVGL, uni-algo, and the
+        unexpectedly unset. Two independent checks both say this
+        attribution is spurious, not real:
+        1. A call counter patched directly into `mrb_raise_nomemory`
+           itself (`mrb_core_init_abort`'s *only* call site anywhere in
+           `3rd/mruby/`, confirmed by grepping the whole tree) — logging
+           its caller (`__builtin_return_address(0)`), `mrb->nomem_err`,
+           and separate counts for the normal-raise and fatal-fallback
+           branches — came back **all zero** after a full crashing run,
+           on a build independently re-verified as freshly compiled (not
+           the stale-object-file false negative an earlier pass in this
+           same session produced and had to correct: that first attempt's
+           `build-psp/rpg2k_psp` still disassembled to the *pre*-edit
+           `mrb_core_init_abort` despite the source having been changed,
+           because the mruby submodule's `git checkout` between builds
+           didn't reliably invalidate `rake`'s own incremental cache —
+           `rm -rf build-psp/mruby` before rebuilding is what actually
+           forces a clean recompile, worth remembering for next time).
+           `mrb_raise_nomemory` was, for real this time, never called at
+           all.
+        2. `__cxa_throw`'s own prologue (`psp-objdump`: `addiu sp,sp,-24;
+           sw ra,20(sp)`) saves its real caller at a fixed, known stack
+           offset; reading that address directly (bypassing the stack
+           walker's own next-frame guess entirely) still landed on
+           `mrb_core_init_abort`'s exact entry address, byte-for-byte, on
+           two separately-built binaries with two different absolute
+           addresses — which looked like unusually strong corroboration
+           until a plain byte search of the linked ELF for that exact
+           4-byte little-endian address turned up a match inside
+           `.eh_frame` (the DWARF unwind-table section, part of what
+           `__cxa_throw`'s own `_Unwind_RaiseException_Phase2` reads while
+           trying and failing to find a handler). The far more mundane
+           explanation: `mrb_core_init_abort`'s address is referenced by
+           the unwind metadata itself (it's the nearest function boundary
+           to something in an FDE/LSDA table, not a call site), and some
+           of that metadata is legitimately sitting on the stack as scratch
+           data during the failed unwind — landing exactly on the memory
+           address a naive "read the return-address slot" probe checks,
+           by coincidence of stack layout, not because anything called
+           through it. Both routes to the same wrong answer share one
+           root cause, which is worth stating plainly for whoever
+           continues: **at this optimization level, a bare address found
+           on the stack — however it was obtained — is not evidence of a
+           call unless something else independently confirms the callee
+           actually ran.** Check 1 is that independent confirmation here,
+           and it says no.
+    - **Not yet found:** the actual `throw` site. The naive techniques
+      that worked for bug 10 (reading a return address off the stack,
+      `psp-addr2line`) have now both produced confident-looking wrong
+      answers for this bug specifically, which is itself informative:
+      whatever's happening here involves either heavier inlining/ICF at
+      this call site than bug 10's, or a genuinely deeper/less-recoverable
+      unwind state by the time `sceKernelCreateSema` fires. Suggested next
+      steps, roughly in order of promise: (1) rebuild the specific
+      suspect object files at `-O0` (temporarily, diagnostically) —
+      eliminates tail-call/sibling-call optimization and identical-code
+      folding as confounds, so a stack-scan or `$ra`-slot read means what
+      it looks like it means; (2) grep every `throw` statement reachable
+      from `Scene::Title#initialize`'s call graph — not just
+      `mruby-rgss/src/*.cxx`, but LVGL, uni-algo, and the
       `Bitmap`/font-rendering path exercised by `draw_system_text` and
       `load_windowskin`, since those run *before* the BGM/save-slot
       searches and could be the true shared cause both bisections missed
