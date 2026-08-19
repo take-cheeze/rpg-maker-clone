@@ -12715,6 +12715,30 @@ check "battle: a skill's stat-mod effect rolls independently of its HP effect" d
      '(-20 clamped to the asymmetric -base/2..+base band, base def 20)')
 end
 
+check "battle: an attribute-defence shift rolls its own hit chance per " \
+      "attribute id, not once for the whole skill" do
+  # RPG_RT (Game_BattleAlgorithm::Skill::vExecute,
+  # src/game_battlealgorithm.cpp) rolls an independent
+  # `Rand::PercentChance(to_hit_attribute_shift)` inside the `for` loop over
+  # every targeted attribute id, even though they all share the same
+  # skill-wide to-hit -- so a multi-attribute shift skill can land on some
+  # ids and miss on others in a single cast. #apply_attr_shift previously
+  # applied the shift to every listed id unconditionally, with no roll at
+  # all.
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.attr_ranks = { 1 => 2, 2 => 2 }
+  foe.attr_base_ranks = { 1 => 2, 2 => 2 }
+  bat = Game::Battle.new([combatant('Hero', 40, 0, 20, 100)], [foe],
+                         SequenceRng.new([49, 60]), nil, false, false, true)
+  # First roll (attribute 1) at 49 hits; second roll (attribute 2) at 60
+  # misses -- same 50% chance for both, one independent roll each.
+  moved = bat.send(:apply_attr_shift, foe, { attr_shift: -1, attr_ids: [1, 2],
+                                              chance: 50 })
+  eq [1], moved, 'only the id whose own roll hit actually shifted'
+  eq 1, foe.attr_ranks[1], 'attribute 1 shifted down (C -> B)'
+  eq 2, foe.attr_ranks[2], 'attribute 2 kept its rank -- its own roll missed'
+end
+
 check "battle: a skill/spell attack now rolls its own critical hit too" do
   # EasyRPG's Game_BattleAlgorithm::Skill::vExecute rolls
   # Algo::CalcCriticalHitChance(source, target, WeaponAll, ...) -- the exact

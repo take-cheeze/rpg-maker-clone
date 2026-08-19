@@ -14280,6 +14280,46 @@ above are repeated here)
   their base values immediately, and stay reset through a same-fight
   revival), confirmed to fail against the pre-fix code (`expected 0, got
   4`) before the fix.
+  ✅ **An attribute-defence rank shift landed on every targeted attribute
+  every single cast, with no accuracy roll at all — RPG_RT rolls one
+  independently per attribute id (2026-08-19).** Confirmed directly against
+  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`,
+  fetched live): the `affect_attr_defence` block loops
+  `for (int i = 0; i < skill.attribute_effects.size(); i++)` and only calls
+  `AddAffectedAttribute`/`SetIsSuccess` when
+  `Rand::PercentChance(to_hit_attribute_shift)` succeeds *for that specific
+  id* — a skill tagged to shift several attributes at once (e.g. a "Ward"
+  skill raising resistance to both Fire and Ice) can land on one and miss
+  the other in the same cast, exactly like this codebase's own
+  `stat_mod_keys`/HP/SP effects already roll independently of each other
+  via `#skill_effect_hits?`. `Game::Battle#apply_attr_shift`
+  (`mruby-rpg2k/mrblib/game.rb`) applied the shift to every id in
+  `cmd[:attr_ids]` unconditionally instead, the same "quoted the C++ branch
+  but only ported part of it" gap as the Knockout-reset fixes just above —
+  here the missing part was the roll immediately guarding
+  `AddAffectedAttribute` itself, not a field further down the same
+  function. (Separately checked while re-reading the surrounding source:
+  `affect_attack`/`affect_defense`/`affect_spirit`/`affect_agility` each
+  roll their own independent `Rand::PercentChance(to_hit)` too, but this
+  codebase's existing `stat_keys = (cmd[:stat_mod_keys] ||
+  []).select { skill_effect_hits?(cmd) }` already re-invokes
+  `#skill_effect_hits?` — a fresh, independent roll — once per key via
+  `Array#select`'s block, so that side was already correct and needed no
+  change.) Fixed by rolling `#skill_effect_hits?(cmd)` inside
+  `#apply_attr_shift`'s own `ids.each` loop, once per attribute id, reusing
+  the same `cmd[:chance]` (already `skill_to_hit(sk, caster, target)`,
+  threaded through unchanged) the skill's other effects already roll
+  against — an id whose own roll misses is skipped entirely, same as a
+  missed stat-mod or heal effect already is. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a two-attribute shift with a
+  seeded `SequenceRng` landing exactly one of two 50%-chance rolls: only
+  the attribute whose own roll hit actually moves, the other keeps its
+  starting rank), confirmed to fail against the pre-fix code
+  (`expected [1], got [1, 2]`) before the fix. `#skill_attr_shift`'s own
+  `IsImmuneToAttributeDownshifts()` gate on a *negative* shift (also
+  visible in the same C++ block) is a separate, not-yet-investigated
+  question — deliberately out of scope here to keep this fix to the single
+  confirmed gap.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor
