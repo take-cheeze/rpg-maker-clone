@@ -7288,6 +7288,43 @@ check 'Control Variables batch operand reading its own destination range splits 
      'a self-referential Set still broadcasts the source value to the whole range'
 end
 
+check 'Control Variables batch indirect operand re-reads live for every id, cascading ' \
+      'when its own resolved target falls inside the destination range' do
+  # EasyRPG's Game_Variables::WriteRange (src/game_variables.cpp) calls its
+  # value lambda fresh once per loop iteration; *RangeVariableIndirect's own
+  # lambda is `Get(Get(var_id))`, read against whatever the table holds right
+  # now -- unlike a direct-variable operand (type 1), whose own
+  # WriteRangeVariable closes over one frozen value per split half. So an
+  # indirect operand (type 2) whose resolved target id falls inside the
+  # destination range cascades: a later id in the same batch sees the value
+  # an earlier id in that same batch just wrote.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  st.variables[10] = 5                        # the pointer: Var[Var[10]] = Var[5]
+  st.variables[5] = 1
+  st.variables[6] = 0
+  st.variables[7] = 0
+  # mode 1 (range): ids 5..7, op 1 (+=), operand type 2 (indirect), pointer var 10.
+  it.start([FakeCmd.new(IC::CONTROL_VARS, [1, 5, 7, 1, 2, 10])])
+  it.update
+  # id 5: Get(Get(10))=Get(5)=1 -> 1+1=2. id 6: Get(5) is *now* 2 -> 0+2=2.
+  # id 7: Get(5) is still 2 -> 0+2=2. Not [2, 1, 1], the single-frozen-read result.
+  eq [2, 2, 2], [st.variables[5], st.variables[6], st.variables[7]],
+     'each id re-reads the pointer\'s live target, cascading the just-written value forward'
+
+  # Control: the identical batch with the pointer's own target *outside* the
+  # destination range is unaffected either way (nothing in the range changes
+  # what it resolves to), matching the ordinary single-broadcast result.
+  st2 = new_state
+  it2 = Game::Interpreter.new(st2)
+  st2.variables[10] = 20
+  st2.variables[20] = 7
+  it2.start([FakeCmd.new(IC::CONTROL_VARS, [1, 5, 7, 1, 2, 10])])
+  it2.update
+  eq [7, 7, 7], [st2.variables[5], st2.variables[6], st2.variables[7]],
+     'a target outside the destination range still broadcasts the same live value to each id'
+end
+
 check 'a variable clamps to +-999999 instead of overflowing' do
   # RPG_RT never lets a variable's stored value leave +-999999 in RPG2000
   # (+-9999999 in RPG2003, LCF.var_max/var_min) -- a Control Variables write

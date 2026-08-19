@@ -5282,6 +5282,42 @@ following this paragraph as the original record.
   (`expected [20, 20, 20, 30, 30], got [20, 20, 20, 20, 20]`) before the fix.
   Covered by a new `scripts/rpg2k_logic_check.rb` check (a wide-range batch
   assign must not produce the same value in every variable).
+  ✅ **Follow-up (2026-08-19): an *indirect*-variable operand (type 2, `Var[Var
+  [A]]`) has the identical live-per-id re-read this same bullet already fixed
+  for a direct-variable operand (type 1) — it was never given the same
+  treatment, so a batch write through a self-referencing pointer still froze
+  its value once and broadcast it, instead of cascading.** Confirmed directly
+  against RPG_RT's live source: `Game_Interpreter::CommandControlVariables`
+  (`src/game_interpreter.cpp`) dispatches operand type 2 over a range to
+  `Game_Variables::SetRangeVariableIndirect`/`AddRangeVariableIndirect`/etc.
+  (`src/game_variables.cpp`), each a thin wrapper calling the *generic*
+  `WriteRange(first_id, last_id, [this,var_id](){ return Get(Get(var_id)); },
+  op)` — unlike type 1's own `WriteRangeVariable`, which closes over one
+  frozen value per (up to two) split half, `WriteRange` itself
+  (`Game_Variables::WriteRange`) calls its value lambda **fresh, once per
+  loop iteration** (`v = Clamp(op(v, value()), _min, _max);`), so `Get(Get
+  (var_id))` re-resolves against whatever the table holds *right now* on
+  every single id. If the pointer's own resolved target id falls inside the
+  destination range, a later id in the same batch sees the value an earlier
+  id in that same batch just wrote — the identical "does not stay frozen at
+  its original value" behavior already fixed for type 1 with its own
+  two-pass split, except type 2 needs no split at all: every id, not just
+  the ones after the source, re-reads live. `Game::Interpreter#do_control_
+  vars` only special-cased `random` (type 3) for this live-per-id
+  re-evaluation and left type 2 falling into the generic once-up-front-value
+  path alongside every operand type that genuinely should stay frozen
+  (constant, item, actor, event, other, enemy — none of these can read their
+  own about-to-be-written destination back, so a single up-front read is
+  correct for them). Fixed by folding type 2 into the same live-evaluation
+  branch type 3 already uses (`live = cmd.param(4) == 3 || cmd.param(4) ==
+  2`); every other operand type, and the existing type-1 two-pass split, are
+  untouched. Covered by a new `scripts/rpg2k_logic_check.rb` check (a
+  pointer variable resolving to an id inside the destination range cascades
+  the just-written value forward through the rest of the batch; the
+  identical batch with the pointer resolving outside the range is
+  unaffected, still broadcasting one live-but-unchanging value), confirmed
+  to fail against the pre-fix code (`expected [2, 2, 2], got [2, 1, 1]`)
+  before the fix.
 - ✅ **Indirect ("pointer") target addressing now no-ops on a resolved id
   ≤0**, instead of writing switch/variable slot 0 or a negative one.
   `Game::Interpreter#range`'s mode-2 (indirect) branch resolves the pointer
