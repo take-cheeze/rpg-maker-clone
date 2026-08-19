@@ -13014,6 +13014,44 @@ not yet verified:
   editor always emits), and a combatant killed by plain HP loss (no
   explicit state ever inflicted) still fails it too — both confirmed to
   fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-19): the same command's test 5 ("Hero uses the
+  ... command") is now implemented too, correcting this entry's own stale
+  claim that it "reads live battle-UI state the runtime does not
+  model."** Confirmed directly against RPG_RT's live source: `Game_
+  Interpreter_Battle::CommandConditionalBranchBattle`'s `case 5` (`src/
+  game_interpreter_battle.cpp`) is `if (Player::IsRPG2k3Commands() &&
+  current_actor_id == com.parameters[1]) { ... result = actor->
+  GetLastBattleAction() == com.parameters[2]; }`, where `current_actor_id`
+  is set once per action, right before that action's own pre-action page
+  events run (`Scene_Battle_Rpg2k3::ProcessBattleActionBegin` calling
+  `interp.SetCurrentActingActorId(actor->GetId())` on the battle's single
+  shared interpreter). This turned out to need nothing new at all:
+  `Game::Battle#actor_command` (`mruby-rpg2k/mrblib/game.rb`) already
+  implements the identical actor-id-plus-source check, ported for the
+  page-level `command_actor` trigger condition the bullet just above this
+  one fixed — and `Scene::Battle#run_battle_events`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) already computes and threads the
+  exact per-battler `source` that check needs, right where it hands the
+  page's own commands to the interpreter (`ui[:events].battle =
+  ui[:battle]`) — it just never also handed that `source` to the
+  interpreter itself, so the in-body Conditional Branch command had no way
+  to read it. Fixed with a new `Interpreter#battle_source` accessor, set
+  alongside `#battle` in `#run_battle_events`, and a new `Interpreter
+  #battle_command_condition(cmd)` (`when 5` in `#eval_battle_condition`)
+  that simply calls `@battle.actor_command(cmd.param(1), battle_source) ==
+  cmd.param(2)` — reusing the existing method rather than duplicating its
+  logic. Test 4 ("the currently-targeted troop member is param1") remains
+  genuinely unimplemented: it needs the acting battler's queued
+  single-enemy target index (`target_enemy_index`/`targets_single_enemy`,
+  also set in `ProcessBattleActionBegin`), which has no counterpart
+  anywhere in this codebase yet — a distinct, separate piece of state from
+  `source` alone, left as its own follow-up. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (no `battle_source` set -- the else
+  branch runs; the acting battler's own chosen command matches; a
+  different command id on the same source does not; a source that is not
+  the named actor never matches), confirmed to fail against the pre-fix
+  code (`NoMethodError: undefined method 'battle_source='`) before the
+  fix.
 - ✅ **"Hero X is in the party" always addresses by database ID, not
   current seat/slot order; there is no built-in way to read a member's
   current seat position — confirmed correct.**

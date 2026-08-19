@@ -16619,6 +16619,57 @@ check 'battle Conditional Branch actor sub-test 3 (can use battle command) match
   eq 1, st.variables[1], '...yet a confused ally likewise still "can act"'
 end
 
+# Test 5 ("actor uses the ... command") was previously left unimplemented
+# (docs/TODO.md), reporting false rather than reading live state the
+# runtime supposedly did not model -- but it turns out to need nothing new
+# at all: `Game::Battle#actor_command` already implements the identical
+# actor-id-plus-source check for the page-level `command_actor` trigger
+# condition (see the `command_actor`/`turn_*` checks above), and
+# `Interpreter#battle_source` is just that same `source`
+# `#run_battle_events` already threads through, now also set on the
+# interpreter that runs the page's own in-body commands.
+check 'battle Conditional Branch test 5 (actor uses the ... command) reads ' \
+      'Interpreter#battle_source' do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL_B, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)]
+  end
+  hero.last_battle_action = 3
+
+  # No source at all (a round-boundary check, the only kind RPG2000's own
+  # battle scene ever has) -- the condition cannot be answered.
+  it.start(branch.call([5, 1, 3]))
+  it.update
+  eq 2, st.variables[1], 'no battle_source set -- the else branch runs'
+
+  # The source is the named actor, whose chosen command matches.
+  it.battle_source = hero
+  it.start(branch.call([5, 1, 3]))
+  it.update
+  eq 1, st.variables[1], 'the acting battler who chose command 3 satisfies the condition'
+
+  # Same source, but a different command id.
+  it.start(branch.call([5, 1, 4]))
+  it.update
+  eq 2, st.variables[1], 'a different command id does not match'
+
+  # The source is a battler other than the one named -- must not match either.
+  it.battle_source = slime
+  it.start(branch.call([5, 1, 3]))
+  it.update
+  eq 2, st.variables[1], 'a source that is not the named actor never matches'
+end
+
 # Confirmed against EasyRPG's actual C++ source, fetched live:
 # `Game_Interpreter_Battle::CommandConditionalBranchBattle`
 # (src/game_interpreter_battle.cpp) reads only `com.parameters[1]` for its

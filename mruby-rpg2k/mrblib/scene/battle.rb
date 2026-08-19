@@ -2309,6 +2309,7 @@ class RPG2k
         cmds = entry[1].event
         return run_battle_events(return_phase, source) if cmds.nil? || cmds.empty? # empty page: try the next
         ui[:events].battle = ui[:battle]
+        ui[:events].battle_source = source
         ui[:events].start(cmds)
         ui[:event_return_phase] = return_phase
         ui[:phase] = :event

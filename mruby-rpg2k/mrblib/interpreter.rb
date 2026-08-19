@@ -255,6 +255,17 @@ module Game
     # screen to notice on some later redraw. nil outside battle (same scope as
     # `@battle`), so the notification is a no-op there.
     attr_accessor :battle_screen
+    # The battler a *per-battler* battle-event page run happens for -- the
+    # same `source` `Scene::Battle#run_battle_events` already threads
+    # through to `Game::BattlePage.active?`'s own `command_actor`/`turn_*`
+    # gating (its own doc comment: "the battle's own #acting_battler at a
+    # battler's action boundary"), set alongside `@battle` so the page's own
+    # in-body Conditional Branch (Battle) command can read it too -- see
+    # `#battle_command_condition`. nil for a round-boundary page check (the
+    # only kind RPG2000's own battle scene ever has) and for a map/common
+    # event, both of which read as "no source" the same way `Game::Battle
+    # #actor_command` already does.
+    attr_accessor :battle_source
     # Answers tile queries for Store Terrain / Event ID: responds to
     # `terrain_id(x, y)` and `event_id_at(x, y)`. Set by the owning scene; nil
     # makes those commands store 0 (the map is not queryable without it).
@@ -2745,9 +2756,7 @@ module Game
     #   3 troop member param1 can act
     #   4 the currently-targeted troop member is param1
     #   5 actor param1's chosen command is param2
-    # Tests 4 and 5 read live battle-UI state the runtime does not model; they
-    # report false rather than guessing, so the else branch runs. Confirmed
-    # against EasyRPG's actual C++ source, fetched live:
+    # Confirmed against EasyRPG's actual C++ source, fetched live:
     # `Game_Interpreter_Battle::CommandConditionalBranchBattle`
     # (`src/game_interpreter_battle.cpp`) reads only `com.parameters[1]` (the
     # actor/enemy id) for cases 2 and 3 -- `result = actor->CanAct();` /
@@ -2759,6 +2768,20 @@ module Game
     # actor; "is present" / "afflicted by state" for an enemy) that has no
     # counterpart in the real command at all -- see #battle_actor_condition
     # for why.
+    #
+    # Test 5 is now implemented too -- see #battle_command_condition; it
+    # turned out to already have everything it needs (`Combatant#
+    # last_battle_action`, and `Game::Battle#actor_command`'s identical
+    # actor-id-plus-source check, already correct for the page-level
+    # `command_actor` trigger condition), just never threaded from
+    # `#run_battle_events`'s own `source` through to the interpreter that
+    # actually runs the page's in-body commands. Test 4 ("the currently-
+    # targeted troop member is param1") remains unimplemented: RPG_RT's own
+    # `target_enemy_index`/`targets_single_enemy` (set in `Scene_Battle_
+    # Rpg2k3::ProcessBattleActionBegin`, right before a page's pre-action
+    # events run) has no counterpart anywhere in this codebase yet -- a
+    # narrower, separate piece of state than `source` alone provides, left
+    # as its own follow-up.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
       skip_to([Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B], cmd.indent)
@@ -2775,6 +2798,7 @@ module Game
         compare(variables[cmd.param(1)], rhs, cmd.param(4))
       when 2 then battle_actor_condition(cmd)
       when 3 then battle_enemy_condition(cmd)
+      when 5 then battle_command_condition(cmd)
       else false
       end
     end
@@ -2824,6 +2848,27 @@ module Game
     def battle_enemy_condition(cmd)
       foe = @battle && @battle.enemy(cmd.param(1))
       foe ? !foe.dead? && !@battle.do_nothing_restricted?(foe) : false
+    end
+
+    # Whether actor `cmd.param(1)`'s chosen command this round is
+    # `cmd.param(2)` -- EasyRPG's `Game_Interpreter_Battle::
+    # CommandConditionalBranchBattle` case 5, `if (Player::
+    # IsRPG2k3Commands() && current_actor_id == com.parameters[1]) { ...
+    # result = actor->GetLastBattleAction() == com.parameters[2]; }`, where
+    # `current_actor_id` is the acting battler for whichever action's own
+    # pre-action page events are running right now (`Scene_Battle_Rpg2k3::
+    # ProcessBattleActionBegin`). `#battle_source` is this port's own
+    # counterpart -- `#run_battle_events`'s own per-battler `source`,
+    # threaded onto the interpreter alongside `@battle` -- and `Game::Battle
+    # #actor_command` already implements the identical actor-id-plus-source
+    # check (ported for the page-level `command_actor` trigger condition),
+    # so this reuses it rather than duplicating the logic. A round-boundary
+    # page check (no source at all -- the only kind RPG2000's own battle
+    # scene ever has) or a page run for a *different* battler both read as
+    # "no match" the same way `#actor_command`'s own early returns do.
+    def battle_command_condition(cmd)
+      return false unless @battle
+      @battle.actor_command(cmd.param(1), battle_source) == cmd.param(2)
     end
 
     # -- conditional branch ---------------------------------------------------
