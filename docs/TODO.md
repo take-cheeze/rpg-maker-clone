@@ -15313,7 +15313,7 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     a tessellated circle via `arc`, an unclosed path, and a stroked segment).
     `closePath`/`arcTo`/`clip` and multi-subpath fills stay no-ops — no core MV
     consumer has needed them yet.
-- 🚧 **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
+- ✅ **M5 — Play.** Input (`Input`/`TouchInput`), save/load (the NW.js
   `require('fs')` shim) and audio (Web Audio → `RGSS::Audio`); a walkable MV game
   in the SDL window and the sixel/iTerm2 terminals. Input is wired too, despite
   no dedicated bullet below having said so: `MV#sync_input`/`#sync_touch`
@@ -15327,53 +15327,44 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     (`width*height*6`), tileset/actor/class cross-references, party members —
     and runs as a **blocking** CI step ahead of the non-blocking native MV
     smokes, so a regression in the committed `data/mv-sample` fails the build.
-  - ⚠️ **Real-game play smoke reaches the map, but nothing ever asserted the
-    player actually moves — and once checked, it doesn't.** CI's "MV real-game
-    play smoke test" / "MV movement smoke test" steps
-    (`.github/workflows/build.yml`) run `--mv_new_game --mv_move_test` but
-    only check the process exit code; unlike the MZ equivalent
-    (`scripts/mz_boot_check.bash`'s `grep -q '\[MZ-MOVE\].*moved=true'`),
-    nothing ever greps the MV log for `[MV-MOVE] moved=true`. Driving the
-    built engine directly against both `data/Lunatic-Core` (the downloaded real
-    bed) and the committed `data/mv-sample`, under both the dummy SDL driver
-    and real Xvfb, `[MV-MOVE]` reports `moved=false` on every run, on both
-    beds — this is not a downloaded-game peculiarity.
-    Root cause traced to `Scene_Map` never becoming active: `$gamePlayer`
-    exists and `Input`/`Input.dir4` correctly reflect the held key every
-    frame (confirmed via `Input.isPressed('down')` and `Input.dir4` tracking
-    the probe's direction cycle exactly), but `SceneManager.updateScene`
-    (`js/rpg_core.js`) never calls `this._scene.start()` because
-    `Scene_Map.prototype.isReady` — `ImageManager.isReady()` — never returns
-    true, which means `Scene_Base#update` (and so `Game_Player#moveByInput`)
-    never runs at all. The map tileset's own `Bitmap` (`img/tilesets/*.png`,
-    loaded via `ImageManager.loadTileset` → `Bitmap.load` →
-    `Bitmap#_requestImage`) gets stuck at `_loadingState: 'requesting'`
-    forever, unlike every other image loaded the same session (system UI art,
-    the player's character sheet) via the identical `Bitmap.load` path, which
-    all reach `'loaded'` normally.
-    Traced (with temporary instrumentation, not committed) to the underlying
-    `Image` object's `.onload` — correctly set to `Bitmap.prototype._onLoad`
-    right after `_requestImage` runs — reading back as `null` by the time the
-    engine's deferred (`requestAnimationFrame`-scheduled) onload-check callback
-    for *that specific image* actually fires, one frame later: confirmed
-    `.onload` is still the right function at the very top of that
-    `__mv_runFrame` batch, and has already become `null` partway through the
-    batch's own callback processing, before the tileset's own callback runs —
-    i.e., something running in between nulls it, but not `Bitmap#_onLoad`
-    itself (never invoked — an added wrapper around it never fires),
-    `Bitmap#_clearImgInstance` (the only place stock MV sets `.onload = null` —
-    also wrapped, also never fires) or `Image.prototype.addEventListener`
-    (also wrapped; correctly assigns the function and is called exactly once).
-    `Bitmap._reuseImages` (the `Image` object pool `_requestImage` checks
-    first) stays empty the entire run, ruling out cross-bitmap reuse. Not yet
-    identified: *what* runs in that window and nulls it, or why only images
-    requested in the batch that creates `Spriteset_Map` (the tileset, the
-    player's own character sheet loaded moments later, is unaffected) are hit.
-    Real content only reveals this once something later in the pipeline
-    actually depends on movement working — a boot check that only asserts
-    "reached Scene_Map" or "captured a non-flat frame" cannot see it, which is
-    how it went unnoticed even with two beds and CI running both smokes every
-    push.
+  - ✅ **Real-game play smoke now asserts the player actually moves.** Root
+    cause of the previous `[MV-MOVE] moved=false`-on-every-run bug (both
+    `data/Lunatic-Core` and `data/mv-sample`, dummy SDL driver and real Xvfb
+    alike): `Scene_Map` never became active because `ImageManager.isReady()`
+    never returned true — the map tileset's `Bitmap` (`img/tilesets/*.png`)
+    got stuck at `_loadingState: 'requesting'` forever, unlike every other
+    image loaded the same session via the identical `Bitmap.load` path.
+    Traced (via an instance-level `Object.defineProperty` watchpoint on the
+    tileset `Image`'s `onload`, capturing a JS stack on every write) to the
+    `Image` shim in `mruby-mvjs/src/mvcanvas.cxx` aliasing
+    `addEventListener('load', cb)` to a single `onload` property slot.
+    `Bitmap#_requestImage` attaches its own completion handler that way, but
+    PIXI's `BaseTexture` *also* assigns `image.onload` directly — when built
+    from an incomplete `Image` source (`js/libs/pixi.js`, `BaseTexture` →
+    `loadSource`, reached from `Bitmap`'s lazy `baseTexture` getter via
+    `Spriteset_Map#loadTileset`) — to learn when the image finishes. On a
+    real browser these are independent listener slots that both fire; our
+    shim let PIXI's later direct assignment silently discard MV's own
+    `addEventListener`-registered handler, so `Bitmap` never left
+    `'requesting'`. Fixed by giving `Image` real independent `onload`/
+    `onerror` properties and `addEventListener`-registered listener lists,
+    all fired on load (matching the DOM contract) — see
+    `changelog.d/mv-image-onload-vs-pixi.fixed.md`. While in there, also
+    fixed a related latent hazard: `Image#src` reassignment now invalidates
+    any still-pending completion from a previous assignment on the same
+    instance (a generation counter), matching a real browser's abort-on-
+    reassign — needed because MV pools and reuses `Image` objects via
+    `Bitmap._reuseImages`, and a stale queued completion from a discarded
+    request could otherwise land on a reused instance after a new owner had
+    already re-armed it.
+    The CI assertion gap that let this go unnoticed (the MV smokes checked
+    only the process exit code, never grepping the log for
+    `[MV-MOVE] moved=true` the way `scripts/mz_boot_check.bash` does for MZ)
+    is now closed too: `.github/workflows/build.yml`'s "MV real-game play
+    smoke test" and "MV movement smoke test" steps grep their captured log
+    for `[MV-MOVE].*moved=true` and fail the step if it's missing, so a
+    regression here fails CI directly instead of requiring someone to read
+    the log by hand.
   - ✅ Battle smoke reaches `Scene_Battle`: `--mv_battle_test` now starts the
     fight via a real "Battle Processing" event command (code 301) through the
     map interpreter instead of a bare out-of-loop `SceneManager.push`, which

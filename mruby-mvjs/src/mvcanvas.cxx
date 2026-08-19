@@ -1641,6 +1641,17 @@ const char* kCanvasPreamble = R"MVJS(
   // rather than setTimeout so the deferral is independent of the host clock. The
   // decoded canvas handle is exposed as `__h`, so drawImage(image, ...) works
   // through the same srcHandle() path a canvas does.
+  //
+  // `onload`/`onerror` and addEventListener('load'/'error', ...) are kept as
+  // independent listener slots, matching the real DOM (the `onload` IDL
+  // attribute is just one more listener alongside ones added via
+  // addEventListener, not a replacement for them). PIXI's BaseTexture sets
+  // `.onload` directly on an incomplete Image to know when its source is
+  // ready, *after* Bitmap#_requestImage has already registered its own
+  // handler via addEventListener('load', ...); aliasing both to a single
+  // slot let PIXI's later assignment silently discard MV's own load handler,
+  // so Bitmap never left `_loadingState: 'requesting'` and the map scene
+  // never became ready. Both must fire.
   function ImageEl() {
     this.__h = 0;
     this.width = 0;
@@ -1649,6 +1660,9 @@ const char* kCanvasPreamble = R"MVJS(
     this.onerror = null;
     this.complete = false;
     this._src = '';
+    this._gen = 0;
+    this._loadListeners = [];
+    this._errorListeners = [];
   }
   Object.defineProperty(ImageEl.prototype, 'src', {
     get: function () { return this._src; },
@@ -1656,6 +1670,16 @@ const char* kCanvasPreamble = R"MVJS(
       var self = this;
       this._src = v;
       this.complete = false;
+      // MV pools and reuses Image instances via Bitmap._reuseImages: a
+      // discarded bitmap sets `.src = ''` to release its image back to the
+      // pool (Bitmap#_clearImgInstance), and the very next bitmap request can
+      // pop and reassign that same instance before the empty-src completion
+      // below has fired. A real browser aborts the in-flight decode when
+      // `.src` is reassigned, so only the *latest* assignment's load/error
+      // ever fires; `_gen` reproduces that abort so the stale completion from
+      // a discarded request can't land after reuse and clobber (or
+      // prematurely complete) the new owner's bitmap.
+      var gen = ++this._gen;
       // An object URL carries decrypted bytes rather than naming a file: it is
       // what the engines hand us for an encrypted asset, after decrypting it in
       // their own JavaScript. Nothing on disk answers to that name, so it is
@@ -1669,6 +1693,7 @@ const char* kCanvasPreamble = R"MVJS(
         h = g.__mv_imageLoad(v);
       }
       g.requestAnimationFrame(function () {
+        if (self._gen !== gen) return;
         // A missing or undecodable image resolves as a 1x1 transparent bitmap
         // (via onload), not an error. MV reserves system art (Window, IconSet,
         // …) and blocks on ImageManager.isReady() until it loads, so an absent
@@ -1681,15 +1706,28 @@ const char* kCanvasPreamble = R"MVJS(
         self.width = g.__mv_canvasWidth(h);
         self.height = g.__mv_canvasHeight(h);
         self.complete = true;
-        if (typeof self.onload === 'function') self.onload();
+        // Snapshot before dispatch: a listener may itself reassign `.onload`
+        // (or call addEventListener again), which must not affect this fire.
+        var listeners = self._loadListeners.slice();
+        if (typeof self.onload === 'function') listeners.push(self.onload);
+        for (var i = 0; i < listeners.length; i++) {
+          try { listeners[i].call(self); } catch (e) { if (g.console) console.error(e); }
+        }
       });
     },
   });
   ImageEl.prototype.addEventListener = function (type, cb) {
-    if (type === 'load') this.onload = cb;
-    else if (type === 'error') this.onerror = cb;
+    if (typeof cb !== 'function') return;
+    if (type === 'load') this._loadListeners.push(cb);
+    else if (type === 'error') this._errorListeners.push(cb);
   };
-  ImageEl.prototype.removeEventListener = function () {};
+  ImageEl.prototype.removeEventListener = function (type, cb) {
+    var arr = type === 'load' ? this._loadListeners :
+              type === 'error' ? this._errorListeners : null;
+    if (!arr) return;
+    var idx = arr.indexOf(cb);
+    if (idx >= 0) arr.splice(idx, 1);
+  };
   g.Image = ImageEl;
 })(this);
 )MVJS";
