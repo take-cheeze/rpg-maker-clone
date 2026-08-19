@@ -496,17 +496,68 @@ not a one-time cosmetic loss: every fatal exception this game hits, of any
 origin, is masked behind the identical `NoMethodError: undefined method
 'message' for NilClass` crash in the error-log utility, until whatever real
 exception triggered it is fixed and the *next* one takes its place. Diagnosing
-each of the fixes above required a temporary, never-committed `fprintf` at
-the `OP_EXCEPT` opcode itself (in the local `3rd/mruby` submodule checkout,
-reverted before every commit) to read the masked exception directly off the
-VM — the `Dir.glob` and `Color.new`/`Tone.new` gaps above were both found
-this way, one at a time, three separate real bugs in a row hidden behind the
-same crash. A fourth is already known and not yet fixed: with all three
-gaps above closed, the game now reaches
-`NoMethodError: undefined method 'dispose' for NilClass`, masked the same
-way. Left for a future pass — the pattern established here (temporary VM
-probe → real gap → mrblib or native fix → regression test) applies to it
-too. mruby's bare `raise` (no arguments) has the same
+each of the fixes above (and the three below) required a temporary,
+never-committed `fprintf` at the `OP_EXCEPT` opcode itself (in the local
+`3rd/mruby` submodule checkout, reverted before every commit) to read the
+masked exception directly off the VM — six separate real bugs found this way,
+one at a time, each hidden behind the identical crash until fixed:
+
+- **Fixed: `Window#contents` started `nil` instead of a real `Bitmap`.**
+  Another native `mruby-rgss` binding bug (`window_init` in
+  `mruby-rgss/src/lib.cxx`), not a script gap. Real RGSS3's own stock,
+  unmodified `Window_Base#create_contents` — called from `#initialize`, so
+  every single `Window` a game ever constructs runs it once immediately —
+  starts with a bare `contents.dispose`, on the assumption a freshly built
+  `Window` already owns a (trivial) disposable `Bitmap`. This engine's
+  `window_init` set `@contents` to Ruby `nil` instead, so the very first
+  `Window_Base`-derived window any VX Ace game ever constructs —
+  `Scene_Title`'s own `Window_TitleCommand` — raised `NoMethodError:
+  undefined method 'dispose' for NilClass` before a single frame of the
+  title screen drew. Fixed by having `window_init` construct a real 1×1
+  `RGSS::Bitmap` (the same `DataType<Bitmap>::make` helper
+  `window_ensure_canvas` already uses a few lines below it) and store that
+  instead of `mrb_nil_value()`.
+
+- **Fixed: `Audio.bgm_play` rejected RGSS3's 4th (`pos`) argument.** A real
+  gap, not a bug — `mruby-rgss/mrblib/lib.rb`'s `bgm_play(filename, volume =
+  100, pitch = 100)` never grew the `pos` parameter RGSS3 added over
+  XP/VX's 3-argument form (VX Ace resumes a BGM's playback position — a
+  save's `RPG::BGM#replay`, or a bare `Audio.bgm_play(f, v, p, pos)` a
+  volume-control add-on script called directly — see the real
+  `RPG::BGM#play` reopened by this same release's add-on). Every VX Ace
+  game whose title screen calls `Audio.bgm_play` with 4 arguments raised
+  `ArgumentError` right there. Accepting the 4th argument needs no real fix
+  behind it — no backend here seeks a mid-stream start position, and this
+  engine's own `RPG::BGM` never calls the 4-arg form internally either (see
+  `mruby-rpgvx/mrblib/rgss2_runtime.rb`'s own `BGM.play_audio`, still
+  3-arg) — so `bgm_play` now accepts `pos = 0`, warns once that seeking is
+  unsupported when it is non-zero, and plays the track from its own
+  beginning, matching the real signature real scripts call with instead of
+  raising.
+
+- **Fixed: `RPG::CommonEvent` had no `#autorun?` / `#parallel?`.** A real
+  data-layer gap in `mruby-rpgvx/mrblib/rgss2_data.rb`: `CommonEvent` only
+  ever exposed the raw `trigger` integer (0 none, 1 autorun, 2 parallel).
+  Real RGSS3's own stock, unmodified `Game_Map#setup_autorun_common_event`
+  and `#parallel_common_events` call the predicates directly rather than
+  comparing `trigger` themselves, so `DataManager.setup_new_game` →
+  `Game_Map#setup` → `#setup_events` raised `NoMethodError: undefined
+  method 'parallel?' for RPG::CommonEvent` on every VX Ace game that starts
+  a new game — every VX Ace game reaches this the moment a player presses
+  New Game, VX Ace's own "Parallel Process" trigger having no XP/VX
+  equivalent means this was invisible on every project this host had
+  reached new-game setup on before. XP's own stock scripts, confirmed
+  against both XP test beds, never call either predicate — the fix is
+  scoped to `mruby-rpgvx` only.
+
+With all six gaps above closed, the same real VX Ace release now reaches
+past `Scene_Title`'s title-command window, its title music, and
+`DataManager.setup_new_game`'s common-event setup, into actual gameplay
+(`Graphics.brightness=`, a scene-transition primitive, is the next stub it
+calls) before hitting a seventh masked exception — not yet diagnosed. The
+pattern established here (temporary VM probe → real gap → mrblib or native
+fix → regression test) applies to it too, left for a future pass. mruby's
+bare `raise` (no arguments) has the same
 root cause from the other side: real Ruby re-raises `$!`, but mruby's
 `mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
 fresh, empty `RuntimeError` instead of re-raising what was actually caught.
@@ -538,5 +589,10 @@ Tilemap item 1's remaining polish (the flat "above characters" layer) is the
 only item left in the six sections above; item 7's `$!`/bare-`raise` gap
 stands, and per a real release it is the reason each fix above only reveals
 the *next* wall one at a time rather than the game running to completion in
-one pass — `NoMethodError: undefined method 'dispose' for NilClass`, found
-but not yet fixed, is where it stands now.
+one pass. Six real bugs have been found and fixed this way so far
+(`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
+`Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`)
+without needing `$!` itself fixed — the temporary VM probe finds the real
+exception directly regardless. A seventh wall, past
+`DataManager.setup_new_game` and into actual gameplay, is where the game
+stands now: not yet diagnosed.

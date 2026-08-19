@@ -5444,7 +5444,16 @@ mrb_value window_init(mrb_state* M, mrb_value self) {
   register_zobj(M, self);
   lv_obj_set_pos(c, 0, 0);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), mrb_nil_value());
+  // RGSS3's own stock Window_Base#create_contents (every VX Ace project ships
+  // it unmodified) calls `contents.dispose` unconditionally as its first line
+  // -- real RGSS never leaves a freshly constructed Window's `contents` nil,
+  // it starts as a real (if trivial) Bitmap so that always-safe first dispose
+  // has something to act on.
+  RClass* initial_contents_bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value initial_contents = DataType<Bitmap>::make(
+      M, initial_contents_bmp_class, 1, 1, LV_COLOR_FORMAT_ARGB8888);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@contents"), initial_contents);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@width"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@height"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(0));

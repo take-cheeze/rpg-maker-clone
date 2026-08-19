@@ -1020,7 +1020,19 @@ module RGSS
     }.freeze
 
     class << self
-      def bgm_play(filename, volume = 100, pitch = 100)
+      # `pos` is RGSS3-only (VX Ace added it over XP/VX's 3-argument form) --
+      # real scripts pass it to resume a BGM from where a prior track left
+      # off (RPG::BGM#replay, a bare `Audio.bgm_play(f, v, p, pos)` in a
+      # volume-control add-on). No backend here seeks a mid-stream start
+      # position, so it is accepted (matching the real signature real
+      # scripts call with) and warned about once rather than raising
+      # ArgumentError on every VX Ace game that calls it -- the track still
+      # plays, just from its own beginning.
+      def bgm_play(filename, volume = 100, pitch = 100, pos = 0)
+        RGSS.warn_once(
+          "Audio.bgm_play pos (mid-track resume) is not implemented yet " \
+          "(stub, plays from the beginning)"
+        ) unless pos == 0
         path = resolve(filename, MUSIC_DIRS)
         return _bgm_play(path, volume, pitch) if path
         play_packed(:bgm, filename, volume, pitch)

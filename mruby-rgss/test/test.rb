@@ -1479,6 +1479,15 @@ assert "RGSS::Audio survives an archive that raises" do
   end
 end
 
+# RGSS3's own `pos` argument (VX Ace added it over XP/VX's 3-argument form),
+# used to resume a BGM from where a prior track left off -- a real VX Ace
+# volume-control add-on calls `Audio.bgm_play(name, vol, pitch, pos)`
+# directly, and the 4th argument raised ArgumentError before this method
+# accepted it.
+assert "RGSS::Audio.bgm_play accepts RGSS3's 4th (pos) argument" do
+  assert_nothing_raised { RGSS::Audio.bgm_play("Theme1", 80, 90, 5) }
+end
+
 assert "RGSS::Audio.se_play resolves a name to a real file" do
   # Capture what the public API forwards to the native primitive so we can
   # assert the filename was resolved (extension appended) and volume/pitch

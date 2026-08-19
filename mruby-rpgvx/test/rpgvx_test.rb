@@ -643,3 +643,25 @@ assert "a VX Ace database survives its .rgss3a (v3) archive" do
   assert_equal "Packed Ace", loaded.game_title
   assert_equal 7, loaded.start_map_id
 end
+
+# Real RGSS3's own stock Game_Map#setup_autorun_common_event/
+# #parallel_common_events call these predicates directly rather than
+# comparing `trigger` themselves -- every VX/VX Ace project's default
+# Game_Map does so unmodified, so a missing predicate fails common events
+# in every real game the script host reaches new-game setup on.
+assert "RPG::CommonEvent#autorun?/#parallel? read the trigger field" do
+  none = RPG::CommonEvent.new
+  none.trigger = 0
+  assert_false none.autorun?
+  assert_false none.parallel?
+
+  autorun = RPG::CommonEvent.new
+  autorun.trigger = 1
+  assert_true autorun.autorun?
+  assert_false autorun.parallel?
+
+  parallel = RPG::CommonEvent.new
+  parallel.trigger = 2
+  assert_false parallel.autorun?
+  assert_true parallel.parallel?
+end
