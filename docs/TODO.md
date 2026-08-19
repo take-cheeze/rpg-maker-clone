@@ -7456,6 +7456,24 @@ not yet verified:
   buy/sell-a-stack-of-three checks that used to press UP twice and now press
   RIGHT twice), all four confirmed to fail against the pre-fix code before
   the fix.
+  ✅ **Follow-up (2026-08-19): the shop quantity counter only moved on a
+  fresh key press, never auto-repeating while a direction was held.**
+  Confirmed directly against RPG_RT's live source: `Window_ShopNumber::
+  Update` (`src/window_shopnumber.cpp`) gates all four directions —
+  RIGHT/LEFT by one, UP/DOWN by ten — on `Input::IsRepeated`, the same
+  repeat-while-held semantics every other in-game list cursor uses (Show
+  Choices, the battle command/target/skill cursors, Equip's slot cursor),
+  never a bare `IsTriggered`. `shop_quantity_move`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) checked only `Input.trigger?` on each
+  branch, so a player had to mash the button once per unit or ten instead
+  of holding it down the way every other cursor in the game already
+  allowed. Fixed by adding `|| Input.repeat?(...)` to all four branches,
+  matching the `Input.trigger?(...) || Input.repeat?(...)` idiom this
+  codebase already uses everywhere else. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (`RGSS::Input.repeated`, not
+  `.triggered`, still steps the counter by one on Right and by ten on Up),
+  confirmed to fail against the pre-fix code (`expected 2, got 1`) before
+  the fix.
 - ✅ **Battle turn order now rolls a random Agility jitter each round, instead
   of sorting purely by raw Agility.** Confirmed against EasyRPG's actual
   `Scene_Battle_Rpg2k::CreateExecutionOrder` (`src/scene_battle_rpg2k.cpp`):

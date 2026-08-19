@@ -4973,15 +4973,22 @@ class RPG2k
       end
 
       # Apply one frame of quantity input; returns whether the count changed.
+      # Every direction auto-repeats while held, not just a single fresh
+      # press -- confirmed against RPG_RT's own live source:
+      # `Window_ShopNumber::Update` (src/window_shopnumber.cpp) gates all
+      # four branches on `Input::IsRepeated`, the same repeat-while-held
+      # semantics every other in-game list cursor uses (see e.g.
+      # Scene::Battle's own `Input.trigger?(...) || Input.repeat?(...)`
+      # cursor idiom), not a bare `IsTriggered`.
       def shop_quantity_move(q)
         before = q[:count]
-        if Input.trigger?(Input::RIGHT)
+        if Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           q[:count] += 1
-        elsif Input.trigger?(Input::LEFT)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
           q[:count] -= 1
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           q[:count] += SHOP_QUANTITY_STEP
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           q[:count] -= SHOP_QUANTITY_STEP
         else
           return false
