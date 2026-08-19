@@ -2143,7 +2143,7 @@ class RPG2k
         # only way in.
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
+        return start_event(ev, true) if action_button_faced?(ev)
 
         # Nothing on the faced tile: if it is a **counter** — a shop or inn
         # counter, marked in the chipset's upper-layer passage table — look
@@ -2157,9 +2157,34 @@ class RPG2k
         nil
       end
 
-      # Whether an event can answer the action button.
+      # Whether an event can answer the action button from the tile the party
+      # is standing on, or (via the counter-tile reach) a tile it is facing:
+      # a plain Trigger-0 event only, matching EasyRPG's own `CheckActionEvent`
+      # (`src/game_player.cpp`), which restricts both its `CheckEventTriggerHere`
+      # call and its counter-reach loop to `{Trigger_action}`.
       def actionable?(ev)
         ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands] ? true : false
+      end
+
+      # Whether the *faced* tile's event answers the action button: an
+      # ordinary Trigger-0 event, or -- matching EasyRPG's own
+      # `CheckActionEvent` (`src/game_player.cpp`), whose first check is
+      # `CheckEventTriggerThere({Trigger_touched, Trigger_collision}, ...,
+      # triggered_by_decision_key: true)` against the immediate front tile,
+      # before it ever looks at Trigger_action there -- a same-layer Player
+      # Touch / Event Touch event. Pressing the action button while facing one
+      # starts it exactly like walking into it would, except with "the
+      # decision key started this event" (Conditional Branch type 8) true
+      # instead of false: the idiom behind an RPG2000 "face it and press
+      # confirm to search" hidden passage, which a same-shaped Trigger_touched
+      # page also answers by simply walking into it (#touch_trigger?). Only the
+      # immediate front tile gets this -- the counter-tile reach loop in
+      # #try_action_trigger stays Trigger_action-only, matching EasyRPG's own
+      # separate, action-only `got_action` search.
+      def action_button_faced?(ev)
+        return false unless ev && ev[:commands] && ev[:layer] == LAYER_SAME
+        ev[:trigger] == TRIGGER_ACTION || ev[:trigger] == TRIGGER_PLAYER_TOUCH ||
+          ev[:trigger] == TRIGGER_EVENT_TOUCH
       end
 
       # Whether a trigger is one the party can set off by walking into the event

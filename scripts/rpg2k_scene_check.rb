@@ -19656,6 +19656,54 @@ check 'battle_scene_class treats an edition-less database as RPG2000' do
      'a fixture database with no #rpg2003? keeps the 2000 scene'
 end
 
+# A same-layer Player Touch / Event Touch event, faced (not stood on) and
+# started via the action button, now also answers with "the decision key
+# started this event" (Conditional Branch type 8, #do_conditional's own
+# `@triggered_by_decision_key`) true -- matching EasyRPG's own
+# `Game_Player::CheckActionEvent` (`src/game_player.cpp`), whose first check
+# is `CheckEventTriggerThere({Trigger_touched, Trigger_collision}, ...,
+# triggered_by_decision_key: true)` against the tile the player faces, before
+# it ever looks at a same-tile Trigger_action event. This is the "face the
+# hidden wall and press confirm to search" idiom real RPG2000 content uses
+# (Nepheshel's own copy-pasted "HiddenDoor" event, ~120 maps, does exactly
+# this): the page is authored with a *Player Touch* trigger so walking into it
+# also works, but its own commands gate the reveal (SE, a self-Move Event
+# opening it, Through Mode) behind this exact condition. `#action_button_faced?`
+# used to recognise only Trigger_action there, so the action-button path never
+# started a same-shaped Trigger_touched/Trigger_event_touch page at all -- the
+# door only ever ran with `@triggered_by_decision_key` false, so its reveal
+# branch was unreachable and it stayed a solid, unopened wall forever.
+check 'facing a same-layer Player Touch event and pressing the action button ' \
+      'starts it with "decision key started this event" true' do
+  ic = Game::Interpreter::Cmd
+  door = page(trigger: RPG2k::Scene::Map::TRIGGER_PLAYER_TOUCH,
+              layer: RPG2k::Scene::Map::LAYER_SAME)
+  door.event_commands = [
+    ECmd.new(ic::CONDITIONAL, [8, 0, 0, 0, 0, 0, 0, 0, 0], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0], indent: 1),
+    ECmd.new(ic::END_BRANCH, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(1, 0, door) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  # Walking straight into it (mere collision) must NOT set the switch: real
+  # RPG_RT's own touch/collision check always passes triggered_by_decision_key
+  # false (Game_Player::Update, both CheckEventTriggerHere/There call sites).
+  RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
+  10.times { scene.update }
+  ok !st.switches[1], 'a plain walk-in never counts as "decision key started this"'
+  eq [0, 0], [st.x, st.y], 'and the same-layer event still blocks the step'
+
+  # Facing it and pressing the action button must set the switch.
+  RGSS::Input.dir_value = 0
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  5.times { scene.update }
+  ok st.switches[1], 'facing it and pressing the action button reaches the ' \
+                      '"decision key started this event" branch'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
