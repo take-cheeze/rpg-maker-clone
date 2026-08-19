@@ -94,6 +94,85 @@ module Errno
   class EISDIR < SystemCallError; end unless const_defined?(:EISDIR)
 end
 
+# Ruby's own `Module#private_method_defined?` / `#protected_method_defined?` /
+# `#public_method_defined?`, which this mruby build does not ship as such —
+# unlike `Errno`/`String#encode` above, this one is not a stub: mruby-metaprog
+# already provides `private_instance_methods`/`protected_instance_methods`/
+# `public_instance_methods` (used by `Module#instance_methods` itself), so the
+# visibility-filtered membership check these three ask for is answerable
+# exactly, just not under this name. A real project's scripts reach for these
+# in visibility-aware `method_missing`/introspection helpers — e.g. an error
+# logger's dump of "was this rescue handler overridden privately" — genuinely
+# checking, not merely tolerating being asked.
+unless Module.method_defined?(:private_method_defined?)
+  class Module
+    def private_method_defined?(sym, inherit = true)
+      private_instance_methods(inherit).include?(sym.to_sym)
+    end
+
+    def protected_method_defined?(sym, inherit = true)
+      protected_instance_methods(inherit).include?(sym.to_sym)
+    end
+
+    def public_method_defined?(sym, inherit = true)
+      public_instance_methods(inherit).include?(sym.to_sym)
+    end
+  end
+end
+
+# Ruby's own `String#encode`, which this mruby build does not ship (no
+# mruby-encoding gem is vendored or configured — mruby strings carry no
+# per-instance encoding metadata at all). A Japanese project's scripts
+# routinely transcode a string at a Windows API boundary, e.g. CACAO's widely
+# bundled 画像保存 utility script binds a window title with
+# `load_data(...).game_title.encode('SHIFT_JIS')` before passing it to a (here
+# already-inert, see `Win32API` below) `FindWindow` call. Real transcoding
+# needs conversion tables this build does not have, but nothing in this engine
+# — UTF-8 throughout — ever depends on that boundary being correct, so this
+# degrades the same way `Win32API#call` does: warn once, then answer the
+# receiver unchanged rather than raise. A script that reads the *result* back
+# as authentically Shift_JIS bytes (rather than just handing it to a Win32
+# call this host cannot make anyway) would see the wrong content, but a
+# NoMethodError here fails the whole script host over a boundary the game
+# never gets to observe.
+unless String.method_defined?(:encode)
+  class String
+    def encode(*)
+      RGSS.warn_stub("String#encode")
+      self
+    end
+  end
+end
+
+# RGSS's Win32API: a general FFI mechanism for calling arbitrary Win32 DLL
+# entry points by name, which a project routinely uses for one *optional*
+# Windows-only feature — e.g. CACAO's widely bundled 画像保存
+# (Bitmap#save/Graphics.save_screen) utility script binds
+# MultiByteToWideChar/FindWindow/BitBlt/... at its top level, unconditionally,
+# just by being included in the project.
+#
+# There is no real Win32 to call into here (this engine also targets Linux,
+# the PSP and wasm), and a script that merely *binds* a function is not
+# choosing to use it yet — raising at `Win32API.new` would fail the whole
+# script host over a feature the game may never invoke, exactly the class of
+# unnecessary death this file's `RPG::Cache` fallback avoids for a missing
+# asset. So construction always succeeds, and `#call` — the point an actual
+# Windows API call would happen — warns once per (dllname, funcname) pair and
+# answers 0, `Win32API#call`'s own return type: whatever Windows-only feature
+# it drove (screenshot saving, a custom window border, ...) silently does
+# nothing, same as a project shipping no RTP art.
+class Win32API
+  def initialize(dllname, funcname, import = nil, export = nil)
+    @dllname = dllname
+    @funcname = funcname
+  end
+
+  def call(*args)
+    RGSS.warn_stub("Win32API #{@dllname}.#{@funcname}")
+    0
+  end
+end unless Object.const_defined?(:Win32API)
+
 module RPG
   # The bitmap cache. Every graphic a game loads goes through here — the scripts
   # call `RPG::Cache.character(name, hue)`, `.tile(tileset, id, hue)`,

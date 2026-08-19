@@ -15328,6 +15328,29 @@ screen (544×416). Full rationale:
     display — down to the exact seam values (170/85 either side of a
     white/black edge) and the mirror symmetry of the swept arc, which is what
     actually pins the centre of rotation.
+  - ✅ **The RGSS3 `BaseItem` superclass chain — real VX Ace games boot now.**
+    Found booting a real, large freeware VX Ace release (a ~60-hour RPG, 468
+    maps, 930 skills, 610 enemies) rather than the synthetic test bed, which
+    never reopens a stock `RPG::` class the way a real project does: every VX
+    Ace project exposes `BaseItem`/`UsableItem`/`EquipItem`/`Actor`/`Class`/
+    `Item`/`Skill`/`Weapon`/`Armor`/`State`/`Enemy` as editable script
+    sections, and every one reasserts its stock superclass on its first line
+    (`class RPG::Actor < RPG::BaseItem`), even when only the body below is
+    customised. `mruby-rpgxp` (loaded first, shared by all RGSS makers)
+    declared these classes flat, so reopening with an explicit superclass
+    raised `TypeError: superclass mismatch` and ended the run — likely the
+    single biggest reason a real VX Ace release could not boot at all. Fixed
+    by giving the classes the real chain from their first (XP-side)
+    declaration; see `docs/rpgvx-rgss-api-gap.md` item 7 and the comment on
+    `class BaseItem` in `mruby-rpgxp/mrblib/rgss_data.rb`. The same dig also
+    found the 64 MB desktop LVGL heap (which backs mruby's whole VM heap, not
+    just graphics) too small for this game's database alone — raised to
+    256 MB — and filled in `Win32API`/`String#encode`/
+    `Module#private_method_defined?` (and friends), which the game's bundled
+    community utility scripts assumed. **Still open:** bare (argument-less)
+    `module_function` is a documented no-op in this mruby version (upstream,
+    not project-specific — see the item 7 write-up), which still blocks this
+    same game's error-logging utility script.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).
