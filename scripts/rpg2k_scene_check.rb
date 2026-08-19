@@ -9927,6 +9927,48 @@ check 'disembarking back onto a map with no field BGM stops the vehicle music th
   eq nil, st.current_bgm
 end
 
+check 'a failed boat disembark (blocked by a shore NPC) falls through to the ' \
+      'action-trigger check on that tile, instead of just swallowing the ' \
+      'button press' do
+  # RPG_RT's own `Game_Player::Update` only skips `CheckActionEvent` when
+  # `GetOnOffVehicle` actually succeeds (`if (!GetOnOffVehicle())
+  # CheckActionEvent();`, src/game_player.cpp) -- and disembarking a boat/
+  # ship fails outright when an active same-layer event occupies the
+  # landing tile (`Game_Map::CanDisembarkShip`, src/game_map.cpp, loops
+  # `GetEvents()` for exactly that before ever checking terrain
+  # passability). A failed disembark press must therefore fall through to
+  # the ordinary action-trigger check on that same tile, the same way it
+  # would have if the party had never tried to board at all -- letting a
+  # shore NPC be talked to directly from the boat.
+  ic = Game::Interpreter::Cmd
+  npc = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME) # a shore NPC
+  npc.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  # The NPC stands on the shore tile the party starts on and boards away
+  # from -- boarding looks only at the boat's own tile, so the party's
+  # starting tile being otherwise occupied does not interfere with it.
+  scene = new_scene({ 1 => event(2, 0, npc) }, player: [2, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face the boat one tile south
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 2
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+  eq [2, 1], [st.x, st.y], 'stepped onto the boat'
+
+  st.direction = 8 # face back north, toward the NPC's shore tile
+  RGSS::Input.triggered = [RGSS::Input::C] # try to disembark onto the NPC's tile
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'the NPC blocks the landing tile, so disembarking failed'
+  5.times { scene.update } # let the started event actually run its commands
+  ok st.switches[4], 'the button press fell through and talked to the shore NPC instead'
+end
+
 check 'Enemy Encounter scene: the round animates action by action, not at once' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

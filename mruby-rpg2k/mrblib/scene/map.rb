@@ -2179,8 +2179,21 @@ class RPG2k
         return false if event_busy?
         return false unless Input.trigger?(Input::C)
         if @state.boarded?
-          disembark_vehicle
-          true # aboard, the action button belongs to the vehicle
+          airship = @state.boarded == :airship
+          disembarked = disembark_vehicle
+          # RPG_RT's action-trigger check (`Game_Player::CheckActionEvent`,
+          # src/game_player.cpp) opens with an unconditional `IsFlying()`
+          # bail, so an airship rider's Decision press never falls through
+          # to it regardless of whether landing actually succeeded -- the
+          # button is consumed either way. A boat/ship rider gets no such
+          # blanket suppression: `Game_Player::Update` only skips
+          # `CheckActionEvent` when `GetOnOffVehicle` (in turn
+          # `GetOffVehicle` / `Game_Map::CanDisembarkShip`) actually
+          # succeeds; a failed disembark -- a blocked landing tile, or an
+          # active same-layer event standing right on the shore -- falls
+          # through to the ordinary action-trigger check on that same
+          # tile, letting a shore NPC be talked to directly from the boat.
+          airship || disembarked
         else
           board_vehicle
         end
@@ -2229,6 +2242,9 @@ class RPG2k
       # party stays aboard). Disembarking the airship also snaps the hero to
       # face left, mirroring `Game_Player::GetOffVehicle`'s own unconditional
       # `SetFacing(Left)` right before `StartDescent()` -- see #board_as.
+      # Returns whether the boat/ship actually got off (the airship branch's
+      # own return is never read -- see #try_board_vehicle's own comment on
+      # why the airship needs no such signal).
       def disembark_vehicle
         if @state.boarded == :airship
           return unless airship_landable?(@state.x, @state.y)
@@ -2239,12 +2255,13 @@ class RPG2k
           return
         end
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
-        return unless passable?(fx, fy, @state.direction)
+        return false unless passable?(fx, fy, @state.direction)
         follow_vehicle # the vehicle is left where the party is getting off
         @state.x = fx
         @state.y = fy
         @state.boarded = nil
         restore_pre_vehicle_bgm # the map BGM resumes
+        true
       end
 
       # Whether the airship may land on tile (x, y): the database terrain's
