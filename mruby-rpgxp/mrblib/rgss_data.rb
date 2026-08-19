@@ -170,6 +170,14 @@ module RPG
   # list whose shape depends on the code.
   class EventCommand
     attr_accessor :code, :indent, :parameters
+
+    # Real RGSS documents this constructor -- scripts synthesize new event
+    # commands with it directly.
+    def initialize(code = 0, indent = 0, parameters = [])
+      @code = code
+      @indent = indent
+      @parameters = parameters
+    end
   end
 
   # A movement script: a list of MoveCommands with repeat/skippable flags.

@@ -812,6 +812,19 @@ assert "RGSS::Bitmap#draw_text takes a Rect as well as x/y/width/height" do
   assert_true pixels.call(plain).size > 0, "the 2-argument Rect form drew nothing"
 end
 
+# Real RGSS3 accepts any object as the text argument, not just a String --
+# games routinely draw_text an Integer directly (HP/MP/gold, the way this
+# real VX Ace release's own stock Window_Gold#refresh ->
+# #draw_currency_value calls `draw_text(x, y, w, h, $game_party.gold, 2)`),
+# relying on implicit #to_s. Both call-signature branches this coerces in.
+assert "RGSS::Bitmap#draw_text accepts a non-String text argument" do
+  numbers = RGSS::Bitmap.new(64, 24)
+  assert_equal numbers, numbers.draw_text(0, 0, 64, 24, 42)
+
+  via_rect = RGSS::Bitmap.new(64, 24)
+  assert_equal via_rect, via_rect.draw_text(RGSS::Rect.new(0, 0, 64, 24), 42)
+end
+
 # The fallback for projects that ship no font. RGSS.default_font_path finds the
 # bundled default font (assets/fonts) — downloaded rather than committed, so nil
 # is a normal answer here — and Font.default_path is the opt-in switch each

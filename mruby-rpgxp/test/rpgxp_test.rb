@@ -626,3 +626,19 @@ assert "Dir.glob covers the patterns real scripts use for save/protect checks" d
     Dir.delete(root)
   end
 end
+
+# Real RGSS documents this constructor -- scripts synthesize new event
+# commands with it directly. EventCommand had no #initialize at all
+# (Object's own default takes zero arguments), so the 3-argument form
+# real scripts call raised ArgumentError.
+assert "RPG::EventCommand.new takes the real code/indent/parameters constructor" do
+  cmd = RPG::EventCommand.new(355, 2, ["@commonevent_id = 7"])
+  assert_equal 355, cmd.code
+  assert_equal 2, cmd.indent
+  assert_equal ["@commonevent_id = 7"], cmd.parameters
+
+  defaulted = RPG::EventCommand.new
+  assert_equal 0, defaulted.code
+  assert_equal 0, defaulted.indent
+  assert_equal [], defaulted.parameters
+end

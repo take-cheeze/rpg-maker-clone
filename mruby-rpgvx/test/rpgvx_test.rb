@@ -665,3 +665,20 @@ assert "RPG::CommonEvent#autorun?/#parallel? read the trigger field" do
   assert_false parallel.autorun?
   assert_true parallel.parallel?
 end
+
+# Real RGSS documents this constructor -- scripts synthesize new event
+# commands with it directly (this same release's error-log utility calls
+# `EventCommand.new(355, 0, [...])` to stamp a common event's id before
+# running it), which raised ArgumentError when EventCommand had no
+# #initialize at all (Object's own default takes zero arguments).
+assert "RPG::EventCommand.new takes the real code/indent/parameters constructor" do
+  cmd = RPG::EventCommand.new(355, 2, ["@commonevent_id = 7"])
+  assert_equal 355, cmd.code
+  assert_equal 2, cmd.indent
+  assert_equal ["@commonevent_id = 7"], cmd.parameters
+
+  defaulted = RPG::EventCommand.new
+  assert_equal 0, defaulted.code
+  assert_equal 0, defaulted.indent
+  assert_equal [], defaulted.parameters
+end

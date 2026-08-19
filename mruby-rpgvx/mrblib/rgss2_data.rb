@@ -336,6 +336,16 @@ module RPG
 
   class EventCommand
     attr_accessor :code, :indent, :parameters
+
+    # Real RGSS documents this constructor -- scripts synthesize new event
+    # commands with it directly (this same release's error-log utility
+    # inserts a `EventCommand.new(355, 0, [...])` "script call" at the front
+    # of every common event's own list, to stamp its id before running).
+    def initialize(code = 0, indent = 0, parameters = [])
+      @code = code
+      @indent = indent
+      @parameters = parameters
+    end
   end
 
   class MoveRoute
