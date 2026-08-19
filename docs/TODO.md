@@ -6370,7 +6370,35 @@ Everything below is unverified against the codebase.
   `#drive_parallel_wait`'s "background: ignore message/choice requests"
   branch — `:teleport` no longer falls into it, see the "a Transfer Player
   command issued from a Parallel Process..." fix just above), confirmed to
-  fail against the pre-fix code before the fix. ✅ **A Battle Processing
+  fail against the pre-fix code before the fix. ✅ **The action button also
+  answers a same-layer Player Touch / Event Touch event it is only facing,
+  not standing on — not just a trigger-0 (Action) event
+  (2026-08-19).** Confirmed directly against RPG_RT's live source:
+  `Game_Player::CheckActionEvent` (`src/game_player.cpp`) is
+  `result |= CheckEventTriggerThere({Trigger_touched, Trigger_collision},
+  front_x, front_y, true); result |= CheckEventTriggerHere({Trigger_action},
+  true);` — the touch-trigger check on the faced tile runs unconditionally,
+  before the action-trigger check ever does, a single, unconditional line
+  with no version gating. `CheckEventTriggerThere` itself requires
+  `ev.GetLayer() == Layers_same`, the identical restriction this codebase's
+  own action-trigger check already applies. `Scene::Map#try_action_trigger`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) only ever tested `#actionable?`
+  (trigger 0) on the faced tile, so a Player Touch or Event Touch NPC
+  standing one tile ahead could only ever be reached by physically walking
+  onto its tile — pressing the action button while facing it did nothing,
+  when real RPG_RT answers it exactly the way walking into it would. Fixed
+  by adding a new `#action_touch_trigger?` predicate — deliberately
+  narrower than the existing `#touch_trigger?` (which also covers Parallel
+  Process, for hero-*contact* purposes only): Parallel is not in RPG_RT's
+  own `{Trigger_touched, Trigger_collision}` set here — and checking it
+  alongside `#actionable?` on the immediate faced tile only, not extended
+  through the counter-tile chain (which stays action-only, matching the
+  reference's own separate `got_action` loop). Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (a same-layer Player Touch event
+  answers the action button when only faced, not stepped onto; the same for
+  Event Touch; a below-characters touch event still needs actual overlap,
+  not just facing it), the first two confirmed to fail against the pre-fix
+  code before the fix. ✅ **A Battle Processing
   (Enemy Encounter) command issued from a Parallel Process now actually
   opens and drives a real fight**, instead of being silently skipped
   outright — the last member of this exact defect-class family left
