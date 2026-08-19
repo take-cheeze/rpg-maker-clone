@@ -1,0 +1,52 @@
+DIAGNOSTIC ONLY -- not a fix, not meant to stay. Logs the guest PC/RA at
+sceKernelCreateLwMutex's success path, at sceKernelLockLwMutex's "Bad
+workarea pointer" rejection, and at Core/MemFault.cpp's "Bad memory access
+detected and ignored" path, so the exact PSP EBOOT instruction responsible
+can be resolved against build-psp/'s own ELF (psp-addr2line / objdump)
+instead of guessing from symptoms alone.
+
+Context: a real, reproducible crash (see docs/adr/0047-psp-memory-budget.md)
+where this repo's PSP EBOOT boots on both interactive PPSSPP (`nix build
+'.#ppsspp'`, real GUI/Vulkan) and real hardware (ARK-5 CFW) but never
+reaches the title screen -- PPSSPP hangs after logging a real (non-poison)
+"ACCESS_ERROR=sceKernelLockLwMutex(...): Bad workarea pointer for LwMutex"
+plus ~150 "Bad memory access" hits in a small heap region just before it;
+real hardware crashes back to the game list instead of hanging, consistent
+with the same underlying bad pointer causing a genuine CPU exception there.
+Headless PPSSPP (used for this repo's own psp-smoke CI and this ADR's
+earlier bring-up verification) never reproduces it, so this needs a real
+interactive run to capture.
+
+Remove this patch (and revert flake.nix's reference to it) once the root
+cause is found -- it exists only to get one more diagnostic data point out
+of an interactive `nix build '.#ppsspp'` run.
+
+--- a/Core/HLE/sceKernelMutex.cpp
++++ b/Core/HLE/sceKernelMutex.cpp
+@@ -700,6 +700,7 @@
+ 	mutex->nm.uid = id;
+ 	mutex->nm.workarea = workareaPtr;
+ 	mutex->nm.initialCount = initialCount;
++	ERROR_LOG(Log::sceKernel, "PSP_LWMUTEX_CREATE name=%s workarea=%08x pc=%08x ra=%08x", name, workareaPtr, currentMIPS->pc, currentMIPS->r[MIPS_REG_RA]);
+ 	workarea->init();
+ 	workarea->lockLevel = initialCount;
+ 	if (initialCount == 0)
+@@ -940,6 +941,7 @@
+ int sceKernelLockLwMutex(u32 workareaPtr, int count, u32 timeoutPtr)
+ {
+ 	if (!Memory::IsValidAddress(workareaPtr)) {
++		ERROR_LOG(Log::sceKernel, "PSP_LWMUTEX_BAD_LOCK workarea=%08x pc=%08x ra=%08x", workareaPtr, currentMIPS->pc, currentMIPS->r[MIPS_REG_RA]);
+ 		return hleLogError(Log::sceKernel, SCE_KERNEL_ERROR_ACCESS_ERROR, "Bad workarea pointer for LwMutex");
+ 	}
+
+--- a/Core/MemFault.cpp
++++ b/Core/MemFault.cpp
+@@ -296,7 +296,7 @@
+ 		context->CTX_PC += info.instructionSize;
+ 		g_numReportedBadAccesses++;
+ 		if (g_numReportedBadAccesses < 100) {
+-			ERROR_LOG(Log::MemMap, "Bad memory access detected and ignored: %08x (%p)", guestAddress, (void *)hostAddress);
++			ERROR_LOG(Log::MemMap, "Bad memory access detected and ignored: %08x (%p) pc=%08x ra=%08x", guestAddress, (void *)hostAddress, currentMIPS->pc, currentMIPS->r[MIPS_REG_RA]);
+ 		}
+ 	} else {
+ 		std::string infoString = "";

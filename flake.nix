@@ -179,6 +179,10 @@
               ./nix/patches/ppsspp-x64analyzer-8bit-mov.patch
               ./nix/patches/ppsspp-sysclibforkernel-missing-functions.patch
               ./nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch
+              # TEMPORARY, diagnostic only -- see the patch file's own header
+              # and docs/adr/0047-psp-memory-budget.md. Remove once the
+              # LwMutex/bad-memory-access root cause is found.
+              ./nix/patches/ppsspp-diagnostic-lwmutex-caller.patch
             ];
           });
         }
