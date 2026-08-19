@@ -18629,6 +18629,43 @@ check 'a random encounter opens a battle with the map-tree node\'s own troop' do
   eq 0, st.encounter_total, 'the accumulator resets once a fight actually starts'
 end
 
+# RPG2000's own 1/32 first-strike roll on a wandering encounter -- EasyRPG's
+# `Game_Map::PrepareEncounter` (`src/game_map.cpp`) is a hard `if (Feature::
+# HasRpg2kBattleSystem()) { Rand::ChanceOf(1, 32) ... } else { /* 2003's
+# terrain-condition rolls */ }`, and `Feature::HasRpg2kBattleSystem()`
+# (`src/feature.cpp`) reduces to `Player::IsRPG2k()` for a genuine database --
+# so a real RPG2003 game never rolls this chance at all, and draws no random
+# number doing so either. Previously this build rolled it unconditionally
+# regardless of edition.
+check 'RPG2003 never rolls RPG2000\'s 1/32 first-strike chance on a wandering ' \
+      'encounter, and draws no random number doing so' do
+  tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
+
+  s2000 = new_scene({}, player: [0, 0], map_tree: tree)
+  rng2000 = s2000.instance_variable_get(:@rng)
+  s2000.send(:check_random_encounter)
+
+  s2003 = new_scene({}, player: [0, 0], map_tree: tree, rpg2003: true)
+  rng2003 = s2003.instance_variable_get(:@rng)
+  s2003.send(:check_random_encounter)
+  3.times { s2003.update }
+  ui2003 = battle_ui(s2003)
+  ok ui2003, 'the guaranteed roll still opens a battle -- only first_strike is affected'
+  ok !ui2003[:battle].first_strike?, 'RPG2003 never sets it from this roll'
+
+  # Both scenes share the identical hardcoded seed (Scene::Map's own
+  # `Game::Rng.new(0x2000)`) and run the identical code path up to the
+  # first-strike line (troop-count roll, accumulator roll, troop selection),
+  # so their `@rng` are in identical internal state right up to it -- the
+  # ONLY difference RPG_RT's own if/else makes is the 2000-only draw. Manually
+  # advancing the 2003 rng one more step must land exactly on the 2000 rng's
+  # own post-call state, proving the roll was skipped outright rather than
+  # merely made and discarded.
+  rng2003.next_int
+  eq rng2000.instance_variable_get(:@state), rng2003.instance_variable_get(:@state),
+     'RPG2003 consumed exactly one fewer random draw than RPG2000 did'
+end
+
 check 'an empty encounter list never starts a random battle' do
   tree = fake_map_tree(1 => FakeEncounterNode.new({}, 1)) # same guaranteed roll, no troops
   scene = new_scene({}, player: [0, 0], map_tree: tree)

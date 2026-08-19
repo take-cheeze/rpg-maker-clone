@@ -2778,6 +2778,41 @@ The work below is roughly ordered by the critical path to a walkable game
   setup — the same dangling-reference simulation the stale-terrain
   diagnostic check already uses — never starts a battle and never
   accumulates), confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-19): the first-strike bullet above undersold its
+  own edition gap — RPG2000's 1-in-32 first-strike roll fired on a wandering
+  encounter for an RPG2003 database too, rather than never rolling at all.**
+  Confirmed directly against RPG_RT's live source: `Game_Map::
+  PrepareEncounter` (`src/game_map.cpp`) is a hard `if (Feature::
+  HasRpg2kBattleSystem()) { if (Rand::ChanceOf(1, 32)) { args.first_strike =
+  true; } } else { /* 2003's terrain-condition rolls */ }` — an `if`/`else`,
+  not two independently-applicable checks — and `Feature::
+  HasRpg2kBattleSystem()` (`src/feature.cpp`) reduces to `Player::IsRPG2k()`
+  for any genuine, unmodified database (the alternate path is an
+  EasyRPG-only dynamic-config extension field absent from real data). So a
+  real RPG2003 game never rolls this chance on a wandering encounter at all
+  — it rolls (rarely; ADR 0034's audit found zero terrain rows in either
+  test bed with `special_flags` set) from the terrain-condition system
+  instead, and the two never both apply. `Scene::Map#check_random_encounter`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) rolled `@rng.random(32).zero?`
+  unconditionally, with nothing downstream (`Game::Battle#initialize`'s
+  `@first_strike`, `#first_strike?`) correcting a wrongly-`true` roll for an
+  RPG2003 fight — this is distinct from, and narrower than, the
+  already-deferred terrain-condition system itself (row damage/hit shifts,
+  Enemy Encounter's own params, the `special_flags` rolls), which stays
+  correctly out of scope; the bug here is that the *2000-only* mechanic
+  leaked into 2003 games instead of just not firing. Fixed by gating the
+  roll on `!@state.party.rpg2003?` (mirroring this method's own existing
+  `@state.party.flying?(@state)` idiom two lines above) — an RPG2003 game
+  now skips `@rng.random(32)` outright rather than merely discarding its
+  result, matching the reference's own `if`/`else` and keeping this
+  project's seeded RNG stream in step with a genuine RPG2003 run, which
+  never draws a number here either. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (an RPG2003-flagged scene's guaranteed
+  wandering encounter never sets `first_strike`, and its `@rng` — sharing
+  the identical hardcoded seed and identical code path up to this point with
+  a parallel RPG2000 scene — consumes exactly one fewer random draw, proving
+  the roll is skipped rather than rolled-and-discarded), confirmed to fail
+  against the pre-fix code before the fix.
 
 #### Menus, save, battle
 - ✅ Menu scene — opens over the map (cancel button); shows party status and a
