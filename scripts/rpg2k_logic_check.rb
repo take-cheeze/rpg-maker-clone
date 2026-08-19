@@ -12739,6 +12739,61 @@ check "battle: an attribute-defence shift rolls its own hit chance per " \
   eq 2, foe.attr_ranks[2], 'attribute 2 kept its rank -- its own roll missed'
 end
 
+# RPG_RT's own two-step mechanism for a revival skill/item (`AlgorithmBase::
+# ApplyHpEffect`/`ApplyStateEffect`, src/game_battlealgorithm.cpp):
+# ApplyHpEffect is a hard no-op on an already-dead target
+# (`if (target->IsDead()) return 0;`), so the heal never lands against the
+# target's raw HP total (nothing floors HP at 0 mid-fight -- an overkill hit
+# can leave it deeply negative). Reviving instead happens entirely through
+# the state cure: removing Death sets HP to 1
+# (`Game_Battler::RemoveStates`), and only then does
+# `if (was_dead && !target->IsDead()) target->ChangeHp(GetAffectedHp() - 1,
+# false)` layer the skill's own heal on top of that 1, floored at 1 by
+# ChangeHp's own non-lethal clamp. #apply_skill_hit's recovery branch used
+# to add the heal directly onto the target's stale (possibly very negative)
+# HP first, then cure the state as a bare array edit with no HP-to-1 side
+# effect at all -- so a revival item could fail to actually revive an ally
+# who'd taken heavy overkill damage, even though the item was consumed and
+# the log reported the state cured.
+check 'battle: a revival skill heals from the cure\'s HP-to-1 floor, not ' \
+      "the target's stale negative HP" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.hp = -200 # overkill damage -- nothing floors HP at 0 mid-fight
+  foe.states = [1]
+  ok foe.dead?, 'sanity: -200 HP is dead'
+  cmd = { cured: [1], chance: 100 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  e = bat.send(:apply_skill_hit, hero, foe, 50, 0, cmd)
+  eq [1], e[:cured]
+  ok !foe.dead?, 'revived'
+  eq 50, foe.hp, 'revived to 1, then +49 on top -- not 50 added to -200'
+end
+
+check 'battle: a revival skill with no heal configured still lands the ' \
+      "cure's own HP-to-1, not a stale negative total" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.hp = -50
+  foe.states = [1]
+  cmd = { cured: [1], chance: 100 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.send(:apply_skill_hit, hero, foe, 0, 0, cmd)
+  ok !foe.dead?, 'revived even with hp: 0'
+  eq 1, foe.hp
+end
+
+check "battle: a heal on a still-standing target is unaffected by the " \
+      "revival fix" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.hp = 40
+  cmd = { chance: 100 }
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.send(:apply_skill_hit, hero, foe, 20, 0, cmd)
+  eq 60, foe.hp, 'an ordinary heal on a live target adds normally'
+end
+
 check "battle: a skill/spell attack now rolls its own critical hit too" do
   # EasyRPG's Game_BattleAlgorithm::Skill::vExecute rolls
   # Algo::CalcCriticalHitChance(source, target, WeaponAll, ...) -- the exact

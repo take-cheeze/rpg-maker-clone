@@ -12130,28 +12130,38 @@ module Game
         # EasyRPG calls `Rand::PercentChance(to_hit)` fresh inside each of
         # `affect_hp`/`affect_sp`'s own `if`, not once for the whole skill
         # (#skill_effect_hits?). A skill that restores HP and SP alike can
-        # therefore land one and miss the other.
-        target.hp = [target.hp + hp, target.max_hp].min if hp > 0 && skill_effect_hits?(cmd)
+        # therefore land one and miss the other. The HP write itself is
+        # skipped entirely on an already-dead target -- EasyRPG's own
+        # `ApplyHpEffect` (src/game_battlealgorithm.cpp) is a hard no-op
+        # (`if (target->IsDead()) return 0;`) before it ever reaches its own
+        # accuracy roll, never adding the skill's heal onto a corpse's raw
+        # (possibly deeply negative, nothing floors HP at 0 mid-fight)
+        # HP total -- reviving is handled entirely by the cure step below.
+        was_dead = target.dead?
+        target.hp = [target.hp + hp, target.max_hp].min if hp > 0 && !was_dead && skill_effect_hits?(cmd)
         target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp && skill_effect_hits?(cmd)
-        # Cure the item's status conditions from the target (an antidote / herb),
-        # unconditionally, matching the field item cure. Deliberately not
-        # routed through #cure_state: unlike every other cure site in this
-        # class, this branch's own `hp` (the skill's raw HP effect, already
-        # variance/attribute-adjusted above) already reaches a downed target
-        # directly -- the `target.hp = ...` line just above carries no
-        # `!target.dead?` guard -- so a revival skill's own configured heal
-        # amount already lands here without #cure_state's own hp-to-1
-        # fallback, and adding it on top risks *overwriting* a larger heal
-        # down to 1 rather than complementing it. RPG_RT's own two-step
-        # mechanism for this exact interaction (`AlgorithmBase::
-        # ApplyStateEffect`, src/game_battlealgorithm.cpp: cure first sets
-        # HP to 1, then a second, additive `ChangeHp(GetAffectedHp() - 1,
-        # false)` layers the skill's own heal on top) is closely related but
-        # not equivalent to this branch's current heal-then-cure ordering,
-        # and deserves its own dedicated, separately-verified fix rather
-        # than folding an approximation into this session's narrower one.
+        # Cure the item's status conditions from the target (an antidote /
+        # herb), unconditionally, matching the field item cure -- routed
+        # through #cure_state (like the attack branch's own `cured.each`
+        # above) so curing Death also sets HP to 1 the same way every other
+        # cure site in this class does.
         cured = (cmd[:cured] || []).select { |s| target.state?(s) }
-        target.states = (target.states || []) - cured unless cured.empty?
+        cured.each { |s| cure_state(target, s) }
+        # A revival (this skill's own cure just took Death off the target)
+        # layers the skill's heal on top of that HP-to-1 instead of the heal
+        # being skipped above, matching EasyRPG's own two-step mechanism
+        # exactly: `AlgorithmBase::ApplyStateEffect`'s `if (was_dead &&
+        # !target->IsDead()) target->ChangeHp(GetAffectedHp() - 1, false)`
+        # -- `ChangeHp`'s own non-lethal floor (`req_new_hp = std::max(1,
+        # req_new_hp)`) is why this reads `[.., 1].max` below rather than
+        # simply adding `hp - 1`. A revival item with no heal configured
+        # (`hp` 0) lands on exactly 1, matching #cure_state's own bare
+        # revival fallback used everywhere else.
+        if was_dead && !target.dead?
+          revived = target.hp + (hp - 1)
+          revived = 1 if revived < 1
+          target.hp = target.max_hp ? [revived, target.max_hp].min : revived
+        end
         # An RPG2003 reverse_state_effect ally/self-scoped skill flips
         # #battle_skill_command's own `cmd[:inflict]` on instead of `cmd[:cured]`
         # (see its comment) -- roll it here the same way an attack skill does,
