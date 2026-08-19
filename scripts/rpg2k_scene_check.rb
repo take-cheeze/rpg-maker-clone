@@ -1619,9 +1619,14 @@ check 'an autostart event Calls a call-only common event through the scene' do
   ok st.switches[7], 'call-only common event ran via Call Event'
 end
 
-check 'player-touch (trigger 1): walking into an event runs it, no move' do
+check 'player-touch (trigger 1) on a same-layer event: walking into it runs ' \
+      'it, no move' do
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 1) # player touch
+  # Same-layer only: like a closed door, the event blocks like any other
+  # LAYER_SAME obstacle, so the touch fires as a bump (EasyRPG's
+  # `CheckEventTriggerThere`) and the party stays put. A below/above-
+  # characters touch event is the opposite case, see the check just below.
+  pg = page(trigger: 1, layer: RPG2k::Scene::Map::LAYER_SAME) # player touch
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
   scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
   RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
@@ -1631,12 +1636,34 @@ check 'player-touch (trigger 1): walking into an event runs it, no move' do
   eq [0, 0], [st.x, st.y], 'player did not step onto the event'
 end
 
-check 'event-touch (trigger 2) also fires when the player walks into it' do
+check 'player-touch (trigger 1) on a below-characters event: it fires but ' \
+      'the party still walks onto its tile' do
+  # The common "invisible SE tile" pattern (a transparent below-characters
+  # event that plays a sound as the party crosses it) is a decoration, not an
+  # obstacle -- #passable?/#char_passable? never let LAYER_BELOW/LAYER_ABOVE
+  # block movement elsewhere, and real RPG_RT fires this via
+  # `CheckEventTriggerHere` once the party has already arrived on the tile
+  # (see docs/TODO.md's `CheckEventTriggerHere({Trigger_touched,
+  # Trigger_collision}, false)` citation), not as a bump that holds the party
+  # back like the same-layer case above.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 1, layer: RPG2k::Scene::Map::LAYER_BELOW) # player touch
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # hold right, onto the event at (1,0)
+  12.times { scene.update } # a full tile slide takes more than 6 frames, see the below/above passability checks above
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[6], 'player-touch event ran'
+  eq [1, 0], [st.x, st.y], 'the party still walked onto the below-characters event'
+end
+
+check 'event-touch (trigger 2) also fires when the player walks into it, ' \
+      'same-layer version blocks the move' do
   # RPG_RT tests both touch triggers as one set on the player's own move — so a
   # trigger-2 event fires from either side, which is how Nepheshel's roaming
   # monsters (9,637 trigger-2 pages) start a fight when you walk into them.
   ic = Game::Interpreter::Cmd
-  pg = page(trigger: 2) # event touch, standing still
+  pg = page(trigger: 2, layer: RPG2k::Scene::Map::LAYER_SAME) # event touch, standing still
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
   scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
   RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
@@ -1644,6 +1671,19 @@ check 'event-touch (trigger 2) also fires when the player walks into it' do
   st = scene.instance_variable_get(:@state)
   ok st.switches[6], 'walking into an event-touch event ran it'
   eq [0, 0], [st.x, st.y], 'and the party did not step onto it'
+end
+
+check 'event-touch (trigger 2) on a below-characters event still lets the ' \
+      'party walk onto its tile' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 2, layer: RPG2k::Scene::Map::LAYER_BELOW)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  RGSS::Input.dir_value = 6 # hold right, onto the event at (1,0)
+  12.times { scene.update } # a full tile slide takes more than 6 frames, see the below/above passability checks above
+  st = scene.instance_variable_get(:@state)
+  ok st.switches[6], 'walking into an event-touch event ran it'
+  eq [1, 0], [st.x, st.y], 'the party still walked onto the below-characters event'
 end
 
 check 'an action event is not set off by walking into it' do

@@ -7517,8 +7517,10 @@ class RPG2k
           # events (you cannot trigger them from the water / air).
           return unless vehicle_passable?(nx, ny, dir, @state.boarded)
         else
-          # Walking into a touch event runs it instead of moving. **Both** touch
-          # triggers answer here: RPG_RT tests them as one set on every
+          # Walking into a touch event runs it; whether that also blocks the
+          # step depends on the event's layer (see the `LAYER_SAME` check
+          # below). **Both** touch triggers answer here: RPG_RT tests them as
+          # one set on every
           # player-side path (EasyRPG's `{Trigger_touched, Trigger_collision}` in
           # `Game_Player::Update` / `UpdateMovement`), so the asymmetry is not
           # the one the trigger names suggest — an "event touch" (2) event fires
@@ -7545,7 +7547,14 @@ class RPG2k
           if touched && touch_trigger?(touched[:trigger]) && touched[:commands] &&
              !touched[:crossed_hero_this_frame]
             start_event(touched)
-            return
+            # A same-layer touch event blocks like a closed door: it fires but
+            # the party stays put, exactly as before. A below/above-characters
+            # touch event (the common "invisible SE tile" pattern) is a
+            # decoration, not an obstacle -- #passable?/#char_passable? never
+            # let it block movement elsewhere, so falling through to the
+            # ordinary passability check below lets the party keep walking
+            # onto its tile while the event's commands run alongside.
+            return if touched[:layer] == LAYER_SAME
           end
           # Through Mode (see @player_through) bypasses collision the same way
           # it does for an event's own #char_passable? -- touch triggers still
