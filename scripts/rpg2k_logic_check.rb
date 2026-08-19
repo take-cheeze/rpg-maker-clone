@@ -5501,8 +5501,14 @@ check 'Change Equipment command equips into the type slot and removes' do
   Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 1, 5])]); it.update }
   eq 11, a.def         # base 2 + 9
   eq 8, a.equipment[2]
-  # Remove the weapon slot (op 1, slot 0).
-  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, 0])]); it.update }
+  # Remove the weapon slot (op 1, slot param3 0). param4 (99, garbage here) is
+  # confirmed against EasyRPG's actual C++ source, fetched live --
+  # `Game_Interpreter::CommandChangeEquipment` (src/game_interpreter.cpp)
+  # reads the remove-mode slot from `com.parameters[3]` (`slot =
+  # com.parameters[3] + 1`), never `[4]`, which is only ever read in the
+  # sibling equip-mode branch as the item id's own ValueOrVariable operand --
+  # to have no bearing on which slot comes off.
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, 99])]); it.update }
   eq 3, a.atk
   eq 0, a.equipment[0]
   eq 8, a.equipment[2] # armour still on
@@ -5565,14 +5571,20 @@ check 'Change Equipment command returns the previously-equipped item to ' \
   eq 9, a.equipment[0], 'now wearing the replacement'
   eq 1, st.party.item_count(7), 'the displaced weapon landed back in the bag'
   eq 0, st.party.item_count(9), 'the replacement itself is worn, not sitting in the bag too'
-  # Remove it outright (op 1): 9 comes back to the bag too.
+  # Remove it outright (op 1, slot param3 0; param4 0 here is coincidentally
+  # the same value, unlike the garbage-param4 case above, but still the one
+  # EasyRPG's real C++ source never reads for this branch).
   Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, 0])]); it.update }
   eq 0, a.equipment[0], 'unequipped'
   eq 1, st.party.item_count(9), 'and it returned to the bag on removal too'
 end
 
-check 'Change Equipment command "remove every slot" (param4 5) returns each ' \
+check 'Change Equipment command "remove every slot" (param3 5) returns each ' \
       'slot to the bag in turn' do
+  # The slot lives in param3, not param4 -- confirmed against EasyRPG's
+  # actual C++ source, fetched live: `Game_Interpreter::
+  # CommandChangeEquipment`'s remove branch is `slot = com.parameters[3] +
+  # 1`. param4 (99, garbage here) proves it is never consulted.
   items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
             8 => fake_item(dfn: 9, type: 3) }   # armour -> slot 2
   db = FakeActorDB.new(
@@ -5582,10 +5594,42 @@ check 'Change Equipment command "remove every slot" (param4 5) returns each ' \
   Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
   Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 8])]); it.update }
   eq [7, 0, 8, 0, 0], a.equipment
-  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 0, Game::Actor::EQUIP_ORDER.size])]); it.update }
+  Game::Interpreter.new(st).tap do |it|
+    it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, Game::Actor::EQUIP_ORDER.size, 99])])
+    it.update
+  end
   eq [0, 0, 0, 0, 0], a.equipment, 'every slot cleared'
   eq 1, st.party.item_count(7), 'the weapon came back to the bag'
   eq 1, st.party.item_count(8), 'the armour came back to the bag too'
+end
+
+check 'Change Equipment command removes exactly the slot named in param3, ' \
+      'not param4' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Interpreter::CommandChangeEquipment` (src/game_interpreter.cpp)
+  # reads the remove-mode slot from `com.parameters[3]` (`slot =
+  # com.parameters[3] + 1`) -- the same 1:1 `cmd.param(n)` <-> `com.
+  # parameters[n]` mapping every other command in this file uses (e.g.
+  # `CommandChangeSkills`, the immediately preceding command in the same
+  # C++ file, which #do_change_skills already mirrors exactly). An armour
+  # slot (2) named in param3, with param4 set to the weapon slot (0) --
+  # what a prior, wrong version of this method would have removed instead
+  # -- must remove the armour and leave the weapon alone.
+  items = { 7 => fake_item(atk: 15, type: 1),   # weapon -> slot 0
+            8 => fake_item(dfn: 9, type: 3) }   # armour -> slot 2
+  db = FakeActorDB.new(
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1], items)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 7])]); it.update }
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 0, 0, 8])]); it.update }
+  eq [7, 0, 8, 0, 0], a.equipment
+  # Remove op, param3 = 2 (armour slot), param4 = 0 (the weapon slot, a
+  # decoy a param4-reading implementation would remove instead).
+  Game::Interpreter.new(st).tap { |it| it.start([FakeCmd.new(IC::CHANGE_EQUIP, [1, 1, 1, 2, 0])]); it.update }
+  eq [7, 0, 0, 0, 0], a.equipment, 'the armour (param3) came off, the weapon (param4) stayed on'
+  eq 1, st.party.item_count(8), 'the removed armour landed back in the bag'
+  eq 0, st.party.item_count(7), 'the weapon is still worn, not in the bag'
 end
 
 check 'Change Equipment command respects an actor_set restriction, per actor' do

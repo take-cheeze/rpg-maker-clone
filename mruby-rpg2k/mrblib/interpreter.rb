@@ -2401,9 +2401,23 @@ module Game
 
     # Change Equipment (10450). param2 selects the operation: 0 equips an item
     # (param3 0 = the item id in param4, 1 = the id held in variable param4) into
-    # the slot matching its type; 1 removes equipment, param4 selecting the slot
-    # (0..4, or 5 for every slot). Confirmed against real events, e.g.
+    # the slot matching its type; 1 removes equipment, **param3** selecting the
+    # slot (0..4, or 5 for every slot). Confirmed against real events, e.g.
     # `[1, 3, 0, 0, 127]` equips armour 127 onto actor 3.
+    #
+    # The remove branch's slot index is confirmed against EasyRPG's actual C++
+    # source, fetched live: `Game_Interpreter::CommandChangeEquipment`
+    # (`src/game_interpreter.cpp`) is `switch (com.parameters[2]) { case 1:
+    # item_id = 0; slot = com.parameters[3] + 1; break; }` -- `parameters[3]`,
+    # not `[4]` (which is only ever read in the sibling `case 0` equip branch,
+    # as the item id's own ValueOrVariable operand). A prior version of this
+    # method read `cmd.param(4)` for the remove slot instead, unlike every
+    # other command in this file's own `cmd.param(n)` <-> `com.parameters[n]`
+    # 1:1 mapping (confirmed against `CommandChangeSkills`, the immediately
+    # preceding command in the same C++ file, which #do_change_skills already
+    # mirrors exactly) -- an ordinary editor-authored "Change Equipment >
+    # Remove Equipment > [some slot]" command would unequip whatever slot
+    # `param(4)` happened to hold instead of the one actually chosen.
     #
     # Both operations swap through the party's bag, same as the equip menu
     # (`Game::Party#equip_item_from_bag` / `#unequip_to_bag`) -- confirmed
@@ -2421,7 +2435,7 @@ module Game
         # command might be allowed the item and another not.
         targets.each { |a| party.equip_item_from_bag(a, item) if party.item_usable_by?(it, a.id) }
       else
-        targets.each { |a| party.unequip_to_bag(a, cmd.param(4)) }
+        targets.each { |a| party.unequip_to_bag(a, cmd.param(3)) }
       end
       check_game_over # losing an item's max-HP bonus can knock the party out
     end

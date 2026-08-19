@@ -5570,6 +5570,11 @@ Everything below is unverified against the codebase.
   item the party never held at all still equips it (conjured, not drawn
   from a bag that had none), and unequipping does not add a copy back
   either. **Every sub-claim in this bullet is now confirmed correct.**
+  (Superseded by a later fix, per the community デフォ戦bot trivia cited in
+  `do_change_equipment`'s own doc comment: the command was found to swap
+  through the party's bag after all, the same way the Equip menu does —
+  see `#equip_item_from_bag`/`#unequip_to_bag` in the current source. The
+  "bypasses the bag entirely" claim above no longer describes the code.)
 - ✅ **`#gain_item` now erases a bag entry outright once its count reaches 0,
   instead of leaving a phantom zero-count key behind forever (2026-08-18).**
   `Game::Party#gain_item`/`#lose_item` (`mruby-rpg2k/mrblib/game.rb`)
@@ -5601,6 +5606,36 @@ Everything below is unverified against the codebase.
   last copy of a held item erases its bag key entirely, not just zeroes it;
   losing a copy of an item never held creates no phantom entry either),
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **Change Equipment's remove mode read the slot from the wrong command
+  parameter — param4 instead of param3 — so an ordinary "Remove Equipment"
+  event could unequip the wrong slot, or none at all (2026-08-19).**
+  `Interpreter#do_change_equipment` (`mruby-rpg2k/mrblib/interpreter.rb`)
+  called `party.unequip_to_bag(a, cmd.param(4))` for the remove branch
+  (`cmd.param(2) != 0`). Every other command in this file maps `cmd.param(n)`
+  1:1 onto EasyRPG's own `com.parameters[n]` — confirmed directly against
+  `CommandChangeSkills`, the very next command up in the same C++ file,
+  which `#do_change_skills` already mirrors exactly — but this one command's
+  remove branch broke that mapping. Verified against EasyRPG's actual C++
+  source, fetched live: `Game_Interpreter::CommandChangeEquipment`
+  (`src/game_interpreter.cpp`) is `switch (com.parameters[2]) { case 1:
+  item_id = 0; slot = com.parameters[3] + 1; break; }` — the slot comes from
+  `parameters[3]`; `parameters[4]` is read only in the sibling equip branch
+  (`case 0`), as the item id's own `ValueOrVariable` operand, and has no
+  meaning at all in remove mode. An ordinary editor-authored "Change
+  Equipment → Remove Equipment → [Armor]" command therefore removed
+  whatever slot `param4` happened to hold instead — usually 0 (the item-id
+  operand's own default), silently always unequipping the weapon slot
+  regardless of which slot the designer actually picked, or "remove every
+  slot" (param3 5) doing nothing observable at all if param4 landed outside
+  0..5. Fixed by reading `cmd.param(3)` instead. Two of the three existing
+  `scripts/rpg2k_logic_check.rb` Change Equipment removal checks happened to
+  set param3 and param4 to the same value and so never caught this;
+  tightened to set param4 to a mismatched decoy value (proving it is
+  ignored) and a new check exercises the concrete failure mode directly — a
+  command naming the armour slot (param3 2) with the weapon slot as a decoy
+  in param4 (0) must remove the armour and leave the weapon on, the
+  opposite of what the pre-fix code did — all three confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Call Event** — every checkable engine-behavior sub-claim is confirmed
   correct: it doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself
