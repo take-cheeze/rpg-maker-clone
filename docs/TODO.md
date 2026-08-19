@@ -6799,6 +6799,36 @@ not yet verified:
   bundled with this bullet (battle damage cap, HP recovery cap, switch/
   variable caps and ranges, recursion ceiling, party/stack/picture caps, move
   speed, transparency steps) remain unverified — see below.
+  ✅ **Correction (2026-08-19): that clamp was wrong — real RPG_RT's Timer
+  Operation "set" is not clamped at all, even from an out-of-range
+  Control Variable.** The bullet just above reasoned from "RPG_RT's timer
+  display never grows past two minute digits" without ever checking the
+  actual `Game_Party::SetTimer` source, and that reasoning turns out
+  backwards: confirmed directly against RPG_RT's live source,
+  `Game_Party::SetTimer` (`src/game_party.cpp`) is `data.timer1_frames =
+  seconds * DEFAULT_FPS + (DEFAULT_FPS - 1);` with no upper bound
+  whatsoever, and `Game_Interpreter::CommandTimerOperation`
+  (`src/game_interpreter.cpp`) passes its `ValueOrVariable`-sourced
+  seconds straight through with no clamp either. Real RPG_RT's own
+  display genuinely doesn't cap cleanly past 99 minutes either —
+  `Sprite_Timer::Draw` (`src/sprite_timer.cpp`) indexes its digit strip
+  at an unbounded `32 + 8 * (mins / 10)`, so a timer set past 99:59
+  garbles the drawn minutes tiles rather than showing a clean "99:59".
+  This port's own pixel-digit renderer (`Scene::Map
+  #draw_timer_digits`, `mruby-rpg2k/mrblib/scene/map.rb`) already
+  indexes its windowskin digit strip the identical unbounded way — it
+  was never given its own separate bound, so removing `Game::Timer`'s
+  clamp reproduces the same garbled-past-99 quirk for free, matching
+  this codebase's established pattern of faithfully keeping known
+  RPG_RT overflow quirks (Break Loop's nesting bug, `flash_sat`/
+  `flash_period` not being saved) rather than "fixing" them into
+  cleaner-than-real behavior. Fixed by removing `Game::Timer::
+  MAX_SECONDS` and the clamp in `#set` entirely. The existing
+  `scripts/rpg2k_logic_check.rb` check was rewritten to assert the
+  opposite of its old claim (a Timer Operation "set" of 9999, direct or
+  variable-sourced, lands at exactly 9999 s / `9999 * FPS + (FPS - 1)`
+  frames, not clamped to 5999), confirmed to fail against the pre-fix
+  code (`expected 9999, got 5999`) before the fix.
 - ✅ **Special-skill HP recovery is capped at 999 per use** — the same
   fixed-3-digit-popup reasoning as the battle damage cap above, for the
   opposite direction. `Game::Battle#apply_skill_hit`'s recovery branch
