@@ -14850,31 +14850,38 @@ check 'Simulated Attack floors the damage at zero' do
   eq 100, st.party.actor_by_id(1).hp
 end
 
-# Same fixed-3-digit-popup reasoning as the normal-attack/skill/self-destruct/
-# slip-damage cap (Game::Battle::DAMAGE_CAP) applies to this raw event
-# command's own damage too -- it shares no code path with any of those four,
-# so it needed its own clamp.
-check 'Simulated Attack hard-caps damage at the battle damage cap, by edition' do
-  # The damage cap is edition-gated the same way the max-HP cap is
-  # (Game::Battle#damage_cap, Game_Constants::MaxDamageValue: 999 on
-  # RPG2000, 9999 on RPG2003) -- an atk high enough to exceed *either*
-  # edition's own cap is needed to exercise both branches distinctly.
-  players = { 1 => FakePlayerRow.new('Tank', '', 0, 5, max_hp: 999, max_mp: 0, atk: 0, def: 0) }
-  st2k = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1])), 1, 0, 0)
-  it2k = Game::Interpreter.new(st2k)
+# A prior version of this codebase clamped Simulated Attack's own damage
+# to Game::Battle::DAMAGE_CAP, by analogy with the normal-attack/skill/
+# self-destruct/slip-damage popup cap -- a plausible-sounding but
+# unverified inference, not something read off this command's own source.
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Game_Interpreter::CommandSimulatedAttack` (src/game_interpreter.cpp)
+# applies no clamp at all. `Utils::Clamp(effect, -MaxDamageValue(),
+# MaxDamageValue())` exists in exactly three places in the entire real
+# codebase, all inside `game_battlealgorithm.cpp`'s `Normal`/`Skill`/
+# `SelfDestruct` -- the battle actions that actually draw the fixed-width
+# damage-popup animation the cap exists for. Simulated Attack is a silent
+# map-side HP change with no popup at all: it calls `Algo::
+# VarianceAdjustEffect` (itself uncapped) and `Game_Battler::ChangeHp`
+# directly, neither of which clamps either.
+check 'Simulated Attack does not hard-cap damage the way a real battle-popup ' \
+      'action does' do
+  # `#max_hp` itself is clamped to the identical per-edition ceiling
+  # (`Actor::MAX_EFFECTIVE_HP_2K`/`_2K3`, 999/9999 -- the genuine RPG_RT
+  # constant governing both), so any attack this large is lethal either
+  # way and HP alone cannot distinguish capped from uncapped; the stored
+  # variable is the only place the real, uncapped number is observable.
+  players = { 1 => FakePlayerRow.new('Tank', '', 0, 5, max_hp: 99_999, max_mp: 0, atk: 0, def: 0) }
+  st = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1])), 1, 0, 0)
+  it = Game::Interpreter.new(st)
   # scope 1, actor 1, atk 15000, def-weight 0, spi-weight 0, variance 0,
-  # store-damage flag 1 -> var 1.
-  it2k.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 15_000, 0, 0, 0, 1, 1])])
-  it2k.update
-  eq 999, st2k.variables[1], 'RPG2000: capped at 999, not the uncapped 15000'
-  eq 0, st2k.party.actor_by_id(1).hp, 'a full-cap hit against the RPG2000 max HP ceiling is exactly lethal'
-
-  st2k3 = Game::State.new(Game::Party.new(FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, rpg2003: true)),
-                          1, 0, 0)
-  it2k3 = Game::Interpreter.new(st2k3)
-  it2k3.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 15_000, 0, 0, 0, 1, 1])])
-  it2k3.update
-  eq 9999, st2k3.variables[1], 'RPG2003: capped at 9999, not the uncapped 15000'
+  # store-damage flag 1 -> var 1. 15000 exceeds both editions' own display
+  # cap (999 on RPG2000, 9999 on RPG2003), so either would prove this if
+  # this build still clamped.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 15_000, 0, 0, 0, 1, 1])])
+  it.update
+  eq 15_000, st.variables[1], 'the full, uncapped damage -- not clamped to 999 or 9999'
+  eq 0, st.party.actor_by_id(1).hp, 'still lethal, same as before -- HP cannot exceed the edition ceiling either way'
 end
 
 check "Simulated Attack's variance uses RPG_RT's real spread, not a coarser percent model" do

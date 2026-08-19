@@ -11050,6 +11050,41 @@ not yet verified:
   against a defenceless, high-max-HP target clamps at 999, both in the HP
   change and the stored variable), confirmed to fail against the pre-fix
   code.
+  ✅ **The fix directly above was itself wrong — Simulated Attack is not
+  actually capped in real RPG_RT at all, and this bullet had it backwards
+  (2026-08-19).** The "missing 999/9999 cap" claim was inferred by analogy
+  ("RPG_RT's damage popup is a fixed-width widget, so this command's own
+  damage must be clamped too") rather than read off `CommandSimulatedAttack`'s
+  own C++ source — the same category of mistake as the Death-crowding-out
+  bullet corrected earlier in this document. Re-verified against RPG_RT's
+  actual behavior via EasyRPG Player's own C++ source, fetched live this
+  time rather than paraphrased: `Game_Interpreter::
+  CommandSimulatedAttack` (`src/game_interpreter.cpp`) applies no clamp
+  whatsoever — `atk - def*p_def/400 - spi*p_spi/800`, floored at 0, spread
+  by `Algo::VarianceAdjustEffect` (itself uncapped, `src/algo.cpp`),
+  floored at 0 again, then straight into `Game_Battler::ChangeHp` and
+  (optionally) the result variable. `Utils::Clamp(effect, -MaxDamageValue(),
+  MaxDamageValue())` exists in exactly three places in the entire real
+  codebase, all inside `game_battlealgorithm.cpp`'s `Normal`/`Skill`/
+  `SelfDestruct` — the battle actions that actually draw the fixed-width
+  damage-popup animation the cap exists for. Simulated Attack draws no
+  popup at all; it is a silent map-side HP change, so the "popup width"
+  rationale this codebase's own doc comment gave for adding the cap does
+  not even apply to the code path it was applied to. A project using the
+  command's store-to-variable option as a damage calculator (an ordinary
+  trap/puzzle-math trick) read a silently-truncated number under the
+  wrong fix. Fixed by removing the clamp entirely, restoring
+  `do_simulated_attack` to the literal formula above with nothing capped.
+  The pre-existing `scripts/rpg2k_logic_check.rb` check this same session
+  added for the wrong cap was replaced outright (not merely loosened) with
+  one asserting the opposite: a 15,000-power attack — comfortably past
+  both editions' own 999/9999 — reports the full, uncapped 15,000 in the
+  stored variable, confirmed to fail against the pre-fix code (`expected
+  15000, got 999`) before this fix. (HP itself cannot distinguish the two
+  models in this scenario: `Actor#max_hp` is independently clamped to the
+  identical per-edition ceiling, `MAX_EFFECTIVE_HP_2K`/`_2K3`, so an
+  attack this large is lethal either way — the stored variable is the
+  only place the real, uncapped number is ever observable.)
 - ✅ **A troop member still `hidden` at the moment of victory — never
   revealed by its own Show Hidden Monster page, or sent running by that
   page's Force Flee — used to still hand over its EXP, gold and treasure
@@ -11288,9 +11323,11 @@ not yet verified:
   Defense-effectiveness 100% = DEF/4 (not full DEF); Spirit-effectiveness
   100% = Mind/8. **Confirmed already correct** —
   `Game::Interpreter#do_simulated_attack` already implements exactly this
-  formula — but the command was missing the same 999 damage cap every other
-  damage path has, which is now fixed; see the fuller writeup under the
-  "Damage is hard-capped below 1000 (999)" bullet above.
+  formula, uncapped, matching real RPG_RT — a later pass in this same
+  document briefly added, and then re-verified against the actual C++
+  source and removed, a 999/9999 damage cap here; see the "The fix
+  directly above was itself wrong" correction under the "Damage is
+  hard-capped below 1000 (999)" bullet above for the full writeup.
 - ✅ Multiple active states: only the highest-priority one is **displayed**
   (`Game::States.significant`, unchanged), but all active states still
   mechanically apply (a hidden poison keeps ticking under a displayed

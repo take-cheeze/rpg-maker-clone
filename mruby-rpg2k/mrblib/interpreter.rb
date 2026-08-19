@@ -2148,21 +2148,29 @@ module Game
     # at 0, then spread by `Algo::VarianceAdjustEffect` and floored at 0 again.
     # The hit can be lethal.
     #
-    # RPG_RT's damage popup is a fixed-width widget (the same reasoning behind
-    # `Game::Battle#damage_cap` on the normal-attack/skill/self-destruct/
-    # slip-damage paths -- edition-gated the same way, 999 on RPG2000, 9999
-    # on RPG2003), so a Simulated Attack's own computed damage is clamped
-    # too before it reaches HP or the result variable.
+    # Deliberately **not** clamped to `Game::Battle#damage_cap`. A prior
+    # version of this method assumed it should be, by analogy with the
+    # normal-attack/skill/self-destruct damage-popup cap ("RPG_RT's damage
+    # popup is a fixed-width widget") -- a plausible-sounding but unverified
+    # inference, not something read off this command's own source. Confirmed
+    # against EasyRPG's actual C++ source, fetched live:
+    # `Game_Interpreter::CommandSimulatedAttack` (`src/game_interpreter.cpp`)
+    # applies no clamp at all -- `Utils::Clamp(effect, -MaxDamageValue(),
+    # MaxDamageValue())` exists in exactly three places in the whole
+    # codebase, all inside `game_battlealgorithm.cpp`'s `Normal`/`Skill`/
+    # `SelfDestruct` (the battle actions that actually draw the fixed-width
+    # popup animation this cap exists for); `CommandSimulatedAttack` is a
+    # silent map-side HP change with no popup at all, and calls
+    # `Algo::VarianceAdjustEffect` (`src/algo.cpp`, itself uncapped) and
+    # `Game_Battler::ChangeHp` directly, neither of which clamps either.
     def do_simulated_attack(cmd)
       atk = cmd.param(2)
       damage = 0
-      cap = @state.party.rpg2003? ? Battle::DAMAGE_CAP_2K3 : Battle::DAMAGE_CAP_2K
       stat_targets(cmd).each do |a|
         damage = atk - (a.def * cmd.param(3)) / 400 - (a.int * cmd.param(4)) / 800
         damage = 0 if damage < 0
         damage = simulated_attack_variance(damage, cmd.param(5))
         damage = 0 if damage < 0
-        damage = cap if damage > cap
         a.change_hp(-damage, true)
       end
       variables[cmd.param(7)] = damage if cmd.param(6) != 0
