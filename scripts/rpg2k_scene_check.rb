@@ -13595,6 +13595,32 @@ check "an enemy's own AI-chosen Escape basic action plays the dedicated " \
      "matches RPG_RT's own Escape::GetStartSe for an enemy source"
 end
 
+# EasyRPG's `Game_BattleAlgorithm::SelfDestruct::GetStartSe` (src/
+# game_battlealgorithm.cpp) is `return &GetSystemSE(SFX_EnemyKill);` --
+# unconditional, unlike the ordinary post-hit death SE just above
+# (`entry[:defeated] && !entry[:target_ally]`), which can never fire for a
+# self-destruct entry at all since every target is a party member.
+# `entry[:autodestruct_se]` (`Game::Battle#enemy_autodestruct`'s own
+# first-entry-only flag) is this codebase's equivalent trigger.
+check "an enemy's own Auto Destruction basic action plays its own " \
+      'explosion SE too' do
+  scene, _st = battle_scene_with_pages({})
+  90.times do
+    ui = battle_ui(scene)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    scene.update
+    RGSS::Input.triggered = []
+    ui = battle_ui(scene)
+    break if ui && ui[:phase] == :command
+  end
+  battle = scene.instance_variable_get(:@battle)
+  RGSS::Audio.reset_se
+  battle.send(:play_battle_action_se, { attacker: 'Slime', autodestruct: true,
+                                         autodestruct_se: true })
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyKill' },
+     "matches RPG_RT's own SelfDestruct::GetStartSe"
+end
+
 check 'Enemy Encounter scene: Escape forbidden (the default escape_mode 0) plays ' \
       'Buzzer on Escape, and the options window stays open' do
   ic = Game::Interpreter::Cmd

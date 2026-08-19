@@ -9048,6 +9048,43 @@ not yet verified:
   double up with the party's own escape SE. Covered by a new
   `scripts/rpg2k_scene_check.rb` check, confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **An enemy's own Auto Destruction (self-destruct) basic action played
+  no sound at all, unlike the sibling Escape fix just above — the same
+  missing per-algorithm `GetStartSe` dispatch, one function over
+  (2026-08-19).** Confirmed directly against RPG_RT's live source:
+  `Game_BattleAlgorithm::SelfDestruct::GetStartSe`
+  (`src/game_battlealgorithm.cpp`) is `return
+  &GetSystemSE(SFX_EnemyKill);` — unconditional, independent of whether
+  the blast actually defeats anyone, dispatched by the same generic
+  `ProcessBattleActionUsage` call every other action's start-SE already
+  goes through. `Game::Battle#enemy_autodestruct`
+  (`mruby-rpg2k/mrblib/game.rb`) already tags every entry it produces with
+  `autodestruct: true`, but `Scene::Battle#play_battle_action_se`'s only
+  `SFX_ENEMY_DEATH` line is `entry[:defeated] && !entry[:target_ally]` --
+  and every self-destruct target is a party member, so `target_ally` is
+  always true and that line can structurally never fire for a
+  self-destruct entry at all. A self-destructing monster in this codebase
+  played no sound whatsoever unless a target happened to take damage
+  (only `SFX_ACTOR_DAMAGE`, from the generic damage check) — the
+  explosion cue itself was entirely missing. The fix could not simply key
+  off `entry[:autodestruct]` directly the way the Escape fix keyed off
+  `entry[:fled]`, though: `enemy_autodestruct` can buffer several
+  entries, one per living target, each drained through
+  `#play_battle_action_se` separately (the same one-at-a-time queue a
+  dual-wield swing's two entries already share) — and `:autodestruct`
+  itself has to ride on *every* entry regardless, since it also drives
+  each target's own "blows itself up on" log line. Fixed with a second,
+  single-purpose flag, `:autodestruct_se`, set only on the first buffered
+  entry (or the lone fizzle entry when the blast finds no living target
+  at all) — the identical "SE plays once per action, not once per repeat"
+  idiom `#enemy_basic_action`'s own dual-attack arm already uses for
+  `attacker_ally`, just under a dedicated name here since `:autodestruct`
+  itself is multi-purpose. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a two-target self-destruct marks
+  only its first entry, not both; a target-less self-destruct still marks
+  its lone fizzle entry) and one new `scripts/rpg2k_scene_check.rb` check
+  (the `EnemyKill` SE actually plays), all three confirmed to fail against
+  the pre-fix code before the fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player

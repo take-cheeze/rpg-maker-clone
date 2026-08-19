@@ -10966,7 +10966,7 @@ module Game
     # whatever HP it already had.
     def enemy_autodestruct(b)
       targets = @allies.reject(&:out_of_play?)
-      entries = targets.map do |t|
+      entries = targets.each_with_index.map do |t, i|
         dmg = effective_atk(b) - effective_def(t) / 2
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
@@ -10989,12 +10989,27 @@ module Game
         entry = { attacker: b.name, target: t.name, damage: dmg, critical: false,
                   autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
                   target_ally: ally?(t) }
+        # RPG_RT's own `SelfDestruct::GetStartSe` plays the explosion SE
+        # unconditionally, once per action, the instant it starts -- not once
+        # per target hit, and not gated on whether the blast actually kills
+        # anyone (`Scene_Battle_Rpg2k::ProcessBattleActionUsage` calls
+        # `GetStartSe()` a single time, before any target's own damage is
+        # even resolved). This multi-target action buffers one entry per
+        # target through the same one-at-a-time drain a dual-wield swing
+        # does, so only the first entry carries the trigger -- the identical
+        # "SE plays once per action, not once per repeat" idiom
+        # #enemy_basic_action's own dual-attack arm already uses (see its
+        # own comment on clearing `attacker_ally` on the second swing).
+        # `:autodestruct_se` is its own separate flag rather than reusing
+        # `:autodestruct` itself, since that one still has to ride on every
+        # entry for its own per-target "blows itself up on" log line.
+        entry[:autodestruct_se] = true if i.zero?
         entry[:woke] = woke unless woke.empty?
         entry
       end
       # Hidden, not killed -- see the method comment above.
       b.hidden = true
-      entries.empty? ? { attacker: b.name, autodestruct: true } : entries
+      entries.empty? ? { attacker: b.name, autodestruct: true, autodestruct_se: true } : entries
     end
 
     # A skill action (kind 1): cast through the same command pipeline the party

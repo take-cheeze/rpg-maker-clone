@@ -3418,6 +3418,19 @@ class RPG2k
         # so it is inherently enemy-only here -- no risk of double-playing
         # this alongside the party's own escape SE.
         play_system_se(SFX_ESCAPE) if entry[:fled]
+        # An enemy's own Auto Destruction basic action plays its own
+        # explosion cue unconditionally -- EasyRPG's own `SelfDestruct::
+        # GetStartSe` (src/game_battlealgorithm.cpp) is `return
+        # &GetSystemSE(SFX_EnemyKill);` with no gate on whether the blast
+        # actually defeats anyone, unlike the ordinary post-hit
+        # `SFX_ENEMY_DEATH` line just above (`entry[:defeated] &&
+        # !entry[:target_ally]`), which can never fire here at all since
+        # every self-destruct target is a party member (`target_ally` is
+        # always true). `entry[:autodestruct_se]` only ever rides on the
+        # first of a multi-target blast's buffered entries (see
+        # #enemy_autodestruct's own comment), so this plays exactly once
+        # per action, matching RPG_RT.
+        play_system_se(SFX_ENEMY_DEATH) if entry[:autodestruct_se]
       end
 
       # The conditions the action just landed or lifted, one sentence each under
