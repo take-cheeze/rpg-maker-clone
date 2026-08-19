@@ -14203,6 +14203,41 @@ above are repeated here)
   instead of whatever it was charged to), both confirmed to fail against
   the pre-fix code (`NoMethodError`, the accessor did not exist at all)
   before the fix.
+  ✅ **The fix above only zeroed a dead ally's gauge at write-back time
+  (battle end); a lethal hit landing mid-fight left the target's gauge at
+  its stale pre-death charge until then, so an ordinary revival item used
+  within the same fight resurrected the target with its old charge still
+  intact instead of empty (2026-08-19).** The bullet above's own citation
+  already quotes the relevant line — `Game_Battler::AddState`'s Knockout
+  branch (`src/game_battler.cpp`), `if (state_id == kDeathID) {
+  SetAtbGauge(0); SetHp(0); ... }` — and deliberately scoped the fix to
+  cross-*battle* persistence only (`Battle#apply_to_party`'s own
+  `c.hp > 0 ? c.gauge : 0` write-back), reasoning that a `Combatant`'s
+  `#dead?` is purely HP-driven so a single end-of-fight check is
+  sufficient — true for *whether* the gauge ends up zeroed by the time the
+  fight ends, but not for *when*: real RPG_RT's `AddState(kDeathID)` fires
+  the instant death actually lands (`Game_Battler::ChangeHp` calls it
+  itself the moment `new_hp <= 0`), and nothing between that moment and a
+  potential same-fight revival re-charges a dead battler's gauge — so a
+  revived ally in real RPG_RT always resumes from empty, never from
+  whatever it had charged to before dying. Concretely: an ally charged to
+  near-full gauge (e.g. 250,000/300,000) who is killed by an ordinary
+  attack, then revived within the same fight by an ordinary Full Heal/
+  revival item — completely standard RPG2003 Gauge-battle-system content —
+  became immediately eligible to act again at its old near-full charge in
+  this codebase, instead of charging back up from empty like everyone
+  else, a real and exploitable pacing difference. Fixed with a new private
+  `Battle#zero_gauge_on_death(target)` (`target.gauge = 0 if target.dead?`,
+  a harmless no-op if called again on an already-dead target), called from
+  every place a `Combatant`'s HP can newly reach 0: the three raw `hp -=`
+  sites (`#deal_attack_with_current_weapon`, `#apply_skill_hit`,
+  `#enemy_autodestruct`) and `#inflict_state`'s own explicit
+  `target.hp = 0 if sid == DEATH_ID` branch. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a lethal `#deal_attack` zeroes a
+  250,000-charged target's gauge immediately; reviving it by directly
+  raising HP back above 0, as an ordinary revival item would, does not
+  restore the stale charge), confirmed to fail against the pre-fix code
+  (`expected 0, got 250000`) before the fix.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor

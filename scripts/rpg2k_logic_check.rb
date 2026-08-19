@@ -11796,6 +11796,39 @@ check 'Battle#apply_to_party zeroes the active-time gauge for an ally who ended 
   eq 0, ally.atb_gauge, 'a knocked-out ally does not carry a charge into the next fight'
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Game_Battler::AddState`'s Knockout branch (src/game_battler.cpp) is
+# `if (state_id == kDeathID) { SetAtbGauge(0); SetHp(0); ... }`, fired the
+# instant Death lands -- and `Game_Battler::ChangeHp` calls
+# `AddState(kDeathID, true)` itself the moment `new_hp <= 0`, so *every*
+# ordinary lethal hit zeroes the gauge mid-fight, not merely once the
+# fight ends (the already-fixed `Battle#apply_to_party` cross-*battle*
+# persistence checks just above are a separate, later boundary). Without
+# this, an ally charged to near-full gauge who dies and is then revived
+# by an ordinary Full Heal/revival item within the same fight would
+# resume acting from that stale pre-death charge instead of empty, like
+# anyone else newly readying up -- a real, exploitable pacing difference
+# in any RPG2003 project using the Gauge battle system.
+check "a lethal attack zeroes the target's active-time gauge immediately, not " \
+      'merely once the fight ends' do
+  hero = combatant('Hero', 999, 0, 5, 100)
+  foe = combatant('Foe', 0, 0, 5, 1)
+  foe.gauge = 250_000 # charged most of the way up when the killing blow lands
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1))
+  bat.send(:deal_attack, hero, foe)
+  ok foe.dead?, 'the hit was lethal'
+  eq 0, foe.gauge, 'the gauge was zeroed the instant Death landed, mid-fight'
+
+  # An ordinary revival effect (a Full Heal/revival item raising HP back
+  # above 0) does not restore the stale pre-death charge -- nothing
+  # recharges a dead battler's gauge in between, matching real RPG_RT,
+  # which never re-zeroes on revival because it was already zeroed the
+  # moment death landed.
+  foe.hp = 10
+  ok !foe.dead?, 'revived'
+  eq 0, foe.gauge, 'revival does not restore the pre-death charge'
+end
+
 check "Battle#apply_to_party clears a battle combo Enable Combo armed, matching RPG_RT (2026-08-19)" do
   # Confirmed against EasyRPG's actual C++ source, fetched live:
   # `Game_Battler::ResetBattle` (src/game_battler.cpp) is `battle_combo_
