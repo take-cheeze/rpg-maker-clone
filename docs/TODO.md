@@ -402,6 +402,38 @@ The work below is roughly ordered by the critical path to a walkable game
   Change Event Location repositioning a vehicle; Proceed With Movement
   waiting on a vehicle route; the Change Graphic override reverting on
   Transfer Player), each confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-19): a vehicle's forced Move Route left its Move
+  Frequency permanently overwritten once the route finished, instead of
+  reverting to whatever it was before the route started — the exact same
+  gap this write-up's own scope already fixed for a map event's forced
+  route, just never mirrored onto vehicles.** Confirmed directly against
+  RPG_RT's live source: `Game_Character::ForceMoveRoute`
+  (`src/game_character.cpp`) snapshots the frequency in effect before the
+  route starts overriding it (`if (!IsMoveRouteOverwritten())
+  original_move_frequency = GetMoveFrequency();`), and `CancelMoveRoute`
+  restores it (`SetMoveFrequency(original_move_frequency)`) the instant a
+  non-repeating route's last command lands (`UpdateMovement`, the same
+  place `#step_event`'s own "revert to page movement" comment already
+  cites). `Game_Vehicle` inherits both methods unchanged — a single,
+  unconditional code path, no version gating — so a boat/ship/airship
+  gets this restore for free in real RPG_RT, identical to the player or a
+  map event. `#force_vehicle_route`/`#step_vehicle_route`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) had no equivalent: a Frequency Up/
+  Down sub-command (or the route's own explicit frequency parameter)
+  permanently overwrote the persistent per-type mirror's
+  `move_frequency`, since `@vehicle_chars[type]` is memoized for as long
+  as the map stays loaded and nothing ever wrote it back. Fixed by adding
+  `@vehicle_orig_freq`, snapshotted in `#force_vehicle_route` only when a
+  route is not already running (mirroring `!IsMoveRouteOverwritten()`, so
+  a second Set Move Route issued mid-route doesn't clobber the *original*
+  pre-route value with whatever the first route's own Frequency Up/Down
+  had already left behind), and restored in `#step_vehicle_route` the
+  instant a non-repeating route's `#done?` goes true. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (force a boat's route at frequency
+  8, run it to completion, confirm the mirror's frequency reverts to its
+  pre-route value of 3 rather than sticking at 8), confirmed to fail
+  against the pre-fix code (`NoMethodError`, since `@vehicle_orig_freq`
+  did not exist at all) before the fix.
   ✅ **A ridden vehicle now walk-cycles with the party**, closing half of the
   walk-cycle gap the paragraph above flagged. `#draw_vehicle_frame` always
   passed pattern `1` (the standing frame) to `Game::CharSet.frame_rect`, so a
@@ -4158,6 +4190,37 @@ The work below is roughly ordered by the critical path to a walkable game
   cell geometry the same way the title-screen check above does),
   confirmed to fail against the pre-fix code (the occupied-slot assertion
   failed first, since neither slot ever blended anything) before the fix.
+  ✅ **Follow-up (2026-08-19): the level/HP line's own layout was still
+  wrong even after the swatch-blend fix above — it drew as one
+  interpolated string with a literal gap, so a leader's level going from
+  one digit to two shifted the "HP" label sideways, something real
+  RPG_RT's fixed-column layout never does.** Confirmed directly against
+  RPG_RT's live source: `Window_SaveFile::Refresh`
+  (`src/window_savefile.cpp`) draws the level and HP fields as four
+  separate `TextDraw` calls at fixed pixel columns — the level label at
+  x=4, the HP label always at x=46 regardless of what came before it — each
+  number space-padded to a fixed width (`std::setw(2)` for level,
+  `std::setw(Player::IsRPG2k3() ? 4 : 3)` for HP, the only version branch
+  in the whole function and a harmless width-only one, not a behavior
+  fork). The two short-label terms (`lvl_short`/`hp_short`, "Lv"/"HP" by
+  default) are likewise clamped to exactly 2 characters
+  (`if (lvl_short.size() != 2) lvl_short.resize(2, ' ')`), regardless of
+  what a project's own database terms table names them.
+  `#draw_slot_box`'s level/HP line (`mruby-rpg2k/mrblib/scene/
+  save_load.rb`) was one `#draw_system_text` call on a Ruby-interpolated
+  `"Lv#{level}    HP#{hp}"` string — no padding on either number, and the
+  literal four-space gap only coincidentally lined up for a single-digit
+  level. Fixed by splitting the line into a new `#draw_level_hp` helper:
+  four separate `#draw_system_text` calls at RPG_RT's own x=4/x=46
+  columns, `level.to_s.rjust(2)` and `hp.to_s.rjust(rpg2003? ? 4 : 3)` for
+  the numbers, and a new `#fixed_width_term` clamping the short labels to
+  exactly 2 characters the same way. Covered by rewriting the existing
+  level/HP `scripts/rpg2k_scene_check.rb` check to expect the four split,
+  padded strings instead of one combined one, plus two new checks (the
+  "HP" label call lands at the fixed x=46 column for a two-digit level,
+  proving the position doesn't shift; an RPG2003 party pads HP to 4
+  characters instead of 3), all three confirmed to fail against the
+  pre-fix code before the fix.
   ✅ **`Scene::SaveLoad`'s own cursor never auto-repeated while Down/Up was
   held — one slot per tap only, forever, no matter how long the key stayed
   down (2026-08-18).** Confirmed against EasyRPG Player's actual source:
@@ -6799,6 +6862,36 @@ not yet verified:
   bundled with this bullet (battle damage cap, HP recovery cap, switch/
   variable caps and ranges, recursion ceiling, party/stack/picture caps, move
   speed, transparency steps) remain unverified — see below.
+  ✅ **Correction (2026-08-19): that clamp was wrong — real RPG_RT's Timer
+  Operation "set" is not clamped at all, even from an out-of-range
+  Control Variable.** The bullet just above reasoned from "RPG_RT's timer
+  display never grows past two minute digits" without ever checking the
+  actual `Game_Party::SetTimer` source, and that reasoning turns out
+  backwards: confirmed directly against RPG_RT's live source,
+  `Game_Party::SetTimer` (`src/game_party.cpp`) is `data.timer1_frames =
+  seconds * DEFAULT_FPS + (DEFAULT_FPS - 1);` with no upper bound
+  whatsoever, and `Game_Interpreter::CommandTimerOperation`
+  (`src/game_interpreter.cpp`) passes its `ValueOrVariable`-sourced
+  seconds straight through with no clamp either. Real RPG_RT's own
+  display genuinely doesn't cap cleanly past 99 minutes either —
+  `Sprite_Timer::Draw` (`src/sprite_timer.cpp`) indexes its digit strip
+  at an unbounded `32 + 8 * (mins / 10)`, so a timer set past 99:59
+  garbles the drawn minutes tiles rather than showing a clean "99:59".
+  This port's own pixel-digit renderer (`Scene::Map
+  #draw_timer_digits`, `mruby-rpg2k/mrblib/scene/map.rb`) already
+  indexes its windowskin digit strip the identical unbounded way — it
+  was never given its own separate bound, so removing `Game::Timer`'s
+  clamp reproduces the same garbled-past-99 quirk for free, matching
+  this codebase's established pattern of faithfully keeping known
+  RPG_RT overflow quirks (Break Loop's nesting bug, `flash_sat`/
+  `flash_period` not being saved) rather than "fixing" them into
+  cleaner-than-real behavior. Fixed by removing `Game::Timer::
+  MAX_SECONDS` and the clamp in `#set` entirely. The existing
+  `scripts/rpg2k_logic_check.rb` check was rewritten to assert the
+  opposite of its old claim (a Timer Operation "set" of 9999, direct or
+  variable-sourced, lands at exactly 9999 s / `9999 * FPS + (FPS - 1)`
+  frames, not clamped to 5999), confirmed to fail against the pre-fix
+  code (`expected 9999, got 5999`) before the fix.
 - ✅ **Special-skill HP recovery is capped at 999 per use** — the same
   fixed-3-digit-popup reasoning as the battle damage cap above, for the
   opposite direction. `Game::Battle#apply_skill_hit`'s recovery branch
@@ -11239,6 +11332,48 @@ not yet verified:
   reaches `bgm_pan` with that value; an omitted balance defaults to 50),
   confirmed to fail against the pre-fix code (`NoMethodError`/no `bgm_pan`
   call at all) before the fix.
+  ✅ **Follow-up (2026-08-19): the live-apply half of pan/balance was fixed
+  above, but the *tracking* half wasn't — Memorize BGM couldn't stash a
+  track's balance (it was never written into `current_bgm` in the first
+  place), so Play Memorized BGM never restored it, and the same shared
+  serializer gap silently dropped balance from the current-BGM/stored-BGM
+  and Change System BGM/SFX save-chunk round-trip too.** Confirmed
+  directly against RPG_RT's live source: `Game_System::MemorizeBGM`/
+  `PlayMemorizedBGM` (`src/game_system.h`) are `data.stored_music =
+  data.current_music;` / `BgmPlay(data.stored_music);` — the *whole*
+  `Music` struct is copied and replayed, balance included — and
+  `Game_System::BgmPlay` (`src/game_system.cpp`) re-applies
+  `Audio().BGM_Balance(...)` even on its own same-track path (`if
+  (previous_music.balance != data.current_music.balance) { ... }`).
+  `#play_audio`'s `:bgm` branch (`mruby-rpg2k/mrblib/interpreter.rb`)
+  already called `RGSS::Audio.bgm_pan(balance)` live on every Play BGM —
+  that part was correct — but built `@state.current_bgm` as `{ name:,
+  volume:, tempo: }` with no `balance:` key at all, so `#do_memorize_bgm`
+  (a bare `.dup` of `current_bgm`) had nothing to stash, and
+  `#do_play_memorized_bgm` never called `bgm_pan` regardless. The
+  identical gap existed a layer down in `Game::State#bgm_chunk`/
+  `.bgm_from_chunk` (`mruby-rpg2k/mrblib/game.rb` — the LCF chunk builder/
+  reader shared by the current-BGM (75) and stored-BGM (78) save slots),
+  which only wrote/read fields 1/3/4 (file/volume/pitch), silently
+  dropping field 5 (balance) — corrupting the `.lsd` round-trip even where
+  the in-memory hash *did* carry it correctly, as `#do_change_system_bgm`'s
+  own `system_bgm` hashes already do (`balance: cmd.param(4)`, confirmed
+  already correct). `#se_chunk`/`.se_from_chunk`, `#bgm_chunk`'s SE
+  counterpart used by every Change System SFX override slot, had the
+  identical field-5 gap. Fixed by adding `balance:` to `#play_audio`'s
+  `current_bgm` hash, an unconditional `RGSS::Audio.bgm_pan(bgm[:balance]
+  || 50)` call in `#do_play_memorized_bgm` (mirroring `#play_audio`'s own
+  placement outside the same-file branch), and `b[5]`/`s[5]` write plus
+  `chunk.balance` read in both chunk builder/reader pairs. Covered by two
+  new `scripts/rpg2k_logic_check.rb` checks (Play BGM "town" at balance
+  20, Memorize BGM, Play BGM "fanfare" at balance 90, Play Memorized BGM
+  restores balance 20 into state and re-applies it live — both to a
+  different track and to one that never stopped playing), plus balance
+  assertions added to the existing Change System BGM/SFX and current/
+  memorized-BGM `to_lsd`/`from_lsd` round-trip checks (using a non-centre
+  value, not just the default, so a chunk that silently fell back to 50
+  couldn't pass by accident), all confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **A map's own configured BGM now actually auto-plays, on the initial map
   load and every Transfer Player alike — a genuine, previously-undocumented
   gap found while cross-checking this same BGM cluster for anything else the
@@ -11700,6 +11835,34 @@ not yet verified:
   window's own available width rather than the full string), both confirmed
   to fail against the pre-fix code (a `NoMethodError`, and the full
   unclipped string) before the fix.
+- ✅ **The message-attached choice cursor (Show Choices, and the Show Inn
+  Accept/Cancel prompt built on the identical mechanism) only moved on a
+  fresh key press, never auto-repeating while Up/Down was held — the same
+  gap already fixed this pass on the shop lists, hero-name grid, and
+  quantity counter, just never checked on the choice list itself
+  (2026-08-19).** Confirmed directly against RPG_RT's live source:
+  `Window_Message` (`src/window_message.h`) is a plain `Window_Selectable`
+  subclass, and `Window_Message::Update` (`src/window_message.cpp`) calls
+  the base `Window_Selectable::Update()` unconditionally every frame,
+  before ever dispatching to its own choice-specific `InputChoice` — so a
+  held Down/Up scrolls the choice cursor exactly like any other list
+  window (`Window_Selectable::Update`, `src/window_selectable.cpp`, gates
+  on `Input::IsRepeated`, `endless_scrolling = true` by default and never
+  overridden for messages). `Game_Interpreter_Map::CommandShowInn`
+  (`src/game_interpreter_map.cpp`) builds its Accept/Cancel prompt as an
+  ordinary choice pair (`pm.PushChoice(ToString(accept), can_afford);
+  pm.PushChoice(ToString(cancel));`), so it inherits the identical
+  behavior. `Scene::Map#drive_message`'s choice branch and `#drive_inn`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) both checked only `Input.trigger?`
+  on Up/Down, so a player had to tap the direction once per option
+  instead of holding it down — arguably the highest-impact instance of
+  this bug class this session, since Show Choices appears in nearly every
+  RPG Maker game's dialogue. Fixed by adding `|| Input.repeat?(...)` to
+  both direction branches in each method. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (`RGSS::Input.repeated`, not
+  `.triggered`, still moves both the Show Choices and the Inn Accept/
+  Cancel cursor), both confirmed to fail against the pre-fix code
+  (`expected 1, got 0`) before the fix.
 
 **Battle system (default)**
 - ✅ **Battle pages are checked far more often than once per turn** — the
@@ -16550,9 +16713,26 @@ screen (544×416). Full rationale:
     first time the game showed a message. `Window` and `Graphics` both
     already had `#width`/`#height`; only `Sprite` was missing them. Fixed
     in `mruby-rgss/mrblib/lib.rb` by delegating to the sprite's own
-    `bitmap.width`/`bitmap.height` (`0` with none set). A tenth masked
-    exception is already known this way and not yet fixed — past the
-    bundled speech-bubble add-on's own text layout, not yet diagnosed.
+    `bitmap.width`/`bitmap.height` (`0` with none set).
+
+    Two corrections to the diagnostic method itself, past that: a short
+    `--timeout_ms` firing `RGSS::Timeout` is this engine's own safety valve
+    (`gfx_update` in `mruby-rgss/src/lib.cxx`), not a bug — the headless
+    driver taps confirm only once per real second, and this release's own
+    opening has enough dialogue to eat a short budget on its own, so a
+    minute-plus budget is needed before a probe run reaches new content
+    reliably. Past that: a tenth masked exception, traced but not fixed —
+    a real bundled add-on's `module BMSP; @@includes ||= {}` (the sole
+    touch of that class variable in the whole 213-section bundle) is
+    caught cleanly by mruby's own compiler-generated rescue for `@@cvar
+    ||=` (confirmed matching real Ruby's behavior, and confirmed present
+    in `3rd/mruby`'s own compiler source), and execution visibly
+    continues well past it — yet a plain `::MapFog = self` a few lines
+    later never takes effect (`Object.const_defined?(:MapFog)` reads
+    `false` even after execution reaches unrelated code far past it), so
+    a later event's own "Script" command that expects `MapFog` fails.
+    Narrowed this far across two rounds of isolated reproduction without
+    fully explaining it; see the item 7 write-up for the full trace.
     Fixing `$!` itself is
     fixable only by wrapping `Kernel#raise` itself (the sole point where the
     about-to-be-raised object is observable), which would add overhead and

@@ -51,6 +51,10 @@ enum Key {
   KEY_C = 6,
   KEY_SHIFT = 12,
   KEY_CTRL = 13,
+  KEY_F5 = 15,
+  KEY_F6 = 16,
+  KEY_F7 = 17,
+  KEY_F8 = 18,
   KEY_F9 = 19,
   KEY_F12 = 20,
   // RPG2003 Key Input Processing Numbers/Operators groups (RGSS::Input::N0..
@@ -525,7 +529,7 @@ void terminal_append_legend(std::string& s) {
   // faint to read on light themes.
   s += "\x1b[K\x1b[7m";
   s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q  "
-       "Debug(testplay): T=Ctrl F=Shift F9";
+       "Debug(testplay): T=Ctrl F=Shift F9  Bug report: F8";
   s += "\x1b[0m\r\n";
 }
 
@@ -658,12 +662,18 @@ void terminal_poll(mrb_state* M) {
   for (size_t i = 0; i < buf.size();) {
     const unsigned char c = static_cast<unsigned char>(buf[i]);
     if (c == 0x1b && i + 2 < buf.size() && buf[i + 1] == '[') {
-      // F9 and F12 -- RPG_RT's debug-menu and return-to-title hotkeys
-      // (RGSS::Input::F9/F12, read by mruby-rpg2k's Scene::Map and main_loop)
-      // -- arrive as a multi-digit CSI sequence terminated by '~' (`ESC [ 20
-      // ~` / `ESC [ 24 ~` in xterm and its descendants: foot, alacritty,
+      // F5-F9 and F12 -- RGSS::Input::F5..F9/F12, the same ids the SDL
+      // desktop backend binds (src/sdl_input.cxx's map_key); F9 is RPG_RT's
+      // debug-menu hotkey, F12 is return-to-title, F8 is this engine's own
+      // bug-report dump (read by mruby-rpg2k's Scene::Map and main_loop), and
+      // F5-F7 stand ready for whatever wants them next -- all six arrive as a
+      // multi-digit CSI sequence terminated by '~' (`ESC [ 15 ~` .. `ESC [ 20
+      // ~`, `ESC [ 24 ~` in xterm and its descendants: foot, alacritty,
       // kitty, gnome-terminal, wezterm, tmux, ...), unlike the single-letter
-      // arrow sequences below.
+      // arrow sequences below. F10/F11 are deliberately left out: xterm's own
+      // `ESC [ 21 ~` clashes with a real F10 in some terminals (it also sends
+      // a menu-bar toggle), and neither id is bound to anything in
+      // RGSS::Input today.
       if (buf[i + 2] >= '0' && buf[i + 2] <= '9') {
         size_t j = i + 2;
         int value = 0;
@@ -672,10 +682,28 @@ void terminal_poll(mrb_state* M) {
           ++j;
         }
         if (j < buf.size() && buf[j] == '~') {
-          if (value == 20)
-            hold_key(M, KEY_F9, now);
-          else if (value == 24)
-            hold_key(M, KEY_F12, now);
+          switch (value) {
+            case 15:
+              hold_key(M, KEY_F5, now);
+              break;
+            case 17:
+              hold_key(M, KEY_F6, now);
+              break;
+            case 18:
+              hold_key(M, KEY_F7, now);
+              break;
+            case 19:
+              hold_key(M, KEY_F8, now);
+              break;
+            case 20:
+              hold_key(M, KEY_F9, now);
+              break;
+            case 24:
+              hold_key(M, KEY_F12, now);
+              break;
+            default:
+              break;
+          }
           i = j + 1;
         } else {
           // No terminating '~' buffered yet; drop the digits read so far

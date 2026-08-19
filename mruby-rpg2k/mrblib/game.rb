@@ -12923,13 +12923,6 @@ module Game
   class Timer
     FPS = 60
 
-    # RPG_RT's timer display never grows past two minute digits, so 99:59
-    # (5999 s) is the largest value it can show; a Timer Operation "set"
-    # sourced from a Control Variables value (arbitrary, player-reachable —
-    # e.g. an accidental or intentional overflowed computation) is clamped to
-    # this ceiling rather than wrapping or overflowing the frame counter.
-    MAX_SECONDS = 5999
-
     # Remaining time in frames; whether it is counting; whether it is drawn; and
     # whether it keeps counting (and drawing) during a battle — the Timer
     # Operation start command's second flag.
@@ -12942,11 +12935,25 @@ module Game
       @in_battle = false
     end
 
-    # Timer Operation, "set": load the timer with `seconds` (see the note above
-    # about the extra 59 frames). Clamped to MAX_SECONDS (99:59) since this can
-    # be fed an out-of-range Variable value via Control Variables.
+    # Timer Operation, "set": load the timer with `seconds` (see the note
+    # above about the extra 59 frames). Not clamped -- confirmed against
+    # RPG_RT's own live source: `Game_Party::SetTimer` (`src/game_party.cpp`)
+    # is `data.timer1_frames = seconds * DEFAULT_FPS + (DEFAULT_FPS - 1);`
+    # with no upper bound at all, and `Game_Interpreter::
+    # CommandTimerOperation` (`src/game_interpreter.cpp`) passes its
+    # `ValueOrVariable`-sourced seconds straight through with no clamp
+    # either -- so a Control Variables value above 99:59 (5999 s, an
+    # arbitrary, player-reachable overflow) genuinely reaches the frame
+    # counter uncapped in real RPG_RT. `Sprite_Timer::Draw`
+    # (`src/sprite_timer.cpp`) indexes its digit strip at an unbounded
+    # `32 + 8 * (mins / 10)` with no ceiling either, so real RPG_RT's own
+    # on-screen minutes display genuinely garbles past 99 rather than
+    # capping cleanly -- this port's own pixel-digit renderer
+    # (`Scene::Map#draw_timer_digits`, `mruby-rpg2k/mrblib/scene/map.rb`)
+    # already indexes its own windowskin digit strip the identical
+    # unbounded way, so it reproduces the same garbled-past-99 quirk for
+    # free once this class stops clamping first.
     def set(seconds)
-      seconds = MAX_SECONDS if seconds > MAX_SECONDS
       @frames = seconds * FPS + (FPS - 1)
     end
 
@@ -13747,26 +13754,38 @@ module Game
     end
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
-    # `{ name:, volume:, tempo: }` hash: file (1), volume (3) and pitch (4). Used
-    # for the system chunk's current-BGM (75) and stored-BGM (78) slots, and
-    # (below) every Change System BGM override slot.
+    # `{ name:, volume:, tempo:, balance: }` hash: file (1), volume (3), pitch
+    # (4) and balance (5). Used for the system chunk's current-BGM (75) and
+    # stored-BGM (78) slots, and (below) every Change System BGM override
+    # slot. Balance confirmed as a first-class field of RPG_RT's own `Music`
+    # struct via `Game_Interpreter::CommandPlayBGM` (`src/
+    # game_interpreter.cpp`: `music.balance = ValueOrVariableBitfield(com, 4,
+    # 4, 3);`), round-tripped whole by `Game_System::MemorizeBGM`/
+    # `PlayMemorizedBGM` (`src/game_system.h`) the same way every other field
+    # here already is.
     def bgm_chunk(bgm)
       b = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
       b[1] = bgm[:name] || ''
       b[3] = bgm[:volume] || 100
       b[4] = bgm[:tempo] || 100
+      b[5] = bgm[:balance] || 50
       b
     end
 
     # Build an SE chunk (an LCF::Array1D over the SE schema) from our stored
-    # `{ name:, volume:, tempo: }` hash: file (1), volume (3) and pitch (4).
-    # #bgm_chunk's SE counterpart, used for every Change System SFX override
-    # slot.
+    # `{ name:, volume:, tempo:, balance: }` hash: file (1), volume (3),
+    # pitch (4) and balance (5). #bgm_chunk's SE counterpart, used for every
+    # Change System SFX override slot -- the same balance field #bgm_chunk's
+    # own fix just above restores, and `#do_change_system_sfx`
+    # (`mruby-rpg2k/mrblib/interpreter.rb`) already tracks it in-memory
+    # (`balance: cmd.param(3)`), so only this save-side round-trip was
+    # dropping it.
     def se_chunk(se)
       s = LCF::Array1D.new('', { elements: LCF::Schema::SE })
       s[1] = se[:name] || ''
       s[3] = se[:volume] || 100
       s[4] = se[:tempo] || 100
+      s[5] = se[:balance] || 50
       s
     end
 
@@ -14107,14 +14126,16 @@ module Game
       NO_CLOCK_TIMESTAMP
     end
 
-    # Rebuild our `{ name:, volume:, tempo: }` BGM hash from a parsed BGM chunk
-    # (an LCF::Array1D over the BGM schema). Returns nil for an absent chunk or an
-    # empty file name (the "use the database value" sentinel).
+    # Rebuild our `{ name:, volume:, tempo:, balance: }` BGM hash from a
+    # parsed BGM chunk (an LCF::Array1D over the BGM schema). Returns nil for
+    # an absent chunk or an empty file name (the "use the database value"
+    # sentinel).
     def self.bgm_from_chunk(chunk)
       return nil unless chunk
       name = chunk.file
       return nil if name.nil? || name.empty?
-      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100 }
+      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
+        balance: chunk.balance || 50 }
     end
 
     # #bgm_from_chunk's SE counterpart: rebuild our `{ name:, volume:, tempo: }`
@@ -14123,7 +14144,8 @@ module Game
       return nil unless chunk
       name = chunk.file
       return nil if name.nil? || name.empty?
-      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100 }
+      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
+        balance: chunk.balance || 50 }
     end
 
     # Rebuild a State from a saved hash. Actors are re-created from the database

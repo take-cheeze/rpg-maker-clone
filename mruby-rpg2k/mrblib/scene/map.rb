@@ -282,6 +282,7 @@ class RPG2k
         @vehicle_chars = {}
         @vehicle_routes = {}
         @vehicle_route_timers = {}
+        @vehicle_orig_freq = {}
         # Move Event targets that resolved to a currently-hidden map event
         # (see #apply_move_request) -- once stuck, permanently so, matching a
         # freeze that never clears on its own.
@@ -319,6 +320,25 @@ class RPG2k
       end
 
       attr_reader :state
+      # The current map's live event list -- see #build_events for the shape
+      # of each entry ({ id:, char:, page:, page_number:, ... }). Read by
+      # RPG2k #dump_bug_report (main.rb) to list every event's
+      # position/direction/page alongside the hero's.
+      attr_reader :events
+      # The foreground interpreter -- the one On Touch/On Talk/auto-start
+      # triggers and Show Message run on, as opposed to a Parallel Process's
+      # own background one (see #parallel_interpreter_for). Read by RPG2k
+      # #dump_bug_report to show what it is stuck on, if anything.
+      attr_reader :interpreter
+
+      # The background Parallel Process interpreter currently running for map
+      # event `id`, or nil when none is (no Parallel Process trigger, or its
+      # page/conditions currently pick something else). Diagnostics only --
+      # RPG2k#dump_bug_report is the one caller today.
+      def parallel_interpreter_for(id)
+        p = @parallels.find { |pp| pp[:event] && pp[:event][:id] == id }
+        p && p[:interp]
+      end
 
       # Services Scene::Battle calls back into ----------------------------
       #
@@ -1171,8 +1191,9 @@ class RPG2k
                                             @state.variables, @state.party,
                                             @state.timer_seconds, @state.timer2_seconds)
           next unless selected
-          page = selected[1]
-          @events.push(build_event(id, ev, page, restore_route_index: restore_route_index))
+          page_number, page = selected
+          @events.push(build_event(id, ev, page, page_number,
+                                    restore_route_index: restore_route_index))
         end
         rebuild_event_tiles
       rescue StandardError => e
@@ -1182,7 +1203,7 @@ class RPG2k
         @event_tiles_by_pos = {}
       end
 
-      def build_event(id, ev, page, restore_route_index: true)
+      def build_event(id, ev, page, page_number, restore_route_index: true)
         dir = Game::EventGraphic.numpad_direction(page_direction(page))
         x, y = ev.x, ev.y
         # A saved wandered position (see #record_map_event_positions) wins over
@@ -1236,8 +1257,12 @@ class RPG2k
           route.resume_at(saved_index)
         end
         # `page` is kept so a refresh can tell whether the conditions still pick
-        # the same one (see #pages_changed?).
-        { id: id, char: ch, page: page, trigger: page_trigger(page),
+        # the same one (see #pages_changed?); `page_number` is the same page's
+        # 1-based slot in the event's own page list (Game::EventPage.select's
+        # first return value) -- diagnostics-only (RPG2k#bug_report_text),
+        # nothing here reads it back.
+        { id: id, char: ch, page: page, page_number: page_number,
+          trigger: page_trigger(page),
           commands: page_commands(page), guarded: page_guarded(page),
           move_type: move_type, route: route,
           move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
@@ -3786,6 +3811,14 @@ class RPG2k
         ch.x = v.x
         ch.y = v.y
         ch.direction = v.direction
+        # Snapshot the frequency in effect before this route starts overriding
+        # it -- but only if a route is not already running, matching RPG_RT's
+        # own `if (!IsMoveRouteOverwritten()) original_move_frequency =
+        # GetMoveFrequency();` (`Game_Character::ForceMoveRoute`, `src/
+        # game_character.cpp`) -- so a second Set Move Route issued mid-route
+        # does not clobber the *original* pre-route value with whatever the
+        # first route's own Frequency Up/Down had already left behind.
+        @vehicle_orig_freq[type] = ch.move_frequency unless @vehicle_routes[type]
         ch.move_frequency = valid_move_freq(freq) || ch.move_frequency
         @vehicle_routes[type] = route
         @vehicle_route_timers[type] = 0
@@ -3814,7 +3847,21 @@ class RPG2k
         v.x = ch.x
         v.y = ch.y
         v.direction = ch.direction
-        @vehicle_routes[type] = nil if route.done?
+        if route.done?
+          @vehicle_routes[type] = nil
+          # The frequency in effect before this route started reasserts
+          # itself the instant a non-repeating route finishes -- matching
+          # `Game_Character::CancelMoveRoute`'s own `SetMoveFrequency(
+          # original_move_frequency)` (`src/game_character.cpp`), fired the
+          # moment the last command of a non-repeating route lands
+          # (`UpdateMovement`). A Frequency Up/Down sub-command inside that
+          # route must not go on pacing the vehicle once control reverts,
+          # only for the duration of the route that issued it -- the same
+          # rule #step_event already applies to a Move Event's own forced
+          # route.
+          orig = @vehicle_orig_freq.delete(type)
+          ch.move_frequency = orig if orig
+        end
       rescue StandardError => e
         $stderr.puts "[RPG2k] vehicle move route failed: #{e.message}"
         @vehicle_routes[type] = nil # drop a broken route so Proceed does not hang
@@ -4417,10 +4464,13 @@ class RPG2k
       # interpreter whichever specific symbols (:n3, :period, ...) actually
       # fired; Game::Interpreter::KEY_INPUT_GROUPS maps them back onto the
       # :numbers/:operators accept flag. Real key backing for
-      # RGSS::Input::N0..PERIOD exists only on the SDL desktop backend today
-      # (src/sdl_input.cxx) — on every other native backend (PSP, Wio
-      # Terminal, terminal/sixel) these ids are simply never pressed, the same
-      # way this build already leaves F5-F12 unbound there.
+      # RGSS::Input::N0..PERIOD: the SDL desktop backend binds every digit and
+      # operator (src/sdl_input.cxx); the terminal/sixel backend types them
+      # too, a real keyboard being able to produce them (mruby-rgss/src/
+      # terminal.cxx); the PSP backend binds only the first five digits
+      # (N0-N4) to its spare buttons; the Wio Terminal has no free pin left,
+      # so these ids stay unbound there — the same backend split F5-F9/F12
+      # follow (bound on SDL and terminal/sixel, unbound on PSP/Wio).
       NUMBER_KEY_BUTTONS = {
         n0: Input::N0, n1: Input::N1, n2: Input::N2, n3: Input::N3, n4: Input::N4,
         n5: Input::N5, n6: Input::N6, n7: Input::N7, n8: Input::N8, n9: Input::N9
@@ -4518,12 +4568,19 @@ class RPG2k
           open_inn_window(req) # opened this frame; take input from the next one
           return
         end
-        if Input.trigger?(Input::DOWN)
+        # Auto-repeats while held, same as #drive_message's own choice
+        # cursor just above -- real RPG_RT implements this exact Accept/
+        # Cancel prompt as an ordinary Show Choices pair
+        # (`Game_Interpreter_Map::CommandShowInn`, `src/
+        # game_interpreter_map.cpp`: `pm.PushChoice(ToString(accept),
+        # can_afford); pm.PushChoice(ToString(cancel));`), so it inherits
+        # the identical `Window_Selectable`-backed auto-repeat.
+        if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @inn_choice += 1
           @inn_choice %= 2
           set_inn_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           @inn_choice -= 1
           @inn_choice %= 2
           set_inn_cursor
@@ -6594,6 +6651,7 @@ class RPG2k
         @vehicle_chars = {}
         @vehicle_routes = {}
         @vehicle_route_timers = {}
+        @vehicle_orig_freq = {}
         @stuck_move_targets = [] # a stuck target was on the map being left
         # Both are per-visit: an Erase Event does not follow the party to the
         # next map, and the destination's pages are chosen fresh.
@@ -7210,13 +7268,23 @@ class RPG2k
               return
             end
           end
-          if Input.trigger?(Input::DOWN)
+          # Both directions auto-repeat while held, not just a fresh press --
+          # RPG_RT's own `Window_Message` (`src/window_message.h`) is a plain
+          # `Window_Selectable` subclass, and `Window_Message::Update`
+          # (`src/window_message.cpp`) calls the base `Window_Selectable::
+          # Update()` unconditionally every frame, before ever dispatching
+          # to its own choice-specific `InputChoice` -- so a held Down/Up
+          # scrolls the choice cursor exactly like any other list window
+          # (`Window_Selectable::Update`, `src/window_selectable.cpp`, gates
+          # on `Input::IsRepeated`, with `endless_scrolling = true` by
+          # default and never overridden here).
+          if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
             @choice_index += 1
             @choice_index %= @message[:count]
             page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
-          elsif Input.trigger?(Input::UP)
+          elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
             @choice_index -= 1
             @choice_index %= @message[:count]
             page_to_choice

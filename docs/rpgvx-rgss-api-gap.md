@@ -614,10 +614,62 @@ With all nine gaps above closed, the same real VX Ace release now reaches
 past `Scene_Title`'s title-command window, its title music,
 `DataManager.setup_new_game`'s common-event setup, its first common event
 call, and the bundled speech-bubble add-on's own text layout — into
-further gameplay, before hitting a tenth masked exception, not yet
-diagnosed. The pattern established here (temporary VM probe → real gap →
-mrblib or native fix → regression test) applies to it too, left for a
-future pass. mruby's bare `raise` (no arguments) has the same
+further gameplay. What comes next needed two corrections to the diagnostic
+method itself before it could even be investigated properly:
+
+**Not a bug: `RGSS::Timeout` is this engine's own `--timeout_ms` safety
+valve** (`gfx_update` in `mruby-rgss/src/lib.cxx`), not a script or engine
+gap. A short headless-run budget (the 30 s the boot checks default to)
+reliably fires it well before the game reaches anything new, because
+`--rgss_host_new_game` deliberately taps the title screen's confirm key
+only once per *real* second (so a headless run looks like a human, not a
+key-repeat exploit), and this release's own opening has enough dialogue
+that clearing it costs most of a short budget on its own. Raising
+`--timeout_ms` past a minute or so reaches real further content reliably;
+below that, a `RGSS::Timeout` in a probe run means "give it more wall
+clock," not "something broke."
+
+**Found, not fixed, and only partly understood: a real VX Ace game's own
+bundled `マップフォグ` ("Map Fog") add-on never finishes setting up, and a
+later event's inline "Script" command that depends on it fails as a
+result.** The add-on's very first line, `module BMSP; @@includes ||= {}`,
+is the sole place in this release's whole 213-section bundle that touches
+`@@includes` — a fresh, never-before-set class variable. Real Ruby handles
+`@@cvar ||= value` on a variable like that without raising (confirmed
+directly: `ruby -e 'module Foo; @@x ||= {}; end'` runs clean), and mruby's
+own compiler has code specifically meant to match that
+(`3rd/mruby/mrbgems/mruby-compiler/core/codegen.c`, `codegen_op_asgn`,
+~line 5471: `||=`/`&&=` on a class variable or constant wraps the read in
+a compiler-generated rescue that turns the `NameError` into `false` rather
+than letting it escape, mirroring the CRuby behaviour exactly). The
+temporary `OP_EXCEPT` probe used throughout this document shows that
+generated rescue actually firing and catching the `NameError` — which
+first looked like proof the line was harmless, since the probe fires on
+*every* caught exception, this compiler-internal one included, and
+execution visibly continues well past it (an isolated run of the whole
+516-line script reaches a *different*, unrelated failure over 280 lines
+later). But a targeted check straight after running the same script
+in isolation — `Object.const_defined?(:MapFog)`, right where the script's
+own `module Interface; ::MapFog = self` sits between those two points —
+comes back `false`. So somewhere between the class-variable rescue
+catching cleanly and execution reaching that later, unrelated failure, a
+plain top-level constant assignment that runs in between stops taking
+effect, without raising anything of its own. In the real game this is
+what a later event's own inline `Script` command hits:
+`NameError: uninitialized constant
+TKG::ErrorLog::Extend_Interpreter::MapFog`, because `::MapFog` was never
+actually set. Two rounds of isolated reproduction (a minimal synthetic
+`@@cvar ||=`, the same through the real script host's own `eval` call,
+and finally the real script's full 516 lines run standalone) narrowed
+this down this far without fully explaining it — genuinely tracing it
+further needs mruby VM-level tooling (breakpoints, instruction-level
+tracing) beyond what a source read and a VM-opcode probe can resolve, and
+any real fix would live in the vendored `3rd/mruby` submodule regardless,
+the same category of call as `$!` below. Left alone rather than patched
+further; documented here at the depth it was actually traced to, rather
+than guessed past.
+
+mruby's bare `raise` (no arguments) has the same
 root cause from the other side: real Ruby re-raises `$!`, but mruby's
 `mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
 fresh, empty `RuntimeError` instead of re-raising what was actually caught.
@@ -654,6 +706,6 @@ one pass. Nine real bugs have been found and fixed this way so far
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
 `Sprite#width`/`#height`) without needing `$!` itself fixed — the temporary
-VM probe finds the real exception directly regardless. A tenth wall, past
-the bundled speech-bubble add-on's own text layout, is where the game
-stands now — not yet diagnosed.
+VM probe finds the real exception directly regardless. A tenth wall, this
+one traced but not fixed (the `@@includes`/`::MapFog` class-variable and
+constant-assignment interaction above), is where the game stands now.

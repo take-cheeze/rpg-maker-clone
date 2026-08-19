@@ -638,6 +638,20 @@ module Game
       @index
     end
 
+    # Where this interpreter currently sits, for a diagnostic report
+    # (RPG2k#bug_report_text) rather than a resume point -- unlike
+    # #resumable_index this answers mid-Call-Event and mid-wait too, since a
+    # report wants "where is this thing stuck", not a safe place to restart
+    # from. `index`/`size` describe the *innermost* running list (a Call
+    # Event pushes the caller's list onto @call_stack and starts a fresh
+    # `@index` against the callee), `call_depth` is how many callers are
+    # stacked beneath it. nil for an interpreter that has never been given a
+    # command list at all.
+    def diagnostic_position
+      return nil if @list.empty? && @call_stack.empty?
+      { index: @index, size: @list.size, call_depth: @call_stack.size }
+    end
+
     # Start (or restart) at a previously #resumable_index-captured position
     # instead of the top of the list. `commands` must be the same command list
     # (or an equivalent rebuild of it, e.g. the same common event reloaded from
@@ -3757,6 +3771,13 @@ module Game
         @state.bgm_looped = false
         RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
       end
+      # Balance/pan is re-applied unconditionally, same-file-or-not, matching
+      # `#play_audio`'s own `:bgm` branch -- `Game_System::BgmPlay` (`src/
+      # game_system.cpp`) re-applies `Audio().BGM_Balance(...)` on the
+      # same-track path too (`if (previous_music.balance != data.current_
+      # music.balance) { ... }`), and the fresh-start path passes the whole
+      # `Music` struct straight to a new play call either way.
+      RGSS::Audio.bgm_pan(bgm[:balance] || 50)
       @state.current_bgm = bgm.dup
     rescue StandardError => e
       $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
@@ -3800,8 +3821,11 @@ module Game
         # per-track state to restart.
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name
         # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
-        # as the "current system BGM" regardless of whether playback succeeds).
-        @state.current_bgm = { name: name, volume: volume, tempo: pitch }
+        # as the "current system BGM" regardless of whether playback succeeds)
+        # -- balance included, since `Game_System::MemorizeBGM`
+        # (`src/game_system.h`) is a bare `data.stored_music =
+        # data.current_music`, copying the whole `Music` struct verbatim.
+        @state.current_bgm = { name: name, volume: volume, tempo: pitch, balance: balance }
         if same_file_already_playing
           RGSS::Audio.bgm_volume(volume)
         else

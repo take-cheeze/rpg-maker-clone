@@ -2944,6 +2944,22 @@ check 'Show Inn scene: the Accept / Cancel cursor wraps around' do
   eq 0, scene.instance_variable_get(:@inn_choice), 'Down from Cancel wraps back to Accept'
 end
 
+check 'Show Inn scene: the Accept / Cancel cursor auto-repeats while held, ' \
+      'not just a fresh press' do
+  # Real RPG_RT implements this exact prompt as an ordinary Show Choices
+  # pair (`Game_Interpreter_Map::CommandShowInn`, `src/
+  # game_interpreter_map.cpp`), so it inherits the same `Window_Selectable`
+  # auto-repeat every other list cursor gets.
+  scene, _st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  eq 0, scene.instance_variable_get(:@inn_choice), 'affordable: cursor starts on Accept'
+
+  RGSS::Input.repeated = [RGSS::Input::UP] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@inn_choice), 'a held (repeated) Up still moves the cursor'
+end
+
 check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' do
   scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
   st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's own BGM
@@ -8010,6 +8026,34 @@ check 'Move Event drives an unboarded boat along a route, respecting vehicle_pas
   eq 6, boat.direction, 'facing the direction it moved (MOVE_RIGHT)'
 end
 
+check "a vehicle's forced Move Route frequency reverts once the (non-" \
+      "repeating) route finishes, not stuck forever" do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # ForceMoveRoute` (src/game_character.cpp) snapshots the frequency in
+  # effect before the route starts (`if (!IsMoveRouteOverwritten())
+  # original_move_frequency = GetMoveFrequency();`), and `CancelMoveRoute`
+  # restores it (`SetMoveFrequency(original_move_frequency)`) the instant a
+  # non-repeating route's last command lands. `Game_Vehicle` inherits both
+  # unchanged, so a boat/ship/airship gets this restore for free just like
+  # a map event already does here (#step_event's own "revert to page
+  # movement" comment).
+  scene = new_scene({}, player: [5, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  route = Game::MoveRoute.new([Game::MoveCommand.new(R::MOVE_RIGHT)],
+                              repeat: false, skippable: true)
+  scene.send(:force_vehicle_route, :boat, route, 8) # freq 8, faster than the default 3
+  ch = scene.instance_variable_get(:@vehicle_chars)[:boat]
+  eq 3, scene.instance_variable_get(:@vehicle_orig_freq)[:boat],
+     "the pre-route frequency (the mirror's own default, 3) was snapshotted"
+  40.times { scene.update }
+  eq nil, scene.instance_variable_get(:@vehicle_routes)[:boat], 'the route finished'
+  eq 3, ch.move_frequency, 'frequency reverted to what it was before the route, not stuck at 8'
+end
+
 check "a boat's move route is blocked by terrain the same way ordinary sailing is" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -9708,6 +9752,38 @@ check 'the choice window cursor wraps around, like Scene::Title (98dad9b)' do
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@choice_index), 'Down from the last choice wraps to the first'
+end
+
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
+# key across frames without it also reading as a fresh trigger.
+check 'the choice window cursor auto-repeats while a direction is held, ' \
+      'not just a fresh press' do
+  # Confirmed against RPG_RT's own live source: `Window_Message` (`src/
+  # window_message.h`) is a plain `Window_Selectable` subclass, and
+  # `Window_Message::Update` (`src/window_message.cpp`) calls the base
+  # `Window_Selectable::Update()` unconditionally every frame before its
+  # own choice-specific dispatch -- so a held Down/Up scrolls the choice
+  # cursor exactly like any other list window.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'Yes'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'No'),
+    ECmd.new(ic::CHOICE_OPTION, [2], indent: 0, string: 'Maybe'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
+  ok(msg && msg[:choice], 'choice window opened')
+  eq 0, scene.instance_variable_get(:@choice_index), 'starts on the first choice'
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@choice_index),
+     'a held (repeated) Down still moves the choice cursor'
 end
 
 check 'character_screen_position measures against the live camera' do
@@ -16317,10 +16393,50 @@ check 'Scene::SaveLoad: an occupied slot shows the leader, level and HP -- no go
   scene, = save_load_scene(:load, nil, fake_db, parent: parent)
   texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
   ok texts.include?('Hero'), 'the leader name gets its own line'
-  ok texts.any? { |t| t.include?('Lv5') && t.include?('HP80') },
-     'level and current HP together on the third line'
+  # Level and HP each draw as their own label + space-padded number, not one
+  # combined string -- see the fixed-column check below for why.
+  ok texts.include?('Lv'), 'the level label draws on its own'
+  ok texts.include?(' 5'), 'the level number is space-padded to width 2'
+  ok texts.include?('HP'), 'the HP label draws on its own'
+  ok texts.include?(' 80'), 'the HP number is space-padded to width 3 on RPG2000'
   ok !texts.any? { |t| t.include?('250G') }, 'no gold shown -- confirmed absent from the ' \
                                               'reference capture, unlike this screen\'s old layout'
+end
+
+# Confirmed against RPG_RT's own live source: `Window_SaveFile::Refresh`
+# (src/window_savefile.cpp) draws the level and HP fields as four separate
+# `TextDraw` calls at fixed pixel columns (x=4, x=46), each number
+# `std::setw`-padded to a fixed width -- so the "HP" label never shifts
+# sideways depending on how many digits the level has, unlike a single
+# interpolated string with a literal gap between the two halves.
+check 'Scene::SaveLoad: the HP label sits at a fixed column regardless of ' \
+      'how many digits the level has' do
+  st = menu_state
+  st.party.leader = st.party.actors.first
+  st.party.leader.instance_variable_set(:@level, 99) # two digits, same as the fixture default
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  c = scene.instance_variable_get(:@slot_windows)[0].contents
+  calls = (c.draw_calls || []) + (c.blend_calls || [])
+  hp_label_call = calls.find { |a| a[4] == 'HP' }
+  ok hp_label_call, 'the HP label was drawn'
+  eq 46, hp_label_call[0], 'the HP label sits at RPG_RT\'s own fixed x=46, ' \
+                            'unmoved by the level\'s own two digits'
+end
+
+class SaveLoadRpg2003StubParty < MenuStubParty
+  def rpg2003?; true; end
+end
+
+check 'Scene::SaveLoad: HP is space-padded to width 4 on RPG2003, not 3' do
+  st = Game::State.new(SaveLoadRpg2003StubParty.new, 1, 0, 0)
+  st.party.leader = st.party.actors.first
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
+  ok texts.include?('  80'), 'RPG2003 widens the HP field to 4 characters, not 3'
 end
 
 # EasyRPG's Window_SaveFile::Refresh (src/window_savefile.cpp) draws every
