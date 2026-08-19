@@ -14634,7 +14634,17 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   a `Scene::Title` (title graphic + New Game / Continue / Shutdown in an
   XP-styled window, title BGM / cursor & decision SE). `src/main.cxx` sizes the
   window to XP's native 640×480.
-- 🚧 **Map scene** — New Game builds the party from `System.party_members`,
+- ~~🚧 **Map scene**~~ — **superseded, not current.** This bullet describes the
+  reimplemented `mruby-rpgxp/mrblib/scene.rb` `Scene::Map` that used to stand in
+  for a game's own scripts; [ADR 0030](adr/0030-rgss-only-the-games-own-engine.md)
+  deleted it (~4,600 lines) once the script host (below) became the only boot
+  path, so nothing here still exists in the repository. Left for history rather
+  than rewritten; the "Remaining" per-row priority note in particular is stale
+  in its own right — that landed, but in the native `RGSS::Tilemap`
+  (`mruby-rgss/src/lib.cxx`) that serves the script host, not in this deleted
+  reimplementation ([ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md),
+  status: implemented).
+  New Game builds the party from `System.party_members`,
   loads the start map and enters a walkable `Scene::Map`. The three tile layers
   now render through the native `RGSS::Tilemap` — the project's real tileset
   graphic, the seven autotiles assembled from their quads and animated, and

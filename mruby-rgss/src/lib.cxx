@@ -4166,6 +4166,58 @@ int vx_tile_quads(int tile_id, int frame, bool table, VXQuad out[8]) {
   return n;
 }
 
+// A table (A2, `flags` bit 0x80) tile grows a short "leg" that spills 8px past
+// its own 32x32 box into the map row below it -- RMXP/VX Ace's authentic
+// table/counter look (a plain flat edge would stop dead at the tile boundary).
+// Ported from mkxp's TileAtlasVX::readAutotileA2 (the real VX/VX Ace tile
+// renderer, GPLv2 -- MV's corescript inherited the tile *geometry* from VX Ace
+// unchanged, per the comment above vx_tile_quads, but drives this particular
+// effect through a different, JS-only mechanism, so mkxp is the reference
+// here instead).
+//
+// A leg exists on the bottom-left / bottom-right corner exactly when that
+// corner would already trigger vx_tile_quads's own same-cell "counter row"
+// substitution above (qsy == 1 or 5) -- confirmed by cross-checking every one
+// of mkxp's 48 shapes' leg source coordinates against VX_FLOOR_QUADS: all 54
+// legs across the 48 shapes matched that corner's own (unsubstituted) quad
+// position exactly. So a leg's source is simply that corner's natural,
+// non-substituted (sx, sy) -- the same value vx_tile_quads's substitution
+// branch already computes and calls sx/sy there -- redrawn 16x16 (not the
+// substitution's 16x8 strip) at dy = TILE_SIZE - half/2, which lands its top
+// 8px over the tile's own bottom edge and its bottom 8px one map row down.
+//
+// Unlike MV's neighbour-examining _drawTableEdge, this needs no lookup of the
+// tile below: mkxp draws every table tile's leg unconditionally (no
+// suppression when the tile below is itself a table), so the leg is a pure
+// function of the owning tile's own id. The caller (tilemap_refresh_vx) must
+// still draw legs in a pass that runs after every plain tile of the same
+// layer, or a tile in the row below would be painted back over the leg.
+int vx_table_leg_quads(int tile_id, VXQuad out[2]) {
+  if (tile_id < VX_TILE_ID_A2 || tile_id >= VX_TILE_ID_A3)
+    return 0;
+  const int half = TILE_SIZE / 2;
+  const int kind = (tile_id - VX_TILE_ID_A1) / 48;
+  const int shape = (tile_id - VX_TILE_ID_A1) % 48;
+  if (shape >= 48)
+    return 0;
+  const int tx = kind % 8, ty = kind / 8;
+  const int bx = tx * 2, by = (ty - 2) * 3;
+  static const int kCorner[2] = {2, 3};  // BL, BR -- VX_FLOOR_QUADS index
+  int n = 0;
+  for (int c = 0; c < 2; ++c) {
+    const int qsx = VX_FLOOR_QUADS[shape][kCorner[c]][0];
+    const int qsy = VX_FLOOR_QUADS[shape][kCorner[c]][1];
+    if (qsy != 1 && qsy != 5)
+      continue;
+    const int sx = (bx * 2 + qsx) * half;
+    const int sy = (by * 2 + qsy) * half;
+    const int dx = c == 0 ? 0 : half;
+    out[n++] = VXQuad{/*sheet=*/1,          sx,   sy,  dx,
+                      TILE_SIZE - half / 2, half, half};
+  }
+  return n;
+}
+
 // z of the priority "above" layer (see the split in tilemap_refresh). INTERIM:
 // a single flat layer above the characters is only an approximation of RMXP's
 // per-row priority interleaving — it puts *every* priority tile above *every*
@@ -4388,6 +4440,41 @@ bool tilemap_refresh_vx(mrb_state* M,
         const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
         for (int q = 0; q < n; ++q) {
           const VXQuad& v = quads[q];
+          const mrb_value sheet_v = mrb_ary_ref(M, bitmaps, v.sheet);
+          if (!mrb_test(sheet_v) || !DATA_PTR(sheet_v))
+            continue;
+          Bitmap& sheet = DataType<Bitmap>::get(M, sheet_v);
+          blit_blend(target, dx0 + v.dx, dy0 + v.dy, sheet, v.sx, v.sy, v.w,
+                     v.h);
+        }
+      }
+    }
+
+    // Table legs, in a pass of their own after every plain tile of this layer
+    // is down: a leg spills into the row below, so it must draw after that
+    // row's own tile or the leg would be painted straight back over (see
+    // vx_table_leg_quads).
+    VXQuad legs[2];
+    for (int ty = ty0; ty < ty1; ++ty) {
+      for (int tx = tx0; tx < tx1; ++tx) {
+        const int idx = tx + ty * mapw + layer * mapw * maph;
+        if (idx < 0 || idx >= static_cast<int>(md.data.size()))
+          continue;
+        const int id = md.data[idx];
+        if (id < VX_TILE_ID_A2 || id >= VX_TILE_ID_A3 || !flags ||
+            id >= static_cast<int>(flags->data.size()))
+          continue;
+        const int flag = flags->data[id];
+        if ((flag & 0x80) == 0)
+          continue;
+        const int n = vx_table_leg_quads(id, legs);
+        if (n == 0)
+          continue;
+        Bitmap& target = ((flag & 0x10) != 0 && above) ? *above : dst;
+        const int dx0 = tx * TILE_SIZE - static_cast<int>(ox);
+        const int dy0 = ty * TILE_SIZE - static_cast<int>(oy);
+        for (int q = 0; q < n; ++q) {
+          const VXQuad& v = legs[q];
           const mrb_value sheet_v = mrb_ary_ref(M, bitmaps, v.sheet);
           if (!mrb_test(sheet_v) || !DATA_PTR(sheet_v))
             continue;
@@ -4834,6 +4921,33 @@ mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
   mrb_value out = mrb_ary_new_capa(M, n);
   for (int i = 0; i < n; ++i) {
     const VXQuad& q = quads[i];
+    mrb_value row = mrb_ary_new_capa(M, 7);
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sheet));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sx));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.sy));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.dx));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.dy));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.w));
+    mrb_ary_push(M, row, mrb_fixnum_value(q.h));
+    mrb_ary_push(M, out, row);
+  }
+  return out;
+}
+
+// Tilemap.vx_table_leg_quads(tile_id) -> [[sheet, sx, sy, dx, dy, w, h], ...]
+//
+// The A2 table-tile "leg" that spills into the row below (see
+// vx_table_leg_quads above), exposed the same way vx_tile_quads is: pure
+// arithmetic, pinned without needing the display the headless test binary
+// has not got.
+mrb_value tilemap_vx_table_leg_quads(mrb_state* M, mrb_value self) {
+  mrb_int tile_id = 0;
+  mrb_get_args(M, "i", &tile_id);
+  VXQuad legs[2];
+  const int n = vx_table_leg_quads(static_cast<int>(tile_id), legs);
+  mrb_value out = mrb_ary_new_capa(M, n);
+  for (int i = 0; i < n; ++i) {
+    const VXQuad& q = legs[i];
     mrb_value row = mrb_ary_new_capa(M, 7);
     mrb_ary_push(M, row, mrb_fixnum_value(q.sheet));
     mrb_ary_push(M, row, mrb_fixnum_value(q.sx));
@@ -6344,6 +6458,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, tilemap, "flags=", tilemap_set_flags, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, tilemap, "vx_tile_quads", tilemap_vx_tile_quads,
                           MRB_ARGS_ARG(1, 2));
+  mrb_define_class_method(M, tilemap, "vx_table_leg_quads",
+                          tilemap_vx_table_leg_quads, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());

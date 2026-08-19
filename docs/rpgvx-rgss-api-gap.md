@@ -110,10 +110,32 @@ MIT-licensed MV corescript, which inherited VX Ace's tile system unchanged, and
 needing a display, both as representative cases and as a checksum over the whole
 sweep.
 
-Remaining polish: `flags` bit 0x10 routes a tile to the existing "above the
-characters" layer, which is the same flat approximation ADR 0022 describes for
-XP, and the A2 table-edge tile drawn *below* its neighbour
-(`Tilemap#_drawTableEdge`) is not done.
+**The A2 table tile's "leg"** — the 8px overhang that spills past a table
+tile's own 32×32 box into the map row below it — is now drawn too. It looked
+like the same gap XP's `priorities` had before [ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md)
+(there described via MV corescript's `Tilemap#_drawTableEdge`, the JS name),
+but MV's neighbour-examining mechanism is JS-only plumbing, not what real
+VX/VX Ace draws — mkxp's `TileAtlasVX::readAutotileA2` (the actual VX/VX Ace
+tile renderer) does it with no neighbour lookup at all: every table tile
+grows its leg unconditionally, as a pure function of its own id. Cross-checked
+against all 48 A2 shapes: a leg exists on a corner exactly when that corner
+already trips the same-cell "counter row" substitution above (`qsy == 1` or
+`5`), sourced from that corner's own unsubstituted position — so no new
+lookup table was needed, only a second pass so the leg draws after the row
+below's own tile (a plain per-tile pass would let that tile paint back over
+it). Exposed as `Tilemap.vx_table_leg_quads` and pinned in `mruby-rgss/test`
+the same way `vx_tile_quads` is.
+
+**`flags` bit 0x10 ("higher tile") stays a flat "above the characters" layer,
+and that is correct, not a placeholder.** This looked like the same
+approximation ADR 0022 describes for XP's `priorities` — a flat layer instead
+of per-row interleaving with characters — but it is not one: mkxp's
+`TilemapVX` (the reference used above) puts its own "above" layer at a fixed
+`z = 200` (`TilemapVXPrivate::AboveLayer`), never per-row. RMXP's per-row
+`screen_z` is specific to XP's own `Game_Character#screen_z` formula (see the
+ADR); VX/VX Ace's own engine does not do that for `flags` 0x10, so widening
+ADR 0022 to VX would have made this *less* faithful, not more. No follow-up
+wanted here.
 
 ### 2. `Viewport` screen effects — tint, flash and fade all draw ✅
 

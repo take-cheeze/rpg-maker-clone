@@ -1980,6 +1980,50 @@ assert "RGSS::Tilemap.vx_tile_quads splits an A2 table tile" do
   assert_equal [1, 48, 16, 16, 24, 16, 8], table[4]
 end
 
+assert "RGSS::Tilemap.vx_table_leg_quads grows a table tile's leg into the row below" do
+  # A table tile's "leg" is separate from the same-cell counter-row splice
+  # above: it is a full 16x16 quad (not the splice's 16x8 strip), sourced from
+  # that corner's own *unsubstituted* position, and placed at dy = 24 so it
+  # spills 8px past the tile's own 32px box into the map row below. Ported
+  # from mkxp's TileAtlasVX::readAutotileA2 (see the comment on
+  # vx_table_leg_quads in lib.cxx for the derivation).
+  #
+  # Shape 4 (tile id 2820) only trips the "table row" condition (qsy == 1 or
+  # 5) on its bottom-right corner, so it grows one leg, sourced from exactly
+  # the same (sx, sy) as the same-cell strip above (48, 16) — confirming the
+  # leg and the splice draw from the same corner, just to different places.
+  assert_equal [[1, 48, 16, 16, 24, 16, 16]], RGSS::Tilemap.vx_table_leg_quads(2820)
+
+  # Shape 0 (tile id 2816) trips the condition on neither corner: no legs.
+  assert_equal [], RGSS::Tilemap.vx_table_leg_quads(2816)
+
+  # Shape 28 (tile id 2844) trips it on both corners: two legs, one per side
+  # (dx 0 for the left, 16 for the right).
+  assert_equal [[1, 32, 80, 0, 24, 16, 16], [1, 16, 80, 16, 24, 16, 16]],
+               RGSS::Tilemap.vx_table_leg_quads(2844)
+
+  # Only A2 ids can be table tiles; anything else grows no leg.
+  assert_equal [], RGSS::Tilemap.vx_table_leg_quads(2048)
+  assert_equal [], RGSS::Tilemap.vx_table_leg_quads(4352)
+end
+
+assert "RGSS::Tilemap.vx_table_leg_quads matches the reference sweep" do
+  # A checksum over every A2 id (the only range a table tile can come from),
+  # the same rolling-hash shape as vx_tile_quads's own reference-sweep check
+  # above, computed from the same mkxp-derived formula described on
+  # vx_table_leg_quads in lib.cxx.
+  sum = 0
+  id = 2816
+  while id < 4352
+    RGSS::Tilemap.vx_table_leg_quads(id).each do |quad|
+      quad.each { |v| sum = (sum * 31 + v) % 1048573 }
+    end
+    sum = (sum * 31 + id) % 1048573
+    id += 1
+  end
+  assert_equal 359443, sum
+end
+
 assert "RGSS::Tilemap API surface" do
   # Tilemap is now native: Tilemap.new builds an lv_canvas the size of the
   # viewport and blits the visible tiles into it, so construction needs a live
