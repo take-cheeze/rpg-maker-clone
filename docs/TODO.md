@@ -14073,6 +14073,37 @@ above are repeated here)
   instead of whatever it was charged to), both confirmed to fail against
   the pre-fix code (`NoMethodError`, the accessor did not exist at all)
   before the fix.
+  ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
+  forever, multiplying hits in every later battle too, instead of
+  clearing once that fight ended (2026-08-19).** `Game::Actor
+  #set_battle_combo` (`mruby-rpg2k/mrblib/game.rb`) stores `@battle_combo`
+  directly on the persistent `Actor` object (not a per-fight `Combatant`
+  snapshot, the way `atk_modifier`/`def_modifier`/etc. correctly are), and
+  its own doc comment already claimed the combo "stays armed for the
+  whole fight until another Enable Combo overwrites it" — true, but
+  nothing anywhere ever cleared it at the *end* of that fight either, so
+  it silently persisted into every subsequent one. Confirmed against
+  EasyRPG's actual C++ source, fetched live: `Game_Battler::ResetBattle`
+  (`src/game_battler.cpp`) is `battle_combo_command_id = -1;
+  battle_combo_times = 1;`, and `Game_Actors::ResetBattle`
+  (`src/game_actors.cpp`, looping every actor's own `ResetBattle`) is
+  called at **both** a battle's start and its end — `Game_Battle::Init`
+  and `Game_Battle::Quit` alike (`src/game_battle.cpp`). A boss fight
+  scripted via a battle-event page's Enable Combo (an entirely ordinary,
+  editor-authored way to grant that one fight a scripted "double-strike"
+  mechanic) left every subsequent battle — random encounters, later story
+  fights alike — still multiplying that actor's attack/skill hits by the
+  same `multiple`, since `Game::Battle#combo_hits` reads `Actor
+  #battle_combo` live off the persistent actor, not a snapshot. Fixed
+  with a new `Actor#clear_battle_combo`, called from `Battle
+  #apply_to_party` (the one place a fight's outcome is written back onto
+  the persistent Actor objects, already doing the identical job for HP/
+  MP/states/gauge) for every ally once the fight ends. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a combo armed mid-fight is
+  present on the actor immediately, gone from it right after `#apply_to_
+  party` runs, and a subsequent fight's own `Combatant` reads no combo
+  bonus at all), confirmed to fail against the pre-fix code before the
+  fix.
   ✅ **A living-but-afflicted party member's own alternate-battle-layout
   sprite (RPG2003's per-actor battler graphic, `db.battleranimations`) now
   shows that state's own configured pose, not always plain Idle

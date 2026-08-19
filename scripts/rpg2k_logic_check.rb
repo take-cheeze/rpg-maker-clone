@@ -11730,6 +11730,36 @@ check 'Battle#apply_to_party zeroes the active-time gauge for an ally who ended 
   eq 0, ally.atb_gauge, 'a knocked-out ally does not carry a charge into the next fight'
 end
 
+check "Battle#apply_to_party clears a battle combo Enable Combo armed, matching RPG_RT (2026-08-19)" do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Battler::ResetBattle` (src/game_battler.cpp) is `battle_combo_
+  # command_id = -1; battle_combo_times = 1;`, called for every actor at
+  # both a battle's start and its end (`Game_Battle::Init`/`Quit`, via
+  # `Game_Actors::ResetBattle`, src/game_battle.cpp / src/game_actors.cpp)
+  # -- so a combo armed by one battle-event page for one specific fight
+  # never carries into the next. #set_battle_combo's own doc comment
+  # already claimed the combo stays armed "until battle end", but nothing
+  # ever actually cleared it: an Enable Combo fired for a scripted boss
+  # fight stayed armed on the actor forever, multiplying hits in every
+  # later random encounter too.
+  st = party_state
+  hero = st.party.actor_by_id(1)
+  hero.set_battle_combo(1, 3) # Attack (command 1) hits 3 times, armed this fight
+  eq({ command_id: 1, multiple: 3 }, hero.battle_combo)
+
+  hc = Game::Battle.from_actor(hero)
+  bat = Game::Battle.new([hc], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  bat.apply_to_party
+  eq nil, hero.battle_combo, 'the combo does not survive past this fight'
+
+  # A fresh fight's own Combatant reads no combo bonus either, matching
+  # #combo_hits' own "no combo armed" default of 1.
+  hc2 = Game::Battle.from_actor(hero)
+  bat2 = Game::Battle.new([hc2], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1))
+  hc2.last_battle_action = 1
+  eq 1, bat2.send(:combo_hits, hc2, :attack), 'no combo carries into the next fight'
+end
+
 check 'Battle#step_action walks a round one attack at a time for animation' do
   # Two fast heroes vs two slow slimes: agility order is Ace, Bee, then the
   # slimes. #step_action surfaces the round one entry at a time (as the on-screen
