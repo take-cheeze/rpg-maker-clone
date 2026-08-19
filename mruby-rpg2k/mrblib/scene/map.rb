@@ -319,6 +319,25 @@ class RPG2k
       end
 
       attr_reader :state
+      # The current map's live event list -- see #build_events for the shape
+      # of each entry ({ id:, char:, page:, page_number:, ... }). Read by
+      # RPG2k #dump_bug_report (main.rb) to list every event's
+      # position/direction/page alongside the hero's.
+      attr_reader :events
+      # The foreground interpreter -- the one On Touch/On Talk/auto-start
+      # triggers and Show Message run on, as opposed to a Parallel Process's
+      # own background one (see #parallel_interpreter_for). Read by RPG2k
+      # #dump_bug_report to show what it is stuck on, if anything.
+      attr_reader :interpreter
+
+      # The background Parallel Process interpreter currently running for map
+      # event `id`, or nil when none is (no Parallel Process trigger, or its
+      # page/conditions currently pick something else). Diagnostics only --
+      # RPG2k#dump_bug_report is the one caller today.
+      def parallel_interpreter_for(id)
+        p = @parallels.find { |pp| pp[:event] && pp[:event][:id] == id }
+        p && p[:interp]
+      end
 
       # Services Scene::Battle calls back into ----------------------------
       #
@@ -1171,8 +1190,9 @@ class RPG2k
                                             @state.variables, @state.party,
                                             @state.timer_seconds, @state.timer2_seconds)
           next unless selected
-          page = selected[1]
-          @events.push(build_event(id, ev, page, restore_route_index: restore_route_index))
+          page_number, page = selected
+          @events.push(build_event(id, ev, page, page_number,
+                                    restore_route_index: restore_route_index))
         end
         rebuild_event_tiles
       rescue StandardError => e
@@ -1182,7 +1202,7 @@ class RPG2k
         @event_tiles_by_pos = {}
       end
 
-      def build_event(id, ev, page, restore_route_index: true)
+      def build_event(id, ev, page, page_number, restore_route_index: true)
         dir = Game::EventGraphic.numpad_direction(page_direction(page))
         x, y = ev.x, ev.y
         # A saved wandered position (see #record_map_event_positions) wins over
@@ -1236,8 +1256,12 @@ class RPG2k
           route.resume_at(saved_index)
         end
         # `page` is kept so a refresh can tell whether the conditions still pick
-        # the same one (see #pages_changed?).
-        { id: id, char: ch, page: page, trigger: page_trigger(page),
+        # the same one (see #pages_changed?); `page_number` is the same page's
+        # 1-based slot in the event's own page list (Game::EventPage.select's
+        # first return value) -- diagnostics-only (RPG2k#bug_report_text),
+        # nothing here reads it back.
+        { id: id, char: ch, page: page, page_number: page_number,
+          trigger: page_trigger(page),
           commands: page_commands(page), guarded: page_guarded(page),
           move_type: move_type, route: route,
           move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
@@ -4417,10 +4441,13 @@ class RPG2k
       # interpreter whichever specific symbols (:n3, :period, ...) actually
       # fired; Game::Interpreter::KEY_INPUT_GROUPS maps them back onto the
       # :numbers/:operators accept flag. Real key backing for
-      # RGSS::Input::N0..PERIOD exists only on the SDL desktop backend today
-      # (src/sdl_input.cxx) — on every other native backend (PSP, Wio
-      # Terminal, terminal/sixel) these ids are simply never pressed, the same
-      # way this build already leaves F5-F12 unbound there.
+      # RGSS::Input::N0..PERIOD: the SDL desktop backend binds every digit and
+      # operator (src/sdl_input.cxx); the terminal/sixel backend types them
+      # too, a real keyboard being able to produce them (mruby-rgss/src/
+      # terminal.cxx); the PSP backend binds only the first five digits
+      # (N0-N4) to its spare buttons; the Wio Terminal has no free pin left,
+      # so these ids stay unbound there — the same backend split F5-F9/F12
+      # follow (bound on SDL and terminal/sixel, unbound on PSP/Wio).
       NUMBER_KEY_BUTTONS = {
         n0: Input::N0, n1: Input::N1, n2: Input::N2, n3: Input::N3, n4: Input::N4,
         n5: Input::N5, n6: Input::N6, n7: Input::N7, n8: Input::N8, n9: Input::N9

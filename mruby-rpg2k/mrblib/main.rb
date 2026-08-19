@@ -852,6 +852,121 @@ class RPG2k
     $stderr.puts "[RPG2k] Failed to continue: #{e.message}"
   end
 
+  # Fences around #bug_report_text so a reader (a human scrolling the log)
+  # can tell exactly where the block starts and ends -- the same idea as
+  # ERROR_DUMP_BEGIN/END (include/error_dump.hxx) for the crash-report path,
+  # kept as distinct strings so the two kinds of report are never confused.
+  BUG_REPORT_BEGIN = "----- BEGIN RPG MAKER CLONE BUG REPORT -----".freeze
+  BUG_REPORT_END = "----- END RPG MAKER CLONE BUG REPORT -----".freeze
+
+  # F8's report (see #main_loop): print the block between the fences above --
+  # so a terminal player can copy it straight out -- and also save it to a
+  # timestamped file next to the save data, for a player who cannot copy from
+  # the log (a bundled window with no attached console). Best-effort: a
+  # failure here must not take the game down over a report that only exists
+  # to describe some *other* problem.
+  def dump_bug_report
+    report = bug_report_text
+    $stderr.puts BUG_REPORT_BEGIN
+    $stderr.puts report
+    $stderr.puts BUG_REPORT_END
+    path = "#{GAME_DIR}/bugreport_#{bug_report_stamp}.md"
+    File.open(path, "w") { |f| f.write report }
+    $stderr.puts "[RPG2k] Bug report written to #{path}"
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] Failed to write bug report: #{e.message}"
+  end
+
+  # The Markdown body itself: which map the hero is standing on and where,
+  # every live event on that map (Scene::Map#events -- id, position, facing,
+  # graphic), and the recent runtime log (RGSS::ErrorReport.log_tail, the same
+  # tee the crash-report path already carries -- see mruby-rgss/mrblib/
+  # error_report.rb) for whatever led up to the moment F8 was pressed. Reads
+  # `@scenes` for the current Scene::Map rather than assuming @scenes.last is
+  # one, since a menu/battle/debug-menu screen can be on top of it; a title or
+  # game-over screen has no Scene::Map at all, so that section is skipped
+  # rather than raising. Each event line also carries its active page number
+  # (Scene::Map#events' page_number:) and which interpreter, if any, is
+  # currently running its commands (#bug_report_interp_text) -- a Parallel
+  # Process's own background one (Scene::Map#parallel_interpreter_for) or the
+  # foreground one (Scene::Map#interpreter) when this event is the one an On
+  # Touch/On Talk/auto-start trigger most recently started; a plain marker
+  # (page:, walking around) has neither and reads "idle". The foreground
+  # interpreter also gets its own summary line, since it can be stuck on a
+  # message/wait with no single event obviously to blame (a common event, a
+  # battle-event page).
+  def bug_report_text
+    r = "# RPG Maker Clone bug report\n\n"
+    r += "Paste this whole block into the bug report.\n\n"
+    r += "## Run\n\n"
+    r += "- game: #{@title}\n"
+    r += "- test play: #{@test_play}\n\n"
+
+    map_scene = @scenes.find { |s| s.is_a?(Scene::Map) }
+    if map_scene
+      state = map_scene.state
+      r += "## Hero\n\n"
+      r += "- map: #{state.map_id}"
+      r += " (#{state.map.width}x#{state.map.height})" if state.map
+      r += "\n"
+      r += "- position: x=#{state.x} y=#{state.y} direction=#{state.direction}\n"
+      state.party.actors.each do |a|
+        r += "- #{a.name}: HP #{a.hp}/#{a.display_max_hp}" \
+             " MP #{a.mp}/#{a.display_max_mp} Lv#{a.level}\n"
+      end
+      fg = map_scene.interpreter
+      r += "\n## Interpreter\n\n"
+      r += "- foreground: #{bug_report_interp_text(fg)}" \
+           " event=#{fg.running? ? (fg.event_id || "(none)") : "-"}\n"
+      r += "\n## Events on this map\n\n"
+      if map_scene.events.empty?
+        r += "(none)\n\n"
+      else
+        map_scene.events.each do |e|
+          ch = e[:char]
+          interp = map_scene.parallel_interpreter_for(e[:id])
+          kind = if interp
+                   "parallel"
+                 elsif fg.running? && fg.event_id == e[:id]
+                   interp = fg
+                   "foreground"
+                 end
+          r += "- id=#{e[:id]} x=#{ch.x} y=#{ch.y} direction=#{ch.direction}" \
+               " graphic=#{ch.graphic_name.inspect}(#{ch.graphic_index})" \
+               " page=#{e[:page_number]}" \
+               " interpreter=#{kind ? "#{kind} #{bug_report_interp_text(interp)}" : "idle"}\n"
+        end
+        r += "\n"
+      end
+    else
+      r += "## Hero\n\nNo map is active (current scene: #{@scenes.last.class}).\n\n"
+    end
+
+    log = RGSS::ErrorReport.log_tail
+    r += "## Recent log\n\n```\n#{log}```\n\n" unless log.empty?
+    r
+  end
+
+  # "running idx=4/12 call_depth=0", "waiting(:message) idx=..." or "idle" for
+  # an interpreter that has never started / has nothing left to run --
+  # Game::Interpreter#diagnostic_position's raw [index, size, call_depth]
+  # turned into the one-line summary #bug_report_text puts next to the
+  # foreground interpreter and each event that owns one.
+  def bug_report_interp_text(interp)
+    return "idle" unless interp && interp.running?
+    pos = interp.diagnostic_position
+    return "idle" unless pos
+    state = interp.waiting? ? "waiting(#{interp.wait_kind})" : "running"
+    "#{state} idx=#{pos[:index]}/#{pos[:size]} call_depth=#{pos[:call_depth]}"
+  end
+
+  # "YYYYMMDD_HHMMSS", filesystem-safe and sortable, so repeated F8 presses in
+  # one session each get their own file instead of clobbering the last.
+  def bug_report_stamp
+    t = Time.now
+    "%04d%02d%02d_%02d%02d%02d" % [t.year, t.month, t.day, t.hour, t.min, t.sec]
+  end
+
   def main_loop
     RGSS::Profiler.frame do
       RGSS::Profiler.section("scene.update") do
@@ -861,6 +976,13 @@ class RPG2k
         # Reuses the same teardown/rebuild return_to_title already does for
         # the "End Game" menu command and the Game Over screen.
         return_to_title if Input.trigger?(Input::F12)
+        # F8 dumps a bug report -- checked here for the same reason as F12
+        # above (works from any scene). Unlike F9/Ctrl/Shift (see
+        # #try_open_debug_menu and Scene::Map's Test Play cheats) this is
+        # NOT gated on test_play: a released game's players are exactly who
+        # needs a way to hand over what the hero/map/events looked like when
+        # something went wrong.
+        dump_bug_report if Input.trigger?(Input::F8)
         @scenes.last.update
       end
       RGSS::Profiler.section("input.update") { Input.update }

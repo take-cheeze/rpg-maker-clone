@@ -56,6 +56,16 @@
   underneath — coordinates, passable/blocked, and any map event standing
   there — and warps the player onto it with C, through the same queued-warp
   mechanism a Teleport field skill uses rather than editing position by hand
+- **F8 dumps a bug report** — unlike the Test Play keys above this works in a
+  released game too, from any scene (map, menu, battle, ...): a Markdown block
+  with the current map id, the hero's x/y/direction, each party member's
+  HP/MP/level, the foreground interpreter's own state (running/waiting-on-what/
+  command index), every live event on the map (id, position, facing, graphic,
+  active page number, and its own running interpreter's position when a
+  Parallel Process or the foreground interpreter is driving it) and the recent
+  runtime log, printed to stderr between fence markers (so it can be copied
+  straight out of a terminal) and saved to a timestamped `bugreport_<stamp>.md`
+  next to the save data
 - `--rpg2k_preview_map=<id>` starts New Game on a chosen map, centred on its
   middle tile, instead of the database's configured start position — a quick
   way to inspect one map's rendering without a save file positioned there.
@@ -517,6 +527,9 @@
   quit). `F9` opens the debug menu directly — most terminal emulators forward
   it as a real function-key escape sequence, the same way `F12`'s
   return-to-title already works here
+- `F8` (bug report, see "Map exploration" above) works here too, the same
+  function-key escape sequence as `F9`/`F12` — terminal key handling matches
+  the SDL desktop backend for the whole F5-F9/F12 set
 - `--sixel` works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm
   and Windows Terminal; `--iterm` works in iTerm2, WezTerm and VS Code
 - Either backend draws its emit rate (frame size, MB/s, fps) on-screen just
