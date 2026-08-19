@@ -12913,6 +12913,34 @@ check 'a page can wound a monster through Change Monster HP' do
   eq foe.max_hp - 7, foe.hp, 'the page took 7 HP off the first troop member'
 end
 
+# RPG_RT's own `CommandChangeMonsterHP` (src/game_interpreter_battle.cpp)
+# plays the enemy-kill system SE directly the instant its own `IsDead()`
+# check goes true, the same cue an ordinary lethal Attack/Skill already gets
+# via `#play_battle_action_se`'s `entry[:defeated]` check -- a check this
+# event-command path never produces, so a scripted kill (a damage-over-time
+# battle-event page, say) used to fell a monster in total silence.
+check 'a page killing a monster through Change Monster HP plays the ' \
+      'enemy-kill SE (RPG_RT)' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 9999, 1])]) }
+  scene, _st = battle_scene_with_pages(pages)
+  RGSS::Audio.reset_se
+  90.times do
+    ui = battle_ui(scene)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    scene.update
+    RGSS::Input.triggered = []
+    ui = battle_ui(scene)
+    break if ui && ui[:phase] == :command
+  end
+  ui = battle_ui(scene)
+  foe = ui[:battle].enemy(0)
+  ok foe.dead?, 'the scripted hit killed troop member 0'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'EnemyKill' },
+     "the scripted kill played the enemy-kill SE, same as an ordinary " \
+     'lethal Attack/Skill'
+end
+
 check 'Change Battle Background from a page rebuilds the backdrop sprite' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_BATTLE_BG, [], string: 'Cave')]) }

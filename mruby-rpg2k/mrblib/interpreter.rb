@@ -208,6 +208,7 @@ module Game
       @triggered_by_decision_key = false
       @revealed_monsters = []
       @fled_monsters = []
+      @monster_kills = []
       @battle_background = nil
       @input_variable = nil
       @input_digits = 1
@@ -290,6 +291,7 @@ module Game
       @movie_request = nil
       @revealed_monsters = []
       @fled_monsters = []
+      @monster_kills = []
       @battle_background = nil
       # Cleared per run so a reused interpreter (the shared foreground one, or a
       # looping parallel process) never inherits the previous event's trigger;
@@ -460,6 +462,21 @@ module Game
     def take_fled_monsters
       ids = @fled_monsters
       @fled_monsters = []
+      ids
+    end
+
+    # Drain the troop-member indices Change Monster HP (13110) has just killed
+    # since the last call. RPG_RT's own `CommandChangeMonsterHP`
+    # (src/game_interpreter_battle.cpp) plays the enemy-kill system SE
+    # (`SePlay(GetSystemSE(SFX_EnemyKill))`) the instant the command's own
+    # `enemy->IsDead()` check goes true, same as any other in-combat kill --
+    # #do_change_monster_hp writes straight to the live combatant with no
+    # `entry` hash for the scene's own #play_battle_action_se to read, so
+    # this queue is this command's only way to tell the scene a kill just
+    # happened. Non-blocking.
+    def take_monster_kills
+      ids = @monster_kills
+      @monster_kills = []
       ids
     end
 
@@ -2508,6 +2525,24 @@ module Game
     # then revived later in the same fight, kept its stale pre-death
     # modifiers/gauge instead of the clean slate every other death path
     # already gives.
+    #
+    # RPG_RT's own `CommandChangeMonsterHP` (src/game_interpreter_battle.cpp)
+    # also plays the enemy-kill system SE the instant its own `IsDead()`
+    # check goes true: `if (enemy->IsDead()) { SePlay(GetSystemSE(
+    # SFX_EnemyKill)); enemy->SetDeathTimer(); }`, right after the
+    # `ChangeHp` call above -- the same death cue an ordinary lethal Attack/
+    # Skill already plays via the scene's own `#play_battle_action_se`
+    # (`entry[:defeated]` -> `SFX_ENEMY_DEATH`). This command produces no
+    # such `entry` for the scene to read, so a scripted kill (a battle
+    # event's damage-over-time page, a scripted boss-phase transition)
+    # silently killed the monster with no sound at all. `#SetDeathTimer`'s
+    # own fade/blink animation has no equivalent in this codebase's sprite
+    # system at all (a dead enemy's sprite already just stops drawing, see
+    # `Scene::Battle`'s `dead?`-gated visibility) and is deliberately not
+    # chased here -- out of scope for this fix, which only restores the
+    # missing sound. Queued the same way Show Hidden Monster/Force Flee
+    # already tell the scene about a mid-battle change it has no other way
+    # to see (see #take_monster_kills).
     def do_change_monster_hp(cmd)
       target = @battle && @battle.enemy(cmd.param(0))
       return unless target
@@ -2520,6 +2555,7 @@ module Game
       hp = target.max_hp if target.max_hp && hp > target.max_hp
       target.hp = hp
       @battle.apply_knockout_reset(target)
+      @monster_kills.push(cmd.param(0)) if target.dead?
     end
 
     # Change Monster MP (13120): the SP counterpart. Same operand layout minus

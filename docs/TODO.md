@@ -14385,6 +14385,39 @@ above are repeated here)
   then killed via a lethal Change Monster HP: all reset immediately),
   confirmed to fail against the pre-fix code (`expected 0, got 5`) before
   the fix.
+  ✅ **A troop member killed by a scripted Change Monster HP died in total
+  silence — no enemy-kill sound at all, unlike an ordinary lethal Attack
+  or Skill (2026-08-19).** Confirmed directly against RPG_RT's live
+  source, immediately below the `ChangeHp` call the fix just above already
+  cites: `Game_Interpreter_Battle::CommandChangeMonsterHP`
+  (`src/game_interpreter_battle.cpp`) is `enemy->ChangeHp(change, lethal);
+  ... if (enemy->IsDead()) { Main_Data::game_system->SePlay(Main_Data::
+  game_system->GetSystemSE(Main_Data::game_system->SFX_EnemyKill));
+  enemy->SetDeathTimer(); }` — the command plays the enemy-kill system SE
+  itself, directly, the instant its own kill lands. This codebase's own
+  death cue for an ordinary lethal Attack/Skill already exists —
+  `Scene::Battle#play_battle_action_se` plays `SFX_ENEMY_DEATH` off
+  `entry[:defeated]`, the hash a combat action returns
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) — but `Game::Interpreter
+  #do_change_monster_hp` produces no such `entry` for the scene to read,
+  so a scripted kill (a battle-event page's damage-over-time tick, a
+  scripted boss-phase kill) silently finished the monster off with no
+  sound and no death cue at all. Fixed the same way this codebase already
+  bridges other event-command-to-scene notifications that have no `entry`
+  to ride on (Show Hidden Monster's `@revealed_monsters`, Force Flee's
+  `@fled_monsters`): a new `@monster_kills` queue, pushed with the troop
+  index whenever `do_change_monster_hp`'s own write makes `target.dead?`
+  newly true, drained every frame by `Scene::Battle
+  #apply_battle_event_requests` (already the poll point for those sibling
+  queues) into a new `#play_monster_kill_se` (`play_system_se
+  (SFX_ENEMY_DEATH)`). `SetDeathTimer`'s own fade/blink animation has no
+  equivalent anywhere in this codebase's sprite system (a dead enemy's
+  sprite already simply stops drawing) and is deliberately left out of
+  scope — this fix restores only the missing sound. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a troop page's lethal Change
+  Monster HP plays the `EnemyKill` SE, matching an ordinary lethal
+  Attack/Skill), confirmed to fail against the pre-fix code before the
+  fix.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor
