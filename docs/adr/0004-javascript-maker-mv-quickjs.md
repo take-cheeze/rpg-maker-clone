@@ -476,6 +476,35 @@ JavaScript loads and interprets the JSON.
       probe re-requests while the map is up so a burst is always on screen, and
       the screenshot waits for a frame with visible cells rather than firing on
       a frame count, or it would photograph the gaps between bursts.
+    - **M6.2 addendum — Effekseer diagnostic stub (landed), full rendering
+      (not attempted).** Investigated whether real particle rendering was
+      reachable: quickjs-ng has no WebAssembly support at all (confirmed —
+      `grep -rl WebAssembly 3rd/quickjs/*.c 3rd/quickjs/*.h` finds nothing),
+      so running the browser's `effekseer.min.js` + `.wasm` build is out
+      without writing a WASM interpreter first. The native Effekseer C++ core
+      (MIT-licensed, the same source the WASM build compiles from) is
+      designed for pluggable renderer backends, and `EffekseerRendererGL`
+      already targets GLES; the surfaceless-EGL/GLES3 context in
+      `mvgl.cxx`/`mvwebgl.cxx` could plausibly host it directly rather than
+      through the WebGL shim. But the real risk is elsewhere — reconciling
+      Effekseer's GL state and coordinate/matrix conventions against PIXI's
+      own without a browser reference to diff against, plus llvmpipe
+      fill-rate cost — and there is no real `.efkefc` file anywhere in this
+      repo to even smoke-test against, so it stayed unattempted rather than
+      guessed at.
+
+      What landed instead: `MZ::EFFEKSEER_SHIM_JS` replaces `window.effekseer`
+      with a stub that turns the *silent* no-op above into an *honest* one —
+      `Graphics.effekseer` goes non-null so `EffectManager.load` actually
+      runs, `loadEffect` reads the real file through the same
+      `__mv_existsSync`/`__mv_readFileBytes` natives every other asset uses,
+      validates the `"EFKEFC"` container magic, and logs what was skipped and
+      why (`console.warn`) before completing the load — a missing file still
+      reports through `onError` the way a real fetch failure would. `play()`
+      hands back a handle with a short fixed lifetime so `Sprite_Animation`
+      still ends the animation normally instead of waiting on a handle that
+      would otherwise never go away. No pixels are drawn; that half of the
+      gap is unchanged.
 
       The animation's cells are all the *same area*, differing only in colour.
       That is not the obvious choice — expanding rings look more like an

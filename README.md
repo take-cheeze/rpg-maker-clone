@@ -349,13 +349,16 @@
   headless CI smoke is what the claim rests on, and it is not yet a blocking
   check
 - MZ **plays animations** too — with a caveat worth knowing, because MZ has two
-  animation systems and only one of them is reachable. `isMVAnimation` routes by
-  data shape: an animation carrying a `frames` array draws as sprite cells
+  animation systems and only one of them draws. `isMVAnimation` routes by data
+  shape: an animation carrying a `frames` array draws as sprite cells
   (`Sprite_AnimationMV`) and works end to end here, including the per-cell blend
-  modes; anything else goes to Effekseer, whose WASM runtime is started by the
-  `main.js` this host bypasses, so such an animation runs its sound and flash
-  timings on schedule and draws **no visuals**. Nothing hangs and nothing errors,
-  which is exactly why it is documented rather than left to be discovered
+  modes; anything else goes to Effekseer, whose real WASM runtime this host
+  cannot run (quickjs-ng has no WebAssembly support). Rather than staying
+  silent about it, `window.effekseer` is a diagnostic stub: it reads the real
+  `.efkefc` file off disk, confirms it looks like a real effect container, and
+  logs exactly what was skipped and why. The animation still runs its sound and
+  flash timings on schedule and still draws **no visuals** — nothing hangs and
+  nothing errors, and now nothing is silent either
 - MZ also **shows messages, opens the party menu, saves and fights**, each
   exercised headlessly the way the MV path is: a message queued through
   `$gameMessage` opens `Window_Message` over the map, `Scene_Map`'s own
