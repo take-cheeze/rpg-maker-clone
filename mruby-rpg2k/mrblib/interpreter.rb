@@ -2318,12 +2318,23 @@ module Game
     def identity_target(cmd); party.roster[cmd.param(0)]; end
 
     # Change Actor Name: rename the actor whose id is param0 to the command
-    # string. A blank name is ignored (RPG_RT keeps the previous name).
+    # string, including a blank one -- RPG_RT's own
+    # `Game_Interpreter::CommandChangeHeroName` (src/game_interpreter.cpp,
+    # code 10610) calls `actor->SetName(...)` completely unconditionally,
+    # with no guard against an empty resolved string anywhere in the
+    # command or in `Game_Actor::SetName` itself (src/game_actor.h) --
+    # `SetName`'s only special case is the string exactly matching the
+    # actor's own *database* name (a save-space sentinel, unrelated to
+    # blankness), and `GetName()` reads `data.name` straight back with no
+    # database-name fallback once it's been set to anything else, empty
+    # string included. A blank Change Actor Name genuinely blanks the
+    # actor's displayed name everywhere (menus, battle, the save screen) in
+    # real RPG_RT; it does not leave the previous name intact. Symmetric
+    # with the sibling #do_change_actor_title just below, which already
+    # gets this right.
     def do_change_actor_name(cmd)
-      name = cmd.string
-      return if name.nil? || name.empty?
       actor = identity_target(cmd)
-      actor.name = name if actor
+      actor.name = cmd.string || '' if actor
     end
 
     # Change Actor Title: set the title (class/subtitle shown on the status

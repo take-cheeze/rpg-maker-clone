@@ -8017,7 +8017,14 @@ end
 
 # -- Change Actor Name / Title / Sprite ---------------------------------------
 
-check 'Change Actor Name renames the actor; a blank name is ignored' do
+# RPG_RT's own `Game_Interpreter::CommandChangeHeroName`
+# (src/game_interpreter.cpp, code 10610) calls `actor->SetName(...)`
+# completely unconditionally, and `Game_Actor::SetName`/`GetName`
+# (src/game_actor.h) have no blank-string fallback to the database name --
+# only a same-as-database-name save-space sentinel, unrelated to blankness.
+# A blank Change Actor Name genuinely blanks the actor's displayed name,
+# symmetric with the Title check just below.
+check 'Change Actor Name renames the actor; a blank name blanks it too' do
   st = party_state
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::CHANGE_ACTOR_NAME, [1], string: 'Zelda')])
@@ -8027,7 +8034,7 @@ check 'Change Actor Name renames the actor; a blank name is ignored' do
   it2 = Game::Interpreter.new(st)
   it2.start([FakeCmd.new(IC::CHANGE_ACTOR_NAME, [1], string: '')])
   it2.update
-  eq 'Zelda', st.party.actor_by_id(1).name # unchanged by the blank name
+  eq '', st.party.actor_by_id(1).name
 end
 
 check 'Change Actor Title sets the title; an empty string clears it' do
