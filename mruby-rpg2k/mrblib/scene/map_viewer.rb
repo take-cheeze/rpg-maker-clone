@@ -147,17 +147,39 @@ class RPG2k
         @contents.draw_text 0, HEADER_H + @view_h, @contents.width, FOOTER_H, hint
       end
 
+      # One #fill_rect per same-coloured horizontal run rather than one
+      # #set_pixel per tile -- a naive per-tile pass is a native call for every
+      # tile in the viewport (up to view_w * view_h, tens of thousands on a
+      # full-screen viewport), cheap enough under SDL to pass unnoticed but
+      # slow enough under the --sixel/--iterm terminal backends (already
+      # paying per-frame encode cost, see ADR 0001/0003) to stall the whole
+      # engine for several seconds on open, and every single frame while a
+      # pan key is held. Real chipset data is overwhelmingly made of same-
+      # passability blocks (a room's floor, a wall run), so this is a large
+      # constant-factor win in the common case and never worse than the
+      # per-tile pass in the checkerboard worst case.
       def draw_tiles
         return unless @map
         (0...@view_h).each do |vy|
           my = @oy + vy
           break if my >= @map.height
-          (0...@view_w).each do |vx|
-            mx = @ox + vx
-            break if mx >= @map.width
-            @contents.set_pixel vx, HEADER_H + vy, tile_color(mx, my)
-          end
+          draw_tile_row(vy, my)
         end
+      end
+
+      def draw_tile_row(vy, my)
+        max_vx = [@view_w, @map.width - @ox].min
+        run_start = 0
+        run_color = nil
+        y = HEADER_H + vy
+        (0...max_vx).each do |vx|
+          color = tile_color(@ox + vx, my)
+          next if color.equal?(run_color)
+          @contents.fill_rect run_start, y, vx - run_start, 1, run_color if run_color
+          run_start = vx
+          run_color = color
+        end
+        @contents.fill_rect run_start, y, max_vx - run_start, 1, run_color if run_color
       end
 
       def tile_color(x, y)

@@ -72,10 +72,6 @@ module RGSS
     def clear; end
     def fill_rect(*a); (@fill_calls ||= []) << a; end
     attr_reader :fill_calls
-    # Scene::MapViewer's whole-map minimap draws one pixel per tile through
-    # this rather than fill_rect, so the pan/tile-colour checks need it too.
-    def set_pixel(*a); (@pixel_calls ||= []) << a; end
-    attr_reader :pixel_calls
     # Recorded so the bush-depth checks can assert *how* a character frame was
     # laid down — one blit or a split pair, and at what opacity — rather than
     # only that drawing happened.
@@ -18768,11 +18764,15 @@ check 'MapViewer marks the player and every map event, and reads every tile as '
   contents = scene.instance_variable_get(:@contents)
 
   ok !scene.instance_variable_get(:@pannable), 'the 6x5 fixture map fits the viewport whole'
-  eq 6 * 5, contents.pixel_calls.size, 'one set_pixel per tile of the 6x5 map'
-  ok contents.pixel_calls.all? { |(_x, _y, c)| c == RPG2k::Scene::MapViewer::PASSABLE_COLOR },
-     'fake_chipset carries no passable_data_lower, so #landable_tile? is true everywhere'
-
   header = RPG2k::Scene::MapViewer::HEADER_H
+  # One fill_rect per row (a single passable run, tile 0..5), not one call per
+  # tile: #draw_tile_row collapses a same-coloured run into a single call so
+  # opening the viewer stays cheap under the terminal backends (see its own
+  # comment) -- five rows means five calls here, not thirty.
+  row_runs = contents.fill_calls.select { |(_x, y, _w, h, _c)| h == 1 && y >= header }
+  eq 5, row_runs.size, 'one fill_rect per row, not one per tile'
+  ok row_runs.all? { |(x, _y, w, _h, c)| x == 0 && w == 6 && c == RPG2k::Scene::MapViewer::PASSABLE_COLOR },
+     'each row is a single passable run: fake_chipset carries no passable_data_lower'
   player_mark = contents.fill_calls.find { |(x, y, *)| x == 3 - 1 && y == header + 4 - 1 }
   ok player_mark, 'a 3x3 marker is centred on the player tile (3, 4)'
   eq RPG2k::Scene::MapViewer::PLAYER_COLOR, player_mark[4]
@@ -18821,10 +18821,14 @@ check 'MapViewer colours a chipset-blocked tile differently from a passable one'
   contents = scene.instance_variable_get(:@contents)
   header = RPG2k::Scene::MapViewer::HEADER_H
 
-  blocked = contents.pixel_calls.find { |(x, y, *)| x == 0 && y == header }
-  passable = contents.pixel_calls.find { |(x, y, *)| x == 1 && y == header }
-  eq RPG2k::Scene::MapViewer::BLOCKED_COLOR, blocked[2], 'tile (0,0), chip index 1, reads blocked'
-  eq RPG2k::Scene::MapViewer::PASSABLE_COLOR, passable[2], 'tile (1,0), chip index 0, reads passable'
+  # Row 0 is two runs -- the lone blocked tile at x=0, then a passable run
+  # covering x=1..5 -- while every other row is one all-passable run.
+  blocked_run = contents.fill_calls.find { |(x, y, w, h, _c)| x == 0 && y == header && w == 1 && h == 1 }
+  passable_run = contents.fill_calls.find { |(x, y, w, h, _c)| x == 1 && y == header && w == 5 && h == 1 }
+  ok blocked_run, 'a one-tile-wide run at (0,0), chip index 1, was drawn'
+  ok passable_run, 'a five-tile-wide passable run at (1,0)..(5,0), chip index 0, was drawn'
+  eq RPG2k::Scene::MapViewer::BLOCKED_COLOR, blocked_run[4], 'the lone tile reads blocked'
+  eq RPG2k::Scene::MapViewer::PASSABLE_COLOR, passable_run[4], 'the rest of the row reads passable'
 end
 
 check 'MapViewer pans a map bigger than the viewport, clamped to its edges, and ' \
