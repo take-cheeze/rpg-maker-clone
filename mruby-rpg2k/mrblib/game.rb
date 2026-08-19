@@ -5349,6 +5349,19 @@ module Game
     # instead of the caster's own SP, never both.
     def battle_skill_command(sk, caster, target, free: false)
       cost = free ? 0 : skill_cost(sk, caster)
+      # A **switch** skill (type 3) has no HP/SP/state effect at all -- its
+      # only job, in battle exactly as on the field (`#cast_switch_skill`), is
+      # turning on its configured switch once cast. EasyRPG's `Game_
+      # BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`)
+      # special-cases this before any of the ordinary hit/damage/state logic:
+      # `if (skill.type == Type_switch) { SetAffectedSwitch(skill.switch_id);
+      # return SetIsSuccess(); }`. `switch_id` rides the command the same way
+      # `#command_item`'s own does for a switch item -- `Game::Battle#apply_
+      # skill_hit`'s recovery branch already reads `cmd[:switch_id]` onto its
+      # log entry, and `Scene::Battle#drive_battle_animate` already flips it
+      # the same moment it does for a switch item; only the battle-cast
+      # switch-skill command itself never carried one.
+      return { cost: cost, switch_id: sk.switch_id } if sk.type == SKILL_SWITCH
       base = skill_effect(sk, caster)
       # Attribute-defence shifting isn't scoped to attack skills -- a "raise
       # my own resistance" buff and a "lower the enemy's" debuff are both this
@@ -10199,7 +10212,7 @@ module Game
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
                       absorb: false, attr_shift: nil, attr_ids: nil,
                       stat_mod_keys: nil, stat_effect: 0, cured: nil, attack: nil,
-                      physical_rate: 0, item_id: nil)
+                      physical_rate: 0, item_id: nil, switch_id: nil)
       ally.command = { kind: :skill, target: target, name: name,
                        skill_id: skill_id, item_id: item_id, absorb: absorb, attack: attack,
                        cost: cost, hp: hp, mp: mp,
@@ -10215,7 +10228,13 @@ module Game
                        # Was silently dropped here entirely until this field
                        # existed: #shake_off_states always rolled against 0,
                        # so no skill's physical-rate cure ever fired.
-                       physical_rate: physical_rate || 0 }
+                       physical_rate: physical_rate || 0,
+                       # A **switch** skill's own switch, the same ride-along
+                       # `#command_item`'s identical field is for a switch item
+                       # -- `#apply_skill_hit`'s recovery branch already reads
+                       # `cmd[:switch_id]` onto the produced log entry, and
+                       # `Scene::Battle#drive_battle_animate` flips it there.
+                       switch_id: switch_id }
       ally.action = nil; ally.defending = false
     end
 
