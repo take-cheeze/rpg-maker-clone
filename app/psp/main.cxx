@@ -505,6 +505,13 @@ int main(void) {
                   mrb_intern_lit(M, "GAME_DIR"), mrb_str_new_cstr(M, kGameDir));
     mrb_const_set(M, mrb_obj_value(M->object_class),
                   mrb_intern_lit(M, "RTP_DIR"), mrb_str_new_cstr(M, ""));
+    // RPG2k#initialize's native_test_play? (mruby-rpg2k/mrblib/main.rb)
+    // references this constant directly (rescuing NameError if it's
+    // missing) -- every other target's entry point defines it
+    // (src/main.cxx), this build has no command line to carry a real
+    // Test Play flag on, so it is always false.
+    mrb_const_set(M, mrb_obj_value(M->object_class),
+                  mrb_intern_lit(M, "TEST_PLAY"), mrb_false_value());
 
     const char* game_start_result;
     if (game_info) {
