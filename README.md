@@ -524,6 +524,9 @@
   quit). `F9` opens the debug menu directly — most terminal emulators forward
   it as a real function-key escape sequence, the same way `F12`'s
   return-to-title already works here
+- `F8` (bug report, see "Map exploration" above) works here too, the same
+  function-key escape sequence as `F9`/`F12` — terminal key handling matches
+  the SDL desktop backend for the whole F5-F9/F12 set
 - `--sixel` works in terminals such as `xterm -ti vt340`, mlterm, foot, WezTerm
   and Windows Terminal; `--iterm` works in iTerm2, WezTerm and VS Code
 - Either backend draws its emit rate (frame size, MB/s, fps) on-screen just

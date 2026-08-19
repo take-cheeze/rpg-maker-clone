@@ -4413,10 +4413,13 @@ class RPG2k
       # interpreter whichever specific symbols (:n3, :period, ...) actually
       # fired; Game::Interpreter::KEY_INPUT_GROUPS maps them back onto the
       # :numbers/:operators accept flag. Real key backing for
-      # RGSS::Input::N0..PERIOD exists only on the SDL desktop backend today
-      # (src/sdl_input.cxx) — on every other native backend (PSP, Wio
-      # Terminal, terminal/sixel) these ids are simply never pressed, the same
-      # way this build already leaves F5-F12 unbound there.
+      # RGSS::Input::N0..PERIOD: the SDL desktop backend binds every digit and
+      # operator (src/sdl_input.cxx); the terminal/sixel backend types them
+      # too, a real keyboard being able to produce them (mruby-rgss/src/
+      # terminal.cxx); the PSP backend binds only the first five digits
+      # (N0-N4) to its spare buttons; the Wio Terminal has no free pin left,
+      # so these ids stay unbound there — the same backend split F5-F9/F12
+      # follow (bound on SDL and terminal/sixel, unbound on PSP/Wio).
       NUMBER_KEY_BUTTONS = {
         n0: Input::N0, n1: Input::N1, n2: Input::N2, n3: Input::N3, n4: Input::N4,
         n5: Input::N5, n6: Input::N6, n7: Input::N7, n8: Input::N8, n9: Input::N9
