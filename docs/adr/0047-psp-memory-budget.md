@@ -999,15 +999,57 @@ the interpreter-linking slice, in this order:
       untried mitigation bug 11's residual note above proposed for the
       first-throw problem, applied here to a distinct but neighboring
       pspsdk bootstrap race instead.
-    - **Verification status:** rebuilds cleanly, and a headless PPSSPP
-      re-run shows no regression (982 clean `RPG2K_PSP_BRINGUP` heartbeats,
-      `RPG2K_PSP_GAME_START RPG2k ok`, the same single pre-existing harmless
-      poison-pointer `ACCESS_ERROR` this build always logs) — but headless
-      never reproduced bug 12 in the first place, so this is not evidence
-      the race is actually fixed, only that the workaround does not break
-      anything. Confirming the fix requires the interactive-PPSSPP and
-      real-hardware repros that originally caught it; not yet done as of
-      this writing.
+    - **Verification status (app-side workaround alone):** rebuilds cleanly,
+      and a headless PPSSPP re-run shows no regression (982 clean
+      `RPG2K_PSP_BRINGUP` heartbeats, `RPG2K_PSP_GAME_START RPG2k ok`, the
+      same single pre-existing harmless poison-pointer `ACCESS_ERROR` this
+      build always logs) — but headless never reproduced bug 12 in the
+      first place, so this was not evidence the race was actually fixed,
+      only that the workaround did not break anything.
+    - **Retested against real interactive PPSSPP with the workaround alone
+      (still broken, but informative):** the originally-reported hang did
+      not recur at the same spot, but a *second*, later `sceKernelCreateThread`
+      — not called from this project's own code (LVGL's pthread OSAL is
+      inactive, `LV_USE_OS` is `LV_OS_NONE` here, so the app itself never
+      calls `pthread_create` a second time) — failed with
+      `ILLEGAL_PRIORITY`, then the same "Bad workarea pointer for LwMutex"
+      symptom recurred. `pthread_self()`'s own lazy path for a foreign
+      (non-pthread-created) thread was checked directly and cleanly zeroes
+      `sched_priority`, ruling out a missing-initialization bug there — the
+      garbage priority is consistent with the same class of heap/global
+      corruption as bug 12's original symptom, just reached via a different
+      path. The app-side workaround closes the specific race window it
+      targets (the very first `pthread_init()` call, before
+      `update_thread` exists) but cannot help a *second*, independently
+      racing caller it has no visibility into.
+    - **Real fix, applied at the library level:** `pthread_init()`
+      (pthread-embedded's `pthread_init.c`, not PSP-specific code — shared
+      by every port) guards its one-time setup with exactly the unlocked
+      check-then-act described above. Patched directly
+      (`patches/pthread-embedded-processInitialized-race.patch`): the claim
+      on the one-time init is now atomic
+      (`__sync_bool_compare_and_swap` on a new, file-local
+      `pte_processInitState`), and every other caller waits for the winner
+      to actually finish instead of racing ahead. Confirmed against the
+      pinned `platform_agnostic` branch (commit
+      `97fe4ce006b420894f2bcaeb530d1f1f53111fc2`): the patch applies
+      cleanly to a fresh clone, `pthread-embedded`'s own isolated build
+      stage (`platform/psp`'s Makefile — no binutils/gcc/newlib rebuild
+      needed) compiles and installs cleanly, and a full clean rebuild of
+      this project's own EBOOT against the patched `libpthread.a` still
+      boots cleanly headlessly (1706 heartbeats, `GAME_START RPG2k ok`,
+      same single pre-existing benign `ACCESS_ERROR`, no new symptoms).
+    - **Verification status (both fixes together):** builds clean, no
+      headless regression — but, as with the app-side workaround alone,
+      headless has never reproduced this bug, so this is not yet
+      confirmation the actual race is closed. That still requires an
+      interactive-PPSSPP or real-hardware retest with a toolchain that has
+      this patch installed; not yet done as of this writing. The app-side
+      `prime_pthread_init()` workaround is left in place alongside this —
+      it is still a reasonable defensive measure (forces the bootstrap to
+      happen at a known, controlled point instead of implicitly on
+      whichever thread happens to touch pthread/libc first) even with the
+      library-level race itself closed.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

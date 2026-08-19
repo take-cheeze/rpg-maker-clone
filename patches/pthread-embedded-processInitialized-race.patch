@@ -1,0 +1,131 @@
+pthread-embedded bug: pthread_init() (platform/psp/../../pthread_init.c,
+shared by every pthread-embedded port, not PSP-specific code) guards its
+one-time setup with a plain "if (pte_processInitialized) return; ...;
+pte_processInitialized = PTE_TRUE; pte_osInit(); ..." -- a check-then-act
+with no lock or atomic protecting either the flag or the pte_osInit()/key/
+lock setup that follows it. On a target where more than one native OS
+thread can reach the first-ever pthread/libc call before that flag is
+set, two threads can both see it false, both proceed, and both run
+pte_osInit() (which mallocs and assigns pspsdk's global TLS key-usage
+table, libpthreadglue/tls-helper.c's pteTlsGlobalInit/__pteTlsAlloc)
+concurrently -- corrupting that global state.
+
+Found while investigating a real boot-time hang (interactive PPSSPP) /
+crash (real hardware, ARK CFW) in this project's own PSP EBOOT: this
+port's main() calls setup_callbacks() -- which spawns a second PSP
+kernel thread via a raw sceKernelCreateThread -- as the very first thing
+it does, so from the start of main() there are two live threads free to
+race whichever of them first touches pthread/libc machinery. See
+docs/adr/0047-psp-memory-budget.md's bug 12 for the full investigation
+(guest PCs captured via a diagnostic PPSSPP build resolved cleanly
+against this project's own EBOOT to malloc/free internals,
+pthread_mutex_init/lock, libgcc's .eh_frame registration, and a tight
+loop entirely inside __pteTlsAlloc reading nothing but garbage -- all
+consistent with one corrupted pointer, not four independent bugs).
+
+app/psp/main.cxx's own prime_pthread_init() works around this from the
+application side (forces pthread_init() to run to completion,
+single-threaded, before any other thread exists) but does not fix the
+library's own race, and does not help a second, later thread creation
+that this project's own code never explicitly calls (most likely
+triggered from inside pspsdk/newlib's own lazily-initialized state, not
+yet root-caused as of this patch).
+
+Fix: makes the *claim* on the one-time init atomic
+(__sync_bool_compare_and_swap on a separate, file-local
+pte_processInitState) and makes every other caller wait for the winner
+to actually finish instead of skipping the check and racing ahead. Since
+this file's own build stage (psptoolchain-allegrex's
+scripts/004-pthread-embedded.sh) runs before pspsdk itself, pspthreadman.h
+is not on the include path here; sceKernelDelayThread is declared
+directly instead, matching pspsdk's own psp/sdk/include/pspthreadman.h.
+
+Not yet upstreamed to https://github.com/pspdev/pthread-embedded --
+applies against the "platform_agnostic" branch (confirmed at commit
+97fe4ce006b420894f2bcaeb530d1f1f53111fc2, 2026-05-12; the branch this
+project's own psptoolchain-allegrex config
+(PSPTOOLCHAIN_ALLEGREX_PTHREAD_EMBEDDED_DEFAULT_REPO_REF) pins). Applied
+manually, not wired into any automated build in this repo -- unlike
+nix/patches/*.patch (which flake.nix applies to PPSSPP automatically),
+this project does not manage the PSP cross-toolchain itself, only
+consumes a pre-built one, so there is nothing here for this patch to
+attach to. Rebuilding and reinstalling it requires only pthread-embedded's
+own isolated build stage (its platform/psp/Makefile), not a full
+psptoolchain rebuild:
+
+    git clone -b platform_agnostic https://github.com/pspdev/pthread-embedded.git
+    cd pthread-embedded
+    patch -p1 < /path/to/this/patch
+    cd platform/psp
+    make clean && make all && make install   # installs into $PSPDEV
+
+Safe to drop once either upstream fixes the same race, or this patch
+fails to apply against a future pthread-embedded revision (check
+pthread_init.c's own check-then-act for whether the fix already landed
+before just bumping context lines).
+
+--- a/pthread_init.c
++++ b/pthread_init.c
+@@ -46,9 +46,35 @@
+
+ #include "implement.h"
+
++/* pspthreadman.h isn't on the include path at this build stage --
++ * pthread-embedded builds before pspsdk in psptoolchain-allegrex's own
++ * bootstrap order, so this project can't depend on its headers. Declared
++ * directly instead; matches pspsdk's own psp/sdk/include/pspthreadman.h. */
++extern int sceKernelDelayThread(unsigned int delay);
++
++/*
++ * pte_processInitialized used to be both the "already done" check and the
++ * "claim the right to do it" flag, read and written with no synchronisation
++ * at all -- on a target where more than one native OS thread can reach
++ * pthread_init() before the first caller finishes (e.g. because it spawns
++ * its own thread as one of its very first actions, before anything else
++ * has necessarily gone through this path even once), two threads can both
++ * see it false, both proceed, and both run pte_osInit() and the key/lock
++ * setup below concurrently -- corrupting whatever global state that setup
++ * touches (pspsdk's TLS key-usage table, in the reported case).
++ *
++ * pte_processInitState makes the *claim* atomic (only one caller's
++ * __sync_bool_compare_and_swap succeeds) and makes every other caller wait
++ * for the winner to actually finish, rather than just skip the check.
++ * pte_processInitialized itself keeps its previous meaning and is still
++ * set exactly once, after initialization is complete, so pte_detach.c and
++ * pthread_terminate.c's own (already fine, since they only ever read after
++ * the fact) checks are unaffected.
++ */
++static volatile int pte_processInitState = 0; /* 0=untouched, 1=claimed, 2=done */
++
+ int pthread_init(void)
+ {
+-
+   if (pte_processInitialized)
+     {
+       /*
+@@ -61,7 +87,16 @@ int pthread_init(void)
+       return PTE_TRUE;
+     }
+
+-  pte_processInitialized = PTE_TRUE;
++  if (!__sync_bool_compare_and_swap(&pte_processInitState, 0, 1))
++    {
++      /* Another thread already claimed initialization; wait for it to
++       * actually finish instead of racing it. */
++      while (pte_processInitState != 2)
++        {
++          sceKernelDelayThread(1000);
++        }
++      return (pte_processInitialized);
++    }
+
+   // Must happen before creating keys.
+   pte_osInit();
+@@ -85,6 +120,8 @@ int pthread_init(void)
+   pte_osMutexCreate (&pte_rwlock_test_init_lock);
+   pte_osMutexCreate (&pte_spinlock_test_init_lock);
+
++  pte_processInitialized = PTE_TRUE;
++  pte_processInitState = 2;
+
+   return (pte_processInitialized);
