@@ -5394,25 +5394,35 @@ class RPG2k
       # (which real RPG_RT's own keyboard grid has no equivalent of): it
       # erases one character with its own Cancel SE, or Buzzer with nothing
       # to erase -- see #name_input_cancel.
+      # Every direction auto-repeats while held, not just a fresh press --
+      # confirmed against RPG_RT's own live source: `Window_Keyboard::Update`
+      # (src/window_keyboard.cpp) gates all four grid directions on
+      # `Input::IsRepeated` alone, which (`Input::UpdateSystem`, src/
+      # input.cpp: `repeated[i] = press_time[i] == 1 || (press_time[i] >=
+      # start_repeat_time && ...)`) fires both on the very first pressed
+      # frame and on the later repeat cadence -- exactly the union this
+      # codebase's own split `Input.trigger?` (fresh press only) /
+      # `Input.repeat?` (delayed auto-repeat, never frame 1) idiom already
+      # covers everywhere else.
       def handle_name_input
         ui = @name_ui
         row = ui[:sel] / NAME_COLS
         col = ui[:sel] % NAME_COLS
         rows = (NAME_CELLS.length + NAME_COLS - 1) / NAME_COLS
-        if Input.trigger?(Input::RIGHT)
+        if Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           ui[:sel] = row * NAME_COLS + (col + 1) % name_row_len(row)
           draw_name_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::LEFT)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
           ui[:sel] = row * NAME_COLS + (col - 1) % name_row_len(row)
           draw_name_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           new_row = (row + 1) % rows
           ui[:sel] = new_row * NAME_COLS + col % name_row_len(new_row)
           draw_name_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           new_row = (row - 1) % rows
           ui[:sel] = new_row * NAME_COLS + col % name_row_len(new_row)
           draw_name_input
@@ -5506,25 +5516,28 @@ class RPG2k
         page == :katakana ? NAME_KATAKANA_ROWS : NAME_HIRAGANA_ROWS
       end
 
+      # Auto-repeats while held, exactly like #handle_name_input above --
+      # same `Window_Keyboard::Update` source, one grid widget in real
+      # RPG_RT for both the ASCII and kana pages.
       def handle_kana_name_input
         ui = @name_ui
         rows = name_kana_rows(ui[:page])
         row = ui[:sel] / NAME_KANA_COLS
         col = ui[:sel] % NAME_KANA_COLS
-        if Input.trigger?(Input::RIGHT)
+        if Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           ui[:sel] = row * NAME_KANA_COLS + (col + 1) % rows[row].length
           draw_kana_name_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::LEFT)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
           ui[:sel] = row * NAME_KANA_COLS + (col - 1) % rows[row].length
           draw_kana_name_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::DOWN)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           new_row = (row + 1) % rows.length
           ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
           draw_kana_name_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::UP)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           new_row = (row - 1) % rows.length
           ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
           draw_kana_name_input
