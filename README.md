@@ -46,7 +46,12 @@
   **Shift** to fast-forward the current message (same effect a C/B press
   already has, held down instead of tapped); press **F9** to open a debug
   menu listing every switch and variable, ten at a time, with a signed number
-  editor for variables
+  editor for variables. A third page (Left/Right past Switch/Variable), Map —
+  this engine's own addition, not part of genuine RPG_RT's F9 menu — opens a
+  whole-map viewer: every tile of the current map at one pixel per tile
+  (green passable, dark red blocked), with a marker for the player and every
+  active map event, panned with the arrow keys and recentred on the player
+  with C
 - `--rpg2k_preview_map=<id>` starts New Game on a chosen map, centred on its
   middle tile, instead of the database's configured start position — a quick
   way to inspect one map's rendering without a save file positioned there.

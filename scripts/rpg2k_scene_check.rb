@@ -688,6 +688,16 @@ def fake_map(id, events, parallax: nil)
   Game::Map.new(id, OpenStruct.new(fields))
 end
 
+# An all-walkable map of arbitrary size (unlike fake_map's fixed 6x5), for the
+# MapViewer pan/clamp checks -- those need a map bigger than the viewer's own
+# viewport to have anything to pan across.
+def big_map(id, w, h, events = {})
+  Game::Map.new(id, OpenStruct.new(width: w, height: h, chipset_id: 1,
+                                   lower_layer: Array.new(w * h, 0),
+                                   upper_layer: Array.new(w * h, 0),
+                                   events: events))
+end
+
 # A minimal parent (stands in for the RPG2k app) and party leader. load_map is
 # what perform_teleport (and Recall to Location) calls to swap maps; it hands
 # back a fresh empty map for the requested id.
@@ -18846,6 +18856,128 @@ check "the debug menu variable editor widens to 7 digits on an RPG2003 database"
   scene.update
   eq 1_000_005, st.variables[1],
      'the millions digit only the RPG2003-widened editor exposes landed in the variable'
+end
+
+# -- Scene::MapViewer (the debug menu's Map page -- see debug_menu.rb) -------
+
+check 'the debug menu Map page opens Scene::MapViewer on C' do
+  scene = menu_scene(RPG2k::Scene::DebugMenu, menu_state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # Switch -> Variable
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # Variable -> Map
+  eq :map, scene.instance_variable_get(:@mode), 'two Rights cycle to the Map page'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  pushed = scene.parent.pushed
+  eq 1, pushed.size, 'C on the Map page pushed exactly one scene'
+  ok pushed.first.is_a?(RPG2k::Scene::MapViewer), 'the pushed scene is the map viewer'
+end
+
+check 'MapViewer marks the player and every map event, and reads every tile as ' \
+     'passable when the chipset carries no passability table' do
+  ev = event(2, 2, page)
+  st = menu_state
+  st.map = fake_map(1, { 1 => ev })
+  st.x = 3; st.y = 4
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  contents = scene.instance_variable_get(:@contents)
+
+  ok !scene.instance_variable_get(:@pannable), 'the 6x5 fixture map fits the viewport whole'
+  header = RPG2k::Scene::MapViewer::HEADER_H
+  # One fill_rect per row (a single passable run, tile 0..5), not one call per
+  # tile: #draw_tile_row collapses a same-coloured run into a single call so
+  # opening the viewer stays cheap under the terminal backends (see its own
+  # comment) -- five rows means five calls here, not thirty.
+  row_runs = contents.fill_calls.select { |(_x, y, _w, h, _c)| h == 1 && y >= header }
+  eq 5, row_runs.size, 'one fill_rect per row, not one per tile'
+  ok row_runs.all? { |(x, _y, w, _h, c)| x == 0 && w == 6 && c == RPG2k::Scene::MapViewer::PASSABLE_COLOR },
+     'each row is a single passable run: fake_chipset carries no passable_data_lower'
+  player_mark = contents.fill_calls.find { |(x, y, *)| x == 3 - 1 && y == header + 4 - 1 }
+  ok player_mark, 'a 3x3 marker is centred on the player tile (3, 4)'
+  eq RPG2k::Scene::MapViewer::PLAYER_COLOR, player_mark[4]
+
+  event_mark = contents.fill_calls.find { |(x, y, *)| x == 2 - 1 && y == header + 2 - 1 }
+  ok event_mark, 'a 3x3 marker is centred on event 1 at its authored spawn (2, 2)'
+  eq RPG2k::Scene::MapViewer::EVENT_COLOR, event_mark[4]
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  eq 1, scene.parent.pop_called, 'B closes the viewer'
+end
+
+check 'MapViewer marks a map event at its live wandered position, not its spawn point' do
+  ev = event(2, 2, page)
+  st = menu_state
+  st.map = fake_map(1, { 1 => ev })
+  st.map_event_positions[1] = [5, 0, 2] # wandered to (5, 0) since spawning at (2, 2)
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  contents = scene.instance_variable_get(:@contents)
+  header = RPG2k::Scene::MapViewer::HEADER_H
+
+  ok !contents.fill_calls.any? { |(x, y, *)| x == 2 - 1 && y == header + 2 - 1 },
+     'no marker is left behind at the authored spawn point'
+  moved_mark = contents.fill_calls.find { |(x, y, *)| x == 5 - 1 && y == header + 0 - 1 }
+  ok moved_mark, 'the marker follows the recorded live position instead'
+end
+
+check 'MapViewer colours a chipset-blocked tile differently from a passable one' do
+  db = fake_db
+  # Chip index 1 (lower tile id 1000, see ChipSet.lower_index) is blocked from
+  # every direction (flags 0); chip index 0 (every other tile in this fixture)
+  # is passable from every direction.
+  db.chipset[1] = OpenStruct.new(name: 'cs', chipset_name: 'cs',
+                                 passable_data_lower: [Game::ChipSet::ALL_DIRS, 0],
+                                 passable_data_upper: nil, terrain_data: [])
+  w = 6; h = 5
+  layer = Array.new(w * h, 0)
+  layer[0] = 1000 # tile (0, 0)
+  st = menu_state
+  st.map = Game::Map.new(1, OpenStruct.new(width: w, height: h, chipset_id: 1,
+                                           lower_layer: layer,
+                                           upper_layer: Array.new(w * h, 0),
+                                           events: {}))
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(db), st)
+  contents = scene.instance_variable_get(:@contents)
+  header = RPG2k::Scene::MapViewer::HEADER_H
+
+  # Row 0 is two runs -- the lone blocked tile at x=0, then a passable run
+  # covering x=1..5 -- while every other row is one all-passable run.
+  blocked_run = contents.fill_calls.find { |(x, y, w, h, _c)| x == 0 && y == header && w == 1 && h == 1 }
+  passable_run = contents.fill_calls.find { |(x, y, w, h, _c)| x == 1 && y == header && w == 5 && h == 1 }
+  ok blocked_run, 'a one-tile-wide run at (0,0), chip index 1, was drawn'
+  ok passable_run, 'a five-tile-wide passable run at (1,0)..(5,0), chip index 0, was drawn'
+  eq RPG2k::Scene::MapViewer::BLOCKED_COLOR, blocked_run[4], 'the lone tile reads blocked'
+  eq RPG2k::Scene::MapViewer::PASSABLE_COLOR, passable_run[4], 'the rest of the row reads passable'
+end
+
+check 'MapViewer pans a map bigger than the viewport, clamped to its edges, and ' \
+     'C recentres on the player' do
+  st = menu_state
+  st.map = big_map(1, 400, 300)
+  st.x = 200; st.y = 150
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  view_w = scene.instance_variable_get(:@view_w)
+  view_h = scene.instance_variable_get(:@view_h)
+  ok scene.instance_variable_get(:@pannable), 'a 400x300 map exceeds the viewport'
+  eq 200 - view_w / 2, scene.instance_variable_get(:@ox), 'opens centred on the player, x'
+  eq 150 - view_h / 2, scene.instance_variable_get(:@oy), 'opens centred on the player, y'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq 200 - view_w / 2 + RPG2k::Scene::MapViewer::PAN_STEP, scene.instance_variable_get(:@ox),
+     'RIGHT pans the viewport right by one step'
+
+  400.times do
+    RGSS::Input.triggered = [RGSS::Input::RIGHT]
+    scene.update
+  end
+  eq 400 - view_w, scene.instance_variable_get(:@ox), 'panning right clamps at the map edge'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 200 - view_w / 2, scene.instance_variable_get(:@ox), 'C recentres back on the player'
 end
 
 check "a troop's terrain_set excludes it from a tile it does not cover" do
