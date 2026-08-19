@@ -2778,6 +2778,41 @@ The work below is roughly ordered by the critical path to a walkable game
   setup — the same dangling-reference simulation the stale-terrain
   diagnostic check already uses — never starts a battle and never
   accumulates), confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-19): the first-strike bullet above undersold its
+  own edition gap — RPG2000's 1-in-32 first-strike roll fired on a wandering
+  encounter for an RPG2003 database too, rather than never rolling at all.**
+  Confirmed directly against RPG_RT's live source: `Game_Map::
+  PrepareEncounter` (`src/game_map.cpp`) is a hard `if (Feature::
+  HasRpg2kBattleSystem()) { if (Rand::ChanceOf(1, 32)) { args.first_strike =
+  true; } } else { /* 2003's terrain-condition rolls */ }` — an `if`/`else`,
+  not two independently-applicable checks — and `Feature::
+  HasRpg2kBattleSystem()` (`src/feature.cpp`) reduces to `Player::IsRPG2k()`
+  for any genuine, unmodified database (the alternate path is an
+  EasyRPG-only dynamic-config extension field absent from real data). So a
+  real RPG2003 game never rolls this chance on a wandering encounter at all
+  — it rolls (rarely; ADR 0034's audit found zero terrain rows in either
+  test bed with `special_flags` set) from the terrain-condition system
+  instead, and the two never both apply. `Scene::Map#check_random_encounter`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) rolled `@rng.random(32).zero?`
+  unconditionally, with nothing downstream (`Game::Battle#initialize`'s
+  `@first_strike`, `#first_strike?`) correcting a wrongly-`true` roll for an
+  RPG2003 fight — this is distinct from, and narrower than, the
+  already-deferred terrain-condition system itself (row damage/hit shifts,
+  Enemy Encounter's own params, the `special_flags` rolls), which stays
+  correctly out of scope; the bug here is that the *2000-only* mechanic
+  leaked into 2003 games instead of just not firing. Fixed by gating the
+  roll on `!@state.party.rpg2003?` (mirroring this method's own existing
+  `@state.party.flying?(@state)` idiom two lines above) — an RPG2003 game
+  now skips `@rng.random(32)` outright rather than merely discarding its
+  result, matching the reference's own `if`/`else` and keeping this
+  project's seeded RNG stream in step with a genuine RPG2003 run, which
+  never draws a number here either. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (an RPG2003-flagged scene's guaranteed
+  wandering encounter never sets `first_strike`, and its `@rng` — sharing
+  the identical hardcoded seed and identical code path up to this point with
+  a parallel RPG2000 scene — consumes exactly one fewer random draw, proving
+  the roll is skipped rather than rolled-and-discarded), confirmed to fail
+  against the pre-fix code before the fix.
 
 #### Menus, save, battle
 - ✅ Menu scene — opens over the map (cancel button); shows party status and a
@@ -3351,6 +3386,56 @@ The work below is roughly ordered by the critical path to a walkable game
    real source) and a new check for a pure `affect_attack`-only "Battle
    Horn" accessory, all three confirmed to fail against the pre-fix code.
    See `changelog.d/use-skill-item-usability-scope-only.fixed.md`.
+- 🚧 **Known, researched gap, deliberately deferred to its own investigation
+  (2026-08-19): the field/battle Item menu excludes every held item that
+  fails `#field_usable?`/`#battle_usable?` from the list entirely, instead
+  of listing it disabled the way RPG_RT does.** Confirmed directly against
+  RPG_RT's live source: `Window_Item::Refresh` (`src/window_item.cpp`) fills
+  its list straight from `Game_Party::GetItems` (`src/game_party.cpp`,
+  pushes every entry of `data.item_ids` unconditionally) filtered only by
+  `CheckInclude` (`item_id > 0`, i.e. every genuinely-held item id
+  qualifies, no type/usability test at all) — usability
+  (`CheckEnable`/`Game_Party::IsItemUsable`) is a separate concern consulted
+  only for (a) greying the drawn name and (b) gating Decision in
+  `Scene_Item::vUpdate`/`Scene_Battle`'s own item-select handler (buzz and
+  stay on the list when disabled, exactly the `Window_Skill::CheckEnable`
+  pattern the field/battle Skill menu fixes just above already ported).
+  `src/scene_battle.h` confirms the battle Item window is the *same*
+  `Window_Item` class the field menu uses, so this applies identically to
+  both. `Game::Party#field_usable?`/`#battle_usable?`
+  (`mruby-rpg2k/mrblib/game.rb`) conflate RPG_RT's two separate gates into
+  one — an ordinary weapon/shield/armor/helmet/accessory sitting unequipped
+  in the bag, a battle-only medicine viewed from the field menu, or a
+  field-only switch item viewed from the battle menu is invisible in this
+  codebase's menu instead of appearing as a listed-but-disabled entry (this
+  is a *deliberate, tested* design choice here, not an oversight —
+  `scripts/rpg2k_logic_check.rb` explicitly asserts e.g. "no use_skill flag
+  -- ordinary equipment, not menu-usable" for `#field_usable?`/
+  `#battle_usable?` returning false on a plain weapon, encoding "not usable"
+  and "not listed" as the same thing, which the fetched source shows they
+  are not). **Deliberately not fixed in this pass**: a correct port needs
+  `#field_items`/`#battle_items` to list *every* held item id (mirroring
+  `CheckInclude`), keeping `#field_usable?`/`#battle_usable?` only as the
+  separate enablement check `Scene::ItemMenu`'s own Decision handler (and
+  the battle item-select flow) would gate on — the same shape as the
+  Skill-menu fix, but at more call sites, and it touches roughly a dozen
+  existing `scripts/rpg2k_logic_check.rb` checks that currently assert
+  *exact* `field_items`/`battle_items` list contents under the old
+  (usable-only) semantics, each of which would need its fixture's full held-
+  item set re-examined and its expected list rewritten to include the
+  now-visible-but-disabled entries — a multi-file, higher-risk change than
+  this investigation lineage's usual single-sitting scope, deferred rather
+  than rushed. No grey-out/disabled-color rendering exists anywhere in this
+  codebase's menus today (neither the Item nor the just-fixed Skill menu
+  models font color at all), so a correct fix likely also needs to either
+  accept that gap (list it plain, buzz on Decision, no visual cue — the same
+  boundary the Skill-menu fix already accepted) or scope in a new rendering
+  feature; worth deciding explicitly before implementing rather than
+  guessing. Files: `Game::Party#field_usable?`/`#field_items`
+  (`mruby-rpg2k/mrblib/game.rb`), `#battle_usable?`/`#battle_items` (same
+  file), `Scene::ItemMenu`'s choose-item dispatch
+  (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
+  selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
 - ✅ Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. (One research question remains: a

@@ -7760,11 +7760,21 @@ class RPG2k
         troops = candidate_troops
         return if troops.empty?
         troop_id = troops[@rng.random(troops.size)]
-        # RPG2000's own first-strike roll for a wandering encounter (EasyRPG's
-        # Rand::ChanceOf(1, 32) under Feature::HasRpg2kBattleSystem; 2003's
-        # back-attack / pincer terrain rolls are a different battle system's
-        # feature and do not apply here).
-        @interpreter.start_random_battle(troop_id, first_strike: @rng.random(32).zero?)
+        # RPG2000's own first-strike roll for a wandering encounter -- EasyRPG's
+        # `Game_Map::PrepareEncounter` (`src/game_map.cpp`) is a hard
+        # `if (Feature::HasRpg2kBattleSystem()) { Rand::ChanceOf(1, 32) ...}
+        # else { /* 2003's terrain-condition rolls */ }`, and
+        # `Feature::HasRpg2kBattleSystem()` (`src/feature.cpp`) reduces to
+        # `Player::IsRPG2k()` for any genuine, unmodified database -- so a real
+        # RPG2003 game never rolls this 1/32 chance at all; it draws from the
+        # (largely unimplemented, see the terrain-condition TODO entry)
+        # back-attack/pincer terrain system instead, never both. The roll is
+        # skipped outright rather than merely discarded on an RPG2003 database,
+        # matching the reference's own `if`/`else` exactly and keeping this
+        # engine's seeded RNG stream in step with a genuine RPG2003 run, which
+        # never consumes a random number here either.
+        first_strike = !@state.party.rpg2003? && @rng.random(32).zero?
+        @interpreter.start_random_battle(troop_id, first_strike: first_strike)
       end
 
       def roll_encounter_chance(p)
