@@ -10933,7 +10933,7 @@ module Game
         cap = damage_cap
         dmg = cap if dmg > cap
         t.hp -= dmg
-        zero_gauge_on_death(t)
+        apply_knockout_reset(t)
         # A survivor's physical-release states shake off here too --
         # `SelfDestruct::vExecute` calls the identical `BattlePhysicalStateHeal(100,
         # ...)` a basic attack does (#deal_attack's own #shake_off_states call),
@@ -11548,7 +11548,7 @@ module Game
       cap = damage_cap
       dmg = cap if dmg > cap
       target.hp -= dmg
-      zero_gauge_on_death(target)
+      apply_knockout_reset(target)
       if target.dead?
         woke = []
         inflicted = []
@@ -12028,7 +12028,7 @@ module Game
             absorbed = hp_dmg
           end
           target.hp -= hp_dmg
-          zero_gauge_on_death(target)
+          apply_knockout_reset(target)
         end
         b.hp = [b.hp + absorbed, b.max_hp].min if absorbed > 0
         # The same shared, un-gated `dmg` the HP branch above just used, applied
@@ -12271,35 +12271,61 @@ module Game
     # RPG_RT's crowding-out rule (`Game::States::PRUNE_GAP`): the state that
     # just landed may itself immediately push out one already held, or be
     # pushed out by one already held that outranks it.
-    # The Knockout state landing zeroes the active-time gauge too, not just
-    # HP -- verified against RPG_RT's actual behavior via EasyRPG's own
-    # C++ source, fetched live: `Game_Battler::AddState`'s Knockout branch
-    # (`src/game_battler.cpp`) is `if (state_id == kDeathID) { SetAtbGauge(0);
-    # SetHp(0); ... }`, fired the instant the state lands, from *every*
-    # path that can inflict it -- an ordinary lethal hit (`ChangeHp` calls
-    # `AddState(kDeathID, true)` itself once `new_hp &lt;= 0`), a skill/weapon's
-    # own state-effect list, Change Monster/Actor Condition, all alike.
+    # The Knockout state landing resets more than HP -- verified against
+    # RPG_RT's actual behavior via EasyRPG's own C++ source, fetched live:
+    # `Game_Battler::AddState`'s Knockout branch (`src/game_battler.cpp`) is
+    #   if (state_id == kDeathID) {
+    #     SetAtbGauge(0); SetHp(0);
+    #     SetAtkModifier(0); SetDefModifier(0); SetSpiModifier(0); SetAgiModifier(0);
+    #     SetIsDefending(false); SetCharged(false);
+    #     attribute_shift.clear();
+    #   }
+    # fired the instant the state lands, from *every* path that can inflict
+    # it -- an ordinary lethal hit (`ChangeHp` calls `AddState(kDeathID,
+    # true)` itself once `new_hp <= 0`), a skill/weapon's own state-effect
+    # list, Change Monster/Actor Condition, all alike. This method ports
+    # the four fields with no other reset path once a fight is already
+    # under way: the active-time gauge (`#gauge`), the persistent per-battle
+    # ATK/DEF/SPI/AGI modifiers a buff/debuff skill accumulates onto
+    # (`#atk_mod`/`#def_mod`/`#spi_mod`/`#agi_mod`, see #apply_stat_mods --
+    # `SetAtkModifier(0)` and siblings), and any attribute-defence rank
+    # shift a skill has applied (`#attr_ranks`, see #apply_attr_shift --
+    # `attribute_shift.clear()`, matched here by resetting to an empty
+    # Hash, which every reader already treats identically to "no shift"
+    # via its own `ranks[aid] || 2`/`base[aid] || 2` fallback). `#defending`/
+    # `#charged` (`SetIsDefending`/`SetCharged`) are deliberately not
+    # ported: this codebase already resets both to false at the start of
+    # every command a battler is given, dead or not, so there is no gap
+    # for a Knockout-time reset to close there.
+    #
     # Distinct from `Actor#atb_gauge`'s own cross-*battle* persistence fix
     # (`#apply_to_party` writing back 0 for an ally who ended the *fight*
-    # dead): this is the same zeroing but at the moment of death itself,
-    # mid-fight -- without it, an ally charged to near-full gauge who dies
-    # and is then revived by an ordinary Full Heal/revival skill within the
-    # same fight would resume acting from that stale pre-death charge
-    # instead of empty, like anyone else newly readying up. Called from
-    # every place a `Combatant`'s HP can newly reach 0 (this method, and
-    # the three raw `hp -=` sites in #deal_attack_with_current_weapon,
-    # #apply_skill_hit and #enemy_autodestruct) -- calling it again on an
-    # already-dead target is a harmless no-op, matching a corpse's gauge
-    # always reading 0 whether checked once or many times.
-    def zero_gauge_on_death(target)
-      target.gauge = 0 if target.respond_to?(:gauge) && target.dead?
+    # dead): this is the same family of resets but at the moment of death
+    # itself, mid-fight -- without it, an ally buffed (or debuffed) by an
+    # ordinary ATK/DEF/SPI/AGI-affecting skill, or charged to near-full
+    # gauge, who dies and is then revived by an ordinary Full Heal/revival
+    # skill within the same fight would fight on with that stale pre-death
+    # modifier/charge still active instead of the clean slate real RPG_RT
+    # gives a revived battler. Called from every place a `Combatant`'s HP
+    # can newly reach 0 (this method, and the three raw `hp -=` sites in
+    # #deal_attack_with_current_weapon, #apply_skill_hit and
+    # #enemy_autodestruct) -- calling it again on an already-dead target is
+    # a harmless no-op, matching a corpse's own stats always reading the
+    # same reset values whether checked once or many times.
+    def apply_knockout_reset(target)
+      return unless target.dead?
+      target.gauge = 0 if target.respond_to?(:gauge)
+      %i[atk_mod def_mod spi_mod agi_mod].each do |field|
+        target.send("#{field}=", 0) if target.respond_to?(field)
+      end
+      target.attr_ranks = {} if target.respond_to?(:attr_ranks=)
     end
 
     def inflict_state(target, sid)
       return if target.state?(sid)
       target.states = Game::States.prune((target.states || []) + [sid], @states)
       target.hp = 0 if sid == Game::States::DEATH_ID
-      zero_gauge_on_death(target)
+      apply_knockout_reset(target)
     end
 
     # Cure a state from `target`, reviving it to 1 HP when curing state 1 is
