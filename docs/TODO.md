@@ -4158,6 +4158,37 @@ The work below is roughly ordered by the critical path to a walkable game
   cell geometry the same way the title-screen check above does),
   confirmed to fail against the pre-fix code (the occupied-slot assertion
   failed first, since neither slot ever blended anything) before the fix.
+  ✅ **Follow-up (2026-08-19): the level/HP line's own layout was still
+  wrong even after the swatch-blend fix above — it drew as one
+  interpolated string with a literal gap, so a leader's level going from
+  one digit to two shifted the "HP" label sideways, something real
+  RPG_RT's fixed-column layout never does.** Confirmed directly against
+  RPG_RT's live source: `Window_SaveFile::Refresh`
+  (`src/window_savefile.cpp`) draws the level and HP fields as four
+  separate `TextDraw` calls at fixed pixel columns — the level label at
+  x=4, the HP label always at x=46 regardless of what came before it — each
+  number space-padded to a fixed width (`std::setw(2)` for level,
+  `std::setw(Player::IsRPG2k3() ? 4 : 3)` for HP, the only version branch
+  in the whole function and a harmless width-only one, not a behavior
+  fork). The two short-label terms (`lvl_short`/`hp_short`, "Lv"/"HP" by
+  default) are likewise clamped to exactly 2 characters
+  (`if (lvl_short.size() != 2) lvl_short.resize(2, ' ')`), regardless of
+  what a project's own database terms table names them.
+  `#draw_slot_box`'s level/HP line (`mruby-rpg2k/mrblib/scene/
+  save_load.rb`) was one `#draw_system_text` call on a Ruby-interpolated
+  `"Lv#{level}    HP#{hp}"` string — no padding on either number, and the
+  literal four-space gap only coincidentally lined up for a single-digit
+  level. Fixed by splitting the line into a new `#draw_level_hp` helper:
+  four separate `#draw_system_text` calls at RPG_RT's own x=4/x=46
+  columns, `level.to_s.rjust(2)` and `hp.to_s.rjust(rpg2003? ? 4 : 3)` for
+  the numbers, and a new `#fixed_width_term` clamping the short labels to
+  exactly 2 characters the same way. Covered by rewriting the existing
+  level/HP `scripts/rpg2k_scene_check.rb` check to expect the four split,
+  padded strings instead of one combined one, plus two new checks (the
+  "HP" label call lands at the fixed x=46 column for a two-digit level,
+  proving the position doesn't shift; an RPG2003 party pads HP to 4
+  characters instead of 3), all three confirmed to fail against the
+  pre-fix code before the fix.
   ✅ **`Scene::SaveLoad`'s own cursor never auto-repeated while Down/Up was
   held — one slot per tap only, forever, no matter how long the key stayed
   down (2026-08-18).** Confirmed against EasyRPG Player's actual source:

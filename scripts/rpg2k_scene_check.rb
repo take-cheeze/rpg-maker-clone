@@ -16229,10 +16229,50 @@ check 'Scene::SaveLoad: an occupied slot shows the leader, level and HP -- no go
   scene, = save_load_scene(:load, nil, fake_db, parent: parent)
   texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
   ok texts.include?('Hero'), 'the leader name gets its own line'
-  ok texts.any? { |t| t.include?('Lv5') && t.include?('HP80') },
-     'level and current HP together on the third line'
+  # Level and HP each draw as their own label + space-padded number, not one
+  # combined string -- see the fixed-column check below for why.
+  ok texts.include?('Lv'), 'the level label draws on its own'
+  ok texts.include?(' 5'), 'the level number is space-padded to width 2'
+  ok texts.include?('HP'), 'the HP label draws on its own'
+  ok texts.include?(' 80'), 'the HP number is space-padded to width 3 on RPG2000'
   ok !texts.any? { |t| t.include?('250G') }, 'no gold shown -- confirmed absent from the ' \
                                               'reference capture, unlike this screen\'s old layout'
+end
+
+# Confirmed against RPG_RT's own live source: `Window_SaveFile::Refresh`
+# (src/window_savefile.cpp) draws the level and HP fields as four separate
+# `TextDraw` calls at fixed pixel columns (x=4, x=46), each number
+# `std::setw`-padded to a fixed width -- so the "HP" label never shifts
+# sideways depending on how many digits the level has, unlike a single
+# interpolated string with a literal gap between the two halves.
+check 'Scene::SaveLoad: the HP label sits at a fixed column regardless of ' \
+      'how many digits the level has' do
+  st = menu_state
+  st.party.leader = st.party.actors.first
+  st.party.leader.instance_variable_set(:@level, 99) # two digits, same as the fixture default
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  c = scene.instance_variable_get(:@slot_windows)[0].contents
+  calls = (c.draw_calls || []) + (c.blend_calls || [])
+  hp_label_call = calls.find { |a| a[4] == 'HP' }
+  ok hp_label_call, 'the HP label was drawn'
+  eq 46, hp_label_call[0], 'the HP label sits at RPG_RT\'s own fixed x=46, ' \
+                            'unmoved by the level\'s own two digits'
+end
+
+class SaveLoadRpg2003StubParty < MenuStubParty
+  def rpg2003?; true; end
+end
+
+check 'Scene::SaveLoad: HP is space-padded to width 4 on RPG2003, not 3' do
+  st = Game::State.new(SaveLoadRpg2003StubParty.new, 1, 0, 0)
+  st.party.leader = st.party.actors.first
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
+  ok texts.include?('  80'), 'RPG2003 widens the HP field to 4 characters, not 3'
 end
 
 # EasyRPG's Window_SaveFile::Refresh (src/window_savefile.cpp) draws every

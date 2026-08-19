@@ -312,9 +312,8 @@ class RPG2k
           level = leader ? leader.level : 0
           hp = leader ? leader.hp : 0
           draw_system_text c, 0, LINE_H, inner_w, LINE_H, name, @skin
-          draw_system_text c, 0, LINE_H * 2, inner_w, LINE_H,
-                            "#{term(:level_short, 'Lv')}#{level}    " \
-                            "#{term(:hp_short, 'HP')}#{hp}", @skin
+          rpg2003 = state.party.respond_to?(:rpg2003?) && state.party.rpg2003?
+          draw_level_hp(c, LINE_H * 2, level, hp, rpg2003)
           draw_slot_faces(c, inner_w, state.party.actors)
         end
         win.contents = c
@@ -323,6 +322,35 @@ class RPG2k
                            else
                              Rect.new(0, 0, 0, 0)
                            end
+      end
+
+      # The level/HP line at RPG_RT's own fixed pixel columns (x=4 for the
+      # level label, x=46 for HP), not proportioned to the label text --
+      # confirmed against RPG_RT's live source: `Window_SaveFile::Refresh`
+      # (`src/window_savefile.cpp`) is four separate `TextDraw` calls at
+      # those exact x-coordinates, each number space-padded to a fixed
+      # width (`std::setw(2)` for level, `std::setw(Player::IsRPG2k3() ? 4
+      # : 3)` for HP) -- so a level 9 vs. 99 leader never shifts where "HP"
+      # sits on screen, unlike a single interpolated string with a literal
+      # gap between the two halves.
+      def draw_level_hp(c, y, level, hp, rpg2003)
+        lvl_label = fixed_width_term(:level_short, 'Lv')
+        hp_label = fixed_width_term(:hp_short, 'HP')
+        draw_system_text c, 4, y, c.width, LINE_H, lvl_label, @skin
+        lx = c.text_size(lvl_label).width
+        draw_system_text c, 4 + lx, y, c.width, LINE_H, level.to_s.rjust(2), @skin
+        draw_system_text c, 46, y, c.width, LINE_H, hp_label, @skin
+        hx = c.text_size(hp_label).width
+        draw_system_text c, 46 + hx, y, c.width, LINE_H, hp.to_s.rjust(rpg2003 ? 4 : 3), @skin
+      end
+
+      # Clamp a database term string to exactly 2 characters, space-padded
+      # if shorter -- matches RPG_RT's own `lvl_short`/`hp_short` handling
+      # (`Window_SaveFile::Refresh`: `if (lvl_short.size() != 2)
+      # lvl_short.resize(2, ' ')`).
+      def fixed_width_term(name, fallback)
+        s = term(name, fallback)
+        s.length > 2 ? s[0, 2] : s.ljust(2)
       end
 
       # Up to `MAX_SLOT_FACES` party face thumbnails, right-anchored within
