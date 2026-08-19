@@ -11430,6 +11430,35 @@ not yet verified:
   into the same still-open window, `@number_input[:embedded]` true, and
   closes both the widget and the message together on confirm), both
   confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-19): Input Number's digit cursor started on the
+  leftmost (most significant) cell and clamped at either end, when real
+  RPG_RT starts it on the rightmost (least significant) cell and wraps
+  Left/Right cyclically instead.** Confirmed directly against RPG_RT's live
+  source: `Window_NumberInput::ResetIndex` (`src/window_numberinput.cpp`) is
+  `index = digits_max - 1 + int(show_operator)` — this widget never shows
+  the operator sign for the Input Number event command
+  (`show_operator = false` at construction, only ever flipped on
+  elsewhere), so this is unconditionally `digits_max - 1`, the last-drawn
+  (rightmost) cell. `Update()`'s own Left/Right handling is genuine modulo
+  wraparound (`index = (index + 1) % (digits_max + (int)show_operator)` and
+  its mirror), never a clamp. `Game::NumberInput`
+  (`mruby-rpg2k/mrblib/game.rb`) initialized `@cursor = 0` (leftmost) and
+  its `#left`/`#right` methods refused to move past either edge — so every
+  Input Number prompt (passwords, quiz answers, any variable-entry dialog)
+  edited the wrong digit by default, and arrow navigation could never wrap
+  the way the genuine engine does. Fixed by starting `@cursor` at
+  `d - 1` and having `#left`/`#right` wrap with modulo arithmetic instead of
+  clamping. The existing `scripts/rpg2k_logic_check.rb` `NumberInput` check
+  had baked the wrong behavior in as expected (`eq 0, m.cursor` on
+  construction, comments reading "already leftmost: no move" and "clamp at
+  the rightmost cell") and needed rewriting to the correct start/wrap
+  semantics; four `scripts/rpg2k_scene_check.rb` integration checks that
+  each pressed Up once on a fresh 2-digit widget and expected the *tens*
+  digit to have incremented (value 10) needed their expectation corrected
+  to the *ones* digit (value 1), since the cursor now starts there instead
+  — all four confirmed to fail against the pre-fix code with the corrected
+  expectation (`expected 1, got 10`) before the fix, and the dedicated
+  logic-check test confirmed to fail on its own (`expected 2, got 0`) too.
 - ✅ **A Face Graphic setting persists through the rest of the current event's
   execution content (not just the next message) and is auto-cleared when
   the event ends, but not before** — it must be explicitly "erased" to stop

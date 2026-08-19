@@ -8181,15 +8181,16 @@ end
 check 'NumberInput edits digits and reads out the entered value' do
   m = Game::NumberInput.new(3)
   eq 3, m.digits
+  eq 2, m.cursor, 'starts on the rightmost (least significant) cell, matching RPG_RT'
+  m.right # wraps forward past the rightmost cell to the leftmost
   eq 0, m.cursor
-  m.left # already leftmost: no move
-  eq 0, m.cursor
-  m.inc; m.inc          # leftmost digit -> 2
-  m.right; m.inc        # middle digit  -> 1
-  m.right; m.right      # clamp at the rightmost cell
+  m.inc # leftmost digit -> 1
+  m.right; m.inc; m.inc # middle digit -> 2
+  m.right; m.dec # rightmost 0 -> 9 (wraps within the digit, not the cursor)
   eq 2, m.cursor
-  m.dec                 # rightmost 0 -> 9 (wraps)
-  eq 219, m.value
+  m.left; m.left; m.left # three lefts from a 3-digit field wraps back to it
+  eq 2, m.cursor
+  eq 129, m.value
 end
 
 check 'NumberInput clamps its digit count to the 1..7 range' do

@@ -1368,7 +1368,14 @@ module Game
       d = MAX_DIGITS if d > MAX_DIGITS
       @digits = d
       @values = Array.new(d, 0)
-      @cursor = 0
+      # The rightmost (least significant) cell, not the leftmost -- confirmed
+      # against RPG_RT's actual behavior via EasyRPG Player's own C++ source,
+      # fetched live: `Window_NumberInput::ResetIndex` (src/
+      # window_numberinput.cpp) is `index = digits_max - 1 +
+      # int(show_operator)`, and this class always leaves `show_operator`
+      # false (the Input Number event command never shows a +/- sign cell) --
+      # `digits_max - 1` is the last-drawn, rightmost digit.
+      @cursor = d - 1
     end
 
     # The digit shown at position i (0 = most significant, leftmost).
@@ -1376,8 +1383,12 @@ module Game
 
     def inc; @values[@cursor] = (@values[@cursor] + 1) % 10; end
     def dec; @values[@cursor] = (@values[@cursor] + 9) % 10; end
-    def left;  @cursor -= 1 if @cursor > 0; end
-    def right; @cursor += 1 if @cursor < @digits - 1; end
+    # Left/Right wrap cyclically rather than clamp at either end -- RPG_RT's
+    # own `Update()` moves the cursor with `index = (index + 1) %
+    # digits_max` (Right) and `index = (index + digits_max - 1) %
+    # digits_max` (Left), never refusing to move past an edge cell.
+    def left;  @cursor = (@cursor + @digits - 1) % @digits; end
+    def right; @cursor = (@cursor + 1) % @digits; end
 
     # The entered value as a base-10 integer (leftmost cell is most significant).
     def value
