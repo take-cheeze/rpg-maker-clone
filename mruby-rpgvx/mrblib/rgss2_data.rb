@@ -273,6 +273,18 @@ module RPG
 
   class CommonEvent
     attr_accessor :id, :name, :trigger, :switch_id, :list
+
+    # `trigger`: 0 none, 1 autorun, 2 parallel -- real RGSS3's stock
+    # Game_Map#setup_autorun_common_event/#parallel_common_events call these
+    # predicates directly rather than comparing `trigger` themselves, and
+    # every VX Ace project's default Game_Map does so unmodified.
+    def autorun?
+      @trigger == 1
+    end
+
+    def parallel?
+      @trigger == 2
+    end
   end
 
   class MapInfo

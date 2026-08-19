@@ -16435,14 +16435,33 @@ screen (544×416). Full rationale:
     turn behind the same `NoMethodError: undefined method 'message' for
     NilClass`. All three fixes above were found this way — a temporary,
     never-committed VM-level probe read the real masked exception one at a
-    time. A fourth is already known this way and not yet fixed:
-    `NoMethodError: undefined method 'dispose' for NilClass`. Fixable only
-    by wrapping `Kernel#raise` itself (the sole point where the
+    time — and the same probe found three more past them: `Window#contents`
+    started `nil` instead of a real `Bitmap` in `mruby-rgss`'s native
+    `window_init`, so real RGSS3's own stock `Window_Base#create_contents`
+    (`contents.dispose`, its first line, run by every `Window` a game ever
+    constructs) raised `NoMethodError` on the very first window any VX Ace
+    game builds — `Scene_Title`'s own title-command window. Fixed by
+    constructing a real 1×1 `Bitmap` there instead. `Audio.bgm_play` rejected
+    RGSS3's 4th (`pos`, resume-playback-position) argument that a real
+    `RPG::BGM#replay` and a volume-control add-on script both call with —
+    fixed by accepting `pos = 0` and warning once that seeking is
+    unsupported rather than raising `ArgumentError`. `RPG::CommonEvent` had
+    no `#autorun?`/`#parallel?`, which real RGSS3's own stock
+    `Game_Map#setup_autorun_common_event`/`#parallel_common_events` call
+    directly — every VX Ace game raised `NoMethodError` the moment a player
+    pressed New Game. Fixed by adding both predicates
+    (`mruby-rpgvx/mrblib/rgss2_data.rb`; confirmed XP's own stock scripts
+    never call either, so the fix is VX/VX Ace-only). A seventh masked
+    exception is already known this way and not yet fixed — past
+    `DataManager.setup_new_game`, into actual gameplay (`Graphics.brightness=`
+    is the next stub the game calls before it). Fixing `$!` itself is
+    fixable only by wrapping `Kernel#raise` itself (the sole point where the
     about-to-be-raised object is observable), which would add overhead and
     stack depth to *every* exception in the shared build across every maker
     and every platform (PSP's stack headroom included) for what is mostly
     log-message fidelity in one utility script — see the item 7 write-up for
-    the full reasoning on why that trade isn't taken here.
+    the full reasoning on why that trade isn't taken here; the temporary VM
+    probe keeps finding the real gaps without it.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).
