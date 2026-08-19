@@ -13569,6 +13569,32 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
      'a successful escape also plays the dedicated Escape SE'
 end
 
+# EasyRPG's `Game_BattleAlgorithm::Escape::GetStartSe` (src/
+# game_battlealgorithm.cpp) returns `SFX_Escape` whenever the algorithm's
+# own *source* is an enemy (an ally's own Escape defers to the base
+# class's silent default instead, played separately by the check just
+# above) -- a distinct trigger from the party's own successful-escape SE.
+# `entry[:fled]` (`Game::Battle#enemy_basic_action`'s BASIC_ESCAPE arm) is
+# only ever produced for an enemy's own AI-chosen Escape action, so it is
+# inherently enemy-only here.
+check "an enemy's own AI-chosen Escape basic action plays the dedicated " \
+      'Escape SE too' do
+  scene, _st = battle_scene_with_pages({})
+  90.times do
+    ui = battle_ui(scene)
+    RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
+    scene.update
+    RGSS::Input.triggered = []
+    ui = battle_ui(scene)
+    break if ui && ui[:phase] == :command
+  end
+  battle = scene.instance_variable_get(:@battle)
+  RGSS::Audio.reset_se
+  battle.send(:play_battle_action_se, { attacker: 'Slime', fled: true })
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Escape1' },
+     "matches RPG_RT's own Escape::GetStartSe for an enemy source"
+end
+
 check 'Enemy Encounter scene: Escape forbidden (the default escape_mode 0) plays ' \
       'Buzzer on Escape, and the options window stays open' do
   ic = Game::Interpreter::Cmd

@@ -9022,6 +9022,32 @@ not yet verified:
   adds cannot starve a later valid one of its slot), confirmed to fail
   against the pre-fix code (`expected [1, 2, 0, -1, -1, -1, -1], got [1,
   2, 99, 0]`) before the fix.
+  ✅ **An enemy's own AI-chosen Escape basic action left the fight in
+  total silence, unlike the party's own successful Escape command, which
+  already plays the dedicated cue (2026-08-19).** Confirmed directly
+  against RPG_RT's live source: `Game_BattleAlgorithm::Escape::
+  GetStartSe` (`src/game_battlealgorithm.cpp`) is `if (source->GetType()
+  == Type_Ally) { return AlgorithmBase::GetStartSe(); } return
+  &GetSystemSE(SFX_Escape);` — an enemy source plays the system escape
+  cue, distinct from an ally's own Escape (silent here, since the party's
+  own escape sound is a separate trigger the scene already plays
+  elsewhere). `Scene_Battle_Rpg2k::ProcessBattleActionUsage`
+  (`src/scene_battle_rpg2k.cpp`) calls `GetStartSe()` unconditionally for
+  every action, the same generic dispatch every other action's start-SE
+  already goes through. `Game::Battle#enemy_basic_action`'s
+  `BASIC_ESCAPE` arm (`mruby-rpg2k/mrblib/game.rb`) already produces an
+  `entry[:fled]` flag, but `Scene::Battle#play_battle_action_se`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) — the method that already reads
+  every other field this same entry hash can carry — never once checked
+  it, even though the `SFX_ESCAPE` constant and its `play_system_se`
+  plumbing were already wired up for the other two flee contexts (the
+  party's own successful Escape command, and a battle page's scripted
+  Force Flee). Fixed by adding `play_system_se(SFX_ESCAPE) if
+  entry[:fled]`; `entry[:fled]` is only ever produced by the enemy-only
+  `BASIC_ESCAPE` arm, so no ally-side entry can ever trigger it and
+  double up with the party's own escape SE. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check, confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **RPG2003's Wait command "wait until the Decision key is pressed" mode
   is now implemented — it used to be silently treated as a zero-duration
   timed wait, letting the event continue instantly with no player

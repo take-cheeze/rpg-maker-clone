@@ -3408,6 +3408,16 @@ class RPG2k
         end
         play_system_se(SFX_ENEMY_DEATH) if entry[:defeated] && !entry[:target_ally]
         play_system_se(SFX_ITEM) if entry[:item_id]
+        # An enemy's own AI-chosen Escape basic action plays the same system
+        # escape cue the party hears on its own successful Escape command --
+        # EasyRPG's `Game_BattleAlgorithm::Escape::GetStartSe` returns
+        # `SFX_Escape` whenever the algorithm's *source* is an enemy (an
+        # ally's own Escape defers to the base class's silent default
+        # instead, played separately by #try_battle_escape). `entry[:fled]`
+        # is only ever produced by `#enemy_basic_action`'s BASIC_ESCAPE arm,
+        # so it is inherently enemy-only here -- no risk of double-playing
+        # this alongside the party's own escape SE.
+        play_system_se(SFX_ESCAPE) if entry[:fled]
       end
 
       # The conditions the action just landed or lifted, one sentence each under
