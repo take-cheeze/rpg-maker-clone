@@ -1593,15 +1593,25 @@ module Game
       op = cmd.param(3)  # 0 =, 1 +, 2 -, 3 *, 4 /, 5 %
       # A random operand (type 3) rolls independently for each variable in the
       # range, matching RPG_RT -- a batch "Var[1..5] = random 1~6" is five
-      # separate dice, not one roll broadcast to all five. Every other operand
-      # type is evaluated once up front, as before -- except a direct-variable
-      # operand (type 1) applied to a genuine multi-id range, which needs its
-      # own split below (a variable-A-ops-B batch reading its own operand out
-      # of the same range it writes).
-      random = cmd.param(4) == 3
-      return do_control_vars_range_variable(cmd, a, b, op) if !random && cmd.param(4) == 1 && a < b
-      val = operand_value(cmd) unless random
-      (a..b).each { |id| variables[id] = apply(op, variables[id], random ? operand_value(cmd) : val) }
+      # separate dice, not one roll broadcast to all five. An indirect-variable
+      # operand (type 2, Var[Var[A]]) re-reads live for every id in the range
+      # too -- EasyRPG's `Game_Variables::WriteRange` (`src/game_variables.cpp`)
+      # calls its lambda fresh once per loop iteration, and `*RangeVariable
+      # Indirect`'s own lambda is `Get(Get(var_id))`, evaluated against
+      # whatever the table holds *right now* -- so if the pointer's own
+      # resolved target id falls inside the destination range, a later id in
+      # the same batch sees the value an earlier id in that same batch just
+      # wrote (a genuine intra-batch cascade), unlike the frozen-once-and-
+      # broadcast reading a direct variable (type 1, `WriteRangeVariable`'s own
+      # closed-over `value`) or any other operand type gets. Every other
+      # operand type is evaluated once up front, as before -- except a
+      # direct-variable operand applied to a genuine multi-id range, which
+      # needs its own split below (a variable-A-ops-B batch reading its own
+      # operand out of the same range it writes).
+      live = cmd.param(4) == 3 || cmd.param(4) == 2
+      return do_control_vars_range_variable(cmd, a, b, op) if !live && cmd.param(4) == 1 && a < b
+      val = operand_value(cmd) unless live
+      (a..b).each { |id| variables[id] = apply(op, variables[id], live ? operand_value(cmd) : val) }
     end
 
     # A batch (range) Control Variables write whose operand is itself a plain
