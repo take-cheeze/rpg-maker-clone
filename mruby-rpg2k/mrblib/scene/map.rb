@@ -869,24 +869,33 @@ class RPG2k
       # A single particle's on-screen cell, spread across the screen by a cheap
       # hash of its index and falling as @anim_frame advances (wrapping at the
       # bottom). Rain is a slanted streak; snow a small fleck that also drifts.
+      # Per-frame motion confirmed against RPG_RT's own live source:
+      # `Game_Screen::UpdateRain`/`UpdateSnow` (src/game_screen.cpp) --
+      # rain falls `p.y += 4; p.x -= 1` every frame it's alive, and snow
+      # falls `p.y += Rand(2, 3)` while drifting `p.x -= Rand(0, 1)`, i.e.
+      # leftward only, never rightward.
       def draw_weather_particle(type, i)
         x0 = (i * 97) % SCREEN_W
         y0 = (i * 59) % SCREEN_H
         if type == WEATHER_RAIN
-          y = (y0 + @anim_frame * 8) % SCREEN_H
-          x = (x0 - @anim_frame * 2) % SCREEN_W
+          y = (y0 + @anim_frame * 4) % SCREEN_H
+          x = (x0 - @anim_frame) % SCREEN_W
           @weather_bmp.fill_rect x, y, 1, 6, RAIN_COLOR
         else
           y = (y0 + @anim_frame * 3) % SCREEN_H
-          x = (x0 + weather_drift(i)) % SCREEN_W
+          x = (x0 - weather_drift(i)) % SCREEN_W
           @weather_bmp.fill_rect x, y, 2, 2, SNOW_COLOR
         end
       end
 
-      # A small side-to-side snow drift, from a triangle wave over @anim_frame.
+      # A small leftward-only snow drift, approximating RPG_RT's own average
+      # rate (`p.x -= Rand::GetRandomNumber(0, 1)` per frame, ~0.5px/frame)
+      # without needing a per-frame RNG draw -- monotonically increasing
+      # (never wrapping back down) so a flake only ever nudges further left
+      # as it falls, the same one-way drift real RPG_RT's snow has, unlike
+      # a bouncing side-to-side wave.
       def weather_drift(i)
-        phase = (@anim_frame / 8 + i) % 8
-        phase < 4 ? phase : 8 - phase
+        (@anim_frame + i * 3) / 2
       end
 
       # Apply a Tint Screen tone (`[r, g, b, sat]`, each 0..200 with 100 neutral)

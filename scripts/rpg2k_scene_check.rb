@@ -9814,6 +9814,33 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   ok !wsp.visible, 'clearing weather hides the overlay'
 end
 
+check 'Weather rain falls and drifts at RPG_RT\'s own per-frame rate, and ' \
+      'snow only ever drifts left, never bounces back right' do
+  # Confirmed against RPG_RT's own live source: Game_Screen::UpdateRain/
+  # UpdateSnow (src/game_screen.cpp) -- rain falls 4px down and 1px left
+  # every frame it's alive (`p.y += 4; p.x -= 1`), snow drifts leftward
+  # only, never rightward (`p.x -= Rand::GetRandomNumber(0, 1)`).
+  scene = new_scene({})
+  bmp = scene.instance_variable_get(:@weather_bmp)
+  h = RPG2k::Scene::Map::SCREEN_H
+  w = RPG2k::Scene::Map::SCREEN_W
+
+  scene.instance_variable_set(:@anim_frame, 5)
+  scene.send(:draw_weather_particle, RPG2k::Scene::Map::WEATHER_RAIN, 0)
+  x, y, = bmp.fill_calls.last
+  eq (5 * 4) % h, y, 'rain falls 4px/frame down, not double that'
+  eq (-5) % w, x, 'rain drifts 1px/frame left, not double that'
+
+  # The old drift was a triangle wave that bounced back down; sample two
+  # frames where that wave would have reversed (32 -> back near 64) and
+  # confirm the real, monotonic-leftward drift never does.
+  scene.instance_variable_set(:@anim_frame, 32)
+  d32 = scene.send(:weather_drift, 0)
+  scene.instance_variable_set(:@anim_frame, 64)
+  d64 = scene.send(:weather_drift, 0)
+  ok d64 > d32, 'snow drift only ever grows (further left), never reverses'
+end
+
 check 'the timer draws M:SS as digit-sprite cells cut from the System graphic, and hides when never shown' do
   scene = new_scene({})
   scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
