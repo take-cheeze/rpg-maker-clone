@@ -2,6 +2,46 @@
 # terminal backends) mapped onto MV's virtual buttons and pushed into MV's
 # `Input._currentState`, which its scenes read for navigation/confirm/cancel.
 
+assert 'MV.confirm_settle_tap presses confirm briefly once per cadence, then releases' do
+  RGSS::Input.release(RGSS::Input::C)
+
+  # No tap yet at a frame between cycles.
+  MV.confirm_settle_tap(1)
+  assert_false MV.pressed_buttons.include?("ok")
+
+  # Pressed at the start of a cycle...
+  MV.confirm_settle_tap(0)
+  assert_true MV.pressed_buttons.include?("ok")
+
+  # ...held through the frame before CONFIRM_TAP_HOLD...
+  MV.confirm_settle_tap(MV::CONFIRM_TAP_HOLD - 1)
+  assert_true MV.pressed_buttons.include?("ok")
+
+  # ...and released once CONFIRM_TAP_HOLD is reached.
+  MV.confirm_settle_tap(MV::CONFIRM_TAP_HOLD)
+  assert_false MV.pressed_buttons.include?("ok")
+
+  # The next cycle (frame == CONFIRM_TAP_EVERY) presses again, so a probe that
+  # calls this every frame keeps tapping for as long as the caller drives it.
+  MV.confirm_settle_tap(MV::CONFIRM_TAP_EVERY)
+  assert_true MV.pressed_buttons.include?("ok")
+ensure
+  RGSS::Input.release(RGSS::Input::C)
+end
+
+assert 'MV.message_busy? tracks $gameMessage.isBusy, and never raises' do
+  # Undefined engine global: the move probe's settle window must not hang
+  # waiting on a read that can never succeed.
+  MV::JS.eval("globalThis.$gameMessage = undefined;")
+  assert_false MV.message_busy?
+
+  MV::JS.eval("globalThis.$gameMessage = { isBusy: function(){ return true; } };")
+  assert_true MV.message_busy?
+
+  MV::JS.eval("globalThis.$gameMessage = { isBusy: function(){ return false; } };")
+  assert_false MV.message_busy?
+end
+
 assert 'MV maps RGSS input keys to MV virtual buttons' do
   # Start from a clean slate so unrelated state can't leak in.
   [RGSS::Input::C, RGSS::Input::B, RGSS::Input::UP, RGSS::Input::DOWN,
