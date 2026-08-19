@@ -11074,6 +11074,31 @@ not yet verified:
   "heavier is denser" ordering assertion to the three exact real counts,
   confirmed to fail against the pre-fix code (`144` instead of `100` at
   heavy strength) before the fix.
+  ✅ **Follow-up (2026-08-19): rain fell and drifted at exactly double
+  RPG_RT's own per-frame rate, and snow's own sideways drift bounced back
+  and forth in a symmetric wave instead of only ever nudging left.**
+  Confirmed directly against RPG_RT's live source:
+  `Game_Screen::UpdateRain`/`UpdateSnow` (`src/game_screen.cpp`) — rain is
+  `p.y += 4; p.x -= 1` every frame it's alive, snow is `p.y += Rand(2, 3);
+  p.x -= Rand(0, 1)`. Both only ever subtract from `x`; neither engine
+  effect ever drifts a particle rightward. `Scene::Map
+  #draw_weather_particle` (`mruby-rpg2k/mrblib/scene/map.rb`) moved rain
+  `@anim_frame * 8` down and `@anim_frame * 2` left — exactly 2x real
+  RPG_RT on both axes — and `#weather_drift`'s own triangle wave added a
+  value that grew 0→4 then shrank back to 0 every 64 frames, oscillating
+  snow side to side rather than drifting one direction the way real RPG_RT
+  does. Fixed by halving rain's per-frame deltas to `@anim_frame * 4`
+  (down) and `@anim_frame` (left, i.e. multiplier 1), and replacing
+  `#weather_drift`'s triangle wave with a monotonically-increasing `(
+  @anim_frame + i * 3) / 2` — averaging the same ~0.5px/frame `Rand(0,
+  1)` draws real RPG_RT's snow rolls, without needing a per-frame RNG
+  draw of its own, and now subtracted from `x` (never added) so a flake
+  only ever ends up further left as it falls. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (rain's exact per-frame fall/drift
+  distance at a sampled frame; snow's drift strictly increasing between
+  two frames the old triangle wave would have had reverse between),
+  confirmed to fail against the pre-fix code (`expected 20, got 40`)
+  before the fix.
 
 **BGM / SE**
 - ✅ BGM has a **single channel** — a new Play BGM force-stops whatever's
