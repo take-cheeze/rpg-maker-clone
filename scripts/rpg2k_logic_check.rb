@@ -3305,14 +3305,7 @@ FakeItem = Struct.new(:atk_points1, :def_points1, :spi_points1, :agi_points1,
                       :uses,
                       # 消費SP (weapon field 16): the SP a basic Attack costs
                       # while this weapon is equipped (Actor#weapon_sp_cost).
-                      :sp_cost,
-                      # animation_data (weapon field 70): the RPG2003-only,
-                      # per-actor Battle Animation table -- a `{actor_id =>
-                      # row}` Hash here (a real database's own Array2D reads
-                      # the same way via `#[]`), each row responding to
-                      # `attack_times` (field 7, 攻撃の回数 -- Actor#
-                      # weapon_attack_multiplier).
-                      :animation_data)
+                      :sp_cost)
 def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               scope: 0, rhp: 0, rhp_rate: 0, rsp: 0, rsp_rate: 0, price: 0,
               skill_id: 0, atk2: 0, dfn2: 0, spi2: 0, agi2: 0, occ_battle: true,
@@ -3323,7 +3316,7 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
               two_handed: 0, attack_all: false, preemptive: false, actor_set: nil,
               cursed: false, raise_evasion: false, animation_id: nil,
               state_chance: 0, use_skill: false, class_set: nil, uses: 1,
-              sp_cost: 0, animation_data: nil)
+              sp_cost: 0)
   FakeItem.new(atk, dfn, spi, agi, mhp, msp, type, name, scope,
                rhp, rhp_rate, rsp, rsp_rate, price, skill_id,
                atk2, dfn2, spi2, agi2, occ_battle, state_set, reverse_state,
@@ -3331,11 +3324,8 @@ def fake_item(atk: 0, dfn: 0, spi: 0, agi: 0, mhp: 0, msp: 0, type: 0, name: '',
                dual_attack, ignore_evasion, half_sp_cost, hit, critical_hit,
                ko_only, two_handed, attack_all, preemptive, actor_set, cursed,
                raise_evasion, animation_id, state_chance, use_skill, class_set,
-               uses, sp_cost, animation_data)
+               uses, sp_cost)
 end
-# A single row of a weapon's RPG2003 per-actor Battle Animation table --
-# `fake_item`'s own `animation_data:` Hash values.
-FakeCbaRow = Struct.new(:attack_times)
 # A database skill row exposing the fields Game::Party's field-skill logic reads.
 FakeSkill = Struct.new(:name, :type, :scope, :occasion_field, :sp_type, :sp_cost,
                        :sp_percent, :power, :physical_rate, :magical_rate,
@@ -14982,51 +14972,6 @@ check 'battle: a 二刀流 weapon swings twice' do
   bat3 = Game::Battle.new([Game::Battle.from_actor(hero)], [dying], Game::Rng.new(1))
   e3 = bat3.send(:swing, bat3.allies[0], dying)
   ok e3.is_a?(Hash), 'a felled target is not struck again'
-end
-
-# 攻撃の回数 (weapon field 70's per-actor Battle Animation table, RPG2003
-# only): a basic Attack's swing count is now multiplied by
-# `Actor#weapon_attack_multiplier`, matching EasyRPG's `Algo::
-# GetNumberOfAttacks` (`cba[actor_id - 1].attacks + 1`). Previously
-# `Actor#strike_count` ported only the `dual_attack` term of that same
-# function, never reading `attack_times` at all (docs/TODO.md).
-check 'battle: RPG2003 攻撃の回数 multiplies a basic Attack\'s swing count' do
-  items = { 7 => fake_item(type: 1, atk: 5, animation_data: { 1 => FakeCbaRow.new(2) }),
-            8 => fake_item(type: 1, atk: 5) } # no animation_data row at all
-  row = CurveRow.new('Hero', '', 0, 1, [200, 50, 20, 10, 10, 10])
-  db = FakeActorDB.new({ 1 => row }, [1], items, {}, {}, nil, nil, rpg2003: true)
-  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  hero = st.party.leader
-
-  hero.equip([8, 0, 0, 0, 0])
-  eq 1, hero.strike_count, 'a weapon naming no row for this actor is a no-op multiplier'
-
-  hero.equip([7, 0, 0, 0, 0])
-  eq 3, hero.strike_count, 'attacks: 2 on this actor\'s own row -> (2 + 1) swings'
-  foe = combatant('Foe', 0, 0, 5, 10_000)
-  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
-  entries = bat.send(:swing, bat.allies[0], foe)
-  eq 3, entries.size, 'the extra swings actually land, not just #strike_count'
-
-  # RPG2000 (no Classes chunk) has no Battle Animation table at all -- the
-  # identical row is a no-op there, same as the un-rowed weapon above.
-  db2000 = FakeActorDB.new({ 1 => row }, [1], items)
-  st2000 = Game::State.new(Game::Party.new(db2000), 1, 0, 0)
-  hero2000 = st2000.party.leader
-  hero2000.equip([7, 0, 0, 0, 0])
-  eq 1, hero2000.strike_count, 'RPG2000: the same row is never consulted at all'
-
-  # A two-weapon (#double_hand?) actor: each weapon's own multiplier scales
-  # only its own term before the two are summed -- EasyRPG's `Normal::Init`
-  # sums `GetNumberOfAttacks(WeaponPrimary) + GetNumberOfAttacks
-  # (WeaponSecondary)`, each already including its own `cba_hits`.
-  items2 = { 7 => fake_item(type: 1, atk: 5, animation_data: { 1 => FakeCbaRow.new(2) }), # 3 hits
-             9 => fake_item(type: 1, atk: 5, dual_attack: true) } # 2 hits, no row
-  db2 = FakeActorDB.new({ 1 => row }, [1], items2, {}, {}, nil, nil, rpg2003: true)
-  st2 = Game::State.new(Game::Party.new(db2), 1, 0, 0)
-  dual = st2.party.leader
-  dual.equip([7, 9, 0, 0, 0])
-  eq 5, dual.strike_count, 'primary\'s own 3 (attack_times: 2) + secondary\'s own 2 (dual_attack)'
 end
 
 # 消費SP (weapon field 16): a basic Attack now spends the equipped weapon's

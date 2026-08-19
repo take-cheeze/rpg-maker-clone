@@ -7331,43 +7331,6 @@ not yet verified:
   weapon plus one ordinary weapon summing to 3, not 2 — all three
   confirmed to fail against the pre-fix code before the fix (`#strike_count`
   did not exist at all).
-  ✅ **Follow-up (2026-08-19): `#strike_count` only ever ported half of the
-  EasyRPG function its own doc comment cites — RPG2003's 攻撃の回数 (Number of
-  Attacks) weapon field never multiplied anything at all.** Confirmed
-  directly against RPG_RT's live source: `Algo::GetNumberOfAttacks`
-  (`src/algo.cpp`) is `int hits = weapon.dual_attack ? 2 : 1; if
-  (Player::IsRPG2k3()) { auto& cba = weapon.animation_data; if (actor_id >=
-  1 && actor_id <= (int)cba.size()) { hits *= cba[actor_id - 1].attacks + 1;
-  } } return hits;` — the very function `#strike_count`'s own comment
-  already names, but only its `dual_attack` term had actually been ported;
-  the `IsRPG2k3()` branch reading each weapon's own per-actor Battle
-  Animation table (`animation_data`, item field 70, each row's `attacks`
-  field named `attack_times` in this schema, item field 7) was never
-  consulted anywhere — confirmed by grep, `attack_times` did not appear a
-  single time in `game.rb`. The field is genuine, already-parsed
-  RPG2000/2003 database data (`mruby-lcf/mrblib/schema.rb`), not an
-  unimplemented schema stub: any RPG2003 project using a weapon's Battle
-  Animation "Number of Attacks" setting to build a multi-hit weapon (stacks
-  with, and is independent of, 二刀流) got exactly `dual_attack?`'s 1-or-2
-  swings instead of RPG_RT's correctly multiplied count. Fixed with a new
-  `Actor#weapon_attack_multiplier(it)` (`(attack_times || 0) + 1` when
-  `rpg2003?` and this actor has a row in `it.animation_data`, else the
-  neutral `1`), multiplied into both of `#strike_count`'s existing terms —
-  the single-weapon `dual_attack? ? 2 : 1` and each weapon's own term in the
-  two-weapon sum, exactly mirroring `Algo::GetNumberOfAttacks` being called
-  once per weapon slot in both the single- and two-weapon
-  `Game_Actor::GetNumberOfAttacks` paths. `#swing_weapon_data`'s own
-  `w1_hits` split point (which of a two-weapon actor's swings the primary
-  vs. secondary weapon governs) needed the identical multiplier folded in,
-  or a CBA-boosted primary weapon's extra swings would have been
-  misattributed to the secondary weapon's own hit rate/attributes/crit once
-  the total swing count grew past the *unmultiplied* boundary. Covered by a
-  new `scripts/rpg2k_logic_check.rb` check (a weapon naming no row for this
-  actor is a no-op; a row's `attacks: 2` gives `(2 + 1)` swings that all
-  actually land; the identical row is inert on an RPG2000 database with no
-  Battle Animation table at all; a two-weapon actor sums each weapon's own
-  already-multiplied term), confirmed to fail against the pre-fix code
-  (`expected 3, got 1`) before the fix.
 - ✅ **A two-weapon actor's individual swings now each roll their own
   weapon's hit rate / elemental attributes / weapon states / crit chance,
   instead of every swing reusing the same value merged (max/union) across
