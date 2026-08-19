@@ -13332,6 +13332,57 @@ check 'Battle command_skill fizzles on a fallen target, sparing the SP' do
   eq 0, downed.hp, 'the fallen ally stayed down'
 end
 
+# RPG_RT's own per-algorithm `IsTargetValid` override
+# (`Game_BattleAlgorithm::Item::IsTargetValid`, src/game_battlealgorithm.cpp)
+# ignores the target entirely for a medicine/switch item -- `return
+# item.type == Type_medicine || item.type == Type_switch;` -- always valid,
+# dead or alive -- re-checked at resolution time by
+# `Scene_Battle_Rpg2k::ProcessBattleActionExecute`'s own
+# `IsCurrentTargetValid()` guard, not just when the target was originally
+# picked. `Skill::IsTargetValid` allows a downed target too, but only when
+# the skill is ally-scoped and cures Death (`state_effects[0]`).
+# #apply_command's blanket `target.dead?` gate applied to every command
+# alike, Item and Skill, so a revival item/skill queued against an
+# already-selectable downed ally (see #battle_ally_targets, which already
+# lets one be picked) silently fizzled at resolution: no SP/item spent, no
+# state cured, no HP restored, and the ally stayed dead -- the in-battle
+# path never actually revived anyone, unlike the field-menu
+# #use_medicine/#cast_skill, which were already correct.
+check 'Battle command_item actually revives a downed ally (RPG_RT: an ' \
+      "item's target is always valid)" do
+  user   = combatant('User', 0, 0, 20, 100)
+  downed = combatant('Downed', 0, 0, 5, 100)
+  downed.hp = 0
+  downed.states = [Game::States::DEATH_ID]
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([user, downed], [foe], Game::Rng.new(1))
+  b.command_item(user, downed, item_id: 4, name: 'Full Recovery', hp: 50,
+                                cured: [Game::States::DEATH_ID])
+  b.begin_round
+  e = b.step_action
+  ok e[:recover], 'the item resolved instead of fizzling on the downed target'
+  eq 4, e[:item_id], 'the item is still consumed'
+  ok !downed.dead?, 'the ally was actually revived'
+  eq 50, downed.hp
+end
+
+check 'Battle command_skill revives a downed ally when the skill cures ' \
+      'Death, but still fizzles a plain heal (RPG_RT: Skill::IsTargetValid)' do
+  mage   = combatant_mp('Mage', 0, 0, 20, 100, 10)
+  downed = combatant('Downed', 0, 0, 5, 100)
+  downed.hp = 0
+  downed.states = [Game::States::DEATH_ID]
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([mage, downed], [foe], Game::Rng.new(1))
+  b.command_skill(mage, downed, name: 'Life', cost: 5, hp: 40,
+                                 cured: [Game::States::DEATH_ID], chance: 100)
+  b.begin_round
+  e = b.step_action
+  ok e[:recover], 'a Death-curing skill resolves against a downed target'
+  ok !downed.dead?, 'the ally was actually revived'
+  eq 5, mage.mp, 'SP was spent, unlike a fizzled cast'
+end
+
 check 'Battle command_item restores HP and tags the entry for bag consumption' do
   user = combatant('User', 0, 0, 20, 100)
   ally = combatant('Ally', 0, 0, 5, 50)

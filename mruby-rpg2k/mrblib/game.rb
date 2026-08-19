@@ -11859,6 +11859,25 @@ module Game
 
     def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
 
+    # Whether a Skill/Item `cmd` may still target an already-downed battler --
+    # EasyRPG's own per-algorithm `IsTargetValid` override
+    # (`src/game_battlealgorithm.cpp`), re-checked at resolution time
+    # (`Scene_Battle_Rpg2k::ProcessBattleActionExecute`'s own `if (!action->
+    # IsCurrentTargetValid()) { ...finish, no Execute()... }`, not just when
+    # the target was originally picked): `Item::IsTargetValid` ignores the
+    # target entirely (`return item.type == Type_medicine || item.type ==
+    # Type_switch;` -- always valid, dead or alive), while the generic
+    # default (`AlgorithmBase::IsTargetValid`, used by an ordinary attack)
+    # is `target.Exists()` -- false the instant HP reaches 0.
+    # `Skill::IsTargetValid` sits between the two: `if (target.IsDead())
+    # return SkillTargetsAllies(skill) && !skill.state_effects.empty() &&
+    # skill.state_effects[0];` -- only a Death-curing, ally-scoped skill may
+    # still target a downed ally.
+    def command_targets_dead_ok?(cmd)
+      return true if cmd[:kind] == :item
+      (cmd[:cured] || []).include?(Game::States::DEATH_ID)
+    end
+
     # Resolve `b`'s queued Skill / Item command and return its log entry, or nil
     # when the chosen target has already fallen this round (the action fizzles —
     # no SP is spent and nothing animates). A skill first spends the caster's SP;
@@ -11866,14 +11885,15 @@ module Game
     # attack (`skill:` names it), while a recovery command (heal skill / medicine)
     # restores HP / SP clamped to the target's maxima and reads as a `recover`.
     #
-    # This `target.dead?` gate is also what keeps a plain heal from reviving a
-    # downed (0 HP) combatant: a fizzled command never reaches #apply_skill_hit
-    # at all, so its HP-raising branch never runs against a dead target in the
-    # first place -- the in-battle mirror of Game::Actor#change_hp's own
-    # `return @hp if dead?` guard on the field. An explicit state-cure (Full
-    # Recovery, a revive item/skill) is the only thing modelled here that can
-    # stand a combatant back up, and it does so by writing HP directly rather
-    # than through this command path.
+    # The `target.dead?` gate is what keeps an ordinary attack or a plain heal
+    # from ever touching a downed (0 HP) combatant -- the in-battle mirror of
+    # Game::Actor#change_hp's own `return @hp if dead?` guard on the field --
+    # but #command_targets_dead_ok? carves out the same two exceptions real
+    # RPG_RT's own `IsTargetValid` does: an Item command's target is always
+    # valid (so a downed ally chosen for a revival medicine, already
+    # selectable per #battle_ally_targets, actually resolves instead of
+    # silently fizzling with the item never consumed), and a Skill command
+    # whose own `cured` list includes Death may still land on one too.
     #
     # A single-target Skill whose target carries Reflect Magic bounces back
     # onto `b` itself (#reflects_skill?) -- checked against the originally
@@ -11889,7 +11909,8 @@ module Game
       cmd = b.command
       return apply_command_all(b, cmd, combo) if cmd[:all]
       target = cmd[:target]
-      return nil if target.nil? || target.dead?
+      return nil if target.nil?
+      return nil if target.dead? && !command_targets_dead_ok?(cmd)
       target = b if reflects_skill?(b, target, cmd)
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
       # A combo'd skill repeats its effect `combo` times against the same
@@ -11926,9 +11947,10 @@ module Game
     # then apply the per-target effect to every living target, returning one log
     # entry per hit (which #step_action surfaces one at a time). Fizzles — nil, no
     # SP spent — when every listed target has already fallen this round. Same
-    # per-target `dead?` filter as #apply_command, and for the same reason: a
-    # downed member of an all-ally heal is skipped rather than topped up back to
-    # life (see #apply_command's comment).
+    # per-target `dead?` filter as #apply_command (#command_targets_dead_ok?'s
+    # same two exceptions apply here too -- a party-wide revival item/Full
+    # Recovery-type skill genuinely does stand up every downed member of an
+    # all-ally volley, not just the living ones).
     #
     # If any originally-selected target carries Reflect Magic
     # (#reflecting_target_all), the whole volley redirects onto `b`'s own
@@ -11947,7 +11969,9 @@ module Game
     # own elemental multiplier/variance/absorb fresh against whichever new
     # target it actually lands on.
     def apply_command_all(b, cmd, combo = 1)
-      live = (cmd[:targets] || []).select { |t| t[:target] && !t[:target].dead? }
+      live = (cmd[:targets] || []).select do |t|
+        t[:target] && (!t[:target].dead? || command_targets_dead_ok?(cmd))
+      end
       return nil if live.empty?
       reflected = reflecting_target_all(b, live, cmd)
       if reflected

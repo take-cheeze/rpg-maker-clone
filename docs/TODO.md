@@ -11313,6 +11313,51 @@ not yet verified:
   member and a wounded one confirms the Skill/Item path skips the downed
   member entirely while still healing the wounded member normally (true
   both before and after, since that path was never broken).
+  ✅ **The in-battle Skill/Item command path above was itself checked
+  against the wrong reference — a plain heal genuinely fizzles on a downed
+  target, but so did every revival Skill/Item, which real RPG_RT allows to
+  land: the "explicit state-cure... writing HP directly rather than
+  through any of these three paths" claim was never actually true, and
+  the in-battle path never revived anyone at all until now
+  (2026-08-19).** Confirmed directly against RPG_RT's own per-algorithm
+  `IsTargetValid` override (`src/game_battlealgorithm.cpp`), re-checked at
+  *resolution* time, not just when a target is originally picked
+  (`Scene_Battle_Rpg2k::ProcessBattleActionExecute`: `if (!action->
+  IsCurrentTargetValid()) { ...finish, Execute() never runs... }`,
+  `IsCurrentTargetValid()` → `IsTargetValid(**current_target)`). The
+  generic default (`AlgorithmBase::IsTargetValid`, an ordinary attack) is
+  `target.Exists()` — false the instant HP reaches 0, matching this
+  bullet's own correctly-checked plain-heal case. But
+  `Item::IsTargetValid` ignores the target entirely — `return item.type ==
+  Type_medicine || item.type == Type_switch;` — a medicine/switch item's
+  target is *always* valid, dead or alive. `Skill::IsTargetValid` sits
+  between the two: `if (target.IsDead()) return SkillTargetsAllies(skill)
+  && !skill.state_effects.empty() && skill.state_effects[0];` — a
+  Death-curing, ally-scoped skill may still target a downed ally too.
+  `Game::Battle#apply_command`/`#apply_command_all`
+  (`mruby-rpg2k/mrblib/game.rb`) applied one blanket `target.dead?` gate to
+  every command alike, so a revival item/skill queued against an
+  already-selectable downed ally (`#battle_ally_targets` was already
+  widened, in an earlier fix, specifically so one *could* be picked —
+  making that earlier fix inert in practice, since the queued action just
+  silently fizzled at resolution instead: no SP/item spent, no state
+  cured, no HP restored, the ally staying dead) never actually landed.
+  This codebase's own field-menu equivalents (`Party#use_medicine`,
+  `Party#cast_skill`) were already correctly implemented with no such
+  blanket gate — only the in-battle path had it. Fixed by adding
+  `Game::Battle#command_targets_dead_ok?(cmd)` (`cmd[:kind] == :item`, or a
+  Skill/Item's own `cured` list including `Game::States::DEATH_ID`) and
+  gating both `apply_command`'s single-target check and
+  `apply_command_all`'s per-target `live` filter on it, so a downed target
+  is skipped only when the command genuinely cannot revive it — matching
+  `IsTargetValid` exactly for both algorithms, single- and all-target
+  scopes alike. Covered by two new `scripts/rpg2k_logic_check.rb` checks
+  (a revival item actually resolves and revives a downed ally, tagging the
+  log entry for bag consumption same as any other item hit; a
+  Death-curing skill resolves and revives too, spending its SP, while the
+  existing "fizzles on a fallen target" check just above — a *plain* heal,
+  no `cured` list — is confirmed to still fizzle exactly as before), both
+  new checks confirmed to fail against the pre-fix code before the fix.
   ✅ **A further Change Monster HP hit on an already-downed enemy revived
   it — the bullet above's own guess about this direction was wrong,
   corrected here against RPG_RT's actual behavior (2026-08-18).**
