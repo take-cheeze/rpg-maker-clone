@@ -9756,11 +9756,14 @@ module Game
     # `IsDirectionFlipped()` (a battler-mirroring mechanic this engine does
     # not model, and which no ordinary actor ever sets in the reference
     # either -- it always reads false there), so the surviving, always-true
-    # part of the condition is exactly "at least one *other* in-play ally is
-    # still in front" -- moving from back to front never needs this check at
-    # all, since it can only ever add to the front row.
+    # part of the condition is exactly "at least one *other* ally is still in
+    # front" -- moving from back to front never needs this check at all,
+    # since it can only ever add to the front row. RowSelected's own headcount
+    # loop walks `Game_Party::GetActors()` unfiltered -- a KO'd or hidden
+    # ally still counts toward keeping the front row non-empty, same as
+    # `@allies` here; only #member?-false (left the live party) is excluded.
     def can_leave_front_row?(ally)
-      allies.reject(&:out_of_play?).count { |a| a != ally && !a.back_row? } >= 1
+      allies.reject { |a| !a.member? }.count { |a| a != ally && !a.back_row? } >= 1
     end
 
     # The RPG2003 **Row** battle command: flip `ally` between front and back

@@ -9512,6 +9512,30 @@ not yet verified:
   member is left untouched; an RPG2000 (non-`rpg2003:`) battle never forces
   rows at all — the first confirmed to fail against the pre-fix code
   (`expected 0, got 1`) before the fix.
+  ✅ **Follow-up (2026-08-19): the in-battle Row command's own "don't empty
+  the front row" guard wrongly dropped a KO'd front-row ally from its
+  headcount, so a lone living front-row ally could be blocked from
+  stepping back even though real RPG_RT would have let it.** Confirmed
+  directly against RPG_RT's live source: `Scene_Battle_Rpg2k3::RowSelected`
+  (`src/scene_battle_rpg2k3.cpp`) counts `front_row_battlers` with a raw
+  loop over `Main_Data::game_party->GetActors()` — an unfiltered walk of
+  `Game_Party`'s roster (`src/game_party.cpp`) with no HP or hidden check
+  anywhere; a dead ally's stored `GetBattleRow()` still counts.
+  `Game::Battle#can_leave_front_row?` (`mruby-rpg2k/mrblib/game.rb`)
+  instead ran `allies.reject(&:out_of_play?)` first, which drops any
+  `dead?`/`hidden` ally before counting — so a 2-member front row with one
+  KO'd member read as "only 1 (myself) in front" and refused the survivor's
+  toggle with a Buzzer, when the reference's own unfiltered headcount would
+  have allowed it. Fixed by counting on `#member?` alone (still excluding
+  an ally who has actually left the live party mid-battle — the one case
+  this codebase's `@allies` array can hold that the reference's
+  `data.party`-backed `GetActors()` never would), matching
+  `RowSelected`'s own unfiltered semantics for HP and hidden state. Two new
+  `scripts/rpg2k3_battle_row_check.rb` checks: a living front-row ally may
+  step back when its only front-row companion is dead; a lone front-row
+  ally still can't step back with no other front-row ally at all (dead or
+  alive) — the first confirmed to fail against the pre-fix code (`expected
+  true, got false`) before the fix.
   ✅ **Change Battle Commands (1009) never validated an added command id
   against the database's own Battle Commands table, so any positive
   integer — however bogus — could occupy one of the six real slots
