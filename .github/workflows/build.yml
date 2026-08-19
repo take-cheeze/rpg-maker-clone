@@ -515,7 +515,10 @@ jobs:
           # player's start/end tile (`[MV-MOVE] ... moved=<bool>`) and capture a
           # frame. The boot smoke above only reaches the title; this exercises
           # the fuller real game's map / movement / render path (a real database,
-          # autotiles and character sheet the minimal sample can't cover).
+          # autotiles and character sheet the minimal sample can't cover). Like
+          # the MZ movement smoke, this greps the log for `moved=true` (a step
+          # that merely runs to completion cannot pass) — the process exit code
+          # alone previously let a stuck-tileset regression through unnoticed.
           # Non-blocking, like the other MV smokes.
           - name: MV real-game play smoke test
             continue-on-error: true
@@ -523,7 +526,10 @@ jobs:
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=105 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/Lunatic-Core --test_play \
-                --mv_new_game --mv_move_test --mv_screenshot=ss/mv_play.png
+                --mv_new_game --mv_move_test --mv_screenshot=ss/mv_play.png \
+                | tee ss/mv_play.log
+              grep -q '\[MV-MOVE\].*moved=true' ss/mv_play.log ||
+                { echo "player never moved ([MV-MOVE] moved=true missing)"; exit 1; }
 
           - name: MV sample smoke test
             continue-on-error: true
@@ -602,7 +608,10 @@ jobs:
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=103 timeout 120 ./build/rpg_maker_clone \
                 --timeout_ms=6000 --game_dir data/mv-sample --test_play \
-                --mv_new_game --mv_move_test
+                --mv_new_game --mv_move_test \
+                | tee ss/mv_move.log
+              grep -q '\[MV-MOVE\].*moved=true' ss/mv_move.log ||
+                { echo "player never moved ([MV-MOVE] moved=true missing)"; exit 1; }
 
           - name: MV message smoke test
             continue-on-error: true
