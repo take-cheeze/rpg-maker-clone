@@ -8527,6 +8527,65 @@ check "a map-triggered Show Battle Animation carries RPG_RT's own 24px map-targe
       'or the battle-only nil fallback'
 end
 
+check "Show Battle Animation's Whole Screen option (param3) tiles the animation " \
+      'across the screen, not just over the target character' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Interpreter_Map::CommandShowBattleAnimation`
+  # (src/game_interpreter_map.cpp) reads `bool global = com.parameters[3] >
+  # 0;` and threads it through to `BattleAnimationMap::DrawGlobal`
+  # (src/battle_animation.cpp), which draws the animation nine times in a
+  # 3x3 grid offset by a full screen width/height in each direction --
+  # covering the whole visible screen regardless of where the camera
+  # happens to sit. A prior version of this codebase never read param3 at
+  # all, so a "Whole screen" animation always rendered as a single copy
+  # anchored to the target character instead.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1, 1], indent: 0), # animation, player, wait, global=1
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  anim = nil
+  40.times do
+    scene.update
+    anim = scene.instance_variable_get(:@map_animation)
+    break if anim
+  end
+  ok anim, 'the animation actually started'
+  eq 9, anim[:targets].size, 'a 3x3 tiled grid of targets, not just the one character'
+  ok anim[:targets].all? { |t| t[:height].nil? },
+     'no sprite bounding box to split -- matching DrawGlobal, which never goes ' \
+     "through DrawSingle's position/character-height offset logic at all"
+  xs = anim[:targets].map { |t| t[:tx] }.uniq.sort
+  ys = anim[:targets].map { |t| t[:ty] }.uniq.sort
+  eq 3, xs.size
+  eq 3, ys.size
+  eq RPG2k::Scene::Map::SCREEN_W, xs[1] - xs[0], 'adjacent tiles are exactly one screen width apart'
+  eq RPG2k::Scene::Map::SCREEN_W, xs[2] - xs[1]
+  eq RPG2k::Scene::Map::SCREEN_H, ys[1] - ys[0], 'and one screen height apart vertically'
+  eq RPG2k::Scene::Map::SCREEN_H, ys[2] - ys[1]
+end
+
+check 'Show Battle Animation with no Whole Screen flag still draws a single ' \
+      'target, unaffected by the param3 fix' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 10001, 1], indent: 0), # animation, player, wait -- no 4th param
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  anim = nil
+  40.times do
+    scene.update
+    anim = scene.instance_variable_get(:@map_animation)
+    break if anim
+  end
+  ok anim, 'the animation actually started'
+  eq 1, anim[:targets].size, 'an ordinary target-character animation, exactly as before'
+end
+
 # A map-triggered Show Battle Animation's flash_scope-1 timing used to be
 # silently dropped: #fire_animation_flashes only ever reached
 # #fire_target_flash's battle-only enemy-sprite mechanism, which a map scene

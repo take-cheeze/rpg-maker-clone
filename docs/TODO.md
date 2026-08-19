@@ -4686,6 +4686,50 @@ The work below is roughly ordered by the critical path to a walkable game
   staying put for center; a map-triggered animation carrying RPG_RT's own
   24px map-target height, not the CharSet frame's 32px), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Show Battle Animation's own "Whole screen" target option (param3) was
+  silently dropped, so it always rendered anchored to the target character
+  instead of tiled across the visible screen (2026-08-19).**
+  `Interpreter#do_show_battle_animation` (`mruby-rpg2k/mrblib/
+  interpreter.rb`) recorded `animation`/`target`/`wait` off `cmd.param(0..2)`
+  but never read `cmd.param(3)` at all. Confirmed against EasyRPG's actual
+  C++ source, fetched live: `Game_Interpreter_Map::
+  CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`) is `bool
+  global = com.parameters[3] > 0;`, threaded straight through `Game_Screen::
+  ShowBattleAnimation` into `BattleAnimationMap`'s own `global` flag — and
+  this command's own `CmdSetup<..., 4>` requires all four parameters, so
+  this is not a 2003-only extension nor an optional trailing field, unlike
+  some other commands in this file. `BattleAnimationMap::Draw`
+  (`src/battle_animation.cpp`) branches on it: `DrawSingle` (the only path
+  this codebase ever took) anchors the animation to the target character;
+  `DrawGlobal` instead tiles it nine times in a 3x3 grid, each copy offset
+  by a full screen width/height (`GetScreenEffectsRect()`), so a single
+  animation cell — smaller than the screen — ends up covering the entire
+  visible area regardless of where the camera sits. Choosing "Whole screen"
+  in the editor's own Show Battle Animation target dropdown (a standard,
+  commonly-authored way to do a screen-wide explosion/flash cutscene
+  effect, not an obscure option) writes this exact parameter — so every
+  such animation played as a small effect stuck to the hero (or whatever
+  `target` resolved to) instead of the intended full-screen wash. Fixed by
+  reading `cmd.param(3)` into a new `global:` key on the `@battle_animation`
+  request, and a new `Scene::Map#global_animation_targets`, called from
+  `#start_map_animation` when it is set: nine `#anim_target` descriptors
+  built directly in this scene's own map-pixel/camera-offset space (so the
+  ordinary per-target `tx - cam_x + TILE / 2` conversion every other draw
+  already applies places each tile at exactly `i * SCREEN_W + SCREEN_W / 2`
+  on screen with no special-casing at draw time), each with `height: nil`
+  since a full-screen tile has no sprite bounding box for
+  `#animation_position_offset` to split against — matching `DrawGlobal`,
+  which never goes through `DrawSingle`'s position/character-height offset
+  logic at all. Every tile shares the same `flash_target` (the original
+  single character `BattleAnimationMap::FlashTargets` itself always
+  flashes, `global` or not, per its own unconditional `target->Flash(...)`
+  call); `ShakeTargets` needed no equivalent change, already a
+  confirmed-empty no-op for this map form regardless of `global`. Covered
+  by two new `scripts/rpg2k_scene_check.rb` checks (a "Whole screen"
+  animation builds a 3x3 grid of `height: nil` targets spaced exactly one
+  screen width/height apart, confirmed to fail against the pre-fix code —
+  `expected 9, got 1` — before the fix; an ordinary single-target animation
+  with no fourth parameter at all is completely unaffected).
   ✅ **Per-cell transparency is no longer approximated away either.** Each
   cell of an animation frame carries its own `transparency` (`battle_anime`
   chunk 19's per-cell field 10 — liblcf's

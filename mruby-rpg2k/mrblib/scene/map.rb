@@ -5993,15 +5993,58 @@ class RPG2k
       def start_map_animation(req)
         return nil unless req
         return @battle.start_battle_page_animation(req) if req[:battle]
-        tx, ty = animation_target_pixel(req[:target])
-        # Every map target -- the player, a map event, a vehicle -- gets the
-        # same fixed height for #animation_position_offset's Head/Feet split
-        # (see ANIM_MAP_TARGET_HEIGHT's own comment for why this is 24, not
-        # the CharSet frame's actual 32px), so the sprite bounding box is
-        # known without asking what kind of character this actually is.
-        target = anim_target(tx, ty, height: ANIM_MAP_TARGET_HEIGHT, index: nil,
-                             flash_target: map_animation_flash_target(req[:target]))
-        build_animation(req[:animation], [target], false)
+        flash_target = map_animation_flash_target(req[:target])
+        targets =
+          if req[:global]
+            global_animation_targets(flash_target)
+          else
+            tx, ty = animation_target_pixel(req[:target])
+            # Every map target -- the player, a map event, a vehicle -- gets
+            # the same fixed height for #animation_position_offset's
+            # Head/Feet split (see ANIM_MAP_TARGET_HEIGHT's own comment for
+            # why this is 24, not the CharSet frame's actual 32px), so the
+            # sprite bounding box is known without asking what kind of
+            # character this actually is.
+            [anim_target(tx, ty, height: ANIM_MAP_TARGET_HEIGHT, index: nil, flash_target: flash_target)]
+          end
+        build_animation(req[:animation], targets, false)
+      end
+
+      # The 3x3 grid of map-pixel target descriptors a **whole-screen** Show
+      # Battle Animation (11210 param3, the editor's "Whole screen" target
+      # option) tiles itself across, matching EasyRPG's actual C++ source,
+      # fetched live: `BattleAnimationMap::DrawGlobal`
+      # (src/battle_animation.cpp) draws the animation nine times, offset by
+      # a full screen width/height in each direction (`for y in -1..1: for x
+      # in -1..1: DrawAt(dst, rect.width*x+rect.x, rect.height*y+rect.y)`,
+      # `rect` the current visible screen area) -- since a single animation
+      # cell is smaller than the screen, this is what makes it cover the
+      # whole visible area regardless of where the camera happens to sit,
+      # rather than appearing only once at a single point on it.
+      #
+      # Built directly in this scene's own map-pixel/camera-offset space
+      # (`#camera_position`, the same one every other draw here already
+      # subtracts) rather than screen space, so the ordinary per-target `tx -
+      # cam_x + TILE / 2` conversion in #render_map_animation places each
+      # tile at exactly `i * SCREEN_W + SCREEN_W / 2` on screen with no
+      # special-casing there. `height: nil` -- like the ally-side "middle of
+      # the screen" fallback -- since a full-screen tile has no sprite
+      # bounding box for #animation_position_offset to split; EasyRPG's own
+      # `DrawGlobal` never goes through `DrawSingle`'s position/character-
+      # height logic at all. Every tile shares the same `flash_target`
+      # (the original single character `BattleAnimationMap::FlashTargets`
+      # itself always flashes, `global` or not) so a flash_scope-1 timing
+      # still pulses the right character; `ShakeTargets` is already a
+      # confirmed-empty no-op for this map form regardless.
+      def global_animation_targets(flash_target)
+        cam_x, cam_y = camera_position
+        (-1..1).flat_map do |gy|
+          (-1..1).map do |gx|
+            tx = cam_x - TILE / 2 + gx * SCREEN_W + SCREEN_W / 2
+            ty = cam_y - TILE / 2 + gy * SCREEN_H + SCREEN_H / 2
+            anim_target(tx, ty, height: nil, index: nil, flash_target: flash_target)
+          end
+        end
       end
 
       # The character a map-triggered flash_scope-1 timing (see
