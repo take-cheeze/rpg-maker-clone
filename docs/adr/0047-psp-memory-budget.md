@@ -744,20 +744,100 @@ the interpreter-linking slice, in this order:
     calls `sceKernelExitGame` on its own, unrelated to this bug; the
     existing `psp-smoke` job already tolerates this class of flakiness
     by staying non-blocking.)
-  - **New, separate finding — not yet investigated:** with bug 10 fixed,
-    the frame loop's very first `main_loop` call (`app/psp/main.cxx`)
-    appears to stall before the first `RPG2K_PSP_BRINGUP` heartbeat would
-    print (`frame % 200 == 0`, so it should fire immediately at
-    `frame=0`) — the log between `GAME_START ok` and the eventual
-    `--timeout` teardown shows only a handful of syscalls, including a
-    `sceKernelCreateSema` (`pthread_sem7`) immediately followed by a
-    `sceKernelWaitSema` that never returns, rather than ~4,000 frames'
-    worth of activity. Plausible cause: some first-frame subsystem init
-    (audio is the leading suspect, given the semaphore-creation naming
-    pattern) blocks on a callback/thread that never signals back under
-    PPSSPP-headless's software/no-audio-output configuration. This is a
-    later-stage, separate bug from bug 10's construction-time crash and
-    has not been root-caused.
+  - **New, separate finding — mechanism confirmed, exact trigger still
+    open.** With bug 10 fixed, the frame loop's very first `main_loop`
+    call (`app/psp/main.cxx`) still crashes before the first
+    `RPG2K_PSP_BRINGUP` heartbeat, during `Scene::Title#initialize`
+    (`mruby-rpg2k/mrblib/scene/title.rb`) — **not a stall**: reproducing
+    with `--timeout=20` and `--timeout=90` produces byte-identical logs
+    (same line count, same final syscalls), so the process exits on its
+    own well inside either window; nothing here is waiting on the harness
+    to kill it.
+    - **Confirmed mechanism**, via a `WalkCurrentStack`/`FormatStackTrace`
+      diagnostic patched into PPSSPP's `sceKernelCreateSema` HLE handler
+      (same technique as bug 10's own diagnostics; reproduced twice, on
+      two different builds, with identical results both times): the crash
+      is a genuine, uncaught **C++ exception**. The first `sceKernelCreateSema`
+      call after `GAME_START ok` (named `pthread_sem7` by pspdev's
+      `libpthreadglue/osal.c`, a plain incrementing counter with no
+      significance beyond "the seventh pthread primitive created in this
+      process") is the pspsdk pthread glue's own lazy TLS setup, entered
+      for the first time from libgcc's C++ personality routine:
+      `pte_osSemaphoreCreate <- pthread_mutex_lock <- pthread_setspecific
+      <- __cxa_get_globals <- __cxa_throw`. Some code throws a real C++
+      exception (`__cxa_throw`) for the first time in the process's life
+      at this point. That throw cannot safely unwind past mruby's own
+      `vm.c` dispatch loop, which is compiled as C++ (see Finding
+      3/`OP_ENTER` discussion above) but *not* with
+      `MRB_USE_CXX_EXCEPTION`/full exception-table support for its own
+      control flow (mruby uses `setjmp`/`longjmp` internally instead) —
+      so the unwind fails inside libgcc's `_Unwind_RaiseException_Phase2`,
+      which calls `abort()`. pspsdk's `_kill()` (`glue.c`, `abort()`'s
+      `SIGABRT` handler) implements "kill the process" as
+      `sceKernelDeleteThread` on its *own* current thread, which the PSP
+      kernel correctly refuses (`SCE_KERNEL_ERROR_NOT_DORMANT`) — and
+      that refused delete is what cascades into the same
+      `sysclib_strlen(0x11e)` symptom bug 10's own diagnostics keyed off
+      of, confirming this is a different bug wearing the same visible
+      symptom, not a regression of bug 10 itself.
+    - **Ruled out with direct evidence**, not speculation:
+      - **Not simple arena exhaustion.** A `g_mrb_free` free-list walk
+        (the same technique bug 10 used) at the exact `pthread_sem7`
+        moment showed **~3.8 MB free of the 8 MB arena**, with a 3.57 MB
+        contiguous block — nowhere near exhausted.
+      - **Not `Audio.bgm_play` specifically.** The title BGM lookup
+        (`mruby-rgss/mrblib/lib.rb`'s `resolve`/`play_packed`, searching
+        every extension in `MUSIC_DIRS` then falling back to
+        `RGSS.asset_archive`, which is `nil` on this bring-up build) runs
+        immediately before the crash and looks like an obvious suspect,
+        but bypassing the call entirely (a scratch edit returning early
+        from `play_title_bgm` before it) did **not** fix anything — the
+        crash just moved to occur after a *different* file-search loop
+        (the Continue-availability save-slot scan) instead, at the same
+        `pthread_sem7`-then-abort pattern. This means the trigger is not
+        audio-specific; whatever throws is reachable from more than one
+        code path, or the two searches are coincidental neighbors of
+        something else entirely.
+      - **Not `RGSS.warn_once`'s `$stderr.puts`.** Also stubbed out as a
+        scratch test (mruby-io's `IO#puts` bottoms out in a plain
+        `write(2, ...)`, the same primitive `psp_write` already uses
+        successfully throughout this whole bring-up); crash persisted
+        unchanged.
+      - **Not mruby's own OOM-fallback abort path.** The stack trace's
+        `__cxa_throw` frame was initially (and, on later direct
+        verification, **incorrectly**) attributed by `psp-addr2line` to
+        `mrb_core_init_abort` (`3rd/mruby/src/error.c`) — the function
+        `mrb_raise_nomemory` falls back to when `mrb->nomem_err` is
+        unexpectedly unset, itself the only caller of a real `__cxa_throw`
+        in mruby's own source (`exc_throw`'s `!mrb->jmp` branch calls
+        `mrb_print_error` then plain `abort()`, not a C++ throw; when
+        `mrb->jmp` is set as expected, `MRB_THROW` is a `longjmp`, not a
+        throw, on this build). A call counter patched directly into
+        `mrb_core_init_abort` came back **`call_count=0`** after a full
+        crashing run: it was never entered. The `addr2line` attribution
+        was a nearest-preceding-symbol artifact, not the real call site —
+        worth recording plainly since it side-tracked a chunk of this
+        session's investigation and would do the same to the next one.
+    - **Not yet found:** the actual `throw` site. Suggested next steps,
+      roughly in order of promise: (1) get a raw disassembly around the
+      exact PC libgcc's personality routine returns to (rather than
+      trusting `addr2line`'s nearest-symbol guess a second time — a
+      function compiled with `-O3` can have its no-return tail folded
+      into another one via identical-code-folding, which is the likely
+      explanation for the first misattribution); (2) grep every `throw`
+      statement reachable from `Scene::Title#initialize`'s call graph —
+      not just `mruby-rgss/src/*.cxx`, but LVGL, uni-algo, and the
+      `Bitmap`/font-rendering path exercised by `draw_system_text` and
+      `load_windowskin`, since those run *before* the BGM/save-slot
+      searches and could be the true shared cause both bisections missed
+      by only cutting out code that runs *after* them; (3) confirm
+      whether `std::string`/STL exceptions (`std::out_of_range`,
+      `std::bad_alloc`, …) are reachable at all from the cross-compiled
+      `psp-g++` build's actual linked exception-personality routine, since
+      a mismatched `-fexceptions` setting between object files linked into
+      `rpg2k_psp` (some parts of this tree are compiled without it) is
+      exactly the kind of thing that produces a phase-1/phase-2 unwind
+      mismatch like the one observed here.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
