@@ -2826,25 +2826,11 @@ module Game
     end
 
     # Restore HP and MP to their maxima and cure every status condition
-    # (RPG2000 Full Recovery). Then re-inflicts every #permanent_states id --
-    # EasyRPG's `Game_Actor::FullHeal` (`src/game_actor.cpp`) is
-    # `RemoveAllStates(); SetHp(GetMaxHp()); SetSp(GetMaxSp());
-    # ResetEquipmentStates(true);`, and that trailing call (its own comment:
-    # "Emulates RPG_RT behavior of resetting even battle equipment states on
-    # full heal") walks every equipped slot and unconditionally re-inflicts
-    # each state a worn RPG2003 cursed item forces, regardless of whether it
-    # was already present. `#clear_states` alone (mirroring `RemoveAllStates`)
-    # can only ever *keep* an id already in `@states`, never re-add a missing
-    # one -- so a state a map-side Change Condition had already lifted via
-    # its own `always_remove_battle_states` exemption (still cursed-armor
-    # locked in every other cure path) stayed gone through a Full Recovery
-    # too, until now, diverging from real RPG_RT's own unconditional
-    # re-inflict.
+    # (RPG2000 Full Recovery).
     def full_heal
       @hp = @max_hp
       @mp = @max_mp
       clear_states
-      permanent_states.each { |id| add_state(id) }
     end
 
     # Change Parameters base-stat types (the RPG2000 command's parameter field).

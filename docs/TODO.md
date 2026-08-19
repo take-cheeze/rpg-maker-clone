@@ -9179,37 +9179,6 @@ not yet verified:
   `#cure_state` call is refused on the same state while the armor stays
   equipped), both confirmed to fail against the pre-fix code before the
   fix.
-  ✅ **Follow-up (2026-08-19): Full Recovery never re-inflicted a
-  cursed-armor-forced state the map-side Change Condition exemption above
-  had already lifted — every fix in this cluster only ever kept an id
-  already present, never re-added a missing one, and RPG_RT's own Full
-  Heal is the one path that does.** Confirmed directly against RPG_RT's
-  live source: `Game_Actor::FullHeal` (`src/game_actor.cpp`) is
-  `RemoveAllStates(); SetHp(GetMaxHp()); SetSp(GetMaxSp());
-  ResetEquipmentStates(true);` — its own comment on the trailing call:
-  "Emulates RPG_RT behavior of resetting even battle equipment states on
-  full heal." `ResetEquipmentStates(true)` walks every equipped slot
-  (Shield/Armor/Helmet/Accessory) and calls `AdjustEquipmentStates(item,
-  true, true)`, which unconditionally re-`AddState`s each of that item's
-  forced states regardless of whether it was already present — so a Full
-  Recovery in real RPG_RT always leaves every currently-cursed-armor-forced
-  state active, even one the map-only exemption two fixes above had just
-  lifted. `Game::Actor#full_heal` (`mruby-rpg2k/mrblib/game.rb`) only ever
-  called `#clear_states`, which (mirroring `RemoveAllStates`/`State::
-  RemoveAll`) can only *keep* an id already in `@states`, never re-add a
-  missing one — so a state a shrine/blessing map event had legitimately
-  lifted via Change Condition's own `always_remove_battle_states` exemption
-  stayed gone through a subsequent Full Recovery too, diverging from real
-  RPG_RT's unconditional re-inflict. Fixed by having `#full_heal` re-add
-  every `#permanent_states` id after `#clear_states`, mirroring
-  `ResetEquipmentStates(true)`'s own unconditional re-inflict; `RemoveAll
-  States`/`ResetEquipmentStates` are single-call-site in both the reference
-  (only `Game_Actor::FullHeal`) and this port (only `Interpreter#
-  do_full_heal`), so nothing else changes behavior. Covered by extending
-  the existing map-side-exemption `scripts/rpg2k_logic_check.rb` check with
-  one more assertion — calling `#full_heal` right after the exemption lifts
-  the state, armor still worn, restores it — confirmed to fail against the
-  pre-fix code (`expected [4], got []`) before the fix.
   ✅ **Change Battle Commands (1009) never validated an added command id
   against the database's own Battle Commands table, so any positive
   integer — however bogus — could occupy one of the six real slots

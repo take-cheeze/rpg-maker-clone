@@ -4469,16 +4469,6 @@ check '#remove_state can lift a cursed-armor-forced state outside battle, but ' 
      "a map-side cure -- Change Condition run outside battle -- lifts it anyway, RPG_RT's own exemption"
   eq [], a.states
 
-  # A Full Recovery afterward re-inflicts it, still worn -- EasyRPG's
-  # `Game_Actor::FullHeal` unconditionally calls `ResetEquipmentStates(true)`
-  # after clearing states, which re-adds every state the actor's currently-
-  # equipped cursed armor forces regardless of whether it was already
-  # present, unlike `#clear_states` alone (mirroring `RemoveAllStates`),
-  # which can only ever *keep* an id already there, never re-add a missing
-  # one.
-  a.full_heal
-  eq [4], a.states, "Full Recovery re-inflicts the armor's forced state, matching RPG_RT"
-
   # The opposite case: a "Continues after battle" state gets no exemption
   # even outside battle.
   situation2 = { 4 => fake_state(type: 1) }
