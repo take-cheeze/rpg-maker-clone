@@ -349,6 +349,42 @@ assert "LCF.parse_move_commands decodes bare and parameterised commands" do
   assert_equal 11, cmds[4].command_id
 end
 
+assert "LCF.encode_event_commands is the exact inverse of .parse_event_commands" do
+  def lcf_command(code, indent, str, params)
+    lcf_ber(code) + lcf_ber(indent) + lcf_ber(str.bytesize) + str +
+      lcf_ber(params.size) + params.map { |p| lcf_ber(p) }.join
+  end
+  cmds = [LCF::EventCommand.new(10110, 0, "Hi", [1, 2]),
+          LCF::EventCommand.new(10210, 1, "", [0, 3, 3, 0])]
+  expected = lcf_command(10110, 0, "Hi", [1, 2]) + lcf_command(10210, 1, "", [0, 3, 3, 0])
+  assert_equal expected, LCF.encode_event_commands(cmds)
+  # And through the generic dispatcher a schema's :event field actually uses.
+  back = LCF.parse_event_commands(LCF.encode(cmds, :event))
+  assert_equal 10110, back[0].code
+  assert_equal [1, 2], back[0].parameters
+  assert_equal "", back[1].string
+end
+
+assert "LCF.encode_move_commands is the exact inverse of .parse_move_commands, " \
+       "writing only the fields each command id carries" do
+  cmds = [LCF::MoveCommand.new(14, '', 0, 0, 0),         # bare
+          LCF::MoveCommand.new(32, '', 7, 0, 0),         # switch_on + id
+          LCF::MoveCommand.new(34, "Hero", 2, 0, 0),     # change_graphic + name/index
+          LCF::MoveCommand.new(35, "bell", 100, 80, 50), # play_sound + name/vol/tempo/balance
+          LCF::MoveCommand.new(11, '', 0, 0, 0)]         # bare
+  expected = lcf_ber(14) +
+             lcf_ber(32) + lcf_ber(7) +
+             lcf_ber(34) + lcf_ber("Hero".bytesize) + "Hero" + lcf_ber(2) +
+             lcf_ber(35) + lcf_ber("bell".bytesize) + "bell" +
+             lcf_ber(100) + lcf_ber(80) + lcf_ber(50) +
+             lcf_ber(11)
+  assert_equal expected, LCF.encode_move_commands(cmds)
+  back = LCF.parse_move_commands(LCF.encode(cmds, :move_commands))
+  assert_equal 5, back.size
+  assert_equal "bell", back[3].parameter_string
+  assert_equal 50, back[3].parameter_c
+end
+
 assert "LCF map-tree scroll bars decode as ints, not booleans" do
   # These chunks (5/6) hold the editor's signed scrollbar positions; a real game
   # stores multi-byte BER ints here, which the old :bool schema could not read.
