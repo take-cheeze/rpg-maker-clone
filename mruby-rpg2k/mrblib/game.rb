@@ -11207,18 +11207,26 @@ module Game
     # Whether `b`'s action this round earns the `preemptive` weapon's
     # turn-order jump: only a basic Attack qualifies (a Skill, Item or Defend
     # with the same weapon equipped keeps its ordinary agility slot, matching
-    # `CreateExecutionOrder`'s own `Type::Normal` guard). A forced
-    # attack-ally restriction (confusion) still counts, since the confused
-    # battler is still swinging a basic Attack under the hood; a forced
+    # `CreateExecutionOrder`'s own `Type::Normal` guard). ~~A forced
+    # attack-ally restriction (confusion) still counts... a forced
     # attack-enemy restriction (berserk) does not -- per the site's own
-    # デフォ戦botまとめ trivia, berserk specifically drops the weapon's
-    # preemptive jump on top of forcing the target. `preemptive` is
-    # actor-only (see Combatant), so an enemy never qualifies either way.
+    # デフォ戦botまとめ trivia~~ -- corrected against RPG_RT's own live
+    # source: `Scene_Battle_Rpg2k::SelectNextActor` (`src/
+    # scene_battle_rpg2k.cpp`) builds an identical `Game_BattleAlgorithm::
+    # Normal` for both `Restriction_attack_ally` (confusion) and
+    # `Restriction_attack_enemy` (berserk) -- the same `switch` just picks
+    # which side `GetRandomActiveBattler()` draws from -- and
+    # `CreateExecutionOrder`'s own `+= 9999` bonus and `Game_Actor::
+    # HasPreemptiveAttack` (`src/game_actor.cpp`) both key purely on
+    # `Type::Normal` plus the equipped weapon's flag, with no restriction
+    # dependency anywhere in the chain. The uncited fan-wiki claim that
+    # berserk specifically drops the bonus does not hold up against the
+    # actual source. `preemptive` is actor-only (see Combatant), so an enemy
+    # never qualifies either way.
     def preemptive_boost?(b)
       return false unless b.preemptive
       r = battler_restriction(b)
-      return false if r == RESTRICTION_ATTACK_ENEMY
-      return true if r == RESTRICTION_ATTACK_ALLY
+      return true if r == RESTRICTION_ATTACK_ALLY || r == RESTRICTION_ATTACK_ENEMY
       b.command.nil? && !b.defending && !b.skip
     end
 

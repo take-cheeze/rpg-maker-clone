@@ -18316,13 +18316,35 @@ codebase yet):
   the attack-all spread to `RESTRICTION_ATTACK_ALLY` only (Berserk now always
   hits its single forced target via `#swing` directly, so the now-redundant
   `#attack_side` helper was removed in favour of the existing `#swing_side`),
-  and returning `false` from `#preemptive_boost?` for `RESTRICTION_ATTACK_ENEMY`
-  before the existing `RESTRICTION_ATTACK_ALLY` case. Covered by four new
+  ~~and returning `false` from `#preemptive_boost?` for `RESTRICTION_ATTACK_ENEMY`
+  before the existing `RESTRICTION_ATTACK_ALLY` case~~. Covered by four new
   `scripts/rpg2k_logic_check.rb` checks (Berserk plus attack-all hits one
-  target; a preemptive weapon's jump is dropped under Berserk; Berserk still
+  target; ~~a preemptive weapon's jump is dropped under Berserk~~; Berserk still
   swings a dual-wield weapon twice; a confused, attack-all, dual-wield
   attacker swings twice per target), all four confirmed to fail against the
-  pre-fix code. **Confirmed already correct, no change needed**: hit rate's
+  pre-fix code.
+  ✅ **Follow-up (2026-08-20): that `#preemptive_boost?` change above was
+  itself wrong — RPG_RT does not drop a `preemptive` weapon's turn-order jump
+  under Berserk.** The doc comment introduced alongside it cited only an
+  uncited fan-wiki page (「デフォ戦botまとめ」) for the exclusion, never a real
+  source. Checked against EasyRPG Player's actual C++: `Scene_Battle_Rpg2k::
+  SelectNextActor` (`src/scene_battle_rpg2k.cpp`) builds an identical
+  `Game_BattleAlgorithm::Normal` for a forced `Restriction_attack_ally`
+  (confusion) and `Restriction_attack_enemy` (berserk) alike — the same
+  `switch` only changes which side `GetRandomActiveBattler()` draws the
+  target from — and `CreateExecutionOrder`'s `battle_order += 9999` bonus
+  keys purely on `GetBattleAlgorithm()->GetType() == Type::Normal &&
+  HasPreemptiveAttack()` (`Game_Actor::HasPreemptiveAttack`, `src/
+  game_actor.cpp`, a bare equipped-weapon flag check), with no restriction
+  dependency anywhere in that chain. `Game::Battle#preemptive_boost?`
+  (`mruby-rpg2k/mrblib/game.rb`) now returns `true` for
+  `RESTRICTION_ATTACK_ENEMY` the same as `RESTRICTION_ATTACK_ALLY`, so
+  Berserk keeps the weapon's jump exactly like Confusion does. The
+  `scripts/rpg2k_logic_check.rb` check this same paragraph added ("a
+  preemptive weapon's jump is dropped under Berserk") was rewritten in place
+  to assert the opposite ("berserk keeps a 先制攻撃 weapon's turn-order jump,
+  same as confusion"), confirmed to fail against the pre-fix code before the
+  fix. **Confirmed already correct, no change needed**: hit rate's
   floor/ceiling relative to a skill's configured rate by relative Agility (a
   90%-accuracy skill can't exceed 95% actual hit even against a much slower
   target; an 80% one caps at 90%). `Game::Battle#to_hit`'s existing
