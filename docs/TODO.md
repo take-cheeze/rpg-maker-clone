@@ -11753,10 +11753,11 @@ not yet verified:
   a new `scripts/rpg2k_scene_check.rb` check ("a Teleport/Escape field skill
   warp does not clear shown pictures"), confirmed to fail against the
   pre-fix code before the fix.
-- ✅ **Picture commands (Show/Move/Erase) are now fully suppressed while any
-  message window or choice list is open**, anywhere, including inside an
-  already-running parallel process — an unconditional engine limitation with
-  no workaround. This was a real, reachable gap: `Game::Interpreter#
+- ✅ **~~Picture commands (Show/Move/Erase) are now fully suppressed while any
+  message window or choice list is open~~, anywhere, including inside an
+  already-running parallel process — ~~an unconditional engine limitation with
+  no workaround~~ (corrected below, 2026-08-20: RPG_RT blocks and retries the
+  exact same command, it does not drop it).** This was a real, reachable gap: `Game::Interpreter#
   do_show_picture`/`#do_move_picture`/`#do_erase_picture` called straight
   into `Game::State#show_picture`/`#move_picture`/`#erase_picture` with no
   gating at all, and the sibling "parallel processes were paused too
@@ -11770,20 +11771,66 @@ not yet verified:
   existing `map_info` hook — the same `@map_info.respond_to?(:x) &&
   @map_info.x` pattern `#event_operand`/`#screen_operand` already use for
   `#event_position`/`#character_screen_position` — so a headless interpreter
-  (no `map_info`, or a battle page) is unaffected. All three picture
+  (no `map_info`, or a battle page) is unaffected. ~~All three picture
   commands now return immediately when it answers true; a suppressed Move
   Picture's wait flag is not honoured either (nothing moved, so there is
-  nothing to wait for), matching "no workaround". Covered by four new
+  nothing to wait for), matching "no workaround".~~ Covered by four new
   `scripts/rpg2k_scene_check.rb` checks, confirmed to fail against the
   pre-fix code: a direct interpreter poke while its own message window is
   open, the same poke against an open choice list, and a full scene
   simulation proving a parallel process's Show/Move/Erase Picture attempts
-  are dropped while a message window (opened via `#open_message`, sidestepping
+  ~~are dropped~~ while a message window (opened via `#open_message`, sidestepping
   the `#step_parallels`-before-`#start_autostart` ordering that would
   otherwise let the parallel process's first lap land before the window is
-  actually open) is up and take effect on the very next lap once it closes —
-  while confirming the same process's non-picture commands (`Control
-  Variables`) keep advancing throughout, so the sibling fix stays intact.
+  actually open) is up and take effect ~~on the very next lap~~ once it closes —
+  ~~while confirming the same process's non-picture commands (`Control
+  Variables`) keep advancing throughout, so the sibling fix stays intact.~~
+  ✅ **Follow-up (2026-08-20): the suppression above was too strong — real
+  RPG_RT blocks a Show/Move/Erase Picture command in place and retries the
+  identical command every subsequent frame, it does not drop it.**
+  Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  CommandShowPicture`/`CommandMovePicture`/`CommandErasePicture`
+  (`src/game_interpreter.cpp`, codes 11110/11120/11130) each open with the
+  identical guard `if (!Player::IsEnglish() && !Player::IsPatchUnlockPics()
+  && Game_Message::IsMessageActive()) { return false; }` — and returning
+  `false` is EasyRPG's own block-and-retry idiom, not "discard": the main
+  dispatch loop (`Game_Interpreter::Update`) only advances
+  `frame->current_command` when the handler returns `true` (`if
+  (!ExecuteCommand()) { break; }` ... `if (index_before_exec ==
+  frame->current_command) { frame->current_command++; }`), so a `false`
+  return re-attempts the identical command on the very next `Update()` call
+  instead of skipping past it — and once the message clears, the same
+  command actually executes and takes effect, including its own wait flag
+  (Move Picture's) once it finally runs. The previous fix's own
+  justification cited only fan-wiki pages ("an unconditional engine
+  limitation with no workaround"), never the real C++ source — re-reading
+  the actual fetched EasyRPG source shows the wiki's "suppressed"/"blocked"
+  wording was taken literally as "permanently dropped" when the real
+  mechanism is "blocked, then retried, then applied." Concretely, this also
+  means the *whole* interpreter blocks at that exact command, not merely
+  that one command in isolation: a command right after a blocked picture
+  command in the same list must not run either until the picture command
+  itself finally succeeds — the prior fix's own test had this backwards,
+  asserting a parallel process's other commands "keep advancing regardless"
+  past its own blocked picture command (masked by parallel processes
+  auto-restarting their command list once finished, `Scene::Map#step_parallels`'s
+  `it.start(p[:commands]) # loop the process`, which coincidentally re-tried
+  a single-command page's own Show Picture from scratch every lap and made
+  the old drop-based code look like it retried). Fixed by adding
+  `Game::Interpreter#block_pending_picture_command`, called from all three
+  handlers in place of the old bare `return if picture_commands_suppressed?`:
+  it rewinds `@index` back onto the same command (already advanced past it
+  by `#update` before `#execute` runs) and suspends on a new
+  `:picture_blocked` wait, mirroring this codebase's own established
+  `:screen`/`:picture`/`:sprite_flash` block-and-retry waits just gated on a
+  different condition. `Scene::Map#drive_event`'s foreground dispatch and
+  `#drive_parallel_wait` both gained a matching `:picture_blocked` case
+  (`resume unless message_window_open?`). Covered by rewriting the existing
+  suite's own wrong assertion (a blocked Show Picture's own trailing
+  `Control Variables` command must read `0` while blocked, not keep
+  incrementing every lap) and confirming it now applies (and the trailing
+  command runs) once the message closes, confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **Not applicable: re-issuing Show Picture every tick being expensive
   enough to cause real frame drops (vs. cheap repeated Move Picture) is a
   real-RPG_RT-specific performance characteristic, not a state/behaviour
