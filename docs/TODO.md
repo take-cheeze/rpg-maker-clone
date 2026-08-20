@@ -8636,6 +8636,29 @@ not yet verified:
   base-damage-1 hit lands for 0, both with and without 強力防御's second
   halving; the identical pair for `#enemy_autodestruct`), all confirmed to
   fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-20): `AdjustDamageForDefend` was also missing
+  entirely from an offensive Skill's HP damage, only ever applied to a plain
+  Attack and to self-destruct.** `Game::Battle#apply_skill_hit`
+  (`mruby-rpg2k/mrblib/game.rb`) computed an enemy-scope skill's `hp_dmg`
+  through attribute multiplier, critical, variance and the damage cap, then
+  applied it to the target's HP completely unadjusted by whether that target
+  was defending — Defend's halving existed only in
+  `#deal_attack_with_current_weapon` and `#enemy_autodestruct`, never here.
+  Confirmed against EasyRPG Player's actual source, fetched live:
+  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`)
+  computes `hp_effect` as `IsPositive() ? effect :
+  Algo::AdjustDamageForDefend(effect, *target)` — every enemy-scope skill's
+  HP branch gets the same treatment a basic Attack's `Normal::vExecute`
+  already does, not just Attack. The same function's SP branch and its
+  ATK/DEF/SPI/AGI stat-mod branches (lines 1074-1136) read the raw `effect`
+  with no such adjustment, so only the HP branch needed the fix — SP drain
+  and stat-mod skills are correct as they stood. Fixed by inserting the same
+  `hp_dmg /= 2; hp_dmg /= 2 if target.strong_defence` halving
+  `#deal_attack_with_current_weapon` already uses, applied to `hp_dmg` right
+  after it is set and before the 吸収 (absorb) clamp. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a dual HP+SP drain skill against a
+  defending target: the HP hit is halved, the SP hit is not), confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ **Simulated Attack's damage spread now uses RPG_RT's real variance
   formula, not a coarser stand-in this method's own comment misattributed to
   EasyRPG's source.** `Interpreter#do_simulated_attack` modelled its damage
