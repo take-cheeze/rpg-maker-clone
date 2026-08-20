@@ -17668,6 +17668,33 @@ above are repeated here)
   learnedness/usability — it has no target-specific "would this help"
   concept at that layer) was not verified before writing this note, so
   it's left for a dedicated follow-up rather than guessed at here.
+  ✅ **Follow-up (2026-08-20): a combined revive-plus-HP-recovery use, from
+  both `#use_medicine` and `#cast_skill`'s primary Affect-HP branch,
+  over-healed by exactly 1 HP.** `#remove_state` already floors a revived
+  target to 1 HP the instant Death comes off, and RPG_RT's own
+  `Game_Battler::UseItem`/`UseSkill` (`src/game_battler.cpp`, cited above)
+  both then add `hp_change - revived`/`effect - revived` on top of that
+  floor, not the full recovery amount — `revived` is `1` exactly when this
+  particular use just cured Death, `0` otherwise, so an ordinary heal on an
+  already-standing ally is unaffected. `#cast_skill`'s own sibling
+  "Affect HP off" branch (documented in the bullet just above this one)
+  already applies this `- revived` treatment correctly
+  (`t.change_hp(t.max_hp * amount / 100 - 1)`) — it was only ever missing
+  from the primary `if sk.affect_hp && amount > 0` branch right above it,
+  an internal inconsistency within the same method, and `#use_medicine` had
+  no `revived` tracking of any kind. Fixed by threading a `was_dead`/
+  `revived` pair through `#use_medicine` mirroring `#cast_skill`'s existing
+  pattern, and subtracting 1 from the applied HP change in both methods
+  whenever `revived` is true. Two existing `scripts/rpg2k_logic_check.rb`
+  checks had baked in the over-healed value and needed correcting: "a
+  revive skill cures the death state, then its HP recovery lands" (expected
+  33 for a revival skill's effect of 32, corrected to 32) and "the same
+  item revives an ally who is down, HP and all" (expected 26 for a 25%-of-
+  100 revive item, corrected to 25) — both confirmed to fail against the
+  pre-fix code with the corrected values before the fix. A third, unrelated
+  comment above (on `Battle command_item actually revives a downed ally`)
+  had asserted the field-menu paths "were already correct" — also wrong,
+  corrected in place.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor
