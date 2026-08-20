@@ -7439,9 +7439,14 @@ check 'a cure skill removes only its state_effects states (usable at full HP)' d
   eq 26, hero.mp                               # 30 - 4, consumed
 end
 
-check 'a revive skill cures the death state, then its HP recovery lands' do
+check 'a revive skill cures the death state, then its HP recovery lands, ' \
+      'one short of the raw effect' do
   # Cures state 1 (戦闘不能) and heals. States apply first: the cure revives the
-  # ally to 1 HP, then the recovery lands. effect = power 20 + mrate 40*int12/40 = 32.
+  # ally to 1 HP, then the recovery lands -- but one HP short of the raw
+  # effect, since RPG_RT's own `Game_Battler::UseSkill`
+  # (`src/game_battler.cpp`) applies `ChangeHp(effect - revived, false)` on
+  # top of the cure's own floor-to-1, not the full `effect`. effect = power
+  # 20 + mrate 40*int12/40 = 32, landing at 1 + (32 - 1) = 32.
   skills = { 6 => fake_skill(name: 'Life', scope: 3, sp_cost: 6,
                              power: 20, mrate: 40, hp: true, state_effects: [1]) }
   st = skill_party(skills)
@@ -7452,7 +7457,7 @@ check 'a revive skill cures the death state, then its HP recovery lands' do
   eq true, ally.dead?
   eq [ally], st.party.cast_skill(hero, 6, ally)
   eq false, ally.dead?
-  eq 33, ally.hp                               # revived to 1, then +32
+  eq 32, ally.hp                               # revived to 1, then +31 (32 - 1)
 end
 
 check 'a revival skill with Affect HP off heals a percentage of max HP, ' \
@@ -14165,8 +14170,11 @@ end
 # already-selectable downed ally (see #battle_ally_targets, which already
 # lets one be picked) silently fizzled at resolution: no SP/item spent, no
 # state cured, no HP restored, and the ally stayed dead -- the in-battle
-# path never actually revived anyone, unlike the field-menu
-# #use_medicine/#cast_skill, which were already correct.
+# path never actually revived anyone. ~~unlike the field-menu
+# #use_medicine/#cast_skill, which were already correct~~ -- that claim was
+# itself wrong: both field-menu methods over-healed a combined revive+HP
+# use by 1 (see the dedicated fix and its own citation in docs/TODO.md,
+# 2026-08-20).
 check 'Battle command_item actually revives a downed ally (RPG_RT: an ' \
       "item's target is always valid)" do
   user   = combatant('User', 0, 0, 20, 100)
@@ -19107,8 +19115,11 @@ check 'the same item revives an ally who is down, HP and all' do
   eq [hero], st.party.use_item(4, hero)
   ok !hero.dead?, 'back on their feet'
   # Standing up puts them on 1 HP first (the existing revive path), and the
-  # item's 25% of 100 lands on top of that.
-  eq 26, hero.hp, 'with the 25% the item restores'
+  # item's 25% of 100 lands on top of that -- but one HP short of the raw
+  # 25, since RPG_RT's `Game_Battler::UseItem` (`src/game_battler.cpp`)
+  # applies `ChangeHp(hp_change - revived, false)` on top of the cure's own
+  # floor-to-1, not the full `hp_change`.
+  eq 25, hero.hp, 'with the 25% the item restores, one short of the raw 25'
   eq 0, st.party.item_count(4), 'and it was spent'
 end
 

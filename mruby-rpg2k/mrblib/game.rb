@@ -4564,6 +4564,7 @@ module Game
         # usable on, even under an all-party scope.
         next if ko_only_blocked?(it, t) || !item_usable_by?(it, t.id)
         changed = false
+        was_dead = t.dead?
         # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
         # the HP recovery below lands instead of being blocked as a no-op.
         cured.each do |s|
@@ -4572,10 +4573,19 @@ module Game
             changed = true
           end
         end
+        # Whether curing Death just revived `t` -- #remove_state's own
+        # bare-revival fallback already floors it to 1 HP the instant Death
+        # comes off, matching EasyRPG's `RemoveState`. `Game_Battler::
+        # UseItem` (`src/game_battler.cpp`) then adds `hp_change - revived`,
+        # not the full `hp_change`, on top of that floor
+        # (`ChangeHp(hp_change - revived, false)`), so a combined revive+HP
+        # item must not add its full recovery on top of the 1 HP the cure
+        # already granted.
+        revived = was_dead && !t.dead?
         hp, mp = item_recovery(it, t)
         before_hp = t.hp
         before_mp = t.mp
-        t.change_hp(hp) if hp > 0
+        t.change_hp(revived ? hp - 1 : hp) if hp > 0
         t.change_mp(mp) if mp > 0
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
@@ -5380,7 +5390,13 @@ module Game
         before_hp = t.hp
         before_mp = t.mp
         if sk.affect_hp && amount > 0
-          t.change_hp(amount)
+          # Same `- revived` treatment as the Affect-HP-off branch just
+          # below: a combined revive+HP skill must not add its full amount
+          # on top of the 1 HP the Death cure above already granted --
+          # `Game_Battler::UseSkill` (`src/game_battler.cpp`) applies
+          # `ChangeHp(effect - revived, false)` here too, not just in its
+          # `cure_hp_percentage` sibling branch.
+          t.change_hp(revived ? amount - 1 : amount)
         elsif revived && amount > 0 && t.max_hp
           # A revival skill with Affect HP off heals a percentage of max HP
           # instead of leaving `t` on the bare revival floor of 1 --
