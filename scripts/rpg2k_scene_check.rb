@@ -11222,6 +11222,34 @@ check 'Enemy Encounter scene: the ally target cursor wraps around' do
   eq 0, ui[:ally_i], 'Down from the last ally wraps to the first'
 end
 
+check 'Enemy Encounter scene: Right/Left move the ally target cursor exactly ' \
+      'like Down/Up' do
+  # Confirmed against RPG_RT's own live source: `Window_BattleStatus::Update`
+  # (src/window_battlestatus.cpp) -- the window driving this cursor while
+  # ally-target selection is active -- gates its "next ally" step on
+  # `IsRepeated(DOWN) || IsRepeated(RIGHT) || IsTriggered(SCROLL_DOWN)` and
+  # its "previous ally" step on the Up/Left/SCROLL_UP mirror, deliberately
+  # skipping the generic Window_Selectable cursor logic to fold Right/Left
+  # onto the same up/down axis.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleTwoAllyParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
+  eq 0, ui[:ally_i], 'starts on the first ally'
+  press_key(scene, RGSS::Input::LEFT)
+  eq 1, ui[:ally_i], 'Left from the first ally wraps to the last, same as Up'
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 0, ui[:ally_i], 'Right from the last ally wraps to the first, same as Down'
+end
+
 # Two actors (distinct ids) with an item_usable_by? that restricts the
 # Potion (item 5) to actor 1 only -- a real Game::Party derives this from the
 # item's 使用可能キャラ / actor_set field (Game::Party#item_usable_by?); this

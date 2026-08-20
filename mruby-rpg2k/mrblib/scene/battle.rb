@@ -1852,14 +1852,26 @@ class RPG2k
 
       # -- Ally target (heal skill / medicine) --------------------------------
 
+      # Right/Left move the ally-target cursor exactly like Down/Up --
+      # confirmed against RPG_RT's own live source: `Window_BattleStatus::
+      # Update` (`src/window_battlestatus.cpp`), the window that drives this
+      # cursor (`Scene_Battle::status_window`, active during ally-target
+      # selection), gates its "next ally" step on `IsRepeated(DOWN) ||
+      # IsRepeated(RIGHT) || IsTriggered(SCROLL_DOWN)` and its "previous
+      # ally" step on the Up/Left/SCROLL_UP mirror -- deliberately
+      # bypassing the generic `Window_Selectable::Update` cursor logic
+      # ("skipped on purpose (breaks up/down-logic)", the function's own
+      # comment) to fold Right/Left into the same single up/down axis.
       def drive_battle_ally_target
         allies = battle_ally_targets
-        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !allies.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN) ||
+            Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && !allies.empty?
           @ui[:ally_i] += 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target
           play_system_se(SFX_CURSOR)
-        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !allies.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP) ||
+               Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !allies.empty?
           @ui[:ally_i] -= 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target
