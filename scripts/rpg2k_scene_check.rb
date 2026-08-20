@@ -17268,6 +17268,41 @@ check 'Scene::ItemMenu: a special item invoking Teleport opens a destination ' \
   ok parent.pop_to_map_called
 end
 
+check 'Scene::ItemMenu: the Teleport destination list crosses a row ' \
+      'boundary on Right/Left rather than stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) -- Right/Left are a flat `index +-
+  # 1` bounded only by the list's own absolute start/end, no row-boundary
+  # check, the same shape already fixed for the item/skill grids. A third
+  # destination is needed here: with only two, both fit in the first row
+  # and Right/Left never reach a boundary to cross.
+  parent = fake_parent(fake_db)
+  state = escape_teleport_item_state
+  state.teleport_targets[30] = { x: 31, y: 32, switch_id: nil }
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the Teleport item
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq [[10, 'Map 10'], [20, 'Map 20'], [30, 'Map 30']], scene.send(:teleport_targets)
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination, same row
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # cross into the next row's first cell
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@teleport_index),
+     'Right from the row edge flows into the next row, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]        # flow back into the previous row's last cell
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
+end
+
 check 'Scene::ItemMenu: cancelling the Teleport destination list returns to the item list' do
   parent = fake_parent(fake_db)
   state = escape_teleport_item_state
@@ -17504,6 +17539,41 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
   RGSS::Input.reset
   eq [20, 21, 22, 0], state.pending_teleport
   ok parent.pop_to_map_called
+end
+
+check 'Scene::SkillMenu: the Teleport destination list crosses a row ' \
+      'boundary on Right/Left rather than stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) -- Right/Left are a flat `index +-
+  # 1` bounded only by the list's own absolute start/end, no row-boundary
+  # check, the same shape already fixed for the item/skill grids. A third
+  # destination is needed here: with only two, both fit in the first row
+  # and Right/Left never reach a boundary to cross.
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  state.teleport_targets[30] = { x: 31, y: 32, switch_id: nil }
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto Teleport
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq [[10, 'Map 10'], [20, 'Map 20'], [30, 'Map 30']], scene.send(:teleport_targets)
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination, same row
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # cross into the next row's first cell
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@teleport_index),
+     'Right from the row edge flows into the next row, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]        # flow back into the previous row's last cell
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
 end
 
 check 'Scene::SkillMenu: a Teleport skill turns on the chosen destination\'s own switch, ' \
