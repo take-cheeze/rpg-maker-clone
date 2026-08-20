@@ -15903,6 +15903,30 @@ check 'the menu party list shows each member condition' do
   ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
 end
 
+# RPG_RT's own `Window_Gold` on this screen -- confirmed against
+# `Scene_Menu::Start` (`src/scene_menu.cpp`), which creates one
+# unconditionally (88x32, bottom-left corner, no version/feature gate
+# anywhere in the file) for RPG2000 and RPG2003 alike, and
+# `Scene_Menu::Continue`, which refreshes it every time control returns from
+# a popped child screen (`Item`/`Skill`/`Equip`/`Status`/`Save`).
+check 'Scene::Menu shows the party\'s own Gold, and keeps it current across ' \
+      'a pushed child screen' do
+  st = menu_state
+  st.party.instance_variable_set(:@gold, 1234)
+  scene = menu_scene(RPG2k::Scene::Menu, st)
+  gold_win = scene.instance_variable_get(:@gold)
+  ok window_texts(gold_win).include?('1234G'), 'Gold is drawn on the field menu screen'
+
+  scene.suspend
+  ok !gold_win.visible, 'the gold panel hides while a child screen (Item/Skill/...) is on top'
+
+  st.party.instance_variable_set(:@gold, 5)
+  scene.resume
+  ok gold_win.visible, 'the gold panel returns once the child screen is popped'
+  ok window_texts(gold_win).include?('5G'),
+     "Gold is refreshed on resume, matching Scene_Menu::Continue's own gold_window->Refresh()"
+end
+
 check 'opening Scene::Menu auto-cancels an Erase Screen black-out (yado.tk)' do
   st = menu_state
   st.screen.erase(Game::Transition::FADE_OUT, 1) # settle fully erased

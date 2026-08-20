@@ -4205,6 +4205,26 @@ The work below is roughly ordered by the critical path to a walkable game
   that End Game "hands control back to the app immediately, with no
   confirmation message to dismiss first" -- now replaced). See
   `changelog.d/menu-end-game-confirmation.fixed.md`.
+  ✅ **The top-level field menu never showed the party's own Gold at all,
+  even though the Status screen's own identical gap was already found and
+  fixed (2026-08-20) — this screen still had nothing.** Confirmed against
+  EasyRPG Player's actual C++ source: `Scene_Menu::Start`
+  (`src/scene_menu.cpp`) creates a `Window_Gold` unconditionally (88x32,
+  bottom-left corner, no version or feature gate anywhere in the file) for
+  RPG2000 and RPG2003 alike, and `Scene_Menu::Continue` (fired when control
+  returns from a popped child screen) unconditionally calls `gold_window->
+  Refresh()` alongside `menustatus_window->Refresh()`. `Scene::Menu`
+  (`mruby-rpg2k/mrblib/scene/menu.rb`) built only `@command` (the command
+  list) and `@status` (the party list) — no gold anywhere. Fixed by adding a
+  `@gold` window (`#build_gold_window`/`#draw_gold_window`, same bottom-left
+  88x32 geometry and the identical no-space "amount then term" rendering
+  `Scene::StatusMenu`'s own Gold line already uses), wired into `#dispose`
+  and toggled alongside `@command`/`@status` in `#suspend`/`#resume` — and,
+  matching `Continue`'s own unconditional refresh, `#resume` redraws the
+  gold text too, not just its visibility. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (Gold renders on open; the panel
+  hides on `#suspend` and returns with a refreshed figure on `#resume`),
+  confirmed to fail against the pre-fix code.
   ✅ **The field menu screens now play RPG2000's four system sound effects
   (cursor-move, decision, cancel, buzzer), the "bigger, separate piece of
   work" the disabled-Save fix above left open.** Confirmed against three
