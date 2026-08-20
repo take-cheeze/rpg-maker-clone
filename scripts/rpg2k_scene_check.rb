@@ -16960,6 +16960,68 @@ class SwitchItemStubParty < MenuStubParty
   end
 end
 
+# A single-target medicine (scope != 1, so #use_medicine reads the chosen
+# actor rather than the whole party) held x3 -- enough to use twice and still
+# have one left, so a repeat use without leaving the target screen is
+# actually observable.
+class MedicineItemStubParty < WrapMenuParty
+  MEDICINE_ID = 40
+  def field_items(_state = nil); [[MEDICINE_ID, 3]]; end
+  def db_item(id)
+    return nil unless id == MEDICINE_ID
+    OpenStruct.new(name: 'Potion', type: Game::Party::ITEM_MEDICINE, scope: 3)
+  end
+  def use_item(id, actor = nil)
+    return [] unless id == MEDICINE_ID && actor
+    [actor]
+  end
+end
+
+check 'Scene::ItemMenu: a successful use stays on the target screen, ' \
+      'matching RPG_RT, instead of dropping back to the item list' do
+  # Confirmed against RPG_RT's own live source: `Scene_ActorTarget::
+  # UpdateItem` (src/scene_actortarget.cpp) never calls `Scene::Pop()` on
+  # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
+  # does. A successful use lets the player keep using the same item on
+  # further targets without leaving this screen.
+  state = Game::State.new(MedicineItemStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, state)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the item -- opens target selection
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  RGSS::Input.triggered = [RGSS::Input::C] # use it on the first target
+  scene.update
+  RGSS::Input.reset
+  ok scene.instance_variable_get(:@message), 'a "Used on ..." message is shown'
+  eq :target, scene.instance_variable_get(:@mode), 'still in target mode while the message is up'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the message
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode), 'stays on the target screen after a successful use'
+  ok scene.instance_variable_get(:@pending_item), 'the pending item is still set, ready for another target'
+
+  # Use it again immediately on the second target -- no re-navigation needed.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  # Cancelling finally returns to the (rebuilt) item list.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
+end
+
 check 'Scene::ItemMenu: a switch item flips its switch, consumes one, and closes ' \
       'the whole menu stack, with no confirmation message' do
   parent = fake_parent(fake_db)
@@ -17618,6 +17680,67 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   eq :skills, scene.instance_variable_get(:@mode)
   ok state.pending_teleport.nil?
   ok !parent.pop_to_map_called
+end
+
+# A single-target skill (scope != 2/4, so the target cursor is not locked)
+# the caster can afford twice over, so a repeat cast without leaving the
+# target screen is actually observable.
+class NormalTargetSkillStubParty < WrapMenuParty
+  SKILL_ID = 50
+  def field_skills(_actor, _state = nil); [[SKILL_ID, 5]]; end
+  def db_skill(id)
+    return nil unless id == SKILL_ID
+    OpenStruct.new(name: 'Heal', type: Game::Party::SKILL_NORMAL, scope: 3)
+  end
+  def cast_skill(caster, sid, target = nil, _free = false)
+    return [] unless sid == SKILL_ID && target
+    [target]
+  end
+end
+
+check 'Scene::SkillMenu: a successful cast stays on the target screen, ' \
+      'matching RPG_RT, instead of dropping back to the skill list' do
+  # Confirmed against RPG_RT's own live source: `Scene_ActorTarget::
+  # UpdateSkill` (src/scene_actortarget.cpp) never calls `Scene::Pop()` on
+  # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
+  # does. A successful cast lets the player keep casting the same skill on
+  # further targets without leaving this screen.
+  state = Game::State.new(NormalTargetSkillStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the skill -- opens target selection
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  RGSS::Input.triggered = [RGSS::Input::C] # cast on the first target
+  scene.update
+  RGSS::Input.reset
+  ok scene.instance_variable_get(:@message), 'a "casts ..." message is shown'
+  eq :target, scene.instance_variable_get(:@mode), 'still in target mode while the message is up'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the message
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode), 'stays on the target screen after a successful cast'
+  ok scene.instance_variable_get(:@pending_skill), 'the pending skill is still set, ready for another target'
+
+  # Cast it again immediately on the second target -- no re-navigation needed.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  # Cancelling finally returns to the (rebuilt) skill list.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :skills, scene.instance_variable_get(:@mode)
 end
 
 # A party whose two field skills are self (2) and all-ally (4) scope -- real

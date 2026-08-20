@@ -3012,6 +3012,45 @@ The work below is roughly ordered by the critical path to a walkable game
   screen opens instead of an immediate cast; the lock holds against UP/DOWN;
   Decision on the locked screen casts; Cancel backs out with nothing spent),
   all confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-20): a successful use/cast on this same target
+  screen unconditionally dropped back to the item/skill list, when real
+  RPG_RT stays put and lets the player keep using the same item/skill on
+  further targets — this bullet's own citation of `UpdateSkill()`/
+  `UpdateItem()` already established the fact, just never drew the
+  conclusion.** Re-reading `Scene_ActorTarget::UpdateItem`/`UpdateSkill`
+  (`src/scene_actortarget.cpp`) in full: on a successful Decision, both just
+  call `status_window->Refresh(); target_window->Refresh();` and return — the
+  **only** `Scene::Pop()` anywhere in the file is `vUpdate`'s own Cancel
+  branch, identical for a no-effect Decision and a successful one alike.
+  `Scene::ItemMenu#drive_message`/`Scene::SkillMenu#drive_message`
+  (`mruby-rpg2k/mrblib/scene/{item,skill}_menu.rb`) instead tagged a
+  successful use/cast's message `:used`/`:cast` and called `#refresh_after_
+  use`/`#refresh_after_cast` on dismiss, forcing `@mode` back to `:items`/
+  `:skills` and rebuilding the list — so healing three party members with a
+  stack of Potions meant re-opening the item list and re-selecting Potion
+  after every single use, an extra round trip real RPG_RT never asks for; a
+  no-effect use already correctly stayed put (nothing tagged it), which is
+  what let this asymmetry hide in plain sight. `#use_item`'s/`#cast_skill`'s
+  own existing count/affordability gates already answer what a *repeat* use
+  does once the item runs out or SP is short — an empty `affected`, the same
+  Buzzer path — matching the reference's own `GetItemCount(id) <= 0`/SP-cost
+  check ahead of `UseItem`/`UseSkill`: depletion buzzes, it does not
+  auto-exit either. Fixed by dropping the `:used` tag entirely in
+  `item_menu.rb` (a plain, always-untagged `show_message` now, so
+  `#drive_message` has nothing left to dispatch on) and folding the item-list
+  invalidate/rebuild/clamp `#refresh_after_use` used to do into
+  `#leave_target_mode` itself, now the single path back to `:items` (reached
+  only via Cancel). `skill_menu.rb` keeps its `:cast` tag, since it still has
+  a second, genuine use — `#apply_switch_skill`'s successful cast, issued
+  straight from the skill list with no target screen to stay open on — but
+  `#apply_skill`'s own ordinary target-mode cast no longer passes it, and the
+  invalidate/rebuild `#refresh_after_cast` used to do folded into `#leave_
+  target` the same way. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a single-target medicine/skill, held or affordable twice over:
+  the target screen stays open through a successful use/cast and its message
+  dismiss, a second use/cast on a different target needs no re-navigation,
+  and only Cancel finally returns to the rebuilt list), both confirmed to
+  fail against the pre-fix code (`expected :target, got :items`/`:skills`).
 
   What decides usability is the **type**, not the occasion flags, and getting
   that wrong used to leave the battle skill menu **empty in both test beds** —

@@ -433,7 +433,17 @@ class RPG2k
       # ineffective status cure, ...) plays Buzzer rather than a second
       # Decision -- matching RPG_RT's own invalid-use handling elsewhere in
       # `Scene_Item` (a rejected action gets the same SE as a confirm on an
-      # empty list or a disabled command, not a silent no-op).
+      # empty list or a disabled command, not a silent no-op). A *successful*
+      # use stays on this same target screen too, exactly like a no-effect
+      # one -- confirmed against RPG_RT's own live source:
+      # `Scene_ActorTarget::UpdateItem` (`src/scene_actortarget.cpp`) never
+      # calls `Scene::Pop()` on Decision, success or failure alike; the only
+      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # `#use_item`'s own `item_count(id) > 0` gate already answers what
+      # happens on a repeat use once the item runs out (an empty `affected`,
+      # the same Buzzer path), matching the reference's own `GetItemCount(id)
+      # <= 0` check ahead of `UseItem` -- depletion buzzes, it does not
+      # auto-exit either.
       def apply_item(id, actor)
         affected = @state.party.use_item(id, actor)
         if affected.empty?
@@ -441,10 +451,15 @@ class RPG2k
           show_message("It had no effect.")
         else
           names = affected.map { |a| a.name.to_s }.join(", ")
-          show_message("Used on #{names}.", :used)
+          show_message("Used on #{names}.")
         end
       end
 
+      # Back to the item list, rebuilt so it reflects whatever changed while
+      # target mode was open (a count fell, a depleted item dropped out) --
+      # only reached via Cancel now that a successful use no longer forces
+      # this on its own (see #apply_item). Keeps the cursor in range when the
+      # last of an item was used up.
       def leave_target_mode
         @pending_item = nil
         @target_lock = nil
@@ -453,18 +468,11 @@ class RPG2k
           @target_window.dispose
           @target_window = nil
         end
-        refresh_desc
-      end
-
-      # After a successful use, drop back to the item list and rebuild it (the
-      # count fell, and a depleted item leaves the list). Keeps the cursor in
-      # range when the last item is used up.
-      def refresh_after_use
-        leave_target_mode
         invalidate_items
         @item_index = items.size - 1 if @item_index >= items.size
         @item_index = 0 if @item_index < 0
         build_item_window
+        refresh_desc
       end
 
       # The highlighted item's flavour text, in a one-line banner across the
@@ -590,14 +598,10 @@ class RPG2k
 
       def drive_message
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        done = @message[:done]
         close_message
-        # A successful use drops back to the (rebuilt) item list; a no-effect use
-        # stays in the current mode so the player can pick another target/item.
-        refresh_after_use if done == :used
       end
 
-      def show_message(text, done = nil)
+      def show_message(text)
         return if @message
         w = SCREEN_W - 40
         win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
@@ -607,7 +611,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
-        @message = { window: win, done: done }
+        @message = { window: win }
       end
 
       def close_message
