@@ -174,8 +174,27 @@ RPG2000 side can adopt it rather than growing its own.
 
 Not covered: `Window` (its contents are composed by a different path, and RGSS
 puts windows in their own viewport, so a map tint does not tint the message
-window anyway) and `Graphics.brightness`, which stays tracked-not-drawn — VX
-fades through `@viewport3.color`, which does draw.
+window anyway).
+
+**`Graphics.brightness`/`fadeout`/`fadein` are drawn too, now** — a real gap
+found and fixed independently of the VX viewport-color work above, on the XP
+side: VX/VX Ace fade through `@viewport3.color` (drawn, as above), but RMXP's
+own stock scripts (`Scene_Gameover`, `Scene_End`, several post-battle screens)
+call plain `Graphics.fadeout`/`fadein` directly, and `Graphics.brightness=`
+(`mruby-rgss/mrblib/lib.rb`) only ever tracked the value — a real XP game
+would previously show no visual fade at all in those spots. Fixed with the
+same overlay technique `Graphics.transition` already uses for its own
+full-screen dissolve (proven, native, tested): a full-screen black `Sprite`
+at `BRIGHTNESS_Z` (just under `TRANSITION_Z`), created once and kept alive,
+whose opacity is `255 - brightness`. `fadeout`/`fadein` themselves needed a
+second, related fix once brightness was real: they ran all `duration` frames
+first and only set the end value afterward, which had been an invisible bug
+(brightness was never drawn either way) that would have become a visible
+"nothing happens, then instant cut to black" the moment the overlay existed —
+now each fades one step per frame. Verified against the real
+`--rgss_effect_probe` CTest, through a live display: `Graphics.brightness = 0`
+darkens `frame_mean` to `[0, 0, 0]` from a `[128, 128, 128]` base, and
+`Graphics.brightness = 255` restores it exactly.
 
 ### 3. `Graphics.freeze` / `transition` / `snap_to_bitmap` — scene transitions dissolve ✅
 
