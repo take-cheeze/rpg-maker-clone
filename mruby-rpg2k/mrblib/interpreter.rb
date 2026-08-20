@@ -2027,8 +2027,9 @@ module Game
     # thresholds; param5 is the "show message" flag — when set, each level an
     # actor gains queues a level-up message (drained by #resume).
     def do_change_exp(cmd)
-      amount = stat_amount(cmd)
       show_msg = cmd.param(5) != 0
+      return if block_pending_exp_level_command(show_msg)
+      amount = stat_amount(cmd)
       stat_targets(cmd).each do |a|
         before = a.level
         before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
@@ -2046,8 +2047,9 @@ module Game
     # operand layout as Change EXP; param5 is the "show message" flag — when set,
     # each level an actor gains queues a level-up message (drained by #resume).
     def do_change_level(cmd)
-      amount = stat_amount(cmd)
       show_msg = cmd.param(5) != 0
+      return if block_pending_exp_level_command(show_msg)
+      amount = stat_amount(cmd)
       stat_targets(cmd).each do |a|
         before = a.level
         before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
@@ -3578,6 +3580,29 @@ module Game
       return false unless message_window_blocks_command?
       @index -= 1
       @wait_kind = :battle_blocked
+      @waiting = true
+      true
+    end
+
+    # Change EXP (10410) / Change Level (10420) block-and-retry the same way,
+    # but only when their own "show message" flag is set -- confirmed
+    # directly against RPG_RT's live source: `Game_Interpreter::
+    # CommandChangeExp`/`CommandChangeLevel` (`src/game_interpreter.cpp`)
+    # both open with `bool show_msg = com.parameters[5]; if (show_msg &&
+    # !Game_Message::CanShowMessage(true)) { return false; }`, guarding the
+    # *entire* command -- the actor's EXP/level and re-derived base stats
+    # included, not just the level-up message -- behind the flag. With
+    # `show_msg` clear neither command ever calls `CanShowMessage` at all,
+    # unlike Show/Move/Erase Picture, Teleport/Recall to Location and Battle
+    # Processing/Enemy Encounter, which block unconditionally regardless of
+    # any flag. Without this, a still-running parallel process (Message
+    # Options' "continue events" flag) could apply a Change EXP/Level's
+    # stat change and level-up message a frame early, while a different
+    # event's message window still sits on screen.
+    def block_pending_exp_level_command(show_msg)
+      return false unless show_msg && message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :exp_level_blocked
       @waiting = true
       true
     end

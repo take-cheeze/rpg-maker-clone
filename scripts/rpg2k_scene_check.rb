@@ -8238,6 +8238,53 @@ check 'Change Level show-message: the scene shows a message per level, then resu
   ok st.switches[5], 'the event resumes once both level-up messages are dismissed'
 end
 
+check "a common event's Parallel Process's own show-message Change Level " \
+      'command is blocked (not applied) while a message window is open, and ' \
+      'retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandChangeExp`/`CommandChangeLevel` (`src/game_interpreter.cpp`) both
+  # open with `bool show_msg = com.parameters[5]; if (show_msg &&
+  # !Game_Message::CanShowMessage(true)) { return false; }`, guarding the
+  # entire command -- the actor's level itself, not just the level-up
+  # message -- behind the flag, the same block-and-retry shape already
+  # ported for Show/Move/Erase Picture and Transfer Player (see
+  # #block_pending_exp_level_command). Unlike those three, this guard is
+  # conditional on the "show message" flag actually being set -- a Change
+  # Level/EXP command with the flag off never blocks at all. A Parallel
+  # Process (unlike a fresh Auto-Start event, which never even begins while
+  # a message window is open -- #event_busy?) keeps advancing during a
+  # message window by design (Message Options' "continue events"), so it is
+  # the case that actually reaches an already-running command mid-list.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3),
+                              ECmd.new(ic::CHANGE_LEVEL, [1, 1, 0, 0, 1, 1], indent: 0),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, LevelStubParty.new)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq 1, st.party.actor_by_id(1).level, 'the level must not change while a message window is open'
+  eq 0, st.variables[4], 'the command right after the blocked Change Level must not run either'
+
+  scene.send(:close_message)
+  # The retried Change Level itself queues its own level-up message once it
+  # finally applies (show_msg is set) -- dismiss it (a C press) the same way
+  # the foreground "Change Level show-message" check above does, so the
+  # process can reach marker B.
+  40.times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+    break if st.variables[4] == 1
+  end
+  eq 2, st.party.actor_by_id(1).level, 'the Change Level retries and applies once the window closes'
+  eq 1, st.variables[4], 'and the command after it then runs too'
+end
+
 check 'boarding a boat and disembarking onto the shore' do
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
