@@ -186,7 +186,25 @@ check 'direction_toward/away point at and away from a target' do
   eq 6, c.direction_toward(9, 6)  # dx dominates -> east
   eq 2, c.direction_toward(5, 9)  # pure vertical -> south
   eq 4, c.direction_away(9, 5)    # away from east -> west
-  eq 2, c.direction_toward(5, 5)  # already there -> keep facing
+end
+
+check 'direction_toward: an exact tie (and the same-tile case) resolves ' \
+      'vertically, landing on Down -- not the horizontal axis and not ' \
+      '"keep the current facing"' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # GetDirectionToCharacter` (src/game_character.cpp) compares with a
+  # strict `>` (`std::abs(sx) > std::abs(sy)`), so `abs(dx) == abs(dy)`
+  # (a genuine diagonal tie, or the degenerate dx == dy == 0 same-tile
+  # case) falls to the vertical branch, landing on Down since `sy > 0` is
+  # false when `sy == 0`. A prior version of this method compared with
+  # `>=` (tying to the *horizontal* axis instead) and special-cased the
+  # same-tile case to "keep the current facing" -- neither of which the
+  # reference does. Starting the character facing Up (8) rather than Down
+  # (2) rules out a same-tile result of 2 being a coincidental match with
+  # "keep facing" rather than the genuine Down default.
+  c = Game::Character.new(5, 5, 8)
+  eq 2, c.direction_toward(9, 9), 'a 4-and-4 diagonal tie lands on Down, not East'
+  eq 2, c.direction_toward(5, 5), 'the same-tile case also lands on Down'
 end
 
 # -- MoveRoute: movement ------------------------------------------------------

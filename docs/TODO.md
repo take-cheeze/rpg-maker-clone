@@ -294,6 +294,38 @@ The work below is roughly ordered by the critical path to a walkable game
   blocks, every one enclosing a runtime-directed move (484 away from the hero,
   188 toward it, 133 forward) rather than a literal direction, and 141 enclose
   more than one, so those now clear the tile they hop over.
+  ✅ **Follow-up (2026-08-20): ~~ties (and equal distance) resolve to the
+  horizontal axis~~ — corrected, real RPG_RT resolves a tie vertically, and
+  the same-tile case is not special-cased to "keep the current facing" at
+  all.** `Game::Character#direction_toward` (`mruby-rpg2k/mrblib/game.rb`)
+  — which faces/moves an event toward or away from a target for Move Route
+  Face/Move Toward Hero / Away From Hero and Move Type "Approach Player" /
+  "Away from Player" alike, `#direction_away` deriving from it via
+  `TURN_180` — compared `dx.abs >= dy.abs` (a non-strict `>=`) and returned
+  the character's own current facing outright when `dx == dy == 0`.
+  Confirmed against RPG_RT's own live source: `Game_Character::
+  GetDirectionToCharacter` (`src/game_character.cpp`) compares with a
+  strict `std::abs(sx) > std::abs(sy)`, so an exact tie — a genuine
+  diagonal tie, or the degenerate same-tile case — falls to the *vertical*
+  branch every time, landing on Down since `sy > 0` reads false when
+  `sy == 0`; the reference does not special-case the same-tile case at
+  all, it just evaluates the same two branches and gets the same Down
+  result any other zero-`sy` tie would. Concretely: a chase/patrol event
+  exactly as far horizontally as vertically from its target — a common
+  diagonal-approach case — turned/stepped along the wrong axis (East/West
+  instead of Down), and an event already standing on its target's tile
+  kept facing whichever way it last faced instead of turning to face Down
+  like real RPG_RT does. Fixed by tightening the horizontal comparison to
+  a strict `>` and making the vertical branch unconditional (`dy < 0 ? 8
+  : 2`), reproducing the reference's `sy == 0` → Down fallthrough without
+  a separate same-tile case. `#direction_away` needed no change — it
+  already derives correctly from `#direction_toward` via `TURN_180`
+  regardless of which branch fires. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a 4-and-4 diagonal tie and the
+  same-tile case both land on Down, starting the character faced Up so a
+  same-tile result of Down cannot be mistaken for a coincidental "kept
+  facing" match), confirmed to fail against the pre-fix code (`expected
+  2, got 6`) before the fix.
   **The hop is drawn as one now, too.** The move happened in a single step and
   the sprite went with it, so a jump — the move whose whole point is being
   airborne — was a blink from one tile to another. A jumping event slides across
