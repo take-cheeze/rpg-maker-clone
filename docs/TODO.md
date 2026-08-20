@@ -3297,6 +3297,36 @@ The work below is roughly ordered by the critical path to a walkable game
   and queues the chosen one; cancelling the list returns to the item list),
   all confirmed to fail against the pre-fix code before the fix. Still
   untested by the real data, since neither test bed has such an item.
+  ✅ **Follow-up (2026-08-20): a special item invoking a Switch-type skill
+  was the one skill type this bullet's own routing never covered — reaching
+  `#cast_skill` (which has no notion of switches at all) and reporting "It
+  had no effect." on every use.** Confirmed directly against RPG_RT's live
+  source: `Scene_Item::vUpdate`'s `Type_switch` skill arm
+  (`src/scene_item.cpp`) sits right beside its already-ported Escape/
+  Teleport siblings — consuming the item, playing the skill's own sound
+  effect, and flipping `skill->switch_id` (the *skill's* own field, not the
+  item's) on the very same Decision press, no target/picker at all, no
+  `Game::State` needed unlike Escape/Teleport's registered-target lookup.
+  This is reachable, not a hypothetical: `#field_skill?`'s own `SKILL_
+  SWITCH` arm (`#field_occasion?(sk)`) already lets such an item appear in
+  the field bag list — `Scene::ItemMenu#choose_item` just had no branch for
+  it, falling through to an ordinary target-confirm or the scope-locked
+  `#apply_item`/`#cast_skill` path, neither of which can flip a switch.
+  Fixed by adding `Game::Party#use_special_switch_item` (mirroring `#use_
+  special_escape_item`'s exact shape: type-9/`use_skill` gate, `#item_
+  usable_by?`, `#consume_item_use`) through a new `free` parameter on
+  `#cast_switch_skill` (the identical pattern `#cast_escape_skill`/`#cast_
+  teleport_skill` already carry), and a new `SKILL_SWITCH` branch in
+  `#choose_item` calling a new `#apply_special_switch_item` that mirrors
+  `Scene::SkillMenu#apply_switch_skill`'s just-fixed shape exactly: no
+  message, straight to `@parent.pop_to_map`. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (`#use_special_switch_item` flips
+  the skill's own switch for free, consumes the item, and reads the field
+  list correctly with no state needed) and a new
+  `scripts/rpg2k_scene_check.rb` check (confirming the item flips the
+  switch and closes the whole menu stack with no message), both confirmed
+  to fail against the pre-fix code (`NoMethodError: undefined method
+  'use_special_switch_item'` / `expected true, got false`).
   **Dual-wield equipping is done too, the opposite rule to two-handed.** A
   weapon's own *combat* effect (a 二刀流 weapon swinging twice) was read
   already (ADR 0033); what remained was the *actor*-row 二刀流 (`double_hand`,

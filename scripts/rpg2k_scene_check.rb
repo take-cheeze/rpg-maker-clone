@@ -17277,6 +17277,47 @@ def escape_teleport_item_state
   st
 end
 
+# A party whose only item is a special (type 9) one invoking a Switch skill --
+# Game::Party's own decision logic (#field_usable? / #use_special_switch_item)
+# is covered by scripts/rpg2k_logic_check.rb; this stub only has to hand the
+# scene something that behaves the same way, so this stays about the RGSS
+# wiring (does confirming the item actually flip the switch and close the
+# menu stack, with no message?).
+class SwitchSkillItemStubParty < MenuStubParty
+  SWITCH_ITEM_ID = 52
+
+  def leader; @actors.first; end
+  def field_items(_state = nil); [[SWITCH_ITEM_ID, 1]]; end
+
+  def db_item(id)
+    return nil unless id == SWITCH_ITEM_ID
+    OpenStruct.new(name: 'Summon Scroll', type: Game::Party::ITEM_SPECIAL, skill_id: 32)
+  end
+
+  def db_skill(id)
+    return nil unless id == 32
+    OpenStruct.new(name: 'Summon', type: Game::Party::SKILL_SWITCH)
+  end
+
+  def use_special_switch_item(id, _actor)
+    return nil unless id == SWITCH_ITEM_ID
+    99
+  end
+end
+
+check 'Scene::ItemMenu: a special item invoking a Switch skill flips its ' \
+      'switch and closes the whole menu stack, with no confirmation message' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SwitchSkillItemStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the only item
+  scene.update
+  RGSS::Input.reset
+  eq true, state.switches[99], 'the switch turned on'
+  ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+  ok scene.instance_variable_get(:@message).nil?, 'no confirmation message, matching a switch item/skill'
+end
+
 check 'Scene::ItemMenu: a special item invoking Escape queues its target and ' \
       'closes the menu, with no confirmation message' do
   parent = fake_parent(fake_db)

@@ -175,6 +175,11 @@ class RPG2k
             @teleport_index = 0
             build_teleport_window
             refresh_desc
+          elsif sk && sk.type == Game::Party::SKILL_SWITCH
+            # A switch skill has no target and no confirmation message either
+            # -- mirroring Scene::SkillMenu#apply_switch_skill, a successful
+            # cast closes the whole menu stack at once.
+            apply_special_switch_item(id)
           elsif sk && (sk.scope == 2 || sk.scope == 4)
             # Unlike a medicine (whose all-ally scope needs no actor at all --
             # #use_medicine reads the whole party off `@actors`, ignoring the
@@ -266,6 +271,21 @@ class RPG2k
         target = @state.party.use_special_escape_item(id, @state.party.leader, @state)
         if target
           queue_teleport(target)
+        else
+          play_system_se(SFX_BUZZER)
+          show_message("It had no effect.")
+        end
+      end
+
+      # The same for a special item invoking a Switch-type skill: no target,
+      # no confirmation message -- a successful cast closes the whole menu
+      # stack at once, matching Scene::SkillMenu#apply_switch_skill (and
+      # this scene's own #apply_switch_item, the plain switch-item case).
+      def apply_special_switch_item(id)
+        switch = @state.party.use_special_switch_item(id, @state.party.leader)
+        if switch
+          @state.switches[switch] = true
+          @parent.pop_to_map
         else
           play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
