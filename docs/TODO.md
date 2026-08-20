@@ -14987,6 +14987,33 @@ depends on. Covered by a new `scripts/rpg2k_scene_check.rb` check (a blank
 Class row with the bare fixture actor, matching RPG2000's no-job-table case;
 a classed fixture actor shows its class name), confirmed to fail against the
 pre-fix code.
+✅ **Follow-up (2026-08-20): on an RPG2003 database, the field Status screen
+never showed which battle row (Front/Back) the displayed actor is
+currently in.** Confirmed directly against RPG_RT's live source:
+`Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`) draws
+`"Front"`/`"Back"` right-aligned at the top of the panel, above the
+face/name block, whenever `Feature::HasRow()` holds. `Feature::HasRow`
+(`src/feature.cpp`) is `HasRpg2k3BattleSystem() &&
+!battlecommands.easyrpg_disable_row_feature` — the second half is an
+EasyRPG-only extension flag with no real LCF field, so for a genuine,
+unmodified project this reduces to a plain database-edition check: shown
+on RPG2003, never on RPG2000. `easyrpg_status_scene_back`/`_front` are
+likewise EasyRPG-only Term extensions absent from RPG_RT's own Term
+chunk, so real RPG_RT hardcodes the literal English labels, the same
+situation the Class row fix (above) already found for its own label.
+The underlying row data was already fully modeled here —
+`Game::Actor#battle_row`/`#battle_row=` (`mruby-rpg2k/mrblib/game.rb`),
+persisted to save data, and already toggled live from the field menu's
+own Row command (`Game::Party#toggle_actor_row`) — only the Status
+screen's own `#build_window` (`mruby-rpg2k/mrblib/scene/status_menu.rb`)
+never read it. Fixed by adding `#rpg2003_party?`/`#draw_battle_row`,
+gated on `@state.party.rpg2003?` (this codebase's established
+RPG2003-presentation gate) and drawn after the flat line pass so it can
+sit right-aligned in the header's own row without disturbing the
+existing left-aligned lines. Covered by a new
+`scripts/rpg2k_scene_check.rb` check (an RPG2000 party draws neither
+label; an RPG2003 party shows "Front" by default and "Back" once the
+actor's own row is toggled), confirmed to fail against the pre-fix code.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.
