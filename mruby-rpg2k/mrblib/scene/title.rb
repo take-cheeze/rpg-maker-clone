@@ -34,7 +34,6 @@ class RPG2k
           term(:continue, 'Continue'),
           term(:shutdown, 'Shutdown')
         ]
-        @selected_index = 0
 
         # RPG_RT grays out and skips over Continue when there is no save to
         # resume. `any_save_exists?` (main.rb) covers both our own Marshal
@@ -42,6 +41,14 @@ class RPG2k
         # across every one of the MAX_SAVE_SLOTS slots -- which one, if any,
         # is now Scene::SaveLoad's own question to ask once Continue opens it.
         @continue_available = continue_available?
+
+        # RPG_RT starts the cursor on Continue, not New Game, whenever a save
+        # exists -- confirmed against EasyRPG's own `Scene_Title::Refresh`
+        # (`src/scene_title.cpp`): `if (continue_enabled)
+        # command_window->SetIndex(1);` fires unconditionally alongside (not
+        # instead of) `SetItemEnabled(1, continue_enabled)`, so a save's
+        # presence moves the initial selection, not just the grayed-out look.
+        @selected_index = @continue_available ? 1 : 0
 
         # RPG_RT sizes the window to the widest label plus one border on each
         # side — no extra padding — and one 16px row per entry.

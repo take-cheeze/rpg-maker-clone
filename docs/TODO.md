@@ -4373,6 +4373,26 @@ The work below is roughly ordered by the critical path to a walkable game
   file already does), confirmed to fail against the pre-fix code (zero
   matching blend calls, since the flat-gray branch never blends at all)
   before the fix.
+  ✅ **The title cursor's *starting position* ignored whether a save exists,
+  a separate gap from either fix just above (2026-08-20).** `Scene::Title#initialize`
+  (`mruby-rpg2k/mrblib/scene/title.rb`) hardcoded `@selected_index = 0` before
+  `@continue_available` was even computed, so the cursor always opened on New
+  Game regardless of save data. Confirmed against EasyRPG Player's actual
+  source: `Scene_Title::Refresh` (`src/scene_title.cpp`) —
+  `continue_enabled = FileFinder::HasSavegame(); if (continue_enabled)
+  command_window->SetIndex(1);` — moves the cursor to Continue (index 1)
+  whenever a save exists, unconditionally alongside (not instead of)
+  `SetItemEnabled(1, continue_enabled)`; `Refresh()` runs from
+  `CreateCommandWindow()` on every title build, and `CommandIndices` fixes
+  `continue_game = 1` regardless of which optional entries (Import/Settings/
+  Translate) exist, so `SetIndex(1)` always targets Continue specifically.
+  Fixed by reordering so `@continue_available` is computed first, then
+  `@selected_index = @continue_available ? 1 : 0`; `#refresh_cursor`, already
+  called at the end of `initialize`, draws the cursor on the correct entry
+  with no other change needed. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a save present starts the cursor on Continue; no save data still
+  starts it on New Game), the first confirmed to fail against the pre-fix
+  code (`expected 1, got 0`) before the fix.
   ✅ **The same disabled-swatch gap existed on the save/load file-select
   screen too, and there every line was flat, not just the disabled one
   (2026-08-18).** `Scene::SaveLoad#draw_slot_box` (`mruby-rpg2k/mrblib/

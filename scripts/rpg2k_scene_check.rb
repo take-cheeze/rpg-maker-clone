@@ -12035,6 +12035,24 @@ check 'a save exists: Continue is flagged available and its selection key opens 
   eq :load, pushed.instance_variable_get(:@mode), 'opened in :load mode'
 end
 
+# `Scene_Title::Refresh` (src/scene_title.cpp) calls `command_window->SetIndex(1)`
+# whenever a save exists, unconditionally alongside `SetItemEnabled` -- the
+# cursor starts on Continue, not New Game, so a returning player does not have
+# to move down manually before resuming.
+check 'a save exists: the title cursor starts on Continue, not New Game' do
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  eq 1, scene.instance_variable_get(:@selected_index),
+     'RPG_RT starts the cursor on Continue when a save exists (Scene_Title::Refresh)'
+end
+
+check 'no save data: the title cursor still starts on New Game' do
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  eq 0, scene.instance_variable_get(:@selected_index),
+     'with nothing to resume, the cursor starts on New Game as before'
+end
+
 # -- screen fade / flash overlays ---------------------------------------------
 #
 # Erase/Show Screen and Flash Screen are drawn as two full-screen colour sprites
