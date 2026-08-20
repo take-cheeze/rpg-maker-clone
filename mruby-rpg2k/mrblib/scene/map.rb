@@ -7574,7 +7574,14 @@ class RPG2k
           model.left
           draw_number_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+        # Right is a no-op -- no move, no sound -- on a single-digit widget:
+        # confirmed against RPG_RT's own live source, `Window_NumberInput::
+        # Update` (src/window_numberinput.cpp) guards only its Right branch
+        # behind `if (digits_max >= 2)`; Left has no such guard and always
+        # plays the Cursor SE, even though its own modulo leaves a
+        # single-cell cursor unmoved either way. Not the symmetric pair a
+        # single `#left`/`#right` gate would suggest.
+        elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && model.digits >= 2
           model.right
           draw_number_input
           play_system_se(SFX_CURSOR)
