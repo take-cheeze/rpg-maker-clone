@@ -16804,6 +16804,48 @@ check 'Scene::Menu: Save access forbidden refuses the selection silently, no mes
   ok scene.instance_variable_get(:@message).nil?, 'no message shown at all'
 end
 
+check 'Scene::Menu: a disabled command reads the windowskin\'s own disabled ' \
+      'swatch, not the default text colour' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Menu::
+  # CreateCommandWindow` (`src/scene_menu.cpp`) disables Save on
+  # `!GetAllowSave()` and every other non-Order command on
+  # `GetActors().empty()`; `Window_Command::SetItemEnabled`/`DrawItem`
+  # (`src/window_command.cpp`) then draws a disabled row through
+  # `Font::ColorDisabled` (swatch index 3, `src/font.h`), the same
+  # windowskin-blended path every row uses -- the same convention already
+  # ported for Scene::Title's Continue and Scene::SaveLoad's file rows.
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> a real windowskin loads
+  st = wrap_menu_state
+  st.save_access = false
+  scene = menu_scene(RPG2k::Scene::Menu, st, db)
+  bc = scene.instance_variable_get(:@command).contents.blend_calls || []
+  # colour 3 -> swatch cell (3%10*16, 3/10*16+48) = (48, 48), the same
+  # geometry Scene::Title's own disabled-Continue check pins.
+  ok bc.any? { |call| call[6] == 48 && call[7] == 48 },
+     'the disabled Save label blends from swatch index 3 (48, 48)'
+
+  st.save_access = true
+  scene2 = menu_scene(RPG2k::Scene::Menu, st, db)
+  bc2 = scene2.instance_variable_get(:@command).contents.blend_calls || []
+  ok !bc2.any? { |call| call[6] == 48 && call[7] == 48 },
+     'once save access is restored, no row blends from the disabled swatch'
+end
+
+check 'Scene::Menu: an empty party disables Item/Skill/Equip too, not just Save' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  st = wrap_menu_state
+  st.party.instance_variable_set(:@actors, [])
+  scene = menu_scene(RPG2k::Scene::Menu, st, db)
+  bc = scene.instance_variable_get(:@command).contents.blend_calls || []
+  disabled_rows = bc.count { |call| call[6] == 48 && call[7] == 48 }
+  # RPG2000's fixed five commands: Item/Skill/Equip disable on an empty
+  # party; Save (gated on save_access, untouched here) and End Game (Quit,
+  # never disabled) do not.
+  eq 3, disabled_rows, "expected 3 disabled rows (Item/Skill/Equip), got #{disabled_rows}"
+end
+
 def save_load_scene(mode, state = nil, db = fake_db, parent: nil)
   parent ||= fake_parent(db)
   [RPG2k::Scene::SaveLoad.new(parent, state, mode), parent]
