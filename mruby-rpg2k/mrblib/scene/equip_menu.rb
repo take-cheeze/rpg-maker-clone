@@ -118,12 +118,17 @@ class RPG2k
           @slot_index %= @slots.size
           refresh_slot_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::RIGHT)
+        # A solo party leaves RIGHT/LEFT silent no-ops -- confirmed against
+        # RPG_RT's own live source: `Scene_Equip::UpdateEquipSelection`
+        # (`src/scene_equip.cpp`) gates both branches on `actors.size() >
+        # 1`, not just the trigger itself, so a lone hero's Equip screen
+        # plays no cursor SE and rebuilds nothing on either key.
+        elsif party.size > 1 && Input.trigger?(Input::RIGHT)
           @actor_index += 1
           @actor_index %= party.size
           rebuild_for_actor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::LEFT)
+        elsif party.size > 1 && Input.trigger?(Input::LEFT)
           @actor_index -= 1
           @actor_index %= party.size
           rebuild_for_actor

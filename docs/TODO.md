@@ -4387,6 +4387,26 @@ The work below is roughly ordered by the critical path to a walkable game
   `debug_menu.rb`, `title.rb`, and every battle target/command list in
   `battle.rb` — each worth the same actual-source check `equip_menu.rb`
   just got, not an assumed blanket `|| #repeat?`.
+  ✅ **Follow-up (2026-08-19): a solo party's Equip screen still played the
+  cursor SE and rebuilt the whole screen on every Right/Left press, for no
+  visible change — the identical second condition `status_menu.rb`'s own
+  follow-up just caught in its sibling function, missed here too.**
+  Re-reading `Scene_Equip::UpdateEquipSelection` (`src/scene_equip.cpp`) in
+  full shows the same shape as `Scene_Status::vUpdate`: both the RIGHT and
+  LEFT branches are gated on `actors.size() > 1 && Input::IsTriggered(...)`
+  — a lone-hero party leaves RIGHT/LEFT silent no-ops, no SE, no
+  `Scene::Push` rebuild, a distinct condition from the already-checked
+  trigger-vs-repeat axis the earlier bullet above verified. `Scene::
+  EquipMenu#update_slots` (`mruby-rpg2k/mrblib/scene/equip_menu.rb`)
+  processed RIGHT/LEFT unconditionally once a solo party's `@actor_index %=
+  1` left it harmlessly pinned at 0, so a solo party still heard a cursor
+  click and paid a full stats/slot-window rebuild for a press genuine
+  RPG_RT treats as if it never happened. Fixed by folding `party.size > 1
+  &&` into both branch conditions, mirroring `status_menu.rb`'s identical
+  fix. Covered by a new `scripts/rpg2k_scene_check.rb` check (a solo-actor
+  `menu_state` party: Right/Left neither move `@actor_index` nor play the
+  cursor SE), confirmed to fail against the pre-fix code (`expected [], got
+  [["Cursor1", ...]]`).
   ✅ **`status_menu.rb` checked next (2026-08-18) — confirmed already
   correct, no code change needed.** Unlike every screen fixed so far, this
   one has no list/grid cursor at all: it is a read-only single-member
