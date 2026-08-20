@@ -13315,6 +13315,34 @@ not yet verified:
   flag on still fires normally), confirmed to fail against the pre-fix
   code before the fix (the Teleport-type skill actually cast, computing a
   stray zero-damage "hit").
+- ✅ **Every window's selection cursor now blinks between the windowskin's
+  two cursor blocks, matching RPG_RT — it used to draw from a single,
+  permanently-static source rect.** Confirmed directly against RPG_RT's
+  live source: `Window::Update` (`src/window.cpp`) advances `cursor_frame`
+  by 1 every frame the window is active, wrapping at 21; `Window::Draw`
+  blits the cursor highlight from the windowskin's `cursor1` block (source
+  x 64) while `cursor_frame <= 10`, or `cursor2` (source x 96) otherwise —
+  base engine behaviour, no RPG2003/`Feature::Has*` gate anywhere in either
+  function. `RPG2k::Window` (`mruby-rpg2k/mrblib/main.rb`) already ported
+  the two source-x offsets as `Game::WindowCursor::FRAME1_X`/`FRAME2_X`
+  (`mruby-rpg2k/mrblib/game.rb`) — `FRAME2_X` even carried a doc comment
+  correctly describing the real blink — but `FRAME2_X` was dead code,
+  `grep`-confirmed unreferenced anywhere: `#update` never advanced a
+  cursor-frame counter at all, and `#draw_cursor_skin` always read
+  `FRAME1_X`. The gap was invisible against the one bundled test
+  windowskin, whose two 32×32 cursor blocks happen to draw identically —
+  `#update`'s own stale comment cited exactly this coincidence as though it
+  were a reason the blink did not need porting, rather than a fixture
+  artifact masking the bug. Fixed by adding a `@cursor_frame` counter,
+  advanced by `#update` while the window is active (wrapping at 21,
+  mirroring `Window::Update` exactly) and redrawn only at the two actual
+  transitions (frame 0 and frame 11) rather than every frame, and having
+  `#draw_cursor_skin` pick `FRAME1_X`/`FRAME2_X` by `@cursor_frame <= 10`.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check driving a real
+  `RPG2k::Window` through 21+ frames and asserting the cursor bitmap's own
+  `#blt` calls source from x 64 initially, x 96 once `cursor_frame` crosses
+  11, and x 64 again once it wraps back to 0, confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **An action pattern's "Enemies" condition (`condition_type` 3,
   `COND_ACTORS`) now ranges over the acting monster's own living
   troop-mates, not the player party's headcount — a straight side-swap,

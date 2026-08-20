@@ -885,6 +885,33 @@ end
 
 # -- checks -------------------------------------------------------------------
 
+check 'RPG2k::Window blinks its selection cursor between the windowskin\'s ' \
+      'two cursor blocks (source x 64/96), matching RPG_RT' do
+  # Confirmed directly against RPG_RT's live source: `Window::Update`
+  # (`src/window.cpp`) advances `cursor_frame` by 1 every frame the window
+  # is active, wrapping at 21, and `Window::Draw` blits from the
+  # windowskin's `cursor1` block (source x 64, Game::WindowCursor::FRAME1_X)
+  # while `cursor_frame <= 10`, or `cursor2` (source x 96, FRAME2_X)
+  # otherwise -- FRAME2_X already existed in this codebase but was never
+  # read anywhere, so the highlight never blinked at all.
+  win = RPG2k::Window.new(0, 0, 64, 64)
+  win.windowskin = Bitmap.new('System/Skin1', true)
+  win.cursor_rect = Rect.new(0, 0, 16, 16)
+  bmp = win.instance_variable_get(:@cursor_bmp)
+
+  10.times { win.update } # frames 1..10: still the steady half, no crossing yet
+  bmp.clear_blt_calls
+  win.update # frame 11: crosses into the alternate half
+  ok bmp.blt_calls && !bmp.blt_calls.empty?, 'the cursor redraws at the transition'
+  eq 96, bmp.blt_calls.first[3].x, 'now sourced from the alternate cursor block (96)'
+
+  9.times { win.update } # frames 12..20: still the alternate half
+  bmp.clear_blt_calls
+  win.update # frame 21 wraps to 0: back to the steady half
+  ok bmp.blt_calls && !bmp.blt_calls.empty?, 'the cursor redraws at the wrap'
+  eq 64, bmp.blt_calls.first[3].x, 'wraps back to the steady cursor block (64)'
+end
+
 check 'Scene::Map builds and ticks with no events without raising' do
   scene = new_scene({})
   30.times { scene.update }
