@@ -1,10 +1,13 @@
 class RPG2k
   module Scene
     # The field status screen (main menu -> Status). Shows one party member's full
-    # detail -- name/title, level, EXP and EXP-to-next, HP/MP, the six stats and
-    # the five equipment slots; LEFT/RIGHT cycle the member. Read-only, so there
-    # is no sub-mode. The EXP-to-next figure is Game::Actor#exp_to_next
-    # (host-tested); the rest reads existing accessors.
+    # detail -- name/title, level, EXP and the next level's absolute EXP
+    # threshold, HP/MP, the six stats and the five equipment slots; LEFT/
+    # RIGHT cycle the member. Read-only, so there is no sub-mode. The "Next"
+    # figure is Game::Actor#next_level_exp -- the absolute threshold RPG_RT's
+    # own `Window_ActorStatus::DrawStatus` displays (`GetNextExpString`),
+    # not the remaining-EXP delta `#exp_to_next` computes (host-tested); the
+    # rest reads existing accessors.
     class StatusMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -104,7 +107,21 @@ class RPG2k
         a = @state.party.actors[@actor_index]
         title = a.title.to_s
         header = title.empty? ? a.name.to_s : "#{a.name}  #{title}"
-        nxt = a.exp_to_next
+        # The "Next" figure is the *absolute* EXP threshold for the next
+        # level, not the remaining delta -- confirmed directly against
+        # RPG_RT's live source: `Window_ActorStatus::DrawStatus`
+        # (`src/window_actorstatus.cpp`) draws the Exp row via
+        # `DrawMinMax(90, 34, -1, -1)`, whose `-1, -1` sentinel routes both
+        # halves through `actor.GetExpString(true)`/`GetNextExpString(true)`
+        # rather than the literal `min`/`max` a normal HP/MP-style call
+        # would draw; `Game_Actor::GetNextExpString` (`src/game_actor.cpp`)
+        # stringifies `GetNextExp()`, which is `exp_list[GetLevel()]` --
+        # the same absolute cumulative-total curve value `CalculateExp`
+        # produces, not a subtraction against current EXP. `#next_level_exp`
+        # (`mruby-rpg2k/mrblib/game.rb`) already computes exactly this
+        # absolute value; `#exp_to_next` instead subtracts current EXP from
+        # it, matching neither RPG_RT's own displayed number.
+        nxt = a.next_level_exp
         lines = [
           header,
           # RPG_RT always draws a labelled Class/Profession row on this

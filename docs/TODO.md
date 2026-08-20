@@ -15230,6 +15230,34 @@ existing left-aligned lines. Covered by a new
 `scripts/rpg2k_scene_check.rb` check (an RPG2000 party draws neither
 label; an RPG2003 party shows "Front" by default and "Back" once the
 actor's own row is toggled), confirmed to fail against the pre-fix code.
+✅ **Follow-up (2026-08-20): the field Status screen's "Next" EXP figure
+showed the remaining delta to the next level, not the absolute threshold
+RPG_RT itself displays.** Confirmed directly against RPG_RT's live
+source: `Window_ActorStatus::DrawStatus` (`src/window_actorstatus.cpp`)
+draws the Exp row via `DrawMinMax(90, 34, -1, -1)` — the `-1, -1`
+sentinel routes both halves through `actor.GetExpString(true)`/
+`GetNextExpString(true)` rather than a literal min/max pair.
+`Game_Actor::GetNextExpString`/`GetNextExp` (`src/game_actor.cpp`)
+stringifies `exp_list[GetLevel()]`, the same absolute cumulative-total
+curve value `CalculateExp` produces — not a subtraction against current
+EXP. `Scene::StatusMenu#build_window`
+(`mruby-rpg2k/mrblib/scene/status_menu.rb`) read `a.exp_to_next`
+(`mruby-rpg2k/mrblib/game.rb`), which subtracts current EXP from the
+threshold and returns the remainder (e.g. exp 1234 against a 2000
+threshold shows "766", where real RPG_RT shows "2000") — the wrong
+accessor for this screen. `Game::Actor#next_level_exp` already computed
+exactly the correct absolute value (a direct port of `CalculateExp`,
+used correctly elsewhere) but was never the one this screen read.
+`#exp_to_next` is used nowhere else in this codebase besides its own
+independent test coverage, so it is left in place unchanged — only the
+Status screen's own accessor choice was wrong. Fixed by swapping
+`a.exp_to_next` for `a.next_level_exp` in `#build_window`, and
+correcting this file's own class comment, which had asserted the old
+(wrong) accessor as fact with no citation of its own. Covered by a new
+`scripts/rpg2k_scene_check.rb` check (`MenuStubActor` gives
+`#next_level_exp`/`#exp_to_next` distinct values, 420 vs 120, so the
+check can tell which one the screen actually reads — it must show 420,
+never 120), confirmed to fail against the pre-fix code.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.
