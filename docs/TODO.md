@@ -326,6 +326,50 @@ The work below is roughly ordered by the critical path to a walkable game
   same-tile result of Down cannot be mistaken for a coincidental "kept
   facing" match), confirmed to fail against the pre-fix code (`expected
   2, got 6`) before the fix.
+  ✅ **Follow-up (2026-08-20): Move Type "Approach Player"/"Away from
+  Player" was a deterministic beeline — every step, in sight or not,
+  computed the exact geometric direction toward/away the hero — where real
+  RPG_RT only tracks the player 8 times out of 10 while actually on
+  screen, and makes no attempt to track at all once off screen.** Confirmed
+  against RPG_RT's own live source: `Game_Event::
+  MoveTypeTowardsOrAwayPlayer` (`src/game_event.cpp`) computes `sx =
+  GetScreenX(); sy = GetScreenY()` and gates on `in_sight` (the view plus a
+  two-tile margin, `TILE_SIZE * 2`) before ever consulting
+  `GetDirectionToCharacter`/`GetDirectionAwayCharacter` (this codebase's
+  own, now-correct `#direction_toward`/`#direction_away`): off screen it
+  always picks `Rand::GetRandomNumber(0, 3)`, a fully random cardinal, with
+  no positional awareness of the hero at all; in sight it rolls
+  `Rand::GetRandomNumber(0, 9)` — 0 keeps the event's current facing, 1 is
+  a random cardinal, and only 2-9 (80% of the time) computes the real
+  direction. `Game::MoveType.next_direction`'s `TOWARD`/`AWAY` cases
+  (`mruby-rpg2k/mrblib/game.rb`) called `#direction_toward`/`#direction_away`
+  unconditionally every single step, with no randomness and no on-screen
+  check at all. Concretely: a chase/flee event in this codebase homed in on
+  the player with laser precision on every move tick, on screen or off,
+  where real RPG_RT looks noticeably more erratic in view (occasional
+  detours, occasional pauses in the current direction) and wanders
+  aimlessly rather than tracking once off screen — directly visible in any
+  guard/monster-chase or escort-flee sequence, a common authored pattern.
+  Fixed with a new `Game::MoveType.toward_away_direction` implementing the
+  same three-way roll, and a new `Scene::Map#char_in_sight?`/
+  `MapWorld#in_sight?` reusing `#character_screen_position`'s own cited
+  screen-pixel math. `VehicleWorld` needs no counterpart — Approach/Away
+  is not a valid Move Type for a vehicle's own Set Move Route. **Still
+  open**: RPG_RT's blocked-move handling for *every* autonomous move type
+  (Random/Cycle/Toward/Away alike) reverts `SetDirection(prev_dir)` when a
+  move fails and the stop-count threshold hasn't been exceeded (the
+  `IsStopping()` block right after `Move(dir)` in the same function) —
+  this codebase's `#move_autonomous` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  just turns to face the obstruction unconditionally on a blocked move
+  instead. That is a related but separate, larger piece of RPG_RT's
+  stop-count state machine shared across all four move types, not just
+  Toward/Away, left for a follow-up investigation of its own. Covered by a
+  rewritten `scripts/rpg2k_logic_check.rb` check (the existing one had
+  itself encoded the old unconditional-geometric-direction behaviour, with
+  no queued `random` roll ever landing on anything but the fallback 0 —
+  masking exactly this gap) exercising all three in-sight draw outcomes
+  plus the off-screen case, confirmed to fail against the pre-fix code
+  (`expected 6, got 2`) before the fix.
   ✅ **Follow-up (2026-08-20): a move route's effect-only sub-commands
   (Switch On/Off, Speed/Frequency Up/Down, Change Graphic, Play Sound,
   Through Mode, Stop/Start Animation, Transparency Up/Down) each paid a

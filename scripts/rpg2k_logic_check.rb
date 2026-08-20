@@ -98,14 +98,15 @@ end
 # A grid world implementing the MoveRoute/MoveType `world` protocol. Passability
 # is a set of blocked [x, y] tiles; everything else is walkable.
 class FakeWorld
-  attr_accessor :hero, :switches, :sounds, :rolls
+  attr_accessor :hero, :switches, :sounds, :rolls, :in_sight
 
-  def initialize(blocked: [], hero: [0, 0], rolls: [])
+  def initialize(blocked: [], hero: [0, 0], rolls: [], in_sight: true)
     @blocked = blocked
     @hero = hero
     @switches = {}
     @sounds = []
     @rolls = rolls # queued values for random(n); falls back to 0
+    @in_sight = in_sight
   end
 
   def passable?(character, dir)
@@ -120,6 +121,7 @@ class FakeWorld
   def set_switch(id, on); @switches[id] = on; end
   def play_sound(*a); @sounds << a; end
   def random(_n); @rolls.empty? ? 0 : @rolls.shift; end
+  def in_sight?(_character); @in_sight; end
 end
 
 # Build an LCF::MoveCommand-alike without loading the native parser.
@@ -748,11 +750,33 @@ check 'MoveType vertical bounces off a blocked tile' do
   eq 8, Game::MoveType.next_direction(Game::MoveType::VERTICAL, c, FakeWorld.new)
 end
 
-check 'MoveType toward/away chase and flee the hero' do
-  c = Game::Character.new(0, 0)
-  w = FakeWorld.new(hero: [0, 5])
+check 'MoveType toward/away chase and flee the hero, gated on sight and a ' \
+      '1-in-10 roll -- confirmed against RPG_RT\'s own live source: ' \
+      'Game_Event::MoveTypeTowardsOrAwayPlayer (src/game_event.cpp) only ' \
+      'computes the real direction on a draw of 2-9 out of a 0-9 roll ' \
+      '(0 keeps the current facing, 1 is a random cardinal), and only while ' \
+      'on screen -- picking a random cardinal unconditionally off screen' do
+  c = Game::Character.new(0, 0, 6) # facing right
+  # In sight, draw 2 (>= 2): the real geometric direction.
+  w = FakeWorld.new(hero: [0, 5], rolls: [2])
   eq 2, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w)
+  w = FakeWorld.new(hero: [0, 5], rolls: [2])
   eq 8, Game::MoveType.next_direction(Game::MoveType::AWAY, c, w)
+
+  # In sight, draw 0: keeps the character's own current facing, not the
+  # geometric direction toward/away the hero.
+  w = FakeWorld.new(hero: [0, 5], rolls: [0])
+  eq 6, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w)
+
+  # In sight, draw 1: a fully random cardinal (the queued random(4) draw),
+  # not the geometric direction either.
+  w = FakeWorld.new(hero: [0, 5], rolls: [1, 3])
+  eq 8, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w) # CARDINALS[3] == 8
+
+  # Off screen: always a random cardinal, no attempt to track the hero at
+  # all, regardless of what random(10) would have drawn.
+  w = FakeWorld.new(hero: [0, 5], in_sight: false, rolls: [1])
+  eq 4, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w) # CARDINALS[1] == 4
 end
 
 # -- Rng ----------------------------------------------------------------------

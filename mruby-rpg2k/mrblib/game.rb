@@ -6662,9 +6662,10 @@ module Game
   # Autonomous (non-custom) event movement: given a page's `move_type`, pick the
   # direction the character should try to step next. `random` picks a cardinal;
   # `vertical`/`horizontal` keep bouncing along one axis, reversing when the way
-  # ahead is blocked; `toward`/`away` chase or flee the hero. Returns a numpad
-  # direction, or nil for "no autonomous movement" (stationary) and for the
-  # custom-route type (which is driven by a MoveRoute instead).
+  # ahead is blocked; `toward`/`away` chase or flee the hero, but only most of
+  # the time and only in sight -- see #toward_away_direction's own citation.
+  # Returns a numpad direction, or nil for "no autonomous movement" (stationary)
+  # and for the custom-route type (which is driven by a MoveRoute instead).
   module MoveType
     STATIONARY = 0
     RANDOM     = 1
@@ -6679,14 +6680,35 @@ module Game
       when RANDOM     then Character::CARDINALS[world.random(4)]
       when VERTICAL   then bounce(character, world, [8, 2])
       when HORIZONTAL then bounce(character, world, [4, 6])
-      when TOWARD
-        hx, hy = world.hero_position
-        character.direction_toward(hx, hy)
-      when AWAY
-        hx, hy = world.hero_position
-        character.direction_away(hx, hy)
+      when TOWARD then toward_away_direction(character, world, true)
+      when AWAY   then toward_away_direction(character, world, false)
       else nil
       end
+    end
+
+    # Approach/Away from Player is not the deterministic beeline it looks
+    # like from the command's name -- confirmed against RPG_RT's own live
+    # source: `Game_Event::MoveTypeTowardsOrAwayPlayer` (`src/game_event.cpp`)
+    # only computes the real toward/away direction 8 times out of 10 while
+    # the event is actually on screen (`Rand::GetRandomNumber(0, 9)`: 0 keeps
+    # the current facing, 1 picks a fully random cardinal, 2-9 the real
+    # direction) -- and picks a fully random cardinal unconditionally,
+    # every time, while off screen (`sx`/`sy` outside the view plus a
+    # two-tile margin, `TILE_SIZE * 2`), making no attempt to track the
+    # player at all until back in view. `GetDirectionToCharacter`/
+    # `GetDirectionAwayCharacter` are #direction_toward/#direction_away,
+    # already correct; it is this surrounding stochastic/visibility gate
+    # that was missing entirely -- every step unconditionally computed the
+    # exact geometric direction, in sight or not, which reads as a
+    # noticeably more precise (and, off screen, omniscient) chase/flee than
+    # real RPG_RT's.
+    def self.toward_away_direction(character, world, towards)
+      return Character::CARDINALS[world.random(4)] unless world.in_sight?(character)
+      draw = world.random(10)
+      return character.direction if draw == 0
+      return Character::CARDINALS[world.random(4)] if draw == 1
+      hx, hy = world.hero_position
+      towards ? character.direction_toward(hx, hy) : character.direction_away(hx, hy)
     end
 
     # Continue along the current axis direction, reversing to the other end of

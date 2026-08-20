@@ -8312,6 +8312,27 @@ class RPG2k
         { x: pixel[0] - cam_x + TILE / 2, y: pixel[1] - cam_y + TILE }
       end
 
+      # Whether `character` is on screen, plus a two-tile margin -- confirmed
+      # against RPG_RT's own live source: `Game_Event::
+      # MoveTypeTowardsOrAwayPlayer` (`src/game_event.cpp`) computes `sx =
+      # GetScreenX(); sy = GetScreenY()` (the same screen-pixel math
+      # #character_screen_position's own citation already ports) and tests
+      # `sx >= -offset && sx <= Player::screen_width + offset && sy >=
+      # -offset && sy <= Player::screen_height + offset`, `offset ==
+      # TILE_SIZE * 2`. Used to gate Move Type Approach/Away from Player's
+      # own randomness (see Game::MoveType.next_direction) -- an off-screen
+      # chaser gets no special treatment there at all, not even a degraded
+      # one, so this uses the character's plain tile position rather than
+      # #event_pixel's mid-slide interpolation (a fresh autonomous-move
+      # decision is only ever made between slides, never mid-step).
+      def char_in_sight?(character)
+        cam_x, cam_y = camera_position
+        sx = character.x * TILE - cam_x + TILE / 2
+        sy = character.y * TILE - cam_y + TILE
+        offset = TILE * 2
+        sx >= -offset && sx <= SCREEN_W + offset && sy >= -offset && sy <= SCREEN_H + offset
+      end
+
       # Current position of vehicle `type` in map pixels: the party's own
       # interpolated pixel position while it's the one being ridden
       # (#player_pixel, so it reads in lockstep with the hero mid-step),
@@ -8323,7 +8344,7 @@ class RPG2k
         return nil unless v.placed? && v.map_id == @state.map_id
         @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
-      public :camera_position, :character_screen_position
+      public :camera_position, :character_screen_position, :char_in_sight?
 
       # The rest of the "services Scene::Battle calls back into" (see the
       # readers next to #dispose): BGM, backdrop, animation-player and
