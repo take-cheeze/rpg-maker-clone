@@ -6110,9 +6110,16 @@ class RPG2k
       # "wait until finished" request on an unresolved target falls straight
       # through to the next command the same tick rather than stalling for
       # the animation's own real duration (or the invalid-animation-id
-      # fallback's timing either).
+      # fallback's timing either). A battle-page request (`req[:battle]`)
+      # gets the identical treatment for an out-of-range Ally/Enemy index --
+      # see `Scene::Battle#battle_page_target_resolves?`'s own citation of
+      # `Game_Interpreter_Battle::CommandShowBattleAnimation`'s matching null
+      # `battler_target` check.
       def begin_map_animation(req)
-        if req && !req[:battle] && !animation_target_resolves?(req[:target])
+        unresolved =
+          req && (req[:battle] ? @battle && !@battle.battle_page_target_resolves?(req)
+                                : !animation_target_resolves?(req[:target]))
+        if unresolved
           @map_animation = nil
           @anim_wait = 0
           return

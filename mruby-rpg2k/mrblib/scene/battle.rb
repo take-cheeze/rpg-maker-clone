@@ -2258,7 +2258,37 @@ class RPG2k
       # when the ally flag is clear, or a single screen-centre animation (the
       # same ally-side fallback above) when it is set, since RPG2000's
       # front-view battle draws no ally sprite to point at.
+      # A single-target request (`req[:target] >= 0`) no-ops when the index
+      # names no actual party/troop slot -- confirmed against RPG_RT's own
+      # live source: `Game_Interpreter_Battle::CommandShowBattleAnimation`
+      # (`src/game_interpreter_battle.cpp`) leaves `battler_target` null (and
+      # so never calls `ShowBattleAnimation` at all) for an Ally index
+      # (1-based, `target -= 1` first) outside `0...GetBattlerCount()`, or an
+      # Enemy index outside `0...GetBattlerCount()` -- both plain party/troop
+      # array bounds checks, dead members included, RPG_RT never consults
+      # `Exists()`/`IsDead()` here. `#start_battle_page_animation` used to
+      # draw an out-of-range Ally target at screen-centre regardless
+      # (`elsif req[:allies]` never even looked at the index) and an
+      # out-of-range Enemy target through `#battle_animation_pixel`'s own
+      # "no sprite" fallback, which is also screen-centre -- neither path
+      # ever no-op'd. A per-slot battle-event page reused across encounters
+      # with different party/troop sizes (e.g. an "Ally 4" animation on a
+      # 3-member party) flashed a spurious screen-centre animation, and
+      # stalled the page for the animation's own duration on a "wait for
+      # completion" request, where real RPG_RT plays nothing and falls
+      # through the same tick.
+      def battle_page_target_resolves?(req)
+        return true unless req[:target] && req[:target] >= 0
+        if req[:allies]
+          idx = req[:target] - 1
+          idx >= 0 && idx < @state.party.actors.size
+        else
+          req[:target] < (@ui[:foes] || []).size
+        end
+      end
+
       def start_battle_page_animation(req)
+        return nil unless battle_page_target_resolves?(req)
         targets =
           if req[:target] && req[:target] < 0
             whole_side_anim_targets(req[:allies])

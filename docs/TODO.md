@@ -14226,6 +14226,43 @@ not yet verified:
   than stalling for animation 8's own ~8-frame duration, with
   `@map_animation` confirmed to stay `nil` — nothing was ever drawn),
   confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-20): the battle-*page* form of this same command
+  (13260) had the identical gap for an out-of-range Ally/Enemy target
+  index — it drew a spurious screen-centre animation instead of no-op'ing,
+  and stalled a "wait for completion" request instead of falling through
+  the same tick.** Confirmed against RPG_RT's own live source:
+  `Game_Interpreter_Battle::CommandShowBattleAnimation`
+  (`src/game_interpreter_battle.cpp`) leaves `battler_target` null — and so
+  never calls `ShowBattleAnimation`, `frames` staying 0 — for an Ally index
+  (1-based, `target -= 1` first) outside `0...Game_Party::GetBattlerCount()`
+  (`GetActors().size()`, dead members included, no `Exists()`/`IsDead()`
+  check anywhere in this function), or an Enemy index outside
+  `0...Game_EnemyParty::GetBattlerCount()`. `Scene::Battle
+  #start_battle_page_animation`'s own `elsif req[:allies]` branch
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) never looked at the target index at
+  all, always drawing at screen centre; its `else` (Enemy) branch relied on
+  `#battle_animation_pixel`'s `sprites[i]` returning `nil` for an
+  out-of-range `i`, which falls into that same method's own "no sprite"
+  fallback -- also screen centre. Neither branch ever no-op'd, and
+  `Scene::Map#begin_map_animation`'s `req[:battle]` case had no notion of
+  "target didn't resolve" (the exact gap the map-target fix just above this
+  one already closed for 11210) so a waited-for battle-page play on an
+  out-of-range index stalled for the animation's own real duration too. A
+  per-slot battle-event page reused across encounters with different
+  party/troop sizes (e.g. an "Ally 4" animation on a 3-member party) flashed
+  a spurious animation and, if waited on, visibly stalled the page. Fixed
+  with a new `Scene::Battle#battle_page_target_resolves?(req)`
+  (`target - 1` bounds-checked against `@state.party.actors.size` for Ally,
+  `req[:target]` bounds-checked against `@ui[:foes].size` for Enemy),
+  consulted by `#start_battle_page_animation` (no-op) and by
+  `Scene::Map#begin_map_animation` (sets `@anim_wait = 0` directly, the same
+  treatment the map-target case already gets, dispatched through
+  `@battle.battle_page_target_resolves?(req)` when `req[:battle]`). Covered
+  by two new `scripts/rpg2k_scene_check.rb` checks (an out-of-range Ally
+  index and an out-of-range Enemy index each run the page straight through
+  with the animation sprite confirmed to never draw and `@map_animation`
+  confirmed to stay `nil`), confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **The "1 frame = 1/30s" half of the bullet above is now correct, and
   the "'Wait' frame is internally two consecutive frames" framing turns out
   to have been a misreading — settled against EasyRPG Player's actual C++

@@ -13928,6 +13928,59 @@ check "a battle page's Show Battle Animation actually holds the page, not resumi
   ok st.switches[21], 'the page ran on once the animation actually finished'
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Interpreter_Battle::
+# CommandShowBattleAnimation` (src/game_interpreter_battle.cpp) leaves
+# `battler_target` null -- and so never calls `ShowBattleAnimation` at all --
+# for an Ally index (1-based, `target -= 1` first) outside
+# `0...GetBattlerCount()`, or an Enemy index outside `0...GetBattlerCount()`.
+# `#start_battle_page_animation` used to draw an out-of-range Ally target at
+# screen-centre regardless (its own `elsif req[:allies]` branch never looked
+# at the index at all) and an out-of-range Enemy target through
+# `#battle_animation_pixel`'s "no sprite" fallback, which is also
+# screen-centre -- neither path ever no-op'd, and a "wait for completion"
+# request stalled for the animation's own real duration instead of RPG_RT's
+# immediate fallthrough.
+check "a battle page's Show Battle Animation no-ops for an out-of-range Ally " \
+      'index instead of flashing screen-centre' do
+  ic = Game::Interpreter::Cmd
+  # BattleStubParty defaults to a single actor (index 0); Ally target 2
+  # (1-based -> index 1) names no such member.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [8, 2, 1, 1], indent: 0), # anim 8, ally #2 (out of range), wait, allies=1
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 23, 23, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  spr_shown = false
+  150.times do
+    scene.update
+    anim_spr = scene.instance_variable_get(:@animation_sprite)
+    spr_shown ||= anim_spr && anim_spr.visible
+    break if st.switches[23]
+  end
+  ok st.switches[23], 'the page ran straight through instead of stalling on the animation duration'
+  ok !spr_shown, 'nothing was ever drawn'
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
+end
+
+check "a battle page's Show Battle Animation no-ops for an out-of-range " \
+      'Enemy index instead of flashing screen-centre' do
+  ic = Game::Interpreter::Cmd
+  # The default troop has at least two members (see the "draws over the
+  # targeted troop member's own sprite position" check below, which
+  # addresses member 1); member 99 names no such slot.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [8, 99, 1], indent: 0), # anim 8, enemy #99 (out of range), wait
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 24, 24, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  spr_shown = false
+  150.times do
+    scene.update
+    anim_spr = scene.instance_variable_get(:@animation_sprite)
+    spr_shown ||= anim_spr && anim_spr.visible
+    break if st.switches[24]
+  end
+  ok st.switches[24], 'the page ran straight through instead of stalling on the animation duration'
+  ok !spr_shown, 'nothing was ever drawn'
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
+end
+
 check "a battle page's Show Battle Animation draws over the targeted troop member's own sprite position" do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [8, 1, 1], indent: 0), # anim 8, member 1, wait
