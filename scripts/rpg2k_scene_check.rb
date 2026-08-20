@@ -509,7 +509,10 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                                      hp_change_type: 1) },
     # A tiny item table the Open Shop window prices its goods from.
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
-            5 => OpenStruct.new(name: 'Herb', price: 40) },
+            5 => OpenStruct.new(name: 'Herb', price: 40),
+            # Price 0 -- RPG2000's own way of marking a key item unsellable,
+            # for the Shop sell-list "listed but refused" check below.
+            8 => OpenStruct.new(name: 'Deed', price: 0) },
     # An enemy and a troop of two, for the placeholder Enemy Encounter victory.
     # Enemy 3 (Bat) carries the "airborne" flag (field 28, `levitate`) for the
     # RPG2003 flying-offset checks; its own troop (group 2) is a lone member
@@ -13843,6 +13846,48 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   scene.update
   shop = scene.instance_variable_get(:@shop)
   eq :sell, shop[:screen], 'and returns to the sell list, same as EasyRPG\'s Sold -> Sell'
+end
+
+# Confirmed against RPG_RT's own live source: `Window_ShopSell`
+# (`src/window_shopsell.cpp`) inherits `Window_Item::CheckInclude`/
+# `Refresh` (`src/window_item.cpp`) unchanged -- a plain `item_id > 0`
+# filter, no price check -- and only overrides `CheckEnable` (`item->price
+# > 0`), which `Scene_Shop::UpdateSellSelection` (`src/scene_shop.cpp`)
+# reads to Buzz instead of opening the quantity counter. A price-0 (key)
+# item the party holds stays on screen in real RPG_RT, just refuses the sale.
+check 'Open Shop scene: a price-0 (key) item stays listed on the sell ' \
+      'screen, but selecting it just buzzes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [2, 0, 0, 0, 3], indent: 0)] # sell-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(fake_db), state)
+  party = ShopStubParty.new(0)
+  party.gain_item(3, 1)
+  party.gain_item(8, 1) # price 0 -- key item
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the shop opens straight to the sell list (sell-only)
+
+  shop = scene.instance_variable_get(:@shop)
+  eq [3, 8], shop[:model].sellable_items, 'the key item stays on the list'
+  texts = window_texts(shop[:window])
+  ok texts.any? { |t| t.include?('Deed') }, 'and is actually drawn'
+
+  # Move the cursor onto it (row 1, the second/last row) and try to select it.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  eq 1, scene.instance_variable_get(:@shop)[:index], 'cursor moved onto the key item'
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen], 'refused -- still on the sell list, not the quantity counter'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Buzzer1' }, 'a Buzzer SE, not Decision'
 end
 
 check 'Open Shop scene: the status panel shows the highlighted item\'s possessed ' \

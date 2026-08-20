@@ -8046,9 +8046,22 @@ module Game
     # non-zero price (RPG2000 marks price-0 / key items as unsellable).
     def sellable?(id); price(id) > 0 && @party.item_count(id) > 0; end
 
-    # The party's sellable items, id-ordered, for the sell list.
+    # Every item the party holds, id-ordered, for the sell list -- list
+    # membership and sellability are two different questions, confirmed
+    # against RPG_RT's own live source: `Window_ShopSell` (`src/window_
+    # shopsell.cpp`) inherits `Window_Item::CheckInclude`/`Refresh`
+    # (`src/window_item.cpp`) completely unchanged (a plain `item_id > 0`
+    # filter over every item `Game_Party::GetItems` returns, no price check
+    # anywhere in it) and only overrides `CheckEnable` (`item->price > 0`) --
+    # which gates the drawn color and, in `Scene_Shop::UpdateSellSelection`
+    # (`src/scene_shop.cpp`), Decision (`item && item->price > 0`, Buzzer
+    # otherwise). A price-0 (key) item a player holds still shows up in the
+    # Sell list in real RPG_RT, just refuses the sale -- this method used to
+    # drop it from the list outright instead, via the same `#sellable?` this
+    # class's own #max_sell already, correctly, uses for the "can it
+    # actually be sold" question that #open_shop_quantity gates Decision on.
     def sellable_items
-      @party.items.keys.select { |id| sellable?(id) }.sort
+      @party.items.keys.sort
     end
 
     # The RPG2000 per-item stack cap: a party holds at most 99 of anything.
