@@ -4403,6 +4403,23 @@ The work below is roughly ordered by the critical path to a walkable game
   already stood (no fix landed, since none was needed). **Still open**:
   `order.rb`, `debug_menu.rb`, `title.rb`, and every battle target/command
   list in `battle.rb`.
+  ✅ **Follow-up (2026-08-19): a solo party's Status screen still played the
+  cursor SE and rebuilt the whole panel on every Right/Left press, for no
+  visible change — a second condition this bullet's own trigger-vs-repeat
+  check never surfaced.** Re-reading `Scene_Status::vUpdate` (`src/
+  scene_status.cpp`) in full shows both branches gated on two conditions,
+  not one: `actors.size() > 1 && Input::IsTriggered(Input::RIGHT)` (and the
+  `LEFT` mirror) — a lone-hero party leaves RIGHT/LEFT silent no-ops, no SE,
+  no `Scene::Push` rebuild, distinct from the already-checked trigger-vs-
+  repeat axis. `Scene::StatusMenu#update` (`mruby-rpg2k/mrblib/scene/
+  status_menu.rb`) processed RIGHT/LEFT unconditionally, so a solo party
+  heard a cursor click and paid a full window rebuild for a press that
+  genuine RPG_RT treats as if it never happened. Fixed by folding `party.
+  size > 1 &&` into both branch conditions. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a solo-actor `menu_state` party:
+  Right/Left neither move `@actor_index` nor play the cursor SE),
+  confirmed to fail against the pre-fix code (`expected [], got
+  [["Cursor1", ...]]`).
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Confirmed
   against EasyRPG Player's actual source: `Scene_Order::vUpdate` (`src/
