@@ -6660,12 +6660,16 @@ module Game
   end
 
   # Autonomous (non-custom) event movement: given a page's `move_type`, pick the
-  # direction the character should try to step next. `random` picks a cardinal;
+  # direction the character should try to step next. ~~`random` picks a
+  # cardinal~~ -- corrected against RPG_RT's own live source: `random` rolls a
+  # *relative* turn off the event's own current facing instead, and sometimes
+  # skips the move attempt entirely -- see #random_direction's own citation;
   # `vertical`/`horizontal` keep bouncing along one axis, reversing when the way
   # ahead is blocked; `toward`/`away` chase or flee the hero, but only most of
   # the time and only in sight -- see #toward_away_direction's own citation.
-  # Returns a numpad direction, or nil for "no autonomous movement" (stationary)
-  # and for the custom-route type (which is driven by a MoveRoute instead).
+  # Returns a numpad direction, or nil for "no autonomous movement" (stationary,
+  # the custom-route type -- driven by a MoveRoute instead -- and a `random`
+  # draw that skips this decision's move attempt entirely).
   module MoveType
     STATIONARY = 0
     RANDOM     = 1
@@ -6677,13 +6681,46 @@ module Game
 
     def self.next_direction(type, character, world)
       case type
-      when RANDOM     then Character::CARDINALS[world.random(4)]
+      when RANDOM     then random_direction(character, world)
       when VERTICAL   then bounce(character, world, [8, 2])
       when HORIZONTAL then bounce(character, world, [4, 6])
       when TOWARD then toward_away_direction(character, world, true)
       when AWAY   then toward_away_direction(character, world, false)
       else nil
       end
+    end
+
+    # Random movement is a *relative* roll off the event's own current facing,
+    # not a uniform pick among the four absolute cardinals -- confirmed against
+    # RPG_RT's own live source: `Game_Event::MoveTypeRandom` (`src/
+    # game_event.cpp`) draws `Rand::GetRandomNumber(0, 9)`: 0-2 (30%) keep
+    # going straight with no turn at all, 3-4 (20%) turn 90 degrees left, 5-6
+    # (20%) turn 90 degrees right, 7 (10%) turn 180 degrees, and 8-9 (20%)
+    # skip the movement decision entirely -- `SetStopCount(Rand::
+    # GetRandomNumber(0, GetMaxStopCount())); return;` fires *before* `Move()`
+    # is ever called, so there is no move attempt this tick at all, not even
+    # one in the direction the character already faces.
+    # `Turn90DegreeLeft`/`Turn90DegreeRight`/`Turn180Degree` (`src/
+    # game_character.cpp`) are themselves plain `SetDirection` remaps with no
+    # passability check of their own (`GetDirection90DegreeLeft(dir)` is
+    # `(dir + 3) % 4`, `GetDirection90DegreeRight` is `(dir + 1) % 4`,
+    # `GetDirection180Degree` is `(dir + 2) % 4`, against that file's `Up = 0,
+    # Right, Down, Left` enum) -- exactly this codebase's own
+    # `Character::TURN_LEFT`/`TURN_RIGHT`/`TURN_180` hashes, confirmed to
+    # match direction-for-direction (both rotate Up -> Left -> Down -> Right
+    # -> Up for a left turn and the reverse for a right turn). Returns nil for
+    # the skip draw -- already `#step_event`'s own sentinel for "no
+    # autonomous movement this frame" (see STATIONARY/CUSTOM above), so no
+    # caller-side change was needed to keep it distinct from a real
+    # direction: nil never collides with a numpad direction (2/4/6/8 are all
+    # truthy).
+    def self.random_direction(character, world)
+      draw = world.random(10)
+      return character.direction if draw < 3
+      return Character::TURN_LEFT[character.direction]  || character.direction if draw < 5
+      return Character::TURN_RIGHT[character.direction] || character.direction if draw < 7
+      return Character::TURN_180[character.direction]   || character.direction if draw == 7
+      nil
     end
 
     # Approach/Away from Player is not the deterministic beeline it looks

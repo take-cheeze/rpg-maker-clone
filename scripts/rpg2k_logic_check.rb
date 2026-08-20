@@ -741,6 +741,40 @@ check 'MoveType stationary and custom yield no autonomous direction' do
   eq nil, Game::MoveType.next_direction(Game::MoveType::CUSTOM, c, w)
 end
 
+check 'MoveType random is a relative roll off the event\'s own current ' \
+      'facing, not a uniform pick among the four absolute cardinals -- ' \
+      'confirmed against RPG_RT\'s own live source: Game_Event::' \
+      'MoveTypeRandom (src/game_event.cpp) draws Rand::GetRandomNumber(0, ' \
+      '9): 0-2 keep going straight, 3-4 turn left, 5-6 turn right, 7 turns ' \
+      '180, and 8-9 skip the move attempt entirely -- returning before ' \
+      'Move() is ever called' do
+  # Facing right (6): TURN_LEFT[6] == 8 (up), TURN_RIGHT[6] == 2 (down),
+  # TURN_180[6] == 4 (left).
+  c = Game::Character.new(0, 0, 6)
+
+  # draw 0-2: continue straight, no turn -- still the current facing.
+  eq 6, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [0]))
+  eq 6, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [2]))
+
+  # draw 3-4: turn 90 degrees left and attempt that new direction.
+  eq 8, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [3]))
+  eq 8, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [4]))
+
+  # draw 5-6: turn 90 degrees right and attempt that new direction.
+  eq 2, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [5]))
+  eq 2, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [6]))
+
+  # draw 7: turn 180 degrees and attempt that new direction.
+  eq 4, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [7]))
+
+  # draw 8-9: skip this decision entirely -- nil, not a move in the
+  # character's current direction and not any other real direction value,
+  # so #step_event's `move_autonomous(...) if dir` never even calls
+  # #move_autonomous this tick, exactly like RPG_RT never calling Move().
+  eq nil, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [8]))
+  eq nil, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [9]))
+end
+
 check 'MoveType vertical bounces off a blocked tile' do
   c = Game::Character.new(2, 2, 8) # heading up
   # Up (2,1) is blocked, so it should reverse to down.
