@@ -4292,6 +4292,33 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check (`Input.repeated` set with
   `Input.triggered` empty still advances the cursor one slot), confirmed
   to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-19): a held (not freshly tapped) Down/Up at the
+  last/first save slot wrongly wrapped the cursor around, when real RPG_RT
+  freezes it there until the key is released and pressed again — a bug the
+  auto-repeat fix just above introduced by citing the wrong base class.**
+  That bullet's own citation of `Window_Selectable::Update` as "the base
+  class the real save/load file list is built on" was wrong: confirmed
+  against RPG_RT's live source, `Window_SaveFile` (`src/window_savefile.cpp`)
+  is a plain `Window_Base`, not a `Window_Selectable` — real RPG_RT's own
+  `Scene_File::vUpdate` (`src/scene_file.cpp`) hand-rolls this list's cursor
+  logic itself: `if (Input::IsRepeated(Input::DOWN) || ...) { if
+  (Input::IsTriggered(Input::DOWN) || ... || index < max_index) { ... index =
+  (index + 1) % file_windows.size(); } }` — the inner condition means a
+  *fresh* `IsTriggered` always advances and wraps unconditionally, but once
+  the key is merely auto-repeating (`IsRepeated` true, `IsTriggered` false),
+  the advance itself is skipped once `index` has nowhere to go but wrap
+  (`index == max_index`); Up mirrors this at `index == 0`. `#move_selection`
+  (`mruby-rpg2k/mrblib/scene/save_load.rb`) wrapped via plain modulo
+  regardless of which of `Input.trigger?`/`Input.repeat?` fired, so once
+  auto-repeat kicked in at the last slot, the cursor silently snapped back to
+  the first without the player releasing the key. Fixed by threading an
+  `allow_wrap:` flag (true only on `Input.trigger?`, matching `vUpdate`'s own
+  split) through `#move_selection`, skipping the advance entirely when it
+  would need to wrap and `allow_wrap` is false. Three new
+  `scripts/rpg2k_scene_check.rb` checks (a held Down at the last slot stays
+  put; a held Up at the first slot stays put; a fresh tap at the last slot
+  still wraps, unchanged) — the first two confirmed to fail against the
+  pre-fix code (`expected 14, got 0` / `expected 0, got 14`).
   ✅ **The same auto-repeat gap, lifted into `Scene::Menu` (the main field
   menu) next, as flagged above (2026-08-18).** All three of its own cursor
   spots only ever checked `Input.trigger?`: `#update_command` (the five
