@@ -16366,7 +16366,7 @@ above are repeated here)
   Attribute resistance rank A-E already maps to the Attribute database's own
   per-rank effect-% table too (`Game::Battle#attr_rate`, `a_rate`..`e_rate`
   with a `[300, 200, 100, 50, 0]` fallback — **confirmed already correct**,
-  no change needed). ✅ **Death/Knockout is now exempt from rank scaling and
+  no change needed). ~~✅ **Death/Knockout is now exempt from rank scaling and
   always lands at the skill's own occurrence rate.** RPG2000 has no separate
   instant-death mechanic — an "instant death" spell is just a skill whose
   state-effect list names Knockout (state id 1, `Game::Actor::DEATH_STATE`)
@@ -16380,7 +16380,29 @@ above are repeated here)
   `scripts/rpg2k_logic_check.rb` checks (a rank-E target still catches
   Knockout; the same rank on an ordinary state — the control case — still
   resists it, pinning the exemption to state id 1 specifically), the first
-  confirmed to fail against the pre-fix code before the fix.
+  confirmed to fail against the pre-fix code before the fix.~~
+  ✅ **Follow-up (2026-08-20): that Knockout exemption was itself wrong —
+  RPG_RT scales an instant-death infliction by the target's A-E resistance
+  rank exactly like any other state, never bypassing it.** The fix above
+  relied solely on an uncited yado.tk claim, never checked against real
+  source. Confirmed against EasyRPG Player's actual C++, fetched live:
+  `Game_Actor::GetStateProbability`/`Game_Enemy::GetStateProbability`
+  (`src/game_actor.cpp`/`src/game_enemy.cpp`) have no `state_id ==
+  kDeathID` special case whatsoever, and both of `Game_BattleAlgorithm`'s
+  infliction call sites — the Skill state-effect loop and the weapon
+  `state_set` loop (`src/game_battlealgorithm.cpp`) — call
+  `target->GetStateProbability(state_id)` uniformly for every flagged state
+  id; each only checks `state_id == kDeathID` *after* a successful roll, to
+  track whether the target just died, never to skip the roll itself. Fixed
+  by removing `state_susceptibility`'s `return 100 if sid ==
+  Game::Actor::DEATH_STATE` early return, letting state id 1 fall through
+  the same rank/equipment-scaled path every other state already uses.
+  `scripts/rpg2k_logic_check.rb`'s two checks from the reverted fix were
+  rewritten in place: the rank-E check now expects Knockout to be blocked
+  (matching every other state's own rank-E check), and a new rank-A check
+  confirms Knockout still lands when the target is genuinely susceptible —
+  both confirmed to fail/pass appropriately against the pre-fix code before
+  the fix.
 - ✅ **A state id past the end of a battler's own `state_ranks` array now
   defaults to the correct rank per side — B/80% for an enemy, C/60% for an
   actor — instead of always C/60%.** A routine situation: liblcf/RPG_RT

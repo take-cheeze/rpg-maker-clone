@@ -13092,15 +13092,22 @@ module Game
     # (only an actor-built Combatant, #from_actor, carries a live `actor`).
     # 100 (unscaled) when the target (a bare fixture) models no ranks at all,
     # so a plain sim keeps landing every status.
-    # The Knockout state (id 1, `Game::Actor::DEATH_STATE`) is exempt from rank
-    # scaling entirely -- a skill's "state change" effect list can name it
-    # directly (RPG2000 has no separate instant-death mechanic), and yado.tk
-    # documents its infliction chance as governed solely by the skill's own
-    # occurrence-rate operand, never reduced by the target's A-E resistance rank.
+    # The Knockout state (id 1, `Game::Actor::DEATH_STATE`) is scaled exactly
+    # like any other state, despite an uncited yado.tk claim this codebase
+    # used to carry (and special-case) that its infliction chance was governed
+    # solely by the skill's own occurrence-rate operand, never reduced by the
+    # target's A-E resistance rank. Confirmed against RPG_RT's actual C++
+    # source: `Game_Actor::GetStateProbability`/`Game_Enemy::
+    # GetStateProbability` (`src/game_actor.cpp`/`src/game_enemy.cpp`) have no
+    # `state_id == kDeathID` special case at all, and both of
+    # `Game_BattleAlgorithm`'s infliction call sites -- the Skill state-effect
+    # loop and the weapon `state_set` loop (`src/game_battlealgorithm.cpp`) --
+    # call `target->GetStateProbability(state_id)` uniformly for every flagged
+    # state id, checking `state_id == kDeathID` only *after* a successful roll
+    # (to track whether the target just died), never to skip the roll itself.
     # An ally's own defensive equipment can scale the A-E result down further
     # still -- see Actor#state_resist_mul.
     def state_susceptibility(target, sid)
-      return 100 if sid == Game::Actor::DEATH_STATE
       ranks = target.state_ranks
       return 100 if ranks.nil? || ranks.empty?
       is_ally = ally?(target)
