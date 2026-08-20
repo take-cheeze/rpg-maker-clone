@@ -237,9 +237,9 @@ class RPG2k
       # on a repeat cast once SP runs out (an empty `affected`, the same
       # Buzzer path), matching the reference's own SP/HP check ahead of
       # `UseSkill` -- unaffordable buzzes, it does not auto-exit either.
-      # Unlike #apply_switch_skill just below, this one is never tagged
-      # `:cast` -- it has nowhere to "return to" until Cancel, so
-      # `#drive_message` has nothing extra to do once the message closes.
+      # Unlike #apply_switch_skill just below, this has nowhere to "return
+      # to" until Cancel -- #drive_message has nothing extra to do once the
+      # message closes.
       def apply_skill(sid, target)
         affected = @state.party.cast_skill(caster, sid, target)
         if affected.empty?
@@ -253,12 +253,22 @@ class RPG2k
       # A switch skill (type 3) spends its SP and turns on a game switch, with
       # nothing to target. This is how a Nepheshel player summons and dismisses a
       # companion — the switch is what its common event watches.
+      # A successful cast closes the whole menu stack at once, exactly like
+      # Scene::ItemMenu#apply_switch_item and this same class's own
+      # #apply_escape_skill just below -- confirmed against RPG_RT's own
+      # live source: `Scene_Skill::vUpdate`'s `Type_switch` arm
+      # (`src/scene_skill.cpp`) plays the skill's own sound effect and calls
+      # `Scene::PopUntil(Scene::Map)` on the very same Decision press, with
+      # no confirmation message at all -- the identical shape as `Type_
+      # escape` right below it, not the ordinary target-mode cast's
+      # stay-open-and-show-a-message flow (`Algo::IsNormalOrSubskill`'s own
+      # arm, which pushes a `Scene_ActorTarget` instead).
       def apply_switch_skill(sid)
         switch = @state.party.cast_switch_skill(caster, sid)
         if switch
           @state.switches[switch] = true
           play_skill_sound_effect(sid)
-          show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+          @parent.pop_to_map
         else
           play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
@@ -595,18 +605,10 @@ class RPG2k
 
       def drive_message
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        # `:cast` only ever tags #apply_switch_skill's message now (see
-        # #apply_skill's own comment) -- a switch skill is cast straight from
-        # the skill list, with no target screen to stay open on, so its own
-        # successful-cast message closes back into a rebuilt list, matching
-        # this same class's pre-existing #leave_target/#leave_teleport_target
-        # shape for "returning to the list."
-        done = @message[:done]
         close_message
-        leave_target if done == :cast
       end
 
-      def show_message(text, done = nil)
+      def show_message(text)
         return if @message
         w = SCREEN_W - 40
         win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
@@ -616,7 +618,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
-        @message = { window: win, done: done }
+        @message = { window: win }
       end
 
       def close_message

@@ -17976,6 +17976,25 @@ check 'Scene::SkillMenu: a Switch skill plays its own sound_effect on a successf
      "the ordinary Decision SE (confirming the choice) then the skill's own sound_effect"
 end
 
+check 'Scene::SkillMenu: a successful Switch skill closes the whole menu ' \
+      'stack at once, with no confirmation message' do
+  # Confirmed against RPG_RT's own live source: `Scene_Skill::vUpdate`'s
+  # `Type_switch` arm (src/scene_skill.cpp) plays the skill's own sound
+  # effect and calls `Scene::PopUntil(Scene::Map)` on the very same Decision
+  # press, with no confirmation message at all -- the identical shape as
+  # `Type_escape`, not the ordinary target-mode cast's stay-open-and-show-a-
+  # message flow.
+  parent = fake_parent(fake_db)
+  state = skill_sound_effect_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the switch skill
+  scene.update
+  RGSS::Input.reset
+  eq true, state.switches[17], 'the switch turned on'
+  ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+  ok scene.instance_variable_get(:@message).nil?, 'no "casts ..." message, matching a switch item'
+end
+
 check 'Scene::SkillMenu: a Switch skill with a blank sound_effect plays nothing extra and does not error' do
   parent = fake_parent(fake_db)
   state = skill_sound_effect_state
