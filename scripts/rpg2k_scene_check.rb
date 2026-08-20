@@ -18022,6 +18022,28 @@ check 'Scene::EquipMenu: holding Down auto-repeats the slot and candidate ' \
      'a held (repeated, not triggered) Down still moves the candidate cursor one step'
 end
 
+# Confirmed against RPG_RT's own live source: `Scene_Equip::
+# UpdateEquipSelection` (src/scene_equip.cpp) gates both the RIGHT and LEFT
+# branches on `actors.size() > 1`, not just the key trigger itself -- a solo
+# party's Equip screen plays no cursor SE and rebuilds nothing on either key.
+check 'Scene::EquipMenu: a solo party leaves Right/Left as silent no-ops' do
+  scene = menu_scene(RPG2k::Scene::EquipMenu, menu_state)
+  eq 0, scene.instance_variable_get(:@actor_index), 'starts on the only actor'
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Right has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Right'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Left has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Left'
+end
+
 check 'Scene::EquipMenu: 装備固定 refuses to open the item list for that actor' do
   state = wrap_menu_state
   state.party.actors.first.equipment_fixed_flag = true
