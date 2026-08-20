@@ -13278,6 +13278,43 @@ not yet verified:
   ineffective rating-60 skill's own rating even though the skill itself
   never fires), all three confirmed to fail against the pre-fix code
   before the fix.
+  ✅ **Follow-up (2026-08-20): a skill action naming an Escape/Teleport-type
+  skill, or a Switch-type skill whose battle-occasion flag is off, was
+  still fully eligible for the weighted draw — the same `enemy_action_
+  valid?`/`enemy_skill_ready?` gap `#skill_helps_troop?` (above) closed for
+  a *different* no-op class, left open for this one.** Confirmed directly
+  against RPG_RT's live source: `EnemyAi::IsActionValid`
+  (`src/enemyai.cpp`) rejects a `Kind_skill` action outright — before its
+  weight is even computed, not merely zeroed out afterward — when
+  `!source.IsSkillUsable(action.skill_id)`; `Game_Battler::IsSkillUsable`
+  (`src/game_battler.cpp`) reaches `Algo::IsSkillUsable` (`src/algo.cpp`),
+  which in battle is unconditionally `false` for a `Type_escape` or
+  `Type_teleport` skill, and for a `Type_switch` skill returns exactly
+  `skill.occasion_battle`. `Game::Battle#enemy_skill_ready?`
+  (`mruby-rpg2k/mrblib/game.rb`) checked only skill existence, the silence
+  seal, and SP affordability — never the skill's own type or occasion flag
+  — so an enemy's action pattern naming such a skill (a designer mistake,
+  or a skill later repurposed as Escape/Teleport/an off-occasion Switch
+  after the pattern was authored) could actually fire: casting Escape/
+  Teleport would compute a stray HP/MP effect from a row RPG_RT never lets
+  an enemy read this way, and an off-occasion Switch would still flip its
+  switch. Traced the whole downstream chain to rule out a later catch:
+  `Game::Party#skill_helps_troop?`/`#battle_skill_command` both have no
+  type gate of their own — they trust the caller to have already screened
+  the action. This is base RPG2000 behaviour (skill types Escape/Teleport/
+  Switch and `occasion_battle` are core RPG2000 fields, not an RPG2003/
+  Maniac-only feature). Fixed by adding `Game::EnemyAi#skill_battle_
+  usable?(sk)`, forwarding to `Game::Party#battle_skill?` — the party
+  class's own already-correct type/occasion gate, already used for the
+  ordinary field/battle actor cast path — and calling it from
+  `#enemy_skill_ready?` right after resolving the skill row, ahead of the
+  seal/cost checks. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  (an Escape-type and a Teleport-type skill in an enemy's pattern never
+  fire, falling back to a plain attack instead; an off-occasion Switch
+  skill never fires either; the identical Switch skill with its occasion
+  flag on still fires normally), confirmed to fail against the pre-fix
+  code before the fix (the Teleport-type skill actually cast, computing a
+  stray zero-damage "hit").
 - ✅ **An action pattern's "Enemies" condition (`condition_type` 3,
   `COND_ACTORS`) now ranges over the acting monster's own living
   troop-mates, not the player party's headcount — a straight side-swap,

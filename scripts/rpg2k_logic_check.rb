@@ -17909,12 +17909,14 @@ end
 class FakeAiSkill
   attr_accessor :name, :type, :scope, :sp_type, :sp_cost, :sp_percent, :power,
                 :physical_rate, :magical_rate, :hit, :variance, :state_effects,
-                :attribute_effects, :affect_hp, :affect_sp
+                :attribute_effects, :affect_hp, :affect_sp, :occasion_battle,
+                :switch_id
 
   def initialize(h = {})
     @name = 'Spell'; @type = 0; @scope = 0; @sp_type = 0; @sp_cost = 0
     @power = 0; @physical_rate = 0; @magical_rate = 0; @hit = 100
     @variance = 0; @affect_hp = true; @affect_sp = false
+    @occasion_battle = true
     h.each { |k, v| send("#{k}=", v) }
   end
 end
@@ -17939,6 +17941,41 @@ check 'an enemy casts an attack skill from its pattern' do
   e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], ai, foe: foe)
   eq 'Fire', e[:skill], 'the skill is named on the log'
   ok e[:damage] > 0, 'and it hurt'
+end
+
+# Confirmed directly against RPG_RT's live source: `EnemyAi::IsActionValid`
+# (`src/enemyai.cpp`) rejects a `Kind_skill` action outright when
+# `!source.IsSkillUsable(action.skill_id)` -- before the action's own weight
+# is ever computed, not merely zeroed out afterward. `Algo::IsSkillUsable`
+# (`src/algo.cpp`), which `Game_Battler::IsSkillUsable`
+# (`src/game_battler.cpp`) reaches in battle, is unconditionally false for a
+# Teleport- or Escape-type skill, and gated on the skill's own
+# `occasion_battle` flag for a Switch-type one -- an enemy's own action
+# pattern is bound by the exact same rules a field/battle actor cast is.
+check "an enemy's action pattern never fires a Teleport/Escape-type skill, " \
+      'and only fires a Switch-type one when its battle-occasion flag is set' do
+  teleport = skill_ai(1 => FakeAiSkill.new(name: 'Warp', type: Game::Party::SKILL_TELEPORT))
+  foe = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], teleport, foe: foe)
+  ok e[:skill].nil?, "a Teleport-type skill must never be cast, got: #{e.inspect}"
+  ok e[:damage] > 0, 'falls back to a plain attack instead'
+
+  escape = skill_ai(1 => FakeAiSkill.new(name: 'Flee', type: Game::Party::SKILL_ESCAPE))
+  foe2 = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e2 = enemy_entry([enemy_action(kind: 1, skill_id: 1)], escape, foe: foe2)
+  ok e2[:skill].nil?, "an Escape-type skill must never be cast, got: #{e2.inspect}"
+
+  off_switch = skill_ai(1 => FakeAiSkill.new(name: 'Alarm', type: Game::Party::SKILL_SWITCH,
+                                             occasion_battle: false, switch_id: 4))
+  foe3 = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e3 = enemy_entry([enemy_action(kind: 1, skill_id: 1)], off_switch, foe: foe3)
+  ok e3[:skill].nil?, "a Switch-type skill with occasion_battle off must not fire, got: #{e3.inspect}"
+
+  on_switch = skill_ai(1 => FakeAiSkill.new(name: 'Alarm', type: Game::Party::SKILL_SWITCH,
+                                            occasion_battle: true, switch_id: 4))
+  foe4 = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e4 = enemy_entry([enemy_action(kind: 1, skill_id: 1)], on_switch, foe: foe4)
+  eq 'Alarm', e4[:source], 'a Switch-type skill with occasion_battle on still fires'
 end
 
 check "an enemy's attack skill inflicts its states — enemy-cast infliction" do

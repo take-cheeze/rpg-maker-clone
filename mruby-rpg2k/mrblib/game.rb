@@ -8733,6 +8733,24 @@ module Game
       party.skill_helps_troop?(sk, caster, troop)
     end
 
+    # Whether `sk` is even a legal in-battle action to name in an enemy's own
+    # action pattern -- reuses Game::Party's own #battle_skill? so an enemy's
+    # AI is gated the exact same way a field/battle actor cast is. Confirmed
+    # directly against RPG_RT's live source: `EnemyAi::IsActionValid`
+    # (`src/enemyai.cpp`) rejects a `Kind_skill` action outright when
+    # `!source.IsSkillUsable(action.skill_id)` -- before the action's own
+    # weight is ever computed -- and `Algo::IsSkillUsable` (`src/algo.cpp`),
+    # which `Game_Battler::IsSkillUsable` (`src/game_battler.cpp`) reaches in
+    # battle, is unconditionally false for an Escape/Teleport-type skill and
+    # gated on the skill's own `occasion_battle` flag for a Switch-type one.
+    # Defaults to "usable" without a party to ask, matching every other
+    # tolerant accessor here.
+    def skill_battle_usable?(sk)
+      party = @state && @state.respond_to?(:party) ? @state.party : nil
+      return true unless party && party.respond_to?(:battle_skill?)
+      party.battle_skill?(sk)
+    end
+
     # Whether `caster` (a live Game::Actor, not a battle Combatant snapshot —
     # #choose_auto_battle_command reaches through a Combatant's own `#actor`
     # to get one) can actually cast skill `sid` right now: reuses
@@ -11211,13 +11229,17 @@ module Game
       pct >= a.condition_param1 && pct <= a.condition_param2
     end
 
-    # Whether `b` can actually cast the skill action `a`: the skill exists and it
-    # can pay the SP. An enemy that cannot afford its spell falls through to its
-    # other actions, the way RPG_RT skips an unusable one.
+    # Whether `b` can actually cast the skill action `a`: the skill exists, is
+    # a legal in-battle action at all (not Escape/Teleport, and not a Switch
+    # skill whose battle-occasion flag is off -- see #skill_battle_usable?),
+    # and it can pay the SP. An enemy that cannot afford its spell -- or whose
+    # pattern names an illegal action entirely -- falls through to its other
+    # actions, the way RPG_RT never lets either kind enter the weighted draw.
     def enemy_skill_ready?(b, a)
       return false unless @ai
       sk = @ai.skill(a.skill_id)
       return false unless sk
+      return false unless @ai.skill_battle_usable?(sk)
       return false if skill_sealed?(b, sk) # silenced: this entry cannot fire
       cmd = @ai.skill_command(sk, b, nil)
       return false unless cmd
