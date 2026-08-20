@@ -19066,6 +19066,32 @@ check 'an ordinary medicine is unaffected by the rule' do
   eq 90, hero.hp
 end
 
+check 'a medicine that does not cure Death does nothing at all to a downed ' \
+      'target -- not even curing an unrelated state or restoring MP, and ' \
+      'the item is not spent' do
+  # Confirmed against RPG_RT's own live source: `Game_Battler::UseItem`
+  # (src/game_battler.cpp) checks `IsDead()` before anything else and
+  # returns `false` immediately -- no state-cure loop, no HP change, no SP
+  # change run at all -- unless `item->state_set[0]` (state id 1, Death) is
+  # flagged. An Antidote-style item that cures some other state (Poison,
+  # state id 2 here) but not Death must leave a KO'd target's Poison
+  # untouched too, not just skip the HP/MP halves independently.
+  items = { 6 => fake_item(type: 6, rhp: 50, rsp: 20, state_set: [nil, true]) }
+  st = item_party(items)
+  st.party.gain_item(6, 1)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(Game::Actor::DEATH_STATE)
+  hero.add_state(2) # Poison, alongside Death
+  hero.mp = 0
+  ok hero.dead?
+  eq [], st.party.use_item(6, hero)
+  ok hero.dead?, 'still down -- the item does not cure Death'
+  ok hero.state?(2), 'Poison is not cured either -- the whole call aborts, ' \
+                      'not just the HP/MP halves'
+  eq 0, hero.mp, 'MP is untouched'
+  eq 1, st.party.item_count(6), 'nothing is spent'
+end
+
 # An all-party revive passes over the members who never fell rather than topping
 # them up, which is the case the "not even the HP" reading decides.
 check 'an all-party revive skips the members still standing' do

@@ -4543,6 +4543,20 @@ module Game
       cured = item_cured_states(it)
       affected = []
       targets.each do |t|
+        # A downed target blocks the item outright unless it's a revive (one
+        # that cures 戦闘不能) -- confirmed against RPG_RT's own live source:
+        # `Game_Battler::UseItem` (`src/game_battler.cpp`) checks `IsDead()`
+        # *before* anything else and returns `false` immediately -- no state
+        # cure, no HP change, no SP change at all -- unless `item->state_set
+        # [0]` (state id 1, Death) is flagged. Without this, an ordinary
+        # medicine with no Death cure (an Antidote that only cures Poison, or
+        # a plain HP/MP potion) used on a KO'd member with some other
+        # affliction silently cured it and/or topped up MP and consumed the
+        # item -- `#change_hp` already happens to no-op for a dead actor on
+        # its own (`return @hp if dead?`), which is what hid this for the HP
+        # half alone, but the cure loop and `#change_mp` below have no such
+        # guard of their own.
+        next if t.dead? && !cured.include?(Game::Actor::DEATH_STATE)
         # A 蘇生専用 item passes over anyone still standing without touching
         # them -- not even the HP restore -- which is what keeps an all-party
         # revive from topping up the members who never fell. An actor_set
