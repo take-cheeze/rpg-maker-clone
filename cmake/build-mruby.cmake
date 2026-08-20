@@ -84,19 +84,19 @@ function(rpg2k_add_mruby)
   # assign-setmcnst.patch's own preamble has the full trail): `::Const = value`
   # written inside a nested module/class body silently defines the constant on
   # the *lexically enclosing* module instead of at the top level -- no
-  # exception, just the wrong owner. Real, not vendor-specific: `ruby -e
-  # 'module Foo; ::Bar = 42; end; p Object.const_defined?(:Bar)'` prints true,
-  # mruby's does not. This submodule tracks upstream mruby/mruby directly (no
-  # fork this project controls to carry the fix on), so it is patched in place
-  # here instead, the same way patches/psp-fixup-imports-jal-relocation-aware.
-  # patch is applied to a fetched pspsdk checkout -- via a real script
+  # exception, just the wrong owner. Real, not vendor-specific: `ruby -e 'module
+  # Foo; ::Bar = 42; end; p Object.const_defined?(:Bar)'` prints true, mruby's
+  # does not. This submodule tracks upstream mruby/mruby directly (no fork this
+  # project controls to carry the fix on), so it is patched in place here
+  # instead, the same way patches/psp-fixup-imports-jal-relocation-aware. patch
+  # is applied to a fetched pspsdk checkout -- via a real script
   # (scripts/apply_mruby_patch.bash), not a `patch` call embedded straight in
   # this COMMAND: it needs a dry-run-first idempotency check across repeat
-  # configures/builds without re-cloning the submodule, and that redirect-
-  # heavy shell logic does not survive CMake's own command-line escaping
-  # reliably inline. The script itself fails loudly (not silently) if the
-  # patch stops applying, e.g. after a future submodule bump moves the
-  # patched code -- see its own preamble.
+  # configures/builds without re-cloning the submodule, and that redirect- heavy
+  # shell logic does not survive CMake's own command-line escaping reliably
+  # inline. The script itself fails loudly (not silently) if the patch stops
+  # applying, e.g. after a future submodule bump moves the patched code -- see
+  # its own preamble.
   set(mruby_colon3_patch
       "${ARG_REPO_ROOT}/patches/mruby-colon3-assign-setmcnst.patch")
 
