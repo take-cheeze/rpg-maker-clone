@@ -1999,6 +1999,12 @@ class RPG2k
           # Move Picture's own wait flag, the parallel-process equivalent of
           # the :screen case just above.
           it.resume unless @state.pictures_moving?
+        elsif it.wait_kind == :picture_blocked
+          # A Show/Move/Erase Picture command issued from a Parallel Process
+          # while a message window or choice list is open -- the parallel-
+          # process equivalent of #drive_event's own :picture_blocked case
+          # just above, see #block_pending_picture_command for the citation.
+          it.resume unless message_window_open?
         elsif it.wait_kind == :sprite_flash
           # Flash Sprite's own wait flag, the parallel-process equivalent of
           # the :screen/:picture cases just above.
@@ -4426,6 +4432,12 @@ class RPG2k
           when :movement then @interpreter.resume if step_forced_movement
           when :screen then @interpreter.resume unless @state.screen.busy?
           when :picture then @interpreter.resume unless @state.pictures_moving?
+          when :picture_blocked
+            # A Show/Move/Erase Picture command reached while a message
+            # window or choice list is open (#block_pending_picture_command)
+            # -- real RPG_RT retries the identical command every subsequent
+            # frame rather than dropping it, see that method's own citation.
+            @interpreter.resume unless message_window_open?
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
           when :name_input then drive_name_input

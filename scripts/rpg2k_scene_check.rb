@@ -3234,7 +3234,7 @@ check 'Show Picture is suppressed while a choice list is open (yado.tk)' do
 end
 
 check 'Show/Move/Erase Picture from an independently-running parallel process are ' \
-      'suppressed while a message window is open, and apply once it closes (yado.tk)' do
+      'blocked (not dropped) while a message window is open, and retry once it closes' do
   ic = Game::Interpreter::Cmd
 
   # Each sub-case opens the message window directly (via the same #open_message
@@ -3242,10 +3242,21 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   # against the parallel process's very first frame -- #step_parallels already
   # runs before #start_autostart each frame (see Scene::Map#update), so a
   # naturally-triggered message would not be open yet for the parallel
-  # process's first lap, and these commands are non-blocking no-ops once
-  # applied, not something a later suppression could retract.
+  # process's first lap.
 
   # -- Show Picture ---------------------------------------------------------
+  # RPG_RT's own dispatch loop (`Game_Interpreter::Update`,
+  # `if (!ExecuteCommand()) { break; }`) breaks the *whole* per-frame command
+  # loop for this exact interpreter when a picture command's own guard
+  # returns false -- not just that one command -- so `add_var_cmd(1)` right
+  # after the blocked Show Picture must not run either, until the message
+  # closes and the picture command itself finally succeeds
+  # (#block_pending_picture_command). This is narrower than, and does not
+  # contradict, the sibling "a message box is not a pause condition for
+  # parallel processes" rule the check just above already covers -- that
+  # rule is about *other, independent* parallel processes continuing
+  # elsewhere, not about this interpreter's own commands past a command it
+  # is itself blocked on.
   par = page(trigger: 4)
   par.event_commands = [
     ECmd.new(ic::SHOW_PICTURE, [1, 0, 100, 100, 0, 100, 0, 0, 100, 100, 100, 100],
@@ -3259,13 +3270,14 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   10.times { scene.update }
   ok !st.pictures.key?(1),
      'Show Picture from a still-running parallel process must not apply while a message window is open'
-  ok st.variables[1] > 0,
-     'the parallel process keeps advancing its non-picture commands regardless -- the sibling ' \
-     '"parallel processes were paused too broadly" fix must stay intact'
+  eq 0, st.variables[1],
+     'the command right after the blocked Show Picture must not run either -- the whole ' \
+     'interpreter is blocked on this exact command, not merely skipping it'
 
   scene.send(:close_message)
   5.times { scene.update }
-  ok st.pictures.key?(1), 'Show Picture applies once the window closes'
+  ok st.pictures.key?(1), 'Show Picture retries and applies once the window closes'
+  ok st.variables[1] > 0, 'and the command after it then runs too'
 
   # -- Move Picture -----------------------------------------------------------
   par2 = page(trigger: 4)
