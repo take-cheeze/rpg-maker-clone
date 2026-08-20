@@ -3307,7 +3307,7 @@ module Game
     end
 
     # Toggle ATB Mode (5003): flip the save-system wait/active toggle
-    # (`SaveSystem.atb_mode`, LSD chunk 140) between wait (0) and active (1) —
+    # (`SaveSystem.atb_mode`, LSD chunk 140) between active (0) and wait (1) —
     # the same field the field menu's Wait command (id 8) flips, so a gauge
     # battle's command menu starts freezing / keeping the gauges running
     # accordingly (RPG2k3::Scene::Battle#atb_accumulating? reads it live).

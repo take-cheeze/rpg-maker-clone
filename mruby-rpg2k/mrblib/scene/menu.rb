@@ -271,10 +271,12 @@ class RPG2k
       end
 
       # The Wait command row's label: `wait_on` while the fight is set to
-      # pause on its command menu (wait mode), `wait_off` once it is active.
-      # Defaults match the terms' own RPG2003 defaults ("Wait: On" / "Wait: Off").
+      # pause on its command menu (wait mode, raw `atb_mode` 1), `wait_off`
+      # once it is active (raw 0, the default) -- confirmed against
+      # EasyRPG's own `Scene_Menu` Wait row (`src/scene_menu.cpp`):
+      # `GetAtbMode() == AtbMode_atb_wait ? wait_on : wait_off`.
       def wait_label
-        @state.atb_mode == 1 ? term(:wait_off, 'Wait Off') : term(:wait_on, 'Wait On')
+        @state.atb_mode == 1 ? term(:wait_on, 'Wait On') : term(:wait_off, 'Wait Off')
       end
 
       def build_windows

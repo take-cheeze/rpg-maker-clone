@@ -13194,11 +13194,14 @@ module Game
     # changes.
     attr_accessor :system_graphic, :font_id
     # RPG2003's active-time wait/active toggle (`SaveSystem.atb_mode`, LSD
-    # SAVE_SYSTEM chunk 140): 0 = wait (a gauge battle's command menu pauses
-    # the fight), 1 = active (gauges keep filling while a menu is open and a
-    # ready non-controllable combatant's action interrupts it). The field
-    # menu's Wait command (id 8) flips it and the gauge battle scene reads it;
-    # default 0 (wait), matching liblcf. RPG2000 saves never carry the chunk.
+    # SAVE_SYSTEM chunk 140): 0 = active (gauges keep filling while a menu is
+    # open and a ready non-controllable combatant's action interrupts it),
+    # 1 = wait (a gauge battle's command menu pauses the fight) -- confirmed
+    # against liblcf's own generated `AtbMode` enum (`AtbMode_atb_active =
+    # 0, AtbMode_atb_wait = 1`), the opposite of an earlier, uncited pass
+    # here. The field menu's Wait command (id 8) flips it and the gauge
+    # battle scene reads it; default 0 (active), matching liblcf. RPG2000
+    # saves never carry the chunk.
     attr_accessor :atb_mode
     # Last known-good resume position of each running Common Event Parallel
     # Process, id => a command-list index (see Game::Interpreter
