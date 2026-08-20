@@ -11618,6 +11618,43 @@ not yet verified:
   reproducing RPG_RT's own quirk of leaving a stray `]` behind when
   nested past that limit rather than resolving cleanly), confirmed to
   fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-20): `\N[]`'s id-0-means-party-leader convenience
+  applied unconditionally whenever the parsed value came out 0, including
+  a bracket that parsed nothing at all — `\N[]`, or `\N[x]` where `x` is
+  neither a digit nor a recognised `\V[]`/`\v[]` reference — which real
+  RPG_RT leaves blank, not the leader's name.** Confirmed directly against
+  RPG_RT's live source: `Game_Message::ParseParam` (`src/game_message.cpp`)
+  tracks its own `got_valid_number` flag, set only when a literal digit or
+  a resolvable nested `\V[]`/`\v[]` is actually consumed inside the
+  brackets, and gates the substitution on `upper == 'N' && values.front()
+  == 0 && got_valid_number` — not on the value alone. A bracket that reads
+  nothing leaves the id at 0, which is not a valid 1-based actor id; real
+  RPG_RT's `DefaultCommandInserter` (`src/pending_message.cpp`) then misses
+  on `GetActor(0)`, logs `"Invalid Actor Id 0 in message text"`, and
+  expands to an empty string. `Game::Message.parse_bracket_value`
+  (`mruby-rpg2k/mrblib/game.rb`) — the character-scanning port described
+  just above — never tracked this flag at all, and `Scene::Map#actor_name`
+  applies its own id-0-means-leader shortcut (`id.to_i.zero? ?
+  party_leader : ...`) purely off the numeric value it is handed, so every
+  route into it read the same way: an explicit `\N[0]` and a bare `\N[]`
+  both named the party leader, where only the former should. Fixed by
+  having `parse_bracket_value` return a third element, `got_number`
+  (RPG_RT's own `got_valid_number`, set on the digit branch and the nested-
+  `\V[]` branch alike, mirroring its explicit `got_valid_number = true;` in
+  that branch independent of the recursive call's own result) — the other
+  three callers (`\V[]`/`\C[]`/`\S[]`) simply destructure the first two
+  elements, which Ruby allows without error. `Message.scan`'s `'n', 'N'`
+  case now passes `-1` (a value `#actor_name`'s own zero-check will never
+  match) instead of the raw parsed value whenever `got_number` is false, so
+  an unresolved bracket falls through to its own dangling-id blank-string
+  path instead of ever reaching the leader shortcut; `Scene::Map#actor_name`
+  itself is unchanged. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (an explicit `\N[0]` still substitutes the leader; a bare `\N[]`
+  and a non-digit, non-`\V[]` `\N[x]` both resolve to blank, and the id-0
+  lookup is never even attempted for either; a nested `\V[]` that resolves
+  to variable value 0 still counts as "a number was read" and the
+  substitution applies), confirmed to fail against the pre-fix code before
+  the fix.
 
 **Pictures**
 - ✅ **Move Picture's own per-frame easing now keeps full float precision

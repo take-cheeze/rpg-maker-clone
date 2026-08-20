@@ -851,6 +851,42 @@ check 'Message.scan resolves a nested \V[] argument inside \c[]/\s[] too ' \
   eq [{ at: 1, speed: 12 }], s2[:speeds]
 end
 
+check 'Message.scan\'s \N[]-id-0-means-party-leader convenience only applies ' \
+      'when a digit or resolvable \V[] was actually read inside the brackets' do
+  # Confirmed directly against RPG_RT's live source: `Game_Message::
+  # ParseParam` (`src/game_message.cpp`) guards the substitution on
+  # `values.front() == 0 && got_valid_number` -- a bracket that parsed
+  # nothing at all (`\N[]`, or `\N[x]` where `x` is neither a digit nor
+  # `\V[]`/`\v[]`) leaves the id at 0, which real RPG_RT's own
+  # `DefaultCommandInserter` (`src/pending_message.cpp`) then misses on
+  # `GetActor(0)` and expands to an empty string, not the leader's name.
+  vars = Game::Variables.new
+  vars[5] = 0
+  seen = []
+  names = ->(id) { seen << id; id.zero? ? 'Leader' : nil }
+
+  s = Game::Message.scan('\N[0]', vars, names)
+  eq 'Leader', s[:segments].map { |seg| seg[:text] }.join,
+     'an explicit \\N[0] still substitutes the leader'
+
+  seen.clear
+  s2 = Game::Message.scan('\N[]', vars, names)
+  eq '', s2[:segments].map { |seg| seg[:text] }.join,
+     'a bare \\N[] with nothing parsed resolves to blank, not the leader'
+  ok !seen.include?(0), 'the leader lookup (id 0) must never be attempted for an unparsed bracket'
+
+  seen.clear
+  s3 = Game::Message.scan('\N[x]', vars, names)
+  eq '', s3[:segments].map { |seg| seg[:text] }.join,
+     'a non-digit, non-\\V[] bracket body resolves to blank too'
+
+  seen.clear
+  s4 = Game::Message.scan('\N[\V[5]]', vars, names)
+  eq 'Leader', s4[:segments].map { |seg| seg[:text] }.join,
+     'a nested \\V[] that resolves to 0 still counts as "a number was read" -- ' \
+     'leader substitution applies'
+end
+
 check 'Message.scan flags \$ (show gold) and drops it from the text' do
   vars = Object.new
   def vars.[](_i); 0; end
