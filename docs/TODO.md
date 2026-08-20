@@ -13692,9 +13692,12 @@ not yet verified:
   site's own text; found by comparing `Game::Troop` against EasyRPG Player's
   actual C++ source while triaging the drop-related bullets nearby.
   `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`) already treats
-  `out_of_play?` (dead **or** hidden) as "out of the fight" for win/loss
-  purposes, so `alive?(@enemies)` — and with it victory — can go true the
-  instant every *visible* member is down, with no requirement that a
+  `out_of_play?` (dead **or** hidden) as "out of the fight," and the enemy
+  side's own win test (`#enemy_active?` as of a later 2026-08-20 follow-up
+  elsewhere in this document — `alive?(@enemies)` at the time this was
+  written) shares that same `out_of_play?` dead-or-hidden equivalence, so
+  victory can go true the instant every *visible* member is down, with no
+  requirement that a
   still-hidden one (never revealed, or fled) ever took a hit at all. `Game::
   Troop#total_exp`/`#total_gold`/`#drops` summed/rolled every member
   unconditionally, with no such check. Verified against real RPG_RT's own
@@ -18342,15 +18345,43 @@ codebase yet):
   own (Sleep, Paralysis with a nonzero `auto_release_prob`) does not count
   towards a wipe, matching "does not recover naturally": the fight keeps
   running, the same roll `#recovers_from_state?` would eventually use to
-  stand that battler back up. Applies symmetrically to both sides (an
+  stand that battler back up. ~~Applies symmetrically to both sides (an
   all-Stoned enemy troop ends the fight in victory too), since nothing in
   the source material suggests the rule is ally-only and `#alive?` was
-  already shared by both `@allies`/`@enemies` call sites. Covered by three
+  already shared by both `@allies`/`@enemies` call sites.~~ Covered by three
   new `scripts/rpg2k_logic_check.rb` checks (a fully-Stoned party is a loss
   with no HP ever moving, confirmed to fail against the pre-fix code before
   the fix; a party-wide do-nothing state with a nonzero `auto_release_prob`
   does *not* end the fight; one incapacitated ally among others is not a
-  wipe). ✅ **Berserk/Confusion override target selection but still
+  wipe).
+  ✅ **Follow-up (2026-08-20): that "applies symmetrically to both sides"
+  claim was wrong — the source material does say the rule is ally-only,
+  it just hadn't been checked.** `Game::Battle#finished?`
+  (`mruby-rpg2k/mrblib/game.rb`) reused `#alive?`/`#incapacitated?` for
+  *both* `@allies` and `@enemies`, so a skill/state that locked an entire
+  enemy troop into a restriction-based "do nothing" status (e.g. a
+  full-troop Stone with 0% self-cure) ended the fight in an instant,
+  damage-free victory. Checked against RPG_RT's own live source:
+  `Game_Battle::CheckWin`/`CheckLose` (`src/game_battle.cpp`) use two
+  genuinely different predicates, not one shared one — `CheckWin` is
+  `!game_enemyparty->IsAnyActive()`, which bottoms out in
+  `Game_Battler::Exists()` (`src/game_battler.h`, `!IsHidden() && !IsDead()
+  && IsInParty()`) with no restriction/recovery check anywhere in that
+  chain, while only `CheckLose` calls `CanActOrRecoverable()` (the source
+  `#incapacitated?` already correctly ports). The ally-side widening exists
+  specifically to avoid a stall where the player can never submit another
+  command; the enemy side carries no such risk (the player can always keep
+  attacking a restricted-but-alive enemy), so RPG_RT's own win check never
+  needed it. Fixed by giving the enemy side its own `#enemy_active?(side)`
+  (`side.any? { |b| !b.out_of_play? }` — dead/hidden only, no restriction
+  check) and using it for the enemy half of `#finished?` in place of
+  `#alive?`; the ally half, and both `#result` call sites (already
+  `@allies`-only), are untouched and still match `CheckLose` exactly.
+  Covered by a new `scripts/rpg2k_logic_check.rb` check (a fully-Stoned
+  enemy troop, still at full HP, does not end the fight — the fight only
+  ends once they're actually reduced to 0 HP), confirmed to fail against
+  the pre-fix code before the fix.
+  ✅ **Berserk/Confusion override target selection but still
   honour "hits twice"/"ignores evasion," while Berserk additionally
   collapses an "attack all" weapon down to a single target and disables
   "always acts first."** `Game::Battle#strike`'s forced-restriction branch
