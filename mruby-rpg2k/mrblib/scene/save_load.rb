@@ -96,8 +96,8 @@ class RPG2k
         # One Game::State (or nil for an empty slot) per slot, read once so
         # scrolling the list never re-touches disk.
         @slots = (1..SLOT_COUNT).map { |slot| parent.load_save_state(slot) }
-        @index = 0
-        @top = 0
+        @index = initial_index
+        @top = [@index - VISIBLE_SLOTS + 1, 0].max
         @arrow_anim = 0
         @message = nil
         @slot_windows = []
@@ -159,6 +159,43 @@ class RPG2k
       # rather than cycling back around, the mirror image for Up at the
       # first slot. `#update` passes `allow_wrap:` true only for the frame a
       # direction is freshly pressed, matching that split exactly.
+      # RPG_RT opens this screen with the cursor already on whichever slot
+      # was saved most recently, not always slot 1 -- confirmed against
+      # EasyRPG's own live source: `Scene_File::Start` (`src/scene_file.cpp`)
+      # sets `index = latest_slot; top_index = std::max(0, index - 2);`,
+      # where `latest_slot`/`latest_time` (`UpdateLatestTimestamp`) track
+      # whichever populated slot's `title.timestamp` (chunk 100 field 1) is
+      # the largest, defaulting to slot 0 when no save has one at all.
+      # `Game::State#to_lsd` already writes that exact field into each
+      # slot's exported `Save<N>.lsd` sibling (`title[1] = timestamp.to_f`,
+      # defaulting to the real save-time "now") -- reading it back here is
+      # the same genuine on-disk field RPG_RT itself reads, not a
+      # filesystem-mtime proxy.
+      def initial_index
+        best = 0
+        best_time = -Float::INFINITY
+        (1..SLOT_COUNT).each do |slot|
+          ts = slot_timestamp(slot)
+          next unless ts && ts > best_time
+          best_time = ts
+          best = slot - 1
+        end
+        best
+      end
+
+      # A slot's `title.timestamp`, read straight from its exported
+      # `Save<N>.lsd` sibling -- nil for a slot with no `.lsd`, an unreadable
+      # one, or one with no title chunk at all (the same defensive shape
+      # `RPG2k#load_save_state` already uses for this exact file).
+      def slot_timestamp(slot)
+        path = parent.lsd_path(slot)
+        return nil unless path && File.exist?(path)
+        title = LCF::SaveData.new(File.open(path, "rb"))[100]
+        title && title.timestamp
+      rescue StandardError
+        nil
+      end
+
       def move_selection(delta, allow_wrap:)
         target = @index + delta
         return if (target == SLOT_COUNT || target == -1) && !allow_wrap

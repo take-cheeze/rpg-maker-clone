@@ -278,6 +278,28 @@ module RGSS
   class Timeout < StandardError; end
 end
 
+# `Game::State#to_lsd`'s only native dependency (LCF.cp932_to_utf8/
+# utf8_to_cp932, a string field's encode/decode) shimmed with Ruby's own
+# Windows-31J transcoder -- exactly as scripts/rpg2k_logic_check.rb and
+# scripts/rpg2k_save_load_check.rb already do for the same reason. Needed
+# so a check can write a real Save<N>.lsd sibling straight to disk (the
+# Scene::SaveLoad initial-slot-recency check below) without loading the
+# native LCF parser this CRuby harness has no access to.
+module LCF
+  def cp932_to_utf8(s)
+    s.dup.force_encoding('Windows-31J')
+     .encode('UTF-8', invalid: :replace, undef: :replace, replace: "\u{FFFD}")
+  end
+  def utf8_to_cp932(s)
+    s.dup.encode('Windows-31J', invalid: :replace, undef: :replace)
+     .force_encoding('BINARY')
+  end
+  module_function :cp932_to_utf8, :utf8_to_cp932
+end
+lcf_lib = File.expand_path('../mruby-lcf/mrblib', __dir__)
+load File.join(lcf_lib, 'lcf.rb')
+load File.join(lcf_lib, 'schema.rb')
+
 lib = File.expand_path('../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
 load File.join(lib, 'interpreter.rb')
@@ -16495,6 +16517,62 @@ end
 def save_load_scene(mode, state = nil, db = fake_db, parent: nil)
   parent ||= fake_parent(db)
   [RPG2k::Scene::SaveLoad.new(parent, state, mode), parent]
+end
+
+# A FakeParent whose #lsd_path points at a real tmpdir -- the only extra
+# thing #initial_index/#slot_timestamp need beyond FakeParent's own
+# #load_save_state, mirroring RPG2k#lsd_path's own zero-padded naming.
+class SaveLoadRecencyParent < FakeParent
+  def initialize(db, dir)
+    super(db) { |id| fake_map(id, {}) }
+    @dir = dir
+  end
+  def lsd_path(slot)
+    n = slot < 10 ? "0#{slot}" : slot.to_s
+    File.join(@dir, "Save#{n}.lsd")
+  end
+end
+
+# A bare Save<N>.lsd carrying only a title chunk (id 100) with the given
+# timestamp -- everything #slot_timestamp reads, without needing a
+# `Game::State#to_lsd`-compatible party fixture (MenuStubParty isn't one;
+# it is built for RGSS scene wiring, not LCF round-tripping).
+def write_title_only_lsd(path, timestamp)
+  save = LCF::SaveData.new
+  title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+  title[1] = timestamp
+  save[100] = title
+  save.save_to(path)
+end
+
+# Confirmed against RPG_RT's own live source: `Scene_File::Start`
+# (`src/scene_file.cpp`) sets `index = latest_slot; top_index = std::max(0,
+# index - 2);`, tracking whichever populated slot's `title.timestamp` is
+# the largest -- not always slot 1.
+check 'Scene::SaveLoad opens with the cursor on the most-recently-saved ' \
+      'slot, not always the first one' do
+  Dir.mktmpdir('rpg2k-save-recency') do |dir|
+    parent = SaveLoadRecencyParent.new(fake_db, dir)
+    # Slot 2 saved first (older timestamp), slot 5 saved second (newer) --
+    # explicit timestamps so ordering never depends on real wall-clock
+    # timing during the test run.
+    write_title_only_lsd(parent.lsd_path(2), 1000.0)
+    write_title_only_lsd(parent.lsd_path(5), 2000.0)
+
+    scene = RPG2k::Scene::SaveLoad.new(parent, nil, :load)
+    eq 4, scene.instance_variable_get(:@index),
+       'the cursor starts on slot 5 (index 4), the newer of the two timestamps'
+    eq 2, scene.instance_variable_get(:@top),
+       "scrolled so slot 5 is in view (top = index - #{RPG2k::Scene::SaveLoad::VISIBLE_SLOTS} + 1)"
+  end
+
+  # With no saves at all, RPG_RT's own `latest_slot` default (0) holds.
+  Dir.mktmpdir('rpg2k-save-recency-empty') do |dir|
+    parent = SaveLoadRecencyParent.new(fake_db, dir)
+    scene = RPG2k::Scene::SaveLoad.new(parent, nil, :load)
+    eq 0, scene.instance_variable_get(:@index), 'no saves at all still starts on slot 1'
+    eq 0, scene.instance_variable_get(:@top)
+  end
 end
 
 check 'Scene::SaveLoad: an empty slot shows only the file label, no placeholder text' do
