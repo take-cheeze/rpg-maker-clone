@@ -7501,6 +7501,28 @@ check 'a plain heal skill cannot revive a downed ally' do
   eq 30, hero.mp                               # nothing spent
 end
 
+check 'an SP-restoring skill cannot touch a downed ally either' do
+  # Confirmed against RPG_RT's own live source: `Game_Battler::UseSkill`
+  # (src/game_battler.cpp) gates SP restoration behind the identical
+  # `!IsDead()` guard its HP sibling carries just above it (`effect > 0 &&
+  # skill->affect_sp && !HasFullSp() && !IsDead()`) -- a non-reviving skill
+  # must leave a downed target's SP untouched exactly like it leaves HP
+  # untouched, the same rule the "plain heal" check just above already
+  # covers for the HP branch.
+  skills = { 10 => fake_skill(name: 'Refresh SP', scope: 3, sp_cost: 5,
+                              power: 20, mrate: 40, sp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(10)
+  ally.change_hp(-9999)                        # KO
+  ally.mp = 0
+  eq [], st.party.cast_skill(hero, 10, ally)   # a plain SP-restore can't touch a KO'd actor
+  eq true, ally.dead?
+  eq 0, ally.mp, 'SP is not restored on a downed, non-revived target'
+  eq 30, hero.mp                               # nothing spent
+end
+
 check 'a reverse skill inflicts its state_effects states' do
   skills = { 8 => fake_skill(name: 'Curse', scope: 3, sp_cost: 3,
                              state_effects: [0, 0, 1], reverse_state: true) }

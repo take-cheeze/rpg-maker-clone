@@ -17608,6 +17608,43 @@ above are repeated here)
   max HP rather than overshooting), all four confirmed to fail against the
   pre-fix code (`expected 25, got 1` / `expected 50, got 1` / `expected
   50, got 1` / `expected 100, got 1`) before the fix.
+  ✅ **Follow-up (2026-08-20): a field-cast skill's SP restoration was not
+  blocked on a downed (dead, non-revived) target the way its HP sibling
+  already was.** `Game_Battler::UseSkill`'s own out-of-battle HP/SP
+  branches (`src/game_battler.cpp`, cited above) gate identically: `effect
+  > 0 && skill->affect_hp && !HasFullHp() && !IsDead()` for HP, `effect >
+  0 && skill->affect_sp && !HasFullSp() && !IsDead()` for SP — the same
+  `!IsDead()` guard on both. `Game::Party#cast_skill`
+  (`mruby-rpg2k/mrblib/game.rb`) had `t.change_mp(amount) if sk.affect_sp
+  && amount > 0` with no dead-target guard of its own; the HP branch
+  (`t.change_hp(amount) if sk.affect_hp && amount > 0`, right above it)
+  only came out correct incidentally, via `Actor#change_hp`'s own built-in
+  `return @hp if dead?` early return — `Actor#change_mp` has no such guard
+  at all. Concretely: casting a field skill with Affect SP on but no Death
+  cure (an SP-restoring support skill, say) on a KO'd party member silently
+  topped up their SP while they stayed downed, something real RPG_RT never
+  does. Fixed by adding `&& !t.dead?` to the SP branch — `t.dead?` there
+  already reflects any Death cure the same loop iteration already applied
+  (the cure loop runs first), so a genuine revive skill with Affect SP on
+  still restores SP correctly; only a target still dead at that point is
+  blocked, matching the reference exactly. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check mirroring the existing "a plain heal
+  skill cannot revive a downed ally" one immediately above it in the test
+  file, but for an SP-restoring skill instead, confirmed to fail against
+  the pre-fix code (the downed ally's MP was fully restored) before the
+  fix. **Not fixed here, noticed along the way**: `Game::Party
+  #skill_effective?` (used to grey out a no-op skill in the menu) checks
+  `t.hp < t.max_hp` / `t.mp < t.max_mp` for its Affect HP/SP clauses with
+  no `t.dead?` guard either — a dead target's HP/MP always reads as "less
+  than max," so a non-reviving skill with Affect HP or SP set still shows
+  as selectable against a downed ally even now that casting it is
+  correctly a no-op. Whether real RPG_RT's own field Skill menu greys out
+  a target row by per-target effectiveness at all (`Window_Skill::
+  CheckEnable`, the one greying mechanism independently checked while
+  investigating this, only gates the *skill list* by caster-side
+  learnedness/usability — it has no target-specific "would this help"
+  concept at that layer) was not verified before writing this note, so
+  it's left for a dedicated follow-up rather than guessed at here.
   ✅ **An Enable Combo (1007) armed for one fight stayed armed on the actor
   forever, multiplying hits in every later battle too, instead of
   clearing once that fight ended (2026-08-19).** `Game::Actor

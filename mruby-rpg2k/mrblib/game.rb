@@ -5394,7 +5394,18 @@ module Game
           # plays here).
           t.change_hp(t.max_hp * amount / 100 - 1)
         end
-        t.change_mp(amount) if sk.affect_sp && amount > 0
+        # `!t.dead?` mirrors `Game_Battler::UseSkill`'s own SP branch
+        # (`src/game_battler.cpp`): `effect > 0 && skill->affect_sp &&
+        # !HasFullSp() && !IsDead()`, the exact same `!IsDead()` guard its HP
+        # sibling carries just above. `t.dead?` here already reflects any
+        # Death cure this same loop iteration just applied (`cured.each`,
+        # above), so a genuine revive skill with Affect SP on still restores
+        # SP correctly -- only a target still dead at this point (the skill
+        # did not cure Death) is blocked, matching the reference exactly.
+        # `#change_hp`'s own `return @hp if dead?` guard gives the HP branch
+        # this same protection incidentally; `#change_mp` has no such guard
+        # of its own, so this needed to be explicit here.
+        t.change_mp(amount) if sk.affect_sp && amount > 0 && !t.dead?
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
