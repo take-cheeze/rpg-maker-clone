@@ -4475,6 +4475,38 @@ The work below is roughly ordered by the critical path to a walkable game
   same `|| Input.repeat?(...)` way or explicitly confirmed (with a citation
   and a regression test) to be correctly discrete-only, except
   `debug_menu.rb`, left open pending a genuine classic-F9-menu reference.
+  ✅ **Follow-up (2026-08-19): Right/Left did nothing at all during
+  ally-target selection, when real RPG_RT treats them as full equivalents
+  of Down/Up there — correcting this bullet's own claim that
+  `status_window` is "a genuine `Window_Selectable`" driven by "the
+  standard trigger-then-repeat."** Confirmed directly against RPG_RT's live
+  source: `Window_BattleStatus::Update` (`src/window_battlestatus.cpp`)
+  opens with its own comment — `// Window Selectable update logic skipped
+  on purpose (breaks up/down-logic)` — and never calls
+  `Window_Selectable::Update()` at all; it hand-rolls the cursor itself,
+  gating the "next ally" step on `IsRepeated(DOWN) || IsRepeated(RIGHT) ||
+  IsTriggered(SCROLL_DOWN)` and the "previous ally" step on the Up/Left/
+  SCROLL_UP mirror — deliberately folding Right/Left onto the same up/down
+  axis, unlike every genuine `Window_Selectable`-based list in this same
+  series. `#drive_battle_ally_target` (`mruby-rpg2k/mrblib/scene/
+  battle.rb`) only ever checked `Input::DOWN`/`Input::UP` (the earlier fix
+  above added `#repeat?` to both, but never noticed `Window_BattleStatus`
+  wasn't the `Window_Selectable` it was assumed to be), so pressing
+  Right/Left while choosing which ally to heal or use an item on did
+  nothing — no cursor movement, no cursor SE — when real RPG_RT moves the
+  cursor exactly as if Down/Up had been pressed. `#drive_battle_target`
+  (the *enemy*-target cursor, a separate method) was checked too and left
+  alone: real RPG_RT's enemy list is a plain `Window_Command` (`target_
+  window`, a single-column `Window_Selectable`, confirmed via `src/
+  scene_battle.h`), whose own `column_max` of 1 means Right/Left are
+  genuine no-ops there too — this fix is `Window_BattleStatus`-specific,
+  not a blanket "add Right/Left everywhere" change. Fixed by folding
+  `Input.trigger?(RIGHT) || Input.repeat?(RIGHT)` into the existing
+  Down branch and the `LEFT` equivalent into the Up branch. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check (Left from the first ally wraps
+  to the last, same as Up; Right from the last ally wraps to the first,
+  same as Down), confirmed to fail against the pre-fix code (`expected 1,
+  got 0`).
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
