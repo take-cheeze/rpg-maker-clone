@@ -14,11 +14,13 @@ module RPG2k3
     # controllable party member whose gauge is full opens the command menu;
     # everyone else acts automatically the instant their gauge fires, enemy AI
     # included. How long that command menu lets the fight run is the RPG2003
-    # Wait/active toggle (`SaveSystem.atb_mode`, LSD chunk 140): in wait mode
-    # (the default) the gauges freeze while the menu is open, in active mode
-    # they keep filling and a ready non-controllable combatant's action
-    # interrupts the menu (#atb_accumulating? / #drive_battle_command's
-    # override).
+    # Wait/active toggle (`SaveSystem.atb_mode`, LSD chunk 140): in active mode
+    # (the default) the gauges keep filling while the menu is open and a ready
+    # non-controllable combatant's action interrupts it, in wait mode they
+    # freeze (#atb_accumulating? / #drive_battle_command's override) --
+    # confirmed against liblcf's own generated `AtbMode` enum
+    # (`AtbMode_atb_active = 0, AtbMode_atb_wait = 1`), the opposite of an
+    # earlier, uncited pass here that had the two raw values swapped.
     #
     # The traditional (0) and alternative (1) presentations run the inherited
     # turn-based machine unchanged -- every override below is gated on
@@ -33,10 +35,12 @@ module RPG2k3
 
       # Whether this fight runs in RPG2003's active-during-menu (Wait-off)
       # presentation -- the save-system `atb_mode` toggle (LSD chunk 140),
-      # flipped by the field menu's Wait command (id 8). Wait mode (the
-      # default) freezes the gauges while a command menu is open.
+      # flipped by the field menu's Wait command (id 8). Active mode (the
+      # default, raw 0 -- liblcf's `AtbMode_atb_active`) keeps the gauges
+      # filling while a command menu is open; wait mode (raw 1,
+      # `AtbMode_atb_wait`) freezes them.
       def active_atb?
-        gauge_battle? && @state.atb_mode == 1
+        gauge_battle? && @state.atb_mode != 1
       end
 
       # Whether the active-time gauges advance this frame -- EasyRPG's

@@ -3514,26 +3514,59 @@ The work below is roughly ordered by the critical path to a walkable game
   Wait), the toggle turned out to live on the **save system**, not the Battle
   Commands table: liblcf's `fields.csv` has no `wait` entry on
   `BattleCommands`, and RPG_RT stores the wait/active choice as
-  `SaveSystem.atb_mode` (LSD chunk 140, default 0 = wait, 1 = active,
-  RPG2003-only). The schema now decodes it, `Game::State` carries it
-  (`attr_accessor :atb_mode`, written to the save only when non-zero so an
-  RPG2000 save never gains the 2003-only chunk), and `Scene::Menu`'s Wait row
-  flips it — ported from EasyRPG's own `Scene_Menu` Wait branch: the label
-  shows the *current* mode (`wait_on` / `wait_off`, `Terms` fields 121/122),
-  confirming plays the Decision SE and relabels the row. In the battle scene
-  (ADR 0054) wait mode freezes the gauges while a command menu is open;
-  active mode keeps them filling and a ready non-controllable combatant's
-  action **interrupts** the menu — `active_atb?` / `atb_accumulating?` /
-  `drive_battle_command`'s interrupt gate mirror EasyRPG's
-  `IsAtbAccumulating` and `ProcessSceneActionCommand` (`GetAtbMode() ==
-  active && IsBattleActionPending()`, with SelectActor/AutoBattle always
-  accumulating). Covered by new `scripts/rpg2k_scene_check.rb` checks (wait
-  mode freezes an enemy's gauge behind the menu; active mode keeps it filling
-  and a ready enemy's action interrupts and returns to the menu; a ready
-  enemy waits in wait mode; the menu Wait row toggles and relabels) and a
-  `scripts/rpg2k_save_load_check.rb` round-trip (`atb_mode` 1 survives).
-  Row alone remains genuinely blocked on the unmodelled RPG2003 battle
-  system.
+  `SaveSystem.atb_mode` (LSD chunk 140, ~~default 0 = wait, 1 = active~~
+  **default 0 = active, 1 = wait — this pass had the two raw values swapped;
+  see the dated follow-up right below**, RPG2003-only). The schema now
+  decodes it, `Game::State` carries it (`attr_accessor :atb_mode`, written to
+  the save only when non-zero so an RPG2000 save never gains the 2003-only
+  chunk), and `Scene::Menu`'s Wait row flips it — ported from EasyRPG's own
+  `Scene_Menu` Wait branch: the label shows the *current* mode (`wait_on` /
+  `wait_off`, `Terms` fields 121/122), confirming plays the Decision SE and
+  relabels the row. In the battle scene (ADR 0054) wait mode freezes the
+  gauges while a command menu is open; active mode keeps them filling and a
+  ready non-controllable combatant's action **interrupts** the menu —
+  `active_atb?` / `atb_accumulating?` / `drive_battle_command`'s interrupt
+  gate mirror EasyRPG's `IsAtbAccumulating` and `ProcessSceneActionCommand`
+  (`GetAtbMode() == active && IsBattleActionPending()`, with
+  SelectActor/AutoBattle always accumulating). Covered by new
+  `scripts/rpg2k_scene_check.rb` checks (wait mode freezes an enemy's gauge
+  behind the menu; active mode keeps it filling and a ready enemy's action
+  interrupts and returns to the menu; a ready enemy waits in wait mode; the
+  menu Wait row toggles and relabels) and a `scripts/rpg2k_save_load_check.rb`
+  round-trip (`atb_mode` 1 survives). Row alone remains genuinely blocked on
+  the unmodelled RPG2003 battle system.
+  ✅ **Follow-up (2026-08-20): the two raw `atb_mode` values were swapped from
+  what real RPG_RT actually stores, so a fresh RPG2003 gauge-battle game
+  opened with its command menu *freezing* the gauges by default, when real
+  RPG_RT's default *keeps them filling*.** Confirmed directly against
+  liblcf's own generated save-format header
+  (`src/generated/lcf/rpg/savesystem.h`): `enum AtbMode { AtbMode_atb_active
+  = 0, AtbMode_atb_wait = 1 };`, with field default `int32_t atb_mode = 0;` —
+  i.e. the *default* raw value is **active**, not wait. EasyRPG's own
+  `Scene_Battle_Rpg2k3::IsAtbAccumulating` (`src/scene_battle_rpg2k3.cpp`)
+  confirms the direction directly: `const bool active_atb =
+  GetAtbMode() == AtbMode_atb_active;`. This codebase's own
+  `RPG2k3::Scene::Battle#active_atb?` (`mruby-rpg2k/mrblib/scene/
+  battle_rpg2k3.rb`) had it backwards — `@state.atb_mode == 1` — treating
+  the *wait* raw value as active; `Scene::Menu#wait_label`
+  (`mruby-rpg2k/mrblib/scene/menu.rb`) had a matching but independent bug,
+  correctly comparing `atb_mode == 1` (which genuinely is wait) but then
+  returning the `wait_off` term for that branch instead of `wait_on` —
+  both symptoms of the same single misunderstanding ("0 = wait by default"),
+  each caught only by tracing back to the un-cited claim rather than by
+  analogy from one to the other. `Game::Interpreter#do_toggle_atb_mode`'s
+  actual flip logic (`atb_mode == 1 ? 0 : 1`) and the LSD chunk 140
+  read/write in `Game::State#to_lsd`/`.from_lsd` are direction-agnostic and
+  needed no change — only the two places that gave the raw values *meaning*
+  were wrong. Fixed by flipping `#active_atb?`'s comparison
+  (`@state.atb_mode != 1`) and swapping `#wait_label`'s two term branches;
+  every doc comment asserting the backwards convention (`game.rb`'s
+  `atb_mode` accessor, `interpreter.rb`'s `do_toggle_atb_mode`,
+  `battle_rpg2k3.rb`'s class comment) was corrected alongside. Covered by
+  rewriting the five existing `scripts/rpg2k_scene_check.rb` checks that had
+  encoded the swapped convention (a fresh state's default now asserted
+  active rather than wait, and every explicit `atb_mode =`/expected label
+  updated to match), all five confirmed to fail against the pre-fix code.
   ✅ **A weapon/shield/armour/helmet/accessory item flagged `use_skill`
   (schema field 71) is now usable directly from the field and battle Item
   menus too, invoking its `skill_id` skill without being equipped.** The

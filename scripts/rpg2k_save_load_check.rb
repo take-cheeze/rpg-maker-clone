@@ -238,10 +238,10 @@ def check_game(dir)
   state.teleport_access = true
   state.escape_access = true
   state.save_count = 7
-  # Wait-off (active) ATB: the save-system toggle (LSD chunk 140, ADR 0054's
-  # follow-up). Set it non-default so the round-trip proves it is written and
-  # read back; the default (0, wait mode) is pinned by the scene check's
-  # fresh-state assertion ("a fresh state starts in wait mode").
+  # Wait ATB: the save-system toggle (LSD chunk 140, ADR 0054's follow-up).
+  # Set it non-default so the round-trip proves it is written and read back;
+  # the default (0, active mode) is pinned by the scene check's fresh-state
+  # assertion ("a fresh state starts in active mode").
   state.atb_mode = 1
   if state.party.leader
     state.party.leader.set_charset('HeroAlt', 5)
@@ -319,7 +319,7 @@ def check_game(dir)
   eq true, round.teleport_access, 'to_lsd: teleport_access'
   eq true, round.escape_access, 'to_lsd: escape_access'
   eq 7, round.save_count, 'to_lsd: save_count'
-  eq 1, round.atb_mode, 'to_lsd: the wait-off atb_mode survives the round-trip'
+  eq 1, round.atb_mode, 'to_lsd: the wait atb_mode survives the round-trip'
   if round.party.leader
     eq 'HeroAlt', round.party.leader.charset_name, 'to_lsd: leader sprite override'
     eq 5, round.party.leader.charset_index, 'to_lsd: leader sprite index'
