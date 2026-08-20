@@ -59,6 +59,7 @@ class RPG2k
       @contents = nil
       @windowskin = nil
       @cursor_rect = Rect.new(0, 0, 0, 0)
+      @cursor_frame = 0
       @active = true
       @visible = true
       @pause = false
@@ -229,12 +230,26 @@ class RPG2k
     end
 
     # Present so the game loop can drive per-frame behaviour: advances the
-    # open/close animation while one is running, and the pause-arrow blink
-    # while `pause` is set. The cursor highlight itself is drawn steadily
-    # (RPG_RT alternates two cursor frames, but Nepheshel's own skin draws
-    # both identically -- see Game::WindowCursor), so nothing else needs a
-    # per-frame tick yet.
+    # open/close animation while one is running, the selection-cursor blink
+    # while the window is active, and the pause-arrow blink while `pause` is
+    # set. Confirmed directly against RPG_RT's live source: `Window::Update`
+    # (`src/window.cpp`) advances `cursor_frame` by 1 every frame the window
+    # is active, wrapping at 21, and `Window::Draw` blits from the
+    # windowskin's `cursor1` block while `cursor_frame <= 10` or `cursor2`
+    # otherwise -- Game::WindowCursor::FRAME1_X/FRAME2_X already hold both
+    # source-rect x-offsets (64/96), but only FRAME1_X was ever read here,
+    # so the highlight never blinked at all -- invisible against the one
+    # bundled test windowskin that happens to draw both blocks identically,
+    # but wrong against any windowskin whose two blocks actually differ.
     def update
+      if @active
+        @cursor_frame += 1
+        @cursor_frame = 0 if @cursor_frame > 20
+        # Only the two actual transitions (steady -> alternate frame, and
+        # back) need a redraw -- matches RPG_RT's own draw-time branch,
+        # which reads the same source rect for every frame in between.
+        draw_cursor if @cursor_frame == 0 || @cursor_frame == 11
+      end
       if @anim_frames_left > 0
         @anim_frames_left -= 1
         if @anim_frames_left <= 0
@@ -443,7 +458,7 @@ class RPG2k
     # are clipped to half the height each.
     def draw_cursor_skin(x, y, w, h)
       c = Game::WindowCursor::CORNER
-      sx = Game::WindowCursor::FRAME1_X
+      sx = @cursor_frame <= 10 ? Game::WindowCursor::FRAME1_X : Game::WindowCursor::FRAME2_X
       sy = Game::WindowCursor::FRAME_Y
       sz = Game::WindowCursor::SIZE
       sk = @windowskin
