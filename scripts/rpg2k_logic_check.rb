@@ -6886,19 +6886,33 @@ check 'a special item invoking a Switch skill flips its switch and warps ' \
 end
 
 check 'a use_skill equipment item invoking an Escape skill is menu-usable purely by ' \
-      "scope, matching real RPG_RT's own use_skill shortcut -- access/target only " \
-      'gate the cast itself, and a plain weapon is never treated as one' do
+      "scope, matching real RPG_RT's own use_skill shortcut, but never warps -- " \
+      'only a genuine special item does that, and a plain weapon is never treated ' \
+      'as either' do
   # Confirmed against EasyRPG's actual C++ source, fetched live:
   # `Game_Party::IsItemUsable` (src/game_party.cpp) checks `item->use_skill`
   # *before* its own `switch (item->type)`, and its own comment flags the
   # result as "RPG_RT BUG: Does not check if skill is usable" -- `skill &&
   # (in_battle || scope == Scope_self/_ally/_party)`, nothing about escape
-  # access or a registered target at all; those only gate the actual warp
-  # (`#cast_escape_skill`'s own `#escape_skill_available?`, unchanged here).
-  # A prior version of this test asserted the opposite -- that #field_usable?
-  # itself withheld the item until access/target existed -- reusing
-  # #field_skill?'s general Escape-type handling without checking this
-  # use_skill-specific branch of IsItemUsable against the real source.
+  # access or a registered target at all. A prior version of this test
+  # asserted the opposite -- that #field_usable? itself withheld the item
+  # until access/target existed -- reusing #field_skill?'s general
+  # Escape-type handling without checking this use_skill-specific branch of
+  # IsItemUsable against the real source.
+  #
+  # #use_special_escape_item now never returns a destination for a use_skill
+  # equipment item, access/target notwithstanding -- confirmed against
+  # `Scene_Item::vUpdate` (`src/scene_item.cpp`), whose whole ReserveTeleport
+  # dispatch is gated on `item.type == Type_special`; an equipment item
+  # invoking the very same Escape skill instead goes through
+  # `Game_Battler::UseSkill`'s "SE only, no warp, always succeeds" branch
+  # (`Game::Party#use_item`/`#use_equip_skill_item` here), regardless of
+  # escape access or a registered target -- neither gates it at all, since
+  # nothing about the actual warp is ever attempted. A prior version of this
+  # test asserted the opposite -- that a use_skill equipment item eventually
+  # warped once access and a target both existed, the exact bug
+  # `#use_special_escape_item`'s own doc comment now cites `Scene_Item::
+  # vUpdate` and `Game_Battler::UseSkill` to correct.
   skills = { 6 => fake_skill(name: 'Blade Escape',
                              type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
   items = { 3 => fake_item(type: 1, skill_id: 6, use_skill: true, name: 'Escape Blade') }
@@ -6906,27 +6920,37 @@ check 'a use_skill equipment item invoking an Escape skill is menu-usable purely
   hero = st.party.actor_by_id(1)
   st.party.gain_item(3, 2)
   ok st.party.field_usable?(3, st), 'listed by scope alone, before access/target exist at all'
-  ok st.party.use_special_escape_item(3, hero, st).nil?, 'the cast itself still needs access'
+  ok st.party.use_special_escape_item(3, hero, st).nil?, 'never a special-item cast -- no access yet either'
   st.escape_access = true
-  ok st.party.field_usable?(3, st)
-  ok st.party.use_special_escape_item(3, hero, st).nil?, 'access alone is not enough -- no target yet'
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
+  ok st.party.field_usable?(3, st)
+  ok st.party.use_special_escape_item(3, hero, st).nil?,
+     'access and a registered target both present now -- still nil, equipment never takes this path'
   before = hero.mp
-  eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.use_special_escape_item(3, hero, st))
-  eq before, hero.mp, 'free -- the item pays, not the caster'
+  affected = st.party.use_item(3, hero)
+  eq [hero], affected, 'the ordinary item-use path succeeds -- ' \
+                        "Game_Battler::UseSkill's Escape/Teleport branch always sets was_used = true"
+  eq before, hero.mp, 'free -- no SP spent for an item cast'
   eq 2, st.party.item_count(3), 'equipment is not consumed -- a reusable tool, like #use_equip_skill_item'
   # A plain weapon (no use_skill flag) must never be treated as an escape item.
   plain = { 5 => fake_item(type: 1, skill_id: 6, use_skill: false, name: 'Plain Blade') }
   st2 = skill_party(skills, plain)
+  st2.party.gain_item(5, 1)
   st2.escape_access = true
   st2.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   ok !st2.party.field_usable?(5, st2), 'a plain weapon is not menu-usable even matching the skill'
   ok st2.party.use_special_escape_item(5, st2.party.actor_by_id(1), st2).nil?,
      'and is not cast as an escape item'
+  eq [], st2.party.use_item(5, st2.party.actor_by_id(1)), 'nor through the ordinary item-use path'
 end
 
 check 'a use_skill equipment item invoking a Teleport skill is menu-usable purely by ' \
-      'scope, matching real RPG_RT -- destinations only gate the cast itself' do
+      'scope, matching real RPG_RT, but never warps -- only a genuine special item ' \
+      'does that' do
+  # See the Escape check above for the full citation chain -- identical
+  # reasoning, `Scene_Item::vUpdate`'s Type_special-only ReserveTeleport/
+  # Scene_Teleport gate and `Game_Battler::UseSkill`'s shared "SE only, no
+  # warp, always succeeds" branch apply the same way to Teleport.
   skills = { 7 => fake_skill(name: 'Blade Teleport',
                              type: Game::Party::SKILL_TELEPORT, sp_cost: 3) }
   items = { 4 => fake_item(type: 1, skill_id: 7, use_skill: true, name: 'Warp Blade') }
@@ -6934,13 +6958,17 @@ check 'a use_skill equipment item invoking a Teleport skill is menu-usable purel
   hero = st.party.actor_by_id(1)
   st.party.gain_item(4, 1)
   ok st.party.field_usable?(4, st), 'listed by scope alone, before any destination is registered'
-  ok st.party.use_special_teleport_item(4, hero, st, 5).nil?, 'the cast itself still needs a destination'
+  ok st.party.use_special_teleport_item(4, hero, st, 5).nil?, 'never a special-item cast -- no destination yet either'
   st.teleport_access = true
   st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
   ok st.party.field_usable?(4, st)
+  ok st.party.use_special_teleport_item(4, hero, st, 5).nil?,
+     'destinations registered now -- still nil, equipment never takes this path'
   before = hero.mp
-  eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.use_special_teleport_item(4, hero, st, 5))
+  affected = st.party.use_item(4, hero)
+  eq [hero], affected, 'the ordinary item-use path succeeds -- ' \
+                        "Game_Battler::UseSkill's Escape/Teleport branch always sets was_used = true"
   eq before, hero.mp, 'free -- no SP spent for an item cast'
   eq 1, st.party.item_count(4), 'equipment is not consumed -- a reusable tool'
 end

@@ -3638,19 +3638,63 @@ The work below is roughly ordered by the critical path to a walkable game
    see the dedicated ✅ bullet above; this line used to read "with no target
    prompt", which was wrong -- and an Escape/Teleport skill warps straight
    away; a single-ally scope still prompts for a target, which was already
-   correct. The warp path
+   correct. ~~The warp path
    needed `#use_special_escape_item` / `#use_special_teleport_item`'s own type
    guard relaxed from `== ITEM_SPECIAL` to also admit a `use_skill`
    equipment item (the cast is identical -- free, the caster need not know the
    skill -- and the equipment item is **not** consumed, since RPG_RT returns
    early from `ConsumeItemUse` on the five equipment types, the same
-   reusable-tool rule `#use_equip_skill_item` already follows). Covered by a
+   reusable-tool rule `#use_equip_skill_item` already follows).~~ Covered by a
    new `scripts/rpg2k_scene_check.rb` check (a `use_skill` weapon invoking an
    all-ally skill is cast by the leader with no prompt) and two new
    `scripts/rpg2k_logic_check.rb` checks (a `use_skill` equipment item
-   invoking an Escape/Teleport skill warps for free and a plain weapon is
+   invoking an Escape/Teleport skill ~~warps for free~~ and a plain weapon is
    never treated as one), confirmed to fail against the pre-fix code. See
    `changelog.d/menu-use-skill-equipment-item.fixed.md`.
+   - **Follow-up (2026-08-20):** the relaxed type guard above was never
+     verified against real RPG_RT's own live source, only assumed "identical"
+     by analogy to the type-9 special-item cast -- it was not. Confirmed
+     against EasyRPG Player's actual C++, fetched live: `Scene_Item::vUpdate`
+     (`src/scene_item.cpp`) only ever reaches its ReserveTeleport/
+     Scene_Teleport dispatch for `item.type == Type_special && item.skill_id
+     > 0`; a `use_skill`-flagged equipment item invoking the very same
+     Escape/Teleport skill always falls to the generic `else` branch there (a
+     plain `Scene_ActorTarget` push), and `Game_Battler::UseSkill`
+     (`src/game_battler.cpp`) — reached from that generic path through
+     `Game_Party::UseItem`/`Game_Battler::UseItem`'s shared `do_skill` gate —
+     plays only the skill's own `sound_effect` for a `Type_teleport`/
+     `Type_escape` skill and sets `was_used = true`; it never calls
+     `ReserveTeleport` or performs any warp at all. So the relaxed guard let
+     a `use_skill` weapon/shield/armor/helmet/accessory item warp the party
+     for free the instant access and a target both existed — something real
+     RPG_RT never does for such an item, only for a genuine type-9 special
+     one. Fixed by re-narrowing `#use_special_escape_item`/
+     `#use_special_teleport_item`'s guard back to `it.type == ITEM_SPECIAL`
+     only, and `Scene::ItemMenu#choose_item`'s Escape/Teleport dispatch
+     branches (the buzzer-gate checks and the no-prompt warp/teleport-picker
+     calls) to `it.type == ITEM_SPECIAL` as well — a `use_skill` equipment
+     item invoking Escape/Teleport now falls to the same ordinary
+     `#prompt_item_target` single-target picker every other equipment item
+     takes. `Game::Party#use_equip_skill_item` gained its own Escape/
+     Teleport branch (`#cast_skill`'s ordinary HP/SP/state loop has no
+     notion of these two skill types and always found nothing to change,
+     which misreported success as failure and played Buzzer instead of the
+     invoked skill's own success SE) so that once a target is picked and
+     confirmed, `Scene::ItemMenu#apply_item`'s existing empty-vs-non-empty
+     check plays the skill's animation SE rather than buzzing, matching
+     `Scene_ActorTarget::UpdateItem`'s identical `do_skill`-on-success
+     branch. The Switch-type dispatch (`#apply_special_switch_item`/
+     `#use_special_switch_item`) was independently re-verified correct as
+     written for both item kinds and is untouched -- `Game_Battler::
+     UseSkill`'s `Type_switch` branch flips the switch through the identical
+     shared `do_skill` path regardless of which item kind reached it.
+     Covered by rewriting the same two `scripts/rpg2k_logic_check.rb` checks
+     cited just above (which had baked in the wrong "eventually warps"
+     expectation once access/target existed) to instead assert
+     `#use_special_escape_item`/`#use_special_teleport_item` stay `nil`
+     unconditionally for equipment while the ordinary `#use_item` path
+     succeeds without a target/warp of any kind, confirmed to fail against
+     the pre-fix code. See `changelog.d/use-skill-item-escape-teleport-no-warp.fixed.md`.
    ✅ **The battle-scene half of this same fix was still missing its own
    dispatch, so an enemy-scope item skill (Nepheshel's whole thrown-bomb
    line — 火炎玉, 爆裂玉, 氷結玉, 雷撃玉 and the rest — is exactly this

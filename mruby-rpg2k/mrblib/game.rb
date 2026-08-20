@@ -4419,8 +4419,40 @@ module Game
     # weapon a reusable tool rather than a one-shot. Routing the consumption
     # through #consume_item_use is what gets that right -- this used to spend
     # the weapon on its first use and leave the party without it.
+    #
+    # An Escape/Teleport-type skill can't run through #cast_skill at all --
+    # confirmed against genuine RPG_RT's own live source: `Game_Battler::
+    # UseSkill` (`src/game_battler.cpp`) gives these two types their own
+    # branch, entirely separate from the ordinary HP/SP/state loop
+    # #cast_skill ports (`Algo::IsNormalOrSubskill`'s branch) -- it plays
+    # only `skill->sound_effect` and sets `was_used = true`, never touching
+    # HP/SP/a state, and never returning early/false the way an ordinary
+    # skill with nothing to change on this target would. Since
+    # `Game_Battler::UseItem`'s `do_skill` branch (the equipment-item
+    # counterpart to this method) forwards straight to `UseSkill` and
+    # returns its `was_used`, a use_skill equipment item invoking one of
+    # these two types always succeeds once #item_usable_by? passes --
+    # treated here as `[actor]`, a one-element "changed" list, so the
+    # caller's own empty-vs-non-empty success check (`Scene::ItemMenu#
+    # apply_item`) plays the invoked skill's own animation SE rather than
+    # Buzzer, matching `Scene_ActorTarget::UpdateItem`'s identical
+    # `do_skill`-on-success branch (see `#play_item_use_se`'s own
+    # citation). This used to fall through to #cast_skill unconditionally,
+    # which has no notion of these two types at all and always found
+    # nothing to change -- an empty `affected`, misreported to the caller
+    # as failure and playing Buzzer instead. (A Switch-type skill needs no
+    # equivalent branch here: `Scene::ItemMenu#choose_item` already routes
+    # a use_skill equipment item invoking one to `#apply_special_switch_item`/
+    # `#use_special_switch_item` before this method is ever reached, the
+    # only path that calls #use_item today -- see #use_special_switch_item's
+    # own doc.)
     def use_equip_skill_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id)
+      sk = db_skill(it.skill_id)
+      if sk && (sk.type == SKILL_ESCAPE || sk.type == SKILL_TELEPORT)
+        consume_item_use(id)
+        return [actor]
+      end
       affected = cast_skill(actor, it.skill_id, actor, true)
       consume_item_use(id) unless affected.empty?
       affected
@@ -4437,11 +4469,22 @@ module Game
     # consumed, mirroring `Scene::SkillMenu#apply_escape_skill`'s own gate.
     def use_special_escape_item(id, actor, state)
       it = db_item(id)
-      # A type-9 special item, or an equipment item flagged `use_skill` (field
-      # 71) invoking an Escape-type skill, both warp free the same way.
-      return nil unless it &&
-                        (it.type == ITEM_SPECIAL ||
-                         (it.use_skill && (1..5).cover?(it.type))) &&
+      # Only a genuine type-9 special item takes this free-warp fast path --
+      # confirmed directly against RPG_RT's live source: `Scene_Item::
+      # vUpdate`'s Escape/Teleport dispatch (`src/scene_item.cpp`) sits
+      # inside an `item.type == Type_special && item.skill_id > 0` gate, so
+      # a `use_skill`-flagged weapon/shield/armor/helmet/accessory (field 71)
+      # never reaches it at all -- it falls to the ordinary
+      # `Scene_ActorTarget` picker instead, which routes through
+      # `Game_Battler::UseItem`/`UseSkill` (`src/game_battler.cpp`); for
+      # `Type_teleport`/`Type_escape` that function only plays the skill's
+      # sound effect (`Main_Data::game_system->SePlay(skill->sound_effect);
+      # was_used = true;`) -- no `ReserveTeleport` call, no warp of any kind.
+      # A prior version of this comment assumed the two item kinds shared
+      # this fast path from `Game_Party::UseItem`'s identical `do_skill`
+      # computation without tracing one level further into what `UseSkill`
+      # itself does for these two skill types specifically.
+      return nil unless it && it.type == ITEM_SPECIAL &&
                         actor && item_usable_by?(it, actor.id)
       target = cast_escape_skill(actor, it.skill_id, state, true)
       return nil unless target
@@ -4454,11 +4497,11 @@ module Game
     # which — see `Scene::SkillMenu`'s teleport list, which this mirrors).
     def use_special_teleport_item(id, actor, state, map_id)
       it = db_item(id)
-      # A type-9 special item, or an equipment item flagged `use_skill` (field
-      # 71) invoking a Teleport-type skill, both warp free the same way.
-      return nil unless it &&
-                        (it.type == ITEM_SPECIAL ||
-                         (it.use_skill && (1..5).cover?(it.type))) &&
+      # Only a genuine type-9 special item takes this free-warp fast path --
+      # see #use_special_escape_item's own citation just above; the same
+      # `Scene_Item::vUpdate`/`Game_Battler::UseSkill` gap applies to
+      # Teleport-type skills identically.
+      return nil unless it && it.type == ITEM_SPECIAL &&
                         actor && item_usable_by?(it, actor.id)
       target = cast_teleport_skill(actor, it.skill_id, state, map_id, true)
       return nil unless target
