@@ -4721,9 +4721,11 @@ module Game
     # are summoned and dismissed exactly this way (skills 120–125, "ファルを召還"
     # and friends, each flipping the switch its common event watches).
     #
-    # `state` is optional and only read for the Escape / Teleport types below —
-    # every other caller (the host-side fixture checks included) can omit it and
-    # gets the old scope/occasion-only behaviour.
+    # `state` is accepted for callers that have one to pass, but `#field_skill?`
+    # itself no longer reads it -- a known Escape/Teleport skill is always
+    # listed regardless of whether it is currently usable (see
+    # `#field_skill?`'s own comment); a caller checking *usability* wants
+    # `#escape_skill_available?`/`#teleport_skill_available?` directly.
     #
     # A database shrink can leave a learned skill id with no matching row
     # (docs/TODO.md's runtime error catalog) -- `db_skill` degrades that to a
@@ -4763,10 +4765,20 @@ module Game
     def field_skill?(sk, state = nil)
       return false unless sk
       case sk.type
-      when SKILL_TELEPORT
-        teleport_skill_available?(state)
-      when SKILL_ESCAPE
-        escape_skill_available?(state)
+      when SKILL_TELEPORT, SKILL_ESCAPE
+        # A known Escape/Teleport skill is *always* listed on the field
+        # menu, whether or not it is usable right this moment -- confirmed
+        # against RPG_RT's own live source: `Window_Skill::CheckInclude`
+        # (`src/window_skill.cpp`) is `if (!Game_Battle::IsBattleRunning())
+        # return true;` outside battle, with no per-type filter at all.
+        # `#escape_skill_available?`/`#teleport_skill_available?` (access,
+        # a registered target, not flying) are `Algo::IsSkillUsable`'s own
+        # logic, which only backs `Window_Skill::CheckEnable` (greying the
+        # entry / Buzzing on selection, `Scene::SkillMenu#choose_skill`) --
+        # a genuinely separate real-engine check this method used to
+        # conflate with list membership, hiding the skill outright instead
+        # of listing it disabled.
+        true
       when SKILL_SWITCH
         field_occasion?(sk)
       else

@@ -141,17 +141,45 @@ class RPG2k
           play_system_se(SFX_BUZZER)
           return
         end
-        play_system_se(SFX_DECISION)
         id, = items[@item_index]
         it = @state.party.db_item(id)
+        sk = (it && (it.type == Game::Party::ITEM_SPECIAL ||
+                    (it.use_skill && (1..5).cover?(it.type)))) ?
+               @state.party.db_skill(it.skill_id) : nil
+        # An Escape/Teleport-invoking item is always listed (see
+        # Game::Party#field_skill?, which #field_usable?'s special-item
+        # branch now defers to) but only castable once access and a
+        # registered target are there. Confirmed against RPG_RT's own live
+        # source: `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its
+        # *entire* per-type dispatch behind `item_window->CheckEnable
+        # (item_id)` before ever reaching the Escape/Teleport branches --
+        # disabled plays only the buzzer and returns, no attempt, no
+        # message, exactly like an unavailable skill in
+        # Scene::SkillMenu#choose_skill. Left to #apply_escape_item /
+        # #apply_teleport_item's own nil-return fallback instead, this would
+        # show a fabricated "It had no effect." message and a stray
+        # Decision-then-Buzzer double beep that RPG_RT never produces for a
+        # disabled entry.
+        if sk && sk.type == Game::Party::SKILL_ESCAPE &&
+           @state.party.respond_to?(:escape_skill_available?) &&
+           !@state.party.escape_skill_available?(@state)
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        if sk && sk.type == Game::Party::SKILL_TELEPORT &&
+           @state.party.respond_to?(:teleport_skill_available?) &&
+           !@state.party.teleport_skill_available?(@state)
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         # A switch item has no actor target; an all-ally medicine skips the
         # target prompt; single-target medicines / skill books ask who to use on.
         # A special item follows the *skill* it invokes, since that is what
         # decides the scope — self (2) or all-ally (4) needs no prompt.
         if it && it.type == Game::Party::ITEM_SWITCH
           apply_switch_item(id)
-        elsif it && (it.type == Game::Party::ITEM_SPECIAL ||
-                    (it.use_skill && (1..5).cover?(it.type)))
+        elsif sk
           # A type-9 special item, or an equipment item flagged `use_skill`
           # (schema field 71), both invoke the skill named in `skill_id`: the
           # invoked skill's type/scope decides the dispatch, so a self (2) or
@@ -161,8 +189,7 @@ class RPG2k
           # `#use_equip_skill_item` / `#use_special_escape_item` /
           # `#use_special_teleport_item` backing as it already does for an
           # ordinary targeted cast.
-          sk = @state.party.db_skill(it.skill_id)
-          if sk && sk.type == Game::Party::SKILL_ESCAPE
+          if sk.type == Game::Party::SKILL_ESCAPE
             # Escape has one registered target and no picker -- mirroring
             # Scene::SkillMenu#apply_escape_skill, a successful cast warps
             # straight there with no confirmation message.

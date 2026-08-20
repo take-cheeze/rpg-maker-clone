@@ -144,18 +144,28 @@ class RPG2k
         # (`IsSkillLearned && IsSkillUsable`, `src/window_skill.cpp`) before
         # playing any SE or pushing `Scene_ActorTarget`/dispatching a
         # switch skill at all; the `else` (disabled) branch just buzzes and
-        # stays on the list. `#skills` (`Game::Party#field_skills`) already
-        # filters the listing by `#field_skill?` -- the same per-type
-        # availability `Algo::IsSkillUsable` covers on the reference's own
-        # `IsSkillUsable` -- so `Game::Party#can_cast?` (affordability, the
-        # 封印/Silence seal, weapon-Attribute gating) is everything left to
-        # check here, the same predicate `Game_Battler::IsSkillUsable`'s own
-        # pre-`Algo::IsSkillUsable` checks cover. Previously nothing gated
-        # this at all: choosing an unaffordable or sealed skill still played
-        # Decision and opened the full target-confirm screen (or, for a
-        # switch skill, cast it outright), with the failure only ever
-        # surfacing afterward as #apply_skill's "It had no effect." message.
-        if @state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)
+        # stays on the list. `#skills` (`Game::Party#field_skills`) now
+        # lists a known skill unconditionally -- confirmed against
+        # `Window_Skill::CheckInclude`, trivially `true` outside battle with
+        # no per-type filter at all, a fact this comment previously got
+        # backwards (claiming `#field_skill?` already covered per-type
+        # availability the way `IsSkillUsable`/`CheckEnable` actually does)
+        # -- so every one of `IsSkillUsable`'s checks needs covering here:
+        # `Game::Party#can_cast?` (affordability, the 封印/Silence seal,
+        # weapon-Attribute gating -- `Game_Battler::IsSkillUsable`'s own
+        # pre-`Algo::IsSkillUsable` checks) plus, for the two types
+        # `Algo::IsSkillUsable` special-cases, `#escape_skill_available?`/
+        # `#teleport_skill_available?` (access, a registered target, not
+        # flying).
+        unavailable =
+          (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
+          (sk && sk.type == Game::Party::SKILL_ESCAPE &&
+           @state.party.respond_to?(:escape_skill_available?) &&
+           !@state.party.escape_skill_available?(@state)) ||
+          (sk && sk.type == Game::Party::SKILL_TELEPORT &&
+           @state.party.respond_to?(:teleport_skill_available?) &&
+           !@state.party.teleport_skill_available?(@state))
+        if unavailable
           play_system_se(SFX_BUZZER)
           return
         end

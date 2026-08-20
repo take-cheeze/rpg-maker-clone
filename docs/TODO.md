@@ -3706,6 +3706,58 @@ The work below is roughly ordered by the critical path to a walkable game
   file), `Scene::ItemMenu`'s choose-item dispatch
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
   selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
+- ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
+  whenever it was not castable right now — access off, no registered
+  target, or flying — instead of staying listed and disabled, and the same
+  gap made a special item invoking one of those skills vanish from the
+  field Item list too (2026-08-20).** Confirmed directly against RPG_RT's
+  live source: `Window_Skill::CheckInclude` (`src/window_skill.cpp`) is
+  `if (!Game_Battle::IsBattleRunning()) return true;` outside battle — every
+  known skill is listed, full stop, with no per-type filter at all.
+  `Algo::IsSkillUsable`'s Escape/Teleport arms (access flag, a registered
+  target, not flying) back only `Window_Skill::CheckEnable` — greying the
+  entry and gating `Scene_Skill::vUpdate`'s Decision handler (buzz, no
+  attempt, when disabled) — a genuinely separate check from list membership.
+  `Game::Party#field_skill?` (`mruby-rpg2k/mrblib/game.rb`) conflated the
+  two, routing `SKILL_ESCAPE`/`SKILL_TELEPORT` through
+  `#escape_skill_available?`/`#teleport_skill_available?` for *inclusion*,
+  not just castability — so an Escape/Teleport skill a party had learned but
+  could not currently use disappeared from the menu rather than appearing
+  greyed. Fixed by making `#field_skill?` return `true` unconditionally for
+  both types (list membership only), and moving the availability check to
+  `Scene::SkillMenu#choose_skill`, which now Buzzes and does nothing —
+  matching `Scene_Skill::vUpdate`'s CheckEnable gate — instead of silently
+  reaching a caster/skill pair that was never castable to begin with.
+  Because `Game::Party#field_usable?`'s `ITEM_SPECIAL` branch already
+  deferred to `#field_skill?` for a special item invoking a skill (see the
+  `use_skill` fix two entries above), this same change also makes a special
+  item invoking an unavailable Escape/Teleport skill listed-but-disabled
+  rather than hidden — independently confirmed against `Window_Item::
+  CheckInclude` (`src/window_item.cpp`, a trivial `item_id > 0` check with
+  no skill-usability test of any kind) and `Scene_Item::vUpdate`
+  (`src/scene_item.cpp`), which gates its *entire* per-type dispatch behind
+  `item_window->CheckEnable(item_id)` before ever reaching the Escape/
+  Teleport branches — disabled plays only the buzzer and returns, no
+  attempt, no message. `Scene::ItemMenu#choose_item`
+  (`mruby-rpg2k/mrblib/scene/item_menu.rb`) previously had no such gate at
+  all for this case, relying on `#apply_escape_item`/`#apply_teleport_item`'s
+  own nil-return fallback — a fabricated "It had no effect." message plus a
+  stray Decision-then-Buzzer double beep that RPG_RT never produces for a
+  disabled entry — so `#choose_item` now runs the identical
+  `escape_skill_available?`/`teleport_skill_available?` pre-check before
+  ever playing the Decision sound or dispatching. This is a narrow slice of
+  the broader deferred Item-menu gap just above (ordinary equipment/
+  medicine/switch items are still hidden rather than listed-disabled when
+  unusable — unchanged, still deferred) — resolved here only because it
+  rode along with the Skill-menu fix through the shared `#field_skill?` call,
+  not because the general Item-menu CheckInclude/CheckEnable conflation was
+  addressed. Covered by rewriting the four existing
+  `scripts/rpg2k_logic_check.rb` checks that had asserted the opposite (an
+  unavailable Escape/Teleport skill or item hidden from
+  `#field_skills`/`#field_items` entirely), each confirmed to fail against
+  the pre-fix code, plus new `#escape_skill_available?`/
+  `#teleport_skill_available?` assertions at every state transition proving
+  castability gating still works independently of listing.
 - ✅ Save & Continue — the portable `Marshal` save of the game state
   (`Game::State#to_h` / `State.load`) is the authoritative save, written via the
   menu's Save command; "Continue" reloads it. (One research question remains: a

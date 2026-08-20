@@ -6475,49 +6475,67 @@ check 'a switch skill is cast for its switch, and only where its flags allow' do
   ok st.party.cast_switch_skill(hero, 99).nil?
 end
 
-check 'an Escape skill is hidden with no runtime state, then gated on access ' \
-      'and a registered target, and warps there for free -- but not while flying' do
+check 'an Escape skill is always listed on the field menu, even unavailable, ' \
+      'but only warps once access and a registered target are there -- and ' \
+      'never while flying' do
+  # Confirmed against RPG_RT's own live source: `Window_Skill::CheckInclude`
+  # (`src/window_skill.cpp`) is `if (!Game_Battle::IsBattleRunning()) return
+  # true;` outside battle, with no per-type filter -- a known Escape skill
+  # is always listed, whether or not it is castable right now.
+  # `Algo::IsSkillUsable`'s own Type_escape arm (access, a registered
+  # target, not flying) is what `Window_Skill::CheckEnable` (greying the
+  # entry) and #cast_escape_skill (the actual cast) both gate on instead.
   skills = { 6 => fake_skill(name: 'Escape', type: Game::Party::SKILL_ESCAPE,
                              sp_cost: 4) }
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)
   hero.learn_skill(6)
   # No state at all -- the bare #field_skill?(sk) a fixture check would call --
-  # reads exactly like the old "not built" behaviour.
-  eq [], st.party.field_skills(hero), 'unsupported with no state to gate on'
-  ok st.party.unsupported_field_skill?(st.party.db_skill(6))
+  # still lists it: list membership never reads state for this type any more.
+  eq [[6, 4]], st.party.field_skills(hero), 'listed even with no state to gate castability on'
+  ok st.party.unsupported_field_skill?(st.party.db_skill(6)),
+     'castability is still state-dependent, even though listing no longer is'
   ok st.party.cast_escape_skill(hero, 6, nil).nil?
-  # State present, but access off (the RPG2000 default) and no target set.
-  eq [], st.party.field_skills(hero, st)
+  # State present, but access off (the RPG2000 default) and no target set --
+  # still listed, just not castable.
+  eq [[6, 4]], st.party.field_skills(hero, st)
+  ok !st.party.escape_skill_available?(st)
   st.escape_access = true
-  eq [], st.party.field_skills(hero, st), 'access alone is not enough -- no target yet'
+  eq [[6, 4]], st.party.field_skills(hero, st), 'still listed -- access alone is not enough to cast'
+  ok !st.party.escape_skill_available?(st), 'access alone is not enough -- no target yet'
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   eq [[6, 4]], st.party.field_skills(hero, st)
+  ok st.party.escape_skill_available?(st)
   before = hero.mp
   eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.cast_escape_skill(hero, 6, st))
   eq before - 4, hero.mp, "the warp costs the skill's SP like any other cast"
-  # Flying (boarded the airship) bars it even with access and a target set --
-  # EasyRPG's Algo::IsSkillUsable Type_escape arm reads Game_Player::IsFlying.
+  # Flying (boarded the airship) bars casting even with access and a target
+  # set -- EasyRPG's Algo::IsSkillUsable Type_escape arm reads Game_Player::
+  # IsFlying -- but the skill stays listed, just uncastable (Buzzer on
+  # selection, Scene::SkillMenu#choose_skill).
   st.boarded = :airship
-  eq [], st.party.field_skills(hero, st), 'the airship blocks it'
+  eq [[6, 4]], st.party.field_skills(hero, st), 'still listed -- the airship only blocks casting'
   ok st.party.cast_escape_skill(hero, 6, st).nil?
   st.boarded = nil
   # A skill that is not Escape casts nothing through the Escape path.
   ok st.party.cast_escape_skill(hero, 99, st).nil?
 end
 
-check 'a Teleport skill lists every registered destination and warps to the ' \
-      'one chosen' do
+check 'a Teleport skill is always listed on the field menu, even with no ' \
+      'destinations registered, but only warps once one is chosen and ' \
+      'reachable' do
   skills = { 7 => fake_skill(name: 'Warp', type: Game::Party::SKILL_TELEPORT,
                              sp_cost: 3) }
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)
   hero.learn_skill(7)
-  eq [], st.party.field_skills(hero, st), 'no targets registered yet'
+  eq [[7, 3]], st.party.field_skills(hero, st), 'listed even with no targets registered yet'
+  ok !st.party.teleport_skill_available?(st)
   st.teleport_access = true
   st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
-  eq [[7, 3]], st.party.field_skills(hero, st), 'access plus any target offers it'
+  eq [[7, 3]], st.party.field_skills(hero, st), 'access plus any target still lists it'
+  ok st.party.teleport_skill_available?(st)
   before = hero.mp
   eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.cast_teleport_skill(hero, 7, st, 5))
   eq before - 3, hero.mp
@@ -6525,9 +6543,10 @@ check 'a Teleport skill lists every registered destination and warps to the ' \
   before = hero.mp
   ok st.party.cast_teleport_skill(hero, 7, st, 999).nil?
   eq before, hero.mp, 'an unknown destination spends no SP'
-  # Riding the airship bars Teleport the same way it bars Escape.
+  # Riding the airship bars casting the same way it bars Escape, without
+  # hiding the entry.
   st.boarded = :airship
-  eq [], st.party.field_skills(hero, st)
+  eq [[7, 3]], st.party.field_skills(hero, st), 'still listed -- the airship only blocks casting'
   ok st.party.cast_teleport_skill(hero, 7, st, 5).nil?
 end
 
@@ -6695,14 +6714,20 @@ check 'class_set is ignored under the default "by Actor" equipment setting' do
      "have excluded both"
 end
 
-check 'a special item invoking an Escape skill is hidden with no runtime ' \
-      'state, then gated on access/target like the skill itself, and warps ' \
-      'for free without spending an SP the item never had' do
-  # #field_usable? used to call #field_skill? with no `state` at all, so an
-  # item wrapping an Escape/Teleport skill always read unusable -- the same
-  # gap #field_skills used to have before it started threading `state`
-  # through, just never closed on the item side. See docs/TODO.md's "Menu
-  # scene" entry.
+check 'a special item invoking an Escape skill is always listed on the ' \
+      'field menu, even unavailable, but only warps once access and a ' \
+      'registered target are there -- and never while flying, for free ' \
+      'without spending an SP the item never had' do
+  # #field_usable?'s special-item branch defers to #field_skill?, which now
+  # always lists a known Escape/Teleport skill regardless of runtime state --
+  # see docs/TODO.md's "Menu scene" entry and Game::Party#field_skill?'s own
+  # doc comment, both confirmed against RPG_RT's own live source:
+  # `Window_Item::CheckInclude` (`src/window_item.cpp`) is a trivial
+  # `item_id > 0` check with no per-skill filter at all, so any held item is
+  # always listed; `#escape_skill_available?` backs only `CheckEnable`
+  # (`Window_Item::CheckEnable` -> `Game_Party::IsItemUsable` ->
+  # `Algo::IsSkillUsable`), gating whether *casting* it actually does
+  # anything, not whether it appears.
   skills = { 6 => fake_skill(name: 'Scroll of Escape',
                              type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
   items = { 3 => fake_item(type: 9, skill_id: 6, name: 'Scroll') }
@@ -6710,40 +6735,49 @@ check 'a special item invoking an Escape skill is hidden with no runtime ' \
   hero = st.party.actor_by_id(1)
   ok !hero.knows_skill?(6), 'the item is the cost -- the caster need not know it'
   st.party.gain_item(3, 2)
-  ok !st.party.field_usable?(3), 'unsupported with no state to gate on'
-  ok st.party.use_special_escape_item(3, hero, nil).nil?, 'and casts nothing'
+  ok st.party.field_usable?(3), 'listed even with no state to gate on'
+  ok st.party.use_special_escape_item(3, hero, nil).nil?, 'but casts nothing'
   eq 2, st.party.item_count(3), 'nothing consumed'
-  # State present, but access off (the RPG2000 default) and no target set.
-  ok !st.party.field_usable?(3, st)
+  # State present, but access off (the RPG2000 default) and no target set --
+  # still listed, just not castable yet.
+  ok st.party.field_usable?(3, st)
+  ok !st.party.escape_skill_available?(st)
   st.escape_access = true
-  ok !st.party.field_usable?(3, st), 'access alone is not enough -- no target yet'
+  ok st.party.field_usable?(3, st)
+  ok !st.party.escape_skill_available?(st), 'access alone is not enough -- no target yet'
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   ok st.party.field_usable?(3, st)
+  ok st.party.escape_skill_available?(st)
   eq [[3, 2]], st.party.field_items(st)
   before = hero.mp
   eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.use_special_escape_item(3, hero, st))
   eq before, hero.mp, 'free -- the item pays, not the caster'
   eq 1, st.party.item_count(3), 'one was consumed'
-  # Flying bars it even with access and a target set, same as the skill path.
+  # Flying bars it even with access and a target set, same as the skill path
+  # -- still listed, just not castable.
   st.boarded = :airship
-  ok !st.party.field_usable?(3, st), 'the airship blocks it'
+  ok st.party.field_usable?(3, st), 'still listed while flying'
+  ok !st.party.escape_skill_available?(st), 'the airship blocks it'
   ok st.party.use_special_escape_item(3, hero, st).nil?
   eq 1, st.party.item_count(3), 'and nothing more is consumed by a failed cast'
 end
 
-check 'a special item invoking a Teleport skill offers every registered ' \
-      'destination and warps to the one chosen, for free' do
+check 'a special item invoking a Teleport skill is always listed on the ' \
+      'field menu, even with no destinations registered, and warps to the ' \
+      'one chosen once available, for free' do
   skills = { 7 => fake_skill(name: 'Scroll of Teleport',
                              type: Game::Party::SKILL_TELEPORT, sp_cost: 3) }
   items = { 4 => fake_item(type: 9, skill_id: 7, name: 'Scroll') }
   st = skill_party(skills, items)
   hero = st.party.actor_by_id(1)
   st.party.gain_item(4, 1)
-  ok !st.party.field_usable?(4, st), 'no destinations registered yet'
+  ok st.party.field_usable?(4, st), 'listed even with no destinations registered yet'
+  ok !st.party.teleport_skill_available?(st)
   st.teleport_access = true
   st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
-  ok st.party.field_usable?(4, st), 'access plus any target offers it'
+  ok st.party.field_usable?(4, st)
+  ok st.party.teleport_skill_available?(st), 'access plus any target offers it'
   before = hero.mp
   eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.use_special_teleport_item(4, hero, st, 5))
   eq before, hero.mp, 'free -- no SP spent for an item cast'
