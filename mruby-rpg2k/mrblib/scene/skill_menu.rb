@@ -104,10 +104,16 @@ class RPG2k
           move_skill_cursor(COLUMN_MAX)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_skill_cursor(-COLUMN_MAX)
+        # Right/Left cross a row boundary rather than stopping at the row's
+        # own edge -- see Scene::ItemMenu#update_items's identical comment
+        # (confirmed directly against `Window_Selectable::Update`,
+        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # bounded only by the list's own absolute start/end, no row-boundary
+        # check, unlike Down/Up's genuine column-lock).
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
-          move_skill_cursor(1) if (@skill_index + 1) % COLUMN_MAX != 0
+          move_skill_cursor(1)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
-          move_skill_cursor(-1) if @skill_index % COLUMN_MAX != 0
+          move_skill_cursor(-1)
         elsif Input.trigger?(Input::C)
           choose_skill
         end
