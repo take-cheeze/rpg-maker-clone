@@ -57,6 +57,20 @@ Fix: gen_colon3_assign should finish with OP_SETMCNST, matching
 gen_colon2_assign and the OP_OCLASS/OP_GETMCNST pairing codegen_colon3
 already uses to *read* the same node type.
 
+Upstream status (checked 2026-08-20): already fixed on mruby/mruby's
+default branch, but not as a targeted bugfix -- an incidental side
+effect of migrating the compiler's parser from the old bison-based one
+to Ruby's "prism" parser (mrbgems/mruby-compiler/src/codegen.c, moved
+from core/codegen.c). There, `Foo::Const = value` and `::Const = value`
+share one case (PM_CONSTANT_PATH_WRITE_NODE) that always finishes with
+OP_SETMCNST, so the old asymmetric gen_colon3_assign/gen_colon2_assign
+split this bug lived in doesn't exist any more. That fix is several
+months of commits ahead of mruby 4.0.0 (831da26, 2026-04-20, what
+3rd/mruby is pinned to here) on master, not in any tagged release yet --
+adopting it means adopting the whole parser rewrite, a far bigger and
+riskier change than this one-line patch. This patch stays until this
+project's own mruby pin moves past that rewrite.
+
 --- a/mrbgems/mruby-compiler/core/codegen.c
 +++ b/mrbgems/mruby-compiler/core/codegen.c
 @@ -3006,7 +3006,7 @@ gen_colon3_assign(codegen_scope *s, node *varnode, node *rhs, int sp, int val)
