@@ -6290,6 +6290,32 @@ The work below is roughly ordered by the critical path to a walkable game
   Skill Book/Seed used on a downed actor teaches nothing, changes no stat,
   and consumes nothing), both confirmed to fail against the pre-fix code
   (`expected false, got true`).
+  ✅ **Follow-up (2026-08-20): ~~an ordinary non-`ko_only` medicine on a dead
+  actor is also refused, per `Game_Battler::UseItem`'s own `IsDead()`
+  branch, already correctly ported~~ -- corrected, it was not: `#use_medicine`
+  had no `IsDead()`-style guard of its own at all.** The claim above,
+  asserted with no independent check of `#use_medicine`'s own code, was
+  wrong on inspection: `Game_Battler::UseItem` (`src/game_battler.cpp`)
+  checks `IsDead()` *before* anything else and returns `false` immediately
+  -- no state-cure loop, no HP change, no SP change run at all -- unless
+  `item->state_set[0]` (state id 1, Death) is flagged; `#use_medicine`
+  (`mruby-rpg2k/mrblib/game.rb`) only ever gated a *living* target from a
+  `ko_only` item (`#ko_only_blocked?`), never a *dead* target from an
+  ordinary one. `#change_hp` already happens to no-op for a dead actor on
+  its own (`return @hp if dead?`), which is what hid this for the HP half
+  alone and let the earlier claim read as plausible without being checked
+  -- but the cure loop and `#change_mp` (which has no such guard) do not:
+  giving a KO'd party member an Antidote-style item that cures some other
+  state but not Death silently cured it anyway, and any medicine restoring
+  MP topped it up too, both consuming the item and playing the success cue
+  instead of RPG_RT's Buzzer/kept-item no-op. Fixed by adding `next if
+  t.dead? && !cured.include?(Game::Actor::DEATH_STATE)` to `#use_medicine`'s
+  per-target loop, ahead of the existing `#ko_only_blocked?` check, mirroring
+  `IsDead()`'s own precedence in the reference. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a medicine curing Poison but not
+  Death, used on a target carrying both, leaves the Poison, HP, MP and item
+  count all untouched), confirmed to fail against the pre-fix code
+  (Poison cured, MP restored, item spent) before the fix.
 - ✅ **A battle switch item now actually flips its switch.** A switch item
   (type 10) was already listed in the battle Item command
   (`Game::Party#battle_usable?` / `#battle_items` both include `ITEM_SWITCH`,
