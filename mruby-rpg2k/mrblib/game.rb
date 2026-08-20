@@ -1477,6 +1477,21 @@ module Game
     # branch on `class_id > 0`).
     attr_reader :class_id
 
+    # The class row's own display name ('' with no class row -- an RPG2000
+    # database, or an unknown/class-less id). Unlike the growth-curve/
+    # battler-animation readers below, this is *not* gated on
+    # `@class_changed`: confirmed against RPG_RT's own live source,
+    # `Game_Actor::GetClassName` (`src/game_actor.cpp`) reads straight
+    # through `GetClass()`, which resolves `data.class_id` (falling back to
+    # the database actor's own starting `class_id` when no Change Class
+    # event has run yet) with no such gate at all -- `@class_changed` only
+    # governs the separate "class settings" (`super_guard`/`lock_equipment`/
+    # `battler_animation`/etc.) `ChangeClass` itself applies, per that
+    # function's own comment already quoted above. `@class_row` is already
+    # populated unconditionally at construction from the actor's starting
+    # class id, so this just reads it straight.
+    def class_name; @class_row ? @class_row.name.to_s : ''; end
+
     def initialize(db, id)
       @db = db
       @id = id

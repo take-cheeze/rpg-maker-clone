@@ -11,7 +11,7 @@ class RPG2k
       LINE_H = 16
       # The condition row: which line of the panel it is, its label, and where
       # the state itself starts (clear of the label).
-      STATE_ROW = 4
+      STATE_ROW = 5
       STATE_LABEL = "State".freeze
       STATE_VALUE_X = 48
 
@@ -107,6 +107,18 @@ class RPG2k
         nxt = a.exp_to_next
         lines = [
           header,
+          # RPG_RT always draws a labelled Class/Profession row on this
+          # screen too, between Name and Title -- confirmed against
+          # `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`):
+          # `TextDraw(..., "Class"); DrawActorClass(actor, ...)`, with no
+          # version gate around it (unlike the RPG2003-only Row line just
+          # above it in the same function), so it draws blank rather than
+          # being omitted for an RPG2000 database with no class table.
+          # `easyrpg_status_scene_class` has no counterpart in RPG_RT's own
+          # Term chunk (an EasyRPG-only extension term), so real RPG_RT
+          # hardcodes the English label, matching this codebase's own
+          # `order.rb` precedent for "Confirm"/"Redo".
+          "Class: #{a.respond_to?(:class_name) ? a.class_name : ''}",
           "#{term(:level_short, 'Lv')} #{a.level}    " \
           "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
           "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}    " \

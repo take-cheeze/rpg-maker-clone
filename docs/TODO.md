@@ -14925,6 +14925,39 @@ label" rendering, the identical no-space convention `Scene::Map`'s shop gold
 panel already uses. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
 nonzero Gold figure renders as its own line; Gold still shows at exactly 0),
 confirmed to fail against the pre-fix code.
+✅ **Follow-up (2026-08-20): the field Status screen never drew a Class
+(Profession/Job) row at all, under any circumstances.** Confirmed directly
+against RPG_RT's live source: `Window_ActorInfo::DrawInfo`
+(`src/window_actorinfo.cpp`) always draws a labelled Class row — `TextDraw(0,
+82, ..., "Class"); DrawActorClass(actor, 36, 98);` — between Name and Title,
+with no version gate around it at all (unlike the RPG2003-only Row-formation
+line at the very top of the same function), so it draws for RPG2000-format
+saves too, just blank when no job table/class is set. `Game_Actor::
+GetClassName` (`src/game_actor.cpp`) resolves via `GetClass()`
+unconditionally — `data.class_id`, falling back to the database actor's own
+starting `class_id` when no Change Class event has run yet — with **no**
+gate on whether a live Change Class has ever fired; that gate only governs
+the separate "class settings" (`super_guard`/`lock_equipment`/
+`battler_animation`/etc.) `ChangeClass` itself applies, per its own comment
+already quoted elsewhere in this document. `easyrpg_status_scene_class` has
+no counterpart in RPG_RT's own Term chunk (an EasyRPG-only extension term,
+confirmed against liblcf's generated `terms.h`: `easyrpg_`-prefixed,
+`kDefaultTerm` fallback), so real RPG_RT hardcodes the English label "Class",
+matching this codebase's own `order.rb` precedent for "Confirm"/"Redo".
+`Game::Actor` (`mruby-rpg2k/mrblib/game.rb`) already resolves and holds
+`@class_row` unconditionally at construction (`#set_class_id`, called from
+`#initialize` off the actor's own starting `class_id`, independent of the
+`@class_changed` flag that correctly still gates the *growth-curve* readers)
+but exposed no accessor for it at all. Fixed by adding a new
+`Game::Actor#class_name` reader (`@class_row ? @class_row.name.to_s : ''`,
+deliberately not gated on `@class_changed`) and inserting a
+`"Class: #{a.class_name}"` line into `Scene::StatusMenu#build_window`
+between the Name/Title header and the Level/EXP line — `STATE_ROW` bumped
+from 4 to 5 to track the shifted line index the state-value draw position
+depends on. Covered by a new `scripts/rpg2k_scene_check.rb` check (a blank
+Class row with the bare fixture actor, matching RPG2000's no-job-table case;
+a classed fixture actor shows its class name), confirmed to fail against the
+pre-fix code.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.
