@@ -10918,6 +10918,43 @@ not yet verified:
   keeps its drawn facing south through the Move Right step, then turns north
   once the Face Up step runs), all three confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **A diagonal Move Route step (Up-Right/Down-Right/Down-Left/Up-Left)
+  always turned the sprite to face that diagonal's *vertical* component,
+  discarding a horizontal facing outright, instead of keeping whichever axis
+  the character was already facing (2026-08-20).** Confirmed directly
+  against RPG_RT's live source: `Game_Character::UpdateFacing`
+  (`src/game_character.cpp`) computes the diagonal's two cardinal
+  components (`f1` vertical, `f2` horizontal) and only reverses the prior
+  facing (`SetFacing((facing + 2) % 4)`) when it matches *neither* of
+  them — otherwise the facing is left completely untouched. Since a
+  180-degree flip of a facing on neither component always lands exactly on
+  the component sharing its own axis, this is equivalent to "keep the
+  vertical component if already facing vertically, keep the horizontal
+  component if already facing horizontally," never an unconditional
+  vertical snap. Concretely: a character facing Left, given an Up-Right
+  step, ends up facing **Right** in real RPG_RT (the horizontal axis it was
+  already on, flipped to align with the diagonal), not Up.
+  `Character#move_diagonal`/`MoveRoute#do_diagonal`
+  (`mruby-rpg2k/mrblib/game.rb`) both hardcoded `face(vertical)`, backed by
+  an uncited comment ("RPG2000 keeps a cardinal facing on diagonals, so we
+  face the vertical part") that turned out to be simply wrong — every
+  existing test exercising this only ever started a character facing Down
+  (itself on the vertical axis), the one starting facing for which "always
+  face vertical" and "preserve the current axis" happen to agree, so the
+  gap was never exercised. Fixed by adding
+  `Character#diagonal_facing(horizontal, vertical)` (returns `vertical` when
+  the current `@direction` is already on the vertical axis, `horizontal`
+  otherwise) and routing both call sites through it instead of the
+  hardcoded component; `#do_diagonal`'s pre-passability-check turn (see the
+  "skippable revert" fix above) and `#move_diagonal`'s own post-move turn
+  both go through the same helper, matching `Move`'s single
+  `SetDirection`/`UpdateFacing` pair in the real source. `#last_move_direction`
+  (what Move Forward reads) is unchanged — this fix is about the *visible*
+  facing only, the same distinction the "One Step Forward" fix above already
+  established. Covered by a new `scripts/rpg2k_logic_check.rb` check (facing
+  Right before an Up-Right step stays Right; facing Left reverses onto
+  Right, not Up; facing Up stays Up), confirmed to fail against the pre-fix
+  code (`expected 6, got 8`) before the fix.
 - Jump needs paired Begin/End; movement commands between them sum into a
   net displacement vector (opposite-axis moves cancel); only the *landing*
   tile's passability is tested, tiles crossed are ignored; speed/direction
