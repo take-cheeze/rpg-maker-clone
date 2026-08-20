@@ -2896,8 +2896,12 @@ The work below is roughly ordered by the critical path to a walkable game
   CreateCommandWindow`'s `Player::IsRPG2k()` branch hardcodes exactly **five**
   commands — Item, Skill, Equip, Save, End Game, **no Status entry at all** —
   regardless of database content, since RPG2000's party list already shows
-  name/level/HP/MP and Equip already shows the full stat block, leaving
-  nothing for a separate Status screen to add. RPG2003 instead builds the list
+  name/level/HP/MP ~~and Equip already shows the full stat block~~ (Equip's
+  own stat panel is narrower than that phrasing implies — see the
+  `Window_EquipStatus` fix a few entries below: name plus the four battle
+  stats only, no HP/MP field at all), leaving nothing a separate Status
+  screen would need to add beyond what the party list and Equip screen
+  already show between them. RPG2003 instead builds the list
   from the System database's own customizable field (chunk 22 field 27,
   `menu_commands`, `mruby-lcf/mrblib/schema.rb` — parsed by the schema and
   never read anywhere in `mruby-rpg2k` before this), matching EasyRPG's
@@ -2998,6 +3002,37 @@ The work below is roughly ordered by the critical path to a walkable game
   pre-fix code (recording the `nil` actor `#use_special_item` was called
   with) before the fix. **Switch skills** (type 3) flip their switch: that is
   how a Nepheshel player summons and dismisses a companion.
+- ✅ **The field Equip screen's stats panel drew the actor's HP/MP, which
+  real RPG_RT's equivalent window never shows at all, and packed the four
+  battle stats onto one shared line instead of RPG_RT's one-row-each layout
+  (2026-08-20).** Confirmed directly against RPG_RT's live source:
+  `Window_EquipStatus::Refresh` (`src/window_equipstatus.cpp`) draws exactly
+  `DrawActorName` once, then loops the four battle stats (Attack/Defense/
+  Spirit/Agility) via `DrawParameter(0, y_offset + ((12 + 4) * i), i)` — a
+  name row followed by four independent stat rows, no HP/MP field anywhere
+  in the function or the class. `Scene_Equip::Start` (`src/scene_equip.cpp`)
+  confirms `equipstatus_window` is the *only* status window this screen
+  builds (alongside the plain equip-slot list), so there is no second window
+  showing HP/MP either — the figure is simply absent from this screen in
+  real RPG_RT, not shown elsewhere on it. `Scene::EquipMenu#build_stats_window`
+  (`mruby-rpg2k/mrblib/scene/equip_menu.rb`) drew an `"HP h/max  MP m/max"`
+  line with no such source behind it, and `#draw_stat_row` laid all four
+  stats out horizontally on one line, `STAT_GAP`-separated — even though the
+  adjacent doc comment on that very method already paraphrased
+  `DrawParameter` as "one row per stat" without the code actually doing that.
+  Fixed by dropping the HP/MP line entirely and rewriting `#draw_stat_row` to
+  place each stat (and, while browsing candidates, its own arrow/new-value
+  preview) on its own row below the name line; `#build_stats_window`'s window
+  height and `#build_slot_window`'s `y` offset (previously a hardcoded
+  `LINE_H * 3`) now both derive from `STAT_DEFS.size` so the slot list stays
+  correctly positioned below the taller panel. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (no HP/MP figures or term labels
+  anywhere in the stats window; exactly four stat-row draw calls, each on
+  its own `LINE_H`-spaced row), confirmed to fail against the pre-fix code.
+  This also corrects the "Menu scene" entry above, which cited "Equip
+  already shows the full stat block" as the reason RPG2000 has no separate
+  Status command — true that nothing further is needed there, but Equip's
+  own panel is narrower than "full stat block" suggested.
 - ✅ **A self- or all-ally-scope field skill/item never actually showed the
   mandatory second target-confirm screen real RPG_RT always pushes, applying
   on the very first Decision press instead — correcting every "applies at
