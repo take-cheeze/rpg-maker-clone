@@ -3541,20 +3541,48 @@ check "Halt All Movement lands an in-progress jump but drops the route's trailin
   ok scene.instance_variable_get(:@player_route).nil?, 'the route itself is cancelled'
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandPlayerVisibility` (`src/game_interpreter.cpp`) is `bool hidden =
+# (com.parameters[0] == 0)` -- param0 zero hides.
 check 'Set Transparent Flag hides and shows the player sprite' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
-  auto.event_commands = [ECmd.new(ic::PLAYER_VISIBILITY, [1])] # transparent ON
+  auto.event_commands = [ECmd.new(ic::PLAYER_VISIBILITY, [0])] # hidden
   one_shot_auto(auto, 9011)
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   5.times { scene.update }
   spr = scene.instance_variable_get(:@player_sprite)
-  eq false, spr.visible, 'the player sprite is hidden while transparent'
+  eq false, spr.visible, 'the player sprite is hidden'
   # A second event turns it back off.
   st = scene.instance_variable_get(:@state)
   st.player_transparent = false
   scene.update
-  eq true, spr.visible, 'the player sprite shows again once transparency clears'
+  eq true, spr.visible, 'the player sprite shows again once hidden clears'
+end
+
+# The leader's own actor graphic "Transparent" flag (Change Actor Graphic /
+# the database Actor checkbox) is a wholly separate, ghost-opacity mechanism
+# from Set Transparent Flag's real hide -- confirmed against RPG_RT's own
+# live source: `Game_Actor::SetSprite` stores `data.transparency = 3`
+# (`src/game_actor.cpp`), and `Game_Character::GetOpacity` (`src/
+# game_character.cpp`) is `Clamp((8 - GetTransparency()) * 32 - 1, 0, 255)`
+# -- level 3 yields 159/255, not a hide. This codebase used to fold the two
+# into one hide-only flag.
+check 'the leader actor graphic\'s Transparent flag makes the player sprite ' \
+      'translucent, not hidden' do
+  scene = new_scene({}, player: [5, 5], members: [SlipActor.new])
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@player_sprite)
+  scene.update
+  eq true, spr.visible, 'not hidden'
+  eq 255, spr.opacity, 'fully opaque with the flag off'
+  st.party.leader.transparent = true
+  scene.update
+  eq true, spr.visible, 'the ghost flag never hides the sprite outright'
+  eq 159, spr.opacity, 'ghost-translucent, RPG_RT\'s own (8 - 3) * 32 - 1'
+  st.party.leader.transparent = false
+  scene.update
+  eq 255, spr.opacity, 'and clears back to fully opaque'
 end
 
 check 'Return to Title Screen hands control back to the app' do

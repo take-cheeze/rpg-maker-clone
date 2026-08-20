@@ -3195,21 +3195,52 @@ class RPG2k
       end
 
       # Reload the party leader's CharSet graphic and apply its transparency to
-      # the player sprite, forcing a redraw on the next frame. The transparency
-      # flag hides the sprite outright (the renderer has no partial-opacity path).
+      # the player sprite, forcing a redraw on the next frame.
       def refresh_player_graphic
         @charset = load_charset
         @last_frame = nil
-        @player_sprite.visible = !player_hidden?
+        apply_player_visibility
         @player_bmp.clear unless @charset
       end
 
-      # Whether the party leader's map sprite should be hidden this frame: either
-      # the Set Transparent Flag command hid the player, or the leader's own
-      # actor graphic carries the (rarely used) semi-transparent flag.
+      # Whether the party leader's map sprite is genuinely hidden this frame --
+      # the Set Transparent Flag command (11310), which RPG_RT itself calls
+      # "Change Player Visibility" and implements as a real hide. Confirmed
+      # against RPG_RT's own live source: `Game_Interpreter::
+      # CommandPlayerVisibility` (`src/game_interpreter.cpp`) is `bool hidden =
+      # (com.parameters[0] == 0); player->SetSpriteHidden(hidden);` -- a wholly
+      # separate mechanism from #player_translucent? below (`IsSpriteHidden()`
+      # vs `GetOpacity()`, both independently gating `Game_Character::
+      # IsVisible()`).
       def player_hidden?
+        @state.player_transparent ? true : false
+      end
+
+      # Whether the leader's *actor graphic* carries RPG2000's "Transparent"
+      # ghost flag (the ChangeActorGraphic/database Actor checkbox) -- this
+      # does not hide the sprite, it makes it translucent. Confirmed against
+      # RPG_RT's own live source: `Game_Actor::SetSprite` stores `data.
+      # transparency = transparent ? 3 : 0` (`src/game_actor.cpp`), and
+      # `Game_Character::GetOpacity` (`src/game_character.cpp`) is `Clamp((8 -
+      # GetTransparency()) * 32 - 1, 0, 255)` -- level 3 yields opacity
+      # 159/255 (~62%), not 0. This codebase used to fold this flag into
+      # #player_hidden? and hide the sprite outright instead.
+      def player_translucent?
         leader = @state.party.leader
-        @state.player_transparent || (leader && leader.transparent) ? true : false
+        leader && leader.transparent ? true : false
+      end
+
+      # RPG_RT's own opacity for the "Transparent" ghost flag (see
+      # #player_translucent?'s citation) -- `(8 - 3) * 32 - 1 == 159`.
+      TRANSLUCENT_OPACITY = 159
+
+      # Apply both independent visibility signals to the player sprite: a
+      # real Set Transparent Flag hide, and the leader graphic's own
+      # translucent-ghost opacity, every frame so the hero hides/shows and
+      # fades as events toggle either one.
+      def apply_player_visibility
+        @player_sprite.visible = !player_hidden?
+        @player_sprite.opacity = player_translucent? ? TRANSLUCENT_OPACITY : 255
       end
 
       # -- Change Map Tileset -------------------------------------------------
@@ -8103,9 +8134,9 @@ class RPG2k
           @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
           @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
                              player_jump_offset
-          # Reflect the Set Transparent Flag command (and any leader graphic flag)
-          # every frame so the hero hides/shows as events toggle it.
-          @player_sprite.visible = !player_hidden?
+          # Reflect the Set Transparent Flag command (and the leader graphic's
+          # own translucent-ghost flag) every frame -- see #apply_player_visibility.
+          apply_player_visibility
           RGSS::Profiler.section("map.chars") do
             draw_player_frame
             draw_vehicles cam_x, cam_y, px, py

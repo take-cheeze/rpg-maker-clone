@@ -3216,11 +3216,13 @@ module Game
     # Set Transparent Flag (Change Player Visibility): toggle whether the party
     # leader's map sprite is hidden. Non-blocking — it only records the flag on
     # the shared game state; the owning scene reads it each frame. The polarity
-    # (param0 non-zero = transparent / hidden) follows EasyRPG's
-    # `SetSpriteHidden(parameters[0] != 0)`; the flag persists through Save /
-    # Continue.
+    # (param0 zero = hidden) follows RPG_RT's own live source: `Game_Interpreter
+    # ::CommandPlayerVisibility` (`src/game_interpreter.cpp`, code 11310) is
+    # `bool hidden = (com.parameters[0] == 0); player->SetSpriteHidden(hidden);`
+    # -- the reverse of an earlier, uncited pass here that had param0 non-zero
+    # meaning hidden instead. The flag persists through Save / Continue.
     def do_player_visibility(cmd)
-      @state.player_transparent = cmd.param(0) != 0
+      @state.player_transparent = cmd.param(0) == 0
     end
 
     # Flash Sprite (11320): pulse a character's sprite with a colour that decays
