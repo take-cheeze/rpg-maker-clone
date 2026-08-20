@@ -14667,6 +14667,43 @@ not yet verified:
   where `:boat` was expected, a `NoMethodError` from the old
   Hash-`[]=`-on-a-Symbol dispatch, and the full-pipeline sprite never being
   flashed at all).
+  ✅ **Follow-up (2026-08-20): ~~a target that cannot be resolved (a vehicle,
+  or an unknown event id) simply flashes nothing~~ — the vehicle half of
+  that claim was never actually true; the Flash Sprite command (11320)
+  itself, not just Show Battle Animation's flash_scope-1 mechanism above,
+  had the identical gap.** `#apply_sprite_flash`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) had no `MOVE_TARGET_BOAT`/`SHIP`/
+  `AIRSHIP` branch at all — a vehicle target fell into the generic `else`,
+  `@events.find` never matches a vehicle (vehicles aren't map events), so
+  the command silently did nothing. Confirmed against RPG_RT's own live
+  source: `Game_Character::GetCharacter` (`src/game_character.cpp`)
+  resolves `CharBoat`/`CharShip`/`CharAirship` (10002-10004) to the live
+  `Game_Vehicle` object exactly like `CharPlayer`/`CharThisEvent`, so
+  `Game_Interpreter_Map::CommandFlashSprite`'s `event->Flash(...)` call
+  reaches a vehicle just as it reaches the player or a map event — nothing
+  in real RPG_RT exempts it, the same fact the bullet above already
+  established for the sibling flash_scope-1 mechanism, just never carried
+  over to this command's own dispatch. An event using Flash Sprite on
+  "Boat"/"Ship"/"Airship" (e.g. flashing the ship red on storm damage)
+  produced no visual effect at all, and a "wait for it to finish" request
+  released on the very next frame regardless of the configured duration,
+  since `#sprite_flashing?` read a `@flash_wait` that was never armed.
+  Fixed by giving `#apply_sprite_flash` a vehicle branch that calls
+  `@vehicle_sprites[type].flash(...)` directly — the same native `Sprite
+  #flash` primitive the flash_scope-1 fix above already uses and
+  `#update_vehicle_flashes` already decays every frame — and having
+  `#update_sprite_flashes` also decay `@flash_wait` when it carries a new
+  `:vehicle` marker (the player/event branches already decay their own
+  `@player_flash`/`[:flash]`, which `@flash_wait` aliases when the target
+  is one of those; the marker keeps a vehicle-origin `@flash_wait` from
+  ever being decayed twice). Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (a vehicle-targeted Flash Sprite
+  pulses and decays the vehicle's own sprite with the correctly-scaled
+  colour; the wait flag holds the interpreter for the real duration rather
+  than releasing the very next update because the target went unresolved
+  — checking still-held partway through the duration, not just
+  "eventually resumes," since the old no-op path resumed just as fast),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A Timer with "valid during battle" checked force-ends the battle**
   the instant it reaches 0:00, regardless of encounter source (default or
   scripted) — an easy accidental trap if the same Timer is reused for a

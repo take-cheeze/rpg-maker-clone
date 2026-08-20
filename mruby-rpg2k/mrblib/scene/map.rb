@@ -3485,8 +3485,20 @@ class RPG2k
 
       # Start the character flashes an interpreter queued this step (11320). The
       # hero and map events both keep their flash as a decaying colour the
-      # renderer tones their CharSet frame with; a target that cannot be resolved
-      # (a vehicle, or an unknown event id) simply flashes nothing.
+      # renderer tones their CharSet frame with; a Boat/Ship/Airship target
+      # instead pulses the native RGSS `Sprite#flash` primitive
+      # #fire_map_target_flash already uses for the same vehicle-target case
+      # under Show Battle Animation's flash_scope -- confirmed against RPG_RT's
+      # own live source: `Game_Character::GetCharacter`
+      # (`src/game_character.cpp`) resolves `CharBoat`/`CharShip`/`CharAirship`
+      # (10002-10004) to the live `Game_Vehicle` object exactly like
+      # `CharPlayer`/`CharThisEvent`, so `Game_Interpreter_Map::
+      # CommandFlashSprite`'s `event->Flash(...)` call reaches a vehicle just
+      # as it reaches the player or a map event -- nothing in real RPG_RT
+      # exempts it. ~~a target that cannot be resolved (a vehicle, or an
+      # unknown event id) simply flashes nothing~~ was true only for the
+      # unknown-event-id half; a vehicle target is not actually unresolvable.
+      # An unknown event id is still a silent no-op.
       def apply_sprite_flash_requests(interp, this_event)
         reqs = interp.take_sprite_flash_requests
         return if reqs.nil? || reqs.empty?
@@ -3514,6 +3526,13 @@ class RPG2k
           flash
         when 0, MOVE_TARGET_THIS
           this_event ? (this_event[:flash] = flash) : nil
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
+          spr = @vehicle_sprites && @vehicle_sprites[type]
+          return nil unless spr
+          spr.flash(Color.new(flash[:red], flash[:green], flash[:blue], flash[:power]), flash[:frames])
+          flash[:vehicle] = true
+          flash
         else
           ev = @events.find { |e| e[:id] == r[:target] }
           ev ? (ev[:flash] = flash) : nil
@@ -3538,6 +3557,13 @@ class RPG2k
         @last_frame = nil if @player_flash
         @player_flash = tick_flash(@player_flash)
         @events.each { |e| e[:flash] = tick_flash(e[:flash]) if e[:flash] }
+        # A vehicle-target Flash Sprite has no CharSet-tone hash of its own to
+        # decay here (its visuals are the native sprite #update_vehicle_flashes
+        # already drives) -- @flash_wait's `:vehicle` marker is only ever set
+        # by #apply_sprite_flash's own vehicle branch, so this can never
+        # double-decay the identical object the @player_flash/event lines
+        # above already tick.
+        @flash_wait = tick_flash(@flash_wait) if @flash_wait && @flash_wait[:vehicle]
       end
 
       def tick_flash(flash)
