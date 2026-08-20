@@ -5998,10 +5998,30 @@ module Game
       @jumped = true
     end
 
+    # The facing a diagonal move settles on: whichever of the diagonal's two
+    # cardinal components (`horizontal`/`vertical`) shares the axis the
+    # character is *already* facing, unchanged if it was already on that
+    # axis -- confirmed against RPG_RT's own live source:
+    # `Game_Character::UpdateFacing` (`src/game_character.cpp`) only
+    # reverses the prior facing (`SetFacing((facing + 2) % 4)`) when it
+    # matches *neither* of the diagonal's two cardinal components, otherwise
+    # leaving it untouched. Since a 180-degree flip of a facing that is on
+    # neither component always lands exactly on the component sharing its
+    # own axis (Up flips to Down's opposite-axis partner... concretely: Down
+    # flips to Up, Left flips to Right), the net effect is simply "keep the
+    # vertical component if already facing vertically, keep the horizontal
+    # component if already facing horizontally" -- RPG_RT never
+    # unconditionally snaps to the diagonal's vertical part the way this
+    # method's own prior, uncited comment ("RPG2000 keeps a cardinal facing
+    # on diagonals, so we face the vertical part") claimed. A character
+    # facing Left that steps Up-Right ends up facing Right, not Up.
+    def diagonal_facing(horizontal, vertical)
+      [8, 2].include?(@direction) ? vertical : horizontal
+    end
+
     # Move one tile diagonally, combining a horizontal and a vertical direction.
-    # RPG2000 keeps a cardinal facing on diagonals, so we face the vertical part.
     def move_diagonal(horizontal, vertical)
-      face(vertical)
+      face(diagonal_facing(horizontal, vertical))
       @last_move_direction = vertical
       hx, = DIR_DELTA[horizontal] || [0, 0]
       _, vy = DIR_DELTA[vertical] || [0, 0]
@@ -6408,7 +6428,7 @@ module Game
     def do_diagonal(character, world, id)
       horizontal, vertical = DIAGONAL[id]
       prev_dir = character.direction
-      character.face(vertical)
+      character.face(character.diagonal_facing(horizontal, vertical))
       passable = character.through ||
                  (world.passable?(character, horizontal) &&
                   world.passable?(character, vertical))

@@ -498,6 +498,41 @@ check 'diagonal move needs both cardinals and faces vertical' do
   eq 2, c3.direction, 'reverted to Down, not left turned toward the wall (8)'
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Character::UpdateFacing`
+# (`src/game_character.cpp`) only reverses the prior facing when it matches
+# *neither* of the diagonal's two cardinal components -- it never
+# unconditionally snaps to the diagonal's vertical part the way the check
+# above's default-Down starting facing alone could not tell apart from the
+# correct axis-preserving rule (Down is on the vertical axis either way, so
+# both rules agree there). Starting on the *horizontal* axis instead is what
+# actually distinguishes them.
+check 'a diagonal move keeps the axis already faced, not always the ' \
+      'vertical component' do
+  # Facing Right (horizontal axis) before an Up-Right step: RPG_RT keeps the
+  # horizontal axis, landing on Right (the diagonal's own horizontal part),
+  # not Up.
+  route = R.new([mc(R::MOVE_UPRIGHT)])
+  c = Game::Character.new(2, 2, 6) # starts facing Right
+  eq :moved, route.step(c, FakeWorld.new)
+  eq 6, c.direction, 'stayed on the horizontal axis it was already facing'
+
+  # Facing Left (horizontal axis, but the *wrong* horizontal component) before
+  # the same Up-Right step: neither of Up-Right's components (Up, Right)
+  # matches Left, so RPG_RT reverses it -- landing on Right, not Up.
+  route2 = R.new([mc(R::MOVE_UPRIGHT)])
+  c2 = Game::Character.new(2, 2, 4) # starts facing Left
+  eq :moved, route2.step(c2, FakeWorld.new)
+  eq 6, c2.direction, 'reversed onto the diagonal\'s own horizontal component'
+
+  # Facing Up (vertical axis, already one of the two components): stays Up,
+  # matching the default-Down check above's "vertical" case but now proven
+  # by an axis-preservation rule rather than a hardcoded one.
+  route3 = R.new([mc(R::MOVE_UPRIGHT)])
+  c3 = Game::Character.new(2, 2, 8) # starts facing Up
+  eq :moved, route3.step(c3, FakeWorld.new)
+  eq 8, c3.direction, 'stayed on the vertical axis it was already facing'
+end
+
 check 'move forward steps in the current facing' do
   route = R.new([mc(R::MOVE_FORWARD)])
   c = Game::Character.new(4, 4, 4) # facing west
