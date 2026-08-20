@@ -8856,10 +8856,10 @@ module Game
     # its own basic Autodestruct -- see `Game::Battle#enemy_autodestruct`)
     # contributes none of the three, even though a fight can end in victory
     # while such a member is technically still at full HP:
-    # `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`) already
+    # `Game::Battle#enemy_active?` (`mruby-rpg2k/mrblib/game.rb`) already
     # treats hidden the same as dead for win/loss purposes (`out_of_play?`),
-    # so `alive?(@enemies)` goes false -- and victory fires -- the instant
-    # every *visible* member is down, with no requirement that a still-hidden
+    # so `enemy_active?(@enemies)` goes false -- and victory fires -- the
+    # instant every *visible* member is down, with no requirement that a still-hidden
     # one ever engaged at all. Matches EasyRPG's actual C++ source:
     # `Game_EnemyParty::GetExp`/`GetMoney`/`GenerateDrops` (`src/
     # game_enemyparty.cpp`) each loop `if (enemy.IsDead())` before
@@ -9921,8 +9921,20 @@ module Game
     STATE_PERSISTS_ON_MAP = 1
 
     # True once one side has been wiped out, or the party has fled — the battle
-    # is decided.
-    def finished?; @escaped || !alive?(@allies) || !alive?(@enemies); end
+    # is decided. The two sides use genuinely different tests, not a shared
+    # symmetric one: RPG_RT's own `Game_Battle::CheckWin`/`CheckLose`
+    # (`src/game_battle.cpp`) are `!game_enemyparty->IsAnyActive()` for the
+    # enemy side against `CanActOrRecoverable()` (`incapacitated?`'s own
+    # source) per party member for the ally side -- `IsAnyActive` bottoms
+    # out in `Game_Battler::Exists()` (`src/game_battler.h`, `!IsHidden() &&
+    # !IsDead() && IsInParty()`), a bare dead-or-hidden test with no
+    # restriction/recovery check at all. The ally-side widening to "locked
+    # into a permanent do-nothing state" exists purely to avoid a stall
+    # where the player can never submit another command; the enemy side has
+    # no such risk (the player can always keep attacking a
+    # restricted-but-alive enemy), so a fully-Stoned enemy troop must still
+    # be finished off with real damage, not treated as an instant win.
+    def finished?; @escaped || !alive?(@allies) || !enemy_active?(@enemies); end
 
     # Whether the party successfully escaped this fight.
     def escaped?; @escaped; end
@@ -11094,16 +11106,25 @@ module Game
       @rng.random(100) < prob
     end
 
-    # Whether `b` counts as out of the fight for win/loss purposes: dead or
+    # Whether `b` counts as out of the fight *for the ally side's own
+    # win/loss test only* (#alive?/#finished?'s `@allies` half): dead or
     # hidden (#out_of_play?), or locked into a "do nothing" restriction by a
-    # state with zero chance of ever shaking itself off. デフォ戦botまとめ:
-    # "party wipe" for game-over purposes means every member is both unable
-    # to act *and* does not recover naturally, not literally "every member's
-    # HP is 0" -- why a fully-Stoned party loses instantly even though nobody
-    # was ever damaged. A do-nothing state that *can* still clear itself
+    # state with zero chance of ever shaking itself off. Ported from
+    # RPG_RT's own `Game_Battler::CanActOrRecoverable`/`Game_Battle::
+    # CheckLose` (`src/game_battler.cpp`/`src/game_battle.cpp`): "party
+    # wipe" for game-over purposes means every member is both unable to act
+    # *and* does not recover naturally, not literally "every member's HP is
+    # 0" -- why a fully-Stoned party loses instantly even though nobody was
+    # ever damaged. A do-nothing state that *can* still clear itself
     # (Sleep, Paralysis with a nonzero auto_release_prob) does not count: the
     # fight keeps running, the same way #recovers_from_state? would
-    # eventually stand that battler back up on its own.
+    # eventually stand that battler back up on its own. This widening exists
+    # purely to avoid a stall where the player can never submit another
+    # command -- RPG_RT's `Game_Battle::CheckWin` (the enemy side's own
+    # test, see #enemy_active?) has no equivalent, and must not reuse this
+    # method: the player can always keep attacking a
+    # restricted-but-alive enemy, so a fully-Stoned enemy troop stays in the
+    # fight until it is actually reduced to 0 HP or removed.
     def incapacitated?(b)
       return true if b.out_of_play?
       (b.states || []).any? do |id|
@@ -11114,6 +11135,14 @@ module Game
     end
 
     def alive?(side); side.any? { |b| !incapacitated?(b) }; end
+
+    # Whether the enemy side still has anyone in the fight -- RPG_RT's own
+    # `Game_Battle::CheckWin` (see #finished?'s citation) only tests
+    # dead-or-hidden (`Exists()`), never a restriction/recovery state, so a
+    # live-but-permanently-restricted enemy troop (e.g. fully Stoned) does
+    # not end the battle on its own; unlike #alive?, this does not fold in
+    # #incapacitated?'s do-nothing-restriction check.
+    def enemy_active?(side); side.any? { |b| !b.out_of_play? }; end
 
     def refill_queue
       @rounds += 1

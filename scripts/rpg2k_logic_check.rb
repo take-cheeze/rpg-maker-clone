@@ -14588,6 +14588,24 @@ check 'battle: one incapacitated ally among others is not a party wipe' do
   ok !bat.finished?, 'a still-able ally keeps the party in the fight'
 end
 
+# RPG_RT's own Game_Battle::CheckWin/CheckLose (src/game_battle.cpp) are two
+# genuinely different tests, not one shared symmetric one: CheckWin is a bare
+# dead-or-hidden check (!IsAnyActive(), bottoming out in Exists()), with no
+# restriction/recovery concept at all -- only CheckLose widens to
+# CanActOrRecoverable(). A fully-Stoned enemy troop, unlike a fully-Stoned
+# party, does not end the fight on its own: the player can always keep
+# attacking a restricted-but-alive enemy, so real RPG_RT keeps the battle
+# running until the enemies are actually reduced to 0 HP or hidden/removed.
+check 'battle: a fully-Stoned enemy troop, still at full HP, does not end the fight' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing, 0% auto-release
+  hero = combatant('Hero', 40, 0, 20, 100)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  slime.states = [8]
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  ok !bat.finished?, 'a live-but-restricted enemy troop keeps the fight going'
+  eq 100, slime.hp, 'and nobody has actually been reduced to 0 HP'
+end
+
 # yado.tk's "unrecoverable input-blocking state lock" case, next to the
 # empty/all-KO'd-party fix: EasyRPG's Scene_Battle_Rpg2k::SelectNextActor
 # skips the Fight/Skill/Defend/Item prompt entirely for a "do nothing"
