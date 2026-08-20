@@ -2923,13 +2923,31 @@ class RPG2k
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
-      # an event-touch (trigger 2) event instead of moving; any other obstacle
-      # just turns the event to face it. `allow_trigger: false` (the "keep
-      # moving during an open message" pass, see #step_events) still turns the
-      # event to face the player but never starts one -- there is only one
-      # foreground @interpreter, already mid-message, and RPG2000 never shows
-      # two message windows at once, so a second event's commands have nowhere
-      # safe to run until the first message closes.
+      # an event-touch (trigger 2) event instead of moving. ~~Any other
+      # obstacle just turns the event to face it~~ -- corrected against
+      # RPG_RT's own live source: `Game_Character::Move` (`src/
+      # game_character.cpp`) does turn to face `dir` immediately, before ever
+      # checking passability (`SetDirection(dir); UpdateFacing();` precede
+      # the `MakeWay` calls) -- but every autonomous-movement caller in `src/
+      # game_event.cpp` (`MoveTypeRandom`/`MoveTypeCycle`/
+      # `MoveTypeTowardsOrAwayPlayer`, all sharing the identical shape)
+      # immediately reverts that on a blocked move: `if (IsStopping()) { if
+      # (IsWaitingForegroundExecution() || (GetStopCount() >=
+      # GetMaxStopCount() + 60)) { SetStopCount(0); } else {
+      # SetDirection(prev_dir); if (!IsFacingLocked()) {
+      # SetFacing(prev_dir); } } }`. Since a movement decision only comes up
+      # once every `GetMaxStopCount()` frames (64 at the default frequency 3)
+      # and the extra threshold is `+ 60` *more* frames on top of that, the
+      # sprite's visible facing does not change on the overwhelmingly common
+      # blocked attempt -- only once genuinely stuck for a sustained stretch
+      # does RPG_RT finally let it settle facing the obstruction, which this
+      # method does not attempt to reproduce (a bounded blocked-streak
+      # counter would need its own follow-up). `allow_trigger: false` (the
+      # "keep moving during an open message" pass, see #step_events) still
+      # turns the event to face the player but never starts one -- there is
+      # only one foreground @interpreter, already mid-message, and RPG2000
+      # never shows two message windows at once, so a second event's
+      # commands have nowhere safe to run until the first message closes.
       def move_autonomous(e, dir, allow_trigger: true)
         ch = e[:char]
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
@@ -2959,8 +2977,6 @@ class RPG2k
                              e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
         elsif @world.passable?(ch, dir)
           ch.move(dir)
-        else
-          ch.face(dir)
         end
       end
 
