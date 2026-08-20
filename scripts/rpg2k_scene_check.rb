@@ -16719,25 +16719,24 @@ check 'Scene::SaveLoad: a member with no FaceSet draws no thumbnail; only the fi
      'only members 2/3/4 (of 5) draw a face'
 end
 
-check 'Scene::SaveLoad :save mode: confirming a slot saves through the parent, shows a ' \
-      'message, and returns to the menu once dismissed' do
+# Confirmed against RPG_RT's own live source: `Scene_Save::Action`
+# (`src/scene_save.cpp`) is just `Save(fs, index + 1); Scene::Pop();`,
+# discarding `Save`'s own boolean result outright -- a save I/O failure
+# pops exactly the same as a success, no "Save failed." path exists at
+# all, and there is no confirmation banner of any kind either way.
+check 'Scene::SaveLoad :save mode: confirming a slot saves through the ' \
+      'parent and pops back to the menu the same frame, no message at all' do
   st = wrap_menu_state
   scene, parent = save_load_scene(:save, st)
   RGSS::Input.triggered = [RGSS::Input::C] # confirm slot 1
   scene.update
   RGSS::Input.reset
   eq [[st, 1]], parent.saved, 'RPG2k#save_game was called for slot 1 with the running state'
-  ok window_texts(scene.instance_variable_get(:@message)[:window]).include?('Game saved.'),
-     'the confirmation banner shows'
-  ok parent.pop_called.nil?, 'the screen has not popped back to the menu yet -- the ' \
-                             'banner is still up'
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the banner
-  scene.update
-  RGSS::Input.reset
-  eq 1, parent.pop_called, 'dismissing the banner pops back to the menu'
+  eq 1, parent.pop_called, 'pops back to the menu the same frame, no dismiss step'
 end
 
-check 'Scene::SaveLoad :save mode: a failed save shows "Save failed." instead' do
+check 'Scene::SaveLoad :save mode: a failed save still pops back the same ' \
+      'way, no failure message' do
   st = wrap_menu_state
   parent = fake_parent(fake_db)
   parent.save_ok = false
@@ -16745,8 +16744,7 @@ check 'Scene::SaveLoad :save mode: a failed save shows "Save failed." instead' d
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  ok window_texts(scene.instance_variable_get(:@message)[:window]).include?('Save failed.'),
-     'the failure banner shows instead of the success one'
+  eq 1, parent.pop_called, 'a failed save pops back to the menu exactly like a successful one'
 end
 
 check 'Scene::SaveLoad :load mode: an empty slot ignores the selection key' do
@@ -16958,12 +16956,7 @@ check 'Open Save Menu: confirming a slot in the pushed picker really saves throu
   picker.update
   RGSS::Input.reset
   eq [[st, 1]], parent.saved, 'RPG2k#save_game was called for slot 1 with the running state'
-  ok window_texts(picker.instance_variable_get(:@message)[:window]).include?('Game saved.'),
-     'the picker shows its own confirmation banner'
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the banner
-  picker.update
-  RGSS::Input.reset
-  eq 1, parent.pop_called, 'the picker popped itself once dismissed'
+  eq 1, parent.pop_called, 'the picker pops itself the same frame, no confirmation banner'
 end
 
 check 'Open Save Menu ignores a Change Save Access lock -- unlike Scene::Menu\'s ' \
