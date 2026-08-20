@@ -16032,15 +16032,35 @@ check 'Tile Substitution rewrites a tile on the map and flags a redraw' do
   eq false, it.take_tiles_changed, 'the flag is one-shot'
 end
 
-check 'Game::Map substitutions are per layer and undone by an identity swap' do
+# Confirmed against RPG_RT's own live source: `Game_Map::DoSubstitute`
+# (`src/game_map.cpp`) scans its persistent substitution table by *current*
+# value every call (`for (i) if (tiles[i] == old_id) tiles[i] = new_id;`),
+# not by each tile's original chipset id -- so a later substitution chains
+# through an earlier one whenever its `old_id` matches the earlier `new_id`,
+# and "substituting a tile back to its original id" does not undo a prior
+# substitution once the tile's current value has moved on. An earlier,
+# uncited pass here modelled both of these the opposite way.
+check 'Game::Map substitutions are per layer and chain by current value, ' \
+      'not by original id' do
   m = fake_map_2x2([1, 1, 1, 1], [1, 1, 1, 1])
-  m.substitute_tile(1, 1, 4) # upper only
+  m.substitute_tile(1, 1, 4) # upper: every tile originally 1 now shows 4
   eq 1, m.lower(0, 0)
   eq 4, m.upper(0, 0)
   ok m.substituted?
-  m.substitute_tile(1, 1, 1) # back to itself: drop the rewrite
-  eq 1, m.upper(0, 0)
-  ok !m.substituted?
+
+  # Chaining: retargets the earlier substitution rather than replacing it.
+  m.substitute_tile(1, 4, 7)
+  eq 7, m.upper(0, 0), 'chained through the first substitution (1 -> 4 -> 7)'
+
+  # "Back to its original id" is not how a substitution is undone: the
+  # tile's slot currently holds 7, not 1, so re-substituting old_id 1 (its
+  # original chipset id) touches nothing.
+  m.substitute_tile(1, 1, 1)
+  eq 7, m.upper(0, 0), 'substituting the original id again has no effect once chained away'
+
+  # Reverting means substituting FROM the tile's *current* id.
+  m.substitute_tile(1, 7, 1)
+  eq 1, m.upper(0, 0), 'substituting from the current id reverts the visible tile'
 end
 
 check 'Open Save Menu and Open Main Menu pause on their own wait kinds' do
