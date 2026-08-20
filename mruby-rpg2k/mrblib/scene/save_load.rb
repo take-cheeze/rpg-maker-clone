@@ -10,8 +10,10 @@ class RPG2k
     #   * `:save`, from Scene::Menu's Save command, with the running
     #     Game::State to write out. Every slot -- occupied or not -- is
     #     selectable; confirming one calls RPG2k#save_game(state, slot) and
-    #     shows the same "Game saved." / "Save failed." feedback the menu
-    #     used to show inline, then returns to the menu.
+    #     pops straight back to the menu the same frame, no feedback of any
+    #     kind either way -- confirmed against RPG_RT's own live source,
+    #     `Scene_Save::Action` (`src/scene_save.cpp`), which discards
+    #     `Save`'s own boolean result outright.
     #   * `:load`, from Scene::Title's Continue entry, with `state` nil (there
     #     is no running game yet). Only an occupied slot is selectable;
     #     confirming one calls RPG2k#continue_game(slot), which tears down the
@@ -99,7 +101,6 @@ class RPG2k
         @index = initial_index
         @top = [@index - VISIBLE_SLOTS + 1, 0].max
         @arrow_anim = 0
-        @message = nil
         @slot_windows = []
         build_header_window
         build_slot_windows
@@ -107,7 +108,6 @@ class RPG2k
       end
 
       def dispose
-        close_message
         @header_window.dispose if @header_window
         @slot_windows.each(&:dispose)
         @up_arrow.dispose if @up_arrow
@@ -116,7 +116,6 @@ class RPG2k
 
       def update
         tick_arrows
-        return drive_message if @message
 
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
@@ -207,15 +206,24 @@ class RPG2k
         play_system_se(SFX_CURSOR)
       end
 
+      # A :save confirm pops straight back to the menu the same frame, with
+      # no feedback of any kind -- confirmed against RPG_RT's own live
+      # source: `Scene_Save::Action` (`src/scene_save.cpp`) is just `Save(fs,
+      # index + 1); Scene::Pop();`, discarding `Save`'s own boolean result
+      # outright -- there is no "Save failed." path in real RPG_RT at all,
+      # a save I/O failure pops exactly the same as a success. `Scene_Menu::
+      # UpdateCommand`'s own Save case (`src/scene_menu.cpp`) is just
+      # `Scene::Push(std::make_shared<Scene_Save>())`, so this class's own
+      # prior comment attributing the fabricated message to "the same
+      # feedback the menu used to show inline" cited no real RPG_RT source
+      # for that claim, only this codebase's own earlier code.
       def confirm_selection
         slot = @index + 1
         case @mode
         when :save
           play_system_se(SFX_DECISION)
-          ok = @parent.save_game(@state, slot)
-          @slots[@index] = @parent.load_save_state(slot) if ok
-          refresh_slot_windows
-          show_message(ok ? "Game saved." : "Save failed.")
+          @parent.save_game(@state, slot)
+          @parent.pop
         when :load
           # An empty slot has nothing to resume -- refused (Buzzer), like the
           # selection key on a title screen Continue with no save at all
@@ -448,35 +456,6 @@ class RPG2k
         cell
       end
 
-      # The "Game saved." / "Save failed." feedback banner, mirroring
-      # Scene::Menu's own #show_message/#drive_message/#close_message: shown
-      # after a :save confirm, dismissed by the player, and only then does
-      # this screen pop back to the menu -- so the message is never missed.
-      def drive_message
-        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        close_message
-        @parent.pop
-      end
-
-      def show_message(text)
-        return if @message
-        w = SCREEN_W - 40
-        win = Window.new(20, SCREEN_H - LINE_H - Window::BORDER * 2 - 4, w,
-                         LINE_H + Window::BORDER * 2)
-        win.z = 500
-        win.windowskin = @skin
-        c = Bitmap.new(w - Window::BORDER * 2, LINE_H)
-        c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, c.width, LINE_H, text
-        win.contents = c
-        @message = { window: win }
-      end
-
-      def close_message
-        return unless @message
-        @message[:window].dispose
-        @message = nil
-      end
     end
   end
 end

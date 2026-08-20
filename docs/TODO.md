@@ -5100,6 +5100,35 @@ The work below is roughly ordered by the critical path to a walkable game
   `.lsd` sibling to disk is exactly what this fix itself now does at
   runtime. Confirmed to fail against the pre-fix code (`expected 4, got
   0`).
+  ✅ **A :save confirm showed a "Game saved."/"Save failed." banner the
+  player had to dismiss before returning to the menu -- real RPG_RT shows
+  no feedback at all, either way (2026-08-20).** This was this codebase's
+  own invention from the start: the screen's own class comment claimed the
+  banner was "the same feedback the menu used to show inline," but
+  `Scene_Menu::UpdateCommand`'s Save case (`src/scene_menu.cpp`) was
+  always just `Scene::Push(std::make_shared<Scene_Save>())` -- no inline
+  message ever existed to carry forward. Confirmed against RPG_RT's own
+  live source: `Scene_Save::Action` (`src/scene_save.cpp`) is `Save(fs,
+  index + 1); Scene::Pop();`, discarding `Save`'s own boolean result
+  outright -- there is no "Save failed." path in real RPG_RT at all, an
+  I/O failure pops exactly the same as a success, the same frame, with no
+  dismiss step. `Scene::SaveLoad#confirm_selection`'s `:save` branch
+  (`mruby-rpg2k/mrblib/scene/save_load.rb`) built a message window and
+  waited for a second Decision/Cancel press to pop, via its own `#drive_
+  message`/`#show_message`/`#close_message` trio (mirroring `Scene::Menu`'s
+  End Game confirmation, a genuinely different case with a real RPG_RT
+  message behind it). Fixed by dropping the message entirely: the `:save`
+  branch now plays Decision, calls `#save_game`, and pops straight back to
+  the parent in the same `#confirm_selection` call, matching `Scene_Save::
+  Action` exactly; `#drive_message`/`#show_message`/`#close_message` were
+  the message's only callers in this file (`:load`'s empty-slot case only
+  ever played Buzzer, no message), so they were removed as dead code along
+  with `@message`'s init/dispose wiring. Covered by three rewritten
+  `scripts/rpg2k_scene_check.rb` checks (a successful save pops back the
+  same frame with no message window built; a failed save pops back
+  identically, not a different "Save failed." path; the event-triggered
+  Open Save Menu picker's own confirm does the same), all confirmed to
+  fail against the pre-fix code.
   ✅ **The battle command/target/skill/item flow now plays system SE too --
   the same class of gap the field menu and title screen already had fixed,
   extended to a much larger interaction surface.** Confirmed against
