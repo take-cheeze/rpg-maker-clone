@@ -6724,6 +6724,31 @@ check 'a special item invoking a Teleport skill offers every registered ' \
   eq 1, st.party.item_count(4), 'an unregistered destination consumes nothing'
 end
 
+check 'a special item invoking a Switch skill flips its switch and warps ' \
+      'nowhere, for free without spending an SP the item never had' do
+  # Confirmed against RPG_RT's own live source: `Scene_Item::vUpdate`'s
+  # `Type_switch` skill arm (src/scene_item.cpp) sits right beside its
+  # Escape/Teleport siblings -- consuming the item, playing the skill's own
+  # sound effect, and flipping `skill->switch_id` on the very same Decision
+  # press, no target/picker of any kind, the identical "no state, no SP"
+  # shape #use_special_escape_item/#use_special_teleport_item already have.
+  skills = { 8 => fake_skill(name: 'Scroll of Summon',
+                             type: Game::Party::SKILL_SWITCH, sp_cost: 5, switch_id: 22) }
+  items = { 6 => fake_item(type: 9, skill_id: 8, name: 'Scroll') }
+  st = skill_party(skills, items)
+  hero = st.party.actor_by_id(1)
+  ok !hero.knows_skill?(8), 'the item is the cost -- the caster need not know it'
+  st.party.gain_item(6, 2)
+  eq [[6, 2]], st.party.field_items(st), 'field_occasion alone is enough -- no state needed to appear'
+  before = hero.mp
+  eq 22, st.party.use_special_switch_item(6, hero), 'casting returns the switch to flip'
+  eq before, hero.mp, 'free -- the item pays, not the caster'
+  eq 1, st.party.item_count(6), 'one was consumed'
+  # An id that names no such item casts nothing and consumes nothing.
+  ok st.party.use_special_switch_item(999, hero).nil?
+  eq 1, st.party.item_count(6), 'unaffected'
+end
+
 check 'a use_skill equipment item invoking an Escape skill is menu-usable purely by ' \
       "scope, matching real RPG_RT's own use_skill shortcut -- access/target only " \
       'gate the cast itself, and a plain weapon is never treated as one' do

@@ -4404,6 +4404,27 @@ module Game
       target
     end
 
+    # The same for a special item invoking a **Switch**-type skill: flip
+    # its switch for free (the item pays, not `actor`'s SP) and return the
+    # switch id to turn on, or nil when `id` does not name such an item or
+    # `actor` may not use it -- confirmed against RPG_RT's own live source:
+    # `Scene_Item::vUpdate`'s `Type_switch` skill arm (`src/scene_item.cpp`)
+    # sits right beside its Escape/Teleport siblings, unconditionally
+    # consuming the item and flipping `skill->switch_id` (the *skill's* own
+    # field, not the item's) on the very same Decision press, no `Game::
+    # State` needed unlike Escape/Teleport's registered-target lookup.
+    def use_special_switch_item(id, actor)
+      it = db_item(id)
+      return nil unless it &&
+                        (it.type == ITEM_SPECIAL ||
+                         (it.use_skill && (1..5).cover?(it.type))) &&
+                        actor && item_usable_by?(it, actor.id)
+      switch = cast_switch_skill(actor, it.skill_id, true)
+      return nil unless switch
+      consume_item_use(id)
+      switch
+    end
+
     # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
     # (scope 1) heals the whole party regardless of `actor`. Applies the recovery
     # (clamped to each target's maxima) and cures the item's status conditions,
@@ -4849,10 +4870,14 @@ module Game
     # to turn on, so the caller can flip it (the switch table lives on the state,
     # not the party -- the same split #use_switch_item already uses). nil when
     # `sid` is not a switch skill the caster can cast, and then nothing is spent.
-    def cast_switch_skill(caster, sid)
-      return nil unless switch_skill?(sid) && can_cast?(caster, sid)
+    # `free`, when true, skips the SP-cost gate/spend entirely -- the same
+    # `free` flag `#cast_escape_skill`/`#cast_teleport_skill` already carry,
+    # for a special/use_skill item's invoked switch skill (the item pays,
+    # not the caster's SP; see #use_special_switch_item).
+    def cast_switch_skill(caster, sid, free = false)
+      return nil unless switch_skill?(sid) && (free ? !caster.nil? : can_cast?(caster, sid))
       sk = db_skill(sid)
-      caster.change_mp(-skill_cost(sk, caster))
+      caster.change_mp(-skill_cost(sk, caster)) unless free
       sk.switch_id
     end
 
