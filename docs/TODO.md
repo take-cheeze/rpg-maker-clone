@@ -556,6 +556,41 @@ The work below is roughly ordered by the critical path to a walkable game
   once the ship is moved aside; an airship cannot land on a parked boat's
   tile but lands normally once it moves away), both confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-20): the asymmetric boarding rule the paragraph
+  above (and the earlier `#vehicle_blocks?` paragraph) cited as background —
+  ~~`#board_vehicle`'s own asymmetric boarding rule — a boat/ship only
+  boards by facing it from an adjacent tile, an airship only by already
+  standing on it~~ — described `#board_vehicle`'s own doc comment
+  accurately, but not what the code beneath that comment actually did.**
+  Confirmed directly against RPG_RT's live source: `Game_Player::
+  GetOnVehicle` (`src/game_player.cpp`) checks the Airship only against the
+  player's own tile (`GetX()`/`GetY()`), in an `if` whose `else` branch is
+  the *only* place the faced tile (`front_x`/`front_y`) is computed at
+  all — the Airship is never considered there, and Ship/Boat (checked in
+  that order) are never considered against the player's own tile.
+  `#board_vehicle` (`mruby-rpg2k/mrblib/scene/map.rb`) instead ran one
+  generic loop over every vehicle type applying *both* the "standing on
+  it" and "facing it" checks to *every* type — so a placed, grounded
+  Airship could be boarded merely by facing it from an adjacent tile
+  (real RPG_RT does nothing there; the button falls through to whatever
+  ordinary event sits on that tile instead), and a Boat/Ship could
+  symmetrically have been boarded by standing on its own tile rather than
+  facing it from the shore — the opposite of the rule the comment above
+  already stated correctly. `Game_Interpreter_Map::
+  CommandEnterExitVehicle` (code 10840) reaches the identical
+  `GetOnOffVehicle`/`GetOnVehicle` path, so the Enter/Exit Vehicle event
+  command carried the same bug. Fixed by splitting `#board_vehicle` into a
+  standing-only Airship check and a facing-only Ship/Boat loop (Ship
+  before Boat, matching the reference's own check order), rather than one
+  generic per-type loop. Two existing `scripts/rpg2k_scene_check.rb`
+  checks had themselves relied on the bug (a boat "boarded in place" by
+  standing on its own tile, both directly and via the Enter/Exit Vehicle
+  command) — rewritten to board by facing instead, matching what real
+  RPG_RT actually allows. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (facing a placed airship from an
+  adjacent tile does not board it; standing on a placed boat does not
+  board it either), confirmed to fail against the pre-fix code before the
+  fix.
 
 #### Event system
 - ✅ Event pages — page conditions (switch/variable/item/actor) are implemented

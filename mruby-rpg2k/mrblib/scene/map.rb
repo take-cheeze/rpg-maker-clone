@@ -2296,20 +2296,35 @@ class RPG2k
       # Board a vehicle placed on the current map at the party's tile (airship) or
       # the tile it faces (boat / ship, boarded from the shore). Steps onto the
       # vehicle's tile and returns whether a vehicle was boarded.
+      #
+      # Each vehicle type has exactly one trigger, never both -- confirmed
+      # against RPG_RT's own live source: `Game_Player::GetOnVehicle`
+      # (`src/game_player.cpp`) checks the airship only against the player's
+      # own tile (`GetX()`/`GetY()`), in an `if` whose `else` branch is the
+      # only place `front_x`/`front_y` (the faced tile) are computed at all --
+      # the airship is never considered there, and Ship/Boat (checked in that
+      # order) are never considered against the player's own tile. This used
+      # to run one generic per-type loop applying *both* checks to *every*
+      # type, which let the airship be boarded merely by facing it from an
+      # adjacent tile (real RPG_RT does nothing there -- the action falls
+      # through to whatever ordinary event sits on that tile instead) and,
+      # symmetrically, would have let a boat/ship be boarded by standing on
+      # its tile rather than facing it from the shore.
       def board_vehicle
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
-        Game::Vehicle::TYPES.each do |type|
+        airship = @state.vehicle(:airship)
+        if airship.placed? && airship.map_id == @state.map_id &&
+           airship.x == @state.x && airship.y == @state.y
+          board_as(:airship)
+          return true
+        end
+        [:ship, :boat].each do |type|
           v = @state.vehicle(type)
-          next unless v.placed? && v.map_id == @state.map_id
-          if v.x == @state.x && v.y == @state.y
-            board_as(type)
-            return true
-          elsif v.x == fx && v.y == fy
-            @state.x = fx
-            @state.y = fy
-            board_as(type)
-            return true
-          end
+          next unless v.placed? && v.map_id == @state.map_id && v.x == fx && v.y == fy
+          @state.x = fx
+          @state.y = fy
+          board_as(type)
+          return true
         end
         false
       end
