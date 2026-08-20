@@ -4094,9 +4094,18 @@ class RPG2k
         return false unless @map.in_bounds?(nx, ny)
         return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
+        # A blocker with its own Through Mode on collides with nothing,
+        # matching EasyRPG's own `WouldCollide` (`src/game_map.cpp`):
+        # `if (self.GetThrough() || other.GetThrough()) return false;` --
+        # *either* side's flag exempts the pair, not only the mover's own
+        # (already handled above). A Move Route's own Through Mode ON sub-
+        # command is how content stages "step into the wall, then let the
+        # party through" -- Nepheshel's own copy-pasted hidden-door events
+        # (~120 maps) send themselves through it as part of opening.
         return false if blockers_at(nx, ny).any? do |b|
-          b[:layer] == character.layer ||
-            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
+          !b[:char].through &&
+            (b[:layer] == character.layer ||
+             (!hero && (character.overlap_forbidden || b[:overlap_forbidden])))
         end
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
@@ -7599,8 +7608,13 @@ class RPG2k
             # decoration, not an obstacle -- #passable?/#char_passable? never
             # let it block movement elsewhere, so falling through to the
             # ordinary passability check below lets the party keep walking
-            # onto its tile while the event's commands run alongside.
-            return if touched[:layer] == LAYER_SAME
+            # onto its tile while the event's commands run alongside. Nor does
+            # a same-layer one that has put itself through Through Mode (see
+            # #passable?'s own matching exemption) -- a hidden-door event that
+            # just opened is exactly this shape, and the party must be able to
+            # step through it the instant it fires, not stay walled off by a
+            # stale layer check that #passable? below would already let pass.
+            return if touched[:layer] == LAYER_SAME && !touched[:char].through
           end
           # Through Mode (see @player_through) bypasses collision the same way
           # it does for an event's own #char_passable? -- touch triggers still
@@ -7887,8 +7901,16 @@ class RPG2k
         # the fuller citation). Every event on the tile gets a say
         # (#blockers_at), not just one of them: a below-characters decal and
         # a same-as-characters NPC can share a tile, and the NPC must still
-        # block even though the decal alone would not.
-        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME }
+        # block even though the decal alone would not. A blocker with its own
+        # Through Mode on is exempted -- EasyRPG's own `WouldCollide`
+        # (`src/game_map.cpp`) checks `self.GetThrough() || other.GetThrough()`,
+        # either side's flag, not only the mover's (the player's own is
+        # checked separately by #step_movement's `@player_through` guard
+        # around this call). A Move Route's own Through Mode ON sub-command is
+        # how content stages "step into the wall, then let the party through"
+        # -- Nepheshel's own copy-pasted hidden-door events (~120 maps) send
+        # themselves through it as part of opening.
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME && !b[:char].through }
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
         # never does, on foot or otherwise (block_airship: false — the hero

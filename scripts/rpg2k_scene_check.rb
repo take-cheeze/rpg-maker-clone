@@ -19704,6 +19704,61 @@ check 'facing a same-layer Player Touch event and pressing the action button ' \
                       '"decision key started this event" branch'
 end
 
+# A same-layer touch event that sets its own Through Mode on (a Move Event
+# sub-command, the way a hidden-door reveal opens itself) used to still block
+# the party forever: #passable? / #char_passable? already exempted a Through
+# Mode blocker from collision (matching EasyRPG's own `WouldCollide`,
+# `src/game_map.cpp`: `if (self.GetThrough() || other.GetThrough()) return
+# false;` -- *either* side, not only the mover's own), but #step_movement's
+# own touch-trigger dispatch had an earlier, unconditional
+# `return if touched[:layer] == LAYER_SAME` that never consulted the touched
+# event's own Through flag at all, so the party stayed walled off by a stale
+# layer check even after the very Through Mode ON the event's own commands
+# just set. Nepheshel's own copy-pasted hidden-door events (~120 maps) open
+# themselves exactly this way -- the reveal fired, but the party could never
+# actually step through the (nominally opened) door.
+check 'a same-layer Player Touch event that switches its own Through Mode on ' \
+      'lets the party step onto its tile instead of staying blocked' do
+  ic = Game::Interpreter::Cmd
+  door = page(trigger: RPG2k::Scene::Map::TRIGGER_PLAYER_TOUCH,
+              layer: RPG2k::Scene::Map::LAYER_SAME)
+  door.event_commands = [
+    # Move Event targeting "this event" (10005), frequency 8, no repeat,
+    # skippable, running a single bare Through Mode ON sub-command (36).
+    ECmd.new(ic::MOVE_EVENT, [RPG2k::Scene::Map::MOVE_TARGET_THIS, 8, 0, 1, 36], indent: 0),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(1, 0, door) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  RGSS::Input.dir_value = 6 # hold right, into the event at (1,0)
+  20.times { scene.update }
+  eq [1, 0], [st.x, st.y],
+     'the party walked onto the (now Through Mode) event tile instead of staying blocked'
+end
+
+# The same exemption on the *mover* side: an ordinary map event's own
+# autonomous/forced movement must also be free to cross a Through Mode
+# blocker, matching `WouldCollide`'s symmetric either-side check.
+check "a custom-route event crosses another event that has switched its own " \
+      'Through Mode on' do
+  ic = Game::Interpreter::Cmd
+  blocker = one_shot_auto(page(trigger: RPG2k::Scene::Map::TRIGGER_AUTO_START,
+                               layer: RPG2k::Scene::Map::LAYER_SAME))
+  blocker.event_commands = [
+    ECmd.new(ic::MOVE_EVENT, [RPG2k::Scene::Map::MOVE_TARGET_THIS, 8, 0, 1, 36], indent: 0),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, [], indent: 0)
+  ]
+  mover = page(x_move_type: Game::MoveType::CUSTOM,
+               route: move_route([R::MOVE_RIGHT]),
+               layer: RPG2k::Scene::Map::LAYER_SAME)
+  scene = new_scene({ 1 => event(1, 1, blocker), 2 => event(0, 1, mover) }, player: [5, 5])
+  40.times { scene.update }
+  c = chars(scene)[2]
+  ok c.x >= 1, "the mover crossed the blocker's tile once it switched Through Mode on " \
+               "(got x=#{c.x}, still stuck behind it at 0 would mean the fix regressed)"
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
