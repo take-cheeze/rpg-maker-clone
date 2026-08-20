@@ -12323,6 +12323,40 @@ not yet verified:
   same list, must not run while a message window opened elsewhere is on
   screen; the battle opens once the window closes), confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **A show-message Change EXP / Change Level is now blocked (not applied)
+  while a message window or choice list is open, and retries once it
+  closes — the same block-and-retry shape as the three fixes above, on a
+  fourth and fifth command, but conditional on the command's own "show
+  message" flag rather than unconditional.** Confirmed directly against
+  RPG_RT's live source: `Game_Interpreter::CommandChangeExp`/
+  `CommandChangeLevel` (`src/game_interpreter.cpp`, codes 10410/10420) both
+  open with `bool show_msg = com.parameters[5]; if (show_msg &&
+  !Game_Message::CanShowMessage(true)) { return false; }` — guarding the
+  *entire* command, the actor's EXP/level and re-derived base stats
+  included, not just the level-up message, and only when the flag is set;
+  `CommandChangeGold`/`CommandChangeParameters` (10310/10430) share no such
+  guard, so this is Change EXP/Level-specific, not a general "Change"
+  command rule. `Interpreter#do_change_exp`/`#do_change_level`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) had no such gate at all: a
+  still-running parallel process (Message Options' "continue events" flag)
+  could apply the stat change and queue its level-up message a frame early,
+  while a different event's message window still sat on screen — the
+  identical class of gap the three fixes above closed, just never ported to
+  these two. Fixed by adding `#block_pending_exp_level_command(show_msg)`,
+  the same shape as `#block_pending_picture_command`/
+  `#block_pending_teleport_command`/`#block_pending_battle_command`
+  (reusing the same `#message_window_blocks_command?` check) but taking the
+  flag as an argument, called from the very top of both methods before
+  `stat_amount`/`stat_targets` run. `Scene::Map#drive_event`'s foreground
+  dispatch and `#drive_parallel_wait` both gained a matching
+  `:exp_level_blocked` case (`resume unless message_window_open?`),
+  alongside the existing `:picture_blocked`/`:teleport_blocked`/
+  `:battle_blocked` ones. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (a common event's Parallel Process's own show-message Change Level,
+  and the command right after it in the same list, must not run while a
+  message window opened elsewhere is on screen; the level applies and its
+  own level-up message opens once the window closes), confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Not applicable: re-issuing Show Picture every tick being expensive
   enough to cause real frame drops (vs. cheap repeated Move Picture) is a
   real-RPG_RT-specific performance characteristic, not a state/behaviour

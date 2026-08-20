@@ -2033,6 +2033,13 @@ class RPG2k
           # :battle_blocked case, see #block_pending_battle_command for the
           # citation.
           it.resume unless message_window_open?
+        elsif it.wait_kind == :exp_level_blocked
+          # A "show message"-flagged Change EXP / Change Level command
+          # issued from a Parallel Process while a message window or choice
+          # list is open -- the parallel-process equivalent of #drive_event's
+          # own :exp_level_blocked case, see
+          # Interpreter#block_pending_exp_level_command for the citation.
+          it.resume unless message_window_open?
         elsif it.wait_kind == :sprite_flash
           # Flash Sprite's own wait flag, the parallel-process equivalent of
           # the :screen/:picture cases just above.
@@ -4549,6 +4556,13 @@ class RPG2k
             # (#block_pending_battle_command) -- the identical
             # block-and-retry shape as :picture_blocked/:teleport_blocked
             # above, see that method's own citation.
+            @interpreter.resume unless message_window_open?
+          when :exp_level_blocked
+            # A "show message"-flagged Change EXP / Change Level command
+            # reached while a message window or choice list is open
+            # (#block_pending_exp_level_command) -- the identical
+            # block-and-retry shape as :picture_blocked/:teleport_blocked/
+            # :battle_blocked above, see that method's own citation.
             @interpreter.resume unless message_window_open?
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
