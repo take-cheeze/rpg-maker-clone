@@ -1367,6 +1367,32 @@ check 'a random-mover roams but stays in bounds and off the player tile' do
   ok moved, 'a random mover should have moved at least once in 300 frames'
 end
 
+check 'a blocked autonomous move does not turn the event to face the ' \
+      'obstacle -- RPG_RT reverts that facing back on nearly every failed ' \
+      'attempt' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::Move`
+  # (src/game_character.cpp) does turn to face the drawn direction before
+  # ever checking passability, but every autonomous-move caller in
+  # src/game_event.cpp (MoveTypeRandom/MoveTypeCycle/
+  # MoveTypeTowardsOrAwayPlayer) immediately reverts that turn on a blocked
+  # move unless genuinely stuck for a sustained stretch (GetMaxStopCount() +
+  # 60 frames) -- boxing an event in on all four sides means every draw is
+  # blocked, so its facing should never visibly change from whatever it
+  # started at.
+  mover     = event(2, 2, page(x_move_type: Game::MoveType::RANDOM, direction: 2))
+  wall_up    = event(2, 1, page)
+  wall_down  = event(2, 3, page)
+  wall_left  = event(1, 2, page)
+  wall_right = event(3, 2, page)
+  scene = new_scene({ 1 => mover, 2 => wall_up, 3 => wall_down,
+                       4 => wall_left, 5 => wall_right }, player: [0, 0])
+  c = chars(scene)[1]
+  60.times { scene.update }
+  eq [2, 2], [c.x, c.y], 'boxed in on all four sides -- never actually moves'
+  eq 2, c.direction, 'blocked every attempt -- facing never turns to the ' \
+                      'randomly drawn (always-blocked) direction'
+end
+
 check 'two events do not stack on the same tile' do
   # Two events collide whenever their layers match exactly (see the LAYER_*
   # comment in map.rb) -- #page's own default (LAYER_BELOW for both) already

@@ -370,6 +370,64 @@ The work below is roughly ordered by the critical path to a walkable game
   masking exactly this gap) exercising all three in-sight draw outcomes
   plus the off-screen case, confirmed to fail against the pre-fix code
   (`expected 6, got 2`) before the fix.
+  ✅ **Follow-up (2026-08-20): closed the "still open" gap directly above —
+  a blocked autonomous move (Random/Vertical/Horizontal-cycle/Toward/Away
+  alike) turned the event to face the obstruction on every single failed
+  attempt, where real RPG_RT reverts that facing back on the overwhelming
+  majority of them.** `Game_Character::Move` (`src/game_character.cpp`)
+  does turn to face the drawn direction immediately, before ever checking
+  passability (`SetDirection(dir); UpdateFacing();` precede the `MakeWay`
+  calls) — but every autonomous-move caller in `src/game_event.cpp`
+  (`MoveTypeRandom`/`MoveTypeCycle`/`MoveTypeTowardsOrAwayPlayer`, all
+  sharing the identical shape) immediately reverts that on a blocked move:
+  `if (IsStopping()) { if (IsWaitingForegroundExecution() ||
+  (GetStopCount() >= GetMaxStopCount() + 60)) { SetStopCount(0); } else {
+  SetDirection(prev_dir); if (!IsFacingLocked()) { SetFacing(prev_dir); }
+  } }`. A movement decision only comes up once every `GetMaxStopCount()`
+  frames to begin with (64 at the default frequency 3, `1 << (9-freq)`),
+  and the extra threshold is `+ 60` *more* frames on top of that, so the
+  sprite's visible facing does not change on the overwhelmingly common
+  blocked attempt — only once genuinely stuck for a sustained stretch does
+  RPG_RT finally let it settle facing the obstruction.
+  `Scene::Map#move_autonomous`'s own doc comment asserted "any other
+  obstacle just turns the event to face it" with no citation at all — the
+  exact kind of uncited claim this project keeps finding wrong. Concretely:
+  an NPC with Random/Cycle/Approach/Away movement repeatedly drawing a
+  blocked direction (a common case near a wall or another blocking event)
+  visibly snapped its sprite to face whatever direction it just failed to
+  enter on every retry, reading as a twitchy, spinning NPC — real RPG_RT's
+  sprite holds its last successful facing steady through nearly all such
+  retries. Fixed by dropping the unconditional `ch.face(dir)` from the
+  blocked (non-player) branch entirely, leaving facing unchanged on a
+  blocked attempt; reproducing the exact "eventually settles facing the
+  obstacle after a sustained stretch" half (the `GetStopCount() >=
+  GetMaxStopCount() + 60` threshold) would need a per-event blocked-streak
+  counter and is left as a further follow-up, since the visible-twitching
+  bug this fixes is the overwhelmingly common case. The player-touch branch
+  (walking into the hero) is untouched — starting a foreground event is
+  exactly `IsWaitingForegroundExecution()`, one of the two revert-exemption
+  conditions above, so unconditionally turning to face the player there was
+  already correct by a different path, not a coincidence. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (an event boxed in on all four sides
+  by stationary blocking events, so every Random draw is blocked, never
+  turns from its starting facing across 60 frames), confirmed to fail
+  against the pre-fix code (`expected 2, got 6`) before the fix.
+  **Also surfaced, deliberately left out of this fix to keep it narrow**: a
+  deeper discrepancy in RPG_RT's actual Random-move algorithm itself.
+  `Game_Event::MoveTypeRandom` is not a uniform pick among the four
+  absolute cardinal directions the way `Game::MoveType.next_direction`'s
+  `RANDOM` case (`Character::CARDINALS[world.random(4)]`) implements it —
+  it is a *relative* roll off the event's own current facing (`Rand::
+  GetRandomNumber(0, 9)`: 0-2 keep going straight, 3-4 turn 90° left, 5-6
+  turn 90° right, 7 turn 180°, 8-9 skip the attempt and idle for a random
+  span), then attempts to move in whatever direction results. A
+  "Random"-moving NPC in real RPG_RT therefore tends to continue mostly
+  straight with occasional turns, not restart in a fresh independent
+  cardinal every single step the way this codebase's port does. This is a
+  substantially larger algorithmic change (a full port of the relative-turn
+  model, not a one-line fix) and a genuinely separate discrepancy from the
+  blocked-move-facing gap just closed above — left for its own future
+  investigation.
   ✅ **Follow-up (2026-08-20): a move route's effect-only sub-commands
   (Switch On/Off, Speed/Frequency Up/Down, Change Graphic, Play Sound,
   Through Mode, Stop/Start Animation, Transparency Up/Down) each paid a
