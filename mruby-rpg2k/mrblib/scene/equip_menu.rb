@@ -242,7 +242,7 @@ class RPG2k
       def build_stats_window
         @stats_window.dispose if @stats_window
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = LINE_H * 3
+        h = LINE_H * (1 + STAT_DEFS.size)
         @stats_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
         @stats_window.z = 400
         @stats_window.windowskin = @skin
@@ -250,9 +250,6 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         a = actor
         c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  #{term(:level_short, 'Lv')} #{a.level}"
-        c.draw_text 0, LINE_H, inner_w, LINE_H,
-                    "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
-                    "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
         draw_stat_row(c, a)
         @stats_window.contents = c
       end
@@ -269,24 +266,23 @@ class RPG2k
         [:agility, 'Agi', :agi_points1, :agi]
       ].freeze
 
-      # Gap, in pixels, between one stat's block and the next on the combat
-      # stat line.
-      STAT_GAP = 8
-
-      # The combat-stat line: four independent "label value" blocks while
-      # browsing the slot list, or, while browsing candidates, four
-      # independent "label value > new_value" comparisons -- confirmed
-      # against EasyRPG's actual `Window_EquipStatus::DrawParameter`, which
-      # draws one row per stat, each an old value, an arrow, and a new value
-      # coloured by `GetNewParameterColor` (0 unchanged / 2 up / 3 down),
-      # never a single combined verdict for the whole item (see
-      # #build_cand_window's own history for the summed-arrow this replaced).
+      # Four independent stat rows -- one "label value" per row while
+      # browsing the slot list, or, while browsing candidates, "label value
+      # > new_value" comparisons -- confirmed against EasyRPG's actual
+      # `Window_EquipStatus::Refresh`/`DrawParameter`
+      # (`src/window_equipstatus.cpp`), which draws the actor name once,
+      # then loops the four stats at `y_offset + ((12 + 4) * i)` -- a
+      # genuinely separate row per stat, each an old value, an arrow, and a
+      # new value coloured by `GetNewParameterColor` (0 unchanged / 2 up / 3
+      # down), never a single combined verdict for the whole item (see
+      # #build_cand_window's own history for the summed-arrow this
+      # replaced) and never sharing a row with any other stat.
       def draw_stat_row(c, a)
-        y = LINE_H * 2
-        x = 0
         previewing = @mode == :items
         cand_id = previewing ? candidates[@cand_index].first : nil
-        STAT_DEFS.each do |term_key, label, field, accessor|
+        STAT_DEFS.each_with_index do |(term_key, label, field, accessor), i|
+          y = LINE_H * (1 + i)
+          x = 0
           value = a.send(accessor)
           text = "#{term(term_key, label)} #{value}"
           c.font.color = Color.new(255, 255, 255, 255)
@@ -302,9 +298,7 @@ class RPG2k
             new_w = c.text_size(new_text).width
             color_idx = delta.zero? ? 0 : (delta.positive? ? 2 : 3)
             draw_system_text c, x, y, new_w, LINE_H, new_text, @skin, color_idx
-            x += new_w
           end
-          x += STAT_GAP
         end
       end
 
@@ -312,7 +306,7 @@ class RPG2k
         @slot_window.dispose if @slot_window
         inner_w = SCREEN_W - Window::BORDER * 2
         h = @slots.size * LINE_H
-        y = DESC_H + LINE_H * 3 + Window::BORDER * 2
+        y = DESC_H + LINE_H * (1 + STAT_DEFS.size) + Window::BORDER * 2
         @slot_window = Window.new(0, y, SCREEN_W, h + Window::BORDER * 2)
         @slot_window.z = 400
         @slot_window.windowskin = @skin

@@ -18673,6 +18673,40 @@ check 'Scene::EquipMenu: the candidate list draws only a name and count, no comp
      'no arrow glyph anywhere in the candidate list'
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Window_EquipStatus::Refresh` (`src/window_equipstatus.cpp`) draws the
+# actor name once (`DrawActorName`) and then loops exactly the four battle
+# stats (`DrawParameter`, type 0-3: Attack/Defense/Spirit/Agility) at
+# `y_offset + ((12 + 4) * i)` -- a genuinely separate row per stat, with no
+# HP/MP field anywhere in the window at all. `Scene_Equip::Start`
+# (`src/scene_equip.cpp`) confirms this is the *only* status window on the
+# screen (alongside the plain slot list) -- there is no second window
+# showing HP/MP either. docs/TODO.md's own "Menu scene" entry used to claim
+# "Equip already shows the full stat block", which this source disproves.
+check 'Scene::EquipMenu: the stats window shows no HP/MP, and each battle ' \
+      'stat is drawn on its own row' do
+  state = Game::State.new(MenuStubParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  eq 80, actor.hp
+  eq 120, actor.display_max_hp
+  eq 10, actor.mp
+  eq 30, actor.display_max_mp
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  win = scene.instance_variable_get(:@stats_window)
+  texts = window_texts(win)
+  ok !texts.any? { |t| t.include?('80') || t.include?('120') },
+     'no HP figures anywhere in the stats window'
+  ok !texts.any? { |t| t.include?('10/30') }, 'no MP figures anywhere in the stats window'
+  ok !texts.any? { |t| t.include?('HP') || t.include?('MP') },
+     'no HP/MP term labels either'
+  # Row 0 (y 0) is the name/level line; the four stats follow it, name
+  # window's own calls excluded by requiring y > 0.
+  rows = win.contents.draw_calls.select { |a| a[1].positive? }
+  eq 4, rows.size, 'exactly one draw call per battle stat, name row excluded'
+  eq [1, 2, 3, 4].map { |i| RPG2k::Scene::EquipMenu::LINE_H * i }, rows.map { |a| a[1] },
+     'each stat on its own row below the name row, one RPG2k::Scene::EquipMenu::LINE_H apart'
+end
+
 # Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
 # UpdateStatusWindow` (`src/scene_equip.cpp`) recomputes each of the four
 # battle stats independently and hands them to `Window_EquipStatus::
