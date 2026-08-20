@@ -11864,6 +11864,36 @@ not yet verified:
   pre-fix code before the fix — the old code's own auto-loop-on-finish
   masking (documented in the Follow-up just above) made the failure show up
   as the process's own marker command re-running four times over, not zero.
+- ✅ **Battle Processing / Enemy Encounter is now blocked (not run) while a
+  message window or choice list is open, anywhere in the scene, and retries
+  once it closes — the same block-and-retry shape as the Show/Move/Erase
+  Picture and Transfer Player/Recall to Location fixes just above, on a
+  third command.** Confirmed directly against RPG_RT's live source:
+  `Game_Interpreter_Map::CommandEnemyEncounter`
+  (`src/game_interpreter_map.cpp`, code 10710) opens with `if
+  (Game_Message::IsMessageActive()) { return false; }`, unconditionally —
+  not gated behind `IsRPG2k3Commands()` or `main_flag`, so this is base
+  RPG2000 behaviour and applies the same way to a scripted Enemy Encounter
+  command as to any other. This codebase's `Game::Interpreter#
+  do_enemy_encounter` (`mruby-rpg2k/mrblib/interpreter.rb`) had no such
+  gate at all: a still-running parallel process (Message Options' "continue
+  events" flag) could cut straight to the battle screen over an on-screen
+  message window instead of waiting for it to close first — the identical
+  class of gap the two fixes just above closed, just never ported to this
+  command. Fixed by adding `#block_pending_battle_command`, the same shape
+  as `#block_pending_picture_command`/`#block_pending_teleport_command`
+  (reusing the same `#message_window_blocks_command?` check), called from
+  the very top of `#do_enemy_encounter` — matching real RPG_RT's own guard
+  placement, before any of the command's other parameter reads or its
+  `@state.battle_count` increment. `Scene::Map#drive_event`'s foreground
+  dispatch and `#drive_parallel_wait` both gained a matching
+  `:battle_blocked` case (`resume unless message_window_open?`), alongside
+  the existing `:picture_blocked`/`:teleport_blocked` ones. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check (a common event's Parallel
+  Process's own Battle Processing, and the command right after it in the
+  same list, must not run while a message window opened elsewhere is on
+  screen; the battle opens once the window closes), confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Not applicable: re-issuing Show Picture every tick being expensive
   enough to cause real frame drops (vs. cheap repeated Move Picture) is a
   real-RPG_RT-specific performance characteristic, not a state/behaviour
