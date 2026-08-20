@@ -4287,6 +4287,44 @@ check 'a \\. pause holds the reveal for RPG_RT\'s real 16 frames, not the docume
   eq 16, held, 'RPG_RT holds a \\. pause for 16 frames, not the documented 15'
 end
 
+check 'an ordinary Decision press held throughout a \\. pause does not cut it ' \
+      'short -- only Test Play\'s own Shift fast-forward may' do
+  # Confirmed directly against RPG_RT's live source: `Window_Message::
+  # Update` (`src/window_message.cpp`) decrements `wait_count` (the counter
+  # `\.`/`\|` set via `SetWaitForNonPrintable`) and returns unconditionally
+  # while it is still positive -- entirely before the separate
+  # `GetPause()`/`WaitForInput()` branch that checks
+  # `Input::IsTriggered(DECISION/CANCEL)` even runs. `case '.'` (the same
+  # file) only ever calls `SetWaitForNonPrintable`, never `SetPause(true)`,
+  # unlike `case '!'`, which calls both -- so a `\.`/`\|` hold cannot be
+  # shortened by an ordinary button press the way a `\!` pause can.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'a\\.b')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  frames = 0
+  until reveal.pending_pause
+    scene.update
+    frames += 1
+    break if frames > 20
+  end
+  ok reveal.pending_pause, 'the \\. pause is reached'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # held throughout the pause
+  held = 0
+  until reveal.pending_pause.nil?
+    scene.update
+    held += 1
+    break if held > 30
+  end
+  RGSS::Input.reset
+  eq 16, held, 'a held Decision press must not shorten the \\. pause below its real 16 frames'
+end
+
 check 'a \\. pause at typing speed 20 holds for 20 frames, not a flat 16' do
   # EasyRPG's own comment calls this "a bug(??)": `SetWaitForNonPrintable(16
   # + Utils::Clamp(speed - 16, 0, 4))`, where `speed` is whatever `\s[n]`
