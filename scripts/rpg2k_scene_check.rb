@@ -13815,6 +13815,43 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
      'the panel closed with the message'
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Message::
+# GetRealPosition` (`src/game_message.cpp`) is `if (Game_Battle::
+# IsBattleRunning()) { return Feature::HasRpg2kBattleSystem() ? 2 : 0; }` --
+# position 2 (bottom) for an RPG2000 database, position 0 (top) for
+# RPG2003 -- overriding any Message-Options position outright while a
+# battle is running. `Feature::HasRpg2kBattleSystem` (`src/feature.cpp`) is
+# a pure database-edition check, unrelated to `battle_type`/gauge mode.
+check 'a battle-event page message sits at the bottom for RPG2000, the ' \
+      'top for RPG2003' do
+  ic = Game::Interpreter::Cmd
+  pages2k = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'Hi')]) }
+  scene, _st = battle_scene_with_pages(pages2k)
+  90.times do
+    scene.update
+    ui = battle_ui(scene)
+    break if ui && ui[:event_win]
+  end
+  win2k = battle_ui(scene)[:event_win]
+  ok win2k, 'the message panel is up'
+  eq RPG2k::Scene::Battle::SCREEN_H - win2k.height, win2k.y,
+     'RPG2000 sits flush against the bottom edge'
+
+  pages2k3 = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'Hi')]) }
+  scene3, _st3 = battle_scene_with_pages(
+    pages2k3, rpg2003: true, party: BattleStubParty.new(rpg2003: true),
+    battlecommands: OpenStruct.new(battle_type: 0, placement: 1)
+  )
+  90.times do
+    scene3.update
+    ui = battle_ui(scene3)
+    break if ui && ui[:event_win]
+  end
+  win2k3 = battle_ui(scene3)[:event_win]
+  ok win2k3, 'the message panel is up'
+  eq RPG2k::Scene::Battle::BATTLE_EVENT_MSG_Y, win2k3.y, 'RPG2003 sits at the top'
+end
+
 check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
   90.times do
