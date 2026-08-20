@@ -3040,17 +3040,48 @@ The work below is roughly ordered by the critical path to a walkable game
   `#drive_message` has nothing left to dispatch on) and folding the item-list
   invalidate/rebuild/clamp `#refresh_after_use` used to do into
   `#leave_target_mode` itself, now the single path back to `:items` (reached
-  only via Cancel). `skill_menu.rb` keeps its `:cast` tag, since it still has
-  a second, genuine use — `#apply_switch_skill`'s successful cast, issued
-  straight from the skill list with no target screen to stay open on — but
-  `#apply_skill`'s own ordinary target-mode cast no longer passes it, and the
-  invalidate/rebuild `#refresh_after_cast` used to do folded into `#leave_
-  target` the same way. Covered by two new `scripts/rpg2k_scene_check.rb`
-  checks (a single-target medicine/skill, held or affordable twice over:
-  the target screen stays open through a successful use/cast and its message
-  dismiss, a second use/cast on a different target needs no re-navigation,
-  and only Cancel finally returns to the rebuilt list), both confirmed to
-  fail against the pre-fix code (`expected :target, got :items`/`:skills`).
+  only via Cancel). ~~`skill_menu.rb` keeps its `:cast` tag, since it still
+  has a second, genuine use — `#apply_switch_skill`'s successful cast, issued
+  straight from the skill list with no target screen to stay open on~~ —
+  **this parenthetical turned out wrong too, see the follow-up right below**
+  — but `#apply_skill`'s own ordinary target-mode cast no longer passes it,
+  and the invalidate/rebuild `#refresh_after_cast` used to do folded into
+  `#leave_target` the same way. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (a single-target medicine/skill,
+  held or affordable twice over: the target screen stays open through a
+  successful use/cast and its message dismiss, a second use/cast on a
+  different target needs no re-navigation, and only Cancel finally returns
+  to the rebuilt list), both confirmed to fail against the pre-fix code
+  (`expected :target, got :items`/`:skills`).
+  ✅ **Follow-up (2026-08-20): a Switch skill's successful cast showed a
+  "casts ..." message and returned to the skill list, when real RPG_RT
+  closes the whole menu stack at once with no message at all — the bullet
+  right above this one reasoned by analogy that `#apply_switch_skill` was a
+  "genuine" stay-in-the-menu case without actually checking its own cited
+  function's `Type_switch` arm.** Confirmed directly against RPG_RT's live
+  source: `Scene_Skill::vUpdate`'s `Type_switch` arm (`src/scene_skill.cpp`)
+  plays the skill's own sound effect and calls `Scene::PopUntil(Scene::Map)`
+  on the very same Decision press — no confirmation message, no second
+  Decision, the identical shape as the adjacent `Type_escape` arm, not the
+  ordinary target-mode cast's stay-open-and-show-a-message flow
+  (`Algo::IsNormalOrSubskill`'s own arm, which pushes a `Scene_ActorTarget`
+  instead — the case the bullet above genuinely does apply to).
+  `Scene::SkillMenu#apply_switch_skill` (`mruby-rpg2k/mrblib/scene/
+  skill_menu.rb`) showed `"#{caster.name} casts ...!"` and, via
+  `#drive_message`'s `:cast` dispatch, called `#leave_target` — staying
+  inside the Skill menu — instead of matching `Scene::ItemMenu#apply_
+  switch_item`'s already-correct shape (no message, straight to
+  `@parent.pop_to_map`), the field-menu switch-item's own identical
+  RPG_RT-verified pattern this method should have mirrored from the start.
+  Fixed by dropping the message and `:cast` tag from `#apply_switch_skill`
+  and calling `@parent.pop_to_map` directly, matching `#apply_escape_skill`
+  right below it exactly. With `:cast` now unused anywhere in the file,
+  `#drive_message`'s dispatch and `#show_message`'s `done:` parameter were
+  both dead weight and removed (mirroring the identical cleanup the bullet
+  above already did in `item_menu.rb`). Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a successful Switch skill cast
+  closes the whole menu stack and shows no message), confirmed to fail
+  against the pre-fix code (the stack stayed open).
 
   What decides usability is the **type**, not the occasion flags, and getting
   that wrong used to leave the battle skill menu **empty in both test beds** —
