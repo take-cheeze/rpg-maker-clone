@@ -19347,6 +19347,69 @@ check 'a two-handed second weapon still empties the shield-turned-weapon hand\'s
   eq 0, hero.equipment[0], 'the two-handed claymore still claims the other hand'
 end
 
+# The Change Equipment event command (#equip_item_from_bag) bypasses
+# #equip_candidates/#equip_candidate_for? entirely -- it names no slot at
+# all, unlike the equip menu -- so it needs its own dual-wield handling.
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandChangeEquipment` (src/game_interpreter.cpp) special-cases
+# `HasTwoWeapons()` before its own `ChangeEquipment` call: a shield-type
+# item is a complete no-op, and a weapon-type item redirects into the
+# shield slot when the weapon slot already holds a non-two-handed weapon
+# and the shield slot is empty, otherwise it falls through to the ordinary
+# weapon-slot overwrite. A prior version of #equip_item_from_bag equipped
+# purely by item type regardless of #double_hand?, so a Change Equipment
+# command handing a 二刀流 actor a second weapon overwrote the first
+# instead of filling the empty second slot, and handing one a shield
+# silently jammed it into the off-hand weapon slot instead of doing
+# nothing.
+check 'Change Equipment on a 二刀流 actor: a shield is a complete no-op' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(3, 1) # shield
+  ok !st.party.equip_item_from_bag(hero, 3), 'no-op, matching HasTwoWeapons()\'s continue'
+  eq 0, hero.equipment[Game::Actor::SHIELD_SLOT], 'nothing was equipped'
+  eq 1, st.party.item_count(3), 'and the shield was never even consumed from the bag'
+end
+
+check 'Change Equipment on a 二刀流 actor: a second weapon fills the empty ' \
+      'shield slot instead of overwriting the first' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1) # sword
+  st.party.gain_item(2, 1) # dagger
+  ok st.party.equip_item_from_bag(hero, 1), 'first weapon: the ordinary weapon slot'
+  eq [1, 0], hero.equipment[0, 2]
+  ok st.party.equip_item_from_bag(hero, 2), 'second weapon: redirected into the shield slot'
+  eq [1, 2], hero.equipment[0, 2], 'both weapons on, neither overwriting the other'
+end
+
+check 'Change Equipment on a 二刀流 actor: the redirect does not fire once ' \
+      'the shield slot is already occupied, or the standing weapon is ' \
+      'two-handed' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 2) # two swords
+  st.party.gain_item(4, 1) # claymore (two-handed)
+  ok st.party.equip_item_from_bag(hero, 1), 'first sword: the ordinary weapon slot'
+  ok st.party.equip_item_from_bag(hero, 1), 'second sword: redirected into the now-empty shield slot'
+  eq [1, 1], hero.equipment[0, 2]
+  ok st.party.equip_item_from_bag(hero, 4), 'a third weapon overwrites the weapon slot -- the shield slot is full'
+  # The claymore is two-handed, so #equip_item's own pre-existing
+  # two-handed-clearing rule (unrelated to this fix) also empties the
+  # shield slot it now claims as its second hand.
+  eq [4, 0], hero.equipment[0, 2]
+
+  st2 = double_hand_party
+  hero2 = st2.party.actor_by_id(1)
+  st2.party.gain_item(4, 1) # claymore, two-handed
+  st2.party.gain_item(1, 1) # sword
+  ok st2.party.equip_item_from_bag(hero2, 4), 'the claymore, into the weapon slot'
+  eq [4, 0], hero2.equipment[0, 2]
+  ok st2.party.equip_item_from_bag(hero2, 1),
+     'a second weapon overwrites the two-handed claymore instead of redirecting'
+  eq [1, 0], hero2.equipment[0, 2]
+end
+
 # -- 装備固定 actors (equipment_fixed) -----------------------------------------
 # An actor (or RPG2003 class) trait meaning the field cannot change their
 # equipment at all. EasyRPG gates this at the equip *scene* -- confirming a
