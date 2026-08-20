@@ -303,10 +303,17 @@ class RPG2k
           move_teleport_cursor(COLUMN_MAX)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_teleport_cursor(-COLUMN_MAX)
+        # Right/Left cross a row boundary rather than stopping at the row's
+        # own edge -- the same fix as #update_skills's identical RIGHT/LEFT
+        # handling (confirmed directly against `Window_Selectable::Update`,
+        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # bounded only by the list's own absolute start/end, no
+        # row-boundary check), never propagated to this sibling list when
+        # that one was corrected.
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
-          move_teleport_cursor(1) if (@teleport_index + 1) % COLUMN_MAX != 0
+          move_teleport_cursor(1)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
-          move_teleport_cursor(-1) if @teleport_index % COLUMN_MAX != 0
+          move_teleport_cursor(-1)
         elsif Input.trigger?(Input::C) && !targets.empty?
           play_system_se(SFX_DECISION)
           map_id, = targets[@teleport_index]

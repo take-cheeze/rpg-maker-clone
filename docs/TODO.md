@@ -3130,6 +3130,29 @@ The work below is roughly ordered by the critical path to a walkable game
   784 checks failed: the corrected `Scene::ItemMenu` check and both
   `Scene::SkillMenu` Teleport checks, each expecting the still-first
   destination or its switch state instead of the second).
+  ✅ **Follow-up (2026-08-20): the fix just above copied the item/skill
+  grid's own then-current Right/Left row-boundary guard onto the Teleport
+  picker — and that pattern itself turned out to be wrong, corrected for
+  the item/skill grids by a later fix this same bullet chain never
+  revisited here.** Confirmed directly against RPG_RT's live source:
+  `Window_Teleport` defines no `Update()` of its own, so its cursor comes
+  entirely from `Window_Selectable::Update` (`src/window_selectable.cpp`),
+  whose real RIGHT/LEFT branches are a flat `index +- 1` bounded only by
+  the list's own absolute start/end (`index < item_max - 1` / `index >
+  0`), with no row-boundary term at all — the exact fact the item/skill
+  grid's own later fix already established, just never propagated to this
+  sibling list. `#update_teleport_target` (`mruby-rpg2k/mrblib/scene/
+  {item,skill}_menu.rb`) still gated RIGHT/LEFT on `% COLUMN_MAX`, so with
+  three or more registered destinations, RIGHT from a row's last cell
+  stayed put instead of flowing into the next row's first cell. Fixed by
+  dropping the `% COLUMN_MAX` guard, the same one-line change as the
+  item/skill grid fix — `#move_teleport_cursor`'s own existing bound
+  already matches the reference exactly. Two new
+  `scripts/rpg2k_scene_check.rb` checks (a third registered destination
+  added to each scene's existing two-target fixture, since two destinations
+  never reach a row boundary to cross): RIGHT from a row's last cell flows
+  into the next row's first cell; LEFT flows back — both confirmed to fail
+  against the pre-fix code (`expected 2, got 1`) before the fix.
 - ✅ **The battle-time skill variance is built now, for a recovery skill too —
   not just an attack one.** This line used to end "Left unbuilt still: the
   battle-time skill variance," describing only the missing half:
