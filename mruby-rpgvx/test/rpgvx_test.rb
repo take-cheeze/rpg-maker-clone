@@ -510,9 +510,9 @@ class << RGSS::Audio
   alias _vx_se_play_orig se_play
   alias _vx_me_play_orig me_play
 
-  def bgm_play(name, volume = 100, pitch = 100)
-    return _vx_bgm_play_orig(name, volume, pitch) unless $vx_audio.is_a?(Array)
-    $vx_audio << [:bgm_play, name, volume, pitch]
+  def bgm_play(name, volume = 100, pitch = 100, pos = 0)
+    return _vx_bgm_play_orig(name, volume, pitch, pos) unless $vx_audio.is_a?(Array)
+    $vx_audio << [:bgm_play, name, volume, pitch, pos]
     nil
   end
 
@@ -560,11 +560,12 @@ end
 
 assert "RPG::BGM plays itself through RGSS::Audio" do
   played = vx_capture_audio { vx_bgm("Theme1", 80, 110).play }
-  assert_equal [[:bgm_play, "Theme1", 80, 110]], played
+  # #play always starts fresh, pos 0 -- only #replay (below) resumes.
+  assert_equal [[:bgm_play, "Theme1", 80, 110, 0]], played
   # The record's own volume/pitch are the defaults, and a record with neither
   # falls back to RGSS's 100/100.
   played = vx_capture_audio { vx_bgm("Theme2").play }
-  assert_equal [[:bgm_play, "Theme2", 100, 100]], played
+  assert_equal [[:bgm_play, "Theme2", 100, 100, 0]], played
 end
 
 assert "RPG::BGM tracks the last played record" do
@@ -572,15 +573,34 @@ assert "RPG::BGM tracks the last played record" do
   assert_equal "Field1", RPG::BGM.last.name
   assert_equal 90, RPG::BGM.last.volume
 
-  # #replay plays the same record again (RGSS3 resumes the map BGM this way).
+  # #replay plays the same record again (RGSS3 resumes the map BGM this way),
+  # pos 0 here since nothing has set one.
   played = vx_capture_audio { RPG::BGM.last.replay }
-  assert_equal [[:bgm_play, "Field1", 90, 100]], played
+  assert_equal [[:bgm_play, "Field1", 90, 100, 0]], played
 
   # Fading or stopping the channel clears it, so `last.name` is readable and
   # empty rather than stale.
   played = vx_capture_audio { RPG::BGM.fade(1000) }
   assert_equal [[:bgm_fade, 1000]], played
   assert_equal "", RPG::BGM.last.name
+end
+
+assert "RPG::BGM#replay resumes at its own stored pos" do
+  # #last stamps the real playing position onto the record it hands back
+  # (RGSS::Audio.bgm_pos, in mruby-rpgvx/mrblib/rgss2_runtime.rb); simulate
+  # that here since this test build installs no native audio backend.
+  bgm = vx_bgm("Field1", 90, 100)
+  bgm.pos = 5000
+  played = vx_capture_audio { bgm.replay }
+  assert_equal [[:bgm_play, "Field1", 90, 100, 5000]], played
+
+  # A record with no stored pos (a fresh one, never played) resumes at 0 --
+  # not nil, which RGSS::Audio.bgm_play would reject.
+  played = vx_capture_audio { vx_bgm("Field2", 80, 100).replay }
+  assert_equal [[:bgm_play, "Field2", 80, 100, 0]], played
+
+  # A nameless record's replay stops the channel, same as #play.
+  assert_equal [[:bgm_stop]], vx_capture_audio { vx_bgm("").replay }
 end
 
 assert "a nameless RPG::BGM stops the channel instead of playing silence" do

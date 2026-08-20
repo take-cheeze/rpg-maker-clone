@@ -53,6 +53,12 @@ bool g_bgm_valid = false;      // a BGM is set and should resume after an ME
 std::string g_bgm_path;
 int g_bgm_volume = 100;
 bool g_me_active = false;  // an ME is playing over the (suspended) BGM
+// The BGM's own playback position (see bgm_pos) at the instant an ME
+// interrupted it, so replay_bgm can resume there instead of restarting the
+// track -- captured once per ME (see me_play/me_play_mem), not on a second ME
+// that replaces one already playing, which would otherwise read 0 (bgm_pos
+// reports 0 while g_me_active) and lose the original resume point.
+int g_bgm_resume_pos_ms = 0;
 // The BGM's encoded bytes when it came out of an encrypted archive rather than
 // a file (empty otherwise). update() replays the BGM after a music effect
 // finishes, and there is no path to replay from in that case, so the bytes have
@@ -372,11 +378,16 @@ bool play_music_mem(const std::string& name,
 
 // Replay the BGM, from wherever it came from. Used to resume after a music
 // effect ends; an archived BGM has no path, only the bytes kept in g_bgm_bytes.
+// Resumes at g_bgm_resume_pos_ms (see me_play/me_play_mem), matching real
+// RGSS: a Music Effect interrupts the map BGM and it picks back up where it
+// left off, not from the top.
 bool replay_bgm(void) {
+  const int pos_ms = g_bgm_resume_pos_ms;
+  g_bgm_resume_pos_ms = 0;
   if (!g_bgm_bytes.empty())
     return play_music_mem(g_bgm_path, g_bgm_bytes.data(),
-                          (int)g_bgm_bytes.size(), g_bgm_volume, -1);
-  return play_music(g_bgm_path, g_bgm_volume, -1);
+                          (int)g_bgm_bytes.size(), g_bgm_volume, -1, pos_ms);
+  return play_music(g_bgm_path, g_bgm_volume, -1, pos_ms);
 }
 
 // -- BGM --------------------------------------------------------------------
@@ -509,6 +520,11 @@ int bgs_pos(void) {
 
 void me_play(const char* path, int volume, int /*pitch*/) {
   // Play once over the BGM; update() restores the BGM when the effect ends.
+  // Capture the BGM's own position now, before g_me_active flips bgm_pos() to
+  // 0 -- but only on the first ME of a run, not one that replaces another
+  // already playing, which would capture 0 and lose the real resume point.
+  if (!g_me_active)
+    g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
   if (!play_music(path, volume, 1))
     g_me_active = false;  // load failed: nothing to wait for.
@@ -519,6 +535,8 @@ void me_play_mem(const char* name,
                  int size,
                  int volume,
                  int /*pitch*/) {
+  if (!g_me_active)
+    g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
   if (!play_music_mem(name, data, size, volume, 1))
     g_me_active = false;

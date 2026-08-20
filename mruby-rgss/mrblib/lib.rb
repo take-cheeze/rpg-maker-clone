@@ -457,6 +457,25 @@ module RGSS
     seek_got = wait_for_bgm_pos
     Audio.bgm_stop
     Graphics.update
+
+    # A Music Effect interrupting the BGM resumes it where it left off once
+    # the effect ends, not from the beginning (real RGSS3 behaviour; see
+    # me_stop -> replay_bgm in src/sdl_audio.cxx, which now threads the BGM's
+    # own captured position through the same seek this probe measured above).
+    # Informational, same reasoning as the seek checks above.
+    Audio.bgm_play(path)
+    # Run well past wait_for_bgm_pos's first nonzero read: pre_me and
+    # me_resumed both being small numbers could look like "resumed" even if
+    # the BGM had actually restarted, so give the BGM real ground to have
+    # covered before interrupting it.
+    30.times { Graphics.update }
+    pre_me = Audio.bgm_pos
+    Audio.me_play(path)
+    5.times { Graphics.update }
+    Audio.me_stop
+    me_resumed = wait_for_bgm_pos
+    Audio.bgm_stop
+    Graphics.update
     File.delete(path) if File.exist?(path)
 
     archive = Object.new
@@ -488,7 +507,8 @@ module RGSS
 
     $stderr.puts "[RGSS-AUDIO] loose=#{loose} stopped=#{stopped} " \
                  "seek_requested=1000 seek_got=#{seek_got} packed=#{packed} " \
-                 "packed_seek_got=#{packed_seek_got}"
+                 "packed_seek_got=#{packed_seek_got} pre_me=#{pre_me} " \
+                 "me_resumed=#{me_resumed}"
     if loose.zero?
       $stderr.puts "[RGSS-AUDIO] FAIL a loose file did not play (no audio " \
                    "device, or this SDL_mixer cannot report a position) — the " \

@@ -550,10 +550,29 @@ way, one at a time, each hidden behind the identical crash until fixed:
   2-second synthetic WAV to 1000ms reads back `bgm_pos` near 1000 on both
   the loose and packed paths (`seek_got`/`packed_seek_got` in its
   `[RGSS-AUDIO]` log line) — not just accepted without raising, the
-  resume is real. `RPG::BGM#replay` (`mruby-rpgvx/mrblib/rgss2_runtime.rb`)
-  still does not pass its stored `pos` through — a separate, related gap
-  (resuming a map's BGM after a Music Effect interrupts it currently always
-  restarts the track) left for its own change.
+  resume is real.
+
+- **Fixed: BGM never resumed after a Music Effect, and `RPG::BGM#replay`
+  never passed its stored `pos` through.** The two related gaps the fix
+  above left open. `Audio.me_play`/`me_play_mem` (`src/sdl_audio.cxx`) now
+  capture the BGM's own position (`bgm_pos()`) the instant an ME
+  interrupts it — only on the first ME of a run, not one that replaces
+  another already playing, which would read 0 (`bgm_pos` reports 0 while
+  an ME is active) and lose the real resume point — and `me_stop`'s
+  `replay_bgm()` seeks there instead of always restarting the track,
+  matching real RGSS3 (an ME plays once over the map BGM, which picks back
+  up where it left off). `RPG::BGM#replay`
+  (`mruby-rpgvx/mrblib/rgss2_runtime.rb`) is now overridden on `BGM` itself
+  (the other three `AudioPlayback` channels keep the shared "just `#play`
+  again" default, since only BGM's backend can resume a position — `BGS`'s
+  own `pos` field exists for save-format fidelity, but its sample-channel
+  backend never reports one to resume from; `ME`/`SE` have no `pos` field
+  at all) to call `Audio.bgm_play` with its own stored `volume`/`pitch`/
+  `pos` — what a save loaded mid-track relies on. Verified against the
+  real `--rgss_audio_probe` CTest: playing a BGM, letting it advance past
+  500ms, interrupting it with an ME and stopping the ME reads `bgm_pos`
+  back near where it was (`pre_me`/`me_resumed` in its `[RGSS-AUDIO]` log
+  line), not reset to 0.
 
 - **Fixed: `RPG::CommonEvent` had no `#autorun?` / `#parallel?`.** A real
   data-layer gap in `mruby-rpgvx/mrblib/rgss2_data.rb`: `CommonEvent` only
