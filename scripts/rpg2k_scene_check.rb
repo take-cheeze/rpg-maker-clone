@@ -16108,6 +16108,7 @@ class MenuStubActor
     @battle_row = Game::Battle::ROW_FRONT
   end
   def exp_to_next; 120; end
+  def next_level_exp; 420; end
   def add_state(id); @states.push(id) unless @states.include?(id); end
   attr_accessor :can_act_flag
   def can_act?; @can_act_flag.nil? ? true : @can_act_flag; end
@@ -19239,6 +19240,26 @@ check 'the status screen shows a labelled Class row' do
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
                          .instance_variable_get(:@window))
   ok texts.include?('Class: Paladin'), "shows the class name, got: #{texts.inspect}"
+end
+
+# Confirmed directly against RPG_RT's live source: `Window_ActorStatus::
+# DrawStatus` (`src/window_actorstatus.cpp`) draws the Exp row via
+# `DrawMinMax(90, 34, -1, -1)`, whose sentinel routes both halves through
+# `GetExpString`/`GetNextExpString` rather than a literal min/max pair;
+# `Game_Actor::GetNextExpString` (`src/game_actor.cpp`) stringifies
+# `GetNextExp()` -- the absolute cumulative-total curve value for the next
+# level, not a subtraction against current EXP. `MenuStubActor` gives
+# `#next_level_exp`/`#exp_to_next` distinct values (420 vs 120) precisely so
+# this check can tell which one the screen actually reads.
+check 'the status screen\'s "Next" EXP figure is the absolute next-level ' \
+      'threshold, not the remaining delta' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Lv 5    EXP 300    Next 420'),
+     "expected the absolute threshold (420), got: #{texts.inspect}"
+  ok !texts.any? { |t| t.include?('Next 120') },
+     "must not show the remaining-EXP delta (120) instead, got: #{texts.inspect}"
 end
 
 check 'the status screen gives the condition a labelled row' do
