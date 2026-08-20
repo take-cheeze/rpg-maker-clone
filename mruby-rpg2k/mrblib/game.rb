@@ -134,8 +134,24 @@ module Game
             end
           when 'n', 'N'
             if text[i] == '['
-              val, i = parse_bracket_value(text, i, variables)
-              s = (names[val] || '').to_s
+              val, i, got_number = parse_bracket_value(text, i, variables)
+              # `\N[]`'s id-0-means-party-leader convenience
+              # (`Scene::Map#actor_name`) only applies when a digit or a
+              # resolvable nested `\V[]` was actually read inside the
+              # brackets -- confirmed directly against RPG_RT's live
+              # source: `Game_Message::ParseParam` (`src/game_message.cpp`)
+              # guards the substitution on `values.front() == 0 &&
+              # got_valid_number`, not on the value alone. A bracket that
+              # parsed nothing at all (a bare `\N[]`, or `\N[x]` where `x`
+              # is neither a digit nor `\V[]`/`\v[]`) leaves the id at 0,
+              # which is not a valid 1-based actor id -- real RPG_RT's
+              # `DefaultCommandInserter` (`src/pending_message.cpp`) then
+              # misses on `GetActor(0)` and expands to an empty string, not
+              # the leader's name. `-1` here is simply a value #actor_name's
+              # own `id.to_i.zero?` leader check will never match, so an
+              # unresolved bracket falls through to its own dangling-id
+              # blank-string path unchanged.
+              s = (names[got_number ? val : -1] || '').to_s
               cur << s
               count += s.length
             end
@@ -266,16 +282,23 @@ module Game
     #   rather than resetting to 0 -- unlike this method's own predecessor,
     #   which fell through to `String#to_i` and silently dropped everything
     #   from the first non-leading-digit character on.
+    #
+    # Returns a third element, `got_number` -- whether a digit or a
+    # resolvable nested `\V[]` was actually read (RPG_RT's own
+    # `got_valid_number`, `src/game_message.cpp`) -- callers besides `\N[]`
+    # (`\V[]`/`\C[]`/`\S[]`) have no use for it and simply destructure the
+    # first two elements, which Ruby allows without error.
     def self.parse_bracket_value(text, i, variables, depth = 1)
       n = text.length
       # No bracket at all (reachable recursively too -- a malformed nested
       # reference like `\N[\V]`, `\v` with no `[` following): RPG_RT's own
       # ParseParam returns 0 without consuming anything, matching `if (iter
       # == end || *iter != '[') { return { iter, 0 }; }`.
-      return [0, i] unless i < n && text[i] == '['
+      return [0, i, false] unless i < n && text[i] == '['
       i += 1
       value = 0
       stop_parsing = false
+      got_number = false
       while i < n && text[i] != ']'
         if stop_parsing
           i += 1
@@ -285,18 +308,20 @@ module Game
         if ch >= '0' && ch <= '9'
           value = value * 10 + ch.to_i
           i += 1
+          got_number = true
         elsif depth > 0 && ch == '\\' && i + 1 < n && (text[i + 1] == 'V' || text[i + 1] == 'v')
           var_id, i = parse_bracket_value(text, i + 2, variables, depth - 1)
           var_val = variables[var_id].to_i
           m = 10
           m *= 10 while value != 0 && m < var_val
           value = value * m + var_val
+          got_number = true
         else
           stop_parsing = true
         end
       end
       i += 1 if i < n # consume the matching ']'
-      [value, i]
+      [value, i, got_number]
     end
   end
 
