@@ -326,6 +326,42 @@ The work below is roughly ordered by the critical path to a walkable game
   same-tile result of Down cannot be mistaken for a coincidental "kept
   facing" match), confirmed to fail against the pre-fix code (`expected
   2, got 6`) before the fix.
+  ✅ **Follow-up (2026-08-20): a move route's effect-only sub-commands
+  (Switch On/Off, Speed/Frequency Up/Down, Change Graphic, Play Sound,
+  Through Mode, Stop/Start Animation, Transparency Up/Down) each paid a
+  full pacing delay, where real RPG_RT runs any number of them for free
+  within the same frame.** Confirmed against RPG_RT's own live source:
+  `Game_Character::UpdateMoveRoute` (`src/game_character.cpp`) loops
+  `while (true)` over a route's commands each frame, calling
+  `SetMaxStopCountFor{Step,Turn,Wait}` — the only thing that actually
+  stalls the loop for the rest of that frame — solely for a Move/Turn/
+  Wait/Jump sub-command; every other sub-command falls straight through
+  to the next command within the same iteration, guarded only against a
+  same-frame infinite loop on a repeating route made entirely of effect
+  commands (`current_index == start_index`). `#step_event`,
+  `#step_player_route`, `#step_vehicle_route` and `#step_forced_event`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) each called `Game::MoveRoute#step`
+  exactly once per pacing-timer expiry regardless of what kind of
+  sub-command it ran, so a route mixing effect commands with moves — a
+  common "reskin then step" authoring pattern (Switch ON, Change Graphic,
+  then Move) — crawled through the effect commands at `#EVENT_MOVE_DELAY`'s
+  own pace (up to 96 frames per sub-command at the slowest frequency)
+  instead of running them in the same frame as genuine RPG_RT. Fixed with
+  a shared `#run_route_step(route, character, world)` helper that loops
+  `route.step` while the returned status is `:effect` (not `:moved`/
+  `:blocked`/`:turned`/`:waited`/`:done`), bounded by `route.index`
+  wrapping back to where the burst started — mirroring the reference's own
+  `current_index == start_index` guard — used in place of the bare
+  `route.step` call at all four sites. The existing "reset the pacing
+  timer to a full delay, once, before dispatch" logic in each of those
+  methods needed no change: it already fires once per real frame, and now
+  that one dispatch can run an unbounded burst of effect commands before
+  the one blocking command that actually earns the delay, the timer
+  correctly charges one delay per burst rather than one per sub-command.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a forced player
+  route of two Switch ON commands followed by a Move runs both switches
+  and starts the move on the very same frame, at the slowest frequency),
+  confirmed to fail against the pre-fix code before the fix.
   **The hop is drawn as one now, too.** The move happened in a single step and
   the sprite went with it, so a jump — the move whose whole point is being
   airborne — was a blink from one tile to another. A jumping event slides across

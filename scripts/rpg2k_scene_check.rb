@@ -8434,6 +8434,36 @@ check "a boarded hero's own Set Move Route respects the ridden vehicle's " \
      "can't -- ended at (#{st.x}, #{st.y})"
 end
 
+check 'a move route runs consecutive effect-only sub-commands in the same ' \
+      'frame as the Move that follows them, only the Move itself spending ' \
+      "the route's own pacing delay" do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # UpdateMoveRoute` (src/game_character.cpp) only calls
+  # `SetMaxStopCountFor{Step,Turn,Wait}` for a Move/Turn/Wait/Jump
+  # sub-command; every other sub-command (Switch On/Off, Speed/Frequency
+  # Up/Down, Change Graphic, Play Sound, Through Mode, Stop/Start
+  # Animation, Transparency Up/Down -- Game::MoveRoute#step's own :effect
+  # status) falls straight through to the next command within the same
+  # frame, with no pacing delay of its own at all. This used to charge one
+  # full #EVENT_MOVE_DELAY tick per sub-command regardless of kind, so a
+  # route mixing effect commands with moves (a common "reskin then step"
+  # authoring pattern) crawled through the effect commands at the route's
+  # own pace instead of running them for free.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  route = Game::MoveRoute.new(
+    [Game::MoveCommand.new(R::SWITCH_ON, '', 1),
+     Game::MoveCommand.new(R::SWITCH_ON, '', 2),
+     Game::MoveCommand.new(R::MOVE_RIGHT)],
+    repeat: false, skippable: true)
+  scene.send(:start_player_route, route, 1) # freq 1, slowest: 96 frames/step
+  scene.update
+  ok st.switches[1] && st.switches[2],
+     'both Switch ON sub-commands ran on the same frame as the Move that follows them'
+  ok scene.instance_variable_get(:@moving),
+     "the Move itself started that same frame too, spending the route's only pacing delay"
+end
+
 check 'a Move Route request targeting a currently-ridden vehicle is ignored' do
   scene = new_scene({}, player: [0, 0], boat_pass: true)
   st = scene.instance_variable_get(:@state)
