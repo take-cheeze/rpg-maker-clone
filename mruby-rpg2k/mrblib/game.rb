@@ -6162,18 +6162,24 @@ module Game
     def turn_left;   @direction = TURN_LEFT[@direction]  || @direction; end
     def turn_around; @direction = TURN_180[@direction]   || @direction; end
 
-    # Direction pointing from this character toward (tx, ty). Ties (and equal
-    # distance) resolve to the horizontal axis, matching RPG2000's toward-hero
-    # behaviour; returns the current facing when already on the tile.
+    # Direction pointing from this character toward (tx, ty). ~~Ties (and
+    # equal distance) resolve to the horizontal axis, matching RPG2000's
+    # toward-hero behaviour; returns the current facing when already on the
+    # tile.~~ Corrected against RPG_RT's own live source: `Game_Character::
+    # GetDirectionToCharacter` (`src/game_character.cpp`) compares with a
+    # strict `>` (`std::abs(sx) > std::abs(sy)`), so an exact tie -- and the
+    # degenerate same-tile case (dx == dy == 0), which the reference does not
+    # special-case at all -- falls through to the *vertical* branch, and
+    # lands on Down there since `sy > 0` is false when `sy == 0`. This used
+    # to compare with `>=` and treat the same-tile case as "keep the current
+    # facing," neither of which the reference does.
     def direction_toward(tx, ty)
       dx = tx - @x
       dy = ty - @y
-      if dx.abs >= dy.abs && dx != 0
+      if dx.abs > dy.abs
         dx > 0 ? 6 : 4
-      elsif dy != 0
-        dy > 0 ? 2 : 8
       else
-        @direction
+        dy < 0 ? 8 : 2
       end
     end
 
