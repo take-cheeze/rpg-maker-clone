@@ -13777,7 +13777,8 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
 end
 
 check 'Open Shop scene: the status panel shows the highlighted item\'s possessed ' \
-      'and equipped counts, and disappears off the buy/sell list' do
+      'and equipped counts, and stays visible through the quantity counter and ' \
+      'purchase confirmation' do
   ic = Game::Interpreter::Cmd
   db = fake_db
   db.term.possessed_items = '所持数'
@@ -13821,14 +13822,75 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
   eq :quantity, shop[:screen]
-  ok shop[:status].nil?, 'the quantity counter highlights no single list row -- no panel'
+  # Scene_Shop::SetMode (src/scene_shop.cpp) keeps the right-hand panels
+  # visible through BuyHowMany/Bought just like Buy itself -- the panel
+  # still describes the item the counter was opened for, not "no panel".
+  ok !shop[:status].nil?, 'the quantity counter keeps the status panel visible, for the same item'
+  texts = window_texts(shop[:status])
+  ok texts.include?('0'), 'still describing the Herb the counter was opened for'
 
-  RGSS::Input.triggered = [RGSS::Input::B] # back to the buy list
+  RGSS::Input.triggered = [RGSS::Input::C] # commit the purchase
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :purchased, shop[:screen]
+  ok !shop[:status].nil?,
+     'the purchase confirmation keeps the status panel visible too (Scene_Shop::SetMode\'s Bought case)'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the confirmation, back to the buy list
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
   eq :buy, shop[:screen]
   ok !shop[:status].nil?, 'the panel returns once a good is highlighted again'
+
+  RGSS::Input.triggered = [RGSS::Input::B] # back to the command menu
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  ok shop[:status].nil?, 'the command menu still shows no panel'
+end
+
+# Scene_Shop::SetMode's own right-hand-panel switch (src/scene_shop.cpp)
+# hides the party/status/gold panels for BuySellLeave and Sell alike, and
+# shows them for Buy, BuyHowMany/SellHowMany and Bought/Sold -- the gold
+# panel follows the exact same visible/hidden set as the status panel
+# checked just above (see SHOP_PANELS_VISIBLE_ON, mruby-rpg2k/mrblib/
+# scene/map.rb), not "always on".
+check 'Open Shop scene: the gold panel hides on the command menu and the ' \
+      'sell list, matching the status panel' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)] # buy+sell
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  party = ShopStubParty.new(500)
+  party.gain_item(3, 1)
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  ok !shop[:gold].visible, 'the command menu hides the gold panel'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to Sell
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Sell
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen]
+  ok !shop[:gold].visible, 'the sell list hides the gold panel too'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # open the quantity counter for the held Potion
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :quantity, shop[:screen]
+  ok shop[:gold].visible, 'the quantity counter shows the gold panel'
 end
 
 check 'Enemy Encounter scene: the result window shows the database Victory term' do

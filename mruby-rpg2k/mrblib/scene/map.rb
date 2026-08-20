@@ -4905,7 +4905,18 @@ class RPG2k
         draw_shop_status(lines)
       end
 
+      # The gold and status panels share one visible/hidden set: RPG_RT's
+      # right-hand panels (Scene_Shop::SetMode, src/scene_shop.cpp) are shown
+      # for Buy, BuyHowMany/SellHowMany and Bought/Sold, and hidden for
+      # BuySellLeave and Sell -- not "whichever screen highlights one item",
+      # the reasoning a prior pass here used, which got the Sell list and the
+      # quantity/confirmation screens backwards.
+      SHOP_PANELS_VISIBLE_ON = %i[buy quantity purchased sold].freeze
+
       def draw_shop_gold
+        visible = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen])
+        @shop[:gold].visible = visible
+        return unless visible
         gw = 88
         c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
@@ -4919,14 +4930,20 @@ class RPG2k
       # SHOP_LINE_H label line each, plus the ordinary window border.
       SHOP_STATUS_W = 136
 
-      # The item id the status panel should describe: whichever row the
-      # cursor sits on in the buy or sell list. The command menu, the
-      # quantity counter and the purchase/sale confirmation don't highlight
-      # a single item, so there is nothing for the panel to show there.
+      # The item id the status panel should describe. On the buy list it is
+      # whichever row the cursor sits on; on the quantity counter and the
+      # purchase/sale confirmation it is the item the counter was opened for
+      # (kept alive in `@shop[:quantity]` through the confirmation screen --
+      # see #drive_shop_quantity / #drive_shop_confirm). The command menu and
+      # the sell list get no status panel at all, matching SHOP_PANELS_VISIBLE_ON.
       def shop_status_item_id(lines)
-        return nil unless @shop[:screen] == :buy || @shop[:screen] == :sell
-        return nil if lines.nil? || lines.empty?
-        lines[@shop[:index]][1]
+        case @shop[:screen]
+        when :buy
+          return nil if lines.nil? || lines.empty?
+          lines[@shop[:index]][1]
+        when :quantity, :purchased, :sold
+          @shop[:quantity] && @shop[:quantity][:id]
+        end
       end
 
       # The status panel beside the buy/sell list: the `possessed_items` /
@@ -5019,6 +5036,7 @@ class RPG2k
       def drive_shop_confirm
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
         @shop[:screen] = @shop[:screen] == :purchased ? :buy : :sell
+        @shop[:quantity] = nil
         draw_shop
       end
 
@@ -5054,7 +5072,9 @@ class RPG2k
           model = @shop[:model]
           mode = q[:mode]
           mode == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
-          @shop[:quantity] = nil
+          # @shop[:quantity] survives into :purchased/:sold -- the status
+          # panel there still needs its item id (see #shop_status_item_id) --
+          # and is only cleared once #drive_shop_confirm leaves the screen.
           @shop[:screen] = mode == :buy ? :purchased : :sold
           draw_shop
           play_system_se(SFX_DECISION)
