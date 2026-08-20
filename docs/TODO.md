@@ -428,6 +428,40 @@ The work below is roughly ordered by the critical path to a walkable game
   model, not a one-line fix) and a genuinely separate discrepancy from the
   blocked-move-facing gap just closed above — left for its own future
   investigation.
+  ✅ **Follow-up (2026-08-20): closed the Random-move gap just above —
+  ~~`random` picks a cardinal~~, a fresh independent uniform cardinal every
+  single step, where real RPG_RT rolls a relative turn off the event's own
+  current facing and sometimes skips the move attempt entirely.** Re-confirmed
+  against RPG_RT's own live source: `Game_Event::MoveTypeRandom`
+  (`src/game_event.cpp`) draws `Rand::GetRandomNumber(0, 9)`: 0-2 (30%) keep
+  going straight with no turn, 3-4 (20%) `Turn90DegreeLeft()`, 5-6 (20%)
+  `Turn90DegreeRight()`, 7 (10%) `Turn180Degree()`, and 8-9 (20%)
+  `SetStopCount(Rand::GetRandomNumber(0, GetMaxStopCount())); return;` —
+  skipping the movement decision *before* `Move()` is ever called, so there is
+  no move attempt that tick at all, not even one in the already-current
+  facing. `Turn90DegreeLeft`/`Turn90DegreeRight`/`Turn180Degree`
+  (`src/game_character.cpp`) are themselves plain `SetDirection` remaps with
+  no passability check of their own — `GetDirection90DegreeLeft(dir)` is
+  `(dir + 3) % 4`, `GetDirection90DegreeRight` is `(dir + 1) % 4`,
+  `GetDirection180Degree` is `(dir + 2) % 4` (`src/game_character.h`, against
+  that file's `Up = 0, Right, Down, Left` enum) — confirmed to match this
+  codebase's existing `Character::TURN_LEFT`/`TURN_RIGHT`/`TURN_180` hashes
+  (`mruby-rpg2k/mrblib/game.rb`) direction-for-direction, so no new rotation
+  table was needed. Fixed by replacing `Game::MoveType.next_direction`'s
+  `RANDOM` case (`Character::CARDINALS[world.random(4)]`) with a new
+  `MoveType.random_direction` porting the same ten-way roll, reusing
+  `TURN_LEFT`/`TURN_RIGHT`/`TURN_180` for the three turning branches and
+  returning `nil` for the skip draw — already `#step_event`'s own sentinel
+  for "no autonomous movement this frame" (`move_autonomous(e, dir, ...) if
+  dir`, `mruby-rpg2k/mrblib/scene/map.rb`), so no caller-side change was
+  needed: `nil` never collides with a real numpad direction (2/4/6/8 are all
+  truthy). Covered by a new `scripts/rpg2k_logic_check.rb` check exercising
+  all five draw outcomes (straight, left, right, 180, skip) off a fixed
+  starting facing, confirmed to fail against the pre-fix code (`expected 6,
+  got 2` — the old implementation's `world.random(4)` call consumed the
+  queued roll but the RANDOM case never even looked at a `random(10)` draw,
+  landing on the FakeWorld's fallback-0 cardinal, `CARDINALS[0] == 2`,
+  instead of the still-facing-right `6` the fix produces) before the fix.
   ✅ **Follow-up (2026-08-20): a move route's effect-only sub-commands
   (Switch On/Off, Speed/Frequency Up/Down, Change Graphic, Play Sound,
   Through Mode, Stop/Start Animation, Transparency Up/Down) each paid a
