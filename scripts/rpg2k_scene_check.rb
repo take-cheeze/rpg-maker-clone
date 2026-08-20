@@ -18242,6 +18242,28 @@ check 'Scene::StatusMenu: holding Right does NOT auto-cycle the actor -- ' \
      'a held (repeated, not triggered) Right does not cycle the actor'
 end
 
+# Confirmed against RPG_RT's own live source: `Scene_Status::vUpdate`
+# (src/scene_status.cpp) gates both the RIGHT and LEFT branches on
+# `actors.size() > 1`, not just the key trigger itself -- a solo party's
+# Status screen plays no cursor SE and rebuilds nothing on either key.
+check 'Scene::StatusMenu: a solo party leaves Right/Left as silent no-ops' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  eq 0, scene.instance_variable_get(:@actor_index), 'starts on the only actor'
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Right has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Right'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Left has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Left'
+end
+
 check 'Scene::StatusMenu: a dangling equipped item id logs once, not per rebuild, ' \
       'while the slot still shows the "Item #<id>" placeholder' do
   state = Game::State.new(DanglingItemParty.new, 1, 0, 0)
