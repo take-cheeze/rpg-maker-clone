@@ -6886,6 +6886,34 @@ check 'field_skills lists only known field-usable ally skills; can_cast? checks 
   eq false, st.party.can_cast?(hero, 99)       # unknown skill
 end
 
+check "field_skill? excludes a state-only skill whose state is battle-only, " \
+      "not flagged to continue after battle" do
+  # Confirmed against RPG_RT's own live source: `Algo::IsSkillUsable`
+  # (src/algo.cpp), called from `Game_Battler::IsSkillUsable` with
+  # `require_states_persist` hard-`true` for this exact purpose, only
+  # counts a `state_effects` entry when `state->type ==
+  # Persistence_persists` -- a battle-only state (the schema default) never
+  # makes the skill field-usable, even though it is a perfectly ordinary
+  # skill in battle (states self-clear at battle end regardless, so there
+  # is nothing left to cure once the field menu is even reachable).
+  situation = {
+    3 => fake_state(type: 0), # battle-only (the schema default)
+    4 => fake_state(type: 1), # "Continues after battle"
+  }
+  skills = {
+    12 => fake_skill(name: 'Wake Up', scope: 3, sp_cost: 2, state_effects: [0, 0, 1]),
+    13 => fake_skill(name: 'Refresh', scope: 3, sp_cost: 2, state_effects: [0, 0, 0, 1]),
+  }
+  st = skill_party(skills, {}, situation: situation)
+  hero = st.party.actor_by_id(1)
+  [12, 13].each { |s| hero.learn_skill(s) }
+  caster = Game::Battle.from_actor(hero)
+  eq [[12, 2], [13, 2]], st.party.battle_skills(hero, caster),
+     'both are perfectly ordinary skills in battle'
+  eq [[13, 2]], st.party.field_skills(hero),
+     'the battle-only state cure is hidden from the field menu; the persisting one is offered'
+end
+
 # A database shrink can leave a caster's learned skill id dangling -- shown
 # as "?" in the editor, docs/TODO.md's runtime error catalog. #db_skill
 # silently resolves that to nil, and #field_skill? just as silently excludes

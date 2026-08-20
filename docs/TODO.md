@@ -3988,6 +3988,37 @@ The work below is roughly ordered by the critical path to a walkable game
   own comment already notes they gate switch skills only *in this engine's
   own port*, which this result casts some doubt on as the full RPG_RT
   picture).
+  ✅ **Follow-up (2026-08-20): the narrower rule was found, from source
+  alone, with no wine needed after all -- it was never about the
+  `occasion_field`/`occasion_battle` flags this earlier attempt suspected.**
+  Confirmed directly against RPG_RT's live source: `Algo::IsSkillUsable`
+  (`src/algo.cpp`) takes a `require_states_persist` parameter, and
+  `Game_Battler::IsSkillUsable` — the function that actually backs
+  `Window_Skill::CheckEnable` for the field Skill list — always calls it
+  `true`. Inside, a state-only skill (no `affect_hp`/`affect_sp`) only
+  counts a `state_effects` entry when `state->type ==
+  Persistence_persists`: `for (...) { if (inflict) { const auto* state =
+  ...GetElement(...); if (state && (!require_states_persist ||
+  state->type == Persistence_persists)) { affects_state = true; break; }
+  } }` — a battle-only state (the schema default, `Persistence_persists`'s
+  own inverse) never makes the skill field-usable, even though it is a
+  perfectly ordinary skill in battle (states self-clear at battle end
+  regardless, so a battle-only cure genuinely has nothing left to do once
+  the field menu is even reachable). `Game::Party#field_skill?`'s else-arm
+  (`mruby-rpg2k/mrblib/game.rb`) read `skill_state_ids(sk)` unconditionally
+  — no persistence filter at all — even though this codebase already had
+  the exact concept implemented and named elsewhere (`Actor#state_
+  persists_type?`, `Battle::STATE_PERSISTS_ON_MAP`, matching liblcf's
+  `Persistence_persists`/`Persistence_ends`), just never threaded into this
+  one gate. Fixed by filtering `skill_state_ids(sk)` down to the ones whose
+  `situation` row reads `type == Battle::STATE_PERSISTS_ON_MAP`, via
+  `Game::States.row` and the existing `#state_table` accessor (a
+  dangling/unknown state id fails the same way the reference's own `state
+  &&` guard does). Covered by a new `scripts/rpg2k_logic_check.rb` check (a
+  skill curing only a battle-only state is hidden from the field list while
+  a perfectly ordinary battle-list entry; a sibling skill curing only a
+  persisting state is offered in both), confirmed to fail against the
+  pre-fix code (`expected [[13, 2]], got [[12, 2], [13, 2]]`).
   ✅ **Confirmed via EasyRPG Player's source instead, once the wine
   reference runtime itself stopped rendering past Continue this session
   (see the harness-quirk notes above), and now fixed.** `Window_Skill`'s

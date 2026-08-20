@@ -4760,8 +4760,23 @@ module Game
         return false unless sk.scope >= 2
         # The raw state set, not #skill_inflicted_states: a plain antidote cures
         # rather than inflicts (`reverse_state_effect` off), and curing poison
-        # between fights is the whole point of the field skill menu.
-        sk.affect_hp || sk.affect_sp || !skill_state_ids(sk).empty?
+        # between fights is the whole point of the field skill menu. A
+        # state-only skill (no affect_hp/affect_sp) only counts if at least
+        # one of the states it touches actually "Continues after battle" --
+        # confirmed against RPG_RT's own live source: `Algo::IsSkillUsable`
+        # (`src/algo.cpp`), called from `Game_Battler::IsSkillUsable` with
+        # `require_states_persist` hard-`true` for this exact purpose, only
+        # counts a `state_effects` entry when `state->type ==
+        # Persistence_persists` -- a battle-only state (the schema default,
+        # `Battle::STATE_PERSISTS_ON_MAP`'s own inverse) never makes the
+        # skill field-usable, even though it's a perfectly ordinary skill in
+        # battle. A dangling/unknown state id fails the same way the
+        # reference's own `state &&` guard does -- not usable.
+        sk.affect_hp || sk.affect_sp ||
+          skill_state_ids(sk).any? do |id|
+            row = Game::States.row(id, state_table)
+            row.respond_to?(:type) && (row.type || 0) == Battle::STATE_PERSISTS_ON_MAP
+          end
       end
     end
 
