@@ -19152,6 +19152,30 @@ check 'the status screen shows the party\'s own Gold' do
   ok texts.include?('0G'), "zero Gold still shows, got: #{texts.inspect}"
 end
 
+# `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`) additionally
+# draws "Front"/"Back" right-aligned at the top of the panel whenever
+# `Feature::HasRow()` (`src/feature.cpp`) holds -- which for a genuine,
+# unmodified project reduces to "the database is RPG2003". An RPG2000
+# database never shows either label.
+check 'the status screen shows the RPG2003 battle row, gated on rpg2003?' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok !texts.include?('Front') && !texts.include?('Back'),
+     "an RPG2000 party draws neither row label, got: #{texts.inspect}"
+
+  rpg2003_party = Class.new(MenuStubParty) { def rpg2003?; true; end }.new
+  st2 = Game::State.new(rpg2003_party, 1, 0, 0)
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Front'), "front row shows by default, got: #{texts.inspect}"
+
+  rpg2003_party.actors.first.battle_row = Game::Battle::ROW_BACK
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Back'), "back row shows once toggled, got: #{texts.inspect}"
+end
+
 check 'Scene::StatusMenu: the actor cursor wraps around' do
   scene = menu_scene(RPG2k::Scene::StatusMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@actor_index), 'starts on the first actor'

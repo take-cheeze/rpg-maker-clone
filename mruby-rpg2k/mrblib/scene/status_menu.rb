@@ -147,7 +147,33 @@ class RPG2k
         end
         draw_actor_state c, a, STATE_VALUE_X, STATE_ROW * LINE_H,
                          inner_w - STATE_VALUE_X, LINE_H, @skin
+        draw_battle_row(c, a, inner_w) if rpg2003_party?
         @window.contents = c
+      end
+
+      # RPG_RT's own status screen additionally shows which RPG2003 battle
+      # row the displayed actor is currently in -- confirmed against
+      # `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`):
+      # `if (Feature::HasRow()) { ... TextDraw(width, 2, ..., battle_row,
+      # AlignRight); }`, right-aligned at the top of the panel, above the
+      # face/name block. `Feature::HasRow` (`src/feature.cpp`) reduces to
+      # "the database is RPG2003" for a genuine, unmodified project (its
+      # other half is an EasyRPG-only battlecommands flag with no real LCF
+      # field), so this is gated the same way the rest of this codebase
+      # gates RPG2003-only presentation: `@state.party.rpg2003?`.
+      # `easyrpg_status_scene_back/front` are likewise EasyRPG-only Term
+      # extensions absent from RPG_RT's own Term chunk, so real RPG_RT
+      # hardcodes the literal English "Front"/"Back" -- matching this file's
+      # own `"Class: ..."` precedent for the same situation.
+      def rpg2003_party?
+        @state.party.respond_to?(:rpg2003?) && @state.party.rpg2003?
+      end
+
+      def draw_battle_row(bmp, actor, inner_w)
+        back = actor.respond_to?(:battle_row) && actor.battle_row == Game::Battle::ROW_BACK
+        text = back ? 'Back' : 'Front'
+        w = bmp.text_size(text).width
+        bmp.draw_text inner_w - w, 0, w, LINE_H, text
       end
     end
 
