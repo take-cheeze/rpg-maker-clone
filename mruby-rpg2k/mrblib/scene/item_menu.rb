@@ -29,12 +29,16 @@ class RPG2k
       # confirmed against genuine RPG_RT under wine with a five-item bag,
       # which filled row-major (item 0 top-left, item 1 top-right, item 2
       # second row left, ...) and left an incomplete last row's second cell
-      # blank rather than reflowing. Cursor movement is grid-aware and does
-      # not wrap at an edge (EasyRPG's own Window_Selectable::CursorDown/Up/
-      # Right/Left shape, `cycle` off): DOWN/UP move by COLUMN_MAX and are a
-      # no-op with no cell below/above (tried pressing DOWN off the last,
-      # partial row -- the cursor simply stayed), RIGHT/LEFT move by one and
-      # are a no-op at the row's own edge.
+      # blank rather than reflowing. Cursor movement is grid-aware but not
+      # symmetric between axes -- confirmed directly against EasyRPG's own
+      # `Window_Selectable::Update` (`src/window_selectable.cpp`), which has
+      # no method actually named `CursorDown`/`Up`/`Right`/`Left`: DOWN/UP
+      # move by COLUMN_MAX and are genuinely column-locked, a no-op with no
+      # cell below/above (tried pressing DOWN off the last, partial row --
+      # the cursor simply stayed); RIGHT/LEFT move by one, bounded only by
+      # the list's own absolute start/end, with no row-boundary check at
+      # all -- RIGHT off a row's last cell flows into the next row's first
+      # cell (and LEFT the mirror), rather than stopping at the row's edge.
       COLUMN_MAX = 2
 
       def initialize parent, state
@@ -99,10 +103,21 @@ class RPG2k
           move_item_cursor(COLUMN_MAX)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_item_cursor(-COLUMN_MAX)
+        # Right/Left cross a row boundary rather than stopping at the row's
+        # own edge -- confirmed directly against RPG_RT's live source:
+        # `Window_Selectable::Update` (`src/window_selectable.cpp`) has no
+        # method actually named `CursorRight`/`CursorLeft`; its real Right/
+        # Left branches are a flat `index +- 1`, bounded only by the list's
+        # own absolute start/end (`index < item_max - 1` / `index > 0`),
+        # structurally unlike Down/Up (genuinely column-locked there,
+        # `index < item_max - column_max`). #move_item_cursor's own bound
+        # (`target < 0 || target >= items.size`) already matches this
+        # exactly -- the row-edge guard removed here was the only thing
+        # stopping Right/Left short of it.
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
-          move_item_cursor(1) if (@item_index + 1) % COLUMN_MAX != 0
+          move_item_cursor(1)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
-          move_item_cursor(-1) if @item_index % COLUMN_MAX != 0
+          move_item_cursor(-1)
         elsif Input.trigger?(Input::C)
           choose_item
         end

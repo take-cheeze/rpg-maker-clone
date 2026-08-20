@@ -3809,12 +3809,36 @@ The work below is roughly ordered by the critical path to a walkable game
   and attributed to a EasyRPG method that turns out not to exist is not
   possible to settle from this entry's own wording alone, and wine is
   unusable this session (see the harness-quirk notes elsewhere) to re-check
-  directly. `#move_item_cursor`/`#move_skill_cursor`
+  directly. ~~`#move_item_cursor`/`#move_skill_cursor`
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`, `skill_menu.rb`) currently gate
   RIGHT/LEFT on `(@item_index ± 1) % COLUMN_MAX`, matching this bullet's
   claim as coded — left unchanged pending a real wine re-test (or a fresh
   EasyRPG source re-read someone is more confident settles it) rather than
-  risk a blind revert of a claimed direct observation. `Scene::ItemMenu`
+  risk a blind revert of a claimed direct observation.~~ **Resolved
+  (2026-08-20): a fresh, full re-read of `Window_Selectable::Update`
+  settles it without needing wine.** `src/window_selectable.cpp` has no
+  method actually named `CursorRight`/`CursorLeft` anywhere in EasyRPG
+  Player's current source (confirmed verbatim, the same check this entry
+  already ran) — its real RIGHT/LEFT branches are `if (column_max >=
+  wrap_limit && index < item_max - 1) { index += 1; }` and the LEFT mirror
+  bounded by `index > 0`: a flat `index ± 1`, checked only against the
+  list's own absolute start/end, with no row-boundary term anywhere in
+  either branch, structurally unlike DOWN/UP's genuine column-lock
+  (`index < item_max - column_max`). This is a direct fact about the code,
+  not an inference by analogy, so the row-edge-stop half of this bullet's
+  original claim was wrong (whether from a wine misread or an
+  over-generalisation from DOWN/UP is moot now). Fixed by dropping the `%
+  COLUMN_MAX` guard from both `Scene::ItemMenu#update_items`'s and
+  `Scene::SkillMenu#update_skills`'s RIGHT/LEFT branches — `#move_item_
+  cursor`/`#move_skill_cursor`'s own existing bound (`target < 0 || target
+  >= items.size`) already matches the reference's `index < item_max - 1` /
+  `index > 0` exactly, so removing the extra row guard was the whole fix.
+  Two new `scripts/rpg2k_scene_check.rb` checks (a three-item/three-skill
+  `ThreeItemWrapParty`/`ThreeSkillWrapParty`, since the existing two-item
+  fixture's single row never reaches a row boundary to cross): RIGHT from a
+  row's last cell flows into the next row's first cell; LEFT flows back —
+  both confirmed to fail against the pre-fix code (`expected 2, got 1`)
+  before the fix. `Scene::ItemMenu`
   gained a `COLUMN_MAX = 2` constant, grid-aware
   drawing (`#build_item_window`, `#item_col_w`) and cursor math
   (`#move_item_cursor`, replacing the old modulo-wraparound UP/DOWN

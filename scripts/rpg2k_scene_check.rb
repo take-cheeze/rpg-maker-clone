@@ -16868,6 +16868,43 @@ check 'Scene::ItemMenu: the item grid cursor does not wrap, the target cursor do
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
 end
 
+# A three-item party -- WrapMenuParty's own two items both fit in the first
+# row, leaving no row boundary for Right/Left to actually cross; this needs
+# a third item (row 2, column 0 alone) to tell "stops at the row edge" apart
+# from "flows into the next row".
+class ThreeItemWrapParty < WrapMenuParty
+  def field_items(_state = nil); [[1, 3], [2, 1], [3, 2]]; end
+end
+
+def three_item_wrap_state
+  Game::State.new(ThreeItemWrapParty.new, 1, 0, 0)
+end
+
+check 'Scene::ItemMenu: Right/Left cross a row boundary rather than ' \
+      'stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) has no method actually named
+  # `CursorRight`/`CursorLeft` -- its real Right/Left branches are a flat
+  # `index +- 1` bounded only by the list's own absolute start/end, no
+  # row-boundary check, structurally unlike Down/Up's genuine column-lock.
+  scene = menu_scene(RPG2k::Scene::ItemMenu, three_item_wrap_state)
+  eq 0, scene.instance_variable_get(:@item_index), 'starts on the first item'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index), 'Right moves onto the second item, same row'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@item_index),
+     'Right from the row\'s last cell flows into the next row\'s first cell, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index),
+     'Left from a row\'s first cell flows back into the previous row\'s last cell'
+end
+
 # EasyRPG's Window_Selectable::Update (the base every real RPG2000 list is
 # built on) falls through to Input::IsRepeated for all four directions
 # right after its own IsTriggered check, so holding a direction
@@ -17292,6 +17329,42 @@ check 'Scene::SkillMenu: the skill grid cursor does not wrap, caster is fixed, '
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
+end
+
+# A three-skill party -- WrapMenuParty's own two skills both fit in the
+# first row, leaving no row boundary for Right/Left to actually cross; see
+# Scene::ItemMenu's identical ThreeItemWrapParty for the fuller writeup.
+class ThreeSkillWrapParty < WrapMenuParty
+  def field_skills(_actor, _state = nil); [[10, 2], [11, 4], [12, 6]]; end
+end
+
+def three_skill_wrap_state
+  Game::State.new(ThreeSkillWrapParty.new, 1, 0, 0)
+end
+
+check 'Scene::SkillMenu: Right/Left cross a row boundary rather than ' \
+      'stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) has no method actually named
+  # `CursorRight`/`CursorLeft` -- its real Right/Left branches are a flat
+  # `index +- 1` bounded only by the list's own absolute start/end, no
+  # row-boundary check, structurally unlike Down/Up's genuine column-lock.
+  scene = menu_scene(RPG2k::Scene::SkillMenu, three_skill_wrap_state)
+  eq 0, scene.instance_variable_get(:@skill_index), 'starts on the first skill'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@skill_index), 'Right moves onto the second skill, same row'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@skill_index),
+     'Right from the row\'s last cell flows into the next row\'s first cell, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@skill_index),
+     'Left from a row\'s first cell flows back into the previous row\'s last cell'
 end
 
 # See Scene::ItemMenu's identical check for the fuller writeup
