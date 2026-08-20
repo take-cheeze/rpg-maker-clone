@@ -1325,6 +1325,31 @@ The work below is roughly ordered by the critical path to a walkable game
   a 100%-of-max-HP battle poison tick now floors at 1 HP and leaves the
   battler alive across two full rounds instead of knocking it out, confirmed
   to fail against the pre-fix code (`expected 1, got 0`) before the fix.
+  ✅ **Follow-up (2026-08-20): a large enough per-turn HP slip was silently
+  clamped to the damage-popup cap (999 on RPG2000, 9999 on RPG2003) —
+  RPG_RT applies the full computed slip, uncapped.** `apply_turn_states`'s
+  HP branch carried `hp = cap if hp > cap` ahead of the `slip_stat` call,
+  on an uncited inline comment claiming "the popup hard-cap applies to
+  slip damage too." Confirmed against EasyRPG Player's actual C++, fetched
+  live: `Game_Battler::ApplyConditions` (`src/game_battler.cpp`) computes
+  each state's `src_hp` and hands it straight to `ChangeHp(src_hp, /*
+  lethal = */ false)` — no `Utils::Clamp` anywhere in that path.
+  `Utils::Clamp(effect, -MaxDamageValue(), MaxDamageValue())`, the actual
+  popup cap, exists at exactly three call sites in the whole codebase, all
+  inside `game_battlealgorithm.cpp`'s Normal/Skill/SelfDestruct algorithms
+  (the same three cited by "Simulated Attack does not hard-cap damage the
+  way a real battle-popup action does" elsewhere in this file) —
+  `ApplyConditions` is not one of them, and the adjacent SP slip branch two
+  lines below was never capped to begin with, which should have been a
+  hint the HP cap was never real. Concretely: a state whose `hp_change_val
+  + max_hp * hp_change_max / 100` exceeds the edition's popup ceiling (a
+  heavy percent-of-max drain on a high-max-HP battler) ticked for less
+  than genuine RPG_RT every turn, understating cumulative slip damage.
+  Fixed by dropping the clamp entirely; the non-lethal floor-at-1 rule
+  above is unaffected. Covered by a new `scripts/rpg2k_logic_check.rb`
+  check (a 50%-of-max poison tick on a 10,000-max-HP battler drains the
+  full 5,000, not 999), confirmed to fail against the pre-fix code
+  (`expected 5000, got 9001`) before the fix.
   **The ground drains it too** — RPG2000's 地形ダメージ, the 地形 row's `damage`
   field (ADR 0034). Stepping onto a tile whose terrain carries one takes that
   much HP off every member who is not already down and is not wearing gear

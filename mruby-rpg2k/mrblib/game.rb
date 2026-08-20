@@ -10859,9 +10859,19 @@ module Game
           b.state_turns.delete(id)
           next
         end
+        # Not clamped to #damage_cap: confirmed against EasyRPG's own live
+        # source (`Game_Battler::ApplyConditions`, `src/game_battler.cpp`) --
+        # its `ChangeHp(src_hp, /* lethal = */ false)` call carries the
+        # computed slip straight through with no `Utils::Clamp` at all. The
+        # popup hard-cap (`MaxDamageValue()`) exists at exactly three call
+        # sites in EasyRPG, all in `src/game_battlealgorithm.cpp`'s
+        # Normal/Skill/SelfDestruct algorithms (see #do_simulated_attack's
+        # own citation of this) -- `ApplyConditions` is not one of them. A
+        # prior version of this method capped the HP slip here anyway, on an
+        # uncited assumption that the popup limit "applies to slip damage
+        # too"; it does not, and the SP slip two lines down was never capped
+        # to begin with, which should have been a hint.
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
-        cap = damage_cap
-        hp = cap if hp > cap # the popup hard-cap applies to slip damage too
         b.hp = slip_stat(b.hp, b.max_hp, hp, state_field(d, :hp_change_type), 1) if hp > 0
         if b.max_mp && b.mp
           sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100

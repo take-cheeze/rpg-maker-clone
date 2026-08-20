@@ -14175,6 +14175,29 @@ check 'battle poison (percent of max) floors at 1 HP -- slip damage alone cannot
   ok !hero.dead?
 end
 
+check 'battle poison slip damage is not clamped to the damage-popup cap' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Battler::ApplyConditions` (src/game_battler.cpp) computes each
+  # afflicted state's `src_hp` and hands it straight to `ChangeHp(src_hp,
+  # /* lethal = */ false)` -- no `Utils::Clamp(..., -MaxDamageValue(),
+  # MaxDamageValue())` anywhere in that path. The popup hard-cap exists at
+  # exactly three call sites in the whole codebase, all inside
+  # `game_battlealgorithm.cpp`'s Normal/Skill/SelfDestruct algorithms (see
+  # "Simulated Attack does not hard-cap damage..." below for the same
+  # citation) -- `ApplyConditions` is not one of them. A prior version of
+  # this codebase clamped the HP slip here to Game::Battle#damage_cap
+  # anyway, on an uncited assumption that the popup limit "applies to slip
+  # damage too"; it does not.
+  states = { 2 => FakeStateDef.new(0, 0, 50, 0, 0) } # 50% of max HP / turn
+  hero = combatant('Tank', 0, 0, 20, 10_000)         # max HP 10000, acts first
+  hero.states = [2]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  bat.step_action
+  eq 5_000, hero.hp, 'the full, uncapped 5000 HP slip -- not clamped to 999/9999'
+end
+
 check 'battle: a GAIN-type state heals per turn instead of draining, clamped to max' do
   # hp_change_type/sp_change_type == Game::States::CHANGE_TYPE_GAIN (a
   # "regen"-style state) adds instead of subtracts, clamped to max_hp/max_mp
