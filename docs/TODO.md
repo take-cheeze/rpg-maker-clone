@@ -1052,8 +1052,44 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game_Party::GetEquippedItemCount` / `Game_Actor::GetItemCount` slot-equality
   scan — a copy currently equipped no longer counts toward the bag, so the
   two rows move independently). It refreshes with the list's own cursor and
-  is torn down for the command menu, the quantity counter and the
-  purchase/sale confirmation, none of which highlight a single item.
+  ~~is torn down for the command menu, the quantity counter and the
+  purchase/sale confirmation, none of which highlight a single item~~ —
+  ✅ **wrong for two of those three screens, corrected below (2026-08-20):**
+  RPG_RT keeps the status panel (and the gold panel) up through the quantity
+  counter and the purchase/sale confirmation, tearing it down only for the
+  command menu and the *sell* list.
+  ✅ **The shop's status and gold panels used "highlights a single item" as
+  their visibility rule, backwards for three of the five shop screens
+  (2026-08-20).** `#shop_status_item_id` (`mruby-rpg2k/mrblib/scene/map.rb`)
+  showed the panel for `:buy` and `:sell` and hid it everywhere else;
+  `#draw_shop_gold` never toggled visibility at all, drawing the gold panel
+  on every screen including the command menu. Confirmed against EasyRPG
+  Player's actual source: `Scene_Shop::SetMode`'s "Right-hand panels" switch
+  (`src/scene_shop.cpp`, fetched and read in full) —
+  `case BuySellLeave: case BuySellLeave2: case Sell: party_window->
+  SetVisible(false); status_window->SetVisible(false); gold_window->
+  SetVisible(false); break; case Buy: case BuyHowMany: case SellHowMany:
+  case Bought: case Sold: party_window->SetVisible(true); status_window->
+  SetVisible(true); gold_window->SetVisible(true); break;` — shows both
+  panels for Buy, the quantity counter (`BuyHowMany`/`SellHowMany`) and the
+  purchase/sale confirmation (`Bought`/`Sold`), and hides them for the
+  command menu (`BuySellLeave`/`BuySellLeave2`) *and the Sell list*, not
+  "whichever screen highlights a single item" (which would show it for Sell
+  and hide it for the quantity/confirmation screens — backwards on both
+  counts). Fixed by widening `#shop_status_item_id`'s screen set to
+  `:buy`/`:quantity`/`:purchased`/`:sold` (dropping `:sell`) and adding a
+  matching `visible=` toggle to `#draw_shop_gold`, both driven by one shared
+  `SHOP_PANELS_VISIBLE_ON` list. The quantity counter and confirmation
+  screens need the highlighted item's id from `@shop[:quantity]`, which
+  `#drive_shop_quantity` used to null out the instant a transaction
+  committed — moved that reset into `#drive_shop_confirm` (where the screen
+  actually leaves `:purchased`/`:sold` back to `:buy`/`:sell`) so the id
+  survives through the confirmation screen. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (the status panel stays visible,
+  showing the same item, through the quantity counter and purchase
+  confirmation; the gold panel hides on the command menu and the sell list
+  and shows on the quantity counter), both confirmed to fail against the
+  pre-fix code before the fix.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
