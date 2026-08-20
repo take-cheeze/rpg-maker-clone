@@ -12761,6 +12761,20 @@ module Game
         hp_dmg = 0
         if hits && hp != 0
           hp_dmg = dmg
+          # An offensive skill's HP effect is halved (quartered under 強力防御)
+          # against a defending target, the same `AdjustDamageForDefend` a
+          # basic attack already gets (`#deal_attack_with_current_weapon`
+          # above) — EasyRPG's `Skill::vExecute` (`src/game_battlealgorithm.
+          # cpp`) computes `hp_effect` as `IsPositive() ? effect :
+          # Algo::AdjustDamageForDefend(effect, *target)`, i.e. every
+          # enemy-scoped skill's HP branch, not just a plain Attack. The SP
+          # effect and the ATK/DEF/SPI/AGI stat-mod branches read the same
+          # raw `effect` with no such adjustment (`Skill::vExecute` lines
+          # 1074-1136), so only `hp_dmg` gets this treatment here.
+          if target.defending && hp_dmg > 0
+            hp_dmg /= 2
+            hp_dmg /= 2 if target.strong_defence
+          end
           if cmd[:absorb] && hp_dmg > 0
             hp_dmg = target.hp if hp_dmg > target.hp
             absorbed = hp_dmg

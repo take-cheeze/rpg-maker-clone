@@ -12900,6 +12900,35 @@ check 'an enemy-scope attack skill with both affect_hp and affect_sp deals ' \
   eq 18, foe.mp, '50 - 32'
 end
 
+check 'an offensive skill halves its HP effect against a defending target, ' \
+      'but leaves the SP effect untouched' do
+  # EasyRPG's Skill::vExecute: `hp_effect = IsPositive() ? effect :
+  # Algo::AdjustDamageForDefend(effect, *target)` -- an enemy-scope skill's HP
+  # branch gets the same defend-halving a plain Attack already gets, but the
+  # SP branch (and the ATK/DEF/SPI/AGI stat-mod branches) read the raw
+  # `effect` with no such adjustment.
+  skills = { 7 => fake_skill(name: 'Drain Fire', scope: 0, sp_cost: 6, power: 20,
+                             mrate: 40, hp: true, sp: true) }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # spi 12 -> effect 32
+  foe = combatant_mp('Foe', 0, 0, 5, 100, 50)
+  foe.defending = true
+  cmd = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq(-32, cmd[:hp], 'hp still carries the full, un-halved effect at this stage')
+  eq(-32, cmd[:mp], 'mp carries the identical effect, not a separate roll')
+
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  bat.command_skill(caster, foe, name: 'Drain Fire', cost: cmd[:cost], hp: cmd[:hp],
+                    mp: cmd[:mp], attack: cmd[:attack], chance: cmd[:chance],
+                    variance: cmd[:variance])
+  bat.begin_round
+  e = bat.step_action
+  eq 16, e[:damage], 'defending halves the HP effect: 32 -> 16'
+  eq 32, e[:sp_damage], 'the SP effect is not halved by defending'
+  eq 84, foe.hp, '100 - 16'
+  eq 18, foe.mp, '50 - 32'
+end
+
 check 'an enemy-scope attack skill with affect_sp but not affect_hp deals ' \
       'only SP damage' do
   skills = { 7 => fake_skill(name: 'SP Drain', scope: 0, sp_cost: 6, power: 20,
