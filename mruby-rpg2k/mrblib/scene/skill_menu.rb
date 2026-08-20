@@ -226,15 +226,27 @@ class RPG2k
         end
       end
 
-      # A cast that changed nothing plays Buzzer rather than a second Decision
-      # -- see Scene::ItemMenu#apply_item's identical reasoning.
+      # A cast that changed nothing plays Buzzer rather than a second
+      # Decision -- see Scene::ItemMenu#apply_item's identical reasoning. A
+      # *successful* cast stays on this same target screen too, exactly like
+      # a no-effect one -- confirmed against RPG_RT's own live source:
+      # `Scene_ActorTarget::UpdateSkill` (`src/scene_actortarget.cpp`) never
+      # calls `Scene::Pop()` on Decision, success or failure alike; the only
+      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # `#cast_skill`'s own affordability gate already answers what happens
+      # on a repeat cast once SP runs out (an empty `affected`, the same
+      # Buzzer path), matching the reference's own SP/HP check ahead of
+      # `UseSkill` -- unaffordable buzzes, it does not auto-exit either.
+      # Unlike #apply_switch_skill just below, this one is never tagged
+      # `:cast` -- it has nowhere to "return to" until Cancel, so
+      # `#drive_message` has nothing extra to do once the message closes.
       def apply_skill(sid, target)
         affected = @state.party.cast_skill(caster, sid, target)
         if affected.empty?
           play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
         else
-          show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+          show_message("#{caster.name} casts #{skill_name(sid)}!")
         end
       end
 
@@ -273,6 +285,11 @@ class RPG2k
         $stderr.puts "[RPG2k] skill SE '#{name}' playback failed: #{e.message}"
       end
 
+      # Back to the skill list, rebuilt so it reflects whatever changed while
+      # target mode was open (SP fell; a now-unaffordable skill drops out) --
+      # only reached via Cancel now that a successful cast no longer forces
+      # this on its own (see #apply_skill). Keeps the cursor in range if the
+      # list shrank.
       def leave_target
         @pending_skill = nil
         @target_lock = nil
@@ -281,6 +298,10 @@ class RPG2k
           @target_window.dispose
           @target_window = nil
         end
+        @skills = nil
+        @skill_index = skills.size - 1 if @skill_index >= skills.size
+        @skill_index = 0 if @skill_index < 0
+        build_skill_window
         refresh_desc
       end
 
@@ -386,14 +407,6 @@ class RPG2k
 
       # After a successful cast, drop back to the skill list and rebuild it (SP
       # fell; a now-unaffordable skill drops out).
-      def refresh_after_cast
-        leave_target
-        @skills = nil
-        @skill_index = skills.size - 1 if @skill_index >= skills.size
-        @skill_index = 0 if @skill_index < 0
-        build_skill_window
-      end
-
       # Column width for the skill grid (see Scene::ItemMenu#item_col_w,
       # which this mirrors).
       def skill_col_w
@@ -582,9 +595,15 @@ class RPG2k
 
       def drive_message
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        # `:cast` only ever tags #apply_switch_skill's message now (see
+        # #apply_skill's own comment) -- a switch skill is cast straight from
+        # the skill list, with no target screen to stay open on, so its own
+        # successful-cast message closes back into a rebuilt list, matching
+        # this same class's pre-existing #leave_target/#leave_teleport_target
+        # shape for "returning to the list."
         done = @message[:done]
         close_message
-        refresh_after_cast if done == :cast
+        leave_target if done == :cast
       end
 
       def show_message(text, done = nil)
