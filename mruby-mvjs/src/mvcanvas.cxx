@@ -303,8 +303,9 @@ uint32_t utf8_next(const unsigned char* s, size_t n, size_t& i) {
 // Scene_Boot until its own 20s timeout on any project whose corescript
 // doesn't take the newer FontFaceSet-based path (see the document.fonts
 // stand-in's own comment, above).
-double font_text_width(const std::string& text, double pixel,
-                        bool use_game_font = true) {
+double font_text_width(const std::string& text,
+                       double pixel,
+                       bool use_game_font = true) {
   GameFont& f = game_font();
   if (!use_game_font || !f.ok)
     return static_cast<double>(text.size()) * pixel * 0.5;
@@ -606,11 +607,11 @@ JSValue js_draw_image(JSContext* ctx,
 }
 
 // __mv_fontMeasure(pixelSize, text, hasGameFont) -> advance width in pixels.
-// Backs CanvasRenderingContext2D.measureText, which MV's Bitmap.measureTextWidth
-// uses to align (centre/right) and lay out text, so it must reflect the real
-// font -- except when the caller's own font shorthand doesn't name "GameFont"
-// at all (see font_text_width's own comment), where a different, rougher
-// estimate is deliberate.
+// Backs CanvasRenderingContext2D.measureText, which MV's
+// Bitmap.measureTextWidth uses to align (centre/right) and lay out text, so it
+// must reflect the real font -- except when the caller's own font shorthand
+// doesn't name "GameFont" at all (see font_text_width's own comment), where a
+// different, rougher estimate is deliberate.
 JSValue js_measure_text(JSContext* ctx,
                         JSValueConst,
                         int argc,
