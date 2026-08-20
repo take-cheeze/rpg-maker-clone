@@ -105,6 +105,7 @@ class RPG2k
         @background.dispose if @background
         @command.dispose if @command
         @status.dispose if @status
+        @gold.dispose if @gold
       end
 
       # Hide this menu's own command list and status panel while a child
@@ -118,13 +119,23 @@ class RPG2k
       def suspend
         @command.visible = false if @command
         @status.visible = false if @status
+        @gold.visible = false if @gold
       end
 
       # Undo #suspend once the child screen above this menu is popped and it
-      # is active again -- called by RPG2k#pop.
+      # is active again -- called by RPG2k#pop. Redraws the gold panel too,
+      # matching EasyRPG's own `Scene_Menu::Continue` (`src/scene_menu.cpp`),
+      # which unconditionally calls `gold_window->Refresh()` (alongside the
+      # status panel's own `menustatus_window->Refresh()`, already mirrored
+      # by #refresh_status_cursor/rebuilds elsewhere) every time control
+      # returns from a popped child screen.
       def resume
         @command.visible = true if @command
         @status.visible = true if @status
+        if @gold
+          @gold.visible = true
+          draw_gold_window
+        end
       end
 
       def update
@@ -302,6 +313,34 @@ class RPG2k
         # while a window is inactive, the same mechanism the command list's
         # own cursor disappears through once focus leaves it.
         @status.active = false
+
+        build_gold_window
+      end
+
+      # The party's own Gold, bottom-left corner -- confirmed against
+      # RPG_RT's own live source: `Scene_Menu::Start` (`src/scene_menu.cpp`)
+      # creates a `Window_Gold` there unconditionally (88x32, no version or
+      # feature gate anywhere in the file), for both RPG2000 and RPG2003
+      # alike. `Window_Gold::Refresh` (`src/window_gold.cpp`) draws the
+      # amount then the `gold` term via `DrawCurrencyValue`
+      # (`src/window_base.cpp`) -- the identical no-space "amount then term"
+      # rendering `Scene::StatusMenu`'s own Gold line already uses.
+      GOLD_WINDOW_W = 88
+      GOLD_WINDOW_H = 32
+
+      def build_gold_window
+        @gold = Window.new(0, SCREEN_H - GOLD_WINDOW_H, GOLD_WINDOW_W, GOLD_WINDOW_H)
+        @gold.z = 400
+        @gold.windowskin = @skin
+        draw_gold_window
+      end
+
+      def draw_gold_window
+        inner_w = GOLD_WINDOW_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, LINE_H, "#{@state.party.gold}#{term(:gold, 'G')}"
+        @gold.contents = c
       end
 
       def refresh_cursor
