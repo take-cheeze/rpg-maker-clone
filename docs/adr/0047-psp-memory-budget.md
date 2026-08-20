@@ -1094,3 +1094,25 @@ the interpreter-linking slice, in this order:
 - Follow-up: once P1's real numbers exist, replace this ADR's estimates with
   measured figures (a memory budget table, as ADR 0007 has for the Wio
   Terminal) — either as an amendment here or a superseding ADR.
+
+## Addendum: `psp-smoke` promoted to a required check
+
+The bug-11 finding above (the boxed-`mrb_value`/`get_display()` assert) noted
+in passing that the forced-shutdown `strlen` crash PPSSPP-headless logs when
+`--timeout` kills a game that never called `sceKernelExitGame` is generic —
+it appears in *both* the game-data run and the plain idle-path `psp-smoke`
+run with no project at `kGameDir` at all — and said the existing job "already
+tolerates this class of flakiness by staying non-blocking." That framed it as
+an open risk. It is not one in practice: the check
+`app/psp/README.md`/`.github/workflows/build.yml`'s `psp-smoke` job runs is
+`grep -qE 'RPG2K_PSP_(BOOT|BRINGUP)' headless.log` against a log the emulator
+invocation writes with `|| true` (exit code ignored) — and `RPG2K_PSP_BOOT` is
+the very first thing the EBOOT ever writes, before any init, while the
+timeout-triggered crash by construction happens only at the *end* of the
+15-second run, after both markers are already in the log. The crash is real
+log noise, but it cannot make this grep fail. Checked directly: the ten most
+recent `master` CI runs at the time of this addendum all show `psp-smoke`
+green (`success`), with no exceptions, matching that reasoning. The job's
+`continue-on-error: true` has accordingly been removed — it is now a required
+check alongside `psp`, and `app/psp/README.md`'s own description of the job
+has been updated to match.

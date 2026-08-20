@@ -112,11 +112,12 @@ once one is deployed to `kGameDir` instead of just the idle HAL's. CI's
 `psp-smoke` job boots the EBOOT under PPSSPP headless and checks that a
 marker appears, so a regression that links but fails to boot is caught
 automatically; it has no project at `kGameDir`, so it only ever exercises the
-idle path (`RPG2K_PSP_GAME_START none not_found`). The job is currently
-**non-blocking** (the required build gate is the `psp` job) — a holdover
-from when the EBOOT did not boot to completion under PPSSPP-headless; now
-that it does (see below), promoting `psp-smoke` to a required check is
-worth revisiting. Nine independent bugs were found and root-caused
+idle path (`RPG2K_PSP_GAME_START none not_found`). The job is a
+**required** check alongside `psp` — it used to run non-blocking, a
+holdover from when the EBOOT did not boot to completion under
+PPSSPP-headless, but now that it does (see below) and has captured its
+markers cleanly across CI runs, it gates the build like every other job.
+Nine independent bugs were found and root-caused
 chasing that boot-to-completion goal; eight of them fixed, the remaining
 one (pspsdk's own upstream bug) no longer reachable — **boot now
 completes**:

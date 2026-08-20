@@ -1380,15 +1380,17 @@ jobs:
     # that from a from-source PPSSPP compile on every run into a one-time cost,
     # replacing the hand-rolled tree cache PPSSPP used to be built from.
     #
-    # NON-BLOCKING (continue-on-error): PPSSPP's headless HLE only partially
-    # implements pspsdk's libc stdio (printf/strlen resolve to firmware stubs),
-    # which the EBOOT's markers lean on, so capture can be flaky under the
-    # emulator even though the EBOOT builds and boots. The required gate is the
-    # `psp` build; this job stays informational (its log is uploaded) until the
-    # emulator path is solid.
+    # BLOCKING: this used to run with continue-on-error while PPSSPP's headless
+    # HLE only partially implemented pspsdk's libc stdio (printf/strlen
+    # resolved to firmware stubs), which the EBOOT's markers lean on, making
+    # capture flaky even when the EBOOT itself booted fine. The nine-bug trail
+    # in app/psp/README.md (five of them PPSSPP HLE/interpreter bugs, patched
+    # in nix/patches/ and applied via this flake's own `packages.ppsspp`) fixed
+    # that: the EBOOT now boots to completion and the markers capture reliably
+    # -- confirmed clean across the ten most recent `master` runs before this
+    # gate was promoted. So this job is now a required check alongside `psp`.
     needs: psp
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:

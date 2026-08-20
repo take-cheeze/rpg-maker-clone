@@ -81,11 +81,19 @@ and CI-checked before the interpreter and assets are layered on:
   PPSSPP comes from nixpkgs (`packages.ppsspp` in `flake.nix`, whose default
   non-Qt build configures `-DHEADLESS=ON` and installs `bin/ppsspp-headless`),
   pinned by `flake.lock` and substituted prebuilt from `cache.nixos.org` rather
-  than compiled in CI. The job is **non-blocking** (`continue-on-error`):
+  than compiled in CI. The job was **non-blocking** (`continue-on-error`):
   PPSSPP only partially HLE-implements pspsdk's libc stdio (plain
   `printf`/`strlen` resolve to firmware stubs), so the markers deliberately
-  avoid libc where possible, but emulator capture can still be fragile; the
-  required gate is the `psp` build.
+  avoid libc where possible, but emulator capture could still be fragile; the
+  required gate was the `psp` build.
+  **Update:** `flake.nix`'s `packages.ppsspp` now carries local patches (see
+  `nix/patches/`) fixing several PPSSPP HLE/interpreter bugs found chasing the
+  EBOOT's own boot-to-completion goal, so it changes the derivation's output
+  hash and every `nix build '.#ppsspp'` compiles PPSSPP from source instead of
+  substituting `cache.nixos.org`'s prebuilt closure. With those fixes, the
+  EBOOT boots to completion and `psp-smoke` captures its markers reliably
+  (see `docs/adr/0047-psp-memory-budget.md`'s addendum); `continue-on-error`
+  has been removed, and `psp-smoke` is now a required check alongside `psp`.
 
 ## Consequences
 
