@@ -2774,6 +2774,35 @@ class RPG2k
         @events.each { |e| step_event(e, allow_trigger: allow_trigger) }
       end
 
+      # Run `route`'s sub-commands until one actually costs a frame of pacing
+      # delay (a Move/Turn/Wait/Jump, `Game::MoveRoute#step`'s own :moved/
+      # :blocked/:turned/:waited statuses) or the route finishes -- an
+      # effect-only sub-command (Switch On/Off, Speed/Frequency Up/Down,
+      # Change Graphic, Play Sound, Through Mode, Stop/Start Animation,
+      # Transparency Up/Down) runs free in the same frame as whatever
+      # follows it, never spending a pacing tick of its own. Confirmed
+      # against RPG_RT's own live source: `Game_Character::UpdateMoveRoute`
+      # (`src/game_character.cpp`) only calls `SetMaxStopCountFor{Step,Turn,
+      # Wait}` for those four command kinds; every other sub-command falls
+      # straight through to the next command within the same `while (true)`
+      # frame, guarded only against an infinite same-frame loop on a
+      # repeating route made entirely of effect commands
+      # (`current_index == start_index`, mirrored here via `route.index`
+      # wrapping back to where this burst started). Every #step call site
+      # below used to charge one full pacing delay per sub-command
+      # regardless of kind, so a route mixing effect commands with moves
+      # (a common "reskin then step" authoring pattern) crawled at
+      # #EVENT_MOVE_DELAY's pace through commands RPG_RT spends no time on
+      # at all.
+      def run_route_step(route, character, world)
+        start = route.index
+        status = route.step(character, world)
+        while status == :effect && !route.done? && route.index != start
+          status = route.step(character, world)
+        end
+        status
+      end
+
       def step_event(e, allow_trigger: true)
         # Cleared unconditionally, before any early return, so a crossing
         # recognised on some earlier frame (see #move_autonomous /
@@ -2797,7 +2826,7 @@ class RPG2k
         oy = ch.y
         status = nil
         if forced
-          status = forced.step(ch, @world) unless forced.done?
+          status = run_route_step(forced, ch, @world) unless forced.done?
           if forced.done? # revert to page movement
             e[:forced_route] = nil
             # The page's own Move Frequency reasserts itself once the forced
@@ -2807,7 +2836,7 @@ class RPG2k
             ch.move_frequency = page_move_frequency(e[:page])
           end
         elsif e[:route]
-          status = e[:route].step(ch, @world) unless e[:route].done?
+          status = run_route_step(e[:route], ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
           move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
@@ -3948,7 +3977,7 @@ class RPG2k
         @vehicle_route_timers[type] -= 1
         return if @vehicle_route_timers[type] > 0
         @vehicle_route_timers[type] = EVENT_MOVE_DELAY[ch.move_frequency] || 40
-        route.step(ch, @vehicle_worlds[type]) unless route.done?
+        run_route_step(route, ch, @vehicle_worlds[type]) unless route.done?
         v = @state.vehicle(type)
         v.x = ch.x
         v.y = ch.y
@@ -4016,7 +4045,7 @@ class RPG2k
         # already does for #try_move (the input-driven path, see
         # @state.boarded? above).
         world = @state.boarded? ? @vehicle_worlds[@state.boarded] : @world
-        @player_route.step(@player_char, world) unless @player_route.done?
+        run_route_step(@player_route, @player_char, world) unless @player_route.done?
         # Mirror Through Mode out to the standing flag every step (not just when
         # the route ends), so a Halt All Movement mid-route sees whatever the
         # route had set so far rather than the mirror's now-discarded state.
@@ -4115,7 +4144,7 @@ class RPG2k
         e[:move_timer] = EVENT_MOVE_DELAY[e[:forced_freq] || ch.move_frequency] || 40
         ox = ch.x
         oy = ch.y
-        e[:forced_route].step(ch, @world) unless e[:forced_route].done?
+        run_route_step(e[:forced_route], ch, @world) unless e[:forced_route].done?
         e[:forced_route] = nil if e[:forced_route].done?
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
