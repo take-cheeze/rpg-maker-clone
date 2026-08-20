@@ -422,6 +422,34 @@ assert 'MV canvas text API is wired (fillText/strokeText/measureText)' do
   )
 end
 
+assert 'MV canvas measureText: a font shorthand without "GameFont" always uses '\
+      'the rough per-character estimate' do
+  # Regression: a bare font-agnostic measureText (the pre-fix behavior) can't
+  # tell '28px GameFont, sans-serif' from '28px sans-serif' apart, so
+  # Graphics.isFontLoaded('GameFont') -- which measures exactly that pair and
+  # waits for the widths to diverge -- never sees them differ and hangs
+  # Scene_Boot on any MV project whose corescript uses that classic detection
+  # (rather than the newer FontFaceSet path our document.fonts stand-in
+  # already covers). A real game (extracted from an Enigma Virtual Box-packed
+  # RPG Maker MV release) hit exactly this: stuck at Scene_Boot until its own
+  # 20s timeout, `Error: Failed to load GameFont`.
+  #
+  # Fixed by having measureText route a font shorthand that doesn't name
+  # "GameFont" through the same rough text.length*pixel*0.5 estimate used when
+  # no game font is loaded at all, guaranteeing it differs from the real
+  # metrics measured against an actual loaded font -- asserted here by its
+  # exact value, so this holds whether or not this test environment happens to
+  # have a real font loaded.
+  assert_equal 100.0, MV::JS.eval(
+    "var c=document.createElement('canvas').getContext('2d'); " \
+    "c.font='40px sans-serif'; c.measureText('abcde').width"
+  )
+  assert_equal 40.0, MV::JS.eval(
+    "var c=document.createElement('canvas').getContext('2d'); " \
+    "c.font='40px serif'; c.measureText('ab').width"
+  )
+end
+
 assert 'MV canvas gradientFillRect interpolates colours across the rect' do
   # A horizontal red -> blue gradient over a 4px-wide rect (as MV's
   # Bitmap.gradientFillRect drives for gauges). The left edge should be

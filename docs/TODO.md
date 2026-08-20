@@ -17713,6 +17713,29 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     `[MV-AUDIO] op=.. dispatched=.. asset=..` — so the audio path is finally
     exercised end to end (the downloaded beds ship no audio). Audible output
     still wants a device / a native listen; CI only checks dispatch + resolve.
+  - ✅ **`measureText` was font-agnostic, so `Graphics.isFontLoaded('GameFont')`
+    could hang `Scene_Boot` forever on a real MV release.** Found against a
+    real, downloaded RPG Maker MV game (an Enigma Virtual Box-packed
+    single-file distributable, unpacked with `evbunpack` to reach its `www/`
+    project): it never got past `Scene_Boot`, throwing `Error: Failed to load
+    GameFont` after its own 20s timeout. Root cause: MV's classic font-ready
+    check measures `'40px GameFont, sans-serif'` against `'40px sans-serif'`
+    and waits for the two widths to diverge, but our `measureText`
+    (`mruby-mvjs/src/mvcanvas.cxx`) backed every font shorthand with the same
+    loaded game font regardless of the requested family, so the two measured
+    widths were always identical and the check never passed — a project whose
+    bundled corescript takes this path (rather than the newer FontFaceSet
+    path our `document.fonts` stand-in already covers, see that shim's own
+    comment) could never boot. Fixed by having `measureText`/`fillText`/
+    `strokeText` parse whether the font shorthand actually names "GameFont"
+    and route anything else through the same rough per-character estimate
+    already used when no game font is loaded at all, guaranteed to differ
+    from the real metrics. `data/Lunatic-Core` and `data/mv-sample` both use a
+    corescript build that takes the FontFaceSet path already, which is why
+    this stayed hidden until a different real release exercised the older
+    one. Covered by `mruby-mvjs/test/canvas_test.rb` (asserts the exact
+    fallback value for a non-"GameFont" shorthand, independent of whether a
+    real font happens to be loaded in the test environment).
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
   - ✅ M6.1 foundation: an `MZ` class (`mruby-mvjs/mrblib/mz.rb`) detects an MZ
