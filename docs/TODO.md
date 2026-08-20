@@ -5072,6 +5072,34 @@ The work below is roughly ordered by the critical path to a walkable game
   frame by frame confirms the down arrow starts on, flips off at exactly
   the 20th frame, and swaps places with the up arrow once scrolled to the
   last slot.
+  ✅ **This screen always opened with the cursor on slot 1, when real RPG_RT
+  opens on whichever slot was saved most recently (2026-08-20).** Confirmed
+  against EasyRPG's own live source: `Scene_File::Start` (`src/
+  scene_file.cpp`) sets `index = latest_slot; top_index = std::max(0, index
+  - 2);`, where `latest_slot`/`latest_time` (`UpdateLatestTimestamp`) track
+  whichever populated slot's `title.timestamp` (chunk 100 field 1) is the
+  largest, defaulting to slot 0 only when no save has one at all.
+  `Scene::SaveLoad#initialize` (`mruby-rpg2k/mrblib/scene/save_load.rb`)
+  hardcoded `@index = 0`/`@top = 0`. This codebase's own `Game::State#
+  to_lsd` already writes that exact field into every slot's exported
+  `Save<N>.lsd` sibling (`title[1] = timestamp.to_f`, defaulting to the
+  real save-time "now" -- see `Game::State#to_lsd`'s own comment and ADR
+  0021 for why that default matters at all) -- fixed by adding
+  `#initial_index`/`#slot_timestamp`, which read that
+  genuine on-disk field back via `parent.lsd_path(slot)` and
+  `LCF::SaveData`, the exact same field RPG_RT itself reads, not a
+  filesystem-mtime proxy. `@top` mirrors EasyRPG's own `max(0, index -
+  2)`, generalised to `VISIBLE_SLOTS` the same way the scroll-arrow fix
+  just above already generalises `top_index < max_index - 2`. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check (two slots each carrying a
+  bare title-only `.lsd` with an explicit timestamp; the cursor opens on
+  the newer one, scrolled into view; an empty save directory still opens
+  on slot 1) -- the check needed `scripts/rpg2k_scene_check.rb` to load
+  `mruby-lcf/mrblib` for the first time (mirroring `rpg2k_logic_check.rb`'s
+  own `LCF.cp932_to_utf8`/`utf8_to_cp932` shim), since writing a real
+  `.lsd` sibling to disk is exactly what this fix itself now does at
+  runtime. Confirmed to fail against the pre-fix code (`expected 4, got
+  0`).
   ✅ **The battle command/target/skill/item flow now plays system SE too --
   the same class of gap the field menu and title screen already had fixed,
   extended to a much larger interaction surface.** Confirmed against
