@@ -11523,6 +11523,42 @@ not yet verified:
   while its visible `direction` stays Left, and a follow-up Move Forward
   walks Down rather than the stale pre-jump direction), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-20): Move Forward after a diagonal move collapsed
+  to one cardinal axis instead of continuing diagonally.** Confirmed
+  against RPG_RT's own live source: `Game_Character::Direction`
+  (`src/game_character.h`) is an 8-way enum (Up/Right/Down/Left/UpRight/
+  DownRight/DownLeft/UpLeft), and `UpdateMoveRoute`'s diagonal case
+  (`SetDirection(cmd)`, `src/game_character.cpp`) sets it to the literal
+  diagonal value; `move_forward` does nothing but `break` before
+  `Move(GetDirection())` reuses whatever `GetDirection()` still holds — so
+  a route "Move Upper-Right, Move Forward" moves diagonally *twice* (2
+  tiles right, 2 tiles up), never diagonally-then-straight. `#move_diagonal`
+  (`mruby-rpg2k/mrblib/game.rb`) stored only the *vertical* component into
+  `#last_move_direction`, collapsing this codebase's own 8-way state to
+  4-way — a following Move Forward continued along one axis only and
+  silently veered off the diagonal path real RPG_RT walks, compounding
+  further on a longer or repeating diagonal route. Fixed by storing the
+  full `[horizontal, vertical]` pair in `#last_move_direction` for a
+  diagonal move, and having `Game::MoveRoute#execute`'s `MOVE_FORWARD`
+  case dispatch to a new shared `#do_diagonal_dir(character, world,
+  horizontal, vertical)` (factored out of `#do_diagonal`, which now just
+  looks up its pair and delegates) when the stored direction is a pair,
+  instead of always calling the cardinal-only `#do_move`. `#move`/`#jump`
+  are unchanged — a cardinal move still stores a plain numpad int, and
+  `Jump`'s own dominant-axis facing is inherently cardinal in the real
+  engine too (see the jump bullet just above). Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (Move Upper-Right then Move Forward
+  advances both axes a second time, landing at `[4, 0]` from a `[2, 2]`
+  start rather than `[3, 0]`), confirmed to fail against the pre-fix code
+  (`expected [4, 0], got [3, 0]`) before the fix. **Still open**: the
+  identical bug in the Begin Jump/End Jump path — `MoveRoute#jump_move_
+  direction`'s `else dir` branch (`mruby-rpg2k/mrblib/game.rb`) never
+  updates the running `dir` for a diagonal move command inside a jump
+  block, so a later Move Forward *inside the same block* would continue
+  along the pre-diagonal direction instead of the diagonal just walked —
+  the same root cause (this codebase's direction state could only hold a
+  single cardinal), just not exercised by this fix, which only touched the
+  non-jump path.
 - A move-route "Change Graphic" sub-command (hero, event, or vehicle) is
   **not persistent** — it reverts to the base graphic on save-load or map
   transfer, unlike the dedicated Change Graphic event commands. ✅ **All three

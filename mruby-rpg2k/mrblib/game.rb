@@ -6040,6 +6040,11 @@ module Game
     # movement) and a blocked #do_move (turns to face an obstruction but
     # never steps) leave it alone. yado.tk: a move-route "One Step Forward"
     # continues in *this* direction, not the sprite's #direction.
+    #
+    # A plain numpad int (2/4/6/8) after #move/#jump, or a `[horizontal,
+    # vertical]` pair after #move_diagonal -- see #move_diagonal's own
+    # citation for why a diagonal step's full 8-way direction has to survive
+    # here, not just one cardinal component.
     attr_reader :last_move_direction
 
     # Placing a character outright -- Change Event Location, a page refresh
@@ -6179,9 +6184,22 @@ module Game
     end
 
     # Move one tile diagonally, combining a horizontal and a vertical direction.
+    #
+    # #last_move_direction is set to the `[horizontal, vertical]` pair itself,
+    # not just one component -- confirmed against RPG_RT's own live source:
+    # `Game_Character::Direction` (`src/game_character.h`) is an 8-way enum
+    # (Up/Right/Down/Left/UpRight/DownRight/DownLeft/UpLeft), and
+    # `UpdateMoveRoute`'s diagonal case (`SetDirection(cmd)`,
+    # `src/game_character.cpp`) sets it to the literal diagonal value, which
+    # `GetDirection()` still holds the next time a Move Forward sub-command
+    # reads it -- a two-command route "Move Upper-Right, Move Forward" moves
+    # diagonally *twice*, not diagonally-then-straight-up. Storing only
+    # `vertical` here (this method's own prior behaviour) collapsed that
+    # 8-way state to 4-way, so a following Move Forward continued along one
+    # axis only and silently veered off the diagonal path real RPG_RT walks.
     def move_diagonal(horizontal, vertical)
       face(diagonal_facing(horizontal, vertical))
-      @last_move_direction = vertical
+      @last_move_direction = [horizontal, vertical]
       hx, = DIR_DELTA[horizontal] || [0, 0]
       _, vy = DIR_DELTA[vertical] || [0, 0]
       @x += hx
@@ -6396,8 +6414,15 @@ module Game
         # yado.tk: continues in the direction actually last walked/jumped,
         # not the sprite's displayed facing -- the two can diverge under a
         # Direction Fix lock or an explicit Face command (see
-        # Character#last_move_direction).
-        do_move(character, world, character.last_move_direction)
+        # Character#last_move_direction). A diagonal last move continues
+        # diagonally (see #last_move_direction's own citation) rather than
+        # collapsing to one cardinal axis.
+        last = character.last_move_direction
+        if last.is_a?(Array)
+          do_diagonal_dir(character, world, last[0], last[1])
+        else
+          do_move(character, world, last)
+        end
       # A Face Direction sub-command always turns the sprite, even right after
       # a Direction Fix ON earlier in the same route (yado.tk) -- #face!, not
       # the lock-respecting #face movement uses.
@@ -6592,6 +6617,19 @@ module Game
 
     def do_diagonal(character, world, id)
       horizontal, vertical = DIAGONAL[id]
+      do_diagonal_dir(character, world, horizontal, vertical)
+    end
+
+    # The shared body of a diagonal step, whether it comes from an explicit
+    # Move Upper-Right/etc. sub-command (#do_diagonal, which looks up its
+    # `horizontal`/`vertical` pair from the move id) or from Move Forward
+    # continuing a diagonal #last_move_direction (see #execute's own
+    # MOVE_FORWARD case) -- RPG_RT's own `UpdateMoveRoute`
+    # (src/game_character.cpp) has no such split at all: `Move(GetDirection())`
+    # is the one call site for every move sub-command, cardinal or diagonal
+    # alike, since `GetDirection()` is an 8-way enum that a diagonal move
+    # simply leaves set.
+    def do_diagonal_dir(character, world, horizontal, vertical)
       prev_dir = character.direction
       character.face(character.diagonal_facing(horizontal, vertical))
       passable = character.through ||
