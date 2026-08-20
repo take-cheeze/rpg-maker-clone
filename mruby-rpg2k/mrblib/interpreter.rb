@@ -1945,10 +1945,23 @@ module Game
       party.gain_gold(cmd.param(0) == 0 ? v : -v)
     end
 
+    # Confirmed against RPG_RT's own live source: `Game_Interpreter::
+    # CommandChangeItems` (`src/game_interpreter.cpp`) computes its signed
+    # `value` through the same `OperateValue` a variable-sourced amount can
+    # make negative even under "Add", then refuses to apply it at all --
+    # "Add item can't be used to remove an item and remove item can't be
+    # used to add one" -- unless the sign still matches the chosen
+    # operation. `Game_Interpreter::CommandChangeGold` calls the identical
+    # `OperateValue` with no such guard, so this asymmetric no-op is
+    # specific to Change Items. Without it, a variable holding a negative
+    # amount silently flips Add into a removal (or Remove into a gain)
+    # instead of doing nothing.
     def do_change_items(cmd)
       item = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
       amount = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
-      party.gain_item(item, cmd.param(0) == 0 ? amount : -amount)
+      value = cmd.param(0) == 0 ? amount : -amount
+      return if cmd.param(0) == 0 ? value < 0 : value > 0
+      party.gain_item(item, value)
     end
 
     # Change Party Member (10330): add or remove the actor named by param2 (a

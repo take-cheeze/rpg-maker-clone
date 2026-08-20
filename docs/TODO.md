@@ -1849,6 +1849,33 @@ The work below is roughly ordered by the critical path to a walkable game
   in-battle Show Battle Animation is deliberately *not* gated with them: it
   renders through `@animation_sprite`, a top-level sprite at z 150 (above the
   battlers, below the pictures), not through either map viewport.
+  ✅ **Follow-up (2026-08-20): Change Items (10320) was missing RPG_RT's own
+  guard against a variable-sourced amount whose sign contradicts the chosen
+  operation, letting Add remove items or Remove add them instead of doing
+  nothing.** Confirmed against RPG_RT's own live source:
+  `Game_Interpreter::CommandChangeItems` (`src/game_interpreter.cpp`)
+  computes its signed `value` through the same `OperateValue` a
+  variable-sourced amount can make negative even under "Add" — "Add item
+  can't be used to remove an item and remove item can't be used to add
+  one" — and no-ops the whole command outright when the resulting sign
+  doesn't match: `if (value > 0) return true;` under Remove, `if (value <
+  0) return true;` under Add. `Game_Interpreter::CommandChangeGold`
+  (10310) calls the identical `OperateValue` with no such guard at all, so
+  this asymmetric no-op is Change Items-specific, not a general
+  Change-command rule. `Interpreter#do_change_items`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) applied whatever signed count
+  `#gain_item` was handed with no sign check of its own: an event driving
+  the amount through a variable that can go negative (arithmetic on other
+  variables, a computed stock delta) silently flipped direction — gaining
+  items on a "Remove" or losing them on an "Add" — instead of the command
+  harmlessly doing nothing like real RPG_RT. Fixed by computing the same
+  signed `value` and returning before `#gain_item` when its sign
+  contradicts `cmd.param(0)`'s chosen operation; `#do_change_gold` is
+  untouched, matching `CommandChangeGold`'s own lack of a guard. Covered
+  by a new `scripts/rpg2k_logic_check.rb` check (a variable holding -2
+  under both Add and Remove leaves each item's count untouched),
+  confirmed to fail against the pre-fix code (`expected 5, got 3`) before
+  the fix.
 - ✅ **Change Screen Tone now reaches the battle backdrop too.** The battle
   backdrop (`Scene::Battle`'s `@ui[:back_sprite]`, a top-level sprite at z 5)
   rides none of the toned viewports, so a Tint Screen active during a fight

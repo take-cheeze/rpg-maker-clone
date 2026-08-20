@@ -1426,6 +1426,31 @@ check 'interpreter change gold/items updates the party' do
   eq 2, st.party.items[3]
 end
 
+check 'Change Items no-ops when a variable-sourced amount has the wrong ' \
+      'sign for the chosen operation, instead of flipping direction' do
+  # Confirmed against RPG_RT's own live source: `Game_Interpreter::
+  # CommandChangeItems` (src/game_interpreter.cpp) computes its value
+  # through the same `OperateValue` a variable-sourced amount can make
+  # negative even under "Add", then refuses to apply it at all -- "Add
+  # item can't be used to remove an item and remove item can't be used to
+  # add one" -- unless the sign still matches. `CommandChangeGold` has no
+  # such guard, so this is Change Items-specific.
+  st = new_state
+  st.party.gain_item(3, 5)
+  st.party.gain_item(4, 5)
+  st.variables[1] = -2
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CHANGE_ITEMS, [0, 0, 3, 1, 1]),  # Add item 3, amount = var[1] (-2)
+    FakeCmd.new(IC::CHANGE_ITEMS, [1, 0, 4, 1, 1]),  # Remove item 4, amount = var[1] (-2)
+  ])
+  it.update
+  eq 5, st.party.items[3],
+     'Add with a negative operand no-ops rather than removing 2'
+  eq 5, st.party.items[4],
+     'Remove with a negative operand (which flips positive) no-ops rather than adding 2'
+end
+
 check 'interpreter pauses on a message and resumes' do
   st = new_state
   it = Game::Interpreter.new(st)
