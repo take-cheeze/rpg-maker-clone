@@ -15055,9 +15055,39 @@ above are repeated here)
   `scripts/rpg2k_logic_check.rb` checks predating this entry — `'Shop sell
   refuses unowned, price-0 (key), or in a buy-only shop'`, `'Shop max_buy of
   a free item is limited only by the cap'` (its own comment: "a price-0
-  good does not divide by zero") and `'Shop sellable_items lists only held,
-  priced goods in id order'` — none of them vacuous; each asserts a concrete
-  gold/item-count/list outcome.
+  good does not divide by zero") ~~and `'Shop sellable_items lists only
+  held, priced goods in id order'`~~ (that third check encoded a real bug —
+  see the follow-up right below) — none of them vacuous; each asserts a
+  concrete gold/item-count/list outcome.
+  ✅ **Follow-up (2026-08-20): the transaction-refusal rule above was
+  correct, but this pass never checked whether a price-0 item should still
+  *appear* on the sell list at all — it should, and this codebase hid it
+  outright instead.** Confirmed directly against RPG_RT's live source:
+  `Window_ShopSell` (`src/window_shopsell.cpp`) inherits `Window_Item::
+  CheckInclude`/`Refresh` (`src/window_item.cpp`) completely
+  unchanged — a plain `item_id > 0` filter over every item `Game_Party::
+  GetItems` returns, no price check anywhere in it — and only overrides
+  `CheckEnable` (`return item->price > 0;`), which gates the drawn color
+  and, in `Scene_Shop::UpdateSellSelection` (`src/scene_shop.cpp`), Decision
+  (`if (item && item->price > 0) { ...SFX_Decision...; SetMode(SellHowMany);
+  } else { ...SFX_Buzzer... }`). A price-0 (key) item the party holds is
+  listed in real RPG_RT's Sell screen — the same CheckInclude/CheckEnable
+  split already found and fixed for the field Skill/Item menus above — just
+  refuses the sale with a Buzzer if selected. `Game::Shop#sellable_items`
+  used `.select { |id| sellable?(id) }`, dropping the item from the list
+  outright rather than only from the *sellable* set `#max_sell` (correctly)
+  already gates `Scene::Map#open_shop_quantity`'s Decision handler on — that
+  handler's existing Buzzer-on-refusal path needed no change at all, since
+  it already fires whenever `#max_sell` returns 0, which a price-0 item
+  already did. Fixed by dropping the `#sellable?` filter from
+  `#sellable_items` entirely (`@party.items.keys.sort`, since a bag never
+  holds a zero-count entry — `#gain_item` erases it outright the moment a
+  count reaches zero, the same way EasyRPG's own `Game_Party::AddItem`
+  does). Covered by rewriting the stale `scripts/rpg2k_logic_check.rb` check
+  above and a new `scripts/rpg2k_scene_check.rb` check (a price-0 "Deed" is
+  drawn on the sell screen; moving the cursor onto it and pressing Decision
+  plays only the Buzzer SE and stays on the sell list), both confirmed to
+  fail against the pre-fix code.
 - ✅ State resistance rank A-E only gates **susceptibility** — the actual
   proc chance is entirely the *skill's own* occurrence-rate field (0%
   occurrence never applies regardless of rank) — **confirmed already

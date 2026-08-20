@@ -9965,12 +9965,22 @@ check 'a zero or negative quantity is not a transaction' do
   ok !shop.did_transaction
 end
 
-check 'Shop sellable_items lists only held, priced goods in id order' do
+# Confirmed against RPG_RT's own live source: `Window_ShopSell`
+# (`src/window_shopsell.cpp`) inherits `Window_Item::CheckInclude`/
+# `Refresh` (`src/window_item.cpp`) unchanged -- a plain `item_id > 0`
+# filter with no price check at all -- and only overrides `CheckEnable`
+# (`item->price > 0`), which `Scene_Shop::UpdateSellSelection`
+# (`src/scene_shop.cpp`) reads to Buzz instead of opening the quantity
+# counter. A price-0 (key) item the party holds is listed, just refused.
+check 'Shop sellable_items lists every held item, id order -- a price-0 ' \
+      '(key) item stays listed even though it cannot actually be sold' do
   st, shop = shop_setup(0, { 3 => 100, 5 => 40, 8 => 0 })
-  st.party.gain_item(8, 1) # price 0 -> not sellable
+  st.party.gain_item(8, 1) # price 0 -- listed, but #sellable?/#max_sell refuse it
   st.party.gain_item(5, 2)
   st.party.gain_item(3, 1)
-  eq [3, 5], shop.sellable_items
+  eq [3, 5, 8], shop.sellable_items
+  ok !shop.sellable?(8), 'still not actually sellable'
+  eq 0, shop.max_sell(8), 'and the quantity counter refuses to open for it'
 end
 
 check 'Open Shop parses the mode and goods and suspends on :shop' do
