@@ -9813,6 +9813,35 @@ not yet verified:
    animation collapses to the single screen-centre target with no enemy
    sprite flashed), both confirmed against the prior single-target-only
    behaviour.
+- ✅ **A troop battle-event page's Show Message/Show Choices window always
+  drew at the top of the screen, when real RPG_RT positions it there only
+  for an RPG2003 database — an RPG2000 database (this project's primary
+  target) shows it at the bottom instead.** Confirmed directly against
+  RPG_RT's live source: `Game_Message::GetRealPosition`
+  (`src/game_message.cpp`) is `if (Game_Battle::IsBattleRunning()) { return
+  Feature::HasRpg2kBattleSystem() ? 2 : 0; }` — position 2 (bottom) for an
+  RPG2000 database, position 0 (top) for RPG2003 — overriding any
+  Message-Options position entirely while a battle is running.
+  `Feature::HasRpg2kBattleSystem` (`src/feature.cpp`) is a pure
+  database-edition check (`Player::IsRPG2k()`), unrelated to `battle_type`/
+  gauge mode, so this is a base RPG2000-vs-RPG2003 difference, not a
+  gauge-battle-only one. `Scene::Battle::BATTLE_EVENT_MSG_Y`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) hardcoded the top position for
+  every edition, justified only by an uncited internal design rationale
+  ("so a page talking mid-round does not fight the action banner for the
+  same row") with no RPG_RT citation at all — the same class's own
+  `RPG2k3::Scene::Battle` (`battle_rpg2k3.rb`) never overrode it either, so
+  both editions inherited the single hardcoded top position. Fixed by
+  making `#battle_text_window` (the message panel's one build site, called
+  only from `#drive_battle_event_message`) pick the position itself off
+  `@state.party.rpg2003?` — `BATTLE_EVENT_MSG_Y` (top) for RPG2003, or
+  flush against the screen's bottom edge (`SCREEN_H - inner_h -
+  Window::BORDER * 2`, computed from the panel's own content height since
+  this codebase's message panel is content-fit rather than RPG_RT's fixed
+  size) for RPG2000. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (an RPG2000 battle-event message sits flush against the bottom edge; an
+  RPG2003 one sits at `BATTLE_EVENT_MSG_Y`), confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **Weather Effects now clamps an RPG2003-only weather type back to none on
   RPG2000, and clamps strength to at most 2 on every edition — both used to
   be stored verbatim off the raw command bytes with no bound at all.**

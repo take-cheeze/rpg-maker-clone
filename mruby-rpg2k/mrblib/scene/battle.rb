@@ -804,8 +804,18 @@ class RPG2k
         bmp
       end
 
-      # Where a battle-event page's message panel sits — above the action banner,
-      # so a page talking mid-round does not fight it for the same row.
+      # Where a battle-event page's message panel sits when the database is
+      # RPG2003 -- the top of the screen. Confirmed against RPG_RT's own live
+      # source: `Game_Message::GetRealPosition` (`src/game_message.cpp`) is
+      # `if (Game_Battle::IsBattleRunning()) { return Feature::
+      # HasRpg2kBattleSystem() ? 2 : 0; }` -- position 2 (bottom) for an
+      # RPG2000 database, position 0 (top) for RPG2003 -- overriding any
+      # Message-Options position entirely while a battle is running.
+      # `Feature::HasRpg2kBattleSystem` (`src/feature.cpp`) is a pure
+      # database-edition check (`Player::IsRPG2k()`), unrelated to
+      # `battle_type`/gauge mode. See `#battle_text_window`, which picks
+      # between this and the bottom (`BATTLE_PANEL_Y`, content-height
+      # adjusted) by `@state.party.rpg2003?`.
       BATTLE_EVENT_MSG_Y = 8
 
       # The backdrop this encounter fights over. Enemy Encounter's own param2
@@ -2403,8 +2413,7 @@ class RPG2k
       def drive_battle_event_message(it)
         unless @ui[:event_win]
           lines = it.wait_kind == :choice ? it.choice_labels : it.message_lines
-          @ui[:event_win] =
-            battle_text_window(lines || [], BATTLE_EVENT_MSG_Y, 340)
+          @ui[:event_win] = battle_text_window(lines || [], 340)
           return # shown this frame; take the button from the next one
         end
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
@@ -3636,14 +3645,14 @@ class RPG2k
         win
       end
 
-      # A text panel of `lines` at vertical position `y` and depth `z`, sized to
-      # fit its content -- used for the battle-event page message window, which
-      # this screen deliberately keeps off the bottom panel's rect (see
-      # `BATTLE_EVENT_MSG_Y`) so a page talking mid-round does not fight the
-      # action banner for the same row.
-      def battle_text_window(lines, y, z)
+      # A text panel of `lines` at depth `z`, sized to fit its content -- used
+      # for the battle-event page message window. Positioned at the top
+      # (`BATTLE_EVENT_MSG_Y`) for an RPG2003 database, or flush against the
+      # bottom edge for RPG2000 -- see that constant's own citation.
+      def battle_text_window(lines, z)
         inner_w = SCREEN_W - 20 - Window::BORDER * 2
         inner_h = [lines.length, 1].max * BATTLE_LINE_H
+        y = @state.party.rpg2003? ? BATTLE_EVENT_MSG_Y : SCREEN_H - inner_h - Window::BORDER * 2
         win = Window.new(10, y, SCREEN_W - 20, inner_h + Window::BORDER * 2)
         win.z = z
         win.windowskin = windowskin
