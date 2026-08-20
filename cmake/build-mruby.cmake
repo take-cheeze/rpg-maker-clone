@@ -80,6 +80,26 @@ function(rpg2k_add_mruby)
       MRUBY_BUILD_DIR=${mruby_build_dir}
       PROJECT_BUILD_DIR=${ARG_PROJECT_BUILD_DIR} ${ARG_MRB_OPTS})
 
+  # Vendored mruby carries a real upstream compiler bug (patches/mruby-colon3-
+  # assign-setmcnst.patch's own preamble has the full trail): `::Const = value`
+  # written inside a nested module/class body silently defines the constant on
+  # the *lexically enclosing* module instead of at the top level -- no
+  # exception, just the wrong owner. Real, not vendor-specific: `ruby -e 'module
+  # Foo; ::Bar = 42; end; p Object.const_defined?(:Bar)'` prints true, mruby's
+  # does not. This submodule tracks upstream mruby/mruby directly (no fork this
+  # project controls to carry the fix on), so it is patched in place here
+  # instead, the same way patches/psp-fixup-imports-jal-relocation-aware. patch
+  # is applied to a fetched pspsdk checkout -- via a real script
+  # (scripts/apply_mruby_patch.bash), not a `patch` call embedded straight in
+  # this COMMAND: it needs a dry-run-first idempotency check across repeat
+  # configures/builds without re-cloning the submodule, and that redirect- heavy
+  # shell logic does not survive CMake's own command-line escaping reliably
+  # inline. The script itself fails loudly (not silently) if the patch stops
+  # applying, e.g. after a future submodule bump moves the patched code -- see
+  # its own preamble.
+  set(mruby_colon3_patch
+      "${ARG_REPO_ROOT}/patches/mruby-colon3-assign-setmcnst.patch")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -92,6 +112,8 @@ function(rpg2k_add_mruby)
   # BSD/macOS) replaces the symlink in place instead.
   add_custom_command(
     OUTPUT "${libmruby_a}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_colon3_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -100,7 +122,8 @@ function(rpg2k_add_mruby)
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME}/mgem-list && ${mrb_opts} rake
       -v
     WORKING_DIRECTORY "${mruby_prefix}"
-    DEPENDS "${ARG_REPO_ROOT}/build_config.rb" ${mrb_files})
+    DEPENDS "${ARG_REPO_ROOT}/build_config.rb" "${mruby_colon3_patch}"
+            ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
 

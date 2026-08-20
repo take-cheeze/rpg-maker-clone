@@ -1,0 +1,70 @@
+mruby bug: `::Const = value` (an explicit top-level constant assignment,
+written from inside a nested module or class body) silently defines the
+constant on the *lexically enclosing* module instead of at the top level
+-- no exception, no warning, just the wrong owner.
+
+Found investigating a real RPG Maker VX Ace game whose own bundled
+add-on never finished setting up (docs/rpgvx-rgss-api-gap.md, item 7):
+
+  module BMSP
+    module MapFog
+      module Interface
+        ::MapFog = self
+        ...
+
+Minimal repro (no class variables, no name collisions -- neither
+mattered, both were red herrings from an earlier, incomplete pass at
+this same bug):
+
+  module Foo
+    ::Bar = 42
+  end
+  Object.const_defined?(:Bar)   # => false, should be true
+  Foo.const_defined?(:Bar)      # => true -- landed here instead
+
+Root cause, in gen_colon3_assign (mruby-compiler/core/codegen.c), the
+codegen for `::Const = value` (NODE_COLON3 in assignment position):
+it pushes Object via OP_OCLASS -- exactly mirroring gen_colon2_assign's
+handling of the explicit-base form `Foo::Const = value`, which pushes
+the base object and correctly finishes with OP_SETMCNST (the opcode
+that takes that pushed value as the constant's owner, symmetric with
+OP_GETMCNST on the read side: `mrb_const_get(mrb, regs[a], ...)`) --
+but then emits **OP_SETCONST** instead. OP_SETCONST's own VM handler
+(src/vm.c) never reads that pushed value at all:
+
+  CASE(OP_SETCONST, BB) {
+    ci = mrb->c->ci;
+    struct RClass *c = MRB_PROC_TARGET_CLASS(ci->proc);
+    if (!c) c = mrb->object_class;
+    mrb_const_set(mrb, mrb_obj_value(c), irep->syms[b], regs[a]);
+    NEXT;
+  }
+
+It always targets MRB_PROC_TARGET_CLASS(ci->proc) -- the current
+lexically enclosing class/module -- which is exactly correct for a
+*bare* `Const = value` (NODE_CONST, compiled by gen_xvar_assignment,
+which never pushes an OP_OCLASS base to begin with) but wrong for the
+explicit `::Const = value` form, whose entire point is to bypass the
+enclosing scope. The *read* path already gets this right --
+codegen_colon3 pairs the same OP_OCLASS push with OP_GETMCNST, not
+OP_GETCONST -- so this looks like a copy/paste slip in the assignment
+counterpart that was never given its own read/write symmetry check.
+
+Confirmed against real CRuby: `ruby -e 'module Foo; ::Bar = 42; end;
+p Object.const_defined?(:Bar)'` prints `true`.
+
+Fix: gen_colon3_assign should finish with OP_SETMCNST, matching
+gen_colon2_assign and the OP_OCLASS/OP_GETMCNST pairing codegen_colon3
+already uses to *read* the same node type.
+
+--- a/mrbgems/mruby-compiler/core/codegen.c
++++ b/mrbgems/mruby-compiler/core/codegen.c
+@@ -3006,7 +3006,7 @@ gen_colon3_assign(codegen_scope *s, node *varnode, node *rhs, int sp, int val)
+   genop_1(s, OP_OCLASS, cursp());
+   push();
+   idx = sym_idx(s, n->name);
+-  gen_colon_assign_common(s, rhs, sp, val, idx, OP_SETCONST);
++  gen_colon_assign_common(s, rhs, sp, val, idx, OP_SETMCNST);
+ }
+
+ static void
