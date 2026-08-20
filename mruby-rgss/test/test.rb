@@ -1712,6 +1712,23 @@ assert "RGSS::Input::N0..N9/PLUS..PERIOD are distinct ids continuing past F12" d
   end
 end
 
+# Graphics.brightness= drives a real Sprite/Bitmap (the fade overlay) since it
+# actually draws now, and Sprite.new needs a live display the headless test
+# binary lacks (see the Sprite/Tilemap note above) -- so every brightness=
+# exercised as plain Ruby logic below stubs the private #brightness_sprite out
+# for a fake that just remembers the opacity it was given, the same way other
+# native calls are stubbed elsewhere in this file. The real overlay is
+# exercised by RGSS.effect_probe (native, against a live display).
+class << RGSS::Graphics
+  alias _brightness_sprite_orig brightness_sprite
+  def brightness_sprite
+    return @fake_brightness_sprite if @fake_brightness_sprite
+    o = Object.new
+    def o.opacity=(v); @opacity = v; end
+    @fake_brightness_sprite = o
+  end
+end
+
 assert "RGSS::Graphics reports and resizes the screen" do
   # RGSS2 added Graphics.width/height; each maker's boot shell declares its own
   # resolution, and the stock VX Ace scripts compute camera and window layouts

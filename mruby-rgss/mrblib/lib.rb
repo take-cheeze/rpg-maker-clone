@@ -199,6 +199,28 @@ module RGSS
                    "did not shape the dissolve"
       ok = false
     end
+
+    # Graphics.brightness=: the grey sprite (still up, per Graphics.transition
+    # above leaving it visible = false -- bring it back first) darkened toward
+    # black, then restored, against the same base frame_mean read at the top.
+    sprite.visible = true
+    Graphics.update
+    Graphics.brightness = 0
+    Graphics.update
+    dark = frame_mean
+    Graphics.brightness = 255
+    Graphics.update
+    restored = frame_mean
+    $stderr.puts "[RGSS-PROBE] dark=#{dark.inspect} restored=#{restored.inspect}"
+    unless dark[0] < base[0] - 40 && dark[1] < base[1] - 40 && dark[2] < base[2] - 40
+      $stderr.puts "[RGSS-PROBE] FAIL Graphics.brightness=0 did not darken the frame"
+      ok = false
+    end
+    if (restored[0] - base[0]).abs > 10
+      $stderr.puts "[RGSS-PROBE] FAIL Graphics.brightness=255 did not restore the frame"
+      ok = false
+    end
+
     sprite.dispose
     bitmap.dispose
     viewport.dispose
@@ -1316,6 +1338,11 @@ module RGSS
     # object; RGSS z values are ordinary integers, so pick one past anything a
     # game would set.
     TRANSITION_Z = 0x40000000
+    # The brightness fade overlay sits just under the transition's own
+    # full-screen sprite (above every game object either way; #transition
+    # forces brightness back to 255 before it runs, so in practice the two
+    # never need to be visible at once).
+    BRIGHTNESS_Z = TRANSITION_Z - 1
 
     class << self
       attr_accessor :frame_count, :frame_rate
@@ -1333,27 +1360,50 @@ module RGSS
         duration.to_i.times { update }
       end
 
-      # 0 (black) .. 255 (normal). Stored so a script's fade bookkeeping is
-      # consistent; the value is not applied to what is drawn yet — that needs
-      # the same native screen-tone support the RPG2000 tint is waiting on, so
-      # say so once rather than pretending the screen darkened.
+      # 0 (black) .. 255 (normal). Drawn as a full-screen black overlay above
+      # every game object (see #brightness_sprite) whose opacity is
+      # `255 - value` — the same technique #transition already uses for its
+      # own full-screen dissolve, just a plain fade instead of a shaped one.
       def brightness=(value)
         value = 0 if value < 0
         value = 255 if value > 255
-        RGSS.warn_stub("Graphics.brightness= (tracked, not drawn)") unless value == 255
         @brightness = value
+        if value >= 255
+          brightness_sprite.opacity = 0 if @brightness_sprite
+        else
+          brightness_sprite.opacity = 255 - value
+        end
       end
 
-      # RGSS2+ fades: run the frames the fade would take (so the game's timing
-      # is right) and leave the brightness at its end value.
+      # RGSS2+ fades: step brightness from its current value to the target (0
+      # for fadeout, 255 for fadein) over `duration` frames, one Graphics.update
+      # per step — not run the frames first and jump to the end value, which
+      # would hold the screen at its *starting* brightness for the whole fade
+      # and only change it on the last frame. `duration <= 0` jumps straight to
+      # the target with no frame pumped, same as RGSS's own instant case.
       def fadeout(duration)
-        wait(duration)
-        self.brightness = 0
+        start = @brightness
+        if duration <= 0
+          self.brightness = 0
+          return
+        end
+        duration.times do |i|
+          self.brightness = start - (start * (i + 1) / duration)
+          update
+        end
       end
 
       def fadein(duration)
-        wait(duration)
-        self.brightness = 255
+        start = @brightness
+        if duration <= 0
+          self.brightness = 255
+          return
+        end
+        diff = 255 - start
+        duration.times do |i|
+          self.brightness = start + (diff * (i + 1) / duration)
+          update
+        end
       end
 
       # RGSS's scene change: `freeze` grabs the current screen and `transition`
@@ -1380,7 +1430,10 @@ module RGSS
       def transition(duration = 8, filename = nil, vague = 40)
         frozen = @frozen
         @frozen = nil
-        @brightness = 255
+        # Through the setter, not a raw ivar write: a scene change always
+        # starts from full brightness, and the brightness overlay (if a
+        # previous fadeout left it visible) has to be hidden again too.
+        self.brightness = 255
         return wait(duration) if frozen.nil? || duration <= 0
 
         map = _transition_map(filename)
@@ -1426,6 +1479,30 @@ module RGSS
         nil
       end
 
+      private
+
+      # The full-screen black sprite #brightness= fades in and out of view,
+      # created once and kept alive at BRIGHTNESS_Z (opacity 0, i.e.
+      # invisible, whenever brightness is 255) rather than allocated fresh on
+      # every fade -- a game commonly fades in and out many times a session
+      # (every battle, every map transfer). Recreated if the screen size
+      # changes out from under it (#resize_screen is normally called once at
+      # boot, before any fade, but nothing stops a script calling it again).
+      def brightness_sprite
+        if @brightness_sprite && @brightness_sprite.bitmap &&
+           @brightness_sprite.bitmap.width == width &&
+           @brightness_sprite.bitmap.height == height
+          return @brightness_sprite
+        end
+        @brightness_sprite.dispose if @brightness_sprite
+        bmp = Bitmap.new(width, height)
+        bmp.fill_rect(0, 0, width, height, Color.new(0, 0, 0, 255))
+        @brightness_sprite = Sprite.new
+        @brightness_sprite.bitmap = bmp
+        @brightness_sprite.z = BRIGHTNESS_Z
+        @brightness_sprite.opacity = 0
+        @brightness_sprite
+      end
     end
   end
 
