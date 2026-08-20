@@ -8730,6 +8730,12 @@ module Game
       @hidden = hidden ? true : false
       @hp = @max_hp
       @sp = @max_sp
+      # This member's own randomized starting phase for the `levitate` bob's
+      # sine argument (0..63, matching EasyRPG's `frame_counter` seed --
+      # see `#flying_phase`'s own attr comment below). Rolled per member by
+      # `Troop#initialize`, not here, since only the troop has an RNG to
+      # hand; left at the schema default of 0 for a bare fixture with none.
+      @flying_phase = 0
       # Critical-hit chance as a whole percent (0 = never), from the enemy's
       # critical_hit flag and its 1-in-`critical_hit_chance` rate, truncated
       # the same way -- and for the same reason -- as Actor#crit_chance. An
@@ -8799,6 +8805,20 @@ module Game
     # it does and does not affect.
     attr_reader :levitate
 
+    # This member's own randomized starting phase (0..63) for `Scene::Battle
+    # #flying_offset`'s sine bob. RPG_RT does not bob every levitating troop
+    # member in lockstep from one shared clock: `Game_Enemy::GetFlyingOffset`
+    # (`src/game_enemy.cpp`) reads a *per-battler* `GetBattleFrameCounter()`
+    # (`Game_Battler::frame_counter`, `src/game_battler.h`), which
+    # `Game_Battler::ResetBattle` (`src/game_battler.cpp`) seeds
+    # independently per battler at battle start -- `frame_counter =
+    # Rand::GetRandomNumber(0, 63);` -- before `Game_Battler::UpdateBattle`
+    # increments every battler's own counter in lockstep for the rest of the
+    # fight (`Scene_Battle::UpdateBattlers`'s per-battler loop). So each
+    # levitating member bobs on its own fixed, randomized phase relative to
+    # the others, not in unison. Writable so `Troop#initialize` can roll it.
+    attr_accessor :flying_phase
+
     # The "Appear Transparent" flag (field 10) -- see the comment in #initialize.
     attr_reader :transparent
 
@@ -8847,6 +8867,17 @@ module Game
       row.members.each { |_, m| @members << member(db, m) } if row && row.members
       @pages = row && row.respond_to?(:pages) ? row.pages : nil
       apply_appear_randomly(row, rng) if row && rng
+      # Each levitating member's own `flying_phase` (see Enemy#flying_phase's
+      # own citation): rolled once here, in member order, the same way
+      # `Game_Battler::ResetBattle` seeds every battler's `frame_counter`
+      # independently at battle start. RPG_RT actually rolls this for every
+      # battler on both sides, levitating or not, party actor included --
+      # deliberately narrowed here to only the members whose `flying_phase`
+      # can ever be observed at all (a non-levitating member's own bob is
+      # always 0, and only a Troop's own `Enemy` members bob in the first
+      # place), so as not to shift the shared `rng`'s draw count for every
+      # ordinary fight the way a full, unconditional port would.
+      @members.each { |m| m.flying_phase = rng.random(64) if m.levitate } if rng
     end
 
     # EXP / gold / drops are only earned from members that actually fell in

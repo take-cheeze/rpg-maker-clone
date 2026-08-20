@@ -11236,6 +11236,47 @@ check 'Appear Randomly leaves every member visible without the flag set, or ' \
      'no RNG handed in at all -- the pass is skipped entirely, not rolled against a default'
 end
 
+LevitateRow = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                         :agility, :exp, :gold, :levitate)
+
+def levitate_db
+  BattleDB.new(
+    { 2 => LevitateRow.new('Bat', 12, 0, 3, 2, 2, 9, 3, 4, true) },
+    { 1 => GroupRow.new('Bats', { 1 => GroupMember.new(2, 0, 0, false),
+                                  2 => GroupMember.new(2, 0, 0, false),
+                                  3 => GroupMember.new(2, 0, 0, false),
+                                  4 => GroupMember.new(2, 0, 0, false) }) })
+end
+
+check 'Game::Troop rolls each levitating member its own independent ' \
+      'flying_phase (0..63) when built with an RNG' do
+  # RPG_RT's Game_Battler::ResetBattle seeds each battler's own
+  # frame_counter independently at battle start (Rand::GetRandomNumber(0,
+  # 63)) -- Game::Troop#initialize ports this per levitating member, in
+  # member order, right after the Appear Randomly pass above (narrowed to
+  # levitating members only -- see the citation on the roll itself -- since
+  # a non-levitating member's own phase is never observable).
+  troop = Game::Troop.new(levitate_db, 1, Game::Rng.new(7))
+  phases = troop.members.map(&:flying_phase)
+  ok phases.all? { |p| p >= 0 && p < 64 }, 'every roll lands in 0..63'
+  ok phases.uniq.size > 1, 'a real seed spreads the four members across ' \
+                           'more than one shared phase'
+end
+
+check 'Game::Troop leaves flying_phase at 0 with no RNG handed in' do
+  troop = Game::Troop.new(levitate_db, 1)
+  ok troop.members.all? { |m| m.flying_phase == 0 },
+     'no RNG at all -- the roll is skipped entirely, not defaulted from a seed'
+end
+
+check "Game::Troop never rolls flying_phase for a non-levitating member, " \
+      "so an ordinary fight's RNG draw count is unaffected" do
+  db = appear_random_db(flag: false) # 4 identical, non-levitating members
+  troop = Game::Troop.new(db, 1, Game::Rng.new(7))
+  ok troop.members.all? { |m| m.flying_phase == 0 },
+     'no member here carries the levitate flag, so nothing is ever rolled'
+end
+
 check 'Appear Randomly never re-rolls a member already individually flagged ' \
       'invisible' do
   db = BattleDB.new(

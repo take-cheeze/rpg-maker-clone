@@ -380,18 +380,18 @@ class RPG2k
       # help file" (their comment). So a genuine RPG2000 database's own
       # `levitate` flag has no on-screen effect whatsoever, real RPG_RT bug and
       # all; only an RPG2003 one draws the +/-4px, 256-frame-period sine bob
-      # (`round(sin(2*PI*frame/256) * 4)`, their `frame` a per-battler counter
-      # incremented once per battle frame) computed here from this scene's own
-      # per-battle `@ui[:frame]` instead -- a single shared phase for
-      # every levitating member rather than EasyRPG's per-battler-randomized
-      # start offset, since nothing in either wiki mirror (both unreachable
-      # this session) describes members desyncing from one another, only that
-      # each one "changes its Y position".
+      # (`round(sin(2*PI*frame/256) * 4)`). Each member bobs on its own
+      # randomized phase, not in lockstep -- `#flying_phase`'s own citation
+      # confirms EasyRPG's `frame` is a *per-battler* counter, independently
+      # seeded 0..63 per battler at battle start, so `member.flying_phase`
+      # (rolled once by `Game::Troop#initialize`) is added to this scene's
+      # own shared per-frame tick, which still advances every member in
+      # lockstep the way `Game_Battler::UpdateBattle` does.
       FLYING_AMPLITUDE = 4
       FLYING_PERIOD = 256
       def flying_offset(member)
         return 0 unless member.levitate && @state.party.rpg2003?
-        frame = @ui[:frame] || 0
+        frame = (@ui[:frame] || 0) + (member.flying_phase || 0)
         (Math.sin(2 * Math::PI * frame / FLYING_PERIOD.to_f) * FLYING_AMPLITUDE).round
       end
 

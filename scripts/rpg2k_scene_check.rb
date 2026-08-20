@@ -12238,6 +12238,9 @@ check 'Scene::Map#flying_offset: RPG2003 + levitate is a +/-4px, 256-frame sine 
   ui = battle_to_command(scene)
   member = ui[:troop].members[0]
   ok member.levitate, 'the fixture enemy (id 3, Bat) carries the flag'
+  member.flying_phase = 0 # pin out the per-member random phase (see
+                           # #flying_phase) so this exercises the bare sine
+                           # formula against a known, controlled frame count
 
   ui[:frame] = 0
   eq 0, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'frame 0: sin(0) = 0'
@@ -12260,6 +12263,9 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   ui = battle_to_command(scene)
   spr = ui[:enemy_sprites][0]
   member = ui[:troop].members[0]
+  member.flying_phase = 0 # pin out the per-member random phase (see
+                           # #flying_phase) for the same reason as the check
+                           # just above
   base_y = member.y - spr.bitmap.height / 2
   frame_before = ui[:frame]
   # Drive to the next frame landing exactly on a sine peak (frame % 256 ==
@@ -12292,6 +12298,33 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   eq base_y2, spr2.y, 'RPG2000: still no bob after the same number of frames ' \
                       '-- the database flag is parsed but the engine never ' \
                       'draws it, a real RPG_RT quirk, not a missing feature'
+end
+
+check 'Scene::Map#flying_offset: a member\'s own flying_phase shifts its ' \
+      "bob, so two levitating members don't have to bob in lockstep" do
+  # RPG_RT's Game_Enemy::GetFlyingOffset reads a *per-battler* frame counter
+  # (Game_Battler::frame_counter), independently randomized 0..63 per
+  # battler at battle start (Game_Battler::ResetBattle) before every
+  # battler's own counter increments in lockstep -- so two levitating troop
+  # members bob on their own fixed, randomized phases relative to each
+  # other, not in unison off one shared clock.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true))
+  ui = battle_to_command(scene)
+  member = ui[:troop].members[0]
+  bat = scene.instance_variable_get(:@battle)
+
+  ui[:frame] = 64 # a quarter period at phase 0: the +4px peak
+  member.flying_phase = 0
+  eq 4, bat.send(:flying_offset, member), 'phase 0 at frame 64 is the peak, as before'
+  member.flying_phase = 64 # a full extra quarter period added on top
+  eq 0, bat.send(:flying_offset, member),
+     "the same shared frame reads differently once this member's own phase " \
+     'is folded into the sine argument'
 end
 
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------
