@@ -526,14 +526,34 @@ way, one at a time, each hidden behind the identical crash until fixed:
   volume-control add-on script called directly — see the real
   `RPG::BGM#play` reopened by this same release's add-on). Every VX Ace
   game whose title screen calls `Audio.bgm_play` with 4 arguments raised
-  `ArgumentError` right there. Accepting the 4th argument needs no real fix
-  behind it — no backend here seeks a mid-stream start position, and this
-  engine's own `RPG::BGM` never calls the 4-arg form internally either (see
-  `mruby-rpgvx/mrblib/rgss2_runtime.rb`'s own `BGM.play_audio`, still
-  3-arg) — so `bgm_play` now accepts `pos = 0`, warns once that seeking is
-  unsupported when it is non-zero, and plays the track from its own
-  beginning, matching the real signature real scripts call with instead of
-  raising.
+  `ArgumentError` right there. First fixed by accepting `pos = 0` and
+  warning once that seeking was unsupported when it was non-zero — no
+  backend seeked a mid-stream start position at the time.
+
+  **Later, seeking itself was implemented**, once the fix above's own
+  warning made it an obvious next target: `pos` now threads through to
+  `Mix_SetMusicPosition` (`src/sdl_audio.cxx`'s `start_music`), on both the
+  loose-file and packed-archive paths (a released game's whole `Audio/`
+  tree is packed, so the archive path — `_bgm_play_mem`, not `_bgm_play` —
+  is what an actual game's resume reaches). `pos` is milliseconds, the same
+  unit `Audio.bgm_pos` already returns, so `Audio.bgm_play(f, v, p,
+  Audio.bgm_pos)` round-trips exactly through this engine's own two halves;
+  a real VX Ace script's own hardcoded literal may use a different native
+  unit (secondary sources disagree on RGSS3's own — one empirical report
+  put "a couple of seconds" at a raw value in the millions, ruling out
+  simple seconds-as-float or milliseconds-as-int, and none of the
+  authoritative sources could be reached to settle it), so this is a
+  best-effort match, not a confirmed one. A decoder that cannot seek (or
+  fails to) still plays from the track's own beginning rather than not
+  playing at all. Verified against the real `--rgss_audio_probe` CTest,
+  through SDL_mixer against a real (dummy-driver) audio device: seeking a
+  2-second synthetic WAV to 1000ms reads back `bgm_pos` near 1000 on both
+  the loose and packed paths (`seek_got`/`packed_seek_got` in its
+  `[RGSS-AUDIO]` log line) — not just accepted without raising, the
+  resume is real. `RPG::BGM#replay` (`mruby-rpgvx/mrblib/rgss2_runtime.rb`)
+  still does not pass its stored `pos` through — a separate, related gap
+  (resuming a map's BGM after a Music Effect interrupts it currently always
+  restarts the track) left for its own change.
 
 - **Fixed: `RPG::CommonEvent` had no `#autorun?` / `#parallel?`.** A real
   data-layer gap in `mruby-rpgvx/mrblib/rgss2_data.rb`: `CommonEvent` only

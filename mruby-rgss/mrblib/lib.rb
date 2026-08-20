@@ -444,6 +444,19 @@ module RGSS
     Audio.bgm_stop
     Graphics.update
     stopped = Audio.bgm_pos
+
+    # RGSS3's Audio.bgm_play pos (mid-track resume): seek 1000ms into the 2s
+    # probe tone and check bgm_pos reads back near there rather than near 0.
+    # Informational, not a pass/fail gate -- Mix_SetMusicPosition's decoder
+    # support varies (solid for OGG/FLAC, weaker for MOD/MIDI/some WAV
+    # decoders), and #bgm_play already falls back to playing from the
+    # beginning when it fails, exactly as it did before this existed. A
+    # decoder that cannot seek here is a real, known limitation, not a broken
+    # build.
+    Audio.bgm_play(path, 100, 100, 1000)
+    seek_got = wait_for_bgm_pos
+    Audio.bgm_stop
+    Graphics.update
     File.delete(path) if File.exist?(path)
 
     archive = Object.new
@@ -461,12 +474,21 @@ module RGSS
       packed = wait_for_bgm_pos
       Audio.se_play("Beep")
       Audio.bgm_stop
+      Graphics.update
+
+      # The same seek, through the packed/archived path this time (a released
+      # game's whole Audio/ tree is packed, so this -- not the loose path
+      # above -- is what an actual VX Ace game's mid-track resume reaches).
+      Audio.bgm_play("Probe", 100, 100, 1000)
+      packed_seek_got = wait_for_bgm_pos
+      Audio.bgm_stop
     ensure
       self.asset_archive = previous
     end
 
     $stderr.puts "[RGSS-AUDIO] loose=#{loose} stopped=#{stopped} " \
-                 "packed=#{packed}"
+                 "seek_requested=1000 seek_got=#{seek_got} packed=#{packed} " \
+                 "packed_seek_got=#{packed_seek_got}"
     if loose.zero?
       $stderr.puts "[RGSS-AUDIO] FAIL a loose file did not play (no audio " \
                    "device, or this SDL_mixer cannot report a position) — the " \
@@ -1037,19 +1059,19 @@ module RGSS
       # `pos` is RGSS3-only (VX Ace added it over XP/VX's 3-argument form) --
       # real scripts pass it to resume a BGM from where a prior track left
       # off (RPG::BGM#replay, a bare `Audio.bgm_play(f, v, p, pos)` in a
-      # volume-control add-on). No backend here seeks a mid-stream start
-      # position, so it is accepted (matching the real signature real
-      # scripts call with) and warned about once rather than raising
-      # ArgumentError on every VX Ace game that calls it -- the track still
-      # plays, just from its own beginning.
+      # volume-control add-on). Milliseconds, the same unit #bgm_pos reports
+      # in, so `Audio.bgm_play(f, v, p, Audio.bgm_pos)` round-trips exactly --
+      # a real VX Ace script's own hardcoded literal may use a different
+      # native unit (unconfirmed; SDL_mixer's own seek call takes seconds, and
+      # secondary sources disagree on RGSS3's), so a value from anywhere other
+      # than this engine's own #bgm_pos is not guaranteed to land on the same
+      # instant a real game would land on. Seeking can still fail (some
+      # decoders, e.g. MOD/MIDI, do not support it); a failed seek plays from
+      # the track's own beginning rather than not playing at all.
       def bgm_play(filename, volume = 100, pitch = 100, pos = 0)
-        RGSS.warn_once(
-          "Audio.bgm_play pos (mid-track resume) is not implemented yet " \
-          "(stub, plays from the beginning)"
-        ) unless pos == 0
         path = resolve(filename, MUSIC_DIRS)
-        return _bgm_play(path, volume, pitch) if path
-        play_packed(:bgm, filename, volume, pitch)
+        return _bgm_play(path, volume, pitch, pos) if path
+        play_packed(:bgm, filename, volume, pitch, pos)
       end
 
       # Re-applies volume to the already-playing BGM stream in place, with no
@@ -1148,7 +1170,14 @@ module RGSS
       #
       # Returns nil either way — RGSS's Audio.*_play has no return value, and a
       # miss here is the same "asset not found" silence the disk path gives.
-      def play_packed(kind, filename, volume, pitch)
+      #
+      # `pos` is BGM's own mid-track resume position (see #bgm_play); every
+      # other kind ignores it. It has to be threaded through here too, not
+      # just the disk path in #bgm_play, because a released game's whole
+      # Audio/ tree is packed into one encrypted archive with nothing loose on
+      # disk (see RGSS.asset_archive) -- this is the path that actually
+      # carries a resume for a released game.
+      def play_packed(kind, filename, volume, pitch, pos = 0)
         return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
         name, bytes = archive ? find_packed(archive, kind, filename) : nil
@@ -1169,7 +1198,7 @@ module RGSS
           return nil
         end
         case kind
-        when :bgm then _bgm_play_mem(name, bytes, volume, pitch)
+        when :bgm then _bgm_play_mem(name, bytes, volume, pitch, pos)
         when :bgs then _bgs_play_mem(name, bytes, volume, pitch)
         when :me then _me_play_mem(name, bytes, volume, pitch)
         else _se_play_mem(name, bytes, volume, pitch)
