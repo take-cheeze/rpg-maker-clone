@@ -17304,7 +17304,23 @@ screen (544×416). Full rationale:
     and every platform (PSP's stack headroom included) for what is mostly
     log-message fidelity in one utility script — see the item 7 write-up for
     the full reasoning on why that trade isn't taken here; the temporary VM
-    probe keeps finding the real gaps without it.
+    probe keeps finding the real gaps without it. That tenth masked
+    exception is now fixed: the real bug was in the vendored mruby compiler
+    itself, not the class variable — `gen_colon3_assign`
+    (`3rd/mruby/mrbgems/mruby-compiler/core/codegen.c`), the codegen for an
+    explicit top-level `::Const = value`, emitted `OP_SETCONST` instead of
+    `OP_SETMCNST`, so the pushed `Object` base was silently ignored and the
+    constant landed on the lexically enclosing module instead (confirmed
+    against real CRuby, and against the real 516-line script run
+    unmodified: `Object.const_defined?(:MapFog)` now reads `true`). A
+    two-round name-collision theory formed while re-investigating (that the
+    nested module sharing a name with its top-level target mattered) was
+    disproven the same way the `@@cvar` theory was: renaming the nested
+    module left the failure identical. Since `3rd/mruby` tracks upstream
+    directly, the fix ships as
+    `patches/mruby-colon3-assign-setmcnst.patch`, applied at build time by
+    `scripts/apply_mruby_patch.bash`; see the item 7 write-up for the full
+    trace.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).

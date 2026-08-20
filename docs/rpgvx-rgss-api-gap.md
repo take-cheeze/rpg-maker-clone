@@ -687,45 +687,54 @@ that clearing it costs most of a short budget on its own. Raising
 below that, a `RGSS::Timeout` in a probe run means "give it more wall
 clock," not "something broke."
 
-**Found, not fixed, and only partly understood: a real VX Ace game's own
-bundled `マップフォグ` ("Map Fog") add-on never finishes setting up, and a
-later event's inline "Script" command that depends on it fails as a
-result.** The add-on's very first line, `module BMSP; @@includes ||= {}`,
-is the sole place in this release's whole 213-section bundle that touches
-`@@includes` — a fresh, never-before-set class variable. Real Ruby handles
-`@@cvar ||= value` on a variable like that without raising (confirmed
-directly: `ruby -e 'module Foo; @@x ||= {}; end'` runs clean), and mruby's
-own compiler has code specifically meant to match that
-(`3rd/mruby/mrbgems/mruby-compiler/core/codegen.c`, `codegen_op_asgn`,
-~line 5471: `||=`/`&&=` on a class variable or constant wraps the read in
-a compiler-generated rescue that turns the `NameError` into `false` rather
-than letting it escape, mirroring the CRuby behaviour exactly). The
-temporary `OP_EXCEPT` probe used throughout this document shows that
-generated rescue actually firing and catching the `NameError` — which
-first looked like proof the line was harmless, since the probe fires on
-*every* caught exception, this compiler-internal one included, and
-execution visibly continues well past it (an isolated run of the whole
-516-line script reaches a *different*, unrelated failure over 280 lines
-later). But a targeted check straight after running the same script
-in isolation — `Object.const_defined?(:MapFog)`, right where the script's
-own `module Interface; ::MapFog = self` sits between those two points —
-comes back `false`. So somewhere between the class-variable rescue
-catching cleanly and execution reaching that later, unrelated failure, a
-plain top-level constant assignment that runs in between stops taking
-effect, without raising anything of its own. In the real game this is
-what a later event's own inline `Script` command hits:
-`NameError: uninitialized constant
-TKG::ErrorLog::Extend_Interpreter::MapFog`, because `::MapFog` was never
-actually set. Two rounds of isolated reproduction (a minimal synthetic
-`@@cvar ||=`, the same through the real script host's own `eval` call,
-and finally the real script's full 516 lines run standalone) narrowed
-this down this far without fully explaining it — genuinely tracing it
-further needs mruby VM-level tooling (breakpoints, instruction-level
-tracing) beyond what a source read and a VM-opcode probe can resolve, and
-any real fix would live in the vendored `3rd/mruby` submodule regardless,
-the same category of call as `$!` below. Left alone rather than patched
-further; documented here at the depth it was actually traced to, rather
-than guessed past.
+**Found and fixed: a real VX Ace game's own bundled `マップフォグ` ("Map
+Fog") add-on used to never finish setting up, so a later event's inline
+"Script" command that depends on it failed.** The add-on's own
+`module Interface; ::MapFog = self` — an explicit *top-level* constant
+assignment, written from inside a nested module — silently landed on the
+lexically enclosing module instead of at the top level, no exception
+raised. (An earlier pass at this same failure suspected the add-on's
+preceding `module BMSP; @@includes ||= {}` — a fresh, never-before-set
+class variable — but that line is handled correctly: mruby's compiler
+already wraps `||=`/`&&=` on a class variable or constant in a
+compiler-generated rescue that turns the `NameError` into `false` rather
+than letting it escape, mirroring real Ruby exactly. That was a red
+herring; the actual bug has nothing to do with class variables, and a
+name-collision theory formed while re-investigating — that the nested
+module and the top-level target sharing a name (`MapFog`) mattered —
+was disproven the same way, by renaming the nested module and watching
+the failure persist identically.)
+
+The real bug is in `gen_colon3_assign`
+(`3rd/mruby/mrbgems/mruby-compiler/core/codegen.c`), the codegen for
+`::Const = value` (`NODE_COLON3` in assignment position): it pushes
+`Object` via `OP_OCLASS` — exactly mirroring `gen_colon2_assign`'s
+handling of the explicit-base form `Foo::Const = value`, which correctly
+finishes with `OP_SETMCNST` (the opcode that reads that pushed value as
+the constant's owner) — but then emits `OP_SETCONST` instead.
+`OP_SETCONST`'s own VM handler (`3rd/mruby/src/vm.c`) never reads that
+pushed value at all; it always targets
+`MRB_PROC_TARGET_CLASS(ci->proc)`, the current lexically enclosing
+class/module — exactly right for a *bare* `Const = value`, but wrong for
+`::Const = value`, whose entire point is to bypass the enclosing scope.
+The *read* path already gets this right — `codegen_colon3` pairs the same
+`OP_OCLASS` push with `OP_GETMCNST`, not `OP_GETCONST` — so this reads as
+a copy/paste slip in the assignment counterpart that was never given its
+own read/write symmetry check. Confirmed against real CRuby: `ruby -e
+'module Foo; ::Bar = 42; end; p Object.const_defined?(:Bar)'` prints
+`true`; mruby's did not.
+
+Since this submodule tracks upstream `mruby/mruby` directly (no fork
+this project controls to carry the fix on), the fix ships as
+`patches/mruby-colon3-assign-setmcnst.patch` (one line:
+`gen_colon3_assign` now finishes with `OP_SETMCNST`), applied
+idempotently at build time by `scripts/apply_mruby_patch.bash` — the
+same `patches/` + apply-script convention already used for the PSP
+toolchain's own patch. Verified against: a minimal synthetic repro
+matching the real semantics, the full mruby test suite (zero
+regressions from a compiler-level change), and the real, unmodified
+516-line script — `Object.const_defined?(:MapFog)` now returns `true`
+after it runs.
 
 mruby's bare `raise` (no arguments) has the same
 root cause from the other side: real Ruby re-raises `$!`, but mruby's
@@ -759,11 +768,11 @@ Tilemap item 1's remaining polish (the flat "above characters" layer) is the
 only item left in the six sections above; item 7's `$!`/bare-`raise` gap
 stands, and per a real release it is the reason each fix above only reveals
 the *next* wall one at a time rather than the game running to completion in
-one pass. Nine real bugs have been found and fixed this way so far
+one pass. Ten real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
-`Sprite#width`/`#height`) without needing `$!` itself fixed — the temporary
-VM probe finds the real exception directly regardless. A tenth wall, this
-one traced but not fixed (the `@@includes`/`::MapFog` class-variable and
-constant-assignment interaction above), is where the game stands now.
+`Sprite#width`/`#height`, and the `::Const = value` compiler bug above)
+without needing `$!` itself fixed — the temporary VM probe finds the real
+exception directly regardless. Where the next wall stands past the
+`マップフォグ` fix is not yet traced.

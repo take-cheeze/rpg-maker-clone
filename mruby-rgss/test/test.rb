@@ -5,6 +5,21 @@
 GAME_DIR = "" unless Object.const_defined?(:GAME_DIR)
 RTP_DIR = "" unless Object.const_defined?(:RTP_DIR)
 
+# Regression test for the vendored mruby compiler bug fixed by
+# patches/mruby-colon3-assign-setmcnst.patch: `::Const = value`, written from
+# inside a nested module, used to silently land on the enclosing module
+# instead of at the top level. Discovered because a real VX Ace game's
+# bundled add-on (docs/rpgvx-rgss-api-gap.md, item 7) relies on exactly this
+# pattern to publish its own top-level API and never finished setting up.
+assert "nested `::Const = value` defines the constant at the top level" do
+  module RGSSTestColon3Outer
+    ::RGSSTestColon3Target = self
+  end
+  assert_true Object.const_defined?(:RGSSTestColon3Target)
+  assert_true RGSSTestColon3Target.equal?(RGSSTestColon3Outer)
+  Object.send(:remove_const, :RGSSTestColon3Target)
+end
+
 # From: https://github.com/uni-algo/uni-algo?tab=readme-ov-file#normalization-functions
 assert "RGSS.to_nfd" do
   assert_equal RGSS.to_nfd("Ŵ"), "W\u0302"
