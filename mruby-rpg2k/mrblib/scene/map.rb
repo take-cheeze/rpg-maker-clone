@@ -2005,6 +2005,16 @@ class RPG2k
           # process equivalent of #drive_event's own :picture_blocked case
           # just above, see #block_pending_picture_command for the citation.
           it.resume unless message_window_open?
+        elsif it.wait_kind == :teleport_blocked
+          # A Transfer Player / Recall to Location command issued from a
+          # Parallel Process while a message window or choice list is open --
+          # the parallel-process equivalent of #drive_event's own
+          # :teleport_blocked case, see #block_pending_teleport_command for
+          # the citation. Before this branch existed a blocked teleport
+          # simply never reached :teleport_blocked at all (the guard is what
+          # raises it in the first place); this and the interpreter-side fix
+          # land together.
+          it.resume unless message_window_open?
         elsif it.wait_kind == :sprite_flash
           # Flash Sprite's own wait flag, the parallel-process equivalent of
           # the :screen/:picture cases just above.
@@ -4437,6 +4447,13 @@ class RPG2k
             # window or choice list is open (#block_pending_picture_command)
             # -- real RPG_RT retries the identical command every subsequent
             # frame rather than dropping it, see that method's own citation.
+            @interpreter.resume unless message_window_open?
+          when :teleport_blocked
+            # A Transfer Player / Recall to Location command reached while a
+            # message window or choice list is open
+            # (#block_pending_teleport_command) -- the identical
+            # block-and-retry shape as :picture_blocked just above, see that
+            # method's own citation.
             @interpreter.resume unless message_window_open?
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over

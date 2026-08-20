@@ -3033,6 +3033,7 @@ module Game
     # here, so converting unconditionally is the same as EasyRPG's
     # `IsRPG2k3Commands` guard for the games that can emit it.
     def do_teleport(cmd)
+      return if block_pending_teleport_command
       @teleport = [cmd.param(0), cmd.param(1), cmd.param(2),
                    teleport_facing(cmd.param(3))]
       @wait_kind = :teleport
@@ -3061,6 +3062,7 @@ module Game
     # the owning scene loads the map and moves the player; the current facing is
     # kept (direction 0).
     def do_recall_location(cmd)
+      return if block_pending_teleport_command
       @teleport = [variables[cmd.param(0)], variables[cmd.param(1)],
                    variables[cmd.param(2)], 0]
       @wait_kind = :teleport
@@ -3481,16 +3483,18 @@ module Game
       end
     end
 
-    # Whether Show/Move/Erase Picture must block this call: real RPG_RT
-    # blocks all three picture commands while any message window or choice
-    # list is open, anywhere in the scene — including a picture command
-    # reached by an already-running parallel process while a *different*
-    # interpreter's message window sits on screen (parallel processes keep
-    # advancing during a message window, see Scene::Map#parallels_paused?;
-    # this is the narrower rule layered on top of that). Without a map_info
-    # hook (a headless interpreter, or a battle page) there is no message
-    # window to block against.
-    def picture_commands_suppressed?
+    # Whether a message-gated command (Show/Move/Erase Picture, Teleport,
+    # Recall to Location — see #block_pending_picture_command /
+    # #block_pending_teleport_command) must block this call: real RPG_RT
+    # blocks each of these while any message window or choice list is open,
+    # anywhere in the scene — including a command reached by an
+    # already-running parallel process while a *different* interpreter's
+    # message window sits on screen (parallel processes keep advancing
+    # during a message window, see Scene::Map#parallels_paused?; this is the
+    # narrower rule layered on top of that). Without a map_info hook (a
+    # headless interpreter, or a battle page) there is no message window to
+    # block against.
+    def message_window_blocks_command?
       @map_info.respond_to?(:message_window_open?) && @map_info.message_window_open?
     end
 
@@ -3515,9 +3519,31 @@ module Game
     # shape this codebase's own :screen/:picture/:sprite_flash waits already
     # use, just gated on a different condition.
     def block_pending_picture_command
-      return false unless picture_commands_suppressed?
+      return false unless message_window_blocks_command?
       @index -= 1
       @wait_kind = :picture_blocked
+      @waiting = true
+      true
+    end
+
+    # Real RPG_RT does not run a Transfer Player / Recall to Location command
+    # while a message window or choice list is open either — the identical
+    # block-and-retry shape #block_pending_picture_command already ports, on
+    # a different pair of commands. Confirmed directly against RPG_RT's live
+    # source: `Game_Interpreter_Map::CommandTeleport`/
+    # `CommandRecallToLocation` (`src/game_interpreter_map.cpp`, codes
+    # 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
+    # return false; }`, unconditionally — not gated behind
+    # `IsRPG2k3Commands()`, so this is base RPG2000 behaviour, not an
+    # RPG2003-only rule. Without this guard, a still-running parallel
+    # process (Message Options' "continue events" flag lets one keep
+    # advancing past another event's open Show Text, see
+    # Scene::Map#parallels_paused?) could warp the map out from under an
+    # on-screen message window instead of waiting for it to close first.
+    def block_pending_teleport_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :teleport_blocked
       @waiting = true
       true
     end
