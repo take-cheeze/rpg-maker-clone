@@ -17885,9 +17885,15 @@ check 'a party-level action reads the average level through the AI env' do
   ok enemy_entry([miss], ai)[:defend].nil?, 'outside it'
 end
 
-check 'an unknown condition type keeps the action out of the running' do
+check 'an out-of-range condition type still fires, matching RPG_RT\'s own ' \
+      'default: return true' do
+  # Confirmed directly against RPG_RT's live source: `EnemyAi::
+  # IsActionValid`'s own `switch (action.condition_type)`
+  # (`src/enemyai.cpp`) ends `default: return true;` -- a condition_type
+  # past the eight it recognises (e.g. a hand-edited or non-standard-tool
+  # database byte) reads as unconditionally eligible, not excluded.
   act = enemy_action(kind: 0, basic: 2, condition_type: 99)
-  ok enemy_entry([act], nil)[:defend].nil?, 'not fired unchecked'
+  eq true, enemy_entry([act], nil)[:defend], 'fires unconditionally, like RPG_RT'
 end
 
 # -- post-action switches ------------------------------------------------------

@@ -11216,9 +11216,17 @@ module Game
         f = fatigue
         f >= a.condition_param1 && f <= a.condition_param2
       else
-        # An operand this build does not know stays out of the running rather
-        # than firing unchecked.
-        false
+        # An out-of-range condition_type (past COND_FATIGUE, the highest of
+        # the eight RPG_RT recognises) reads as unconditionally eligible, not
+        # excluded -- confirmed directly against RPG_RT's live source:
+        # `EnemyAi::IsActionValid`'s own `switch (action.condition_type)`
+        # (`src/enemyai.cpp`) ends `default: return true;`, applying
+        # identically on RPG2000 and RPG2003 (no version gate anywhere in
+        # the function). This is the mirror image of the "unset/unknown
+        # stays conservative" shape this method's own COND_ACTORS/skill-type
+        # fixes correctly use elsewhere -- this one specific fallthrough
+        # goes the other way in real RPG_RT.
+        true
       end
     end
 

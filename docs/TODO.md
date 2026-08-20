@@ -13365,6 +13365,29 @@ not yet verified:
   own headcount (fires with all three troop-mates alive, stops firing
   once two are killed off, regardless of the untouched one-hero party),
   confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-20): ~~An operand this build does not know stays
+  out of the running rather than firing unchecked~~ — corrected, real
+  RPG_RT does the opposite: an action pattern's out-of-range
+  `condition_type` fires unconditionally, not excluded.** Confirmed
+  directly against RPG_RT's live source: `EnemyAi::IsActionValid`'s own
+  `switch (action.condition_type)` (`src/enemyai.cpp`) ends `default:
+  return true;`, applying identically on RPG2000 and RPG2003 (no version
+  gate anywhere in the function). `Game::Battle#enemy_action_valid?`'s
+  fallthrough `else` branch (`mruby-rpg2k/mrblib/game.rb`) mirrors every
+  one of the eight named condition cases correctly but flipped the
+  fallthrough's own polarity to `false`, with no citation for that specific
+  branch — reasoning by analogy to this same method's own (correctly)
+  conservative `COND_ACTORS`/skill-type fixes just above, rather than
+  independently checking this particular `default` case's real C++ source.
+  A `condition_type` byte past `COND_FATIGUE` (7) — reachable from
+  hand-edited or non-standard-tool-written data, since the schema stores
+  this field as a bare unbounded `:int` — permanently excluded that action
+  from the weighted draw here, where genuine RPG_RT always keeps it
+  eligible. Fixed by flipping the `else` branch to `true`. The existing
+  `scripts/rpg2k_logic_check.rb` check ("an unknown condition type keeps
+  the action out of the running") had itself encoded this same wrong
+  polarity — replaced with a check asserting the action fires, confirmed to
+  fail against the pre-fix code before the fix.
 - ✅ **An HP-increase cannot revive a downed (0 HP) combatant**, checked
   across all three paths that can raise HP. The **field actor** path
   (`Game::Actor#change_hp`, `mruby-rpg2k/mrblib/game.rb`) was already
