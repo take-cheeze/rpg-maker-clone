@@ -6366,6 +6366,24 @@ check 'a skill book on an actor who already knows the skill does nothing' do
   eq 1, st.party.item_count(8)                 # not consumed
 end
 
+check 'a skill book does nothing on a downed actor -- unlike Medicine, ' \
+      'Book/Seed have no ko_only-style exception' do
+  # Confirmed against RPG_RT's own live source: Game_Actor::UseItem
+  # (src/game_actor.cpp) only reaches its Type_book/Type_material branches
+  # inside an `if (!IsDead())` guard; falling through to
+  # Game_Battler::UseItem (src/game_battler.cpp) for a dead actor lands on
+  # neither type at all (only Medicine/Switch/skill-invoking items are
+  # handled there), so the item is silently never consumed.
+  st = item_party({ 8 => fake_item(type: 7, skill_id: 42) })
+  st.party.gain_item(8, 1)
+  hero = st.party.leader
+  hero.change_hp(-9999)                        # KO
+  eq false, st.party.item_effective?(8, hero)
+  eq [], st.party.use_item(8, hero)
+  eq false, hero.knows_skill?(42), 'nothing learned'
+  eq 1, st.party.item_count(8)                 # not consumed
+end
+
 check 'a seed permanently raises the target stats (points2 set) and is consumed' do
   st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
   st.party.gain_item(9, 2)
@@ -6375,6 +6393,19 @@ check 'a seed permanently raises the target stats (points2 set) and is consumed'
   eq 150, hero.max_hp                           # +50 base max HP
   eq 15, hero.atk                               # +5 base attack (atk_points2)
   eq 1, st.party.item_count(9)                  # one seed consumed
+end
+
+check 'a seed does nothing on a downed actor -- the identical Game_Actor::' \
+      'UseItem `if (!IsDead())` gate as a skill book' do
+  st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
+  st.party.gain_item(9, 1)
+  hero = st.party.leader                        # max_hp 100, atk 10
+  hero.change_hp(-9999)                         # KO
+  eq false, st.party.item_effective?(9, hero)
+  eq [], st.party.use_item(9, hero)
+  eq 100, hero.max_hp, 'no stat change'
+  eq 10, hero.atk, 'no stat change'
+  eq 1, st.party.item_count(9)                  # not consumed
 end
 
 check 'field_items includes seeds; a seed with no boost is ineffective' do
