@@ -13973,26 +13973,37 @@ check 'battle: a mid susceptibility (rank C 60%) both lands and resists' do
   ok results.any?(&:empty?), 'and sometimes is resisted'
 end
 
-check 'battle: Knockout (state 1) ignores state_ranks -- rank E still lands' do
-  # RPG2000 has no separate instant-death mechanic; a skill's state-effect list
-  # names Knockout (id 1, Game::Actor::DEATH_STATE) directly, and yado.tk
-  # documents its landing chance as governed solely by the skill's own
-  # occurrence-rate operand -- never scaled down by the target's A-E rank the
-  # way every other state is.
+check 'battle: Knockout (state 1) is scaled by state_ranks like any other ' \
+      'state -- rank E blocks it' do
+  # RPG2000 has no separate instant-death mechanic; a skill's state-effect
+  # list names Knockout (id 1, Game::Actor::DEATH_STATE) directly. RPG_RT's
+  # own Game_Actor::GetStateProbability (src/game_actor.cpp) has no
+  # state_id == kDeathID special case, and Game_BattleAlgorithm's infliction
+  # loops (src/game_battlealgorithm.cpp) call GetStateProbability uniformly
+  # for every flagged state id, Knockout included.
   foe = combatant('Foe', 0, 0, 5, 100)
-  foe.state_ranks = { Game::Actor::DEATH_STATE => 4 } # rank E -> 0% for any other state
+  foe.state_ranks = { Game::Actor::DEATH_STATE => 4 } # rank E -> 0%
   e = poison_cast_state(foe, Game::Actor::DEATH_STATE)
-  eq [Game::Actor::DEATH_STATE], e[:inflicted], 'Knockout lands despite rank-E "immunity"'
-  ok foe.state?(Game::Actor::DEATH_STATE)
+  eq [], e[:inflicted], 'rank-E resistance blocks Knockout the same as any other state'
+  ok !foe.state?(Game::Actor::DEATH_STATE)
 end
 
-check 'battle: an ordinary state at the same rank E is still blocked' do
-  # Control: the same rank on a non-Knockout state id keeps resisting, proving
-  # the exemption above is specific to id 1, not a general susceptibility bypass.
+check 'battle: an ordinary state at the same rank E is also blocked' do
+  # Control: a non-Knockout state id at the same rank resists identically,
+  # confirming Knockout gets no special treatment either way.
   foe = combatant('Foe', 0, 0, 5, 100)
   foe.state_ranks = { 3 => 4 }
   e = poison_cast_state(foe, 3)
   eq [], e[:inflicted]
+end
+
+check 'battle: a susceptible target (state rank A) still catches a sure ' \
+      'Knockout' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { Game::Actor::DEATH_STATE => 0 } # rank A -> 100%
+  e = poison_cast_state(foe, Game::Actor::DEATH_STATE)
+  eq [Game::Actor::DEATH_STATE], e[:inflicted]
+  ok foe.state?(Game::Actor::DEATH_STATE)
 end
 
 # A state the target already carries is not a silent no-op: RPG_RT reports it as
