@@ -17062,8 +17062,9 @@ check 'Scene::ItemMenu: a successful use stays on the target screen, ' \
   # Confirmed against RPG_RT's own live source: `Scene_ActorTarget::
   # UpdateItem` (src/scene_actortarget.cpp) never calls `Scene::Pop()` on
   # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
-  # does. A successful use lets the player keep using the same item on
-  # further targets without leaving this screen.
+  # does, and it never builds a message window either: only `SePlay`/
+  # `Refresh`. A successful use lets the player keep using the same item on
+  # further targets immediately, with no extra dismiss press in between.
   state = Game::State.new(MedicineItemStubParty.new, 1, 0, 0)
   scene = menu_scene(RPG2k::Scene::ItemMenu, state)
   RGSS::Input.triggered = [RGSS::Input::C] # confirm the item -- opens target selection
@@ -17071,28 +17072,25 @@ check 'Scene::ItemMenu: a successful use stays on the target screen, ' \
   RGSS::Input.reset
   eq :target, scene.instance_variable_get(:@mode)
 
+  RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C] # use it on the first target
   scene.update
   RGSS::Input.reset
-  ok scene.instance_variable_get(:@message), 'a "Used on ..." message is shown'
-  eq :target, scene.instance_variable_get(:@mode), 'still in target mode while the message is up'
-
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the message
-  scene.update
-  RGSS::Input.reset
+  ok scene.instance_variable_get(:@message).nil?, 'no confirmation message is ever shown'
+  eq 'ItemUse', RGSS::Audio.se_calls.last&.first, 'the item\'s own success SE plays instead'
   eq :target, scene.instance_variable_get(:@mode), 'stays on the target screen after a successful use'
   ok scene.instance_variable_get(:@pending_item), 'the pending item is still set, ready for another target'
 
-  # Use it again immediately on the second target -- no re-navigation needed.
+  # Use it again immediately on the second target -- no dismiss step, no
+  # re-navigation, just DOWN then the next Decision.
   RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
+  RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss
-  scene.update
-  RGSS::Input.reset
+  eq 'ItemUse', RGSS::Audio.se_calls.last&.first, 'the second use plays the same success SE, no click first'
   eq :target, scene.instance_variable_get(:@mode)
 
   # Cancelling finally returns to the (rebuilt) item list.
@@ -17805,13 +17803,16 @@ end
 
 # A single-target skill (scope != 2/4, so the target cursor is not locked)
 # the caster can afford twice over, so a repeat cast without leaving the
-# target screen is actually observable.
+# target screen is actually observable. `animation_id` 12 names the
+# `battle_anime` row the check below installs its own success SE on.
 class NormalTargetSkillStubParty < WrapMenuParty
   SKILL_ID = 50
+  ANIMATION_ID = 12
   def field_skills(_actor, _state = nil); [[SKILL_ID, 5]]; end
   def db_skill(id)
     return nil unless id == SKILL_ID
-    OpenStruct.new(name: 'Heal', type: Game::Party::SKILL_NORMAL, scope: 3)
+    OpenStruct.new(name: 'Heal', type: Game::Party::SKILL_NORMAL, scope: 3,
+                   animation_id: ANIMATION_ID)
   end
   def cast_skill(caster, sid, target = nil, _free = false)
     return [] unless sid == SKILL_ID && target
@@ -17824,37 +17825,42 @@ check 'Scene::SkillMenu: a successful cast stays on the target screen, ' \
   # Confirmed against RPG_RT's own live source: `Scene_ActorTarget::
   # UpdateSkill` (src/scene_actortarget.cpp) never calls `Scene::Pop()` on
   # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
-  # does. A successful cast lets the player keep casting the same skill on
-  # further targets without leaving this screen.
+  # does, and it never builds a message window either: only `SePlay`/
+  # `Refresh`, playing the invoked skill's own `animation_id`-derived SE. A
+  # successful cast lets the player keep casting the same skill on further
+  # targets immediately, with no extra dismiss press in between.
+  db = fake_db
+  db.battle_anime = { NormalTargetSkillStubParty::ANIMATION_ID => OpenStruct.new(
+    timings: { 1 => OpenStruct.new(
+      se: OpenStruct.new(file: 'HealCast', volume: 90, pitch: 110)) }
+  ) }
   state = Game::State.new(NormalTargetSkillStubParty.new, 1, 0, 0)
-  scene = menu_scene(RPG2k::Scene::SkillMenu, state)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state, db)
   RGSS::Input.triggered = [RGSS::Input::C] # confirm the skill -- opens target selection
   scene.update
   RGSS::Input.reset
   eq :target, scene.instance_variable_get(:@mode)
 
+  RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C] # cast on the first target
   scene.update
   RGSS::Input.reset
-  ok scene.instance_variable_get(:@message), 'a "casts ..." message is shown'
-  eq :target, scene.instance_variable_get(:@mode), 'still in target mode while the message is up'
-
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the message
-  scene.update
-  RGSS::Input.reset
+  ok scene.instance_variable_get(:@message).nil?, 'no confirmation message is ever shown'
+  eq 'HealCast', RGSS::Audio.se_calls.last&.first,
+     "the skill's own animation SE plays instead"
   eq :target, scene.instance_variable_get(:@mode), 'stays on the target screen after a successful cast'
   ok scene.instance_variable_get(:@pending_skill), 'the pending skill is still set, ready for another target'
 
-  # Cast it again immediately on the second target -- no re-navigation needed.
+  # Cast it again immediately on the second target -- no dismiss step, no
+  # re-navigation, just DOWN then the next Decision.
   RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
+  RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss
-  scene.update
-  RGSS::Input.reset
+  eq 'HealCast', RGSS::Audio.se_calls.last&.first, 'the second cast plays the same SE, no click first'
   eq :target, scene.instance_variable_get(:@mode)
 
   # Cancelling finally returns to the (rebuilt) skill list.

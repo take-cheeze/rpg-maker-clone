@@ -246,6 +246,33 @@ class RPG2k
         { name: name, volume: (se.respond_to?(:volume) ? se.volume : 100),
           tempo: (se.respond_to?(:pitch) ? se.pitch : 100) }
       end
+
+      # Plays a battle_anime row's own sound effect -- confirmed against
+      # EasyRPG's actual C++ source: `Game_System::SePlay(const RPG::
+      # Animation&)` (`src/game_system.cpp`) walks the animation's own
+      # `timings` and plays only the *first* one with a real SE, then
+      # returns; it never plays every timing's SE, and never draws the
+      # animation itself (no Show Battle Animation flash/shake/sprite here --
+      # this is the field item/skill success cue, which real RPG_RT plays as
+      # sound only). A no-op for a nil/dangling animation id, an animation
+      # with no timings, or (mirroring `#play_skill_sound_effect`'s own
+      # simpler convention elsewhere in this codebase) every timing's SE
+      # being blank.
+      def play_animation_se(anim_id)
+        return unless anim_id
+        table = db.respond_to?(:battle_anime) ? db.battle_anime : nil
+        anim = table && table[anim_id]
+        return unless anim && anim.timings
+        anim.timings.each do |_id, t|
+          se = t.respond_to?(:se) ? t.se : nil
+          name = se && se.file
+          next if name.nil? || name.empty?
+          Audio.se_play name, se.volume, se.pitch
+          return
+        end
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] animation ##{anim_id} SE playback failed: #{e.message}"
+      end
     end
 
     # Adapter that exposes the running map to the movement engine

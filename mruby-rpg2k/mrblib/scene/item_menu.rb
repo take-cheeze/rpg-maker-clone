@@ -444,14 +444,13 @@ class RPG2k
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
-          play_system_se(SFX_DECISION)
           apply_item(@pending_item, party[@target_index])
         end
       end
 
       # A used item that changed nothing (everyone already full, an
-      # ineffective status cure, ...) plays Buzzer rather than a second
-      # Decision -- matching RPG_RT's own invalid-use handling elsewhere in
+      # ineffective status cure, ...) plays Buzzer rather than the item's own
+      # success cue -- matching RPG_RT's own invalid-use handling elsewhere in
       # `Scene_Item` (a rejected action gets the same SE as a confirm on an
       # empty list or a disabled command, not a silent no-op). A *successful*
       # use stays on this same target screen too, exactly like a no-effect
@@ -464,14 +463,41 @@ class RPG2k
       # the same Buzzer path), matching the reference's own `GetItemCount(id)
       # <= 0` check ahead of `UseItem` -- depletion buzzes, it does not
       # auto-exit either.
+      #
+      # No confirmation message either way -- `UpdateItem`'s own success/
+      # failure branches only ever call `SePlay`/`Refresh`, never build a
+      # message window; this class used to show "Used on X."/"It had no
+      # effect." here (and `#update_target` played a Decision-click SE ahead
+      # of every use, matching neither branch), a fabricated dialog this
+      # runtime invented that also forced an extra dismiss press before the
+      # next target could be picked -- a genuine slowdown a screen this
+      # runtime already got right for the Switch/Escape/Teleport special
+      # items (`#apply_special_switch_item` etc.) never had.
       def apply_item(id, actor)
         affected = @state.party.use_item(id, actor)
         if affected.empty?
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         else
-          names = affected.map { |a| a.name.to_s }.join(", ")
-          show_message("Used on #{names}.")
+          play_item_use_se(id)
+        end
+      end
+
+      # The item's own success cue -- confirmed against RPG_RT's own live
+      # source: `Scene_ActorTarget::UpdateItem` plays the invoked skill's own
+      # animation SE for a Type_special item or a `use_skill`-flagged
+      # weapon/shield/armor/helmet/accessory item (the identical `do_skill`
+      # condition `Game::Party#use_special_escape_item` already mirrors for
+      # its own free-use gate), and the database's own Item system SE
+      # (`SFX_UseItem`) for every other item type.
+      def play_item_use_se(id)
+        it = @state.party.db_item(id)
+        do_skill = it && (it.type == Game::Party::ITEM_SPECIAL ||
+                           (it.use_skill && (1..5).cover?(it.type)))
+        if do_skill
+          sk = @state.party.db_skill(it.skill_id)
+          play_animation_se(sk && sk.animation_id)
+        else
+          play_system_se(SFX_ITEM)
         end
       end
 

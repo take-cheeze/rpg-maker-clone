@@ -221,15 +221,14 @@ class RPG2k
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
-          play_system_se(SFX_DECISION)
           apply_skill(@pending_skill, party[@target_index])
         end
       end
 
-      # A cast that changed nothing plays Buzzer rather than a second
-      # Decision -- see Scene::ItemMenu#apply_item's identical reasoning. A
-      # *successful* cast stays on this same target screen too, exactly like
-      # a no-effect one -- confirmed against RPG_RT's own live source:
+      # A cast that changed nothing plays Buzzer rather than the skill's own
+      # animation SE -- see Scene::ItemMenu#apply_item's identical reasoning.
+      # A *successful* cast stays on this same target screen too, exactly
+      # like a no-effect one -- confirmed against RPG_RT's own live source:
       # `Scene_ActorTarget::UpdateSkill` (`src/scene_actortarget.cpp`) never
       # calls `Scene::Pop()` on Decision, success or failure alike; the only
       # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
@@ -237,16 +236,22 @@ class RPG2k
       # on a repeat cast once SP runs out (an empty `affected`, the same
       # Buzzer path), matching the reference's own SP/HP check ahead of
       # `UseSkill` -- unaffordable buzzes, it does not auto-exit either.
-      # Unlike #apply_switch_skill just below, this has nowhere to "return
-      # to" until Cancel -- #drive_message has nothing extra to do once the
-      # message closes.
+      #
+      # No confirmation message either way -- `UpdateSkill`'s own success/
+      # failure branches only ever call `SePlay`/`Refresh`, playing the
+      # skill's own `animation_id`-derived SE (`#play_animation_se`) on
+      # success, never building a message window; this class used to show
+      # "X casts Y!"/"It had no effect." here (and `#update_target` played a
+      # Decision-click SE ahead of every cast, matching neither branch), a
+      # fabricated dialog this runtime invented that also forced an extra
+      # dismiss press before the next target could be picked.
       def apply_skill(sid, target)
         affected = @state.party.cast_skill(caster, sid, target)
         if affected.empty?
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         else
-          show_message("#{caster.name} casts #{skill_name(sid)}!")
+          sk = @state.party.db_skill(sid)
+          play_animation_se(sk && sk.animation_id)
         end
       end
 
