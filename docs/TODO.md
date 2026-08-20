@@ -11794,6 +11794,26 @@ not yet verified:
   — all four confirmed to fail against the pre-fix code with the corrected
   expectation (`expected 1, got 10`) before the fix, and the dedicated
   logic-check test confirmed to fail on its own (`expected 2, got 0`) too.
+  ✅ **Follow-up (2026-08-19): Right silently moved the digit cursor and
+  played the Cursor SE on a single-digit Input Number widget, when real
+  RPG_RT treats Right as a complete no-op there — no move, no sound —
+  correcting this file's own previous bullet, which quoted Left/Right as
+  "genuine modulo wraparound... and its mirror" without noticing the two
+  are not actually symmetric.** Confirmed directly against RPG_RT's live
+  source: `Window_NumberInput::Update` (`src/window_numberinput.cpp`) gates
+  only its Right branch behind `if (digits_max >= 2) { ...SePlay...;
+  index = (index + 1) % ...; }` — Left has no such guard and always plays
+  `SFX_Cursor`, even on a one-digit widget where its own modulo leaves the
+  single-cell cursor unmoved either way. `#drive_number_input`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) treated Left/Right identically, so a
+  one-digit Input Number prompt (a common "pick 0-9" dialog) played the
+  cursor SE on every Right tap/repeat just like Left, when the reference
+  plays nothing at all for Right there. Fixed by gating the Right branch on
+  `model.digits >= 2`, leaving Left unconditional exactly as the reference
+  does. Covered by a new `scripts/rpg2k_scene_check.rb` check on a 1-digit
+  widget (Right plays no SE at all; Left still plays the cursor SE),
+  confirmed to fail against the pre-fix code (`expected [], got
+  [["Cursor1", ...]]`).
 - ✅ **A Face Graphic setting persists through the rest of the current event's
   execution content (not just the next message) and is auto-cleared when
   the event ends, but not before** — it must be explicitly "erased" to stop

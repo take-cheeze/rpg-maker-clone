@@ -3787,6 +3787,35 @@ check 'Input Number plays the Cursor SE on every digit move and Decision on conf
   eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming plays the decision SE'
 end
 
+check 'Input Number: on a single-digit widget, Right is a silent no-op but ' \
+      'Left still plays the cursor SE' do
+  # Confirmed against RPG_RT's own live source, Window_NumberInput::Update
+  # (src/window_numberinput.cpp): Right is guarded behind `if (digits_max >=
+  # 2)` -- no move, no sound, on a one-digit widget -- but Left has no such
+  # guard and always plays SFX_Cursor, even though its own modulo leaves a
+  # single-cell cursor unmoved either way. Not the symmetric pair the
+  # existing two-digit check above might suggest.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::INPUT_NUMBER, [1, 5])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+
+  ni = nil
+  12.times { scene.update; ni = scene.instance_variable_get(:@number_input); break if ni }
+  ok ni, 'the number-entry widget opened'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq [], RGSS::Audio.se_calls, 'Right on a single-digit widget plays nothing'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first,
+     'Left still plays the cursor SE even on a single-digit widget'
+end
+
 check 'a message types out gradually, then a button completes and dismisses it' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
