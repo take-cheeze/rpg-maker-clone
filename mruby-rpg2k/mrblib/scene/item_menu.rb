@@ -146,7 +146,31 @@ class RPG2k
         sk = (it && (it.type == Game::Party::ITEM_SPECIAL ||
                     (it.use_skill && (1..5).cover?(it.type)))) ?
                @state.party.db_skill(it.skill_id) : nil
-        # An Escape/Teleport-invoking item is always listed (see
+        # Only a genuine type-9 special item warps for an Escape/Teleport
+        # skill (or is buzzer-gated on access/target before it even tries)
+        # -- confirmed against genuine RPG_RT's own live source:
+        # `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its whole
+        # ReserveTeleport/Scene_Teleport dispatch behind `item.type ==
+        # Type_special`; a `use_skill`-flagged weapon/shield/armor/helmet/
+        # accessory item (schema field 71) invoking the very same skill type
+        # always falls to the generic `else` branch there instead (a plain
+        # `Scene_ActorTarget` push), and `Game_Battler::UseSkill`'s own
+        # Escape/Teleport branch for it plays only the skill's sound effect,
+        # no warp at all (see `#use_special_escape_item`'s own citation).
+        # `#use_equip_skill_item` already mirrors that exact "SE only, no
+        # warp" outcome once a target is confirmed (see its own doc), so
+        # this scene needs no special dispatch for that case beyond the
+        # ordinary `#prompt_item_target` every other targeted item already
+        # takes. This used to route a use_skill equipment item through the
+        # special-item Escape/Teleport branches too, which let it warp the
+        # party for free -- something real RPG_RT never does for such an
+        # item. A Switch-type skill is unaffected either way: `Game_Battler
+        # ::UseSkill`'s Switch branch flips the switch through the same
+        # shared `do_skill` path for both item kinds, which `#apply_special
+        # _switch_item`/`#use_special_switch_item` below already gets right
+        # for both.
+        special = it && it.type == Game::Party::ITEM_SPECIAL
+        # An Escape/Teleport-invoking special item is always listed (see
         # Game::Party#field_skill?, which #field_usable?'s special-item
         # branch now defers to) but only castable once access and a
         # registered target are there. Confirmed against RPG_RT's own live
@@ -160,13 +184,13 @@ class RPG2k
         # show a fabricated "It had no effect." message and a stray
         # Decision-then-Buzzer double beep that RPG_RT never produces for a
         # disabled entry.
-        if sk && sk.type == Game::Party::SKILL_ESCAPE &&
+        if special && sk && sk.type == Game::Party::SKILL_ESCAPE &&
            @state.party.respond_to?(:escape_skill_available?) &&
            !@state.party.escape_skill_available?(@state)
           play_system_se(SFX_BUZZER)
           return
         end
-        if sk && sk.type == Game::Party::SKILL_TELEPORT &&
+        if special && sk && sk.type == Game::Party::SKILL_TELEPORT &&
            @state.party.respond_to?(:teleport_skill_available?) &&
            !@state.party.teleport_skill_available?(@state)
           play_system_se(SFX_BUZZER)
@@ -179,35 +203,35 @@ class RPG2k
         # decides the scope — self (2) or all-ally (4) needs no prompt.
         if it && it.type == Game::Party::ITEM_SWITCH
           apply_switch_item(id)
+        elsif sk && special && sk.type == Game::Party::SKILL_ESCAPE
+          # Escape has one registered target and no picker -- mirroring
+          # Scene::SkillMenu#apply_escape_skill, a successful cast warps
+          # straight there with no confirmation message. Genuine special
+          # items only -- see this method's own doc comment above.
+          apply_escape_item(id)
+        elsif sk && special && sk.type == Game::Party::SKILL_TELEPORT
+          # Teleport opens a third list of every registered destination, the
+          # same as Scene::SkillMenu's own teleport picker. Genuine special
+          # items only -- see this method's own doc comment above.
+          @pending_item = id
+          @mode = :teleport_target
+          @teleport_index = 0
+          build_teleport_window
+          refresh_desc
         elsif sk
-          # A type-9 special item, or an equipment item flagged `use_skill`
-          # (schema field 71), both invoke the skill named in `skill_id`: the
-          # invoked skill's type/scope decides the dispatch, so a self (2) or
-          # all-ally (4) skill needs no target prompt and an Escape/Teleport
-          # skill warps. Mirrors the special-item path exactly (see the
-          # type-9 fixes above); an equipment item simply reaches the same
-          # `#use_equip_skill_item` / `#use_special_escape_item` /
-          # `#use_special_teleport_item` backing as it already does for an
-          # ordinary targeted cast.
-          if sk.type == Game::Party::SKILL_ESCAPE
-            # Escape has one registered target and no picker -- mirroring
-            # Scene::SkillMenu#apply_escape_skill, a successful cast warps
-            # straight there with no confirmation message.
-            apply_escape_item(id)
-          elsif sk && sk.type == Game::Party::SKILL_TELEPORT
-            # Teleport opens a third list of every registered destination, the
-            # same as Scene::SkillMenu's own teleport picker.
-            @pending_item = id
-            @mode = :teleport_target
-            @teleport_index = 0
-            build_teleport_window
-            refresh_desc
-          elsif sk && sk.type == Game::Party::SKILL_SWITCH
+          if sk.type == Game::Party::SKILL_SWITCH
             # A switch skill has no target and no confirmation message either
             # -- mirroring Scene::SkillMenu#apply_switch_skill, a successful
-            # cast closes the whole menu stack at once.
+            # cast closes the whole menu stack at once. Both item kinds take
+            # this branch -- see this method's own doc comment above.
             apply_special_switch_item(id)
-          elsif sk && (sk.scope == 2 || sk.scope == 4)
+          elsif sk.type == Game::Party::SKILL_ESCAPE || sk.type == Game::Party::SKILL_TELEPORT
+            # A use_skill equipment item invoking Escape/Teleport: no warp,
+            # no picker of its own -- the ordinary single-target prompt
+            # below, exactly like ordinary equipment (see this method's own
+            # doc comment above and #use_equip_skill_item's).
+            prompt_item_target(id)
+          elsif sk.scope == 2 || sk.scope == 4
             # Unlike a medicine (whose all-ally scope needs no actor at all --
             # #use_medicine reads the whole party off `@actors`, ignoring the
             # argument), a special item's `actor` argument is the *caster*
