@@ -285,10 +285,7 @@ class RPG2k
         @command.z = 400
         @command.windowskin = @skin
         cc = Bitmap.new(cw - Window::BORDER * 2, @commands.size * LINE_H)
-        cc.font.color = Color.new(255, 255, 255, 255)
-        @commands.each_with_index do |(_key, label), i|
-          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, label
-        end
+        draw_command_labels(cc)
         @command.contents = cc
         refresh_cursor
 
@@ -360,11 +357,52 @@ class RPG2k
       def redraw_command_labels
         cc = @command.contents
         cc.clear
-        cc.font.color = Color.new(255, 255, 255, 255)
-        @commands.each_with_index do |(_key, label), i|
-          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, label
-        end
+        draw_command_labels(cc)
         refresh_cursor
+      end
+
+      # Whether command `key`'s row should read the windowskin's own
+      # *disabled* swatch instead of its default text colour -- confirmed
+      # directly against RPG_RT's live source: `Scene_Menu::
+      # CreateCommandWindow` (`src/scene_menu.cpp`) disables Save on
+      # `!GetAllowSave()`, Order on `GetActors().size() <= 1`, and every
+      # other command (Item/Skill/Equipment/Status/Row) on
+      # `GetActors().empty()` -- Wait/Quit/Settings/Debug are never
+      # disabled. The exact same three gates `#select_command` above
+      # already enforces as buzzer-and-refuse *behaviour*; this is only the
+      # missing visual cue RPG_RT shows before the player even tries.
+      def command_disabled?(key)
+        case key
+        when :save then !@state.save_access
+        when :order then @state.party.actors.size <= 1
+        when :item, :skill, :equip, :status, :row then @state.party.actors.empty?
+        else false
+        end
+      end
+
+      # Draw every command row into `cc`, in the windowskin's own default
+      # text colour or its *disabled* swatch (system-colour index 3) per
+      # `#command_disabled?` -- confirmed against RPG_RT's live source:
+      # `Window_Command::SetItemEnabled`/`DrawItem` (`src/window_command.cpp`)
+      # always draws a disabled row through `Font::ColorDisabled` (swatch
+      # index 3, `src/font.h`), the same windowskin-blended path every
+      # enabled row uses, not a hardcoded flat gray -- a custom windowskin
+      # whose disabled swatch is tinted shows that tint on real RPG_RT, the
+      # same rule already ported for `Scene::Title`'s Continue and
+      # `Scene::SaveLoad`'s file rows. `draw_system_text`'s own no-windowskin
+      # fallback (plain `draw_text` in the current font colour) still
+      # supplies the flat gray when there is no skin to sample.
+      def draw_command_labels(cc)
+        @commands.each_with_index do |(key, label), i|
+          y = i * LINE_H + 2
+          if command_disabled?(key)
+            cc.font.color = Color.new(128, 128, 128, 255)
+            draw_system_text cc, 0, y, cc.width, LINE_H, label, @skin, 3
+          else
+            cc.font.color = Color.new(255, 255, 255, 255)
+            draw_system_text cc, 0, y, cc.width, LINE_H, label, @skin
+          end
+        end
       end
 
       # Height of one party-status row (see #build_windows's own `y = i *

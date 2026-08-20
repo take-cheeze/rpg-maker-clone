@@ -4296,6 +4296,36 @@ The work below is roughly ordered by the critical path to a walkable game
   @state.save_access`, no `else`. This buzzer, and the rest of the field
   menu's system SE playback, is now modelled too -- see the ✅ bullet just
   below.
+  ✅ **Follow-up (2026-08-20): the field menu never grayed out a disabled
+  command's label at all -- only the buzzer-and-refuse *behaviour* above
+  was fixed, not the visual cue RPG_RT shows before the player even
+  tries.** Confirmed directly against RPG_RT's live source: `Scene_Menu::
+  CreateCommandWindow` (`src/scene_menu.cpp`, the "Disable items" loop)
+  disables Save on `!GetAllowSave()`, Order on `GetActors().size() <= 1`,
+  and every other command (Item/Skill/Equipment/Status/Row) on
+  `GetActors().empty()` -- Wait/Quit/Settings/Debug are never disabled.
+  `Window_Command::SetItemEnabled`/`DrawItem` (`src/window_command.cpp`)
+  then draws a disabled row through `Font::ColorDisabled` (swatch index 3,
+  `src/font.h`), the same windowskin-blended path every row uses, not a
+  hardcoded flat gray -- the identical convention already ported for
+  `Scene::Title`'s Continue and `Scene::SaveLoad`'s file rows (both
+  documented elsewhere in this file), just never carried over to the field
+  menu's own command list. `Scene::Menu#build_windows`/
+  `#redraw_command_labels` (`mruby-rpg2k/mrblib/scene/menu.rb`) drew every
+  row through a bare `cc.draw_text` in plain white, with no check of
+  `@state.save_access` or the party's size/emptiness at all -- `#select_
+  command`'s own per-key gates (quoted just above) already implement the
+  buzzer, but nothing told the player which rows were live before they
+  tried. Fixed by adding `#command_disabled?(key)` (the same three RPG_RT
+  rules, reusing the exact conditions `#select_command` already checks) and
+  a shared `#draw_command_labels(cc)` helper, called from both label-drawing
+  sites, that switches between the default and disabled `draw_system_text`
+  swatch per row exactly like `Scene::Title`'s own fix. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (a disabled Save blends from swatch
+  index 3, restoring save access clears it; an empty party disables exactly
+  the three party-dependent RPG2000 commands, Item/Skill/Equip, leaving
+  Save/End Game alone), both confirmed to fail against the pre-fix code
+  before the fix.
   ✅ **End Game now opens a Yes/No confirmation instead of quitting the game
   outright on the first press.** This engine's `Scene::Menu#select_command`
   played the Decision SE and called `@parent.return_to_title` directly --
