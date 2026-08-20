@@ -6841,6 +6841,34 @@ Everything below is unverified against the codebase.
   in param4 (0) must remove the armour and leave the weapon on, the
   opposite of what the pre-fix code did — all three confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-20): the equip branch never gave a 二刀流
+  (`double_hand?`) actor the dual-wield redirect the equip menu already
+  gets structurally from `#equip_candidates`.** Confirmed directly against
+  RPG_RT's live source: `Game_Interpreter::CommandChangeEquipment`
+  (`src/game_interpreter.cpp`) special-cases `HasTwoWeapons()` *before* its
+  own `ChangeEquipment` call — a shield-type item is a complete no-op
+  (`continue`, nothing equipped, nothing consumed); a weapon-type item
+  equips into the *shield* slot instead when the weapon slot already holds
+  a non-two-handed weapon and the shield slot is empty, otherwise it falls
+  through to the ordinary weapon-slot overwrite.
+  `Game::Party#equip_item_from_bag` (`mruby-rpg2k/mrblib/game.rb`) equipped
+  purely by the item's own database type regardless of `#double_hand?`, so
+  a scripted "learn 二刀流, here is your second blade" event overwrote the
+  actor's first weapon instead of filling the empty second slot, and
+  handing such an actor a shield silently jammed it into their off-hand
+  weapon slot instead of the harmless no-op real RPG_RT makes it. Fixed by
+  mirroring the three-way branch inside `#equip_item_from_bag` itself,
+  reusing `Actor#two_handed?`/`#equipment` rather than re-deriving the
+  two-handed check. `Actor#equip_item`'s own doc comment, which described
+  the event command as always equipping "by type, since that command names
+  no slot," was corrected — it now sometimes passes an explicit shield-slot
+  the same way the equip menu does. Covered by three new
+  `scripts/rpg2k_logic_check.rb` checks (a shield is a complete no-op and
+  is never even consumed from the bag; a second weapon fills the empty
+  shield slot instead of overwriting the first; the redirect does not fire
+  once the shield slot is already occupied or the standing weapon is
+  two-handed), all three confirmed to fail against the pre-fix code before
+  the fix.
 - ✅ **Call Event** — every checkable engine-behavior sub-claim is confirmed
   correct: it doesn't move the target event, ignores its appearance
   conditions, can't cross maps, continues the *caller* right after itself

@@ -1888,7 +1888,10 @@ module Game
     # (1) as the candidate list `Party#equip_candidates` offered it for. A
     # non-equippable item, an unknown id, or a database without an item table
     # is ignored. Drives the Change Equipment event command's equip operation
-    # (always by type, since that command names no slot).
+    # too -- ~~always by type, since that command names no slot~~: since the
+    # dual-wield redirect below, `Party#equip_item_from_bag` also passes an
+    # explicit shield-slot for a 二刀流 actor's second weapon, the same way
+    # the equip menu does.
     def equip_item(item_id, slot = nil)
       return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
       it = @db.item[item_id]
@@ -4711,10 +4714,38 @@ module Game
     # or unknown item id is a no-op, matching EasyRPG's own type-switch
     # default. Callers apply any actor_set restriction themselves (per target,
     # same as #equip_candidate_for? would) before calling this.
+    #
+    # A 二刀流 (double_hand) actor gets the same dual-wield redirect
+    # `Scene::EquipMenu` gets structurally from #equip_candidates, since this
+    # command bypasses the candidate list entirely -- confirmed against
+    # RPG_RT's own live source: `Game_Interpreter::CommandChangeEquipment`
+    # (`src/game_interpreter.cpp`) special-cases `HasTwoWeapons()` before its
+    # own `ChangeEquipment` call: a shield-type item is a complete no-op
+    # (`continue`, nothing equipped, nothing consumed); a weapon-type item
+    # equips into the *shield* slot instead when the weapon slot already
+    # holds a (non-two-handed) weapon, the shield slot is empty, and the new
+    # weapon is not two-handed either -- otherwise it falls through to the
+    # ordinary weapon-slot overwrite. Previously this method equipped purely
+    # by item type regardless of `double_hand?`, so a scripted "learn 二刀流,
+    # here is your second blade" event overwrote the first weapon instead of
+    # filling the empty second slot, and handing such an actor a shield
+    # silently jammed it into their off-hand weapon slot instead of being
+    # the no-op real RPG_RT makes it.
     def equip_item_from_bag(actor, item_id)
       return false unless actor
       slot = equip_slot_for(item_id)
       return false if slot.nil?
+      if actor.double_hand?
+        return false if slot == Actor::SHIELD_SLOT
+        if slot == Actor::WEAPON_SLOT
+          weapon = actor.equipment[Actor::WEAPON_SLOT]
+          shield = actor.equipment[Actor::SHIELD_SLOT]
+          if weapon && weapon != 0 && (shield.nil? || shield == 0) &&
+             !actor.two_handed?(weapon) && !actor.two_handed?(item_id)
+            slot = Actor::SHIELD_SLOT
+          end
+        end
+      end
       swap_equipment_through_bag(actor, item_id, slot)
     end
 
