@@ -18505,20 +18505,68 @@ class EquipCompareParty < MenuStubParty
   def equip_candidates(_slot, _actor = nil); [[2, 1], [3, 1], [4, 1]]; end
 end
 
-check 'Scene::EquipMenu: the candidate arrow sums all four stat deltas against the worn item (yado.tk)' do
+# Confirmed against EasyRPG's actual C++ source: `Window_EquipItem::
+# CheckInclude` (`src/window_equipitem.cpp`) and the inherited `Window_Item::
+# DrawItem` draw only the item's name and stock count, no comparison glyph of
+# any kind -- the summed arrow this candidate list used to draw next to each
+# row (attributed to a fan wiki, yado.tk, rather than ever reading
+# `scene_equip.cpp` in full) never existed in real RPG_RT. The comparison
+# lives entirely in the stats window instead, checked below.
+check 'Scene::EquipMenu: the candidate list draws only a name and count, no comparison glyph' do
   state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
   state.party.actors.first.equipment[0] = 1 # weapon slot already holds item 1 (atk 10)
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
   texts = window_texts(scene.instance_variable_get(:@cand_window))
-  # Row 0 is "(Remove)" (one draw_text call); each candidate row after it is
-  # three calls -- name, arrow, count -- so the arrows land at 2, 5, 8.
-  eq '^', texts[2], 'a candidate with strictly more combined points draws Up'
-  eq 'v', texts[5], 'one with strictly fewer draws Down'
-  eq '-', texts[8], 'an exact match draws Same, not counted per-stat'
+  # Row 0 is "(Remove)" (one call); each candidate row after it is exactly
+  # two calls -- name, count -- so a summed arrow would show up as a third.
+  eq ['(Remove)', 'Better', ':1', 'Worse', ':1', 'Same', ':1'], texts,
+     'no arrow glyph anywhere in the candidate list'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
+# UpdateStatusWindow` (`src/scene_equip.cpp`) recomputes each of the four
+# battle stats independently and hands them to `Window_EquipStatus::
+# SetNewParameters`, which `DrawParameter` (`src/window_equipstatus.cpp`)
+# draws as its own old -> new pair -- never folded into one net verdict, so
+# a candidate that trades Atk for Def shows both movements at once.
+check 'Scene::EquipMenu: the stats window previews each battle stat ' \
+      'independently while browsing candidates' do
+  state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  actor.equipment[0] = 1 # weapon slot: Worn (atk 10); actor's own Atk stub is 20
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+  # #candidates leads with a "(Remove)" entry (id 0), so index 1 is the
+  # first real candidate: [0 Remove, 1 Better(id 2), 2 Worse(id 3), 3 Same(id 4)].
+  scene.instance_variable_set(:@cand_index, 1) # Better (id 2, atk 15)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('25'), 'Better\'s own delta (15 - 10 = +5) applied on top: 20 + 5 = 25'
+
+  scene.instance_variable_set(:@cand_index, 2) # Worse (id 3, atk 5)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('15'), 'Worse\'s own delta (5 - 10 = -5) applied: 20 - 5 = 15'
+
+  scene.instance_variable_set(:@cand_index, 3) # Same (id 4, atk 10)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('20'), 'no delta (10 - 10 = 0): the new value equals the old one (20)'
+
+  scene.send(:leave_items)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  eq false, texts.include?('>'), 'back on the slot list, the preview arrow is gone entirely'
+end
+
+# The same per-stat preview, but through the 両手持ち forced-unequip case a
+# single summed verdict used to collapse into one arrow: Atk rises (+40 the
+# claymore, -20 the old sword) while Def falls at the same time (-25 the
+# shield the claymore forces off) -- two independent movements on one
+# candidate, exactly what #draw_stat_row's per-stat preview (and real
+# RPG_RT) shows and a single combined arrow never could.
 # An actor whose weapon-slot Claymore (id 2) is 両手持ち; MenuStubActor's own
 # stub always answers false, so a check exercising the forced-unequip side
 # effect needs this richer one instead.
@@ -18541,16 +18589,17 @@ class TwoHandedEquipParty < MenuStubParty
   def equip_candidates(_slot, _actor = nil); [[2, 1]]; end
 end
 
-check 'Scene::EquipMenu: a 両手持ち candidate also drops the other hand\'s ' \
-      'stat bonus from the preview, matching what actually equipping it does' do
-  # Confirmed against EasyRPG's actual C++ source: Scene_Equip::
-  # UpdateStatusWindow (src/scene_equip.cpp) also subtracts the *other*
-  # hand's item when either it or the candidate is 両手持ち, since equipping
-  # either one forces the opposite slot empty -- the exact side effect
-  # Actor#equip_item / #free_two_handed_slot already applies for real. A
-  # preview that only diffs the two items landing in the browsed slot would
-  # show the Claymore's own +20 Atk (40 - 20) and draw Up, even though the
-  # true net (+20 Atk, -25 Def from the forced-off Shield) is -5.
+# Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
+# UpdateStatusWindow` also subtracts the *other* hand's item when either it
+# or the candidate is 両手持ち, since equipping either one forces the
+# opposite slot empty -- the exact side effect `Actor#equip_item` /
+# `#free_two_handed_slot` already applies for real. The per-stat preview
+# shows this as two independent movements on the SAME candidate (Atk rises,
+# Def falls at once) rather than one net verdict -- a single combined arrow
+# could only ever show one of the two, or worse, cancel them into "Up" and
+# hide the shield loss entirely.
+check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' \
+      'falling at once, not one summed verdict' do
   state = Game::State.new(TwoHandedEquipParty.new, 1, 0, 0)
   actor = state.party.actors.first
   actor.equipment[0] = 1 # weapon slot: Sword, atk 20
@@ -18558,11 +18607,44 @@ check 'Scene::EquipMenu: a 両手持ち candidate also drops the other hand\'s '
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  texts = window_texts(scene.instance_variable_get(:@cand_window))
-  # Row 0 is "(Remove)"; the one candidate (Claymore) follows it, arrow at 2.
-  eq 'v', texts[2],
-     'net -5 (claymore +40 atk, sword -20 atk, forced-off shield -25 def), ' \
-     'not a naive +20 that ignores the shield the claymore forces off'
+  # #candidates leads with a "(Remove)" entry (id 0); the Claymore is index 1.
+  scene.instance_variable_set(:@cand_index, 1)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('40'),
+     'Atk rises: stub actor\'s own 20 + delta (claymore 40 - sword 20 = 20) = 40'
+  ok texts.include?('-13'),
+     'Def falls in the same preview: stub actor\'s own 12 + delta (0 - forced-off ' \
+     "shield's 25 = -25) = -13"
+end
+
+# EasyRPG's `Window_EquipStatus::DrawParameter` (`src/window_equipstatus.cpp`)
+# colours the new value via `GetNewParameterColor` (0 unchanged / 2 up / 3
+# down), blended from the windowskin's own system-colour swatches -- the same
+# convention the disabled title-menu label and the shop status panel already
+# use elsewhere in this codebase -- not a hardcoded green/red.
+check 'Scene::EquipMenu: the stats window\'s preview colour comes from the ' \
+      'windowskin\'s own swatches, not a hardcoded colour' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> load_windowskin returns a real Bitmap
+  state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
+  state.party.actors.first.equipment[0] = 1
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state, db)
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+
+  scene.instance_variable_set(:@cand_index, 1) # Better (id 2) -- Atk rises
+  scene.send(:refresh_cand_cursor)
+  bc = scene.instance_variable_get(:@stats_window).contents.blend_calls || []
+  # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
+  ok bc.any? { |call| call[6] == 32 && call[7] == 48 },
+     'a rising stat blends from swatch index 2 (32, 48)'
+
+  scene.instance_variable_set(:@cand_index, 2) # Worse (id 3) -- Atk falls
+  scene.send(:refresh_cand_cursor)
+  bc = scene.instance_variable_get(:@stats_window).contents.blend_calls || []
+  ok bc.any? { |call| call[6] == 48 && call[7] == 48 },
+     'a falling stat blends from swatch index 3 (48, 48)'
 end
 
 check "Scene::EquipMenu: browsing the shield slot with a 両手持ち weapon " \
