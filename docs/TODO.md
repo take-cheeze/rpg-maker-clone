@@ -3509,6 +3509,40 @@ The work below is roughly ordered by the critical path to a walkable game
   time or leaves the screen with none picked; Confirm applies the picked
   order to the party and closes; Redo clears every pick without touching the
   party)
+  ✅ **Follow-up (2026-08-20): confirming an Order reorder never refreshed the
+  party leader's on-map sprite, so promoting a member whose CharSet graphic
+  differs from the previous leader's left the hero walking around wearing
+  the old leader's sprite until some unrelated trigger (a map transfer, or
+  a Change Party Member / Change Actor Sprite event) happened to refresh
+  it.** Confirmed directly against RPG_RT's live source:
+  `Scene_Order::Confirm` (`src/scene_order.cpp`) removes then re-adds every
+  member through `Game_Party::RemoveActor`/`AddActor` (`src/game_party.cpp`),
+  and *each* of those calls unconditionally calls `Main_Data::
+  game_player->ResetGraphic()` as a side effect; `Game_Player::
+  ResetGraphic()` (`src/game_player.cpp`) re-reads slot 0's (the new
+  leader's) CharSet name/index/transparency onto the map sprite. The
+  `#reorder` fix above deliberately applies the remove/re-add dance's *net
+  array effect* directly rather than replaying it command-by-command — a
+  correct optimization for the party order itself, but one that silently
+  dropped this specific side effect along with the replay, since nothing
+  else in this codebase's Order path ever calls the sprite refresh.
+  `Scene::Map#apply_graphic_change` already polls an identical flag
+  (`Interpreter#take_actor_graphic_changed`) for the interpreter-driven
+  Change Actor Graphic command, but Order is driven entirely by
+  `Scene::Order`, a pushed screen with no interpreter command of its own to
+  carry it. Fixed by adding `Game::Party#leader_graphic_dirty`/
+  `#take_leader_graphic_dirty` (the identical one-shot-read idiom,
+  mirroring `Interpreter#take_actor_graphic_changed`), set unconditionally
+  by `#reorder` the same way RPG_RT's own `ResetGraphic()` call is
+  unconditional, and polled by `Scene::Map#update` as the very first thing
+  once the scene is on top again — the same "catch up on whatever the
+  pushed screen did" timing `@state.pending_teleport`'s own poll,
+  immediately below it, already uses for a different pushed-screen side
+  effect. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
+  two-member party's map sprite starts on the leader's own CharSet, then
+  refreshes to the newly-promoted member's CharSet once `#reorder` runs and
+  the scene updates), confirmed to fail against the pre-fix code before
+  the fix.
   ✅ **Wait (RPG2003 `menu_commands` id 8, the ATB toggle) is implemented.** Of
   the three ids `RPG2K3_COMMAND_IDS` used to skip wholesale (Row, Order,
   Wait), the toggle turned out to live on the **save system**, not the Battle

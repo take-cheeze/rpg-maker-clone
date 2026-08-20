@@ -388,6 +388,17 @@ class RPG2k
       end
 
       def update
+        # RPG2003's Order screen (party reorder) is driven entirely by
+        # Scene::Order, with no interpreter command of its own to carry the
+        # leader-graphic-refresh flag #apply_graphic_change already polls for
+        # Change Actor Graphic -- so it is polled here instead, the very
+        # first thing once this scene is on top again, the same "catch up on
+        # whatever the pushed screen did" timing #state.pending_teleport
+        # (just below) already uses for a different pushed-screen side
+        # effect. See Game::Party#reorder's own citation of RPG_RT's
+        # `Game_Party::AddActor`/`RemoveActor`/`Game_Player::ResetGraphic`.
+        refresh_player_graphic if @state.party.respond_to?(:take_leader_graphic_dirty) &&
+                                   @state.party.take_leader_graphic_dirty
         # An Escape / Teleport field skill queues its destination here rather
         # than jumping directly -- it is cast from the skill menu, a scene with
         # none of this one's map-load machinery, and this scene does not even
