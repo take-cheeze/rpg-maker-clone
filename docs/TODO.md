@@ -9521,6 +9521,49 @@ not yet verified:
   round-trip (which explicitly exercised the now-removed field 55) was
   updated to match, and gained its own from-scratch check for the corrected
   `SAVE_MOVABLE` field. `ninja -C build test` still passes.
+  ✅ **Follow-up (2026-08-20): two further, independent bugs in this same
+  feature, found while re-verifying the entry above against RPG_RT's own
+  live source rather than trusting its existing citations at face value.**
+  (1) **Set Transparent Flag's own parameter polarity was backwards.**
+  `Game_Interpreter::CommandPlayerVisibility` (`src/game_interpreter.cpp`,
+  code 11310) is `bool hidden = (com.parameters[0] == 0); player->
+  SetSpriteHidden(hidden);` — param0 *zero* hides the player, non-zero shows
+  it. `Interpreter#do_player_visibility` (`mruby-rpg2k/mrblib/interpreter.rb`)
+  had `@state.player_transparent = cmd.param(0) != 0`, backwards, and its own
+  comment cited "EasyRPG's `SetSpriteHidden(parameters[0] != 0)`" — a
+  paraphrase that does not match the real function at all (it computes
+  `hidden` from `parameters[0] == 0` *before* ever calling `SetSpriteHidden`,
+  which takes the already-resolved boolean, not a raw parameter expression).
+  (2) **A wholly separate RPG_RT mechanism — the leader's own actor graphic
+  "Transparent" flag (Change Actor Graphic's third parameter, or the
+  database Actor's own checkbox) — was folded into the same hide, when real
+  RPG_RT renders it as a *translucent ghost*, not a hide at all.** Confirmed
+  against RPG_RT's own live source: `Game_Actor::SetSprite`
+  (`src/game_actor.cpp`) stores `data.transparency = transparent ? 3 : 0`;
+  `Game_Character::GetOpacity` (`src/game_character.cpp`) is `Clamp((8 -
+  GetTransparency()) * 32 - 1, 0, 255)` — level 3 yields opacity 159/255
+  (~62%); and `Game_Character::IsVisible` (`src/game_character.h`) is
+  `IsActive() && !IsSpriteHidden() && GetOpacity() > 0` — `IsSpriteHidden()`
+  (Set Transparent Flag's own mechanism) and `GetOpacity()` (the ghost flag)
+  are genuinely independent gates, never merged into one. `Scene::Map
+  #player_hidden?` (`mruby-rpg2k/mrblib/scene/map.rb`) computed `@state.
+  player_transparent || (leader && leader.transparent)` as one combined
+  hide-boolean — its own adjacent comment even called the ghost flag
+  "(rarely used)" and "semi-transparent" while the code hid the sprite
+  outright, a direct contradiction between comment and code caught only by
+  fetching the real source rather than trusting the comment's own framing.
+  Fixed by splitting `#player_hidden?` down to `@state.player_transparent`
+  alone, adding a new `#player_translucent?` for the leader-graphic ghost
+  flag, and a new `#apply_player_visibility` that sets both `@player_sprite.
+  visible` (the real hide) and `@player_sprite.opacity` (159 while
+  translucent, 255 otherwise) every frame — replacing the two raw
+  `@player_sprite.visible = !player_hidden?` call sites in `#refresh_player_
+  graphic` and `#render`. `do_player_visibility`'s polarity was flipped to
+  `cmd.param(0) == 0`. Covered by rewriting the existing
+  `scripts/rpg2k_logic_check.rb`/`scripts/rpg2k_scene_check.rb` checks that
+  had encoded the backwards polarity, plus a new scene check asserting the
+  ghost flag sets opacity 159 without ever clearing `visible`, all confirmed
+  to fail against the pre-fix code.
 - ✅ **A hero's, vehicle's or map event's saved facing is now decoded (and
   encoded) correctly — this build used to read/write liblcf's raw wire value
   for the field as if it were already this runtime's own numpad convention,

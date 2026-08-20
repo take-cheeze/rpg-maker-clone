@@ -8622,19 +8622,24 @@ end
 
 # -- Player Visibility / Return to Title --------------------------------------
 
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandPlayerVisibility` (`src/game_interpreter.cpp`, code 11310) is
+# `bool hidden = (com.parameters[0] == 0); player->SetSpriteHidden(hidden);`
+# -- param0 *zero* hides the player, non-zero shows it, the reverse of an
+# earlier, uncited pass here that had the polarity backwards.
 check 'Set Transparent Flag toggles the player-transparent state, non-blocking' do
   st = party_state
   it = Game::Interpreter.new(st)
-  it.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [1]),
+  it.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [0]),
             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
   it.update
-  eq true, st.player_transparent, 'param0 != 0 hides the player'
+  eq true, st.player_transparent, 'param0 == 0 hides the player'
   ok !it.waiting?, 'Set Transparent Flag must not pause the interpreter'
   eq true, st.switches[1], 'the command after it still ran'
   it2 = Game::Interpreter.new(st)
-  it2.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [0])])
+  it2.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [1])])
   it2.update
-  eq false, st.player_transparent, 'param0 == 0 shows the player again'
+  eq false, st.player_transparent, 'param0 != 0 shows the player again'
 end
 
 check 'player_transparent round-trips through the save' do
