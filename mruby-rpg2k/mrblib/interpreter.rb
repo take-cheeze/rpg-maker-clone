@@ -2023,11 +2023,9 @@ module Game
     # Change EXP: add (or, when the operation is "remove", subtract) an amount of
     # experience to the target actors, re-deriving each one's level and base
     # stats from the growth curve. Uses the same scope/operation/operand layout
-    # as Change HP (stat_targets / stat_amount); the show-level-up-message flag is
-    # ignored (no battle/message UI drives it here).
-    # Change EXP: add or remove experience for the target actors, which may cross
-    # one or more level thresholds. param5 is the "show message" flag — when set,
-    # each level an actor gains queues a level-up message (drained by #resume).
+    # as Change HP (stat_targets / stat_amount). May cross one or more level
+    # thresholds; param5 is the "show message" flag — when set, each level an
+    # actor gains queues a level-up message (drained by #resume).
     def do_change_exp(cmd)
       amount = stat_amount(cmd)
       show_msg = cmd.param(5) != 0
@@ -2045,10 +2043,8 @@ module Game
 
     # Change Level: add or subtract levels for the target actors, recomputing
     # their base stats and re-aligning EXP to the new level. Same scope/operation/
-    # operand layout as Change EXP.
-    # Change Level: add or remove levels for the target actors. param5 is the
-    # "show message" flag — when set, each level an actor gains queues a level-up
-    # message (drained by #resume).
+    # operand layout as Change EXP; param5 is the "show message" flag — when set,
+    # each level an actor gains queues a level-up message (drained by #resume).
     def do_change_level(cmd)
       amount = stat_amount(cmd)
       show_msg = cmd.param(5) != 0

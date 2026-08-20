@@ -14148,6 +14148,48 @@ not yet verified:
   and the screen flash untouched), the first and third confirmed to fail
   against the pre-fix code before the fix (the second failing on the sprite
   never having drawn at all).
+- ✅ **A map-triggered Show Battle Animation (11210) whose target doesn't
+  resolve — "This Event" from a common event's own Parallel Process, or a
+  specific event id the map has no character for — drew on the player
+  instead of not drawing at all, and a "wait until it finishes" request on
+  one stalled for the animation's own real duration instead of falling
+  straight through the very same tick.** Confirmed against RPG_RT's own
+  live source: `Game_Interpreter_Map::CommandShowBattleAnimation`
+  (`src/game_interpreter_map.cpp`) calls `GetCharacter(evt_id, ...)`
+  unconditionally, before it ever reads the "Whole screen" flag or computes
+  a frame count, and returns outright when that comes back null — so the
+  *entire* command, "Whole screen" target included, no-ops for an
+  unresolved target. `Game_Interpreter::GetCharacter`
+  (`src/game_interpreter.cpp`) is null both for "This Event" (0) when the
+  calling interpreter has no owning map event (`GetThisEventId() == 0`,
+  exactly what a common event's own Parallel Process is) and for a specific
+  event id the map has no character for; `_state.wait_time = frames` is
+  never reached in either case. `Scene::Map#animation_target_pixel`/
+  `#map_animation_flash_target` (`mruby-rpg2k/mrblib/scene/map.rb`) both
+  fell back to the player's own pixel/`:player` for these same two cases —
+  their own doc comments described this as deliberate, but neither was ever
+  checked against `GetCharacter`'s real null-return behavior — and
+  `#begin_map_animation` had no notion of "target didn't resolve" distinct
+  from "target resolved but the animation id/graphic is missing"
+  (`#missing_animation_wait`'s own, unrelated fallback), so a waited-for
+  play on an unresolved target stalled for a real animation's own frame
+  count instead of RPG_RT's immediate fallthrough. Fixed with a new
+  `#animation_target_resolves?(target)` predicate (true for the player and
+  every vehicle slot unconditionally, `!@active_event.nil?` for "This
+  Event," and an `@events` membership check otherwise), consulted by
+  `#start_map_animation` (returns `nil` immediately, before either the
+  global or non-global branch, mirroring the reference's own check-before-
+  `global` ordering) and by `#begin_map_animation` (sets `@anim_wait = 0`
+  directly rather than routing through `#missing_animation_wait`). The two
+  target-decoding helpers' own doc comments, which described the fallback
+  as reachable/deliberate, are corrected in place — both are now only ever
+  called once the target is already known to resolve. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (a common event's "This Event"
+  target, and a specific unknown event id, each resuming within the same
+  one-frame build/step latency every `:animation` wait already has rather
+  than stalling for animation 8's own ~8-frame duration, with
+  `@map_animation` confirmed to stay `nil` — nothing was ever drawn),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **The "1 frame = 1/30s" half of the bullet above is now correct, and
   the "'Wait' frame is internally two consecutive frames" framing turns out
   to have been a misreading — settled against EasyRPG Player's actual C++

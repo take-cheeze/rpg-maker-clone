@@ -6099,12 +6099,51 @@ class RPG2k
       # build the frame-by-frame player from a raw `battle_animation` request
       # hash, or arm the timed-wait fallback when there is no drawable
       # animation.
+      #
+      # An unresolved map target (see #animation_target_resolves?) waits
+      # exactly 0, not #missing_animation_wait's animation-duration fallback
+      # -- confirmed against RPG_RT's own live source: `Game_Interpreter_Map::
+      # CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`) calls
+      # `GetCharacter(evt_id, ...)` unconditionally, before it ever looks at
+      # `global` or computes a frame count, and returns outright when that is
+      # null -- `_state.wait_time = frames` is simply never reached, so a
+      # "wait until finished" request on an unresolved target falls straight
+      # through to the next command the same tick rather than stalling for
+      # the animation's own real duration (or the invalid-animation-id
+      # fallback's timing either).
       def begin_map_animation(req)
+        if req && !req[:battle] && !animation_target_resolves?(req[:target])
+          @map_animation = nil
+          @anim_wait = 0
+          return
+        end
         @map_animation = start_map_animation(req)
         if @map_animation
           fire_animation_flashes(@map_animation) # frame 0 flashes
         else
           @anim_wait = missing_animation_wait(req[:animation])
+        end
+      end
+
+      # Whether Show Battle Animation's map target id names something real to
+      # draw over -- confirmed against RPG_RT's own live source:
+      # `Game_Interpreter::GetCharacter` (`src/game_interpreter.cpp`) returns
+      # null both for "This Event" (0) when the calling interpreter has no
+      # owning map event (a common/parallel event -- `GetThisEventId() == 0`)
+      # and for a specific event id the map has no character for; either way
+      # `CommandShowBattleAnimation` no-ops the *entire* command, including a
+      # "Whole screen" one, since the null check runs before `global` is even
+      # read. The player and every vehicle slot always resolve --
+      # `Game_Character::GetCharacter` constructs those unconditionally,
+      # never returning null for them.
+      def animation_target_resolves?(target)
+        case target
+        when MOVE_TARGET_PLAYER, MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          true
+        when 0, MOVE_TARGET_THIS
+          !@active_event.nil?
+        else
+          @events.any? { |e| e[:id] == target }
         end
       end
 
@@ -6295,6 +6334,7 @@ class RPG2k
       def start_map_animation(req)
         return nil unless req
         return @battle.start_battle_page_animation(req) if req[:battle]
+        return nil unless animation_target_resolves?(req[:target])
         flash_target = map_animation_flash_target(req[:target])
         targets =
           if req[:global]
@@ -6351,14 +6391,13 @@ class RPG2k
 
       # The character a map-triggered flash_scope-1 timing (see
       # #fire_map_target_flash) should pulse: `:player`, a specific `@events`
-      # entry (this event / a named map event id), a `Game::Vehicle::TYPES`
-      # symbol (`:boat`/`:ship`/`:airship`) for a vehicle slot, or nil when
-      # the target id names nothing (a stale/invalid event id no live event
-      # matches). Mirrors #animation_target_pixel's own target-id decoding
-      # exactly, including its "this event" -> player fallback when there is
-      # no active event (a common event Parallel Process's own Show Battle
-      # Animation) and its `Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]`
-      # idiom for a vehicle slot.
+      # entry (this event / a named map event id), or a `Game::Vehicle::TYPES`
+      # symbol (`:boat`/`:ship`/`:airship`) for a vehicle slot. Only ever
+      # called once #animation_target_resolves?(target) has already passed
+      # (see #start_map_animation), so the "this event, no active event" and
+      # "unknown event id" cases it decodes have both already been ruled
+      # out -- this ~~falls back to `:player`~~ no longer needs a fallback
+      # for either.
       def map_animation_flash_target(target)
         case target
         when MOVE_TARGET_PLAYER then :player
@@ -6460,13 +6499,17 @@ class RPG2k
       end
 
       # The target character's map-pixel position: the player, the running event
-      # ("this event" / 0), a vehicle slot, or a map event by id, defaulting to
-      # the player. yado.tk: a vehicle target reads that vehicle's real,
-      # currently-live x/y off `Game::State` (the same source
-      # `#event_operand`'s Control Variables "character position" vehicle fix
-      # reads) even when the vehicle is not on the map this scene has loaded --
-      # RPG_RT does not check that the two agree before placing the animation,
-      # the same blind-read quirk as the Control Variables fix.
+      # ("this event" / 0), a vehicle slot, or a map event by id. Only ever
+      # called once #animation_target_resolves?(target) has already passed
+      # (see #start_map_animation), so its "this event, no active event" and
+      # "unknown event id" ~~fall back to the player~~ branches are dead --
+      # both cases are already ruled out by then. yado.tk: a vehicle target
+      # reads that vehicle's real, currently-live x/y off `Game::State` (the
+      # same source `#event_operand`'s Control Variables "character
+      # position" vehicle fix reads) even when the vehicle is not on the map
+      # this scene has loaded -- RPG_RT does not check that the two agree
+      # before placing the animation, the same blind-read quirk as the
+      # Control Variables fix.
       def animation_target_pixel(target)
         case target
         when MOVE_TARGET_PLAYER then player_pixel
