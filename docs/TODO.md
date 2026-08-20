@@ -3088,7 +3088,15 @@ The work below is roughly ordered by the critical path to a walkable game
   successful use/cast and its message dismiss, a second use/cast on a
   different target needs no re-navigation, and only Cancel finally returns
   to the rebuilt list), both confirmed to fail against the pre-fix code
-  (`expected :target, got :items`/`:skills`).
+  (`expected :target, got :items`/`:skills`). ✅ **Still wrong even after this
+  fix, caught in a later pass (2026-08-20): a "Used on X."/"casts Y!" message
+  survived on every successful use/cast, when `UpdateItem`/`UpdateSkill`'s own
+  cited source, quoted just above, never builds a message window at all —
+  only `SePlay`/`Refresh`. This bullet caught the *stay-open* half of that
+  citation but missed the *no-message* half sitting in the very same two
+  lines — the identical right-conclusion-wrong-detail shape the switch-skill
+  follow-up right below also shows for `#apply_switch_skill`. See the full
+  correction after it.**
   ✅ **Follow-up (2026-08-20): a Switch skill's successful cast showed a
   "casts ..." message and returned to the skill list, when real RPG_RT
   closes the whole menu stack at once with no message at all — the bullet
@@ -3118,6 +3126,45 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check (a successful Switch skill cast
   closes the whole menu stack and shows no message), confirmed to fail
   against the pre-fix code (the stack stayed open).
+  ✅ **Follow-up (2026-08-20): the ordinary item/skill target-confirm screen's
+  successful-use message ("Used on X."/"X casts Y!") never existed in real
+  RPG_RT either — the two bullets above this one fixed the *stay-open* half
+  of `UpdateItem`/`UpdateSkill`'s cited behavior but kept the message the
+  first bullet's own quote of those same two functions already showed had no
+  message-window call anywhere.** Confirmed against EasyRPG Player's actual
+  C++ source, `Scene_ActorTarget::UpdateItem`/`UpdateSkill`
+  (`src/scene_actortarget.cpp`), read in full again: on a successful
+  Decision, `UpdateItem` plays the invoked skill's own `animation_id`-derived
+  SE for a `Type_special` item or a `use_skill`-flagged equipment item, or
+  the database's own Item SE (`SFX_UseItem`) otherwise; `UpdateSkill` always
+  plays the cast skill's own `animation_id`-derived SE. Neither ever
+  constructs a message window — success and failure alike are conveyed by
+  sound effect plus the immediately-refreshed HP/MP/state numbers already
+  visible in the target list, and the very next Decision press acts again
+  with no dismiss step at all. `#update_target` in both scenes also
+  unconditionally played the ordinary Decision-click SE ahead of dispatch,
+  which matches neither the success nor the failure branch. A repo-wide
+  search of EasyRPG's own source for the string "no effect" turns up no
+  match outside unrelated files, corroborating that the fabricated dialog is
+  exactly that — invented here, not ported from anywhere. Fixed by dropping
+  both `show_message` calls from `Scene::ItemMenu#apply_item`/
+  `Scene::SkillMenu#apply_skill` and the stray `SFX_DECISION` from each
+  `#update_target`; a new shared `Scene::Base#play_animation_se` (mirroring
+  EasyRPG's own `Game_System::SePlay(const RPG::Animation&)`, which plays
+  only the *first* of an animation's `timings` carrying a real SE, not every
+  one) resolves the skill's own success cue via its `animation_id`, and a new
+  `Scene::ItemMenu#play_item_use_se` picks between that and `SFX_ITEM` using
+  the identical `do_skill` condition (`type == ITEM_SPECIAL || (use_skill &&
+  (1..5).cover?(type))`) `Game::Party#use_special_escape_item` already
+  established for its own free-use gate. `show_message`/`drive_message`/
+  `close_message` are untouched otherwise — the Switch/Escape/Teleport
+  special-item and special-skill failure paths this same file/its sibling
+  still use them for are a separate `Scene_Skill::vUpdate` code path, not
+  `Scene_ActorTarget`, and were not re-verified here. Covered by two rewritten
+  `scripts/rpg2k_scene_check.rb` checks (a successful use/cast plays the
+  item's own SE or the skill's animation SE, shows no message, and lets the
+  very next Decision act on a different target with no dismiss press in
+  between), both confirmed to fail against the pre-fix code.
 
   What decides usability is the **type**, not the occasion flags, and getting
   that wrong used to leave the battle skill menu **empty in both test beds** —
