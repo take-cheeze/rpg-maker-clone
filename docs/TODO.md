@@ -462,6 +462,44 @@ The work below is roughly ordered by the critical path to a walkable game
   queued roll but the RANDOM case never even looked at a `random(10)` draw,
   landing on the FakeWorld's fallback-0 cardinal, `CARDINALS[0] == 2`,
   instead of the still-facing-right `6` the fix produces) before the fix.
+  ✅ **Follow-up (2026-08-20): `Game::MoveType.bounce`'s Vertical/Horizontal-
+  cycle default direction was reversed for an event caught facing off its
+  own cycle axis.** Confirmed against RPG_RT's own live source:
+  `Game_Event::MoveTypeCycle` (`src/game_event.cpp`) only continues in
+  `ReverseDir(default_dir)` when the event is already facing exactly that;
+  every other current facing — on-axis (facing `default_dir` itself) or not
+  (facing perpendicular to the cycle axis, a legal independent page field a
+  Vertical/Horizontal-cycle event can start with, or get knocked into by a
+  Change Event Location or forced Face command while staying on the same
+  page) — moves `default_dir` instead. `MoveTypeCycleUpDown`/
+  `MoveTypeCycleLeftRight` pass `Down`/`Right` as that default
+  (`src/game_character.h`'s `Up = 0, Right, Down, Left` enum), so the true
+  RPG_RT default is Down for Vertical, Right for Horizontal — not Up/Left.
+  `Game::MoveType.next_direction`'s `VERTICAL`/`HORIZONTAL` cases
+  (`mruby-rpg2k/mrblib/game.rb`) called `#bounce(character, world, [8, 2])`/
+  `[4, 6])`, whose own fallback for "not currently facing either pair
+  member" is `pair[0]` — `8` (Up) and `4` (Left) respectively, the reverse
+  of RPG_RT's actual default. Concretely: a Vertical-cycle event whose page
+  facing is Left or Right (or a Horizontal-cycle event facing Up or Down)
+  took its very first autonomous step in the wrong direction — Up instead
+  of Down, or Left instead of Right — a deterministic, player-visible
+  reversal on any such off-axis-starting-facing event, not a rare edge
+  case. Fixed by swapping the pair argument order at both call sites
+  (`[2, 8]`/`[6, 4]`) — `#bounce`'s own body needed no change, since its
+  reversal branch (`cur == pair[0] ? pair[1] : pair[0]`) is already
+  order-symmetric; only the off-axis fallback needed the correct default
+  first. Covered by a new `scripts/rpg2k_logic_check.rb` check (a
+  Vertical-cycle event facing Left defaults to Down, a Horizontal-cycle
+  event facing Down defaults to Right), confirmed to fail against the
+  pre-fix code (`expected 2, got 8`) before the fix. Left deliberately
+  untouched: `#bounce`'s own immediate on-block reversal (checking
+  passability once and flipping straight to the opposite pair member) does
+  not reproduce `MoveTypeCycle`'s actual staged timing — a fresh block
+  keeps the current direction and only reverses once stuck for `stop_count
+  >= max_stop_count + 20` frames, itself layered under the same
+  blocked-move-facing-revert threshold (`+ 60` frames) already flagged as
+  a further follow-up above — a separate, deeper timing discrepancy from
+  the plain default-direction bug this fix closes.
   ✅ **Follow-up (2026-08-20): a move route's effect-only sub-commands
   (Switch On/Off, Speed/Frequency Up/Down, Change Graphic, Play Sound,
   Through Mode, Stop/Start Animation, Transparency Up/Down) each paid a

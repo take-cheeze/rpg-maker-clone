@@ -6682,8 +6682,8 @@ module Game
     def self.next_direction(type, character, world)
       case type
       when RANDOM     then random_direction(character, world)
-      when VERTICAL   then bounce(character, world, [8, 2])
-      when HORIZONTAL then bounce(character, world, [4, 6])
+      when VERTICAL   then bounce(character, world, [2, 8])
+      when HORIZONTAL then bounce(character, world, [6, 4])
       when TOWARD then toward_away_direction(character, world, true)
       when AWAY   then toward_away_direction(character, world, false)
       else nil
@@ -6749,7 +6749,20 @@ module Game
     end
 
     # Continue along the current axis direction, reversing to the other end of
-    # `pair` when the way ahead is blocked.
+    # `pair` when the way ahead is blocked. `pair[0]` is also the default when
+    # the event is not currently facing either end of the axis at all (an
+    # independent page field, so a Vertical/Horizontal-cycle event can start
+    # -- or be knocked, by a Change Event Location or forced Face command --
+    # facing perpendicular to its own cycle axis) -- confirmed against
+    # RPG_RT's own live source: `Game_Event::MoveTypeCycle` (`src/
+    # game_event.cpp`) only continues in `ReverseDir(default_dir)` when
+    # already facing exactly that; every other current facing, on-axis or
+    # not, moves `default_dir` instead. `MoveTypeCycleUpDown`/
+    # `MoveTypeCycleLeftRight` pass `Down`/`Right` as that default (`src/
+    # game_character.h`'s `Up = 0, Right, Down, Left` enum), so `pair[0]`
+    # here is `2`/`6`, not `8`/`4` -- a Vertical/Horizontal event caught
+    # facing off-axis took its first step Up/Left instead of RPG_RT's own
+    # Down/Right until this was corrected.
     def self.bounce(character, world, pair)
       cur = pair.include?(character.direction) ? character.direction : pair[0]
       return cur if world.passable?(character, cur)

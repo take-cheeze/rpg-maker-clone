@@ -784,6 +784,25 @@ check 'MoveType vertical bounces off a blocked tile' do
   eq 8, Game::MoveType.next_direction(Game::MoveType::VERTICAL, c, FakeWorld.new)
 end
 
+check 'MoveType vertical/horizontal-cycle defaults to Down/Right (not Up/' \
+      'Left) when the event is caught facing off its own cycle axis -- ' \
+      'confirmed against RPG_RT\'s own live source: Game_Event::' \
+      'MoveTypeCycle (src/game_event.cpp) only continues in ReverseDir(' \
+      'default_dir) when already facing exactly that; any other current ' \
+      'facing (on-axis or not) moves default_dir instead, and ' \
+      'MoveTypeCycleUpDown/MoveTypeCycleLeftRight pass Down/Right as that ' \
+      'default' do
+  # Vertical-cycle event facing sideways (Left/6): neither pair member, so
+  # it must fall to the RPG_RT default (Down), not the old code's Up.
+  c = Game::Character.new(2, 2, 4)
+  eq 2, Game::MoveType.next_direction(Game::MoveType::VERTICAL, c, FakeWorld.new)
+
+  # Horizontal-cycle event facing vertically (Down/2): neither pair member,
+  # so it must fall to the RPG_RT default (Right), not the old code's Left.
+  c2 = Game::Character.new(2, 2, 2)
+  eq 6, Game::MoveType.next_direction(Game::MoveType::HORIZONTAL, c2, FakeWorld.new)
+end
+
 check 'MoveType toward/away chase and flee the hero, gated on sight and a ' \
       '1-in-10 roll -- confirmed against RPG_RT\'s own live source: ' \
       'Game_Event::MoveTypeTowardsOrAwayPlayer (src/game_event.cpp) only ' \
