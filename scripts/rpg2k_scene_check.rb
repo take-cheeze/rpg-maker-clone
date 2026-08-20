@@ -16833,6 +16833,32 @@ check 'Scene::Order: holding Down auto-repeats both the left-column pick ' \
      'a held (repeated, not triggered) Down still flips the prompt cursor to Redo'
 end
 
+# Confirmed directly against RPG_RT's live source: `Scene_Order::Confirm`
+# (`src/scene_order.cpp`) removes then re-adds every member through
+# `Game_Party::RemoveActor`/`AddActor` (`src/game_party.cpp`), and each of
+# those calls `Main_Data::game_player->ResetGraphic()` (`src/game_player.cpp`)
+# as a side effect -- re-reading slot 0's (the new leader's) CharSet name
+# onto the map sprite. `Game::Party#reorder` applies the net effect of the
+# remove/re-add dance directly rather than replaying it, so this side effect
+# needs its own explicit wiring (`#take_leader_graphic_dirty`, polled by
+# Scene::Map#update the same way Change Actor Graphic's own flag already is).
+check 'Scene::Map refreshes the leader\'s map sprite once a reorder promotes ' \
+      'a different member to the front' do
+  hero = SlipActor.new
+  hero.instance_variable_set(:@charset_name, 'Hero')
+  ally = SlipActor.new
+  ally.instance_variable_set(:@charset_name, 'Ally')
+  scene = new_scene({}, members: [hero, ally])
+  st = scene.instance_variable_get(:@state)
+  eq 'CharSet/Hero', scene.instance_variable_get(:@charset).load_name,
+     'starts on the leader\'s own charset'
+
+  st.party.reorder([1, 0]) # promote Ally to the front
+  scene.update
+  eq 'CharSet/Ally', scene.instance_variable_get(:@charset).load_name,
+     'the map sprite refreshes to the newly-promoted leader\'s charset'
+end
+
 # -- Scene::SaveLoad: the save/load file-select screen -------------------------
 #
 # Scene::Menu's Save command and Scene::Title's Continue entry both used to

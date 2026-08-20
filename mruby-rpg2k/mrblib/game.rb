@@ -3482,6 +3482,7 @@ module Game
       @item_usage = {}
       @gold = 0
       @revision = 0
+      @leader_graphic_dirty = false
     end
 
     # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
@@ -3602,9 +3603,30 @@ module Game
     # but the leader can be -- `#leader` is simply `@actors.first` -- which is
     # why this bumps @revision the same as #promote_to_leader above, the
     # existing precedent for a leader change with no membership change.
+    #
+    # `Game_Party::AddActor`/`RemoveActor` (`src/game_party.cpp`) -- the pair
+    # `Confirm()` calls once per member during the remove/re-add dance -- each
+    # unconditionally call `Main_Data::game_player->ResetGraphic()` as a side
+    # effect, and `Game_Player::ResetGraphic()` (`src/game_player.cpp`) re-reads
+    # slot 0's (the new leader's) CharSet name/index/transparency onto the map
+    # sprite. Skipping the replay (above) also skipped this side effect, so
+    # `@leader_graphic_dirty` reproduces it directly: set unconditionally here,
+    # the same way real RPG_RT's own call is unconditional, not only when the
+    # leader actually changed.
     def reorder(new_order)
       @actors = new_order.map { |i| @actors[i] }
       @revision += 1
+      @leader_graphic_dirty = true
+    end
+
+    # One-shot read of #reorder's own leader-graphic side effect -- the
+    # `Interpreter#take_actor_graphic_changed` idiom (`mruby-rpg2k/mrblib/
+    # interpreter.rb`), applied here since a reorder is driven entirely by
+    # Scene::Order rather than an interpreter command.
+    def take_leader_graphic_dirty
+      v = @leader_graphic_dirty
+      @leader_graphic_dirty = false
+      v
     end
 
     # RPG2003's field-menu **Row** command (`RPG2K3_COMMAND_IDS` id 6,
