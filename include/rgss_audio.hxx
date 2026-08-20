@@ -33,8 +33,13 @@ extern "C" {
 // to outlive the call.
 struct RgssAudioBackend {
   // Background music: a single looping stream. Starting a new one replaces the
-  // current music.
-  void (*bgm_play)(const char* path, int volume, int pitch);
+  // current music. pos_ms is RGSS3's mid-track resume position, in
+  // milliseconds -- the same unit bgm_pos (below) reports in, so a caller that
+  // feeds bgm_pos's own return value back in here round-trips exactly. 0 plays
+  // from the beginning, as XP/VX's 3-argument form always did. A backend that
+  // cannot seek (or fails to) is expected to fall back to playing from the
+  // beginning rather than dropping the play.
+  void (*bgm_play)(const char* path, int volume, int pitch, int pos_ms);
   // Re-applies volume to the BGM stream already playing, with no restart --
   // unlike bgm_play, which always starts its track over. Used when a Play BGM
   // command re-triggers the file that is already current (RPG_RT re-applies
@@ -77,11 +82,15 @@ struct RgssAudioBackend {
   void (*update)(void);
 
   // The same four, from encoded bytes rather than a file. See the note above.
+  // bgm_play_mem's pos_ms is the same resume position as bgm_play's, above --
+  // this is how a released game (its whole Audio/ tree packed into one
+  // archive, nothing loose on disk) actually hears a mid-track resume.
   void (*bgm_play_mem)(const char* name,
                        const void* data,
                        int size,
                        int volume,
-                       int pitch);
+                       int pitch,
+                       int pos_ms);
   void (*bgs_play_mem)(const char* name,
                        const void* data,
                        int size,

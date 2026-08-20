@@ -219,8 +219,8 @@ assert "a packed track plays through RGSS.asset_archive" do
     class << RGSS::Audio
       alias _bgm_play_mem_orig3 _bgm_play_mem
       alias _can_play_mem_orig3 _can_play_mem?
-      def _bgm_play_mem(name, bytes, volume, pitch)
-        $audio_arch_capture = [name, bytes, volume, pitch]
+      def _bgm_play_mem(name, bytes, volume, pitch, pos = 0)
+        $audio_arch_capture = [name, bytes, volume, pitch, pos]
         nil
       end
       # The test binary installs no audio backend; pretend one is there so the

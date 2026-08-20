@@ -53,10 +53,13 @@ mrb_value play_mem(mrb_state* M, PlayMemFn fn) {
 
 mrb_value bgm_play(mrb_state* M, mrb_value self) {
   const char* path;
-  mrb_int volume, pitch;
-  get_play_args(M, &path, &volume, &pitch);
+  mrb_int volume = 100, pitch = 100, pos_ms = 0;
+  // BGM alone takes a 4th (pos_ms) argument: RGSS3's mid-track resume, which
+  // BGS/ME/SE never had -- get_play_args (above) only reads the three they all
+  // share.
+  mrb_get_args(M, "z|iii", &path, &volume, &pitch, &pos_ms);
   if (g_backend.bgm_play)
-    g_backend.bgm_play(path, (int)volume, (int)pitch);
+    g_backend.bgm_play(path, (int)volume, (int)pitch, (int)pos_ms);
   return mrb_nil_value();
 }
 
@@ -176,7 +179,18 @@ mrb_value audio_update(mrb_state* M, mrb_value self) {
 }
 
 mrb_value bgm_play_mem(mrb_state* M, mrb_value self) {
-  return play_mem(M, g_backend.bgm_play_mem);
+  // Not the shared play_mem helper: BGM alone takes a 5th (pos_ms) argument
+  // (see bgm_play, above) -- this is the packed-archive path a released
+  // game's mid-track resume actually reaches (see RGSS.asset_archive).
+  const char* name;
+  const char* data;
+  mrb_int size;
+  mrb_int volume = 100, pitch = 100, pos_ms = 0;
+  mrb_get_args(M, "zs|iii", &name, &data, &size, &volume, &pitch, &pos_ms);
+  if (g_backend.bgm_play_mem && size > 0)
+    g_backend.bgm_play_mem(name, data, (int)size, (int)volume, (int)pitch,
+                           (int)pos_ms);
+  return mrb_nil_value();
 }
 
 mrb_value bgs_play_mem(mrb_state* M, mrb_value self) {
@@ -223,7 +237,7 @@ extern "C" void rgss_audio_frame(void) {
 void rgss_audio_define(mrb_state* M, RClass* rgss) {
   RClass* audio = mrb_define_module_under(M, rgss, "Audio");
   mrb_define_module_function(M, audio, "_bgm_play", bgm_play,
-                             MRB_ARGS_ARG(1, 2));
+                             MRB_ARGS_ARG(1, 3));
   mrb_define_module_function(M, audio, "_bgm_volume", bgm_volume,
                              MRB_ARGS_REQ(1));
   mrb_define_module_function(M, audio, "_bgm_pan", bgm_pan, MRB_ARGS_REQ(1));
@@ -245,7 +259,7 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
   // Play from encoded bytes: how a release that packs its Audio/ tree into an
   // encrypted RGSSAD archive is heard at all (see RGSS.asset_archive).
   mrb_define_module_function(M, audio, "_bgm_play_mem", bgm_play_mem,
-                             MRB_ARGS_ARG(2, 2));
+                             MRB_ARGS_ARG(2, 3));
   mrb_define_module_function(M, audio, "_bgs_play_mem", bgs_play_mem,
                              MRB_ARGS_ARG(2, 2));
   mrb_define_module_function(M, audio, "_me_play_mem", me_play_mem,
