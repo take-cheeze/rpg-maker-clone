@@ -19759,6 +19759,83 @@ check "a custom-route event crosses another event that has switched its own " \
                "(got x=#{c.x}, still stuck behind it at 0 would mean the fix regressed)"
 end
 
+# Nepheshel's own "HiddenDoor" event (Map0022 event 24, Map0023 event 29,
+# byte-identical, ~120 maps total) is not gated shut behind a switch once
+# opened -- it stays a Player Touch/Trigger_action page forever, and its own
+# two Conditional Branches (type 6, orientation) are how it tells "about to
+# open" from "already open": while it still faces up (direction 0, its
+# authored starting facing) AND the decision key started this trigger, it
+# plays its reveal SE and Move Event (Through Mode on, step down, face
+# right); once it faces right (direction 1 -- exactly what that Move Event's
+# own Face Right sub-command leaves it facing), any further trigger instead
+# runs the second branch: Erase Screen / Teleport / Show Screen. So pressing
+# the action button on it again after it has opened is expected to still be
+# possible (the page is never erased) -- what must NOT happen is the first
+# branch running a second time (which would mean the door's own facing
+# state, and therefore its progress, never actually advanced, and it stays
+# stuck replaying its own reveal instead of ever letting the party through).
+# Mirrors real Map0022 event 24 command-for-command (comment stripped).
+check 'a HiddenDoor-shaped event advances past its "about to open" branch ' \
+      'once opened, instead of replaying the reveal SE on a second trigger' do
+  ic = Game::Interpreter::Cmd
+  door = page(trigger: RPG2k::Scene::Map::TRIGGER_PLAYER_TOUCH,
+              layer: RPG2k::Scene::Map::LAYER_SAME, direction: 0, # numpad-up
+              animation_type: 4) # Fixed Graphic: real event 24's own page 1
+  door.event_commands = [
+    ECmd.new(ic::CONDITIONAL, [6, 10005, 0, 0, 0, 0, 0, 0, 0], indent: 0),
+    ECmd.new(ic::CONDITIONAL, [8, 0, 0, 0, 0, 0, 0, 0, 0], indent: 1),
+    ECmd.new(ic::PLAY_SE, [100, 100, 50, 0, 0, 0, 0, 0, 0], indent: 2),
+    ECmd.new(ic::MOVE_EVENT, [10005, 8, 0, 1, 36, 2, 13], indent: 2),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, [], indent: 2),
+    ECmd.new(ic::END_EVENT, [], indent: 2),
+    ECmd.new(ic::END_BRANCH, [], indent: 1),
+    ECmd.new(ic::END_BRANCH, [], indent: 0),
+    ECmd.new(ic::CONDITIONAL, [6, 10005, 1, 0, 0, 0, 0, 0, 0], indent: 0),
+    ECmd.new(ic::ERASE_SCREEN, [-1, 0, 0, 0, 0, 0, 0, 0, 0], indent: 1),
+    ECmd.new(ic::TELEPORT, [51, 10, 5, 0, 0, 0, 0, 0, 0], indent: 1),
+    ECmd.new(ic::SHOW_SCREEN, [-1, 0, 0, 0, 0, 0, 0, 0, 0], indent: 1),
+    ECmd.new(ic::END_BRANCH, [], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(1, 0, door) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+
+  # Face the door and let the plain walk-touch it fires (triggered_by_decision_key
+  # false, per the committed check above) fully settle -- a same-frame action
+  # button press would otherwise race the leftover touch dispatch's own
+  # deferred command execution and never even reach #try_action_trigger.
+  RGSS::Input.dir_value = 6 # hold right, facing the event at (1,0)
+  10.times { scene.update }
+  RGSS::Input.dir_value = 0
+  10.times { scene.update }
+
+  # Press the action button once: the reveal branch runs.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  20.times { scene.update }
+  d = chars(scene)[1]
+  eq 6, d.direction, "the Move Event's Face Right sub-command left the " \
+                      'door facing right (its own "now open" marker)'
+  ok d.through, 'the Move Event also left the door in Through Mode'
+
+  # The reveal moved the door itself out of the party's way (down, off the
+  # original tile it blocked) rather than erasing it -- exactly the
+  # HiddenDoor idiom's own "walk through it" payoff (see the Through Mode
+  # exemption checks above). Continue toward where it now sits: stepping
+  # onto its tile fires its Player Touch trigger again, and since the door
+  # itself no longer faces up, this must run the *second* branch (the
+  # teleport) rather than replay the first (its own SE a second time).
+  RGSS::Input.dir_value = 6 # onto the vacated (1,0) tile
+  40.times { scene.update; break if st.x >= 1 }
+  RGSS::Input.dir_value = 2 # down onto the door's new tile at (1,1)
+  40.times { scene.update; break if st.y >= 1 }
+  RGSS::Input.dir_value = 0
+  10.times { scene.update }
+  eq 51, st.map_id, 'stepping onto the door\'s new tile advanced to the ' \
+                     'teleport branch instead of replaying the reveal ' \
+                     '(stuck facing up forever)'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
