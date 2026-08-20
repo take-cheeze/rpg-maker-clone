@@ -11831,6 +11831,39 @@ not yet verified:
   incrementing every lap) and confirming it now applies (and the trailing
   command runs) once the message closes, confirmed to fail against the
   pre-fix code before the fix.
+- ✅ **Transfer Player / Recall to Location is now blocked (not run) while a
+  message window or choice list is open, anywhere in the scene, and retries
+  once it closes — the same block-and-retry shape as the Show/Move/Erase
+  Picture fix just above, on a different pair of commands.** Confirmed
+  directly against RPG_RT's live source: `Game_Interpreter_Map::
+  CommandTeleport`/`CommandRecallToLocation` (`src/game_interpreter_map.cpp`,
+  codes 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
+  return false; }`, unconditionally — not gated behind `IsRPG2k3Commands()`,
+  so this is base RPG2000 behaviour, not an RPG2003-only rule. This
+  codebase's `Game::Interpreter#do_teleport`/`#do_recall_location`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) had no such gate at all: a still-running
+  parallel process (Message Options' "continue events" flag lets one keep
+  advancing past another event's open Show Text, see
+  `Scene::Map#parallels_paused?`) could warp the map out from under an
+  on-screen message window instead of waiting for it to close first — the
+  identical class of gap the Show/Move/Erase Picture fix just above closed
+  for those three commands, just never ported to these two. Fixed by
+  renaming the picture fix's own `#picture_commands_suppressed?` to the more
+  general `#message_window_blocks_command?` (its logic is unchanged, and it
+  was already generic — only its name was picture-specific) and adding a new
+  `#block_pending_teleport_command`, the same shape as
+  `#block_pending_picture_command`: rewinds `@index` back onto the same
+  command and suspends on a new `:teleport_blocked` wait.
+  `Scene::Map#drive_event`'s foreground dispatch and `#drive_parallel_wait`
+  both gained a matching `:teleport_blocked` case (`resume unless
+  message_window_open?`), alongside the existing `:picture_blocked` ones.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a common event's
+  Parallel Process's own Transfer Player, and the command right after it in
+  the same list, must not run while a message window opened elsewhere is on
+  screen; both apply once the window closes), confirmed to fail against the
+  pre-fix code before the fix — the old code's own auto-loop-on-finish
+  masking (documented in the Follow-up just above) made the failure show up
+  as the process's own marker command re-running four times over, not zero.
 - ✅ **Not applicable: re-issuing Show Picture every tick being expensive
   enough to cause real frame drops (vs. cheap repeated Move Picture) is a
   real-RPG_RT-specific performance characteristic, not a state/behaviour

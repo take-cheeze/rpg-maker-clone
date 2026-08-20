@@ -2450,6 +2450,39 @@ check "a common event's Parallel Process's own Transfer Player command " \
      'and reached marker B on the new map'
 end
 
+check "a common event's Parallel Process's own Transfer Player command is " \
+      'blocked (not dropped) while a message window is open, and retries once ' \
+      'it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter_Map::
+  # CommandTeleport`/`CommandRecallToLocation` (`src/game_interpreter_map.cpp`,
+  # codes 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
+  # return false; }`, unconditionally -- the identical block-and-retry shape
+  # already ported for Show/Move/Erase Picture (see
+  # #block_pending_picture_command). A command right after the blocked
+  # Transfer Player in the same list must not run either, until the Transfer
+  # Player itself finally succeeds -- the whole interpreter blocks at that
+  # exact command, matching the picture-command fix's own citation of
+  # `Game_Interpreter::Update`'s `if (!ExecuteCommand()) { break; }`.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::TELEPORT, [2, 0, 0, 0]),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq 1, st.map_id, 'the Transfer Player must not apply while a message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Transfer Player must not run either'
+
+  scene.send(:close_message)
+  5.times { scene.update }
+  eq 2, st.map_id, 'the Transfer Player retries and applies once the window closes'
+  eq 1, st.variables[4], 'and the command after it then runs too'
+end
+
 check "an unrelated event's page change does not restart another event's " \
       'own Parallel Process' do
   ic = Game::Interpreter::Cmd
