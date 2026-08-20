@@ -3229,6 +3229,17 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # Same reasoning: appended last, nil reads as 0 via
                            # the reader methods, matching the schema default.
                            :battle_x, :battle_y, :battler_animation)
+# A real LCF growth curve (chunk 31 / #int16_values(31)) as `levels` calls to
+# `blk`, each returning one level's [maxhp, maxsp, atk, def, int, agi] --
+# liblcf's `RawStruct<rpg::Parameters>::ReadLcf` (src/ldb_parameters.cpp)
+# reads it as six *separate* same-length runs back to back (every level's
+# maxhp, then every level's maxsp, then atk/def/int/agi), not six shorts
+# interleaved per level, so this transposes the per-level rows into that
+# stat-major layout before flattening.
+def block_curve(levels)
+  (0...levels).map { |i| yield i }.transpose.flatten
+end
+
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -3711,10 +3722,8 @@ end
 # which always re-seeds class_id from there).
 check 'to_lsd/from_lsd round-trips a live Change Class, and the battle ' \
       'commands it materializes' do
-  actor_curve = []
-  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
-  job1 = []
-  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
+  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
   players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, nil) }
   jobs = { 1 => JobRow.new('Mage', job1) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
@@ -3772,10 +3781,8 @@ check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
 end
 
 check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
-  actor_curve = []
-  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
-  job1 = []
-  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
+  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
   players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 1, nil) }
   jobs = { 1 => JobRow.new('Mage', job1) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
@@ -4331,8 +4338,11 @@ end
 
 check 'Actor base stats scale with level from the growth curve' do
   # Two levels, six stats each: L1 = maxhp10/maxmp5/atk3/def2/int1/agi4,
-  # L2 = double each (except as listed).
-  curve = [10, 5, 3, 2, 1, 4,  20, 10, 6, 4, 2, 8]
+  # L2 = double each (except as listed). Six same-length runs back to back --
+  # every level's maxhp, then every level's maxmp, then atk/def/int/agi --
+  # matching liblcf's own `RawStruct<rpg::Parameters>::ReadLcf`, not six
+  # shorts interleaved per level.
+  curve = [10, 20,  5, 10,  3, 6,  2, 4,  1, 2,  4, 8]
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, curve) }, [1])
   a = Game::Party.new(db).leader
   eq 1, a.level
@@ -4765,8 +4775,8 @@ check 'An ordinary level change carries a live Change Parameters adjustment ' \
   # curve on every call, silently discarding any live change_param delta the
   # moment the actor's level changed by any means.
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1,
-                                            [10, 5, 50, 2, 1, 4,   # level 1
-                                             10, 5, 52, 2, 1, 4]) }, # level 2
+                                            [10, 10,  5, 5,  50, 52,  # atk: L1 50, L2 52
+                                             2, 2,  1, 1,  4, 4]) },
                        [1])
   a = Game::Party.new(db).leader
   eq 50, a.atk                                  # level 1 curve atk
@@ -4885,12 +4895,9 @@ end
 # checks: the actor is a level-3 "Fighter" curve, class 1 is twice as strong and
 # class 2 half as strong, and each class teaches its own skill.
 def class_db(class_id = 0, actor_learns = [[10, 1]])
-  actor_curve = [] # levels 1..3, six stats each
-  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
-  job1 = [] # class 1: double the actor's HP curve, distinct battle stats
-  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
-  job2 = []
-  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
+  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] } # levels 1..3, six stats each
+  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] } # class 1: double the actor's HP curve, distinct battle stats
+  job2 = block_curve(3) { |i| [50 + i * 10, 10, 5 + i, 4, 3, 2] }
   players = {
     1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, class_id,
                         [1, 2, 0, -1, -1, -1, -1]),
@@ -5091,10 +5098,8 @@ end
 # EasyRPG's Game_Actor::ChangeClass (src/game_actor.cpp) calls the same
 # LearnLevelSkills(1, new_level, pm) Change Level/Change EXP do.
 def class_db_named_skills(actor_learns = [[10, 1]])
-  actor_curve = []
-  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
-  job1 = []
-  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
+  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
   players = {
     1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, 0,
                         [1, 2, 0, -1, -1, -1, -1]),
@@ -5226,8 +5231,7 @@ check 'a class change and its battle commands survive Save / Continue' do
 end
 
 check "Game::Actor#battle_command_row resolves a positive id via the database's Battle Commands table" do
-  actor_curve = []
-  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
   players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, [5, 0, -1, -1, -1, -1, -1]) }
   table = FakeBattleCommandsTable.new({ 5 => FakeBattleCommand.new('Cast Fire', 2) }, 0)
   db = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, battlecommands: table)
@@ -5628,7 +5632,7 @@ end
 check 'Change Level command raises the level and rescales stats' do
   # Two-level curve: L1 maxhp10/atk3, L2 maxhp20/atk6.
   db = FakeActorDB.new(
-    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8]) }, [1])
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 20, 5, 10, 3, 6, 2, 4, 1, 2, 4, 8]) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   a = st.party.actor_by_id(1)
   eq [1, 10, 3], [a.level, a.max_hp, a.atk]
@@ -6577,12 +6581,9 @@ end
 check 'a use_skill equipment item restricted by class_set is only usable by ' \
       'an actor in one of its listed classes, under the RPG2003 "by Class" ' \
       'equipment setting' do
-  actor_curve = []
-  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
-  job1 = []
-  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
-  job2 = []
-  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
+  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
+  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
+  job2 = block_curve(3) { |i| [50 + i * 10, 10, 5 + i, 4, 3, 2] }
   skills = { 8 => fake_skill(name: 'Elixir', scope: 3, sp_cost: 99, power: 40, hp: true) }
   # class_set index 0 is EasyRPG's reserved "no class" slot, never a real
   # class -- the first real class is index 1. Index 1 (class 1) false,
@@ -6620,12 +6621,9 @@ end
 # is equally subject to, not a use_skill-equipment-only rule -- an ordinary
 # medicine with a class_set is gated the exact same way.
 check 'an ordinary medicine is gated by class_set too, under "by Class"' do
-  actor_curve = []
-  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
-  job1 = []
-  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
-  job2 = []
-  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
+  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
+  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
+  job2 = block_curve(3) { |i| [50 + i * 10, 10, 5 + i, 4, 3, 2] }
   items = { 4 => fake_item(type: 6, rhp: 40, class_set: [false, false, true],
                            name: 'Mage Draught') }
   players = {
@@ -9241,8 +9239,9 @@ check 'a fresh actor starts with the EXP for its initial level' do
 end
 
 check 'gain_exp levels the actor up across thresholds and recomputes stats' do
-  # Per-level curve (level-major, six stats per level): max_hp 100/120/140.
-  curve = [100, 20, 10, 8, 6, 5, 120, 22, 11, 9, 7, 6, 140, 24, 12, 10, 8, 7]
+  # Per-stat curve (stat-major, six same-length runs back to back): max_hp
+  # 100/120/140, max_mp 20/22/24, atk 10/11/12, def 8/9/10, int 6/7/8, agi 5/6/7.
+  curve = [100, 120, 140,  20, 22, 24,  10, 11, 12,  8, 9, 10,  6, 7, 8,  5, 6, 7]
   a = exp_actor(initial_level: 1, max_level: 3, curve: curve,
                 exp_basic: 100, exp_increase: 0, exp_correction: 0)
   eq 1, a.level

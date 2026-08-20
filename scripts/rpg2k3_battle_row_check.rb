@@ -140,7 +140,7 @@ def actor_combatant(name, atk, dfn, agi)
   c
 end
 
-bat = Game::Battle.new([front], [front], Game::Rng.new(1))
+bat = Game::Battle.new([front], [front], Game::Rng.new(1), rpg2003: true)
 attacker = actor_combatant('Atk', 100, 0, 20)
 target_front = bat.enemies[0]
 target_back = target_front.dup
@@ -184,7 +184,7 @@ end
 #   front defender: unchanged 62
 #   back  defender: 75 * 62 / 100 = 46        (defender row, after attribute)
 dmg_bat = Game::Battle.new([attacker], [target_front], Game::Rng.new(1),
-                           nil, false, false, false)
+                           nil, false, false, false, rpg2003: true)
 
 check 'a front-row attacker deals +25% damage vs a front-row defender' do
   entry = dmg_bat.send(:deal_attack, attacker, target_front)

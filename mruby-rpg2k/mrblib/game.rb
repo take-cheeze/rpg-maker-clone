@@ -1922,18 +1922,33 @@ module Game
     end
 
     # The six base stats at `level`. Real database rows expose the full growth
-    # curve (six shorts per level) via LCF::Array1D#int16_values; index it by
-    # level, clamped to the curve's length. A row that only offers a single
-    # `status` hash (the test fixtures, or a database without a curve) is treated
-    # as level-independent. With a class set the class row's curve wins.
+    # curve via LCF::Array1D#int16_values(31), bypassing the schema's own
+    # `status` accessor (which only ever surfaces level 1 -- see below); index
+    # it by level, clamped to the curve's length. A row that only offers a
+    # single `status` hash (the test fixtures, or a database without a curve)
+    # is treated as level-independent. With a class set the class row's curve
+    # wins.
+    #
+    # The curve is six *separate* same-length runs back to back -- every
+    # level's maxHP, then every level's maxSP, then ATK, DEF, SPI, AGI -- not
+    # six shorts interleaved per level as a prior version of this method (and
+    # STAT_NAMES' own field order) suggested. Confirmed against liblcf's own
+    # reader, `RawStruct<rpg::Parameters>::ReadLcf` (`src/ldb_parameters.cpp`):
+    # `n = length / 6; stream.Read(maxhp, n); stream.Read(maxsp, n); ...` --
+    # six sequential fixed-size reads, one per stat, each `n` (the level
+    # count) shorts long. Reading it as interleaved landed on a different
+    # stat's value entirely for every level past the first (and a different
+    # *level* of maxHP even at level 1, since only STAT_NAMES[0]'s stride-1
+    # and block-`n` offsets coincide there) -- verified against a real
+    # database (Nepheshel): the interleaved reading's level-1 ATK (59) was
+    # actually the level-3 entry of the maxHP run.
     def base_stats(level)
       a = curve_row
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
       if curve && curve.size >= STAT_NAMES.size
-        levels = curve.size / STAT_NAMES.size
-        lv = level > levels ? levels : level
-        base = (lv - 1) * STAT_NAMES.size
-        return STAT_NAMES.each_index.map { |i| curve[base + i] || 0 }
+        n = curve.size / STAT_NAMES.size
+        lv = level > n ? n : level
+        return STAT_NAMES.each_index.map { |i| curve[(i * n) + (lv - 1)] || 0 }
       end
       st = (a.respond_to?(:status) ? a.status : nil) || {}
       STAT_NAMES.map { |k| st[k] || 0 }
@@ -9907,7 +9922,19 @@ module Game
     # an enemy defaulting to the front row is never adjusted). The `row` is
     # read through Combatant#row (nil defaults to the front row, the only row
     # RPG2000 knows).
+    #
+    # `@rpg2003` gated first: the front row is every RPG2000 ally's permanent
+    # default (there is no Row command to ever leave it), so the `offense`
+    # branch below is not the no-op its own row-never-changes reasoning
+    # promises -- unlike the `defender` branch, which really is a no-op there
+    # (row can never read ROW_BACK), `row == ROW_FRONT` is trivially true for
+    # every ally, on every attack, in every RPG2000 fight. Without this gate a
+    # plain RPG2000 basic attack silently took RPG2003's +25% front-row bonus
+    # on every single swing -- confirmed against a real RPG2000 database
+    # (Nepheshel): a level 1 actor's very first hit read 25% higher than
+    # `Battle.attack_damage` alone accounts for.
     def row_adjusted?(battler, offense)
+      return false unless @rpg2003
       row = battler.respond_to?(:row) ? battler.row : ROW_FRONT
       if offense
         ally?(battler) && row == ROW_FRONT

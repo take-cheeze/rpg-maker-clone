@@ -45,3 +45,24 @@ accessor, via its `order:` mapping, only ever surfaced the first (level-1) row.
   level-up are still not modelled, and `exp` is stored but no gain-exp path
   consumes it yet -- follow-up. The growth curve is read straight from the
   database, so no save fixture is bundled.
+
+✅ **Follow-up (2026-08-20): the curve layout itself was wrong.** This ADR's
+own context section claimed chunk 31 is "six shorts (maxHP, maxSP, atk, def,
+int, agi) *per level*" -- interleaved -- and `base_stats` indexed it that way
+(`(level - 1) * 6 + stat_index`). That is not what liblcf writes. Its own
+reader, `RawStruct<rpg::Parameters>::ReadLcf` (`src/ldb_parameters.cpp`),
+reads six *separate*, same-length runs back to back -- every level's maxHP,
+then every level's maxSP, then atk/def/int/agi -- and this project's `status`
+cross-check (`curve[0..5]` equalling the schema's own level-1 `status` hash,
+cited above as confirmation) never actually tested the layout: `status`'s
+`order:` mapping decodes the identical first six raw shorts the same
+stride-6 way, so the two agreed by construction, not by checking against an
+independent source. Caught from a real player report of ally damage reading
+roughly double real RPG_RT for the same fight, traced through a real
+database (Nepheshel): the interleaved reading's level-1 ATK (59) was actually
+the level-3 entry of the maxHP run. `base_stats` now reads `n = curve.size /
+6` same-length blocks and indexes `curve[stat_index * n + (level - 1)]`,
+matching the reference reader; the hand-built curve fixtures across
+`rpg2k_logic_check.rb` (`CurveRow`/`ClassedRow`/`JobRow` growth tables) were
+rewritten from interleaved rows to the same six-block layout via a shared
+`block_curve` test helper. See `changelog.d/actor-growth-curve-block-layout.fixed.md`.
