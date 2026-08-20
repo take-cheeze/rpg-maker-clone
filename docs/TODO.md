@@ -8979,6 +8979,45 @@ not yet verified:
   the bug rather than catching it); its expected value is corrected to the
   pass-through relationship (`param 2000 → 2000ms`), confirmed to fail
   against the pre-fix code (`expected 2000, got 200000`) before the fix.
+  ✅ **Follow-up (2026-08-20): ~~Clears the current-BGM record so a Memorize
+  BGM taken afterwards memorises silence, as RPG_RT does~~ — corrected,
+  real RPG_RT does the opposite: an ordinary Fade Out BGM leaves the
+  current-BGM record untouched, so a Memorize BGM taken afterwards still
+  memorises the track that was fading, not silence.** This method's own
+  doc comment carried that claim with no citation of its own (only the
+  neighbouring millisecond-vs-tenths conversion, quoted above, was actually
+  sourced) — re-reading RPG_RT's live source directly contradicts it.
+  Confirmed: `Game_Interpreter::CommandFadeOutBGM`
+  (`src/game_interpreter.cpp`) calls `Main_Data::game_system->
+  BgmFade(fadeout)` with a single argument; `Game_System::BgmFade`
+  (`src/game_system.h`: `void BgmFade(int duration, bool
+  clear_current_music = false);`, `src/game_system.cpp`) only clears
+  `data.current_music` when its second parameter is explicitly `true` —
+  defaulted `false`, so the event command never passes it. `BgmFade(...,
+  true)` is reserved for unrelated callers (a title/reset path in
+  `player.cpp`), not the ordinary event command. `Game_System::
+  MemorizeBGM` (`src/game_system.h`, inline: `data.stored_music =
+  data.current_music;`) then confirms a Memorize BGM issued after a fade
+  captures whatever `current_music` still holds — the pre-fade track.
+  `Interpreter#do_fadeout_bgm` (`mruby-rpg2k/mrblib/interpreter.rb`)
+  unconditionally set `@state.current_bgm = nil`, with concrete
+  player-visible consequences traced through the whole call chain: `#do_
+  memorize_bgm` stored `nil` instead of the pre-fade track (a later Play
+  Memorized BGM restored silence instead of resuming it); `@current_bgm`
+  is persisted into both the Marshal save and the `.lsd` (`game.rb`: `sys
+  [75] = bgm_chunk(@current_bgm) if @current_bgm`), so a Save taken right
+  after a fade forgot the track entirely instead of resuming it on
+  Continue; and `Scene::Map`'s vehicle/battle/inn BGM-restore snapshots
+  (`@pre_vehicle_bgm`/`@pre_battle_bgm`/`@pre_inn_bgm = @state.current_
+  bgm`) captured `nil` instead of the pre-fade track, so disembarking/
+  ending a battle/leaving an inn shortly after a Fade Out BGM restored
+  silence instead of the track that had been fading. Fixed by removing the
+  `@state.current_bgm = nil` line — `@state.bgm_looped = false` is
+  unrelated and left alone. Covered by rewriting the existing `scripts/
+  rpg2k_logic_check.rb` "Fade Out BGM" check (the current-BGM record must
+  still name the faded track, not `nil`) and a new "Memorize BGM taken
+  after a Fade Out BGM still memorises the faded track" check, both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A Forced-AI actor's auto-battle skill-ranking cost is no longer
   inflated by a percent-cost formula RPG2000 never applies.**
   `Game::Battle#auto_battle_raw_cost` (`mruby-rpg2k/mrblib/game.rb`) is the

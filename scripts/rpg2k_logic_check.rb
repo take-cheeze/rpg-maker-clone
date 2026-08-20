@@ -15989,11 +15989,20 @@ check 'Flash Sprite without its wait flag does not pause the interpreter' do
   eq 1, it.take_sprite_flash_requests.size
 end
 
-check 'Fade Out BGM fades the music and forgets the current track' do
+check 'Fade Out BGM fades the music but keeps the current-BGM record intact' do
   # param0 is already milliseconds -- EasyRPG's CommandFadeOutBGM passes it
   # straight through to Game_System::BgmFade with no scaling (confirmed
   # against its "Duration in ms" doc comment and every real call site, all
   # bare millisecond literals).
+  #
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandFadeOutBGM` (`src/game_interpreter.cpp`) calls `Game_System::
+  # BgmFade(fadeout)` with a single argument, and `Game_System::BgmFade`
+  # (`src/game_system.h`/`.cpp`) only clears `data.current_music` when its
+  # second parameter, `clear_current_music`, is explicitly `true` --
+  # defaulted `false`, so the event command never clears it. A save taken
+  # (or a Memorize BGM issued) right after a Fade Out BGM must still see
+  # the track that was fading, not silence.
   st = new_state
   RGSS::Audio.log = []
   it = Game::Interpreter.new(st)
@@ -16002,8 +16011,25 @@ check 'Fade Out BGM fades the music and forgets the current track' do
     FakeCmd.new(IC::FADEOUT_BGM, [2000]), # 2000 ms
   ])
   it.update
-  eq nil, st.current_bgm, 'nothing is playing after a fade-out'
+  eq 'Town', st.current_bgm[:name],
+     'the current-BGM record still names the track that was fading'
   eq [:bgm_fade, 2000], RGSS::Audio.log.last, 'the parameter is passed straight through as ms'
+end
+
+check 'Memorize BGM taken after a Fade Out BGM still memorises the faded track' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::FADEOUT_BGM, [2000]),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'fanfare'),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  eq 'town', st.current_bgm[:name],
+     'the memorized BGM is the pre-fade track, not silence'
 end
 
 check 'Play Movie records the request instead of dropping it' do

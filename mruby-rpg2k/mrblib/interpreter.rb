@@ -3695,9 +3695,16 @@ module Game
     end
 
     # Fade Out BGM (11520): fade the music to silence over param0
-    # milliseconds, then leave nothing playing. Clears the current-BGM
-    # record so a Memorize BGM taken afterwards memorises silence, as
-    # RPG_RT does. Non-blocking — the event runs on while the music fades.
+    # milliseconds, then leave nothing playing. The current-BGM record
+    # survives the fade untouched -- a Memorize BGM taken afterwards still
+    # memorises the track that was fading, not silence. Confirmed directly
+    # against RPG_RT's live source: `Game_Interpreter::CommandFadeOutBGM`
+    # (`src/game_interpreter.cpp`) calls `Main_Data::game_system->
+    # BgmFade(fadeout)` with a single argument, and `Game_System::BgmFade`
+    # (`src/game_system.h`/`.cpp`) only clears `data.current_music` when its
+    # second parameter, `clear_current_music`, is explicitly `true` --
+    # defaulted to `false`, so the event command never sets it. Non-blocking
+    # — the event runs on while the music fades.
     #
     # param0 is already milliseconds, not tenths of a second: EasyRPG's
     # `CommandFadeOutBGM` (src/game_interpreter.cpp) passes
@@ -3709,7 +3716,6 @@ module Game
     # `RGSS::Audio.bgm_fade` already expects milliseconds too --
     # `Scene::Menu`'s own End Game call passes `bgm_fade(400)` directly.
     def do_fadeout_bgm(cmd)
-      @state.current_bgm = nil
       @state.bgm_looped = false
       RGSS::Audio.bgm_fade(cmd.param(0))
     rescue StandardError => e
