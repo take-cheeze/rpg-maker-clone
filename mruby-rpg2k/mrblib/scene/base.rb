@@ -300,6 +300,16 @@ class RPG2k
         [s.x, s.y]
       end
 
+      # Whether `character` is on screen (plus a two-tile margin) -- gates
+      # Move Type Approach/Away from Player's own randomness, see
+      # Scene::Map#char_in_sight?'s own citation. Only ever asked of a map
+      # event/the hero, never a vehicle -- Approach/Away is not a valid
+      # Move Type for a vehicle's own Set Move Route, so VehicleWorld below
+      # needs no counterpart.
+      def in_sight?(character)
+        @scene.char_in_sight?(character)
+      end
+
       def set_switch(id, on)
         @scene.state.switches[id] = on
       end
