@@ -5112,9 +5112,19 @@ module Game
     # (dual-wield) between them -- there is no test-bed skill with two to
     # confirm that against, so it is the direct reading of "a weapon carrying
     # that same attribute" applied per attribute rather than a guess at
-    # something looser.
+    # something looser. An `affect_attr_defence` skill (a resistance-shift
+    # buff, see `#apply_attr_shift`) is exempt from this whole check,
+    # regardless of which attribute it names -- confirmed against RPG_RT's
+    # own live source: `Game_Actor::IsSkillUsable` (`src/game_actor.cpp`)
+    # wraps its entire weapon-equip loop in `if (!skill->affect_attr_defence)
+    # { ... }`, and neither `Algo::IsSkillUsable` nor `Game_Battler::
+    # IsSkillUsable` (`src/algo.cpp`/`src/game_battler.cpp`) has any such
+    # check at all -- it exists only at this one `Game_Actor` level, guarded
+    # by that flag. yado.tk's own text (cited above) never mentions the
+    # exemption.
     def weapon_attribute_ready?(caster, sk)
       return true unless sk
+      return true if sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence
       ids = skill_attributes(sk).select { |aid| attribute_weapon_type?(aid) }
       return true if ids.empty?
       equipped = caster.respond_to?(:weapon_attributes) ? caster.weapon_attributes : []

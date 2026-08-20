@@ -14243,7 +14243,28 @@ not yet verified:
   of "a weapon carrying **that** attribute", not confirmed against a
   multi-attribute skill since neither test bed ships one. Covered by a new
   `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the pre-fix
-  code. **Weapon-type × magic-type attribute stacking is built now too** — a
+  code.
+  ✅ **Follow-up (2026-08-21): that weapon-equip gate wrongly applied to an
+  `affect_attr_defence` (resistance-shift buff) skill too, blocking a
+  perfectly castable "raise Fire resistance"-style skill whenever its named
+  attribute happened to be weapon-type and the caster had no matching weapon
+  equipped.** Confirmed against RPG_RT's own live source: `Game_Actor::
+  IsSkillUsable` (`src/game_actor.cpp`) wraps its *entire* weapon-equip loop
+  in `if (!skill->affect_attr_defence) { ... }` — the exemption sits at
+  exactly this one `Game_Actor` level; neither `Algo::IsSkillUsable` nor
+  `Game_Battler::IsSkillUsable` (`src/algo.cpp`/`src/game_battler.cpp`) has
+  any weapon-attribute check at all. The original bullet above (and its
+  yado.tk source) never mentioned this exemption, so `#weapon_attribute_
+  ready?` never checked it either. Fixed with a single early `return true if
+  sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence` ahead of
+  the existing weapon-id check — the same one-choke-point `#can_cast?` call
+  site fixes all three live callers (`#can_cast?`, `Game::Battle
+  #skill_ready?`/auto-battle, and `Scene::Battle#confirm_battle_skill`) at
+  once. Covered by a new `scripts/rpg2k_logic_check.rb` check (a defence-
+  shift skill naming a weapon-type attribute is castable with no weapon
+  equipped at all, unlike an ordinary weapon-type-attribute attack skill),
+  confirmed to fail against the pre-fix code before the fix.
+  **Weapon-type × magic-type attribute stacking is built now too** — a
   separate question from equip gating, in the damage formula rather than
   usability. EasyRPG's `Attribute::ApplyAttributeMultiplier` keeps the
   *strongest* rate within each type (physical/weapon and magical/magic
