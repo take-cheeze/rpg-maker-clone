@@ -104,7 +104,13 @@
   (see "Map exploration" above) straight onto the screen, skipping opening F9
   and paging to them by hand. Combine with `--rpg2k_preview_map` to choose
   which map (and so which chipset) is open, and with the terminal backends
-  below and `--timeout_ms` for a headless screenshot:
+  below and `--timeout_ms` for a headless screenshot. Unlike every other flag
+  on this page, these three do **not** need `--test_play`/`Game.ini`
+  `[Game] Test=1` alongside them — passing one is already the same kind of
+  deliberate, explicit opt-in `--test_play` itself is, so requiring both
+  would only be redundant typing. Interactive F9 access still requires
+  `--test_play` as always; this only affects launching straight into a tool
+  from the command line:
 
   ```sh
   ./rpg_maker_clone --iterm --game_dir path/to/game --rpg2k_preview_map=5 \

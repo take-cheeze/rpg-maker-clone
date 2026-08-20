@@ -102,6 +102,42 @@ class RPG2k
         out
       end
 
+      # Greedily packs `text`'s whitespace-separated words into as many lines
+      # as it takes to each fit within `w` px (measured via #text_size, the
+      # current font) -- unlike #clip_text_to_width above, which drops
+      # whatever doesn't fit, this keeps every word by wrapping onto the next
+      # line instead. Written for the debug editors' key-binding hint lines
+      # (Scene::MapViewer, Scene::ChipsetEditor): a single #draw_text call
+      # neither wraps nor clips its own text (see #clip_text_to_width's own
+      # comment), so a hint longer than one line's width used to run straight
+      # off the bitmap's right edge and simply vanish there instead of
+      # appearing at all. A single over-wide word (wider than `w` on its own)
+      # still overflows its line -- this only ever breaks *between* words.
+      def wrap_text_to_width(c, text, w)
+        lines = []
+        line = ''
+        text.split(' ').each do |word|
+          candidate = line.empty? ? word : "#{line} #{word}"
+          if !line.empty? && c.text_size(candidate).width > w
+            lines << line
+            line = word
+          else
+            line = candidate
+          end
+        end
+        lines << line unless line.empty?
+        lines
+      end
+
+      # Draws `text` word-wrapped to `@contents`' own width (see
+      # #wrap_text_to_width), one #draw_text call per line, each `line_h` px
+      # apart starting at `y`.
+      def draw_wrapped_hint(text, y, line_h)
+        wrap_text_to_width(@contents, text, @contents.width).each_with_index do |line, i|
+          @contents.draw_text 0, y + i * line_h, @contents.width, line_h, line
+        end
+      end
+
       # The condition a battler carrying `states` shows, as [text, palette colour
       # index]: the significant state's name in its own colour, or the database's
       # "normal" term when there is none. A state the database does not name

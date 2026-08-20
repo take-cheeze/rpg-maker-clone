@@ -917,6 +917,16 @@ static bool script_host_env_enabled(const std::string& value) {
 // whenever the run asked for it anyway. --rgss_script_host is deliberately
 // not touched: it is not a debug feature but the only way an RGSS game runs
 // at all (docs/adr/0029-rgss-script-host-by-default.md).
+//
+// --rpg2k_map_editor/--rpg2k_chipset_editor/--rpg2k_preview_animation are
+// ALSO deliberately not touched, unlike every other flag here: a released
+// game exposes them to nobody regardless (they only run once *some* CLI flag
+// already launched them, same as --test_play itself would have to be), so
+// the redundant --test_play a developer would otherwise have to keep retyping
+// alongside them protects against nothing --test_play doesn't already cover
+// on its own. The interactive path into the same tools -- pressing F9 during
+// a normal play session -- stays fully gated on Scene::Map#try_open_debug_menu
+// reading RPG2k#test_play, unaffected by this.
 static void disable_non_test_play_flags() {
   auto reset_bool = [](bool& flag, const char* name) {
     if (flag) {
@@ -947,9 +957,6 @@ static void disable_non_test_play_flags() {
   reset_bool(FLAGS_rpg2k_continue, "rpg2k_continue");
   reset_int(FLAGS_rpg2k_preview_map, "rpg2k_preview_map");
   reset_int(FLAGS_rpg2k_battle_troop, "rpg2k_battle_troop");
-  reset_bool(FLAGS_rpg2k_map_editor, "rpg2k_map_editor");
-  reset_bool(FLAGS_rpg2k_chipset_editor, "rpg2k_chipset_editor");
-  reset_int(FLAGS_rpg2k_preview_animation, "rpg2k_preview_animation");
   reset_bool(FLAGS_rgss_host_new_game, "rgss_host_new_game");
   reset_bool(FLAGS_rgss_host_move_test, "rgss_host_move_test");
   reset_bool(FLAGS_rgss_host_menu_test, "rgss_host_menu_test");

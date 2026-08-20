@@ -31,7 +31,11 @@ class RPG2k
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       HEADER_H = 16
-      FOOTER_H = 16
+      # Two lines tall -- see MapViewer::FOOTER_H's own comment; this editor's
+      # hint fits below the grid either way (rows * CELL always leaves more
+      # than FOOTER_H px of slack), but the constant stays honest about how
+      # tall #draw_footer can actually draw.
+      FOOTER_H = HEADER_H * 2
       CELL = 16
       COLS = 18
       LOWER_COUNT = 162
@@ -193,7 +197,7 @@ class RPG2k
       def draw_footer
         @contents.font.color = HINT_COLOR
         hint = 'Arrows:Move  L:Tab  C:Toggle  R:Save  B:Close'
-        @contents.draw_text 0, HEADER_H + rows * CELL, @contents.width, FOOTER_H, hint
+        draw_wrapped_hint(hint, HEADER_H + rows * CELL, HEADER_H)
       end
 
       def draw_grid

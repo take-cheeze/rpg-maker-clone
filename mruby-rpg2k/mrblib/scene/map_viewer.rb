@@ -50,7 +50,12 @@ class RPG2k
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       HEADER_H = 16
-      FOOTER_H = 16
+      # Two lines tall: Edit mode's hint ('Arrows:Move  C:Paint  CTRL:Pick
+      # SHIFT:Layer  R:Save  B:Exit') runs wider than the 320px screen on one
+      # line and needs to wrap (see Base#draw_wrapped_hint) -- reserved
+      # unconditionally, for every mode, so the viewport doesn't resize when
+      # switching modes.
+      FOOTER_H = HEADER_H * 2
       PAN_STEP = 8
       CURSOR_MARGIN = 2
 
@@ -360,7 +365,7 @@ class RPG2k
                  @pannable ? 'Arrows:Pan  C:Center  R:Select  L:Edit  B:Close' \
                             : 'R:Select  L:Edit  B:Close'
                end
-        @contents.draw_text 0, HEADER_H + @view_h, @contents.width, FOOTER_H, hint
+        draw_wrapped_hint(hint, HEADER_H + @view_h, HEADER_H)
       end
 
       # One #fill_rect per same-coloured horizontal run rather than one

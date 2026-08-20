@@ -19874,6 +19874,45 @@ check 'MapViewer Edit mode R saves the map back to its .lmu path via the parent,
   end
 end
 
+check "MapViewer's Edit mode hint is wider than the 320px screen at a " \
+     "realistic character width, so #draw_footer wraps it onto multiple " \
+     "lines instead of letting it run off the right edge unclipped" do
+  w = 6; h = 5
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+                          events: {})
+  st = menu_state
+  st.map = Game::Map.new(1, unit)
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update # -> Edit mode
+
+  # A realistic 6px/char stub, same pattern (and same caveat about the
+  # shared stub's own flat-0px #text_size never wrapping) as the battle
+  # status panel's clip check above.
+  original_text_size = RGSS::Bitmap.instance_method(:text_size)
+  RGSS::Bitmap.send(:define_method, :text_size) { |s| RGSS::Rect.new(0, 0, s.length * 6, 0) }
+  contents = scene.instance_variable_get(:@contents)
+  # L's own #update already ran a #refresh under the stub's flat-0px
+  # #text_size (never wraps), leaving that unwrapped call in #draw_calls too
+  # -- drop it so this only asserts on the patched refresh below.
+  contents.instance_variable_set(:@draw_calls, [])
+  begin
+    scene.send(:refresh)
+  ensure
+    RGSS::Bitmap.send(:define_method, :text_size, original_text_size)
+  end
+
+  footer_top = RPG2k::Scene::MapViewer::HEADER_H + scene.instance_variable_get(:@view_h)
+  footer_calls = contents.draw_calls.select { |(_x, y, *)| y >= footer_top }
+  ok footer_calls.size >= 2,
+     "the 62-char Edit-mode hint wrapped onto #{footer_calls.size} line(s), expected at least 2"
+  ok footer_calls.all? { |(_x, _y, _w, _h, text)| text.length * 6 <= contents.width },
+     'every wrapped line actually fits within the screen, not just the box #draw_text was given'
+  eq 'Arrows:Move C:Paint CTRL:Pick SHIFT:Layer R:Save B:Exit', footer_calls.map { |c| c[4] }.join(' '),
+     'wrapping only rejoins words with single spaces -- no word was dropped, duplicated, or reordered'
+end
+
 check "ChipsetEditor's C toggles passability (all four direction bits at once) " \
      "without disturbing an upper cell's star/counter bits" do
   db = fake_db
