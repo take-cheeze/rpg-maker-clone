@@ -5719,12 +5719,23 @@ module Game
       @chipset_id = unit.chipset_id
       @lower = unit.lower_layer || []
       @upper = unit.upper_layer || []
-      # Tile Substitution (11750) rewrites, per layer: { old_id => new_id }. Kept
-      # as a lookup applied on read rather than as an edit of the layer arrays,
-      # the way RPG_RT does it — the map data stays pristine, a second
-      # substitution of the same tile replaces (not chains with) the first, and
-      # passability follows the substituted tile because every reader goes
-      # through #lower / #upper. Cleared with the map, so leaving resets it.
+      # Tile Substitution (11750) rewrites, per layer: a sparse { original_id =>
+      # current_id } deviation from identity. Kept as a lookup applied on read
+      # rather than as an edit of the layer arrays -- the map data stays
+      # pristine, and passability follows the substituted tile because every
+      # reader goes through #lower / #upper. Cleared with the map, so leaving
+      # resets it. Confirmed against RPG_RT's own live source: `Game_Map::
+      # SubstituteDown`/`SubstituteUp` (`src/game_map.cpp`) operate on a
+      # persistent 144-entry table, `map_info.lower_tiles`/`upper_tiles`,
+      # identity-initialized (`std::iota`) once per map load and mutated
+      # in place every call via `DoSubstitute`, which scans by *current*
+      # value, not original index: `for (i) if (tiles[i] == old_id) tiles[i]
+      # = new_id;`. A second substitution therefore **chains** through the
+      # first whenever its `old_id` matches the first's `new_id`, rather than
+      # independently replacing it -- and "substituting a tile back to
+      # itself" is not how a prior substitution is undone (see
+      # #substitute_tile's own doc comment for the full correction; an
+      # earlier, uncited pass here got both of these backwards).
       @substitutions = [{}, {}]
     end
 
@@ -5735,16 +5746,28 @@ module Game
     def lower(x, y); tile(@lower, 0, x, y); end
     def upper(x, y); tile(@upper, 1, x, y); end
 
-    # Tile Substitution: from now on draw (and treat) every `old_id` tile on
-    # `layer` (0 lower, 1 upper) as `new_id`. Substituting a tile back to itself
-    # drops the rewrite.
+    # Tile Substitution: from now on draw (and treat) as `new_id` every tile on
+    # `layer` (0 lower, 1 upper) that *currently* renders as `old_id` -- not
+    # just tiles whose original chipset id is `old_id`. Confirmed against
+    # RPG_RT's own live source (`Game_Map::DoSubstitute`, `src/game_map.cpp`,
+    # see the constructor's fuller citation): it scans the persistent
+    # substitution table by current value every call, so a later
+    # substitution chains through an earlier one whenever its `old_id`
+    # matches the earlier `new_id` -- e.g. substituting 5->8 then 8->12
+    # leaves *both* original tiles 5 and 8 rendering as 12, not tile 5 stuck
+    # at 8. `old_id == new_id` is not a special "undo" case either: it only
+    # resets whichever tiles currently render as `old_id` back to `old_id`
+    # (a no-op for most of them) -- reverting a specific earlier
+    # substitution means substituting *from* its current (already-rewritten)
+    # id, not its original one.
     def substitute_tile(layer, old_id, new_id)
-      table = @substitutions[layer == 0 ? 0 : 1]
-      if old_id == new_id
-        table.delete(old_id)
-      else
-        table[old_id] = new_id
-      end
+      idx = layer == 0 ? 0 : 1
+      rebuilt = {}
+      @substitutions[idx].each { |k, v| rebuilt[k] = v == old_id ? new_id : v }
+      rebuilt[old_id] = new_id unless rebuilt.key?(old_id)
+      table = {}
+      rebuilt.each { |k, v| table[k] = v unless k == v }
+      @substitutions[idx] = table
       @revision += 1
     end
 

@@ -10602,6 +10602,43 @@ not yet verified:
   (a substitution snapshotted mid-play restores onto a freshly-built
   `Game::Map`, contrasted with the existing "leaving and returning drops it"
   check just above), all confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-20): a second Tile Substitution independently
+  replaced (rather than chained with) an earlier one, and "substituting a
+  tile back to its own original id" was modelled as reverting a prior
+  substitution — both backwards from real RPG_RT, per an earlier, uncited
+  claim on `Game::Map#substitute_tile`'s own doc comment.** Confirmed
+  directly against RPG_RT's live source: `Game_Map::DoSubstitute`
+  (`src/game_map.cpp`) operates on a *persistent* 144-entry table
+  (`map_info.lower_tiles`/`upper_tiles`, identity-initialized via
+  `std::iota` once per map load) and scans it by **current value**, not
+  original index, on every call: `for (i) if (tiles[i] == old_id) tiles[i]
+  = new_id;`. This means a later substitution whose `old_id` matches an
+  earlier `new_id` retargets the earlier entry too (chaining) rather than
+  replacing it independently, and `old_id == new_id` only resets whichever
+  slots *currently* hold that value back to it — a slot already remapped
+  away from `old_id` is untouched, so "substitute a tile back to its
+  original id" does nothing once a prior substitution has already moved it
+  elsewhere; reverting requires substituting *from* the tile's current
+  (already-rewritten) id instead. `Game::Map#substitute_tile`
+  (`mruby-rpg2k/mrblib/game.rb`) kept a flat `{original_id => new_id}` hash
+  applied once against each tile's pristine id on every read, with its own
+  comment explicitly claiming "a second substitution of the same tile
+  replaces (not chains with) the first" and "substituting a tile back to
+  itself drops the rewrite" — both uncited and, per the fetched source,
+  simply wrong. The adjacent Save/Continue round-trip code (`Game::State.
+  tile_replacement_bytes`/`.tile_replacement_hash`, part of the fix above)
+  already correctly modelled the real 144-slot identity array for
+  serialization; the bug was confined to this one live-mutation method,
+  which was never updated to match. Fixed by rewriting `#substitute_tile` to
+  scan the sparse `{original_id => current_id}` hash by current value
+  (rebuilding it: every entry whose value equals `old_id` retargets to
+  `new_id`; `old_id`'s own slot, if still implicitly identity, gets the same
+  treatment; any entry that ends up mapping back to its own key is dropped,
+  keeping the sparse "deviates from identity" invariant `#tile` and
+  `#substitution_snapshot` already rely on) — no other call site needed to
+  change. Covered by rewriting the existing `scripts/rpg2k_logic_check.rb`
+  check that had asserted the old (backwards) semantics, confirmed to fail
+  against the pre-fix code (`expected 7, got 4`).
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**
