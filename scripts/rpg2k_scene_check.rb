@@ -12958,6 +12958,49 @@ check 'Flash Sprite on the hero holds a waiting event until it decays' do
   eq 1, st.variables[5], 'the event resumed once the flash finished'
 end
 
+check 'Flash Sprite targeting a vehicle (Boat) pulses the native sprite flash ' \
+      'and decays, instead of silently dropping the target' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # GetCharacter` (src/game_character.cpp) resolves CharBoat/CharShip/
+  # CharAirship (10002-10004) to the live Game_Vehicle object exactly like
+  # CharPlayer/CharThisEvent, so `Game_Interpreter_Map::
+  # CommandFlashSprite`'s `event->Flash(...)` call reaches a vehicle just
+  # as it reaches the player or a map event -- nothing in real RPG_RT
+  # exempts it, unlike this codebase's prior "vehicle target = unresolved,
+  # flashes nothing" behaviour.
+  cmds = [ECmd.new(IC2::FLASH_SPRITE, [10002, 31, 0, 0, 31, 2, 0])] # boat, r g b power, 2 tenths, wait=0
+  scene = new_scene({}, player: [0, 0])
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update
+  spr = scene.instance_variable_get(:@vehicle_sprites)[:boat]
+  ok spr.flash_color, 'the boat sprite was flashed'
+  eq [248, 0, 0, 248],
+     [spr.flash_color.red, spr.flash_color.green, spr.flash_color.blue, spr.flash_color.alpha],
+     'the configured colour/power, already scaled to 0..255 the same way the player/event flash is'
+  20.times { scene.update }
+  ok !spr.flash_color, 'the vehicle flash decays away like any other'
+end
+
+check 'Flash Sprite on a vehicle with the wait flag holds the interpreter ' \
+      'until the flash decays, rather than resuming the very next update ' \
+      'because the target went unresolved' do
+  # 1 tenth = 6 frames (Interpreter::FRAMES_PER_TENTH). Before this fix the
+  # vehicle target never resolved, so #sprite_flashing? was false from the
+  # start and the wait released on the very next #update regardless of the
+  # configured duration -- checking still-0 a couple of updates in (well
+  # short of the real 6-frame duration) is what catches that, not just
+  # "it eventually reaches 1" (which the old, broken no-op path did too).
+  cmds = [ECmd.new(IC2::FLASH_SPRITE, [10002, 31, 0, 0, 31, 1, 1]), # boat, r g b power, 1 tenth, wait=1
+          add_var_cmd(5)]
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  3.times { scene.update }
+  eq 0, st.variables[5], 'still held partway through the vehicle flash duration'
+  10.times { scene.update }
+  eq 1, st.variables[5], 'the event resumed once the vehicle flash finished'
+end
+
 check 'Tile Substitution rewrites the map the scene walks on' do
   cmds = [ECmd.new(IC2::TILE_SUBSTITUTION, [0, 0, 41])]
   scene = new_scene(parallel_event(cmds), player: [0, 0])
