@@ -7521,6 +7521,39 @@ check "a Common Event Parallel Process's own Battle Processing now actually open
   ok !st.switches[2], 'the Escape handler was skipped'
 end
 
+check "a Common Event Parallel Process's own Battle Processing is blocked " \
+      '(not run) while a message window is open, and retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter_Map::
+  # CommandEnemyEncounter` (`src/game_interpreter_map.cpp`, code 10710) opens
+  # with `if (Game_Message::IsMessageActive()) { return false; }`,
+  # unconditionally -- the identical block-and-retry shape already ported for
+  # Show/Move/Erase Picture and Transfer Player/Recall to Location, see
+  # #block_pending_battle_command. A command right after the blocked Enemy
+  # Encounter in the same list must not run either, until the Enemy
+  # Encounter itself finally succeeds -- the whole interpreter blocks at
+  # that exact command.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: Game::CommonEvent::PARALLEL, need_flag: false,
+                      switch_id: nil,
+                      event: [add_var_cmd(3),
+                              ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq nil, battle_ui(scene), 'the battle must not open while a message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Enemy Encounter must not run either'
+
+  scene.send(:close_message)
+  5.times { scene.update }
+  ok battle_ui(scene), 'the battle opens once the window closes'
+end
+
 # A battle a Parallel Process opened owns the single @battle_ui slot exactly
 # the way one the foreground opened does -- ordinary player movement/menu
 # access must freeze for its whole duration regardless of which interpreter

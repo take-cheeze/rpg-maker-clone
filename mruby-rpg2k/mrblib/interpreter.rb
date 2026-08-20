@@ -1463,6 +1463,7 @@ module Game
     # Threaded onto `@battle_request` as `:background`/`:terrain_id`, read
     # back by `Scene::Battle#encounter_backdrop`.
     def do_enemy_encounter(cmd)
+      return if block_pending_battle_command
       escape_mode = cmd.param(3)
       troop_id = cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)]
       @battle_indent = cmd.indent
@@ -3544,6 +3545,30 @@ module Game
       return false unless message_window_blocks_command?
       @index -= 1
       @wait_kind = :teleport_blocked
+      @waiting = true
+      true
+    end
+
+    # Real RPG_RT does not open a battle from a Battle Processing / Enemy
+    # Encounter command while a message window or choice list is open
+    # either — the identical block-and-retry shape
+    # #block_pending_picture_command/#block_pending_teleport_command already
+    # port, on a third command. Confirmed directly against RPG_RT's live
+    # source: `Game_Interpreter_Map::CommandEnemyEncounter`
+    # (`src/game_interpreter_map.cpp`, code 10710) opens with `if
+    # (Game_Message::IsMessageActive()) { return false; }`, unconditionally
+    # — not gated behind `IsRPG2k3Commands()` or `main_flag`, so this is
+    # base RPG2000 behaviour, not an RPG2003-only rule, and applies the same
+    # way to a scripted Enemy Encounter command as to any other. Without
+    # this guard, a still-running parallel process (Message Options'
+    # "continue events" flag lets one keep advancing past another event's
+    # open Show Text, see Scene::Map#parallels_paused?) could cut straight
+    # to the battle screen over an on-screen message window instead of
+    # waiting for it to close first.
+    def block_pending_battle_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :battle_blocked
       @waiting = true
       true
     end
