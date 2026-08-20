@@ -516,6 +516,25 @@ check 'diagonal move needs both cardinals and faces vertical' do
   eq 2, c3.direction, 'reverted to Down, not left turned toward the wall (8)'
 end
 
+check 'Move Forward continues a diagonal last move diagonally, not along ' \
+      'one collapsed cardinal axis' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # Direction` (src/game_character.h) is an 8-way enum (Up/Right/Down/Left/
+  # UpRight/DownRight/DownLeft/UpLeft); `UpdateMoveRoute`'s diagonal case
+  # (`SetDirection(cmd)`, src/game_character.cpp) sets it to the literal
+  # diagonal value, and `move_forward` does nothing but `break` before
+  # `Move(GetDirection())` reuses whatever `GetDirection()` still holds --
+  # so a route "Move Upper-Right, Move Forward" moves diagonally *twice*
+  # (2 tiles right, 2 tiles up), not diagonally then straight up.
+  route = R.new([mc(R::MOVE_UPRIGHT), mc(R::MOVE_FORWARD)])
+  c = Game::Character.new(2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [3, 1], [c.x, c.y]
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 0], [c.x, c.y], 'continues diagonally -- both axes advance again, ' \
+     'not just the vertical one'
+end
+
 # Confirmed against RPG_RT's own live source: `Game_Character::UpdateFacing`
 # (`src/game_character.cpp`) only reverses the prior facing when it matches
 # *neither* of the diagonal's two cardinal components -- it never
