@@ -1626,18 +1626,33 @@ class RPG2k
         draw_battle_skill
       end
 
+      # Move a battle Item/Skill list cursor by `delta` cells (a row for
+      # +-BATTLE_LIST_COLUMN_MAX, a column for +-1), left in place if the
+      # target cell is off the grid -- confirmed against RPG_RT's own live
+      # source: `Window_Selectable::Update` (`src/window_selectable.cpp`)
+      # bounds Down/Up by `index < item_max - column_max`/`index >=
+      # column_max` (blocked rather than wrapped past either end, genuinely
+      # column-locked) and Right/Left by the flat `index < item_max -
+      # 1`/`index > 0` (no row-boundary term at all) -- the identical
+      # mechanism `Scene::ItemMenu#move_item_cursor` already uses for the
+      # field item/skill grid, which never propagated to battle's own
+      # Item/Skill lists.
+      def move_battle_list_index(index, delta, size)
+        target = index + delta
+        return nil if target.negative? || target >= size
+        target
+      end
+
       def drive_battle_skill
         skills = @ui[:skills]
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !skills.empty?
-          @ui[:skill_i] += 1
-          @ui[:skill_i] %= skills.length
-          draw_battle_skill
-          play_system_se(SFX_CURSOR)
+          move_battle_skill_cursor(BATTLE_LIST_COLUMN_MAX)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !skills.empty?
-          @ui[:skill_i] -= 1
-          @ui[:skill_i] %= skills.length
-          draw_battle_skill
-          play_system_se(SFX_CURSOR)
+          move_battle_skill_cursor(-BATTLE_LIST_COLUMN_MAX)
+        elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && !skills.empty?
+          move_battle_skill_cursor(1)
+        elsif (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !skills.empty?
+          move_battle_skill_cursor(-1)
         elsif Input.trigger?(Input::C)
           confirm_battle_skill
         elsif Input.trigger?(Input::B)
@@ -1646,6 +1661,14 @@ class RPG2k
           @ui[:phase] = :command
           draw_battle_command
         end
+      end
+
+      def move_battle_skill_cursor(delta)
+        target = move_battle_list_index(@ui[:skill_i], delta, @ui[:skills].length)
+        return unless target
+        @ui[:skill_i] = target
+        draw_battle_skill
+        play_system_se(SFX_CURSOR)
       end
 
       # Choose the highlighted skill: if the caster cannot afford its SP, or is
@@ -1783,15 +1806,13 @@ class RPG2k
       def drive_battle_item
         items = @ui[:items]
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !items.empty?
-          @ui[:item_i] += 1
-          @ui[:item_i] %= items.length
-          draw_battle_item
-          play_system_se(SFX_CURSOR)
+          move_battle_item_cursor(BATTLE_LIST_COLUMN_MAX)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !items.empty?
-          @ui[:item_i] -= 1
-          @ui[:item_i] %= items.length
-          draw_battle_item
-          play_system_se(SFX_CURSOR)
+          move_battle_item_cursor(-BATTLE_LIST_COLUMN_MAX)
+        elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && !items.empty?
+          move_battle_item_cursor(1)
+        elsif (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !items.empty?
+          move_battle_item_cursor(-1)
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
           item_id, _count = @ui[:items][@ui[:item_i]]
@@ -1848,6 +1869,14 @@ class RPG2k
           @ui[:phase] = :command
           draw_battle_command
         end
+      end
+
+      def move_battle_item_cursor(delta)
+        target = move_battle_list_index(@ui[:item_i], delta, @ui[:items].length)
+        return unless target
+        @ui[:item_i] = target
+        draw_battle_item
+        play_system_se(SFX_CURSOR)
       end
 
       # -- Ally target (heal skill / medicine) --------------------------------
@@ -3005,6 +3034,18 @@ class RPG2k
       # long skill list) scrolls: the panel's fixed 64px content area (80 minus
       # the 8px border on each side) divided by the 16px row height.
       BATTLE_VISIBLE_ROWS = 4
+      # The battle Item/Skill lists are a two-column grid, not a single
+      # stacked column -- confirmed against RPG_RT's own live source:
+      # `Window_Item`/`Window_Skill` (`src/window_item.cpp`/
+      # `src/window_skill.cpp`) both set `column_max = 2` in their own
+      # constructors, and `Window_BattleSkill` (`src/window_skill.h`)
+      # inherits `Window_Skill` unchanged -- `Scene_Battle::CreateUi`
+      # (`src/scene_battle.cpp`) backs the battle screen's item/skill windows
+      # with exactly these classes. The enemy-target list (`Window_Command`,
+      # `column_max = 1`) and the ally-target list (`Window_BattleStatus`,
+      # hand-rolled) are correctly single-column already -- this constant is
+      # only for #draw_battle_item/#draw_battle_skill.
+      BATTLE_LIST_COLUMN_MAX = 2
 
       # Column origins within the status panel's contents, in the order RPG_RT's
       # battle status window uses them: who, what condition they are in, then the
@@ -3338,26 +3379,35 @@ class RPG2k
       # A bottom-anchored list window of `labels` with the cursor on `sel`, at
       # left edge `x` and width `w`, fixed to the panel's own height (80px, the
       # shape every RPG_RT battle list window shares) — the shared shape of the
-      # Skill / Item / target / ally-target menus. A list longer than
-      # `BATTLE_VISIBLE_ROWS` scrolls, keeping `sel` in view, the way
+      # Skill / Item / target / ally-target menus. `column_max` (1 for every
+      # caller except #draw_battle_item/#draw_battle_skill, see
+      # `BATTLE_LIST_COLUMN_MAX`) lays `labels` out row-major across that many
+      # columns instead of one; a list longer than `BATTLE_VISIBLE_ROWS`
+      # *rows* scrolls, keeping `sel`'s own row in view, the way
       # `Window_Selectable`'s own scrolling does for an oversized troop or
       # skill list.
-      def battle_list_window(x, w, labels, sel, z)
+      def battle_list_window(x, w, labels, sel, z, column_max: 1)
         rows = BATTLE_VISIBLE_ROWS
-        scroll = labels.length > rows ? [[sel - rows + 1, 0].max, labels.length - rows].min : 0
+        inner_w = w - Window::BORDER * 2
+        col_w = inner_w / column_max
+        row_count = column_max > 1 ? [(labels.length / column_max.to_f).ceil, 1].max : labels.length
+        sel_row = sel / column_max
+        scroll = row_count > rows ? [[sel_row - rows + 1, 0].max, row_count - rows].min : 0
         win = Window.new(x, BATTLE_PANEL_Y, w, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
-        inner_w = w - Window::BORDER * 2
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
-          next if i < scroll || i >= scroll + rows
-          c.draw_text 0, (i - scroll) * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
+          row = i / column_max
+          next if row < scroll || row >= scroll + rows
+          col = i % column_max
+          c.draw_text col * col_w, (row - scroll) * BATTLE_LINE_H, col_w, BATTLE_LINE_H, label
         end
         win.contents = c
         unless labels.empty?
-          win.cursor_rect = Rect.new(0, (sel - scroll) * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
+          sel_col = sel % column_max
+          win.cursor_rect = Rect.new(sel_col * col_w, (sel_row - scroll) * BATTLE_LINE_H, col_w, BATTLE_LINE_H)
         end
         win
       end
@@ -3373,7 +3423,8 @@ class RPG2k
           sk = @state.party.db_skill(sid)
           "#{sk ? sk.name : "Skill #{sid}"}  #{cost}"
         end
-        @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325)
+        @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325,
+                                             column_max: BATTLE_LIST_COLUMN_MAX)
       end
 
       def close_battle_skill
@@ -3389,7 +3440,8 @@ class RPG2k
           it = @state.party.db_item(id)
           "#{it ? it.name : "Item #{id}"}  x#{count}"
         end
-        @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325)
+        @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
+                                            column_max: BATTLE_LIST_COLUMN_MAX)
       end
 
       def close_battle_item

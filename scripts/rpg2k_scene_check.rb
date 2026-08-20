@@ -10755,7 +10755,11 @@ check 'Enemy Encounter scene: a special item invoking an enemy-scope skill ' \
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   eq :item, ui[:phase]
-  press_key(scene, RGSS::Input::DOWN) # Potion (id 5) -> Fire Bomb (id 7, sorted second)
+  # Potion (id 5, row 0 col 0) -> Fire Bomb (id 7, sorted second, row 0 col 1)
+  # -- the battle item list is a two-column grid (BATTLE_LIST_COLUMN_MAX),
+  # so with only two items Right crosses to the second one, not Down (there
+  # is no second row for two items to wrap across).
+  press_key(scene, RGSS::Input::RIGHT)
   press_key(scene, RGSS::Input::C)    # choose the Fire Bomb
   eq :target, ui[:phase], 'an enemy-scope item skill prompts for an enemy, not an ally'
 
@@ -11132,63 +11136,106 @@ check "Enemy Encounter scene: a battle-command list of Row alone falls back to t
      'is not a usable list on its own, so this falls back to the fixed four'
 end
 
-# A hero with two battle skills, so the skill-list cursor has more than one row
-# to wrap across (BattleMagicParty above only carries one).
-class BattleTwoSkillParty < BattleMagicParty
+# A hero with three battle skills, so the skill-list cursor (a two-column
+# grid, see BATTLE_LIST_COLUMN_MAX) has a genuine second row to cross into
+# (BattleMagicParty above only carries one, and two would both sit in the
+# same row).
+class BattleThreeSkillParty < BattleMagicParty
   def initialize
     super()
-    @hero.instance_variable_set(:@skills, [1, 2])
+    @hero.instance_variable_set(:@skills, [1, 2, 3])
   end
   def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, 3] }; end
   def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0); end
 end
 
-check 'Enemy Encounter scene: the skill list cursor wraps around' do
+# The battle Item/Skill lists are a genuine two-column grid -- confirmed
+# against RPG_RT's own live source: `Window_Item`/`Window_Skill`
+# (`src/window_item.cpp`/`src/window_skill.cpp`) both set `column_max = 2`,
+# and `Window_BattleSkill` inherits that unchanged. `Window_Selectable::
+# Update`'s own Down/Up are genuinely column-locked (`index < item_max -
+# column_max`, blocked rather than wrapped) while Right/Left are a flat
+# `index +- 1` bounded only by the list's absolute ends, no row-boundary
+# term -- the identical shape the field item/skill grid already has.
+check 'Enemy Encounter scene: the skill list cursor is a column-locked ' \
+      'two-column grid, not a single wrapping column' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
-  st.instance_variable_set(:@party, BattleTwoSkillParty.new)
+  st.instance_variable_set(:@party, BattleThreeSkillParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
   eq :skill, ui[:phase]
-  eq 0, ui[:skill_i], 'starts on the first skill'
+  eq 0, ui[:skill_i], 'starts on the first skill (row 0, col 0)'
+
   press_key(scene, RGSS::Input::UP)
-  eq 1, ui[:skill_i], 'Up from the first skill wraps to the last (2 skills)'
+  eq 0, ui[:skill_i], 'Up from row 0 does not move -- there is no row above'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 1, ui[:skill_i], 'Right moves within the row (col 0 -> col 1)'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 2, ui[:skill_i], 'Right crosses the row boundary into row 1 -- flat, no row-edge stop'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 2, ui[:skill_i], 'Right at the list\'s own end does not wrap'
+
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:skill_i], 'Down from the last skill wraps to the first'
+  eq 2, ui[:skill_i], 'Down does not move -- column 0 (index 2) has nothing below it'
+
+  press_key(scene, RGSS::Input::LEFT)
+  press_key(scene, RGSS::Input::LEFT)
+  eq 0, ui[:skill_i], 'Left flows back across the row boundary the same way'
 end
 
-# A hero with two battle items, so the item-list cursor has more than one row
-# to wrap across (BattleMagicParty above only carries one).
-class BattleTwoItemParty < BattleMagicParty
+# A hero with three battle items, mirroring BattleThreeSkillParty above.
+class BattleThreeItemParty < BattleMagicParty
   def initialize
     super()
-    @items = { 5 => 2, 6 => 1 }
+    @items = { 5 => 2, 6 => 1, 7 => 1 }
   end
   def db_item(id); OpenStruct.new(name: "Item#{id}"); end
 end
 
-check 'Enemy Encounter scene: the item list cursor wraps around' do
+check 'Enemy Encounter scene: the item list cursor is a column-locked ' \
+      'two-column grid, not a single wrapping column' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
-  st.instance_variable_set(:@party, BattleTwoItemParty.new)
+  st.instance_variable_set(:@party, BattleThreeItemParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   eq :item, ui[:phase]
-  eq 0, ui[:item_i], 'starts on the first item'
+  eq 0, ui[:item_i], 'starts on the first item (row 0, col 0)'
+
   press_key(scene, RGSS::Input::UP)
-  eq 1, ui[:item_i], 'Up from the first item wraps to the last (2 items)'
+  eq 0, ui[:item_i], 'Up from row 0 does not move -- there is no row above'
+
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:item_i], 'Down from the last item wraps to the first'
+  eq 2, ui[:item_i], 'Down crosses into row 1 -- column 0 has a third item below it'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 2, ui[:item_i], 'Right at the list\'s own end does not wrap -- row 1 has only one cell'
+
+  press_key(scene, RGSS::Input::UP)
+  eq 0, ui[:item_i], 'Up flows back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 1, ui[:item_i], 'Right moves within the row (col 0 -> col 1)'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 1, ui[:item_i], 'Down does not move -- column 1 has nothing below it with only 3 items'
+
+  press_key(scene, RGSS::Input::LEFT)
+  eq 0, ui[:item_i], 'Left moves back to column 0'
 end
 
 # A two-actor party, so the ally-target cursor (heal skill / medicine) has

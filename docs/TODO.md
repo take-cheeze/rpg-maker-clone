@@ -4825,6 +4825,39 @@ The work below is roughly ordered by the critical path to a walkable game
   to the last, same as Up; Right from the last ally wraps to the first,
   same as Down), confirmed to fail against the pre-fix code (`expected 1,
   got 0`).
+  ✅ **Follow-up (2026-08-20): the battle Item/Skill lists were single-column
+  wrapping lists, when real RPG_RT's own `Window_Item`/`Window_Skill` are a
+  genuine two-column grid — the bullet above checked `target_window` (the
+  enemy list) and `Window_BattleStatus` (the ally list) but never checked
+  `item_window`/`skill_window`'s own `column_max`.** Confirmed against
+  EasyRPG Player's actual C++ source: `Window_Item`/`Window_Skill`
+  (`src/window_item.cpp`/`src/window_skill.cpp`) both set `column_max = 2`
+  in their own constructors, and `Window_BattleSkill` (`src/window_skill.h`,
+  what `Scene_Battle::CreateUi`, `src/scene_battle.cpp`, actually backs the
+  battle skill list with) inherits `Window_Skill` unchanged — the identical
+  2-column grid the field `Scene::ItemMenu`/`Scene::SkillMenu` already have,
+  just never propagated to their battle counterparts. `#drive_battle_skill`/
+  `#drive_battle_item` (`mruby-rpg2k/mrblib/scene/battle.rb`) moved
+  `@ui[:skill_i]`/`@ui[:item_i]` by 1 with a modulo wrap on Down/Up and had
+  no Right/Left handling at all — with only two skills/items (a common
+  case), Down/Up cycled between them like a single column, and Right/Left
+  did nothing, when real RPG_RT's `Window_Selectable::Update`
+  (`src/window_selectable.cpp`) genuinely column-locks Down/Up (`index <
+  item_max - column_max`, blocked rather than wrapped past either end) and
+  moves Right/Left by a flat `index +- 1` bounded only by the list's
+  absolute ends, no row-boundary term — the exact shape already ported to
+  the field grid and the Teleport picker. Fixed by adding a `column_max:`
+  parameter to the shared `#battle_list_window` draw helper (row-major
+  layout and matching cursor-rect math, with `column_max: 1`'s existing
+  callers — the enemy-target and ally-target lists — unchanged by
+  construction) and a new `#move_battle_list_index`/`#move_battle_skill_
+  cursor`/`#move_battle_item_cursor` trio mirroring `Scene::ItemMenu#move_
+  item_cursor`'s own no-wrap bound exactly. Covered by two rewritten
+  `scripts/rpg2k_scene_check.rb` checks (a three-skill/three-item party:
+  Up at the top and Down/Right at the list's own end are no-ops, Down/Right
+  correctly cross into and back out of the partial second row), plus a
+  navigation fix in an existing check that assumed the old single-column
+  wrap, all confirmed to fail against the pre-fix code.
   **A harness reachability quirk, worth recording for whoever extends this
   comparison next:** navigating the field menu's command list under wine and
   then confirming gets unreliable past the *second* cursor position, but it
