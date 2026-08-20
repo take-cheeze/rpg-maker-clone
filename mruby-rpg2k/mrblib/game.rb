@@ -4228,9 +4228,9 @@ module Game
           item_cured_states(it).any? { |s| actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it.skill_id
-        !s.nil? && s != 0 && !actor.knows_skill?(s)
+        !actor.dead? && !s.nil? && s != 0 && !actor.knows_skill?(s)
       when ITEM_SEED
-        seed_boosts(it).any? { |b| b != 0 }
+        !actor.dead? && seed_boosts(it).any? { |b| b != 0 }
       when ITEM_SWITCH
         true # a switch item always flips its switch
       when ITEM_SPECIAL
@@ -4465,9 +4465,19 @@ module Game
     # A skill book teaches its skill (item field 53) to `actor` if the actor does
     # not already know it, consuming one book. A book with no skill, or used on an
     # actor who already knows the skill, does nothing and is not consumed.
+    # A Skill Book/Seed does nothing on a downed actor -- confirmed against
+    # RPG_RT's own live source: `Game_Actor::UseItem` (`src/game_actor.cpp`)
+    # only reaches its `Type_book`/`Type_material` branches inside an
+    # `if (!IsDead())` guard; falling through to `Game_Battler::UseItem`
+    # (`src/game_battler.cpp`) for a dead actor lands on neither type at
+    # all (only Medicine/Switch/skill-invoking items are handled there), so
+    # the item is silently never consumed and nothing changes -- unlike
+    # Medicine, the one item type genuinely meant to work on the dead
+    # (`#ko_only_blocked?`'s own `it.ko_only` case), Book/Seed have no such
+    # exception.
     def use_skill_book(it, id, actor)
       skill = it.skill_id
-      return [] unless actor && item_usable_by?(it, actor.id) &&
+      return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id) &&
                        skill && skill != 0 && !actor.knows_skill?(skill)
       actor.learn_skill(skill)
       consume_item_use(id)
@@ -4488,8 +4498,11 @@ module Game
     # A seed permanently raises `actor`'s base stats by seed_boosts (each applied
     # through Actor#change_param, so RPG2000's stat caps hold). Consumes one when
     # it carries any boost; a seed with no boost does nothing and is not consumed.
+    # A Seed does nothing on a downed actor -- see #use_skill_book's own
+    # comment for the full RPG_RT citation; this shares the identical
+    # `if (!IsDead())` gate in `Game_Actor::UseItem`.
     def use_seed(it, id, actor)
-      return [] unless actor && item_usable_by?(it, actor.id)
+      return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id)
       boosts = seed_boosts(it)
       return [] unless boosts.any? { |b| b != 0 }
       boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }

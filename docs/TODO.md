@@ -5461,6 +5461,30 @@ The work below is roughly ordered by the critical path to a walkable game
   excludes the second actor: the picker offers only the first, and moving
   the cursor has nowhere to go), confirmed to fail against the pre-fix code
   before the fix.
+  ✅ **Follow-up (2026-08-20): a Skill Book or Seed used on a downed party
+  member taught the skill / raised the stats anyway, when real RPG_RT
+  silently does nothing.** Confirmed directly against RPG_RT's live source:
+  `Game_Actor::UseItem` (`src/game_actor.cpp`) only reaches its `Type_book`/
+  `Type_material` branches inside an `if (!IsDead())` guard; falling
+  through to `Game_Battler::UseItem` (`src/game_battler.cpp`) for a dead
+  actor lands on neither type at all — only Medicine/Switch/skill-invoking
+  items are handled there — so the item is silently never consumed and
+  nothing changes. Unlike Medicine, the one item type genuinely meant to
+  work on the dead (`#ko_only_blocked?`'s own `it.ko_only` case, and the
+  reverse: an ordinary non-`ko_only` medicine on a dead actor is *also*
+  refused, per `Game_Battler::UseItem`'s own `IsDead()` branch, already
+  correctly ported), Book/Seed have no such exception anywhere in the
+  reference. `Game::Party#use_skill_book`/`#use_seed`
+  (`mruby-rpg2k/mrblib/game.rb`) had no `actor.dead?` check at all — only
+  `#item_usable_by?` (`actor_set`) — even though `Actor#dead?` already
+  existed and backs the sibling `#ko_only_blocked?` gate. Fixed by adding
+  `!actor.dead?` to both methods' guards, and to `#item_effective?`'s
+  matching `ITEM_SKILL_BOOK`/`ITEM_SEED` branches for the same reason
+  (keeping "would this do anything" consistent with what `#use_item` itself
+  now does). Covered by two new `scripts/rpg2k_logic_check.rb` checks (a
+  Skill Book/Seed used on a downed actor teaches nothing, changes no stat,
+  and consumes nothing), both confirmed to fail against the pre-fix code
+  (`expected false, got true`).
 - ✅ **A battle switch item now actually flips its switch.** A switch item
   (type 10) was already listed in the battle Item command
   (`Game::Party#battle_usable?` / `#battle_items` both include `ITEM_SWITCH`,
