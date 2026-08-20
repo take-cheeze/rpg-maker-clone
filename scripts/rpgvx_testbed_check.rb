@@ -173,7 +173,7 @@ module RGSS
     class << self
       attr_reader :played
       def reset = @played = []
-      def bgm_play(name, volume = 100, pitch = 100) = @played << [:bgm_play, name, volume, pitch]
+      def bgm_play(name, volume = 100, pitch = 100, pos = 0) = @played << [:bgm_play, name, volume, pitch, pos]
       def bgm_stop = @played << [:bgm_stop]
       def bgm_fade(time) = @played << [:bgm_fade, time]
       def bgm_pos = 0
@@ -1218,7 +1218,7 @@ class Checker
     # The RGSS2/RGSS3 built-ins the scripts called on the way: the title BGM
     # played itself through RPG::BGM#play (rgss2_runtime.rb) and is remembered
     # as the channel's last record.
-    expect(RGSS::Audio.played == [[:bgm_play, "Theme1", 100, 100]],
+    expect(RGSS::Audio.played == [[:bgm_play, "Theme1", 100, 100, 0]],
            "boot: title BGM did not reach Audio (got #{RGSS::Audio.played.inspect})")
     expect(RPG::BGM.last.name == "Theme1",
            "boot: RPG::BGM.last is #{RPG::BGM.last.name.inspect}, expected \"Theme1\"")

@@ -40,10 +40,11 @@ module RPG
       end
     end
 
-    # Play this record again from its stored position. RGSS3's `RPG::BGM#replay`
-    # resumes at `pos` (the map BGM is replayed after a battle); the SDL_mixer
-    # backend cannot seek, so the position is kept for the save data and the
-    # track restarts. Same audible result for a looping BGM.
+    # Play this record again. RGSS3's `RPG::BGM#replay` resumes at `pos` (a
+    # map's BGM is replayed at its own position after a battle, or after a
+    # save loads); by default this is just `#play` restarting the track,
+    # since only BGM's backend can actually seek to a stored position -- see
+    # `BGM#replay` below, which overrides this to pass one through.
     def replay
       play
     end
@@ -94,8 +95,25 @@ module RPG
     include AudioPlayback
     extend AudioPlayback::ClassMethods
 
-    def self.play_audio(name, volume, pitch)
-      RGSS::Audio.bgm_play(name, volume, pitch)
+    def self.play_audio(name, volume, pitch, pos = 0)
+      RGSS::Audio.bgm_play(name, volume, pitch, pos)
+    end
+
+    # Resumes at this record's own stored `pos` (real RGSS3 behaviour), now
+    # that Audio.bgm_play's pos argument actually seeks instead of always
+    # restarting -- what a save's `$game_system.playing_bgm.replay` (loading a
+    # save mid-track) and a battle's interrupted map BGM both rely on. BGS/ME/
+    # SE inherit AudioPlayback#replay's plain #play instead: BGS's own `pos`
+    # field exists for save-format fidelity, but its sample-channel backend
+    # never reports one to resume from (see bgs_pos in src/sdl_audio.cxx), and
+    # ME/SE have no `pos` field at all.
+    def replay
+      if name.nil? || name.empty?
+        self.class.stop
+      else
+        self.class.play_audio(name, volume || 100, pitch || 100, pos || 0)
+        self.class.last = self
+      end
     end
 
     def self.stop_audio
@@ -107,8 +125,9 @@ module RPG
     end
 
     # RGSS3 stamps the playing position onto the record it hands back, which is
-    # what a save stores so the BGM resumes where it left off (the SDL_mixer
-    # backend cannot seek on replay, but the value round-trips).
+    # what a save stores so the BGM resumes where it left off -- and, since
+    # #replay above now actually seeks, where a battle's interrupted map BGM
+    # resumes too.
     def self.last
       record = (@last ||= new_empty)
       record.pos = RGSS::Audio.bgm_pos
