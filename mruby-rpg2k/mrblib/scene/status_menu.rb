@@ -122,6 +122,14 @@ class RPG2k
         ]
         eqp = a.equipment
         @slots.each_with_index { |label, i| lines.push("#{label}: #{item_name(eqp[i])}") }
+        # RPG_RT always shows the party's own Gold on this screen -- its own
+        # `Window_Gold` (`src/window_gold.cpp`) sits right under the
+        # actor-info box, drawn unconditionally by `Scene_Status::Start`
+        # (`src/scene_status.cpp`, no visibility gate anywhere in the file) --
+        # confirmed missing here entirely, not merely mispositioned.
+        # `DrawCurrencyValue` (`src/window_base.cpp`) draws just the amount
+        # and the term, no extra label of its own.
+        lines.push("#{@state.party.gold}#{term(:gold, 'G')}")
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
         end

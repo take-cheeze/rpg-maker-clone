@@ -14524,6 +14524,25 @@ Covered by two new `scripts/rpg2k_scene_check.rb` checks (one per screen), each
 equipping a fixture actor with a dangling item id, asserting the diagnostic
 fires exactly once across construction and repeated rebuilds while the
 placeholder label still renders correctly.
+✅ **The field Status screen never showed the party's own Gold at all
+(2026-08-20).** `Scene::StatusMenu`'s own class comment (this file, above)
+described a "read-only per-member detail (name/title, level, EXP and
+EXP-to-next, HP/MP, the six stats and the equipped items)" — accurate as far
+as it went, but never mentioned Gold because the screen never drew it.
+Confirmed against EasyRPG Player's actual C++ source: `Scene_Status::Start`
+(`src/scene_status.cpp`) creates a `Window_Gold` unconditionally alongside
+the actor-info/status/equip windows, and `vUpdate` updates it every frame
+with no visibility gate anywhere in the file; `Window_Gold::Refresh`
+(`src/window_gold.cpp`) calls `DrawCurrencyValue(Main_Data::game_party->
+GetGold(), ...)` — the party's current Gold, always shown, including at 0.
+`Scene::StatusMenu#build_window` (`mruby-rpg2k/mrblib/scene/status_menu.rb`)
+had no Gold line anywhere in its flat single-bitmap layout. Fixed by adding
+one more line after the equipment slots, `"#{@state.party.gold}#{term(:gold,
+'G')}"` — matching `DrawCurrencyValue`'s own "amount then term, no extra
+label" rendering, the identical no-space convention `Scene::Map`'s shop gold
+panel already uses. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
+nonzero Gold figure renders as its own line; Gold still shows at exactly 0),
+confirmed to fail against the pre-fix code.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.

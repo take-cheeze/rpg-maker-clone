@@ -18725,6 +18725,24 @@ check 'the status screen gives the condition a labelled row' do
   ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
 end
 
+# RPG_RT's own `Window_Gold` (`src/window_gold.cpp`), created unconditionally
+# by `Scene_Status::Start` (`src/scene_status.cpp`, no visibility gate
+# anywhere in the file) -- confirmed missing here entirely.
+check 'the status screen shows the party\'s own Gold' do
+  st = menu_state
+  st.party.instance_variable_set(:@gold, 1234)
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('1234G'), "Gold is drawn as its own line, got: #{texts.inspect}"
+
+  # RPG_RT's Window_Gold draws unconditionally, including at 0 -- not only
+  # once the party has money.
+  st.party.instance_variable_set(:@gold, 0)
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('0G'), "zero Gold still shows, got: #{texts.inspect}"
+end
+
 check 'Scene::StatusMenu: the actor cursor wraps around' do
   scene = menu_scene(RPG2k::Scene::StatusMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@actor_index), 'starts on the first actor'
