@@ -290,10 +290,24 @@ uint32_t utf8_next(const unsigned char* s, size_t n, size_t& i) {
   return cp;
 }
 
-// Total advance width of `text` at `pixel` em size, in pixels.
-double font_text_width(const std::string& text, double pixel) {
+// Total advance width of `text` at `pixel` em size, in pixels. `use_game_font`
+// is false for a CSS font shorthand that doesn't name "GameFont" (MV's own
+// custom-font family, always loaded via Graphics.loadFont as literally
+// "GameFont") -- stb_truetype only ever backs that one font, so a generic
+// family like plain "sans-serif" gets the same rough per-character estimate
+// as an unloaded font, deliberately different from the real metrics below.
+// This is what makes Graphics.isFontLoaded's classic detection trick work:
+// it measures '40px GameFont, sans-serif' against '40px sans-serif' and
+// waits for the two widths to diverge -- with a single font-agnostic
+// measurement (the pre-existing behavior) they never would, hanging
+// Scene_Boot until its own 20s timeout on any project whose corescript
+// doesn't take the newer FontFaceSet-based path (see the document.fonts
+// stand-in's own comment, above).
+double font_text_width(const std::string& text,
+                       double pixel,
+                       bool use_game_font = true) {
   GameFont& f = game_font();
-  if (!f.ok)
+  if (!use_game_font || !f.ok)
     return static_cast<double>(text.size()) * pixel * 0.5;
   const float scale =
       stbtt_ScaleForMappingEmToPixels(&f.info, static_cast<float>(pixel));
@@ -592,16 +606,20 @@ JSValue js_draw_image(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
-// __mv_fontMeasure(pixelSize, text) -> advance width in pixels. Backs
-// CanvasRenderingContext2D.measureText, which MV's Bitmap.measureTextWidth uses
-// to align (centre/right) and lay out text, so it must reflect the real font.
+// __mv_fontMeasure(pixelSize, text, hasGameFont) -> advance width in pixels.
+// Backs CanvasRenderingContext2D.measureText, which MV's
+// Bitmap.measureTextWidth uses to align (centre/right) and lay out text, so it
+// must reflect the real font -- except when the caller's own font shorthand
+// doesn't name "GameFont" at all (see font_text_width's own comment), where a
+// different, rougher estimate is deliberate.
 JSValue js_measure_text(JSContext* ctx,
                         JSValueConst,
                         int argc,
                         JSValueConst* argv) {
   const double pixel = ad(ctx, argc, argv, 0, 10);
   const char* text = argc > 1 ? JS_ToCString(ctx, argv[1]) : nullptr;
-  const double w = text ? font_text_width(text, pixel) : 0.0;
+  const bool has_game_font = argc > 2 ? ai(ctx, argc, argv, 2) != 0 : true;
+  const double w = text ? font_text_width(text, pixel, has_game_font) : 0.0;
   if (text)
     JS_FreeCString(ctx, text);
   return JS_NewFloat64(ctx, w);
@@ -1334,6 +1352,12 @@ const char* kCanvasPreamble = R"MVJS(
     var m = /([\d.]+)px/.exec(s || '');
     return m ? parseFloat(m[1]) : 10;
   }
+  // Whether a CSS font shorthand names "GameFont", MV's own custom-font
+  // family (always loaded as literally that name -- see font_text_width's
+  // own comment in mvcanvas.cxx for why this distinction matters).
+  function fontHasGameFont(s) {
+    return /GameFont/.test(s || '');
+  }
   // Map a canvas textBaseline to the native code (0 alphabetic, 1 top,
   // 2 middle, 3 bottom); ideographic/hanging fall back to the nearest.
   function baselineCode(b) {
@@ -1343,7 +1367,8 @@ const char* kCanvasPreamble = R"MVJS(
     return 0;
   }
   Ctx.prototype.measureText = function (t) {
-    return { width: g.__mv_fontMeasure(fontPx(this.font), t == null ? '' : String(t)) };
+    return { width: g.__mv_fontMeasure(fontPx(this.font), t == null ? '' : String(t),
+                                       fontHasGameFont(this.font) ? 1 : 0) };
   };
   // Shared layout for fill/strokeText: resolve colour, size and the horizontal
   // alignment offset, then hand off to the native rasteriser with the current
@@ -1355,11 +1380,12 @@ const char* kCanvasPreamble = R"MVJS(
     var a = Math.round(col[3] * self.globalAlpha);
     if (a <= 0) return;
     var size = fontPx(self.font);
+    var hasGameFont = fontHasGameFont(self.font) ? 1 : 0;
     var ax = x;
     if (self.textAlign === 'center') {
-      ax -= g.__mv_fontMeasure(size, text) / 2;
+      ax -= g.__mv_fontMeasure(size, text, hasGameFont) / 2;
     } else if (self.textAlign === 'right' || self.textAlign === 'end') {
-      ax -= g.__mv_fontMeasure(size, text);
+      ax -= g.__mv_fontMeasure(size, text, hasGameFont);
     }
     var m = self._m;
     g.__mv_canvasDrawText(self.__h, ax, y, text, col[0], col[1], col[2], a,
