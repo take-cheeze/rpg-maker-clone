@@ -8262,6 +8262,41 @@ check 'boarding a boat and disembarking onto the shore' do
   eq [0, 1], [boat.x, boat.y], 'the boat stayed where the party left it'
 end
 
+check 'each vehicle type has exactly one boarding trigger: the airship only ' \
+      'by standing on it, a boat/ship only by facing it' do
+  # Confirmed against RPG_RT's own live source: `Game_Player::GetOnVehicle`
+  # (src/game_player.cpp) checks the Airship only against the player's own
+  # tile (`GetX()`/`GetY()`), in an `if` whose `else` branch is the only
+  # place the faced tile is computed at all -- the Airship is never
+  # considered there, and Ship/Boat are never considered against the
+  # player's own tile. A prior version of `#board_vehicle` ran one generic
+  # per-type loop applying *both* checks to *every* type, which let the
+  # Airship be boarded merely by facing it from an adjacent tile (real
+  # RPG_RT does nothing there) and would have let a Boat/Ship be boarded by
+  # standing on its tile rather than facing it from the shore.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 1 # placed on the tile the party faces, not the tile it stands on
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'facing a placed airship from an adjacent tile does not board it'
+  eq [0, 0], [st.x, st.y], 'the party never stepped toward it either'
+
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 0 # right under the party -- standing on it, not facing it
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'standing on a placed boat does not board it'
+end
+
 check 'a boarded boat cannot overlap a below-characters event unless it has Through Mode on' do
   # yado.tk: a below-characters, passable-graphic event lets the *walking*
   # hero overlap it fine (LAYER_BELOW is not LAYER_SAME, see the priority-type
@@ -8380,13 +8415,13 @@ check "a boarded hero's own Set Move Route respects the ridden vehicle's " \
   # way ordinary sailing is" above -- but every tile is still ordinarily
   # walkable on foot, so the pre-fix bug (checking on-foot passability while
   # boarded) would have let this route sail through anyway.
-  scene = new_scene({}, player: [0, 1])
+  scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
   boat.map_id = st.map_id
   boat.x = 0
   boat.y = 1
-  RGSS::Input.triggered = [RGSS::Input::C] # board the boat in place (same tile)
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat by facing it (down, the default)
   scene.update
   RGSS::Input.triggered = []
   eq :boat, st.boarded, 'boarded the boat'
@@ -8822,36 +8857,41 @@ end
 # `#vehicle_passable?` and `#airship_landable?`.
 check 'a moving boat collides with a different parked ship, and with a ' \
       'grounded airship' do
+  # A Boat/Ship boards only by facing it from an adjacent tile, never by
+  # standing on it -- see "board_vehicle applies the wrong boarding trigger"
+  # above -- so the party starts one tile above the boat, facing down (2, the
+  # default), and steps onto it via the ordinary facing-tile board.
   scene = new_scene({}, player: [0, 0], boat_pass: true)
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
   boat.map_id = st.map_id
   boat.x = 0
-  boat.y = 0 # under the party; board in place
+  boat.y = 1
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  eq :boat, st.boarded, 'boarded the boat in place'
+  eq :boat, st.boarded, 'boarded the boat by facing it from the shore'
+  eq [0, 1], [st.x, st.y], 'and stepped onto its tile'
 
   ship = st.vehicle(:ship)
   ship.map_id = st.map_id
   ship.x = 1
-  ship.y = 0
+  ship.y = 1
   RGSS::Input.dir_value = 6 # hold right, straight into the parked ship
   10.times { scene.update }
   RGSS::Input.dir_value = 0
-  eq [0, 0], [st.x, st.y], 'a different parked vehicle (the ship) blocks the boat'
+  eq [0, 1], [st.x, st.y], 'a different parked vehicle (the ship) blocks the boat'
 
   # Move the ship out of the way and put a grounded airship there instead.
   ship.map_id = 0
   air = st.vehicle(:airship)
   air.map_id = st.map_id
   air.x = 1
-  air.y = 0
+  air.y = 1
   RGSS::Input.dir_value = 6
   10.times { scene.update }
   RGSS::Input.dir_value = 0
-  eq [0, 0], [st.x, st.y], 'a grounded airship blocks the boat too'
+  eq [0, 1], [st.x, st.y], 'a grounded airship blocks the boat too'
 end
 
 check 'the airship cannot land on a parked boat/ship\'s tile' do
@@ -12882,14 +12922,21 @@ check 'Tile Substitution survives a Save/Continue on the same map, unlike an ord
   eq 41, fresh.lower(3, 3), 'Continue restores the substitution onto the fresh map'
 end
 
-check 'Enter/Exit Vehicle boards the vehicle the party stands on' do
+check 'Enter/Exit Vehicle boards the vehicle the party faces' do
+  # `Game_Interpreter_Map::CommandEnterExitVehicle` (code 10840,
+  # src/game_interpreter_map.cpp) just calls `Game_Player::GetOnOffVehicle`
+  # -- the identical function the action button drives -- so a Boat/Ship
+  # boards only by facing it from an adjacent tile, never by standing on it
+  # (see "board_vehicle applies the wrong boarding trigger" above); only the
+  # Airship boards by standing on its own tile.
   cmds = [ECmd.new(IC2::ENTER_EXIT_VEHICLE, [])]
   scene = new_scene(parallel_event(cmds), player: [0, 0])
   st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
   boat = st.vehicle(:boat)
   boat.map_id = st.map_id
-  boat.x = st.x
-  boat.y = st.y
+  boat.x = 0
+  boat.y = 1
   scene.update
   eq :boat, st.boarded
   scene.update # the command runs again next loop and steps back off
