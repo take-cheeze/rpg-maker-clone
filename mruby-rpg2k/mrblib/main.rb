@@ -688,7 +688,7 @@ class RPG2k
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.
     scene = Scene::Map.new(self, state)
-    @scenes.last.dispose
+    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
     # A machine-readable marker so a headless run (see --rpg2k_new_game and
     # scripts/compare-nepheshel-wine.bash) can assert the map scene was really
@@ -842,7 +842,7 @@ class RPG2k
     # it as), which re-deriving from the current map's tree here would
     # silently discard. See Scene::Map#initialize's own comment.
     scene = Scene::Map.new(self, state, apply_access: false)
-    @scenes.last.dispose
+    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
     # Same marker start_new_game emits, so a headless run resuming a save (see
     # --rpg2k_continue) can assert which map it landed on -- which for a save
