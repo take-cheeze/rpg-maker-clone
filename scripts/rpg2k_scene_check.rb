@@ -19063,6 +19063,27 @@ check 'Scene::EquipMenu: a dangling equipped item id logs once, not per rebuild,
   ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
+# Confirmed against RPG_RT's own live source: `Window_ActorInfo::DrawInfo`
+# (`src/window_actorinfo.cpp`) always draws a labelled Class/Profession row
+# (`TextDraw(..., "Class"); DrawActorClass(actor, ...)`), with no version
+# gate around it -- an RPG2000 database with no class table still gets the
+# row, just blank.
+check 'the status screen shows a labelled Class row' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.any? { |t| t.start_with?('Class:') },
+     "the row is labelled even with no class (RPG2000), got: #{texts.inspect}"
+  eq 'Class: ', texts.find { |t| t.start_with?('Class:') },
+     'blank value with no class table'
+
+  classed = Class.new(MenuStubActor) { def class_name; 'Paladin'; end }.new
+  st.party.instance_variable_set(:@actors, [classed])
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Class: Paladin'), "shows the class name, got: #{texts.inspect}"
+end
+
 check 'the status screen gives the condition a labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
