@@ -16573,8 +16573,10 @@ above are repeated here)
   `@battle_ui[:frame]` counter (reset to 0 in `#open_battle`, incremented once
   per `#drive_battle` call — this scene's own once-per-screen-frame cadence,
   the same one `#update_map_tone`'s `@anim_frame` already uses for water/tile
-  animation) rather than EasyRPG's per-battler-randomized start phase, since
-  neither wiki mirror describes members desyncing from one another. A new
+  animation) ~~rather than EasyRPG's per-battler-randomized start phase, since
+  neither wiki mirror describes members desyncing from one another~~ (see the
+  dated Follow-up below — this turned out to be a real, verifiable gap, not
+  just an undocumented wiki detail). A new
   `#battler_y(member, bmp)` (`member.y - bmp.height / 2 + flying_offset(member)`)
   replaces the bare centring math at all three sites that place an enemy
   sprite — `#build_battle_sprites`, `#rebuild_battler_sprite` (a mid-fight
@@ -16597,8 +16599,50 @@ above are repeated here)
   `scene.update` ticks the frame counter in an RPG2003 fight, while the
   identical troop and flag fought with no `rpg2003?` flag never bobs at all
   after the same number of frames — both confirmed to fail against the
-  pre-fix code (`NoMethodError: undefined method 'levitate'`). ✅ **The
-  "frequent miss" enemy option is confirmed already correct: a hardcoded 90%→70% drop to
+  pre-fix code (`NoMethodError: undefined method 'levitate'`).
+  ✅ **Follow-up (2026-08-20): levitating troop members do bob on
+  independently randomized phases, not in lockstep off one shared clock —
+  the "neither wiki mirror describes members desyncing" note above turned
+  out to be right that the wikis were silent, but wrong to treat that
+  silence as evidence there's no desync.** Checked directly against
+  EasyRPG Player's live C++ source this time, not a 403/503'd wiki mirror:
+  `Game_Enemy::GetFlyingOffset`'s own `frame` is `GetBattleFrameCounter()`
+  (`src/game_enemy.cpp`), which reads `Game_Battler::frame_counter` (`src/
+  game_battler.h`) — a **per-battler** field, not a shared one.
+  `Game_Battler::ResetBattle` (`src/game_battler.cpp`) seeds it
+  independently per battler at battle start (`frame_counter =
+  Rand::GetRandomNumber(0, 63);`), and `Game_Battler::UpdateBattle`
+  increments each battler's own counter by one every battle frame
+  (`Scene_Battle::UpdateBattlers`'s per-battler loop) — so every levitating
+  member bobs on its own fixed, randomized starting phase relative to the
+  others for the rest of the fight, not in unison. Fixed with a new
+  `Game::Enemy#flying_phase` (0..63, defaulting to 0 for a bare fixture),
+  rolled once per levitating member by `Game::Troop#initialize` right
+  after the existing Appear Randomly pass (`rng.random(64)`, the exact
+  match for `GetRandomNumber(0, 63)`'s inclusive range) — deliberately
+  narrowed to only levitating members, rather than every battler on both
+  sides the way real RPG_RT's own `ResetBattle` does, since a
+  non-levitating member's own phase is never observable and rolling it
+  unconditionally would have shifted the shared battle `rng`'s draw count
+  for every ordinary fight, not just ones with a levitating enemy — a much
+  wider blast radius than this cosmetic fix needs (confirmed by watching an
+  unrelated, already-passing RNG-draw-count check for the RPG2000/2003
+  first-strike-roll difference break the instant the roll was made
+  unconditional, then pass again once narrowed to `if m.levitate`).
+  `Scene::Battle#flying_offset` now adds `member.flying_phase` into its
+  sine argument alongside the existing shared `@ui[:frame]` tick. The two
+  existing checks above needed a small update (pinning `member.flying_phase
+  = 0` so their exact peak/trough assertions stay deterministic against a
+  real, RNG-driven troop build) rather than a behavioral correction.
+  Covered by three new `scripts/rpg2k_logic_check.rb` checks (a real seed
+  spreads several levitating members across more than one phase, each
+  landing in 0..63; no RNG handed in leaves every phase at 0; a
+  non-levitating troop's phases stay at 0 too, proving the RNG draw is
+  skipped rather than made and discarded) and one new
+  `scripts/rpg2k_scene_check.rb` check (the same shared frame reads
+  differently once a member's own nonzero phase is folded in), all
+  confirmed to fail against the pre-fix code before the fix.
+  ✅ **The "frequent miss" enemy option is confirmed already correct: a hardcoded 90%→70% drop to
   *normal-attack* accuracy only, skills unaffected.** `Game::Enemy#attack_hit_rate`
   (`mruby-rpg2k/mrblib/game.rb`) already reads the schema's `miss` field
   (LCF enemy field 26) exactly this way — `@miss ? 70 : 90` — and
