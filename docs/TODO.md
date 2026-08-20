@@ -15052,12 +15052,12 @@ above are repeated here)
   upper tile still deferring to a blocked lower tile). The simplified
   ○/×/★/□ editor icon's own "at least one of 4 directions" semantics is a
   content-authoring/editor-display fact with no runtime code to check.
-- ✅ **The equip-menu comparison arrow (Up/Same/Down) is computed from the
+- ~~The equip-menu comparison arrow (Up/Same/Down) is computed from the
   sum of all four stat deltas between the currently-equipped and candidate
-  item, not evaluated per-stat.** (The bullet's own wording says "shop", but
+  item, not evaluated per-stat.~~ (The bullet's own wording says "shop", but
   RPG2000 shops never compare equipment stats — only the field Equip screen's
   own candidate list does; `01_shoshin`/`11_db` both describe this same
-  indicator on that screen.) `Scene::EquipMenu#build_cand_window`
+  indicator on that screen.) ~~`Scene::EquipMenu#build_cand_window`
   (`mruby-rpg2k/mrblib/scene/equip_menu.rb`) drew each candidate as a bare
   name + bag count, with no comparison of any kind. Fixed by summing each
   side's `atk_points1`/`def_points1`/`spi_points1`/`agi_points1` fields (the
@@ -15068,12 +15068,52 @@ above are repeated here)
   which is the actual yado.tk claim (a candidate trading `-2` Atk for `+3`
   Def still draws a single Up arrow). RPG_RT draws small triangle icons here;
   this build has no icon-cell blit for them yet, so a plain glyph stands in
-  — a later, purely-visual refinement, not a behaviour gap. The "Remove"
-  entry draws no arrow (nothing to compare an empty slot's combined points
-  against is confirmed either way). Covered by a new
-  `scripts/rpg2k_scene_check.rb` check (a strictly-better, a strictly-worse
-  and an exactly-equal candidate against a fixed worn item each draw the
-  right glyph), confirmed to fail against the pre-fix code before the fix.
+  — a later, purely-visual refinement, not a behaviour gap.~~ ✅ **Wrong
+  outright, not just visually rough — corrected below (2026-08-20): RPG_RT's
+  candidate list never draws a comparison indicator of any kind, summed or
+  otherwise, and the real per-stat comparison lives entirely in the status
+  panel above it, which this codebase's own earlier pass never actually read
+  in full (`Scene_Equip::UpdateStatusWindow`, `src/scene_equip.cpp`) before
+  taking the yado.tk fan-wiki description of the candidate-list arrow at face
+  value.**
+- ✅ **The Equip screen's candidate-list "sum all four stats into one arrow"
+  design was wrong outright; RPG_RT compares each battle stat independently
+  in the status panel above the list, not the list itself (2026-08-20).**
+  Confirmed against EasyRPG Player's actual C++ source, read in full this
+  time: `Window_EquipItem::CheckInclude` (`src/window_equipitem.cpp`) and the
+  inherited `Window_Item::DrawItem` draw only a candidate's name and stock
+  count — no comparison glyph anywhere. `Scene_Equip::UpdateStatusWindow`
+  (`src/scene_equip.cpp`) instead recomputes `atk`/`def`/`spi`/`agi`
+  independently every frame the item list is active (summing every equipped
+  item, subtracting the old slot item and, if either it or the candidate is
+  両手持ち, the other hand's item too) and hands all four to
+  `Window_EquipStatus::SetNewParameters`; `DrawParameter`
+  (`src/window_equipstatus.cpp`) then draws each stat as its own
+  `value → new_value` pair, coloured by `GetNewParameterColor` (0 unchanged /
+  2 up / 3 down) — four independent verdicts shown at once, never folded into
+  a single net arrow (a candidate trading `-2` Atk for `+3` Def shows *both*
+  movements, not one combined Up). Fixed by removing the summed-arrow column
+  from `Scene::EquipMenu#build_cand_window` (candidates now draw name + count
+  only) and giving `#build_stats_window`'s combat-stat line a preview mode:
+  a new `#draw_stat_row` draws each of the four stats as a plain
+  `label value` block while browsing the slot list, or, while browsing
+  candidates (`#refresh_cand_cursor` now rebuilds the stats window on every
+  cursor move), a `label value > new_value` block per stat, the new value
+  coloured via the same windowskin-swatch convention `#draw_system_text`
+  already uses elsewhere in this codebase (index 0/2/3, the identical
+  `Game::MessagePalette` cells `GetNewParameterColor` maps to). The existing
+  `#item_stat_sum`/`#equip_delta` two-handed math was generalised into a new
+  per-field `#item_stat`/`#stat_field_delta` pair rather than discarded —
+  `#equip_delta` is now `#stat_field_delta` summed across all four fields,
+  identical to its own prior behaviour, so its existing direct-call tests
+  needed no changes. Covered by four new/rewritten `scripts/rpg2k_scene_check.rb`
+  checks (the candidate list draws no glyph at all; the stats window shows
+  the correct per-stat preview for a better/worse/unchanged candidate and
+  reverts once the list is left; a 両手持ち candidate previews Atk rising and
+  Def falling *at once*, the exact case a single summed verdict could only
+  ever show one side of; the preview colour comes from the loaded
+  windowskin's own swatch cells, not a hardcoded RGB value), all four
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A State's own configured display-color field is a pointer into the
   same shared message-colour palette every `\c[n]` code draws from —
   confirmed already correct, no code change needed.** There is only one
