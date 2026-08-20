@@ -7484,7 +7484,8 @@ class RPG2k
         # speeds up one paragraph's reveal, it does not blow through
         # paragraph after paragraph on its own. Gated on RPG2k#test_play the
         # same way #debug_through? is, so a released game never sees it.
-        fast_forward = confirm || (@parent.test_play && Input.press?(Input::SHIFT))
+        shift_forward = @parent.test_play && Input.press?(Input::SHIFT)
+        fast_forward = confirm || shift_forward
         unless reveal.done?
           pause = reveal.pending_pause
           # A `:page` pause (synthetic, at a page boundary) means the current
@@ -7505,7 +7506,7 @@ class RPG2k
           # `\.` / `\|` holds, which clear on their own.
           @message[:window].pause = pause ? pause[:kind] == :key : false
           if pause
-            drive_message_pause(reveal, pause, fast_forward)
+            drive_message_pause(reveal, pause, fast_forward, shift_forward)
           elsif fast_forward
             reveal.reveal_all
           else
@@ -7532,11 +7533,23 @@ class RPG2k
       end
 
       # Hold the reveal at a pacing code: `\!` waits for a button, `\.` / `\|`
-      # count down a fixed number of frames (a button skips the wait). A `\.`
-      # pause's own length depends on the `\s[n]` typing speed in effect at
-      # that point in the text (see #speed_at and MSG_PAUSE_QUARTER's own
-      # comment); `\|` never varies.
-      def drive_message_pause(reveal, pause, pressed)
+      # count down a fixed number of frames that an ordinary Decision/Cancel
+      # press cannot cut short -- confirmed directly against RPG_RT's live
+      # source: `Window_Message::Update` (`src/window_message.cpp`)
+      # decrements `wait_count` (the counter `\.`/`\|` set via
+      # `SetWaitForNonPrintable`) and returns unconditionally while it is
+      # still positive, entirely before the separate `GetPause()`/
+      # `WaitForInput()` branch that checks `Input::IsTriggered(DECISION/
+      # CANCEL)` even runs -- and `case '.'`/`case '|'` (the same file) only
+      # ever call `SetWaitForNonPrintable`, never `SetPause(true)`, unlike
+      # `case '!'`, which calls both. A `\.` pause's own length depends on
+      # the `\s[n]` typing speed in effect at that point in the text (see
+      # #speed_at and MSG_PAUSE_QUARTER's own comment); `\|` never varies.
+      # `shift_forward` alone (Test Play's own fast-forward, see
+      # #drive_text_message) still cuts a `\.`/`\|` wait short, mirroring
+      # `SetWaitForNonPrintable`'s own `if (!instant_speed)` guard around
+      # `SetWait` -- an ordinary player confirm press must not.
+      def drive_message_pause(reveal, pause, pressed, shift_forward)
         if pause[:kind] == :key
           reveal.release_pause if pressed
           return
@@ -7548,7 +7561,7 @@ class RPG2k
                                        MSG_PAUSE_QUARTER + Game.clamp(speed - 16, 0, 4)
                                      end
         @message[:pause_frames] -= 1
-        if pressed || @message[:pause_frames] <= 0
+        if shift_forward || @message[:pause_frames] <= 0
           @message[:pause_frames] = nil
           reveal.release_pause
         end

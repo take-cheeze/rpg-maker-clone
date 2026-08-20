@@ -8561,6 +8561,32 @@ not yet verified:
   new `scripts/rpg2k_scene_check.rb` check pinning a `\s[20]\.` pause to
   exactly 20 frames (16 + 4, the maximum stretch), confirmed to fail against
   the pre-fix code before the fix (`expected 20, got 16`).
+  ✅ **Follow-up (2026-08-20): an ordinary Decision/Cancel press let the
+  player cut a `\.`/`\|` pause short — real RPG_RT never lets a button skip
+  either one, only Test Play's own Shift fast-forward may.** Confirmed
+  directly against RPG_RT's live source: `Window_Message::Update`
+  (`src/window_message.cpp`) decrements `wait_count` (the counter `\.`/`\|`
+  set via `SetWaitForNonPrintable`) and returns unconditionally while it is
+  still positive, entirely before the separate `GetPause()`/`WaitForInput()`
+  branch — the one that checks `Input::IsTriggered(DECISION/CANCEL)` — even
+  runs; `case '.'`/`case '|'` (the same file) only ever call
+  `SetWaitForNonPrintable`, never `SetPause(true)`, unlike `case '!'`, which
+  calls both. `Scene::Map#drive_message_pause`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) merged the ordinary confirm press and
+  Test Play's own Shift fast-forward into one `pressed` flag and released a
+  `:full`/`:quarter` pause on either, letting a plain Decision/Cancel tap
+  blow straight through a timed hold the way it correctly does for a `\!`
+  pause — a discrepancy this file's own class comment ("a button skips the
+  wait") had asserted as fact with no citation of its own. Fixed by
+  threading the Test-Play-Shift component through as its own parameter
+  (`shift_forward`), separate from the merged `pressed`/`fast_forward`
+  flag: `:key` (`\!`) pauses are unchanged, still released by either;
+  `:full`/`:quarter` (`\.`/`\|`) pauses now release only on `shift_forward`
+  reaching zero on their own frame countdown, mirroring `SetWaitForNonPrintable`'s
+  own `if (!instant_speed)` guard around `SetWait`. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a Decision press held throughout a
+  `\.` pause must not shorten it below its real 16 frames), confirmed to
+  fail against the pre-fix code before the fix (`expected 16, got 1`).
 - ✅ **A blocked Move Route step on a *skippable* ("Ignore If Can't Move")
   route no longer leaves the character visibly turned toward the
   obstruction — the failed turn now reverts entirely before the route
