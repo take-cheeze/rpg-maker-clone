@@ -5508,7 +5508,7 @@ class RPG2k
           background = build_field_background(@windowskin)
           if req[:charset] == 2
             @name_ui = { name: req[:seed] || '', sel: 0, win: nil, kana: false,
-                         background: background, interp: it }
+                         actor_id: req[:actor_id], background: background, interp: it }
             draw_name_input
           else
             @name_ui = { name: req[:seed] || '', sel: 0, kana: true,
@@ -5619,9 +5619,27 @@ class RPG2k
         @name_ui[:kana] ? draw_kana_name_input : draw_name_input
       end
 
+      # A blank confirm does not close the widget -- confirmed against
+      # RPG_RT's own live source: `Scene_Name::vUpdate`'s DONE branch
+      # (`src/scene_name.cpp`) is `if (name_window->Get().empty()) {
+      # name_window->Set(ToString(actor.GetName())); name_window->Refresh();
+      # } else { actor.SetName(...); Scene::Pop(); }` -- an empty typed name
+      # resets the field back to the actor's current name and leaves the
+      # screen open, rather than resuming the event with an empty string.
+      # This check lives in the single shared `vUpdate` (gated only on
+      # which cell was picked), so it applies identically to every keyboard
+      # page -- the kana grid's own :confirm cell routes through this same
+      # method.
       def commit_name_input
-        name = @name_ui[:name]
-        interp = @name_ui[:interp]
+        ui = @name_ui
+        if ui[:name].empty?
+          actor = roster_actor(ui[:actor_id])
+          ui[:name] = actor ? actor.name.to_s : ''
+          ui[:kana] ? draw_kana_name_input : draw_name_input
+          return
+        end
+        name = ui[:name]
+        interp = ui[:interp]
         close_name_input
         interp.resume_name_input(name)
       end

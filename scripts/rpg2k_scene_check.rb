@@ -7568,6 +7568,50 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
+# Confirmed against RPG_RT's own live source: `Scene_Name::vUpdate`'s DONE
+# branch (`src/scene_name.cpp`) is `if (name_window->Get().empty()) {
+# name_window->Set(ToString(actor.GetName())); name_window->Refresh(); }
+# else { actor.SetName(...); Scene::Pop(); }` -- an empty typed name resets
+# the field to the actor's current name and leaves the screen open, rather
+# than resuming the event with a blank name.
+check 'Enter Hero Name: confirming a blank name refills it and stays open, ' \
+      'instead of resuming the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0), # actor 1, letters, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  # Confirm the OK cell straight away, with nothing typed.
+  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok scene.instance_variable_get(:@name_ui), 'the widget stays open on a blank confirm'
+  eq 'Hero', ui[:name], "refilled with the actor's current name"
+  eq 'Hero', st.party.actor_by_id(1).name, 'the actor itself is untouched so far'
+
+  # Confirming again now commits the refilled (non-blank) name.
+  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq nil, scene.instance_variable_get(:@name_ui), 'now the widget closes'
+  eq 'Hero', st.party.actor_by_id(1).name
+  3.times { scene.update }
+  ok st.switches[5], 'and the event resumed'
+end
+
 check 'Enter Hero Name plays the RPG_RT system SE on every interaction' do
   # Confirmed against EasyRPG's Scene_Name::vUpdate (src/scene_name.cpp,
   # Cursor on every grid move, Decision unconditionally on every C press
@@ -7828,6 +7872,51 @@ check 'Enter Hero Name: typing a kana and confirming renames the actor' do
   eq nil, scene.instance_variable_get(:@name_ui), 'the widget closed'
   3.times { scene.update }
   ok st.switches[5], 'the event resumed after entry'
+end
+
+# Same DONE/blank-confirm refusal as the letters page (see the earlier check's
+# citation) -- the kana grid's :confirm cell routes through the identical
+# #commit_name_input.
+check 'Enter Hero Name: confirming a blank kana name refills it and stays ' \
+      'open, instead of resuming the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0), # actor 1, hiragana, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  cols = RPG2k::Scene::Map::NAME_KANA_COLS
+  last_row = rows.length - 1
+  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
+
+  # Confirm the :confirm cell straight away, with nothing typed.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok scene.instance_variable_get(:@name_ui), 'the widget stays open on a blank confirm'
+  eq 'Hero', ui[:name], "refilled with the actor's current name"
+  eq 'Hero', st.party.actor_by_id(1).name, 'the actor itself is untouched so far'
+
+  # Confirming again now commits the refilled (non-blank) name.
+  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq nil, scene.instance_variable_get(:@name_ui), 'now the widget closes'
+  eq 'Hero', st.party.actor_by_id(1).name
+  3.times { scene.update }
+  ok st.switches[5], 'and the event resumed'
 end
 
 check 'Enter Hero Name: the toggle cell swaps the hiragana/katakana page' do

@@ -4489,6 +4489,41 @@ The work below is roughly ordered by the critical path to a walkable game
   `.triggered`, still moves both the ASCII and kana grid cursors), both
   confirmed to fail against the pre-fix code (`expected 1, got 0`) before
   the fix.
+  ✅ **Follow-up (2026-08-20): confirming the OK/DONE cell with nothing
+  typed closed the widget and resumed the event with a blank name, instead
+  of refusing the blank confirm the way real RPG_RT does.** Confirmed
+  directly against RPG_RT's live source: `Scene_Name::vUpdate`'s DONE branch
+  (`src/scene_name.cpp`) is `if (name_window->Get().empty()) { name_window
+  ->Set(ToString(actor.GetName())); name_window->Refresh(); } else {
+  actor.SetName(name_window->Get()); Scene::Pop(); }` — a blank confirm
+  resets the field to the actor's *current* name and leaves the screen
+  open; the player must confirm a second time (now non-blank) to actually
+  leave. This check lives in the single shared `vUpdate`, gated only on
+  which cell was picked, so it applies identically to every keyboard page
+  (the kana grids included — RPG2000/2003 share one `Scene_Name`), not just
+  the Latin-alphabet one. This is the *opposite* correction from the
+  already-fixed Change Actor Name (10610) blank-string bug elsewhere in this
+  document (that command's own C++ source has no blank guard at all,
+  unconditional `SetName`) — the two commands needed opposite fixes, and
+  only one of them had been made; `#name_input_cancel`'s Cancel-key branch
+  (the SE-pass bullet above) was already ported correctly from this exact
+  function, only the sibling DONE branch was missed.
+  `Scene::Map#commit_name_input` (`mruby-rpg2k/mrblib/scene/map.rb`), the
+  shared target both `#name_input_confirm`'s `'OK'` cell and
+  `#kana_name_input_confirm`'s `:confirm` cell dispatch to, unconditionally
+  did `close_name_input; interp.resume_name_input(name)` with no blank
+  check. Fixed by checking `@name_ui[:name].empty?` first: if so, look the
+  actor back up (`#roster_actor`, the same helper `#draw_kana_name_input`'s
+  face panel already uses) and refill `@name_ui[:name]` with its current
+  name, redraw (`#draw_kana_name_input`/`#draw_name_input`) and return,
+  skipping the close/resume entirely. `#drive_name_input`'s Latin-page
+  branch built its `@name_ui` hash without an `actor_id:` field at all
+  (only the kana branch had one) — added for parity, since the refill now
+  needs it on both pages. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (one per keyboard page: confirming blank refills the field and
+  keeps the widget open without resuming the event; confirming again with
+  the refilled name then closes it normally), both confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **The same "silent embedded widget" family, found once more: Open Shop
   and Show Inn played zero sound effects at all (2026-08-18).** Verified
   against RPG_RT's actual behavior via EasyRPG Player's own C++ source,
