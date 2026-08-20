@@ -9791,6 +9791,61 @@ check "a Common Event Parallel Process's own waited-for Show Battle Animation sh
   ok !st.switches[5], "the process is still held on its own wait that same frame, not resumed already"
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Interpreter_Map::
+# CommandShowBattleAnimation` (src/game_interpreter_map.cpp) calls
+# `GetCharacter(evt_id, ...)` unconditionally, before it ever reads `global`
+# or computes a frame count, and returns outright when that comes back null
+# -- `GetCharacter` (src/game_interpreter.cpp) is null for "This Event" (0)
+# when the calling interpreter has no owning map event, exactly what a
+# common event's own Parallel Process is. `_state.wait_time = frames` is
+# never reached in that case, so a "wait until finished" request falls
+# straight through the same tick rather than drawing on the player (this
+# codebase's own prior fallback) and stalling for the animation's real
+# duration.
+check "a common event Parallel Process's Show Battle Animation targeting " \
+      '"This Event" no-ops instead of falling back to the player, and does ' \
+      'not stall the wait' do
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 0, 1], indent: 0), # animation, This Event, wait
+                              ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  resumed_frame = nil
+  3.times do |i|
+    scene.update
+    resumed_frame ||= i if st.switches[5]
+  end
+  ok resumed_frame && resumed_frame <= 1,
+     'resumes within the same one-frame build/step latency every :animation wait already has, not ' \
+     "stalled for animation 8's own multi-frame missing_animation_wait duration (8 frames)"
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
+end
+
+# Same fact for a specific-but-nonexistent event id -- `GetCharacter` is
+# equally null for an id the map has no character for, regardless of
+# whether the target is "This Event" or a stale/invalid one.
+check 'a Show Battle Animation naming an event id the map has no character ' \
+      'for no-ops instead of falling back to the player' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 99, 1], indent: 0), # animation, unknown event 99, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  resumed_frame = nil
+  3.times do |i|
+    scene.update
+    resumed_frame ||= i if st.switches[5]
+  end
+  ok resumed_frame && resumed_frame <= 1,
+     'resumes within the same one-frame build/step latency every :animation wait already has, not ' \
+     'stalled on the animation duration'
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
+end
+
 # yado.tk: RPG_RT drops straight into Game Over the instant a wipe-triggering
 # command finds the whole party dead outside battle, regardless of which
 # event noticed it -- a Simulated Attack floor trap on a background Parallel
