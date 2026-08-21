@@ -2452,13 +2452,38 @@ class RPG2k
           return
         end
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
-        return false unless passable?(fx, fy, @state.direction)
+        return false unless ship_disembark_passable?(fx, fy, @state.direction)
         follow_vehicle # the vehicle is left where the party is getting off
         @state.x = fx
         @state.y = fy
         @state.boarded = nil
         restore_pre_vehicle_bgm # the map BGM resumes
         true
+      end
+
+      # Whether the landing tile (x, y) admits a disembarking boat/ship,
+      # heading `dir`. A dedicated, one-sided test -- NOT #passable? -- since
+      # RPG_RT's own disembark check is narrower than an ordinary step.
+      # Confirmed against EasyRPG's live source: `Game_Player::GetOffVehicle`
+      # (`src/game_player.cpp`) calls `Game_Map::CanDisembarkShip` (`src/
+      # game_map.cpp`), which (1) only tests the *landing* tile's own entry
+      # passability (`GetPassableMask(x, y, player.GetX(), player.GetY())`
+      # derives just the one direction bit at `(x, y)`; the water tile the
+      # party is standing on is never passed to `IsPassableTile` at all,
+      # unlike an ordinary step's own two-sided `#passable?` check), (2)
+      # calls `IsPassableTile(nullptr, bit, x, y)` with a null mover -- no
+      # `boat_pass`/`ship_pass` terrain gate applies to *landing*, only to
+      # sailing there in the first place -- and (3) has no equivalent of
+      # `#vehicle_blocks?` at all (unlike `Game_Map::CanLandAirship`, a few
+      # lines above it in the same file, which does loop `{ Boat, Ship }`
+      # explicitly): a boat/ship parked on the landing tile never blocks
+      # disembarking here. Only a same-layer, non-Through event still does.
+      def ship_disembark_passable?(x, y, dir)
+        return false unless @map.in_bounds?(x, y)
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME && !b[:char].through }
+        return true if @chipset.nil?
+        @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
+                                 Game::Character::TURN_180[dir] || dir)
       end
 
       # Whether the airship may land on tile (x, y): the database terrain's

@@ -8694,6 +8694,59 @@ check 'boarding a boat and disembarking onto the shore' do
   eq [0, 1], [boat.x, boat.y], 'the boat stayed where the party left it'
 end
 
+# Confirmed against EasyRPG's live source: `Game_Player::GetOffVehicle`
+# (`src/game_player.cpp`) calls `Game_Map::CanDisembarkShip` (`src/
+# game_map.cpp`), which only ever tests the *landing* tile's own passability
+# (`GetPassableMask(x, y, player.GetX(), player.GetY())` derives a single
+# direction bit at `(x, y)` alone) -- unlike an ordinary step's own two-sided
+# `#passable?`, the water tile the party is leaving is never consulted.
+check 'a boat disembark only tests the landing tile\'s own passability, ' \
+      'not the water tile being left' do
+  scene = new_scene({}, player: [0, 0])
+  calls = []
+  fake_chipset = Object.new
+  fake_chipset.define_singleton_method(:passable_tile?) do |lower, upper, dir|
+    calls << [lower, upper, dir]
+    true
+  end
+  scene.instance_variable_set(:@chipset, fake_chipset)
+  scene.send(:ship_disembark_passable?, 0, 1, 2)
+  eq 1, calls.size, 'exactly one tile is asked about passability -- the landing tile alone'
+end
+
+# Confirmed against EasyRPG's live source: `Game_Map::CanDisembarkShip` has
+# no equivalent of `#vehicle_blocks?` at all -- unlike `Game_Map::
+# CanLandAirship`, a few lines above it in the same file, which does loop
+# `{ Boat, Ship }` explicitly to block a landing -- so a different boat/ship
+# parked on the landing tile never blocks disembarking here.
+check 'disembarking a boat is not blocked by a different vehicle parked on ' \
+      'the landing tile' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+
+  # Park the ship right on the shore tile the party is about to step onto.
+  ship = st.vehicle(:ship)
+  ship.map_id = st.map_id
+  ship.x = 0
+  ship.y = 0
+
+  st.direction = 8 # face up, toward (0, 0) -- the parked ship's tile
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'disembarked despite the parked ship on the landing tile'
+  eq [0, 0], [st.x, st.y], 'stepped onto the tile the ship occupies'
+end
+
 check 'each vehicle type has exactly one boarding trigger: the airship only ' \
       'by standing on it, a boat/ship only by facing it' do
   # Confirmed against RPG_RT's own live source: `Game_Player::GetOnVehicle`

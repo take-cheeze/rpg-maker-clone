@@ -8124,6 +8124,34 @@ Everything below is unverified against the codebase.
   failed) but still runs the NPC's event — confirmed to fail against the
   pre-fix code (the NPC's Control Switches command never ran) before the
   fix.
+  ✅ **Follow-up (2026-08-21): `#disembark_vehicle`'s boat/ship branch reused
+  the ordinary two-sided `#passable?` step check, but RPG_RT's own disembark
+  test is one-sided and lighter.** Confirmed against EasyRPG's live source:
+  `Game_Player::GetOffVehicle`'s boat/ship branch (already cited above)
+  calls `Game_Map::CanDisembarkShip` (`src/game_map.cpp`), which (1) only
+  tests the *landing* tile's own entry passability — `GetPassableMask(x, y,
+  player.GetX(), player.GetY())` derives a single direction bit at `(x, y)`
+  alone, and the water tile the party is standing on is never passed to a
+  passability check at all, unlike an ordinary step's own two-sided
+  `#passable?` — and (2) has no equivalent of `#vehicle_blocks?`, unlike
+  `Game_Map::CanLandAirship` a few lines above it in the same file, which
+  does loop `{ Boat, Ship }` explicitly: a different boat/ship parked on the
+  landing tile never blocks disembarking. This build's `#passable?`-based
+  check tested both sides of the boundary (the water tile's own exit
+  passability too) and called `#vehicle_blocks?`, so a mapper who authored a
+  directionally-restricted water autotile (a current or waterfall edge, not
+  the common fully-open case) could see a disembark real RPG_RT allows
+  silently refused, and a boat/ship parked on the shore tile could block a
+  disembark real RPG_RT never checks for at all. Fixed by adding a
+  dedicated `#ship_disembark_passable?` (landing-tile-only chipset test,
+  same-layer/non-Through blocker check, no `#vehicle_blocks?` call) and
+  routing `#disembark_vehicle`'s boat/ship branch through it instead of
+  `#passable?`; the airship branch (`#airship_landable?`, already verified
+  against `CanLandAirship` separately) is untouched. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (`#ship_disembark_passable?` asks
+  the chipset about exactly one tile, the landing tile, not two; a different
+  vehicle parked on the landing tile no longer blocks disembarking), both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **Battle Event** — separate command set from Map/Common events
   entirely (`Game::Interpreter`'s battle-only opcodes — `CHANGE_MONSTER_HP`/
   `MP`/`CONDITION`, `SHOW_HIDDEN_MONSTER`, `FORCE_FLEE`, `TERMINATE_BATTLE`,
