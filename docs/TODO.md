@@ -11360,6 +11360,40 @@ not yet verified:
   is, unchanged; a state already present by ordinary means is still locked
   in by the armor either way), confirmed to fail against the pre-fix code
   (`expected [], got [4]`) before the fix.
+  ✅ **Follow-up (2026-08-21): equipping cursed armor never applied RPG_RT's
+  own crowding-out rule to the state it forced, leaving a much
+  lower-priority ailment the actor already carried untouched instead of
+  clearing it, the same instant the cursed state landed — the one
+  state-infliction call site in this file that never paired `#add_state`
+  with the `#Game::States.prune` pass every other one already does.**
+  Confirmed directly against RPG_RT's live source: `State::Add`
+  (`src/state.cpp`) runs its crowding-out pass — clearing any state 10+
+  priority points below the resulting significant state, unless a
+  `PermanentStates` exemption applies — unconditionally, inside every
+  single call, with no caller-side opt-out at all; `Game_Battler::AddState`
+  (`src/game_battler.cpp`) calls it via `State::Add(...)` for every
+  infliction path in the engine, and `Game_Actor::AdjustEquipmentStates`
+  (`src/game_actor.cpp`) funnels equip-triggered infliction through that
+  identical `AddState` — so a lethal hit, a landed skill state, and a
+  cursed item's forced state all get the identical crowding-out pass in
+  real RPG_RT, with no exception for the equip-triggered one.
+  `Game::Actor#adjust_equipment_states`'s add branch
+  (`mruby-rpg2k/mrblib/game.rb`) called `#add_state` but never followed it
+  with `Game::States.prune`, unlike `#knock_out!`, `Party#cast_skill`'s own
+  skill-infliction loop, and Change Monster Condition — the three other
+  state-infliction call sites in this file, each of which already pairs
+  the two calls (`#knock_out!`'s own doc comment even already says the
+  crowding-out pass runs "after *every* state it adds, not just Death",
+  yet the equip path was still missed). Fixed by adding the identical
+  `@states = Game::States.prune(@states, state_table, keep:
+  permanent_states)` call right after `#adjust_equipment_states`'s own
+  `#add_state`, mirroring `#knock_out!`'s exact idiom. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (an actor already carrying a
+  low-priority state equips a cursed item forcing a high-priority one; the
+  low-priority state is crowded out the instant the cursed state lands,
+  the same as a lethal hit or a landed skill state already does here),
+  confirmed to fail against the pre-fix code (`expected [4], got [2, 4]`)
+  before the fix.
   ✅ **Follow-up (2026-08-19): an RPG2003 fight that started with every
   front-row ally already incapacitated (dead/hidden) never snapped
   back-row survivors to the front, leaving them fighting a whole battle
