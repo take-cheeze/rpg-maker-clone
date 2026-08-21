@@ -14300,6 +14300,40 @@ not yet verified:
   identical per-edition ceiling, `MAX_EFFECTIVE_HP_2K`/`_2K3`, so an
   attack this large is lethal either way — the stored variable is the
   only place the real, uncapped number is ever observable.)
+  - **Follow-up (2026-08-21):** Simulated Attack's result variable is now
+    left untouched when its target actor id is invalid, instead of being
+    zeroed — a third correction to this same command, this time to the
+    *variable write's own placement*, not the damage formula. Confirmed
+    directly against RPG_RT's live source: `Game_Interpreter::
+    CommandSimulatedAttack` (`src/game_interpreter.cpp`) writes
+    `Main_Data::game_variables->Set(com.parameters[7], result)` *inside*
+    its own `for (const auto& actor : GetActors(com.parameters[0],
+    com.parameters[1]))` loop — never reached at all when that loop is
+    empty. `GetActors` (same file) returns an empty vector, without ever
+    touching the variable, whenever a fixed actor id names a database row
+    that does not exist, or a variable-actor mode's own variable holds an
+    invalid/stale id (`if (!actor) { Output::Warning(...); return actors;
+    }`, modes 1/2). `Interpreter#do_simulated_attack`
+    (`mruby-rpg2k/mrblib/interpreter.rb`) instead pre-initialized
+    `damage = 0` *before* the target loop and wrote the result variable
+    *after* it, unconditionally on the "store result" flag alone — so an
+    invalid actor id (an authoring mistake, or a variable gone stale after
+    that actor left the party) silently zeroed whatever the variable held
+    before, where real RPG_RT leaves it exactly as it was. `#stat_targets`
+    (same file) already mirrors `GetActors`'s empty-vector behaviour
+    precisely for an invalid fixed/variable actor id (`Actors#[]`,
+    `mruby-rpg2k/mrblib/game.rb`, returns `nil` for a non-positive id or an
+    unbuilt database row, `.compact`-ed away) — only the write's own
+    placement was wrong, not the target-resolution logic. Fixed by moving
+    the variable write inside the `each` loop, gated on a `store_result`
+    flag captured once before the loop, and dropping the pre-loop
+    `damage = 0` entirely — multi-target scope (party-wide) is unaffected,
+    since both the old and new code already overwrote the variable once per
+    actor, so the last actor visited still "wins" identically either way.
+    Covered by a new `scripts/rpg2k_logic_check.rb` check (a stale value
+    already sitting in the result variable survives a Simulated Attack
+    naming a nonexistent actor id, instead of being zeroed), confirmed to
+    fail against the pre-fix code before the fix.
 - ✅ **A troop member still `hidden` at the moment of victory — never
   revealed by its own Show Hidden Monster page, or sent running by that
   page's Force Flee — used to still hand over its EXP, gold and treasure
