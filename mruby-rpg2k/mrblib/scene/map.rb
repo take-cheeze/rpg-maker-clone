@@ -4367,9 +4367,15 @@ class RPG2k
         return false unless @map.in_bounds?(nx, ny)
         return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
+        # A blocker's own Through Mode exempts it from every collision test
+        # below, not just the layer one -- `WouldCollide` (`src/
+        # game_map.cpp`) checks `self.GetThrough() || other.GetThrough()`
+        # first and unconditionally, before either the overlap-forbidden or
+        # the layer test, uniformly for the hero, another event, or a
+        # vehicle (see `#passable?`'s own citation).
         return false if blockers_at(nx, ny).any? do |b|
-          b[:layer] == character.layer ||
-            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
+          !b[:char].through && (b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden])))
         end
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
@@ -4399,12 +4405,13 @@ class RPG2k
         # anything on screen to notice it by.
         return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
-        # Same layer-gated occupancy rule as #char_passable? (see its comment).
+        # Same layer-gated occupancy rule as #char_passable? (see its
+        # comment) -- including the same blocker-Through exemption.
         return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
         return false if blockers_at(x, y).any? do |b|
-          b[:layer] == character.layer ||
-            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
+          !b[:char].through && (b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden])))
         end
         return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
@@ -8446,8 +8453,16 @@ class RPG2k
         # the fuller citation). Every event on the tile gets a say
         # (#blockers_at), not just one of them: a below-characters decal and
         # a same-as-characters NPC can share a tile, and the NPC must still
-        # block even though the decal alone would not.
-        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME }
+        # block even though the decal alone would not. A blocker's own
+        # Through Mode exempts it from this entirely, the same as the
+        # mover's: `WouldCollide` (`src/game_map.cpp`) checks `self.
+        # GetThrough() || other.GetThrough()` before any layer test at all,
+        # uniformly for the hero, another event, or a vehicle -- an NPC
+        # authored with Through Mode on (a common technique so it never
+        # blocks the party) must let the hero walk straight through it,
+        # matching `#vehicle_passable?`'s own already-correct `!b[:char].
+        # through` idiom just above.
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME && !b[:char].through }
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
         # never does, on foot or otherwise (block_airship: false — the hero

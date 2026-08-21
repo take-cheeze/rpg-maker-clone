@@ -16236,6 +16236,40 @@ not yet verified:
   rewritten in place to assert the opposite of its own final assertion
   (Through Mode no longer lets the airship land), confirmed to fail against
   the pre-fix code before the fix.
+- ✅ **A same-layer map event with its own Through Mode on now lets the
+  hero, or another event's own Move Route, walk straight through it —
+  distinct from the vehicle-specific Through-Mode rules the two bullets
+  above already cover, which are about a boat/ship's or airship's own
+  separate collision path, not the general character-vs-character one
+  every ordinary step (hero or event) goes through (2026-08-21).**
+  Confirmed against RPG_RT's own live source: `WouldCollide` (`src/
+  game_map.cpp`) — the single collision primitive `Game_Character::Move`'s
+  `MakeWay` bottoms out in, for the hero, a map event, or a boarded
+  vehicle alike (`Game_Player::MakeWay` delegates straight to
+  `GetVehicle()->MakeWay`/`Game_Character::MakeWay` depending on
+  `IsAboard()`) — opens with `if (self.GetThrough() || other.GetThrough())
+  { return false; }`, *before* the overlap-forbidden or layer-match tests
+  that follow it, uniformly for every mover type. `Scene::Map#passable?`
+  (the hero's own on-foot step check) and `#char_passable?`/`#char_can_
+  land?` (the shared mover-vs-event test every map event's own Move Route,
+  and the party's forced-route mirror, use) each only ever tested a
+  blocker's *layer* (`b[:layer] == LAYER_SAME` / `b[:layer] == character.
+  layer`, plus `overlap_forbidden` for event-vs-event) — never the
+  blocker's own Through flag — unlike `#vehicle_passable?`, which already
+  carried the correct `!b[:char].through` idiom for its own boat/ship
+  branch. An NPC authored with Through Mode on (a common technique so it
+  never blocks the party) therefore still blocked the hero and every other
+  event's own movement outright, when real RPG_RT lets anything walk
+  straight through it. Fixed by adding the identical `!b[:char].through`
+  guard `#vehicle_passable?` already used to all three blocker checks —
+  `#passable?`'s single layer test, and `#char_passable?`/`#char_can_
+  land?`'s combined layer-or-overlap-forbidden test (the Through exemption
+  has to gate the *whole* disjunction, not just the layer half, since
+  `WouldCollide`'s own Through check runs before either sub-test). Covered
+  by two new `scripts/rpg2k_scene_check.rb` checks (a same-layer event with
+  Through Mode on lets the hero walk through it; the same for another
+  event's own Move Route crossing it), both confirmed to fail against the
+  pre-fix code before the fix.
 
 **Save / Load persistence — consolidated master list**
 Runtime state that does **not** survive a map re-visit (leave and return,
