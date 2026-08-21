@@ -5195,6 +5195,39 @@ The work below is roughly ordered by the critical path to a walkable game
   that they run cleanly); the full `rpg2k_scene_check.rb` (485),
   `rpg2k_logic_check.rb` (773), `rpg2k_save_load_check.rb`, and
   `rpg2k_testbed_logic_check.rb` (125) suites all still pass.
+  ✅ **Follow-up (2026-08-21): the title screen hard-cut the BGM on every
+  selection instead of fading it the way RPG_RT does for New Game and
+  Continue.** Confirmed directly against RPG_RT's live source: `Player::
+  SetupNewGame` (`src/player.cpp`) is `Main_Data::game_system->BgmFade(800,
+  true); ...` — an 800ms fade, not `BgmStop()`'s immediate cut
+  (`Game_System::BgmFade`/`BgmStop`, `src/game_system.cpp`, are genuinely
+  different calls) — and `Player::LoadSavegame` fades the same way,
+  `if (!load_on_map) { Main_Data::game_system->BgmFade(800); ... }`, true
+  whenever Continue is reached from the title (the guard exists only to
+  skip the fade when the identical `:load` code path is reached instead
+  from an in-map RPG2003 Open Load Menu event). `Scene_Title::
+  CommandShutdown` (`src/scene_title.cpp`) makes no BGM call at all —
+  confirmed by reading its full body — so Shutdown leaves the music
+  playing through its own fade-out screen transition. `Scene::Title#update`
+  (`mruby-rpg2k/mrblib/scene/title.rb`) instead ran a blanket
+  `Audio.bgm_stop` before every one of the three selections, this
+  engine's own `interpreter.rb` doc comment on Fade Out BGM had already
+  named `player.cpp` as one of the three real `BgmFade(...)` call sites
+  this engine's `RGSS::Audio.bgm_fade` mirrors — the title screen itself
+  was simply never updated to use it. Fixed by removing the blanket stop
+  and adding `Audio.bgm_fade(800)` to the New Game branch (an unambiguous
+  single call site) and to the headless `--rpg2k_continue` auto-select
+  path only (the one path that resumes a slot the instant it fires, the
+  same instant `LoadSavegame` would) — the interactive Continue picker
+  (`Scene::SaveLoad` in `:load` mode) is deliberately left unfaded here,
+  since that mode is shared with the in-map Open Load Menu event and
+  giving the title-only entry its own fade needs a flag threaded through
+  `SaveLoad.new`, left as a separate, well-scoped follow-up. Shutdown gets
+  no BGM call either way. Covered by three new `scripts/rpg2k_scene_check.rb`
+  checks (New Game fades over 800ms, not a hard stop; the headless
+  auto-continue path fades the same way before resuming; opening the
+  interactive Continue picker itself does not fade), the first two
+  confirmed to fail against the pre-fix code (`expected [[800]], got []`).
 - ✅ **That same SFX audit scoped itself to the separate `Scene::*` menu
   screens and missed `Scene::Map`'s own embedded Input Number widget, which
   played no sound effects at all (2026-08-18).** Verified against RPG_RT's
