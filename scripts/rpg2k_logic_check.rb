@@ -4988,21 +4988,28 @@ check 'An ordinary level change carries a live Change Parameters adjustment ' \
   eq 72, a.atk
 end
 
-check 'Change Parameters tracks an unclamped total under the displayed clamp' do
-  # yado.tk `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
-  # 1..999 (1..9999 for HP/MP), but RPG_RT keeps accumulating the *real*
-  # total underneath -- a big drop below the floor doesn't "spend" any of a
-  # later raise until the raw total genuinely climbs back past the floor.
+check "Change Parameters clamps the modifier itself to +/-999 on every " \
+      'call, not the displayed total' do
+  # RPG_RT's own Game_Actor::SetBaseAtk (src/game_actor.cpp) clamps
+  # data.attack_mod -- a shadow entirely separate from the level curve --
+  # to +/-MaxStatBaseValue() (999) via ClampStatMod on every single call,
+  # before the curve and equipment are ever added and the combined total
+  # clamped again to 1..999. So a deep debuff can never bank more magnitude
+  # in the modifier than its own +/-999 ceiling, and a partial recovery
+  # afterward reflects immediately once the (already-bounded) modifier
+  # crosses back over the curve's own threshold.
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
   a = Game::Party.new(db).leader
-  eq 3, a.atk                                     # base atk starts at 3
-  a.change_param(Game::Actor::PARAM_ATK, -2000)    # raw 3 - 2000 = -1997
-  eq 1, a.atk                                      # clamped to the floor
-  a.change_param(Game::Actor::PARAM_ATK, 1000)     # raw -1997 + 1000 = -997
-  eq 1, a.atk                                      # still floored -- raw is still negative
-  a.change_param(Game::Actor::PARAM_ATK, 1000)     # raw -997 + 1000 = 3
-  eq 3, a.atk                                      # raw crossed back above 1: unclamps
-  # An ordinary, never-clamped sequence is untouched by the shadow tracking.
+  eq 3, a.atk                                     # base atk starts at 3, mod 0
+  a.change_param(Game::Actor::PARAM_ATK, -2000)    # mod clamp(0-2000,-999,999) = -999
+  eq 1, a.atk                                      # curve 3 + mod -999 = -996, floored to 1
+  a.change_param(Game::Actor::PARAM_ATK, 1000)     # mod clamp(-999+1000,..) = 1
+  eq 4, a.atk                                      # curve 3 + mod 1 = 4 -- reacts immediately,
+                                                     # not still floored the way an unclamped
+                                                     # running total would leave it
+  a.change_param(Game::Actor::PARAM_ATK, 1000)     # mod clamp(1+1000,-999,999) = 999
+  eq 999, a.atk                                     # curve 3 + mod 999 = 1002, capped at 999
+  # An ordinary, never-clamped sequence is unaffected by the modifier clamp.
   a.change_param(Game::Actor::PARAM_DEF, 5)        # base def 2 -> 7
   eq 7, a.def
   a.change_param(Game::Actor::PARAM_DEF, -3)       # 7 -> 4
@@ -5021,21 +5028,22 @@ check 'Party save round-trips a Change Parameters adjustment across Continue' do
   hero.gain_exp(500) # level up, so Continue's #set_exp also re-derives @base via
                       # #set_level -- the common case, not just the fresh-object one
   hero.change_param(Game::Actor::PARAM_DEF, 5)      # ordinary, never-clamped: 2 -> 7
-  hero.change_param(Game::Actor::PARAM_ATK, -2000)  # floors atk at 1, raw deep negative
-  hero.change_param(Game::Actor::PARAM_ATK, 1000)   # raw still negative -- stays floored
+  hero.change_param(Game::Actor::PARAM_ATK, -2000)  # mod clamps to -999, floors atk at 1
   eq 7, hero.def
   eq 1, hero.atk
   loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
   eq hero.level, loaded.level      # the level-up itself round-tripped too
   eq 7, loaded.def                 # ordinary adjustment survives Continue
   eq 1, loaded.atk                 # still floored, not reverted to the level-derived base
-  # The floor is still the hidden shadow total (raw -997), not a fresh clamp:
-  # one more +1000 crosses it back above 1 on the reloaded actor exactly as it
-  # does on the live one, rather than needing a second raise the way a
-  # freshly-floored (raw -1997) actor would.
+  # The floor is still the persisted -999 modifier, not a fresh clamp with no
+  # memory of it: a +1000 raise lands at curve 3 + mod 1 = 4 on the reloaded
+  # actor exactly as it does on the live one -- a fresh, never-adjusted actor
+  # given the same +1000 would instead land at curve 3 + mod 999 = 999
+  # (mod clamp(0+1000,-999,999) = 999), proving the saved modifier really did
+  # round-trip rather than resetting to 0.
   loaded.change_param(Game::Actor::PARAM_ATK, 1000)
   hero.change_param(Game::Actor::PARAM_ATK, 1000)
-  eq 3, loaded.atk
+  eq 4, loaded.atk
   eq hero.atk, loaded.atk
 end
 
