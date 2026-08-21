@@ -7474,7 +7474,10 @@ Everything below is unverified against the codebase.
   over a 256-unit tile (speed 1..6 → 4..128 units → 64..2 frames/tile) and
   jumps via `jump_speed[] = {8,12,16,24,32,64}`; its animation frames come
   from `GetStationaryAnimFrames`/`GetContinuousAnimFrames` (`{12,10,8,6,5,4}`
-  / `{16,12,10,8,7,6}`). The two coincidental-at-"Normal" tables, the zero
+  / `{16,12,10,8,7,6}`) ~~— and, for a Spin-type event, `GetSpinAnimFrames`
+  (`{24,16,12,8,6,4}`)~~ **, though only the first of those three tables was
+  actually ported here at the time — corrected below (2026-08-21).** The two
+  coincidental-at-"Normal" tables, the zero
   readers of `Character#move_speed`, and the subpixel requirement were the
   three reasons this was deferred before the subpixel accumulator made a
   single-pass, non-re-baselining fix possible.
@@ -7513,6 +7516,41 @@ Everything below is unverified against the codebase.
   clamping up) and a corrected existing `scripts/rpg2k_logic_check.rb`
   clamp-bounds check; the full scene suite (725 checks) and logic suite
   (1006 checks) still pass.
+  ✅ **Follow-up (2026-08-21): a Continuous/Fixed-Continuous or Spin-type
+  event standing still cycled its walk frame / facing rotation on the same
+  (fastest) cadence as an event actually sliding between tiles, instead of
+  its own, slower one.** `Scene::Map#animate_event`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) called `#anim_frame_period` — backed
+  by `ANIM_STATIONARY_FRAMES` alone — for every animated event regardless of
+  why it was animating: genuinely sliding, or merely idling with a
+  Continuous/Fixed-Continuous/Spin type forcing it to keep animating in
+  place. Confirmed against EasyRPG's live source, `Game_Character::
+  UpdateAnimation` (`src/game_character.cpp`): a spinning event reads
+  `GetSpinAnimFrames` unconditionally, before any movement test at all, and
+  an ordinary event blends `GetContinuousAnimFrames` (idling Continuous) and
+  `GetStationaryAnimFrames` (`stopped && anim_count >= stationary_limit`,
+  i.e. genuinely mid-step) — three distinct, non-interchangeable tables
+  (`{12,10,8,6,5,4}` / `{16,12,10,8,7,6}` / `{24,16,12,8,6,4}`), only the
+  first of which this codebase had ever added. Concretely: a speed-3
+  (internal 2) Continuous decorative event (a torch, a waterwheel, an
+  "always animates" NPC — a common RPG2000 authoring idiom) cycled every 8
+  frames standing still instead of the real 10; a same-speed Spin event
+  rotated its facing every 8 frames instead of the real 12 — noticeably too
+  fast in both cases. Fixed by adding `ANIM_CONTINUOUS_FRAMES`/
+  `ANIM_SPIN_FRAMES` (and matching `#anim_continuous_period`/
+  `#anim_spin_period` helpers) and having `#animate_event` pick sliding vs.
+  Spin vs. idling-Continuous by case, rather than always calling
+  `#anim_frame_period`. This is a deliberate simplification of `Update
+  Animation`'s own dual-condition blend (which also settles a *moving*
+  Continuous event onto the stationary cadence once it stops mid-frame, and
+  holds the sprite on its left/right pose until the count catches up) —
+  only the three-cadence-table split is fixed here, not that finer
+  settle-frame nuance. Covered by two new `scripts/rpg2k_scene_check.rb`
+  checks (a standing Continuous event's phase has not advanced by 8 frames,
+  where the old code would have; a standing Spin event's facing likewise
+  holds past 8 frames) and four new direct-call assertions on
+  `#anim_continuous_period`/`#anim_spin_period`, all confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Repeat/Loop** — loops forever without an explicit Break Loop.
   `Interpreter#do_end_loop` unconditionally scans back to the matching
   `Loop` marker and jumps `@index` there every single time it is reached —
