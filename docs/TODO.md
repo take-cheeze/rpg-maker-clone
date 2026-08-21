@@ -3342,6 +3342,38 @@ The work below is roughly ordered by the critical path to a walkable game
   a parallel RPG2000 scene — consumes exactly one fewer random draw, proving
   the roll is skipped rather than rolled-and-discarded), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-21): ~~"A hit picks a uniform-random troop from the
+  current map's own list"~~ was incomplete — RPG_RT also pools in any "Area"
+  map-tree sub-region's own encounter list while the party stands inside its
+  bounds, and this build never read those at all.** The RPG2000/2003 editor
+  lets a map be subdivided into rectangular "Area" nodes (map-tree field 4
+  `type` == 2, a direct child of the parent map via field 2
+  `parent_map_id`, with its own bounding rect in field 51 `area` and its own
+  independent encounter list in field 41 `enemy_groups`) — a common way to
+  give one sub-region of a map its own distinct monster set. This schema was
+  already fully modeled (`mruby-lcf/mrblib/schema.rb`) but nothing read
+  `type`/`parent_map_id`/`area` for random encounters: `Scene::Map
+  #candidate_troops` (`mruby-rpg2k/mrblib/scene/map.rb`) only ever consulted
+  `#map_node_properties`, the current map's own row. Confirmed against
+  EasyRPG's live source, `Game_Map::GetEncountersAt` (`src/game_map.cpp`):
+  it walks every map-tree node, pooling the current map's own `encounters`
+  *and* every Area node whose `parent_map == GetMapId()` and whose bounds
+  (via `Rect::IsOutOfBounds`, `src/rect.cpp`) contain the party's tile —
+  into the exact same vector `PrepareEncounter` draws a single uniform-random
+  troop from, not a separate roll layered on top. Worked through `Rect::
+  IsOutOfBounds`'s inequalities by hand: the area is inclusive on its
+  left/top and exclusive on its right/bottom, matching this schema's own
+  field-51 comment ("Area bounds ... [X1, Y1, X2 + 1, Y2 + 1]"). Fixed by
+  adding `#area_troop_ids` (walks `#map_properties`, keeping only `type ==
+  2` rows whose `parent_map_id` matches the current map and whose `area`
+  contains the party's tile) and folding its result into `#candidate_troops`
+  alongside the map's own list, before the existing `terrain_set` filter.
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (an Area node's
+  troop joins the pool only while the party's tile is inside its bounds,
+  probing both the inclusive top-left corner and the exclusive right/bottom
+  edge one tile past it; a different map's own Area node, sharing an
+  overlapping rectangle, never leaks its troops onto this one), both
+  confirmed to fail against the pre-fix code before the fix.
 
 #### Menus, save, battle
 - ✅ Menu scene — opens over the map (cancel button); shows party status and a
