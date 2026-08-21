@@ -13803,6 +13803,17 @@ module Game
     # a new BGM starts; set by Scene::Map, which watches `RGSS::Audio.bgm_pos`
     # and treats a playback position that jumped backwards as a loop.
     attr_accessor :bgm_looped
+    # Whether the current BGM has been faded/stopped since it last actually
+    # started playing -- RPG_RT's own `music_stopping` flag
+    # (`Game_System::BgmFade`, `src/game_system.cpp`: `data.music_stopping =
+    # true;`, set by Fade Out BGM/11520). `Game_System::BgmPlay`'s "same
+    # track: adjust volume in place, don't restart" shortcut is gated on
+    # `!data.music_stopping` -- so a Play BGM/Play Memorized BGM of the same
+    # track right after a fade-out DOES restart it from the top, unlike an
+    # ordinary same-name replay. Cleared unconditionally at the end of every
+    # `BgmPlay` call, restart or not (`data.music_stopping = false;`), which
+    # `#play_audio`'s `:bgm` branch and `#do_play_memorized_bgm` both mirror.
+    attr_accessor :bgm_stopping
     # Whether the party leader's map sprite is hidden, toggled by the Set
     # Transparent Flag / Change Player Visibility (11310) event command. Defaults
     # off (the hero is shown) and is persisted in the save.
@@ -13959,6 +13970,7 @@ module Game
       @current_bgm = nil
       @memorized_bgm = nil
       @bgm_looped = false
+      @bgm_stopping = false
       @player_transparent = false
       @encounter_rate = nil
       @encounter_total = 0

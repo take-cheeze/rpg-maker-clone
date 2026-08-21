@@ -14161,6 +14161,44 @@ not yet verified:
   value, not just the default, so a chunk that silently fell back to 50
   couldn't pass by accident), all confirmed to fail against the pre-fix
   code before the fix.
+  ✅ **Follow-up (2026-08-21): the same-file "does not restart" shortcut
+  itself had a missing exception — a Fade Out BGM of the current track
+  should force the very next same-name Play BGM/Play Memorized BGM to
+  restart it, and this codebase never modelled that.** Confirmed directly
+  against RPG_RT's live source: `Game_System::BgmPlay` (`src/
+  game_system.cpp`) gates its whole "same track: adjust volume in place"
+  branch on `if (!data.music_stopping && previous_music.name == bgm.name)`
+  — not name equality alone — and `Game_System::BgmFade` (Fade Out BGM,
+  11520) always sets `data.music_stopping = true` alongside the fade
+  itself, regardless of duration; `BgmPlay` clears the flag back to `false`
+  unconditionally at its very end, restart or not. liblcf's own
+  `SaveSystem.music_stopping` field (`generator/csv/fields.csv`, field
+  `0x3D`/61) documents the exact same rule in its own description: "Music
+  is being faded out or had been stopped (Play music with the same music
+  as currently playing will restart the music when this flag is set)."
+  `Game::Interpreter#play_audio`'s `:bgm` branch and
+  `#do_play_memorized_bgm` (`mruby-rpg2k/mrblib/interpreter.rb`) both
+  computed their own `same_file_already_playing` from name equality alone,
+  so a track faded out and then immediately replayed by name wrongly took
+  the silent in-place-volume path instead of actually restarting — audible
+  any time a project fades a track out on some trigger and later replays
+  the identical file (a very common pattern). Fixed by adding a new
+  `Game::State#bgm_stopping` flag (`mruby-rpg2k/mrblib/game.rb`), set by
+  `#do_fadeout_bgm`, folded into both same-file checks as an additional
+  `&& !@state.bgm_stopping` term, and cleared unconditionally at the end of
+  every BGM-playing path (including the blank/`(OFF)` stop branch), the
+  same shape `data.music_stopping`'s own read/write sites take in
+  `BgmPlay`. Also corrected this file's own doc comment, which had cited
+  yado.tk for the general same-file no-restart behaviour where a direct
+  citation of `BgmPlay`'s own source (already established elsewhere in this
+  file) was available and more precise. `mruby-lcf/mrblib/schema.rb`'s
+  `SAVE_SYSTEM` table does not yet model liblcf field 61 at all, so
+  `#bgm_stopping` does not currently round-trip through a real
+  Save/Continue either — a separately-scoped follow-up, left for later.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (a same-file
+  Play BGM, and a Play Memorized BGM, each restart the track after an
+  intervening Fade Out BGM, distinguished from the existing "no restart"
+  checks' own fixture), both confirmed to fail against the pre-fix code.
 - ✅ **A map's own configured BGM now actually auto-plays, on the initial map
   load and every Transfer Player alike — a genuine, previously-undocumented
   gap found while cross-checking this same BGM cluster for anything else the

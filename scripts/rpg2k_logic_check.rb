@@ -3370,6 +3370,48 @@ check 'Play BGM with the file already playing does not restart it' do
   eq [50], volumes, 'the still-playing track had its volume re-applied live instead of doing nothing'
 end
 
+check 'Play BGM with the same file restarts it after a Fade Out BGM, unlike ' \
+      'an ordinary same-file replay' do
+  # Confirmed directly against RPG_RT's live source: `Game_System::BgmPlay`
+  # (`src/game_system.cpp`) gates its "same track: adjust volume in place,
+  # don't restart" shortcut on `!data.music_stopping`, and
+  # `Game_System::BgmFade` (Fade Out BGM, 11520) always sets `data.
+  # music_stopping = true` alongside the fade -- so a Play BGM of the exact
+  # track just faded out DOES restart it from the top, unlike the ordinary
+  # same-file no-restart case the check just above this one covers.
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::FADEOUT_BGM, [400]),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town town], names, 'the second Play BGM restarted the track after the fade-out, ' \
+                           'not skipped as an in-place volume tick'
+end
+
+check 'Play Memorized BGM restarts its track after a Fade Out BGM, unlike ' \
+      'an ordinary same-file replay' do
+  # Same gate as the check above, on Play Memorized BGM's own restart path --
+  # `Game_System::PlayMemorizedBGM` is a bare `BgmPlay` call, so it shares
+  # the identical `!data.music_stopping` shortcut.
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::FADEOUT_BGM, [400]),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town town], names, 'Play Memorized BGM restarted the track after the fade-out'
+end
+
 check 'Play BGM with a different file still restarts (or starts) playback' do
   RGSS::Audio.log = []
   st = new_state
