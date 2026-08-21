@@ -254,16 +254,17 @@ class RPG2k
         @stats_window.contents = c
       end
 
-      # RPG2000 term / equip-bonus field / actor-accessor triples for the four
-      # battle stats, in the order EasyRPG's own `Window_EquipStatus::
-      # DrawParameter` (`src/window_equipstatus.cpp`) draws them (Atk/Def/
-      # Spirit/Agility -- this codebase's own `term(:mind, ...)`/`#int` name
-      # RPG2000's "Spirit" stat "Int" instead, matching status_menu.rb).
+      # RPG2000 term / equip-bonus field / actor-accessor / effective-stat
+      # method / state-flag quintuples for the four battle stats, in the
+      # order EasyRPG's own `Window_EquipStatus::DrawParameter`
+      # (`src/window_equipstatus.cpp`) draws them (Atk/Def/Spirit/Agility --
+      # this codebase's own `term(:mind, ...)`/`#int` name RPG2000's
+      # "Spirit" stat "Int" instead, matching status_menu.rb).
       STAT_DEFS = [
-        [:attack, 'Atk', :atk_points1, :atk],
-        [:defense, 'Def', :def_points1, :def],
-        [:mind, 'Int', :spi_points1, :int],
-        [:agility, 'Agi', :agi_points1, :agi]
+        [:attack, 'Atk', :atk_points1, :atk, :effective_atk, :affect_attack],
+        [:defense, 'Def', :def_points1, :def, :effective_def, :affect_defense],
+        [:mind, 'Int', :spi_points1, :int, :effective_int, :affect_spirit],
+        [:agility, 'Agi', :agi_points1, :agi, :effective_agi, :affect_agility]
       ].freeze
 
       # Four independent stat rows -- one "label value" per row while
@@ -280,23 +281,56 @@ class RPG2k
       def draw_stat_row(c, a)
         previewing = @mode == :items
         cand_id = previewing ? candidates[@cand_index].first : nil
-        STAT_DEFS.each_with_index do |(term_key, label, field, accessor), i|
+        STAT_DEFS.each_with_index do |(term_key, label, field, accessor,
+                                        effective_method, stat_flag), i|
           y = LINE_H * (1 + i)
           x = 0
-          value = a.send(accessor)
+          # State-adjusted (halve/double), not the raw base+equip total --
+          # confirmed against RPG_RT's own live source: `Window_EquipStatus::
+          # DrawParameter` (`src/window_equipstatus.cpp`) draws
+          # `actor.GetAtk()` et al., which run the base value through
+          # `Game_Battler::AdjustParam` (`src/game_battler.cpp`) against
+          # whatever states the actor currently carries. `Game::Party
+          # #effective_atk`/`#effective_def`/`#effective_int`/`#effective_agi`
+          # already port this (built for skill formulas); this screen never
+          # called them.
+          value = @state.party.send(effective_method, a)
           text = "#{term(term_key, label)} #{value}"
           c.font.color = Color.new(255, 255, 255, 255)
           w = c.text_size(text).width
           c.draw_text x, y, w, LINE_H, text
           x += w
           if previewing
+            # The preview recomputes the new *base* total (this stat's own
+            # raw base+equip accessor plus the candidate's raw point delta,
+            # matching `#effective_atk` et al.'s own base+equip reading)
+            # and only then reapplies the state halve/double, exactly
+            # mirroring `Scene_Equip::UpdateStatusWindow` (`src/
+            # scene_equip.cpp`): it rebuilds `atk`/`def`/`spi`/`agi` from
+            # `GetBaseAtk(..., equip: false)` plus each equipped item's own
+            # point field, clamps, then calls
+            # `actor.CalcValueAfterAtkStates(atk)` -- the state adjustment
+            # is the last step, not folded additively into the raw delta.
             delta = stat_field_delta(cand_id, field)
+            # Clamped to 1..999 (`Game::Actor::MAX_EFFECTIVE_STAT`, matching
+            # `scene_equip.cpp`'s own `actor.MaxStatBaseValue()`) *before*
+            # the state adjustment -- the reference's `Utils::Clamp(atk, 1,
+            # limit)` runs ahead of `CalcValueAfterAtkStates`, not after.
+            new_base = Game.clamp(a.send(accessor) + delta, 1,
+                                   Game::Actor::MAX_EFFECTIVE_STAT)
+            new_value = @state.party.adjust_stat(
+              new_base, @state.party.stat_mode(a, stat_flag)
+            )
             arrow_w = c.text_size('>').width
             draw_system_text c, x, y, arrow_w, LINE_H, '>', @skin, 1
             x += arrow_w
-            new_text = (value + delta).to_s
+            new_text = new_value.to_s
             new_w = c.text_size(new_text).width
-            color_idx = delta.zero? ? 0 : (delta.positive? ? 2 : 3)
+            # `Window_EquipStatus::GetNewParameterColor` (same file) compares
+            # the two *displayed* (state-adjusted) values, not the raw item
+            # delta's sign -- the two usually agree, but only this matches
+            # the reference at a clamp boundary or under a halving state.
+            color_idx = new_value == value ? 0 : (new_value > value ? 2 : 3)
             draw_system_text c, x, y, new_w, LINE_H, new_text, @skin, color_idx
           end
         end

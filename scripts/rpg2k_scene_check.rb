@@ -16536,13 +16536,47 @@ class MenuStubActor
 
 class MenuStubParty
   attr_reader :actors, :gold, :revision
-  attr_accessor :leader
+  attr_accessor :leader, :situation
   def initialize
     @actors = [MenuStubActor.new]; @gold = 0; @leader = nil; @revision = 0
+    @situation = nil # a state-definition table, for the one check below
+                      # that exercises a stat-affecting (halve/double) state
   end
   def field_items(_state = nil); []; end
   def field_skills(_actor, _state = nil); []; end
   def reorder(new_order); @actors = new_order.map { |i| @actors[i] }; end
+  # Mirrors Game::Party#stat_mode/#adjust_stat/#effective_atk (etc, see
+  # game.rb) -- Scene::StatusMenu/Scene::EquipMenu now read an actor's
+  # state-adjusted battle stat through the real party object rather than
+  # its bare accessor. @situation nil (the default here, matching every
+  # existing check's own state-free actors) always reads :normal, so this
+  # is a no-op for every check except the one that sets it.
+  def stat_mode(b, stat_flag)
+    return :normal unless @situation
+    half = false; dbl = false
+    (b.states || []).each do |sid|
+      d = @situation[sid]
+      next unless d && d.respond_to?(stat_flag) && d.send(stat_flag)
+      case d.respond_to?(:affect_type) ? d.affect_type : 2
+      when 0 then half = true
+      when 1 then dbl = true
+      end
+    end
+    return :double if dbl && !half
+    return :half if half && !dbl
+    :normal
+  end
+  def adjust_stat(value, mode)
+    case mode
+    when :double then value * 2
+    when :half then [value / 2, 1].max
+    else value
+    end
+  end
+  def effective_atk(b); adjust_stat(b.atk, stat_mode(b, :affect_attack)); end
+  def effective_def(b); adjust_stat(b.def, stat_mode(b, :affect_defense)); end
+  def effective_int(b); adjust_stat(b.int, stat_mode(b, :affect_spirit)); end
+  def effective_agi(b); adjust_stat(b.agi, stat_mode(b, :affect_agility)); end
   # Mirrors Game::Party#toggle_actor_row's own guard (see rpg2k_logic_check.rb
   # for that method's own coverage) -- this scene-check only needs to prove
   # Scene::Menu's `:row` dispatch actually reaches it, not re-prove the guard.
@@ -19511,6 +19545,41 @@ check 'Scene::EquipMenu: the stats window previews each battle stat ' \
   eq false, texts.include?('>'), 'back on the slot list, the preview arrow is gone entirely'
 end
 
+# Confirmed against RPG_RT's own live source: `Window_EquipStatus::
+# DrawParameter` (`src/window_equipstatus.cpp`) draws `actor.GetAtk()` (the
+# state-adjusted value), and `Scene_Equip::UpdateStatusWindow` (`src/
+# scene_equip.cpp`) computes its own "new" preview by rebuilding the raw
+# base+equip total first, clamping to `MaxStatBaseValue()` (999), and only
+# then calling `actor.CalcValueAfterAtkStates` -- the state adjustment is
+# the last step in both the current and the preview column, not skipped or
+# folded additively into the raw item-swap delta.
+check 'Scene::EquipMenu: both the current and previewed stat are halved by ' \
+      'an active state' do
+  state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  actor.equipment[0] = 1 # weapon slot: Worn (atk 10); actor's own Atk stub is 20
+  actor.add_state(5)
+  state.party.situation = { 5 => OpenStruct.new(affect_type: 0, affect_attack: true) }
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  # Each stat is its own draw call here (unlike the combined status-screen
+  # line above); the Atk row is whichever one ends in " 10", not the term
+  # text (a real database's own, not this fixture's fallback labels).
+  ok texts.any? { |t| t.match?(/\b10\z/) },
+     "expected the halved current Atk (10), got: #{texts.inspect}"
+  ok !texts.any? { |t| t.match?(/\b20\z/) },
+     "the raw base Atk (20) should not still appear: #{texts.inspect}"
+
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+  scene.instance_variable_set(:@cand_index, 1) # Better (id 2, atk 15)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  # base+equip: 20 + (15 - 10) = 25, then halved: 12 (25 / 2 truncated)
+  ok texts.include?('12'),
+     "expected the halved preview (12), not a linear 10 + 5, got: #{texts.inspect}"
+end
+
 # The same per-stat preview, but through the 両手持ち forced-unequip case a
 # single summed verdict used to collapse into one arrow: Atk rises (+40 the
 # claymore, -20 the old sword) while Def falls at the same time (-25 the
@@ -19563,9 +19632,15 @@ check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' 
   texts = window_texts(scene.instance_variable_get(:@stats_window))
   ok texts.include?('40'),
      'Atk rises: stub actor\'s own 20 + delta (claymore 40 - sword 20 = 20) = 40'
-  ok texts.include?('-13'),
-     'Def falls in the same preview: stub actor\'s own 12 + delta (0 - forced-off ' \
-     "shield's 25 = -25) = -13"
+  # Def falls in the same preview: stub actor's own 12 + delta (0 -
+  # forced-off shield's 25 = -25) = -13 -- but RPG_RT clamps the new base
+  # total to 1..999 (`Utils::Clamp(atk, 1, limit)`, `src/scene_equip.cpp`)
+  # *before* ever displaying it, the same clamp #draw_stat_row now applies,
+  # so a negative preview floors to 1, not the raw negative sum.
+  ok texts.include?('1'),
+     'Def falls to the floor in the same preview: -13 clamped to 1'
+  ok !texts.include?('-13'),
+     'the raw, unclamped negative total should not be shown at all'
 end
 
 # EasyRPG's `Window_EquipStatus::DrawParameter` (`src/window_equipstatus.cpp`)
@@ -19675,6 +19750,32 @@ check 'the status screen shows a labelled Class row' do
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
                          .instance_variable_get(:@window))
   ok texts.include?('Class: Paladin'), "shows the class name, got: #{texts.inspect}"
+end
+
+# Confirmed against RPG_RT's own live source: `Window_ParamStatus::Refresh`
+# (`src/window_paramstatus.cpp`) draws `actor.GetAtk()`/`GetDef()`/
+# `GetSpi()`/`GetAgi()`, and `Game_Battler::GetAtk` et al. (`src/
+# game_battler.cpp`) run the base value through `AdjustParam`, which halves
+# or doubles it against whatever states the actor currently carries -- a
+# state that persists onto the map affects this screen too, not just battle
+# math.
+check 'the status screen shows a battle stat halved by an active state, ' \
+      'not the raw base value' do
+  st = menu_state
+  hero = st.party.actors.first
+  eq 20, hero.atk # MenuStubActor's own base stub value
+  hero.add_state(5)
+  st.party.situation = { 5 => OpenStruct.new(affect_type: 0, affect_attack: true) }
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  # Def/Int/Agi (12/9/14) are unaffected -- only Atk (base 20) halves to 10;
+  # matched by number rather than term text since the term table (a real
+  # database's own, unlike this fixture's bare fallback labels) is not what
+  # this check is about.
+  stat_line = texts.find { |t| t.include?('12') && t.include?('9') && t.include?('14') }
+  ok stat_line, "expected the stat row somewhere, got: #{texts.inspect}"
+  ok stat_line.match?(/\b10\b/), "expected the halved Atk (10), not the raw base (20): #{stat_line.inspect}"
+  ok !stat_line.match?(/\b20\b/), "the raw base Atk (20) should not still appear: #{stat_line.inspect}"
 end
 
 # Confirmed directly against RPG_RT's live source: `Window_ActorStatus::

@@ -16900,10 +16900,61 @@ above are repeated here)
   checks (the candidate list draws no glyph at all; the stats window shows
   the correct per-stat preview for a better/worse/unchanged candidate and
   reverts once the list is left; a 両手持ち candidate previews Atk rising and
-  Def falling *at once*, the exact case a single summed verdict could only
-  ever show one side of; the preview colour comes from the loaded
-  windowskin's own swatch cells, not a hardcoded RGB value), all four
-  confirmed to fail against the pre-fix code before the fix.
+  ~~Def falling *at once*, the exact case a single summed verdict could only
+  ever show one side of~~ (that check's own expected Def value was itself
+  wrong — see the dated Follow-up a few bullets below); the preview colour
+  comes from the loaded windowskin's own swatch cells, not a hardcoded RGB
+  value), all four confirmed to fail against the pre-fix code before the fix.
+- ✅ **The field Status screen and Equip screen showed an actor's ATK/DEF/
+  Int(Spirit)/AGI as the raw base stat, ignoring any currently-active
+  halve/double state (2026-08-21).** Confirmed against RPG_RT's own live
+  source: `Window_ParamStatus::Refresh` (`src/window_paramstatus.cpp`)
+  draws `actor.GetAtk()`/`GetDef()`/`GetSpi()`/`GetAgi()` directly (not a
+  "base" variant), and `Game_Battler::GetAtk` et al. (`src/game_battler.cpp`)
+  run the base value through `AdjustParam`, which halves/doubles it against
+  whatever states the actor currently carries (`GetInflictedStates()`, not
+  battle-scoped — whatever is on the actor, in battle or on the field).
+  `Window_EquipStatus::DrawParameter` (`src/window_equipstatus.cpp`) draws
+  the Equip screen's "current" column the same way, and `Scene_Equip::
+  UpdateStatusWindow` (`src/scene_equip.cpp`) finishes its "new" preview
+  column with `actor.CalcValueAfterAtkStates(atk)` — both columns are
+  state-adjusted in the reference. This codebase had already built the
+  correct machinery for exactly this — `Game::Party#effective_atk`/
+  `#effective_def`/`#effective_int`/`#effective_agi`, ported for skill power
+  formulas with the identical "not a battle-only variant" reasoning cited
+  above — but `status_menu.rb`/`equip_menu.rb` read `Game::Actor#atk`/`#def`/
+  `#int`/`#agi` directly and never called them. Fixed by routing both
+  screens' current-value display through the existing `effective_*`
+  methods. Covered by two new `scripts/rpg2k_scene_check.rb` checks (the
+  status screen shows a halved Atk under an active state, not the raw base;
+  the equip screen's current-value column does too), confirmed to fail
+  against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-21): the Equip screen's preview column had two
+  further gaps in the same method, one of them predating this state-
+  adjustment fix — a negative preview total was shown raw and unclamped,
+  and the preview never applied a state's halve/double at all.** Confirmed
+  against RPG_RT's own live source: `Scene_Equip::UpdateStatusWindow`
+  rebuilds the new *base* total (each stat's own `GetBaseAtk(..., equip:
+  false)` plus every equipped item's own point field, the candidate
+  swapped in), clamps it to `actor.MaxStatBaseValue()` (999, floor 1) via
+  `Utils::Clamp`, and only *then* calls `CalcValueAfterAtkStates` — state
+  adjustment is the last step, applied to an already-floored value, not
+  folded additively into the raw item-swap delta and left unclamped. This
+  codebase's own `#draw_stat_row` computed `value + delta` with no clamp of
+  any kind — a 両手持ち weapon swap that forces off a hefty shield could
+  (and, per the check just above, did) preview a genuine negative Def —
+  and never reapplied `stat_mode`/`adjust_stat` to the preview at all.
+  Fixed by clamping the new base to `1..Game::Actor::MAX_EFFECTIVE_STAT`
+  before applying the same `stat_mode`/`adjust_stat` pair the current-value
+  fix above already wired in; `Window_EquipStatus::GetNewParameterColor`
+  compares the two *displayed* (state-adjusted) values, not the raw item
+  delta's sign, so the preview's up/down colouring was corrected to match
+  (the two agree away from a clamp boundary or an active state, which is
+  every case the existing colour check already covered, so it needed no
+  changes). The existing 両手持ち preview check's own expected Def value
+  (`-13`) was corrected to the clamped `1`, and a new check confirms both
+  the current and previewed value halve together under an active state,
+  both confirmed to fail against the pre-fix code before the fix.
 - ✅ **A State's own configured display-color field is a pointer into the
   same shared message-colour palette every `\c[n]` code draws from —
   confirmed already correct, no code change needed.** There is only one

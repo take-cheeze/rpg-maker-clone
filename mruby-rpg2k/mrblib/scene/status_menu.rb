@@ -140,8 +140,22 @@ class RPG2k
           "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
           "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}    " \
           "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}",
-          "#{term(:attack, 'Atk')} #{a.atk}   #{term(:defense, 'Def')} #{a.def}   " \
-          "#{term(:mind, 'Int')} #{a.int}   #{term(:agility, 'Agi')} #{a.agi}",
+          # ATK/DEF/Int(Spirit)/AGI, state-adjusted -- confirmed against
+          # RPG_RT's own live source: `Window_ParamStatus::Refresh`
+          # (`src/window_paramstatus.cpp`) draws `actor.GetAtk()`/`GetDef()`/
+          # `GetSpi()`/`GetAgi()` directly, and `Game_Battler::GetAtk` et al.
+          # (`src/game_battler.cpp`) run the base value through `AdjustParam`,
+          # which halves/doubles it against whatever states the actor
+          # currently carries (`GetInflictedStates()`, not battle-scoped) --
+          # so a halving/doubling state that persists onto the map shows its
+          # effect here too, not just in battle math. `Game::Party
+          # #effective_atk`/`#effective_def`/`#effective_int`/`#effective_agi`
+          # already port this (built for skill formulas, see their own
+          # citation) but were never wired into this screen.
+          "#{term(:attack, 'Atk')} #{@state.party.effective_atk(a)}   " \
+          "#{term(:defense, 'Def')} #{@state.party.effective_def(a)}   " \
+          "#{term(:mind, 'Int')} #{@state.party.effective_int(a)}   " \
+          "#{term(:agility, 'Agi')} #{@state.party.effective_agi(a)}",
           # The condition gets a labelled row of its own, as on RPG_RT's status
           # screen (its Window_ActorInfo draws the label then the state). Only
           # the label goes through the flat pass below; the state itself is drawn
