@@ -14389,6 +14389,30 @@ not yet verified:
     already sitting in the result variable survives a Simulated Attack
     naming a nonexistent actor id, instead of being zeroed), confirmed to
     fail against the pre-fix code before the fix.
+  - **Follow-up (2026-08-21): Simulated Attack read the target's raw, unadjusted
+    Defence/Spirit instead of its state-adjusted value — a fourth correction
+    to this same command, this time to the damage formula's own stat inputs.**
+    Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+    CommandSimulatedAttack` (`src/game_interpreter.cpp`) computes `atk -
+    actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and
+    `Game_Battler::GetDef`/`GetSpi` (`src/game_battler.cpp`) both route
+    through `AdjustParam`, which folds in a currently-afflicted state's own
+    halve/double Defence/Spirit flag (`affect_defense`/`affect_spirit`) —
+    the same accessor every other damage formula reads, in or out of
+    battle. `Interpreter#do_simulated_attack`
+    (`mruby-rpg2k/mrblib/interpreter.rb`) instead read the target's raw
+    `.def`/`.int` fields directly, so a party member afflicted by a
+    Weaken-type status — including one an RPG2003 cursed item is currently
+    forcing on — took the wrong amount of damage from a Simulated Attack,
+    e.g. a damage-floor trap event silently ignoring an active debuff.
+    `Game::Party#effective_def`/`#effective_int` (`mruby-rpg2k/mrblib/
+    game.rb`) already port that exact formula for this identical map-side,
+    non-battle-actor situation (`scene/status_menu.rb` already uses them
+    the same way) — fixed by wiring those in instead of the raw fields, no
+    new methods needed. Covered by a new `scripts/rpg2k_logic_check.rb`
+    check (a target with an active halve-Defence state takes damage
+    computed off its halved Defence, not its raw base stat), confirmed to
+    fail against the pre-fix code before the fix.
 - ✅ **A troop member still `hidden` at the moment of victory — never
   revealed by its own Show Hidden Monster page, or sent running by that
   page's Force Flee — used to still hand over its EXP, gold and treasure

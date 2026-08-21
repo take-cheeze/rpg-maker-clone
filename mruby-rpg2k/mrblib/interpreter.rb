@@ -2252,7 +2252,23 @@ module Game
       atk = cmd.param(2)
       store_result = cmd.param(6) != 0
       stat_targets(cmd).each do |a|
-        damage = atk - (a.def * cmd.param(3)) / 400 - (a.int * cmd.param(4)) / 800
+        # Reads the target's state-adjusted Defence/Spirit, not the raw base
+        # stat -- `Game_Interpreter::CommandSimulatedAttack` (`src/
+        # game_interpreter.cpp`) computes `atk - actor->GetDef() * def /
+        # 400 - actor->GetSpi() * spi / 800`, and `Game_Battler::GetDef`/
+        # `GetSpi` (`src/game_battler.cpp`) both route through `AdjustParam`,
+        # which folds in a currently-afflicted state's own halve/double
+        # Defence/Spirit flag (`affect_defense`/`affect_spirit`) -- the same
+        # accessor every other damage formula reads, in or out of battle.
+        # `Game::Party#effective_def`/`#effective_int`
+        # (`mruby-rpg2k/mrblib/game.rb`) already port that exact formula for
+        # this identical "map-side, non-battle actor" situation (see
+        # `scene/status_menu.rb`'s own use of them), so a target afflicted
+        # by a Weaken-type status -- including one an RPG2003 cursed item is
+        # currently forcing on -- now takes the correct amount of damage
+        # instead of one computed off its unadjusted stat.
+        damage = atk - (party.effective_def(a) * cmd.param(3)) / 400 -
+                 (party.effective_int(a) * cmd.param(4)) / 800
         damage = 0 if damage < 0
         damage = simulated_attack_variance(damage, cmd.param(5))
         damage = 0 if damage < 0
