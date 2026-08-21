@@ -13182,6 +13182,22 @@ check 'Flash Sprite on the hero holds a waiting event until it decays' do
   eq 1, st.variables[5], 'the event resumed once the flash finished'
 end
 
+check 'Flash Sprite on the hero with an instant (zero-duration) flash still ' \
+      'holds the event, instead of never pausing at all' do
+  # 0 tenths (instant) with the wait flag set, then a variable bump that must
+  # not run the same frame -- RPG_RT still floors a 0.0s wait to one frame.
+  cmds = [ECmd.new(IC2::FLASH_SPRITE, [10001, 31, 0, 0, 31, 0, 1]),
+          add_var_cmd(5)]
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update
+  ok !scene.instance_variable_get(:@player_flash), 'nothing left to flash, it was instant'
+  eq 0, st.variables[5], 'the event is still held right after the flash is queued'
+  3.times { scene.update }
+  eq 1, st.variables[5], 'the event resumed once the (already-finished) flash was reported clear'
+end
+
 check 'Flash Sprite targeting a vehicle (Boat) pulses the native sprite flash ' \
       'and decays, instead of silently dropping the target' do
   # Confirmed against RPG_RT's own live source: `Game_Character::

@@ -3259,6 +3259,21 @@ module Game
     # the duration in tenths of a second and param6 the wait flag. Queued for the
     # owning scene (which owns the sprites); with the wait flag set the event also
     # pauses on a :sprite_flash wait until the scene reports the flash finished.
+    # RPG_RT always honours the wait flag, even for a 0.0s flash: `Game_Interpreter
+    # _Map::CommandFlashSprite` (`src/game_interpreter_map.cpp`) calls
+    # `SetupWait(tenths)` unconditionally whenever the wait flag is set, and
+    # `SetupWait` floors a 0 duration to one frame rather than skipping the
+    # wait -- the same rule already fixed for Tint/Flash Screen and Move
+    # Picture. `Scene::Map#apply_sprite_flash` already returns nil (no flash
+    # attached) for a 0-duration request, so `#sprite_flashing?` is false the
+    # instant it applies, and the `:sprite_flash` wait dispatcher's own
+    # `resume unless sprite_flashing?` clears the wait as soon as it is
+    # checked -- still pausing the event at least one frame, matching the
+    # floor, even if this dispatcher (unlike `:wait`'s own documented "resume
+    # and keep spending this frame's budget" idiom) does not yet resume and
+    # continue in that identical frame; that gap is pre-existing and shared
+    # by every duration of Tint/Flash Screen, Move Picture and Flash Sprite
+    # alike, not something this fix changes.
     FLASH_CHANNEL_SCALE = 8
 
     def do_flash_sprite(cmd)
@@ -3271,7 +3286,7 @@ module Game
         power: cmd.param(4) * FLASH_CHANNEL_SCALE,
         frames: frames
       )
-      return unless cmd.param(6) != 0 && frames > 0
+      return unless cmd.param(6) != 0
       @wait_kind = :sprite_flash
       @waiting = true
     end
