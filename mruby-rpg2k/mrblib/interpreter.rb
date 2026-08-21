@@ -2369,9 +2369,17 @@ module Game
     # than keeping the current one, param4 is the skill mode and param5 the
     # parameter mode (see Game::Actor::CLASS_SKILL_* / CLASS_PARAM_*), and param6
     # is the "show level-up message" flag the Change Level command also carries.
-    # An RPG2000 project cannot emit this, and a database without a class table
-    # leaves every actor class-less, so the command self-limits to 2003 data.
+    # Confirmed against RPG_RT's own live source: `Game_Interpreter::
+    # CommandChangeClass` (`src/game_interpreter.cpp`) opens with `if
+    # (!Player::IsRPG2k3Commands()) { return true; }`, before any other logic
+    # -- an RPG2000-compatible run no-ops the command outright. ~~An RPG2000
+    # project cannot emit this... so the command self-limits to 2003 data~~
+    # was an unverified assumption, not something read off this function's own
+    # source: `class_id: 0` ("no class") still runs `#change_class`'s other
+    # side effects (recomputing `@base`/`@exp`/clearing `@battle_commands`)
+    # regardless of whether the database carries a class table at all.
     def do_change_class(cmd)
+      return unless party.rpg2003?
       class_id = cmd.param(2)
       level_1 = cmd.param(3) != 0
       skill_mode = cmd.param(4)
@@ -2412,8 +2420,17 @@ module Game
 
     # Change Battle Commands (1009), RPG2003-only: add (param3 non-zero) or
     # remove battle command param2 from the target actor(s). Removing command 0
-    # clears the list back to the Row entry alone.
+    # clears the list back to the Row entry alone. Confirmed against RPG_RT's
+    # own live source: `Game_Interpreter::CommandChangeBattleCommands`
+    # (`src/game_interpreter.cpp`) opens with the identical `if (!Player::
+    # IsRPG2k3Commands()) { return true; }` gate Change Class carries -- an
+    # RPG2000-compatible run no-ops the command outright, including the
+    # "clear to Row alone" (id 0, remove) branch, which -- unlike the "add"
+    # branch's own `#battle_command_row` existence check -- has no table
+    # lookup of its own to make it inert on a table-less database by
+    # construction (see `Game::Actor#change_battle_commands`).
     def do_change_battle_commands(cmd)
+      return unless party.rpg2003?
       cmd_id = cmd.param(2)
       add = cmd.param(3) != 0
       stat_targets(cmd).each { |a| a.change_battle_commands(add, cmd_id) }

@@ -5251,7 +5251,11 @@ def class_db(class_id = 0, actor_learns = [[10, 1]])
   # a genuine RPG2003 database always carries this table for any project
   # that uses the command at all.
   commands = (1..8).each_with_object({}) { |i, h| h[i] = FakeBattleCommand.new("Cmd#{i}", 1) }
-  FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil,
+  # rpg2003: true -- Change Class / Change Battle Commands are both
+  # RPG2003-only (Interpreter#do_change_class/#do_change_battle_commands'
+  # own IsRPG2k3Commands() gate), and every check built on this fixture
+  # exercises one or the other.
+  FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil, rpg2003: true,
                   battlecommands: FakeBattleCommandsTable.new(commands, 0))
 end
 
@@ -5448,9 +5452,10 @@ def class_db_named_skills(actor_learns = [[10, 1]])
   jobs = {
     1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
   }
+  # rpg2003: true -- Change Class is RPG2003-only (see class_db's own note).
   FakeActorDB.new(players, [1], {},
                   { 21 => fake_skill(name: 'Slash'), 22 => fake_skill(name: 'Cleave') },
-                  jobs)
+                  jobs, nil, nil, rpg2003: true)
 end
 
 check 'Change Class announces each newly-learned skill by name, not just the level' do
@@ -5545,6 +5550,38 @@ check 'Change Battle Commands stops at six commands plus Row' do
   a = class_state.party.actor_by_id(1)
   (3..8).each { |id| a.change_battle_commands(true, id) }
   eq [1, 2, 3, 4, 5, 6, 0], a.battle_commands, 'the seventh add is dropped'
+end
+
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandChangeClass`/`CommandChangeBattleCommands` (`src/
+# game_interpreter.cpp`) both open with `if (!Player::IsRPG2k3Commands()) {
+# return true; }`, before any other logic -- an RPG2000-compatible database
+# no-ops both commands outright, the same edition gate `#do_force_flee`/
+# `#do_enable_combo`/`#do_call_common_event` already carry. `class_id: 0`
+# ("no class") and the "clear to Row alone" battle-commands case are used
+# deliberately here: both apply their side effect (EXP reset, list clear)
+# unconditionally, with no existence-table guard of their own that would
+# otherwise coincidentally make them inert on a table-less RPG2000 database
+# regardless of this gate -- a weaker test using a positive class/command id
+# would not actually distinguish the fixed code from the broken code.
+check 'Change Class and Change Battle Commands are RPG2000 no-ops' do
+  st = party_state # rpg2003: false by default
+  a = st.party.actor_by_id(1)
+  a.exp = 99_999 # nowhere near any real level threshold
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 0, 0, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                         Game::Actor::CLASS_PARAM_NO_CHANGE, 0])])
+  it.update
+  eq 99_999, a.exp,
+     "Change Class's own unconditional EXP reset must not run on an RPG2000 database"
+
+  a.instance_variable_set(:@battle_commands, [3, 4, 0])
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_BATTLE_COMMANDS, [1, 1, 0, 0])]) # clear (id 0, remove)
+  it2.update
+  eq [3, 4, 0], a.battle_commands,
+     "Change Battle Commands' own unconditional clear-to-Row must not run either"
 end
 
 # RPG_RT's own `Game_Actor::ChangeBattleCommands` (src/game_actor.cpp)

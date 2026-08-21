@@ -10817,6 +10817,41 @@ not yet verified:
   absent"), all four confirmed to fail against the pre-fix code before the
   fix. `ninja -C build test` (mruby-lcf's own suite, since schema.rb
   changed) still passes.
+  ✅ **Follow-up (2026-08-21): Change Class and Change Battle Commands
+  applied unconditionally on any database edition, instead of no-opping
+  outright on an RPG2000-compatible one.** `Interpreter#do_change_class`/
+  `#do_change_battle_commands` (`mruby-rpg2k/mrblib/interpreter.rb`) carried
+  no edition gate at all, unlike their three immediate dispatch neighbors in
+  the same file -- `#do_force_flee` (1006), `#do_enable_combo` (1007), and
+  `#do_call_common_event` (1005) -- which already open with `return unless
+  @battle && @state.party.rpg2003?`. Confirmed against RPG_RT's own live
+  source: `Game_Interpreter::CommandChangeClass`/
+  `CommandChangeBattleCommands` (`src/game_interpreter.cpp`) both open with
+  `if (!Player::IsRPG2k3Commands()) { return true; }`, before any other
+  logic. `class_id: 0` ("no class") still runs `#change_class`'s other side
+  effects (an unconditional EXP reset to the current level's threshold,
+  among others) regardless of whether the database carries a class table at
+  all, and Change Battle Commands' own "clear to Row alone" case (`id 0`,
+  remove) has no existence-table guard of its own the way its "add" branch
+  does -- a `game.rb` comment on `#change_battle_commands` had claimed
+  reusing `#battle_command_row` "makes the command correctly inert on a
+  genuine RPG2000 database... matching `IsRPG2k3Commands()`'s own gate,
+  which `#do_change_battle_commands` does not separately enforce", true
+  only of the "add" branch, not the "clear" one -- corrected in place with
+  a strikethrough. Fixed by adding `return unless party.rpg2003?` to both
+  methods (mirroring the map-side, not battle-side, gate shape, since
+  Change Class/Change Battle Commands are ordinary map/common-event
+  commands with no `@battle` requirement, unlike Force Flee/Enable
+  Combo/Call Common Event). This codebase's own `scripts/
+  rpg2k_logic_check.rb` test fixtures (`class_db`/`class_db_named_skills`)
+  had the identical, matching gap -- built without `rpg2003: true` -- so
+  every existing Change Class/Change Battle Commands check was silently
+  exercising edition-agnostic behavior; both fixtures now pass `rpg2003:
+  true`. Covered by a new check proving both commands are genuine RPG2000
+  no-ops, using `class_id: 0`/the "clear" case specifically (a positive
+  class or command id would coincidentally already be blocked by the
+  existing per-id existence checks on a table-less database, masking the
+  actual gap), confirmed to fail against the pre-fix code before the fix.
 - ✅ **A Change Actor Sprite / Change Vehicle Graphic override's *index* now
   round-trips through `.lsd` at the correct liblcf tag — it was being
   written to, and read from, the wrong field of the save's hero/vehicle
