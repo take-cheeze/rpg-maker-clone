@@ -1976,17 +1976,42 @@ The work below is roughly ordered by the critical path to a walkable game
   { Scene::ReturnToTitleScene(); }` — the entire file contains no reference
   to `Input::CANCEL` anywhere. Pressing Cancel on the real screen does
   nothing at all; only Decision returns to the title. Fixed by dropping the
-  `Input::B` half of the dismiss check (the pre-arming debounce, which
+  `Input::B` half of the dismiss check (~~the pre-arming debounce, which
   watches both keys purely to swallow whatever key was still held from the
   battle result that led here, was left alone — delaying arming by a frame
-  is harmless, unlike actually dismissing on the wrong key). An existing
-  check ("a game with no game-over picture still reaches the screen") had
-  been asserting the buggy behavior itself, dismissing with `Input::B` —
-  switched to `Input::C` to keep testing what it was meant to test (a
-  missing picture does not block dismissal) rather than the bug. Covered by
-  a new `scripts/rpg2k_scene_check.rb` check confirming Cancel is inert and
-  Decision still works right after, confirmed to fail against the pre-fix
-  code before the fix.
+  is harmless, unlike actually dismissing on the wrong key~~ -- **this
+  "harmless" framing turned out to be wrong too; see the dated Follow-up
+  below**). An existing check ("a game with no game-over picture still
+  reaches the screen") had been asserting the buggy behavior itself,
+  dismissing with `Input::B` — switched to `Input::C` to keep testing what
+  it was meant to test (a missing picture does not block dismissal) rather
+  than the bug. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  confirming Cancel is inert and Decision still works right after,
+  confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-21): the pre-arming debounce left alone above was
+  not harmless — it had no counterpart in real RPG_RT at all, and could
+  silently swallow a genuine fresh Decision press.** `Scene_Gameover::
+  vUpdate` (`src/scene_gameover.cpp`, cited above) is a bare
+  `if (Input::IsTriggered(Input::DECISION)) { ReturnToTitleScene(); }` —
+  no arming/pending state of any kind. The debounce's own justification
+  ("stops the button that closed the battle result from skipping the
+  screen in the same frame") does not hold up against this codebase's own
+  call chain either: `RPG2k#show_game_over` swaps `@scenes` without ever
+  calling `.update` on the new scene itself, so `Scene::GameOver`'s first
+  real `#update` always lands on the *next* `#main_loop` iteration, by
+  which point that iteration's own `Input.update` has already cleared the
+  old trigger (`@triggered` resets at the top of every `Input.update` call,
+  set again only by a genuine new key-down event) — the scenario the
+  debounce defended against cannot occur through the actual engine loop.
+  Meanwhile the debounce gated on `Input.press?` (held state, not a fresh
+  trigger) for *both* Decision and Cancel, so a player merely still
+  *holding* Cancel — which does nothing on this screen — when it appeared
+  had a fresh Decision press silently ignored until they let go, something
+  real RPG_RT never does. Fixed by removing `@armed` entirely, making
+  `#update` a literal one-line port of `vUpdate`. The existing "held key"
+  check was rewritten to assert the corrected behavior (the very first
+  `#update` call already honours a fresh Decision trigger, no delay),
+  confirmed to fail against the pre-fix code before the fix.
   **The battle backdrop is chosen from the game's own data now** rather than
   always being the flat void. RPG2000 keeps it on the map-tree node, not the map:
   `Game::Backdrop.name_for` reads the node's `backdrop_type`, a tri-state the

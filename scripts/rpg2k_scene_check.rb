@@ -7519,19 +7519,26 @@ check 'a game-over battle defeat hands its Game::State to the Game Over screen' 
   eq st, parent.game_over_state, 'carrying the very Game::State the battle ran on'
 end
 
-check 'a button still held from the battle does not skip the Game Over screen' do
+check "Game Over's very first #update already honours a Decision trigger " \
+      '-- there is no arming delay' do
+  # EasyRPG's Scene_Gameover::vUpdate (src/scene_gameover.cpp) is a bare
+  # `if (Input::IsTriggered(Input::DECISION)) { ReturnToTitleScene(); }` --
+  # no arming/pending state of any kind. An earlier version here required a
+  # key-released frame first, on the theory that the key which dismissed
+  # the battle-defeat result could otherwise skip this screen in the same
+  # frame -- but `RPG2k#show_game_over` swaps `@scenes` without ever
+  # calling `.update` on the new scene itself, so this screen's first real
+  # `#update` always lands on the *next* `#main_loop` iteration, by which
+  # point that iteration's own `Input.update` has already cleared the old
+  # trigger. That scenario can never reach this screen's very first
+  # `#update` call through the real engine loop, so a fresh Decision
+  # trigger dismisses it immediately, exactly like the reference.
   parent = fake_parent(fake_db)
   Input.reset
-  # The key that dismissed the defeat message is still down as the scene opens.
-  Input.triggered = [Input::C]
   scene = RPG2k::Scene::GameOver.new(parent)
-  scene.update
-  ok !parent.returned_to_title, 'the held key is ignored'
-  Input.reset
-  scene.update                       # released: the screen arms
   Input.triggered = [Input::C]
-  scene.update                       # pressed afresh
-  ok parent.returned_to_title, 'a fresh press dismisses it'
+  scene.update
+  ok parent.returned_to_title, 'the very first update already honours it'
   Input.reset
 end
 
@@ -7545,12 +7552,10 @@ check 'the Cancel button does not dismiss the Game Over screen -- only Decision 
   parent = fake_parent(fake_db)
   Input.reset
   scene = RPG2k::Scene::GameOver.new(parent)
-  scene.update # arm: no key held yet
   Input.triggered = [Input::B]
   scene.update
   ok !parent.returned_to_title, 'Cancel is not a dismiss trigger for this screen'
   Input.reset
-  scene.update
   Input.triggered = [Input::C]
   scene.update
   ok parent.returned_to_title, 'Decision still dismisses it, right after'
