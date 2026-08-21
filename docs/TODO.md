@@ -2844,6 +2844,41 @@ The work below is roughly ordered by the critical path to a walkable game
    `\s[4]` message through `Scene::Map` end to end, all confirmed to fail
    against the old code, which dropped `\s[]` outright and revealed at a flat
    rate regardless of it.
+  ✅ **Follow-up (2026-08-21): Message Options (10120) and Change Face
+  Graphic (10130) never blocked-and-retried while a *different* message
+  window was already open, unlike every sibling command in the same C++
+  function family.** `Interpreter#do_message_options`/`#do_change_face`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) applied their state (`@state.
+  message_config` mutations, `@face_owner`) unconditionally and
+  synchronously, with no guard at all — unlike the already-ported
+  block-and-retry family (Show/Move/Erase Picture, Transfer Player/Recall
+  to Location, Battle Processing/Enemy Encounter, Change EXP/Level, Key
+  Input Processing), which all call a `block_pending_*_command` guard
+  first. Confirmed against EasyRPG's live source: `Game_Interpreter::
+  CommandMessageOptions`/`CommandChangeFaceGraphic` (`src/
+  game_interpreter.cpp`, codes 10120/10130) both open with the identical
+  guard Show Message/Show Choices/Input Number themselves use, `if
+  (!Game_Message::CanShowMessage(main_flag)) { return false; }` —
+  unconditionally, the same base RPG2000 behaviour as every other
+  block-and-retry command in this family. Without this guard, a
+  still-running Parallel Process (Message Options' own "continue events"
+  flag lets one keep advancing past another event's open Show Text) could
+  mutate the shared, global message window's transparency/position/face
+  image while a *different* event's window was already showing on screen —
+  visibly altering it mid-display instead of only taking effect once that
+  window closes and this one's own message opens. Fixed by adding
+  `#block_pending_message_config_command` (the identical shape as the five
+  existing `block_pending_*_command` helpers) and calling it first in both
+  `do_message_options`/`do_change_face`, plus wiring a new
+  `:message_config_blocked` wait kind into `Scene::Map`'s three existing
+  `_blocked`-kind dispatch points (the foreground `drive_event` switch,
+  `step_parallel`'s equivalent switch, and the same-frame-continuation
+  list) exactly the way `:key_input_blocked` already is. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a Parallel Process's own Message
+  Options reached while a different message window is open leaves
+  `message_config` untouched and the command right after it un-run, then
+  both apply once that window closes), confirmed to fail against the
+  pre-fix code before the fix.
 - ✅ **Long messages now paginate.** RPG2000's message window shows four 16px
   rows (the 64px interior of the 80px-tall window); a Show Text that runs past
   that many lines used to draw its later lines straight off the bottom of the

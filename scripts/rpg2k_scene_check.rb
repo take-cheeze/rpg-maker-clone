@@ -2638,6 +2638,44 @@ check "a common event's Parallel Process's own Transfer Player command is " \
   eq 1, st.variables[4], 'and the command after it then runs too'
 end
 
+check "a common event's Parallel Process's own Message Options command is " \
+      'blocked (not dropped) while a different message window is open, and ' \
+      'retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandMessageOptions`/`CommandChangeFaceGraphic` (`src/
+  # game_interpreter.cpp`, codes 10120/10130) both open with `if (!Game_
+  # Message::CanShowMessage(main_flag)) { return false; }` -- the identical
+  # guard Show Message/Show Choices/Input Number themselves use, and the
+  # same block-and-retry shape already ported for Show/Move/Erase Picture,
+  # Transfer Player/Recall to Location, Battle Processing/Enemy Encounter,
+  # Change EXP/Level and Key Input Processing (see
+  # #block_pending_message_config_command).
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::MESSAGE_OPTIONS, [1, 0, 0, 0]),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq false, st.message_config.transparent,
+     'Message Options must not apply while a different message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Message Options must not run either'
+
+  scene.send(:close_message)
+  5.times { scene.update }
+  eq true, st.message_config.transparent,
+     'Message Options retries and applies once the window closes'
+  # >= 1, not == 1: unlike Transfer Player's own multi-frame map load,
+  # Message Options is instantaneous, so the Parallel Process's own
+  # "loops forever" behavior (see the Transfer Player check above) can carry
+  # it around the whole command list more than once within these frames.
+  ok st.variables[4] >= 1, 'and the command after it then runs too'
+end
+
 check "an unrelated event's page change does not restart another event's " \
       'own Parallel Process' do
   ic = Game::Interpreter::Cmd
