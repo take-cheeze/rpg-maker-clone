@@ -7272,6 +7272,29 @@ check "can_cast?: a weapon-type Attribute skill needs a weapon carrying it equip
   eq true, st.party.can_cast?(hero, 8)
 end
 
+check "can_cast?: an affect_attr_defence skill is exempt from the weapon " \
+      'check even when it names a weapon-type Attribute' do
+  # RPG_RT's Game_Actor::IsSkillUsable (src/game_actor.cpp) wraps its whole
+  # weapon-equip loop in `if (!skill->affect_attr_defence) { ... }` -- a
+  # resistance-shift buff skill never needs a matching weapon equipped,
+  # regardless of which attribute it names.
+  props = { 1 => AttrTypeRow.new(0) } # weapon-type
+  skills = {
+    9 => fake_skill(name: 'Fire Ward', scope: 3, sp_cost: 1,
+                    attribute_effects: [true], affect_attr_defence: true),
+  }
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  st = Game::State.new(
+    Game::Party.new(FakeActorDB.new(players, [1], {}, skills, {}, nil, props)), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(9)
+  hero.equip([]) # no weapon at all
+  eq true, st.party.can_cast?(hero, 9),
+     'a defence-shift skill needs no matching weapon, unlike an ordinary ' \
+     'weapon-type Attribute skill'
+end
+
 # 封印 / Silence: EasyRPG's Game_Battler::IsSkillUsable (src/game_battler.cpp)
 # checks restrict_skill/restrict_magic unconditionally, in or out of a fight
 # -- Window_Skill::CheckEnable is one shared window class for the field and
