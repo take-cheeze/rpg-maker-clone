@@ -19572,26 +19572,32 @@ check 'a 二刀流 actor with one dual_attack weapon sums 2 + 1, not just 2' do
   eq 3, hero.strike_count, "the dual_attack sword's 2 swings plus the dagger's 1"
 end
 
-check "battle: a two-weapon actor's swings each roll their own weapon's to-hit, " \
-      'not a merged max' do
+check "battle: an RPG2003 two-weapon actor's swings each roll their own " \
+      "weapon's to-hit, not a merged max" do
   # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
-  # Normal::GetWeapon (src/game_battlealgorithm.cpp) resolves each swing to
-  # exactly one weapon (the primary weapon's own hit count worth of swings,
-  # then the secondary's), and Game_Actor::GetHitChance's own
+  # Normal::GetDefaultStyle (src/game_battlealgorithm.cpp) only picks
+  # Style_MultiHit -- the style whose Init sets weapon_style and so lets
+  # GetWeapon resolve a specific slot instead of WeaponAll -- when
+  # Feature::HasRpg2k3BattleSystem() (src/feature.cpp: !HasRpg2kBattleSystem,
+  # true whenever the game isn't Player::IsRPG2k()). Under that style, each
+  # swing resolves to exactly one weapon (the primary weapon's own hit count
+  # worth of swings, then the secondary's), and Game_Actor::GetHitChance's own
   # ForEachEquipment (src/game_actor.cpp) excludes the *other* weapon's slot
   # entirely -- never a merge/max across both. hit 100 always lands (its own
   # agi term collapses to zero regardless of either side's Agility); a low
   # hit rate against a much nimbler target clamps to a guaranteed miss (the
   # agi term, `100 - (100-base)*(src+tgt)/(2*src)`, goes negative and clamps
   # to 0). Before this fix, both swings read #attack_hit_rate's merged max
-  # (100, from whichever weapon has it) -- the low-hit weapon's swing would
-  # always land too, identically to the other weapon's.
+  # (100, from whichever weapon has it) regardless of RPG2000/2003 -- the
+  # low-hit weapon's swing would always land too, identically to the other
+  # weapon's, even on a non-2003 database (Style_Combined's actual rule --
+  # see the RPG2000 check just below).
   items = { 1 => fake_item(type: 1, atk: 10, hit: 100), # always lands
             2 => fake_item(type: 1, atk: 10, hit: 10) } # clamps to a guaranteed miss below
   row = FakePlayerRow.new('Hero', '', 0, 5,
                           { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
   row.double_hand = true
-  db = FakeActorDB.new({ 1 => row }, [1], items)
+  db = FakeActorDB.new({ 1 => row }, [1], items, rpg2003: true)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   actor = st.party.actor_by_id(1)
   st.party.gain_item(1, 1)
@@ -19607,19 +19613,20 @@ check "battle: a two-weapon actor's swings each roll their own weapon's to-hit, 
                             'clamped to 0 against a much nimbler target'
 end
 
-check "battle: a two-weapon actor's swings each carry their own weapon's " \
-      'elemental attribute and state, not a union of both' do
-  # Same GetWeapon/ForEachEquipment exclusion as the to-hit check above, but
-  # for Attribute::ApplyAttributeNormalAttackMultiplier and the weapon-state
-  # block of Normal::vExecute (both also gated on that swing's own resolved
-  # weapon, per EasyRPG's src/attribute.cpp and src/game_battlealgorithm.cpp).
-  # Both weapons hit 100 so accuracy never interferes; element 1 is immune
-  # (rank 4 -> 0%) and element 2 is normal (rank 2 -> 100%) on the target.
-  # The weapon states are 3 and 4, deliberately not 1: state id 1 is always
-  # Knockout (Game::States::DEATH_ID) in every real database, so inflicting
-  # it -- as this test briefly did by accident, before #inflict_state
-  # correctly started zeroing HP on landing it -- would fell the target on
-  # the very first swing and never reach the second at all.
+check "battle: an RPG2003 two-weapon actor's swings each carry their own " \
+      "weapon's elemental attribute and state, not a union of both" do
+  # Same Style_MultiHit/GetWeapon/ForEachEquipment exclusion as the to-hit
+  # check above, but for Attribute::ApplyAttributeNormalAttackMultiplier and
+  # the weapon-state block of Normal::vExecute (both also gated on that
+  # swing's own resolved weapon, per EasyRPG's src/attribute.cpp and
+  # src/game_battlealgorithm.cpp). Both weapons hit 100 so accuracy never
+  # interferes; element 1 is immune (rank 4 -> 0%) and element 2 is normal
+  # (rank 2 -> 100%) on the target. The weapon states are 3 and 4,
+  # deliberately not 1: state id 1 is always Knockout (Game::States::
+  # DEATH_ID) in every real database, so inflicting it -- as this test
+  # briefly did by accident, before #inflict_state correctly started zeroing
+  # HP on landing it -- would fell the target on the very first swing and
+  # never reach the second at all.
   items = { 1 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [true, false],
                            state_set: [0, 0, 1, 0], state_chance: 100),  # element 1, state 3
             2 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [false, true],
@@ -19627,7 +19634,7 @@ check "battle: a two-weapon actor's swings each carry their own weapon's " \
   row = FakePlayerRow.new('Hero', '', 0, 5,
                           { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
   row.double_hand = true
-  db = FakeActorDB.new({ 1 => row }, [1], items)
+  db = FakeActorDB.new({ 1 => row }, [1], items, rpg2003: true)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   actor = st.party.actor_by_id(1)
   st.party.gain_item(1, 1)
@@ -19645,6 +19652,43 @@ check "battle: a two-weapon actor's swings each carry their own weapon's " \
   ok first[:damage] < second[:damage], "swing 2's own element (2) is unscaled, unlike swing 1's"
   eq [3], first[:inflicted], "swing 1 only rolls its own weapon's state (3)"
   eq [4], second[:inflicted], "swing 2 only rolls its own weapon's state (4), not both"
+end
+
+check "battle: an RPG2000 two-weapon actor's swings both roll the merged " \
+      "max to-hit, never one weapon's own low roll" do
+  # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
+  # Normal::GetDefaultStyle (src/game_battlealgorithm.cpp) picks
+  # Style_Combined -- not Style_MultiHit -- whenever
+  # !Feature::HasRpg2k3BattleSystem() (a non-2003 database), and Init only
+  # ever sets weapon_style under Style_MultiHit; left at its initial -1,
+  # GetWeapon always returns WeaponAll, so Game_Actor::GetHitChance's
+  # ForEachEquipment (src/game_actor.cpp) folds in *both* equipped weapons'
+  # hit fields for *every* swing (`hit = std::max(hit, item.hit)`), never one
+  # specific slot's own roll. Same fixture as the RPG2003 check above (a
+  # hit-100 and a hit-10 weapon against a much nimbler target -- the low hit
+  # rate's own agi term would clamp to a guaranteed miss if it were rolled on
+  # its own), but with no `rpg2003: true` -- so both swings must land, using
+  # the merged 100 the same way #attack_hit_rate already reports for the
+  # actor as a whole.
+  items = { 1 => fake_item(type: 1, atk: 10, hit: 100), # the merged max
+            2 => fake_item(type: 1, atk: 10, hit: 10) } # would clamp to a guaranteed miss alone
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items) # rpg2003: false, the default
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  actor = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(actor, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(actor, 2, Game::Actor::SHIELD_SLOT)
+  hero = Game::Battle.from_actor(actor)
+  foe = combatant('Foe', 0, 0, 20, 999) # much nimbler than the hero's agi 10
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), {}, false, false, true)
+  first, second = bat.send(:swing, hero, foe)
+  ok !first[:missed], 'swing 1 rolls the merged 100, and lands'
+  ok !second[:missed], "swing 2 also rolls the merged 100, not the dagger's own 10 -- " \
+                        'RPG2000 never splits by weapon'
 end
 
 check 'battle: #swing actually lands three attacks when strike_count is three, ' \

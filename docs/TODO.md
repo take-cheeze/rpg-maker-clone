@@ -9022,6 +9022,37 @@ not yet verified:
   own weapon's state, never both), and an actual three-swing basic Attack
   landing all three hits rather than being capped at two — all three
   confirmed to fail against the pre-fix code before the fix.
+  ~~`#swing_weapon_data` applied this per-swing split unconditionally, to
+  every two-weapon actor regardless of RPG2000/2003.~~
+  ✅ **Follow-up (2026-08-21): that per-swing split is RPG2003-only.**
+  Confirmed against EasyRPG's actual C++ source:
+  `Game_BattleAlgorithm::Normal::GetDefaultStyle`
+  (`src/game_battlealgorithm.cpp`) — `return
+  Feature::HasRpg2k3BattleSystem() ? Style_MultiHit : Style_Combined;` — and
+  `Normal::Init`, which only ever sets `weapon_style` (the field `GetWeapon`
+  reads to resolve one specific slot) `if (... style == Style_MultiHit)`;
+  left at its default `-1` under `Style_Combined`, `GetWeapon` always
+  returns `WeaponAll`, so `Game_Actor::GetHitChance`'s own
+  `ForEachEquipment` folds in *both* equipped weapons for *every* swing
+  (`hit = std::max(hit, item.hit)`) — the plain merged max, never a specific
+  weapon's own roll. `Feature::HasRpg2k3BattleSystem()` (`src/feature.cpp`)
+  is `!HasRpg2kBattleSystem()`, itself `true` whenever `Player::IsRPG2k()` —
+  a genuine RPG2000/2003 edition gate, not an incidental detail. So a
+  genuine RPG2000 two-weapon actor (this project's actual default; every
+  fixture above that exercised `#swing_weapon_data` happened to also set
+  `double_hand: true` without ever passing `rpg2003: true`) had *every*
+  swing read one specific weapon's own data instead of the merged max/union
+  `#attack_hit_rate`/`#weapon_attributes`/`#weapon_states`/
+  `#weapon_crit_bonus` already correctly compute for it — the exact
+  inverted-scope bug this bullet's own fix introduced. Fixed by gating
+  `swing_weapon_data` behind `rpg2003?`, returning `nil` (falling back to
+  the ordinary merged Combatant fields, already correct for any actor
+  regardless of weapon count) otherwise. The two existing checks above were
+  updated to pass `rpg2003: true` (they only ever verified the 2003-specific
+  mechanic), and a new check confirms an RPG2000 two-weapon actor's swings
+  both roll the *merged* 100%-hit max rather than one weapon's own
+  guaranteed-miss 10%, confirmed to fail against the pre-fix code before the
+  fix.
 - ✅ **A terrain row's negative `damage` field now heals the party each step
   instead of doing nothing, and bypasses 地形ダメージ無効 gear entirely while
   doing it.** RPG2000/2003 terrain rows carry one plain signed `damage`
