@@ -2915,8 +2915,18 @@ class RPG2k
       # Everything the action announces: what it did, then the conditions it
       # changed. `log_round` traces all of it and `show_battle_action` banners
       # all of it, so the console and the screen never disagree.
+      # The per-turn state reminder line (Combatant#turn_state_message, via
+      # `entry[:state_message]`) opens the banner, ahead of the action's own
+      # lines -- RPG_RT shows it right at the start of the battler's turn,
+      # before whatever it goes on to do (`Scene_Battle_Rpg2k::
+      # ProcessBattleActionBegin`, `src/scene_battle_rpg2k.cpp`). A blank
+      # reminder (a healed state with no configured `message_recovery`,
+      # which RPG_RT still flashes for but has no text to show) is dropped
+      # rather than rendered as an empty line.
       def battle_action_lines(entry)
-        battle_action_body(entry) + battle_state_lines(entry)
+        lines = battle_action_body(entry) + battle_state_lines(entry)
+        msg = entry[:state_message]
+        msg && !msg.empty? ? [msg] + lines : lines
       end
 
       # The result window's text: the outcome, and on a win the EXP / gold gained

@@ -1496,8 +1496,49 @@ The work below is roughly ordered by the critical path to a walkable game
   too — making the report depend on the roll would be the natural guess and it is
   wrong. `roll_inflict` returns the already-carried states beside the landed ones
   and the action banner prints the sentence, one wording for both sides.
-  `message_affected` is deliberately still unread: EasyRPG defines its helper and
-  never calls it from either battle scene, so nothing pins when RPG_RT prints it.
+  ~~`message_affected` is deliberately still unread: EasyRPG defines its helper
+  and never calls it from either battle scene, so nothing pins when RPG_RT
+  prints it.~~
+  ✅ **Follow-up (2026-08-21): that claim is simply wrong against current live
+  EasyRPG source — `message_affected` (and `message_recovery`, reused for the
+  same purpose) is read every single turn.** Confirmed via curl:
+  `Scene_Battle_Rpg2k::ProcessBattleActionBegin` (`src/scene_battle_rpg2k.cpp`)
+  scans every state id 1..N the acting battler either still carries or just had
+  auto-cured this very turn (`BattleStateHeal()`/`ApplyConditions()`, already
+  this codebase's own `#apply_turn_states`), keeps whichever has the highest
+  `priority` (`>=`, walked ascending — a tie goes to the *later*, higher id),
+  and shows that state's own `message_affected` (still held; only if
+  non-blank) or `message_recovery` (just healed; always, even blank) right at
+  the start of the battler's turn, before whatever it goes on to do. This is a
+  **different** scan from `Game_Battler::GetSignificantState`/`State::
+  GetSignificantState` (this codebase's own `States.significant`, used
+  elsewhere for the battle-sprite pose) — confirmed these are two genuinely
+  distinct functions in EasyRPG's own source rather than reasoned by analogy:
+  `GetSignificantState` special-cases Knockout outright and never considers a
+  just-healed state at all, neither of which `ProcessBattleActionBegin`'s own
+  inline loop does. So a per-turn reminder like "Zero is poisoned!" — the
+  single most common way a real database actually uses `message_affected` —
+  never appeared anywhere in this engine, on either an actor's or an
+  enemy's turn, whether or not the state also happened to block acting. Fixed
+  with a new `Combatant#turn_state_message` field (the resolved message text
+  for this turn, or nil), computed by a new `Battle#turn_state_message(b,
+  healed)` at the end of `#apply_turn_states` and a new `Game::States.
+  affected_message` (mirroring the existing `#recovery_message` exactly), then
+  threaded onto the acting battler's first log entry in `#record_action` (so a
+  buffered multi-hit action only opens with it once) and rendered ahead of the
+  action's own lines by `Scene::Battle#battle_action_lines`. Deliberately
+  scoped to the battler's still-be-able-to-act case only — the case where a
+  restriction locks the turn to "do nothing" already produces *zero* log entry
+  or banner of any kind today (`step`/`step_action` both silently `next` past
+  it), a separate, larger pre-existing gap this fix does not attempt, since
+  making that turn visible at all is its own conceptual change or turn/banner
+  plumbing, not a `message_affected` wiring fix. Covered by four new
+  `scripts/rpg2k_logic_check.rb` checks (a still-held state's own
+  `message_affected`; a blank `message_affected` shows nothing at all; a
+  just-healed state's `message_recovery` instead; the higher-priority of two
+  simultaneously-held states wins), all four confirmed to fail against the
+  pre-fix code (three via a wrong/missing message, one already vacuously true)
+  before the fix.
   **A condition drains the party on the map now, too** — RPG2000's field poison,
   the last of the 状態 row's simulation fields with a game behind it.
   `hp_change_map_steps` / `hp_change_map_val` (and the matching SP pair) say how

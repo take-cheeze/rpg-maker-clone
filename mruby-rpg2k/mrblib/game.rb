@@ -9298,6 +9298,14 @@ module Game
       message(battler_name, field(id, table, :message_recovery))
     end
 
+    # ... and the per-turn reminder a battler still carrying (or just having
+    # shaken off) a state gets at the very start of its own turn, before its
+    # action -- distinct from #inflict_message, which fires only the instant
+    # a state first lands. One wording for both sides, like recovery.
+    def self.affected_message(id, table, battler_name)
+      message(battler_name, field(id, table, :message_affected))
+    end
+
     # ... and for one the target **already** carried when something tried to
     # inflict it again ("はすでに毒に冒されている！"). One wording for both sides,
     # like the recovery line. RPG_RT treats this as a result worth announcing
@@ -9686,7 +9694,20 @@ module Game
                             # the battle-page `command_actor` condition. nil
                             # until an actor picks a command (an enemy, or an
                             # auto-battling ally, never records one).
-                            :last_battle_action) do
+                            :last_battle_action,
+                            # The per-turn state reminder line this battler's
+                            # turn should open with, as of the most recent
+                            # #apply_turn_states call -- the message text
+                            # itself (already resolved against this
+                            # battler's name), or nil when nothing qualifies.
+                            # EasyRPG's `Scene_Battle_Rpg2k::
+                            # ProcessBattleActionBegin` (`src/
+                            # scene_battle_rpg2k.cpp`) computes this fresh
+                            # every turn from whichever single highest-
+                            # `priority` state (ties to the higher id) the
+                            # battler either still carries or just had
+                            # auto-cured -- not accumulated across turns.
+                            :turn_state_message) do
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -10246,10 +10267,16 @@ module Game
     # all-target skill returns an array — every entry is logged now (the effects
     # all landed at once) but surfaced one per #step so the screen animates them
     # in turn. nil (no living target) passes straight through.
+    #
+    # The acting battler's own #apply_turn_states-computed per-turn state
+    # reminder (see Combatant#turn_state_message) rides on the *first* entry
+    # only, matching RPG_RT showing it once at the very start of the turn,
+    # not once per buffered hit.
     def record_action(result)
       return nil if result.nil?
       entries = result.is_a?(Array) ? result : [result]
       return nil if entries.empty?
+      entries.first[:state_message] = @acting.turn_state_message if @acting
       entries.each { |e| @log << e }
       @pending.concat(entries[1..-1])
       entries.first
@@ -11141,6 +11168,7 @@ module Game
     def apply_turn_states(b)
       can_act = true
       b.state_turns ||= {}
+      healed = []
       (b.states || []).dup.each do |id|
         d = state_def(id)
         next unless d
@@ -11148,6 +11176,7 @@ module Game
         if recovers_from_state?(b, id, d)
           b.states = b.states - [id]
           b.state_turns.delete(id)
+          healed << id
           next
         end
         # Not clamped to #damage_cap: confirmed against EasyRPG's own live
@@ -11170,7 +11199,41 @@ module Game
         end
         can_act = false if state_field(d, :restriction) == RESTRICTION_DO_NOTHING
       end
+      b.turn_state_message = turn_state_message(b, healed)
       can_act
+    end
+
+    # `b`'s per-turn state reminder line, freshly computed for this call --
+    # EasyRPG's `Scene_Battle_Rpg2k::ProcessBattleActionBegin`'s own inline
+    # scan (`src/scene_battle_rpg2k.cpp`), not `States.significant`/EasyRPG's
+    # own separate `State::GetSignificantState` (which special-cases
+    # Knockout and never considers a just-healed state) -- confirmed these
+    # are two genuinely different functions in EasyRPG's own source, not two
+    # names for the same algorithm. Walks every id either just healed this
+    # turn or still held afterward in ascending order, keeping whichever has
+    # the highest `priority` (`>=`, so a tie goes to the later, higher id).
+    # A healed state's line always shows, even blank; a still-held one only
+    # shows if its own `message_affected` is non-blank -- matching RPG_RT's
+    # own asymmetric rule exactly, not guessed at.
+    def turn_state_message(b, healed)
+      best_id = nil
+      best_healed = false
+      best_priority = -1
+      (healed | (b.states || [])).sort.each do |id|
+        d = state_def(id)
+        next unless d
+        priority = state_field(d, :priority)
+        next if priority < best_priority
+        best_id = id
+        best_healed = healed.include?(id)
+        best_priority = priority
+      end
+      return nil unless best_id
+      if best_healed
+        States.recovery_message(best_id, @states, b.name) || ''
+      else
+        States.affected_message(best_id, @states, b.name)
+      end
     end
 
     # One state's per-turn slip applied to a single stat (`cur` against `max`):
