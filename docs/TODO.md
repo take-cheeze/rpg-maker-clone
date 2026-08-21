@@ -11658,7 +11658,7 @@ not yet verified:
   unchanged. Covered by a new `scripts/rpg2k_logic_check.rb` check (Direction
   Fix ON, then a Move Right that keeps the facing frozen, then a Face Up that
   turns north despite the still-active lock), confirmed to fail against the
-  pre-fix code (asserting direction 8, getting 2) before the fix. ✅ **The
+  pre-fix code (asserting direction 8, getting 2) before the fix. ~~✅ **The
   related, separate "One Step Forward" question this fix scoped out is now
   fixed too**: a move-route "One Step Forward" is documented to continue in
   the *last direction actually moved* rather than the displayed facing, which
@@ -11676,7 +11676,9 @@ not yet verified:
   is no axis to be dominant when nothing moved. Covered by a new
   `scripts/rpg2k_logic_check.rb` check (Direction Fix ON, a locked Move
   Right, an explicit Face Up, then One Step Forward continues east, not
-  north), confirmed to fail against the pre-fix code before the fix. ✅ **The
+  north), confirmed to fail against the pre-fix code before the fix.~~ (this
+  whole "actually moved, not displayed facing" framing was backwards — see
+  the dated Follow-up a few bullets below.) ✅ **The
   "Animation Type" half of the original claim is now fixed too, verified
   against EasyRPG Player's actual C++ source rather than guessed at.** A
   page's own fixed-direction Animation Type (Fixed/Fixed-Continuous/Fixed-
@@ -11832,6 +11834,36 @@ not yet verified:
   the same root cause (this codebase's direction state could only hold a
   single cardinal), just not exercised by this fix, which only touched the
   non-jump path.
+  ✅ **Follow-up (2026-08-21): Move Forward after an explicit Face/Turn
+  sub-command continued in the direction last *physically walked* instead
+  of the newly faced direction — the opposite of what the original fix in
+  this cluster claimed, and the mirror image of the diagonal bug fixed
+  directly above (which correctly traced the same `UpdateMoveRoute` source
+  but never applied that reading to Face/Turn).** RPG_RT does not have a
+  "last actually walked" concept distinct from "currently faced" at all:
+  `Game_Character::UpdateMoveRoute`'s Face/Turn branch (`src/
+  game_character.cpp`) ends every one of Face Up/Right/Down/Left,
+  `Turn90DegreeRight`/`Turn90DegreeLeft`/`Turn180Degree`/`TurnRandom`/
+  `TurnTowardCharacter`/`TurnAwayFromCharacter` in a `SetDirection(...)`
+  call — the *exact same* `direction` field the Move-command branch's
+  `Move(GetDirection())` reads for a later Move Forward, with no lock check
+  anywhere in the Face/Turn branch. So `Turn Right` immediately followed by
+  `Move Forward` walks in the *turned* direction in real RPG_RT, lock or no
+  lock — never the stale pre-turn direction. `Character#face!`
+  (`mruby-rpg2k/mrblib/game.rb`) and `#turn_right`/`#turn_left`/
+  `#turn_around` wrote only `@direction`, deliberately leaving
+  `@last_move_direction` untouched per the original (uncited yado.tk-
+  sourced) doc comment quoted above — so `MOVE_FORWARD` kept reading the
+  direction from before the Face/Turn command ran. Fixed by having all four
+  methods also assign `@last_move_direction`, mirroring `#move`/`#jump`/
+  `#move_diagonal`'s existing assignment; `#face` (the lock-respecting
+  variant `#move` itself uses) is untouched, matching `UpdateFacing()`'s
+  own separate lock-respecting path in the reference. Covered by rewriting
+  the existing `scripts/rpg2k_logic_check.rb` check for this exact
+  Direction-Fix-then-Face-Up-then-Move-Forward sequence in place — it now
+  asserts continuing north (the newly faced direction) instead of east (the
+  old, wrong "last walked" assertion) — confirmed to fail against the
+  pre-fix code before the fix.
 - A move-route "Change Graphic" sub-command (hero, event, or vehicle) is
   **not persistent** — it reverts to the base graphic on save-load or map
   transfer, unlike the dedicated Change Graphic event commands. ✅ **All three

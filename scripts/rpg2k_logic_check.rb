@@ -609,13 +609,22 @@ check 'a Face Direction sub-command overrides an earlier Direction Fix ON in the
   eq 8, c.direction
 end
 
-check 'move forward after a Direction-Fix move continues in the last direction actually moved' do
-  # yado.tk: "One Step Forward" is documented to continue in the direction
-  # last *walked*, not the sprite's displayed facing -- the follow-up this
-  # codebase scoped out of the Face Direction fix above, since #direction
-  # alone cannot tell the two apart once a locked move and an explicit Face
-  # command have diverged. Character#last_move_direction (added for this)
-  # is what Move Forward now reads instead of #direction.
+check 'move forward after an explicit Face command continues in the newly ' \
+      'faced direction, even under an active Direction-Fix lock' do
+  # Confirmed against RPG_RT's own live source rather than an uncited
+  # yado.tk claim this check used to repeat (the opposite of this):
+  # `Game_Character::UpdateMoveRoute` (src/game_character.cpp) uses one
+  # single shared `direction` field for both purposes -- its Face/Turn
+  # branch's `SetDirection(...)` (Face Up/Right/Down/Left, or
+  # Turn90DegreeRight/Left/Turn180Degree/TurnRandom/TurnTowardCharacter/
+  # TurnAwayFromCharacter, each itself a SetDirection call) writes the
+  # exact same `direction` a later Move-command branch's
+  # `Move(GetDirection())` reads for Move Forward -- with no lock check
+  # anywhere in the Face/Turn branch. So "Face Up" immediately followed by
+  # "Move Forward" walks north in real RPG_RT, not east (the direction last
+  # physically walked before the Face command), lock or no lock.
+  # Character#last_move_direction is what Move Forward reads; #face!
+  # (Face/Turn sub-commands) now updates it exactly like #move does.
   route = R.new([mc(R::LOCK_FACING), mc(R::MOVE_RIGHT), mc(R::FACE_UP),
                  mc(R::MOVE_FORWARD)], repeat: false)
   c = Game::Character.new(5, 5, 2) # facing south
@@ -624,12 +633,12 @@ check 'move forward after a Direction-Fix move continues in the last direction a
   route.step(c, w) # Move Right: last-moved direction east, facing stays south
   eq [6, 5], [c.x, c.y]
   eq 6, c.last_move_direction
-  route.step(c, w) # Face Up: turns the sprite north; last-moved direction untouched
+  route.step(c, w) # Face Up: turns the sprite north, and last_move_direction with it
   eq 8, c.direction
-  eq 6, c.last_move_direction
-  route.step(c, w) # One Step Forward: continues east (last walked), not north (facing)
-  eq [7, 5], [c.x, c.y]
-  eq 8, c.direction # the lock is still on, so the step itself doesn't re-face south
+  eq 8, c.last_move_direction
+  route.step(c, w) # One Step Forward: continues north (newly faced), not east
+  eq [6, 4], [c.x, c.y]
+  eq 8, c.direction
 end
 
 check 'a fixed-direction Animation Type suppresses movement-driven facing, but ' \

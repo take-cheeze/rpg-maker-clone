@@ -6106,20 +6106,30 @@ module Game
     attr_accessor :fixed_facing
     attr_reader :graphic_name, :graphic_index, :x, :y
 
-    # The direction actually walked/jumped by the last successful move,
-    # distinct from #direction (the displayed sprite facing): a Direction
-    # Fix lock or an explicit Face command can turn the sprite without the
-    # character having moved a step in that direction, and the reverse --
-    # a locked move steps somewhere the sprite never turns to face. Only
-    # #move / #jump / #move_diagonal update this; #face!/#turn_* (no
-    # movement) and a blocked #do_move (turns to face an obstruction but
-    # never steps) leave it alone. yado.tk: a move-route "One Step Forward"
-    # continues in *this* direction, not the sprite's #direction.
+    # What a following move-route "Move Forward" sub-command walks in --
+    # NOT simply "the direction actually walked/jumped by the last
+    # successful move" the way an uncited yado.tk claim this comment used to
+    # repeat had it. RPG_RT's own `Game_Character::UpdateMoveRoute`
+    # (`src/game_character.cpp`) uses a single shared `direction` field for
+    # both purposes: a Face/Turn sub-command's branch (`SetDirection(...)`
+    # for Face Up/Right/Down/Left, or `Turn90DegreeRight`/`Turn90DegreeLeft`/
+    # `Turn180Degree`/`TurnRandom`/`TurnTowardCharacter`/
+    # `TurnAwayFromCharacter`, each itself a `SetDirection` call) writes the
+    # exact same `direction` a later Move-command branch's `Move(GetDirection
+    # ())` reads for Move Forward -- so `Turn Right` immediately followed by
+    # `Move Forward` walks in the *turned* direction in real RPG_RT, not
+    # whichever direction the character was last physically stepped in
+    # before the route began. #face!/#turn_right/#turn_left/#turn_around
+    # (the move-route Face/Turn sub-commands) update this field for exactly
+    # that reason; #move/#jump/#move_diagonal (actual steps) update it too,
+    # since RPG_RT's shared field is written by both. A blocked #do_move
+    # (turns to face an obstruction but never steps) still leaves it alone,
+    # matching #face's own lock-respecting, no-step nature.
     #
-    # A plain numpad int (2/4/6/8) after #move/#jump, or a `[horizontal,
-    # vertical]` pair after #move_diagonal -- see #move_diagonal's own
-    # citation for why a diagonal step's full 8-way direction has to survive
-    # here, not just one cardinal component.
+    # A plain numpad int (2/4/6/8) after #move/#jump/#face!/#turn_*, or a
+    # `[horizontal, vertical]` pair after #move_diagonal -- see
+    # #move_diagonal's own citation for why a diagonal step's full 8-way
+    # direction has to survive here, not just one cardinal component.
     attr_reader :last_move_direction
 
     # Placing a character outright -- Change Event Location, a page refresh
@@ -6188,7 +6198,9 @@ module Game
     # one of the fixed kinds -- RPG_RT still turns a "statue" NPC's sprite on
     # an explicit Face command even though it never turns while it walks.
     def face!(dir)
-      @direction = dir unless dir.nil?
+      return if dir.nil?
+      @direction = dir
+      @last_move_direction = dir
     end
 
     # Whether the move just made was a jump (a Begin Jump / End Jump block)
@@ -6282,9 +6294,20 @@ module Game
       @jumped = false
     end
 
-    def turn_right;  @direction = TURN_RIGHT[@direction] || @direction; end
-    def turn_left;   @direction = TURN_LEFT[@direction]  || @direction; end
-    def turn_around; @direction = TURN_180[@direction]   || @direction; end
+    def turn_right
+      @direction = TURN_RIGHT[@direction] || @direction
+      @last_move_direction = @direction
+    end
+
+    def turn_left
+      @direction = TURN_LEFT[@direction] || @direction
+      @last_move_direction = @direction
+    end
+
+    def turn_around
+      @direction = TURN_180[@direction] || @direction
+      @last_move_direction = @direction
+    end
 
     # Direction pointing from this character toward (tx, ty). ~~Ties (and
     # equal distance) resolve to the horizontal axis, matching RPG2000's
@@ -6486,12 +6509,13 @@ module Game
       when MOVE_AWAY_HERO
         do_move(character, world, away_hero(character, world))
       when MOVE_FORWARD
-        # yado.tk: continues in the direction actually last walked/jumped,
-        # not the sprite's displayed facing -- the two can diverge under a
-        # Direction Fix lock or an explicit Face command (see
-        # Character#last_move_direction). A diagonal last move continues
-        # diagonally (see #last_move_direction's own citation) rather than
-        # collapsing to one cardinal axis.
+        # #last_move_direction is what RPG_RT's own shared `direction` field
+        # holds at this point -- the immediately preceding Face/Turn
+        # sub-command in this same route wins over whatever the character
+        # last physically stepped in, since #face!/#turn_* update it too
+        # (see #last_move_direction's own citation). A diagonal last
+        # direction continues diagonally rather than collapsing to one
+        # cardinal axis.
         last = character.last_move_direction
         if last.is_a?(Array)
           do_diagonal_dir(character, world, last[0], last[1])
