@@ -3093,7 +3093,7 @@ check 'Teleport converts its RPG2003 facing argument to a numpad direction' do
   # (and Game::State#direction) speak the 2/4/6/8 numpad. Passing it through
   # raw made 1 and 3 into numbers that are not directions at all.
   { 1 => 8, 2 => 6, 3 => 2, 4 => 4 }.each do |param, numpad|
-    st = new_state
+    st = new_state(rpg2003: true)
     it = Game::Interpreter.new(st)
     it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, param])])
     it.update
@@ -3103,18 +3103,32 @@ end
 
 check 'Teleport with no facing argument keeps the current one' do
   # 0 is what an RPG2000 project writes — the edition that has no such argument.
-  st = new_state
+  st = new_state(rpg2003: true)
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 0])])
   it.update
   eq [5, 3, 9, 0], it.teleport, 'nothing to face, so the scene leaves it alone'
 
   # An out-of-range value means the same rather than an invalid direction.
-  st2 = new_state
+  st2 = new_state(rpg2003: true)
   it2 = Game::Interpreter.new(st2)
   it2.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 9])])
   it2.update
   eq [5, 3, 9, 0], it2.teleport
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Game_Interpreter_Map::
+# CommandTeleport` (`src/game_interpreter_map.cpp`) reads param3 only `if
+# (com.parameters.size() > 3 && Player::IsRPG2k3Commands())` -- a genuine
+# RPG2000 binary never reads a facing argument at all, regardless of what
+# the command's own parameter list happens to hold.
+check "Teleport's facing argument is ignored outright on an RPG2000 database" do
+  st = new_state(rpg2003: false)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 3])]) # 3 = down -> numpad 2, if read
+  it.update
+  eq [5, 3, 9, 0], it.teleport,
+     'RPG2000 never reads a 4th Teleport parameter, even when one is present'
 end
 
 # -- Store Terrain ID / Store Event ID ---------------------------------------
@@ -3895,14 +3909,15 @@ FakeBattlerAnimation = Struct.new(:name, :speed, :poses)
 FakeBattlerAnimationPose = Struct.new(:name, :battler_name, :battler_index,
                                       :animation_type, :battle_animation_id)
 
-def party_state(enemy_group: Hash.new(true))
+def party_state(enemy_group: Hash.new(true), rpg2003: false)
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8),
     2 => FakePlayerRow.new('Ally', '', 0, 3,
                            max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
-  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], enemy_group: enemy_group)),
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], rpg2003: rpg2003,
+                                                   enemy_group: enemy_group)),
                   1, 0, 0)
 end
 
@@ -9450,7 +9465,7 @@ end
 # the Teleport tests above) is what converts that same 1-based encoding into
 # this runtime's own numpad direction, reused verbatim here.
 check 'Change Event Location carries the RPG2003 facing sub-parameter, constant mode only' do
-  st = party_state
+  st = party_state(rpg2003: true)
   st.variables[7] = 4
   st.variables[8] = 9
   it = Game::Interpreter.new(st)
@@ -9461,6 +9476,16 @@ check 'Change Event Location carries the RPG2003 facing sub-parameter, constant 
   eq 2, reqs.size
   eq 2, reqs[0][:dir], 'constant mode: param4=3 (down) -> numpad 2'
   eq 0, reqs[1][:dir], 'variable mode never applies the facing param at all'
+end
+
+check "Change Event Location's facing argument is ignored outright on an RPG2000 database" do
+  st = party_state(rpg2003: false)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 0, 5, 6, 3])]) # constant, face down
+  it.update
+  reqs = it.take_location_requests
+  eq 1, reqs.size
+  eq 0, reqs[0][:dir], 'RPG2000 has no facing sub-parameter at all'
 end
 
 check 'Trade Event Locations queues a :swap request' do
