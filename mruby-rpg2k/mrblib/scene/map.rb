@@ -5383,14 +5383,19 @@ class RPG2k
       end
 
       # The purchased / sold confirmation shown right after a transaction
-      # commits (Game::Shop#buy / #sell): a single line, dismissed on a
-      # button press the same way the battle event message panel is (see
-      # #drive_battle_event_message), then back to the list it came from --
-      # EasyRPG's own Scene_Shop::Bought / Sold modes return to Buy / Sell
-      # respectively (a timed auto-dismiss there; button-driven here to match
-      # every other message screen in this scene).
+      # commits (Game::Shop#buy / #sell): a single line, auto-dismissed after
+      # a flat one-second timer, then back to the list it came from.
+      # Confirmed directly against EasyRPG's live source, `Scene_Shop::
+      # vUpdate` (src/scene_shop.cpp): its `Bought` / `Sold` cases are a bare
+      # `timer--; if (timer == 0) SetMode(Buy/Sell);`, and `SetMode` arms
+      # `timer = DEFAULT_FPS` (`src/options.h`: `#define DEFAULT_FPS 60`) on
+      # entry. `UpdateNumberInput` -- the only place this scene reads
+      # `Input::` during the Buy/Sell flow -- has no `Bought`/`Sold` case at
+      # all, so a button press neither dismisses the confirmation early nor
+      # does anything else while it is up.
       def drive_shop_confirm
-        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        @shop[:confirm_timer] -= 1
+        return if @shop[:confirm_timer] > 0
         @shop[:screen] = @shop[:screen] == :purchased ? :buy : :sell
         @shop[:quantity] = nil
         draw_shop
@@ -5432,6 +5437,7 @@ class RPG2k
           # panel there still needs its item id (see #shop_status_item_id) --
           # and is only cleared once #drive_shop_confirm leaves the screen.
           @shop[:screen] = mode == :buy ? :purchased : :sold
+          @shop[:confirm_timer] = 60
           draw_shop
           play_system_se(SFX_DECISION)
         elsif Input.trigger?(Input::B)
