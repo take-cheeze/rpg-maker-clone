@@ -16541,6 +16541,25 @@ check 'Simulated Attack floors the damage at zero' do
   eq 100, st.party.actor_by_id(1).hp
 end
 
+check 'Simulated Attack leaves its result variable untouched when the ' \
+      'target actor id is invalid, instead of zeroing it' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandSimulatedAttack` (`src/game_interpreter.cpp`) writes the result
+  # variable *inside* its own `for (const auto& actor : GetActors(...))`
+  # loop, never reached at all when that loop is empty -- and `GetActors`
+  # returns an empty vector, without ever touching the variable, when a
+  # fixed actor id names a database row that does not exist (`if (!actor)
+  # { ...; return actors; }`). A stale value already sitting in the
+  # variable must therefore survive, not get zeroed by a target-less hit.
+  st = party_state
+  st.variables[6] = 77 # a stale value the empty-target case must not clear
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed actor), actor id 99 (no such actor), store-damage flag 1.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 99, 50, 0, 0, 0, 1, 6])])
+  it.update
+  eq 77, st.variables[6], 'no target resolved, so the variable is left exactly as it was'
+end
+
 # A prior version of this codebase clamped Simulated Attack's own damage
 # to Game::Battle::DAMAGE_CAP, by analogy with the normal-attack/skill/
 # self-destruct/slip-damage popup cap -- a plausible-sounding but

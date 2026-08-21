@@ -2221,6 +2221,18 @@ module Game
     # at 0, then spread by `Algo::VarianceAdjustEffect` and floored at 0 again.
     # The hit can be lethal.
     #
+    # The variable write happens once per resolved target, from inside
+    # RPG_RT's own target-resolution loop -- confirmed against
+    # `Game_Interpreter::CommandSimulatedAttack` (`src/game_interpreter.cpp`):
+    # `Main_Data::game_variables->Set(com.parameters[7], result)` sits inside
+    # the `for (const auto& actor : GetActors(...))` loop, never reached at
+    # all when that loop is empty. `GetActors` (same file) returns an empty
+    # vector without ever touching the variable when a fixed actor ID names a
+    # row the database doesn't have, or a variable-actor mode's variable
+    # holds an invalid/stale ID (`if (!actor) { ...; return actors; }`,
+    # modes 1/2). An empty target list therefore leaves the variable exactly
+    # as it was, not zeroed.
+    #
     # Deliberately **not** clamped to `Game::Battle#damage_cap`. A prior
     # version of this method assumed it should be, by analogy with the
     # normal-attack/skill/self-destruct damage-popup cap ("RPG_RT's damage
@@ -2238,15 +2250,15 @@ module Game
     # `Game_Battler::ChangeHp` directly, neither of which clamps either.
     def do_simulated_attack(cmd)
       atk = cmd.param(2)
-      damage = 0
+      store_result = cmd.param(6) != 0
       stat_targets(cmd).each do |a|
         damage = atk - (a.def * cmd.param(3)) / 400 - (a.int * cmd.param(4)) / 800
         damage = 0 if damage < 0
         damage = simulated_attack_variance(damage, cmd.param(5))
         damage = 0 if damage < 0
         a.change_hp(-damage, true)
+        variables[cmd.param(7)] = damage if store_result
       end
-      variables[cmd.param(7)] = damage if cmd.param(6) != 0
       check_game_over
     end
 
