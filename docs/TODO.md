@@ -12229,6 +12229,40 @@ not yet verified:
   `nil`; a save written before this landed, missing field 3 entirely, also
   round-trips to `nil` rather than crashing), confirmed to fail against the
   pre-fix code (`expected 7, got nil`).
+  ✅ **Follow-up (2026-08-21): a live Change Parallax Background (11720)
+  override had the identical Save/Continue gap Change Encounter Rate just
+  got fixed for above — the exact same `SaveMapInfo`/chunk 111 struct, a
+  different set of its fields.** This codebase's own `Game::State#@parallax`
+  doc comment claimed "RPG2000 resets it to the map's default on every map
+  change... so it is not serialised," conflating two genuinely different
+  triggers in real RPG_RT: a map change (Teleport, confirmed correct —
+  `Game_Map::Setup` calls `Parallax::ClearChangedBG()`) versus a Save/
+  Continue on the *same* map (a separate code path, `SetupFromSave`, which
+  never calls `ClearChangedBG`). Confirmed directly against RPG_RT's live
+  source: `SetupFromSave` (`src/game_map.cpp`) does `map_info =
+  std::move(save_map)` unconditionally — the same `SaveMapInfo` struct
+  `encounter_steps` lives in — then ends with `Parallax::ChangeBG(
+  GetParallaxParams())`, whose own helper reads `map_info.parallax_name`
+  first and only falls back to the map's own default when that field is
+  blank; `Parallax::ChangeBG` itself (the Change Parallax Background
+  command's own handler) writes straight onto `map_info.parallax_*`, so a
+  live override sits in the same struct a Save chunk carries wholesale.
+  liblcf's own generator table confirms the wire format: `SaveMapInfo,
+  parallax_name,f,String,0x20,...` through `...,parallax_vert_speed,f,
+  Int32,0x26,...` (`generator/csv/fields.csv`), seven fields (32-38)
+  in the same chunk 111. `LCF::Schema::SAVE_MAP_EVENT` had none of them;
+  `#to_lsd`/`.from_lsd` never wrote or read `#parallax` at all — a genuine
+  Save/Continue silently reverted a live override to the map's own
+  panorama the moment the save reloaded. Fixed the identical way: added
+  fields 32-38 to `SAVE_MAP_EVENT`, wrote them from `#parallax`'s existing
+  `{name:, loop_x:, loop_y:, auto_x:, sx:, auto_y:, sy:}` hash shape
+  (`Interpreter#do_change_parallax`'s own opts) when live, and read them
+  back in `.from_lsd` — a blank/absent name means "no override," matching
+  `GetParallaxParams`'s own check (real RPG_RT cannot distinguish "never
+  overridden" from "overridden to blank" either, since `ClearChangedBG`
+  itself writes a default-constructed, empty-name `Params`). Covered by a
+  new `scripts/rpg2k_logic_check.rb` check mirroring the encounter-rate
+  test's structure exactly, confirmed to fail against the pre-fix code.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**

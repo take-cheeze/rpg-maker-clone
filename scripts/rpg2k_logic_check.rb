@@ -11117,6 +11117,48 @@ check 'to_lsd/from_lsd round-trips a live Change Encounter Rate override ' \
   eq nil, old.encounter_rate, 'no saved override means the map\'s own rate applies'
 end
 
+check 'to_lsd/from_lsd round-trips a live Change Parallax Background ' \
+      'override (chunk 111 fields 32-38)' do
+  # Real RPG_RT's SaveMapInfo.parallax_name/horz/vert/horz_auto/horz_speed/
+  # vert_auto/vert_speed (liblcf generator/csv/fields.csv: `SaveMapInfo,
+  # parallax_name,f,String,0x20,...` through `...,parallax_vert_speed,f,
+  # Int32,0x26,...`) restore a Save/Continue on the same map to whatever
+  # Change Parallax Background (11720) had overridden --
+  # Game_Map::Parallax::ChangeBG/GetParallaxParams (src/game_map.cpp)
+  # confirmed directly against EasyRPG's own live source, the same `map_info`
+  # struct `SetupFromSave` restores wholesale before ChangeBG re-derives the
+  # live panorama from it. #to_lsd/.from_lsd previously never touched these
+  # fields at all, so the override silently reverted to the map's own
+  # panorama the moment a real save was reloaded.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.set_parallax(name: 'Clouds', loop_x: true, loop_y: false,
+                  auto_x: true, sx: 2, auto_y: false, sy: 0)
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq({ name: 'Clouds', loop_x: true, loop_y: false, auto_x: true, sx: 2,
+       auto_y: false, sy: 0 }, round.parallax)
+
+  # A blank/absent name is real RPG_RT's own "no override" sentinel
+  # (GetParallaxParams' `map_info.parallax_name.empty()` check) -- a State
+  # that never ran Change Parallax Background must not write these fields at
+  # all, and from_lsd must leave a fresh State's own nil (use the map's own
+  # panorama) alone rather than invent an override.
+  never_overridden = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, Game::State.from_lsd(db, never_overridden.to_lsd).parallax,
+     'no Change Parallax Background this session means no override round-trips'
+
+  # A save written before this landed simply omits fields 32-38 (or chunk
+  # 111 entirely, if no event ever recorded a position/substitution either);
+  # from_lsd must leave that same nil alone rather than crash reading absent
+  # fields.
+  legacy = st.to_lsd
+  (32..38).each { |f| legacy[111].delete(f) }
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.parallax, 'no saved override means the map\'s own panorama applies'
+end
+
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
 # 0=up/1=right/2=down/3=left (Game_Character::Direction's own enum order),
 # not this runtime's numpad convention (2/4/6/8) -- the two schemes only

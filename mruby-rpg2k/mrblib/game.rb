@@ -13992,8 +13992,16 @@ module Game
       # HUD pictures are re-shown by parallel events on load), so not serialised.
       @pictures = {}
       # Runtime parallax override from a Change Parallax Background command (nil =
-      # use the map's own panorama). Transient like @pictures: RPG2000 resets it
-      # to the map's default on every map change, so it is not serialised.
+      # use the map's own panorama). Reset on a map change (#clear_parallax,
+      # called alongside #erase_all_pictures) -- but, unlike @pictures, DOES
+      # round-trip through a real Save/Continue on the same map (#to_lsd/
+      # .from_lsd, chunk 111 fields 32-38): confirmed against RPG_RT's own
+      # live source, `Game_Map::SetupFromSave` (`src/game_map.cpp`) restores
+      # `SaveMapInfo`/`map_info` wholesale (the same struct a live Change
+      # Parallax Background writes onto) and only a genuine map change
+      # (`Game_Map::Setup`) calls `Parallax::ClearChangedBG()` -- two
+      # genuinely different triggers a prior, uncited version of this
+      # comment had conflated.
       @parallax = nil
     end
 
@@ -14439,16 +14447,19 @@ module Game
       # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) is the currently-loaded map's
       # own live event table, mirrored straight from #map_event_positions/
       # #map_event_route_index, plus its Tile Substitution table
-      # (#tile_substitutions, fields 21/22) and a live Change Encounter Rate
-      # override (#encounter_rate, field 3) -- all four already scoped to the
-      # current map only, see their own doc comments above. Camera scroll
-      # (SAVE_MAP_EVENT fields 1/2) is not modelled by this codebase, so it
-      # stays absent, matching the "view derives from the hero" fallback ADR
-      # 0021 documents. Omitted entirely on a State with none of these three
-      # recorded (e.g. a fresh, unplayed save), the same "absent means
-      # nothing to restore" rule the unplaced-vehicle chunks above use.
+      # (#tile_substitutions, fields 21/22), a live Change Encounter Rate
+      # override (#encounter_rate, field 3) and a live Change Parallax
+      # Background override (#parallax, fields 32-38) -- all five already
+      # scoped to the current map only, see their own doc comments above.
+      # Camera scroll (SAVE_MAP_EVENT fields 1/2) is not modelled by this
+      # codebase, so it stays absent, matching the "view derives from the
+      # hero" fallback ADR 0021 documents. Omitted entirely on a State with
+      # none of these four recorded (e.g. a fresh, unplayed save), the same
+      # "absent means nothing to restore" rule the unplaced-vehicle chunks
+      # above use.
       lower_subs, upper_subs = @tile_substitutions
-      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty? && !@encounter_rate
+      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty? &&
+             !@encounter_rate && !@parallax
         mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
         unless @map_event_positions.empty?
           events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
@@ -14467,6 +14478,15 @@ module Game
         mapev[21] = self.class.tile_replacement_bytes(lower_subs) unless lower_subs.empty?
         mapev[22] = self.class.tile_replacement_bytes(upper_subs) unless upper_subs.empty?
         mapev[3] = @encounter_rate if @encounter_rate
+        if @parallax
+          mapev[32] = @parallax[:name].to_s
+          mapev[33] = @parallax[:loop_x]
+          mapev[34] = @parallax[:loop_y]
+          mapev[35] = @parallax[:auto_x]
+          mapev[36] = @parallax[:sx]
+          mapev[37] = @parallax[:auto_y]
+          mapev[38] = @parallax[:sy]
+        end
         save[111] = mapev
       end
 
@@ -14813,6 +14833,21 @@ module Game
       # Scene::Map#current_encounter_steps.
       steps = map_events && map_events.encounter_steps
       state.encounter_rate = steps if steps && steps >= 0
+      # The same chunk's own Change Parallax Background override (fields
+      # 32-38): a blank/absent name means "no override, use the map's own
+      # panorama" -- matching `GetParallaxParams`'s own `map_info.
+      # parallax_name.empty()` check (`src/game_map.cpp`), which real RPG_RT
+      # itself cannot distinguish from "never overridden" either (`Parallax::
+      # ClearChangedBG` writes a default-constructed, empty-name Params).
+      pname = map_events && map_events.parallax_name
+      if pname && !pname.empty?
+        state.set_parallax(name: pname, loop_x: !!map_events.parallax_horz,
+                           loop_y: !!map_events.parallax_vert,
+                           auto_x: !!map_events.parallax_horz_auto,
+                           sx: map_events.parallax_horz_speed,
+                           auto_y: !!map_events.parallax_vert_auto,
+                           sy: map_events.parallax_vert_speed)
+      end
       state
     end
 
