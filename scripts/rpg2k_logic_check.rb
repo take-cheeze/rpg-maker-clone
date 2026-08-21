@@ -20513,6 +20513,39 @@ check "battle: an RPG2000 two-weapon actor's swings both roll the merged " \
                         'RPG2000 never splits by weapon'
 end
 
+check "battle: an RPG2003 two-weapon actor's swing on a genuine 0%-hit " \
+      'weapon always misses, not defaulted to the 90% unarmed rate' do
+  # Same INT_MIN-sentinel distinction #attack_hit_rate's own fix already
+  # covers (see "a weapon with its own genuine 0% hit rate is used as-is,
+  # not treated as unequipped" above), now for the per-swing #swing_weapon_
+  # data/#weapon_roll_data path a two-weapon RPG2003 actor's second swing
+  # goes through. Confirmed against the same EasyRPG source: `Game_Actor::
+  # GetHitChance`'s `ForEachEquipment<true,false>(..., weapon)` call visits
+  # exactly one slot for a single-weapon query, so `hit = std::max(INT_MIN,
+  # item.hit) == item.hit` verbatim -- the `INT_MIN` fallback to 90 only
+  # ever fires when that slot holds no weapon at all, never when the
+  # equipped weapon's own `hit` field is a genuine 0.
+  items = { 1 => fake_item(type: 1, atk: 10, hit: 100), # always lands
+            2 => fake_item(type: 1, atk: 10, hit: 0) }  # cursed: never lands
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items, rpg2003: true)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  actor = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(actor, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(actor, 2, Game::Actor::SHIELD_SLOT)
+  hero = Game::Battle.from_actor(actor)
+  foe = combatant('Foe', 0, 0, 20, 999) # much nimbler than the hero's agi 10
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), {}, false, false, true)
+  first, second = bat.send(:swing, hero, foe)
+  ok !first[:missed], 'swing 1 (hit 100) always lands'
+  eq true, second[:missed], "swing 2 (the cursed hit-0 weapon) always misses -- its own " \
+                            '0%, not the 90% unarmed default a masked 0 would fall back to'
+end
+
 check 'battle: #swing actually lands three attacks when strike_count is three, ' \
       'not capped at two' do
   # #swing previously hardcoded "at most two attacks" (`deal_attack` once,

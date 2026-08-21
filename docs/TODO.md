@@ -9525,6 +9525,32 @@ not yet verified:
   both roll the *merged* 100%-hit max rather than one weapon's own
   guaranteed-miss 10%, confirmed to fail against the pre-fix code before the
   fix.
+  ✅ **Follow-up (2026-08-21): `#weapon_roll_data` (the per-swing data
+  `#swing_weapon_data` hands each RPG2003 two-weapon swing) folded a
+  genuine 0%-hit weapon into the "nothing equipped" case and substituted
+  the 90% unarmed default — the exact same bug class `#attack_hit_rate`
+  was already fixed for elsewhere in this file (`Game_Actor::
+  GetHitChance`'s own `INT_MIN` sentinel, see that bullet's own citation),
+  just never mirrored into this newer, parallel single-weapon path.**
+  Confirmed against the identical EasyRPG source: `ForEachEquipment`'s
+  single-slot query (`weapon != slot+1` exclusion) visits exactly one item
+  for `#swing_weapon_data`'s per-swing resolution, so `hit = std::max(
+  INT_MIN, item.hit) == item.hit` verbatim — the `INT_MIN` fallback only
+  ever fires when that slot holds no weapon at all, never when the
+  equipped weapon's own `hit` field is a genuine 0. `#weapon_roll_data`
+  (`mruby-rpg2k/mrblib/game.rb`) instead wrote `it.hit && it.hit > 0 ?
+  it.hit : 90`, so an RPG2003 dual-wield actor's second weapon —
+  deliberately authored with `hit: 0` (a cursed/joke weapon meant to never
+  land) — would land that swing at the ordinary unarmed rate instead of
+  never. Fixed by replacing the `> 0` fold with the same nil-vs-present
+  distinction `#attack_hit_rate` already uses (`h = it.hit; hit = h.nil? ?
+  90 : h`) — `it` is always a real equipped weapon by the time it reaches
+  here, so the only genuinely-absent case left is a row with no `hit`
+  field at all. Covered by a new `scripts/rpg2k_logic_check.rb` check (an
+  RPG2003 two-weapon actor's hit-100 first swing always lands while its
+  cursed hit-0 second swing always misses, against a target nimble enough
+  that the old 90%-default bug would have landed it almost every roll),
+  confirmed to fail against the pre-fix code.
 - ✅ **A terrain row's negative `damage` field now heals the party each step
   instead of doing nothing, and bypasses 地形ダメージ無効 gear entirely while
   doing it.** RPG2000/2003 terrain rows carry one plain signed `damage`
