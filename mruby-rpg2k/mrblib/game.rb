@@ -10221,6 +10221,38 @@ module Game
       source.last_battle_action
     end
 
+    # Conditional Branch (Battle) test 4, "the currently-targeted troop
+    # member is param1": the troop slot index of `source`'s own currently-
+    # resolved single enemy target, or nil when there is no such single
+    # target. Port of RPG_RT's own `target_enemy_index`/`targets_single_
+    # enemy` (set in `Scene_Battle_Rpg2k3::ProcessBattleActionBegin`, `src/
+    # scene_battle_rpg2k3.cpp`, right before a page's pre-action events
+    # run): only computed when `source->GetType() == Type_Ally`, from that
+    # action's own `GetOriginalSingleTarget()` -- the target chosen at
+    # command time, before any forced-restriction (Berserk/Confuse)
+    # override -- and only when that target is itself an enemy (`Type_
+    # Enemy`); an all-target action or one aimed at an ally leaves
+    # `targets_single_enemy` false. This port's own equivalent of "the
+    # original single target": a basic Attack's plain `#action` field, or a
+    # single-target Skill/Item's `#command[:target]` (nil for an all-target
+    # `#command[:all]` action). `@enemies.find_index` compares by identity
+    # (`#equal?`), not the Struct's own value equality, since two same-type
+    # enemies sharing every stat would otherwise collide onto the wrong
+    # index the way `#turn_order`'s own citation on this exact hazard
+    # already documents. Only ever resolved for an ally `source` -- RPG_RT
+    # itself only ever *sets* these fields for an acting ally; an
+    # enemy-sourced page run instead inherits whatever the last acting ally
+    # left behind (`// Enemy doesn't change the values...`), a real but
+    # rarely-observable quirk left unmodelled here.
+    def target_enemy_index(source)
+      return nil unless source
+      a = source.actor
+      return nil unless a
+      target = source.command ? (source.command[:all] ? nil : source.command[:target]) : source.action
+      return nil unless target
+      @enemies.find_index { |e| e.equal?(target) }
+    end
+
     # Force Flee (1006), target 0: let the party leave whenever it next tries.
     # RPG_RT grants the escape rather than performing it, so the player still has
     # to pick Flee — #attempt_escape then always succeeds.

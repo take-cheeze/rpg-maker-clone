@@ -18144,6 +18144,73 @@ check 'battle Conditional Branch test 5 (actor uses the ... command) reads ' \
   eq 2, st.variables[1], 'a source that is not the named actor never matches'
 end
 
+# Test 4 ("the currently-targeted troop member is param1") was previously
+# left unimplemented (see #do_conditional_battle's own citation), falling
+# straight to `else false` regardless of actual battle state. Confirmed
+# against EasyRPG's actual C++ source: `Game_Interpreter_Battle::
+# CommandConditionalBranchBattle` case 4, `result = (targets_single_enemy
+# && target_enemy_index == com.parameters[1]);`, where both fields are set
+# in `Scene_Battle_Rpg2k3::ProcessBattleActionBegin` (src/
+# scene_battle_rpg2k3.cpp) from the acting ally's own `GetOriginalSingle
+# Target()` -- the target chosen at command time -- only when that target
+# is itself an enemy. `Game::Battle#target_enemy_index` is this port's own
+# counterpart, reusing the identical `battle_source` plumbing test 5
+# already threads.
+check 'battle Conditional Branch test 4 (troop member is the current ' \
+      "target) reads Interpreter#battle_source's own resolved target" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  goblin = combatant('Goblin', 0, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime, goblin], Game::Rng.new(1))
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL_B, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)]
+  end
+
+  # No source at all (a round-boundary check) -- unanswerable.
+  hero.action = slime
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 2, st.variables[1], 'no battle_source set -- the else branch runs'
+
+  it.battle_source = hero
+
+  # A basic Attack (#action) targeting troop slot 0 (the slime).
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 1, st.variables[1], 'a basic Attack on troop slot 0 matches index 0'
+
+  it.start(branch.call([4, 1]))
+  it.update
+  eq 2, st.variables[1], 'but not the other troop slot'
+
+  # A single-target Skill/Item's own #command[:target] overrides #action --
+  # targeting troop slot 1 (the goblin) this time.
+  hero.command = { target: goblin }
+  it.start(branch.call([4, 1]))
+  it.update
+  eq 1, st.variables[1], "a single-target Skill/Item's own resolved target wins over #action"
+
+  # An all-target action (#command[:all]) has no single troop-member target.
+  hero.command = { all: true }
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 2, st.variables[1], 'an all-target action never satisfies any troop-member test'
+
+  # A heal aimed at an ally resolves to no troop index at all.
+  hero.command = { target: hero }
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 2, st.variables[1], 'a command aimed at an ally is not a troop member'
+end
+
 # Confirmed against EasyRPG's actual C++ source, fetched live:
 # `Game_Interpreter_Battle::CommandConditionalBranchBattle`
 # (src/game_interpreter_battle.cpp) reads only `com.parameters[1]` for its
