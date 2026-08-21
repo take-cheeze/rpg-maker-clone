@@ -2335,13 +2335,19 @@ check 'Tint Screen with a wait pauses until the transition settles' do
   eq 0, st.screen.tint[0]
 end
 
-check 'Tint Screen with an instant (zero-duration) transition does not wait' do
+check 'Tint Screen with an instant (zero-duration) transition still waits one frame' do
   st = new_state
   it = Game::Interpreter.new(st)
-  it.start([FakeCmd.new(IC::TINT_SCREEN, [50, 60, 70, 100, 0, 1])]) # dur 0, wait 1
+  it.start([FakeCmd.new(IC::TINT_SCREEN, [50, 60, 70, 100, 0, 1]), # dur 0, wait 1
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
   it.update
-  ok !it.waiting?, 'nothing to wait for when the tint is immediate'
-  eq [50, 60, 70, 100], st.screen.tint
+  eq [50, 60, 70, 100], st.screen.tint, 'the tint itself applies immediately'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  ok !st.switches[1], 'the following command has not run yet'
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[1], 'resumed the very next frame, since nothing is left animating'
 end
 
 check 'Shake Screen without a wait starts a shake and does not pause' do
@@ -2462,6 +2468,21 @@ check 'Flash Screen with a wait pauses until the flash fades out' do
   it.update
   eq true, st.switches[2], 'resumed once the flash faded'
   eq 0, st.screen.flash_color[3]
+end
+
+check 'Flash Screen with an instant (zero-duration) flash still waits one frame' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [31, 0, 0, 20, 0, 1]), # dur 0, wait 1
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq 0, st.screen.flash_color[3], 'a zero-duration flash settles at no flash immediately'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  ok !st.switches[1], 'the following command has not run yet'
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[1], 'resumed the very next frame, since nothing is left animating'
 end
 
 check 'RPG2003 Flash Screen mode 1 (Begin) strobes indefinitely and never pauses' do
