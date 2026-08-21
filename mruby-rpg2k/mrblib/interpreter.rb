@@ -3976,6 +3976,10 @@ module Game
     # `Scene::Menu`'s own End Game call passes `bgm_fade(400)` directly.
     def do_fadeout_bgm(cmd)
       @state.bgm_looped = false
+      # `Game_System::BgmFade` (`src/game_system.cpp`) always sets `data.
+      # music_stopping = true` alongside the fade itself -- see Game::State
+      # #bgm_stopping's own doc comment for what this ungates.
+      @state.bgm_stopping = true
       RGSS::Audio.bgm_fade(cmd.param(0))
     rescue StandardError => e
       $stderr.puts "[RPG2k] BGM fade-out failed: #{e.message}"
@@ -4117,7 +4121,12 @@ module Game
     def do_play_memorized_bgm(_cmd)
       bgm = @state.memorized_bgm
       return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
-      same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == bgm[:name]
+      # Gated on !#bgm_stopping too, same as #play_audio's :bgm branch --
+      # `PlayMemorizedBGM` is a bare `BgmPlay` call, so it shares that
+      # method's own `!data.music_stopping` restart gate (see
+      # Game::State#bgm_stopping's own doc comment).
+      same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == bgm[:name] &&
+                                   !@state.bgm_stopping
       if same_file_already_playing
         RGSS::Audio.bgm_volume(bgm[:volume] || 100)
       else
@@ -4132,6 +4141,9 @@ module Game
       # `Music` struct straight to a new play call either way.
       RGSS::Audio.bgm_pan(bgm[:balance] || 50)
       @state.current_bgm = bgm.dup
+      # Cleared unconditionally, restart or not -- see #play_audio's own
+      # matching reset.
+      @state.bgm_stopping = false
     rescue StandardError => e
       $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
       nil
@@ -4158,6 +4170,10 @@ module Game
         if blank || name == '(OFF)'
           RGSS::Audio.bgm_stop
           @state.current_bgm = nil
+          # `Game_System::BgmPlay` clears `data.music_stopping` unconditionally
+          # at the very end, including this stop branch -- see Game::State
+          # #bgm_stopping's own doc comment.
+          @state.bgm_stopping = false
           return
         end
       elsif blank
@@ -4175,19 +4191,27 @@ module Game
         balance = cmd.parameters.size > 3 ? cmd.param(3) : 50
         # BGM has a single channel, and RPG_RT special-cases re-triggering Play
         # BGM with the file that's already current: it does NOT break and
-        # restart the track from the top the way any other Play BGM does
-        # (yado.tk), but it does re-apply the command's own volume to the
-        # still-playing track (`RGSS::Audio.bgm_volume`, backed by
-        # `Mix_VolumeMusic` — see `src/sdl_audio.cxx`, which applies live with
-        # no restart, unlike `bgm_play`'s `Mix_PlayMusic`). Tempo stays
-        # unaddressed: SDL_mixer has no live pitch control for a playing music
-        # stream (only a freshly started one). Balance/pan is wired the same
-        # live-update way via `RGSS::Audio.bgm_pan` (backed by
-        # `Mix_SetPanning(MIX_CHANNEL_POST, ...)` — the only technique that
-        # reaches a Mix_Music stream at all, see `src/sdl_audio.cxx`), applied
-        # on every Play BGM regardless of same-file-or-not since it has no
-        # per-track state to restart.
-        same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name
+        # restart the track from the top the way any other Play BGM does --
+        # confirmed against `Game_System::BgmPlay` (`src/game_system.cpp`)
+        # itself, not merely a fan-wiki claim -- but it does re-apply the
+        # command's own volume to the still-playing track
+        # (`RGSS::Audio.bgm_volume`, backed by `Mix_VolumeMusic` — see
+        # `src/sdl_audio.cxx`, which applies live with no restart, unlike
+        # `bgm_play`'s `Mix_PlayMusic`). Tempo stays unaddressed: SDL_mixer has
+        # no live pitch control for a playing music stream (only a freshly
+        # started one). Balance/pan is wired the same live-update way via
+        # `RGSS::Audio.bgm_pan` (backed by `Mix_SetPanning(MIX_CHANNEL_POST,
+        # ...)` — the only technique that reaches a Mix_Music stream at all,
+        # see `src/sdl_audio.cxx`), applied on every Play BGM regardless of
+        # same-file-or-not since it has no per-track state to restart.
+        #
+        # That no-restart shortcut is itself gated on `!data.music_stopping`
+        # in real RPG_RT (`BgmPlay`'s own `if (!data.music_stopping &&
+        # previous_music.name == bgm.name)`) -- a Fade Out BGM (11520) of this
+        # exact track since it last started DOES force a fresh restart here,
+        # matching `#bgm_stopping`'s own doc comment.
+        same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name &&
+                                     !@state.bgm_stopping
         # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
         # as the "current system BGM" regardless of whether playback succeeds)
         # -- balance included, since `Game_System::MemorizeBGM`
@@ -4200,6 +4224,9 @@ module Game
           @state.bgm_looped = false # a fresh track has not looped yet
           RGSS::Audio.bgm_play(name, volume, pitch)
         end
+        # Cleared unconditionally, restart or not -- `BgmPlay`'s own `data.
+        # music_stopping = false;` runs after the if/else either way.
+        @state.bgm_stopping = false
         RGSS::Audio.bgm_pan(balance)
       else
         # PlaySE parameters: [volume, tempo, balance].
