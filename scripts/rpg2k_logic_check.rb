@@ -14980,6 +14980,29 @@ check 'battle state at 0% auto_release_prob never wears off on its own' do
   eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
+# EasyRPG's Game_Battler::BattleStateHeal (src/game_battler.cpp) always rolls
+# Rand::ChanceOf(auto_release_prob, 100) once state_turns exceeds hold_turn --
+# Rand::ChanceOf (src/rand.cpp) is GetRandomNumber(1, m) <= n and always draws,
+# whatever n is; C++'s && only short-circuits on the hold_turn test, never on
+# the probability. A 0%-chance state must still burn that RNG draw every turn
+# once eligible, or this build's shared RNG stream desyncs from a real seeded
+# RPG_RT run for the rest of the fight.
+check 'battle state auto-release always consumes an RNG draw once eligible, even at 0% chance' do
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 0, 0) } # hold_turn 0, prob 0
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  rng = Game::Rng.new(1)
+  bat = Game::Battle.new([hero], [slime], rng, states)
+  bat.send(:apply_turn_states, hero) # counter 0 -> 1, > hold_turn 0: eligible, must roll
+
+  reference = Game::Rng.new(1)
+  reference.next_int
+  eq reference.instance_variable_get(:@state), rng.instance_variable_get(:@state),
+     'an always-fails-at-0% auto-release check must still burn exactly one RNG draw, matching ' \
+     "Rand::ChanceOf's unconditional GetRandomNumber call"
+end
+
 check 'battle: curing a state resets its turn-held counter, so a ' \
       'reinflicted state does not inherit a stale duration' do
   # RPG_RT's own State::Add/State::Remove (src/state.cpp) share one literal
