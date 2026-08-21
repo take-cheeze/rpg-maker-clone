@@ -5463,6 +5463,42 @@ check 'Change Class stays quiet about a skill the actor already knew going in' d
      'skill 21 was already known, so only the newly-learned skill 22 is named'
 end
 
+check 'Change Class still announces the level even when its Reset/Add skill ' \
+      'mode happens to teach nothing new' do
+  # Confirmed directly against RPG_RT's live source: `Game_Actor::
+  # ChangeClass` (`src/game_actor.cpp`) gates its level-up line on
+  # `new_level > 1 && (new_level > prev_level || new_skill !=
+  # eSkillNoChange)` -- a skill-*mode* check, never a check of whatever
+  # `LearnLevelSkills` (called only for Reset/Add) actually taught. A
+  # Reset/Add class swap that happens to teach nothing new (the actor
+  # already knows every skill the new class's learn table offers) still
+  # shows the line -- only skill_mode NO_CHANGE (or a level that never
+  # exceeds 1) stays quiet.
+  st = Game::State.new(Game::Party.new(class_db_named_skills), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  # Teach both of class 1's learn-table skills (21 at level 1, 22 at level
+  # 3) up front, so a RESET class change at the same level 3 teaches nothing
+  # new at all.
+  it0 = Game::Interpreter.new(st)
+  it0.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 21]),
+             FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 22])])
+  it0.update
+  eq [10, 21, 22], a.skills.sort
+
+  it = Game::Interpreter.new(st)
+  # class 1, keep level 3 (level1 flag off), skills reset, params no-change,
+  # show message on.
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 1, 0, Game::Actor::CLASS_SKILL_RESET,
+                         Game::Actor::CLASS_PARAM_NO_CHANGE, 1])])
+  it.update
+  eq :message, it.wait_kind, 'RPG_RT still announces the level, taught nothing new or not'
+  eq ['Hero is now level 3!'], it.message_lines, 'no newly-learned skill to name'
+  it.resume
+  it.update
+  ok !it.waiting?
+end
+
 check 'Change Battle Commands adds, removes and clears the command list' do
   st = class_state
   a = st.party.actor_by_id(1)

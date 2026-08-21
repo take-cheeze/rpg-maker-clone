@@ -2587,11 +2587,11 @@ The work below is roughly ordered by the critical path to a walkable game
   named a single skill the change taught. Fixed the same way as Change
   Level/Change EXP: snapshot each target's skill list right before
   `#change_class` runs and append one `skill_learned_message` line per
-  post-change skill absent from that snapshot onto the level-up page. The
+  post-change skill absent from that snapshot onto the level-up page. ~~The
   show-message trigger itself is now more precise too — it fires on an
   actual skill diff being non-empty rather than guessing from the skill mode
   alone, so a RESET/ADD class swap that happens to teach nothing new stays
-  quiet, same as a level that didn't move. Covered by two new
+  quiet, same as a level that didn't move.~~ Covered by two new
   `scripts/rpg2k_logic_check.rb` checks (a class swap whose learn table
   teaches two skills across levels 1 and 3 names both on the level-up page;
   a skill taught early via an explicit Change Skills stays quiet, naming
@@ -2601,6 +2601,27 @@ The work below is roughly ordered by the critical path to a walkable game
   still announces each skill on its own level's page; a skill taught early
   via Change Skills still stays quiet once the level that would have taught
   it is reached.)
+  - **Follow-up (2026-08-21):** the "more precise" trigger above was itself
+    wrong — RPG_RT does *not* base the level-up line on the actual skill
+    diff at all. Confirmed against RPG_RT's own live source: `Game_Actor::
+    ChangeClass` (`src/game_actor.cpp`) gates its `PushLine(GetLevelUpMessage
+    (...))` on `new_level > 1 && (new_level > prev_level || new_skill !=
+    eSkillNoChange)` — a skill-*mode* check, one of several known-quirky,
+    deliberately-preserved RPG_RT behaviours EasyRPG's own comments flag in
+    this exact function, never a check of whatever `LearnLevelSkills`
+    (called only for Reset/Add) actually taught. So ~~a RESET/ADD class
+    swap that happens to teach nothing new stays quiet~~ is backwards: real
+    RPG_RT still shows the line whenever the skill mode is Reset or Add,
+    regardless of whether that mode actually taught anything. Fixed by
+    reverting the outer gate from the actual skill-diff check back to a
+    skill-mode check (`skill_mode != Game::Actor::CLASS_SKILL_NO_CHANGE`),
+    while leaving the per-skill diff (used to name which skills to list
+    under the level-up line) untouched — that half was already correct.
+    Covered by a new `scripts/rpg2k_logic_check.rb` check (a RESET class
+    swap that teaches nothing new, because the actor already knows every
+    skill the new class's learn table offers, still shows the bare
+    level-up line with no skill named underneath it), confirmed to fail
+    against the pre-fix code before the fix.
   ✅ **A learned skill's own position in the actor's skill list is now
   kept in ascending id order, not learn order (2026-08-18).**
   `Actor#learn_skill` (`mruby-rpg2k/mrblib/game.rb`) simply `push`ed the new

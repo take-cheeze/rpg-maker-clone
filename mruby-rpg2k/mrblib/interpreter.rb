@@ -2345,17 +2345,22 @@ module Game
         next unless a.change_class(class_id, level_1 ? 1 : a.level,
                                    skill_mode, param_mode)
         # Unlike Change Level (which announces every level crossed) RPG_RT shows
-        # a single line here, and shows it whenever the class change taught new
-        # skills even if the level itself did not move (EasyRPG's ChangeClass,
-        # which calls the identical LearnLevelSkills(1, new_level, pm) Change
-        # Level/Change EXP use -- see queue_level_up_messages's own comment).
-        # The actual skill diff (rather than a skill-mode guess) also decides
-        # whether there is anything to announce at all: a RESET/ADD class swap
-        # that happens to teach nothing the actor didn't already know stays
-        # quiet, matching a level that didn't move.
+        # a single line here, and shows it whenever the level exceeds 1 and
+        # either the level actually rose or the skill mode was Reset/Add --
+        # regardless of whether that mode actually taught anything the actor
+        # didn't already know. Confirmed against RPG_RT's own live source:
+        # `Game_Actor::ChangeClass` (`src/game_actor.cpp`) gates its
+        # `PushLine(GetLevelUpMessage(...))` on `new_level > 1 && (new_level >
+        # prev_level || new_skill != eSkillNoChange)` -- a mode check, never a
+        # check of whatever `LearnLevelSkills` (called only for Reset/Add)
+        # actually taught. One of several known-quirky, deliberately-preserved
+        # RPG_RT behaviours EasyRPG's own comments flag in this function. A
+        # RESET/ADD class swap that happens to teach nothing new (e.g.
+        # swapping between two classes whose level 1..N learn tables the actor
+        # has already fully absorbed) still shows the line.
         next unless show_msg
         new_skills = a.respond_to?(:skills) ? a.skills - before_skills : []
-        next unless a.level > 1 && (a.level > before || !new_skills.empty?)
+        next unless a.level > 1 && (a.level > before || skill_mode != Game::Actor::CLASS_SKILL_NO_CHANGE)
         lines = [level_up_message(a, a.level)]
         new_skills.each do |sid|
           sk = party.db_skill(sid)
