@@ -18961,6 +18961,69 @@ check 'Scene::SkillMenu: a successful cast stays on the target screen, ' \
   eq :skills, scene.instance_variable_get(:@mode)
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Game_System::
+# SePlay(const RPG::Animation&)` (`src/game_system.cpp`) skips a timing
+# whose sound name fails `IsStopSoundFilename` -- true for a genuinely
+# blank name *or* the literal "(OFF)" sentinel (liblcf's own "no sound set"
+# default), not blank alone -- and falls through to the next timing's own
+# sound instead.
+check "Scene::SkillMenu: an animation's own success SE skips past a " \
+      '"(OFF)" timing to a later real one, not the reverse' do
+  db = fake_db
+  db.battle_anime = { NormalTargetSkillStubParty::ANIMATION_ID => OpenStruct.new(
+    timings: { 1 => OpenStruct.new(se: OpenStruct.new(file: '(OFF)', volume: 90, pitch: 110)),
+               2 => OpenStruct.new(se: OpenStruct.new(file: 'HealCast', volume: 90, pitch: 110)) }
+  ) }
+  state = Game::State.new(NormalTargetSkillStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state, db)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the skill -- opens target selection
+  scene.update
+  RGSS::Input.reset
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # cast on the first target
+  scene.update
+  RGSS::Input.reset
+  eq 'HealCast', RGSS::Audio.se_calls.last&.first,
+     'the first timing\'s "(OFF)" sentinel is skipped, the second timing\'s ' \
+     'real sound plays instead'
+end
+
+# Confirmed against EasyRPG's actual C++ source:
+# `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect` case
+# (`src/game_character.cpp`) -- `if (move_command.parameter_string !=
+# "(OFF)" && move_command.parameter_string != "(Brak)") { ...SePlay...; }`
+# -- a Move Route "Play SE" sub-command skips playback for either sentinel
+# string, not just a blank name. `RPG2k::Scene::MapWorld`/`VehicleWorld
+# #play_sound` (`mruby-rpg2k/mrblib/scene/base.rb`) is what `Game::
+# MoveRoute`'s own PLAY_SOUND case calls through.
+check 'RPG2k::Scene::MapWorld#play_sound skips the "(OFF)"/"(Brak)" ' \
+      'sentinels, not just a blank name' do
+  world = RPG2k::Scene::MapWorld.new(nil, nil)
+  RGSS::Audio.reset_se
+  world.play_sound('(OFF)', 90, 100, 50)
+  world.play_sound('(Brak)', 90, 100, 50)
+  eq [], RGSS::Audio.se_calls, 'neither sentinel plays anything'
+  world.play_sound('bell', 90, 100, 50)
+  eq [['bell', 90, 100]], RGSS::Audio.se_calls, 'a real name still plays normally'
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Game_System::
+# SePlay(const lcf::rpg::Sound&, bool)` (`src/game_system.cpp`) -- `if
+# (se.name.empty()) { return; } else if (se.name == "(OFF)") { ...; return;
+# }` -- a system SFX slot (cursor/decision/cancel/buzzer) set to the
+# literal "(OFF)" sentinel plays nothing, the same as a genuinely blank
+# name.
+check 'Scene::Base#play_system_se treats a "(OFF)" system SFX slot as no ' \
+      'sound, not a literal filename' do
+  db = fake_db
+  db.system.cursor_se = OpenStruct.new(file: '(OFF)', volume: 100, pitch: 100)
+  scene = RPG2k::Scene::Base.new(fake_parent(db))
+  RGSS::Audio.reset_se
+  scene.send(:play_system_se, RPG2k::Scene::Base::SFX_CURSOR)
+  eq [], RGSS::Audio.se_calls, 'a "(OFF)" system SFX slot plays nothing'
+end
+
 # A party whose two field skills are self (2) and all-ally (4) scope -- real
 # RPG_RT (`Scene_Skill::vUpdate`'s `Algo::IsNormalOrSubskill` branch,
 # scope-independent, `src/scene_skill.cpp`) still pushes a target-confirm
