@@ -3755,10 +3755,12 @@ The work below is roughly ordered by the critical path to a walkable game
   the attack branch rather than inventing a new mechanism:
   `battle_skill_command`'s `else` (heal) branch now reports `variance:
   skill_variance(sk)` alongside its `hp`/`mp`, and `apply_skill_hit` spreads
-  `hp` and `mp` independently through the same `#varied` helper the attack
+  ~~`hp` and `mp` independently through the same `#varied` helper the attack
   branch already calls (each rolls its own random offset, since HP and SP are
   two separate effect values sharing one base rather than one number applied
-  twice), gated on the fight having variance enabled at all. Both the party's
+  twice)~~ (see the Follow-up below — that parenthetical is wrong; RPG_RT
+  applies one shared roll, not one per field), gated on the fight having
+  variance enabled at all. Both the party's
   own healers and an enemy's ally-scoped heal (行動パターン, see the Event
   command interpreter entry) go through the identical `battle_skill_command`
   call, so the fix reaches both sides symmetrically with no separate enemy-AI
@@ -3775,6 +3777,42 @@ The work below is roughly ordered by the critical path to a walkable game
   recovery` check's expectations (both now include the `variance` key),
   confirmed to fail against the pre-fix code (a constant heal across every
   seeded cast; a missing `variance` key) before the fix.
+  ✅ **Follow-up (2026-08-21): HP and SP do not roll independently — RPG_RT
+  spreads both (and any ATK/DEF/SPI/AGI modifier the same cast applies) with
+  one single shared roll, off one shared effect magnitude.** The fix above
+  introduced its own uncited claim in the same breath as fixing the original
+  gap: "each rolls its own random offset, since HP and SP are two separate
+  effect values sharing one base rather than one number applied twice."
+  Confirmed against EasyRPG's actual C++ source: `Algo::CalcSkillEffect`
+  (`src/algo.cpp`) computes one `effect` local — the attribute multiplier and
+  `VarianceAdjustEffect` are each applied exactly once — and
+  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`)
+  reads that identical raw number into every one of its
+  `affect_hp`/`affect_sp`/`affect_attack`/`affect_defense`/`affect_spirit`/
+  `affect_agility` branches, each still gated by its own fresh
+  `Rand::PercentChance(to_hit)` roll (that part of the original fix — the
+  independent *accuracy* gate per field — was already correct and is
+  unaffected). So a Cure spell restoring both HP and SP could land two
+  different randomized amounts (and burn two RNG draws instead of one,
+  desyncing every seeded roll afterward) where real RPG_RT always lands the
+  identical amount off a single draw. Separately, `stat_amount` (the ATK/
+  DEF/SPI/AGI modifier) never even received the attribute multiplier at all
+  in the recovery branch, only `hp`/`mp` did — another gap from the same
+  root cause (three fields computed independently instead of one shared
+  effect split three ways at the end) — and `mp` was never clamped to
+  `#recover_cap` the way `hp`/`stat_amount` were, matching EasyRPG's own
+  single `Utils::Clamp(effect, -MaxDamageValue(), MaxDamageValue())` right
+  after `CalcSkillEffect` returns, before any affect_* branch reads it.
+  `Game::Battle#apply_skill_hit`'s recovery branch now computes one shared
+  `effect` (attribute-multiplied, variance-spread, and capped exactly once)
+  and assigns it identically to whichever of `hp`/`mp`/`stat_amount` is
+  active, mirroring the attack branch's own established `dmg = hp != 0 ? hp
+  : (mp != 0 ? mp : cmd[:stat_effect])` idiom. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a heal restoring both HP and SP with
+  a seeded two-value RNG sequence lands the *same* amount on both, proving
+  only the first value was ever drawn — a second, independent roll would
+  have produced a different SP amount), confirmed to fail against the
+  pre-fix code (`expected 35, got 45`) before the fix.
   ✅ **A special item (type 9) invoking an Escape/Teleport skill is castable
   from the field Item menu now.** `#field_usable?` used to call
   `#field_skill?(db_skill(it.skill_id))` with no `Game::State` at all, so its

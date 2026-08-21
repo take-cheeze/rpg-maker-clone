@@ -13646,6 +13646,33 @@ check 'battle: a heal skill restoring both HP and SP rolls each independently' d
   eq 10, hero.mp
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Algo::CalcSkillEffect`
+# (src/algo.cpp) computes one `effect` local -- attribute multiplier, then
+# `VarianceAdjustEffect`, each applied exactly once -- and `Skill::vExecute`
+# (src/game_battlealgorithm.cpp) reads that identical raw number into every
+# `affect_hp`/`affect_sp`/`affect_attack`/etc. branch it takes, each still
+# gated by its own independent `Rand::PercentChance(to_hit)` roll (the
+# check above, unaffected by this one). The *magnitude* itself is never
+# rolled twice, unlike the accuracy gate.
+check "battle: a heal skill restoring both HP and SP shares one variance " \
+      "roll, not an independent one per field" do
+  hero = combatant_mp('Hero', 0, 0, 20, 100, 100)
+  hero.hp = 50
+  hero.mp = 50
+  cmd = { variance: 5 }
+  # A single shared roll (SequenceRng value 5) must land 35 on the base-40
+  # spread; a second, independent draw (value 15) would instead land 45 --
+  # so HP and SP landing the *same* amount proves only one roll happened.
+  bat = Game::Battle.new([hero], [combatant('Foe', 0, 0, 5, 100)],
+                         SequenceRng.new([5, 15]), nil, true)
+  e = bat.send(:apply_skill_hit, hero, hero, 40, 40, cmd)
+  eq 35, e[:recover_hp], 'the shared roll (SequenceRng value 5)'
+  eq 35, e[:recover_mp], 'SP restored the identical amount as HP, not a second, ' \
+     'independent roll (value 15, which would give 45)'
+  eq 85, hero.hp
+  eq 85, hero.mp
+end
+
 # RPG_RT's `Game_BattleAlgorithm::Skill::vExecute` (src/game_battlealgorithm.cpp)
 # gates every state a skill would cure behind its own `Rand::PercentChance(
 # to_hit_states)` roll -- the same fresh-per-field idiom `#skill_effect_hits?`

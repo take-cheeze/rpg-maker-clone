@@ -13062,40 +13062,40 @@ module Game
           absorbed_hp: absorbed, sp_damage: sp_dmg,
           target_mp: target.mp }
       else
-        # Spread the recovery by the skill's own variance when the fight rolls
-        # it, the same way the attack branch above does: EasyRPG's
-        # `Algo::VarianceAdjustEffect` is one function applied to whichever
-        # signed effect `CalcSkillEffect` produced, not a damage-only step, so
-        # a Cure spell's heal wobbles exactly like a Fire spell's damage does.
-        # HP and SP roll independently (`#varied` draws its own random offset
-        # each call) since a skill can restore both from the same base effect
-        # and RPG_RT does not correlate the two rolls. An item's fixed effect
-        # never carries a `variance` (items have no such field), so this is a
-        # no-op there; a 0 (or absent) `hp`/`mp` clears #varied's own `base >
-        # 0` guard, so a skill that only restores one of the two leaves the
-        # other alone.
-        # The ATK/DEF/SPI/AGI modifier delta rides the identical variance roll
-        # as HP/SP (see the comment above), off `cmd[:stat_effect]` rather
-        # than `hp` itself: a buff-only skill (affect_hp clear) leaves `hp` at
-        # 0 throughout, but the modifier still applies off the skill's own
-        # base effect.
-        stat_amount = cmd[:stat_effect] || 0
-        # Elemental scaling applies to a recovery's own effect exactly the way
-        # it applies to an attack's (see #battle_skill_command's ally branch
-        # comment above) -- EasyRPG's `CalcSkillEffect` order is attribute
-        # multiplier first, then variance last, for either sign of effect.
-        hp = apply_attr_multiplier(hp, cmd[:attributes], target)
-        mp = apply_attr_multiplier(mp, cmd[:attributes], target)
-        if @variance && cmd[:variance] && cmd[:variance] > 0
-          hp = varied(hp, cmd[:variance])
-          mp = varied(mp, cmd[:variance])
-          stat_amount = varied(stat_amount, cmd[:variance])
-        end
+        # The skill's one shared, un-gated effect magnitude -- the exact same
+        # idiom the attack branch's own `dmg` local above uses (`hp != 0 ?
+        # hp : (mp != 0 ? mp : cmd[:stat_effect])`), since `#battle_skill_command`'s
+        # ally branch already builds `hp`/`mp`/`stat_effect` from the
+        # identical `base`. EasyRPG's `Skill::vExecute` (`src/
+        # game_battlealgorithm.cpp`) computes one `effect` local --
+        # `Algo::CalcSkillEffect` applies the attribute multiplier and then
+        # `VarianceAdjustEffect` exactly once each -- and reads that same raw
+        # number into every one of its `affect_hp`/`affect_sp`/`affect_attack`/
+        # `affect_defense`/`affect_spirit`/`affect_agility` branches, each
+        # still gated by its own fresh `Rand::PercentChance(to_hit)` roll (see
+        # `#skill_effect_hits?`'s own per-field calls below -- that part was
+        # already correct). Previously `hp`/`mp`/`stat_amount` each ran
+        # `#apply_attr_multiplier`/`#varied` independently, so a Cure spell
+        # restoring both HP and SP could land two different randomized
+        # amounts (and burn two RNG draws) where real RPG_RT always lands the
+        # identical one off a single draw -- `stat_amount` never even got the
+        # attribute multiplier at all, only hp/mp did.
+        effect = hp != 0 ? hp : (mp != 0 ? mp : (cmd[:stat_effect] || 0))
+        effect = apply_attr_multiplier(effect, cmd[:attributes], target)
+        effect = varied(effect, cmd[:variance]) if @variance && cmd[:variance] && cmd[:variance] > 0
+        # Same hard cap as `MaxDamageValue()`'s single clamp on EasyRPG's one
+        # shared `effect` (`Utils::Clamp(effect, -MaxDamageValue(),
+        # MaxDamageValue())`, right after `CalcSkillEffect` returns, before
+        # any affect_* branch reads it) -- applied once here for the same
+        # reason, rather than separately per field afterward (which
+        # previously left `mp` uncapped entirely).
+        rcap = recover_cap
+        effect = rcap if effect > rcap
+        hp = effect if hp != 0
+        mp = effect if mp != 0
+        stat_amount = effect
         before_hp = target.hp
         before_mp = target.mp || 0
-        rcap = recover_cap
-        hp = rcap if hp > rcap
-        stat_amount = rcap if stat_amount > rcap
         # Each affected field rolls its own, independent accuracy check --
         # EasyRPG calls `Rand::PercentChance(to_hit)` fresh inside each of
         # `affect_hp`/`affect_sp`'s own `if`, not once for the whole skill
