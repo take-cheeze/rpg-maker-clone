@@ -1777,9 +1777,19 @@ class RPG2k
           # step_parallel call before its own next command ever ran, one
           # frame later than real RPG_RT -- yado.tk's "chaining two Show
           # Battle Animation calls back-to-back produces a visible one-frame
-          # stutter", the parallel-process half. Other wait kinds keep their
-          # old one-frame-per-call pacing.
-          unless (wait_kind == :wait || wait_kind == :animation) && !it.waiting?
+          # stutter", the parallel-process half. Tint/Flash Screen, Move
+          # Picture and Flash Sprite's own wait flags are the identical
+          # `_state.wait_time` countdown the plain Wait command uses in real
+          # RPG_RT (`SetupWait`, `src/game_interpreter.cpp`/
+          # `game_interpreter_map.cpp`), not a "poll until still animating"
+          # mechanism, so :screen/:picture/:sprite_flash get the same
+          # same-frame treatment here too -- the identical fix
+          # #drive_event's foreground dispatcher just received for those
+          # three wait kinds. Other wait kinds keep their old
+          # one-frame-per-call pacing.
+          unless (wait_kind == :wait || wait_kind == :animation ||
+                  wait_kind == :screen || wait_kind == :picture ||
+                  wait_kind == :sprite_flash) && !it.waiting?
             apply_interpreter_requests(it, p[:event])
             return record_parallel_progress(p)
           end
@@ -4583,8 +4593,31 @@ class RPG2k
             return
           when :teleport then perform_teleport(@interpreter.teleport)
           when :movement then @interpreter.resume if step_forced_movement
-          when :screen then @interpreter.resume unless @state.screen.busy?
-          when :picture then @interpreter.resume unless @state.pictures_moving?
+          when :screen
+            @interpreter.resume unless @state.screen.busy?
+            # Same "spend this frame's own step budget immediately" idiom as
+            # :wait/:animation above: Tint Screen and one-shot Flash Screen's
+            # own wait flag is implemented with the identical `_state.
+            # wait_time` countdown the plain Wait command uses (`SetupWait`,
+            # `src/game_interpreter.cpp`, called from both `CommandTintScreen`
+            # and `CommandFlashScreen`) -- not a "poll until still animating"
+            # mechanism -- so real RPG_RT's own `Update` loop falls straight
+            # through into whatever command follows the instant that
+            # countdown clears, rather than costing a further frame.
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :picture
+            @interpreter.resume unless @state.pictures_moving?
+            # Same reasoning as :screen just above: Move Picture's own wait
+            # flag is `SetupWait(params.duration)`, the identical `_state.
+            # wait_time` field, in `CommandMovePicture`
+            # (`src/game_interpreter.cpp`).
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :picture_blocked
             # A Show/Move/Erase Picture command reached while a message
             # window or choice list is open (#block_pending_picture_command)
@@ -4636,7 +4669,16 @@ class RPG2k
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
-          when :sprite_flash then @interpreter.resume unless sprite_flashing?
+          when :sprite_flash
+            @interpreter.resume unless sprite_flashing?
+            # Same reasoning as :screen/:picture above: Flash Sprite's own
+            # wait flag is `SetupWait(tenths)`, the identical `_state.
+            # wait_time` field, in `Game_Interpreter_Map::CommandFlashSprite`
+            # (`src/game_interpreter_map.cpp`).
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :save_menu then perform_event_save
           when :menu then perform_event_menu
           when :load_menu then perform_event_load
