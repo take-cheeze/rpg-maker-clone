@@ -16424,7 +16424,8 @@ check 'a battle-page Toggle ATB Mode (5003) flips the live fight to wait' do
   # A TURN-gated page runs at the first turn boundary; its 5003 flips the
   # same save-system `atb_mode` the field menu Wait command flips, live.
   pages = { 1 => troop_page([ECmd.new(ic::TOGGLE_ATB_MODE, [])]) }
-  scene, st = battle_scene_with_pages(pages, rpg2003: true,
+  scene, st = battle_scene_with_pages(pages, party: BattleStubParty.new(rpg2003: true),
+                                      rpg2003: true,
                                       battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
   eq 0, st.atb_mode, 'the fight begins in active mode'
   ui = battle_until_phase(scene, :command, 250)
@@ -18406,7 +18407,7 @@ end
 
 check 'Open Load Menu pushes Scene::SaveLoad in :load mode' do
   cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
-  scene = new_scene({}, player: [0, 0])
+  scene = new_scene({}, player: [0, 0], rpg2003: true)
   parent = scene.instance_variable_get(:@parent)
   st = scene.instance_variable_get(:@state)
   scene.instance_variable_get(:@interpreter).start(cmds)
@@ -18422,7 +18423,7 @@ end
 check 'Open Load Menu: cancelling the picker resumes the event -- unlike the old ' \
       'single-slot version, a cancelled load does not abandon it' do
   cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
-  scene = new_scene({}, player: [0, 0])
+  scene = new_scene({}, player: [0, 0], rpg2003: true)
   parent = scene.instance_variable_get(:@parent)
   st = scene.instance_variable_get(:@state)
   scene.instance_variable_get(:@interpreter).start(cmds)
@@ -18442,7 +18443,7 @@ end
 
 check 'Open Load Menu: confirming an occupied slot resumes the app through continue_game' do
   cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
-  scene = new_scene({}, player: [0, 0])
+  scene = new_scene({}, player: [0, 0], rpg2003: true)
   parent = scene.instance_variable_get(:@parent)
   parent.save_states[3] = menu_state
   scene.instance_variable_get(:@interpreter).start(cmds)
