@@ -13982,6 +13982,31 @@ not yet verified:
   `#blt` calls source from x 64 initially, x 96 once `cursor_frame` crosses
   11, and x 64 again once it wraps back to 0, confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-21): an inactive window hid its selection cursor
+  entirely instead of freezing it — `#draw_cursor` carried a second,
+  uncited `active` check the reference does not have.** Confirmed against
+  RPG_RT's own live source: `Window::Draw`'s cursor block (`src/
+  window.cpp`) reads only `cursor_rect`/`animation_frames`/`cursor_frame`,
+  with no `active` check anywhere; `active` only gates whether `Window::
+  Update` keeps *advancing* `cursor_frame` at all (`if (active) {
+  cursor_frame += 1; ... }`) — an inactive window's highlight simply
+  freezes on whatever frame it last stopped at, it does not vanish.
+  `RPG2k::Window#draw_cursor` (`mruby-rpg2k/mrblib/main.rb`) had `return
+  unless @active` right after clearing the cursor bitmap, so setting a
+  window inactive (`#active=`, which calls `#draw_cursor` immediately) blanked
+  the highlight outright — reachable in live UI code: `Scene::Menu
+  #enter_actor_selection`/`#open_end_game_confirm` and `Scene::Order
+  #enter_confirm` (`mruby-rpg2k/mrblib/scene/menu.rb`/`order.rb`) all set
+  `.active = false` on a list whose `cursor_rect` still points at the
+  just-picked row, expecting it to stay highlighted (frozen) the way real
+  RPG_RT leaves it, not disappear. `#update`'s own `@cursor_frame` advance
+  already correctly gated on `@active` — only `#draw_cursor`'s extra check
+  was wrong. Fixed by deleting that one line. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a window's cursor is still drawn
+  the instant it goes inactive, frozen on whichever frame it was on; 20+
+  further frames of `#update` while inactive never redraw it at all, the
+  already-correct half of the gate), confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **An action pattern's "Enemies" condition (`condition_type` 3,
   `COND_ACTORS`) now ranges over the acting monster's own living
   troop-mates, not the player party's headcount — a straight side-swap,
