@@ -1390,6 +1390,28 @@ The work below is roughly ordered by the critical path to a walkable game
   cancelling back out leaves the cursor on Sell, not reset to Buy),
   confirmed to fail against the pre-fix code (`expected 1, got 0`) before
   the fix.
+  ✅ **Follow-up (2026-08-21): the purchased/sold confirmation line waited
+  for a button press to dismiss, instead of auto-dismissing after a flat
+  one-second timer with no input read at all.** `#drive_shop_confirm`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) — introduced by the fix directly
+  above, whose own doc comment ~~called this "button-driven ... to match
+  every other message screen in this scene", flagging EasyRPG's timed
+  auto-dismiss as a deliberate deviation~~ — waited on `Input.trigger?(C) ||
+  Input.trigger?(B)`. Confirmed against EasyRPG's actual C++ source:
+  `Scene_Shop::vUpdate`'s `Bought`/`Sold` cases (`src/scene_shop.cpp`) are a
+  bare `timer--; if (timer == 0) SetMode(Buy/Sell);`, with `SetMode` arming
+  `timer = DEFAULT_FPS` (`src/options.h`: `#define DEFAULT_FPS 60`) on
+  entry; `UpdateNumberInput` — the only place this scene's Buy/Sell flow
+  reads `Input::` — has no `Bought`/`Sold` case at all, so a button press
+  neither dismisses the confirmation early nor does anything else while it
+  is up. Fixed by replacing the input check with a `@shop[:confirm_timer]`
+  countdown (armed to 60 the same frame `#drive_shop_quantity` enters
+  `:purchased`/`:sold`), the same per-frame countdown idiom already used
+  elsewhere in this file (e.g. the Wait command's own frame timer). Covered
+  by extending four existing `scripts/rpg2k_scene_check.rb` checks (a
+  button press alone no longer dismisses the confirmation; the screen only
+  advances once 60 frames have actually elapsed), all confirmed to fail
+  against the pre-fix code before the fix.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

@@ -6467,10 +6467,10 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   scene.update
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the "purchased" confirmation
-  scene.update
-  RGSS::Input.triggered = []
-  scene.update
+  # The "purchased" confirmation only leaves once its own 60-frame timer
+  # expires -- Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) never
+  # reads Input::, so a button press does not skip it.
+  60.times { scene.update }
   RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
   scene.update
   scene.update # the Transaction branch runs
@@ -6623,9 +6623,15 @@ check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   eq 3, st.party.item_count(3), 'three bought in one confirm'
   shop = scene.instance_variable_get(:@shop)
   eq :purchased, shop[:screen], 'the "purchased" confirmation shows first'
+  # RPG_RT auto-dismisses the confirmation after a flat one-second (60 frame)
+  # timer -- Scene_Shop::vUpdate's Bought/Sold cases (src/scene_shop.cpp)
+  # never read Input:: at all -- so a button press alone does nothing here.
   press(scene, RGSS::Input::C)
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'and dismissing it returns to the buy list'
+  eq :purchased, shop[:screen], 'a button press does not dismiss it early'
+  59.times { scene.update }
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'and the timer expiring on its own returns to the buy list'
 end
 
 check 'Open Shop scene: cancelling the counter buys nothing' do
@@ -6829,10 +6835,10 @@ check 'Open Shop issued from a Parallel Process opens the shop screen too' do
   scene.update
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the "purchased" confirmation
-  scene.update
-  RGSS::Input.triggered = []
-  scene.update
+  # The "purchased" confirmation only leaves once its own 60-frame timer
+  # expires -- Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) never
+  # reads Input::, so a button press does not skip it.
+  60.times { scene.update }
   RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
   scene.update
   scene.update
@@ -14804,13 +14810,20 @@ check 'Open Shop scene: buying shows the shop_purchased confirmation, then retur
   ok window_texts(shop[:window]).any? { |t| t.include?('毎度あり！') },
      'the confirmation line uses the database shop_purchased term'
 
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the confirmation
+  # Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) is a bare
+  # `timer--; if (timer == 0) SetMode(Buy);` with no Input:: read at all, so
+  # a button press does nothing here -- only the flat 60-frame timer (armed
+  # by SetMode, DEFAULT_FPS in src/options.h) dismisses it.
+  RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  scene.update
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'a button press returns to the buy list, same as EasyRPG\'s ' \
-                          'Bought -> Buy transition'
+  eq :purchased, shop[:screen], 'a button press does not dismiss it early'
+
+  59.times { scene.update }
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'the timer expiring on its own returns to the buy list, ' \
+                          'same as EasyRPG\'s Bought -> Buy transition'
 end
 
 check 'Open Shop scene: selling shows the shop_sold confirmation, then returns ' \
@@ -14842,12 +14855,18 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   ok window_texts(shop[:window]).any? { |t| t.include?('毎度！') },
      'the confirmation line uses the database shop_sold term'
 
-  RGSS::Input.triggered = [RGSS::Input::B] # dismiss the confirmation (B works too)
+  # Scene_Shop::vUpdate's Sold case (src/scene_shop.cpp) never reads Input::
+  # either -- B does not dismiss it early any more than C does.
+  RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
   RGSS::Input.triggered = []
-  scene.update
   shop = scene.instance_variable_get(:@shop)
-  eq :sell, shop[:screen], 'and returns to the sell list, same as EasyRPG\'s Sold -> Sell'
+  eq :sold, shop[:screen], 'a button press does not dismiss it early'
+
+  59.times { scene.update }
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen], 'the timer expiring on its own returns to the sell list, ' \
+                           'same as EasyRPG\'s Sold -> Sell'
 end
 
 # Confirmed against RPG_RT's own live source: `Window_ShopSell`
@@ -14953,9 +14972,10 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   ok !shop[:status].nil?,
      'the purchase confirmation keeps the status panel visible too (Scene_Shop::SetMode\'s Bought case)'
 
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the confirmation, back to the buy list
-  scene.update
-  RGSS::Input.triggered = []
+  # The confirmation only leaves once its own 60-frame timer runs out --
+  # Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) never reads
+  # Input:: at all.
+  60.times { scene.update } # the timer expires, back to the buy list
   shop = scene.instance_variable_get(:@shop)
   eq :buy, shop[:screen]
   ok !shop[:status].nil?, 'the panel returns once a good is highlighted again'
