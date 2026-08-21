@@ -6124,10 +6124,52 @@ check 'a continuous-animation event advances even while standing still' do
   ev = event(2, 2, page(charset_name: 'c',
                         animation_type: Game::EventGraphic::CONTINUOUS))
   scene = new_scene({ 1 => ev }, player: [5, 4])
-  40.times { scene.update }
+  # 13: past the continuous cadence's own single period (10 frames/phase at
+  # this event's default move_speed) but nowhere near a multiple of its
+  # 4-frame phase cycle (40), which would wrap #anim_phase back around to 0
+  # and read as "never cycled".
+  13.times { scene.update }
   e = event_hashes(scene)[1]
   eq [2, 2], [e[:char].x, e[:char].y], 'it did not move'
   ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
+end
+
+# Confirmed against EasyRPG's live source, `Game_Character::
+# GetContinuousAnimFrames` (`src/game_character.h`): an idling Continuous
+# event's own cadence (ANIM_CONTINUOUS_FRAMES[2] = 10 at the default
+# move_speed) is slower than the sliding/stationary cadence
+# (ANIM_STATIONARY_FRAMES[2] = 8) the same event would use while actually
+# stepping between tiles -- not the same table reused for both.
+check 'a continuous-animation event standing still cycles on its own, ' \
+      'slower cadence than a sliding event would use' do
+  ev = event(2, 2, page(charset_name: 'c',
+                        animation_type: Game::EventGraphic::CONTINUOUS))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  e = event_hashes(scene)[1]
+  8.times { scene.update }
+  eq 0, e[:anim_phase],
+     'still on the first frame after 8 updates -- too soon for the sliding ' \
+     'cadence, which this event is not using'
+  2.times { scene.update }
+  ok e[:anim_phase] != 0, 'but the continuous cadence (10 frames) has advanced it by now'
+end
+
+# Same distinction, for a Spin-type event's own facing-rotation cadence
+# (ANIM_SPIN_FRAMES[2] = 12) -- confirmed against EasyRPG's `Game_Character::
+# GetSpinAnimFrames` (`src/game_character.h`), read unconditionally by
+# `UpdateAnimation`'s `IsSpinning()` branch, whether the event is moving or
+# not.
+check 'a spin-type event rotates its facing on its own, slower cadence ' \
+      'than a sliding event would use' do
+  ev = event(2, 2, page(charset_name: 'c', animation_type: Game::EventGraphic::SPIN))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  e = event_hashes(scene)[1]
+  8.times { scene.update }
+  eq 0, e[:anim_phase],
+     'still on the first facing after 8 updates -- too soon for the sliding ' \
+     'cadence, which this event is not using'
+  4.times { scene.update }
+  ok e[:anim_phase] != 0, 'but the spin cadence (12 frames) has rotated it by now'
 end
 
 check 'a map with a looping, autoscrolling parallax renders without raising' do
@@ -9104,6 +9146,15 @@ check 'Move Speed is no longer dead: it drives the per-frame slide, jump and ani
   # Animation cadence is move_speed-dependent; internal 3 keeps the prior 6.
   eq 6,  scene.send(:anim_frame_period, 3)
   eq 4,  scene.send(:anim_frame_period, 5)
+  # Confirmed against EasyRPG's live source, `Game_Character::
+  # GetContinuousAnimFrames` / `GetSpinAnimFrames` (`src/game_character.h`):
+  # an idling Continuous/Fixed-Continuous event and a Spin event's own
+  # facing-rotation each use their own, slower table -- not the stationary
+  # one reused.
+  eq 8,  scene.send(:anim_continuous_period, 3)
+  eq 6,  scene.send(:anim_continuous_period, 5)
+  eq 8,  scene.send(:anim_spin_period, 3)
+  eq 4,  scene.send(:anim_spin_period, 5)
 end
 
 check "an event's database Move Speed converts from RPG_RT's real 1..6 scale, not fed through raw" do

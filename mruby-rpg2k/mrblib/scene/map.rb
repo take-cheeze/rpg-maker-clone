@@ -41,8 +41,29 @@ class RPG2k
       # Walk-animation frame cadence by move_speed, port 0..5, matching EasyRPG's
       # GetStationaryAnimFrames (limits[] = {12,10,8,6,5,4}, 0-indexed by the
       # same real-minus-1 offset); the default (2) keeps the prior 6-frame
-      # period, so existing animation pacing is unchanged.
+      # period, so existing animation pacing is unchanged. Governs an event
+      # while it is actually sliding between tiles.
       ANIM_STATIONARY_FRAMES = { 0 => 12, 1 => 10, 2 => 8, 3 => 6, 4 => 5, 5 => 4 }.freeze
+
+      # A Continuous/Fixed-Continuous event's own idle cadence -- slower than
+      # #ANIM_STATIONARY_FRAMES, not the same table reused. Confirmed against
+      # EasyRPG's live source, `Game_Character::GetContinuousAnimFrames`
+      # (`src/game_character.h`): `limits[] = {16,12,10,8,7,6}`. Real RPG_RT's
+      # `UpdateAnimation` (`src/game_character.cpp`) actually blends this with
+      # the stationary table while genuinely moving too (`GetAnimCount() >=
+      # continuous_limit || (stopped && GetAnimCount() >= stationary_limit)`),
+      # but the dominant, most visible effect -- and the one this fixes -- is
+      # that an idle Continuous/Fixed-Continuous event (a torch, a waterwheel,
+      # an "always animates" NPC) cycles noticeably slower than one that is
+      # actually walking, not on the identical cadence.
+      ANIM_CONTINUOUS_FRAMES = { 0 => 16, 1 => 12, 2 => 10, 3 => 8, 4 => 7, 5 => 6 }.freeze
+
+      # A Spin-type event's own facing-rotation cadence, slower again.
+      # Confirmed against EasyRPG's `Game_Character::GetSpinAnimFrames`
+      # (`src/game_character.h`): `limits[] = {24,16,12,8,6,4}` -- `Update
+      # Animation`'s `IsSpinning()` branch reads this and only this table,
+      # unconditionally, whether the event is moving or not.
+      ANIM_SPIN_FRAMES = { 0 => 24, 1 => 16, 2 => 12, 3 => 8, 4 => 6, 5 => 4 }.freeze
 
       # Clamp a (possibly out-of-range) internal move_speed to the port's own
       # 0..5 scale -- the real RPG2000 Move Speed field is 1..6 (see
@@ -56,8 +77,15 @@ class RPG2k
       # Quarter-tile units advanced per frame while jumping at `s`.
       def jump_slide_step(s); JUMP_SLIDE_STEP[clamp_speed(s)] || 6; end
 
-      # Walk-animation period (frames per phase) at `s`.
+      # Walk-animation period (frames per phase) at `s`, while actually sliding.
       def anim_frame_period(s); ANIM_STATIONARY_FRAMES[clamp_speed(s)] || 6; end
+
+      # Idle-animation period for a Continuous/Fixed-Continuous event standing
+      # still at `s`.
+      def anim_continuous_period(s); ANIM_CONTINUOUS_FRAMES[clamp_speed(s)] || 8; end
+
+      # Facing-rotation period for a Spin-type event at `s`.
+      def anim_spin_period(s); ANIM_SPIN_FRAMES[clamp_speed(s)] || 12; end
 
       # Advance a slide by `step` quarter-tile units. Folds the whole TILE-units
       # into `move_count` (the integer, display-side progress) and returns the new
@@ -92,8 +120,11 @@ class RPG2k
       EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
                            5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
-      # (Walk-animation cadence is now move_speed-dependent; see
-      # ANIM_STATIONARY_FRAMES and #anim_frame_period below.)
+      # (Walk-animation cadence is move_speed-dependent, and split by whether
+      # an event is sliding, idling Continuous, or Spinning; see
+      # ANIM_STATIONARY_FRAMES / ANIM_CONTINUOUS_FRAMES / ANIM_SPIN_FRAMES and
+      # #anim_frame_period / #anim_continuous_period / #anim_spin_period
+      # below.)
 
       # Event-page start conditions (the page `trigger` field): how the event's
       # command list is set off.
@@ -2947,12 +2978,15 @@ class RPG2k
 
       # Advance each event's pixel slide and walk-animation phase once per frame.
       # An event "moves" for animation purposes while it is sliding between two
-      # tiles (see reoccupy / event_sliding?); such events — and any
-      # continuous/spin animation type — cycle their walk frames on a
-      # move_speed-dependent cadence (see #anim_frame_period), while an event
-      # resting on a tile shows its page pose. Game::EventGraphic.frame reads
-      # @moving / @anim_phase to pick the drawn column, and event_pixel reads the
-      # slide for the draw position.
+      # tiles (see reoccupy / event_sliding?); such events cycle their walk
+      # frames on the (fastest) #anim_frame_period cadence, while a Continuous/
+      # Fixed-Continuous or Spin type standing still instead cycles on its own,
+      # slower #anim_continuous_period / #anim_spin_period -- confirmed against
+      # EasyRPG's `Game_Character::UpdateAnimation` (`src/game_character.cpp`),
+      # which reads a distinct table per case rather than one shared cadence.
+      # An event resting on a tile with neither type shows its page pose.
+      # Game::EventGraphic.frame reads @moving / @anim_phase to pick the drawn
+      # column, and event_pixel reads the slide for the draw position.
       def animate_events
         @events.each { |e| animate_event(e) }
       end
@@ -2974,7 +3008,16 @@ class RPG2k
         return unless Game::EventGraphic.animated?(type)
         return unless sliding || Game::EventGraphic.continuous?(type)
         e[:anim_count] += 1
-        return if e[:anim_count] < anim_frame_period(ch.move_speed)
+        # Sliding always uses the (fastest) stationary-per-frame table; an
+        # event merely idling in place -- Spin rotating its facing, or a
+        # Continuous/Fixed-Continuous type cycling its walk frame with nobody
+        # pushing it -- uses its own slower table instead of reusing this one
+        # (see #ANIM_CONTINUOUS_FRAMES / #ANIM_SPIN_FRAMES above).
+        period = if sliding then anim_frame_period(ch.move_speed)
+                 elsif type == Game::EventGraphic::SPIN then anim_spin_period(ch.move_speed)
+                 else anim_continuous_period(ch.move_speed)
+                 end
+        return if e[:anim_count] < period
         e[:anim_count] = 0
         e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
       end
