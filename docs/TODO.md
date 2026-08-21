@@ -9517,6 +9517,22 @@ not yet verified:
   its wait flag set now waits exactly one frame before the following command
   runs, in place of the prior checks that had asserted no wait at all),
   confirmed to fail against the pre-fix code before the fix.
+  - **Follow-up (2026-08-21):** ~~the `:screen` wait dispatcher already
+    resolves on the very next frame once nothing is left animating~~ —
+    `resume` alone only clears the wait flag; unlike `:wait`'s own dispatch
+    branch (which explicitly follows a cleared wait with its own
+    `@interpreter.update` call the same frame, "RPG_RT resumes a Wait the
+    instant its timer elapses and keeps spending that same frame's step
+    budget", per that branch's own citation), `:screen`'s branch has no such
+    follow-up call, so the *following* command does not actually run until a
+    further frame's dispatch reaches the newly-un-waiting interpreter. The
+    wait itself still floors to the correct minimum this fix set out to
+    guarantee (never fewer than one frame), which is what the checks above
+    actually verify — but the write-up's own "waits exactly one frame before
+    the following command runs" overstated the dispatcher's precision. This
+    gap is pre-existing (shared by every duration of Tint/Flash Screen, Move
+    Picture, and Flash Sprite alike, not introduced by any of these fixes)
+    and left as a follow-up candidate rather than folded in here.
 - ✅ **Move Picture's wait flag has the identical 0.0s-still-waits-one-frame
   gap the Tint/Flash Screen fix above just closed — a 0-duration picture move
   with its wait flag set skipped the wait outright, instead of blocking the
@@ -9543,6 +9559,36 @@ not yet verified:
   a new `scripts/rpg2k_logic_check.rb` check (a 0-duration Move Picture with
   its wait flag set now waits exactly one frame before the following command
   runs), confirmed to fail against the pre-fix code before the fix.
+  - **Follow-up (2026-08-21):** the identical correction applies here as the
+    one just added to the Tint/Flash Screen bullet above — `:picture`'s
+    dispatch branch has the same "resume clears the wait, but does not also
+    spend that same frame executing the next command" gap `:wait`'s own
+    branch avoids, so ~~waits exactly one frame before the following command
+    runs~~ overstates the dispatcher's actual precision; the checks still
+    correctly verify the wait itself never floors to zero, which is this
+    fix's real scope.
+- ✅ **Flash Sprite has the identical 0.0s-still-waits-one-frame gap already
+  fixed twice this session for Tint/Flash Screen and Move Picture — a
+  0-duration sprite flash with its wait flag set skipped the wait outright,
+  instead of blocking the interpreter for one frame like RPG_RT
+  (2026-08-21).** Confirmed against EasyRPG's actual C++ source:
+  `Game_Interpreter_Map::CommandFlashSprite` (`src/game_interpreter_map.cpp`,
+  code 11320) calls `SetupWait(tenths)` unconditionally whenever the wait
+  flag (`com.parameters[6] > 0`) is set — never gated on the flash's own
+  duration — and `SetupWait` (`src/game_interpreter.cpp`) floors a zero
+  duration to one frame rather than skipping the wait, exactly as already
+  cited for the two prior fixes. `Interpreter#do_flash_sprite`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) instead armed the wait only when
+  `cmd.param(6) != 0 && frames > 0` — a 0-duration flash therefore never
+  paused at all, unlike RPG_RT's guaranteed one-frame block. Fixed by
+  dropping the `&& frames > 0` conjunct — the wait flag alone now decides —
+  since `Scene::Map#apply_sprite_flash` already returns `nil` (no flash
+  attached) for a 0-duration request, so `#sprite_flashing?` reads false the
+  instant the `:sprite_flash` dispatcher checks it. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (interpreter-level: the wait arms) and
+  a new `scripts/rpg2k_scene_check.rb` check (full-scene: the following
+  command is genuinely held back, not run the very same update), both
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
   status effect from landing at all, instead of only its A-E susceptibility
   rank ever mattering.** Confirmed against EasyRPG's actual C++ source:

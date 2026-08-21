@@ -16649,6 +16649,19 @@ check 'Flash Sprite without its wait flag does not pause the interpreter' do
   eq 1, it.take_sprite_flash_requests.size
 end
 
+check 'Flash Sprite with an instant (zero-duration) flash still waits one frame' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # target the hero, colour 31/0/16, power 31, 0 tenths (instant), wait flag set
+  it.start([FakeCmd.new(IC::FLASH_SPRITE, [10001, 31, 0, 16, 31, 0, 1])])
+  it.update
+  reqs = it.take_sprite_flash_requests
+  eq 1, reqs.size
+  eq 0, reqs[0][:frames], 'the flash itself is instant'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  eq :sprite_flash, it.wait_kind
+end
+
 check 'Fade Out BGM fades the music but keeps the current-BGM record intact' do
   # param0 is already milliseconds -- EasyRPG's CommandFadeOutBGM passes it
   # straight through to Game_System::BgmFade with no scaling (confirmed
