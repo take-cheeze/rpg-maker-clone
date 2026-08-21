@@ -1212,8 +1212,11 @@ module Game
     # position (0 top / 1 middle / 2 bottom), param2 whether the window may move
     # aside to avoid the hero (0 fixed / 1 auto-position — so `position_fixed`
     # is the param2 == 0 case, matching RPG_RT), param3 whether other events keep
-    # running while the message shows. Sets global state; it does not pause.
+    # running while the message shows. Sets global state; blocks-and-retries
+    # first while a *different* message window is already open (see
+    # #block_pending_message_config_command), same as Show Message itself.
     def do_message_options(cmd)
+      return if block_pending_message_config_command
       cfg = @state.message_config
       cfg.transparent = cmd.param(0) != 0
       cfg.position = cmd.param(1)
@@ -1224,11 +1227,13 @@ module Game
     # Change Face Graphic: select the face shown beside the next messages. The
     # command string is the FaceSet file name (empty clears the face); param0 is
     # the cell index (0..15), param1 puts the face on the right, param2 mirrors
-    # it. Persists for the rest of *this* event's execution content (does not
-    # pause), but -- unlike Message Options -- is not sticky game-wide: #update
-    # auto-clears it once this interpreter's own command list genuinely
-    # finishes, via the @face_owner claim set/dropped here.
+    # it. Persists for the rest of *this* event's execution content, but --
+    # unlike Message Options -- is not sticky game-wide: #update auto-clears it
+    # once this interpreter's own command list genuinely finishes, via the
+    # @face_owner claim set/dropped here. Blocks-and-retries first while a
+    # *different* message window is already open, same as Message Options.
     def do_change_face(cmd)
+      return if block_pending_message_config_command
       cfg = @state.message_config
       name = cmd.string || ''
       if name.empty?
@@ -3728,6 +3733,28 @@ module Game
       return false unless wait && message_window_blocks_command?
       @index -= 1
       @wait_kind = :key_input_blocked
+      @waiting = true
+      true
+    end
+
+    # Message Options (10120) / Change Face Graphic (10130) block-and-retry
+    # the same way too -- confirmed directly against RPG_RT's live source:
+    # `Game_Interpreter::CommandMessageOptions`/`CommandChangeFaceGraphic`
+    # (`src/game_interpreter.cpp`) both open with the identical guard Show
+    # Message/Show Choices/Input Number themselves use, `if (!Game_Message::
+    # CanShowMessage(main_flag)) { return false; }` -- unconditionally, the
+    # same base RPG2000 behaviour as the other block-and-retry commands.
+    # Without this guard, a still-running parallel process (Message Options'
+    # own "continue events" flag lets one keep advancing past another
+    # event's open Show Text) could mutate the shared, global message
+    # window's transparency/position/face image while a *different* event's
+    # window is already showing on screen, visibly altering it mid-display
+    # instead of only taking effect once that window closes and this one's
+    # own message opens.
+    def block_pending_message_config_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :message_config_blocked
       @waiting = true
       true
     end
