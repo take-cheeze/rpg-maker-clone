@@ -231,17 +231,24 @@ The work below is roughly ordered by the critical path to a walkable game
     the OLE-automation scale is 1899-12-30, which RPG_RT reads as an *empty
     slot*. It now defaults to the current time, and a from-scratch `to_lsd` save
     loads in the real runtime. ~~A `to_lsd` save still carries no picture,
-    map-event or vehicle state, so it resumes into a bare scene~~ — partly
-    stale as of 2026-08-21: `to_lsd` now writes map-event positions/tile
-    substitutions/encounter-rate/parallax overrides (chunk 111) and shown
-    pictures (chunk 103, the Follow-up just above) too. **Vehicle placement
-    (chunks 105-107) is still the one real gap left in this list** —
-    `.from_lsd` already reads `save.boat`/`.ship`/`.airship` back
-    (`state.vehicle(:boat).load_movable(save.boat)` etc.), but `#to_lsd`
-    never writes any of the three, the identical "reader exists, writer
-    doesn't" shape every fix in this section has been closing one chunk at a
-    time — left open for a future pass rather than folded into this one. A
-    from-scratch `to_lsd` save is enough to prove the file loads, not enough
+    map-event or vehicle state, so it resumes into a bare scene~~ — stale as
+    of 2026-08-21: `to_lsd` now writes map-event positions/tile
+    substitutions/encounter-rate/parallax overrides (chunk 111), shown
+    pictures (chunk 103) and Set Teleport/Escape Target destinations (chunk
+    110, see the Follow-ups above and below).
+    ~~**Vehicle placement (chunks 105-107) is still the one real gap left in
+    this list** — `.from_lsd` already reads `save.boat`/`.ship`/`.airship`
+    back, but `#to_lsd` never writes any of the three.~~ **Correction, same
+    day: that claim was itself wrong.** `#to_lsd` already writes all three
+    vehicle chunks (`mruby-rpg2k/mrblib/game.rb`, the `{105=>:boat,
+    106=>:ship, 107=>:airship}.each` block, gated on `v.placed?` — a genuine
+    "not yet placed" vehicle correctly gets no chunk, matching RPG_RT) —
+    verified by actually reading the method body rather than trusting a
+    grep for a literal `save[105]` string, which misses this codebase's own
+    variable-keyed `save[chunk] = mv` assignment style. Caught while
+    investigating the next item in this list (chunk 110) and corrected
+    immediately rather than left standing. A from-scratch `to_lsd` save is
+    enough to prove the file loads, not enough
     to compare rendering against a real cutscene mid-playthrough, which is
     why the comparison harness still edits a genuine save.
 - ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
@@ -12303,6 +12310,41 @@ not yet verified:
   itself writes a default-constructed, empty-name `Params`). Covered by a
   new `scripts/rpg2k_logic_check.rb` check mirroring the encounter-rate
   test's structure exactly, confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-21): Set Teleport Target (11810) / Set Escape
+  Target (11830) had the identical Save/Continue gap — chunk 110 this time,
+  not chunk 111, but the same "reader exists, writer doesn't" shape as
+  every fix above.** Confirmed directly against RPG_RT's live source:
+  `Scene_Save::Prepare`/`Player::LoadSavegame` (`src/scene_save.cpp`/`src/
+  player.cpp`) round-trip `save.targets` via `Game_Targets::GetSaveData`/
+  `SetSaveData` (`src/game_targets.cpp`) unconditionally on every save —
+  the escape target always written first, at array id 0 (a
+  default-constructed, "never set" `SaveTarget` when no Set Escape Target
+  ever ran — RPG_RT carries the slot regardless), every teleport target
+  keyed by its own destination map id (`AddTeleportTarget`'s own `tgt.ID =
+  map_id`). `mruby-lcf/mrblib/schema.rb`'s `SAVE_TARGET`/chunk-110 mapping
+  already matched liblcf's own field table exactly (fields 1-5: map_id/x/y/
+  switch_on/switch_id) — no schema change needed this time, unlike the
+  three fixes above. `Game::State#to_lsd`/`.from_lsd`
+  (`mruby-rpg2k/mrblib/game.rb`) simply never touched chunk 110 at all —
+  only this engine's own portable Marshal save (`#to_h`/`.load`)
+  round-tripped `#teleport_targets`/`#escape_target`, so a genuine
+  Save/Continue silently dropped every registered target, even though
+  `Game::Battle#cast_escape_skill`/`#cast_teleport_skill`
+  (`mruby-rpg2k/mrblib/game.rb`) already consume them live for the
+  Escape/Teleport skill types — correcting a second stale claim found along
+  the way, `Interpreter#do_set_teleport_target`/`#do_set_escape_target`'s
+  own doc comments ("nothing consumes it yet") were already wrong before
+  this fix, unrelated to the save gap itself. Fixed by mirroring chunk
+  111's own write pattern: build a `SAVE_TARGET` `Array2D`, write the
+  escape slot at id 0 (fields left at their schema defaults when
+  `#escape_target` is nil, so `map_id` reads back absent/0 — RPG_RT's own
+  sentinel), then one entry per `#teleport_targets` hash key. Covered by a
+  new `scripts/rpg2k_logic_check.rb` check (an escape target and two
+  teleport targets round-trip through `to_lsd`/`.from_lsd` exactly; a State
+  that never ran either command round-trips to `nil`/`{}`; a save written
+  before this landed, missing chunk 110 entirely, also round-trips to the
+  same defaults rather than crashing), confirmed to fail against the
+  pre-fix code.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**

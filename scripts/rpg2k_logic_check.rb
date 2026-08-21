@@ -11217,6 +11217,50 @@ check 'to_lsd/from_lsd round-trips a live Change Parallax Background ' \
   eq nil, old.parallax, 'no saved override means the map\'s own panorama applies'
 end
 
+check 'to_lsd/from_lsd round-trips Set Teleport Target / Set Escape Target ' \
+      '(chunk 110)' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Save::Prepare`/
+  # `Player::LoadSavegame` (`src/scene_save.cpp`/`src/player.cpp`) round-trip
+  # `save.targets` via `Game_Targets::GetSaveData`/`SetSaveData`
+  # (`src/game_targets.cpp`) unconditionally on every save -- the escape
+  # target always at array id 0, every teleport target keyed by its own
+  # destination map id. #to_lsd/.from_lsd previously never touched chunk 110
+  # at all (only this engine's own portable Marshal save round-tripped these
+  # registries -- see the "Targets / rate / system audio round-trip through
+  # the save" check above, `to_h`/.load only), so a real Save/Continue
+  # silently dropped every registered target, even though the Escape/
+  # Teleport skills (Game::Battle#cast_escape_skill/#cast_teleport_skill)
+  # already consume them live.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.escape_target = { map_id: 8, x: 3, y: 5, switch_id: 20 }
+  st.teleport_targets[4] = { x: 7, y: 9, switch_id: 12 }
+  st.teleport_targets[6] = { x: 1, y: 2, switch_id: nil }
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq({ map_id: 8, x: 3, y: 5, switch_id: 20 }, round.escape_target)
+  eq({ x: 7, y: 9, switch_id: 12 }, round.teleport_targets[4])
+  eq({ x: 1, y: 2, switch_id: nil }, round.teleport_targets[6])
+
+  # A State that never ran either command must not invent a target on
+  # round-trip -- array id 0's own map_id reads absent/0, RPG_RT's own
+  # "never set" sentinel (a default-constructed SaveTarget), not a real
+  # destination.
+  never_set = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  round2 = Game::State.from_lsd(db, never_set.to_lsd)
+  eq nil, round2.escape_target, 'no Set Escape Target this session means no target round-trips'
+  eq({}, round2.teleport_targets, 'no Set Teleport Target this session means no targets round-trip')
+
+  # A save written before this landed simply omits chunk 110 entirely;
+  # from_lsd must leave those same defaults alone rather than crash reading
+  # an absent chunk.
+  legacy = st.to_lsd
+  legacy.delete(110)
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.escape_target
+  eq({}, old.teleport_targets)
+end
+
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
 # 0=up/1=right/2=down/3=left (Game_Character::Direction's own enum order),
 # not this runtime's numpad convention (2/4/6/8) -- the two schemes only

@@ -14483,6 +14483,39 @@ module Game
       inv[41] = @last_battle_turns if @last_battle_turns
       save[109] = inv
 
+      # Chunk 110 is every Set Teleport Target (11810) / Set Escape Target
+      # (11830) destination registered so far -- confirmed against RPG_RT's
+      # live source: `Scene_Save::Prepare`/`Player::LoadSavegame`
+      # (`src/scene_save.cpp`/`src/player.cpp`) round-trip `save.targets` via
+      # `Game_Targets::GetSaveData`/`SetSaveData` (`src/game_targets.cpp`)
+      # unconditionally, every save. `GetSaveData` always writes the escape
+      # target first, at array id 0 (default-constructed/empty when never
+      # set -- RPG_RT carries it regardless), followed by every teleport
+      # target keyed by its own destination map id
+      # (`AddTeleportTarget`'s own `tgt.ID = map_id`) -- the exact shape
+      # mirrored below.
+      targets = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_TARGET })
+      esc = @escape_target
+      e0 = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TARGET })
+      if esc
+        e0[1] = esc[:map_id]
+        e0[2] = esc[:x]
+        e0[3] = esc[:y]
+        e0[4] = !esc[:switch_id].nil?
+        e0[5] = esc[:switch_id] || 1
+      end
+      targets[0] = e0
+      @teleport_targets.each do |map_id, t|
+        e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TARGET })
+        e[1] = map_id
+        e[2] = t[:x]
+        e[3] = t[:y]
+        e[4] = !t[:switch_id].nil?
+        e[5] = t[:switch_id] || 1
+        targets[map_id] = e
+      end
+      save[110] = targets
+
       # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) is the currently-loaded map's
       # own live event table, mirrored straight from #map_event_positions/
       # #map_event_route_index, plus its Tile Substitution table
@@ -14718,6 +14751,27 @@ module Game
       state.vehicle(:boat).load_movable(save.boat)
       state.vehicle(:ship).load_movable(save.ship)
       state.vehicle(:airship).load_movable(save.airship)
+      # Chunk 110 (SAVE_TARGET): every Set Teleport Target/Set Escape Target
+      # destination, the same shape #to_lsd writes -- see that method's own
+      # citation. Array id 0 is always the escape slot (RPG_RT's own
+      # `Game_Targets::GetSaveData` convention); `map_id` absent/0 there
+      # means "never set" (matching a default-constructed `SaveTarget`, the
+      # same sentinel real RPG_RT itself carries when Set Escape Target was
+      # never run). Every other id is a teleport target keyed by its own
+      # destination map id.
+      targets = save[110]
+      if targets
+        esc = targets[0]
+        if esc && esc.map_id && esc.map_id != 0
+          state.escape_target = { map_id: esc.map_id, x: esc.x || 0, y: esc.y || 0,
+                                  switch_id: esc.switch_on ? esc.switch_id : nil }
+        end
+        targets.each do |id, t|
+          next if id == 0 || t.map_id.nil?
+          state.teleport_targets[t.map_id] =
+            { x: t.x || 0, y: t.y || 0, switch_id: t.switch_on ? t.switch_id : nil }
+        end
+      end
       # The leader's on-map sprite override (a Change Sprite Association), stored
       # in the hero chunk's CharSet fields.
       if party.leader && hero.charset_name && !hero.charset_name.empty?
