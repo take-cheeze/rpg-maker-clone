@@ -13195,6 +13195,46 @@ check 'a lethal attack also resets stat modifiers and attribute-rank shifts, ' \
   eq 0, foe.atk_mod, 'a revived ally does not keep its stale pre-death buff'
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Game_Battler::AddState`'s Knockout branch (src/game_battler.cpp) also
+# fires `SetIsDefending(false)`/`SetCharged(false)` the instant Death
+# lands, the same statement group as the gauge/stat-modifier resets the two
+# checks above already cover -- `apply_knockout_reset`'s own doc comment
+# had claimed these two fields were "deliberately not ported" because "this
+# codebase already resets both to false at the start of every command a
+# battler is given" -- true for an ally (`#end_round` unconditionally
+# clears both for every entry in `@allies` every round) but not for an
+# enemy: `#strike`'s own `b.defending = false` only fires at the start of
+# *that enemy's own next turn*, not immediately at death, and `#charged`
+# is never reset short of actually being consumed by a subsequent charged
+# attack. An enemy that Defends (or Charges), then dies, then is revived
+# before its own next turn comes up kept the stale flag -- wrongly halving
+# incoming damage from other battlers (`#defending`) or wrongly doubling
+# its own next attack (`#charged`) -- something real RPG_RT's immediate,
+# unconditional reset at death never allows.
+check 'a lethal attack also clears a defending or charged enemy\'s stance, ' \
+      'the same Knockout branch the gauge/stat-mod fixes above already cover' do
+  hero = combatant('Hero', 999, 0, 5, 100)
+  defender = combatant('Defender', 0, 0, 5, 1)
+  defender.defending = true
+  bat = Game::Battle.new([hero], [defender], Game::Rng.new(1))
+  bat.send(:deal_attack, hero, defender)
+  ok defender.dead?, 'the hit was lethal'
+  eq false, defender.defending, 'the stale Defend stance was cleared the instant Death landed'
+
+  charger = combatant('Charger', 0, 0, 5, 1)
+  charger.charged = true
+  bat2 = Game::Battle.new([hero], [charger], Game::Rng.new(1))
+  bat2.send(:deal_attack, hero, charger)
+  ok charger.dead?, 'the hit was lethal'
+  eq false, charger.charged, 'the stale Charge was cleared the instant Death landed'
+
+  # Revival does not restore either, matching the gauge/stat-mod checks above.
+  defender.hp = 10
+  ok !defender.dead?
+  eq false, defender.defending, 'a revived enemy does not keep its stale pre-death Defend stance'
+end
+
 check "Battle#apply_to_party clears a battle combo Enable Combo armed, matching RPG_RT (2026-08-19)" do
   # Confirmed against EasyRPG's actual C++ source, fetched live:
   # `Game_Battler::ResetBattle` (src/game_battler.cpp) is `battle_combo_
