@@ -3505,6 +3505,7 @@ module Game
     # an instant style (the cuts, or a transition onto a screen already in that
     # state) settles at once and does not wait at all.
     def do_erase_screen(cmd)
+      return if block_pending_screen_command
       style = Game::Transition.erase_style(cmd.param(0), teleport_transition(0))
       @state.screen.erase(style)
       return unless @state.screen.fading?
@@ -3513,6 +3514,7 @@ module Game
     end
 
     def do_show_screen(cmd)
+      return if block_pending_screen_command
       style = Game::Transition.show_style(cmd.param(0), teleport_transition(1))
       @state.screen.show(style)
       return unless @state.screen.fading?
@@ -3702,6 +3704,26 @@ module Game
       return false unless message_window_blocks_command?
       @index -= 1
       @wait_kind = :teleport_blocked
+      @waiting = true
+      true
+    end
+
+    # Real RPG_RT does not run an Erase Screen / Show Screen command while a
+    # message window or choice list is open either -- the identical
+    # block-and-retry shape #block_pending_picture_command already ports, on
+    # a fourth pair of commands. Confirmed directly against RPG_RT's live
+    # source: `Game_Interpreter::CommandEraseScreen`/`CommandShowScreen`
+    # (`src/game_interpreter.cpp`, codes 11010/11020) both open with `if
+    # (Game_Message::IsMessageActive()) { return false; }`, unconditionally --
+    # not gated behind `IsEnglish()`/`IsPatchUnlockPics()` the way Show/Move/
+    # Erase Picture are, so this is base RPG2000 behaviour with no edition
+    # exception at all. Without this guard, a still-running parallel process
+    # could cut the screen to black (or back) out from under an on-screen
+    # message window instead of waiting for it to close first.
+    def block_pending_screen_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :screen_blocked
       @waiting = true
       true
     end
