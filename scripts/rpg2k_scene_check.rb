@@ -2097,6 +2097,31 @@ check 'an action event under the player answers the action button' do
   ok st.switches[4], 'the event under the party ran'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Game_Player::
+# CheckEventTriggerHere` (`src/game_player.cpp`) -- the overlap check
+# `#try_action_trigger`'s own "under the player" branch above ports --
+# explicitly excludes a same-layer event (`ev.GetLayer() != lcf::rpg::
+# EventPage::Layers_same`), the same restriction the faced-tile check a few
+# lines below already carries. A same-layer event ordinarily can never
+# reach this branch at all (it blocks the party from ever standing on it),
+# but a page re-select can still leave one co-located with the player --
+# a switch elsewhere flips a same-layer, action-triggered page active while
+# the player already happens to occupy that exact tile, with no movement
+# in between.
+check 'a same-layer action event under the player does not answer the ' \
+      'action button by overlap' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [2, 2])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'the same-layer event under the party must not answer the button'
+end
+
 # yado.tk: 決定キーを押してもマップイベントが実行しない (「決定キーを押しても
 # マップイベントが実行しない」バグ・エラーページ) — a below/above-characters
 # action event only answers the button by overlap (see the check above), never
