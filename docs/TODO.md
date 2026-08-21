@@ -12200,6 +12200,35 @@ not yet verified:
   change. Covered by rewriting the existing `scripts/rpg2k_logic_check.rb`
   check that had asserted the old (backwards) semantics, confirmed to fail
   against the pre-fix code (`expected 7, got 4`).
+  ✅ **Follow-up (2026-08-21): a live Change Encounter Rate (11740) override
+  had the identical Save/Continue gap Tile Substitution just got fixed for
+  above — round-tripped through this codebase's own portable Marshal save,
+  but never through a real `.lsd`.** Confirmed directly against RPG_RT's
+  live source: `Game_Map::PrepareSave`/`SetEncounterSteps`
+  (`src/game_map.cpp`) restore `SaveMapInfo.encounter_steps` verbatim on
+  Continue (a `-1` sentinel meaning "unmodified, use the map's own rate"),
+  and liblcf's own generator table confirms the wire format:
+  `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...` (`generator/csv/
+  fields.csv`) — chunk `Save.map_info` is liblcf id `0x6F` (111), the same
+  chunk this codebase's own event-position and tile-substitution fields
+  already live in. `LCF::Schema::SAVE_MAP_EVENT`
+  (`mruby-lcf/mrblib/schema.rb`) only defined fields 1/2/11/21/22 — no field
+  3 — so `Game::State#to_lsd`/`.from_lsd`
+  (`mruby-rpg2k/mrblib/game.rb`) never wrote or read a live
+  `#encounter_rate` override at all; a genuine Save/Continue silently
+  reverted it to the map's own default the moment the save reloaded, even
+  though the in-memory (Marshal) save format had round-tripped it correctly
+  all along. Fixed by adding field 3 (`encounter_steps`, default `-1`,
+  matching liblcf's own default) to `SAVE_MAP_EVENT`, writing
+  `mapev[3] = @encounter_rate if @encounter_rate` in `#to_lsd` (widening
+  the chunk-111 write guard to also fire when an override is live), and
+  reading it back in `.from_lsd` (a `-1` or absent field 3 both mean "no
+  override", the same as a fresh `#encounter_rate` of `nil`). Covered by a
+  new `scripts/rpg2k_logic_check.rb` check (an override round-trips through
+  `to_lsd`/`.from_lsd`; a State that never overrode the rate round-trips to
+  `nil`; a save written before this landed, missing field 3 entirely, also
+  round-trips to `nil` rather than crashing), confirmed to fail against the
+  pre-fix code (`expected 7, got nil`).
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**

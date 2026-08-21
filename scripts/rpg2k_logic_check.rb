@@ -11081,6 +11081,42 @@ check 'to_lsd/from_lsd round-trips a live Tile Substitution table (chunk 111 fie
   eq [{}, {}], old.tile_substitutions, 'no saved table means every tile shows its own graphic'
 end
 
+check 'to_lsd/from_lsd round-trips a live Change Encounter Rate override ' \
+      '(chunk 111 field 3)' do
+  # Real RPG_RT's SaveMapInfo.encounter_steps (liblcf generator/csv/
+  # fields.csv: `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`) restores a
+  # Save/Continue on the same map to whatever Change Encounter Rate (11740)
+  # had overridden -- Game_Map::PrepareSave/SetEncounterSteps
+  # (src/game_map.cpp) confirmed directly against EasyRPG's own live source;
+  # #to_lsd/.from_lsd previously never touched field 3 at all, so the
+  # override silently reverted to the map's own default the moment a real
+  # save was reloaded.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.encounter_rate = 7
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq 7, round.encounter_rate
+
+  # -1 is the schema's own "no override" sentinel (matching liblcf's real
+  # default) -- a State that never ran Change Encounter Rate must not write
+  # field 3 at all, and from_lsd must leave a fresh State's own nil (use the
+  # map's own rate) alone rather than invent an override.
+  never_overridden = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, Game::State.from_lsd(db, never_overridden.to_lsd).encounter_rate,
+     'no Change Encounter Rate this session means no override round-trips'
+
+  # A save written before this landed simply omits field 3 (or chunk 111
+  # entirely, if no event ever recorded a position/substitution either);
+  # from_lsd must leave that same nil alone rather than crash reading an
+  # absent field.
+  legacy = st.to_lsd
+  legacy[111].delete(3)
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.encounter_rate, 'no saved override means the map\'s own rate applies'
+end
+
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
 # 0=up/1=right/2=down/3=left (Game_Character::Direction's own enum order),
 # not this runtime's numpad convention (2/4/6/8) -- the two schemes only

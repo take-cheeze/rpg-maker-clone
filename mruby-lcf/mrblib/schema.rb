@@ -1324,6 +1324,12 @@ module LCF
     SAVE_MAP_EVENT = {
       1 => { name: :scroll_x, type: :int, default: 0 }, # 1/16 px
       2 => { name: :scroll_y, type: :int, default: 0 }, # 1/16 px
+      # A live Change Encounter Rate (11740) override, or -1/absent for "no
+      # override, use the map's own encounter rate" -- confirmed against
+      # liblcf's own generator table (`generator/csv/fields.csv`):
+      # `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`, matching
+      # `Game_Map::PrepareSave`/`SetEncounterSteps` (`src/game_map.cpp`).
+      3 => { name: :encounter_steps, type: :int, default: -1 },
       11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
       21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
       22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]

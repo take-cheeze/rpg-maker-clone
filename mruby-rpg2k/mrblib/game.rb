@@ -14439,16 +14439,16 @@ module Game
       # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) is the currently-loaded map's
       # own live event table, mirrored straight from #map_event_positions/
       # #map_event_route_index, plus its Tile Substitution table
-      # (#tile_substitutions, fields 21/22) -- all three already scoped to the
+      # (#tile_substitutions, fields 21/22) and a live Change Encounter Rate
+      # override (#encounter_rate, field 3) -- all four already scoped to the
       # current map only, see their own doc comments above. Camera scroll
       # (SAVE_MAP_EVENT fields 1/2) is not modelled by this codebase, so it
       # stays absent, matching the "view derives from the hero" fallback ADR
-      # 0021 documents. Omitted entirely on a State with neither recorded
-      # positions nor a live substitution (e.g. a fresh, unplayed save), the
-      # same "absent means nothing to restore" rule the unplaced-vehicle
-      # chunks above use.
+      # 0021 documents. Omitted entirely on a State with none of these three
+      # recorded (e.g. a fresh, unplayed save), the same "absent means
+      # nothing to restore" rule the unplaced-vehicle chunks above use.
       lower_subs, upper_subs = @tile_substitutions
-      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty?
+      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty? && !@encounter_rate
         mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
         unless @map_event_positions.empty?
           events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
@@ -14466,6 +14466,7 @@ module Game
         end
         mapev[21] = self.class.tile_replacement_bytes(lower_subs) unless lower_subs.empty?
         mapev[22] = self.class.tile_replacement_bytes(upper_subs) unless upper_subs.empty?
+        mapev[3] = @encounter_rate if @encounter_rate
         save[111] = mapev
       end
 
@@ -14805,6 +14806,13 @@ module Game
           upper ? tile_replacement_hash(upper) : {},
         ]
       end
+      # The same chunk's own Change Encounter Rate override (field 3): -1 (its
+      # schema default, matching liblcf's own `SaveMapInfo.encounter_steps`)
+      # or absent both mean "no override, use the map's own rate", the same
+      # `nil` #encounter_rate already means live -- see
+      # Scene::Map#current_encounter_steps.
+      steps = map_events && map_events.encounter_steps
+      state.encounter_rate = steps if steps && steps >= 0
       state
     end
 
