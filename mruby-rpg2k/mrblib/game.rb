@@ -3141,10 +3141,14 @@ module Game
     # integer through -- a handful of bogus adds could silently exhaust the
     # six-slot capacity, starving a later, genuinely valid add of a slot it
     # should have had. Reusing #battle_command_row (already the exact
-    # existence check this needs) also makes the command correctly inert on
-    # a genuine RPG2000 database with no `battlecommands` table at all --
-    # matching `Player::IsRPG2k3Commands()`'s own gate on the real event
-    # command, which #do_change_battle_commands does not separately enforce.
+    # existence check this needs) also makes the *add* branch inert on a
+    # genuine RPG2000 database with no `battlecommands` table at all --
+    # ~~matching `Player::IsRPG2k3Commands()`'s own gate on the real event
+    # command, which #do_change_battle_commands does not separately
+    # enforce~~ not true of the "clear to Row alone" branch below (`id ==
+    # 0`, `add` false), which has no table lookup of its own and still
+    # clears the list even without one; #do_change_battle_commands now
+    # carries the real `IsRPG2k3Commands()` gate itself instead.
     def change_battle_commands(add, id)
       cmds = battle_commands
       if add
