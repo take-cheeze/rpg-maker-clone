@@ -15481,13 +15481,36 @@ not yet verified:
   (`blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden]`), the exact
   same reused-hero-rule mistake the boat/ship fix above already corrected for
   sailing: a below-characters event was silently landable on instead of
-  refusing the landing. The blocker check is now `blocker &&
+  refusing the landing. ~~The blocker check is now `blocker &&
   !blocker[:char].through`, textually identical to `#vehicle_passable?`'s
-  boat/ship branch; the terrain's own `airship_land` flag and flight itself
-  are untouched. Covered by a new `scripts/rpg2k_scene_check.rb` check (an
-  airship boarded directly over a below-characters event cannot land there
-  despite `airship_land: true`; turning that event's own Through Mode on lets
-  it land), confirmed to fail against the pre-fix code before the fix.
+  boat/ship branch~~ (**that Through-Mode exemption was itself wrong — see
+  the dated Follow-up below**); the terrain's own `airship_land` flag and
+  flight itself are untouched. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (an airship boarded directly over a below-characters event cannot
+  land there despite `airship_land: true`; ~~turning that event's own
+  Through Mode on lets it land~~), confirmed to fail against the pre-fix
+  code before the fix.
+  ✅ **Follow-up (2026-08-21): the Through-Mode exemption the fix above
+  copied from `#vehicle_passable?`'s boat/ship rule was itself wrong for
+  airship landing — RPG_RT never reads Through Mode when deciding whether
+  an event blocks a landing at all.** Confirmed against RPG_RT's own live
+  source: `Game_Map::CanLandAirship` (`src/game_map.cpp`) is a standalone
+  loop over every event — `if (ev.IsInPosition(x, y) && ev.IsActive() &&
+  ev.GetActivePage() != nullptr) return false;` — entirely separate from
+  `WouldCollide`/`CheckOrMakeWayEx`, the function `#vehicle_passable?`'s
+  own boat/ship rule legitimately reads `GetThrough()` from.
+  `CanLandAirship` never calls into that machinery and never reads Through
+  Mode anywhere: an event with Through Mode ON still blocks a landing,
+  unlike a boat/ship's own movement collision — landing is the airship
+  occupying the ground tile outright, not a "pass through" move. Fixed by
+  dropping the Through-Mode filter from `Scene::Map#airship_landable?`
+  entirely (`blockers_at(x, y).any?`, unconditional — `blockers_at` already
+  only ever indexes an event with a currently active page, the same
+  `IsActive() && GetActivePage() != nullptr` test `CanLandAirship` itself
+  uses). The existing `scripts/rpg2k_scene_check.rb` check above was
+  rewritten in place to assert the opposite of its own final assertion
+  (Through Mode no longer lets the airship land), confirmed to fail against
+  the pre-fix code before the fix.
 
 **Save / Load persistence — consolidated master list**
 Runtime state that does **not** survive a map re-visit (leave and return,
