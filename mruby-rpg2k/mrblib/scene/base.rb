@@ -242,7 +242,14 @@ class RPG2k
         return nil unless field && db.system.respond_to?(field)
         se = db.system.send(field)
         name = se && se.respond_to?(:file) ? se.file : nil
-        return nil if name.nil? || name.empty?
+        # Confirmed against EasyRPG's actual C++ source: `Game_System::
+        # SePlay(const lcf::rpg::Sound&, bool)` (`src/game_system.cpp`) --
+        # `if (se.name.empty()) { return; } else if (se.name == "(OFF)")
+        # { ...; return; }` -- treats blank *and* the literal "(OFF)"
+        # sentinel identically as "nothing to play," the same convention
+        # `Interpreter#play_audio` already ports for the Play SE/Play BGM
+        # event commands.
+        return nil if name.nil? || name.empty? || name == '(OFF)'
         { name: name, volume: (se.respond_to?(:volume) ? se.volume : 100),
           tempo: (se.respond_to?(:pitch) ? se.pitch : 100) }
       end
@@ -257,7 +264,13 @@ class RPG2k
       # sound only). A no-op for a nil/dangling animation id, an animation
       # with no timings, or (mirroring `#play_skill_sound_effect`'s own
       # simpler convention elsewhere in this codebase) every timing's SE
-      # being blank.
+      # being blank -- or, per `IsStopSoundFilename`'s own guard (called
+      # right here, `src/game_system.cpp` line ~213), the literal "(OFF)"
+      # sentinel, which is not a blank string but liblcf's own "no sound set"
+      # default: a timing left at that default is skipped exactly like a
+      # blank one, so the scan correctly falls through to a *later* timing's
+      # genuine sound instead of trying (and failing) to play a file
+      # literally named "(OFF)".
       def play_animation_se(anim_id)
         return unless anim_id
         table = db.respond_to?(:battle_anime) ? db.battle_anime : nil
@@ -266,7 +279,7 @@ class RPG2k
         anim.timings.each do |_id, t|
           se = t.respond_to?(:se) ? t.se : nil
           name = se && se.file
-          next if name.nil? || name.empty?
+          next if name.nil? || name.empty? || name == '(OFF)'
           Audio.se_play name, se.volume, se.pitch
           return
         end
@@ -314,8 +327,17 @@ class RPG2k
         @scene.state.switches[id] = on
       end
 
+      # Confirmed against EasyRPG's actual C++ source:
+      # `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect`
+      # case (`src/game_character.cpp`) -- `if (move_command.
+      # parameter_string != "(OFF)" && move_command.parameter_string !=
+      # "(Brak)") { ...SePlay...; }` -- a Move Route "Play SE" sub-command
+      # skips playback for either of two sentinel strings, not just a blank
+      # name: "(OFF)" (liblcf's own "no sound set" default) and "(Brak)"
+      # (Polish for "missing" -- a legacy artifact unique to this one
+      # command in the whole reference codebase, found nowhere else in it).
       def play_sound(name, volume, tempo, _balance)
-        return if name.nil? || name.empty?
+        return if name.nil? || name.empty? || name == '(OFF)' || name == '(Brak)'
         RGSS::Audio.se_play(name, volume, tempo)
       rescue StandardError => e
         $stderr.puts "[RPG2k] event SE '#{name}' playback failed: #{e.message}"
@@ -357,8 +379,17 @@ class RPG2k
         @scene.state.switches[id] = on
       end
 
+      # Confirmed against EasyRPG's actual C++ source:
+      # `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect`
+      # case (`src/game_character.cpp`) -- `if (move_command.
+      # parameter_string != "(OFF)" && move_command.parameter_string !=
+      # "(Brak)") { ...SePlay...; }` -- a Move Route "Play SE" sub-command
+      # skips playback for either of two sentinel strings, not just a blank
+      # name: "(OFF)" (liblcf's own "no sound set" default) and "(Brak)"
+      # (Polish for "missing" -- a legacy artifact unique to this one
+      # command in the whole reference codebase, found nowhere else in it).
       def play_sound(name, volume, tempo, _balance)
-        return if name.nil? || name.empty?
+        return if name.nil? || name.empty? || name == '(OFF)' || name == '(Brak)'
         RGSS::Audio.se_play(name, volume, tempo)
       rescue StandardError => e
         $stderr.puts "[RPG2k] event SE '#{name}' playback failed: #{e.message}"

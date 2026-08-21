@@ -13483,6 +13483,41 @@ not yet verified:
   name stops the current track instead of trying to play it; a blank Play
   BGM name still also stops it), confirmed to fail against the pre-fix code
   before the fix.
+  ✅ **Follow-up (2026-08-21): three more call sites had the identical
+  blank-only gap, each independently missing the literal "(OFF)" sentinel
+  (mruby-rpg2k/mrblib/scene/base.rb).** `#play_animation_se` (a
+  `battle_anime` row's own success SE for a field item/skill use) walks the
+  animation's `timings` for the first one with a real sound, `next`ing past
+  any without one — but only ever checked for a blank name, so a timing
+  explicitly left at its schema default ("(OFF)", not blank) tried
+  `Audio.se_play('(OFF)', ...)`, which fails and (via the loop's own
+  `return`) skips every *later* timing's genuine sound too, rather than
+  falling through to it. Confirmed against EasyRPG's actual C++ source:
+  `Game_System::SePlay(const RPG::Animation&)` (`src/game_system.cpp`)
+  gates each timing on `IsStopSoundFilename`, which (via the shared
+  `IsStopFilename`, same file) treats blank and the literal "(OFF)"
+  identically. `#db_system_se` (a Change-System-SFX-overridable
+  cursor/decision/cancel/buzzer sound) had the same blank-only gap;
+  confirmed against `Game_System::SePlay(const lcf::rpg::Sound&, bool)`
+  (same file), which applies the identical blank-vs-"(OFF)" check before
+  any of these system slots ever play. `RPG2k::Scene::MapWorld`/
+  `VehicleWorld#play_sound` (a Move Route "Play SE" sub-command) had a
+  *narrower* version of the same gap plus a second, genuinely distinct
+  sentinel this codebase had never encountered before: confirmed against
+  `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect` case
+  (`src/game_character.cpp`) — `if (move_command.parameter_string !=
+  "(OFF)" && move_command.parameter_string != "(Brak)") { ...SePlay...; }`
+  — a Move Route Play SE skips *either* "(OFF)" *or* "(Brak)" (Polish for
+  "missing," a legacy artifact found nowhere else in the entire reference
+  codebase, unique to this one command). All three fixed by adding the
+  matching literal-string check(s) alongside each method's existing blank
+  check — no control-flow changes, pure guard-condition additions. Covered
+  by four new checks across `scripts/rpg2k_scene_check.rb` (an animation
+  whose first timing is "(OFF)" plays its second timing's real sound
+  instead; a Move Route Play SE plays nothing for either "(OFF)" or
+  "(Brak)" but still plays a real name normally; a system SFX slot
+  (Change System SFX) set to "(OFF)" plays nothing), confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Not applicable/deliberately not reproduced: "SE files must be WAVE;
   BGM accepts MIDI/WAVE/MP3" is an old Windows API limitation of the
   original executable, not a rule this reimplementation restricts to.**
