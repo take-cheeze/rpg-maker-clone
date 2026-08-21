@@ -2937,18 +2937,42 @@ module Game
     # (max HP/MP 1..9999, the four battle stats 1..999); recomputing re-clamps the
     # current HP/MP so a lowered maximum never leaves a vital over its cap.
     #
-    # yado.tk's `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
-    # that range, but RPG_RT keeps accumulating the *unclamped* running total
-    # underneath -- lower Attack far past 1 with one call, then raise it back
-    # only part way, and the effective value stays pinned at the old clamp
-    # until the raw total genuinely climbs back past it, rather than reacting
-    # to the partial raise immediately. @base_raw is that shadow total; @base
+    # ~~yado.tk's `2000/デフォ戦botまとめ`: the displayed/effective stat clamps
+    # to that range, but RPG_RT keeps accumulating the *unclamped* running
+    # total underneath -- lower Attack far past 1 with one call, then raise
+    # it back only part way, and the effective value stays pinned at the old
+    # clamp until the raw total genuinely climbs back past it, rather than
+    # reacting to the partial raise immediately.~~ This turned out to be
+    # backwards -- confirmed against RPG_RT's own live source:
+    # `Game_Actor::SetBaseAtk`/`SetBaseDef`/`SetBaseSpi`/`SetBaseAgi`
+    # (`src/game_actor.cpp`) each clamp the *modifier itself* --
+    # `data.attack_mod` etc, a shadow entirely separate from the level curve
+    # -- to `+/-MaxStatBaseValue()` (999) via `ClampStatMod`, on every single
+    # call, before `GetBaseAtk` ever adds the curve and equipment and clamps
+    # the combined total again to `1..999`; `SetBaseMaxHp`/`SetBaseMaxSp`
+    # clamp `data.hp_mod`/`data.sp_mod` the same way via `ClampMaxHpMod`/
+    # `ClampMaxSpMod`. So a deep debuff can never bank more magnitude in the
+    # modifier than its own +/-999 ceiling, and a partial recovery afterward
+    # reflects immediately once the (already-bounded) modifier crosses back
+    # over the curve's own threshold -- it never has to "climb back" through
+    # however deep the original delta was. `@base_raw` (curve + modifier, no
+    # equipment -- see `#set_level`'s own `preserve_mod` diff) is this
+    # codebase's combined shadow; `@base_raw[type] - base_stats(@level)[type]`
+    # is the isolated modifier #set_level already computes this exact way,
+    # clamped here to `+/-base_param_limit(type)` before being added back
+    # onto the curve, matching `ClampStatMod`'s bound (the same ceiling
+    # `#base_param_limit` already uses for the *displayed* clamp, since the
+    # HP/MP edition-cap mismatch documented above this method already covers
+    # why the two ceilings aren't perfectly split by edition here). `@base`
     # (read by #recompute_stats and everything else) stays the clamped,
     # display/effective value throughout.
     def change_param(type, delta)
       return unless type >= 0 && type < STAT_NAMES.size
-      @base_raw[type] += delta
-      @base[type] = Game.clamp(@base_raw[type], 1, base_param_limit(type))
+      limit = base_param_limit(type)
+      curve = base_stats(@level)[type]
+      mod = Game.clamp(@base_raw[type] - curve + delta, -limit, limit)
+      @base_raw[type] = curve + mod
+      @base[type] = Game.clamp(@base_raw[type], 1, limit)
       recompute_stats
     end
 

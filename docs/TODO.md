@@ -18348,14 +18348,15 @@ codebase yet):
   unbuffed value, and `Party#effective_def` agrees with `Battle#
   effective_def` instead of diverging from it), confirmed to fail against
   the pre-fix code (`expected 2, got 5`) before the fix.
-  **Change Parameters' hidden
-  unclamped total is now tracked.** `Game::Actor#change_param`
+  ~~**Change Parameters' hidden unclamped total is now tracked.**~~
+  (**this framing turned out to be backwards — see the dated Follow-up at
+  the end of this Change Parameters section.**) `Game::Actor#change_param`
   (`mruby-rpg2k/mrblib/game.rb`) clamped and overwrote `@base[type]` on
   every call, permanently discarding how far past the 1..999 (1..9999 for
   max HP/MP) limit the real total had gone — lowering Attack by 2000 off a
   base of 3, then raising it back by 1000, landed at the clamp ceiling
-  (999) instead of staying floored, even though the real total
-  (3 − 2000 + 1000 = −997) is still deep underwater. Fixed with a parallel
+  (999) instead of staying floored ~~, even though the real total
+  (3 − 2000 + 1000 = −997) is still deep underwater~~. Fixed with a parallel
   `@base_raw` shadow that `#change_param` accumulates the signed delta on
   before clamping the result into `@base` — the value `#recompute_stats`
   and every other reader still uses, so nothing outside `#change_param`
@@ -18411,6 +18412,39 @@ codebase yet):
   with no such adjustment round-trips unaffected), confirmed to fail
   against the pre-fix code (the restored actor's stats reverted to the
   level-derived baseline) before the fix.
+  ✅ **Follow-up (2026-08-21): the whole "unclamped shadow total" premise
+  above was backwards — RPG_RT clamps the Change Parameters/Seed modifier
+  itself to +/-999 on every single call, it does not let an unbounded raw
+  total accumulate underneath the display clamp.** Both bullets above were
+  built on an uncited assumption (traced to a code comment attributing it
+  to `yado.tk`/`デフォ戦botまとめ`, never actually checked against real
+  source) that a deep debuff keeps "banking" magnitude indefinitely until a
+  later raise climbs all the way back through it. Checked directly against
+  RPG_RT's own live C++ this time: `Game_Actor::SetBaseAtk`/`SetBaseDef`/
+  `SetBaseSpi`/`SetBaseAgi` (`src/game_actor.cpp`) each clamp the modifier
+  itself — `data.attack_mod` etc, a shadow entirely separate from the level
+  curve — to `+/-MaxStatBaseValue()` (999) via a `ClampStatMod` helper, on
+  every call, *before* `GetBaseAtk` ever adds the curve and equipment and
+  clamps the combined total again to `1..999`; `SetBaseMaxHp`/`SetBaseMaxSp`
+  clamp `data.hp_mod`/`data.sp_mod` the same way via `ClampMaxHpMod`/
+  `ClampMaxSpMod`. So a deep debuff can never bank more magnitude in the
+  modifier than its own +/-999 ceiling, and a partial recovery afterward
+  reflects immediately once the (already-bounded) modifier crosses back
+  over the curve's own threshold — concretely, lowering Attack by 2000 off
+  a base-3 actor and then raising it back by 1000 twice now reads 1, then
+  **4** (curve 3 + a modifier that only ever reached -999, now raised to 1),
+  not 1, then 1 again the way the unclamped-total design left it. Fixed by
+  clamping the *isolated modifier* (`@base_raw[type] - base_stats(@level)
+  [type]`, the same diff `#set_level`'s own `preserve_mod` logic already
+  computes) to `+/-base_param_limit(type)` on every `#change_param` call,
+  before adding it back onto the curve — `@base_raw`'s own "curve + mod"
+  invariant, `#set_level`'s mod-preservation, and `#restore_base`'s
+  save/load round-trip are all otherwise untouched, since this only bounds
+  the modifier at write time rather than changing what `@base_raw` means.
+  The two existing `scripts/rpg2k_logic_check.rb` checks this section's own
+  bullets added were rewritten in place with the corrected values (the
+  save/load check's own reload-then-raise assertion changed from 3 to 4),
+  both confirmed to fail against the pre-fix code before the fix.
   ✅ **"Party wipe" for game-over purposes is now "every
   member is both unable to act and does not recover naturally," not
   literally "every member's HP is 0"** — why Stone status can wipe a party
