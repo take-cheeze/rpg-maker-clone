@@ -10749,6 +10749,31 @@ not yet verified:
   `#cure_state` call is refused on the same state while the armor stays
   equipped), both confirmed to fail against the pre-fix code before the
   fix.
+  ✅ **Follow-up (2026-08-21): `#cure_state` cleared a state from
+  `Combatant#states` but never cleared the matching entry in this
+  codebase's own separate `#apply_turn_states`-owned `state_turns` hash —
+  so a state cured and then reinflicted later in the *same* battle
+  inherited a stale "turns held" count instead of restarting at zero,
+  making it eligible for its `auto_release_prob` roll far too early
+  (sometimes on the very next tick).** Real RPG_RT cannot have this bug at
+  all: `State::Add`/`State::Remove` (`src/state.cpp`) share one literal
+  field for "state present" and "turns held" — `states[state_id - 1] = 1;`
+  on Add, `st = 0;` on Remove — and `Game_Battler::BattleStateHeal`
+  (`src/game_battler.cpp`) increments that exact same field each turn
+  (`states[i] > lcf::Data::states[i].hold_turn && ...`), so a cure always
+  zeroes the one field a later reinfliction resets to 1; the two states
+  (presence, duration) can never drift apart. This codebase's own other two
+  state-removal sites in the same class — `#apply_turn_states`'s own
+  auto-release branch and `#shake_off_states`'s physical-release branch —
+  already clear `state_turns` correctly; only `#cure_state`, the shared
+  helper behind an attack-skill's cure branch, a recovery-skill/item's cure
+  branch, and an RPG2003 weapon's `reverse_state_effect` heal, was missed.
+  Fixed with `target.state_turns.delete(sid) if target.state_turns` right
+  after the existing `states -= [sid]` line, mirroring `#shake_off_states`'s
+  own idiom exactly. Covered by a new `scripts/rpg2k_logic_check.rb` check
+  (a state held for two turns, cured, reinflicted, then held for one more
+  turn stays afflicted — not auto-released early off the stale counter),
+  confirmed to fail against the pre-fix code before the fix.
   ✅ **Follow-up (2026-08-19): Full Recovery never re-inflicted a
   cursed-armor-forced state the map-side Change Condition exemption above
   had already lifted — every fix in this cluster only ever kept an id

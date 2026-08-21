@@ -13304,6 +13304,20 @@ module Game
       return unless target.state?(sid)
       return if combatant_permanent_states(target).include?(sid)
       target.states = (target.states || []) - [sid]
+      # Clear the per-state turn counter too, the same idiom
+      # #shake_off_states already uses for its own release path -- real
+      # RPG_RT's `State::Add`/`State::Remove` (`src/state.cpp`) share one
+      # literal field for "state present" and "turns held"
+      # (`states[state_id - 1] = 1` on Add, `st = 0` on Remove;
+      # `Game_Battler::BattleStateHeal`, `src/game_battler.cpp`, increments
+      # that same field each turn), so a cured-then-reinflicted state can
+      # never inherit a stale duration there. `#apply_turn_states`'s own
+      # `state_turns` hash tracks it separately here and is only ever
+      # incremented, never reset on infliction (`#inflict_state` touches
+      # `states`/`hp` only) -- leaving a stale entry behind would make a
+      # state re-inflicted later in the same fight eligible for its
+      # auto-release roll far too early, sometimes on the very next tick.
+      target.state_turns.delete(sid) if target.state_turns
       target.hp = 1 if sid == Game::States::DEATH_ID
     end
     public :inflict_state, :cure_state, :apply_knockout_reset
