@@ -18234,17 +18234,56 @@ end
 # -- RPG2003 English-release (2k3e) system commands ---------------------------
 
 check 'Open Load Menu and Exit Game raise their scene requests' do
-  it = Game::Interpreter.new(new_state)
+  it = Game::Interpreter.new(new_state(rpg2003: true))
   it.start([FakeCmd.new(IC::OPEN_LOAD_MENU, [])])
   it.update
   ok it.waiting?
   eq :load_menu, it.wait_kind
 
-  it2 = Game::Interpreter.new(new_state)
+  it2 = Game::Interpreter.new(new_state(rpg2003: true))
   it2.start([FakeCmd.new(IC::EXIT_GAME, [])])
   it2.update
   ok it2.waiting?
   eq :exit_game, it2.wait_kind
+end
+
+# Confirmed against RPG_RT's own live source: all five 2k3e system commands
+# (`CommandOpenLoadMenu`/`CommandExitGame`/`CommandToggleAtbMode`/
+# `CommandToggleFullscreen`/`CommandOpenVideoOptions`, `src/
+# game_interpreter.cpp`/`game_interpreter_map.cpp`) open with `if (!Player::
+# IsRPG2k3ECommands()) { return true; }` -- a hard no-op, not merely
+# discarding some other effect, on an RPG2000-compatible database.
+check 'all five 2k3e system commands are RPG2000 no-ops' do
+  it = Game::Interpreter.new(new_state) # rpg2003: false by default
+  it.start([FakeCmd.new(IC::OPEN_LOAD_MENU, [])])
+  it.update
+  ok !it.waiting?, 'Open Load Menu never raises its scene request on an RPG2000 database'
+
+  it2 = Game::Interpreter.new(new_state)
+  it2.start([FakeCmd.new(IC::EXIT_GAME, [])])
+  it2.update
+  ok !it2.waiting?, 'nor does Exit Game'
+
+  st = new_state
+  before_atb = st.atb_mode
+  it3 = Game::Interpreter.new(st)
+  it3.start([FakeCmd.new(IC::TOGGLE_ATB_MODE, [])])
+  it3.update
+  eq before_atb, st.atb_mode, 'Toggle ATB Mode leaves atb_mode untouched'
+
+  it4 = Game::Interpreter.new(new_state)
+  logged = capture_stderr do
+    it4.start([FakeCmd.new(IC::TOGGLE_FULLSCREEN, [])])
+    it4.update
+  end
+  eq '', logged, "Toggle Fullscreen doesn't even reach its own logged no-op message"
+
+  it5 = Game::Interpreter.new(new_state)
+  logged5 = capture_stderr do
+    it5.start([FakeCmd.new(IC::OPEN_VIDEO_OPTIONS, [])])
+    it5.update
+  end
+  eq '', logged5, "Open Video Options doesn't either"
 end
 
 # Ports EasyRPG's own `Game_Interpreter::CommandWait`
@@ -18288,7 +18327,7 @@ check 'Wait with param1 0, or on a non-RPG2003 database, or with no param1 at al
 end
 
 check 'Toggle Fullscreen / Open Video Options run on without pausing' do
-  st = new_state
+  st = new_state(rpg2003: true)
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::TOGGLE_FULLSCREEN, []),
             FakeCmd.new(IC::OPEN_VIDEO_OPTIONS, []),

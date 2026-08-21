@@ -2418,6 +2418,40 @@ The work below is roughly ordered by the critical path to a walkable game
   `EventCommand::Code` enum, which
   also corrected `analyze_game.rb` — it had Change Class / Change Battle Commands
   at 12610 / 12710, numbers the enum does not define at all.
+  ✅ **Follow-up (2026-08-21): all five of these "RPG2003 English-release
+  (2k3e)" commands — Open Load Menu (5001), Exit Game (5002), Toggle ATB
+  Mode (5003), Toggle Fullscreen (5004), Open Video Options (5005) — ran
+  unconditionally on any database edition, despite the section's own header
+  already labeling them 2k3e-only.** `Interpreter#do_open_load_menu`/
+  `#do_exit_game`/`#do_toggle_atb_mode`/`#do_toggle_fullscreen`/`#do_open_
+  video_options` (`mruby-rpg2k/mrblib/interpreter.rb`) carried no edition
+  gate at all, unlike Change Class/Change Battle Commands (fixed earlier
+  this session) and Force Flee/Enable Combo/Call Common Event, all in the
+  same file. Confirmed against RPG_RT's own live source: all five —
+  `CommandExitGame`/`CommandToggleFullscreen`/`CommandOpenVideoOptions`
+  (`src/game_interpreter.cpp`), `CommandOpenLoadMenu`/`CommandToggleAtbMode`
+  (`src/game_interpreter_map.cpp`) — open with `if (!Player::
+  IsRPG2k3ECommands()) { return true; }`, a hard no-op, before any other
+  logic. `IsRPG2k3ECommands()` (`src/player.h`) is technically narrower
+  still (`IsRPG2k3E()` = `IsRPG2k3() && IsEnglish()`, the *English*-release
+  2003 command set specifically) — this codebase does not model an
+  English/Japanese RPG2003 distinction anywhere (an already-established
+  simplification, see `#block_pending_picture_command`'s own citation on
+  `!Player::IsEnglish()`), so falling back to the coarser `party.rpg2003?`
+  boundary already tracked everywhere else in this file is the correct
+  in-pattern choice here too. Fixed by adding `return unless
+  party.rpg2003?` as the first line of all five methods. This codebase's
+  own `scripts/rpg2k_logic_check.rb`/`scripts/rpg2k_scene_check.rb` checks
+  for these commands had the identical, matching gap — built with the
+  default `rpg2003: false` fixture — so every existing check was silently
+  exercising edition-agnostic behavior; all affected fixtures now pass
+  `rpg2003: true` (including a battle-page check whose own separate
+  `BattleStubParty` fixture overrides `@state.party` entirely and needed
+  its own `rpg2003: true` alongside the scene-level one). Covered by a new
+  `scripts/rpg2k_logic_check.rb` check proving all five are genuine
+  RPG2000 no-ops (Toggle Fullscreen/Open Video Options checked via a
+  captured-stderr assertion, since their own effect is log-only), confirmed
+  to fail against the pre-fix code before the fix.
   **Battle-event pages now run too**: a troop's pages (`enemy_group` chunk 11)
   are evaluated by `Game::BattlePage` at the start of every turn — switch,
   variable, turn, enemy-HP and actor-HP conditions — and each matching page runs

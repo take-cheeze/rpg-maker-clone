@@ -3413,11 +3413,31 @@ module Game
     end
 
     # -- RPG2003 English-release (2k3e) system commands ------------------------
+    #
+    # All five below are gated on `party.rpg2003?`, matching RPG_RT's own
+    # `Player::IsRPG2k3ECommands()` guard each carries (`if (!Player::
+    # IsRPG2k3ECommands()) { return true; }`, confirmed against live source
+    # for all five: `CommandExitGame`/`CommandToggleFullscreen`/
+    # `CommandOpenVideoOptions` in `src/game_interpreter.cpp`,
+    # `CommandOpenLoadMenu`/`CommandToggleAtbMode` in
+    # `src/game_interpreter_map.cpp`) -- the same "return unless
+    # party.rpg2003?" shape `#do_change_class`/`#do_change_battle_commands`
+    # already carry a few hundred lines up, and these five's own dispatch
+    # neighbors (`#do_force_flee`/`#do_enable_combo`/`#do_call_common_event`)
+    # carry too. `IsRPG2k3ECommands()` is technically narrower still (`Is
+    # RPG2k3E()` = `IsRPG2k3() && IsEnglish()`, the *English*-release 2003
+    # command set specifically) -- this codebase does not model an
+    # English/Japanese RPG2003 distinction anywhere (see
+    # `#block_pending_picture_command`'s own citation on `!Player::
+    # IsEnglish()` for the same already-established simplification), so
+    # falling back to the coarser `rpg2003?` boundary already tracked
+    # everywhere else in this file is the correct in-pattern choice here too.
 
     # Open Load Menu (5001): leave the map for the save-slot loader, the way
     # Return to Title leaves it. Raised as a :load_menu request; there is nothing
     # to resume, because whatever the player loads replaces this scene.
     def do_open_load_menu(_cmd)
+      return unless party.rpg2003?
       @wait_kind = :load_menu
       @waiting = true
     end
@@ -3426,6 +3446,7 @@ module Game
     # by an event. Raised as an :exit_game request the scene answers by leaving
     # the process; nothing resumes.
     def do_exit_game(_cmd)
+      return unless party.rpg2003?
       @wait_kind = :exit_game
       @waiting = true
     end
@@ -3439,6 +3460,7 @@ module Game
     # (`data.atb_mode = !data.atb_mode`), and RPG_RT's 2k3e "Toggle ATB Mode"
     # command is the event-driven path to the same setting. The event runs on.
     def do_toggle_atb_mode(_cmd)
+      return unless party.rpg2003?
       @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
     end
 
@@ -3448,10 +3470,12 @@ module Game
     # cannot change mode — the command is a logged no-op rather than a silent
     # one, and the event runs straight on.
     def do_toggle_fullscreen(_cmd)
+      return unless party.rpg2003?
       $stderr.puts '[RPG2k] Toggle Fullscreen: this display has no fullscreen mode'
     end
 
     def do_open_video_options(_cmd)
+      return unless party.rpg2003?
       $stderr.puts '[RPG2k] Open Video Options: no video-options screen in this build'
     end
 
