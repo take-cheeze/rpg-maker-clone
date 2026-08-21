@@ -1330,6 +1330,20 @@ module LCF
       # `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`, matching
       # `Game_Map::PrepareSave`/`SetEncounterSteps` (`src/game_map.cpp`).
       3 => { name: :encounter_steps, type: :int, default: -1 },
+      # A live Change Parallax Background (11720) override, or an absent/
+      # blank name for "no override, use the map's own panorama" --
+      # confirmed against liblcf's own generator table
+      # (`generator/csv/fields.csv`): `SaveMapInfo,parallax_name,f,String,
+      # 0x20,...` through `...,parallax_vert_speed,f,Int32,0x26,...`, seven
+      # fields matching `Game_Map::Parallax::ChangeBG`/`GetParallaxParams`
+      # (`src/game_map.cpp`) exactly.
+      32 => { name: :parallax_name, type: :string, default: '' },
+      33 => { name: :parallax_horz, type: :bool, default: false },
+      34 => { name: :parallax_vert, type: :bool, default: false },
+      35 => { name: :parallax_horz_auto, type: :bool, default: false },
+      36 => { name: :parallax_horz_speed, type: :int, default: 0 },
+      37 => { name: :parallax_vert_auto, type: :bool, default: false },
+      38 => { name: :parallax_vert_speed, type: :int, default: 0 },
       11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
       21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
       22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
