@@ -31,21 +31,29 @@ class RPG2k
         bmp = gameover_bitmap
         @picture.bitmap = bmp if bmp
         play_gameover_bgm
-        # RPG_RT ignores whatever key ended the fight; requiring a *fresh* press
-        # stops the button that closed the battle result from skipping the
-        # screen in the same frame.
-        @armed = false
       end
 
+      # A literal port of EasyRPG's `Scene_Gameover::vUpdate`
+      # (src/scene_gameover.cpp): `if (Input::IsTriggered(Input::DECISION))
+      # { Scene::ReturnToTitleScene(); }` -- the whole method, no Cancel
+      # anywhere in the file (unlike the message/choice/menu windows this
+      # screen otherwise resembles, Cancel does not also dismiss it) and no
+      # arming/pending state of any kind. An earlier version here required a
+      # key-released frame before arming, on the theory that the key which
+      # dismissed the battle-defeat result could otherwise skip this screen
+      # in the same frame -- but `RPG2k#show_game_over` swaps `@scenes`
+      # without ever calling `.update` on the new scene itself, so this
+      # screen's first real `#update` always lands on the *next*
+      # `#main_loop` iteration, by which point that iteration's own
+      # `Input.update` has already cleared the old trigger (`@triggered` is
+      # reset at the top of every `Input.update` call, and only a genuine
+      # new key-down event sets it again) -- the scenario the arming gate
+      # defended against cannot occur through this engine's actual update
+      # loop, and the gate itself introduced a real divergence: a player
+      # merely still *holding* Cancel (which does nothing here) when this
+      # screen appears had a fresh Decision press silently ignored until
+      # they let go, something real RPG_RT never does.
       def update
-        unless @armed
-          @armed = true unless Input.press?(Input::C) || Input.press?(Input::B)
-          return
-        end
-        # EasyRPG's `Scene_Gameover::vUpdate` (src/scene_gameover.cpp) checks
-        # only `Input::IsTriggered(Input::DECISION)` -- no Cancel anywhere in
-        # the file. Unlike the message/choice/menu windows this screen
-        # otherwise resembles, Cancel does not also dismiss it.
         return unless Input.trigger?(Input::C)
         parent.return_to_title
       end
