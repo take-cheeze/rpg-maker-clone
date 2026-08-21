@@ -8092,13 +8092,22 @@ class RPG2k
       # damaged someone (EasyRPG's `!terrain->on_damage_se || red_flash`),
       # turning it from an ambient step sound into the terrain's own damage-tick
       # SE instead of playing on every ordinary step onto that terrain.
+      # Confirmed against EasyRPG's actual C++ source: `Game_Player::
+      # BeginMove` (`src/game_player.cpp`) calls `Main_Data::game_system->
+      # SePlay(terrain->footstep)` -- a full `Sound` (filename + volume +
+      # tempo + balance), read by `Game_System::SePlay(const lcf::rpg::
+      # Sound&, bool)` (`src/game_system.cpp`), which treats a blank name
+      # *or* the literal "(OFF)" sentinel as silent no-ops, the same
+      # convention every other Sound-typed field in this codebase already
+      # follows (see `#db_system_se`/`#play_animation_se`).
       def play_terrain_footstep_se(row, damaged)
         return unless @db.respond_to?(:rpg2003?) && @db.rpg2003?
         return unless row && row.respond_to?(:footstep) && row.respond_to?(:on_damage_se)
         return if row.on_damage_se && !damaged
-        name = row.footstep
-        return if name.nil? || name.empty?
-        RGSS::Audio.se_play(name)
+        se = row.footstep
+        name = se && se.respond_to?(:file) ? se.file : nil
+        return if name.nil? || name.empty? || name == '(OFF)'
+        RGSS::Audio.se_play(name, se.volume, se.pitch)
       rescue StandardError => e
         $stderr.puts "[RPG2k] Terrain: footstep SE playback failed: #{e.message}"
       end

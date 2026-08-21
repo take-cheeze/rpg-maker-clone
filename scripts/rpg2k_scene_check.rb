@@ -597,10 +597,20 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     # Every tile of the synthetic map is chip 0, which the fake chipset tags as
     # terrain 42 — so this one row decides whether walking hurts, and (for the
     # airship checks) whether it may fly over / land on any tile.
+    #
+    # `footstep` is a real `Sound` (filename + volume + pitch + balance, see
+    # #play_terrain_footstep_se's own citation), not a bare filename -- a
+    # plain String here is a convenience shorthand for "that filename, at the
+    # Sound schema's own default volume/pitch", auto-wrapped so every
+    # existing `footstep: 'Step1'` caller keeps working unchanged; a caller
+    # that needs a specific volume/pitch or the "(OFF)" sentinel passes an
+    # already Sound-shaped object (`respond_to?(:file)`) directly instead.
     terrain: { 42 => OpenStruct.new(damage: terrain_damage, bush_depth: bush_depth,
                                     airship_land: airship_land, airship_pass: airship_pass,
                                     boat_pass: boat_pass, ship_pass: ship_pass,
-                                    footstep: footstep, on_damage_se: on_damage_se) },
+                                    footstep: footstep.respond_to?(:file) ? footstep :
+                                      OpenStruct.new(file: footstep, volume: 100, pitch: 100),
+                                    on_damage_se: on_damage_se) },
     common_event: common,
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
@@ -20292,6 +20302,33 @@ check 'RPG2003 terrain footstep plays every ordinary step onto that tile' do
   scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true, footstep: 'Step1')
   walk(scene, 3)
   eq 3, RGSS::Audio.se_calls.count { |c| c[0] == 'Step1' }, 'one footstep per tile walked'
+end
+
+# Confirmed against EasyRPG's actual C++ source: liblcf's own
+# `generator/csv/fields.csv` (`Terrain,footstep,f,Sound,0x0F,...`) and
+# `src/generated/lcf/rpg/terrain.h` (`Sound footstep;`) -- the field is a
+# full Sound struct (filename + volume + tempo + balance), not a bare
+# filename, the same shape `Game_System::SePlay(const lcf::rpg::Sound&,
+# bool)` (`src/game_system.cpp`) already reads for every other Sound-typed
+# database field.
+check 'RPG2003 terrain footstep plays with its own configured volume/pitch, ' \
+      'not the schema defaults' do
+  RGSS::Audio.reset_se
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true,
+                     footstep: OpenStruct.new(file: 'Step2', volume: 80, pitch: 120))
+  walk(scene, 1)
+  eq ['Step2', 80, 120], RGSS::Audio.se_calls.find { |c| c[0] == 'Step2' }
+end
+
+check 'a terrain footstep explicitly set to "(OFF)" plays nothing, matching ' \
+      'every other Sound-typed field\'s own "(OFF)" convention' do
+  RGSS::Audio.reset_se
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true,
+                     footstep: OpenStruct.new(file: '(OFF)', volume: 100, pitch: 100))
+  walk(scene, 3)
+  eq [], RGSS::Audio.se_calls, 'a "(OFF)" footstep never plays'
 end
 
 check 'RPG2000 never plays a terrain footstep, even when one is set' do

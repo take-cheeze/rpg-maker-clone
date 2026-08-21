@@ -16263,8 +16263,9 @@ once per the two call sites that both read the same landed-on tile in a
 single step, and not again on further re-queries of the same tile) while
 terrain damage/bush depth both fall back to their harmless defaults.
 ✅ **Terrain's `footstep` and `on_damage_se` fields (chunk 16 elements 15/16)
-are wired up** — parsed by `mruby-lcf/mrblib/schema.rb` since the terrain
-chunk was first decoded (ADR 0034) but never read by the runtime;
+are wired up** — ~~parsed by `mruby-lcf/mrblib/schema.rb` since the terrain
+chunk was first decoded (ADR 0034)~~ (see the Follow-up below — `footstep`
+was parsed as the wrong *type*, not just left unread) but never read by the runtime;
 `scripts/rpg2k_field_audit.rb`'s `NOT_OURS` table used to list `footstep` as
 out of scope for exactly that reason. Checked against a real
 `Game_Player::Move` (EasyRPG source, not guessed): the footstep SE is
@@ -16282,6 +16283,38 @@ now passed to both rather than queried twice. Covered by three new
 firing once per tile walked; an RPG2000 fixture never playing one even when
 the field is set; and an RPG2003 fixture with `on_damage_se` set staying
 silent on a harmless tile while playing on every tile of a damaging one.
+✅ **Follow-up (2026-08-21): `footstep` (chunk 16 element 0x0F) was declared
+as a bare `:string` in the schema — real RPG_RT's field is a full `Sound`
+struct (filename + volume + tempo + balance), the same shape every other
+Sound-typed database field already uses.** Confirmed against liblcf's own
+source, fetched live: `generator/csv/fields.csv` —
+`Terrain,footstep,f,Sound,0x0F,...` — and `src/generated/lcf/rpg/
+terrain.h` — `Sound footstep;`. `Game_Player::BeginMove`
+(`src/game_player.cpp`) plays it with `Main_Data::game_system->
+SePlay(terrain->footstep)`, the identical `Game_System::SePlay(const
+lcf::rpg::Sound&, bool)` (`src/game_system.cpp`) every other system/
+animation SE call site reads — the same method already fixed twice this
+session for its blank-vs-"(OFF)" distinction (`#db_system_se`/
+`#play_animation_se`). Mistyping the field as `:string` meant
+`#play_terrain_footstep_se` read raw undecoded sub-chunk bytes instead of
+the real filename for any project that actually configured a footstep SE
+(the fixture-only checks above happened to never exercise a real decoded
+row, so the mistyped field went unnoticed), silently dropped the SE's own
+volume/pitch even when the filename decoded to something plausible by
+accident, and had no "(OFF)" check at all — every *other* Sound-typed field
+in this schema (`SE`, reused by `cursor_se`/`decision_se`/.../`battle_se`
+and the skill/item/animation `se` fields alike) was already declared
+correctly; `footstep` was the one sibling left mistyped, evidently added ad
+hoc for the original ADR 0034 fix without reusing the established `SE`
+convention. Fixed by retyping the schema field to
+`{ type: :Array1D, elements: SE }` and updating
+`#play_terrain_footstep_se` to read `.file`/`.volume`/`.pitch` off the
+decoded `Sound` struct, with the same blank-or-"(OFF)" no-op guard every
+other Sound-typed call site in this codebase already follows. Covered by
+two new `scripts/rpg2k_scene_check.rb` checks (a footstep plays with its
+own configured volume/pitch, not the schema defaults; a footstep explicitly
+set to "(OFF)" plays nothing), confirmed to fail against the pre-fix code
+before the fix.
 ✅ **Riding the airship now skips terrain damage and the footstep SE
 entirely (2026-08-18).** `#note_party_step` looked up and applied the
 stepped-on tile's terrain regardless of what the party was riding.
