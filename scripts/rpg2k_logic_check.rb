@@ -4746,6 +4746,32 @@ check 'equipping RPG2003 cursed armor does NOT inflict a state left at its ' \
   eq nil, a.remove_state(4), 'and an ordinary cure still cannot touch it while the armor is worn'
 end
 
+check 'equipping RPG2003 cursed armor crowds out a lower-priority state ' \
+      'already carried, the same as a lethal hit or a landed skill state does' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live: `State::Add`
+  # (`src/state.cpp`) runs its crowding-out pass -- clearing any state 10+
+  # priority points below the resulting significant state -- unconditionally,
+  # inside every single call, with no caller-side opt-out. `Game_Battler::
+  # AddState` (`src/game_battler.cpp`) calls it via `State::Add(...)`, and
+  # `Game_Actor::AdjustEquipmentStates` (`src/game_actor.cpp`) funnels equip-
+  # triggered infliction through the identical `AddState` -- so equipping a
+  # cursed item that forces a high-priority state gets the same crowding-out
+  # a lethal hit (#knock_out!) or a landed skill state already does in this
+  # codebase, which had been the one state-infliction call site here that
+  # never paired #add_state with the #Game::States.prune pass every other
+  # one already does.
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  situation = { 2 => fake_state(type: 1, priority: 10), # low priority
+                4 => fake_state(type: 1, priority: 90) } # the cursed state, high priority
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, situation, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.add_state(2)
+  eq [2], a.states, 'carrying the low-priority ailment already'
+  a.equip_item(20)
+  eq [4], a.states, 'the cursed state crowded out the ailment 10+ priority below it'
+end
+
 check 'RPG2003 cursed armor set as *starting* gear inflicts its state from the ' \
       'very first frame, not only once equipped through a later Equip command' do
   # Confirmed against EasyRPG's actual C++ source, fetched live:

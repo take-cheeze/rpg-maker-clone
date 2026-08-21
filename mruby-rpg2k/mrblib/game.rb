@@ -2087,7 +2087,25 @@ module Game
     # itself.
     def adjust_equipment_states(item_id, add)
       cursed_armor_state_ids(item_id).each do |id|
-        add ? add_state(id, allow_battle_states: false) : remove_state(id)
+        if add
+          add_state(id, allow_battle_states: false)
+          # `State::Add` (`src/state.cpp`) runs the crowding-out pass after
+          # *every* state it adds, with no caller-side opt-out -- RPG_RT's
+          # `Game_Battler::AddState` funnels every infliction path through
+          # it uniformly, equipment included: `Game_Actor::
+          # AdjustEquipmentStates` calls the identical `AddState`
+          # `#knock_out!`/#cast_skill's own skill-infliction loop already
+          # pairs with a prune call here. A cursed item forcing a
+          # high-priority state onto an actor already carrying a
+          # low-priority ailment must clear that ailment the instant the
+          # cursed state lands, the same as a lethal hit or a landed skill
+          # state already does here -- this was the one state-infliction
+          # call site in this file that missed pairing #add_state with the
+          # prune pass every other one already does.
+          @states = Game::States.prune(@states, state_table, keep: permanent_states)
+        else
+          remove_state(id)
+        end
       end
     end
 
