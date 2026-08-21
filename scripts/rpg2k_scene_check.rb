@@ -21498,6 +21498,57 @@ check 'an empty encounter list never starts a random battle' do
      'the roll succeeds but there is nothing to fight, so no battle opens'
 end
 
+# Confirmed against EasyRPG's live source, `Game_Map::GetEncountersAt`
+# (`src/game_map.cpp`): an "Area" map-tree node (field 4 `type` == 2, a
+# rectangular sub-region the RPG2000/2003 editor lets an author carve out of
+# a map with its own independent encounter list, field 41) is a *direct
+# child* of its owning map (field 2 `parent_map_id`) and contributes its own
+# troops into the SAME pooled random-encounter vector whenever the party's
+# tile falls inside its bounds (field 51) -- not a separate roll layered on
+# top, and not inherited by a descendant map the way Save/Teleport/Escape
+# access is (see #map_node_properties's own citation for that contrast).
+check "an Area map-tree node's own troops join the map's own random " \
+      'encounter pool while the party stands inside its bounds' do
+  area = OpenStruct.new(type: 2, parent_map_id: 1,
+                        area: { left: 2, top: 2, right: 4, bottom: 4 },
+                        enemy_groups: { 1 => OpenStruct.new(enemy_group_id: 2) })
+  tree = fake_map_tree(
+    1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1),
+    2 => area
+  )
+  outside = new_scene({}, player: [0, 0], map_tree: tree)
+  eq [1], outside.send(:candidate_troops),
+     "outside the area's [2,2)..(4,4) bounds: only the map's own troop"
+
+  inside = new_scene({}, player: [2, 2], map_tree: tree)
+  eq [1, 2], inside.send(:candidate_troops),
+     "at the area's own top-left corner (inclusive): both troops pool together"
+
+  edge = new_scene({}, player: [3, 3], map_tree: tree)
+  eq [1, 2], edge.send(:candidate_troops),
+     'still inside at [3,3], one tile short of the exclusive right/bottom edge'
+
+  just_outside = new_scene({}, player: [4, 4], map_tree: tree)
+  eq [1], just_outside.send(:candidate_troops),
+     "[4,4] is the area's own exclusive right/bottom edge -- outside again"
+end
+
+check "an Area node belonging to a different map's tree does not leak its " \
+      'troops onto this one' do
+  # parent_map_id 9, not this scene's own map id (always 1 in this harness,
+  # see #new_scene) -- a sibling map's own Area must never contribute here,
+  # regardless of how its bounds happen to overlap.
+  foreign_area = OpenStruct.new(type: 2, parent_map_id: 9,
+                                area: { left: 0, top: 0, right: 10, bottom: 10 },
+                                enemy_groups: { 1 => OpenStruct.new(enemy_group_id: 2) })
+  tree = fake_map_tree(
+    1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1),
+    2 => foreign_area
+  )
+  scene = new_scene({}, player: [0, 0], map_tree: tree)
+  eq [1], scene.send(:candidate_troops), "only this map's own troop, the foreign area ignored"
+end
+
 check 'riding the airship skips the random-encounter roll entirely' do
   tree = fake_map_tree(1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1))
   scene = new_scene({}, player: [0, 0], map_tree: tree)

@@ -8357,19 +8357,54 @@ class RPG2k
       end
 
       # Troop ids the party's current tile can start a fight from: the map's
-      # own encounter list (map-tree field 41), filtered by each troop's own
+      # own encounter list (map-tree field 41) plus every "Area" sub-region
+      # (field 4 == 2) that is this map's own direct child and whose bounds
+      # (field 51) cover the party's tile, filtered by each troop's own
       # terrain_set (enemy_group chunk field 5) -- a per-terrain-tag allow list
       # a troop's editor page can restrict it to. An omitted entry (the array
       # too short to reach this tile's tag) defaults to allowed, the same
       # "missing entry reads as the field's default" rule the rest of this
-      # runtime's bit tables already follow.
+      # runtime's bit tables already follow. Confirmed against EasyRPG's live
+      # source, `Game_Map::GetEncountersAt` (`src/game_map.cpp`): it pools an
+      # Area node's own `encounters` list into the *same* vector as the map's
+      # own, so `PrepareEncounter` draws uniformly across both -- not a
+      # separate roll layered on top.
       def candidate_troops
-        row = map_node_properties
-        return [] unless row && row.respond_to?(:enemy_groups) && row.enemy_groups
         tag = terrain_id(@state.x, @state.y)
-        row.enemy_groups.map { |_, e| e.enemy_group_id }.select do |tid|
+        troop_ids(map_node_properties).concat(area_troop_ids).select do |tid|
           troop_allowed_on_terrain?(tid, tag)
         end
+      end
+
+      def troop_ids(row)
+        return [] unless row && row.respond_to?(:enemy_groups) && row.enemy_groups
+        row.enemy_groups.map { |_, e| e.enemy_group_id }
+      end
+
+      # Every Area node's own troop ids, for an Area that is a direct child of
+      # the current map (field 2, `parent_map_id`) and whose rectangle (field
+      # 51) contains the party's tile. `left`/`top` inclusive, `right`/
+      # `bottom` exclusive -- this schema's own field-51 comment already notes
+      # they are stored as `X2 + 1` / `Y2 + 1`, matching EasyRPG's `Rect::
+      # IsOutOfBounds`, worked through by hand: `!player_rect.IsOutOfBounds
+      # (area_rect)` reduces to `area.left <= x < area.right && area.top <= y
+      # < area.bottom`.
+      def area_troop_ids
+        props = map_properties
+        return [] unless props
+        troops = []
+        props.each do |_, row|
+          next unless row.respond_to?(:type) && row.type == 2
+          next unless row.respond_to?(:parent_map_id) && row.parent_map_id == @state.map_id
+          area = row.respond_to?(:area) ? row.area : nil
+          next unless area && area_contains?(area, @state.x, @state.y)
+          troops.concat(troop_ids(row))
+        end
+        troops
+      end
+
+      def area_contains?(area, x, y)
+        x >= area[:left] && x < area[:right] && y >= area[:top] && y < area[:bottom]
       end
 
       def troop_allowed_on_terrain?(tid, tag)
