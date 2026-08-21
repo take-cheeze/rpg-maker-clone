@@ -2191,12 +2191,27 @@ class RPG2k
         return unless Input.trigger?(Input::C)
         # An action event **under the player** fires too: RPG_RT checks the tile
         # the party is standing on before the one it faces, which is how a
-        # trigger-0 event on a doorway tile answers the action button. Overlap
-        # answers the button regardless of priority type, so this check alone
-        # is how a below/above-characters action event (see below) is ever
-        # reachable at all.
+        # trigger-0 event on a doorway tile answers the action button. ~~Overlap
+        # answers the button regardless of priority type~~ -- corrected against
+        # RPG_RT's own live source: `Game_Player::CheckEventTriggerHere`
+        # (`src/game_player.cpp`), which this overlap check and
+        # `#try_action_trigger`'s own faced-tile check below both port,
+        # excludes a same-layer event explicitly (`ev.GetLayer() !=
+        # lcf::rpg::EventPage::Layers_same`) -- the overlap check is
+        # LAYER_SAME-excluded, the exact opposite of "regardless of priority
+        # type". A below/above-characters action event (typically one whose
+        # graphic is an upper-layer chip, which defaults to LAYER_BELOW) is
+        # what this check is actually for; a LAYER_SAME event blocks the
+        # party from ever standing on it in the first place (see
+        # #char_passable?'s own LAYER_SAME collision), so it can never
+        # legitimately reach this branch at all -- the missing exclusion only
+        # mattered for the one way a same-layer event *can* end up
+        # co-located with the player anyway: its page re-selects to a
+        # blocking, action-triggered LAYER_SAME page while the player already
+        # happens to be standing on that exact tile (e.g. a switch flips
+        # elsewhere, with no movement in between).
         here = event_at(@state.x, @state.y)
-        return start_event(here, true) if actionable?(here)
+        return start_event(here, true) if actionable?(here) && here[:layer] != LAYER_SAME
 
         # The faced tile only answers the button for a LAYER_SAME event: RPG_RT
         # ties this to priority type the same way it ties collision to it

@@ -6652,6 +6652,30 @@ following this paragraph as the original record.
   (trigger 0) by tile overlap, never by facing it from an adjacent tile —
   only "same as characters" answers by facing (yado.tk: 決定キーを押しても
   マップイベントが実行しない, `2k/09_bug/025_ibento_kettei_huka/`).
+  ✅ **Follow-up (2026-08-21): the overlap check itself never excluded a
+  "same as characters" event, when real RPG_RT excludes one there too.**
+  `Scene::Map#try_action_trigger`'s own "under the player" branch
+  (`mruby-rpg2k/mrblib/scene/map.rb`) carried an uncited comment claiming
+  "Overlap answers the button regardless of priority type" — the opposite
+  of what its sibling checks two paragraphs below (the faced-tile check,
+  the counter-reach loop) already correctly restrict to `LAYER_SAME` only,
+  by symmetry with the *below/above*-only rule this very bullet documents.
+  Confirmed against EasyRPG's actual C++ source: `Game_Player::
+  CheckEventTriggerHere` (`src/game_player.cpp`) — the function both the
+  overlap check and the Trigger_touched/collision-here check in
+  `CheckActionEvent` share — explicitly excludes a same-layer event
+  (`ev.GetLayer() != lcf::rpg::EventPage::Layers_same`). A same-layer event
+  ordinarily can never reach this branch at all (it blocks the party from
+  ever standing on it — the very first bullet in this list), so the missing
+  exclusion only mattered for the one way a same-layer event *can* end up
+  co-located with the player anyway: its page re-selects to a blocking,
+  action-triggered same-layer page while the player already happens to
+  occupy that exact tile, with no movement in between (a switch flipped
+  elsewhere). Fixed by adding the same `here[:layer] != LAYER_SAME` guard
+  the sibling checks already carry. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (a same-layer action event
+  co-located with the player does not answer the button by overlap),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ Set Move Route **Change Graphic** targeting the hero now actually
   changes the on-screen sprite (it applied to `@player_char` but the
   renderer never read it), and reverts on Transfer Player like real RPG_RT
