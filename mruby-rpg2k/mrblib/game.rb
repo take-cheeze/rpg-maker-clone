@@ -609,6 +609,13 @@ module Game
     (100 - clamp(top_trans, 0, 100)) * 255 / 100
   end
 
+  # The inverse of .trans_to_opacity, for writing a live picture's current
+  # `Game::Picture#opacity` (0..255) back to chunk 103 field 34's own 0..100
+  # transparency scale on Save (Game::State#to_lsd).
+  def self.opacity_to_trans(opacity)
+    100 - clamp(opacity, 0, 255) * 100 / 255
+  end
+
   # Top-left pixel of the view so the player is centred, clamped so the camera
   # never scrolls past the edges of a map smaller/larger than the screen.
   def self.camera_offset(player_px, screen_px, map_px)
@@ -14412,6 +14419,38 @@ module Game
         actors[a.id] = e
       end
       save[108] = actors
+
+      # Chunk 103 is every currently-shown picture (Show Picture, 11110) --
+      # confirmed against RPG_RT's live source: `Scene_Save::Prepare`
+      # (`src/scene_save.cpp`) writes `save.pictures = Main_Data::
+      # game_pictures->GetSaveData()` unconditionally on every save, and
+      # `Player::LoadSavegame` (`src/player.cpp`) restores it unconditionally
+      # on every load -- the same chunk `.from_lsd`/`.restore_pictures`
+      # (above) already reads, just never written here. Field mapping is the
+      # exact mirror of `.restore_pictures`' own read (see its comment for
+      # why the numbers need no separate guesswork): 1 name, 31/32 current_x/
+      # current_y, 33 zoom, 34 transparency (`Game.opacity_to_trans`, the
+      # inverse of the live command's own `#trans_to_opacity`), 41-44 the
+      # red/green/blue/saturation tone. `@pictures` only ever holds currently
+      # -shown pictures (#erase_picture deletes the entry outright), so every
+      # entry present is live and belongs in the save.
+      unless @pictures.empty?
+        pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+        @pictures.each do |id, p|
+          e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+          e[1] = p.name
+          e[31] = p.x
+          e[32] = p.y
+          e[33] = p.zoom
+          e[34] = Game.opacity_to_trans(p.opacity)
+          e[41] = p.red
+          e[42] = p.green
+          e[43] = p.blue
+          e[44] = p.saturation
+          pics[id] = e
+        end
+        save[103] = pics
+      end
 
       inv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_INVENTORY })
       inv[1] = @party.actors.map { |a| a.id }

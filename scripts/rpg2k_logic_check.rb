@@ -4329,6 +4329,64 @@ check 'restore_pictures restores zoom, opacity and tone, not just name/position'
   eq 100, plain.saturation
 end
 
+check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Save::Prepare`
+  # (`src/scene_save.cpp`) writes `save.pictures = Main_Data::game_pictures->
+  # GetSaveData()` unconditionally on every save, and `Player::LoadSavegame`
+  # (`src/player.cpp`) restores it unconditionally on every load -- so a
+  # picture shown via Show Picture (11110) survives a genuine Save/Continue.
+  # `#to_lsd` never wrote chunk 103 at all (see the "restore_pictures..."
+  # check above, whose own comment used to note this), so any shown picture
+  # silently vanished the instant this engine's own Save/Continue ran, even
+  # though loading a genuine external RPG_RT save with pictures already
+  # worked (that path only ever exercises .from_lsd, never .to_lsd).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.show_picture(3, name: 'backdrop', x: 200, y: 150, zoom: 150,
+                  opacity: Game.trans_to_opacity(25), # == 191, see the check above
+                  red: 50, green: 60, blue: 70, saturation: 80)
+
+  saved = st.to_lsd[103][3]
+  ok !saved.nil?, 'chunk 103 carries the shown picture'
+  eq 'backdrop', saved.name
+  eq 200, saved.current_x.to_i
+  eq 150, saved.current_y.to_i
+  eq 150, saved.zoom
+  # Game.opacity_to_trans(191) == 100 - 191*100/255 == 26 -- not 25: this
+  # codebase's own Game::Picture keeps opacity (0..255), not RPG_RT's own
+  # native 0..100 transparency, as its live ground truth (#trans_to_opacity
+  # only ever converts one way for the live command), so a save round-trip
+  # through both integer-truncating conversions is not perfectly lossless.
+  # Real RPG_RT itself has no such drift (`Game_Pictures::Picture::data.
+  # current_top_trans` is the 0..100 value directly, confirmed against
+  # `src/game_pictures.cpp`) -- a pre-existing, separate precision gap noted
+  # in docs/TODO.md, out of scope for this fix.
+  eq 26, saved.transparency
+  eq 50, saved.tone_red
+  eq 60, saved.tone_green
+  eq 70, saved.tone_blue
+  eq 80, saved.tone_saturation
+
+  # End-to-end through .from_lsd too, at the two values that round-trip
+  # exactly (0 and 255 are each other's fixed point under both conversions,
+  # see the arithmetic above) so this assertion is not itself muddied by the
+  # same rounding the transparency check above already covers directly.
+  st.show_picture(4, name: 'clean', x: 10, y: 20, opacity: 255)
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.pictures[4]
+  ok !restored.nil?, 'the picture round-trips through a real .lsd write/read'
+  eq 'clean', restored.name
+  eq 10, restored.x
+  eq 20, restored.y
+  eq 255, restored.opacity, 'opacity 255 (trans 0) is a fixed point of both conversions'
+
+  # A State with no pictures shown must not gain a stray chunk 103 at all --
+  # the same "absent means nothing to restore" rule chunk 111's own fields
+  # already follow.
+  empty_st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, empty_st.to_lsd[103], 'no shown pictures means no chunk 103 at all'
+end
+
 # -- the permanent actor roster (Game::Actors) --------------------------------
 #
 # Nepheshel drives its whole party mechanic through Change Party Member: it adds

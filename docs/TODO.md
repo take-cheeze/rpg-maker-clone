@@ -191,6 +191,36 @@ The work below is roughly ordered by the critical path to a walkable game
     covered by a synthetic-chunk round-trip in `rpg2k_logic_check.rb` (`to_lsd`
     does not write chunk 103 itself yet, so there is no live save to round-trip
     through).
+    ✅ **Follow-up (2026-08-21): `to_lsd` now writes chunk 103 too — a shown
+    picture used to vanish the instant this engine's own Save/Continue ran,
+    even though loading a genuine external RPG_RT save with one already
+    worked correctly (that path only ever exercised `.from_lsd`, never
+    `.to_lsd`).** Confirmed directly against RPG_RT's live source:
+    `Scene_Save::Prepare` (`src/scene_save.cpp`) writes `save.pictures =
+    Main_Data::game_pictures->GetSaveData()` unconditionally on every save,
+    and `Player::LoadSavegame` (`src/player.cpp`) restores it unconditionally
+    on every load. Fixed by mirroring `.restore_pictures`' own read exactly —
+    same field ids (1 name, 31/32 current_x/current_y, 33 zoom, 34
+    transparency, 41-44 tone), same conversions, just in the write direction
+    — iterating `@pictures` (only ever currently-shown pictures;
+    `#erase_picture` deletes the entry outright, so presence alone means
+    live). A new `Game.opacity_to_trans` (the inverse of the existing
+    `#trans_to_opacity`) converts `Game::Picture#opacity` (0..255) back to
+    the save field's own 0..100 scale. Worth noting: this codebase's
+    `Game::Picture` keeps `opacity` (not RPG_RT's own native 0..100
+    transparency) as its live ground truth, so a save round-trip through
+    both integer-truncating conversions is not perfectly lossless (e.g.
+    opacity 191 round-trips to 188) — real RPG_RT has no such drift
+    (`Game_Pictures::Picture::data.current_top_trans` is the 0..100 value
+    directly, confirmed against `src/game_pictures.cpp`), a separate,
+    pre-existing precision gap left as-is rather than folded into this fix.
+    Covered by a new `scripts/rpg2k_logic_check.rb` check (`to_lsd` writes a
+    shown picture's exact field values, including the expected 191→26
+    transparency conversion; a full `to_lsd`/`.from_lsd` round-trip at
+    opacity 255/trans 0 — a fixed point of both conversions — restores every
+    field exactly; a State with no shown pictures gets no chunk 103 at all),
+    confirmed to fail against the pre-fix code (`NoMethodError` on a nil
+    chunk).
   - ✅ **`Game::State#to_lsd` output is loadable by RPG_RT.** It round-tripped
     through our own parser (`scripts/lcf_save_roundtrip.rb`) but the genuine
     runtime left "Continue" dead, with no error anywhere. The assumed cause —
@@ -200,10 +230,20 @@ The work below is roughly ordered by the critical path to a walkable game
     then the field: `to_lsd` wrote the file-screen date as `0.0`, and zero on
     the OLE-automation scale is 1899-12-30, which RPG_RT reads as an *empty
     slot*. It now defaults to the current time, and a from-scratch `to_lsd` save
-    loads in the real runtime. A `to_lsd` save still carries no picture,
-    map-event or vehicle state, so it resumes into a bare scene — enough to
-    prove the file loads, not enough to compare rendering, which is why the
-    comparison harness still edits a genuine save.
+    loads in the real runtime. ~~A `to_lsd` save still carries no picture,
+    map-event or vehicle state, so it resumes into a bare scene~~ — partly
+    stale as of 2026-08-21: `to_lsd` now writes map-event positions/tile
+    substitutions/encounter-rate/parallax overrides (chunk 111) and shown
+    pictures (chunk 103, the Follow-up just above) too. **Vehicle placement
+    (chunks 105-107) is still the one real gap left in this list** —
+    `.from_lsd` already reads `save.boat`/`.ship`/`.airship` back
+    (`state.vehicle(:boat).load_movable(save.boat)` etc.), but `#to_lsd`
+    never writes any of the three, the identical "reader exists, writer
+    doesn't" shape every fix in this section has been closing one chunk at a
+    time — left open for a future pass rather than folded into this one. A
+    from-scratch `to_lsd` save is enough to prove the file loads, not enough
+    to compare rendering against a real cutscene mid-playthrough, which is
+    why the comparison harness still edits a genuine save.
 - ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
   backdrop behind the tile layers (a sprite at z = -1). `Game::Parallax` ports
   EasyRPG's parallax model: a looping axis tiles the image and scrolls it at
