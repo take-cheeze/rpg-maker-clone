@@ -3794,7 +3794,7 @@ check "Change Event Location's RPG2003 facing sub-parameter snaps another " \
   auto = page(trigger: 3) # auto-start: place event 2 at (5, 3), facing down
   auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [2, 0, 5, 3, 3])]
   scene = new_scene({ 1 => event(0, 4, auto), 2 => event(1, 1, page) },
-                    player: [5, 5])
+                    player: [5, 5], rpg2003: true)
   c = chars(scene)[2]
   c.direction = 8 # start facing up, so a no-op would be obvious
   5.times { scene.update }
@@ -4864,7 +4864,7 @@ check 'a teleport lands the party facing the direction it asked for' do
   auto = page(trigger: 3)
   # RPG2003's facing argument: 1 = up, which the runtime speaks as numpad 8.
   auto.event_commands = [ECmd.new(ic::TELEPORT, [1, 4, 3, 1])]
-  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0], rpg2003: true)
   st = scene.instance_variable_get(:@state)
   st.direction = 2 # facing down to start with
   20.times { scene.update }

@@ -10121,6 +10121,32 @@ not yet verified:
   reads as `0`/no facing change) and a new `scripts/rpg2k_scene_check.rb`
   check (a targeted event snaps to face down on arrival), all three
   confirmed to fail against the pre-fix code before the fix.
+  - **Follow-up (2026-08-21):** ~~the fix above gated the facing conversion
+    on constant-appointment mode alone.~~ It also needed the edition gate
+    the write-up already cited but never actually applied: RPG_RT's own
+    `Game_Interpreter::CommandChangeEventLocation` only reads `com.
+    parameters[4]` at all `if (com.parameters.size() > 4 &&
+    Player::IsRPG2k3Commands())` (`src/game_interpreter.cpp`) — an RPG2000
+    binary never reads the 5th parameter, regardless of what happens to be
+    sitting in the on-disk command's parameter array. `#do_teleport`
+    (`mruby-rpg2k/mrblib/interpreter.rb`) had the identical gap for its own
+    `com.parameters[3]`/`IsRPG2k3Commands()` guard (`Game_Interpreter_Map::
+    CommandTeleport`, `src/game_interpreter_map.cpp`) — both converted
+    whatever facing parameter was present unconditionally, relying on an
+    uncited assumption ("an RPG2000 project writes 0 here") that a genuine
+    RPG2000 database's own command list never carries a stray non-zero value
+    in that slot, rather than the actual edition check every sibling
+    parameter-count guard in this same file already applies (`#do_flash_
+    screen`/`#do_shake_screen`). Fixed by gating both `#do_teleport` and
+    `#do_change_event_location`'s facing conversion behind `@state.party.
+    rpg2003? && cmd.parameters.size > N`, matching the sibling guards
+    exactly. Covered by two new `scripts/rpg2k_logic_check.rb` checks (an
+    RPG2000 database ignores a present Teleport/Change Event Location facing
+    parameter outright, even though it does convert a facing argument when
+    the database is RPG2003) and two adjusted `scripts/rpg2k_scene_check.rb`
+    fixtures (both existing facing-snap checks now build an RPG2003 fixture,
+    since neither had actually been exercising the edition gate before),
+    confirmed to fail against the pre-fix code before the fix.
 - ✅ **Set Vehicle Location now moves the party along with the vehicle they
   are currently riding, on the same map — it used to reposition only the
   vehicle model, leaving the party (and everything the screen actually

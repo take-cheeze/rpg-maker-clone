@@ -3041,13 +3041,23 @@ module Game
     # one". It is not the runtime's 2/4/6/8 numpad direction, and passing it
     # through raw set two of the four values to numbers that are not directions
     # at all (1 and 3, which no delta or charset row matches) and a third to the
-    # wrong one — only "left" happened to line up. An RPG2000 project writes 0
+    # wrong one — only "left" happened to line up. ~~An RPG2000 project writes 0
     # here, so converting unconditionally is the same as EasyRPG's
-    # `IsRPG2k3Commands` guard for the games that can emit it.
+    # `IsRPG2k3Commands` guard for the games that can emit it.~~ Corrected
+    # against RPG_RT's own live source: `Game_Interpreter_Map::CommandTeleport`
+    # (`src/game_interpreter_map.cpp`) reads param3 only `if
+    # (com.parameters.size() > 3 && Player::IsRPG2k3Commands())` — a genuine
+    # RPG2000 binary never reads it at all, regardless of what the parameter
+    # array happens to hold, the same edition gate `#do_flash_screen`/
+    # `#do_shake_screen` already carry a few methods below. "An RPG2000
+    # project writes 0 here" is not something this command's own reference
+    # source relies on or guarantees for every possible on-disk command list
+    # (a hand-edited/imported one included), so converting unconditionally
+    # was an uncited equivalence claim, not an actual port of the guard.
     def do_teleport(cmd)
       return if block_pending_teleport_command
-      @teleport = [cmd.param(0), cmd.param(1), cmd.param(2),
-                   teleport_facing(cmd.param(3))]
+      dir = @state.party.rpg2003? && cmd.parameters.size > 3 ? teleport_facing(cmd.param(3)) : 0
+      @teleport = [cmd.param(0), cmd.param(1), cmd.param(2), dir]
       @wait_kind = :teleport
       @waiting = true
     end
@@ -3097,7 +3107,9 @@ module Game
     # runtime's own numpad direction, so it is reused verbatim here rather
     # than duplicated. EasyRPG only applies it "for the constant case, not
     # for variables" (its own comment) -- the appointment-mode check below
-    # mirrors that.
+    # mirrors that. The `rpg2003?`/`parameters.size` half of that same cited
+    # guard had been quoted here without actually being applied in the code
+    # below it -- fixed to match #do_teleport's own identical correction.
     def do_change_event_location(cmd)
       x = cmd.param(2)
       y = cmd.param(3)
@@ -3106,7 +3118,7 @@ module Game
         x = variables[x]
         y = variables[y]
       end
-      dir = variable_mode ? 0 : teleport_facing(cmd.param(4))
+      dir = (!variable_mode && @state.party.rpg2003? && cmd.parameters.size > 4) ? teleport_facing(cmd.param(4)) : 0
       @location_requests.push({ op: :set, target: cmd.param(0), x: x, y: y, dir: dir })
     end
 
