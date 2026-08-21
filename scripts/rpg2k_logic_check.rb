@@ -14635,6 +14635,32 @@ check 'battle state at 0% auto_release_prob never wears off on its own' do
   eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
+check 'battle: curing a state resets its turn-held counter, so a ' \
+      'reinflicted state does not inherit a stale duration' do
+  # RPG_RT's own State::Add/State::Remove (src/state.cpp) share one literal
+  # field for "state present" and "turns held" -- Add sets it to 1, Remove
+  # sets it to 0 -- so a cured-then-reinflicted state can never carry a
+  # stale duration into BattleStateHeal's (src/game_battler.cpp) hold_turn
+  # check. #cure_state used to remove the state from `states` without ever
+  # clearing the matching #apply_turn_states entry in this codebase's own
+  # separate `state_turns` hash, which #inflict_state never resets either.
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 2, 100) } # hold_turn 2, 100% release
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.send(:apply_turn_states, hero) # counter 1, not > 2
+  bat.send(:apply_turn_states, hero) # counter 2, not > 2 (2 is not > 2)
+  ok hero.state?(5), 'still held after two turns -- not yet eligible to auto-release'
+  bat.send(:cure_state, hero, 5)
+  ok !hero.state?(5), 'cured'
+  bat.send(:inflict_state, hero, 5)
+  ok hero.state?(5), 'reinflicted'
+  bat.send(:apply_turn_states, hero) # one turn on the freshly reinflicted state
+  ok hero.state?(5), 'counter restarted at 1, not resumed from the stale 2 -- ' \
+                      'still held, not auto-released a turn early'
+end
+
 # デフォ戦botまとめ: "'party wipe' for game-over purposes is defined as 'every
 # member is both unable to act and does not recover naturally,' not literally
 # 'every member's HP is 0' (why Stone status can wipe a party without zeroing
