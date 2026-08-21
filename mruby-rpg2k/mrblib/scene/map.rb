@@ -2460,7 +2460,15 @@ class RPG2k
       # back into a map that itself had no BGM used to leave the vehicle's own
       # track still playing, neither of which real RPG_RT does.
       def play_bgm_or_stop(music)
-        if music && music[:name] && !music[:name].to_s.empty?
+        # The doc comment above already cites "(OFF) means play nothing" from
+        # `BgmPlay`'s own source, but this condition itself only ever checked
+        # for a blank name -- never the literal "(OFF)" text `BgmPlay`
+        # actually compares against (liblcf's own Music-struct schema
+        # default). A vehicle/pre-battle/pre-inn BGM explicitly set to
+        # "(OFF)" in the editor fell through to `#play_bgm` and tried to
+        # play a file literally named "(OFF)" instead of stopping.
+        name = music && music[:name] ? music[:name].to_s : ''
+        if !name.empty? && name != '(OFF)'
           play_bgm(music)
         else
           RGSS::Audio.bgm_stop
