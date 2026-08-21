@@ -13383,18 +13383,58 @@ not yet verified:
   #play_audio` (`mruby-rpg2k/mrblib/interpreter.rb`) returned immediately on
   a blank filename for both Play BGM and Play SE alike, which is correct for
   a blank Play BGM (nothing establishes RPG_RT treats that as anything but a
-  no-op) but wrong for Play SE: the editor's "(OFF)" choice is encoded the
-  same way, as an empty filename, and since SE is truly polyphonic (no
-  single "current" track the way BGM has one), a blank Play SE genuinely
-  halts every in-flight sound effect rather than leaving one alone. The
-  blank-name branch now calls `RGSS::Audio.se_stop` (already defined as an
-  `Audio` module wrapper in `mruby-rgss`, previously unused from this
-  codebase) when the command is a Play SE; Play BGM's own blank-name case is
-  untouched. Covered by two new `scripts/rpg2k_logic_check.rb` checks (a
-  blank-name Play SE reaches the stop-all backend call and plays nothing; an
-  ordinary named Play SE still plays normally, not a stop-all), confirmed to
-  fail against the pre-fix code before the fix. SE never loops natively
-  (unverified, separate claim).
+  no-op) but wrong for Play SE: ~~the editor's "(OFF)" choice is encoded the
+  same way, as an empty filename~~ (see the Follow-up below — that's an
+  uncited, wrong assumption; "(OFF)" is its own literal string, distinct
+  from blank), and since SE is truly polyphonic (no single "current" track
+  the way BGM has one), a blank Play SE genuinely halts every in-flight
+  sound effect rather than leaving one alone. The blank-name branch now
+  calls `RGSS::Audio.se_stop` (already defined as an `Audio` module wrapper
+  in `mruby-rgss`, previously unused from this codebase) when the command is
+  a Play SE; Play BGM's own blank-name case is untouched. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks (a blank-name Play SE reaches the
+  stop-all backend call and plays nothing; an ordinary named Play SE still
+  plays normally, not a stop-all), confirmed to fail against the pre-fix
+  code before the fix. SE never loops natively (unverified, separate claim).
+  ✅ **Follow-up (2026-08-21): the editor's "(OFF)" choice is not encoded as
+  a blank filename at all — it is the literal 5-character string "(OFF)",
+  liblcf's own schema default for both the Music and Sound structs — and
+  RPG_RT treats a genuinely blank name and a literal "(OFF)" name
+  differently for Play SE (identically for Play BGM).** Confirmed against
+  EasyRPG's actual C++ source: `Game_System::SePlay` (`src/game_system.cpp`)
+  — `if (se.name.empty()) { return; } else if (se.name == "(OFF)") { if
+  (stop_sounds) Audio().SE_Stop(); return; }` — a genuinely blank name is a
+  silent no-op with **no** stop call, while only the literal "(OFF)" stops
+  every playing SE (gated on `stop_sounds`, which `Game_Interpreter::
+  CommandPlaySound`, `src/game_interpreter.cpp`, always passes `true` for the
+  Play SE event command itself). So the fix above actually had it backwards
+  for a genuinely blank Play SE name (a real no-op in RPG_RT) — it stopped
+  everything — while a Play SE explicitly set to "(OFF)" in the editor never
+  hit the stop branch at all, since its `cmd.string` is the non-empty text
+  `"(OFF)"`: it fell through to `RGSS::Audio.se_play("(OFF)", ...)`, which
+  fails to find a file by that name and silently does nothing (caught by the
+  method's own `rescue`), rather than stopping playback. Separately, `Game_
+  System::BgmPlay` (same file) treats blank and "(OFF)" identically —
+  `if (!bgm.name.empty() && bgm.name != "(OFF)") { ...play... } else {
+  BgmStop(); }` — so Play BGM's own blank-name case (left "untouched" above,
+  on the same reasoning that a blank Play BGM's behavior was unestablished)
+  was also wrong: real RPG_RT always stops the current track on a blank *or*
+  "(OFF)" Play BGM, and an explicit "(OFF)" selection (not just a blank
+  field) never stopped anything here either. `#play_audio` now checks the
+  literal `name == '(OFF)'` string alongside blank for both kinds, correctly
+  reproducing `BgmStop`'s always-stop rule for BGM and `SePlay`'s
+  no-op-vs-stop split for SE. The identical gap existed in `Scene::Map
+  #play_bgm_or_stop` (`mruby-rpg2k/mrblib/scene/map.rb`) too — its own doc
+  comment already correctly cited "(OFF) means play nothing" from `BgmPlay`,
+  but the condition itself only ever checked for a blank name, so a
+  vehicle/pre-battle/pre-inn BGM explicitly set to "(OFF)" fell through to
+  `#play_bgm` and tried to play a file literally named "(OFF)" — fixed the
+  same way. Covered by four new `scripts/rpg2k_logic_check.rb` checks (a
+  genuinely blank Play SE name is now a true no-op — no stop call at all; the
+  literal "(OFF)" Play SE name stops every SE; the literal "(OFF)" Play BGM
+  name stops the current track instead of trying to play it; a blank Play
+  BGM name still also stops it), confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **Not applicable/deliberately not reproduced: "SE files must be WAVE;
   BGM accepts MIDI/WAVE/MP3" is an old Windows API limitation of the
   original executable, not a rule this reimplementation restricts to.**

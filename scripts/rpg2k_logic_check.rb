@@ -25,6 +25,7 @@ module RGSS
       def bgm_volume(*a); (@log ||= []) << [:bgm_volume, *a]; end
       def bgm_pan(*a); (@log ||= []) << [:bgm_pan, *a]; end
       def bgm_fade(*a); (@log ||= []) << [:bgm_fade, *a]; end
+      def bgm_stop(*a); (@log ||= []) << [:bgm_stop, *a]; end
       def se_play(*a);  (@log ||= []) << [:se, *a];  end
       def se_stop(*a);  (@log ||= []) << [:se_stop, *a]; end
     end
@@ -3389,13 +3390,30 @@ check 'Play BGM re-applies pan on a same-file re-trigger, not just a fresh start
   eq [20, 80], pans, 'pan is re-applied on the same-file branch too'
 end
 
-# -- Play SE "(OFF)" ----------------------------------------------------------
+# -- Play SE/BGM "(OFF)" ------------------------------------------------------
+# Confirmed against EasyRPG's actual C++ source: the editor's "(OFF)" choice
+# is encoded as the literal 5-character string "(OFF)" (liblcf's own schema
+# default for both the Music and Sound structs), not as a blank filename --
+# an uncited assumption this project's own prior fix had made. `Game_System::
+# SePlay` (src/game_system.cpp) treats the two differently: a genuinely blank
+# name is a silent no-op (`if (se.name.empty()) { return; }`), while only the
+# literal "(OFF)" stops every playing SE (`else if (se.name == "(OFF)") {
+# if (stop_sounds) Audio().SE_Stop(); return; }`).
 
-check 'Play SE with a blank name (the editor\'s "(OFF)" choice) stops every SE' do
+check 'Play SE with a genuinely blank name is a silent no-op, not a stop-all' do
   RGSS::Audio.log = []
   st = new_state
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: '')])
+  it.update
+  eq [], RGSS::Audio.log, 'a blank name neither plays nor stops anything'
+end
+
+check 'Play SE with the literal "(OFF)" name stops every SE' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: '(OFF)')])
   it.update
   eq [[:se_stop]], RGSS::Audio.log, 'the SE-stop-all backend call ran, and no SE played'
 end
@@ -3407,6 +3425,36 @@ check 'Play SE with a real file name plays it, not a stop-all' do
   it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: 'cursor')])
   it.update
   eq [[:se, 'cursor', 80, 100]], RGSS::Audio.log
+end
+
+check 'Play BGM with the literal "(OFF)" name stops the current track' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: '(OFF)'),
+  ])
+  it.update
+  eq [[:bgm, 'town', 80, 100], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
+     'the second Play BGM stops the track just started, rather than trying ' \
+     'to play a file literally named "(OFF)"'
+  eq nil, it.instance_variable_get(:@state).current_bgm,
+     'the tracked current BGM is cleared too, matching BgmStop\'s own ' \
+     'current_music.name = "(OFF)"'
+end
+
+check 'Play BGM with a blank name also stops the current track' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: ''),
+  ])
+  it.update
+  eq [[:bgm, 'town', 80, 100], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
+     'BgmPlay treats a blank name exactly like "(OFF)" -- both stop'
 end
 
 # -- actor HP / MP commands ---------------------------------------------------

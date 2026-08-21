@@ -43,6 +43,7 @@ module RGSS
       def bgm_fade(*); end
       def bgm_stop(*); end
       def se_play(*); end
+      def se_stop(*); end
       def me_play(*); end
     end
   end

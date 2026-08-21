@@ -3907,16 +3907,31 @@ module Game
 
     def play_audio(kind, cmd)
       name = cmd.string
-      if name.nil? || name.empty?
-        # Selecting "(OFF)" for the SE field (an empty string, same encoding
-        # as any other blank filename) is not a no-op like a blank BGM field
-        # is: real RPG_RT stops every currently-playing sound effect at once
-        # (SE is truly polyphonic, unlike the single-channel BGM slot, so
-        # there is no single "current" track for an empty name to leave
-        # alone the way Play BGM does — yado.tk). Play BGM's own blank-name
-        # case stays an untouched no-op; nothing here establishes RPG_RT
-        # treats a blank Play BGM the same way, so that stays unaddressed.
-        RGSS::Audio.se_stop if kind == :se
+      blank = name.nil? || name.empty?
+      # Corrected against EasyRPG's actual C++ source (this method's own
+      # prior comment here had assumed selecting the editor's "(OFF)" choice
+      # is encoded as a blank string, an uncited claim — it is instead the
+      # literal 5-character text "(OFF)", liblcf's own schema default for
+      # both the Music and Sound structs). `Game_System::BgmPlay`
+      # (`src/game_system.cpp`): `if (!bgm.name.empty() && bgm.name !=
+      # "(OFF)") { ...play... } else { BgmStop(); }` — blank *and* "(OFF)"
+      # both stop the current track unconditionally. `Game_System::SePlay`
+      # (same file) instead treats the two differently: `if (se.name.empty())
+      # { return; } else if (se.name == "(OFF)") { if (stop_sounds)
+      # Audio().SE_Stop(); return; }` — a genuinely blank name is a silent
+      # no-op, while only the literal "(OFF)" stops every playing SE (gated
+      # on `stop_sounds`, always true for the Play SE event command itself —
+      # `Game_Interpreter::CommandPlaySound`, `src/game_interpreter.cpp`).
+      if kind == :bgm
+        if blank || name == '(OFF)'
+          RGSS::Audio.bgm_stop
+          @state.current_bgm = nil
+          return
+        end
+      elsif blank
+        return
+      elsif name == '(OFF)'
+        RGSS::Audio.se_stop
         return
       end
       if kind == :bgm
