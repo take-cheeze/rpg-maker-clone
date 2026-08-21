@@ -12445,6 +12445,28 @@ not yet verified:
   round-trips to neutral; a save written before this landed, missing chunk
   102 entirely, also round-trips to the same neutral defaults rather than
   crashing), confirmed to fail against the pre-fix code.
+  ✅ **Confirmed (2026-08-21) against a genuine RPG_RT.exe, not just EasyRPG's
+  source.** This session's verification method changed after this fix landed:
+  every earlier claim here was checked against EasyRPG Player's C++
+  reimplementation; this one is the first checked against the real Enterbrain
+  runtime itself, under wine (`docs/adr/0021-nepheshel-render-parity-under-
+  wine.md`'s methodology). A genuine save was edited to set chunk 102 to
+  `finish=[200,0,0,100]` (deep red), `current=[0,0,200,100]` (deep blue),
+  `frames_left=240`, then resumed on a static map under real RPG_RT.exe
+  headlessly. The rendered frames went blue (t=1.5s, mean RGB (22,0,225)) →
+  purple (t=2.5s, (91,0,159)) → red (t=4.0s, (191,0,58)) → settled flat red
+  (t=6-9s, (255,0,0), stddev 0), landing exactly at the 240-frame/60fps mark —
+  proving RPG_RT genuinely resumes interpolating from the saved `current`
+  toward `finish` rather than snapping to `finish` on load, and that
+  `frames_left` really is 60fps frame count, both exactly as this fix assumes.
+  A neutral-tint negative control on the same map confirmed the color
+  sequence came from the injected chunk 102 fields, not a load-time artifact.
+  Incidental, unrelated observation from the same probe: at these extreme
+  tint values the settled frame was a perfectly flat, zero-variance red with
+  no tile shading surviving at all — `Game::Screen`'s own doc comment already
+  notes the tint does not yet draw natively in this codebase, so there is
+  nothing to compare that against yet; left as a note for whoever implements
+  native tint rendering, not a fix target here.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**
