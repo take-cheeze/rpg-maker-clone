@@ -11287,12 +11287,22 @@ module Game
 
     # Whether `b` shakes off state `id` this turn: only once it has held for more
     # than the state's `hold_turn`, then an `auto_release_prob`% roll (0 = never
-    # auto-releases). Grounded on EasyRPG's BattleStateHeal.
+    # auto-releases). Grounded on EasyRPG's live `Game_Battler::BattleStateHeal`
+    # (`src/game_battler.cpp`): `states[i] > hold_turn && Rand::ChanceOf(auto_
+    # release_prob, 100) && RemoveState(...)`. C++'s `&&` only short-circuits on
+    # the `hold_turn` test -- `Rand::ChanceOf` (`src/rand.cpp`) is
+    # `GetRandomNumber(1, m) <= n` and always draws, whatever `n` is. A prior
+    # version of this method checked `prob <= 0` *before* the `hold_turn` test
+    # and returned early, skipping the RNG draw outright once a state's counter
+    # passed `hold_turn` -- for any state configured with `auto_release_prob ==
+    # 0` (a common "must be cured" ailment), that silently dropped one draw per
+    # turn from the shared stream for the rest of the fight, permanently
+    # desyncing this build's RNG sequence from a real seeded RPG_RT run.
+    # `@rng.random(100) < 0` is always false, so the observable outcome at 0%
+    # is unchanged -- only the draw itself is now consumed, same as RPG_RT.
     def recovers_from_state?(b, id, d)
-      prob = state_field(d, :auto_release_prob)
-      return false if prob <= 0
       return false unless b.state_turns[id] > state_field(d, :hold_turn)
-      @rng.random(100) < prob
+      @rng.random(100) < state_field(d, :auto_release_prob)
     end
 
     # Whether `b` counts as out of the fight *for the ally side's own

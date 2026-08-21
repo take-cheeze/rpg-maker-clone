@@ -1519,7 +1519,28 @@ The work below is roughly ordered by the critical path to a walkable game
   afflicts the foe, which then slips or skips via the per-turn processing above.
   A state also **auto-recovers**: a per-battler turn counter lets `apply_turn_
   states` roll `auto_release_prob` once the state has held past its `hold_turn`,
-  so a temporary ailment wears off. Three more of the 状態 row's fields are read
+  so a temporary ailment wears off.
+  ~~That roll was itself skipped outright whenever `auto_release_prob` was
+  0, on the reasoning that a guaranteed-fail roll is a pure no-op.~~
+  ✅ **Follow-up (2026-08-21): it is not a no-op — RPG_RT still burns the RNG
+  draw.** Confirmed via curl against EasyRPG's live `Game_Battler::
+  BattleStateHeal` (`src/game_battler.cpp`): `states[i] > hold_turn &&
+  Rand::ChanceOf(auto_release_prob, 100) && RemoveState(...)`. C++'s `&&`
+  only short-circuits on the `hold_turn` test; `Rand::ChanceOf` (`src/
+  rand.cpp`) is `GetRandomNumber(1, m) <= n` and always calls
+  `GetRandomNumber`, whatever `n` is. `#recovers_from_state?` used to check
+  `auto_release_prob <= 0` *before* the `hold_turn` test and return early,
+  skipping `@rng.random` entirely — for any state configured "never auto-
+  releases" (a common design for Poison/Curse-style ailments meant to
+  require a cure item), that silently dropped one RNG draw per turn from
+  the shared stream for the rest of the fight once the state's counter
+  passed `hold_turn`, permanently desyncing this build's sequence from a
+  real seeded RPG_RT run. Fixed by reordering the two checks so the
+  `hold_turn` gate runs first and the roll always happens after
+  (`@rng.random(100) < auto_release_prob`, which is always false at 0%
+  regardless, so the observable auto-release outcome is unchanged — only
+  the draw itself is now consumed).
+  Three more of the 状態 row's fields are read
   now, and they are the ones that give the genre's most familiar statuses their
   meaning (ADR 0032): **`reduce_hit_ratio`** scales the afflicted attacker's
   accuracy, the lowest ratio winning when several apply, so **Blind blinds** —
