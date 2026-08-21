@@ -133,6 +133,21 @@ class RPG2k
         draw_system_text bmp, x, y, w, h, text, skin, color, align
       end
 
+      # The palette colour index an actor's live HP/SP figure draws in --
+      # ported verbatim from EasyRPG's live `Window_Base::GetValueFontColor`
+      # (`src/window_base.cpp`), the shared routine behind `DrawActorHp`/
+      # `DrawActorSp`: knockout gray (5) at exactly 0 with `can_knockout` set
+      # (HP only -- `DrawActorSp` always passes false, so SP never shows this
+      # colour even at 0), else critical red/orange (4) at or below a quarter
+      # of `max`, else the ordinary default (0). These are `\c[n]`-style
+      # system-palette indices, the same ones #state_display already returns
+      # for a status condition's own name.
+      def value_font_color(have, max, can_knockout)
+        return 5 if can_knockout && have == 0
+        return 4 if max && max > 0 && have <= max / 4
+        0
+      end
+
       # The database's word for "no condition" (RPG_RT shows it rather than
       # leaving the column blank), or a plain English stand-in for a database
       # that leaves the term unset.

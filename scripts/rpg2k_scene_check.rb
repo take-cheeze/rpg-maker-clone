@@ -20567,6 +20567,35 @@ check 'the status screen shows the RPG2003 battle row, gated on rpg2003?' do
   ok texts.include?('Back'), "back row shows once toggled, got: #{texts.inspect}"
 end
 
+# Confirmed directly against RPG_RT's live source: `Window_Base::
+# GetValueFontColor` (`src/window_base.cpp`), the shared routine behind
+# `DrawActorHp`/`DrawActorSp` (in turn used by `Window_ActorStatus::
+# DrawStatus`, `src/window_actorstatus.cpp`) -- the *current* HP/MP figure
+# alone recolors: knockout gray (index 5) at exactly 0 HP, critical
+# red/orange (index 4) at or below a quarter of max, the ordinary default
+# (index 0) otherwise. SP never shows the knockout colour even at 0
+# (`DrawActorSp` always passes `can_knockout` false).
+check 'the status screen colours a knocked-out HP figure and a critical MP ' \
+      'figure through the windowskin\'s own swatches, not a flat colour' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> make_windowskin returns a real Bitmap
+  st = Game::State.new(MenuStubParty.new, 1, 0, 0)
+  hero = st.party.actors.first
+  hero.instance_variable_set(:@hp, 0) # knocked out -- HP figure draws in index 5
+  hero.instance_variable_set(:@mp, 5) # <= a quarter of max_mp (30) -- index 4
+  scene = menu_scene(RPG2k::Scene::StatusMenu, st, db)
+  bc = scene.instance_variable_get(:@window).contents.blend_calls || []
+  # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
+  ok bc.any? { |call| call[4] == '0' && call[6] == 80 && call[7] == 48 },
+     "the knocked-out HP figure must blend from swatch index 5 (80, 48), got: " \
+     "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+  ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
+     "the critical MP figure must blend from swatch index 4 (64, 48), got: " \
+     "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+  ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+     'the HP max figure stays the default colour (index 0)'
+end
+
 check 'Scene::StatusMenu: the actor cursor wraps around' do
   scene = menu_scene(RPG2k::Scene::StatusMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@actor_index), 'starts on the first actor'

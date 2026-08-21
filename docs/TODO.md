@@ -17355,6 +17355,38 @@ correcting this file's own class comment, which had asserted the old
 `#next_level_exp`/`#exp_to_next` distinct values, 420 vs 120, so the
 check can tell which one the screen actually reads — it must show 420,
 never 120), confirmed to fail against the pre-fix code.
+✅ **Follow-up (2026-08-21): the field Status screen's HP/MP row never
+recolored its current figures at low health, unlike RPG_RT.** Confirmed
+directly against RPG_RT's live source: `Window_Base::GetValueFontColor`
+(`src/window_base.cpp`), the shared routine behind `DrawActorHp`/
+`DrawActorSp` (in turn used by `Window_ActorStatus::DrawStatus`,
+`src/window_actorstatus.cpp` — this screen's own EasyRPG counterpart) —
+`if (can_knockout && have == 0) return ColorKnockout; if (max > 0 &&
+have <= max / 4) return ColorCritical; return ColorDefault;` — colors
+only the *current* HP/SP figure, never its label or max: knockout gray
+(palette index 5) at exactly 0 HP, critical red/orange (index 4) at or
+below a quarter of max, else the ordinary default (index 0); SP never
+shows the knockout colour even at 0 (`DrawActorSp` always passes
+`can_knockout` false). `Scene::StatusMenu#build_window`
+(`mruby-rpg2k/mrblib/scene/status_menu.rb`) drew its whole HP/MP line as
+one flat-white string, no color logic at all. Fixed by porting
+`GetValueFontColor` verbatim as a new `#value_font_color` helper on
+`Scene::Base` (`mruby-rpg2k/mrblib/scene/base.rb`, alongside
+`#draw_actor_state`'s own palette-index convention), and pulling the
+HP/MP row out of the screen's flat-line pass into a new
+`#draw_hp_mp_row`/`#draw_stat_segment` pair that draws each stat's
+label, current figure (through `#value_font_color`) and `/max` as three
+separately-colored runs via the existing `#draw_system_text`. The
+battle status panel's own HP/SP columns (`Scene::Battle#battle_status_row`,
+`mruby-rpg2k/mrblib/scene/battle.rb`) have the identical gap — a single
+flat-colored `"HP n/max"` segment — but splitting that shared-column
+layout the same way is a separate, larger change (its renderer lays out
+fixed-width columns by explicit x offsets rather than a single flowing
+line) and is left for a future pass. Covered by a new
+`scripts/rpg2k_scene_check.rb` check asserting a knocked-out HP figure
+and a critical MP figure blend from their own distinct windowskin
+swatch cells (indices 5 and 4) while the HP max figure stays on the
+default swatch (index 0), confirmed to fail against the pre-fix code.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.
