@@ -2476,8 +2476,19 @@ module Game
     # `#swing_weapon_data` hands a specific weapon-governed swing, as
     # opposed to `#attack_hit_rate`/`#weapon_attributes`/`#weapon_states`/
     # `#crit_chance`'s own merge across every equipped weapon-type item.
+    #
+    # Same sentinel distinction `#attack_hit_rate`'s own citation makes:
+    # `Game_Actor::GetHitChance`'s `INT_MIN` (`src/game_actor.cpp`) only ever
+    # falls back to 90 when the queried slot holds no weapon at all --
+    # `ForEachEquipment`'s single-weapon call here visits exactly one item,
+    # so a genuine `hit == 0` on it (an intentionally "never lands" weapon)
+    # must return 0 as-is, not fold into the nothing-equipped default. `it`
+    # is always a real equipped weapon by the time it reaches here (`#swing_
+    # weapon_data`'s own `weapons.size >= 2` guard), so the only "absent"
+    # case left is a row with no `hit` field at all.
     def weapon_roll_data(it)
-      hit = it.respond_to?(:hit) && it.hit && it.hit > 0 ? it.hit : 90
+      h = it.respond_to?(:hit) ? it.hit : nil
+      hit = h.nil? ? 90 : h
       attrs = []
       set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
       set.each_with_index { |on, i| attrs << (i + 1) if on } if set
