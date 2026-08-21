@@ -2883,12 +2883,11 @@ module Game
     # `command_actor` trigger condition), just never threaded from
     # `#run_battle_events`'s own `source` through to the interpreter that
     # actually runs the page's in-body commands. Test 4 ("the currently-
-    # targeted troop member is param1") remains unimplemented: RPG_RT's own
-    # `target_enemy_index`/`targets_single_enemy` (set in `Scene_Battle_
-    # Rpg2k3::ProcessBattleActionBegin`, right before a page's pre-action
-    # events run) has no counterpart anywhere in this codebase yet -- a
-    # narrower, separate piece of state than `source` alone provides, left
-    # as its own follow-up.
+    # targeted troop member is param1") is now implemented too -- see
+    # #battle_target_enemy_condition/`Game::Battle#target_enemy_index`, this
+    # port's own counterpart of RPG_RT's `target_enemy_index`/`targets_
+    # single_enemy` pair, reusing the identical `battle_source` plumbing
+    # test 5 already threads.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
       skip_to([Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B], cmd.indent)
@@ -2905,6 +2904,7 @@ module Game
         compare(variables[cmd.param(1)], rhs, cmd.param(4))
       when 2 then battle_actor_condition(cmd)
       when 3 then battle_enemy_condition(cmd)
+      when 4 then battle_target_enemy_condition(cmd)
       when 5 then battle_command_condition(cmd)
       else false
       end
@@ -2976,6 +2976,20 @@ module Game
     def battle_command_condition(cmd)
       return false unless @battle
       @battle.actor_command(cmd.param(1), battle_source) == cmd.param(2)
+    end
+
+    # Test 4, "the currently-targeted troop member is param1" -- EasyRPG's
+    # `Game_Interpreter_Battle::CommandConditionalBranchBattle` case 4:
+    # `result = (targets_single_enemy && target_enemy_index ==
+    # com.parameters[1]);`. `Game::Battle#target_enemy_index` is this port's
+    # own counterpart of RPG_RT's `target_enemy_index`/`targets_single_
+    # enemy` pair, reusing the identical `battle_source` plumbing
+    # `#battle_command_condition` (test 5) already threads from
+    # `#run_battle_events`; a nil result (no single enemy target resolved)
+    # never matches any `cmd.param(1)`.
+    def battle_target_enemy_condition(cmd)
+      return false unless @battle
+      @battle.target_enemy_index(battle_source) == cmd.param(1)
     end
 
     # -- conditional branch ---------------------------------------------------

@@ -16766,6 +16766,39 @@ not yet verified:
   the named actor never matches), confirmed to fail against the pre-fix
   code (`NoMethodError: undefined method 'battle_source='`) before the
   fix.
+  ✅ **Follow-up (2026-08-21): test 4 ("the currently-targeted troop member
+  is param1") is now implemented too, correcting this entry's own claim
+  that it "remains genuinely unimplemented."** Confirmed directly against
+  RPG_RT's live source: `Game_Interpreter_Battle::
+  CommandConditionalBranchBattle`'s `case 4` (`src/
+  game_interpreter_battle.cpp`) is `result = (targets_single_enemy &&
+  target_enemy_index == com.parameters[1]);`. Both fields are set in
+  `Scene_Battle_Rpg2k3::ProcessBattleActionBegin`
+  (`src/scene_battle_rpg2k3.cpp`), right before a page's pre-action events
+  run, from the acting ally's own `GetOriginalSingleTarget()` — the target
+  chosen at command time, before any forced-restriction (Berserk/Confuse)
+  override — and only when that target is itself an enemy; `targets_
+  single_enemy` stays false for an all-target action or one aimed at an
+  ally. Only ever set for an acting ally (`if (source->GetType() ==
+  Type_Ally)`) — an enemy-sourced page run instead inherits whatever the
+  last acting ally left behind, a real but rarely-observable quirk left
+  unmodelled in the fix below. Fixed with a new `Game::Battle
+  #target_enemy_index(source)` (`mruby-rpg2k/mrblib/game.rb`), this port's
+  own counterpart: resolves `source`'s single target from a basic Attack's
+  plain `#action` field or a single-target Skill/Item's own
+  `#command[:target]` (nil for an all-target `#command[:all]` action), then
+  looks it up in `@enemies` **by identity** (`#equal?`, not the Struct's
+  own value equality — see `#turn_order`'s own citation on why two
+  same-stat enemies would otherwise collide onto the wrong index). A new
+  `Interpreter#battle_target_enemy_condition(cmd)` (`when 4` in
+  `#eval_battle_condition`) reuses the identical `battle_source` plumbing
+  test 5 already threads, the same "reuse, don't duplicate" shape that
+  fix took. Covered by a new `scripts/rpg2k_logic_check.rb` check (no
+  `battle_source` set -- unanswerable; a basic Attack on troop slot 0
+  matches index 0 but not slot 1; a single-target Skill/Item's own
+  resolved target wins over `#action`; an all-target action or one aimed
+  at an ally never satisfies any troop-member test), confirmed to fail
+  against the pre-fix code (`expected 1, got 2`) before the fix.
 - ✅ **"Hero X is in the party" always addresses by database ID, not
   current seat/slot order; there is no built-in way to read a member's
   current seat position — confirmed correct.**
