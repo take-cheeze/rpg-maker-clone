@@ -2676,6 +2676,39 @@ check "a common event's Parallel Process's own Message Options command is " \
   ok st.variables[4] >= 1, 'and the command after it then runs too'
 end
 
+check "a common event's Parallel Process's own Erase Screen command is " \
+      'blocked (not dropped) while a message window is open, and retries ' \
+      'once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandEraseScreen`/`CommandShowScreen` (`src/game_interpreter.cpp`,
+  # codes 11010/11020) both open with `if (Game_Message::IsMessageActive()) {
+  # return false; }`, unconditionally -- not gated behind
+  # `IsEnglish()`/`IsPatchUnlockPics()` the way Show/Move/Erase Picture are --
+  # the same block-and-retry shape already ported for Show/Move/Erase
+  # Picture, Transfer Player/Recall to Location, Battle Processing/Enemy
+  # Encounter, Change EXP/Level, Key Input Processing and Message
+  # Options/Change Face Graphic (see #block_pending_screen_command).
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::ERASE_SCREEN, [0]),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  ok !st.screen.fading? && !st.screen.erased?,
+     'Erase Screen must not apply while a message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Erase Screen must not run either'
+
+  scene.send(:close_message)
+  60.times { scene.update }
+  ok st.screen.erased?, 'Erase Screen retries and applies once the window closes'
+  ok st.variables[4] >= 1, 'and the command after it then runs too'
+end
+
 check "an unrelated event's page change does not restart another event's " \
       'own Parallel Process' do
   ic = Game::Interpreter::Cmd

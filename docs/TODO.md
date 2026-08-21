@@ -2934,6 +2934,25 @@ The work below is roughly ordered by the critical path to a walkable game
   `message_config` untouched and the command right after it un-run, then
   both apply once that window closes), confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-21): Erase Screen (11010) and Show Screen (11020)
+  had the exact same gap — a seventh and eighth sibling missing from the
+  block-and-retry family.** `Interpreter#do_erase_screen`/`#do_show_screen`
+  ran their screen transition immediately, even while a message window from
+  another event/parallel process was still on screen — visibly cutting the
+  screen to black (or back) mid-message, something real RPG_RT never does.
+  Confirmed against EasyRPG's live source: `Game_Interpreter::
+  CommandEraseScreen`/`CommandShowScreen` (`src/game_interpreter.cpp`, codes
+  11010/11020) both open with `if (Game_Message::IsMessageActive()) { return
+  false; }`, unconditionally — not gated behind `IsEnglish()`/
+  `IsPatchUnlockPics()` the way Show/Move/Erase Picture are, so this is base
+  RPG2000 behaviour with no edition exception at all. Fixed the identical
+  way: a new `#block_pending_screen_command` helper, called first in both
+  `do_erase_screen`/`do_show_screen`, plus a new `:screen_blocked` wait kind
+  wired into `Scene::Map`'s three existing `_blocked`-kind dispatch points.
+  Covered by a new `scripts/rpg2k_scene_check.rb` check (a Parallel
+  Process's own Erase Screen reached while a message window is open leaves
+  the screen unfaded and the command right after it un-run, then both apply
+  once that window closes), confirmed to fail against the pre-fix code.
 - ✅ **Long messages now paginate.** RPG2000's message window shows four 16px
   rows (the 64px interior of the 80px-tall window); a Show Text that runs past
   that many lines used to draw its later lines straight off the bottom of the

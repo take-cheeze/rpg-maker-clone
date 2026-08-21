@@ -1832,14 +1832,17 @@ class RPG2k
           # `src/game_interpreter.cpp`) has the identical `return false`
           # shape, so it joins the list too, and so does Message Options /
           # Change Face Graphic's own block (`CommandMessageOptions`/
-          # `CommandChangeFaceGraphic`, `src/game_interpreter.cpp`). Other
-          # wait kinds keep their old one-frame-per-call pacing.
+          # `CommandChangeFaceGraphic`, `src/game_interpreter.cpp`), and so
+          # does Erase/Show Screen's own block (`CommandEraseScreen`/
+          # `CommandShowScreen`, `src/game_interpreter.cpp`). Other wait
+          # kinds keep their old one-frame-per-call pacing.
           unless (wait_kind == :wait || wait_kind == :animation ||
                   wait_kind == :screen || wait_kind == :picture ||
                   wait_kind == :sprite_flash || wait_kind == :movement ||
                   wait_kind == :picture_blocked || wait_kind == :teleport_blocked ||
                   wait_kind == :battle_blocked || wait_kind == :exp_level_blocked ||
-                  wait_kind == :key_input_blocked || wait_kind == :message_config_blocked) &&
+                  wait_kind == :key_input_blocked || wait_kind == :message_config_blocked ||
+                  wait_kind == :screen_blocked) &&
                  !it.waiting?
             apply_interpreter_requests(it, p[:event])
             return record_parallel_progress(p)
@@ -2114,6 +2117,13 @@ class RPG2k
           # list is open -- the parallel-process equivalent of #drive_event's
           # own :message_config_blocked case, see
           # Interpreter#block_pending_message_config_command for the citation.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :screen_blocked
+          # An Erase Screen / Show Screen command issued from a Parallel
+          # Process while a message window or choice list is open -- the
+          # parallel-process equivalent of #drive_event's own :screen_blocked
+          # case, see Interpreter#block_pending_screen_command for the
+          # citation.
           it.resume unless message_window_open?
         elsif it.wait_kind == :sprite_flash
           # Flash Sprite's own wait flag, the parallel-process equivalent of
@@ -4832,6 +4842,21 @@ class RPG2k
             # same-frame reasoning (`Game_Interpreter::CommandMessageOptions`/
             # `CommandChangeFaceGraphic`, `src/game_interpreter.cpp`, the
             # identical `return false` with the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :screen_blocked
+            # An Erase Screen / Show Screen command reached while a message
+            # window or choice list is open (#block_pending_screen_command)
+            # -- the identical block-and-retry shape as :picture_blocked/
+            # :teleport_blocked/:battle_blocked/:exp_level_blocked/
+            # :key_input_blocked/:message_config_blocked above, see that
+            # method's own citation and :picture_blocked's own same-frame
+            # reasoning (`Game_Interpreter::CommandEraseScreen`/
+            # `CommandShowScreen`, `src/game_interpreter.cpp`, the identical
+            # `return false` with the index untouched).
             @interpreter.resume unless message_window_open?
             unless @interpreter.waiting?
               @interpreter.update
