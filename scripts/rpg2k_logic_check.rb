@@ -18951,6 +18951,76 @@ check "battle: auto_battle_raw_cost's percent-cost branch is RPG2003-only, match
      'RPG2003: the percent formula applies -- 100 max_mp * 50% = 50'
 end
 
+check 'battle: auto_battle_attack_target_rank includes the RPG2003 attacker ' \
+      "row bonus, matching the real attack's own formula" do
+  # Confirmed directly against RPG_RT's live source: `Calc
+  # NormalAttackAutoBattleTargetRank` (`src/autobattle.cpp`) computes its own
+  # `base_effect` via `Algo::CalcNormalAttackEffect` (`src/algo.cpp`) -- the
+  # *identical* function `Game_BattleAlgorithm::Normal::Execute`
+  # (`src/game_battlealgorithm.cpp`) calls to resolve the real swing -- so a
+  # front-row attacker's ranking must include the same +25% bonus its real
+  # attack deals, not merely the raw, unadjusted damage. Two otherwise-
+  # identical battles seeded identically isolate the row difference from the
+  # ranking's own random jitter, since both draw the same first random value.
+  # #ally? (the row-adjustment attacker gate) keys off a Combatant carrying a
+  # live Game::Actor snapshot (`battler.actor`), so the attacker must be
+  # built via #from_actor, not the bare #combatant fixture #row_adjusted?
+  # would then always read as an enemy (never row-adjusted) regardless of
+  # #row. A second, front-row-and-able ally rides along in each battle so
+  # the constructor's own RPG2003 row safety net (every ally snaps to the
+  # front row if none of them can act from there) does not overwrite the
+  # single back-row attacker under test.
+  st1 = party_state
+  st2 = party_state
+  dummy_front1 = Game::Battle.from_actor(st1.party.actor_by_id(2))
+  attacker_front = Game::Battle.from_actor(st1.party.actor_by_id(1)) # atk 10, def 8
+  attacker_front.row = Game::Battle::ROW_FRONT
+  dummy_front2 = Game::Battle.from_actor(st2.party.actor_by_id(2))
+  attacker_back = Game::Battle.from_actor(st2.party.actor_by_id(1))
+  attacker_back.row = Game::Battle::ROW_BACK
+  # def 0, so the base swing (atk/2 - def/4 = 5) is large enough that the
+  # front row's +25% survives integer division (125*5/100 = 6, not rounded
+  # back down to 5) instead of being masked by truncation.
+  target_front = combatant('Foe', 0, 0, 5, 1000) # high hp, keeps the rank unsaturated
+  target_back = combatant('Foe', 0, 0, 5, 1000)
+
+  bat_front = Game::Battle.new([dummy_front1, attacker_front], [target_front], Game::Rng.new(1),
+                               nil, false, false, false, false, nil, nil, rpg2003: true)
+  bat_back = Game::Battle.new([dummy_front2, attacker_back], [target_back], Game::Rng.new(1),
+                              nil, false, false, false, false, nil, nil, rpg2003: true)
+  rank_front = bat_front.send(:auto_battle_attack_target_rank, attacker_front, bat_front.enemies.first)
+  rank_back = bat_back.send(:auto_battle_attack_target_rank, attacker_back, bat_back.enemies.first)
+  ok rank_front > rank_back,
+     "a front-row attacker's own +25% row bonus should rank higher than an " \
+     "identical back-row one, got front=#{rank_front} back=#{rank_back}"
+end
+
+check 'battle: auto_battle_attack_target_rank reads the target\'s ' \
+      'state-adjusted Defence, not its raw base stat' do
+  # Same citation as the row check above -- `CalcNormalAttackAutoBattleTarget
+  # Rank` shares `Algo::CalcNormalAttackEffect` with the real attack, and
+  # `Game_Battler::GetDef` (`src/game_battler.cpp`) folds in a currently-
+  # afflicted state's own halve/double Defence flag. A target whose Defence
+  # is halved by an active state must rank as easier to damage than an
+  # identical, unafflicted one.
+  states = { 2 => fake_state(affect_type: 0, affect_defense: true) } # 0 = halve
+  attacker1 = combatant('Attacker', 20, 0, 5, 100)
+  attacker2 = combatant('Attacker', 20, 0, 5, 100)
+  target_plain = combatant('Foe', 0, 10, 5, 1000)
+  target_halved = combatant('Foe', 0, 10, 5, 1000)
+  target_halved.states = [2]
+
+  bat_plain = Game::Battle.new([attacker1], [target_plain], Game::Rng.new(1), states)
+  bat_halved = Game::Battle.new([attacker2], [target_halved], Game::Rng.new(1), states)
+  rank_plain = bat_plain.send(:auto_battle_attack_target_rank, bat_plain.allies.first,
+                              bat_plain.enemies.first)
+  rank_halved = bat_halved.send(:auto_battle_attack_target_rank, bat_halved.allies.first,
+                                bat_halved.enemies.first)
+  ok rank_halved > rank_plain,
+     "a target with a halved Defence should rank easier to damage than an " \
+     "unafflicted one, got plain=#{rank_plain} halved=#{rank_halved}"
+end
+
 check 'battle: a Forced-AI actor picks a clearly-better Skill over Attack, with no manual command' do
   # 強制AI (mruby-lcf/mrblib/schema.rb, player/job field 23, force_ai) --
   # parsed but never read anywhere in mruby-rpg2k before this fix. Ported
