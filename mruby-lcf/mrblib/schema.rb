@@ -340,7 +340,14 @@ module LCF
             7 => { name: :airship_pass, type: :bool, default: true },
             9 => { name: :airship_land, type: :bool, default: true },
             11 => { name: :bush_depth, type: :int, default: 0 },
-            15 => { name: :footstep, type: :string, default: '' },
+            # RPG2003 field 0x0F is a full `Sound` struct (filename + volume +
+            # tempo + balance, liblcf's own `generator/csv/fields.csv`:
+            # `Terrain,footstep,f,Sound,0x0F,...`), not a bare filename --
+            # the same shape every other Sound-typed database field here
+            # already uses (see `SE` above). Confirmed against EasyRPG's
+            # actual C++ source: `src/generated/lcf/rpg/terrain.h` declares
+            # `Sound footstep;`.
+            15 => { name: :footstep, type: :Array1D, elements: SE },
             16 => { name: :on_damage_se, type: :bool, default: false },
             17 => { name: :background_type, type: :int, default: 0 },
             21 => { name: :background_a_name, type: :string, default: '' },
