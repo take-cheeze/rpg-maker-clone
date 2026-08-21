@@ -9640,7 +9640,9 @@ not yet verified:
   shape in both dispatchers, but a block-and-retry command's own blocking
   condition is a different mechanism (message/choice window open) than a
   `_state.wait_time` countdown, so it needs its own citation pass before
-  assuming the identical fix applies. Covered by three new
+  assuming the identical fix applies. Closed by the "the same same-frame
+  fix now covers Proceed With Movement and the four block-and-retry
+  commands too" bullet below (2026-08-21). Covered by three new
   `scripts/rpg2k_scene_check.rb` checks with exact frame-count assertions
   (a foreground Tint Screen, a foreground Flash Sprite, and a Parallel
   Process's own Move Picture each resume the command right after them on
@@ -9649,6 +9651,51 @@ not yet verified:
   asserts resumption after exactly one further frame instead of a generous
   multi-frame margin), all confirmed to fail against the pre-fix code
   before the fix.
+- ✅ **The same same-frame fix now covers Proceed With Movement and the four
+  block-and-retry commands too (Show/Move/Erase Picture, Transfer Player /
+  Recall to Location, Battle Processing / Enemy Encounter, and a "show
+  message"-flagged Change EXP / Change Level) — closing the follow-up the
+  bullet above flagged and deliberately left open (2026-08-21).** Confirmed
+  against EasyRPG's actual C++ source that RPG_RT's own `Game_Interpreter::
+  Update` loop falls through into whatever command follows in that same
+  frame for both blocking mechanisms, not just a `_state.wait_time`
+  countdown: `if (_state.wait_movement) { if (Game_Map::IsAnyMovePending())
+  break; _state.wait_movement = false; }` (`src/game_interpreter.cpp`) does
+  not unconditionally `break` either — once every targeted forced route
+  finishes, the loop keeps going. And each of the four blocked commands'
+  own guard — `Game_Interpreter_Map::CommandTeleport`/
+  `CommandRecallToLocation`/`CommandEnemyEncounter` (`src/
+  game_interpreter_map.cpp`, `if (Game_Message::IsMessageActive()) { return
+  false; }`), `Game_Interpreter::CommandShowPicture` (`src/
+  game_interpreter.cpp`, the identical guard gated on `!Player::IsEnglish()
+  && !Player::IsPatchUnlockPics()`), and `CommandChangeExp`/
+  `CommandChangeLevel` (`if (show_msg && !Game_Message::CanShowMessage(
+  true)) { return false; }`) — all `return false` with the command index
+  left untouched while blocked, so RPG_RT's own loop simply re-attempts the
+  identical command on its next iteration, in the same frame the block
+  clears, exactly like any other retried `ExecuteCommand` call; when the
+  retry succeeds, that same loop iteration falls through to whatever comes
+  next exactly as for any other command. This codebase's own
+  `#block_pending_picture_command`/`#block_pending_teleport_command`/
+  `#block_pending_battle_command`/`#block_pending_exp_level_command`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) already rewind `@index` back onto
+  the blocked command for the identical retry effect — only the *dispatch*
+  side (`Scene::Map`) was missing the same-frame follow-through. Fixed by
+  adding the identical `unless @interpreter.waiting? … @interpreter.update;
+  apply_interpreter_requests(...) end` idiom to `:movement`,
+  `:picture_blocked`, `:teleport_blocked`, `:battle_blocked`, and
+  `:exp_level_blocked` in the foreground dispatcher, and by adding all five
+  to `#step_parallel`'s own same-frame-continuation wait-kind list.
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks with exact
+  frame-count assertions — Proceed With Movement resumes the command right
+  after it the same frame a single-step forced route finishes (armed with
+  `move_timer` starting at 0, so its very first `#step_forced_movement`
+  call both executes the step and finishes the route, pinning an exact
+  frame count without waiting out a real movement-frequency pace), and a
+  blocked Show Picture (issued from a Parallel Process, mirroring the
+  existing block-and-retry check just above) both retries and runs the
+  command right after it on the very same frame the message window closes
+  — both confirmed to fail against the pre-fix code before the fix.
 - ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
   status effect from landing at all, instead of only its A-E susceptibility
   rank ever mattering.** Confirmed against EasyRPG's actual C++ source:

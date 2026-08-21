@@ -1785,11 +1785,25 @@ class RPG2k
           # mechanism, so :screen/:picture/:sprite_flash get the same
           # same-frame treatment here too -- the identical fix
           # #drive_event's foreground dispatcher just received for those
-          # three wait kinds. Other wait kinds keep their old
-          # one-frame-per-call pacing.
+          # three wait kinds. :movement's own `_state.wait_movement` check
+          # in real RPG_RT's `Update` loop is not an unconditional `break`
+          # either (`src/game_interpreter.cpp`), and each of the four
+          # `_blocked` kinds' underlying command (`CommandShowPicture`/
+          # `CommandMovePicture`/`CommandErasePicture`, `CommandTeleport`/
+          # `CommandRecallToLocation`, `CommandEnemyEncounter`,
+          # `CommandChangeExp`/`CommandChangeLevel`) just `return false`
+          # with the command index untouched while blocked -- RPG_RT's own
+          # loop re-executes that identical command the instant the block
+          # clears, in that same frame, the same as any other retried
+          # command -- so all five join the same-frame list too, matching
+          # #drive_event's foreground dispatcher exactly. Other wait kinds
+          # keep their old one-frame-per-call pacing.
           unless (wait_kind == :wait || wait_kind == :animation ||
                   wait_kind == :screen || wait_kind == :picture ||
-                  wait_kind == :sprite_flash) && !it.waiting?
+                  wait_kind == :sprite_flash || wait_kind == :movement ||
+                  wait_kind == :picture_blocked || wait_kind == :teleport_blocked ||
+                  wait_kind == :battle_blocked || wait_kind == :exp_level_blocked) &&
+                 !it.waiting?
             apply_interpreter_requests(it, p[:event])
             return record_parallel_progress(p)
           end
@@ -4592,7 +4606,20 @@ class RPG2k
             end
             return
           when :teleport then perform_teleport(@interpreter.teleport)
-          when :movement then @interpreter.resume if step_forced_movement
+          when :movement
+            @interpreter.resume if step_forced_movement
+            # Same reasoning as :screen/:picture/:sprite_flash below: RPG_RT's
+            # own `Game_Interpreter::Update` loop does not unconditionally
+            # `break` on `_state.wait_movement` either -- `if
+            # (_state.wait_movement) { if (Game_Map::IsAnyMovePending())
+            # break; _state.wait_movement = false; }` (`src/
+            # game_interpreter.cpp`) -- once every targeted route finishes,
+            # that same `Update` call falls straight through into whatever
+            # command follows, costing no further frame.
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :screen
             @interpreter.resume unless @state.screen.busy?
             # Same "spend this frame's own step budget immediately" idiom as
@@ -4623,28 +4650,65 @@ class RPG2k
             # window or choice list is open (#block_pending_picture_command)
             # -- real RPG_RT retries the identical command every subsequent
             # frame rather than dropping it, see that method's own citation.
+            # The retry itself is not a "wait", though: `CommandShowPicture`/
+            # `CommandMovePicture`/`CommandErasePicture` (`src/
+            # game_interpreter.cpp`) each just `return false` with the
+            # command index untouched while a message window blocks them --
+            # RPG_RT's own `Update` loop keeps looping and re-executes that
+            # same command the instant the block clears, in that same frame,
+            # exactly like every other `ExecuteCommand` retry. Since
+            # `#block_pending_picture_command` already rewinds `@index` back
+            # onto the blocked command, re-invoking `#update` the moment the
+            # block clears reproduces that -- it re-attempts the identical
+            # command this frame, not the next one, matching RPG_RT.
             @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :teleport_blocked
             # A Transfer Player / Recall to Location command reached while a
             # message window or choice list is open
             # (#block_pending_teleport_command) -- the identical
             # block-and-retry shape as :picture_blocked just above, see that
-            # method's own citation.
+            # method's own citation and :picture_blocked's own same-frame
+            # reasoning (`Game_Interpreter_Map::CommandTeleport`/
+            # `CommandRecallToLocation`, `src/game_interpreter_map.cpp`, the
+            # identical `return false` with the index untouched).
             @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :battle_blocked
             # A Battle Processing / Enemy Encounter command reached while a
             # message window or choice list is open
             # (#block_pending_battle_command) -- the identical
             # block-and-retry shape as :picture_blocked/:teleport_blocked
-            # above, see that method's own citation.
+            # above, see that method's own citation and :picture_blocked's
+            # own same-frame reasoning (`Game_Interpreter_Map::
+            # CommandEnemyEncounter`, `src/game_interpreter_map.cpp`, the
+            # identical `return false` with the index untouched).
             @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :exp_level_blocked
             # A "show message"-flagged Change EXP / Change Level command
             # reached while a message window or choice list is open
             # (#block_pending_exp_level_command) -- the identical
             # block-and-retry shape as :picture_blocked/:teleport_blocked/
-            # :battle_blocked above, see that method's own citation.
+            # :battle_blocked above, see that method's own citation and
+            # :picture_blocked's own same-frame reasoning
+            # (`Game_Interpreter::CommandChangeExp`/`CommandChangeLevel`,
+            # `src/game_interpreter.cpp`, the identical `return false` with
+            # the index untouched).
             @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
           when :name_input then drive_name_input

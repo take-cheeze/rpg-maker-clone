@@ -3429,6 +3429,7 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   ok st.variables[1] > 0, 'and the command after it then runs too'
 
   # -- Move Picture -----------------------------------------------------------
+
   par2 = page(trigger: 4)
   par2.event_commands = [ECmd.new(ic::MOVE_PICTURE,
                                   [1, 0, 200, 200, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0])]
@@ -3460,6 +3461,36 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   scene3.send(:close_message)
   5.times { scene3.update }
   ok !st3.pictures.key?(1), 'Erase Picture applies once the window closes'
+end
+
+check 'a blocked Show Picture resumes the command right after it the same ' \
+      'real frame the message window closes, not one frame later' do
+  # RPG_RT's own `Game_Interpreter::Update` loop does not treat a blocked
+  # command specially once it succeeds -- `CommandShowPicture` (`src/
+  # game_interpreter.cpp`) just `return true`s like any other command the
+  # instant `Game_Message::IsMessageActive()` reads false, so the *same*
+  # `Update()` call keeps going into whatever follows, costing no further
+  # frame -- the identical reasoning already fixed for :screen/:picture/
+  # :sprite_flash/:movement.
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4)
+  par.event_commands = [
+    ECmd.new(ic::SHOW_PICTURE, [1, 0, 100, 100, 0, 100, 0, 0, 100, 100, 100, 100],
+             string: 'pic'),
+    add_var_cmd(1),
+  ]
+  scene = new_scene({ 1 => event(4, 4, par) })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  scene.update # frame 1: the process starts, blocks on the open message
+  ok !st.pictures.key?(1), 'blocked, message window still open'
+  eq 0, st.variables[1]
+
+  scene.send(:close_message)
+  scene.update # frame 2: retries -- must succeed AND run the next command
+  ok st.pictures.key?(1), 'Show Picture retried and applied the same frame the window closed'
+  ok st.variables[1] > 0, 'and the command right after it ran that same frame too'
 end
 
 check 'parallel processes pause during battle' do
@@ -5170,6 +5201,36 @@ check 'Proceed With Movement holds the interpreter until a forced route finishes
   200.times { scene.update } # enough frames for the freq-4 route to finish
   eq 3, c.x, 'the forced event reached the end of its route'
   ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
+check 'Proceed With Movement resumes the command right after it the same ' \
+      'real frame the forced route finishes, not one frame later' do
+  # RPG_RT's own `Game_Interpreter::Update` loop does not unconditionally
+  # `break` on `_state.wait_movement` either -- `if (_state.wait_movement) {
+  # if (Game_Map::IsAnyMovePending()) break; _state.wait_movement = false; }`
+  # (`src/game_interpreter.cpp`) -- once every targeted route finishes, that
+  # same `Update` call falls straight through into whatever command follows.
+  # A freshly-armed forced route's own `move_timer` starts at 0
+  # (#force_event_route), so its very first step fires on the first frame
+  # #step_forced_movement is ever consulted -- a single-command route is
+  # therefore already fully done that same frame, letting this test pin an
+  # exact frame count without waiting out a real movement-frequency pace.
+  ic = Game::Interpreter::Cmd
+  cmds = [
+    ECmd.new(ic::MOVE_EVENT, [2, 4, 0, 0, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 2 => event(0, 1, page) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  c = chars(scene)[2]
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update # frame 1: arms the forced route and the wait
+  eq 0, c.x, 'has not stepped yet'
+  ok !st.switches[1], 'the command after it has not run yet'
+  scene.update # frame 2: the single-step route finishes on this very frame
+  eq 1, c.x, 'the forced event stepped'
+  ok st.switches[1], 'the command after it ran the very same frame the route finished'
 end
 
 check 'Set Move Route targeting a currently-hidden map event freezes Proceed With Movement (yado.tk)' do
