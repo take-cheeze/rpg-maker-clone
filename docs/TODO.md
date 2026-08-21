@@ -16417,19 +16417,21 @@ not yet verified:
   for a boarded boat/ship. ("It can never land on a tile a map event occupies
   regardless of terrain" was the one genuine gap in this bullet — now fixed,
   see below.)
-- ✅ **Small/large ships can never overlap an event's tile even with a
+- ✅ ~~**Small/large ships can never overlap an event's tile even with a
   passable graphic + below-characters priority** (which *does* let the
   walking hero overlap it fine via the already-implemented priority-type
   gating) — a ship needs the *blocking event's own* move route to have
   Through Mode on instead; ships ignore priority-type/`overlap_forbidden`
   gating for this purpose entirely and just check the blocked event's own
-  Through Mode flag. `Scene::Map#vehicle_passable?`'s boat/ship branch
+  Through Mode flag.~~ **Wrong — this entire bullet's claim was sourced from
+  a fan wiki (yado.tk) and contradicts EasyRPG's actual C++ source; corrected
+  by the dated Follow-up below (2026-08-21).** `Scene::Map#vehicle_passable?`'s boat/ship branch
   (`mruby-rpg2k/mrblib/scene/map.rb`) used to reuse the exact same
   `blocker[:layer] == LAYER_SAME || blocker[:overlap_forbidden]` occupancy
   test the hero's own `passable?`/`char_passable?` use, so a below-
-  characters event never blocked a ship at all — the opposite of RPG_RT,
+  characters event never blocked a ship at all — ~~the opposite of RPG_RT,
   which always blocks a ship on such a tile unless that specific event has
-  Through Mode enabled. The blocker check is now `blocker &&
+  Through Mode enabled.~~ The blocker check is now `blocker &&
   !blocker[:char].through`, reading the same `Game::Character#through`
   accessor (`attr_accessor :through`, toggled by the Set Move Route
   Through Mode ON/OFF commands) that the hero's own Through Mode already
@@ -16439,6 +16441,36 @@ not yet verified:
   by a new `scripts/rpg2k_scene_check.rb` check (a boarded boat is stopped
   by a below-characters event on an otherwise boat-passable tile; setting
   that event's own Through Mode on lets the boat sail through it).
+  ✅ **Follow-up (2026-08-21): the "ships ignore layer entirely" claim above
+  was itself wrong, sourced from an uncited fan-wiki (yado.tk) claim rather
+  than RPG_RT's own source — a moving boat/ship's collision IS layer-gated,
+  identically to the hero's own rule, not a special "always blocks unless
+  Through Mode" case.** Confirmed against EasyRPG's live source:
+  `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) routes a moving
+  boat/ship's collision (`vehicle_type != Game_Vehicle::Airship`) through the
+  exact same generic `WouldCollide` every other mover — hero, map event, or
+  vehicle alike — uses, whose own layer test is a plain `self.GetLayer() ==
+  other.GetLayer()`; no vehicle-specific bypass anywhere in that call chain.
+  `Game_Vehicle`'s constructor (`src/game_vehicle.cpp`) sets
+  `SetLayer(Layers_same)` unconditionally, for every vehicle type (Boat,
+  Ship, and Airship alike), never overridden elsewhere in that file — so a
+  moving boat/ship only ever collides with a `LAYER_SAME` event, exactly
+  like the hero, and a below/above-characters decorative event is a tile it
+  glides straight through with no Through Mode needed at all. `#vehicle_
+  passable?`'s blocker check dropped the layer test the fix above had
+  removed, reading `blockers_at(x, y).any? { |b| !b[:char].through }` with
+  no layer condition; fixed by restoring a `b[:layer] == LAYER_SAME` guard
+  alongside the existing Through-Mode check, mirroring `#char_passable?`'s
+  own layer-gated pattern rather than reusing its full occupancy test
+  (which also folds in `overlap_forbidden`, a hero/event-only rule
+  `WouldCollide` never applies to a vehicle mover). The existing
+  `scripts/rpg2k_scene_check.rb` check this bullet's own fix added was
+  rewritten into two: a `LAYER_BELOW` blocker no longer stops the boat at
+  all (no Through Mode needed, reverting to the pre-this-bullet behavior for
+  that specific case), and a new, separate check confirms a `LAYER_SAME`
+  blocker still stops it and still needs Through Mode to pass — both
+  confirmed to fail/pass appropriately against the pre-fix code before the
+  fix.
 - ✅ **An airship can never land on a tile a map event occupies, regardless
   of terrain** — the same vehicle-specific Through-Mode rule as the boat/ship
   fix directly above, applied to landing rather than sailing. Flying itself

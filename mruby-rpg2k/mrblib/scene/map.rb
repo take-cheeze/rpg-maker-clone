@@ -2779,16 +2779,20 @@ class RPG2k
       # the way, falling back to on-foot passability when the map has no terrain
       # data.
       #
-      # A boat / ship's event-blocking rule is a real divergence from the
-      # hero's own (yado.tk quirk): the walking hero is priority-type-gated —
-      # a below/above-characters event with a passable graphic never blocks it
-      # (see `passable?` / `char_passable?`, which key off `blocker[:layer]`).
-      # A ship ignores that entirely and just asks whether the blocking
-      # event's *own* move route has Through Mode on
+      # A moving boat / ship's event-blocking rule is layer-gated, exactly like
+      # the hero's own (see `passable?` / `char_passable?`, which key off
+      # `blocker[:layer]`) -- confirmed against EasyRPG's live source, not a
+      # divergence: `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) routes a
+      # moving boat/ship's collision through the exact same generic
+      # `WouldCollide` every other mover uses, whose own layer test is
+      # `self.GetLayer() == other.GetLayer()`; `Game_Vehicle`'s constructor
+      # (`src/game_vehicle.cpp`) sets `SetLayer(Layers_same)` unconditionally,
+      # for every vehicle type, never overridden elsewhere. So a below/above-
+      # characters event a boat/ship's own layer never matches is a decoration
+      # it glides straight through, the same as the hero does -- Through Mode
       # (`blocker[:char].through`, the same accessor `char_passable?` and
-      # `passable?` check for the mover's own Through Mode) — a below-
-      # characters, passable-graphic event the hero strolls over still stops
-      # a ship dead unless that specific event has Through Mode enabled.
+      # `passable?` check) is a *separate*, additional exemption on top of the
+      # layer gate, not the only one.
       def vehicle_passable?(x, y, dir, type)
         return false unless @map.in_bounds?(x, y)
         row = terrain_row_at(x, y)
@@ -2796,7 +2800,7 @@ class RPG2k
           return true if row.nil?
           return row.airship_pass ? true : false
         end
-        return false if blockers_at(x, y).any? { |b| !b[:char].through }
+        return false if blockers_at(x, y).any? { |b| !b[:char].through && b[:layer] == LAYER_SAME }
         # A moving Boat/Ship also collides with a *different* parked
         # Boat/Ship, and with a grounded Airship -- `Game_Map::
         # CheckOrMakeWayEx` (`src/game_map.cpp`) loops `{ Boat, Ship }` for

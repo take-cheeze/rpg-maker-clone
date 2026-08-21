@@ -8729,14 +8729,17 @@ check 'each vehicle type has exactly one boarding trigger: the airship only ' \
   ok !st.boarded?, 'standing on a placed boat does not board it'
 end
 
-check 'a boarded boat cannot overlap a below-characters event unless it has Through Mode on' do
-  # yado.tk: a below-characters, passable-graphic event lets the *walking*
-  # hero overlap it fine (LAYER_BELOW is not LAYER_SAME, see the priority-type
-  # checks above) -- but a ship ignores that gating entirely and just asks
-  # whether the blocking event's own move route has Through Mode on. Put a
-  # LAYER_BELOW event one tile past a boarded boat, on a boat_pass tile, and
-  # confirm the boat is stopped cold by it despite the layer mismatch that
-  # would let the hero glide over it.
+check 'a boarded boat glides straight through a below-characters event, ' \
+      'the same as the walking hero' do
+  # Confirmed against EasyRPG's live source, not a divergence from the hero's
+  # own rule: `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) routes a
+  # moving boat/ship's collision through the exact same generic `WouldCollide`
+  # every other mover uses, whose own layer test is `self.GetLayer() ==
+  # other.GetLayer()`; `Game_Vehicle`'s constructor (`src/game_vehicle.cpp`)
+  # sets `SetLayer(Layers_same)` unconditionally, for every vehicle type. So a
+  # LAYER_BELOW event never matches a boat's own LAYER_SAME and is a
+  # decoration it glides straight through, exactly as the walking hero does
+  # (see the priority-type checks above) -- Through Mode is not required.
   blocker = event(0, 2, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
   scene = new_scene({ 1 => blocker }, player: [0, 0], boat_pass: true)
   st = scene.instance_variable_get(:@state)
@@ -8754,12 +8757,41 @@ check 'a boarded boat cannot overlap a below-characters event unless it has Thro
   RGSS::Input.dir_value = 2 # hold down, toward the below-characters event
   20.times { scene.update }
   RGSS::Input.dir_value = 0
+  eq 0, st.x, 'only moved along the column it was already sailing'
+  ok st.y > 1,
+     "the below-characters event's layer mismatch let the boat glide over " \
+     "it, no Through Mode needed (was at y=1, now #{st.y})"
+end
+
+check 'a boarded boat cannot overlap a same-layer event unless it has ' \
+      'Through Mode on' do
+  # The layer-matched counterpart to the check above: a LAYER_SAME event does
+  # match a boat's own fixed layer, so `WouldCollide`'s layer test fires and
+  # the boat is stopped cold, same as it would stop the walking hero -- until
+  # the blocking event's own Through Mode exempts it (`WouldCollide` checks
+  # `self.GetThrough() || other.GetThrough()` before the layer test at all).
+  blocker = event(0, 2, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME))
+  scene = new_scene({ 1 => blocker }, player: [0, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+  eq [0, 1], [st.x, st.y], 'stepped onto the boat tile'
+
+  RGSS::Input.dir_value = 2 # hold down, toward the same-layer event
+  20.times { scene.update }
+  RGSS::Input.dir_value = 0
   eq [0, 1], [st.x, st.y],
-     'a below-characters event stops a boat even though its layer would let ' \
-     "the hero overlap it (got #{[st.x, st.y]})"
+     "a same-layer event stops a boat, matching its own layer (got #{[st.x, st.y]})"
 
   # Turn the blocking event's own Through Mode on and try again: now the boat
-  # passes it, matching real RPG_RT's ship-specific rule.
+  # passes it.
   chars(scene)[1].through = true
   RGSS::Input.dir_value = 2
   20.times { scene.update }
