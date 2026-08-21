@@ -5479,6 +5479,33 @@ check "Move Picture's own wait flag blocks a Parallel Process's own interpreter,
   ok st.switches[1], 'the Parallel Process resumed once the move settled'
 end
 
+check "A Parallel Process's own Move Picture resumes the command right after " \
+      'it the same real frame the move settles, not one frame later' do
+  # Same reasoning as the identical foreground fix (see the Tint Screen check
+  # of the same name): Move Picture's own wait flag is RPG_RT's plain
+  # `_state.wait_time` countdown, not a "poll until still moving" mechanism,
+  # so #step_parallel must spend that same frame's own budget once it clears,
+  # exactly like it already does for :wait/:animation. 1 tenth (6 frames):
+  # the process starts on frame 1, the move occupies frames 2-7, settling
+  # exactly on frame 7 -- the switch flip must land on that same frame 7.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  pg.event_commands = [
+    ECmd.new(ic::MOVE_PICTURE,
+             [1, 0, 200, 200, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 1, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, pg) })
+  st = scene.instance_variable_get(:@state)
+  st.pictures[1] = Game::Picture.new(1, x: 100, y: 100)
+
+  scene.update # frame 1: starts the process, runs Move Picture, arms the wait
+  6.times { scene.update } # frames 2-7: the move settles on the last of these
+  ok !st.pictures[1].moving?, 'the move has fully settled'
+  eq [200, 200], [st.pictures[1].x, st.pictures[1].y]
+  ok st.switches[1], 'the command after it ran the very same frame the move settled'
+end
+
 check "Flash Sprite's own wait flag blocks a Parallel Process's own interpreter, " \
       'not just the foreground\'s' do
   # Same defect class as the two checks just above, for the :sprite_flash
@@ -5779,6 +5806,27 @@ check 'Tint Screen with a wait holds the interpreter until the tint settles' do
   60.times { scene.update } # enough frames (30) for the tint to settle
   eq 200, st.screen.tint[0], 'the tint reached its target'
   ok st.switches[1], 'the interpreter resumed once the tint settled'
+end
+
+check 'Tint Screen resumes the command right after it the same real frame the ' \
+      'tint settles, not one frame later' do
+  # RPG_RT implements Tint Screen's own wait flag with the identical
+  # `_state.wait_time` countdown the plain Wait command uses (`SetupWait`,
+  # `src/game_interpreter.cpp`), not a "poll until still animating"
+  # mechanism -- its own `Update` loop falls straight through into whatever
+  # command follows the instant that countdown clears, costing no further
+  # frame. 1 tenth (6 frames): the interpreter starts on frame 1, the tint
+  # occupies frames 2-7 (6 decrements), settling exactly on frame 7 -- the
+  # switch flip must land on that same frame 7, not frame 8.
+  cmds = [ECmd.new(Game::Interpreter::Cmd::TINT_SCREEN, [200, 100, 100, 100, 1, 1]),
+          add_var_cmd(5)]
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update # frame 1: arms the tint and the wait
+  6.times { scene.update } # frames 2-7: the tint settles on the last of these
+  ok !st.screen.tinting?, 'the tint has fully settled'
+  eq 1, st.variables[5], 'the command after it ran the very same frame the tint settled'
 end
 
 check 'Shake Screen with a wait holds the interpreter and renders with an offset' do
@@ -13194,8 +13242,10 @@ check 'Flash Sprite on the hero with an instant (zero-duration) flash still ' \
   scene.update
   ok !scene.instance_variable_get(:@player_flash), 'nothing left to flash, it was instant'
   eq 0, st.variables[5], 'the event is still held right after the flash is queued'
-  3.times { scene.update }
-  eq 1, st.variables[5], 'the event resumed once the (already-finished) flash was reported clear'
+  scene.update
+  eq 1, st.variables[5], 'the event resumed the very next frame -- matching RPG_RT, whose ' \
+                          'Flash Sprite wait is the identical wait_time countdown the plain ' \
+                          'Wait command uses, not a poll-until-still-animating mechanism'
 end
 
 check 'Flash Sprite targeting a vehicle (Boat) pulses the native sprite flash ' \

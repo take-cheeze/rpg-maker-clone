@@ -9532,7 +9532,9 @@ not yet verified:
     the following command runs" overstated the dispatcher's precision. This
     gap is pre-existing (shared by every duration of Tint/Flash Screen, Move
     Picture, and Flash Sprite alike, not introduced by any of these fixes)
-    and left as a follow-up candidate rather than folded in here.
+    and left as a follow-up candidate rather than folded in here. Closed by
+    the "now resumes the command right after it the same real frame" bullet
+    below (2026-08-21).
 - ✅ **Move Picture's wait flag has the identical 0.0s-still-waits-one-frame
   gap the Tint/Flash Screen fix above just closed — a 0-duration picture move
   with its wait flag set skipped the wait outright, instead of blocking the
@@ -9566,7 +9568,8 @@ not yet verified:
     branch avoids, so ~~waits exactly one frame before the following command
     runs~~ overstates the dispatcher's actual precision; the checks still
     correctly verify the wait itself never floors to zero, which is this
-    fix's real scope.
+    fix's real scope. Closed by the "now resumes the command right after it
+    the same real frame" bullet below (2026-08-21).
 - ✅ **Flash Sprite has the identical 0.0s-still-waits-one-frame gap already
   fixed twice this session for Tint/Flash Screen and Move Picture — a
   0-duration sprite flash with its wait flag set skipped the wait outright,
@@ -9589,6 +9592,63 @@ not yet verified:
   a new `scripts/rpg2k_scene_check.rb` check (full-scene: the following
   command is genuinely held back, not run the very same update), both
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A waited-for Tint Screen, Flash Screen, Move Picture or Flash Sprite
+  now resumes the command right after it the same real frame the effect
+  settles, instead of always losing one further frame first — closing the
+  gap the three bullets above flagged and deliberately left open
+  (2026-08-21).** Confirmed against EasyRPG's actual C++ source:
+  `Game_Interpreter::Update` (`src/game_interpreter.cpp`) is a single
+  `for (; loop_count < loop_limit; ++loop_count)` loop that keeps executing
+  successive event commands within the *same* call until it hits a genuine
+  blocking condition; `if (_state.wait_time > 0) { _state.wait_time--;
+  break; }` is checked once at the top of *each* iteration, before running
+  the next command — so once a wait's own countdown reaches 0, that same
+  `Update()` call falls straight through into whatever command follows,
+  costing no further frame. Crucially, Tint Screen/Flash Screen's
+  `CommandTintScreen`/`CommandFlashScreen`, Move Picture's
+  `CommandMovePicture`, and Flash Sprite's `Game_Interpreter_Map::
+  CommandFlashSprite` all implement their own wait flag with `SetupWait`
+  — the *identical* `_state.wait_time` field the plain Wait command uses —
+  not a "poll until the effect is still animating" mechanism at all in the
+  reference implementation. This codebase's `Interpreter#update`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) already mirrors that same loop shape
+  (`until @waiting`, executing successive commands in one call) and
+  `Scene::Map`'s `:wait`/`:wait_key_enter`/`:animation`/`:battle` dispatch
+  branches (`mruby-rpg2k/mrblib/scene/map.rb`) already follow a cleared wait
+  with their own same-frame `@interpreter.update` call for exactly this
+  reason (see their own citations) — but the `:screen`, `:picture`, and
+  `:sprite_flash` branches only ever called `@interpreter.resume`, which
+  merely clears `@waiting` (`Interpreter#resume` → `#reset_waits`) without
+  driving the interpreter forward, so the *following* command always sat
+  one further real frame behind RPG_RT, for every duration of these four
+  commands' entire history in this codebase (not something introduced by
+  any of the three 0.0s-floor fixes above — those only fixed the wait's own
+  minimum length, not this separate dispatch gap). The identical shape
+  existed a second time in `Scene::Map#step_parallel`'s own wait dispatch
+  for a Parallel Process's own interpreter, which explicitly special-cased
+  `:wait`/`:animation` for the same same-frame continuation (see its own
+  comment) but not `:screen`/`:picture`/`:sprite_flash`. Fixed by adding the
+  identical `unless @interpreter.waiting? … @interpreter.update;
+  apply_interpreter_requests(...) end` follow-through already used for
+  `:wait`/`:animation` to the foreground `:screen`/`:picture`/`:sprite_flash`
+  branches, and by adding `:screen`/`:picture`/`:sprite_flash` to
+  `#step_parallel`'s own same-frame-continuation wait-kind list alongside
+  `:wait`/`:animation`. Left out of scope (flagged for a future cycle, not
+  verified against RPG_RT's own blocking semantics here): `:movement`,
+  `:picture_blocked`, `:teleport_blocked`, `:battle_blocked`, and
+  `:exp_level_blocked` show the same bare-`resume`-with-no-follow-through
+  shape in both dispatchers, but a block-and-retry command's own blocking
+  condition is a different mechanism (message/choice window open) than a
+  `_state.wait_time` countdown, so it needs its own citation pass before
+  assuming the identical fix applies. Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks with exact frame-count assertions
+  (a foreground Tint Screen, a foreground Flash Sprite, and a Parallel
+  Process's own Move Picture each resume the command right after them on
+  the precise real frame the effect settles, not one frame later) and one
+  tightened existing check (Flash Sprite's own zero-duration check now
+  asserts resumption after exactly one further frame instead of a generous
+  multi-frame margin), all confirmed to fail against the pre-fix code
+  before the fix.
 - ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
   status effect from landing at all, instead of only its A-E susceptibility
   rank ever mattering.** Confirmed against EasyRPG's actual C++ source:
