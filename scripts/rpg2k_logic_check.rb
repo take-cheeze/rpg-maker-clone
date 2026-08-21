@@ -8949,6 +8949,30 @@ check 'Move Picture eases the picture and its wait flag pauses the interpreter' 
   eq true, st.switches[1], 'the command after the waited move ran'
 end
 
+check 'Move Picture with an instant (zero-duration) move still waits one frame' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::SHOW_PICTURE,
+               [1, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0], string: 'p'),
+    # Move to (60,0) over 0 tenths (instant) with the wait flag set, then a
+    # switch we can watch to prove the interpreter still paused one frame.
+    FakeCmd.new(IC::MOVE_PICTURE,
+               [1, 0, 60, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 0, 1]),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])
+  ])
+  it.update # Show
+  it.update # Move -> snaps instantly but still waits
+  eq 60, st.pictures[1].x, 'the move itself applies immediately'
+  ok !st.pictures[1].moving?, 'nothing left to interpolate'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  ok !st.switches[1], 'the following command has not run yet'
+  st.update_pictures # the scene advances pictures each frame
+  it.resume
+  it.update
+  eq true, st.switches[1], 'resumed the very next frame, since nothing is left moving'
+end
+
 check 'Erase Picture removes the picture' do
   st = new_state
   # Show alone first, to confirm it is present before erasing.
