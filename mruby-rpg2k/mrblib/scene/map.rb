@@ -1796,13 +1796,17 @@ class RPG2k
           # loop re-executes that identical command the instant the block
           # clears, in that same frame, the same as any other retried
           # command -- so all five join the same-frame list too, matching
-          # #drive_event's foreground dispatcher exactly. Other wait kinds
-          # keep their old one-frame-per-call pacing.
+          # #drive_event's foreground dispatcher exactly. A waiting Key
+          # Input Processing command's own block (`CommandKeyInputProc`,
+          # `src/game_interpreter.cpp`) has the identical `return false`
+          # shape, so it joins the list too. Other wait kinds keep their
+          # old one-frame-per-call pacing.
           unless (wait_kind == :wait || wait_kind == :animation ||
                   wait_kind == :screen || wait_kind == :picture ||
                   wait_kind == :sprite_flash || wait_kind == :movement ||
                   wait_kind == :picture_blocked || wait_kind == :teleport_blocked ||
-                  wait_kind == :battle_blocked || wait_kind == :exp_level_blocked) &&
+                  wait_kind == :battle_blocked || wait_kind == :exp_level_blocked ||
+                  wait_kind == :key_input_blocked) &&
                  !it.waiting?
             apply_interpreter_requests(it, p[:event])
             return record_parallel_progress(p)
@@ -2063,6 +2067,13 @@ class RPG2k
           # list is open -- the parallel-process equivalent of #drive_event's
           # own :exp_level_blocked case, see
           # Interpreter#block_pending_exp_level_command for the citation.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :key_input_blocked
+          # A waiting Key Input Processing command issued from a Parallel
+          # Process while a message window or choice list is open -- the
+          # parallel-process equivalent of #drive_event's own
+          # :key_input_blocked case, see
+          # Interpreter#block_pending_key_input_command for the citation.
           it.resume unless message_window_open?
         elsif it.wait_kind == :sprite_flash
           # Flash Sprite's own wait flag, the parallel-process equivalent of
@@ -4702,6 +4713,20 @@ class RPG2k
             # :battle_blocked above, see that method's own citation and
             # :picture_blocked's own same-frame reasoning
             # (`Game_Interpreter::CommandChangeExp`/`CommandChangeLevel`,
+            # `src/game_interpreter.cpp`, the identical `return false` with
+            # the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :key_input_blocked
+            # A waiting Key Input Processing command reached while a message
+            # window or choice list is open (#block_pending_key_input_command)
+            # -- the identical block-and-retry shape as :picture_blocked/
+            # :teleport_blocked/:battle_blocked/:exp_level_blocked above, see
+            # that method's own citation and :picture_blocked's own
+            # same-frame reasoning (`Game_Interpreter::CommandKeyInputProc`,
             # `src/game_interpreter.cpp`, the identical `return false` with
             # the index untouched).
             @interpreter.resume unless message_window_open?
