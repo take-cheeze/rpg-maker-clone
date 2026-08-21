@@ -13015,6 +13015,9 @@ TitleParent = Struct.new(:db, :map_tree, :hide_title_flag, :any_save_flag) do
   # check here drives that path through a TitleParent.
   def continue_calls; @continue_calls || 0; end
   def continue_game(_slot = 1); @continue_calls = continue_calls + 1; end
+  # Kept for parity with the real RPG2k#start_new_game New Game calls.
+  def new_game_calls; @new_game_calls || 0; end
+  def start_new_game; @new_game_calls = new_game_calls + 1; end
 end
 
 check 'HideTitle hides the title picture and centres the command window' do
@@ -13143,6 +13146,61 @@ check 'no save data: the title cursor still starts on New Game' do
   scene = RPG2k::Scene::Title.new(parent)
   eq 0, scene.instance_variable_get(:@selected_index),
      'with nothing to resume, the cursor starts on New Game as before'
+end
+
+check 'selecting New Game fades the title BGM (800ms), matching RPG_RT, ' \
+      'not a hard stop' do
+  # Confirmed directly against RPG_RT's live source: `Player::SetupNewGame`
+  # (`src/player.cpp`) is `Main_Data::game_system->BgmFade(800, true); ...`
+  # -- an 800ms fade, not `BgmStop()`'s immediate cut (`Game_System::
+  # BgmFade`/`BgmStop`, `src/game_system.cpp`, are genuinely different
+  # calls). A prior version of this method ran a blanket `Audio.bgm_stop`
+  # before every title selection, this one included.
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  RGSS::Audio.reset_bgm # #play_title_bgm's own construction-time bgm_play is not what this checks
+  scene.instance_variable_set(:@selected_index, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq [[800]], RGSS::Audio.bgm_fade_calls, 'New Game fades the BGM over 800ms'
+  eq 0, RGSS::Audio.bgm_stop_calls, 'not a hard stop'
+  eq 1, parent.new_game_calls
+end
+
+check "the headless --rpg2k_continue auto-select fades the title BGM " \
+      "(800ms) before resuming, matching RPG_RT's LoadSavegame" do
+  # Confirmed directly against RPG_RT's live source: `Player::LoadSavegame`
+  # (`src/player.cpp`) is `if (!load_on_map) { Main_Data::game_system->
+  # BgmFade(800); ... }` -- true from the title screen, the only path this
+  # headless single-slot shortcut ever takes (the interactive
+  # Scene::SaveLoad picker is a separate, deliberately-unfaded path -- see
+  # #update's own citation on why).
+  clear_title_flags
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  RGSS::Audio.reset_bgm
+  Object.const_set(:RPG2K_CONTINUE, true)
+  scene.update
+  clear_title_flags
+  eq [[800]], RGSS::Audio.bgm_fade_calls, 'the auto-continue path fades the BGM over 800ms'
+  eq 0, RGSS::Audio.bgm_stop_calls, 'not a hard stop'
+  eq 1, parent.continue_calls
+end
+
+check 'the interactive Continue picker (Scene::SaveLoad) does not fade the ' \
+      'BGM itself -- that shared :load path must not fade when reached ' \
+      'from an in-map Open Load Menu event instead' do
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  RGSS::Audio.reset_bgm
+  scene.instance_variable_set(:@selected_index, 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq [], RGSS::Audio.bgm_fade_calls,
+     'opening the picker itself does not fade -- only the headless single-slot shortcut does'
+  eq 0, parent.continue_calls, 'the picker was opened, not resumed directly'
 end
 
 # -- screen fade / flash overlays ---------------------------------------------
