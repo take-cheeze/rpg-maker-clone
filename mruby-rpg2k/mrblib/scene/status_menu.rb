@@ -17,6 +17,11 @@ class RPG2k
       STATE_ROW = 5
       STATE_LABEL = "State".freeze
       STATE_VALUE_X = 48
+      # The HP/MP row: which line of the panel it is. Drawn separately from
+      # the flat `lines` pass below (see #draw_hp_mp_row) since, unlike every
+      # other line on this screen, its two current-value figures each need
+      # their own palette colour.
+      HP_MP_ROW = 3
 
       # `actor_index` is which party member the screen opens on -- the one
       # `Scene::Menu#enter_actor_selection` preselected from the menu's own
@@ -138,8 +143,8 @@ class RPG2k
           "Class: #{a.respond_to?(:class_name) ? a.class_name : ''}",
           "#{term(:level_short, 'Lv')} #{a.level}    " \
           "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
-          "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}    " \
-          "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}",
+          # Drawn separately, after this flat pass -- see #draw_hp_mp_row.
+          '',
           # ATK/DEF/Int(Spirit)/AGI, state-adjusted -- confirmed against
           # RPG_RT's own live source: `Window_ParamStatus::Refresh`
           # (`src/window_paramstatus.cpp`) draws `actor.GetAtk()`/`GetDef()`/
@@ -176,6 +181,7 @@ class RPG2k
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
         end
+        draw_hp_mp_row c, a, HP_MP_ROW * LINE_H, inner_w
         draw_actor_state c, a, STATE_VALUE_X, STATE_ROW * LINE_H,
                          inner_w - STATE_VALUE_X, LINE_H, @skin
         draw_battle_row(c, a, inner_w) if rpg2003_party?
@@ -198,6 +204,38 @@ class RPG2k
       # own `"Class: ..."` precedent for the same situation.
       def rpg2003_party?
         @state.party.respond_to?(:rpg2003?) && @state.party.rpg2003?
+      end
+
+      # This screen's HP/MP row: RPG_RT's own `Window_ActorStatus::DrawStatus`
+      # (`src/window_actorstatus.cpp`) draws it through the same
+      # `DrawActorHp`/`DrawActorSp` (`src/window_base.cpp`) the battle status
+      # panel uses, so it carries the identical per-value colouring (see
+      # #draw_stat_segment) -- only ever applied to this screen's *current*
+      # HP/MP figures, never their label or max.
+      def draw_hp_mp_row(c, a, y, inner_w)
+        gutter = c.text_size('    ').width
+        x = draw_stat_segment(c, 0, y, inner_w, term(:hp_short, 'HP') + ' ',
+                               a.hp, a.display_max_hp, true)
+        draw_stat_segment(c, x + gutter, y, inner_w, term(:mp_short, 'MP') + ' ',
+                           a.mp, a.display_max_mp, false)
+      end
+
+      # One "LABEL current/max" run starting at `x`: `label` and the `/max`
+      # suffix draw in the default palette colour, `cur` alone through
+      # #value_font_color (`can_knockout` true only for HP, matching
+      # `DrawActorHp`'s own call -- `DrawActorSp` never passes it). Returns
+      # the x position just past the drawn run, so a caller can chain another
+      # stat after it (see #draw_hp_mp_row's own MP call).
+      def draw_stat_segment(c, x, y, inner_w, label, cur, max, can_knockout)
+        draw_system_text c, x, y, inner_w - x, LINE_H, label, @skin
+        x += c.text_size(label).width
+        color = value_font_color(cur, max, can_knockout)
+        cur_s = cur.to_s
+        draw_system_text c, x, y, inner_w - x, LINE_H, cur_s, @skin, color
+        x += c.text_size(cur_s).width
+        rest = "/#{max}"
+        draw_system_text c, x, y, inner_w - x, LINE_H, rest, @skin
+        x + c.text_size(rest).width
       end
 
       def draw_battle_row(bmp, actor, inner_w)
