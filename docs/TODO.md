@@ -18763,14 +18763,15 @@ codebase yet):
   `#deal_attack` instead of the `#swing` an ordinary Attack uses, so
   dual-wield's extra hit never landed under either restriction (必中 already
   worked either way, since `#to_hit` reads `attacker.ignores_evasion`
-  regardless of which method calls it); attack-all spread across the whole
+  regardless of which method calls it); ~~attack-all spread across the whole
   opposing side under Berserk exactly as it does under Confusion, with no
-  single-target collapse; and `#preemptive_boost?` granted the "always acts
+  single-target collapse~~ (see the second Follow-up below — this half was
+  also wrong); and `#preemptive_boost?` granted the "always acts
   first" turn-order jump to both restrictions alike. Fixed by routing the
-  restricted branch through `#swing` (dual-wield restored for both), scoping
+  restricted branch through `#swing` (dual-wield restored for both), ~~scoping
   the attack-all spread to `RESTRICTION_ATTACK_ALLY` only (Berserk now always
   hits its single forced target via `#swing` directly, so the now-redundant
-  `#attack_side` helper was removed in favour of the existing `#swing_side`),
+  `#attack_side` helper was removed in favour of the existing `#swing_side`)~~,
   ~~and returning `false` from `#preemptive_boost?` for `RESTRICTION_ATTACK_ENEMY`
   before the existing `RESTRICTION_ATTACK_ALLY` case~~. Covered by four new
   `scripts/rpg2k_logic_check.rb` checks (Berserk plus attack-all hits one
@@ -18799,7 +18800,35 @@ codebase yet):
   preemptive weapon's jump is dropped under Berserk") was rewritten in place
   to assert the opposite ("berserk keeps a 先制攻撃 weapon's turn-order jump,
   same as confusion"), confirmed to fail against the pre-fix code before the
-  fix. **Confirmed already correct, no change needed**: hit rate's
+  fix.
+  ✅ **Follow-up (2026-08-21): the attack-all-collapses-under-Berserk half of
+  that same デフォ戦botまとめ claim above was wrong too — RPG_RT does not
+  collapse an attack_all weapon to a single target under Berserk either.**
+  Confirmed against EasyRPG Player's actual C++ source:
+  `Scene_Battle_Rpg2k::SelectNextActor` (`src/scene_battle_rpg2k.cpp`)
+  constructs an identical single-target `Game_BattleAlgorithm::
+  Normal(active_actor, random_target)` for both `Restriction_attack_ally`
+  (confusion) and `Restriction_attack_enemy` (berserk) — the same `switch`
+  only changes which side `GetRandomActiveBattler()` draws from — and
+  `Normal::vStart()` (`src/game_battlealgorithm.cpp`) then unconditionally
+  re-expands *any* single-target Normal algorithm to its target's whole side
+  once the weapon carries `attack_all` (`GetOriginalPartyTarget() == nullptr
+  && source->HasAttackAll(weapon)` — true for every single-`Game_Battler*`-
+  constructed `Normal`, forced or not), with no restriction check anywhere in
+  that path. `SelectNextActor`'s own inline comment — "RPG_RT doesn't support
+  'Attack All' weapons when battler is confused or provoked" — is itself
+  stale against the `vStart()` code EasyRPG actually runs; the code, not the
+  comment, is what real RPG_RT executes. `Game::Battle#strike`
+  (`mruby-rpg2k/mrblib/game.rb`) now spreads a forced attack across the whole
+  target side whenever `b.attack_all`, regardless of which restriction forced
+  it, exactly like the unforced attack-all path just below it in the same
+  method. The `scripts/rpg2k_logic_check.rb` check this same paragraph added
+  ("a berserk battler with an attack_all weapon still hits only one target")
+  was rewritten in place to assert the opposite ("still hits every living
+  enemy, same as an unforced attack_all would"), confirmed to fail against
+  the pre-fix code (`expected 2, got 11` — a single Hash entry, not a
+  two-entry array) before the fix.
+  **Confirmed already correct, no change needed**: hit rate's
   floor/ceiling relative to a skill's configured rate by relative Agility (a
   90%-accuracy skill can't exceed 95% actual hit even against a much slower
   target; an 80% one caps at 90%). `Game::Battle#to_hit`'s existing
