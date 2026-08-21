@@ -16584,6 +16584,30 @@ check 'Simulated Attack damages the target by atk less its defence share' do
   eq 58, hero.hp # 100 HP less (50 - 8 * 400 / 400) = 42 damage
 end
 
+check "Simulated Attack reads the target's state-adjusted Defence/Spirit, " \
+      'not its raw base stat' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandSimulatedAttack` (`src/game_interpreter.cpp`) computes `atk -
+  # actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and
+  # `Game_Battler::GetDef`/`GetSpi` (`src/game_battler.cpp`) both route
+  # through `AdjustParam`, which folds in a currently-afflicted state's own
+  # halve/double Defence flag -- the same accessor every other damage
+  # formula reads, in or out of battle. A target whose Defence is halved by
+  # an active state must take more damage than its raw stat alone would
+  # suggest.
+  states = { 2 => fake_state(affect_type: 0, affect_defense: true) } # 0 = halve
+  st = party_state_with_states(states)
+  hero = st.party.actor_by_id(1) # def 8, hp 100
+  hero.add_state(2)
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, atk 50, def-weight 400, spi-weight 0, variance 0,
+  # store-damage flag 0.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 50, 400, 0, 0, 0, 0])])
+  it.update
+  eq 54, hero.hp, '100 HP less (50 - halved-def 4 * 400 / 400) = 46 damage, ' \
+                  'not 42 off the raw, unhalved def of 8'
+end
+
 check 'Simulated Attack stores the damage it dealt in a variable' do
   st = party_state
   it = Game::Interpreter.new(st)
