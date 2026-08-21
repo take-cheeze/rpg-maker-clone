@@ -3693,7 +3693,16 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # also persists onto the map. Appended last, same
                           # reason again -- nil reads as 0/battle-only via
                           # #state_field, the schema's own default.
-                          :type)
+                          :type,
+                          # ... and `message_affected`: the per-turn reminder
+                          # (Game::Battle#turn_state_message) a battler still
+                          # carrying this state opens its turn with, distinct
+                          # from message_actor/message_enemy (which fire only
+                          # the instant it lands). Appended last, same reason
+                          # again -- nil reads as "no reminder configured" via
+                          # States.field, matching the schema's own blank
+                          # default.
+                          :message_affected)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -3708,7 +3717,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                hp_change_type: Game::States::CHANGE_TYPE_LOSE,
                sp_change_type: Game::States::CHANGE_TYPE_LOSE,
                avoid_attacks: false, reflect_magic: false, cursed: false,
-               type: 0)
+               type: 0, affected_msg: nil)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
@@ -3718,7 +3727,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                    affect_type, affect_attack, affect_defense,
                    affect_spirit, affect_agility,
                    hp_change_type, sp_change_type, avoid_attacks, reflect_magic,
-                   cursed, type)
+                   cursed, type, affected_msg)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -14520,6 +14529,77 @@ check 'battle: a "do nothing" state (restriction 1) skips the turn' do
   bat.command_attack(hero, slime)                    # even commanded, it cannot act
   bat.run_round
   eq 100, slime.hp                                   # the asleep hero never struck
+end
+
+# Confirmed against EasyRPG's actual C++ source: Scene_Battle_Rpg2k::
+# ProcessBattleActionBegin (src/scene_battle_rpg2k.cpp) scans every state id
+# the battler either still carries or just had auto-cured this turn (not
+# Game_Battler::GetSignificantState/State::GetSignificantState -- confirmed
+# these are two genuinely distinct functions in EasyRPG's own source, the
+# latter special-casing Knockout and never considering a just-healed state),
+# keeping whichever has the highest `priority` (ties to the higher id), and
+# shows that state's own message_affected (still held) or message_recovery
+# (just healed) at the very start of the battler's turn, before its action.
+# This codebase's own docs/TODO.md had claimed the opposite -- that
+# message_affected is "deliberately still unread" because "EasyRPG ...
+# never calls it from either battle scene" -- which is simply wrong against
+# current live EasyRPG source.
+check 'battle: a still-afflicted state opens the battler\'s turn with its own ' \
+      'message_affected line' do
+  states = { 3 => fake_state(priority: 50, affected_msg: 'は毒に苦しんでいる！') } # poison, no restriction
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq 'Heroは毒に苦しんでいる！', entry[:state_message],
+     "the still-held state's own message_affected, prefixed with the battler's name"
+end
+
+check 'battle: a state with no configured message_affected opens the turn ' \
+      'with no reminder line at all' do
+  states = { 3 => fake_state(priority: 50) } # affected_msg left blank
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq nil, entry[:state_message],
+     'RPG_RT only shows the still-held case when message_affected is non-blank'
+end
+
+check 'battle: a state that auto-cures this turn opens the turn with its own ' \
+      'message_recovery instead of message_affected' do
+  # hold_turn 0, auto_release 100 -- guaranteed to clear on this very turn
+  # (#recovers_from_state? needs state_turns[id] > hold_turn, already true
+  # after this turn's own +1, and rolls under the 100% chance).
+  states = { 3 => fake_state(priority: 50, hold_turn: 0, auto_release: 100,
+                             affected_msg: 'は毒に苦しんでいる！',
+                             recovery_msg: 'の毒が治った！') }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq 'Heroの毒が治った！', entry[:state_message],
+     'a just-healed state shows its own message_recovery, not message_affected'
+end
+
+check 'battle: the higher-priority of two simultaneously-held states opens ' \
+      "the turn, a tie going to the higher id" do
+  states = { 3 => fake_state(priority: 10, affected_msg: 'は毒に苦しんでいる！'),
+             4 => fake_state(priority: 50, affected_msg: 'は暗闇に閉ざされている！') }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3, 4]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq 'Heroは暗闇に閉ざされている！', entry[:state_message],
+     "state 4's higher priority (50 > 10) wins outright, no tie involved"
 end
 
 # デフォ戦bot: "once afflicted with a 'cannot act' state, curing it before your
