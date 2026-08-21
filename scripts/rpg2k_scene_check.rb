@@ -17172,6 +17172,36 @@ check 'Scene::Order: picking every member opens the Confirm/Redo prompt, ' \
   ok scene.parent.pop_called, 'the screen closes on Confirm'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Scene_Order::UpdateOrder`
+# (`src/scene_order.cpp`), once the last member is picked, calls
+# `window_left->SetIndex(-1)` before `SetActive(false)` -- distinct from
+# simply going inactive. `Window_Selectable::UpdateCursorRect`
+# (`src/window_selectable.cpp`) special-cases a negative index to
+# `SetCursorRect(Rect())`, so real RPG_RT hides the left column's cursor
+# entirely at this transition, rather than freezing it on the now-blank
+# final row the way an ordinary inactive window's cursor otherwise would
+# (see the `RPG2k::Window#draw_cursor` "freeze, don't hide" fix, which still
+# applies to every *other* inactive window whose index is untouched).
+check 'Scene::Order: opening the Confirm/Redo prompt hides the left ' \
+      "column's cursor entirely, rather than freezing it on the blank " \
+      'final row' do
+  scene, state = order_scene
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 0
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto the only unpicked row
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 1 -- both picked, prompt opens
+  scene.update
+  RGSS::Input.reset
+  eq :confirm, scene.instance_variable_get(:@focus), 'both picked -- prompt opens'
+  left = scene.instance_variable_get(:@left_window)
+  eq 0, left.cursor_rect.width, "the left column's cursor is emptied, not left " \
+     'highlighting the now-blank final row'
+  eq 0, left.cursor_rect.height
+end
+
 check 'Scene::Order: Redo clears every pick and returns to the left column, ' \
       'without touching the party' do
   scene, state = order_scene

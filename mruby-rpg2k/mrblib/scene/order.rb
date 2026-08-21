@@ -105,10 +105,21 @@ class RPG2k
         refresh_right_window
       end
 
+      # Confirmed against EasyRPG's actual C++ source: `Scene_Order::
+      # UpdateOrder` (`src/scene_order.cpp`), once the last member is picked,
+      # calls `window_left->SetIndex(-1)` before `SetActive(false)` --
+      # distinct from simply going inactive (see `RPG2k::Window#draw_cursor`'s
+      # own "freeze, don't hide" fix, which still applies to every *other*
+      # inactive window whose index is untouched). `Window_Selectable::
+      # UpdateCursorRect` (`src/window_selectable.cpp`) special-cases a
+      # negative index to `SetCursorRect(Rect())`, emptying the highlight
+      # outright -- so real RPG_RT hides the left column's cursor entirely at
+      # this transition rather than freezing it on the now-blank final row.
       def enter_confirm
         @focus = :confirm
         @confirm_index = 0
         @left_window.active = false
+        @left_window.cursor_rect = Rect.new(0, 0, 0, 0)
         @confirm_window.visible = true
         @confirm_window.active = true
         refresh_confirm_cursor

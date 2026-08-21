@@ -14067,8 +14067,8 @@ not yet verified:
   unless @active` right after clearing the cursor bitmap, so setting a
   window inactive (`#active=`, which calls `#draw_cursor` immediately) blanked
   the highlight outright — reachable in live UI code: `Scene::Menu
-  #enter_actor_selection`/`#open_end_game_confirm` and `Scene::Order
-  #enter_confirm` (`mruby-rpg2k/mrblib/scene/menu.rb`/`order.rb`) all set
+  #enter_actor_selection`/`#open_end_game_confirm` and ~~`Scene::Order
+  #enter_confirm`~~ (`mruby-rpg2k/mrblib/scene/menu.rb`/`order.rb`) all set
   `.active = false` on a list whose `cursor_rect` still points at the
   just-picked row, expecting it to stay highlighted (frozen) the way real
   RPG_RT leaves it, not disappear. `#update`'s own `@cursor_frame` advance
@@ -14079,6 +14079,27 @@ not yet verified:
   further frames of `#update` while inactive never redraw it at all, the
   already-correct half of the gate), confirmed to fail against the pre-fix
   code before the fix.
+  ✅ **Follow-up (2026-08-21): `Scene::Order#enter_confirm` was wrongly
+  grouped in with the "expects to stay frozen" sites above — real RPG_RT
+  hides the left column's cursor entirely at this one specific transition,
+  it does not freeze it.** Confirmed against EasyRPG's actual C++ source:
+  `Scene_Order::UpdateOrder` (`src/scene_order.cpp`), once the last member is
+  picked, calls `window_left->SetIndex(-1)` *before* `SetActive(false)` — an
+  extra, additional mutation beyond what `Scene::Menu
+  #enter_actor_selection`/`#open_end_game_confirm` do, which only ever go
+  inactive. `Window_Selectable::UpdateCursorRect` (`src/
+  window_selectable.cpp`) special-cases a negative index to
+  `SetCursorRect(Rect())`, emptying the highlight outright. So the general
+  "freeze, don't hide" rule the fix above correctly restored for every
+  *other* inactive window is, at this one specific call site, exactly the
+  wrong behavior: `enter_confirm` left the left column's cursor frozen on
+  the now-blank final row instead of hiding it. Fixed by having
+  `enter_confirm` also clear `@left_window.cursor_rect` to an empty `Rect`,
+  mirroring `SetIndex(-1)`'s effect directly (`redo_picks`'s own
+  `refresh_left_cursor` call already correctly restores it when picking
+  resumes, unaffected). Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (the left column's cursor rect is empty the instant the Confirm/Redo
+  prompt opens), confirmed to fail against the pre-fix code before the fix.
 - ✅ **An action pattern's "Enemies" condition (`condition_type` 3,
   `COND_ACTORS`) now ranges over the acting monster's own living
   troop-mates, not the player party's headcount — a straight side-swap,
