@@ -3412,14 +3412,23 @@ module Game
 
     # Tint Screen: transition the shared screen tint to the RPG2000 channels
     # param0..3 (red / green / blue / saturation, each 0..200) over param4 tenths
-    # of a second. When param5 (the wait flag) is set and the transition takes
-    # time, pause until it finishes — the owning scene advances Game::Screen each
-    # frame and resumes us once it settles.
+    # of a second. When param5 (the wait flag) is set, pause until it finishes —
+    # the owning scene advances Game::Screen each frame and resumes us once it
+    # settles. RPG_RT always honours the wait flag, even for a 0.0s transition:
+    # `Game_Interpreter::CommandTintScreen` (`src/game_interpreter.cpp`) calls
+    # `SetupWait(tenths)` unconditionally whenever the wait flag is set, and
+    # `SetupWait` (same file) explicitly floors a 0 duration to one frame ("0.0
+    # waits 1 frame") rather than skipping the wait. A 0.0s tint therefore still
+    # blocks the interpreter for exactly one frame, which the `:screen` wait
+    # dispatcher (`Scene::Map`'s wait-kind handler) already provides for free —
+    # `@state.screen.busy?` is false the instant a 0-duration tint applies, so
+    # the very next frame's dispatch resumes us, the same one-frame floor
+    # `#drive_wait` gives an ordinary `Wait 0.0s` command.
     def do_tint_screen(cmd)
       frames = cmd.param(4) * FRAMES_PER_TENTH
       @state.screen.tint_to(cmd.param(0), cmd.param(1), cmd.param(2),
                             cmd.param(3), frames)
-      return unless cmd.param(5) != 0 && @state.screen.tinting?
+      return unless cmd.param(5) != 0
       @wait_kind = :screen
       @waiting = true
     end
@@ -3428,6 +3437,11 @@ module Game
     # peak strength param3, fading out over param4 tenths of a second. When param5
     # (the wait flag) is set, pause until it fades — the owning scene advances
     # Game::Screen each frame and resumes us once no screen effect is animating.
+    # As with Tint Screen, RPG_RT always honours the wait flag on the one-shot
+    # mode, even for a 0.0s flash: `Game_Interpreter::CommandFlashScreen`
+    # (`src/game_interpreter.cpp`) calls `SetupWait(tenths)` unconditionally
+    # whenever the wait flag is set on the mode-0 path, and `SetupWait` floors a
+    # 0 duration to one frame rather than skipping the wait.
     # RPG2003 extends the command with a param6 mode byte (0 one-shot / 1 begin a
     # repeating strobe / 2 end one), matching EasyRPG's `CommandFlashScreen`
     # (src/game_interpreter.cpp): a command list carrying no 7th parameter (an
@@ -3457,7 +3471,7 @@ module Game
         frames = cmd.param(4) * FRAMES_PER_TENTH
         @state.screen.flash(cmd.param(0) * FLASH_SCALE, cmd.param(1) * FLASH_SCALE,
                             cmd.param(2) * FLASH_SCALE, cmd.param(3) * FLASH_SCALE, frames)
-        return unless cmd.param(5) != 0 && @state.screen.flashing?
+        return unless cmd.param(5) != 0
         @wait_kind = :screen
         @waiting = true
       end

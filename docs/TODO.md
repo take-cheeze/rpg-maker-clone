@@ -9483,6 +9483,40 @@ not yet verified:
   unscaled — corrected to realistic 0..31 inputs and their now-correctly-
   scaled 0..255 expectations, both confirmed to fail against the pre-fix
   code before the fix.
+- ✅ **A Tint Screen or one-shot Flash Screen command with its wait flag set
+  now blocks the interpreter for one frame even when its own duration is
+  0.0 seconds, instead of skipping the wait entirely (2026-08-21).**
+  Confirmed against EasyRPG's actual C++ source: `Game_Interpreter::
+  CommandTintScreen`/`CommandFlashScreen` (`src/game_interpreter.cpp`,
+  codes 11030/11040 mode 0) both call `SetupWait(tenths)` unconditionally
+  whenever the command's own wait flag is set — never gated on whether
+  `tenths` is nonzero — and `SetupWait` (same file) explicitly special-cases
+  a zero duration: `if (duration == 0) { // 0.0 waits 1 frame; _state.
+  wait_time = 1; }`. `Interpreter#do_tint_screen`/`#do_flash_screen`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) instead armed the wait only when the
+  screen effect was *still animating* (`@state.screen.tinting?`/
+  `flashing?`) — but a 0-duration tint/flash applies instantly
+  (`Game::Screen#tint_to`/`#flash`, `mruby-rpg2k/mrblib/game.rb`, both
+  `frames <= 0` branches), so those predicates were never true for exactly
+  the case RPG_RT still guarantees a 1-frame wait for. A project that sets a
+  Tint/Flash Screen's duration to 0.0s deliberately (an instant colour snap)
+  while leaving "wait" checked — common when a later command's timing is
+  meant to line up with it — silently ran zero frames early. `Game_Interpreter
+  ::CommandShakeScreen`'s own equivalent 0-duration case is genuinely
+  different and untouched by this fix: it calls `ShakeEnd()` instead of
+  `ShakeOnce`/`SetupWait` at all when `tenths <= 0`, so a 0-duration shake
+  was never meant to wait in the first place. Fixed by dropping the
+  `&& @state.screen.tinting?`/`&& @state.screen.flashing?` conjuncts from
+  both methods' wait guard, leaving the wait flag alone decide whether to
+  arm `@wait_kind = :screen` — the existing `:screen` wait dispatcher
+  (`Scene::Map`'s wait-kind handler, `@interpreter.resume unless @state.
+  screen.busy?`) already resolves on the very next frame once nothing is
+  left animating, exactly the same 1-frame floor `#drive_wait` already gives
+  an ordinary `Wait 0.0s` command. Covered by two rewritten
+  `scripts/rpg2k_logic_check.rb` checks (a 0-duration Tint/Flash Screen with
+  its wait flag set now waits exactly one frame before the following command
+  runs, in place of the prior checks that had asserted no wait at all),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
   status effect from landing at all, instead of only its A-E susceptibility
   rank ever mattering.** Confirmed against EasyRPG's actual C++ source:
