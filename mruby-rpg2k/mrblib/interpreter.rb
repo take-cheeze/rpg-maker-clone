@@ -3659,7 +3659,18 @@ module Game
     # tone over param14 tenths of a second. When the wait flag (param15) is set,
     # pause until the move finishes — the scene advances the pictures each frame
     # and resumes us once none is moving. Same parameter layout as Show Picture,
-    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture).
+    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture). RPG_RT
+    # always honours the wait flag, even for a 0.0s move: `Game_Interpreter::
+    # CommandMovePicture` (`src/game_interpreter.cpp`) calls
+    # `SetupWait(params.duration)` unconditionally whenever `options.wait` is
+    # set, and `SetupWait` explicitly floors a 0 duration to one frame ("0.0
+    # waits 1 frame") rather than skipping the wait -- the same rule already
+    # fixed for Tint/Flash Screen. A 0.0s move therefore still blocks the
+    # interpreter for exactly one frame, which the `:picture` wait dispatcher
+    # (`Scene::Map`'s wait-kind handler, `@state.pictures_moving?`) already
+    # provides for free -- a 0-duration move snaps to its target instantly
+    # (`Picture#move_to`/`#finish_move`), so the very next frame's dispatch
+    # resumes us.
     def do_move_picture(cmd)
       return if block_pending_picture_command
       id = cmd.param(0)
@@ -3668,8 +3679,7 @@ module Game
                           cmd.param(5), trans_to_opacity(cmd.param(6)),
                           cmd.param(8), cmd.param(9), cmd.param(10),
                           cmd.param(11), frames)
-      return unless cmd.param(15) != 0 && @state.pictures[id] &&
-                    @state.pictures[id].moving?
+      return unless cmd.param(15) != 0
       @wait_kind = :picture
       @waiting = true
     end

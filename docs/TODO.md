@@ -9517,6 +9517,32 @@ not yet verified:
   its wait flag set now waits exactly one frame before the following command
   runs, in place of the prior checks that had asserted no wait at all),
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **Move Picture's wait flag has the identical 0.0s-still-waits-one-frame
+  gap the Tint/Flash Screen fix above just closed — a 0-duration picture move
+  with its wait flag set skipped the wait outright, instead of blocking the
+  interpreter for one frame like RPG_RT (2026-08-21).** Confirmed against
+  EasyRPG's actual C++ source: `Game_Interpreter::CommandMovePicture`
+  (`src/game_interpreter.cpp`, code 11120) calls `SetupWait(params.duration)`
+  unconditionally whenever `options.wait` is set — never gated on whether
+  the move actually left anything still interpolating — and `SetupWait`
+  (same file) floors a zero duration to one frame rather than skipping the
+  wait, exactly as already cited for Tint/Flash Screen. `Interpreter#
+  do_move_picture` (`mruby-rpg2k/mrblib/interpreter.rb`) instead armed the
+  wait only when `@state.pictures[id].moving?` was still true after the
+  move applied — but a 0-duration move snaps to its target instantly
+  (`Picture#move_to`/`#finish_move`, `mruby-rpg2k/mrblib/game.rb`), so that
+  predicate was never true for exactly the case RPG_RT still guarantees a
+  1-frame wait for. This is the same bug shape as the Tint/Flash Screen fix
+  above, simply not caught in that pass since it lives in a different
+  command handler. Fixed by dropping the `@state.pictures[id] &&
+  @state.pictures[id].moving?` conjunct from `do_move_picture`'s wait guard
+  — the wait flag alone now decides — since the existing `:picture` wait
+  dispatcher (`Scene::Map`'s wait-kind handler, `@interpreter.resume unless
+  @state.pictures_moving?`) already resolves on the very next frame once
+  nothing is left moving, giving the same 1-frame floor for free. Covered by
+  a new `scripts/rpg2k_logic_check.rb` check (a 0-duration Move Picture with
+  its wait flag set now waits exactly one frame before the following command
+  runs), confirmed to fail against the pre-fix code before the fix.
 - ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
   status effect from landing at all, instead of only its A-E susceptibility
   rank ever mattering.** Confirmed against EasyRPG's actual C++ source:
