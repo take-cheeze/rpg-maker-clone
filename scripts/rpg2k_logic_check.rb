@@ -8268,16 +8268,28 @@ ensure
   RGSS::Audio.bgm_pos = nil
 end
 
-check 'battle counters advance: Enemy Encounter and its outcome' do
+# Confirmed against EasyRPG's actual C++ source: `Scene_Battle::EndBattle`
+# (`src/scene_battle.cpp`) tallies all four "Other" battle counters together,
+# unconditionally, at battle *end* -- not scattered across the moment an
+# Enemy Encounter arms its wait (well before the fight has even opened) and
+# a resume path a game-over-ending defeat can skip. This codebase's own
+# counterpart is `Scene::Battle#finish_battle` (`mruby-rpg2k/mrblib/scene/
+# battle.rb`, covered end-to-end by `scripts/rpg2k_scene_check.rb`'s "the
+# battle-entry count does not tick until the fight actually ends" and "a
+# game-over-ending fight still counts as a battle entered" checks); at the
+# bare-interpreter level exercised here, neither arming the encounter nor
+# #resume_battle touches any of the four counters any more.
+check 'Enemy Encounter and #resume_battle leave the "Other" battle counters ' \
+      'untouched -- that tally now happens only in Scene::Battle#finish_battle' do
   st = new_state
   it = Game::Interpreter.new(st)
   # Enemy Encounter (troop 1, no handlers): suspends on a :battle wait.
   it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0])])
   it.update
-  eq 1, st.battle_count, 'entering a battle bumps the battle count'
-  eq 0, st.win_count
+  eq 0, st.battle_count, 'arming the encounter alone does not bump it here'
   it.resume_battle(:victory)
-  eq 1, st.win_count, 'a victory bumps the win count'
+  eq 0, st.battle_count, 'nor does resuming the outcome'
+  eq 0, st.win_count
   eq 0, st.defeat_count
   eq 0, st.escape_count
 end

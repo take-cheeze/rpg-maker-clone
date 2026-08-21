@@ -7657,6 +7657,13 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   RGSS::Input.triggered = []
   ok parent.game_over_shown, 'a game-over defeat reached the Game Over screen'
   ok !st.switches[5], 'the rest of the event never ran'
+  # Confirmed against EasyRPG's `Scene_Battle::EndBattle` (`src/
+  # scene_battle.cpp`): the "Other" battle counters are bumped there,
+  # unconditionally, before the Game Over dispatch that can follow a
+  # defeat -- a game-over-ending defeat still counts, even though the event
+  # that opened the fight is abandoned and never resumed.
+  eq 1, st.battle_count, 'a game-over-ending fight still counts as a battle entered'
+  eq 1, st.defeat_count, 'and still counts as a defeat, even though the event never resumes'
 end
 
 check 'Game Over event command returns to the title, abandoning the event' do
@@ -14283,6 +14290,31 @@ check 'Terminate Battle matches neither Win/Escape/Defeat and only bumps the bat
   eq 0, st.win_count
   eq 0, st.escape_count
   eq 0, st.defeat_count
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Scene_Battle::EndBattle`
+# (`src/scene_battle.cpp`) only ever bumps `IncBattleCount()` there, at
+# battle *end* -- not when the encounter is first armed, well before the
+# fight screen has even opened.
+check "the battle-entry count does not tick until the fight actually ends, " \
+      'not the instant it is entered' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, st = battle_scene_with_pages(pages)
+  eq 0, st.battle_count, 'not yet entered'
+  10.times do
+    scene.update
+    break if battle_ui(scene)
+  end
+  ok battle_ui(scene), 'the battle screen is up'
+  eq 0, st.battle_count,
+     'still not counted -- the fight has not concluded yet, only opened'
+  100.times do
+    scene.update
+    break if battle_ui(scene).nil?
+  end
+  eq nil, battle_ui(scene), 'the battle closed'
+  eq 1, st.battle_count, 'and only now does the count tick, once'
 end
 
 check 'a battle-valid Timer reaching 0:00 force-ends the fight (yado.tk)' do

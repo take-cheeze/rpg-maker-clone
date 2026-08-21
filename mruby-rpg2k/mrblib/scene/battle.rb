@@ -2604,6 +2604,20 @@ class RPG2k
         # this is RPG2000's "turns passed in latest battle" (Game::State
         # #last_battle_turns, LCF inventory chunk 109 field 41).
         @state.last_battle_turns = @ui[:battle].turn
+        # Tally the Control Variables "Other" battle counters here, together and
+        # unconditionally, matching EasyRPG's `Scene_Battle::EndBattle`
+        # (`src/scene_battle.cpp`): `IncBattleCount()` runs for every result
+        # (victory/escape/defeat/abort alike) before the individual win/escape/
+        # defeat counter and before the game-over dispatch that can follow a
+        # defeat -- not scattered across the moment the encounter is armed (long
+        # before the fight has actually concluded) and a resume path a
+        # game-over-ending defeat skips entirely.
+        @state.battle_count += 1
+        case result
+        when :victory then @state.win_count += 1
+        when :defeat  then @state.defeat_count += 1
+        when :escape  then @state.escape_count += 1
+        end
         # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
         # party knocked out ends the game; every other outcome resumes the event.
         game_over = result == :defeat && @req[:defeat_game_over] &&

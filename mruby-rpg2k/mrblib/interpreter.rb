@@ -807,17 +807,15 @@ module Game
 
     # Resume an Enemy Encounter with the battle's outcome (:victory, :escape or
     # :defeat). Rewards (EXP / gold on victory) are granted by the scene, which
-    # owns the battle; this only steers event flow. Escape with the "end event
-    # processing" mode abandons the rest of the event; otherwise, when the
-    # command carries [Victory] / [Escape] / [Defeat] handler branches, jump into
-    # the matching one. A game-over on defeat is the scene's concern.
+    # owns the battle; this only steers event flow. The Control Variables
+    # "Other" battle counters are already tallied by the time this runs --
+    # Scene::Battle#finish_battle's job now, unconditionally, matching
+    # EasyRPG's `Scene_Battle::EndBattle` -- so a game-over-ending defeat
+    # (which skips this method entirely) still counts. Escape with the "end
+    # event processing" mode abandons the rest of the event; otherwise, when
+    # the command carries [Victory] / [Escape] / [Defeat] handler branches,
+    # jump into the matching one. A game-over on defeat is the scene's concern.
     def resume_battle(result)
-      # Tally the outcome for the Control Variables "Other" operand.
-      case result
-      when :victory then @state.win_count += 1
-      when :defeat  then @state.defeat_count += 1
-      when :escape  then @state.escape_count += 1
-      end
       if result == :escape && @battle_escape_aborts
         @index = @list.size
         @call_stack = []
@@ -1490,7 +1488,6 @@ module Game
       when 1 then @battle_request[:background] = cmd.string.to_s
       when 2 then @battle_request[:terrain_id] = cmd.param(8)
       end
-      @state.battle_count += 1 # a battle was entered (Control Variables "Other")
       @wait_kind = :battle
       @waiting = true
     end
@@ -1506,8 +1503,8 @@ module Game
     # into the [Escape] handler if the command carries one, ending the event
     # outright under the "abort on escape" escape mode, or otherwise simply
     # falling through to the command right after the encounter -- but does not
-    # bump the win/escape/defeat "Other" battle counters (#resume_battle's
-    # job), since no battle was ever actually fought.
+    # bump the "Other" battle counters (Scene::Battle#finish_battle's job),
+    # since no battle was ever actually fought.
     def skip_invalid_troop(troop_id)
       $stderr.puts "[RPG2k] Enemy Encounter: enemy group #{troop_id} not " \
                    'found, skipping battle'
@@ -1525,8 +1522,10 @@ module Game
     # not a command in any list. Same request shape #do_enemy_encounter
     # builds and the same :battle wait, but with no [Victory]/[Escape]/[Defeat]
     # handler to route into and nothing to end early on an "abort" escape
-    # mode, so #resume_battle's job shrinks to tallying the outcome and
-    # clearing the wait. Only valid while this interpreter is otherwise idle
+    # mode, so #resume_battle's job shrinks to just clearing the wait --
+    # Scene::Battle#finish_battle tallies the "Other" battle counters for
+    # every encounter, scripted or random alike. Only valid while this
+    # interpreter is otherwise idle
     # (Scene::Map only calls it from ordinary player movement, never while an
     # event is running); escape is always allowed. A wipe is game over unless
     # the database's own RPG2003 Death Handler is active
@@ -1557,7 +1556,6 @@ module Game
                           first_strike: first_strike,
                           defeat_game_over: !party.death_handler?, random: true,
                           headless: headless ? true : false }
-      @state.battle_count += 1
       @wait_kind = :battle
       @waiting = true
     end

@@ -15901,10 +15901,16 @@ not yet verified:
   table has no `:abort` key either, so an unmatched lookup (`want = nil`)
   never finds a `[Victory]`/`[Escape]`/`[Defeat]` marker and instead lands on
   the encounter's own `END_BATTLE` — resuming the event right after Branch
-  End, exactly as the site describes. `battle_count` (the "a battle was
+  End, exactly as the site describes. ~~`battle_count` (the "a battle was
   entered" tally the site's "battle-count stat" bullet half refers to) is
   bumped once at `do_enemy_encounter`, independent of any outcome, so it is
-  untouched by this path either way. No code change was needed for the game
+  untouched by this path either way.~~ **Wrong about *when* `battle_count`
+  bumps, corrected below (2026-08-21): real RPG_RT bumps it at battle *end*,
+  not the instant the encounter is armed** — see the Follow-up bullet right
+  after this one. The claim that Terminate Battle's own outcome leaves it
+  untouched either way still held (it is bumped for every outcome, Abort
+  included), just not at the moment or by the mechanism originally
+  described. No code change was needed for the game
   logic — but the existing `scripts/rpg2k_scene_check.rb` check that looked
   like it already covered this (`'Terminate Battle from a page ends the
   fight and resumes the event'`) had a loop bug: `12.times { scene.update;
@@ -15923,6 +15929,38 @@ not yet verified:
   `win_count`/`escape_count`/`defeat_count` all `0` and neither handler
   switch set — confirmed to fail against both an injected win-count bug and
   an injected `BATTLE_HANDLERS[:abort]` mapping.
+  ✅ **Follow-up (2026-08-21): the "Other" battle counters were tallied
+  scattered across the wrong moments — `battle_count` at the instant an
+  encounter is armed rather than when the fight actually ends, and
+  `win_count`/`defeat_count`/`escape_count` in a resume path a game-over-
+  ending defeat skips entirely.** `Interpreter#do_enemy_encounter` and
+  `#start_random_battle` (`mruby-rpg2k/mrblib/interpreter.rb`) both bumped
+  `@state.battle_count` the instant the encounter was armed, before the
+  fight screen had even opened; `#resume_battle` bumped `win_count`/
+  `defeat_count`/`escape_count` — but `Scene::Battle#finish_battle`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) only calls `owner.resume_battle`
+  in its non-game-over branch, so a defeat ending the game (no custom
+  [Defeat] handler, whole party down) never reached it at all. Confirmed
+  against EasyRPG's actual C++ source: `Scene_Battle::EndBattle`
+  (`src/scene_battle.cpp`) is the single choke point for all four —
+  `Main_Data::game_party->IncBattleCount();` unconditionally, then a
+  `switch (result)` bumping the matching Victory/Escape/Defeat counter
+  (`Abort` does nothing extra) — called only once the fight actually
+  concludes, with the Game-Over `Scene::Push` itself wired in as
+  `EndBattle`'s own `on_battle_end` callback, invoked *after* the counters
+  update, so a game-over-ending defeat still counts. Fixed by moving all
+  four increments into `Scene::Battle#finish_battle`, run unconditionally
+  before its `game_over`/`else` branch (mirroring `EndBattle`'s own
+  ordering), and deleting the scattered increments from
+  `do_enemy_encounter`, `#start_random_battle` and `#resume_battle`.
+  Covered by two new `scripts/rpg2k_scene_check.rb` checks (the
+  battle-entry count stays at 0 while the fight is still open, only ticking
+  once it actually closes; a game-over-ending defeat still counts as both a
+  battle entered and a defeat) and a rewritten `scripts/rpg2k_logic_check.rb`
+  check (arming an encounter and resuming its outcome no longer touch any
+  of the four counters at the bare-interpreter level at all, now that the
+  tally lives solely in `Scene::Battle#finish_battle`), all three confirmed
+  to fail against the pre-fix code before the fix.
 - ✅ **Enemy Appearance (Show Hidden Monster) already gets both halves of this
   right.** Targeting an already-appeared enemy is a silent no-op:
   `Scene::Map#reveal_battle_monster` (`mruby-rpg2k/mrblib/scene/map.rb`)
