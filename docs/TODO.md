@@ -7256,6 +7256,30 @@ Everything below is unverified against the codebase.
   one array with no dual-wield-aware branching anywhere, reading attr 11
   (Shield) on such an actor already returns the second weapon's id, not a
   literal shield's, with nothing further needed.
+  ✅ **Follow-up (2026-08-21): the Attack/Defence/Intelligence/Agility
+  attributes (5..9's own attrs 6-9) and the RPG2003 battle operand's
+  Attack/Defence/Spirit/Agility (attrs 4-7) read the actor's/enemy's raw
+  base stat, not its currently state-adjusted value.** `Interpreter
+  #actor_operand`'s attrs 6-9 read `actor.atk`/`actor.def`/`actor.int`/
+  `actor.agi` directly, and `#enemy_operand`'s attrs 4-7 read `foe.atk`/
+  `foe.def`/`foe.spi`/`foe.agi` directly — both skipping any currently
+  active Weaken/Boost-type state's own halve/double effect. Confirmed
+  against EasyRPG's live source, `ControlVariables::Actor`/`::Enemy`
+  (`src/game_interpreter_control_variables.cpp`): both route their
+  stat cases straight through `Game_Battler::GetAtk`/`GetDef`/`GetSpi`/
+  `GetAgi` (`src/game_battler.cpp`), each an `AdjustParam` call folding in
+  the same active-state halve/double this codebase already ports as
+  `Game::Party#effective_atk`/`#effective_def`/`#effective_int`/
+  `#effective_agi` (for the map-side actor operand) and `Game::Battle
+  #effective_atk`/`#effective_def`/`#effective_spi`/`#effective_agi` (for
+  the in-battle enemy operand) — both helpers already used elsewhere
+  (Simulated Attack, the Status menu, the real attack formula) but never
+  wired into these two Control Variables readers. Fixed by routing both
+  through the matching `effective_*` helper instead of the bare field.
+  Covered by two new `scripts/rpg2k_logic_check.rb` checks (a Weaken-type
+  state halves an actor's Attack reading through operand type 5; the same
+  for a troop member's Defence through operand type 8), both confirmed to
+  fail against the pre-fix code before the fix.
   ✅ **"Item possession count" excludes equipped copies (must sum both for
   the true total) -- also already correct and already tested.**
   `Item#item_operand`'s two branches read `party.item_count(id)` (bag-only)

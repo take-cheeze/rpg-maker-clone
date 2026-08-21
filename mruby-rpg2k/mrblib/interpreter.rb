@@ -1826,6 +1826,16 @@ module Game
     # companion, and its party status display is built out of them, so a
     # dismissed member used to be listed at level 0. Only an id the database has
     # no row for reads as 0.
+    #
+    # Attack/Defence/Intelligence/Agility read the actor's *state-adjusted*
+    # value, not its raw base stat: confirmed against EasyRPG's live source,
+    # `ControlVariables::Actor` (`src/game_interpreter_control_variables.cpp`),
+    # whose cases 6-9 call straight through `Game_Actor::GetAtk`/`GetDef`/
+    # `GetSpi`/`GetAgi` (`src/game_battler.cpp`), each routed through
+    # `AdjustParam` — the same halve/double-by-active-state mechanism this
+    # codebase's own `Game::Party#effective_atk`/`#effective_def`/
+    # `#effective_int`/`#effective_agi` already model and already use
+    # elsewhere (Simulated Attack's `#do_simulated_attack`, the Status menu).
     def actor_operand(cmd)
       actor = party.roster[cmd.param(5)]
       return 0 unless actor
@@ -1837,10 +1847,10 @@ module Game
       when 3 then actor.mp
       when 4 then actor.max_hp
       when 5 then actor.max_mp
-      when 6 then actor.atk
-      when 7 then actor.def
-      when 8 then actor.int
-      when 9 then actor.agi
+      when 6 then party.effective_atk(actor)
+      when 7 then party.effective_def(actor)
+      when 8 then party.effective_int(actor)
+      when 9 then party.effective_agi(actor)
       when 10, 11, 12, 13, 14 then actor.equipment[attr - 10] || 0
       else 0
       end
@@ -1851,6 +1861,15 @@ module Game
     # the same one Change Monster HP uses — and param6 the attribute (0 HP,
     # 1 SP, 2 max HP, 3 max SP, 4 attack, 5 defence, 6 spirit, 7 agility).
     # Outside a battle, or for a member that is not in this troop, it reads 0.
+    #
+    # Attack/Defence/Spirit/Agility read the enemy's *state-adjusted* value,
+    # the same citation as #actor_operand above (`ControlVariables::Enemy`'s
+    # cases 4-7 route through the identical `Game_Battler::GetAtk`/`GetDef`/
+    # `GetSpi`/`GetAgi`/`AdjustParam` chain) -- ported here via this class's
+    # own `Game::Battle#effective_atk`/`#effective_def`/`#effective_spi`/
+    # `#effective_agi`, the battle-Combatant-scoped counterpart of
+    # `Party#effective_*` above, already used elsewhere in this same battle
+    # engine (e.g. `#deal_attack_with_current_weapon`).
     def enemy_operand(cmd)
       foe = @battle && @battle.enemy(cmd.param(5))
       return 0 unless foe
@@ -1859,10 +1878,10 @@ module Game
       when 1 then foe.mp || 0
       when 2 then foe.max_hp
       when 3 then foe.max_mp || 0
-      when 4 then foe.atk
-      when 5 then foe.def
-      when 6 then foe.spi
-      when 7 then foe.agi
+      when 4 then @battle.effective_atk(foe)
+      when 5 then @battle.effective_def(foe)
+      when 6 then @battle.effective_spi(foe)
+      when 7 then @battle.effective_agi(foe)
       else 0
       end
     end

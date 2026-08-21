@@ -15479,6 +15479,47 @@ def party_state_with_states(states, skills = {})
     Game::Party.new(FakeActorDB.new(players, [1, 2], {}, skills, {}, states)), 1, 0, 0)
 end
 
+# Confirmed against EasyRPG's live source, `ControlVariables::Actor`
+# (`src/game_interpreter_control_variables.cpp`): its Attack/Defence/
+# Intelligence/Agility cases (6-9) call straight through `Game_Actor::
+# GetAtk`/`GetDef`/`GetSpi`/`GetAgi` (`src/game_battler.cpp`), each routed
+# through `AdjustParam` -- the same halve/double-by-active-state mechanism
+# ported here as `Game::Party#effective_atk`/`#effective_def`/`#effective_int`/
+# `#effective_agi`, already used elsewhere (Simulated Attack, the Status
+# menu). Reading a stat straight off the actor (`actor.atk`, its raw base
+# value) skips that adjustment entirely.
+check 'Control Variables reads an actor\'s state-adjusted Attack, not its ' \
+      'raw base stat (operand type 5)' do
+  states = { 2 => fake_state(affect_type: 0, affect_attack: true) } # 0 = halve
+  st = party_state_with_states(states)
+  hero = st.party.actor_by_id(1) # base atk 10
+  hero.add_state(2)
+  ic = Game::Interpreter::Cmd
+  interp = Game::Interpreter.new(st)
+  interp.start([FakeCmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 5, 1, 6])]) # actor 1, attribute 6 = Attack
+  interp.update while interp.running? && !interp.waiting?
+  eq 5, st.variables[1], 'halved from the raw base of 10, not the raw value itself'
+end
+
+# Same citation, `ControlVariables::Enemy`'s Attack/Defence/Spirit/Agility
+# cases (4-7), routed through this class's own battle-Combatant-scoped
+# `Game::Battle#effective_atk`/`#effective_def`/`#effective_spi`/
+# `#effective_agi`.
+check 'Control Variables reads a troop member\'s state-adjusted Defence, ' \
+      'not its raw base stat (operand type 8)' do
+  states = { 2 => fake_state(affect_type: 0, affect_defense: true) } # 0 = halve
+  foe = combatant('Slime', 5, 10, 5, 100) # base def 10
+  foe.states = [2]
+  b = Game::Battle.new([combatant('Hero', 10, 0, 10, 100)], [foe], Game::Rng.new(1), states)
+  st = new_state
+  interp = Game::Interpreter.new(st)
+  interp.battle = b
+  ic = Game::Interpreter::Cmd
+  interp.start([FakeCmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 8, 0, 5])]) # troop member 0, attribute 5 = Defence
+  interp.update while interp.running? && !interp.waiting?
+  eq 5, st.variables[1], 'halved from the raw base of 10, not the raw value itself'
+end
+
 check 'Change Condition prunes a state it displaces, and one that displaces it' do
   states = { 2 => display_state(name: 'Poison', priority: 30),
              3 => display_state(name: 'Petrify', priority: 90) }
