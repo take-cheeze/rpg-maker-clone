@@ -9945,6 +9945,36 @@ not yet verified:
   `#map_step_damaged?` itself (LOSE, bare GAIN, and mixed LOSE+GAIN-net-heal)
   and a new `scripts/rpg2k_scene_check.rb` end-to-end walking check, both
   confirmed to fail against the pre-fix code before the fix.
+- ✅ **A knocked-out party member's map-step status condition is no longer
+  skipped outright -- its SP component still applies, matching RPG_RT, even
+  though its HP component silently no-ops.**
+  `Game::Party#apply_map_step_damage` (`mruby-rpg2k/mrblib/game.rb`) opened
+  its per-actor loop with `next if actor.nil? || actor.dead?`, skipping a
+  KO'd member's affliction entirely. Confirmed against EasyRPG's actual C++
+  source: `Game_Party::ApplyStateDamage` (`src/game_party.cpp`) iterates
+  `GetActors()` with no alive/dead filter at all, for both its HP loop and
+  its SP loop. The dead-guard lives one level down, and asymmetrically:
+  `Game_Battler::ChangeHp` (`src/game_battler.cpp`) opens with `if
+  (IsDead()) { return 0; }`, but its sibling `Game_Battler::ChangeSp` has no
+  such guard whatsoever — an SP-draining or SP-regenerating state keeps
+  ticking on a KO'd member exactly as it would on a living one. RPG_RT's own
+  `damage` bool (this codebase's `#map_step_damaged?`) is likewise set
+  unconditionally in the lose branch, regardless of whether `ChangeHp`
+  actually changed anything. This codebase's own `#change_hp`/`#change_mp`
+  already correctly mirror that asymmetry (`return @hp if dead?` only on the
+  HP side) — the caller-side `actor.dead?` skip was the sole bug, discarding
+  a dead member's SP change, its "hit"-array membership, and its
+  contribution to `#map_step_damaged?` all at once. ~~The method's own doc
+  comment previously claimed "A member who is already down slips nothing at
+  all" as if it were a confirmed RPG_RT rule~~ — no such guard exists in the
+  cited source; corrected in place. Fixed by removing `|| actor.dead?` from
+  the loop's `next` guard, relying on `#change_hp`'s own existing internal
+  no-op for the HP half. Covered by extending the existing `scripts/
+  rpg2k_logic_check.rb` "map slip damage cannot kill" check (which had
+  locked in the old, wrong exclusion) to expect the dead member in the
+  returned array, and a new check proving a dead member's SP-only state
+  component still lands and still sets `#map_step_damaged?`, both confirmed
+  to fail against the pre-fix code before the fix.
 - ✅ **A Conditional Branch of an unrecognized type now takes the else branch,
   instead of always taking the true one.** Confirmed against EasyRPG's
   actual C++ source: `Game_Interpreter::CommandConditionalBranch`

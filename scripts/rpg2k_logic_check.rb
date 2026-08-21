@@ -15729,11 +15729,37 @@ check 'map slip damage cannot kill: it floors at 1 HP' do
   eq 1, hero.hp, 'and walking on keeps it there'
   eq false, st.party.all_dead?
 
-  # A member already down slips nothing at all.
+  # A member already down is not skipped outright -- EasyRPG's
+  # `Game_Party::ApplyStateDamage` iterates every actor with no alive/dead
+  # filter, and only `ChangeHp` (not the caller) has its own dead-guard, so a
+  # dead member's affliction is still reported as "hit" even though the HP
+  # loss itself silently no-ops via #change_hp.
   ally = st.party.actor_by_id(2)
   ally.add_state(2)
   ally.set_hp(0)
-  eq [hero], st.party.apply_map_step_damage(table, 3)
+  eq [hero, ally], st.party.apply_map_step_damage(table, 3)
+  eq 0, ally.hp, 'the HP loss itself still no-ops on a dead member'
+end
+
+# Ports EasyRPG's `Game_Battler::ChangeSp` (`src/game_battler.cpp`), which --
+# unlike `ChangeHp` -- carries no `IsDead()` guard at all: a map-step state's
+# SP component keeps applying to a KO'd member exactly as it would to a
+# living one, even though that same member's HP component is silently
+# absorbed by `ChangeHp`'s own dead-guard.
+check "a dead member's SP-draining state still applies, unlike its HP half" do
+  table = { 2 => fake_state(name: 'Drain', hp_map_steps: 1, hp_map_val: 5,
+                             sp_map_steps: 1, sp_map_val: 3) }
+  st = party_state
+  ally = st.party.actor_by_id(2)
+  ally.add_state(2)
+  ally.set_hp(0)
+  before_mp = ally.mp
+  hit = st.party.apply_map_step_damage(table, 1)
+  eq [ally], hit
+  eq 0, ally.hp, 'a dead member cannot lose HP it does not have'
+  eq before_mp - 3, ally.mp, 'but the same state\'s SP loss still lands'
+  eq true, st.party.map_step_damaged?,
+     'a dead-only affected member\'s own lose-type state still counts as damage'
 end
 
 check 'map slip damage: a GAIN-type state heals instead of draining, clamped to max_hp/max_sp' do

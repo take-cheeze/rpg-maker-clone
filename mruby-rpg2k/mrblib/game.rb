@@ -3723,8 +3723,21 @@ module Game
     # RPG_RT's rule, and it is why nothing on this path has to re-check for a
     # game over the way the twelve event commands that *can* wipe the party
     # do. A **gain** clamps to max_hp/max_sp the same way change_hp/change_mp
-    # already clamp an ordinary heal. A member who is already down slips
-    # nothing at all.
+    # already clamp an ordinary heal.
+    #
+    # A member who is already down does NOT slip nothing: EasyRPG's
+    # `Game_Party::ApplyStateDamage` (`src/game_party.cpp`) iterates
+    # `GetActors()` with no alive/dead filter at all, for both the HP and SP
+    # loops, and `Game_Battler::ChangeSp` (`src/game_battler.cpp`) carries no
+    # `IsDead()` guard of its own -- only `ChangeHp` does (`if (IsDead())
+    # return 0;`, matching this class's own `#change_hp`'s `return @hp if
+    # dead?`). So a KO'd member's own HP loss silently no-ops (already true
+    # via #change_hp), but an SP-draining/regenerating state on that same
+    # member still applies in full, and RPG_RT's `damage` bool -- set
+    # unconditionally in the lose branch regardless of whether `ChangeHp`
+    # actually changed anything -- still fires. This method mirrors that: it
+    # must not skip a dead actor outright, only rely on #change_hp's own
+    # internal no-op for the HP half.
     #
     # `table` is the database `situation` array; a caller without one (the seeded
     # harness fixtures) drains nothing. Returns the actors actually affected
@@ -3734,7 +3747,7 @@ module Game
       hit = []
       @map_step_damaged = false
       @actors.each do |actor|
-        next if actor.nil? || actor.dead?
+        next if actor.nil?
         hp = 0
         sp = 0
         actor.states.each do |id|
