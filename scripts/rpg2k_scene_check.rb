@@ -3234,6 +3234,49 @@ check 'Key Input Proc waits for a key, stores its code, then continues' do
   ok st.switches[5], 'the event continued after the key press'
 end
 
+check 'a waiting Key Input Proc issued from a Parallel Process is blocked ' \
+      '(not armed) while a message window is open, and retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandKeyInputProc` (`src/game_interpreter.cpp`, code 11610) resets the
+  # target variable to 0 every retried frame, *then* checks `if (wait &&
+  # Game_Message::IsMessageActive()) { return false; }` -- unconditionally,
+  # the same block-and-retry shape already ported for Show/Move/Erase
+  # Picture, Teleport/Recall to Location, Battle Processing/Enemy Encounter
+  # and a "show message"-flagged Change EXP/Level. A key held down while
+  # blocked must not resolve the proc the instant it becomes armed. Issued
+  # from a Parallel Process (not the foreground) since an autostart event
+  # does not even begin while a message window is already open -- it simply
+  # waits to start until the window closes, never actually reaching this
+  # command mid-block; a Parallel Process, unlike an autostart, keeps
+  # advancing and reaching new commands while a *different* interpreter's
+  # message window sits open (see Scene::Map#parallels_paused?), which is
+  # the scenario this fix actually guards against.
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4)
+  par.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 1, 1, 1, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(4, 4, par) })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+  # Held throughout, including while blocked -- Down, not Decision, since
+  # Decision is also this message window's own "advance/close" key and
+  # would close the very window this check means to hold open.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+
+  5.times { scene.update }
+  eq 0, st.variables[1], 'blocked -- the held key must not resolve a proc that never armed'
+  ok !st.switches[5], 'the command after it has not run either'
+
+  scene.send(:close_message)
+  scene.update # retries the same frame the window closes -- now actually arms
+  scene.update # samples the still-held key and resolves
+  eq 1, st.variables[1], 'Down stored code 1, once the window closed'
+  scene.update # the following command runs once the proc has resumed
+  ok st.switches[5], 'the event continued after the key press'
+end
+
 check 'Key Input Proc ignores keys it was not told to accept' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)

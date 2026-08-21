@@ -1321,7 +1321,13 @@ module Game
     #                     further-extended param list (out of scope, see
     #                     below). param7/param8 are a separate "timed input"
     #                     countdown-variable feature, still unmodelled.
-    # The interpreter only records the request and suspends on a :key_input
+    # A waiting proc (param1 set) first blocks-and-retries while a message
+    # window or choice list is open anywhere in the scene, the same as
+    # Show/Move/Erase Picture, Teleport/Recall to Location, Battle
+    # Processing/Enemy Encounter and a "show message"-flagged Change EXP/
+    # Level (#block_pending_key_input_command, see its own citation) -- a
+    # no-wait proc is never gated by this at all. Once past that, the
+    # interpreter only records the request and suspends on a :key_input
     # wait; the owning scene samples real input (triggered edges when waiting,
     # held state otherwise) and calls resume_key_input with the resulting code.
     # Numbers/Operators decoded into `accepted` are sampled by
@@ -1335,6 +1341,12 @@ module Game
     def do_key_input(cmd)
       var_id = cmd.param(0)
       wait = cmd.param(1) != 0
+      # RPG_RT clears the variable every retried frame while a waiting proc
+      # is pending, before it even checks whether a message window blocks it
+      # (`CommandKeyInputProc`'s own citation above) -- reset first, then
+      # check the block, so the reset still happens on every retry.
+      variables[var_id] = 0 if wait && var_id && var_id > 0
+      return if block_pending_key_input_command(wait)
       size = cmd.parameters.size
       accepted = { decision: cmd.param(3) != 0, cancel: cmd.param(4) != 0,
                    shift: false, down: false, left: false, right: false,
@@ -1364,9 +1376,6 @@ module Game
       end
       @input_variable = var_id
       @key_input_request = { wait: wait, accepted: accepted }
-      # RPG_RT clears the variable while a waiting proc is pending; a no-wait proc
-      # overwrites it below via the scene's immediate resume.
-      variables[var_id] = 0 if wait && var_id && var_id > 0
       @wait_kind = :key_input
       @waiting = true
     end
@@ -3644,6 +3653,31 @@ module Game
       return false unless show_msg && message_window_blocks_command?
       @index -= 1
       @wait_kind = :exp_level_blocked
+      @waiting = true
+      true
+    end
+
+    # A waiting Key Input Processing command block-and-retries the same way
+    # too, but only in its own wait mode -- confirmed directly against
+    # RPG_RT's live source: `Game_Interpreter::CommandKeyInputProc`
+    # (`src/game_interpreter.cpp`, code 11610) resets the target variable to
+    # 0 every retried frame first (`if (wait) { Main_Data::game_variables->
+    # Set(var_id, 0); ... }`), *then* checks `if (wait &&
+    # Game_Message::IsMessageActive()) { return false; }` -- unconditionally,
+    # not gated behind any edition/patch check, the same base RPG2000
+    # behaviour as Teleport/Recall to Location/Enemy Encounter. A no-wait
+    # proc (param1 clear) never calls `IsMessageActive` at all and always
+    # samples immediately, matching every other block-and-retry command's own
+    # flag-gated shape (Change EXP/Level's `show_msg`). Without this guard, a
+    # still-running parallel process's own Key Input Processing could resolve
+    # the instant an accepted key is pressed while a different event's
+    # message window still sits on screen, instead of waiting for it to
+    # close first -- the same bug class already fixed for the other four
+    # commands.
+    def block_pending_key_input_command(wait)
+      return false unless wait && message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :key_input_blocked
       @waiting = true
       true
     end

@@ -9696,6 +9696,43 @@ not yet verified:
   existing block-and-retry check just above) both retries and runs the
   command right after it on the very same frame the message window closes
   — both confirmed to fail against the pre-fix code before the fix.
+- ✅ **A waiting Key Input Processing command now blocks-and-retries while a
+  message window or choice list is open too, the fifth instance of the
+  block-and-retry shape already ported for Show/Move/Erase Picture,
+  Transfer Player / Recall to Location, Battle Processing / Enemy Encounter
+  and a "show message"-flagged Change EXP / Change Level (2026-08-21).**
+  Confirmed against EasyRPG's actual C++ source: `Game_Interpreter::
+  CommandKeyInputProc` (`src/game_interpreter.cpp`, code 11610) resets the
+  target variable to 0 every retried frame first (`if (wait) {
+  Main_Data::game_variables->Set(var_id, 0); ... }`), *then* checks `if
+  (wait && Game_Message::IsMessageActive()) { return false; }` —
+  unconditionally, not gated behind any edition/patch check, the same base
+  RPG2000 behaviour already confirmed for Teleport/Recall to Location/Enemy
+  Encounter. A no-wait proc (param1 clear) never calls `IsMessageActive` at
+  all and always samples immediately, matching Change EXP/Level's own
+  `show_msg`-gated shape. `Interpreter#do_key_input`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) armed the wait unconditionally, with
+  no equivalent guard at all — most concretely reachable through a Parallel
+  Process: a still-running Common Event's own waiting Key Input Processing
+  command could resolve the instant an accepted key is pressed while a
+  *different* interpreter's message window sat open on screen, instead of
+  waiting for it to close first, exactly the bug class already fixed for
+  the other four commands. Fixed by adding `#block_pending_key_input_command`
+  (identical shape to `#block_pending_picture_command` et al., gated on the
+  command's own `wait` flag the same way `#block_pending_exp_level_command`
+  gates on `show_msg`) and calling it from `do_key_input` right after the
+  variable reset — matching `CommandKeyInputProc`'s own reset-then-check
+  order exactly, so the reset still happens on every retried frame — and by
+  adding a `:key_input_blocked` case to both `Scene::Map` dispatchers
+  (foreground and Parallel Process), including the same-frame
+  continuation the four sibling `_blocked` kinds already carry. Covered by
+  a new `scripts/rpg2k_scene_check.rb` check (issued from a Parallel
+  Process, since a foreground autostart never even reaches this code
+  path — it simply refuses to begin at all while a message window is
+  already open, unlike a Parallel Process which keeps advancing during one;
+  a key held down throughout is proven not to resolve a proc that never
+  armed, then resolves once the window closes), confirmed to fail against
+  the pre-fix code before the fix.
 - ✅ **An ally's equipped shield/armor/helmet/accessory can now resist a
   status effect from landing at all, instead of only its A-E susceptibility
   rank ever mattering.** Confirmed against EasyRPG's actual C++ source:
