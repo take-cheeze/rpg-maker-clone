@@ -2426,17 +2426,19 @@ module Game
 
     # Which weapon governs swing index `i` (0-based) of a two-weapon actor's
     # basic Attack -- EasyRPG's `Normal::GetWeapon`/`weapon_style`
-    # (`src/game_battlealgorithm.cpp`): the primary (weapon-slot) weapon's
-    # own hit count worth of swings, then the secondary (shield-slot)
-    # weapon's, each contributing *its own* hit rate / elemental attributes /
-    # weapon states / crit bonus rather than the merged max/union
-    # `#attack_hit_rate`/`#weapon_attributes`/`#weapon_states`/
-    # `#weapon_crit_bonus` compute across every equipped weapon-type item
-    # (correct for the ordinary single-weapon case, wrong once a second,
-    # *different* weapon governs a later swing). `Battle#deal_attack` reads
-    # this per swing; nil when fewer than two weapons are equipped, so it
-    # falls back to the ordinary merged Combatant fields.
+    # (`src/game_battlealgorithm.cpp`): `Init` only sets `weapon_style`
+    # (and so only lets `GetWeapon` return a specific slot) when
+    # `style == Style_MultiHit`, and `GetDefaultStyle` picks that style only
+    # under `Feature::HasRpg2k3BattleSystem()` -- RPG2000 (and an RPG2003
+    # game running the legacy 2k battle system) instead uses
+    # `Style_Combined`, where `weapon_style` stays `-1` and `GetWeapon`
+    # always returns `WeaponAll`, so *every* swing reads the merged max/union
+    # `GetHitChance`/etc. across both weapons, never one weapon's own data.
+    # So this per-swing split only applies to RPG2003; nil for a non-2003
+    # actor falls back to the ordinary merged Combatant fields, which is
+    # correct there regardless of how many weapons are equipped.
     def swing_weapon_data(i)
+      return nil unless rpg2003?
       weapons = equipped_weapons
       return nil unless weapons.size >= 2
       w1, w2 = weapons[0, 2]
