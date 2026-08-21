@@ -12041,13 +12041,18 @@ module Game
     # the one real, un-patched RPG_RT always runs; EasyRPG's other two named
     # algorithms, `AttackOnly` and `RpgRtImproved`, are its own optional,
     # non-default customizations and are not modelled here). The ranking
-    # deliberately mirrors EasyRPG's `CalcNormalAttackAutoBattleTargetRank` /
-    # `CalcSkillAutoBattleTargetRank` at `apply_variance: false` and does not
-    # layer the RPG2003 row modifiers (#row_adjusted?) into its per-target
-    # score -- the actual hit/damage a thrown attack lands (#deal_attack /
-    # #to_hit) is where those apply, and a ranking heuristic need not double-
-    # count them, so a front-row actor's +25% shows up in the damage it deals
-    # rather than being pre-empted in its auto-battle preference.
+    # mirrors EasyRPG's `CalcNormalAttackAutoBattleTargetRank` /
+    # `CalcSkillAutoBattleTargetRank` at `apply_variance: false` --
+    # `CalcNormalAttackAutoBattleTargetRank` (`src/autobattle.cpp`) computes
+    # its own `base_effect` via `Algo::CalcNormalAttackEffect`
+    # (`src/algo.cpp`), the *identical* function the real attack execution
+    # calls (`Game_BattleAlgorithm::Normal::Execute`,
+    # `src/game_battlealgorithm.cpp:716`) -- so real RPG_RT's ranking pass
+    # and the damage a thrown attack actually deals share the same RPG2003
+    # row modifiers (#row_adjusted?) and state-adjusted ATK/DEF
+    # (#effective_atk/#effective_def) by construction, not merely as an
+    # equivalent approximation. `#auto_battle_attack_target_rank` layers
+    # both in for exactly that reason (see its own citation).
     def choose_auto_battle_command(b)
       best_skill = nil
       best_sid = nil
@@ -12211,23 +12216,42 @@ module Game
     # EasyRPG's `CalcNormalAttackAutoBattleTargetRank`, `apply_variance:
     # false` (RpgRtCompat's own `attack_variance` flag) -- the base swing
     # (`Battle.attack_damage`, the same `atk/2 - def/4` formula #deal_attack
-    # itself hits with) is never spread by variance here, only scaled by the
-    # attacker's own weapon-Attribute multiplier. `emulate_bugs: true` skips
-    # the dual-wield swing-count multiplier entirely -- real RPG_RT's own
-    # documented bug, "Dual Attack is ignored" for ranking purposes, even
-    # though the swing itself still lands twice once actually thrown (see
-    # `Combatant#strike_count`, untouched by this). The `*1.5+0.5` first-
-    # enemy bonus and the final jitter-plus-`*1.5` reshaping both mirror
-    # `#auto_battle_damage_rank`'s and this function's own C++ counterpart
-    # exactly -- note the jitter step here runs unconditionally whenever
-    # `target` exists and this rank is positive, stacking with (not
-    # replacing) the first-enemy bonus above it, matching the source's own
-    # two independent `rank = rank*1.5+...` lines rather than folding them
-    # into one.
+    # itself hits with) is never spread by variance here. Confirmed against
+    # RPG_RT's own live source: `CalcNormalAttackAutoBattleTargetRank`
+    # (`src/autobattle.cpp`) computes its own `base_effect` by calling
+    # `Algo::CalcNormalAttackEffect` (`src/algo.cpp`) -- the *identical*
+    # function `Game_BattleAlgorithm::Normal::Execute`
+    # (`src/game_battlealgorithm.cpp:716`) calls to resolve the real swing --
+    # so the ranking pass reads the same state-adjusted ATK/DEF
+    # (`Game_Battler::GetAtk`/`GetDef`, ported here as #effective_atk/
+    # #effective_def) and the same RPG2003 attacker/defender row adjustment
+    # (`Feature::HasRow() && IsRowAdjusted(...)`, ported here as
+    # #row_adjusted?) the real attack applies, in the same order (attacker
+    # row -> weapon-Attribute multiplier -> defender row) -- not merely an
+    # equivalent approximation, but literally the same calculation call. A
+    # prior version of this comment (and of `#choose_auto_battle_command`'s
+    # own, see its citation) claimed the opposite -- that RPG_RT's own
+    # ranking pass deliberately omits row modifiers to avoid "double
+    # counting" them against the real attack -- an unverified, plausible-
+    # sounding inference rather than something read off this function's own
+    # source; the two calculations are not independent at all. `emulate_bugs:
+    # true` skips the dual-wield swing-count multiplier entirely -- real
+    # RPG_RT's own documented bug, "Dual Attack is ignored" for ranking
+    # purposes, even though the swing itself still lands twice once actually
+    # thrown (see `Combatant#strike_count`, untouched by this). The
+    # `*1.5+0.5` first-enemy bonus and the final jitter-plus-`*1.5`
+    # reshaping both mirror `#auto_battle_damage_rank`'s and this function's
+    # own C++ counterpart exactly -- note the jitter step here runs
+    # unconditionally whenever `target` exists and this rank is positive,
+    # stacking with (not replacing) the first-enemy bonus above it, matching
+    # the source's own two independent `rank = rank*1.5+...` lines rather
+    # than folding them into one.
     def auto_battle_attack_target_rank(b, target)
       return 0.0 unless target && !target.out_of_play?
-      dmg = Battle.attack_damage(b.atk || 0, target.def || 0)
+      dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
+      dmg = 125 * dmg / 100 if row_adjusted?(b, true)
       dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
+      dmg = 75 * dmg / 100 if row_adjusted?(target, false)
       tgt_hp = target.hp
       return 0.0 if tgt_hp <= 0
       rank = [dmg, tgt_hp].min.to_f / tgt_hp

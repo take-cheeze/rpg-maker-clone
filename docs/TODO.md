@@ -10066,6 +10066,43 @@ not yet verified:
   `#auto_battle_raw_cost` directly against both an RPG2000 and an RPG2003
   `Game::Battle`, confirmed to fail against the pre-fix code (`expected 10,
   got 50`) before the fix.
+- ✅ **A Forced-AI actor's own plain-Attack ranking now layers the same
+  RPG2003 row bonus/penalty and state-adjusted Defence/Spirit the real
+  attack deals, instead of a flatter, unadjusted approximation.**
+  `Game::Battle#auto_battle_attack_target_rank` (`mruby-rpg2k/mrblib/
+  game.rb`) computed `Battle.attack_damage(b.atk, target.def)` straight off
+  each combatant's raw base stats. RPG_RT's own
+  `CalcNormalAttackAutoBattleTargetRank` (`src/autobattle.cpp`) instead
+  calls `Algo::CalcNormalAttackEffect` (`src/algo.cpp`) for its
+  `base_effect` term — the *identical* function
+  `Game_BattleAlgorithm::Normal::Execute` (`src/game_battlealgorithm.cpp`)
+  calls to resolve the real swing. That function reads `Game_Battler::
+  GetAtk`/`GetDef` (already state- and equipment-adjusted via
+  `AdjustParam`) and, when `Feature::HasRow()`, applies the same
+  `IsRowAdjusted` 125%/75% front/back-row multiplier the real attack gets.
+  So a Forced-AI actor's own ranking of a plain Attack shares its formula
+  with the attack it would actually deal, not an independent
+  approximation — a front-row Forced-AI actor (or one targeting a
+  back-row/state-weakened foe) under-ranked plain Attack relative to a
+  competing Skill, and could pick the worse of the two. Fixed by routing
+  through the same `#effective_atk`/`#effective_def` (`AdjustParam`-based)
+  helpers and `#row_adjusted?` 125%/75% multiplier `#deal_attack_with_
+  current_weapon` already uses for the real attack.
+  ~~A prior version of this file's `#choose_auto_battle_command` doc
+  comment claimed ranking "deliberately... does not layer the RPG2003 row
+  modifiers... a ranking heuristic need not double-count them."~~ That was
+  an unverified, plausible-sounding inference rather than something read
+  off `CalcNormalAttackAutoBattleTargetRank`'s own source, and is corrected
+  in both doc comments now. Covered by two new `scripts/
+  rpg2k_logic_check.rb` checks calling `#auto_battle_attack_target_rank`
+  directly: a front-row-vs-back-row `Game::Battle.from_actor` attacker pair
+  (rigged with a low-Defence enemy so the 25% swing survives Ruby's
+  integer-division truncation, plus a front-row "dummy" ally on each side
+  so the constructor's own RPG2003 row-safety-net — which force-resets
+  every ally to front row if none of them can otherwise act from
+  there — doesn't overwrite the lone back-row attacker under test), and a
+  plain-vs-Defence-halving-state target pair, both confirmed to fail
+  against the pre-fix code before the fix.
 - ✅ **Enter Hero Name (10740) issued from a Parallel Process now actually
   opens the name-entry screen, instead of silently doing nothing.**
   Confirmed against EasyRPG's actual C++ source:
