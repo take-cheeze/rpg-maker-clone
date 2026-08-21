@@ -4980,8 +4980,9 @@ class RPG2k
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
-                  window: nil, gold: build_shop_gold_window, status: nil,
-                  terms: shop_terms(req[:type]), browsed: false, interp: it }
+                  cmd_index: 0, window: nil, gold: build_shop_gold_window,
+                  status: nil, terms: shop_terms(req[:type]), browsed: false,
+                  interp: it }
         draw_shop
       end
 
@@ -5355,8 +5356,22 @@ class RPG2k
         # shopkeeper's line on returning to the command menu switches from a
         # first-time greeting to "anything else?" for the rest of it.
         @shop[:browsed] = true if screen == :buy || screen == :sell
+        # The command menu's own cursor position persists across a trip into
+        # Buy/Sell and back, rather than always snapping to the first row --
+        # confirmed against EasyRPG's actual C++ source: `Window_Shop`
+        # (`src/window_shop.cpp`) sets `index = 1` (the Buy row) exactly once,
+        # in its constructor; neither `Refresh()` nor `SetMode()` (called by
+        # `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`'s own Cancel
+        # branch, `src/scene_shop.cpp`, to return to `BuySellLeave2`) ever
+        # touches `index` again. So cancelling out of the Sell list, say,
+        # returns to the command menu with Sell still highlighted, not Buy.
+        # Saved/restored here rather than in a fresh field per screen, since
+        # only the command menu has a cursor position worth remembering
+        # across a screen change -- Buy/Sell/the quantity counter always
+        # start a fresh browse at their own first row.
+        @shop[:cmd_index] = @shop[:index] if @shop[:screen] == :command
         @shop[:screen] = screen
-        @shop[:index] = 0
+        @shop[:index] = screen == :command ? (@shop[:cmd_index] || 0) : 0
         draw_shop
       end
 

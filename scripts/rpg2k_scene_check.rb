@@ -14444,6 +14444,50 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
      'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Window_Shop`
+# (`src/window_shop.cpp`) sets `index = 1` (the Buy row) exactly once, in
+# its constructor; neither `Refresh()` nor `SetMode()` (called by
+# `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`'s own Cancel
+# branch, `src/scene_shop.cpp`, to return to `BuySellLeave2`) ever touches
+# `index` again. So the command menu's own cursor persists across a trip
+# into Buy or Sell and back, rather than always snapping back to the first
+# row (Buy).
+check 'Open Shop scene: the command cursor stays on Sell after cancelling ' \
+      'out of the sell list, not snapping back to Buy' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)]
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  eq 0, shop[:index], 'starts on the first row (Buy)'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto Sell
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq 1, shop[:index], 'now on the second row (Sell)'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # enter the sell list
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen]
+
+  RGSS::Input.triggered = [RGSS::Input::B] # cancel back to the command menu
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  eq 1, shop[:index],
+     'the cursor is still on Sell, not reset to Buy (row 0)'
+end
+
 check 'Open Shop scene: buying shows the shop_purchased confirmation, then returns ' \
       'to the buy list' do
   ic = Game::Interpreter::Cmd

@@ -1367,6 +1367,29 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmation; the gold panel hides on the command menu and the sell list
   and shows on the quantity counter), both confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-21): cancelling out of the Buy or Sell list back to
+  the command menu always snapped the command cursor onto Buy, instead of
+  leaving it wherever the player had it.** Confirmed against EasyRPG's
+  actual C++ source: `Window_Shop` (`src/window_shop.cpp`) sets `index = 1`
+  (the Buy row) exactly once, in its constructor; neither `Refresh()` nor
+  `SetMode()` (called by `Scene_Shop::UpdateBuySelection`/
+  `UpdateSellSelection`'s own Cancel branch, `src/scene_shop.cpp`, to return
+  to `BuySellLeave2`) ever touches `index` again — so cancelling out of the
+  Sell list, say, returns to the command menu with Sell still highlighted,
+  not Buy. `#shop_switch` (`mruby-rpg2k/mrblib/scene/map.rb`) is the one
+  method used both to *enter* Buy/Sell from the command menu (where a fresh
+  `index: 0` is correct) and to *return* to the command menu from a list
+  (where it wrongly applied the same reset) — this codebase's single shared
+  `@shop[:index]` field, reused across all four shop screens, has no
+  equivalent to `Window_Shop`'s own persistent per-widget cursor. Fixed with
+  a new `@shop[:cmd_index]` field that `#shop_switch` saves the command
+  menu's cursor into on the way out and restores on the way back, while
+  every other screen (Buy, Sell, the quantity counter) still always starts
+  fresh at row 0. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  (moving the command cursor onto Sell, entering the sell list, then
+  cancelling back out leaves the cursor on Sell, not reset to Buy),
+  confirmed to fail against the pre-fix code (`expected 1, got 0`) before
+  the fix.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
