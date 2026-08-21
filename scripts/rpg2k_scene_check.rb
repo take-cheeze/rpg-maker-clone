@@ -912,6 +912,34 @@ check 'RPG2k::Window blinks its selection cursor between the windowskin\'s ' \
   eq 64, bmp.blt_calls.first[3].x, 'wraps back to the steady cursor block (64)'
 end
 
+check "RPG2k::Window keeps its selection cursor visible, frozen, once " \
+      'inactive -- it does not hide it' do
+  # Confirmed against RPG_RT's own live source: `Window::Draw`'s cursor
+  # block (`src/window.cpp`) reads only `cursor_rect`/`cursor_frame`, with
+  # no `active` check anywhere -- `active` only gates whether
+  # `Window::Update` keeps *advancing* (blinking) `cursor_frame` at all.
+  win = RPG2k::Window.new(0, 0, 64, 64)
+  win.windowskin = Bitmap.new('System/Skin1', true)
+  win.cursor_rect = Rect.new(0, 0, 16, 16)
+  bmp = win.instance_variable_get(:@cursor_bmp)
+  ok bmp.blt_calls && !bmp.blt_calls.empty?, 'sanity: drawn while active'
+
+  bmp.clear_blt_calls
+  win.active = false
+  ok bmp.blt_calls && !bmp.blt_calls.empty?,
+     'still drawn the instant it goes inactive, not hidden'
+  eq 64, bmp.blt_calls.first[3].x,
+     'frozen on whatever frame it stopped at (still the steady block here)'
+
+  # 20+ frames of #update while inactive never advance/blink it (the
+  # already-correct half of this gate) -- and, per the fix, never hide it
+  # either: the frozen bitmap from the moment it went inactive stays put.
+  bmp.clear_blt_calls
+  25.times { win.update }
+  ok bmp.blt_calls.nil? || bmp.blt_calls.empty?,
+     'an inactive window never redraws its cursor from #update at all'
+end
+
 check 'Scene::Map builds and ticks with no events without raising' do
   scene = new_scene({})
   30.times { scene.update }

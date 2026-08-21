@@ -436,9 +436,18 @@ class RPG2k
     # rather than as a flat bar; Game::WindowCursor holds the geometry measured
     # off a genuine RPG_RT frame. Without a windowskin there is nothing to blit,
     # so the old solid bar stays as the fallback.
+    #
+    # An inactive window still draws its cursor -- confirmed against RPG_RT's
+    # own live source: `Window::Draw`'s cursor block (`src/window.cpp`) reads
+    # only `cursor_rect`/`animation_frames`/`cursor_frame`, with no `active`
+    # check anywhere; `active` only gates whether `Window::Update` keeps
+    # *advancing* `cursor_frame` (and so blinking) at all -- an inactive
+    # window's highlight simply freezes on whichever frame it last stopped at
+    # instead of vanishing. `#update`'s own `@cursor_frame` advance already
+    # ports that `active` gate correctly; this method used to add a second,
+    # uncited one of its own that hid the highlight outright.
     def draw_cursor
       @cursor_bmp.clear
-      return unless @active
       r = @cursor_rect
       return if r.width <= 0 || r.height <= 0
 
