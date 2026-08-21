@@ -1484,6 +1484,25 @@ check 'a same-layer event still blocks the hero' do
   eq [0, 0], [st.x, st.y], 'a same-layer event still blocks like a normal character'
 end
 
+check "a same-layer event with its own Through Mode on lets the hero walk " \
+      'straight through it' do
+  # Confirmed against EasyRPG's actual C++ source: `WouldCollide` (`src/
+  # game_map.cpp`) checks `self.GetThrough() || other.GetThrough()` first
+  # and unconditionally, before any layer test at all -- a blocker's own
+  # Through Mode (a common authoring technique so an NPC never blocks the
+  # party) exempts it from collision the same way the mover's own Through
+  # Mode already does, uniformly for the hero, another event, or a vehicle.
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  chars(scene)[1].through = true
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [1, 0], [st.x, st.y],
+     "Through Mode on the blocking event should let the hero pass it, got #{[st.x, st.y]}"
+end
+
 check 'events on different layers pass through each other via Move Route' do
   # A below-layer event sits at (3,2); an above-layer event runs a custom
   # route straight through its column. #char_passable? gates layer on an
@@ -1535,6 +1554,26 @@ check 'two below-layer events collide with each other via Move Route' do
   40.times { scene.update }
   eq [2, 2], [ch.x, ch.y],
      "two below-layer events should still collide with each other, got #{[ch.x, ch.y]}"
+end
+
+check "an event's own Through Mode lets another event's Move Route pass " \
+      'through it, even on a matching layer' do
+  # The event-vs-event equivalent of "a same-layer event with its own
+  # Through Mode on lets the hero walk straight through it" above:
+  # `WouldCollide` (`src/game_map.cpp`) checks `self.GetThrough() ||
+  # other.GetThrough()` before the layer-match test, so a blocking event's
+  # own Through Mode exempts it from #char_passable?'s layer gate too, not
+  # just #passable?'s.
+  below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => below, 2 => mover }, player: [0, 0])
+  chars(scene)[1].through = true
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [3, 2], [ch.x, ch.y],
+     "Through Mode on the blocking event should let the mover cross it, got #{[ch.x, ch.y]}"
 end
 
 check 'overlap_forbidden does not block the hero on an ordinary step' do
