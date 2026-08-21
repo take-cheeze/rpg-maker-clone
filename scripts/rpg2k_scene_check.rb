@@ -8848,15 +8848,20 @@ check 'the airship crosses a tile in half the frames walking on foot takes' do
      "the airship's slide is exactly half the length of the on-foot one"
 end
 
-check 'the airship cannot land on a tile a map event occupies unless it has Through Mode on' do
+check 'the airship cannot land on a tile a map event occupies, Through ' \
+      'Mode or not' do
   # yado.tk: an airship can never land on a tile a map event occupies,
   # regardless of terrain. Flying itself ignores events entirely
   # (#vehicle_passable?'s airship branch never reads @event_tiles), so the
   # airship can cruise -- and be boarded -- directly over a below-characters
   # event a walking hero would just as happily overlap; landing there must
-  # still refuse it, the same vehicle-specific "any layer, only the blocking
-  # event's own Through Mode lets it through" rule already confirmed for a
-  # boarded boat/ship (see the boat/below-characters-event check above).
+  # still refuse it. Confirmed against RPG_RT's own live source:
+  # `Game_Map::CanLandAirship` (`src/game_map.cpp`) is a standalone loop
+  # over every event's `IsInPosition`/`IsActive`/`GetActivePage`, entirely
+  # separate from `WouldCollide`/`CheckOrMakeWayEx` (the function
+  # #vehicle_passable?'s own boat/ship rule reads Through Mode from) -- it
+  # never reads Through Mode at all, so an event with Through Mode ON still
+  # blocks a landing, unlike a boat/ship's own movement collision.
   blocker = event(0, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
   scene = new_scene({ 1 => blocker }, player: [0, 0], airship_land: true)
   st = scene.instance_variable_get(:@state)
@@ -8876,13 +8881,13 @@ check 'the airship cannot land on a tile a map event occupies unless it has Thro
   RGSS::Input.triggered = []
   eq :airship, st.boarded, 'a below-characters event on the tile still blocked landing'
 
-  # Turn the blocking event's own Through Mode on and try again: now it lands.
+  # Turn the blocking event's own Through Mode on and try again: still
+  # blocked -- CanLandAirship never reads Through Mode at all.
   chars(scene)[1].through = true
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  ok !st.boarded?, 'Through Mode on the blocking event let the airship land'
-  eq [0, 0], [st.x, st.y], 'the party stands where the airship touched down'
+  eq :airship, st.boarded, 'Through Mode on the blocking event does not let the airship land'
 end
 
 check 'an unridden boat/ship blocks the hero on foot, but an unridden airship does not' do

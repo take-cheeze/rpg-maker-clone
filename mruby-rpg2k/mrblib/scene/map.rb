@@ -2387,15 +2387,24 @@ class RPG2k
       # ignores events entirely (#vehicle_passable?'s airship branch never
       # reads @event_tiles, so the airship can cruise directly over a
       # below-characters event a walking hero would just as happily overlap),
-      # so this is the one place events reach it at all — and, once they do,
-      # this follows the same vehicle-specific rule #vehicle_passable? already
-      # uses for a boat/ship (`!blocker[:char].through`): any layer blocks,
-      # priority-type/overlap_forbidden gating is ignored entirely, and only
-      # the blocking event's own Through Mode lets it through. A tile with no
-      # terrain data (a bare fixture) is landable.
+      # so this is the one place events reach it at all. Confirmed against
+      # RPG_RT's own live source: `Game_Map::CanLandAirship`
+      # (`src/game_map.cpp`) is a standalone loop -- `if (ev.IsInPosition(x,
+      # y) && ev.IsActive() && ev.GetActivePage() != nullptr) return false;`
+      # -- entirely separate from `WouldCollide`/`CheckOrMakeWayEx` (the
+      # function `#vehicle_passable?`'s own boat/ship rule legitimately
+      # reads `GetThrough()` from). `CanLandAirship` never reads Through
+      # Mode at all: any event with a currently-active page blocks a
+      # landing, Through Mode or not -- unlike a boat/ship's own movement
+      # collision, an airship landing is not itself a "pass through" move,
+      # it is occupying the ground tile outright. `blockers_at` already only
+      # ever indexes an event with a currently active page (the same
+      # `IsActive() && GetActivePage() != nullptr` test), so any blocker it
+      # returns here blocks unconditionally. A tile with no terrain data (a
+      # bare fixture) is landable.
       def airship_landable?(x, y)
         return false unless @map.in_bounds?(x, y)
-        return false if blockers_at(x, y).any? { |b| !b[:char].through }
+        return false if blockers_at(x, y).any?
         # A Boat/Ship parked on the ground blocks a landing too, matching
         # `Game_Map::CanLandAirship`'s own `for (auto vid: { Boat, Ship })`
         # loop (`src/game_map.cpp`) -- see `#vehicle_blocks?`.
