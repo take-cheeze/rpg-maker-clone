@@ -11446,14 +11446,29 @@ module Game
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
         return nil unless target
-        # Berserk (attack-enemy) forces a single target even with an
+        # ~~Berserk (attack-enemy) forces a single target even with an
         # attack_all weapon in hand; confusion (attack-ally) still spreads
         # one, same as an unforced Attack would (デフォ戦botまとめ: "Berserk
         # additionally collapses an 'attack all' weapon down to a single
-        # target").
+        # target").~~ Corrected against RPG_RT's own live source:
+        # `Scene_Battle_Rpg2k::SelectNextActor` (`src/scene_battle_rpg2k.cpp`)
+        # constructs an *identical* single-target `Game_BattleAlgorithm::
+        # Normal(active_actor, random_target)` for both
+        # `Restriction_attack_ally` and `Restriction_attack_enemy` -- the same
+        # `switch` just picks which side `GetRandomActiveBattler()` draws
+        # from -- and `Normal::vStart()` (`src/game_battlealgorithm.cpp`) then
+        # unconditionally re-expands *any* single-target Normal algorithm to
+        # its target's whole side whenever the weapon carries attack_all
+        # (`GetOriginalPartyTarget() == nullptr && source->HasAttackAll(...)`
+        # -- true for every single-`Game_Battler*`-constructed Normal,
+        # forced or not), with no restriction check anywhere in that path.
+        # `SelectNextActor`'s own inline comment ("RPG_RT doesn't support
+        # 'Attack All' weapons when battler is confused or provoked") is
+        # itself stale against the actual `vStart()` code EasyRPG runs --
+        # the code, not the comment, is what real RPG_RT executes.
         pay_weapon_sp_cost(b)
         hits = combo_hits(b, :attack)
-        return swing_side(b, side_targets(target), hits) if r == RESTRICTION_ATTACK_ALLY && b.attack_all
+        return swing_side(b, side_targets(target), hits) if b.attack_all
         return swing(b, target, hits)
       end
       # A combo multiplies a skill's hits (SP paid once), never an item's --
