@@ -5634,7 +5634,17 @@ class RPG2k
       # long-vowel mark, then a symbol row, and a final row of six kana plus
       # the page-toggle and confirm cells (each drawn two columns wide, so the
       # last row fills the same 10 columns as the rows above it).
-      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ゔ] + %i[toggle confirm]).freeze
+      # Confirmed against EasyRPG's actual C++ source: `Window_Keyboard::
+      # layouts[]` (`src/window_keyboard.cpp`), the real RPG_RT keyboard
+      # table -- the ま/マ row's small kana column order is っゃゅょゎ, not
+      # ゃゅょっー (small-tsu had drifted three columns right, and the last
+      # column was a stray duplicate of the ー already on the row below,
+      # rather than small-wa ゎ/ヮ); the last row's "vu" cell is katakana
+      # ヴ on *both* the hiragana and katakana pages in the reference table
+      # (hiragana has no glyph of its own there), not hiragana ゔ on the
+      # hiragana page; and the や/ヤ row's final cell is the white star ☆
+      # (U+2606), not the black star ★ (U+2605).
+      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ヴ] + %i[toggle confirm]).freeze
       NAME_KANA_LAST_KATAKANA = (%w[ラ リ ル レ ロ ヴ] + %i[toggle confirm]).freeze
       NAME_HIRAGANA_ROWS = [
         %w[あ い う え お が ぎ ぐ げ ご],
@@ -5643,8 +5653,8 @@ class RPG2k
         %w[た ち つ て と ば び ぶ べ ぼ],
         %w[な に ぬ ね の ぱ ぴ ぷ ぺ ぽ],
         %w[は ひ ふ へ ほ ぁ ぃ ぅ ぇ ぉ],
-        %w[ま み む め も ゃ ゅ ょ っ ー],
-        %w[や ゆ よ わ ん ー 〜 ・ ＝ ★],
+        %w[ま み む め も っ ゃ ゅ ょ ゎ],
+        %w[や ゆ よ わ ん ー 〜 ・ ＝ ☆],
         NAME_KANA_LAST_HIRAGANA
       ].freeze
       NAME_KATAKANA_ROWS = [
@@ -5654,8 +5664,8 @@ class RPG2k
         %w[タ チ ツ テ ト バ ビ ブ ベ ボ],
         %w[ナ ニ ヌ ネ ノ パ ピ プ ペ ポ],
         %w[ハ ヒ フ ヘ ホ ァ ィ ゥ ェ ォ],
-        %w[マ ミ ム メ モ ャ ュ ョ ッ ー],
-        %w[ヤ ユ ヨ ワ ン ー 〜 ・ ＝ ★],
+        %w[マ ミ ム メ モ ッ ャ ュ ョ ヮ],
+        %w[ヤ ユ ヨ ワ ン ー 〜 ・ ＝ ☆],
         NAME_KANA_LAST_KATAKANA
       ].freeze
       NAME_KANA_COLS = 10

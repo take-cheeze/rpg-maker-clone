@@ -5088,6 +5088,31 @@ The work below is roughly ordered by the critical path to a walkable game
   keeps the widget open without resuming the event; confirming again with
   the refilled name then closes it normally), both confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-21): the kana grid's own character table had three
+  cells scrambled or outright wrong, typed from memory rather than ported
+  from real data.** Confirmed against EasyRPG's actual C++ source:
+  `Window_Keyboard::layouts[]` (`src/window_keyboard.cpp`), the real RPG_RT
+  keyboard table. `NAME_HIRAGANA_ROWS`/`NAME_KATAKANA_ROWS`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) had the ま/マ row's small-kana columns
+  as ゃゅょっー — small-tsu (っ) had drifted three columns right of its real
+  position (column 5, right after the base も/モ row), and the final column
+  was a stray duplicate of the ー already one row below, rather than
+  small-wa (ゎ/ヮ). `NAME_KANA_LAST_HIRAGANA`'s own "vu" cell used hiragana
+  ゔ, where the reference table uses katakana ヴ on *both* the hiragana and
+  katakana pages (hiragana has no canonical vu glyph of its own here) — the
+  katakana constant already had this right, only the hiragana one was
+  wrong. The や/ヤ row's final cell was also the black star ★ (U+2605)
+  where the reference uses the white star ☆ (U+2606). None of these three
+  constants carried a source citation, unlike almost everything else in
+  this file. This is inert game data, not a control-flow method, so it sits
+  in no other fix's call chain and has no sibling call site to have caught
+  it — `NAME_CHARS`/`NAME_CELLS`, the separate Latin-alphabet page, was
+  already correct and untouched. Fixed by correcting the three data
+  literals to match the cited table exactly. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (the ま row matches the reference
+  table cell-for-cell; typing the corrected small-tsu and small-wa cells
+  produces the right characters; the hiragana page's own "vu" cell is
+  katakana ヴ), confirmed to fail against the pre-fix code before the fix.
 - ✅ **The same "silent embedded widget" family, found once more: Open Shop
   and Show Inn played zero sound effects at all (2026-08-18).** Verified
   against RPG_RT's actual behavior via EasyRPG Player's own C++ source,

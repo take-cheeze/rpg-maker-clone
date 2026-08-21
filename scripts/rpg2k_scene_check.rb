@@ -8121,6 +8121,51 @@ check 'Enter Hero Name: confirming a blank kana name refills it and stays ' \
   ok st.switches[5], 'and the event resumed'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Window_Keyboard::
+# layouts[]` (`src/window_keyboard.cpp`), the real RPG_RT keyboard table --
+# the ま row's small-kana columns are っゃゅょゎ (small-tsu, then small-ya/
+# yu/yo, then small-wa), and the last row's "vu" cell is katakana ヴ even
+# on the hiragana page (hiragana has no glyph of its own there in the
+# reference table).
+check 'Enter Hero Name: the ま row and "vu" cell match RPG_RT\'s own keyboard ' \
+      'table, not a scrambled small-kana order' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+
+  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  cols = RPG2k::Scene::Map::NAME_KANA_COLS
+  ma_row = rows.index { |r| r[0] == 'ま' }
+  ok ma_row, 'the ま row exists'
+  eq %w[ま み む め も っ ゃ ゅ ょ ゎ], rows[ma_row],
+     'small-tsu, then small-ya/yu/yo, then small-wa -- not ゃゅょっー'
+
+  ui[:sel] = ma_row * cols + 5 # っ
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'っ', ui[:name], 'column 5 types small-tsu'
+
+  ui[:sel] = ma_row * cols + 9 # ゎ
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'っゎ', ui[:name], 'column 9 types small-wa, not a duplicate ー'
+
+  last_row = rows.length - 1
+  eq 'ヴ', rows[last_row][5],
+     'the hiragana page\'s own "vu" cell is katakana ヴ, not hiragana ゔ'
+end
+
 check 'Enter Hero Name: the toggle cell swaps the hiragana/katakana page' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
