@@ -13443,7 +13443,7 @@ module Game
     # it -- an ordinary lethal hit (`ChangeHp` calls `AddState(kDeathID,
     # true)` itself once `new_hp <= 0`), a skill/weapon's own state-effect
     # list, Change Monster/Actor Condition, all alike. This method ports
-    # the four fields with no other reset path once a fight is already
+    # the fields with no other reset path once a fight is already
     # under way: the active-time gauge (`#gauge`), the persistent per-battle
     # ATK/DEF/SPI/AGI modifiers a buff/debuff skill accumulates onto
     # (`#atk_mod`/`#def_mod`/`#spi_mod`/`#agi_mod`, see #apply_stat_mods --
@@ -13451,11 +13451,24 @@ module Game
     # shift a skill has applied (`#attr_ranks`, see #apply_attr_shift --
     # `attribute_shift.clear()`, matched here by resetting to an empty
     # Hash, which every reader already treats identically to "no shift"
-    # via its own `ranks[aid] || 2`/`base[aid] || 2` fallback). `#defending`/
-    # `#charged` (`SetIsDefending`/`SetCharged`) are deliberately not
-    # ported: this codebase already resets both to false at the start of
-    # every command a battler is given, dead or not, so there is no gap
-    # for a Knockout-time reset to close there.
+    # via its own `ranks[aid] || 2`/`base[aid] || 2` fallback).
+    # ~~`#defending`/`#charged` (`SetIsDefending`/`SetCharged`) are
+    # deliberately not ported: this codebase already resets both to false
+    # at the start of every command a battler is given, dead or not, so
+    # there is no gap for a Knockout-time reset to close there.~~
+    # Corrected (2026-08-21): that is only true for an *ally* — `#end_round`
+    # unconditionally clears both for every entry in `@allies` regardless of
+    # whether it acted that round, but never touches `@enemies` at all, and
+    # an *enemy's* own `#defending` reset (`#strike`'s `b.defending = false`)
+    # only fires at the start of *that enemy's own next turn* -- not
+    # immediately at death the way real RPG_RT's `AddState` does -- and its
+    # `#charged` flag is never reset at all short of actually being consumed
+    # by a subsequent charged attack. Between a revival mid-round and that
+    # enemy's own next turn, a stale `#defending` wrongly halves incoming
+    # damage from other battlers' actions, and a stale `#charged` wrongly
+    # doubles the revived enemy's own next attack -- both real divergences
+    # real RPG_RT's immediate, unconditional reset at death closes. Fixed
+    # below by porting the two fields after all.
     #
     # Distinct from `Actor#atb_gauge`'s own cross-*battle* persistence fix
     # (`#apply_to_party` writing back 0 for an ally who ended the *fight*
@@ -13478,6 +13491,8 @@ module Game
         target.send("#{field}=", 0) if target.respond_to?(field)
       end
       target.attr_ranks = {} if target.respond_to?(:attr_ranks=)
+      target.defending = false if target.respond_to?(:defending=)
+      target.charged = false if target.respond_to?(:charged=)
     end
 
     # `target`'s live RPG2003 cursed-armor-forced states (`Actor

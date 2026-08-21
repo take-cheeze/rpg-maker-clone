@@ -19256,6 +19256,35 @@ above are repeated here)
   Monster HP plays the `EnemyKill` SE, matching an ordinary lethal
   Attack/Skill), confirmed to fail against the pre-fix code before the
   fix.
+  ✅ **Follow-up (2026-08-21): `apply_knockout_reset` itself had its own gap
+  — a defending or charged enemy killed and revived mid-fight kept the
+  stale stance, contradicting this very method's own doc comment.**
+  Confirmed directly against RPG_RT's live source: `Game_Battler::
+  AddState`'s Knockout branch (`src/game_battler.cpp`) also fires
+  `SetIsDefending(false)`/`SetCharged(false)` in the identical statement
+  group as the gauge/stat-modifier resets the fixes above already cover.
+  ~~This codebase's own comment on `apply_knockout_reset` had claimed
+  `#defending`/`#charged` were "deliberately not ported: this codebase
+  already resets both to false at the start of every command a battler is
+  given, dead or not, so there is no gap for a Knockout-time reset to
+  close there."~~ That is only true for an *ally* — `#end_round`
+  unconditionally clears both for every entry in `@allies` every round,
+  but never touches `@enemies` at all; an *enemy's* own `#defending` reset
+  (`#strike`'s `b.defending = false`) only fires at the start of *that
+  enemy's own next turn*, not immediately at death, and its `#charged`
+  flag is never reset short of actually being consumed by a subsequent
+  charged attack. Between a revival mid-round and that enemy's own next
+  turn, a stale `#defending` wrongly halves incoming damage from other
+  battlers, and a stale `#charged` wrongly doubles the revived enemy's own
+  next attack — both real divergences real RPG_RT's immediate,
+  unconditional reset at death closes. Fixed by porting the two fields
+  into `apply_knockout_reset` after all (`target.defending = false`/
+  `target.charged = false`, both already guarded by the method's own
+  `target.dead?` early return and `respond_to?` checks). Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (a defending enemy and a charged
+  enemy, each killed by a lethal Attack, immediately lose their stance;
+  revival does not restore it either), confirmed to fail against the
+  pre-fix code (`expected false, got true`) before the fix.
   ✅ **A curative battle skill's status cure landed unconditionally, with no
   accuracy roll at all — a Silence/Poison-cure skill whose own `hit` field
   is below 100 always cured the status, never missing
