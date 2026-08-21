@@ -11303,6 +11303,60 @@ check 'to_lsd/from_lsd round-trips Set Teleport Target / Set Escape Target ' \
   eq({}, old.teleport_targets)
 end
 
+check 'to_lsd/from_lsd round-trips a live screen tint transition (chunk 102)' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Save::Save`
+  # (`src/scene_save.cpp`) writes `save.screen = Main_Data::game_screen->
+  # GetSaveData()` unconditionally on every save, and `Player::LoadSavegame`
+  # (`src/player.cpp`) restores it unconditionally on every load via
+  # `Game_Screen::SetSaveData` (`src/game_screen.cpp`), a wholesale struct
+  # replace -- so a Tint Screen (11030) transition still in flight when the
+  # game is saved must resume interpolating from exactly where it left off,
+  # not restart or snap to its finish value. #to_lsd/.from_lsd previously
+  # never touched chunk 102 at all -- schema.rb's own comment on SAVE_DATA
+  # flagged it as "left out until confirmed" -- so a real Save/Continue
+  # silently dropped every standing or in-progress tint.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.screen.tint_to(50, 60, 70, 80, 40) # a transition still 40 frames from done
+  st.screen.instance_variable_set(:@r, 62.5) # partway through interpolating
+  st.screen.instance_variable_set(:@g, 68.0)
+  st.screen.instance_variable_set(:@b, 73.5)
+  st.screen.instance_variable_set(:@sat, 82.0)
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq [50, 60, 70, 80],
+     [round.screen.instance_variable_get(:@tr), round.screen.instance_variable_get(:@tg),
+      round.screen.instance_variable_get(:@tb), round.screen.instance_variable_get(:@tsat)]
+  eq [62.5, 68.0, 73.5, 82.0],
+     [round.screen.instance_variable_get(:@r), round.screen.instance_variable_get(:@g),
+      round.screen.instance_variable_get(:@b), round.screen.instance_variable_get(:@sat)]
+  eq 40, round.screen.instance_variable_get(:@frames),
+     'a mid-transition tint must resume with its remaining frame count intact, not restart or settle'
+  ok round.screen.tinting?, 'the restored tint must still report itself as in-flight'
+
+  # A tint that had already settled (frames == 0, current == finish) writes
+  # nothing at all -- chunk 102 is omitted entirely, the same "omit when
+  # neutral" convention the unplaced-vehicle chunks already follow -- and a
+  # State that never tinted at all must not invent a tint on round-trip.
+  never_tinted = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  saved = never_tinted.to_lsd
+  eq nil, saved[102], 'a State that never tinted must not write chunk 102 at all'
+  round2 = Game::State.from_lsd(db, saved)
+  eq [100, 100, 100, 100], round2.screen.tint
+  eq false, round2.screen.tinting?
+
+  # A save written before this landed simply omits chunk 102 entirely;
+  # from_lsd must leave the fresh Screen.new neutral defaults alone rather
+  # than crash reading an absent chunk.
+  st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st2.screen.tint_to(0, 0, 0, 100, 30)
+  legacy = st2.to_lsd
+  legacy.delete(102)
+  old = Game::State.from_lsd(db, legacy)
+  eq [100, 100, 100, 100], old.screen.tint
+  eq false, old.screen.tinting?
+end
+
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
 # 0=up/1=right/2=down/3=left (Game_Character::Direction's own enum order),
 # not this runtime's numpad convention (2/4/6/8) -- the two schemes only

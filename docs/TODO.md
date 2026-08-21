@@ -12404,6 +12404,47 @@ not yet verified:
   before this landed, missing chunk 110 entirely, also round-trips to the
   same defaults rather than crashing), confirmed to fail against the
   pre-fix code.
+  ✅ **Follow-up (2026-08-21): the screen tint transition (Tint Screen,
+  11030) had the identical Save/Continue gap — chunk 102 this time, and
+  unlike every fix above, the schema itself had never even modelled the
+  chunk.** `mruby-lcf/mrblib/schema.rb`'s own comment on `SAVE_DATA` already
+  flagged this honestly: *"Chunk 102 (screen effects) ... left out until
+  confirmed."* Confirmed directly against RPG_RT's live source:
+  `Scene_Save::Save` (`src/scene_save.cpp`) writes `save.screen = Main_Data
+  ::game_screen->GetSaveData()` unconditionally on every save, and `Player::
+  LoadSavegame` (`src/player.cpp`) restores it unconditionally on every load
+  via `Game_Screen::SetSaveData` (`src/game_screen.cpp`) — a wholesale
+  struct replace (`data = std::move(screen);`), so a tint mid-transition
+  resumes interpolating from exactly where it left off, not merely snapped
+  to its finish value. liblcf's own generator table (`generator/csv/
+  fields.csv`) confirms the wire format: `SaveScreen, tint_finish_red, f,
+  Int32, 0x01, 100` through `tint_time_left, f, Int32, 0x0F, 0` (fields 1-4,
+  11-14, 15), and `Save, screen, f, SaveScreen, 0x66` places the whole chunk
+  at id 102 (0x66) on the top-level Save struct. `Game::Screen` already
+  modelled every one of these fields one-for-one (`@r/@g/@b/@sat` current,
+  `@tr/@tg/@tb/@tsat` finish, `@frames` time left) — it just never crossed
+  the save-file boundary; `#to_lsd`/`.from_lsd` never referenced `@screen`
+  at all. Scoped narrowly to tint only: liblcf's `SaveScreen` also carries
+  flash/shake/pan/weather/battle-animation fields, but `Game::Screen`
+  doesn't model those as persistent state at all yet (a separate, larger
+  gap, left as a future extension — not this fix). Fixed by adding a new
+  `SAVE_SCREEN` table to `schema.rb` and registering chunk 102, two small
+  new `Game::Screen#tint_save_data`/`#restore_tint` methods, and one stanza
+  each in `#to_lsd` (omitted entirely when the tint is settled at neutral,
+  the same convention the unplaced-vehicle chunks follow) and `.from_lsd`.
+  Also corrected two adjacent stale doc comments found along the way while
+  editing this exact code: `Game::State#initialize`'s comment on `@screen`
+  still claimed shake/flash/fade *and tint* stayed transient (true only for
+  shake/flash/fade now), and `@pictures`'/the parallax override's own
+  comments still described `@pictures` as *not* round-tripping through
+  Save/Continue — stale since the chunk 103 fix earlier this session (see
+  above). Covered by a new `scripts/rpg2k_logic_check.rb` check (a
+  mid-transition tint — current values partway to a not-yet-reached finish,
+  frames-remaining nonzero — round-trips through `to_lsd`/`.from_lsd`
+  exactly; a State that never tinted writes no chunk 102 at all and
+  round-trips to neutral; a save written before this landed, missing chunk
+  102 entirely, also round-trips to the same neutral defaults rather than
+  crashing), confirmed to fail against the pre-fix code.
 
 **Event triggers & page selection**
 - Map/common event page selection: only the single **highest-numbered**

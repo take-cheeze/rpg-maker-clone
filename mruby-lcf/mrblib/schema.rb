@@ -1519,16 +1519,34 @@ module LCF
       28 => { name: :face4_index, type: :int, default: 0 },
     }
 
+    # liblcf's SaveScreen (generator/csv/fields.csv), the screen-tint subset
+    # only -- flash/shake/pan/weather/battle-animation are a separate, larger
+    # save-state surface this codebase does not yet model at all in
+    # Game::Screen, and are left out here too.
+    SAVE_SCREEN = {
+      1 => { name: :tint_finish_red, type: :int, default: 100 },
+      2 => { name: :tint_finish_green, type: :int, default: 100 },
+      3 => { name: :tint_finish_blue, type: :int, default: 100 },
+      4 => { name: :tint_finish_sat, type: :int, default: 100 },
+      11 => { name: :tint_current_red, type: :double, default: 100.0 },
+      12 => { name: :tint_current_green, type: :double, default: 100.0 },
+      13 => { name: :tint_current_blue, type: :double, default: 100.0 },
+      14 => { name: :tint_current_sat, type: :double, default: 100.0 },
+      15 => { name: :tint_time_left, type: :int, default: 0 },
+    }
+
     # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk
     # map. Chunks 109 (inventory) and 114 (common-event state), still marked
     # unanalysed on that wiki, were identified against a real Save01.lsd (see
-    # ADR 0011). Chunk 102 (screen effects), 112 (a one-byte flag) and 200 (a
+    # ADR 0011). Chunk 102 (screen effects) is now handled for its tint fields
+    # only (see SAVE_SCREEN above). Chunk 112 (a one-byte flag) and 200 (a
     # non-standard high-id extension chunk) are still left out until confirmed.
     SAVE_DATA = {
       name: :Save, type: :Array1D,
       elements: {
         100 => { name: :title, type: :Array1D, elements: SAVE_TITLE },
         101 => { name: :system, type: :Array1D, elements: SAVE_SYSTEM },
+        102 => { name: :screen, type: :Array1D, elements: SAVE_SCREEN },
         103 => { name: :pictures, type: :Array2D, elements: SAVE_PICTURE },
         104 => { name: :hero, type: :Array1D, elements: SAVE_MOVABLE },
         105 => { name: :boat, type: :Array1D, elements: SAVE_MOVABLE },
