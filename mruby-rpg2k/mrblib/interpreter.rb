@@ -4012,8 +4012,13 @@ module Game
     # param1 the map id; on add, param2/param3 are the tile x/y and an optional
     # switch (param4 flags its presence, param5 is the switch id) gates the
     # target's availability. Stored in a Game::State registry keyed by map id.
-    # Nothing consumes it yet — the Teleport skill is not executed — so this is
-    # modelled purely for save fidelity, mirroring the access flags.
+    # ~~Nothing consumes it yet -- the Teleport skill is not executed -- so
+    # this is modelled purely for save fidelity, mirroring the access
+    # flags.~~ Stale: `Game::Battle#cast_teleport_skill`/`#teleport_skill_
+    # available?` (`mruby-rpg2k/mrblib/game.rb`) do consume this registry now.
+    # Also round-trips through a real Save/Continue (chunk 110,
+    # `Game::State#to_lsd`/`.from_lsd`'s own citation), not just this
+    # engine's own portable Marshal save.
     def do_set_teleport_target(cmd)
       map_id = cmd.param(1)
       if cmd.param(0) != 0
@@ -4027,9 +4032,11 @@ module Game
 
     # Set Escape Target: register the single destination the Escape skill jumps
     # to. param0 map id, param1/param2 the tile x/y, and an optional switch
-    # (param3 flags its presence, param4 the switch id). Like the teleport
+    # (param3 flags its presence, param4 the switch id). ~~Like the teleport
     # registry this is stored for save fidelity only; the Escape skill is not
-    # executed yet.
+    # executed yet.~~ Stale, same correction as #do_set_teleport_target's own
+    # comment: `Game::Battle#cast_escape_skill`/`#escape_skill_available?`
+    # already consume it, and it round-trips through a real Save/Continue too.
     def do_set_escape_target(cmd)
       switch_id = cmd.param(3) != 0 ? cmd.param(4) : nil
       @state.escape_target =
