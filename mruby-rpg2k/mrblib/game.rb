@@ -8065,6 +8065,23 @@ module Game
       end
     end
 
+    # The raw tint state for `.lsd` chunk 102: [finish_rgbs, current_rgbs,
+    # frames_left], matching liblcf's SaveScreen fields one-for-one (see
+    # #restore_tint, its inverse).
+    def tint_save_data
+      [[@tr, @tg, @tb, @tsat], [@r, @g, @b, @sat], @frames]
+    end
+
+    # Restore a tint transition read back from `.lsd` chunk 102: `finish` and
+    # `current` are each [red, green, blue, sat], `frames` the frames still
+    # left. Unlike #tint_to, `current` need not equal `finish` -- a save made
+    # mid-transition resumes interpolating from exactly where it left off.
+    def restore_tint(finish, current, frames)
+      @tr, @tg, @tb, @tsat = finish
+      @r, @g, @b, @sat = current
+      @frames = frames
+    end
+
     # Begin a timed shake of the given power and speed for `frames` frames
     # (frames <= 0 stops the shake immediately). Power/speed clamp to sane ranges.
     def shake(power, speed, frames)
@@ -14060,17 +14077,28 @@ module Game
       @vehicles = { boat: Vehicle.new(:boat), ship: Vehicle.new(:ship),
                     airship: Vehicle.new(:airship) }
       @boarded = nil
-      # Screen effects: tint transition/shake/flash/fade stay transient (not
-      # serialised, so a reloaded game starts with them neutral) -- but the
-      # Pan Screen offset/lock *does* now survive a save/load, see
-      # Game::Screen#to_h/#load_h.
+      # Screen effects: the tint transition now round-trips through a real
+      # Save/Continue too (#to_lsd/.from_lsd, chunk 102's tint_finish_*/
+      # tint_current_*/tint_time_left fields -- liblcf's SaveScreen, verified
+      # against EasyRPG's own `Game_Screen::SetSaveData` (`src/game_screen.
+      # cpp`), a wholesale struct replace so a mid-transition tint resumes
+      # interpolating exactly where it left off, not merely snapped to its
+      # finish value). Shake/flash/fade/weather/battle-animation stay
+      # transient (not serialised, so a reloaded game starts them neutral) --
+      # a real gap vs RPG_RT's own SaveScreen, which models those too, left
+      # as a separate future extension. The Pan Screen offset/lock *does*
+      # also survive a save/load, but only through the internal Marshal-style
+      # snapshot (`Game::Screen#to_h`/`#load_h`, `Game::State#to_h`/`.load`,
+      # `main.rb`) used for quick-resume, not through `.lsd` chunk 102 itself.
       @screen = Screen.new
-      # Shown pictures, id => Game::Picture. Transient like @screen (RPG2000's
-      # HUD pictures are re-shown by parallel events on load), so not serialised.
+      # Shown pictures, id => Game::Picture. DOES round-trip through a real
+      # Save/Continue (#to_lsd/.from_lsd, chunk 103, SAVE_PICTURE) -- a prior
+      # version of this comment claimed otherwise; corrected the same day
+      # chunk 103 was added (see docs/TODO.md).
       @pictures = {}
       # Runtime parallax override from a Change Parallax Background command (nil =
       # use the map's own panorama). Reset on a map change (#clear_parallax,
-      # called alongside #erase_all_pictures) -- but, unlike @pictures, DOES
+      # called alongside #erase_all_pictures) -- and, like @pictures, DOES
       # round-trip through a real Save/Continue on the same map (#to_lsd/
       # .from_lsd, chunk 111 fields 32-38): confirmed against RPG_RT's own
       # live source, `Game_Map::SetupFromSave` (`src/game_map.cpp`) restores
@@ -14489,6 +14517,29 @@ module Game
         actors[a.id] = e
       end
       save[108] = actors
+
+      # Chunk 102 is the screen tint transition (Tint Screen, 11030) --
+      # confirmed against RPG_RT's live source: `Scene_Save::Save`
+      # (`src/scene_save.cpp`) writes `save.screen = Main_Data::game_screen->
+      # GetSaveData()` unconditionally on every save, and `Player::
+      # LoadSavegame` (`src/player.cpp`) restores it unconditionally on every
+      # load via `Game_Screen::SetSaveData`, a wholesale struct replace (`src/
+      # game_screen.cpp`) -- so a tint mid-transition resumes interpolating
+      # exactly where it left off, not merely snapped to its finish value.
+      # Only tint is modelled here (see @screen's own comment above); the
+      # shake/flash/fade/weather/battle-animation fields liblcf's SaveScreen
+      # also carries are a separate, larger gap this codebase doesn't model
+      # in Game::Screen at all yet, left as a future extension. Only written
+      # when a tint is actually in effect or in flight, the same "omit when
+      # neutral" convention the unplaced-vehicle chunks already follow.
+      unless @screen.tint == [Screen::NEUTRAL] * 4 && !@screen.tinting?
+        scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
+        finish, current, frames = @screen.tint_save_data
+        scr[1], scr[2], scr[3], scr[4] = finish
+        scr[11], scr[12], scr[13], scr[14] = current
+        scr[15] = frames
+        save[102] = scr
+      end
 
       # Chunk 103 is every currently-shown picture (Show Picture, 11110) --
       # confirmed against RPG_RT's live source: `Scene_Save::Prepare`
@@ -14932,6 +14983,19 @@ module Game
             party.leader.name = nm
           end
         end
+      end
+      # Chunk 102 is the screen tint transition; only #restore_tint's tint
+      # sub-fields are modelled here (see #to_lsd's own comment on chunk 102
+      # for why). An absent chunk (a save written before this fix, or one
+      # made while the tint genuinely sat at neutral) leaves the fresh
+      # `Screen.new` neutral defaults in place.
+      scr = save[102]
+      if scr
+        state.screen.restore_tint([scr.tint_finish_red, scr.tint_finish_green,
+                                    scr.tint_finish_blue, scr.tint_finish_sat],
+                                   [scr.tint_current_red, scr.tint_current_green,
+                                    scr.tint_current_blue, scr.tint_current_sat],
+                                   scr.tint_time_left)
       end
       restore_pictures(state, save[103])
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
