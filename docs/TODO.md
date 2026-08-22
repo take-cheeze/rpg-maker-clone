@@ -5445,6 +5445,24 @@ The work below is roughly ordered by the critical path to a walkable game
   that End Game "hands control back to the app immediately, with no
   confirmation message to dismiss first" -- now replaced). See
   `changelog.d/menu-end-game-confirmation.fixed.md`.
+  ✅ **Follow-up (2026-08-22): the cursor-default half of the bullet above was
+  itself wrong -- it cited EasyRPG's `Scene_End::CreateCommandWindow`
+  defaulting to index 1 ("No"), and that citation was never checked against
+  genuine RPG_RT.** Reached the confirm prompt on a real `RPG_RT.exe`
+  (Nepheshel, wine) by loading a `--clear-scene` save on map 371, dismissing
+  its wake-up dialogue, opening the field menu (Escape) and confirming the
+  last command (this database relabels End Game as "…に戻る", but it still
+  raises the same Yes/No prompt any RPG2000 End Game does). The cursor opens
+  on "はい" (Yes), the top row, not "いいえ" (No) -- reproduced identically on
+  a second, independent save+launch. This also matches the Inn Accept/Cancel
+  prompt's own already-fixed default (cursor starts on the affirmative
+  option there too), rather than being an isolated case. Fixed by changing
+  `#open_end_game_confirm`'s `@confirm_index` default from `END_GAME_NO` to
+  `END_GAME_YES` (`mruby-rpg2k/mrblib/scene/menu.rb`); the three
+  `scripts/rpg2k_scene_check.rb` checks above were updated to match (the
+  "confirm No" check now presses Down before confirming, since the cursor no
+  longer opens there; the "confirm Yes" check drops its now-redundant Up
+  press). See `changelog.d/menu-end-game-confirm-cursor-default.fixed.md`.
   ✅ **The top-level field menu never showed the party's own Gold at all,
   even though the Status screen's own identical gap was already found and
   fixed (2026-08-20) — this screen still had nothing.** Confirmed against

@@ -501,17 +501,19 @@ class RPG2k
       end
 
       # End Game never quits outright -- it opens a Yes/No confirmation on
-      # top of the command list, matching EasyRPG's own `Scene_End` (pushed
-      # by `Scene_Menu::UpdateCommand`'s `case Quit`, right after the
-      # Decision SE #select_command already plays above). `Scene_End::
-      # CreateCommandWindow` defaults the cursor to "No" (index 1) -- a
-      # stray confirm press does not quit the game.
+      # top of the command list. Confirmed directly against a genuine
+      # RPG_RT.exe (Nepheshel, wine): opening the prompt from a fresh menu
+      # shows the cursor already on "はい" (Yes), the top row -- not "No", as
+      # an earlier, EasyRPG-sourced note here had wrongly claimed (that
+      # finding was discarded; see docs/TODO.md). "Yes" defaulting first
+      # matches this same menu's Inn Accept/Cancel prompt, whose cursor also
+      # starts on the affirmative option.
       END_GAME_YES = 0
       END_GAME_NO = 1
 
       def open_end_game_confirm
         @focus = :end_game_confirm
-        @confirm_index = END_GAME_NO
+        @confirm_index = END_GAME_YES
         @command.active = false
         build_end_game_confirm_windows
       end
