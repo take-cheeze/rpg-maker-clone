@@ -14723,19 +14723,32 @@ module Game
       # own live event table, mirrored straight from #map_event_positions/
       # #map_event_route_index, plus its Tile Substitution table
       # (#tile_substitutions, fields 21/22), a live Change Encounter Rate
-      # override (#encounter_rate, field 3) and a live Change Parallax
-      # Background override (#parallax, fields 32-38) -- all five already
-      # scoped to the current map only, see their own doc comments above.
-      # Camera scroll (SAVE_MAP_EVENT fields 1/2) is not modelled by this
-      # codebase, so it stays absent, matching the "view derives from the
-      # hero" fallback ADR 0021 documents. Omitted entirely on a State with
-      # none of these four recorded (e.g. a fresh, unplayed save), the same
-      # "absent means nothing to restore" rule the unplaced-vehicle chunks
-      # above use.
+      # override (#encounter_rate, field 3), a live Change Parallax
+      # Background override (#parallax, fields 32-38), and the camera scroll
+      # (fields 1/2) -- all six scoped to the current map only, see their own
+      # doc comments above. Camera scroll is the view's top-left pixel in
+      # 1/16 pixel, computed the same way `Scene::Map#camera_position` does
+      # every frame (`Game.camera_offset` against the hero's pixel centre and
+      # the map's own size). RPG_RT restores this from the save rather than
+      # deriving it from the hero -- confirmed against the genuine runtime:
+      # an edited save missing these fields drew the map's top-left corner,
+      # not a hero-centred view, and a correct pair reproduced the exact same
+      # frame our own hero-centred renderer already draws (ADR 0021's
+      # "comparing an ordinary map" addendum). Omitted entirely on a State
+      # with no map loaded (e.g. a fresh, unplayed save), the same "absent
+      # means nothing to restore" rule the unplaced-vehicle chunks above use.
       lower_subs, upper_subs = @tile_substitutions
-      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty? &&
-             !@encounter_rate && !@parallax
+      if self.map || !@map_event_positions.empty? || !lower_subs.empty? ||
+         !upper_subs.empty? || @encounter_rate || @parallax
         mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
+        if self.map
+          hero_px = @x * TILE + TILE / 2
+          hero_py = @y * TILE + TILE / 2
+          cam_x = Game.camera_offset(hero_px, SCREEN_W, self.map.width * TILE)
+          cam_y = Game.camera_offset(hero_py, SCREEN_H, self.map.height * TILE)
+          mapev[1] = cam_x * LCF::Schema::SCROLL_UNITS_PER_PIXEL
+          mapev[2] = cam_y * LCF::Schema::SCROLL_UNITS_PER_PIXEL
+        end
         unless @map_event_positions.empty?
           events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
           @map_event_positions.each do |id, pos|

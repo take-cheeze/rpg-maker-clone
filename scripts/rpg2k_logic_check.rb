@@ -9641,6 +9641,46 @@ check 'to_lsd writes the system graphic / font override at the correct ' \
   eq 1, round.font_id
 end
 
+check 'to_lsd writes the camera scroll (chunk 111 fields 1/2) from the ' \
+      'hero position, not just when some other chunk-111 override is live' do
+  # RPG_RT restores the camera from the save rather than deriving it from the
+  # hero -- confirmed against the genuine runtime (ADR 0021's "comparing an
+  # ordinary map" addendum): a save missing chunk 111 fields 1/2 drew the
+  # map's top-left corner regardless of the hero's tile, and the correct
+  # 1/16-pixel pair reproduced the exact hero-centred frame this engine's own
+  # renderer already draws. #to_lsd never wrote them at all -- worse, the
+  # whole chunk was omitted whenever no map event / tile substitution /
+  # encounter-rate / parallax override was also live, which is the common
+  # case on an untouched map -- so any save this engine exported for a real
+  # RPG_RT/EasyRPG to load rendered the wrong part of the map.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5,
+                                     max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  # A 30x30-tile map (480x480px) is larger than the 320x240 screen on both
+  # axes, so the hero at tile (10, 10) sits far enough from every edge that
+  # the camera centres rather than clamps -- a witness that disambiguates
+  # "centred on the hero" from both "always (0, 0)" and a naive unclamped
+  # "hero pixel verbatim".
+  map = Game::Map.new(1, FakeMapUnit.new(30, 30, 1, [], []))
+  st = Game::State.new(Game::Party.new(db), 1, 10, 10)
+  st.map = map
+
+  saved = st.to_lsd
+  mapev = saved[111]
+  ok mapev, 'chunk 111 is written even with no event/substitution/encounter/parallax override live'
+  # cam = clamp(hero_px + TILE/2 - screen_px/2, 0, map_px - screen_px)
+  # x: clamp(10*16+8 - 160, 0, 480-320) = clamp(8, 0, 160) = 8 -> *16 = 128
+  # y: clamp(10*16+8 - 120, 0, 480-240) = clamp(48, 0, 240) = 48 -> *16 = 768
+  eq 128, mapev.scroll_x, 'scroll_x is the hero-centred camera in 1/16 pixel'
+  eq 768, mapev.scroll_y, 'scroll_y is the hero-centred camera in 1/16 pixel'
+
+  # A map with no camera loaded at all (State#map still nil) keeps omitting
+  # chunk 111 when nothing else is live, matching the pre-existing "absent
+  # means nothing to restore" rule for a fresh, unplayed save.
+  bare = Game::State.new(Game::Party.new(db), 1, 10, 10)
+  eq nil, bare.to_lsd[111], 'no loaded map means no chunk 111 at all'
+end
+
 # -- Enter Hero Name (Name Input) ---------------------------------------------
 
 check 'Enter Hero Name suspends on :name_input and resume renames the actor' do
