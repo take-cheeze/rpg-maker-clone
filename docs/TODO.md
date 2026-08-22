@@ -5557,8 +5557,10 @@ The work below is roughly ordered by the critical path to a walkable game
   file already does), confirmed to fail against the pre-fix code (zero
   matching blend calls, since the flat-gray branch never blends at all)
   before the fix.
-  ✅ **The title cursor's *starting position* ignored whether a save exists,
-  a separate gap from either fix just above (2026-08-20).** `Scene::Title#initialize`
+  ~~The title cursor's *starting position* ignored whether a save exists,
+  a separate gap from either fix just above (2026-08-20).~~ **The 2026-08-20
+  fix below turned out to be wrong — reverted; see the dated Follow-up.**
+  ~~`Scene::Title#initialize`
   (`mruby-rpg2k/mrblib/scene/title.rb`) hardcoded `@selected_index = 0` before
   `@continue_available` was even computed, so the cursor always opened on New
   Game regardless of save data. Confirmed against EasyRPG Player's actual
@@ -5576,7 +5578,25 @@ The work below is roughly ordered by the critical path to a walkable game
   with no other change needed. Covered by two new `scripts/rpg2k_scene_check.rb`
   checks (a save present starts the cursor on Continue; no save data still
   starts it on New Game), the first confirmed to fail against the pre-fix
-  code (`expected 1, got 0`) before the fix.
+  code (`expected 1, got 0`) before the fix.~~
+  ✅ **Follow-up (2026-08-22): the 2026-08-20 fix above was itself wrong —
+  reverted.** That fix was sourced only from EasyRPG's source, not a genuine
+  RPG_RT.exe, and this session's own move away from EasyRPG-as-verification
+  caught it: booting real `RPG_RT.exe` (Nepheshel, under wine) three separate
+  times against a valid, working save — Continue confirmed enabled and
+  un-grayed by successfully opening a correctly-populated file-select screen
+  from it — the title cursor sat on **最初から (New Game)** every single
+  time, never on 続きから (Continue). `@selected_index = 0` unconditionally
+  now, with the wrong doc comment replaced by this citation.
+  `@continue_available` is unaffected and still correctly gates the
+  grayed-out rendering and the disabled-Continue buzz. The
+  `--rpg2k_continue` CLI flag's own explicit `@selected_index = 1` (used by
+  the save-based wine comparison harness itself) is untouched, since it sets
+  the index *after* `initialize` runs. The existing "save present starts on
+  Continue" check in `scripts/rpg2k_scene_check.rb` is flipped to assert 0,
+  the same non-symmetric witness (only `any_save_flag` varies from its
+  sibling "no save data" check) now pointed the other way, confirmed to
+  fail against the pre-fix (2026-08-20) code before this fix.
   ✅ **The same disabled-swatch gap existed on the save/load file-select
   screen too, and there every line was flat, not just the disabled one
   (2026-08-18).** `Scene::SaveLoad#draw_slot_box` (`mruby-rpg2k/mrblib/

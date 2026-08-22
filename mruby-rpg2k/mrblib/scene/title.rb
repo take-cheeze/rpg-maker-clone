@@ -42,13 +42,16 @@ class RPG2k
         # is now Scene::SaveLoad's own question to ask once Continue opens it.
         @continue_available = continue_available?
 
-        # RPG_RT starts the cursor on Continue, not New Game, whenever a save
-        # exists -- confirmed against EasyRPG's own `Scene_Title::Refresh`
-        # (`src/scene_title.cpp`): `if (continue_enabled)
-        # command_window->SetIndex(1);` fires unconditionally alongside (not
-        # instead of) `SetItemEnabled(1, continue_enabled)`, so a save's
-        # presence moves the initial selection, not just the grayed-out look.
-        @selected_index = @continue_available ? 1 : 0
+        # The cursor always starts on New Game, whether or not a save exists
+        # to Continue -- confirmed against a genuine RPG_RT.exe (Nepheshel,
+        # under wine): booted three separate times against a valid, working
+        # save (Continue enabled and un-grayed, confirmed by successfully
+        # opening a correctly-populated file-select screen from it), the
+        # title cursor sat on 最初から (New Game) every time, never on 続きから
+        # (Continue). `@continue_available` still gates the grayed-out
+        # rendering and the disabled-selection buzz below; only the initial
+        # cursor position was wrong.
+        @selected_index = 0
 
         # RPG_RT sizes the window to the widest label plus one border on each
         # side — no extra padding — and one 16px row per entry.
