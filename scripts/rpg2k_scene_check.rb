@@ -11486,6 +11486,11 @@ class BattleMagicParty
   def battle_items
     @items.keys.sort.select { |id| item_count(id) > 0 }.map { |id| [id, item_count(id)] }
   end
+  # Every item this stub can hold is meant to be battle-usable -- none of
+  # these checks model a disabled entry, which Scene::Battle now consults to
+  # decide whether Decision buzzes-and-stays instead of dispatching,
+  # mirroring Game::Party#battle_usable?.
+  def battle_usable?(id); item_count(id) > 0; end
   def db_item(id); id == 5 ? OpenStruct.new(name: 'Potion') : nil; end
   def battle_item_command(_it, _target); { hp: 20, mp: 0 }; end
   def item_all_allies?(it); it.respond_to?(:scope) && it.scope == 1; end
@@ -12346,6 +12351,42 @@ check 'Enemy Encounter scene: the item list cursor is a column-locked ' \
 
   press_key(scene, RGSS::Input::LEFT)
   eq 0, ui[:item_i], 'Left moves back to column 0'
+end
+
+# A single held item that #battle_items now lists (a field-only medicine,
+# say) but #battle_usable? still refuses -- Game::Party's own list-vs-usable
+# split is covered by scripts/rpg2k_logic_check.rb; this stub only has to
+# hand the scene one listed-but-disabled row so the check below can pin the
+# RGSS wiring: Decision on it buzzes and stays, exactly like the field Item
+# menu's identical fix already does (see Scene::ItemMenu's own check).
+class BattleDisabledItemParty < BattleMagicParty
+  def initialize
+    super()
+    @items = { 5 => 1 }
+  end
+  def battle_usable?(_id); false; end
+end
+
+check 'Enemy Encounter scene: choosing a listed-but-unusable battle item ' \
+      'plays Buzzer, not Decision, casts nothing, and stays on the list' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleDisabledItemParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+
+  RGSS::Audio.reset_se
+  press_key(scene, RGSS::Input::C)    # try the one, disabled item
+  eq :item, ui[:phase], 'stays on the item list'
+  eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'Buzzer plays instead of Decision'
+  ok ui[:pending].nil?, 'nothing was queued to cast'
 end
 
 # A two-actor party, so the ally-target cursor (heal skill / medicine) has

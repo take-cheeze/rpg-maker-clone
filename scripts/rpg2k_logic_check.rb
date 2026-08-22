@@ -6771,7 +6771,7 @@ check 'a field-only medicine is kept out of battle; every medicine is in the fie
   eq [[5, 1], [6, 1]], st.party.field_items
   ok st.party.battle_usable?(5), 'the ordinary medicine is usable in battle'
   ok !st.party.battle_usable?(6), 'the field-only one is not'
-  eq [[5, 1]], st.party.battle_items
+  eq [[5, 1], [6, 1]], st.party.battle_items, 'both listed -- the field-only one just disabled here'
 end
 
 # A database shrink can leave a party-held item id dangling -- shown as "?"
@@ -6806,7 +6806,8 @@ check 'a switch item reads its own pair of occasion flags' do
   st.party.gain_item(6, 1)
   eq [[5, 1], [6, 1]], st.party.field_items, 'both listed -- the battle-flagged one just disabled here'
   ok !st.party.field_usable?(6), 'still not field-usable, only listing changed'
-  eq [[6, 1]], st.party.battle_items, 'only the battle-flagged one'
+  eq [[5, 1], [6, 1]], st.party.battle_items, 'both listed here too -- the field-flagged one disabled'
+  ok !st.party.battle_usable?(5), 'still not battle-usable, only listing changed'
 end
 
 check 'a switch item is field-usable, effective, and flips its switch on use' do
@@ -15095,9 +15096,11 @@ check 'battle_items lists battle medicines; battle_item_command recovers' do
   st.party.gain_item(5, 2)
   st.party.gain_item(6, 1)
   st.party.gain_item(7, 1)
-  eq [[5, 2]], st.party.battle_items, 'only the battle-flagged medicine'
+  eq [[5, 2], [6, 1], [7, 1]], st.party.battle_items,
+     'every held item is listed -- the field-only medicine and the weapon just disabled'
   ok st.party.battle_usable?(5)
   ok !st.party.battle_usable?(6), 'a field-only medicine is not battle-usable'
+  ok !st.party.battle_usable?(7), 'a plain weapon is not battle-usable'
   target = combatant('T', 0, 0, 5, 100)
   target.max_mp = 30
   eq({ hp: 40, mp: 0, cured: [] },

@@ -4647,6 +4647,36 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check driving a live `Scene::ItemMenu`
   (Decision on a listed-but-disabled row plays Buzzer, casts nothing, and
   stays on the list) — all four confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-22): the battle-menu half is now fixed too,
+  independently re-verified against genuine RPG_RT.exe rather than trusting
+  the "same `Window_Item` class" EasyRPG citation.** Got a live battle open
+  under wine against real `RPG_RT.exe` (a genuine, pre-existing Nepheshel
+  autostart event's command list swapped for an Enemy Encounter, keeping its
+  original trailing `[Victory]`/`[Escape]`/End Battle markers — a bare,
+  dangling Enemy Encounter with nothing after it, tried first, is silently
+  tolerated by this engine's own interpreter but never actually runs on real
+  RPG_RT, which is what made an earlier attempt at this comparison
+  misleading) with a controlled inventory: item 1 (薬草, battle-usable) and
+  item 15 (気付け薬, `occasion_field1` set — field-only, battle-unusable).
+  Real RPG_RT's battle Item window listed **both**, the unusable one in
+  glyph color `(99,166,247)` — the exact same measured "disabled" swatch
+  color the field-menu fix found — while this engine's own `#battle_items`
+  on the identical save/inventory showed only the usable one. Fixed with the
+  identical shape as the field-menu fix: `#battle_items` drops its
+  `#battle_usable?` filter (keeping the dangling-item exclusion),
+  `Scene::Battle#drive_battle_item`'s Decision handler gained the same
+  "buzz and stay" guard, and `#draw_battle_item` now colors each row via
+  `#draw_system_text` (index 0/3) through a new optional `idxs:` parameter
+  on the shared `#battle_list_window` helper — `nil` for every other caller
+  (skill/target/ally-target lists), so their own flat-white rendering is
+  unchanged. Covered by three widened `scripts/rpg2k_logic_check.rb`
+  `battle_items` fixtures (mirroring the field-menu ones: a field-only
+  medicine; the same switch-item-usable-on-one-side fixture, now also
+  asserting the battle side; a three-item fixture adding a field-only
+  medicine and a plain weapon) and a new `scripts/rpg2k_scene_check.rb`
+  check driving a live `Scene::Battle` into its Item sub-menu (Decision on
+  the one, listed-but-disabled item plays Buzzer, queues nothing, and stays
+  on the list) — all four confirmed to fail against the pre-fix code.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
   target, or flying — instead of staying listed and disabled, and the same
