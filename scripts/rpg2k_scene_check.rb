@@ -174,7 +174,7 @@ module RGSS
   # `triggered` (buttons pressed this frame). Defaults to no input.
   module Input
     C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6; SHIFT = 7
-    CTRL = 8; F9 = 9; L = 10; R = 11
+    CTRL = 8; F9 = 9; L = 10; R = 11; X = 12; Y = 13
     # RPG2003 Key Input Processing's Numbers/Operators groups (see
     # Scene::Map::NUMBER_KEY_BUTTONS / OPERATOR_KEY_BUTTONS).
     N0 = 20; N1 = 21; N2 = 22; N3 = 23; N4 = 24
@@ -748,6 +748,17 @@ class FakeParent
   # missing-graphic debug marker; Ctrl/Shift/F9's debug behaviour); every
   # other check wants the same default (false) a plainly-launched game gets.
   attr_accessor :test_play
+  # Directory Scene::MapViewer's Map Editor #save_to_disk writes into (see
+  # #map_path below). nil by default -- every check that never saves a map
+  # never needs it -- so a check exercising the save path must set this to
+  # its own Dir.mktmpdir first, the same way it would ask a real GAME_DIR to
+  # write somewhere it controls rather than a bare filesystem root.
+  attr_accessor :map_dir
+  # The live Scene::Map a check wants Scene::DebugMenu's Animation page (or
+  # any future debug tool reaching through RPG2k#map_scene) to find. nil by
+  # default; a check exercising it sets this to a real Scene::Map or a
+  # narrow double answering just the methods under test.
+  attr_accessor :map_scene
   def initialize(db, &map_maker)
     @db = db
     @map_tree = nil
@@ -757,6 +768,13 @@ class FakeParent
   end
 
   def load_map(id); @map_maker.call(id); end
+  # Map0001.lmu, Map0002.lmu, ... under #map_dir -- mirrors RPG2k#map_path
+  # (mruby-rpg2k/mrblib/main.rb) closely enough for the Map Editor's own
+  # save-to-disk check to round-trip through a real file.
+  def map_path(id); File.join(@map_dir, format('Map%04d.lmu', id)); end
+  # RPG_RT.ldb under #map_dir -- mirrors RPG2k#db_path for Scene::
+  # ChipsetEditor's own save-to-disk check.
+  def db_path; File.join(@map_dir, 'RPG_RT.ldb'); end
   # Scene::Map#try_open_menu pushes a Scene::Menu; record it instead.
   def push(scene); @pushed << scene; end
   # Scene::SaveLoad (and every field submenu) pops itself on cancel / once its
@@ -805,6 +823,60 @@ end
 
 def fake_parent(db)
   FakeParent.new(db) { |id| fake_map(id, {}) }
+end
+
+# Stands in for the real LCF::MapUnit a Game::Map wraps, for the Map Editor's
+# own checks: records #[]= calls and #save_to writes instead of doing real LCF
+# binary encoding, so these checks prove the *wiring* (Game::Map#sync_layers_
+# to_unit and Scene::MapViewer#save_to_disk call the right methods with the
+# right values) without redoing what scripts/lcf_text_convert_check.rb already
+# proves about the real binary writer.
+class FakeMapUnit
+  attr_reader :sets, :saved_to
+  def initialize(fields)
+    @fields = fields
+    @sets = {}
+  end
+  def method_missing(sym, *args)
+    return @fields[sym] if args.empty? && @fields.key?(sym)
+    super
+  end
+  def respond_to_missing?(sym, include_private = false)
+    @fields.key?(sym) || super
+  end
+  def []=(idx, value); @sets[idx] = value; end
+  def save_to(path)
+    @saved_to = path
+    File.write(path, 'fake .lmu')
+  end
+end
+
+# Stands in for the real LCF::Array1D a chipset row is, for Scene::
+# ChipsetEditor's own checks. It reads/writes by integer chunk id (4 =
+# passable_data_lower, 5 = passable_data_upper) exactly the way a real
+# Array1D does -- and the way the editor itself always talks to a chipset row
+# (see its own comment on why: `obj.field = value` is not something Array1D
+# actually supports) -- so its code runs completely unmodified under test.
+class FakeChipsetRow
+  FIELD_IDX = { passable_data_lower: 4, passable_data_upper: 5 }.freeze
+  def initialize(fields)
+    @fields = fields
+  end
+  def method_missing(sym, *args)
+    return @fields[sym] if args.empty? && @fields.key?(sym)
+    super
+  end
+  def respond_to_missing?(sym, include_private = false)
+    @fields.key?(sym) || super
+  end
+  def [](idx)
+    name = FIELD_IDX.key(idx)
+    name ? @fields[name] : nil
+  end
+  def []=(idx, value)
+    name = FIELD_IDX.key(idx)
+    @fields[name] = value if name
+  end
 end
 
 # A party member reduced to what map-step slip damage touches. Building a
@@ -13000,6 +13072,70 @@ check 'RPG2k#headless_battle_troop reads RPG2K_BATTLE_TROOP, 0 meaning unset' do
   Object.send(:remove_const, :RPG2K_BATTLE_TROOP) if Object.const_defined?(:RPG2K_BATTLE_TROOP)
 end
 
+# -- --rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation --
+#
+# Same shape as --rpg2k_preview_map/--rpg2k_battle_troop just above: these
+# pin the flag plumbing (the RPG2k accessor reading its constant, and
+# Scene::Title auto-selecting New Game for it) in CRuby, without a real
+# database/.lmu -- RPG2k#start_new_game's own push/animation calls are only
+# exercised by the native boot check against real game data.
+check 'RPG2k#map_editor?/#chipset_editor? read their constants, false meaning unset' do
+  read = lambda do |const, method, v|
+    Object.send(:remove_const, const) if Object.const_defined?(const)
+    Object.const_set(const, v) unless v.nil?
+    RPG2k.allocate.send(method)
+  end
+  eq false, read.call(:RPG2K_MAP_EDITOR, :map_editor?, nil),
+     'undefined constant (the CRuby-only checks) -> false'
+  eq false, read.call(:RPG2K_MAP_EDITOR, :map_editor?, false), 'false, the flag default'
+  eq true, read.call(:RPG2K_MAP_EDITOR, :map_editor?, true)
+  Object.send(:remove_const, :RPG2K_MAP_EDITOR) if Object.const_defined?(:RPG2K_MAP_EDITOR)
+
+  eq false, read.call(:RPG2K_CHIPSET_EDITOR, :chipset_editor?, nil)
+  eq true, read.call(:RPG2K_CHIPSET_EDITOR, :chipset_editor?, true)
+  Object.send(:remove_const, :RPG2K_CHIPSET_EDITOR) if Object.const_defined?(:RPG2K_CHIPSET_EDITOR)
+end
+
+check 'RPG2k#preview_animation_id reads RPG2K_PREVIEW_ANIMATION, 0 meaning unset' do
+  read = lambda do |v|
+    if Object.const_defined?(:RPG2K_PREVIEW_ANIMATION)
+      Object.send(:remove_const, :RPG2K_PREVIEW_ANIMATION)
+    end
+    Object.const_set(:RPG2K_PREVIEW_ANIMATION, v) unless v.nil?
+    RPG2k.allocate.send(:preview_animation_id)
+  end
+  eq nil, read.call(nil), 'undefined constant (the CRuby-only checks) -> nil'
+  eq nil, read.call(0), '0, the flag default -> nil'
+  eq 5, read.call(5)
+  if Object.const_defined?(:RPG2K_PREVIEW_ANIMATION)
+    Object.send(:remove_const, :RPG2K_PREVIEW_ANIMATION)
+  end
+end
+
+check '--rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation each ' \
+     'auto-select New Game on their own, like --rpg2k_new_game' do
+  build = lambda do |parent_fields|
+    clear_title_flags
+    parent = OpenStruct.new(map_editor?: false, chipset_editor?: false, preview_animation_id: nil,
+                            **parent_fields)
+    scene = RPG2k::Scene::Title.allocate
+    scene.instance_variable_set(:@auto_started, false)
+    scene.instance_variable_set(:@selected_index, 0)
+    scene.instance_variable_set(:@parent, parent)
+    scene
+  end
+
+  scene = build.call(map_editor?: true)
+  ok scene.send(:auto_select?), '--rpg2k_map_editor fires the auto-select'
+  eq 0, scene.instance_variable_get(:@selected_index), 'New Game is entry 1'
+
+  scene = build.call(chipset_editor?: true)
+  ok scene.send(:auto_select?), '--rpg2k_chipset_editor fires the auto-select'
+
+  scene = build.call(preview_animation_id: 5)
+  ok scene.send(:auto_select?), '--rpg2k_preview_animation fires the auto-select'
+end
+
 # Scene::Map#headless_battle (the --rpg2k_battle boot drive) arms the same
 # :battle wait a random encounter does, marked `headless: true` so
 # Scene::Battle#start fires the [RPG2k-BATTLE] marker the boot check asserts
@@ -22182,6 +22318,68 @@ check 'the debug menu Map page opens Scene::MapViewer on C' do
   ok pushed.first.is_a?(RPG2k::Scene::MapViewer), 'the pushed scene is the map viewer'
 end
 
+check "the debug menu Map page's @map_id defaults to the player's own current map, and C " \
+     "with that default selected reuses the live Game::Map object rather than loading a " \
+     "second copy of it" do
+  st = menu_state
+  st.map = fake_map(7, {})
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # Switch -> Variable
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # Variable -> Map
+  eq 7, scene.instance_variable_get(:@map_id), "defaults to the player's own current map id"
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  viewer = scene.parent.pushed.first
+  ok viewer.is_a?(RPG2k::Scene::MapViewer)
+  ok viewer.instance_variable_get(:@map).equal?(st.map),
+     'the same id as the current map reuses the live Game::Map object, unchanged from before'
+  ok viewer.instance_variable_get(:@live), 'so it is marked live'
+end
+
+check "the debug menu Map page's own Up/Down/L/R step @map_id (Up/Down +-1, L/R +-10, " \
+     "clamped at a floor of 1 -- the same convention the Animation page already uses for " \
+     "its own id, since Left/Right are already claimed by #cycle_mode) independently of the " \
+     "player's live map, and C then opens a freshly loaded (not live) viewer for it" do
+  st = menu_state
+  st.map = fake_map(7, {})
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # -> Map page, @map_id == 7
+
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  eq 8, scene.instance_variable_get(:@map_id), 'Up steps +1'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  eq 7, scene.instance_variable_get(:@map_id), 'Down steps -1'
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update
+  eq 17, scene.instance_variable_get(:@map_id), 'R jumps +10'
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update
+  eq 7, scene.instance_variable_get(:@map_id), 'L jumps back -10'
+  3.times do
+    RGSS::Input.triggered = [RGSS::Input::L]
+    scene.update
+  end
+  eq 1, scene.instance_variable_get(:@map_id), 'clamped at a floor of 1, never zero or negative'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  viewer = scene.parent.pushed.first
+  ok viewer.is_a?(RPG2k::Scene::MapViewer)
+  ok !viewer.instance_variable_get(:@map).equal?(st.map),
+     "a different id from the player's own current map loads a fresh Game::Map instead of " \
+     'reusing the live one'
+  eq 1, viewer.instance_variable_get(:@map).id
+  ok !viewer.instance_variable_get(:@live), 'so it is not marked live'
+end
+
 check 'MapViewer marks the player and every map event, and reads every tile as ' \
      'passable when the chipset carries no passability table' do
   ev = event(2, 2, page)
@@ -22287,6 +22485,15 @@ check 'MapViewer pans a map bigger than the viewport, clamped to its edges, and 
   eq 200 - view_w / 2, scene.instance_variable_get(:@ox), 'C recentres back on the player'
 end
 
+check "MapViewer.new(..., start_mode: :edit) lands directly in Edit mode, skipping " \
+     "the usual pan-mode landing page -- what --rpg2k_map_editor uses to jump " \
+     "straight there" do
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st, start_mode: :edit)
+  eq :edit, scene.instance_variable_get(:@mode)
+end
+
 check 'R enters MapViewer Select mode on the player tile; B backs out to pan mode ' \
      'without closing the viewer' do
   st = menu_state
@@ -22296,18 +22503,33 @@ check 'R enters MapViewer Select mode on the player tile; B backs out to pan mod
 
   RGSS::Input.triggered = [RGSS::Input::R]
   scene.update
-  ok scene.instance_variable_get(:@select), 'R enters Select mode'
+  eq :select, scene.instance_variable_get(:@mode), 'R enters Select mode'
   eq 2, scene.instance_variable_get(:@cx), 'the cursor opens on the player tile, x'
   eq 3, scene.instance_variable_get(:@cy), 'the cursor opens on the player tile, y'
 
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
-  ok !scene.instance_variable_get(:@select), 'B backs out of Select mode'
+  eq :pan, scene.instance_variable_get(:@mode), 'B backs out of Select mode'
   ok !scene.parent.pop_called, 'B in Select mode does not close the whole viewer'
 
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
   eq 1, scene.parent.pop_called, 'a second B, now back in pan mode, closes it'
+end
+
+check 'MapViewer.new(..., quit_on_close: true) -- what --rpg2k_map_editor uses -- ' \
+     'exits the whole process on B in pan mode instead of popping back to the ' \
+     'ordinary playable map the flag skipped past' do
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st, quit_on_close: true)
+  exit_called = false
+  scene.define_singleton_method(:exit) { exit_called = true }
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok exit_called, 'B calls exit instead of @parent.pop'
+  ok !scene.parent.pop_called, 'the parent is never popped when quit_on_close is set'
 end
 
 check 'MapViewer Select mode reports the tile under the cursor: coordinates, ' \
@@ -22379,6 +22601,345 @@ check 'the cursor auto-scrolls the MapViewer viewport to stay in view while movi
   ox = scene.instance_variable_get(:@ox)
   ok ox > ox_before, 'the viewport scrolled right to keep up with the cursor'
   ok cx >= ox && cx < ox + view_w, 'the cursor stays inside the (now-scrolled) viewport'
+end
+
+check 'Game::Map#set_lower/#set_upper rewrite one cell directly, and ' \
+     '#sync_layers_to_unit pushes the edited layers back into the unit via chunks 71/72' do
+  w = 6; h = 5
+  lower = Array.new(w * h, 0)
+  upper = Array.new(w * h, 0)
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: lower, upper_layer: upper, events: {})
+  map = Game::Map.new(1, unit)
+
+  map.set_lower(2, 1, 5000)
+  eq 5000, map.lower(2, 1), 'the edited cell reads back the new id'
+  eq 0, map.lower(0, 0), 'an untouched cell is unaffected'
+
+  rev_before = map.revision
+  map.set_upper(3, 2, 4001)
+  ok map.revision > rev_before, '#set_upper bumps the cache-invalidation revision too'
+
+  map.sync_layers_to_unit
+  eq lower, unit.sets[71], 'the whole edited lower array (not just the one cell) reached chunk 71'
+  eq upper, unit.sets[72], 'and the upper array reached chunk 72'
+end
+
+check 'MapViewer Edit mode: CTRL picks up a tile as the brush, C paints it ' \
+     'elsewhere, and SHIFT swaps the active layer' do
+  w = 6; h = 5
+  lower = Array.new(w * h, 0)
+  lower[0] = 7000 # tile (0, 0)
+  upper = Array.new(w * h, 0)
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: lower, upper_layer: upper, events: {})
+  st = menu_state
+  st.map = Game::Map.new(1, unit)
+  st.x = 0; st.y = 0
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update
+  eq :edit, scene.instance_variable_get(:@mode), 'L enters Edit mode'
+  eq 0, scene.instance_variable_get(:@cx), 'the cursor opens on the player tile, same as Select'
+
+  RGSS::Input.triggered = [RGSS::Input::CTRL]
+  scene.update
+  eq 7000, scene.instance_variable_get(:@brush),
+     'CTRL picked up the tile under the cursor as the brush'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # cursor -> (1, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 7000, st.map.lower(1, 0), 'C stamped the brush onto the cursor tile'
+  ok scene.instance_variable_get(:@dirty), 'painting marks the map dirty'
+
+  RGSS::Input.triggered = [RGSS::Input::SHIFT]
+  scene.update
+  eq :upper, scene.instance_variable_get(:@brush_layer), 'SHIFT swaps to the upper layer'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 7000, st.map.upper(1, 0), 'a second C now paints the upper layer instead'
+  eq 7000, st.map.lower(1, 0), 'and left the earlier lower-layer paint untouched'
+end
+
+check 'MapViewer Edit mode R saves the map back to its .lmu path via the parent, ' \
+     'and clears the unsaved-changes flag' do
+  w = 6; h = 5
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+                          events: {})
+  st = menu_state
+  st.map = Game::Map.new(7, unit)
+  parent = fake_parent(fake_db)
+  Dir.mktmpdir('map-editor-save-check') do |dir|
+    parent.map_dir = dir
+    scene = RPG2k::Scene::MapViewer.new(parent, st)
+
+    RGSS::Input.triggered = [RGSS::Input::L]
+    scene.update
+    RGSS::Input.triggered = [RGSS::Input::C] # paint brush 0 onto (0, 0): a no-op value-wise,
+    scene.update                             # but still exercises the dirty flag honestly
+    ok scene.instance_variable_get(:@dirty), 'painting marks the map dirty'
+
+    RGSS::Input.triggered = [RGSS::Input::R]
+    scene.update
+    eq File.join(dir, 'Map0007.lmu'), unit.saved_to,
+       "saved to the map_path the parent computed for id 7"
+    ok !scene.instance_variable_get(:@dirty), 'saving clears the unsaved-changes flag'
+  end
+end
+
+check "MapViewer's Edit mode hint is wider than the 320px screen at a " \
+     "realistic character width, so #draw_footer wraps it onto multiple " \
+     "lines instead of letting it run off the right edge unclipped" do
+  w = 6; h = 5
+  unit = FakeMapUnit.new(width: w, height: h, chipset_id: 1,
+                          lower_layer: Array.new(w * h, 0), upper_layer: Array.new(w * h, 0),
+                          events: {})
+  st = menu_state
+  st.map = Game::Map.new(1, unit)
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update # -> Edit mode
+
+  # A realistic 6px/char stub, same pattern (and same caveat about the
+  # shared stub's own flat-0px #text_size never wrapping) as the battle
+  # status panel's clip check above.
+  original_text_size = RGSS::Bitmap.instance_method(:text_size)
+  RGSS::Bitmap.send(:define_method, :text_size) { |s| RGSS::Rect.new(0, 0, s.length * 6, 0) }
+  contents = scene.instance_variable_get(:@contents)
+  # L's own #update already ran a #refresh under the stub's flat-0px
+  # #text_size (never wraps), leaving that unwrapped call in #draw_calls too
+  # -- drop it so this only asserts on the patched refresh below.
+  contents.instance_variable_set(:@draw_calls, [])
+  begin
+    scene.send(:refresh)
+  ensure
+    RGSS::Bitmap.send(:define_method, :text_size, original_text_size)
+  end
+
+  footer_top = RPG2k::Scene::MapViewer::HEADER_H +
+               scene.instance_variable_get(:@view_h) * scene.instance_variable_get(:@zoom)
+  footer_calls = contents.draw_calls.select { |(_x, y, *)| y >= footer_top }
+  ok footer_calls.size >= 2,
+     "the 72-char Edit-mode hint wrapped onto #{footer_calls.size} line(s), expected at least 2"
+  ok footer_calls.all? { |(_x, _y, _w, _h, text)| text.length * 6 <= contents.width },
+     'every wrapped line actually fits within the screen, not just the box #draw_text was given'
+  eq 'Arrows:Move C:Paint CTRL:Pick SHIFT:Layer R:Save B:Exit +/-:Zoom',
+     footer_calls.map { |c| c[4] }.join(' '),
+     'wrapping only rejoins words with single spaces -- no word was dropped, duplicated, or reordered'
+end
+
+check '+/- zoom the MapViewer in and out, scaling drawn tile size and shrinking/growing ' \
+     'the tile viewport to match, clamped to ZOOM_MIN/ZOOM_MAX -- PLUS/MINUS rather than ' \
+     'the RGSS face-button ids X/Y, whose physical keys are already taken (X cancels, and ' \
+     'Y is unbound) on the SDL backend\'s own default layout' do
+  map_w = 6; map_h = 5
+  st = menu_state
+  st.map = Game::Map.new(1, OpenStruct.new(width: map_w, height: map_h, chipset_id: 1,
+                                           lower_layer: Array.new(map_w * map_h, 0),
+                                           upper_layer: Array.new(map_w * map_h, 0),
+                                           events: {}))
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  eq RPG2k::Scene::MapViewer::ZOOM_MIN, scene.instance_variable_get(:@zoom), 'opens at 1px/tile'
+  view_w_before = scene.instance_variable_get(:@view_w)
+  view_h_before = scene.instance_variable_get(:@view_h)
+
+  RGSS::Input.triggered = [RGSS::Input::PLUS]
+  scene.update
+  eq 2, scene.instance_variable_get(:@zoom), '+ steps the zoom up by one'
+  eq view_w_before / 2, scene.instance_variable_get(:@view_w),
+     'doubling the pixels-per-tile halves how many tiles the same-size viewport can show'
+  eq view_h_before / 2, scene.instance_variable_get(:@view_h)
+
+  contents = scene.instance_variable_get(:@contents)
+  header = RPG2k::Scene::MapViewer::HEADER_H
+  row0 = contents.fill_calls.find { |(x, y, _w, rh, _c)| x == 0 && y == header && rh == 2 }
+  ok row0, 'row 0 is drawn 2px tall at zoom 2x, not the original 1px'
+  eq map_w * 2, row0[2], 'and 2px wide per tile across the whole passable run'
+
+  RGSS::Input.triggered = [RGSS::Input::MINUS]
+  scene.update
+  eq 1, scene.instance_variable_get(:@zoom), '- steps the zoom back down'
+  eq view_w_before, scene.instance_variable_get(:@view_w), 'back to the original tile count'
+
+  (RPG2k::Scene::MapViewer::ZOOM_MAX + 2).times do
+    RGSS::Input.triggered = [RGSS::Input::PLUS]
+    scene.update
+  end
+  eq RPG2k::Scene::MapViewer::ZOOM_MAX, scene.instance_variable_get(:@zoom),
+     '+ clamps at ZOOM_MAX rather than growing without bound'
+
+  RPG2k::Scene::MapViewer::ZOOM_MAX.times do
+    RGSS::Input.triggered = [RGSS::Input::MINUS]
+    scene.update
+  end
+  eq RPG2k::Scene::MapViewer::ZOOM_MIN, scene.instance_variable_get(:@zoom),
+     '- clamps at ZOOM_MIN rather than going to 0 or negative'
+end
+
+check 'a Scene::MapViewer opened with map: other than state.map (Scene::DebugMenu\'s Map ' \
+     "page browsing a different id -- see #open_map_viewer) is not live: its cursor centres " \
+     "on the browsed map's own middle tile rather than the live player's position, which " \
+     "could be out of bounds (or simply meaningless) on a map the player isn't actually on, " \
+     'and it draws no player marker at all' do
+  st = menu_state
+  st.x = 3; st.y = 4
+  st.map = fake_map(1, {}) # the player's own live map, distinct from the one being browsed
+  foreign = Game::Map.new(9, OpenStruct.new(width: 20, height: 16, chipset_id: 1,
+                                            lower_layer: Array.new(20 * 16, 0),
+                                            upper_layer: Array.new(20 * 16, 0),
+                                            events: {}))
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st, map: foreign)
+  ok !scene.instance_variable_get(:@live), 'map: other than state.map is not live'
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update # -> Select mode
+  eq foreign.width / 2, scene.instance_variable_get(:@cx),
+     "the cursor opens on the browsed map's own middle tile, not the live player's (3, 4)"
+  eq foreign.height / 2, scene.instance_variable_get(:@cy)
+
+  contents = scene.instance_variable_get(:@contents)
+  ok !contents.fill_calls.any? { |(*rest)| rest.last == RPG2k::Scene::MapViewer::PLAYER_COLOR },
+     "no player marker is drawn on a map the player isn't actually standing on"
+end
+
+check 'Scene::MapViewer opened with no map: (or map: state.map explicitly) behaves exactly ' \
+     'as before this parameter existed -- live, centred on the real player position' do
+  st = menu_state
+  st.x = 3; st.y = 4
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  ok scene.instance_variable_get(:@live), 'defaulting map: to state.map is live'
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update
+  eq 3, scene.instance_variable_get(:@cx), "the cursor opens on the live player's own tile"
+  eq 4, scene.instance_variable_get(:@cy)
+end
+
+check 'Scene::Base#screen_width/#screen_height fall back to RPG2000\'s fixed 320x240 ' \
+     'when RPG2K_SCREEN_WIDTH/HEIGHT is undefined (the CRuby-only host this check itself ' \
+     'runs under), the same guard RPG2k#map_editor? uses' do
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  eq RPG2k::WIDTH, scene.send(:screen_width),
+     'undefined RPG2K_SCREEN_WIDTH falls back to RPG2000\'s own resolution, not a NameError'
+  eq RPG2k::HEIGHT, scene.send(:screen_height)
+end
+
+check "ChipsetEditor's C toggles passability (all four direction bits at once) " \
+     "without disturbing an upper cell's star/counter bits" do
+  db = fake_db
+  db.chipset[1] = FakeChipsetRow.new(
+    passable_data_lower: Array.new(162, 0),
+    passable_data_upper: Array.new(144, Game::ChipSet::ABOVE_BIT | Game::ChipSet::COUNTER_BIT)
+  )
+  st = menu_state
+  st.map = fake_map(1, {}) # chipset_id 1
+  scene = RPG2k::Scene::ChipsetEditor.new(fake_parent(db), st)
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq Game::ChipSet::ALL_DIRS, db.chipset[1].passable_data_lower[0],
+     'C toggled lower cell 0 from blocked to fully passable'
+
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update
+  eq :upper, scene.instance_variable_get(:@tab), 'L switches to the Upper tab'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  byte = db.chipset[1].passable_data_upper[0]
+  ok (byte & Game::ChipSet::ALL_DIRS) != 0, 'the upper cell is now passable too'
+  ok (byte & Game::ChipSet::ABOVE_BIT) != 0, "toggling passability left the star bit alone"
+  ok (byte & Game::ChipSet::COUNTER_BIT) != 0, 'and left the counter bit alone too'
+end
+
+check "ChipsetEditor's R saves the database and rebuilds the live map's chipset" do
+  db = fake_db
+  db.chipset[1] = FakeChipsetRow.new(passable_data_lower: Array.new(162, 0),
+                                     passable_data_upper: Array.new(144, 0))
+  saved_to = nil
+  db.define_singleton_method(:save_to) { |path| saved_to = path }
+  st = menu_state
+  st.map = fake_map(1, {})
+  parent = fake_parent(db)
+  Dir.mktmpdir('chipset-editor-save-check') do |dir|
+    parent.map_dir = dir
+    rebuilt = false
+    map_scene = Object.new
+    map_scene.define_singleton_method(:rebuild_chipset) { rebuilt = true }
+    parent.map_scene = map_scene
+    scene = RPG2k::Scene::ChipsetEditor.new(parent, st)
+
+    RGSS::Input.triggered = [RGSS::Input::C] # toggle a cell so there is something to save
+    scene.update
+
+    RGSS::Input.triggered = [RGSS::Input::R]
+    scene.update
+    eq File.join(dir, 'RPG_RT.ldb'), saved_to, 'saved via the parent-computed db_path'
+    ok rebuilt, "the live map scene's chipset was rebuilt so the edit shows immediately"
+    ok !scene.instance_variable_get(:@dirty), 'saving clears the unsaved flag'
+  end
+end
+
+check 'ChipsetEditor.new(..., quit_on_close: true) -- what --rpg2k_chipset_editor uses -- ' \
+     'exits the whole process on B instead of popping back to the ordinary playable ' \
+     'map the flag skipped past' do
+  db = fake_db
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::ChipsetEditor.new(fake_parent(db), st, quit_on_close: true)
+  exit_called = false
+  scene.define_singleton_method(:exit) { exit_called = true }
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok exit_called, 'B calls exit instead of @parent.pop'
+  ok !scene.parent.pop_called, 'the parent is never popped when quit_on_close is set'
+end
+
+check 'the debug menu Animation page adjusts an id (Up/Down by one, L/R by ten) and ' \
+     'C plays it back on the live map scene, then closes to the map' do
+  st = menu_state
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  4.times do # Switch -> Variable -> Map -> Chipset -> Animation
+    RGSS::Input.triggered = [RGSS::Input::RIGHT]
+    scene.update
+  end
+  eq :animation, scene.instance_variable_get(:@mode), 'four Rights cycle to the Animation page'
+
+  RGSS::Input.triggered = [RGSS::Input::R] # +10
+  scene.update
+  eq 11, scene.instance_variable_get(:@anim_id)
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # +1
+  scene.update
+  eq 12, scene.instance_variable_get(:@anim_id)
+
+  built = nil
+  map_scene = Object.new
+  map_scene.define_singleton_method(:anim_target) { |*args, **kwargs| [args, kwargs] }
+  map_scene.define_singleton_method(:build_animation) do |id, targets, battle|
+    built = [id, targets, battle]
+    :the_animation
+  end
+  map_scene.instance_variable_set(:@map_animation, nil)
+  map_scene.define_singleton_method(:map_animation=) { |v| @map_animation = v }
+  map_scene.define_singleton_method(:map_animation) { @map_animation }
+  scene.parent.map_scene = map_scene
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  eq 12, built[0], 'C built animation #12 (the adjusted id)'
+  eq true, built[2], 'as a battle-style (screen-space) play, matching a real battle round'
+  eq :the_animation, map_scene.map_animation, 'and assigned it as the live map animation'
+  ok scene.parent.pop_to_map_called, 'and closed the whole debug menu back to the map'
 end
 
 check "a troop's terrain_set excludes it from a tile it does not cover" do

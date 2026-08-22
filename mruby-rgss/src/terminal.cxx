@@ -49,6 +49,8 @@ enum Key {
   KEY_A = 4,
   KEY_B = 5,
   KEY_C = 6,
+  KEY_L = 10,
+  KEY_R = 11,
   KEY_SHIFT = 12,
   KEY_CTRL = 13,
   KEY_F5 = 15,
@@ -528,8 +530,8 @@ void terminal_append_legend(std::string& s) {
   // legible on any terminal background -- a dim foreground (SGR 2) was too
   // faint to read on light themes.
   s += "\x1b[K\x1b[7m";
-  s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  Quit: Q  "
-       "Debug(testplay): T=Ctrl F=Shift F9  Bug report: F8";
+  s += "Move: Arrows/WASD  OK: Z/Enter/Space  Cancel: X/Esc  A: C  L/R: L/R  "
+       "Quit: Q  Debug(testplay): T=Ctrl F=Shift F9  Bug report: F8";
   s += "\x1b[0m\r\n";
 }
 
@@ -836,6 +838,24 @@ void terminal_poll(mrb_state* M) {
       case 'f':
       case 'F':
         hold_key(M, KEY_SHIFT, now);
+        break;
+      // L/R (shoulder-button paging: DebugMenu's own page/block jumps, the
+      // debug editors' layer/mode switches, shop and formation-change
+      // scrolling, ...) had no terminal binding at all until this -- unlike
+      // Ctrl/Shift above there is no modifier ambiguity to work around here,
+      // this was simply never wired up. The SDL backend's own default
+      // (Q/PageUp for L, W/PageDown for R, matching RPG Maker XP's own
+      // keyboard layout) doesn't carry over: Q already means quit and W
+      // already means Up in this backend's own WASD-for-arrows scheme, so L
+      // and R get their own literal letters instead, both otherwise unused
+      // here.
+      case 'l':
+      case 'L':
+        hold_key(M, KEY_L, now);
+        break;
+      case 'r':
+      case 'R':
+        hold_key(M, KEY_R, now);
         break;
       case 'q':
       case 0x03:  // 'q' or Ctrl-C = quit

@@ -564,7 +564,7 @@ class RPG2k
     @test_play = args.include?('TestPlay') || native_test_play?
     @hide_title = args.include?('HideTitle')
 
-    @db = LCF::Database.new File.open "#{GAME_DIR}/RPG_RT.ldb"
+    @db = LCF::Database.new File.open db_path
     @map_tree = LCF::MapTree.new File.open "#{GAME_DIR}/RPG_RT.lmt"
     # Put the game's own name on the window (and on the browser tab in the web
     # build), the way RPG_RT.exe titles its own.
@@ -661,6 +661,18 @@ class RPG2k
     pop while @scenes.size > 1
   end
 
+  # The base Scene::Map underneath whatever menus/debug tools are currently
+  # pushed on top -- always @scenes.first, since only #return_to_title and
+  # #show_game_over ever replace @scenes wholesale (both away from a running
+  # game entirely), and only #push/#pop touch it otherwise. Debug tools that
+  # need to reach into the live map scene itself (not just Game::State) go
+  # through this -- e.g. Scene::DebugMenu's Animation page, which fires a
+  # battle-animation preview by calling Scene::Map's own animation-player
+  # methods directly, the same way Scene::Battle does.
+  def map_scene
+    @scenes.first
+  end
+
   # Tear down all scenes and return to a fresh title screen.
   def return_to_title
     @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
@@ -678,12 +690,25 @@ class RPG2k
     @scenes = [Scene::GameOver.new(self, state)]
   end
 
-  # Load one map (.lmu) by id. Map files are named Map0001.lmu, Map0002.lmu, ...
-  def load_map id
+  # Map0001.lmu, Map0002.lmu, ... -- shared by #load_map and the debug Map
+  # Editor's own save-back-to-disk action (Scene::MapViewer), which needs the
+  # same path a second time to write to rather than only to read from.
+  def map_path(id)
     num = id.to_s
     num = "0#{num}" while num.size < 4
-    path = "#{GAME_DIR}/Map#{num}.lmu"
-    Game::Map.new id, LCF::MapUnit.new(File.open(path))
+    "#{GAME_DIR}/Map#{num}.lmu"
+  end
+
+  # RPG_RT.ldb -- shared by #initialize's own @db load and
+  # Scene::ChipsetEditor's save-back-to-disk action, the database's
+  # counterpart to #map_path above.
+  def db_path
+    "#{GAME_DIR}/RPG_RT.ldb"
+  end
+
+  # Load one map (.lmu) by id.
+  def load_map id
+    Game::Map.new id, LCF::MapUnit.new(File.open(map_path(id)))
   end
 
   # New Game: build the initial party from the database, read the start
@@ -726,9 +751,49 @@ class RPG2k
     # random encounter's would; the battle then waits for input until the run
     # times out. A no-op when the flag is unset.
     scene.headless_battle(headless_battle_troop) if headless_battle_troop
+    # --rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation:
+    # jump straight to the named debug tool once the map is up, the same way
+    # --rpg2k_battle_troop jumps straight to a fight -- skips navigating
+    # there through F9 by hand. Each is independent and all three can combine
+    # (a chipset editor pushed on top of a map editor, say); none touch the
+    # others' own state.
+    open_map_editor(state) if map_editor?
+    open_chipset_editor(state) if chipset_editor?
+    fire_preview_animation(scene) if preview_animation_id
   rescue StandardError => e
     # Never let a data problem crash the title screen; report and stay put.
     $stderr.puts "[RPG2k] Failed to start new game: #{e.message}"
+  end
+
+  # --rpg2k_map_editor: push Scene::MapViewer straight into Edit mode on top
+  # of the just-built map scene, the same scene F9's Map page would push, just
+  # skipping the menu navigation to get there.
+  def open_map_editor(state)
+    push Scene::MapViewer.new(self, state, start_mode: :edit, quit_on_close: true)
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] --rpg2k_map_editor failed to open: #{e.message}"
+  end
+
+  # --rpg2k_chipset_editor: push Scene::ChipsetEditor for the starting map's
+  # chipset, the same scene F9's Chipset page would push.
+  def open_chipset_editor(state)
+    push Scene::ChipsetEditor.new(self, state, quit_on_close: true)
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] --rpg2k_chipset_editor failed to open: #{e.message}"
+  end
+
+  # --rpg2k_preview_animation: play the named battle animation back on `scene`
+  # (the just-built map scene) screen-centred, through the same
+  # build_animation/anim_target/map_animation= trio Scene::DebugMenu's own
+  # Animation page and a real battle round both use. Unlike the two editors
+  # above this pushes nothing -- the animation plays right on the field map,
+  # which is still the top of the scene stack.
+  def fire_preview_animation(scene)
+    target = scene.anim_target(RPG2k::WIDTH / 2, RPG2k::HEIGHT / 2, height: nil,
+                                                                     index: nil, flash_target: nil)
+    scene.map_animation = scene.build_animation(preview_animation_id, [target], true)
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] --rpg2k_preview_animation failed: #{e.message}"
   end
 
   # --rpg2k_battle: the troop id to open a headless battle against right after
@@ -749,6 +814,32 @@ class RPG2k
   # to nil.
   def preview_map_id
     RPG2K_PREVIEW_MAP.zero? ? nil : RPG2K_PREVIEW_MAP
+  rescue StandardError
+    nil
+  end
+
+  # --rpg2k_map_editor / --rpg2k_chipset_editor: whether to open the named
+  # debug tool right after New Game. Guarded the same way as #preview_map_id:
+  # an undefined RPG2K_MAP_EDITOR/RPG2K_CHIPSET_EDITOR (the CRuby-only host
+  # harnesses that load this file never define them) raises NameError,
+  # rescued to false.
+  def map_editor?
+    RPG2K_MAP_EDITOR
+  rescue StandardError
+    false
+  end
+
+  def chipset_editor?
+    RPG2K_CHIPSET_EDITOR
+  rescue StandardError
+    false
+  end
+
+  # --rpg2k_preview_animation: the animation id to play back right after New
+  # Game, or nil when unset (0, the default -- see src/main.cxx; animation
+  # ids start at 1). Guarded the same way as #preview_map_id.
+  def preview_animation_id
+    RPG2K_PREVIEW_ANIMATION.zero? ? nil : RPG2K_PREVIEW_ANIMATION
   rescue StandardError
     nil
   end

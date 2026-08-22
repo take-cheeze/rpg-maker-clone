@@ -47,15 +47,37 @@
   already has, held down instead of tapped); press **F9** to open a debug
   menu listing every switch and variable, ten at a time, with a signed number
   editor for variables. A third page (Left/Right past Switch/Variable), Map —
-  this engine's own addition, not part of genuine RPG_RT's F9 menu — opens a
-  whole-map viewer: every tile of the current map at one pixel per tile
-  (green passable, dark red blocked), with a marker for the player and every
-  active map event, panned with the arrow keys and recentred on the player
-  with C. **R** enters Select mode, a single-tile cursor (arrow keys move it,
+  this engine's own addition, not part of genuine RPG_RT's F9 menu — steps a
+  selected map id (Up/Down by one, L/R by ten, the same convention the
+  Animation page below uses for its own id) and opens a whole-map viewer for
+  it with C: every tile of the selected map at one pixel per tile (green
+  passable, dark red blocked), with a marker for the player and every active
+  map event when it's the player's own current map (a different id opens a
+  fresh, read-only-until-edited view of that map instead — no player marker,
+  since the player isn't standing on it), panned with the arrow keys and
+  recentred with C. **R** enters Select mode, a single-tile cursor (arrow keys move it,
   the viewport auto-scrolling to keep it in view) that reports the tile
   underneath — coordinates, passable/blocked, and any map event standing
   there — and warps the player onto it with C, through the same queued-warp
-  mechanism a Teleport field skill uses rather than editing position by hand
+  mechanism a Teleport field skill uses rather than editing position by hand.
+  **L** instead enters Edit mode — this engine's own in-game Map Editor:
+  **Ctrl** picks up the tile under the cursor as the brush, **Shift** swaps
+  which layer (lower/upper) is active, **C** stamps the brush onto the
+  cursor's tile (rewriting that one cell — unlike Tile Substitution's
+  map-wide "every tile with this id" rewrite), and **R** writes the edited
+  map back to its `.lmu` file. A brush only ever comes from the eyedropper,
+  never a typed id, so a painted tile is always one that already validly
+  exists somewhere on the map. A fourth page, Chipset, opens a passability
+  editor for the current map's chipset: a coloured grid (green passable, dark
+  red blocked) over its 162 lower / 144 upper cells — **L** switches between
+  them, arrow keys move the cell cursor, **C** toggles passability on the
+  selected cell (all four direction bits at once, leaving an upper cell's
+  own "star"/counter flags untouched), and **R** writes the database back to
+  its `.ldb` file and refreshes the live map's chipset so the edit is visible
+  immediately. A fifth page, Animation, previews a battle animation: Up/Down
+  steps the id by one and L/R by ten, and **C** plays it back on the field
+  map through the same animation player a real battle round uses, closing
+  the debug menu so it's what's on screen
 - **F8 dumps a bug report** — unlike the Test Play keys above this works in a
   released game too, from any scene (map, menu, battle, ...): a Markdown block
   with the current map id, the hero's x/y/direction, each party member's
@@ -80,6 +102,37 @@
   the named database troop (the 2003 test beds ship no encounters, so a bare
   boot never reaches a fight on its own) — a headless way to drive a real
   project into the battle scene, logging the fight as `[RPG2k-BATTLE]`
+- `--rpg2k_map_editor`, `--rpg2k_chipset_editor` and
+  `--rpg2k_preview_animation=<id>` each start New Game and immediately push
+  the F9 debug menu's Map Editor, Chipset editor or Animation preview
+  (see "Map exploration" above) straight onto the screen, skipping opening F9
+  and paging to them by hand. Closing the Map Editor or Chipset editor (B)
+  exits the process instead of falling back to the ordinary playable map
+  underneath — the flag skipped past F9 to get there, so an unqualified pop
+  would land in a live, controllable game rather than ending the run; opening
+  either editor from F9 itself still just pops back to the debug menu.
+  Combine with `--rpg2k_preview_map` to choose
+  which map (and so which chipset) is open, and with the terminal backends
+  below and `--timeout_ms` for a headless screenshot. Unlike every other flag
+  on this page, these three do **not** need `--test_play`/`Game.ini`
+  `[Game] Test=1` alongside them — passing one is already the same kind of
+  deliberate, explicit opt-in `--test_play` itself is, so requiring both
+  would only be redundant typing. Interactive F9 access still requires
+  `--test_play` as always; this only affects launching straight into a tool
+  from the command line. The Map Editor also fills whatever screen size
+  `--width`/`--height` asks for (RPG2000/2003's own fixed 320x240 only binds
+  real gameplay, not this debug-only tool), and its own **+**/**-** keys zoom
+  each tile from the original 1px up to 8px — useful on a bigger screen,
+  where 1px/tile would otherwise be too fine-grained to paint precisely (not
+  **Y**/**X**: the SDL desktop backend's own default layout already binds the
+  physical X key to Cancel and leaves Y unbound, so +/- — already wired to
+  the same keys on every backend for RPG2003's Key Input Processing — avoids
+  that collision):
+
+  ```sh
+  ./rpg_maker_clone --iterm --game_dir path/to/game --rpg2k_preview_map=5 \
+      --rpg2k_map_editor --timeout_ms=2000
+  ```
 
 ### Events, menu & saving
 - Map events run through an event-command interpreter: messages and choices,
@@ -520,9 +573,11 @@
   ```
 
 - Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm (C),
-  `X`/`Esc` to cancel (B), `C` for the A button, `Q` or `Ctrl-C` to quit. The
-  same reference is drawn as a one-line legend on the top row above the game
-  image
+  `X`/`Esc` to cancel (B), `C` for the A button, `L`/`R` for the shoulder
+  buttons (DebugMenu page/block jumps, the debug editors' layer/mode
+  switches, shop and formation-change scrolling, ...), `Q` or `Ctrl-C` to
+  quit. The same reference is drawn as a one-line legend on the top row
+  above the game image
 - The Test Play debug keys (see "Map exploration" above) work here too, held
   the same hold-to-repeat way the movement keys are: `T` stands in for Ctrl
   and `F` for Shift, since a raw terminal cannot tell a genuine Ctrl/Shift

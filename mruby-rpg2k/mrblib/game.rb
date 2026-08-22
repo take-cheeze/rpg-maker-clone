@@ -6070,7 +6070,34 @@ module Game
       @revision += 1
     end
 
+    # Overwrite one tile's own authored id, unlike #substitute_tile's map-wide
+    # "every tile with this id" rewrite -- the debug Map Editor's paint tool
+    # (Scene::MapViewer's Edit mode) uses these, not the event-command-facing
+    # Tile Substitution mechanism, since painting means "this one cell is now
+    # a different tile", not "reinterpret an id everywhere it appears". A
+    # no-op out of bounds, matching #lower/#upper's own bounds handling.
+    def set_lower(x, y, tile_id); set_tile(@lower, x, y, tile_id); end
+    def set_upper(x, y, tile_id); set_tile(@upper, x, y, tile_id); end
+
+    # Push #set_lower/#set_upper edits back into the LCF chunk data (chunks
+    # 71/72, both a plain :int16_array -- see mruby-lcf/mrblib/schema.rb)
+    # through #unit's own schema-driven `[]=`, so #unit.to_lcf/#unit.save_to
+    # actually carry them. Reading (#lower/#upper, and so Scene::Map's own
+    # rendering) never needs this: both already read straight off the same
+    # @lower/@upper arrays #set_lower/#set_upper mutate in place -- it is only
+    # the file writer that goes through #unit's own separately-decoded copy.
+    def sync_layers_to_unit
+      @unit[71] = @lower
+      @unit[72] = @upper
+    end
+
     private
+
+    def set_tile(layer, x, y, tile_id)
+      return unless in_bounds?(x, y)
+      layer[y * @width + x] = tile_id
+      @revision += 1
+    end
 
     def tile(layer, index, x, y)
       return nil unless in_bounds?(x, y)

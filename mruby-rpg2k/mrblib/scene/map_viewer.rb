@@ -30,13 +30,54 @@ class RPG2k
     # Teleport-command machinery (reloading the map, replaying its access/BGM
     # setup) on its very next #update, rather than this scene hand-mutating
     # `@state.x`/`@state.y` and leaving that machinery unrun.
+    #
+    # L enters Edit mode instead -- this engine's actual Map Editor -- the same
+    # cursor repurposed to paint. CTRL picks up the tile under the cursor (on
+    # the active layer) as the brush; SHIFT swaps which layer (lower/upper) is
+    # active; C stamps the brush onto the cursor's tile via Game::Map#set_lower
+    # / #set_upper (an outright rewrite of that one cell, unlike Tile
+    # Substitution's map-wide "every tile with this id" rewrite); R writes the
+    # edited map back to its .lmu file. Edits are live the instant they're
+    # painted either way (Scene::Map reads the same @lower/@upper arrays), so R
+    # is only about persisting past this session, not about the edit taking
+    # effect. Brushes only ever come from the eyedropper, never typed as a raw
+    # id, so a painted tile is always one that already validly exists
+    # somewhere on this map. This viewer still only ever shows passable/
+    # blocked colour blocks, not real tile art (see #tile_color) -- painting
+    # between two tiles with the same passability will not visibly change
+    # anything here even though the underlying id did change.
     class MapViewer < Base
-      SCREEN_W = RPG2k::WIDTH
-      SCREEN_H = RPG2k::HEIGHT
       HEADER_H = 16
-      FOOTER_H = 16
+      # Three lines tall: Edit mode's hint ('Arrows:Move  C:Paint  CTRL:Pick
+      # SHIFT:Layer  R:Save  B:Exit  +/-:Zoom') runs wider than the 320px
+      # screen on one line and needs to wrap (see Base#draw_wrapped_hint) --
+      # reserved unconditionally, for every mode, so the viewport doesn't
+      # resize when switching modes. Three rather than two lines: on the
+      # narrowest (320px) screen this hint still wraps to three, and a line
+      # that doesn't fit the reservation draws past #draw_wrapped_hint's own
+      # box uninspected -- Bitmap#draw_text neither wraps nor clips, so it
+      # would simply vanish off the bitmap's bottom edge instead of the
+      # right one this fix already covers.
+      FOOTER_H = HEADER_H * 3
       PAN_STEP = 8
       CURSOR_MARGIN = 2
+      # Pixels drawn per map tile (see #draw_tile_row) -- 1 is the original,
+      # one-pixel-per-tile density; +/- (zoom in/out, RGSS::Input::PLUS/MINUS
+      # -- see #update_pan and friends) step it up to ZOOM_MAX for a screen
+      # too fine-grained to paint on precisely, especially once
+      # #screen_width/#screen_height hands this scene more room than
+      # RPG2000's own 320x240 to work with. Deliberately not RGSS::Input::X/Y
+      # (RPG Maker's face-button ids, not literal key names): the SDL desktop
+      # backend's own default layout already binds the physical X key to
+      # Input::B (Cancel) and leaves physical Y unbound entirely (see
+      # src/sdl_input.cxx's own comment), so a hint reading "Y/X:Zoom" would
+      # have told a player to press Cancel to zoom in and nothing at all to
+      # zoom out. Input::PLUS/MINUS (bound to the numpad/main-row +/- keys on
+      # every backend already, for RPG2003's Key Input Processing) sidesteps
+      # that collision and works identically under the terminal backends too
+      # (mruby-rgss/src/terminal.cxx already types '+'/'-' the same way).
+      ZOOM_MIN = 1
+      ZOOM_MAX = 8
 
       PASSABLE_COLOR = Color.new(64, 160, 64, 255)
       BLOCKED_COLOR = Color.new(160, 48, 48, 255)
@@ -47,25 +88,63 @@ class RPG2k
       TEXT_COLOR = Color.new(255, 255, 255, 255)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
-      def initialize(parent, state)
+      # `start_mode:` lets a caller that already knows it wants Edit (or
+      # Select) mode skip the usual pan-mode landing page -- used by
+      # RPG2k#open_map_editor (the --rpg2k_map_editor flag), which exists
+      # specifically to skip navigating here by hand.
+      #
+      # `map:` lets a caller browse/edit a map other than the one the player
+      # is actually standing on (Scene::DebugMenu's Map page, stepping
+      # @map_id with Up/Down/L/R the same way its Animation page steps an
+      # animation id, then loading it via RPG2k#load_map) -- defaults to
+      # `state.map`, the player's real live map, unchanged from before this
+      # parameter existed. @live (below) tells the two apart so this scene
+      # never draws the player or another map's wandered-event positions on
+      # top of a map the player isn't actually on.
+      # `quit_on_close:` -- set by RPG2k#open_map_editor (the
+      # --rpg2k_map_editor flag) -- makes B in pan mode quit the whole process
+      # instead of popping back to whatever this viewer was pushed on top of.
+      # --rpg2k_map_editor pushes this scene straight onto a freshly-built
+      # Scene::Map (skipping F9 entirely, see #open_map_editor's own comment),
+      # so an ordinary #pop there would drop the CLI flag's whole point --
+      # jumping straight into the editor for a quick edit or a headless
+      # screenshot -- into an ordinary, playable field map instead of ending
+      # the run. Left false (the default) for every other caller, including
+      # F9's own Map page, where popping back to the debug menu underneath is
+      # exactly the wanted behaviour.
+      def initialize(parent, state, map: nil, start_mode: :pan, quit_on_close: false)
         super parent
         @state = state
-        @map = state.map
+        @map = map || state.map
+        @live = @map.equal?(state.map)
+        @quit_on_close = quit_on_close
         @chipset = build_chipset
         @skin = make_windowskin
         @background = build_field_background(@skin)
-        @window = Window.new(0, 0, SCREEN_W, SCREEN_H)
+        w = screen_width
+        h = screen_height
+        @window = Window.new(0, 0, w, h)
         @window.z = 400
         @window.windowskin = @skin
-        @contents = Bitmap.new(SCREEN_W - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
+        @contents = Bitmap.new(w - Window::BORDER * 2, h - Window::BORDER * 2)
         @window.contents = @contents
-        @view_w = @contents.width
-        @view_h = @contents.height - HEADER_H - FOOTER_H
-        @pannable = @map && (@map.width > @view_w || @map.height > @view_h)
-        @select = false
+        @zoom = ZOOM_MIN
+        recompute_view
+        @mode = :pan
+        @brush_layer = :lower
+        @brush = 0
+        @dirty = false
         @ox = 0
         @oy = 0
         center_on_player
+        # #enter_edit_mode/#enter_select_mode already refresh when @map is
+        # present, but a no-op (no map at all -- not the normal case, only
+        # reachable if this scene is ever built without one) still needs the
+        # unconditional #refresh below to draw its "No map loaded" screen.
+        case start_mode
+        when :edit then enter_edit_mode
+        when :select then enter_select_mode
+        end
         refresh
       end
 
@@ -75,19 +154,29 @@ class RPG2k
       end
 
       def update
-        @select ? update_select : update_pan
+        case @mode
+        when :select then update_select
+        when :edit then update_edit
+        else update_pan
+        end
       end
 
       private
 
       def update_pan
         if Input.trigger?(Input::B)
-          @parent.pop
+          close
         elsif Input.trigger?(Input::C)
           center_on_player
           refresh
         elsif Input.trigger?(Input::R)
           enter_select_mode
+        elsif Input.trigger?(Input::L)
+          enter_edit_mode
+        elsif Input.trigger?(Input::PLUS)
+          zoom_in
+        elsif Input.trigger?(Input::MINUS)
+          zoom_out
         elsif @pannable
           refresh if pan
         end
@@ -95,22 +184,127 @@ class RPG2k
 
       def update_select
         if Input.trigger?(Input::B) || Input.trigger?(Input::R)
-          @select = false
+          @mode = :pan
           refresh
         elsif Input.trigger?(Input::C)
           teleport_to_cursor
+        elsif Input.trigger?(Input::PLUS)
+          zoom_in
+        elsif Input.trigger?(Input::MINUS)
+          zoom_out
         elsif move_cursor
           refresh
         end
       end
 
+      def update_edit
+        if Input.trigger?(Input::B) || Input.trigger?(Input::L)
+          @mode = :pan
+          refresh
+        elsif Input.trigger?(Input::C)
+          paint_cursor
+        elsif Input.trigger?(Input::CTRL)
+          pick_brush
+        elsif Input.trigger?(Input::SHIFT)
+          @brush_layer = @brush_layer == :lower ? :upper : :lower
+          refresh
+        elsif Input.trigger?(Input::R)
+          save_to_disk
+        elsif Input.trigger?(Input::PLUS)
+          zoom_in
+        elsif Input.trigger?(Input::MINUS)
+          zoom_out
+        elsif move_cursor
+          refresh
+        end
+      end
+
+      # See @quit_on_close's own comment on #initialize.
+      def close
+        return exit if @quit_on_close
+        @parent.pop
+      end
+
       def enter_select_mode
         return unless @map
-        @select = true
-        @cx = @state.x
-        @cy = @state.y
+        @mode = :select
+        @cx, @cy = cursor_start
         ensure_cursor_visible
         refresh
+      end
+
+      def enter_edit_mode
+        return unless @map
+        @mode = :edit
+        @cx, @cy = cursor_start
+        ensure_cursor_visible
+        refresh
+      end
+
+      # The player's real position on their own live map; the middle tile of
+      # any other map, the same landing spot --rpg2k_preview_map gives a
+      # freshly-opened preview (RPG2k#start_new_game) -- @state.x/y would be a
+      # coordinate on a *different* map here, meaningless (and potentially out
+      # of bounds) on this one.
+      def cursor_start
+        @live ? [@state.x, @state.y] : [@map.width / 2, @map.height / 2]
+      end
+
+      # +/- (zoom in/out) work identically in every mode -- panning, picking a
+      # tile, and painting all get easier to land precisely once a tile is
+      # more than the original one screen pixel across.
+      def zoom_in
+        set_zoom(@zoom + 1)
+      end
+
+      def zoom_out
+        set_zoom(@zoom - 1)
+      end
+
+      def set_zoom(z)
+        z = clamp(z, ZOOM_MIN, ZOOM_MAX)
+        return if z == @zoom
+        @zoom = z
+        recompute_view
+        @ox = clamp(@ox, 0, max_ox)
+        @oy = clamp(@oy, 0, max_oy)
+        ensure_cursor_visible if @mode == :select || @mode == :edit
+        refresh
+      end
+
+      # @view_w/@view_h stay in *tile* units throughout this scene (the pan/
+      # cursor/scroll maths below all compare them directly against
+      # @map.width/height) -- #draw_tile_row and friends are the only place
+      # that ever multiplies by @zoom, to go from a tile coordinate to the
+      # pixel one Bitmap#fill_rect/#draw_text want.
+      def recompute_view
+        @view_w = @contents.width / @zoom
+        @view_h = (@contents.height - HEADER_H - FOOTER_H) / @zoom
+        @pannable = @map && (@map.width > @view_w || @map.height > @view_h)
+      end
+
+      def paint_cursor
+        if @brush_layer == :lower
+          @map.set_lower(@cx, @cy, @brush)
+        else
+          @map.set_upper(@cx, @cy, @brush)
+        end
+        @dirty = true
+        refresh
+      end
+
+      def pick_brush
+        @brush = @brush_layer == :lower ? @map.lower(@cx, @cy) : @map.upper(@cx, @cy)
+        refresh
+      end
+
+      def save_to_disk
+        @map.sync_layers_to_unit
+        @map.unit.save_to(@parent.map_path(@map.id))
+        @dirty = false
+        refresh
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] map editor save failed: #{e.message}"
       end
 
       # One tile per press/repeat, unlike #pan's fixed pixel step -- the
@@ -200,8 +394,9 @@ class RPG2k
 
       def center_on_player
         return unless @map
-        @ox = clamp(@state.x - @view_w / 2, 0, max_ox)
-        @oy = clamp(@state.y - @view_h / 2, 0, max_oy)
+        x, y = cursor_start
+        @ox = clamp(x - @view_w / 2, 0, max_ox)
+        @oy = clamp(y - @view_h / 2, 0, max_oy)
       end
 
       def clamp(v, lo, hi)
@@ -222,13 +417,18 @@ class RPG2k
 
       def draw_header
         @contents.font.color = TEXT_COLOR
-        text = @select ? select_header_text : player_header_text
+        text = case @mode
+               when :select then select_header_text
+               when :edit then edit_header_text
+               else player_header_text
+               end
         @contents.draw_text 0, 0, @contents.width, HEADER_H, text
       end
 
       def player_header_text
         return 'No map loaded' unless @map
-        "Map #{@map.id}  #{@map.width}x#{@map.height}  x:#{@state.x} y:#{@state.y}"
+        where = @live ? "x:#{@state.x} y:#{@state.y}" : '(browsing, not the live map)'
+        "Map #{@map.id}  #{@map.width}x#{@map.height}  #{where}  zoom:#{@zoom}x"
       end
 
       def select_header_text
@@ -239,7 +439,12 @@ class RPG2k
                end
         ev = event_at(@cx, @cy)
         ev_text = ev ? "  Event ##{ev[0]} #{ev[1]}" : ''
-        "Cursor x:#{@cx} y:#{@cy}  #{word}#{ev_text}"
+        "Cursor x:#{@cx} y:#{@cy}  #{word}#{ev_text}  zoom:#{@zoom}x"
+      end
+
+      def edit_header_text
+        dirty = @dirty ? '  *unsaved*' : ''
+        "Edit x:#{@cx} y:#{@cy}  layer:#{@brush_layer}  brush:#{@brush}#{dirty}  zoom:#{@zoom}x"
       end
 
       # The id and name of the map event standing at (x, y), or nil -- shares
@@ -254,14 +459,16 @@ class RPG2k
 
       def draw_footer
         @contents.font.color = HINT_COLOR
-        hint = if @select
+        hint = case @mode
+               when :select
                  'Arrows:Move  C:Teleport  B:Cancel'
-               elsif @pannable
-                 'Arrows:Pan  C:Center  R:Select  B:Close'
+               when :edit
+                 'Arrows:Move  C:Paint  CTRL:Pick  SHIFT:Layer  R:Save  B:Exit'
                else
-                 'R:Select  B:Close'
+                 @pannable ? 'Arrows:Pan  C:Center  R:Select  L:Edit  B:Close' \
+                            : 'R:Select  L:Edit  B:Close'
                end
-        @contents.draw_text 0, HEADER_H + @view_h, @contents.width, FOOTER_H, hint
+        draw_wrapped_hint("#{hint}  +/-:Zoom", HEADER_H + @view_h * @zoom, HEADER_H)
       end
 
       # One #fill_rect per same-coloured horizontal run rather than one
@@ -288,15 +495,19 @@ class RPG2k
         max_vx = [@view_w, @map.width - @ox].min
         run_start = 0
         run_color = nil
-        y = HEADER_H + vy
+        y = HEADER_H + vy * @zoom
         (0...max_vx).each do |vx|
           color = tile_color(@ox + vx, my)
           next if color.equal?(run_color)
-          @contents.fill_rect run_start, y, vx - run_start, 1, run_color if run_color
+          if run_color
+            @contents.fill_rect run_start * @zoom, y, (vx - run_start) * @zoom, @zoom, run_color
+          end
           run_start = vx
           run_color = color
         end
-        @contents.fill_rect run_start, y, max_vx - run_start, 1, run_color if run_color
+        if run_color
+          @contents.fill_rect run_start * @zoom, y, (max_vx - run_start) * @zoom, @zoom, run_color
+        end
       end
 
       def tile_color(x, y)
@@ -321,7 +532,11 @@ class RPG2k
         return unless @map
         events = @map.unit.events
         return unless events
-        positions = @state.map_event_positions || {}
+        # Only the live map's own events can have wandered from their authored
+        # spawn -- Game::State#map_event_positions records the *current* map's
+        # roaming, not every map's, so it says nothing about a map merely being
+        # browsed here (see @live's own comment).
+        positions = @live ? (@state.map_event_positions || {}) : {}
         events.each do |id, ev|
           pos = positions[id]
           x = pos ? pos[0] : ev.x
@@ -330,15 +545,23 @@ class RPG2k
         end
       end
 
+      # Only the live map has an actual player standing on it -- a browsed map
+      # has no in-bounds (@state.x, @state.y) to mark; it belongs to whichever
+      # map the player is really on, if any.
       def draw_player
+        return unless @live
         mark(@state.x, @state.y, PLAYER_COLOR)
       end
 
+      # A marker one pixel bigger than a tile block on every side, so it stays
+      # visible as a border even at ZOOM_MIN (1px tiles, where the tile itself
+      # would otherwise be indistinguishable from a same-coloured neighbour).
       def mark(x, y, color)
         vx = x - @ox
         vy = y - @oy
         return if vx.negative? || vy.negative? || vx >= @view_w || vy >= @view_h
-        @contents.fill_rect vx - 1, HEADER_H + vy - 1, 3, 3, color
+        size = @zoom + 2
+        @contents.fill_rect vx * @zoom - 1, HEADER_H + vy * @zoom - 1, size, size, color
       end
 
       # A hollow box around the cursor tile, not a filled block like #mark --
@@ -346,13 +569,13 @@ class RPG2k
       # marker, which it starts right on top of (Select mode opens on the
       # player's own tile).
       def draw_cursor
-        return unless @select
+        return unless @mode == :select || @mode == :edit
         vx = @cx - @ox
         vy = @cy - @oy
         return if vx.negative? || vy.negative? || vx >= @view_w || vy >= @view_h
-        x = vx - CURSOR_MARGIN
-        y = HEADER_H + vy - CURSOR_MARGIN
-        size = CURSOR_MARGIN * 2 + 1
+        x = vx * @zoom - CURSOR_MARGIN
+        y = HEADER_H + vy * @zoom - CURSOR_MARGIN
+        size = @zoom + CURSOR_MARGIN * 2
         @contents.fill_rect x, y, size, 1, CURSOR_COLOR
         @contents.fill_rect x, y + size - 1, size, 1, CURSOR_COLOR
         @contents.fill_rect x, y, 1, size, CURSOR_COLOR

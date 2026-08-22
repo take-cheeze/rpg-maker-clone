@@ -8747,6 +8747,12 @@ class RPG2k
              :fire_animation_flashes, :frames_from_tenths, :load_face_bitmap,
              :step_map_animation, :close_battle, :current_map_tone
 
+      # Reached from Scene::ChipsetEditor (a debug tool, pushed on top rather
+      # than a Scene::Battle callback like the block above) after it edits and
+      # saves the database's chipset row, so the change is visible in the
+      # field map immediately rather than only on the next map load.
+      public :rebuild_chipset
+
       def render
         px, py = player_pixel
         cam_x, cam_y = camera_position
