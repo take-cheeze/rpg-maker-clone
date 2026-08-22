@@ -6563,7 +6563,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, window, "active=", window_set_active, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "pause=", window_set_pause, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "stretch=", window_set_stretch, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "viewport=", window_set_viewport, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "viewport=", window_set_viewport,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "update", window_update, MRB_ARGS_NONE());
   // RGSS2 / RGSS3 (VX, VX Ace): the open/close animation and the background
   // tone. Native because both have to redraw -- and so they must NOT be
