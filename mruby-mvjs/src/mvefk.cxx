@@ -109,7 +109,8 @@ bool smoke_test(const char* path,
   }
 
   Effekseer::Handle handle = manager->Play(effect, 0.0f, 0.0f, 0.0f);
-  for (int i = 0; i < warmup_frames; ++i) manager->Update(1.0f);
+  for (int i = 0; i < warmup_frames; ++i)
+    manager->Update(1.0f);
   // Manager::Update's autoFlip (on by default, used here) syncs the
   // render-visible DrawSet snapshot at the *start* of Update, from state as
   // of the previous Update call -- so without this, DrawHandle below would
