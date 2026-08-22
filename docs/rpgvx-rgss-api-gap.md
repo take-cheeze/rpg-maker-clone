@@ -780,6 +780,95 @@ existed, the wrapping was never needed for `raise` either — `mrb_f_raise`'s
 zero-argument case now just re-raises `mrb->errinfo` directly when one is
 in scope. Both are fixed by `patches/mruby-dollar-bang-scoped.patch`.
 
+**Found and fixed: with `$!` finally working, the same real VX Ace release's
+crash-reporter add-on stopped masking exceptions -- and the game hung for
+minutes instead, on something that had nothing to do with `$!` at all.**
+Booting past the `マップフォグ` fix with `$!` in place produced total
+silence: no scene transition, no exception, no `[RPGXP-HOST-SCENE]` marker,
+just CPU pinned at 100% for as long as the run was given (tested past four
+minutes). Diagnosed by attaching `gdb` to the running headless process mid-hang
+(a real C++ backtrace, not the temporary `OP_EXCEPT` `fprintf` probe used
+above -- this hang was native, not a masked Ruby exception) and sampling it
+repeatedly: every sample landed inside `Tilemap#ox=`/`#oy=` or
+`Plane#ox=`/`#oy=` (`mruby-rgss/src/lib.cxx`), specifically inside their own
+`tilemap_refresh`/`plane_retile` — a full CPU-side re-composite of the visible
+tile grid or fog layer into an offscreen canvas. A temporary call counter
+confirmed why: hundreds of consecutive calls to the exact same already-stored
+`ox`/`oy` value. Real RGSS's stock `Spriteset_Map#update` reassigns
+`tilemap.ox`/`oy` (and a fog `Plane`'s own ox/oy) unconditionally every
+single frame, whether the camera moved or not — real RGSS treats this as a
+cheap, hardware-composited draw offset, so the redundant reassignment costs
+nothing there. This engine's `ox=`/`oy=` had no such guard, so a
+**stationary** camera still paid a full re-composite every frame. Fixed by
+adding a same-value early return to both setters on both classes (`tilemap_set_ox`/
+`_oy`, `plane_set_ox`/`_oy`) — one frame's worth of camera position, camera
+position, cheap to compare, wildly cheaper than the composite it used to
+force every time regardless. Past this fix, the release now reaches real
+event/battle content within seconds, not minutes.
+
+That real content immediately needed three more, smaller fixes, each just
+past where the last one stopped:
+
+- **Fixed: `Audio.bgs_play` rejected RGSS3's 4th (`pos`) argument** — the
+  same class of gap `Audio.bgm_play`'s `pos` argument fix (above) closed for
+  BGM, left open for BGS. Real RGSS3's stock `RPG::BGS#play` passes `pos` the
+  same way `RPG::BGM#play` does, but BGS's own backend
+  (`Mix_PlayChannel`-based, `src/sdl_audio.cxx`) has no seekable position to
+  resume the way `Mix_Music` does for BGM (this project's own earlier
+  `RPG::BGM#replay` work already noted this: "BGS's own `pos` field exists
+  for save-format fidelity, but its sample-channel backend never reports one
+  to resume from"). Every VX Ace game whose event system plays a BGS via the
+  stock 4-argument call raised `ArgumentError: wrong number of arguments
+  (given 4, expected 1..3)` the moment it ran. Fixed by accepting a 4th
+  `pos = 0` argument and warning once (`RGSS.warn_once`) if it is ever
+  actually nonzero, rather than raising — matching the *first* step of BGM's
+  own fix history, before real seeking was implemented there; BGS has no
+  seekable backend to build the rest of that fix on.
+- **Fixed: `Marshal.dump` called a custom `marshal_dump` with a stray
+  argument.** A real bug in the vendored `mruby-marshal` gem (its own
+  separate submodule, `take-cheeze/mruby-marshal` — not nested in
+  `3rd/mruby`'s own gem tree, so it gets its own patch file the same way):
+  `Marshal.dump` called a class's `marshal_dump` with one argument (a
+  literal `nil`) instead of the zero arguments real Ruby's documented
+  protocol defines for it — a leftover copy/paste from the `marshal_load`
+  call two cases below it in the same function, which legitimately does take
+  one argument (the dumped data). Found via a real VX Ace game's own
+  `Game_Interpreter`, which defines a real, standards-conforming
+  `marshal_dump` (RGSS3's own `BattleManager#save_battle_start_objects`
+  reached the first time any event's "Battle Processing" command runs, to
+  snapshot the interpreter's own state) — `ArgumentError: wrong number of
+  arguments (given 1, expected 0)`, raised from inside
+  `Game_Interpreter#marshal_dump` itself.
+- **Fixed: `Marshal.load` called a custom `marshal_load` as a class method
+  instead of real Ruby's instance-level protocol.** Fixing the argument
+  count above immediately surfaced a second, deeper incompatibility in the
+  same gem: `Marshal.load` called `SomeClass.marshal_load(data)` — a
+  *class*-level factory method expected to return a whole new, fully-restored
+  object — instead of real Ruby's actual protocol, which allocates a new
+  instance *without* running `#initialize` (`Class#allocate`) and then calls
+  the *instance* method `#marshal_load(data)` on that allocation to restore
+  its state in place. `Game_Interpreter#marshal_load` is defined the real,
+  standard way (an instance method), so calling it as a class method raised
+  `NoMethodError: undefined method 'marshal_load' for Class`. Both fixes
+  ship together as `patches/mruby-marshal-dump-load-protocol.patch` (that
+  patch's own preamble has the full trail, including a CRuby confirmation of
+  both directions and why this gem's own bundled test needed updating to the
+  corrected protocol alongside the fix itself).
+
+With all four of these in place, the same real release now runs its own
+`BattleManager#setup` (a full object-graph `Marshal` round-trip) and reaches
+into its bundled 吹きだしウィンドウ ("bubble window") speech-bubble add-on's
+own event-driven call path — new ground for this whole investigation, not
+reached even briefly before. It stops there on a fifth, different-shaped
+issue: `NoMethodError: undefined method 'defined?' for Module`, from inside
+that add-on's own `call_sceman_hukidasi`. `defined?` is ordinarily a Ruby
+*keyword* (`defined?(expr)`), not a real method invoked with a receiver, so
+this reads like an mruby compiler corner case in how some particular
+argument shape to `defined?` gets compiled — plausibly related in spirit to
+the `::Const = value` compiler bug found and fixed earlier in this same
+document, but not yet traced to a specific codegen path the way that one
+was. Left for the next round.
+
 ## What this means for turning the host on
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
@@ -796,11 +885,14 @@ only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
 now fixed too (`patches/mruby-dollar-bang-scoped.patch`, above), so the same
 real release's own crash-reporter add-on now sees the actual exception
 instead of masking it behind an unrelated `NoMethodError`, and re-raises it
-correctly. Eleven real bugs have been found and fixed this way so far
+correctly. Fifteen real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
-`Sprite#width`/`#height`, the `::Const = value` compiler bug, and `$!`/bare-
-`raise` itself) — the first ten via the temporary VM probe, finding the real
-exception directly regardless of `$!` being masked at the time. Where the
-next wall stands past the `マップフォグ` fix is not yet traced.
+`Sprite#width`/`#height`, the `::Const = value` compiler bug, `$!`/bare-
+`raise` itself, the `Tilemap`/`Plane` `ox=`/`oy=` redundant-refresh hang,
+`Audio.bgs_play`'s `pos` argument, and `Marshal`'s `marshal_dump`/
+`marshal_load` protocol mismatches) — the first ten via the temporary VM
+probe, finding the real exception directly regardless of `$!` being masked
+at the time. Where the next wall stands past `defined?` being called as a
+method inside 吹きだしウィンドウ's own event path is not yet traced.

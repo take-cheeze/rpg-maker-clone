@@ -126,6 +126,46 @@ assert "RGSS::Color equality and marshal" do
   assert_true a == loaded
 end
 
+# Regression test for two real bugs in the vendored 3rd/mruby-marshal gem
+# (patches/mruby-marshal-dump-load-protocol.patch's own preamble has the
+# full trail), both found via a real VX Ace game's own Game_Interpreter
+# (which defines a real, standards-conforming marshal_dump/marshal_load pair
+# to control what its own battle-start snapshot serializes --
+# BattleManager#setup, reached the first time any event's "Battle
+# Processing" command runs):
+#
+#   - Marshal.dump called a custom marshal_dump with one (stray nil)
+#     argument instead of the zero arguments real Ruby's protocol defines,
+#     raising ArgumentError on any class that defines one.
+#   - Marshal.load called a custom marshal_load as a *class* factory method
+#     (`klass.marshal_load data`, returning a whole new object) instead of
+#     real Ruby's protocol -- allocate a new instance without running
+#     #initialize, then call the *instance* method `#marshal_load(data)` on
+#     it to restore state in place -- raising NoMethodError on any class
+#     whose marshal_load is defined the standard way (an instance method,
+#     not `self.`).
+class RGSSTestMarshalDump
+  def initialize(v = nil)
+    @v = v
+  end
+
+  attr_reader :v
+
+  def marshal_dump
+    @v
+  end
+
+  def marshal_load(v)
+    @v = v
+  end
+end
+
+assert "Marshal round-trips a custom marshal_dump/marshal_load pair" do
+  loaded = Marshal.load(Marshal.dump(RGSSTestMarshalDump.new(42)))
+  assert_true loaded.is_a?(RGSSTestMarshalDump)
+  assert_equal 42, loaded.v
+end
+
 assert "RGSS::Tone basics and clamping" do
   t = RGSS::Tone.new(-300, 20, 30, 400)
   assert_equal(-255.0, t.red) # clamped to -255..255
@@ -1585,6 +1625,15 @@ end
 # accepted it.
 assert "RGSS::Audio.bgm_play accepts RGSS3's 4th (pos) argument" do
   assert_nil RGSS::Audio.bgm_play("Theme1", 80, 90, 5)
+end
+
+# Same RGSS3 4th (pos) argument as bgm_play above, but real stock RPG::BGS#play
+# passes it too -- BGS has no seekable backend to honour it with (unlike BGM,
+# its playback is a one-shot sample channel), so unlike bgm_play this accepts
+# and ignores a nonzero pos rather than raising ArgumentError on every VX Ace
+# game whose event system plays a BGS the stock way.
+assert "RGSS::Audio.bgs_play accepts RGSS3's 4th (pos) argument" do
+  assert_nil RGSS::Audio.bgs_play("Theme1", 80, 90, 5)
 end
 
 assert "RGSS::Audio.se_play resolves a name to a real file" do

@@ -1142,7 +1142,14 @@ module RGSS
         _bgm_pos
       end
 
-      def bgs_play(filename, volume = 100, pitch = 100)
+      # `pos` mirrors #bgm_play's 4th argument -- RGSS3's stock RPG::BGS#play
+      # passes it the same way RPG::BGM#play does -- but BGS has no seekable
+      # backend to honour it with (see #play_packed's own comment: its
+      # sample-channel playback never reports a position to resume from), so
+      # it is accepted and, if actually nonzero, warned about once rather
+      # than raising ArgumentError on every game that calls #play this way.
+      def bgs_play(filename, volume = 100, pitch = 100, pos = 0)
+        RGSS.warn_once("Audio.bgs_play: pos is not supported; ignoring") if pos != 0
         path = resolve(filename, MUSIC_DIRS)
         return _bgs_play(path, volume, pitch) if path
         play_packed(:bgs, filename, volume, pitch)
