@@ -6255,6 +6255,41 @@ The work below is roughly ordered by the critical path to a walkable game
   Right/Left neither move `@actor_index` nor play the cursor SE),
   confirmed to fail against the pre-fix code (`expected [], got
   [["Cursor1", ...]]`).
+  ✅ **Follow-up (cycle #121, 2026-08-22): `equip_menu.rb`'s solo-party
+  RIGHT/LEFT no-op, above, was independently re-verified against a genuine
+  RPG_RT.exe under wine — confirmed correct, no code change.** Every bullet
+  in this whole cluster (this one, `status_menu.rb`'s twin below, and the
+  discrete-vs-repeat finding further up) was checked only against EasyRPG
+  Player's own C++ source, never against real RPG_RT, exactly the kind of
+  claim this session's later methodology treats as worth re-checking on its
+  own. Built a synthetic single-actor `Save01.lsd` (デモ用, the existing
+  debug save already used for the file-select-screen investigations)
+  repositioned to a plain already-explored map (`gen-rpg2k-save.rb --map 12
+  --clear-scene`, avoiding the bedroom map's long unskippable narrative) and
+  drove genuine RPG_RT.exe under wine into `Scene_Equip` (Menu -> Equip):
+  with this solo-actor party, a single RIGHT tap immediately followed by a
+  single LEFT tap left the captured frame **pixel-identical** (`compare
+  -fuzz 5%`, 0 differing pixels) to a matched pair of idle frames sampled
+  the same distance apart with no key pressed at all — the only pixel
+  movement anywhere in the whole sequence, on every frame pair regardless of
+  input, was the windowskin's own constant cursor-blink noise floor (a
+  steady 3200px), never a rebuilt panel or a moved actor. Comment on
+  `Scene::EquipMenu#update_slots` (`mruby-rpg2k/mrblib/scene/equip_menu.rb`)
+  updated to record the re-verification rather than just citing EasyRPG,
+  mirroring the `ARROW_BLINK_FRAMES` precedent. **Left open, not chased
+  further this cycle**: (a) `status_menu.rb`'s identical claim was not
+  re-run against real RPG_RT — menu navigation landed on an unexpectedly
+  blank-labelled command row this cycle's time budget didn't resolve; (b)
+  the separate, adjacent discrete-vs-repeat claim (does RIGHT/LEFT actually
+  auto-repeat when held, vs. switching once per tap?) needs a **multi**-
+  actor party to observe at all, and every attempt to add a second party
+  member to this exact debug save's chunk 109 party list (even one, e.g.
+  `[15, 1]`, both ids already carrying a chunk 108 record) crashed genuine
+  RPG_RT outright on the very next map load — a real, if narrow, limitation
+  of this specific test save worth remembering before reaching for it again
+  for a multi-actor scenario, not something this cycle chased down further.
+  No fix shipped for either open half, per this session's own "no partial
+  fix for a narrowly-verified case" rule.
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Confirmed
   against EasyRPG Player's actual source: `Scene_Order::vUpdate` (`src/
