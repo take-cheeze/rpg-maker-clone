@@ -934,9 +934,13 @@ module RGSS
   # whole surface is native — `initialize`, `contents=`, `windowskin=`, `x=`,
   # `y=`, `width=`, `height=`, `ox=`, `oy=`, `opacity=`, `back_opacity=`,
   # `contents_opacity=`, `cursor_rect=`, `active=`, `pause=`, `stretch=`,
-  # `update`, `z=`, `visible`/`visible=`, `dispose`/`disposed?`. `stretch=` picks
-  # between the stretched (default) and tiled windowskin background. This reopening
-  # only adds the plain readers and their RGSS defaults.
+  # `viewport=`, `update`, `z=`, `visible`/`visible=`, `dispose`/`disposed?`.
+  # `stretch=` picks between the stretched (default) and tiled windowskin
+  # background. `viewport=` (RGSS3/VX Ace) reparents the window's canvas into
+  # the given Viewport's clipped, scrollable content layer -- or back to the
+  # screen for `nil` -- the same mechanism `initialize`'s own optional
+  # viewport argument uses, just reassignable afterward. This reopening only
+  # adds the plain readers and their RGSS defaults.
   class Window
     attr_reader :contents, :windowskin, :x, :y, :width, :height, :ox, :oy, :z,
                 :viewport, :contents_opacity

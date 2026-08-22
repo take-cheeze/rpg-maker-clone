@@ -5609,6 +5609,29 @@ mrb_value window_set_stretch(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// RGSS3 (VX Ace) added `Window#viewport=`: a window can be (re)assigned to a
+// Viewport after construction, the same way Scene_Battle's stock windows are,
+// so they clip and scroll with the battle viewport instead of the screen.
+// `window_init` already threads an optional viewport through to
+// `parent_object` at construction time, matching Sprite's own constructor --
+// but nothing reassigns it afterward, which is what real games actually call
+// (VX Ace's `Window.new(x, y, width, height)` never passes one). Reparenting
+// via LVGL is the whole mechanism: the window's canvas becomes a child of the
+// new viewport's (clipped, scrollable) content layer -- or the root screen
+// for `nil`, via the same `parent_object` construction uses -- and
+// `gfx_update`'s z-sort already groups by each object's live LVGL parent
+// every frame, so no further z-order or compositing change is needed.
+mrb_value window_set_viewport(mrb_state* M, mrb_value self) {
+  mrb_value vp;
+  mrb_get_args(M, "o", &vp);
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  mrb_assert(obj);
+  lv_obj_set_parent(obj, parent_object(M, vp));
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  update_z(M);
+  return vp;
+}
+
 // A single number standing for a Tone's four channels, so a change can be
 // spotted with one comparison. Shared with the viewport's tone tracking.
 double vp_tone_key(const Tone& t);
@@ -6540,6 +6563,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, window, "active=", window_set_active, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "pause=", window_set_pause, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "stretch=", window_set_stretch, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "viewport=", window_set_viewport, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "update", window_update, MRB_ARGS_NONE());
   // RGSS2 / RGSS3 (VX, VX Ace): the open/close animation and the background
   // tone. Native because both have to redraw -- and so they must NOT be

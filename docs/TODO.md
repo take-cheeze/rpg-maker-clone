@@ -21114,6 +21114,28 @@ screen (544×416). Full rationale:
     simplifications versus real Ruby, and confirmation that the same
     release now runs its normal frame loop with no crash at all where this
     used to be a hard stop.
+  - ✅ **`Window#viewport=` was not implemented at all.** With `defined?`
+    no longer masking the crash, the same real release's headless run under
+    `--test_play` turned out to skip straight to `Scene_Battle#start`
+    (RGSS3's `$BTEST`-gated Test Battle convention, triggered by VX Ace's
+    editor F9) rather than a title screen, immediately hitting a sixth wall:
+    `NoMethodError: undefined method 'viewport=' for Window_BattleStatus`.
+    Scene_Battle's own stock `create_all_windows` assigns every battle
+    window to a dedicated Viewport so it clips/scrolls with the battle
+    background, an RGSS3 capability this engine's native `Window` class
+    never got at all -- not a documented gap, a genuine blind spot:
+    `Window#initialize` already threads an optional viewport through to
+    construction (unused in practice, since VX Ace's own
+    `Window.new(x, y, width, height)` shape never passes one), but nothing
+    let a script reassign it afterward, which is what real games actually
+    call. Fixed with one new native method, `window_set_viewport`
+    (`mruby-rgss/src/lib.cxx`), reparenting the window's canvas via LVGL's
+    `lv_obj_set_parent` -- the same mechanism Sprite/Plane/Tilemap already
+    use at construction, just made reassignable -- and updating the shared
+    z-order pass, which already groups every display object by its live
+    LVGL parent each frame with no further changes needed. With this fix,
+    the same real release's headless run goes several minutes into
+    `Scene_Battle` with no crash at all.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).

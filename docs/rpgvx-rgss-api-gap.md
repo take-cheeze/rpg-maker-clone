@@ -904,13 +904,35 @@ lookup with `defined?(SceneManager)`.
   all: attaching gdb to a running headless instance mid-boot shows it
   inside `Graphics.update`'s own frame-throttling `nanosleep`, i.e.
   genuinely executing its normal per-frame game loop rather than stuck or
-  crashed. Whether its title screen responds to the engine's headless
-  auto-confirm tooling the way the XP/2000/2003 hosts' do is not yet
-  confirmed — no `[RPGXP-HOST-SCENE]` log was observed within several
-  minutes of headless run, which may mean a slow intro/logo sequence ahead
-  of a stock `Scene_Title`, a custom title screen this game's own scripts
-  substitute for it, or simply more boot time than was given. Left for the
-  next round to trace further.
+  crashed. It turns out the absence of `[RPGXP-HOST-SCENE]` logging was not
+  a sign of a slow title screen: under `--test_play`, this release's own
+  `Main` script skips straight to `Scene_Battle#start` (RGSS3's own
+  `$BTEST`-gated Test Battle convention, which VX Ace's editor triggers via
+  F9) without ever constructing a `Scene_Title`, which surfaced the next
+  bug below immediately.
+
+- **Fixed: `Window#viewport=` was not implemented at all.** `Scene_Battle`'s
+  own stock `create_info_viewport`/`create_all_windows` assign every battle
+  window (`Window_BattleStatus` among them) to a dedicated Viewport so they
+  clip and scroll with the battle background, the same way RGSS3 (VX Ace)
+  lets any `Window` be (re)assigned to a `Viewport` after construction —
+  this engine's native `Window` class had no `viewport`/`viewport=` method
+  at all, so the very first battle window construction raised
+  `NoMethodError: undefined method 'viewport=' for Window_BattleStatus`.
+  Not a documented, deliberate gap: `Window#initialize` already threads an
+  optional viewport argument through to the same `parent_object` helper
+  `Sprite`/`Plane`/`Tilemap` use at construction (VX Ace's own
+  `Window.new(x, y, width, height)` shape just never passes one, so that
+  path was silently dead), and the shared z-order pass in `gfx_update`
+  already groups every display object by its *live* LVGL parent each
+  frame — so reassignment only needed one new native method,
+  `window_set_viewport` (`mruby-rgss/src/lib.cxx`), reparenting the
+  window's canvas via LVGL's own `lv_obj_set_parent` (clipped and scrolled
+  by the target viewport's content layer exactly like a Sprite, or back to
+  the root screen for `nil`) and updating the z-order. No compositing,
+  clipping, or z-sort changes needed elsewhere. With this fix, the same
+  real release's headless run no longer crashes within the first several
+  minutes of `Scene_Battle`, well past this wall.
 
 ## What this means for turning the host on
 
@@ -928,15 +950,17 @@ only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
 now fixed too (`patches/mruby-dollar-bang-scoped.patch`, above), so the same
 real release's own crash-reporter add-on now sees the actual exception
 instead of masking it behind an unrelated `NoMethodError`, and re-raises it
-correctly. Sixteen real bugs have been found and fixed this way so far
+correctly. Seventeen real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
 `Sprite#width`/`#height`, the `::Const = value` compiler bug, `$!`/bare-
 `raise` itself, the `Tilemap`/`Plane` `ox=`/`oy=` redundant-refresh hang,
 `Audio.bgs_play`'s `pos` argument, `Marshal`'s `marshal_dump`/
-`marshal_load` protocol mismatches, and the missing `defined?` keyword) —
-the first ten via the temporary VM probe, finding the real exception
-directly regardless of `$!` being masked at the time. With `defined?` fixed,
-the same real release now runs its normal frame loop with no crash at all;
-where its next wall stands (if any) past that is not yet traced.
+`marshal_load` protocol mismatches, the missing `defined?` keyword, and the
+missing `Window#viewport=`) — the first ten via the temporary VM probe,
+finding the real exception directly regardless of `$!` being masked at the
+time. With `defined?` and `Window#viewport=` both fixed, the same real
+release's headless Test Battle run now goes several minutes into
+`Scene_Battle` with no crash at all; where its next wall stands (if any)
+past that is not yet traced.
