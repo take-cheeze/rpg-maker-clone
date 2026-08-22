@@ -3229,12 +3229,25 @@ check 'Show Inn scene: cancelling with B spends nothing, runs No Stay, and never
   ok st.switches[2], 'the No Stay branch ran'
 end
 
+check 'Show Inn scene: the cursor starts on Accept even when unaffordable, ' \
+      'not on Cancel' do
+  # Confirmed against genuine RPG_RT.exe under wine: a gold-0 and a gold-25
+  # capture against a 50G price (both unaffordable) each showed the cursor
+  # on Accept, matching an affordable gold-100 capture -- real RPG_RT
+  # implements this prompt as an ordinary Show Choices pair with Accept
+  # merely disabled when unaffordable, and an ordinary Show Choices list
+  # starts on its first entry regardless of whether that entry is disabled.
+  scene, = inn_scene(50, inn_commands(Game::Interpreter::Cmd, 100)) # 50g < 100g
+  5.times { scene.update }
+  eq 0, scene.instance_variable_get(:@inn_choice),
+     'the cursor starts on Accept (index 0), not Cancel, despite being unaffordable'
+end
+
 check 'Show Inn scene: an unaffordable Accept is ignored' do
   scene, st = inn_scene(50, inn_commands(Game::Interpreter::Cmd, 100)) # 50g < 100g
   5.times { scene.update }
-  # Cursor starts on Cancel when broke; move up to Accept and press it.
-  RGSS::Input.triggered = [RGSS::Input::UP]
-  scene.update
+  # The cursor already starts on Accept (disabled, but still the default --
+  # see #open_inn_window's own doc comment); confirm it directly.
   RGSS::Input.triggered = [RGSS::Input::C]
   3.times { scene.update }
   ok !st.switches[1] && !st.switches[2], 'Accept is inert while unaffordable'
@@ -3253,12 +3266,7 @@ check 'Show Inn scene: plays the RPG_RT system SE on every interaction' do
   # `pm.PushChoice(accept, can_afford)` (src/game_interpreter_map.cpp): a
   # disabled Accept plays Buzzer rather than Decision.
   scene, = inn_scene(50, inn_commands(Game::Interpreter::Cmd, 100)) # 50g < 100g
-  5.times { scene.update } # cursor starts on Cancel (unaffordable)
-
-  RGSS::Audio.reset_se
-  RGSS::Input.triggered = [RGSS::Input::UP] # move to Accept
-  scene.update
-  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'moving the cursor plays the cursor SE'
+  5.times { scene.update } # cursor starts on Accept, disabled but still the default
 
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C] # confirm Accept -- unaffordable, disabled
@@ -3268,6 +3276,9 @@ check 'Show Inn scene: plays the RPG_RT system SE on every interaction' do
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to Cancel
   scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first, 'moving the cursor plays the cursor SE'
+
+  RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C] # confirm Cancel
   scene.update
   RGSS::Input.triggered = []

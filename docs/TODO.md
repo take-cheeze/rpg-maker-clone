@@ -1449,13 +1449,28 @@ The work below is roughly ordered by the critical path to a walkable game
   pair. Covered by a new `scripts/rpg2k_scene_check.rb` check asserting the
   prompt window's exact `x`/`y`/`width`/`height`, confirmed to fail against
   the pre-fix code before the fix.
-  **Known, deliberately out-of-scope observation from the same wine
-  capture, not yet independently confirmed**: with the test party's gold
-  below the inn's price, real RPG_RT's cursor still defaulted to Accept
-  (the first choice), not Cancel — this codebase's `@inn_choice = req[:
-  can_afford] ? 0 : 1` defaults to Cancel when unaffordable. Only one
-  unaffordable data point was captured, so this is flagged for its own
-  follow-up investigation rather than folded into the geometry fix above.
+  ✅ **Follow-up (2026-08-22): the deferred cursor-default observation above
+  is now independently re-confirmed and fixed.** Two further wine captures
+  (gold 0 and gold 25, both against a 50G price, so two separate
+  unaffordable data points rather than the earlier single one) each showed
+  real RPG_RT's cursor on Accept, matching an affordable gold-100 capture —
+  never on Cancel. Real RPG_RT implements this prompt as an ordinary Show
+  Choices pair with Accept merely *disabled* when unaffordable (the same
+  `pm.PushChoice(accept, can_afford)` shape `#drive_inn`'s own doc comment
+  already cites), and an ordinary Show Choices list starts on its first
+  entry regardless of whether that entry happens to be disabled — the same
+  listed-but-disabled convention this session's field/battle Item menu
+  fixes already established elsewhere in this codebase. Fixed by changing
+  `#open_inn_window`'s `@inn_choice = req[:can_afford] ? 0 : 1` to an
+  unconditional `@inn_choice = 0`; `#drive_inn`'s existing Confirm handler
+  already gates Accept correctly and needed no change. Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (the cursor starts on Accept, index
+  0, even when unaffordable) plus fixes to two existing checks whose own
+  setup assumed the old "starts on Cancel" default (an initial Up press
+  meant to walk from Cancel to Accept, now redundant since Accept is
+  already the start; restructured to confirm Accept directly, then
+  separately move Down to Cancel and confirm that), all three confirmed to
+  fail against the pre-fix code before the fix.
   **Open Shop** (10720) is a playable game-mode too: a `Game::Shop` holds the
   goods and buy / sell rules and performs the transactions (buy at the database
   price, sell at half, party 99-item / gold caps enforced), tracking whether
