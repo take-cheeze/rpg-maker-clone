@@ -112,6 +112,23 @@ function(rpg2k_add_mruby)
   set(mruby_dollar_bang_patch
       "${ARG_REPO_ROOT}/patches/mruby-dollar-bang-scoped.patch")
 
+  # Vendored mruby never implemented the `defined?` keyword at all -- neither
+  # the lexer nor the grammar recognized it, so `defined?(Foo)` parsed as an
+  # ordinary method call named `defined?` and raised NoMethodError instead of
+  # answering the question at compile time (patches/mruby-defined-keyword.
+  # patch's own preamble has the full trail: which of the lexer, grammar, and
+  # codegen pieces were missing, the register-allocation pitfall its codegen
+  # helpers have to account for, and the two documented simplifications versus
+  # real Ruby). Real, not vendor-specific: upstream mruby 3.3.0 has never
+  # implemented this keyword either. Found via a real VX Ace game's
+  # speech-bubble add-on (docs/rpgvx-rgss-api-gap.md), which guards a
+  # SceneManager lookup with `defined?(SceneManager)` and crashed with
+  # NoMethodError on the very first frame it ran. Same patch-in-place treatment
+  # as the colon3 and `$!` patches above, for the same reason (no fork of
+  # upstream mruby/mruby this project controls).
+  set(mruby_defined_keyword_patch
+      "${ARG_REPO_ROOT}/patches/mruby-defined-keyword.patch")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -128,6 +145,8 @@ function(rpg2k_add_mruby)
             "${mruby_colon3_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_dollar_bang_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_defined_keyword_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -137,7 +156,8 @@ function(rpg2k_add_mruby)
       -v
     WORKING_DIRECTORY "${mruby_prefix}"
     DEPENDS "${ARG_REPO_ROOT}/build_config.rb" "${mruby_colon3_patch}"
-            "${mruby_dollar_bang_patch}" ${mrb_files})
+            "${mruby_dollar_bang_patch}" "${mruby_defined_keyword_patch}"
+            ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
 

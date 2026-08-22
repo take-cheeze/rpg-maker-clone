@@ -21063,11 +21063,24 @@ screen (544×416). Full rationale:
     first time any event's "Battle Processing" command runs. Ships as
     `patches/mruby-marshal-dump-load-protocol.patch`; see the item 7
     write-up for the CRuby confirmation and the fuller trace.
-  - Next wall past all four fixes above: `defined?` called as a method
-    (`NoMethodError: undefined method 'defined?' for Module`) inside the
-    same release's bundled 吹きだしウィンドウ speech-bubble add-on's own
-    event-driven call path -- not yet traced to a specific mruby codegen
-    path.
+  - ✅ **The `defined?` keyword was not implemented at all** -- not a
+    codegen corner case as first suspected once found (via the same
+    release's 吹きだしウィンドウ speech-bubble add-on calling
+    `defined?(SceneManager)`), but a genuinely missing mruby language
+    feature: the lexer never recognized `defined?` as a keyword, so it
+    always parsed as an ordinary method call and failed the moment it was
+    actually invoked with a receiver. Real, not vendor-specific: upstream
+    mruby 3.3.0 has never implemented this keyword either, though this
+    project's own maintainer had evidently started addressing it (the
+    `NODE_DEFINED`/`mrb_ast_defined_node` AST scaffolding already existed,
+    with a codegen stub that unconditionally returned `nil`). Fixed by
+    wiring up all three missing pieces -- lexer keyword, grammar (`not`'s
+    own two forms as the direct template), and real per-expression-type
+    codegen -- shipped as `patches/mruby-defined-keyword.patch`; see the
+    item 7 write-up for the full per-case semantics, the two documented
+    simplifications versus real Ruby, and confirmation that the same
+    release now runs its normal frame loop with no crash at all where this
+    used to be a hard stop.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).

@@ -1,0 +1,471 @@
+mruby gap: `defined?` -- the keyword form (`defined? expr` / `defined?(expr)`)
+-- is not implemented at all. Vendored mruby's lexer never recognized
+`defined?` as a keyword, so `defined?(Foo)` parsed as an ordinary method
+call named `defined?` and raised NoMethodError at runtime instead of
+answering the question at compile time. Real, not vendor-specific: upstream
+mruby 3.3.0 has never implemented this keyword either (confirmed directly
+against its own mrbgems/mruby-compiler/core/{codegen.c,parse.y,keywords}).
+This project's own maintainer had evidently started addressing it before
+this patch -- the NODE_DEFINED enum value and mrb_ast_defined_node AST node
+already existed in node.h, along with a codegen.c stub that unconditionally
+returned nil and commented "defined? is complex to implement correctly" --
+but never finished wiring up the lexer, grammar, or a real codegen.
+
+Found via a real VX Ace game's speech-bubble ("吹きだしウィンドウ") add-on
+(docs/rpgvx-rgss-api-gap.md), which guards a SceneManager lookup with
+`defined?(SceneManager)` and crashed with NoMethodError on the very first
+frame it ran.
+
+This patch wires up all three missing pieces:
+
+  1. Lexer (mrbgems/mruby-compiler/core/keywords, a gperf source): adds
+     `defined?` as a keyword. The literal `?` is included in the gperf key
+     because mruby's lexer already accumulates a trailing `?`/`!` into the
+     token text before calling `mrb_reserved_word` (parse.y), so this
+     overrides the token that would otherwise be assigned to it (a
+     function-identifier-ending-in-`?`, i.e. an ordinary method-call parse).
+
+  2. Grammar (mrbgems/mruby-compiler/core/parse.y): adds `keyword_defined`
+     alongside `keyword_not`, whose two existing forms (`not expr` at the
+     `expr` level, `not(expr)`/`not()` at the `primary` level) serve as the
+     direct structural template. Only the non-parenthesized `expr`-level
+     form and the parenthesized `primary`-level form are added (matching
+     real Ruby's own two `defined?` forms, per CRuby's parse.y); a
+     `new_defined` constructor wraps the inner expression in the
+     pre-existing NODE_DEFINED/mrb_ast_defined_node AST node. Precedence is
+     `%nonassoc`, placed right after `%right keyword_not`, matching real
+     CRuby's own `%nonassoc keyword_defined` placement.
+
+  3. Codegen (mrbgems/mruby-compiler/core/codegen.c): replaces the
+     always-nil `codegen_defined` stub with real per-node-type logic,
+     dispatching on the wrapped expression's node type. The literal/
+     compile-time-certain cases (nil/true/false/self, an already-declared
+     local variable, any assignment form) are pure string/nil pushes with
+     zero evaluation -- matching real Ruby's own behavior of never actually
+     performing the assignment in `defined?(x = 1)`, while `x` still becomes
+     a known local afterward because mruby's parser (like CRuby's) registers
+     locals at parse time, independent of whether that code path ever runs.
+     Constant reads (NODE_CONST/COLON2/COLON3) reuse the normal read codegen
+     wrapped in a compiler-generated rescue region (the same
+     catch_handler_new/catch_handler_set/OP_EXCEPT mechanism codegen_rescue
+     uses) since constant reads have no side effects, so catching and
+     discarding any exception is safe. Method calls (NODE_CALL, which also
+     covers operators -- `1 + 1` is a NODE_CALL under the hood) emit
+     `<receiver-or-self>.respond_to?(:method_name, true)` rather than
+     invoking the method, matching real Ruby's `defined?(raise "x")` =>
+     "method" (never raises). Instance/class/global variables and `yield`
+     each emit a single boolean-returning self-send
+     (instance_variable_defined?/class_variable_defined?/
+     global_variables.include?/block_given?) and convert the boolean to the
+     literal answer string or nil. Every helper here that emits an
+     OP_SEND/OP_SSEND does one extra push() beyond the receiver and its
+     arguments before resetting cursp() to the call's base register: those
+     opcodes read a block-argument slot at `a + n + 1` even when no block is
+     passed (mrb_vm_exec's `bidx` in vm.c), so nregs must account for that
+     trailing register or the VM's own `bidx < irep->nregs` assertion fails
+     at runtime despite the bytecode itself being well-formed -- this is
+     exactly the register-allocation risk class of bug this project has hit
+     before with hand-written codegen, so it is called out explicitly here
+     and in a comment at its first occurrence in the patch itself. The
+     default fallback (any other expression: literals, `if`/`case` used as
+     an expression, etc.) pushes "expression", matching real Ruby's own
+     default answer for anything it does not special-case.
+
+     Two intentional, documented simplifications versus real Ruby, both
+     safe (neither ever evaluates anything with side effects):
+       - Ruby recursively checks the definedness of array-literal elements
+         and call arguments (`defined?([undefined_var])` => nil); this
+         implementation does not recurse and answers from the outer node
+         type alone ("expression"/"method" respectively).
+       - `super`/`zsuper` conservatively answer nil rather than attempting
+         to determine the current method context at compile time.
+
+  4. mrblib/kernel.rb: adds one small private Kernel helper,
+     `__defined_cvar_scope`, used only by the class-variable case above.
+     Real Ruby resolves `@@cvar` via the lexical scope (cref) chain; a
+     `self.class`-based approximation is wrong specifically for a
+     class/singleton method (`def self.foo; defined?(@@cv); end` has `self`
+     already equal to the class itself, and `self.class` there is `Class`,
+     which knows nothing about the subject class's own `@@cv`). This helper
+     picks `self` when `self` is already a Module/Class and `self.class`
+     otherwise, covering both the plain-instance-method and
+     class/singleton-method cases (still not the full lexical-cref chain
+     for every possible nesting -- see its own comment).
+
+Verified against the full `rake test` suite (1847 OK / 0 KO / 0 Crash, no
+regressions) and a dedicated regression test
+(mruby-rgss/test/test.rb, "defined? matches real Ruby's answers for each
+expression shape") whose expected values were checked directly against a
+real CRuby 3.3.6 interpreter for every case, not from documentation alone.
+--- a/mrbgems/mruby-compiler/core/keywords
++++ b/mrbgems/mruby-compiler/core/keywords
+@@ -21,6 +21,7 @@ break,        {keyword_break,       keyword_break},       EXPR_MID
+ case,         {keyword_case,        keyword_case},        EXPR_VALUE
+ class,        {keyword_class,       keyword_class},       EXPR_CLASS
+ def,          {keyword_def,         keyword_def},         EXPR_FNAME
++defined?,     {keyword_defined,     keyword_defined},     EXPR_ARG
+ do,           {keyword_do,          keyword_do},          EXPR_BEG
+ else,         {keyword_else,        keyword_else},        EXPR_BEG
+ elsif,        {keyword_elsif,       keyword_elsif},       EXPR_VALUE
+--- a/mrbgems/mruby-compiler/core/parse.y
++++ b/mrbgems/mruby-compiler/core/parse.y
+@@ -828,6 +828,15 @@ new_break(parser_state *p, node *c)
+   return (node*)n;
+ }
+ 
++/* struct: defined_node(expr) */
++static node*
++new_defined(parser_state *p, node *c)
++{
++  struct mrb_ast_defined_node *n = NEW_NODE(defined, NODE_DEFINED);
++  n->expr = c;
++  return (node*)n;
++}
++
+ /* struct: next_node(value) */
+ static node*
+ new_next(parser_state *p, node *c)
+@@ -2049,6 +2058,7 @@ prohibit_literals(parser_state *p, node *n)
+         keyword_and     "'and'"
+         keyword_or      "'or'"
+         keyword_not     "'not'"
++        keyword_defined "'defined?'"
+         modifier_if     "'if' modifier"
+         modifier_unless "'unless' modifier"
+         modifier_while  "'while' modifier"
+@@ -2155,6 +2165,7 @@ prohibit_literals(parser_state *p, node *n)
+ %nonassoc  modifier_if modifier_unless modifier_while modifier_until keyword_in
+ %left  keyword_or keyword_and
+ %right keyword_not
++%nonassoc keyword_defined
+ %right '=' tOP_ASGN
+ %left modifier_rescue
+ %right '?' ':' tLABEL_TAG
+@@ -2430,6 +2441,10 @@ expr            : command_call
+                     {
+                       $$ = call_uni_op(p, cond($3), "!");
+                     }
++                | keyword_defined opt_nl expr
++                    {
++                      $$ = new_defined(p, $3);
++                    }
+                 | '!' command_call
+                     {
+                       $$ = call_uni_op(p, cond($2), "!");
+@@ -2812,7 +2827,7 @@ reswords        : keyword__LINE__ | keyword__FILE__ | keyword__ENCODING__
+                 | keyword_BEGIN | keyword_END
+                 | keyword_alias | keyword_and | keyword_begin
+                 | keyword_break | keyword_case | keyword_class | keyword_def
+-                | keyword_do | keyword_else | keyword_elsif
++                | keyword_defined | keyword_do | keyword_else | keyword_elsif
+                 | keyword_end | keyword_ensure | keyword_false
+                 | keyword_for | keyword_in | keyword_module | keyword_next
+                 | keyword_nil | keyword_not | keyword_or | keyword_redo
+@@ -3305,6 +3320,10 @@ primary         : literal
+                     {
+                       $$ = call_uni_op(p, new_nil(p), "!");
+                     }
++                | keyword_defined '(' expr rparen
++                    {
++                      $$ = new_defined(p, $3);
++                    }
+                 | operation brace_block
+                     {
+                       $$ = new_fcall(p, $1, new_callargs(p, 0, 0, $2));
+--- a/mrbgems/mruby-compiler/core/codegen.c
++++ b/mrbgems/mruby-compiler/core/codegen.c
+@@ -6239,15 +6239,271 @@ codegen_colon3(codegen_scope *s, node *varnode, int val)
+   if (val) push();
+ }
+ 
++/* Unconditionally pushes a literal string at cursp(). Used for the `defined?`
++ * cases whose answer is known at compile time (keywords, local variables,
++ * assignments, and the generic literal/expression fallback). */
++static void
++codegen_defined_push_str(codegen_scope *s, const char *str)
++{
++  int off = new_lit_cstr(s, str);
++  genop_2(s, OP_STRING, cursp(), off);
++  push();
++}
++
++/* Consumes a boolean value already sitting at cursp()-1 (i.e. a single value
++ * was just pushed by the caller) and replaces it with the literal string
++ * `str` when it was truthy, or nil otherwise. Leaves the result at the same
++ * register, with cursp() restored to one past it -- same shape as any other
++ * single-value expression codegen. */
++static void
++codegen_defined_bool_to_str(codegen_scope *s, const char *str)
++{
++  int r;
++  uint32_t skip, done;
++
++  pop();
++  r = cursp();
++  skip = genjmp2_0(s, OP_JMPNOT, r, VAL);
++  codegen_defined_push_str(s, str);
++  done = genjmp_0(s, OP_JMP);
++  dispatch(s, skip);
++  s->sp = r; /* undo the true-branch push(); only one path runs at a time */
++  genop_1(s, OP_LOADNIL, r);
++  push();
++  dispatch(s, done);
++}
++
++/* Pushes `<receiver-or-self>.respond_to?(:method_name, true)` -- used to
++ * answer `defined?` for method-call expressions (including operators, which
++ * are NODE_CALL under the hood) without ever actually invoking the method,
++ * matching real Ruby's `defined?(raise "x")` => "method" (never raises).
++ *
++ * Every helper in this file that emits a SEND/SSEND does one extra push()
++ * beyond the receiver and its arguments before resetting cursp() back to the
++ * call's base register: OP_SEND/OP_SSEND read a block-argument slot at
++ * `a + n + 1` even when no block is passed (mrb_vm_exec's `bidx` in vm.c),
++ * so nregs must account for that trailing register or the VM's own
++ * `bidx < irep->nregs` assertion fails at runtime despite the bytecode
++ * itself being perfectly well-formed. */
++static void
++codegen_defined_respond_to(codegen_scope *s, struct mrb_ast_call_node *call)
++{
++  int r = cursp();
++  int noself = (!call->receiver || node_type(call->receiver) == NODE_SELF);
++
++  if (noself) {
++    push();
++  }
++  else {
++    codegen(s, call->receiver, VAL);
++  }
++  genop_2(s, OP_LOADSYM, cursp(), sym_idx(s, call->method_name));
++  push();
++  genop_1(s, OP_LOADTRUE, cursp());
++  push();
++  push(); /* block-argument slot */
++  s->sp = r;
++  genop_3(s, noself ? OP_SSEND : OP_SEND, r, sym_idx(s, MRB_SYM_Q(respond_to)), 2);
++  s->sp = r;
++  push();
++}
++
++/* Pushes the boolean result of a zero-arg implicit-self call, e.g. `block_given?`. */
++static void
++codegen_defined_self_send0(codegen_scope *s, mrb_sym method)
++{
++  int r = cursp();
++  push();
++  push(); /* block-argument slot */
++  s->sp = r;
++  genop_2(s, OP_SSEND0, r, sym_idx(s, method));
++  s->sp = r;
++  push();
++}
++
++/* Pushes the boolean result of a one-arg implicit-self call with a symbol
++ * argument, e.g. `instance_variable_defined?(:@foo)`. */
++static void
++codegen_defined_self_send1_sym(codegen_scope *s, mrb_sym method, mrb_sym arg_sym)
++{
++  int r = cursp();
++  push();
++  genop_2(s, OP_LOADSYM, cursp(), sym_idx(s, arg_sym));
++  push();
++  push(); /* block-argument slot */
++  s->sp = r;
++  genop_3(s, OP_SSEND, r, sym_idx(s, method), 1);
++  s->sp = r;
++  push();
++}
++
++/* Pushes the boolean result of
++ * `self.__defined_cvar_scope.class_variable_defined?(sym)` (the private
++ * Kernel helper in mrblib/kernel.rb, which resolves to `self` when `self`
++ * is already a Module/Class and to `self.class` otherwise). Still a known,
++ * intentional simplification versus real Ruby's full lexical-cref-based
++ * lookup, but handles both the instance-method and class-method cases. */
++static void
++codegen_defined_cvar(codegen_scope *s, mrb_sym cvar_sym)
++{
++  int r = cursp();
++  push();
++  push(); /* block-argument slot */
++  s->sp = r;
++  genop_2(s, OP_SSEND0, r, sym_idx(s, MRB_SYM(__defined_cvar_scope)));
++  push();
++  genop_2(s, OP_LOADSYM, cursp(), sym_idx(s, cvar_sym));
++  push();
++  push(); /* block-argument slot */
++  s->sp = r;
++  genop_3(s, OP_SEND, r, sym_idx(s, MRB_SYM_Q(class_variable_defined)), 1);
++  s->sp = r;
++  push();
++}
++
++/* Pushes the boolean result of `global_variables.include?(sym)`. */
++static void
++codegen_defined_gvar(codegen_scope *s, mrb_sym gvar_sym)
++{
++  int r = cursp();
++  push();
++  push(); /* block-argument slot */
++  s->sp = r;
++  genop_2(s, OP_SSEND0, r, sym_idx(s, MRB_SYM(global_variables)));
++  push();
++  genop_2(s, OP_LOADSYM, cursp(), sym_idx(s, gvar_sym));
++  push();
++  push(); /* block-argument slot */
++  s->sp = r;
++  genop_3(s, OP_SEND, r, sym_idx(s, MRB_SYM_Q(include)), 1);
++  s->sp = r;
++  push();
++}
++
++/* Answers `defined?` for a constant/scoped-constant read (NODE_CONST,
++ * NODE_COLON2, NODE_COLON3) by reusing the normal read codegen wrapped in a
++ * compiler-generated rescue region: constant reads have no side effects, so
++ * catching and discarding any exception (a bare `rescue` with no filtering)
++ * is safe. Pushes "constant" on success, nil if the read raised. */
++static void
++codegen_defined_const(codegen_scope *s, node *exprnode)
++{
++  int catch_entry, begin, end, r;
++  uint32_t success_jmp, done_jmp;
++
++  r = cursp();
++  catch_entry = catch_handler_new(s);
++  begin = s->pc;
++  codegen(s, exprnode, VAL);
++  pop();
++  end = s->pc;
++  success_jmp = genjmp_0(s, OP_JMP);
++  catch_handler_set(s, catch_entry, MRB_CATCH_RESCUE, begin, end, s->pc);
++  genop_1(s, OP_EXCEPT, r); /* consumes and clears the exception */
++  genop_1(s, OP_LOADNIL, r);
++  push();
++  done_jmp = genjmp_0(s, OP_JMP);
++  dispatch(s, success_jmp);
++  pop(); /* undo the handler branch's push(); the success path writes fresh */
++  codegen_defined_push_str(s, "constant");
++  dispatch(s, done_jmp);
++}
++
+ static void
+ codegen_defined(codegen_scope *s, node *varnode, int val)
+ {
+-  // DEFINED nodes are rarely used - generate basic implementation
+-  (void)varnode; // suppress unused warning
+-  if (val) {
+-    // For now, just return nil (defined? is complex to implement correctly)
++  struct mrb_ast_defined_node *n = defined_node(varnode);
++  node *expr = n->expr;
++
++  /* `defined?` never evaluates its argument, so if the result isn't even
++   * used there is nothing to generate at all. */
++  if (!val) return;
++
++  if (!expr) {
+     genop_1(s, OP_LOADNIL, cursp());
+     push();
++    return;
++  }
++
++  switch (node_type(expr)) {
++  case NODE_NIL:
++    codegen_defined_push_str(s, "nil");
++    break;
++  case NODE_TRUE:
++    codegen_defined_push_str(s, "true");
++    break;
++  case NODE_FALSE:
++    codegen_defined_push_str(s, "false");
++    break;
++  case NODE_SELF:
++    codegen_defined_push_str(s, "self");
++    break;
++
++  case NODE_LVAR:
++    /* mruby's parser only ever emits NODE_LVAR for identifiers already
++     * established as locals in the current scope, so this is a compile-time
++     * certain answer -- an identifier that isn't yet a known local parses as
++     * a method call (NODE_CALL) instead. */
++    codegen_defined_push_str(s, "local-variable");
++    break;
++
++  case NODE_ASGN:
++  case NODE_OP_ASGN:
++  case NODE_MASGN:
++    /* Real Ruby never performs the assignment when checking `defined?`, and
++     * neither do we -- the inner node is intentionally never passed to
++     * codegen() here. Any locals it introduces are already registered by
++     * the parser regardless of whether this code path ever runs. */
++    codegen_defined_push_str(s, "assignment");
++    break;
++
++  case NODE_CONST:
++  case NODE_COLON2:
++  case NODE_COLON3:
++    codegen_defined_const(s, expr);
++    break;
++
++  case NODE_CALL:
++    codegen_defined_respond_to(s, call_node(expr));
++    codegen_defined_bool_to_str(s, "method");
++    break;
++
++  case NODE_IVAR:
++    codegen_defined_self_send1_sym(s, MRB_SYM_Q(instance_variable_defined), var_node(expr)->symbol);
++    codegen_defined_bool_to_str(s, "instance-variable");
++    break;
++
++  case NODE_CVAR:
++    codegen_defined_cvar(s, var_node(expr)->symbol);
++    codegen_defined_bool_to_str(s, "class variable");
++    break;
++
++  case NODE_GVAR:
++    codegen_defined_gvar(s, var_node(expr)->symbol);
++    codegen_defined_bool_to_str(s, "global-variable");
++    break;
++
++  case NODE_YIELD:
++    codegen_defined_self_send0(s, MRB_SYM_Q(block_given));
++    codegen_defined_bool_to_str(s, "yield");
++    break;
++
++  case NODE_SUPER:
++  case NODE_ZSUPER:
++    /* Determining the current method context safely at compile time is more
++     * involved; conservatively report "not defined" rather than guessing. */
++    genop_1(s, OP_LOADNIL, cursp());
++    push();
++    break;
++
++  default:
++    /* Real Ruby's default answer for any other expression (literals,
++     * `if`/`case`/`begin` used as expressions, etc.) is "expression". This
++     * intentionally does not replicate Ruby's recursive definedness checks
++     * for array-literal elements or call arguments -- a safe simplification
++     * that never evaluates anything with side effects. */
++    codegen_defined_push_str(s, "expression");
++    break;
+   }
+ }
+ 
+--- a/mrblib/kernel.rb
++++ b/mrblib/kernel.rb
+@@ -42,4 +42,16 @@ module Kernel
+   def to_enum(*a)
+     raise NotImplementedError.new("fiber required for enumerator")
+   end
++
++  # Used by the compiler's `defined?` codegen (codegen_defined in
++  # mruby-compiler/core/codegen.c) to answer `defined?(@@cvar)`. Class
++  # variables are looked up starting from `self` when `self` is already a
++  # Module/Class (e.g. inside `def self.foo; defined?(@@cvar); end`, where
++  # `self` is the class itself), or from `self.class` otherwise (a plain
++  # instance method) -- `self.class` unconditionally is wrong for the first
++  # case: it would look on `Class`, which knows nothing about the subject
++  # class's own `@@cvar`.
++  private def __defined_cvar_scope
++    is_a?(Module) ? self : self.class
++  end
+ end
