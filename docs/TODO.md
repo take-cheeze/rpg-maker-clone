@@ -8908,6 +8908,23 @@ not yet verified:
   indistinguishable from a 999 popup cap by coincidence): a raw 9999 HP heal
   against a 9999-max-HP target sitting at 1 HP lands at the full 9999, not
   1 + 999 = 1000 the way the already-fixed battle-cast equivalent clamps.
+  ✅ **Follow-up (2026-08-22): the RPG2000 half of the "clamped only by
+  max_hp" reasoning above is now independently confirmed against a genuine
+  RPG_RT.exe, not just EasyRPG's source.** Edited a real Nepheshel save's
+  actor directly (chunk 108 field 33 `hp_mod` → 20000, an extreme Change
+  Parameters-style modifier), resumed under both this engine and real
+  `RPG_RT.exe`: both display the identical `HP 1/999` in the field-menu
+  party status panel. Since the two runtimes independently landed on the
+  same number, `MAX_EFFECTIVE_HP_2K = 999` is a genuine internal ceiling in
+  real RPG_RT too, not a coincidence of this codebase's own rendering — the
+  premise the existing RPG2003 fixture above already relied on to
+  disambiguate "clamped only by max_hp" from "a separate 999 popup cap" is
+  solid. **Still open, and still EasyRPG-sourced only**: whether the
+  field-item-use path genuinely has *no* fixed-digit cap at all on an
+  RPG2003 database (where max_hp can itself reach 9999) — this environment's
+  only RPG2003 test-bed (`data/mtf-meido-action`) does not bundle a genuine
+  `RPG_RT.exe`, only EasyRPG's own build, so that half could not be
+  empirically re-checked this session.
 - ✅ **The battle damage/recovery popup cap itself now widens to RPG2003's
   real 9999 too, instead of staying a flat 999 on every database — the same
   edition-blind gap the max-HP and total-EXP fixes above already closed for
