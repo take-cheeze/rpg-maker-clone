@@ -22483,27 +22483,102 @@ check 'F9 does nothing during a battle outside Test Play' do
   ok scene.parent.pushed.empty?, 'a released game never sees F9 open anything, mid-battle either'
 end
 
-check 'the debug menu toggles a switch on C and flips to Variable on Left/Right' do
+check 'the debug menu toggles a switch on C (after C first enters row focus), pages the ' \
+     'screen on Right/Left, and flips to Variable on R -- verified directly against real ' \
+     'RPG_RT.exe: it opens in block focus (a coarse, ten-block-per-screen list, not a flat ' \
+     'per-id one), C drills into the highlighted block\'s own ten ids, and Right/Left there ' \
+     'means "page the screen" rather than "cycle to Variable" (that lives on the L/R shoulder ' \
+     'instead, freed up by this)' do
   st = menu_state
   st.switches[1] = false
+  st.switches[150] = true # pushes max_id past the FLOOR_ID=100 floor, so screen 1 exists to page to
   scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  eq :block, scene.instance_variable_get(:@focus), 'opens in block focus, not row focus'
+
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
-  ok st.switches[1], 'C toggled switch 1 (the cursor starts on row 1) on'
+  eq :row, scene.instance_variable_get(:@focus), 'C from block focus enters row focus'
+  ok !st.switches[1], 'entering row focus alone does not touch the switch'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  ok st.switches[1], 'C in row focus toggled switch 1 (the row cursor starts on row 1) on'
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   ok !st.switches[1], 'a second C toggles it back off'
 
   RGSS::Input.triggered = [RGSS::Input::RIGHT]
   scene.update
-  eq :variable, scene.instance_variable_get(:@mode), 'Left/Right flips to the Variable page'
+  eq :switch, scene.instance_variable_get(:@mode), 'Right in row focus is a no-op, not a mode flip'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  eq :block, scene.instance_variable_get(:@focus), 'B backs row focus out to block focus'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq :switch, scene.instance_variable_get(:@mode), 'Right in block focus pages the screen, ' \
+     'it does not flip the mode either'
+  eq 1, scene.instance_variable_get(:@page), 'and it actually paged (screen 0 -> screen 1)'
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update
+  eq :variable, scene.instance_variable_get(:@mode), 'R (shoulder) flips to the Variable page'
+end
+
+check 'the debug menu Switch/Variable page geometry matches real RPG_RT.exe, measured ' \
+     'directly off a screenshot (a 640x480 2x capture, halved back to native 320x240): two ' \
+     'windows flush to the screen edges at y=32, height 176 (ten BLOCK_SIZE rows plus the ' \
+     '8px border on each side, no separate title row), split at x=96 of 320' do
+  scene = menu_scene(RPG2k::Scene::DebugMenu, menu_state)
+  left = scene.instance_variable_get(:@left_window)
+  right = scene.instance_variable_get(:@right_window)
+  eq 0, left.x, 'left window flush to the screen\'s left edge'
+  eq 32, left.y
+  eq 96, left.width
+  eq 176, left.height
+  eq 96, right.x, 'right window starts exactly where the left one ends'
+  eq 32, right.y
+  eq 224, right.width, 'right window fills the rest of the 320px screen width'
+  eq 176, right.height
+  ok left.visible, 'both windows are visible in the default (Switch) mode'
+  ok right.visible
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update # Switch -> Variable: still the same two windows, still visible
+  ok left.visible, 'still visible on the Variable page (a genuine RPG_RT page too)'
+  ok right.visible
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update # Variable -> Map: the invented single-panel page takes over
+  ok !left.visible, 'the two-window layout hides on Map (not a genuine RPG_RT page)'
+  ok !right.visible
+  ok scene.instance_variable_get(:@window).visible, 'the single legacy panel shows instead'
+end
+
+check 'the debug menu draws a Switch row\'s value bracketed, "[ ON ]"/"[ OFF ]", matching a ' \
+     'real RPG_RT.exe screenshot; a Variable row\'s own value format was never independently ' \
+     'confirmed against the genuine runtime, so it is deliberately left exactly as it was' do
+  st = menu_state
+  st.switches[1] = true
+  st.variables[1] = 42
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  eq '[ ON ]', scene.send(:row_value_text, 1), 'a Switch row is bracketed'
+  st.switches[1] = false
+  eq '[ OFF ]', scene.send(:row_value_text, 1)
+  scene.instance_variable_set(:@mode, :variable)
+  eq '42', scene.send(:row_value_text, 1), 'a Variable row is untouched -- no brackets'
 end
 
 check 'the debug menu edits a variable through the signed number editor' do
   st = menu_state
   st.variables[1] = 5
   scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  # This check is only about the number editor, not block/row navigation
+  # (see the block/row check above), so drop straight into row focus on
+  # variable 1's own row rather than re-driving C through block focus first.
   scene.instance_variable_set(:@mode, :variable)
+  scene.instance_variable_set(:@focus, :row)
   scene.send(:refresh)
 
   RGSS::Input.triggered = [RGSS::Input::C] # open the editor on variable 1
@@ -22530,6 +22605,7 @@ check 'B cancels the debug menu variable editor without changing the value' do
   st.variables[1] = 5
   scene = menu_scene(RPG2k::Scene::DebugMenu, st)
   scene.instance_variable_set(:@mode, :variable)
+  scene.instance_variable_set(:@focus, :row)
   scene.send(:refresh)
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
@@ -22554,6 +22630,7 @@ check "the debug menu variable editor widens to 7 digits on an RPG2003 database"
   st.variables[1] = 5
   scene = menu_scene(RPG2k::Scene::DebugMenu, st)
   scene.instance_variable_set(:@mode, :variable)
+  scene.instance_variable_set(:@focus, :row)
   scene.send(:refresh)
   eq 7, scene.send(:editor_digits), 'RPG2003 widens the editor to 7 digits'
 
@@ -22576,11 +22653,14 @@ end
 
 check 'the debug menu Map page opens Scene::MapViewer on C' do
   scene = menu_scene(RPG2k::Scene::DebugMenu, menu_state)
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  # Switch/Variable cycle mode on R (shoulder) -- Right/Left means "page the
+  # screen" there instead, verified against real RPG_RT.exe (see the block/
+  # row focus check above); Map/Chipset/Animation still cycle on Right/Left.
+  RGSS::Input.triggered = [RGSS::Input::R]
   scene.update # Switch -> Variable
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  RGSS::Input.triggered = [RGSS::Input::R]
   scene.update # Variable -> Map
-  eq :map, scene.instance_variable_get(:@mode), 'two Rights cycle to the Map page'
+  eq :map, scene.instance_variable_get(:@mode), 'two Rs cycle to the Map page'
 
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
@@ -22595,9 +22675,9 @@ check "the debug menu Map page's @map_id defaults to the player's own current ma
   st = menu_state
   st.map = fake_map(7, {})
   scene = menu_scene(RPG2k::Scene::DebugMenu, st)
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  RGSS::Input.triggered = [RGSS::Input::R]
   scene.update # Switch -> Variable
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  RGSS::Input.triggered = [RGSS::Input::R]
   scene.update # Variable -> Map
   eq 7, scene.instance_variable_get(:@map_id), "defaults to the player's own current map id"
 
@@ -22617,9 +22697,9 @@ check "the debug menu Map page's own Up/Down/L/R step @map_id (Up/Down +-1, L/R 
   st = menu_state
   st.map = fake_map(7, {})
   scene = menu_scene(RPG2k::Scene::DebugMenu, st)
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  RGSS::Input.triggered = [RGSS::Input::R]
   scene.update
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  RGSS::Input.triggered = [RGSS::Input::R]
   scene.update # -> Map page, @map_id == 7
 
   RGSS::Input.triggered = [RGSS::Input::UP]
@@ -23179,11 +23259,19 @@ check 'the debug menu Animation page adjusts an id (Up/Down by one, L/R by ten) 
      'C plays it back on the live map scene, then closes to the map' do
   st = menu_state
   scene = menu_scene(RPG2k::Scene::DebugMenu, st)
-  4.times do # Switch -> Variable -> Map -> Chipset -> Animation
+  # Switch -> Variable -> Map both cycle on R (shoulder, see the block/row
+  # focus check above -- Variable is the same block/row-focus code path as
+  # Switch); once on Map, Map -> Chipset -> Animation cycle on Right same as
+  # always (only Switch/Variable's Right/Left changed meaning).
+  2.times do
+    RGSS::Input.triggered = [RGSS::Input::R]
+    scene.update
+  end
+  2.times do
     RGSS::Input.triggered = [RGSS::Input::RIGHT]
     scene.update
   end
-  eq :animation, scene.instance_variable_get(:@mode), 'four Rights cycle to the Animation page'
+  eq :animation, scene.instance_variable_get(:@mode), 'two Rs then two Rights cycle to Animation'
 
   RGSS::Input.triggered = [RGSS::Input::R] # +10
   scene.update
