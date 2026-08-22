@@ -42,6 +42,22 @@ assert 'MV.message_busy? tracks $gameMessage.isBusy, and never raises' do
   assert_false MV.message_busy?
 end
 
+assert 'MV.event_running? tracks $gameMap.isEventRunning, and never raises' do
+  # Undefined engine global: the move probe's settle window must not hang
+  # waiting on a read that can never succeed.
+  MV::JS.eval("globalThis.$gameMap = undefined;")
+  assert_false MV.event_running?
+
+  # A page with no $gameMessage traffic at all (Show Picture, Wait, Move
+  # Route, ...) still reports busy here even though MV.message_busy? cannot
+  # see it -- this is the case #message_busy? alone misses.
+  MV::JS.eval("globalThis.$gameMap = { isEventRunning: function(){ return true; } };")
+  assert_true MV.event_running?
+
+  MV::JS.eval("globalThis.$gameMap = { isEventRunning: function(){ return false; } };")
+  assert_false MV.event_running?
+end
+
 assert 'MV maps RGSS input keys to MV virtual buttons' do
   # Start from a clean slate so unrelated state can't leak in.
   [RGSS::Input::C, RGSS::Input::B, RGSS::Input::UP, RGSS::Input::DOWN,

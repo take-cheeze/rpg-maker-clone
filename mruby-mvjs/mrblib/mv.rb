@@ -27,8 +27,9 @@ class MV
   MOVE_PROBE_FRAMES = 80
 
   # Settle window before the move probe starts holding a direction (see
-  # #maybe_move_test): only paid when $gameMessage is actually busy, and the
-  # confirm-key tap cadence within it.
+  # #maybe_move_test): only paid when $gameMessage is actually busy or
+  # $gameMap's own interpreter is still running a page, and the confirm-key
+  # tap cadence within it.
   #
   # RGSS's own script-host driver (mruby-rpgxp/mrblib/script_host.rb) taps
   # confirm every CONFIRM_EVERY frames from boot onward and only suppresses it
@@ -47,8 +48,8 @@ class MV
   # confirm-tapping were enough to blow straight through it with zero probe
   # output, because a confirm tap that actually lands on a real game can
   # advance real event logic (more loads, more rendering), not just close an
-  # empty window. #message_busy? makes the wait conditional instead: a game
-  # with no opening dialogue (message_busy? false the instant Scene_Map
+  # empty window. #message_busy? / #event_running? make the wait conditional
+  # instead: a game with no opening event (both false the instant Scene_Map
   # appears) pays nothing and moves exactly as before; MOVE_SETTLE_MAX_FRAMES
   # is only a safety cap on a game that is genuinely still busy.
   MOVE_SETTLE_MAX_FRAMES = 180
@@ -198,6 +199,27 @@ class MV
       MV::JS.eval(
         "(typeof $gameMessage !== 'undefined' && $gameMessage && " \
         "$gameMessage.isBusy()) ? true : false"
+      ) == true
+    rescue StandardError
+      false
+    end
+
+    # Whether $gameMap's own event interpreter is currently running a page —
+    # true for a Show Text/Show Choices sequence (already covered by
+    # #message_busy?) but also for one that never touches $gameMessage at all:
+    # Show Picture, Wait, Set Move Route, Fadeout/Fadein, Tint Screen and the
+    # like. A real game's opening autorun event routinely chains exactly that
+    # kind of silent-but-busy sequence before ever showing text, and
+    # #message_busy? alone reads `false` throughout it — the move probe's
+    # settle window would then never engage and would burn its whole hold
+    # budget against a player Game_Player#canMove() is refusing to move,
+    # reporting "did not move" for a game the engine never actually failed to
+    # walk. `false` (not running, or the engine is not up yet) whenever the
+    # read itself fails, matching #message_busy?'s own fail-open shape.
+    def event_running?
+      MV::JS.eval(
+        "(typeof $gameMap !== 'undefined' && $gameMap && " \
+        "$gameMap.isEventRunning()) ? true : false"
       ) == true
     rescue StandardError
       false
@@ -570,14 +592,21 @@ class MV
   # play (flag unset).
   #
   # Before any direction is held, the probe checks whether $gameMessage is
-  # already busy (see .message_busy?): a real game's opening autorun event can
+  # already busy or $gameMap's own interpreter is running a page (see
+  # .message_busy? / .event_running?): a real game's opening autorun event can
   # run a Show Text/Show Choices sequence the instant the map loads, and a
-  # blocking message window swallows movement input frame after frame — the
+  # blocking message window swallows movement input frame after frame — or it
+  # can run Show Picture/Wait/Move Route/Fadeout steps that never touch
+  # $gameMessage at all, which #message_busy? alone can't see. Either way the
   # probe would report "did not move" not because the engine failed to walk
   # the player, but because it never got a turn against the game's own event.
-  # If it is, confirm gets tapped (see .confirm_settle_tap) until the message
-  # clears or MOVE_SETTLE_MAX_FRAMES runs out; if it never was busy to begin
-  # with, movement starts immediately, exactly as before this existed.
+  # If either is true, confirm gets tapped (see .confirm_settle_tap) until
+  # both clear or MOVE_SETTLE_MAX_FRAMES runs out; if neither was busy to
+  # begin with, movement starts immediately, exactly as before this existed.
+  # If the interpreter is *still* running once the probe ends, the "end" line
+  # says so (`blocked=true`) rather than reporting a bare `moved=false`
+  # indistinguishable from a real movement bug — see the note at the bottom of
+  # this method.
   def maybe_move_test
     return if @move_test_done
     return unless move_test_requested?
@@ -585,7 +614,8 @@ class MV
 
     unless @move_settled
       @move_settle_frame ||= 0
-      if self.class.message_busy? && @move_settle_frame < MOVE_SETTLE_MAX_FRAMES
+      if (self.class.message_busy? || self.class.event_running?) &&
+         @move_settle_frame < MOVE_SETTLE_MAX_FRAMES
         self.class.confirm_settle_tap(@move_settle_frame)
         @move_settle_frame += 1
         return
@@ -612,7 +642,9 @@ class MV
     end
 
     @move_test_done = true
-    $stderr.puts "[MV-MOVE] end #{player_tile} moved=#{@move_seen ? true : false}"
+    blocked = self.class.event_running?
+    $stderr.puts "[MV-MOVE] end #{player_tile} " \
+                 "moved=#{@move_seen ? true : false} blocked=#{blocked}"
   rescue StandardError => e
     $stderr.puts "[MV] move test error: #{e.message}"
   end
