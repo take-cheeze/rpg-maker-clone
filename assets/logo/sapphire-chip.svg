@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sapphire Chip: the project mark. A cut gem for the mruby interpreter
+  riding inside the engine, drawn on the same 16x16 pixel grid (here scaled
+  8x to a 512x512 canvas) the game maps themselves are built from.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" ry="96" fill="#191c2b"/>
+  <polygon points="160,80 352,80 416,160 256,368 96,160" fill="#1e4a8c"/>
+  <polygon points="160,80 256,176 96,160" fill="#a3701f" opacity="0.55"/>
+  <path d="M160,80 L256,176 M352,80 L256,176 M96,160 L256,176 M416,160 L256,176 M256,176 L256,368"
+        stroke="#eae3d3" stroke-width="11" fill="none"/>
+  <rect x="232" y="384" width="48" height="48" fill="#a3701f"/>
+</svg>

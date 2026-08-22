@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo/sapphire-chip.svg" width="128" height="128" alt="Sapphire Chip logo">
+</p>
+
 # RPG Maker Clone implemented with mruby
 
 ## Features
