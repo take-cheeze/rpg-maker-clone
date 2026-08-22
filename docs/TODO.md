@@ -7255,8 +7255,51 @@ The work below is roughly ordered by the critical path to a walkable game
   item name; a Skill-menu cast with no `item_id` is untouched), the first
   confirmed to fail against the pre-fix code (`expected` the item's own
   line, `got` the skill's two sentences instead) before the fix.
-
-### yado.tk quirks backlog
+- ✅ **The Fight/Auto Battle/Escape options window's Escape row is already
+  correct: it stays in the ordinary enabled colour even when the fight
+  disallows escape, and it is *not* an omission of the "listed but
+  disabled" dimming convention (Item/Skill/Save/Continue) — confirmed as a
+  genuine exception, not a gap, against real RPG_RT.exe.** `Scene::Battle
+  #draw_battle_options` (`mruby-rpg2k/mrblib/scene/battle.rb`) draws Fight/
+  Auto Battle/Escape in plain white unconditionally, with no read of `@req
+  [:allow_escape]` at all — `#select_battle_option`'s own `:escape` arm
+  already buzzes-and-refuses when it is false, so the *behaviour* half of
+  the convention was already in place, only the *visual* half looked
+  unaudited. Verified directly rather than assumed: a genuine Enemy
+  Encounter page was found already in Nepheshel's own database (map 19,
+  event 1, page 2 — an autostart boss ambush) and its whole post-Encounter
+  tail (the command itself plus the real Victory/Escape/EndBattle handler
+  structure, codes 20710/20711/20713) was copied verbatim into a synthetic
+  autostart event injected onto map 12, with only the Encounter command's
+  own escape_mode parameter (param index 3) forced from 2 (custom escape
+  handler) to 0 (escape disallowed). Resumed under genuine RPG_RT.exe via a
+  moved/cleared save (`gen-rpg2k-save.rb --map 12 --clear-scene`): the
+  options window opened with Fight/Auto Battle/**Escape** all rendered in
+  the identical light-blue/white gradient (sampled pixel colours on the
+  Escape row match Auto Battle's, not a desaturated/grey disabled swatch),
+  and moving the cursor to Escape and pressing Decision did nothing at all
+  — no escape-chance roll, no message, cursor stays put — confirming
+  escape_mode 0 genuinely took effect (the row is functionally disabled)
+  while remaining visually identical to an enabled one. No code change:
+  this is the "confirmed already correct" outcome, not a fix.
+  **Two reusable, load-bearing corrections to this session's synthetic-
+  event-injection technique, discovered getting this specific repro to
+  load under real RPG_RT.exe instead of hitting its own error dialogs (a
+  "ストリームからの読み込みエラー" / stream-read-error the first attempt,
+  then a "無効なイベントページが指定されました" / invalid-event-page error
+  the second) — worth carrying into later cycles that inject a page
+  directly via `LCF::Array1D`/`Array2D` rather than hex-editing an existing
+  page's bytes:** (1) a `MAP_EVENT_PAGE`'s field 51
+  (`event_command_size`) is **not** a command count — a genuine page read
+  971 there against a 64-command list — it is the exact byte length of the
+  encoded field-52 (`event_commands`) payload, and leaving it absent/0
+  reads as a truncated command stream to RPG_RT's own reader, not to this
+  project's own lenient schema-driven one (which never noticed, since nothing
+  in it treats field 51 as authoritative). (2) an event's `pages` `Array2D`
+  (field 5 of `MAP_EVENT`) is **1-indexed**, not 0-indexed — every genuine
+  single-page event on the test map carried its page at index 1, never 0 —
+  and writing a fresh page to index 0 leaves the event with zero pages by
+  RPG_RT's own count, which it reports rather than silently tolerating.
 
 [yado.tk](http://yado.tk/) is a Japanese fan reference cataloguing specific,
 undocumented-elsewhere behavioural quirks of the genuine RPG_RT.exe (RPG
