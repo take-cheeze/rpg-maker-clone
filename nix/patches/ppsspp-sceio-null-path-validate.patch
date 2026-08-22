@@ -1,0 +1,80 @@
+PPSSPP upstream gap: Core/HLE/sceIo.cpp's path-taking HLE functions
+dereference a guest-supplied pointer without validating it first, and a bad
+one crashes the *host* emulator process rather than raising a
+guest-catchable error.
+
+Core/HLE/FunctionWrappers.h's WrapU_C passes its argument straight through:
+
+    template<u32 func(const char *)> void WrapU_C() {
+        u32 retval = func(Memory::GetCharPointer(PARAM(0)));
+
+Memory::GetCharPointer returns nullptr for an address outside guest memory,
+so any of the five functions registered through that wrapper -- sceIoDopen,
+sceIoChdir, sceIoRemove, sceIoRmdir, sceIoUnassign -- receives a raw null
+and hands it to pspFileSystem, which builds a std::string from it. That
+throws std::logic_error ("basic_string: construction from null is not
+valid"), nothing catches it, and PPSSPP calls std::terminate and dumps
+core.
+
+This is the same shape as the sceKernelCreateLwMutex workarea bug this
+flake already patches (nix/patches/ppsspp-lwmutex-workarea-validate.patch):
+a guest can take the emulator down with an ordinary bad argument, so a
+misbehaving PSP binary presents as an emulator crash and cannot be debugged
+under it at all. Hit while bringing up this project's PSP EBOOT, where
+newlib's _unlink() (pspsdk libcglue glue.c) reaches sceIoRemove with an
+unreadable path pointer -- reproducible, and it turned every attempt to add
+diagnostic code to the guest into a host core dump instead of a log line.
+See docs/adr/0047-psp-memory-budget.md's P1 and app/psp/README.md.
+
+Fixed by rejecting a null pointer up front in each of the four functions
+that dereference one, returning SCE_KERNEL_ERROR_ERRNO_INVALID_ARGUMENT and
+logging it -- the same treatment sceIoWrite already gives a bad address a
+few hundred lines above ("bad address"). sceIoUnassign is left alone: it
+takes the same wrapper but never dereferences the pointer.
+
+Not upstreamed to https://github.com/hrydgard/ppsspp yet -- nothing about
+this is specific to this project, and any PSP binary that passes a bad path
+pointer can crash the emulator this way.
+
+--- a/Core/HLE/sceIo.cpp
++++ b/Core/HLE/sceIo.cpp
+@@ -1629,6 +1629,9 @@
+ }
+
+ static u32 sceIoRemove(const char *filename) {
++	if (!filename) {
++		return hleLogError(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_INVALID_ARGUMENT, "bad filename pointer");
++	}
+ 	if (!pspFileSystem.GetFileInfo(filename).exists) {
+ 		return hleDelayResult(hleLogWarning(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_FILE_NOT_FOUND), "file removed", 100);
+ 	}
+@@ -1647,6 +1650,9 @@
+ }
+
+ static u32 sceIoRmdir(const char *dirname) {
++	if (!dirname) {
++		return hleLogError(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_INVALID_ARGUMENT, "bad dirname pointer");
++	}
+ 	// TODO: Improve timing.
+ 	if (pspFileSystem.RmDir(dirname))
+ 		return hleDelayResult(hleLogDebug(Log::sceIo, 0), "rmdir", 1000);
+@@ -2129,6 +2135,9 @@
+ }
+
+ static u32 sceIoChdir(const char *dirname) {
++	if (!dirname) {
++		return hleLogError(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_INVALID_ARGUMENT, "bad dirname pointer");
++	}
+ 	return hleLogDebug(Log::sceIo, pspFileSystem.ChDir(dirname));
+ }
+
+@@ -2416,6 +2425,9 @@
+
+ static u32 sceIoDopen(const char *path) {
+ 	if (!path) {
++		return hleLogError(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_INVALID_ARGUMENT, "bad path pointer");
++	}
++	if (!path) {
+ 		// Not tested on the PSP. Matches sceIoOpen.
+ 		return hleLogError(Log::sceIo, SCE_KERNEL_ERROR_ERRNO_FILE_NOT_FOUND, "nullptr file not found");
+ 	}
