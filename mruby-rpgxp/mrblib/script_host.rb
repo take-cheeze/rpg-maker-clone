@@ -546,7 +546,8 @@ class RPGXP
 
     def self.call_battle
       temp = $game_temp
-      return if temp.nil? || !temp.respond_to?(:battle_calling=)
+      @battle_called = !temp.nil? && temp.respond_to?(:battle_calling=)
+      return unless @battle_called
       temp.battle_troop_id = BATTLE_TROOP_ID
       temp.battle_can_escape = true
       temp.battle_can_lose = true
@@ -558,8 +559,20 @@ class RPGXP
       @battle_done = true
       scene = current_scene
       name = scene.nil? ? "?" : scene.class.to_s
+      # `called=false` means the probe never got as far as asking for a
+      # battle at all -- this game's own Game_Temp does not implement the
+      # stock battle-calling attributes (a real, if unusual, case: a real
+      # freeware VX Ace release was found replacing Game_Temp with a custom
+      # one that has no battle_calling/battle_troop_id/etc. at all, presumably
+      # because it starts battles some other way). Distinguishing that from
+      # `reached=false` with `called=true` (the battle *was* requested but the
+      # game's own engine never brought Scene_Battle up) matters: the two mean
+      # completely different things to whoever reads this log next, and
+      # without it, telling them apart takes re-deriving this from scratch
+      # with a temporary debug patch every time, as this one did.
       $stderr.puts "[RPGXP-HOST-BATTLE] scene=#{name} " \
-                   "reached=#{name.include?("Scene_Battle")} frame=#{@frames}"
+                   "reached=#{name.include?("Scene_Battle")} " \
+                   "called=#{@battle_called} frame=#{@frames}"
     end
 
     def self.finish_menu_probe

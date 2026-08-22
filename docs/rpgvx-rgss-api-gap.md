@@ -987,5 +987,32 @@ VM probe, finding the real exception directly regardless of `$!` being
 masked at the time. With `defined?`, `Window#viewport=` and
 `battle_ok?`/`menu_ok?` all fixed, the same real release's headless Test
 Battle run now gets past its enemies' first action-selection pass with no
-crash at all; where its next wall stands (if any) past that is not yet
-traced.
+crash at all.
+
+**Traced (as far as `--rgss_host_battle_test` can go): the standing
+CLI-flag probe cannot drive this specific release into battle at all, and
+that is expected, not a new wall.** `battle_probe` (`script_host.rb`) has
+always guarded `call_battle` on `$game_temp.respond_to?(:battle_calling=)`,
+with a comment noting a game may ship its own `Game_Temp` — and this real
+release does exactly that: its `Game_Temp` is fully replaced by a custom
+one (`Game_Temp.instance_methods(false)` is `[:clear_common_event,
+:common_event_id, :common_event_reserved?, :event_state_changing,
+:event_state_changing=, :fade_type, :fade_type=, :last_gain_holder,
+:last_gain_holder=, :last_gain_material, :last_gain_material=,
+:reserve_common_event, :reserved_common_event]` — no `battle_calling`,
+`battle_troop_id`, or any of the other stock battle-calling attributes at
+all), so the probe's guard was always going to no-op for it. Confirmed by
+temporarily instrumenting `call_battle` (uncommitted, reverted) to print
+exactly that. The probe's own log used to report this identically to "the
+battle scene never came up" (`reached=false` either way) — indistinguishable
+from a real crash without re-deriving this by hand — so
+`[RPGXP-HOST-BATTLE]` now also reports `called=..`: `false` means the probe
+never got to ask (this case); `true reached=false` would mean it asked and
+the game's own engine still never brought `Scene_Battle` up. This says
+nothing about whether this release's *own* battle system works when played
+normally — only that the CLI-flag probe's stock-`Game_Temp` assumption
+cannot exercise it, the same category of probe-methodology limit as the
+move-test settle window elsewhere in this project. Driving this specific
+release past its own custom battle entry point (if that is ever wanted)
+would need a probe built around whatever this release's own scripts use
+instead of `Game_Temp.battle_calling` — not attempted here.

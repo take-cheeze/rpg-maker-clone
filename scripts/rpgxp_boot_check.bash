@@ -32,11 +32,17 @@
 #     on the released game.
 #   * a second pass over the editor bed calls a battle the way the game's own
 #     Battle Processing command does and reports
-#     `[RPGXP-HOST-BATTLE] scene=.. reached=..`. Its own pass because a battle
-#     is called from the map and the pass above ends inside the menu; the editor
-#     bed only, because a released game's opening is an event sequence a battle
-#     call would land in the middle of. This is the biggest surface of the lot:
-#     every enemy in it is a `Sprite_Battler`, on top of `RPG::Sprite`.
+#     `[RPGXP-HOST-BATTLE] scene=.. reached=.. called=..`. Its own pass
+#     because a battle is called from the map and the pass above ends inside
+#     the menu; the editor bed only, because a released game's opening is an
+#     event sequence a battle call would land in the middle of -- and, found
+#     tracing a real release by hand (not through this script), because a
+#     real game may replace `Game_Temp` entirely with a custom one that has
+#     none of the stock battle-calling attributes this probe sets, in which
+#     case `called=false` (the probe never even got to ask) rather than
+#     `reached=false` (it asked, but the game's own engine never brought
+#     `Scene_Battle` up). This is the biggest surface of the lot: every enemy
+#     in it is a `Sprite_Battler`, on top of `RPG::Sprite`.
 #   * a third pass opens the game's own save screen the same way
 #     (`--rgss_host_save_test`, `[RPGXP-HOST-SAVE]`). That is the one place a
 #     game reads a file's timestamp back — its `Window_SaveFile` stamps each
