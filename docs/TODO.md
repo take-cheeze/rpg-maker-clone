@@ -20010,7 +20010,24 @@ session (reading + documenting only, not fixed — see below):
   common, unaffected case; and the wiki's own worked nested-loop example,
   asserting the command after the outer loop is never reached), the second
   confirmed to fail against the pre-fix code before the fix.
-- **Autorun (auto-start) events re-trigger every frame the way real RPG_RT does, once the previous lap finishes — the cross-frame half of this claim is now implemented; the within-frame same-event restart remains open.** `Scene::Map#start_autostart` (`mruby-rpg2k/mrblib/scene/
+  ✅ **Follow-up (2026-08-22): re-verified against a genuine RPG_RT.exe, not
+  just the viprpg-dev wiki plus a host-CRuby unit test — still correct, no
+  code change.** Built a synthetic autostart map event reproducing the
+  wiki's worked example verbatim (a `.lmu` edited directly, with a
+  contiguous event id and the mandatory trailing `BlankLine(no-op)`
+  terminator every genuine event command list carries — both needed to
+  avoid crashing real RPG_RT on a synthetic list, discovered the hard way)
+  and resumed a genuine save on that map under both real `RPG_RT.exe` and
+  this engine, under wine. After the same key sequence both runtimes show
+  only "LOOP-A", never "AFTER-OUTER" — confirming the indent-blind forward
+  scan `do_break_loop` already implements matches genuine RPG_RT exactly,
+  not just the wiki's paraphrase of it. The identical technique also spot-
+  checked two related, previously undocumented hypotheses formed by
+  analogy — whether `#skip_to`'s Conditional-Branch scan or
+  `#do_jump_label`'s Label scan share the same indent-blind/first-match
+  quirk — both came back **already correct** against genuine RPG_RT
+  (indent-matched End Branch resolution; earliest-by-list-position Label
+  match), so neither needed a fix either. `Scene::Map#start_autostart` (`mruby-rpg2k/mrblib/scene/
   map.rb:919`) picks the single lowest-id not-yet-started eligible
   auto-start map event or common event, flips `@started_auto[id]` /
   `@started_common[id]` and never considers that id again this visit —
