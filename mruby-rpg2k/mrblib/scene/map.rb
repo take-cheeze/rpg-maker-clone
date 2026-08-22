@@ -5186,8 +5186,18 @@ class RPG2k
 
         gwin = build_inn_gold_window(gold_term)
         @inn_window = { window: win, gold: gwin }
-        # Start on Accept when affordable, else on Cancel.
-        @inn_choice = req[:can_afford] ? 0 : 1
+        # The cursor always starts on Accept, even when unaffordable --
+        # confirmed against genuine RPG_RT.exe under wine: a gold-0 and a
+        # gold-25 capture against a 50G price (both unaffordable) each
+        # showed the cursor on Accept, matching an affordable gold-100
+        # capture, never on Cancel. Real RPG_RT implements this prompt as
+        # an ordinary Show Choices pair with Accept merely *disabled* when
+        # unaffordable (see #drive_inn's own citation just below), and an
+        # ordinary Show Choices list starts on its first entry regardless
+        # of whether that entry happens to be disabled -- the same
+        # listed-but-disabled shape this session's field/battle Item menu
+        # fixes already established elsewhere in this codebase.
+        @inn_choice = 0
         set_inn_cursor
       end
 
