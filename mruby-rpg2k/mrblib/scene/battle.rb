@@ -1681,19 +1681,28 @@ class RPG2k
         play_system_se(SFX_CURSOR)
       end
 
-      # Choose the highlighted skill: if the caster cannot afford its SP, or is
+      # Whether the highlighted skill (`sid`/`cost`/`sk`, already looked up)
+      # cannot currently be cast: the caster cannot afford its SP, or is
       # missing a weapon-type Attribute the skill requires
       # (`Game::Party#weapon_attribute_ready?` -- the same equip-gate
       # `#can_cast?` already applies to a field cast and to a Forced-AI actor's
-      # own skill eligibility, see `Game::Battle#skill_ready?`), this is
-      # RPG_RT's own Buzzer case (`SkillSelected`'s `CheckEnable` covers both);
+      # own skill eligibility, see `Game::Battle#skill_ready?`). Shared by
+      # #confirm_battle_skill's buzz-and-stay gate and #draw_battle_skill's
+      # row colour (see its own comment) so both agree by construction.
+      def battle_skill_unavailable?(cost, sk)
+        current_actor.mp < cost ||
+          !@state.party.weapon_attribute_ready?(current_actor_row, sk)
+      end
+
+      # Choose the highlighted skill: if the caster cannot afford its SP, or is
+      # missing a weapon-type Attribute the skill requires, this is RPG_RT's
+      # own Buzzer case (`SkillSelected`'s `CheckEnable` covers both);
       # otherwise Decision, then route to enemy / ally target selection (or
       # cast at once on a self-scope skill).
       def confirm_battle_skill
         sid, cost = @ui[:skills][@ui[:skill_i]]
         sk = @state.party.db_skill(sid)
-        if current_actor.mp < cost ||
-           !@state.party.weapon_attribute_ready?(current_actor_row, sk)
+        if battle_skill_unavailable?(cost, sk)
           play_system_se(SFX_BUZZER)
           return
         end
@@ -3465,10 +3474,11 @@ class RPG2k
       # skill list.
       # `idxs`, parallel to `labels`, is an optional windowskin swatch index
       # per row (0 enabled / 3 disabled, `Scene::Base#draw_system_text`'s own
-      # convention) -- nil (every caller except #draw_battle_item) keeps the
-      # plain flat-white `draw_text` every list here has always used; only
-      # the item list can hold a listed-but-disabled row (see
-      # #draw_battle_item).
+      # convention) -- nil (every caller except #draw_battle_item/
+      # #draw_battle_skill) keeps the plain flat-white `draw_text` every
+      # other list here has always used; the item and skill lists are the
+      # two that can hold a listed-but-disabled row (see #draw_battle_item /
+      # #draw_battle_skill).
       def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil)
         rows = BATTLE_VISIBLE_ROWS
         inner_w = w - Window::BORDER * 2
@@ -3504,15 +3514,27 @@ class RPG2k
       # width, same rect as the item menu — RPG_RT's skill and item windows
       # cover both the status and command windows while open (EasyRPG's
       # `skill_window` / `item_window`, `(0, screen_height - 80, MENU_WIDTH,
-      # 80)`).
+      # 80)`). A listed but not currently castable skill (see
+      # #battle_skill_unavailable?) draws in the windowskin's disabled
+      # swatch, matching the field Skill menu and #draw_battle_item just
+      # below -- confirmed for the field Skill list directly against a
+      # genuine RPG_RT.exe (see Scene::SkillMenu#build_skill_window's own
+      # comment for the measured colours); not independently re-verified for
+      # this battle-side sibling this session, ported on the strength of
+      # sharing the identical `battle_list_window`/`draw_system_text`
+      # machinery #draw_battle_item already has confirmed pixel-for-pixel.
       def draw_battle_skill
         @ui[:skill_win].dispose if @ui[:skill_win]
         labels = @ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
           "#{sk ? sk.name : "Skill #{sid}"}  #{cost}"
         end
+        idxs = @ui[:skills].map do |sid, cost|
+          sk = @state.party.db_skill(sid)
+          battle_skill_unavailable?(cost, sk) ? 3 : 0
+        end
         @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325,
-                                             column_max: BATTLE_LIST_COLUMN_MAX)
+                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs)
       end
 
       def close_battle_skill

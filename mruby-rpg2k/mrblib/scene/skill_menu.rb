@@ -131,6 +131,23 @@ class RPG2k
         play_system_se(SFX_CURSOR)
       end
 
+      # Whether `sid` (row `sk`, already looked up) cannot currently be cast --
+      # shared by #choose_skill's buzz-and-stay gate and #build_skill_window's
+      # row colour (see its own comment): affordability/seal/weapon-Attribute
+      # (`Game::Party#can_cast?`) for an ordinary skill, or a missing
+      # registered target for Escape/Teleport. Extracted so both call sites
+      # agree by construction rather than by two separately-maintained copies
+      # of the same three-way check.
+      def skill_unavailable?(sid, sk)
+        (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
+          (sk && sk.type == Game::Party::SKILL_ESCAPE &&
+           @state.party.respond_to?(:escape_skill_available?) &&
+           !@state.party.escape_skill_available?(@state)) ||
+          (sk && sk.type == Game::Party::SKILL_TELEPORT &&
+           @state.party.respond_to?(:teleport_skill_available?) &&
+           !@state.party.teleport_skill_available?(@state))
+      end
+
       def choose_skill
         if skills.empty?
           play_system_se(SFX_BUZZER)
@@ -157,15 +174,7 @@ class RPG2k
         # `Algo::IsSkillUsable` special-cases, `#escape_skill_available?`/
         # `#teleport_skill_available?` (access, a registered target, not
         # flying).
-        unavailable =
-          (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
-          (sk && sk.type == Game::Party::SKILL_ESCAPE &&
-           @state.party.respond_to?(:escape_skill_available?) &&
-           !@state.party.escape_skill_available?(@state)) ||
-          (sk && sk.type == Game::Party::SKILL_TELEPORT &&
-           @state.party.respond_to?(:teleport_skill_available?) &&
-           !@state.party.teleport_skill_available?(@state))
-        if unavailable
+        if skill_unavailable?(sid, sk)
           play_system_se(SFX_BUZZER)
           return
         end
@@ -490,16 +499,30 @@ class RPG2k
         # for the analogous Item screen (see item_menu.rb), confirmed there
         # against genuine RPG_RT under wine: a blank list row with a visible,
         # empty cursor box (see #refresh_skill_cursor) rather than a message.
+        #
+        # A row whose skill is not currently castable (unaffordable SP, a
+        # sealed/missing weapon Attribute, an unregistered Escape/Teleport
+        # target -- see #skill_unavailable?) is still drawn, in the
+        # windowskin's disabled swatch (index 3) rather than the enabled one
+        # (0) -- the same convention Scene::ItemMenu#build_item_window
+        # already applies, and confirmed here directly, not just by analogy:
+        # a genuine RPG_RT.exe frame (party leader with one affordable and
+        # two unaffordable self-scope skills at 2/8/20 SP against 5 current)
+        # pixel-sampled the affordable row's glyph at (165,211,255) and an
+        # unaffordable row's at (99,166,247) -- the exact same two colours
+        # the item-list capture measured for its own usable/unusable rows.
         col_w = skill_col_w
         rows.each_with_index do |(sid, cost), i|
           x = (i % COLUMN_MAX) * col_w
           y = head_h + (i / COLUMN_MAX) * LINE_H
-          c.draw_text x, y, col_w - 40, LINE_H, skill_name(sid)
+          sk = @state.party.db_skill(sid)
+          idx = skill_unavailable?(sid, sk) ? 3 : 0
+          draw_system_text(c, x, y, col_w - 40, LINE_H, skill_name(sid), @skin, idx)
           # "-  5"-style: a separator (a plain hyphen -- confirmed via
           # EasyRPG's own Window_Skill::DrawItem, which formats this as
           # `"{separator}{cost:3d}"` with a hyphen default) then the cost
           # right-aligned in a 3-character field, no MP/SP unit suffix.
-          c.draw_text x + col_w - 40, y, 40, LINE_H, "-%3d" % cost
+          draw_system_text(c, x + col_w - 40, y, 40, LINE_H, "-%3d" % cost, @skin, idx)
         end
         @skill_window.contents = c
         refresh_skill_cursor

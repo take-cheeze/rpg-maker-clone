@@ -4788,6 +4788,82 @@ The work below is roughly ordered by the critical path to a walkable game
   check driving a live `Scene::Battle` into its Item sub-menu (Decision on
   the one, listed-but-disabled item plays Buzzer, queues nothing, and stays
   on the list) — all four confirmed to fail against the pre-fix code.
+- ✅ **The field and battle Skill lists never coloured a listed-but-currently-
+  unusable skill in the windowskin's disabled swatch — the same gap the
+  Item lists above had, flagged but deliberately left open when those were
+  fixed ("neither the Item nor the just-fixed Skill menu models font color
+  at all") and never picked up since (2026-08-22).** Confirmed directly
+  against a genuine RPG_RT.exe under wine: a party leader with one
+  affordable (2 SP against 5 current MP) and two unaffordable (8/20 SP)
+  self-scope field skills pixel-sampled the affordable row's glyph at
+  `(165,211,255)` and an unaffordable row's at `(99,166,247)` — the exact
+  same two colours the Item-list capture measured for its own usable/
+  unusable rows, confirming the identical windowskin-swatch convention
+  (index 0 enabled / 3 disabled) applies here too. `Scene::SkillMenu
+  #build_skill_window` (`mruby-rpg2k/mrblib/scene/skill_menu.rb`) used to
+  draw every row through a flat `c.draw_text`, with no colour distinction at
+  all between a skill the caster can and cannot currently cast — the
+  underlying "listed but disabled" *behaviour* (buzz-and-stay on Decision)
+  was already correct, only the visual cue RPG_RT shows before the player
+  even tries was missing. Fixed by extracting the existing three-way
+  availability check (`#choose_skill`'s own affordability/seal/weapon-
+  Attribute/Escape-target/Teleport-target logic) into a new
+  `#skill_unavailable?(sid, sk)` shared by both `#choose_skill`'s gate and
+  `#build_skill_window`'s new per-row `draw_system_text` call (index 3 when
+  unavailable, 0 otherwise) — the same `#draw_system_text`/swatch-index
+  convention `Scene::ItemMenu#build_item_window` already uses. Covered by a
+  new `scripts/rpg2k_scene_check.rb` check (a loaded windowskin, one
+  affordable and one sealed/unaffordable skill: the unaffordable row's text
+  blends from swatch cell (48, 48) — index 3 — and the affordable row's from
+  (0, 48) — index 0), confirmed to fail against the pre-fix code (no blend
+  calls at all, since the flat `draw_text` path never blends).
+  **The battle Skill list (`Scene::Battle#draw_battle_skill`) got the
+  identical fix** — a `#battle_skill_unavailable?(cost, sk)` helper
+  extracted from `#confirm_battle_skill`'s own existing SP/weapon-Attribute
+  gate, now also driving a new `idxs:` array into `#battle_list_window`
+  (the same optional parameter `#draw_battle_item` already uses) — but
+  **this half was not independently re-verified against genuine RPG_RT this
+  session**, ported on the strength of sharing the identical
+  `battle_list_window`/`draw_system_text` machinery `#draw_battle_item`
+  already has confirmed pixel-for-pixel, plus the field-side confirmation
+  just above. Covered by a `scripts/rpg2k_scene_check.rb` check pinning
+  `#battle_skill_unavailable?`'s own verdict against a mixed affordable/
+  unaffordable pair (a full pixel-level check would need a windowskin
+  loaded in the battle test harness, which `new_scene`'s stub `db` does not
+  carry — unlike `Scene::SkillMenu`'s own check, built through `menu_scene`
+  instead).
+  **Worth recording for whoever next needs Nepheshel's own save/actor state
+  under wine**: getting *any* controlled skill-list scenario to render at
+  all took three failed approaches before this succeeded, all now understood
+  and worth not repeating. (1) Editing chunk 109's party-list field (chunk
+  109 field 1) to name a different actor id (2, or even 15 — the "real"
+  leader, see below) than whatever a fresh save already has reliably
+  blackens genuine RPG_RT on Continue, confirmed on three separate save-
+  construction methods (a hand-edited genuine EasyRPG-F9-captured save; a
+  from-scratch save built entirely by this engine's own `Game::State#to_lsd`
+  with no EasyRPG involvement at all) and three different maps (12, 204,
+  13) — even a byte-identical no-op rewrite of the *same* value round-trips
+  fine, so it is specifically forcing party membership to a *different*
+  value that breaks it, not the write path. This matches and reproduces a
+  narrower prior finding in this same investigation lineage (the "Attempted
+  and abandoned" / "not merely a valid actor id to resolve" paragraph
+  earlier in this section). (2) Nepheshel's own save lineage always
+  displays a fixed showcase leader (actor 15, デモ用, level 50, ~600-800
+  HP/MP) regardless of chunk 109's stated party — already documented above
+  ("Continue could resume with the wrong actor leading the party") — and
+  this is **not** a common-event effect (the database's own common-event
+  table has zero Auto-Start/Parallel-Process entries, checked directly) or
+  a per-map autostart (the same override persists across three unrelated
+  maps): genuine RPG_RT resolves the actually-displayed leader by some
+  mechanism independent of chunk 109, most likely matching the title
+  chunk's `hero_name` against the roster the way this engine's own
+  `Game::State.from_lsd` fix already does. (3) The fix: **edit only the
+  resolved leader's own chunk 108 record** (actor 15's skills/mp fields)
+  and leave chunk 109 completely untouched at whatever a fresh save already
+  has — exactly "the same technique that worked for the item bag" an
+  earlier pass in this same section already used successfully, just not yet
+  connected to the skill list specifically. This is the technique the
+  fresh capture above used.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
   target, or flying — instead of staying listed and disabled, and the same
