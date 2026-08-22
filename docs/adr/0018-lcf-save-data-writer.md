@@ -98,3 +98,18 @@ Two framing details had to be pinned down against the real fixtures:
   as raw bytes but not yet re-encodable from decoded values; a future change that
   needs to author those from scratch must add their encoders (and prove them the
   same way).
+
+## Addendum: the "no top-level terminator" rule does not generalize to `.lmu`
+
+The "no terminator" finding above was proven only against `.lsd` (`SaveData`),
+but `File#to_lcf` applied `terminate = false` unconditionally to every
+subclass -- `Database` (`.ldb`) too, which turned out to share the rule (a
+genuine `RPG_RT.ldb` round-trips byte-exact with no terminator), but also
+`MapUnit` (`.lmu`), which does not: a real `.lmu` carries a trailing `0x00`
+root terminator, confirmed by round-tripping genuine Nepheshel `Map*.lmu`
+files (each came out exactly one byte short without it, byte-identical with
+it appended) and, at runtime, a genuine RPG_RT.exe hanging on a black screen
+loading a map file we wrote without that byte. `File` now exposes a
+`#terminate_root?` predicate (default `false`, matching `.lsd`/`.ldb`) that
+`MapUnit` overrides to `true`. See the dated entry in `docs/TODO.md`'s
+Tooling section.
