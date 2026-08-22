@@ -53,13 +53,11 @@ class RPG2k
         @teleport_index = 0
         @pending_skill = nil
         @mode = :skills          # :skills list, :target selection, or :teleport_target
-        @message = nil
         build_desc_window
         build_skill_window
       end
 
       def dispose
-        close_message
         @desc_window.dispose if @desc_window
         @skill_window.dispose if @skill_window
         @target_window.dispose if @target_window
@@ -67,7 +65,6 @@ class RPG2k
       end
 
       def update
-        return drive_message if @message
         case @mode
         when :target then update_target
         when :teleport_target then update_teleport_target
@@ -286,7 +283,12 @@ class RPG2k
       # no confirmation message at all -- the identical shape as `Type_
       # escape` right below it, not the ordinary target-mode cast's
       # stay-open-and-show-a-message flow (`Algo::IsNormalOrSubskill`'s own
-      # arm, which pushes a `Scene_ActorTarget` instead).
+      # arm, which pushes a `Scene_ActorTarget` instead). The failure branch
+      # is unreachable through ordinary play -- `#choose_skill` already
+      # buzzes-and-returns on an uncastable skill before ever calling this
+      # (see `#apply_skill`'s own citation for the direct-against-RPG_RT
+      # confirmation that a no-effect Decision never shows a message) -- but
+      # it is kept message-free for consistency with every reachable sibling.
       def apply_switch_skill(sid)
         switch = @state.party.cast_switch_skill(caster, sid)
         if switch
@@ -295,7 +297,6 @@ class RPG2k
           @parent.pop_to_map
         else
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         end
       end
 
@@ -393,7 +394,8 @@ class RPG2k
       # picker (see the class comment). A successful cast closes the whole menu
       # stack at once, matching RPG_RT: there is no field-menu message shown
       # afterwards, since the map that would show it is gone before the next
-      # frame draws.
+      # frame draws. Failure is unreachable the same way #apply_switch_skill's
+      # is (`#escape_skill_available?` gates `#choose_skill` first).
       def apply_escape_skill(sid)
         target = @state.party.cast_escape_skill(caster, sid, @state)
         if target
@@ -401,19 +403,18 @@ class RPG2k
           queue_teleport(target)
         else
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         end
       end
 
       # Teleport (type 2), once a destination is chosen from the list built by
-      # #build_teleport_window.
+      # #build_teleport_window. Failure is unreachable the same way
+      # (`#teleport_skill_available?` gates `#choose_skill` first).
       def apply_teleport_skill(sid, map_id)
         target = @state.party.cast_teleport_skill(caster, sid, @state, map_id)
         if target
           queue_teleport(target)
         else
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         end
       end
 
@@ -641,29 +642,6 @@ class RPG2k
         @teleport_window.cursor_rect = Rect.new(x, y, teleport_col_w, h)
       end
 
-      def drive_message
-        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        close_message
-      end
-
-      def show_message(text)
-        return if @message
-        w = SCREEN_W - 40
-        win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
-        win.z = 500
-        win.windowskin = @skin
-        c = Bitmap.new(w - Window::BORDER * 2, 14)
-        c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, c.width, 14, text
-        win.contents = c
-        @message = { window: win }
-      end
-
-      def close_message
-        return unless @message
-        @message[:window].dispose
-        @message = nil
-      end
     end
 
   end

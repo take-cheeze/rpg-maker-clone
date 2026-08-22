@@ -51,13 +51,11 @@ class RPG2k
         @target_lock = nil
         @teleport_index = 0
         @pending_item = nil
-        @message = nil
         build_desc_window
         build_item_window
       end
 
       def dispose
-        close_message
         @desc_window.dispose if @desc_window
         @item_window.dispose if @item_window
         @target_window.dispose if @target_window
@@ -65,7 +63,6 @@ class RPG2k
       end
 
       def update
-        return drive_message if @message
         case @mode
         when :target then update_target
         when :teleport_target then update_teleport_target
@@ -306,10 +303,19 @@ class RPG2k
       # and consumes one -- then closes the whole menu stack at once, the same
       # as a special item invoking Escape or Teleport (RPG_RT never leaves a
       # switch item's user sitting in the item list afterwards, since flipping
-      # a switch is typically what a waiting map event is watching for). No
-      # confirmation message on success, matching that same Escape/Teleport
-      # precedent; a use that consumed nothing (not actually a held switch
-      # item) reports "It had no effect." and stays put instead.
+      # a switch is typically what a waiting map event is watching for). A use
+      # that consumed nothing (not actually a held switch item) plays Buzzer
+      # and stays put, with no message -- see #apply_item's own citation
+      # (confirmed directly against a genuine RPG_RT.exe under wine: a
+      # no-effect Decision on this menu's target/confirm screen shows no
+      # message window at all, just the buzzer, and leaves the screen open)
+      # for why this file no longer fabricates one here either. This branch
+      # is unreachable through ordinary play -- #choose_item only ever
+      # dispatches here for an id already known to be a held switch item
+      # (`it.type == ITEM_SWITCH`, from the held-items list `#items` builds),
+      # so `#use_switch_item`'s own `switch_item?(id) && item_count(id) > 0`
+      # guard can never actually fail -- but it is kept in the same no-message
+      # shape as every reachable sibling below for consistency.
       def apply_switch_item(id)
         sid = @state.party.use_switch_item(id)
         if sid
@@ -317,7 +323,6 @@ class RPG2k
           @parent.pop_to_map
         else
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         end
       end
 
@@ -326,14 +331,16 @@ class RPG2k
       # A successful cast closes the whole menu stack at once, matching
       # Scene::SkillMenu#apply_escape_skill -- there is no field-menu message
       # shown afterwards, since the map that would show it is gone before the
-      # next frame draws.
+      # next frame draws. The failure branch is likewise unreachable in
+      # ordinary play (`#choose_item` already buzzes-and-returns via
+      # `#escape_skill_available?` before ever calling this), kept
+      # message-free for the same reason #apply_switch_item is above.
       def apply_escape_item(id)
         target = @state.party.use_special_escape_item(id, @state.party.leader, @state)
         if target
           queue_teleport(target)
         else
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         end
       end
 
@@ -341,6 +348,7 @@ class RPG2k
       # no confirmation message -- a successful cast closes the whole menu
       # stack at once, matching Scene::SkillMenu#apply_switch_skill (and
       # this scene's own #apply_switch_item, the plain switch-item case).
+      # Failure is unreachable the same way as that sibling.
       def apply_special_switch_item(id)
         switch = @state.party.use_special_switch_item(id, @state.party.leader)
         if switch
@@ -348,19 +356,19 @@ class RPG2k
           @parent.pop_to_map
         else
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         end
       end
 
       # The same for a Teleport-type skill, once a destination is chosen from
-      # the list built by #build_teleport_window.
+      # the list built by #build_teleport_window. Failure is unreachable the
+      # same way #apply_escape_item's is (`#teleport_skill_available?` gates
+      # `#choose_item` first).
       def apply_teleport_item(id, map_id)
         target = @state.party.use_special_teleport_item(id, @state.party.leader, @state, map_id)
         if target
           queue_teleport(target)
         else
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         end
       end
 
@@ -711,29 +719,6 @@ class RPG2k
         end
       end
 
-      def drive_message
-        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        close_message
-      end
-
-      def show_message(text)
-        return if @message
-        w = SCREEN_W - 40
-        win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
-        win.z = 500
-        win.windowskin = @skin
-        c = Bitmap.new(w - Window::BORDER * 2, 14)
-        c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, c.width, 14, text
-        win.contents = c
-        @message = { window: win }
-      end
-
-      def close_message
-        return unless @message
-        @message[:window].dispose
-        @message = nil
-      end
     end
 
   end
