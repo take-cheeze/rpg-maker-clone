@@ -18479,10 +18479,15 @@ def write_title_only_lsd(path, timestamp)
   save.save_to(path)
 end
 
-# Confirmed against RPG_RT's own live source: `Scene_File::Start`
-# (`src/scene_file.cpp`) sets `index = latest_slot; top_index = std::max(0,
-# index - 2);`, tracking whichever populated slot's `title.timestamp` is
-# the largest -- not always slot 1.
+# Independently confirmed against a genuine RPG_RT.exe under wine (cycle
+# #123): two title-only Save<N>.lsd siblings differing only in timestamp,
+# dropped into Nepheshel's own game dir, landed the file-select cursor on
+# whichever slot held the larger one -- and swapping which slot had the
+# larger timestamp swapped which slot the cursor landed on, ruling out "just
+# the highest-numbered occupied slot". Originally ported from EasyRPG's
+# `Scene_File::Start` (`src/scene_file.cpp`, `index = latest_slot;
+# top_index = std::max(0, index - 2);`, tracking whichever populated slot's
+# `title.timestamp` is the largest) -- not always slot 1.
 check 'Scene::SaveLoad opens with the cursor on the most-recently-saved ' \
       'slot, not always the first one' do
   Dir.mktmpdir('rpg2k-save-recency') do |dir|

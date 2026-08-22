@@ -6336,6 +6336,51 @@ The work below is roughly ordered by the critical path to a walkable game
   claim once independently confirmed. The adjacent multi-actor
   discrete-vs-repeat question from cycle #121 was not chased further this
   cycle (out of scope once the solo-party half turned out unreachable).
+  ✅ **Follow-up (cycle #123, 2026-08-22): `save_load.rb`'s "the file-select
+  cursor opens on whichever slot was saved most recently" claim is now
+  independently confirmed against a genuine RPG_RT.exe, not just EasyRPG's
+  source -- confirmed correct, no code change.** `#initial_index`/
+  `#slot_timestamp` (`mruby-rpg2k/mrblib/scene/save_load.rb`) were fixed
+  back on 2026-08-20 (see the ✅ bullet further down this file, "This screen
+  always opened with the cursor on slot 1...") but cited only EasyRPG's
+  `Scene_File::Start` (`src/scene_file.cpp`), never re-run against real
+  RPG_RT -- exactly the kind of claim this session's methodology treats as
+  worth re-checking on its own. Wrote two title-only `Save<N>.lsd` siblings
+  directly into Nepheshel's own game dir (chunk 100 field 1, `timestamp`,
+  the only field that differs between them; built from a genuine
+  `gen-lcf-save-wine.bash` base save so both round-trip cleanly), then
+  booted real RPG_RT.exe under wine fresh and drove Title -> Down -> Return
+  (Continue) into the file-select screen with neither slot's Return pressed
+  (so no map load, no drift risk). With slot 2 given the larger timestamp,
+  the cursor landed on File 2, not File 1; swapping which slot carried the
+  larger timestamp (re-running with the values exchanged) moved the cursor
+  to File 1 instead -- ruling out "just the highest-numbered occupied slot"
+  as a competing explanation for the first result, since the cursor
+  tracked the timestamp field specifically, through a swap, not slot
+  position. No fix needed. Comments on `#initial_index`
+  (`save_load.rb`) and the matching `scripts/rpg2k_scene_check.rb` check
+  updated to record the re-verification rather than just citing EasyRPG,
+  mirroring the `ARROW_BLINK_FRAMES`/`equip_menu.rb` precedent; the
+  existing check (two title-only `.lsd` siblings with explicit timestamps,
+  asserting `@index`/`@top` land on the newer one, plus a no-saves-at-all
+  case) already covered this and needed no changes, confirmed still passing
+  (902 checks). One dead end chased first and abandoned per this session's
+  own time-boxing rule: an attempt to verify a *different*, adjacent
+  EasyRPG-sourced claim in this same investigation -- `Scene::Menu`'s
+  disabled-Save "buzzer only, no message" branch (`menu.rb`), via an
+  injected autostart Change Save Access (11930) map event -- reproducibly
+  **crashed genuine RPG_RT.exe itself** the instant Escape was pressed to
+  open the field menu afterward (confirmed reproducible twice; confirmed,
+  by a control run with a neutral injected event instead, that it is
+  specific to this command, not "any new event id on this map"; confirmed,
+  by a further control run, that plain movement after the same event runs
+  fine and only opening the menu triggers it). Since this project's own
+  event-command encoder (`LCF.encode_event_commands`) is a generic,
+  already-proven-correct codec shared by every other command (including
+  the ones exercised in this same probe), and this is a real crash in the
+  genuine reference runtime rather than a difference in rendered output,
+  there was no actionable code fix to extract from it -- reported here
+  rather than chased further, and not left as a partially-verified claim.
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Confirmed
   against EasyRPG Player's actual source: `Scene_Order::vUpdate` (`src/
