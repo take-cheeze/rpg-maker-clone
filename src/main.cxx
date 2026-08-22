@@ -176,11 +176,17 @@ DEFINE_bool(
     "For the RGSS makers under the script host: once the game is on its own "
     "map, start a battle the way its own Battle Processing event command does "
     "(setting the same five $game_temp fields) and log which scene the game "
-    "reached as [RPGXP-HOST-BATTLE] (implies --rgss_host_new_game). The rung "
-    "above the menu: a battle builds the game's own Spriteset_Battle, so every "
-    "enemy is a Sprite_Battler on top of RPG::Sprite. Unlike the other probes "
-    "this writes to the game's globals, because no keypress starts a battle. "
-    "Used by scripts/rpgxp_boot_check.bash");
+    "reached as [RPGXP-HOST-BATTLE] scene=.. reached=.. called=.. (implies "
+    "--rgss_host_new_game). The rung above the menu: a battle builds the "
+    "game's own Spriteset_Battle, so every enemy is a Sprite_Battler on top "
+    "of RPG::Sprite. Unlike the other probes this writes to the game's "
+    "globals, because no keypress starts a battle. called=false means the "
+    "probe never got that far: the game's own Game_Temp does not implement "
+    "the stock battle-calling attributes (a real game may replace Game_Temp "
+    "entirely with a custom one, e.g. a custom battle system) -- distinct "
+    "from called=true reached=false, where the battle really was requested "
+    "but the game's own engine never brought Scene_Battle up. Used by "
+    "scripts/rpgxp_boot_check.bash");
 DEFINE_bool(
     rgss_host_save_test,
     false,
