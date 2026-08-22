@@ -621,6 +621,41 @@ JavaScript loads and interprets the JSON.
       addendum was staged ahead of, per the previous addendum's own
       recommendation) — now unblocked, since the native GL pipeline is
       confirmed to render real, visible content end to end.
+    - **M6.2 addendum 3 — JS bridge: real simulation, rendering still
+      deferred.** The first half of the JS-bridge wiring the previous
+      addendum unblocked: `EFFEKSEER_SHIM_JS`'s `loadEffect`/`play`/
+      `update`/`stopAll` now route through a real, persistent
+      `Effekseer::Manager` (`mvefk::context_create`/`effect_load`/`play`/
+      `update`/... in `mvefk.cxx`, exposed to JS as `__mv_efk*` natives,
+      `mv_install_effekseer`) wherever that manager successfully parses the
+      loaded file — deliberately **not** the rendering half: no
+      `EffekseerRendererGL::Renderer`, no GL context. Simulation needs
+      neither; drawing needs Effekseer's renderer to share the exact GL
+      context/FBO PIXI's own WebGL renderer (`mvwebgl.cxx`) is using
+      mid-frame, which is a materially riskier integration (shared GL state,
+      a JS-side `WebGLRenderingContext` handle to translate into a native
+      one, MZ's own fixed projection/camera matrix convention in
+      `Sprite_Animation.setProjectionMatrix`/`setCameraMatrix`) staged as
+      its own follow-up rather than rushed alongside this.
+
+      A file that merely *looks* like a `.efkefc` (right magic bytes, not
+      real Effekseer data — exactly what this project's own test fixtures
+      use) fails `Effekseer::Effect::Create` and falls back to the shim's
+      original synthetic, fixed-20-frame handle, unchanged from before this
+      addendum. This was a deliberate design constraint, not an afterthought:
+      the shim's existing tests exercise garbage-but-correctly-prefixed
+      bytes, a bare `{}` passed to `play()`, and a missing file, all
+      specifically to verify the *honest-diagnostic* fallback path still
+      works — routing those same inputs through real native parsing would
+      have broken them. The fallback makes this a strict superset of the
+      previous behavior: nothing that "worked" (reported honestly) before
+      behaves differently now, proven by all three of those pre-existing
+      tests passing unchanged. A fourth, new test
+      (`mruby-mvjs/test/mz_test.rb`) loads a real, unmodified `.efkefc`
+      (`Flash.efkefc`) through the shim and confirms it takes the *other*
+      path: a nonzero native effect handle and a `play()` result whose
+      `_native` field is a real, non-negative `Effekseer::Handle` — proving
+      genuine native routing, not just that nothing broke.
 
       It also shows why M6.3g's frame check is not redundant with the log: with
       the animation's sheet renamed away, `[MZ-ANIM]` still reports

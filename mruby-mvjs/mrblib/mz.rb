@@ -290,7 +290,12 @@ class MZ
     "})(globalThis);".freeze
 
   # Replaces `window.effekseer` (defined by the vendored `effekseer.min.js`,
-  # still evaluated harmlessly as part of CORE_SCRIPTS) with a diagnostic stub.
+  # still evaluated harmlessly as part of CORE_SCRIPTS) with a bridge to the
+  # real native Effekseer C++ SDK (`3rd/effekseer`, `mruby-mvjs/src/mvefk.cxx`)
+  # where it was compiled in, falling back to the original honest-diagnostic
+  # stub everywhere else (or for content that fails to parse as a real
+  # `.efkefc`) — see `__mv_efkContextCreate` and friends (mvefk.cxx) for the
+  # native half.
   #
   # `Graphics._createEffekseerContext` (rmmz_core.js) already degrades
   # gracefully when `effekseer.createContext()` returns null, which is exactly
@@ -304,62 +309,134 @@ class MZ
   # whose animations are all Effekseer looks like it is running fine with no
   # indication anything was skipped.
   #
-  # This stub does not draw particles (that needs a native Effekseer port
-  # targeting the WebGL bridge in mvgl.cxx/mvwebgl.cxx — a multi-week project
-  # of its own, tracked separately) but it does the two things a stub can do
-  # honestly in one step: it makes `Graphics.effekseer` non-null so the load
-  # path actually runs, and it reads the real `.efkefc` bytes off disk
+  # This still does not draw particles: only `Effekseer::Manager`
+  # (simulation) is wired here, not `EffekseerRendererGL::Renderer` (drawing
+  # real MZ animations needs Effekseer's renderer to share the exact GL
+  # context/FBO PIXI's own WebGL renderer, mvwebgl.cxx, is using mid-frame —
+  # a separate, higher-risk integration staged as its own follow-up; see
+  # docs/TODO.md's Effekseer entry). What real simulation buys over the old
+  # synthetic stub: `loadEffect` on a genuinely valid `.efkefc` gets a real
+  # native effect handle, and `play()` on that handle drives a real
+  # `Effekseer::Manager::Update` loop, so `handle.exists`/animation timing
+  # reflect the effect's own authored duration instead of an arbitrary
+  # 20-frame placeholder. Content that merely *looks* like an effect (right
+  # magic bytes, not real Effekseer data — as hand-built test fixtures are)
+  # fails native parsing and transparently falls back to the old synthetic
+  # handle, so this is a strict superset of the previous behavior: nothing
+  # that "worked" (i.e. reported honestly) before behaves differently now.
+  #
+  # `loadEffect` still reads the real `.efkefc` bytes off disk itself
   # (through the same `__mv_existsSync`/`__mv_readFileBytes` natives every
-  # other asset uses) to confirm the file exists and looks like a real effect
-  # container (`"EFKEFC"` magic) before logging exactly what was skipped and
-  # why. A missing effect file still reports through `onError`/`checkErrors`
-  # the same way the real engine's fetch failure would (rmmz_managers.js's
+  # other asset uses, unrelated to the native Effekseer parse attempt above)
+  # to confirm the file exists and looks like a real effect container
+  # (`"EFKEFC"` magic) before logging what native rendering still can't draw.
+  # A missing effect file still reports through `onError`/`checkErrors` the
+  # same way the real engine's fetch failure would (rmmz_managers.js's
   # `EffectManager.throwLoadError`), rather than being swallowed twice over.
   #
-  # `play()` hands back a handle with a short fixed lifetime (decremented by
-  # `update()`, which `SceneManager.updateEffekseer` already calls once a
-  # frame) so `Sprite_Animation.checkEnd` still sees `_handle.exists` go
-  # false and ends the animation normally instead of hanging on it forever.
-  EFFEKSEER_SHIM_JS =
-    "(function(g){ " \
-    "function makeContext(){ var ctx = { _handles: [] }; " \
-    "ctx.init = function(){}; " \
-    "ctx.setRestorationOfStatesFlag = function(){}; " \
-    "ctx.loadEffect = function(url, mag, onLoad, onError){ " \
-    "var exists = (typeof g.__mv_existsSync === 'function') && " \
-    "g.__mv_existsSync(url); " \
-    "if (!exists) { if (onError) onError('not found', url); " \
-    "return { isLoaded: false, url: url }; } " \
-    "var bytes = new Uint8Array(g.__mv_readFileBytes(url)); " \
-    "var magic = 'EFKEFC'; var magicOk = bytes.length >= magic.length; " \
-    "for (var i = 0; magicOk && i < magic.length; i++) { " \
-    "if (bytes[i] !== magic.charCodeAt(i)) magicOk = false; } " \
-    "if (typeof console !== 'undefined' && console.warn) { " \
-    "console.warn('[Effekseer] effect requested but native particle ' + " \
-    "'rendering is not implemented: ' + url + ' (' + bytes.length + " \
-    "' bytes' + (magicOk ? '' : ', unrecognized format') + ')'); } " \
-    "if (onLoad) onLoad(); " \
-    "return { isLoaded: true, url: url, byteLength: bytes.length, " \
-    "magicOk: magicOk }; }; " \
-    "ctx.releaseEffect = function(){}; " \
-    "ctx.update = function(){ var alive = []; " \
-    "for (var i = 0; i < this._handles.length; i++) { " \
-    "var h = this._handles[i]; h._life--; " \
-    "if (h._life <= 0) h.exists = false; else alive.push(h); } " \
-    "this._handles = alive; }; " \
-    "ctx.stopAll = function(){ for (var i = 0; i < this._handles.length; i++) " \
-    "this._handles[i].exists = false; this._handles = []; }; " \
-    "ctx.play = function(){ var h = { exists: true, _life: 20, " \
-    "setLocation: function(){}, setRotation: function(){}, " \
-    "setScale: function(){}, setSpeed: function(){}, " \
-    "stop: function(){ this.exists = false; } }; " \
-    "this._handles.push(h); return h; }; " \
-    "ctx.beginDraw = function(){}; ctx.drawHandle = function(){}; " \
-    "ctx.endDraw = function(){}; ctx.setProjectionMatrix = function(){}; " \
-    "ctx.setCameraMatrix = function(){}; " \
-    "return ctx; } " \
-    "g.effekseer = { createContext: makeContext }; " \
-    "})(globalThis);".freeze
+  # A synthetic (non-native) `play()` handle still has a short fixed lifetime
+  # (decremented by `update()`, which `SceneManager.updateEffekseer` already
+  # calls once a frame) so `Sprite_Animation.checkEnd` still sees
+  # `_handle.exists` go false and ends the animation normally instead of
+  # hanging on it forever, exactly as before.
+  EFFEKSEER_SHIM_JS = <<~'JS'
+    (function (g) {
+      var haveNative = typeof g.__mv_efkContextCreate === 'function';
+      function makeContext() {
+        var ctx = { _handles: [] };
+        var nativeCtx = haveNative ? g.__mv_efkContextCreate() : 0;
+        ctx.init = function () {};
+        ctx.setRestorationOfStatesFlag = function () {};
+        ctx.loadEffect = function (url, mag, onLoad, onError) {
+          var exists = (typeof g.__mv_existsSync === 'function') && g.__mv_existsSync(url);
+          if (!exists) {
+            if (onError) onError('not found', url);
+            return { isLoaded: false, url: url };
+          }
+          var bytes = new Uint8Array(g.__mv_readFileBytes(url));
+          var magic = 'EFKEFC';
+          var magicOk = bytes.length >= magic.length;
+          for (var i = 0; magicOk && i < magic.length; i++) {
+            if (bytes[i] !== magic.charCodeAt(i)) magicOk = false;
+          }
+          // A real .efkefc that fails to parse here (garbage past the magic
+          // bytes, an unsupported sub-format) is not treated as a load
+          // error: isLoaded/magicOk above are still honest either way, and
+          // play() below falls back to the synthetic handle for it.
+          var nativeEffect = nativeCtx ? g.__mv_efkEffectLoad(nativeCtx, bytes, mag || 1) : 0;
+          if (!nativeEffect && typeof console !== 'undefined' && console.warn) {
+            console.warn('[Effekseer] effect requested but native particle ' +
+              'rendering is not implemented: ' + url + ' (' + bytes.length +
+              ' bytes' + (magicOk ? '' : ', unrecognized format') + ')');
+          }
+          if (onLoad) onLoad();
+          return { isLoaded: true, url: url, byteLength: bytes.length, magicOk: magicOk, _native: nativeEffect };
+        };
+        ctx.releaseEffect = function (effect) {
+          if (nativeCtx && effect && effect._native) g.__mv_efkEffectRelease(nativeCtx, effect._native);
+        };
+        ctx.update = function (deltaFrame) {
+          if (nativeCtx) g.__mv_efkUpdate(nativeCtx, deltaFrame === undefined ? 1 : deltaFrame);
+          var alive = [];
+          for (var i = 0; i < this._handles.length; i++) {
+            var h = this._handles[i];
+            if (h._native !== undefined && h._native >= 0) {
+              h.exists = nativeCtx ? !!g.__mv_efkExists(nativeCtx, h._native) : false;
+            } else {
+              h._life--;
+              h.exists = h._life > 0;
+            }
+            if (h.exists) alive.push(h);
+          }
+          this._handles = alive;
+        };
+        ctx.stopAll = function () {
+          for (var i = 0; i < this._handles.length; i++) {
+            var h = this._handles[i];
+            if (nativeCtx && h._native !== undefined && h._native >= 0) g.__mv_efkStop(nativeCtx, h._native);
+            h.exists = false;
+          }
+          this._handles = [];
+        };
+        ctx.play = function (effect, x, y, z) {
+          var nativeHandle = (nativeCtx && effect && effect._native)
+            ? g.__mv_efkPlay(nativeCtx, effect._native, x || 0, y || 0, z || 0)
+            : -1;
+          var h;
+          if (nativeHandle >= 0) {
+            h = {
+              exists: true,
+              _native: nativeHandle,
+              setLocation: function (x, y, z) { g.__mv_efkSetLocation(nativeCtx, nativeHandle, x, y, z); },
+              setRotation: function (x, y, z) { g.__mv_efkSetRotation(nativeCtx, nativeHandle, x, y, z); },
+              setScale: function (x, y, z) { g.__mv_efkSetScale(nativeCtx, nativeHandle, x, y, z); },
+              setSpeed: function (s) { g.__mv_efkSetSpeed(nativeCtx, nativeHandle, s); },
+              stop: function () { g.__mv_efkStop(nativeCtx, nativeHandle); this.exists = false; }
+            };
+          } else {
+            h = {
+              exists: true,
+              _life: 20,
+              setLocation: function () {},
+              setRotation: function () {},
+              setScale: function () {},
+              setSpeed: function () {},
+              stop: function () { this.exists = false; }
+            };
+          }
+          this._handles.push(h);
+          return h;
+        };
+        ctx.beginDraw = function () {};
+        ctx.drawHandle = function () {};
+        ctx.endDraw = function () {};
+        ctx.setProjectionMatrix = function () {};
+        ctx.setCameraMatrix = function () {};
+        return ctx;
+      }
+      g.effekseer = { createContext: makeContext };
+    })(globalThis);
+  JS
 
   # Installed only for headless/CI runs (see #render_skip_enabled?, gated on
   # the same --no_render_wait flag as RGSS::Graphics.update's frame-pacing
