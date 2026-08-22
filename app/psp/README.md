@@ -72,12 +72,13 @@ What runs today:
 Requires the [pspdev toolchain](https://github.com/pspdev/pspdev) with `$PSPDEV`
 set (it provides `psp-gcc`, the CMake toolchain file and `create_pbp_file`).
 Run `scripts/build_psp_fixup_imports.bash` first — it replaces the
-toolchain's own `psp-fixup-imports` (normally at `$PSPDEV/bin/`) with a
-patched build; see the bug trail lower in this section for why this
-EBOOT needs it to actually boot:
+toolchain's own `$PSPDEV/bin/psp-fixup-imports` with a patched build; see
+the bug trail lower in this section for why this EBOOT needs it to
+actually boot. Configuring without it is a hard error, so there is no way
+to get a silently mis-linked EBOOT out of this build:
 
 ```sh
-scripts/build_psp_fixup_imports.bash "$PSPDEV/bin/psp-fixup-imports"
+scripts/build_psp_fixup_imports.bash
 cmake -S app/psp -B build-psp \
   -DCMAKE_TOOLCHAIN_FILE=$PSPDEV/psp/share/pspdev.cmake
 cmake --build build-psp          # -> build-psp/EBOOT.PBP

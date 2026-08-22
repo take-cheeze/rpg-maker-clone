@@ -1342,10 +1342,12 @@ jobs:
         # container has neither tool by default (confirmed missing by a real
         # CI run, "sh: gperf: not found", once that patch first shipped).
         #
-        # That script replaces the image's own /usr/local/pspdev/bin/
-        # psp-fixup-imports (a host tool `cmake --build` invokes automatically
-        # after linking, as part of `create_pbp_file`) with a patched build
-        # before configuring -- see the script and patches/
+        # That script replaces $PSPDEV/bin/psp-fixup-imports (a host tool
+        # `cmake --build` invokes automatically after linking, as part of
+        # `create_pbp_file`, and resolves through that same variable) with a
+        # patched build before configuring. This image exports
+        # PSPDEV=/usr/local/pspdev, so that is the path it lands on here --
+        # see the script and patches/
         # psp-fixup-imports-jal-relocation-aware.patch for why: the stock tool
         # silently mis-links several of this EBOOT's own genuine PSP imports,
         # which is what stops it booting to completion under PPSSPP-headless
