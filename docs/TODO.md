@@ -5136,6 +5136,35 @@ The work below is roughly ordered by the critical path to a walkable game
   party with no FaceSet set round-trips to `nil`, not four blank pairs), plus
   corrected x-coordinates in the two pre-existing position checks — all
   confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (cycle #120): the same live-vs-snapshot gap existed for the
+  file-select screen's Lv/HP line, not just its face row.** The face-thumbnail
+  fix above flagged this as worth checking; it was. Confirmed against a
+  genuine RPG_RT.exe under wine: a synthetic Save01.lsd whose title chunk
+  (chunk 100, fields 12/13, `hero_level`/`hero_hp`) was edited to 7/321 while
+  leaving the leader's own live actor entry (chunk 108) at its real 50/600
+  showed **"LV 7  HP 321"** on the real file-select screen — proving
+  `Window_SaveFile` draws this pair from the title chunk directly too, never
+  from any Actor object, the same architecture as the face row.
+  `Scene::SaveLoad#draw_slot_box` (`mruby-rpg2k/mrblib/scene/save_load.rb`)
+  was still reading `state.party.leader.level`/`.hp` (the live actor) for
+  this line. `Game::State#to_lsd` already wrote `hero_level`/`hero_hp` from
+  the leader's own level/hp at save time; `#from_lsd` never read them back.
+  Fixed by adding `Game::State#preview_level`/`#preview_hp`
+  (`mruby-rpg2k/mrblib/game.rb`), populated by `.from_lsd` from the title
+  chunk's fields 12/13 (nil for a state that never carried one, e.g. a
+  Marshal round-trip), and having `draw_slot_box` prefer them, falling back
+  to the live leader's own level/hp only when nil — the same snapshot-first,
+  live-fallback shape `draw_slot_faces` already uses. (The leader's *name*
+  needed no equivalent snapshot: the promotion fix directly below already
+  guarantees `party.leader.name` agrees with `title.hero_name` one way or
+  another, but there is no equivalent stat-sync step for level/hp, so this
+  build should not have implicitly relied on one either.) Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (`to_lsd`/`from_lsd` round-trips the
+  snapshot, staying independent of a subsequent live mutation to the same
+  actor) and a new `scripts/rpg2k_scene_check.rb` check (a deliberately-
+  mismatched `preview_level`/`preview_hp` overrides the live leader's own
+  level/hp in the drawn text) — both confirmed to fail against the pre-fix
+  code before the fix.
   ✅ **Continue could resume with the wrong actor leading the party.**
   Found by comparing against a genuine `RPG_RT.exe` under wine on a real
   Nepheshel save: chunk 109's party list (field 1) named actor 1 ("リト"),
