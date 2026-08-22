@@ -4186,6 +4186,51 @@ check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
   eq false, restored.battle_commands_changed?
 end
 
+check 'to_lsd/from_lsd round-trips the file-select screen\'s face-thumbnail ' \
+      'snapshot (State#preview_faces), independent of the loaded actors\' own data' do
+  # Confirmed against a genuine RPG_RT.exe under wine: the save/load
+  # file-select screen draws its face row from the save's title chunk (100,
+  # fields 21/22..27/28) verbatim, not from whatever the party/actor data
+  # says once loaded -- a synthetic save whose title chunk pointed at an
+  # unrelated FaceSet showed exactly that FaceSet, even though the save's
+  # own (single-member) party's actor carried no matching data at all. This
+  # loads chunk 108 (SAVE_PARTY_ACTOR) into fresh actors that have never had
+  # #set_faceset called -- as a genuine `.lsd` load always does, since that
+  # chunk has no FaceSet field of its own (see SAVE_PARTY_ACTOR's schema) --
+  # so a `round.preview_faces` that matched party data instead of the title
+  # chunk's own snapshot would prove this regressed back to deriving live.
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+  }
+  db = FakeActorDB.new(players, [1])
+  party = Game::Party.new(db)
+  party.add_actor(2)
+  st = Game::State.new(party, 1, 0, 0)
+  st.party.leader.set_faceset('LeaderFace', 1)
+  st.party.actor_by_id(2).set_faceset('AllyFace', 2)
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq [['LeaderFace', 1], ['AllyFace', 2], nil, nil], round.preview_faces,
+     'both members\' faceset name/index round-trip via the title chunk\'s four ' \
+     'face slots, the unused two staying nil'
+
+  # A save whose party never had a FaceSet at all (e.g. every fixture used
+  # elsewhere in this file) writes an all-blank snapshot, and #from_lsd
+  # leaves State#preview_faces nil for one rather than a row of four nils --
+  # Scene::SaveLoad#draw_slot_faces then falls back to deriving from the
+  # live party, still correct for a state that never had a snapshot to give.
+  no_face_players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  no_face_db = FakeActorDB.new(no_face_players, [1])
+  no_face_st = Game::State.new(Game::Party.new(no_face_db), 1, 0, 0)
+  no_face_round = Game::State.from_lsd(no_face_db, no_face_st.to_lsd)
+  ok no_face_round.preview_faces.nil?,
+     'a party with no FaceSet set writes an all-blank snapshot, read back as nil ' \
+     "(got #{no_face_round.preview_faces.inspect})"
+end
+
 check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
   actor_curve = []
   3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }

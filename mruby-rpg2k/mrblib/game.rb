@@ -14029,6 +14029,26 @@ module Game
     # inventory chunk (109 fields 32-35).
     attr_accessor :save_count, :battle_count, :win_count, :defeat_count,
                   :escape_count
+    # The file-select screen's own face-thumbnail snapshot (title chunk 100,
+    # fields 21/22..27/28, `LCF::Schema::SAVE_TITLE`'s face1..face4
+    # name/index pairs) -- up to four `[faceset_name, faceset_index]` pairs,
+    # or nil for a state that never carried one (a Marshal round-trip, or a
+    # state built directly rather than loaded from a genuine `.lsd`).
+    # Confirmed against a genuine RPG_RT.exe under wine: the save/load
+    # file-select screen draws each occupied slot's face row from exactly
+    # these title-chunk fields, not from whatever the slot's own party/actor
+    # data says at preview time -- a synthetic save edited so the title
+    # chunk's four face fields point at an unrelated FaceSet the actual
+    # single-member party's own actor never carries showed precisely that
+    # unrelated FaceSet on the real screen. `#to_lsd` already writes this
+    # snapshot from the party's own members at save time (see its own
+    # comment); only the read side was missing. `Scene::SaveLoad
+    # #draw_slot_faces` reads this when present, falling back to deriving
+    # from the live party's own members only when it is nil -- correct for
+    # the Marshal round-trip path, which is not lossy (unlike `.lsd`'s own
+    # per-actor chunk, which has no FaceSet fields at all) and so needs no
+    # separate snapshot.
+    attr_accessor :preview_faces
     # Teleport / Escape skill destinations registered by Set Teleport Target
     # (11810) and Set Escape Target (11830). `teleport_targets` is a hash keyed
     # by map id → `{ x:, y:, switch_id: }`; `escape_target` is nil or one such
@@ -15156,6 +15176,22 @@ module Game
             party.leader.name = nm
           end
         end
+      end
+      if title
+        # The file-select screen's own face-thumbnail snapshot -- see
+        # State#preview_faces. Read straight off the title chunk's four
+        # name/index pairs, each skipped (nil) when its name is blank (an
+        # unfilled slot, e.g. a save written by tooling -- EasyRPG's own F9
+        # debug-menu Save -- that never populates them), the same "blank
+        # name -> no face" rule Scene::SaveLoad#draw_slot_faces already
+        # applies elsewhere.
+        faces = [[title.face1_name, title.face1_index],
+                 [title.face2_name, title.face2_index],
+                 [title.face3_name, title.face3_index],
+                 [title.face4_name, title.face4_index]].map do |name, index|
+          name && !name.empty? ? [name, index] : nil
+        end
+        state.preview_faces = faces if faces.any?
       end
       # Chunk 102 is the screen tint transition; only #restore_tint's tint
       # sub-fields are modelled here (see #to_lsd's own comment on chunk 102

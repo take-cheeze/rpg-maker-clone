@@ -5102,6 +5102,40 @@ The work below is roughly ordered by the critical path to a walkable game
   from their own FaceSet cell at the right position/pitch; a blank-named
   member and a 5th-and-beyond member both draw nothing), both confirmed to
   fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-22): this whole passage's own citations were
+  EasyRPG Player's C++ source, not genuine RPG_RT — and once actually
+  checked, both the data source and the row's exact position were wrong.**
+  Confirmed directly against a genuine RPG_RT.exe under wine: the file-select
+  screen draws each slot's face row from the *save's own title-chunk
+  snapshot* (chunk 100, fields 21-28 — the same fields `#to_lsd` already
+  wrote at save time but `#from_lsd` never read back), not from whatever the
+  slot's party/actor data says once loaded. A synthetic save whose title
+  chunk pointed all four face fields at an unrelated FaceSet the actual
+  (single-member) party's own actor never carried showed exactly that
+  unrelated FaceSet on the real screen — proving the two are independent,
+  and that `draw_slot_faces` deriving from `state.party.actors` at render
+  time (as the fix above did) was reading the wrong data entirely, live
+  actor state a title-chunk snapshot exists specifically to bypass. The same
+  capture also pixel-measured the row's exact position — four faces at
+  logical x=96/152/208/264, the fourth's right edge landing exactly on the
+  box's own content-edge (312 = 320-8) with **no trailing 8px gap past the
+  last face** — showing the old `inner_w - MAX_SLOT_FACES * FACE_SPACING`
+  right-anchor formula (which reserved a phantom fifth gap) put the whole
+  row 8px too far left. Fixed by adding `Game::State#preview_faces`
+  (`mruby-rpg2k/mrblib/game.rb`) — up to four `[faceset_name, faceset_index]`
+  pairs read from the title chunk's face1-4 fields by `.from_lsd`, nil for a
+  state that never carried one (a Marshal round-trip, which loses nothing
+  and so needs no separate snapshot) — and having `draw_slot_faces`
+  (`mruby-rpg2k/mrblib/scene/save_load.rb`) prefer it, falling back to
+  deriving from live party members only when nil; the right-anchor formula
+  is now `inner_w - ((MAX_SLOT_FACES - 1) * FACE_SPACING + FACE_SIZE)`,
+  flush with no trailing gap. Covered by a new `scripts/rpg2k_scene_check.rb`
+  check (a deliberately-mismatched `preview_faces` overrides the live
+  party's own faceset data) and a new `scripts/rpg2k_logic_check.rb` check
+  (`to_lsd`/`from_lsd` round-trips the snapshot independent of actor data; a
+  party with no FaceSet set round-trips to `nil`, not four blank pairs), plus
+  corrected x-coordinates in the two pre-existing position checks — all
+  confirmed to fail against the pre-fix code before the fix.
   ✅ **Continue could resume with the wrong actor leading the party.**
   Found by comparing against a genuine `RPG_RT.exe` under wine on a real
   Nepheshel save: chunk 109's party list (field 1) named actor 1 ("リト"),
