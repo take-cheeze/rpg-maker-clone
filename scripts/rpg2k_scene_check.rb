@@ -11043,6 +11043,32 @@ check 'the timer draws M:SS as digit-sprite cells cut from the System graphic, a
   ok !spr.visible, 'clearing visibility hides the timer sprite'
 end
 
+check 'a timer past 99 minutes draws its minute-tens value across both ' \
+      'leading cells, a duplicated colon, and only the seconds-tens digit -- ' \
+      'not the naive out-of-range single-glyph index' do
+  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: 107 min 34 s
+  # (mins / 10 == 10, a genuine two-digit overflow, reachable via an uncapped
+  # Control-Variables-sourced Timer Set -- see Game::Timer#set's own comment)
+  # draws [1, 0, :, :, 3] across the five 8x16 cells -- the two decimal digits
+  # of mins/10 (10 -> "1","0"), the colon glyph a second time in the cell that
+  # would otherwise be seconds-tens... er, minutes-ones, then seconds-tens
+  # alone. minutes-ones (7) and seconds-ones (4) are both dropped entirely,
+  # not merely miscomputed -- the previous unbounded single-index formula
+  # instead read an out-of-range windowskin offset for cell 0 and still drew
+  # minutes-ones/seconds-ones normally, which does not match real RPG_RT.
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).frames = (107 * 60 + 34) * 60 + 30 # blink-on half of the second
+  st.timer(0).visible = true
+  scene.update
+  spr = scene.instance_variable_get(:@timer_sprites)[0]
+  calls = spr.bitmap.blt_calls
+  eq [[0, 0, 40, 32, 8, 16], [8, 0, 32, 32, 8, 16], [16, 0, 112, 32, 8, 16],
+      [24, 0, 112, 32, 8, 16], [32, 0, 56, 32, 8, 16]],
+     calls.map { |x, y, src, r| [x, y, r.x, r.y, r.width, r.height] }
+end
+
 check 'the timer colon blinks off for the first half of each second' do
   scene = new_scene({})
   scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))

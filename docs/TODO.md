@@ -8666,6 +8666,39 @@ not yet verified:
   variable-sourced, lands at exactly 9999 s / `9999 * FPS + (FPS - 1)`
   frames, not clamped to 5999), confirmed to fail against the pre-fix
   code (`expected 9999, got 5999`) before the fix.
+  ✅ **Follow-up (2026-08-22): the "reproduces the garbled-past-99 quirk for
+  free" half of that correction was itself wrong. ~~`Sprite_Timer::Draw`
+  indexes its digit strip at an unbounded `32 + 8 * (mins / 10)` ... this
+  port's own pixel-digit renderer already indexes its windowskin digit strip
+  the identical unbounded way ... reproduces the same garbled-past-99 quirk
+  for free.~~** That whole claim was reasoned from EasyRPG's source alone,
+  never checked against a genuine RPG_RT.exe's actual on-screen output —
+  exactly the kind of uncited claim this session has repeatedly found wrong
+  elsewhere. Confirmed by editing a genuine save's Timer chunk (109 fields
+  23-26) to values with `mins / 10` a genuine two-digit overflow (10-99) and
+  resuming under a real RPG_RT.exe: the widget does NOT simply index the
+  digit strip out of range and read whatever garbage windowskin pixels
+  happen to sit there (what an unbounded single-glyph index — matching this
+  port's pre-fix code — would produce, and did: for 107 min 34 s it drew
+  `mins/10=10` as index 10 into the strip, `mins%10=7`, and `secs%10=4`
+  normally). Instead RPG_RT draws the two-digit `mins/10` value's own tens
+  and ones digits across the first two cells, the colon glyph a *second*
+  time in the cell that would otherwise be minutes-ones, then only
+  seconds-tens in the last cell — minutes-ones and seconds-ones are dropped
+  entirely, not merely miscomputed. Confirmed on four mutually-
+  disambiguating samples (`mins/10` = 10, 10, 11, 25, each individually
+  distinguishable per this session's cycle-#95 lesson about symmetric
+  witnesses), and the glyphs verified to land on the identical 8px-aligned
+  columns as the normal case (ruling out a switch to proportional-width
+  text rendering). `mins >= 1000` (`mins/10 >= 100`, reachable only past
+  ~16.7 real hours) departs from even this pattern on the one sample tried
+  and is left unhandled, same as before — not worth characterizing for
+  something that far outside normal play. Fixed in `Scene::Map
+  #draw_timer_digits` (`mruby-rpg2k/mrblib/scene/map.rb`) and the stale
+  claim struck from `Game::Timer#set`'s own comment
+  (`mruby-rpg2k/mrblib/game.rb`). Covered by a new
+  `scripts/rpg2k_scene_check.rb` check (107 min 34 s renders the five cells
+  exactly as above), confirmed to fail against the pre-fix code.
 - ✅ **Special-skill HP recovery is capped at 999 per use** — the same
   fixed-3-digit-popup reasoning as the battle damage cap above, for the
   opposite direction. `Game::Battle#apply_skill_hit`'s recovery branch

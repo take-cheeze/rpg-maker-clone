@@ -13776,7 +13776,7 @@ module Game
     # `ValueOrVariable`-sourced seconds straight through with no clamp
     # either -- so a Control Variables value above 99:59 (5999 s, an
     # arbitrary, player-reachable overflow) genuinely reaches the frame
-    # counter uncapped in real RPG_RT. `Sprite_Timer::Draw`
+    # counter uncapped in real RPG_RT. ~~`Sprite_Timer::Draw`
     # (`src/sprite_timer.cpp`) indexes its digit strip at an unbounded
     # `32 + 8 * (mins / 10)` with no ceiling either, so real RPG_RT's own
     # on-screen minutes display genuinely garbles past 99 rather than
@@ -13784,7 +13784,12 @@ module Game
     # (`Scene::Map#draw_timer_digits`, `mruby-rpg2k/mrblib/scene/map.rb`)
     # already indexes its own windowskin digit strip the identical
     # unbounded way, so it reproduces the same garbled-past-99 quirk for
-    # free once this class stops clamping first.
+    # free once this class stops clamping first.~~ Correction: confirmed
+    # against a genuine RPG_RT.exe, not just its source, this claim was
+    # wrong -- RPG_RT does not garble past 99 the same way a naive
+    # unbounded single-glyph index would. See `Scene::Map#draw_timer_digits`
+    # (`mruby-rpg2k/mrblib/scene/map.rb`) for the actual, empirically
+    # characterized overflow behavior.
     def set(seconds)
       @frames = seconds * FPS + (FPS - 1)
     end

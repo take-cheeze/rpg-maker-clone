@@ -8887,15 +8887,33 @@ class RPG2k
       # off for the first half of every real second, on for the second half --
       # independent of the four digit cells either side of it, which always
       # draw regardless of the blink.
+      #
+      # `mins` overflowing past 99 (reachable via an uncapped Control-
+      # Variables-sourced Timer Set, see `Game::Timer#set`'s own comment) is
+      # NOT the naive "index the digit strip past its end" garble a single
+      # unbounded `mins / 10` lookup would produce -- confirmed against a
+      # genuine RPG_RT.exe: for `mins` 100..999 (i.e. `mins / 10` itself a
+      # two-digit 10..99), the widget draws that two-digit value's own tens
+      # and ones digits in cells 0-1, the colon glyph a SECOND time in cell 3
+      # (not `mins % 10`, and not `secs % 10` either), and only `secs / 10`
+      # in cell 4 -- `mins % 10` and `secs % 10` are both dropped entirely,
+      # not merely miscomputed. `mins >= 1000` (over 16.7 real hours) departs
+      # from even this pattern and is left unhandled, same as before.
       def draw_timer_digits(bmp, timer)
         s = timer.seconds
         mins = s / 60
         secs = s % 60
-        cells = [mins / 10, mins % 10, nil, secs / 10, secs % 10]
+        mins_tens = mins / 10
+        cells =
+          if mins_tens >= 10 && mins_tens < 100
+            [mins_tens / 10, mins_tens % 10, nil, nil, secs / 10]
+          else
+            [mins_tens, mins % 10, nil, secs / 10, secs % 10]
+          end
         bmp.clear
         blink_off = (timer.frames % Game::Timer::FPS) < Game::Timer::FPS / 2
         cells.each_with_index do |digit, i|
-          next if digit.nil? && blink_off # the colon cell, mid-blink-off
+          next if digit.nil? && blink_off # a colon cell, mid-blink-off
           src_x = digit.nil? ? TIMER_COLON_SRC_X : TIMER_DIGIT_SRC_X + TIMER_DIGIT_W * digit
           bmp.blt i * TIMER_DIGIT_W, 0, @windowskin,
                   Rect.new(src_x, TIMER_DIGIT_SRC_Y, TIMER_DIGIT_W, TIMER_DIGIT_H)
