@@ -349,6 +349,36 @@ pinned, and the cost is measured and small: unoptimised `.text` is ~260 KB
 larger, against a boot reporting 782 KB heap free, a 256 KB LVGL pool running
 at 1.4%, and a 256 KB main stack at 6.4%.
 
+### Open: a failed file operation on every frame
+
+With the two PPSSPP patches above in, the EBOOT boots to Nepheshel's title
+screen and holds it, but the frame loop performs one failed file operation per
+frame -- tens of thousands per run. Its identity changed when
+`ppsspp-sysclib-strchr-strrchr.patch` landed:
+
+- before: `sceIoDread` returning `BADF`, from pspsdk's `getdents`/`_lseekDir`
+  (`libcglue/glue.c`) after a `sceIoDopen(ms0:/PSP/GAME/rpg2k/Fonts)` that
+  fails because the directory does not exist. Its second argument was the
+  emulator's `0xDEADBEEF` register poison, i.e. never set.
+- after: `sceIoRemove` with a filename pointer PPSSPP cannot read. The call
+  chain is `File.delete`/`File.unlink` -> `mrb_file_s_unlink`
+  (`mruby-io/src/file.c:150`) -> `mrb_hal_io_unlink` -> `unlink` ->
+  `_unlink_r` -> `_unlink` -> `sceIoRemove`, and `_unlink` passes the stack
+  buffer `__path_absolute` filled in.
+
+Both are "a file operation with a bad argument, every frame". What has *not*
+been established is whether they are the same underlying call: the two
+observations come from builds that differ in both the emulator and the guest
+binary, so the change cannot be attributed to either on this evidence.
+
+Two things make it worth chasing rather than ignoring. `mrb_sys_fail` raises
+when the HAL call fails, and mruby here is built with the C++ exception ABI --
+so a rescued Ruby exception per frame means a real C++ throw and unwind per
+frame, through the FDE index `psp_unwind_fde.cxx` rebuilds. And no Ruby in
+this tree calls `File.delete` per frame; the only non-test occurrence is a
+one-off probe in `mruby-rgss/mrblib/lib.rb`. Something is reaching it that the
+source does not obviously explain.
+
 To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
