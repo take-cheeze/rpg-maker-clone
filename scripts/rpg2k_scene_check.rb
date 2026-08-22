@@ -3163,6 +3163,24 @@ check 'Show Inn scene: accepting heals the party, spends gold, runs Stay branch'
   ok !st.switches[2], 'the No Stay branch was skipped'
 end
 
+check 'Show Inn scene: the prompt window is a fixed 320x80 panel flush to ' \
+      'the screen\'s bottom-left corner, not a content-sized box inset 10px' do
+  # Confirmed against genuine RPG_RT.exe under wine: a live Inn prompt's
+  # border touches the screen's left, right and bottom edges with no gap --
+  # the same fixed panel the message window uses (MSG_WIN_W/MSG_WIN_H), not
+  # this window's old content-sized, 10px-inset box (the same stale
+  # anti-pattern already fixed for the message window and the shop list
+  # window).
+  scene, = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  win = scene.instance_variable_get(:@inn_window)[:window]
+  map_mod = RPG2k::Scene::Map
+  eq 0, win.x, "the prompt window is flush to the screen's left edge"
+  eq map_mod::MSG_WIN_W, win.width, 'and the message window\'s own fixed width'
+  eq map_mod::SCREEN_H - map_mod::MSG_WIN_H, win.y, 'flush to the bottom edge'
+  eq map_mod::MSG_WIN_H, win.height, 'and the message window\'s own fixed height'
+end
+
 check 'Show Inn scene: an accepted stay fades to black, holds through the heal, ' \
       'then fades back in over the RPG_RT default 35 frames' do
   # Real RPG_RT (EasyRPG's Scene_Map::UpdateInn / FinishInn, the async

@@ -5163,10 +5163,18 @@ class RPG2k
         gold_term = nonblank(db.term.gold, 'G')
         lines = ["#{terms[:greet1]} #{req[:price]}#{gold_term} #{terms[:greet2]}".strip,
                  terms[:greet3], terms[:accept], terms[:cancel]]
-        inner_w = SCREEN_W - 20 - Window::BORDER * 2
-        inner_h = lines.length * INN_LINE_H
-        win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
-                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        # Fixed 320x80 panel flush to the screen's bottom-left corner, the
+        # same panel the message window uses (MSG_WIN_W/MSG_WIN_H) -- not a
+        # content-sized box inset 10px, the same stale anti-pattern already
+        # fixed for the message window (ADR 0021) and the shop list window.
+        # Confirmed against genuine RPG_RT.exe under wine: a live Inn
+        # prompt's border touches the screen's left, right and bottom edges
+        # with no gap, at exactly this size -- this codebase's own
+        # content-sized box left a visible strip of map background on both
+        # sides and below it.
+        inner_w = MSG_WIN_W - Window::BORDER * 2
+        inner_h = MSG_WIN_H - Window::BORDER * 2
+        win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
         win.z = 300
         win.windowskin = @windowskin
         contents = Bitmap.new(inner_w, inner_h)

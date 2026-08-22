@@ -1422,6 +1422,40 @@ The work below is roughly ordered by the critical path to a walkable game
   charged, holds through the heal, then fades back in), plus fade assertions
   added to the existing cancel and unaffordable-Accept checks confirming
   neither ever starts a fade.
+  ✅ **Follow-up (2026-08-22): the inn's own greeting/prompt window carried
+  the same stale "inset 10px, content-sized" shape already fixed for the
+  message window and the shop list window.** `#open_inn_window`
+  (`mruby-rpg2k/mrblib/scene/map.rb`) built a content-sized panel
+  (`x=10, width=SCREEN_W-20, height=` the four greeting/prompt lines' own
+  height) instead of the fixed 320x80 panel flush to the bottom-left corner
+  every other prompt-style window in this codebase already uses. Confirmed
+  against genuine RPG_RT.exe under wine: a synthetic Show Inn autostart
+  event on a genuine Nepheshel map (no editor-authored Inn NPC exists in
+  Nepheshel, so this was the one recent shop/inn fix needing injected event
+  data rather than an authentic in-game NPC), resumed under both runtimes —
+  real RPG_RT's prompt window border touches the screen's left, right and
+  bottom edges with no gap, at exactly the message window's own 320x80
+  size (logical `x=0, y=160, width=320, height=80`), while this codebase's
+  old box measured `x=10, y=162, width=300, height=72` — matching its own
+  `10, SCREEN_H - inner_h - Window::BORDER*2 - 6, SCREEN_W - 20, inner_h +
+  Window::BORDER*2` arithmetic exactly, and leaving a visible strip of map
+  background on both sides and below it. The gold window
+  (`#build_inn_gold_window`, same file) was
+  independently pixel-checked and is already correct — pixel-identical
+  between both runtimes — so only the greeting window needed the fix.
+  Fixed by reusing the message window's own `MSG_WIN_W`/`MSG_WIN_H`
+  constants directly (`Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W,
+  MSG_WIN_H)`) rather than inventing a separate but numerically-identical
+  pair. Covered by a new `scripts/rpg2k_scene_check.rb` check asserting the
+  prompt window's exact `x`/`y`/`width`/`height`, confirmed to fail against
+  the pre-fix code before the fix.
+  **Known, deliberately out-of-scope observation from the same wine
+  capture, not yet independently confirmed**: with the test party's gold
+  below the inn's price, real RPG_RT's cursor still defaulted to Accept
+  (the first choice), not Cancel — this codebase's `@inn_choice = req[:
+  can_afford] ? 0 : 1` defaults to Cancel when unaffordable. Only one
+  unaffordable data point was captured, so this is flagged for its own
+  follow-up investigation rather than folded into the geometry fix above.
   **Open Shop** (10720) is a playable game-mode too: a `Game::Shop` holds the
   goods and buy / sell rules and performs the transactions (buy at the database
   price, sell at half, party 99-item / gold caps enforced), tracking whether
