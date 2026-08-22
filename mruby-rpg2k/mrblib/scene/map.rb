@@ -5367,11 +5367,22 @@ class RPG2k
         header = shop_header
         offset = header ? 1 : 0
         row_count = lines.length + offset
-        inner_w = SCREEN_W - 20 - Window::BORDER * 2
+        # Docks flush to the screen's left edge, not inset 10px -- the same
+        # stale anti-pattern ADR 0021 already diagnosed and fixed for the
+        # message window ("300px wide, inset 10px" -> "fixed 320x80 at
+        # x=0"), which this window never picked up. Full screen width on the
+        # command menu and the sell list (no side panels); narrowed to leave
+        # room for the status/gold column otherwise -- confirmed against
+        # genuine RPG_RT.exe under wine: a live shop's list window right
+        # edge lands exactly where the panel column starts on Buy/the
+        # quantity counter, flush with the panel's own SHOP_STATUS_W+6
+        # offset from the screen's right edge.
+        win_w = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen]) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
+        inner_w = win_w - Window::BORDER * 2
         inner_h = [row_count, 1].max * SHOP_LINE_H
         @shop[:window].dispose if @shop[:window]
-        win = Window.new(10, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
-                         SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        win = Window.new(0, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
+                         win_w, inner_h + Window::BORDER * 2)
         win.z = 300
         win.windowskin = @windowskin
         c = Bitmap.new(inner_w, inner_h)

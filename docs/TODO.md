@@ -1559,6 +1559,41 @@ The work below is roughly ordered by the critical path to a walkable game
   check (status panel x, gold panel x matches it, status sits above gold,
   gold panel width matches the status panel's), confirmed to fail against
   the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-22): the list window's own full-width, inset-10px
+  shape is fixed too — the "roughly 55%" gap noted above, now precisely
+  measured and closed, plus a second, deeper-rooted bug it shares with the
+  message window's own already-fixed history.** Reached a live Buy/Sell
+  screen with zero synthetic event editing (Nepheshel's own shop NPC,
+  `Map0016.lmu` event 4) and corner-marker pixel-scanned genuine RPG_RT.exe
+  frames under wine: on the command menu and the Sell list (no side panels)
+  the list spans the full screen edge-to-edge; on Buy and the quantity
+  counter its right edge lands exactly where the status/gold panel column
+  begins (real x≈182, matching the already-verified `SHOP_STATUS_W+6`
+  panel offset from the right edge) — never the old `x=10, width=300`
+  inset box on any screen. That inset-10px shape is the identical stale
+  anti-pattern ADR 0021 already diagnosed and fixed for the *message*
+  window ("300px wide, inset 10px" → "fixed 320x80 at x=0") — this shop
+  list window carried the same pre-ADR-0021 shape all along, past the
+  point that fix landed, simply never revisited. Fixed by computing
+  `#draw_shop`'s window `x`/width from `@shop[:screen]`: `x = 0` always,
+  `width = SCREEN_W` when `SHOP_PANELS_VISIBLE_ON` excludes the current
+  screen (command/sell), `width = SCREEN_W - SHOP_STATUS_W - 6` when it
+  includes it (buy/quantity/purchased/sold) — reusing the already-verified
+  panel-position constants rather than a fresh magic number, so the list's
+  right edge and the panel column's left edge stay self-consistent by
+  construction. **Still open, deliberately out of scope**: the same
+  RPG_RT capture also showed a full-width item-description help bar above
+  the list+panel row, a full-width shopkeeper-prompt bar below it, and a
+  third (blank, for non-equipment goods) party window above the status
+  panel — none of which this codebase draws at all, a materially larger
+  layout gap than the width fixed here. `#open_inn_window` (same file) and
+  the battle log window (`mruby-rpg2k/mrblib/scene/battle.rb`) carry the
+  identical inset-10px shape and are worth their own follow-up. Covered by
+  five new assertions across the existing shop-panel scene checks (full
+  width on the command menu; narrowed to exactly the panel column's own
+  offset on Buy and the quantity counter, confirming the rule follows
+  `SHOP_PANELS_VISIBLE_ON` rather than being buy-only), confirmed to fail
+  against the pre-fix code before the fix.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
