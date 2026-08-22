@@ -1,0 +1,94 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'org.rpg2k.android'
+    // Keep in lockstep with the NDK release this project has actually been
+    // built against (docs/adr/0058-android-port.md) rather than "whatever
+    // Gradle finds" -- a newer NDK silently changing codegen/ABI is exactly
+    // the kind of drift the other ports (app/psp, platformio.ini) pin against
+    // too.
+    ndkVersion "27.2.12479018"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "org.rpg2k.android"
+        // Matches root CMakeLists.txt's ANDROID branch and build_config.rb's
+        // android cross target, both of which read this back out as
+        // ANDROID_NATIVE_API_LEVEL/ANDROID_PLATFORM -- one number to change,
+        // not two, if the floor ever moves. 28 (Android 9.0) is the lowest
+        // level bionic implements aligned_alloc(3), which LVGL's SDL
+        // software-renderer driver (3rd/lvgl/src/drivers/sdl/lv_sdl_sw.c)
+        // calls directly -- confirmed the hard way: a 24 floor built
+        // everything else (mruby, SDL2, SDL2_mixer) and only failed there
+        // ("call to undeclared library function 'aligned_alloc'"). Also well
+        // above the libc++ std::filesystem floor (21) src/main.cxx and the
+        // RGSS layer need.
+        minSdk 28
+        targetSdk 34
+        versionCode 1
+        versionName "0.1"
+
+        // Bring-up scope: one ABI. See build_config.rb's android cross-build
+        // comment for what widening this needs.
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                abiFilters 'arm64-v8a'
+                // NDK's own recommendation once more than one of an app's own
+                // shared libraries might touch the C++ runtime -- our own
+                // lib${PROJECT_NAME}.so is the only one here that does
+                // (SDL2/SDL2_mixer are pure C), but a single shared libc++
+                // copy across it, mruby's C++ exception unwinding and any
+                // future second native library is the safer default over
+                // c++_static's one-copy-per-.so.
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "../../../CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    sourceSets {
+        main {
+            // org.libsdl.app.SDLActivity et al -- SDL's own reusable Android
+            // Java glue, which only ships inside its android-project
+            // template (there is no separate java-only source dir in the SDL
+            // repo). Referenced from the vendored submodule rather than
+            // copied, so an SDL version bump carries its Java side along with
+            // the native side automatically.
+            java.srcDirs += ['../../../3rd/SDL/android-project/app/src/main/java']
+        }
+    }
+
+    packagingOptions {
+        // SDL2/SDL2_mixer/rpg_maker_clone are all built fresh by this same
+        // externalNativeBuild -- nothing else on the classpath should be
+        // contributing a second copy of any of these.
+        pickFirst 'lib/*/libc++_shared.so'
+    }
+}
+
+dependencies {
+}

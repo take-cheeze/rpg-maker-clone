@@ -816,6 +816,29 @@
   [`docs/deploy.md`](docs/deploy.md) for the one-time repo setup (Pages source +
   Cloudflare secrets).
 
+### Android
+
+- A Gradle/CMake project under [`app/android`](app/android) builds the runtime
+  into an Android APK via SDL2's Java `Activity` glue — additive to and
+  independent of the desktop/wasm build, using the same root
+  [`CMakeLists.txt`](CMakeLists.txt) rather than a separate copy of it. See
+  [`app/android/README.md`](app/android/README.md) for build instructions and
+  [`docs/adr/0058-android-port.md`](docs/adr/0058-android-port.md) for the
+  design.
+- **Status: native build bring-up, untested on a device or emulator.** It
+  produces a real, installable debug APK (mruby, LVGL, SDL2/SDL2_mixer,
+  gflags, ng-log, uni-algo and quickjs-ng all cross-compiled and linked), but
+  has not been run on real Android hardware or an emulator yet — see the
+  app's own README for exactly what that does and doesn't cover.
+- There is no in-app project picker yet: `adb push` an RPG Maker project's
+  files to the app's external-files directory (the Android equivalent of the
+  PSP port's fixed Memory Stick path), matching the PSP port's own
+  "one install, one game" scope for its first slice.
+- RPG Maker MV/MZ (the WebGL/quickjs-ng maker) does not render on Android in
+  this first slice, for a real, documented reason (an EGL symbol Android's
+  `libEGL.so` doesn't export) — RPG2000/2003, XP and VX/VX Ace are
+  unaffected. See the ADR.
+
 ### Reporting an error
 
 When the engine dies on a Ruby exception it no longer just prints a backtrace

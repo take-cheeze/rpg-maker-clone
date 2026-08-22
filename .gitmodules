@@ -35,3 +35,9 @@
 [submodule "3rd/quickjs"]
 	path = 3rd/quickjs
 	url = https://github.com/quickjs-ng/quickjs.git
+[submodule "3rd/SDL"]
+	path = 3rd/SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "3rd/SDL_mixer"]
+	path = 3rd/SDL_mixer
+	url = https://github.com/libsdl-org/SDL_mixer.git
