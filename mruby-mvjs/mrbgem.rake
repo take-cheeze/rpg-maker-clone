@@ -85,6 +85,21 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
       cxx.include_paths << "#{effekseer_dir}/EffekseerRendererCommon"
       cxx.include_paths << "#{effekseer_dir}/EffekseerRendererGL"
       cxx.defines << "__EFFEKSEER_RENDERER_GLES3__"
+      # mvefk.cxx's own `__has_include` probe can't see this decision -- it
+      # only sees whether *its* compiler invocation happens to find real
+      # EGL/GLES3 headers, which is also true for the native "host" mruby
+      # sub-build that a cross target (emscripten) builds internally to get
+      # mrbc, since that host compiler really does have them on this
+      # machine. But `have_egl`/`have_gles3` above are keyed off
+      # `ENV["MRUBY_TARGET"]`, which a cross build sets for its *whole* rake
+      # process -- both the cross target and that internal host build --
+      # so this block never runs for either sub-build of an emscripten job,
+      # even though the host sub-build's compiler capability probe alone
+      # would say yes. Passing this define makes mvefk.cxx's guard agree
+      # with *this* decision instead of re-probing capability on its own,
+      # so it only compiles the real implementation where this exact
+      # include/link wiring actually ran.
+      cxx.defines << "MVJS_EFFEKSEER_BUILD_ENABLED"
       build_dir = ENV["PROJECT_BUILD_DIR"]
       linker.library_paths << "#{build_dir}/3rd/effekseer/Dev/Cpp/Effekseer"
       linker.library_paths <<

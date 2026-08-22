@@ -2,16 +2,23 @@
 
 #include "mvefk.hxx"
 
-// Same compile-time gate as mvgl.cxx (EGL + GLES2), plus GLES3: Effekseer's
-// own GraphicsDevice.cpp needs real ES3 entry points and enums (multiple
-// render target attachments, VAOs, float/half-float texture formats) that
-// plain ES2 does not declare — see CMakeLists.txt's own comment on this,
-// which is why the CMake/mrbgem.rake wiring only builds/links the vendored
-// Effekseer libraries where GLES3 was found too. `Effekseer.h` and
-// `EffekseerRendererGL.h` are always physically present (a vendored
-// submodule, not a system header), so they are not part of this guard.
-#if !defined(__EMSCRIPTEN__) && __has_include(<EGL/egl.h>) && \
-    __has_include(<GLES2/gl2.h>) && __has_include(<GLES3/gl3.h>)
+// Unlike mvgl.cxx (which decides purely from `__has_include`, since EGL/
+// GLES2 headers/libs are found via the default system search path with no
+// extra wiring needed), this gate hinges on a define mrbgem.rake sets
+// (MVJS_EFFEKSEER_BUILD_ENABLED) rather than probing header availability
+// itself. Effekseer.h lives in a vendored submodule that needs an explicit
+// `-I`, so a bare `__has_include` probe here can disagree with whether
+// mrbgem.rake actually wired that include path (and the matching link
+// libraries) up for *this* compiler invocation -- concretely, the native
+// "host" mruby sub-build a cross target (emscripten) builds internally to
+// get mrbc: that compiler really does find real EGL/GLES3 headers on a
+// dev machine, but mrbgem.rake's own have_egl/have_gles3 checks are keyed
+// off ENV["MRUBY_TARGET"], which a cross build sets for its whole rake
+// process (host sub-build included), so they never add the Effekseer `-I`/
+// link wiring there. Depending on this define instead of re-probing
+// capability keeps the two in agreement by construction: see mrbgem.rake's
+// own comment beside where it's defined.
+#if defined(MVJS_EFFEKSEER_BUILD_ENABLED) && !defined(__EMSCRIPTEN__)
 #define MVJS_HAVE_EFFEKSEER 1
 
 #include <GLES3/gl3.h>
