@@ -47,17 +47,27 @@ class RPG2k
     # between two tiles with the same passability will not visibly change
     # anything here even though the underlying id did change.
     class MapViewer < Base
-      SCREEN_W = RPG2k::WIDTH
-      SCREEN_H = RPG2k::HEIGHT
       HEADER_H = 16
-      # Two lines tall: Edit mode's hint ('Arrows:Move  C:Paint  CTRL:Pick
-      # SHIFT:Layer  R:Save  B:Exit') runs wider than the 320px screen on one
-      # line and needs to wrap (see Base#draw_wrapped_hint) -- reserved
-      # unconditionally, for every mode, so the viewport doesn't resize when
-      # switching modes.
-      FOOTER_H = HEADER_H * 2
+      # Three lines tall: Edit mode's hint ('Arrows:Move  C:Paint  CTRL:Pick
+      # SHIFT:Layer  R:Save  B:Exit  Y/X:Zoom') runs wider than the 320px
+      # screen on one line and needs to wrap (see Base#draw_wrapped_hint) --
+      # reserved unconditionally, for every mode, so the viewport doesn't
+      # resize when switching modes. Three rather than two lines: on the
+      # narrowest (320px) screen this hint still wraps to three, and a line
+      # that doesn't fit the reservation draws past #draw_wrapped_hint's own
+      # box uninspected -- Bitmap#draw_text neither wraps nor clips, so it
+      # would simply vanish off the bitmap's bottom edge instead of the
+      # right one this fix already covers.
+      FOOTER_H = HEADER_H * 3
       PAN_STEP = 8
       CURSOR_MARGIN = 2
+      # Pixels drawn per map tile (see #draw_tile_row) -- 1 is the original,
+      # one-pixel-per-tile density; Y/X (zoom in/out, see #update_pan and
+      # friends) step it up to ZOOM_MAX for a screen too fine-grained to
+      # paint on precisely, especially once #screen_width/#screen_height
+      # hands this scene more room than RPG2000's own 320x240 to work with.
+      ZOOM_MIN = 1
+      ZOOM_MAX = 8
 
       PASSABLE_COLOR = Color.new(64, 160, 64, 255)
       BLOCKED_COLOR = Color.new(160, 48, 48, 255)
@@ -79,14 +89,15 @@ class RPG2k
         @chipset = build_chipset
         @skin = make_windowskin
         @background = build_field_background(@skin)
-        @window = Window.new(0, 0, SCREEN_W, SCREEN_H)
+        w = screen_width
+        h = screen_height
+        @window = Window.new(0, 0, w, h)
         @window.z = 400
         @window.windowskin = @skin
-        @contents = Bitmap.new(SCREEN_W - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
+        @contents = Bitmap.new(w - Window::BORDER * 2, h - Window::BORDER * 2)
         @window.contents = @contents
-        @view_w = @contents.width
-        @view_h = @contents.height - HEADER_H - FOOTER_H
-        @pannable = @map && (@map.width > @view_w || @map.height > @view_h)
+        @zoom = ZOOM_MIN
+        recompute_view
         @mode = :pan
         @brush_layer = :lower
         @brush = 0
@@ -130,6 +141,10 @@ class RPG2k
           enter_select_mode
         elsif Input.trigger?(Input::L)
           enter_edit_mode
+        elsif Input.trigger?(Input::Y)
+          zoom_in
+        elsif Input.trigger?(Input::X)
+          zoom_out
         elsif @pannable
           refresh if pan
         end
@@ -141,6 +156,10 @@ class RPG2k
           refresh
         elsif Input.trigger?(Input::C)
           teleport_to_cursor
+        elsif Input.trigger?(Input::Y)
+          zoom_in
+        elsif Input.trigger?(Input::X)
+          zoom_out
         elsif move_cursor
           refresh
         end
@@ -159,6 +178,10 @@ class RPG2k
           refresh
         elsif Input.trigger?(Input::R)
           save_to_disk
+        elsif Input.trigger?(Input::Y)
+          zoom_in
+        elsif Input.trigger?(Input::X)
+          zoom_out
         elsif move_cursor
           refresh
         end
@@ -180,6 +203,39 @@ class RPG2k
         @cy = @state.y
         ensure_cursor_visible
         refresh
+      end
+
+      # Y/X (zoom in/out) work identically in every mode -- panning, picking a
+      # tile, and painting all get easier to land precisely once a tile is
+      # more than the original one screen pixel across.
+      def zoom_in
+        set_zoom(@zoom + 1)
+      end
+
+      def zoom_out
+        set_zoom(@zoom - 1)
+      end
+
+      def set_zoom(z)
+        z = clamp(z, ZOOM_MIN, ZOOM_MAX)
+        return if z == @zoom
+        @zoom = z
+        recompute_view
+        @ox = clamp(@ox, 0, max_ox)
+        @oy = clamp(@oy, 0, max_oy)
+        ensure_cursor_visible if @mode == :select || @mode == :edit
+        refresh
+      end
+
+      # @view_w/@view_h stay in *tile* units throughout this scene (the pan/
+      # cursor/scroll maths below all compare them directly against
+      # @map.width/height) -- #draw_tile_row and friends are the only place
+      # that ever multiplies by @zoom, to go from a tile coordinate to the
+      # pixel one Bitmap#fill_rect/#draw_text want.
+      def recompute_view
+        @view_w = @contents.width / @zoom
+        @view_h = (@contents.height - HEADER_H - FOOTER_H) / @zoom
+        @pannable = @map && (@map.width > @view_w || @map.height > @view_h)
       end
 
       def paint_cursor
@@ -325,7 +381,7 @@ class RPG2k
 
       def player_header_text
         return 'No map loaded' unless @map
-        "Map #{@map.id}  #{@map.width}x#{@map.height}  x:#{@state.x} y:#{@state.y}"
+        "Map #{@map.id}  #{@map.width}x#{@map.height}  x:#{@state.x} y:#{@state.y}  zoom:#{@zoom}x"
       end
 
       def select_header_text
@@ -336,12 +392,12 @@ class RPG2k
                end
         ev = event_at(@cx, @cy)
         ev_text = ev ? "  Event ##{ev[0]} #{ev[1]}" : ''
-        "Cursor x:#{@cx} y:#{@cy}  #{word}#{ev_text}"
+        "Cursor x:#{@cx} y:#{@cy}  #{word}#{ev_text}  zoom:#{@zoom}x"
       end
 
       def edit_header_text
         dirty = @dirty ? '  *unsaved*' : ''
-        "Edit x:#{@cx} y:#{@cy}  layer:#{@brush_layer}  brush:#{@brush}#{dirty}"
+        "Edit x:#{@cx} y:#{@cy}  layer:#{@brush_layer}  brush:#{@brush}#{dirty}  zoom:#{@zoom}x"
       end
 
       # The id and name of the map event standing at (x, y), or nil -- shares
@@ -365,7 +421,7 @@ class RPG2k
                  @pannable ? 'Arrows:Pan  C:Center  R:Select  L:Edit  B:Close' \
                             : 'R:Select  L:Edit  B:Close'
                end
-        draw_wrapped_hint(hint, HEADER_H + @view_h, HEADER_H)
+        draw_wrapped_hint("#{hint}  Y/X:Zoom", HEADER_H + @view_h * @zoom, HEADER_H)
       end
 
       # One #fill_rect per same-coloured horizontal run rather than one
@@ -392,15 +448,19 @@ class RPG2k
         max_vx = [@view_w, @map.width - @ox].min
         run_start = 0
         run_color = nil
-        y = HEADER_H + vy
+        y = HEADER_H + vy * @zoom
         (0...max_vx).each do |vx|
           color = tile_color(@ox + vx, my)
           next if color.equal?(run_color)
-          @contents.fill_rect run_start, y, vx - run_start, 1, run_color if run_color
+          if run_color
+            @contents.fill_rect run_start * @zoom, y, (vx - run_start) * @zoom, @zoom, run_color
+          end
           run_start = vx
           run_color = color
         end
-        @contents.fill_rect run_start, y, max_vx - run_start, 1, run_color if run_color
+        if run_color
+          @contents.fill_rect run_start * @zoom, y, (max_vx - run_start) * @zoom, @zoom, run_color
+        end
       end
 
       def tile_color(x, y)
@@ -438,11 +498,15 @@ class RPG2k
         mark(@state.x, @state.y, PLAYER_COLOR)
       end
 
+      # A marker one pixel bigger than a tile block on every side, so it stays
+      # visible as a border even at ZOOM_MIN (1px tiles, where the tile itself
+      # would otherwise be indistinguishable from a same-coloured neighbour).
       def mark(x, y, color)
         vx = x - @ox
         vy = y - @oy
         return if vx.negative? || vy.negative? || vx >= @view_w || vy >= @view_h
-        @contents.fill_rect vx - 1, HEADER_H + vy - 1, 3, 3, color
+        size = @zoom + 2
+        @contents.fill_rect vx * @zoom - 1, HEADER_H + vy * @zoom - 1, size, size, color
       end
 
       # A hollow box around the cursor tile, not a filled block like #mark --
@@ -454,9 +518,9 @@ class RPG2k
         vx = @cx - @ox
         vy = @cy - @oy
         return if vx.negative? || vy.negative? || vx >= @view_w || vy >= @view_h
-        x = vx - CURSOR_MARGIN
-        y = HEADER_H + vy - CURSOR_MARGIN
-        size = CURSOR_MARGIN * 2 + 1
+        x = vx * @zoom - CURSOR_MARGIN
+        y = HEADER_H + vy * @zoom - CURSOR_MARGIN
+        size = @zoom + CURSOR_MARGIN * 2
         @contents.fill_rect x, y, size, 1, CURSOR_COLOR
         @contents.fill_rect x, y + size - 1, size, 1, CURSOR_COLOR
         @contents.fill_rect x, y, 1, size, CURSOR_COLOR

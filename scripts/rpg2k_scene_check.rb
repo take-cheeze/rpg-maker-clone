@@ -174,7 +174,7 @@ module RGSS
   # `triggered` (buttons pressed this frame). Defaults to no input.
   module Input
     C = 1; B = 2; UP = 3; DOWN = 4; LEFT = 5; RIGHT = 6; SHIFT = 7
-    CTRL = 8; F9 = 9; L = 10; R = 11
+    CTRL = 8; F9 = 9; L = 10; R = 11; X = 12; Y = 13
     # RPG2003 Key Input Processing's Numbers/Operators groups (see
     # Scene::Map::NUMBER_KEY_BUTTONS / OPERATOR_KEY_BUTTONS).
     N0 = 20; N1 = 21; N2 = 22; N3 = 23; N4 = 24
@@ -19903,14 +19903,73 @@ check "MapViewer's Edit mode hint is wider than the 320px screen at a " \
     RGSS::Bitmap.send(:define_method, :text_size, original_text_size)
   end
 
-  footer_top = RPG2k::Scene::MapViewer::HEADER_H + scene.instance_variable_get(:@view_h)
+  footer_top = RPG2k::Scene::MapViewer::HEADER_H +
+               scene.instance_variable_get(:@view_h) * scene.instance_variable_get(:@zoom)
   footer_calls = contents.draw_calls.select { |(_x, y, *)| y >= footer_top }
   ok footer_calls.size >= 2,
-     "the 62-char Edit-mode hint wrapped onto #{footer_calls.size} line(s), expected at least 2"
+     "the 72-char Edit-mode hint wrapped onto #{footer_calls.size} line(s), expected at least 2"
   ok footer_calls.all? { |(_x, _y, _w, _h, text)| text.length * 6 <= contents.width },
      'every wrapped line actually fits within the screen, not just the box #draw_text was given'
-  eq 'Arrows:Move C:Paint CTRL:Pick SHIFT:Layer R:Save B:Exit', footer_calls.map { |c| c[4] }.join(' '),
+  eq 'Arrows:Move C:Paint CTRL:Pick SHIFT:Layer R:Save B:Exit Y/X:Zoom',
+     footer_calls.map { |c| c[4] }.join(' '),
      'wrapping only rejoins words with single spaces -- no word was dropped, duplicated, or reordered'
+end
+
+check 'Y/X zoom the MapViewer in and out, scaling drawn tile size and shrinking/growing ' \
+     'the tile viewport to match, clamped to ZOOM_MIN/ZOOM_MAX' do
+  map_w = 6; map_h = 5
+  st = menu_state
+  st.map = Game::Map.new(1, OpenStruct.new(width: map_w, height: map_h, chipset_id: 1,
+                                           lower_layer: Array.new(map_w * map_h, 0),
+                                           upper_layer: Array.new(map_w * map_h, 0),
+                                           events: {}))
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  eq RPG2k::Scene::MapViewer::ZOOM_MIN, scene.instance_variable_get(:@zoom), 'opens at 1px/tile'
+  view_w_before = scene.instance_variable_get(:@view_w)
+  view_h_before = scene.instance_variable_get(:@view_h)
+
+  RGSS::Input.triggered = [RGSS::Input::Y]
+  scene.update
+  eq 2, scene.instance_variable_get(:@zoom), 'Y steps the zoom up by one'
+  eq view_w_before / 2, scene.instance_variable_get(:@view_w),
+     'doubling the pixels-per-tile halves how many tiles the same-size viewport can show'
+  eq view_h_before / 2, scene.instance_variable_get(:@view_h)
+
+  contents = scene.instance_variable_get(:@contents)
+  header = RPG2k::Scene::MapViewer::HEADER_H
+  row0 = contents.fill_calls.find { |(x, y, _w, rh, _c)| x == 0 && y == header && rh == 2 }
+  ok row0, 'row 0 is drawn 2px tall at zoom 2x, not the original 1px'
+  eq map_w * 2, row0[2], 'and 2px wide per tile across the whole passable run'
+
+  RGSS::Input.triggered = [RGSS::Input::X]
+  scene.update
+  eq 1, scene.instance_variable_get(:@zoom), 'X steps the zoom back down'
+  eq view_w_before, scene.instance_variable_get(:@view_w), 'back to the original tile count'
+
+  (RPG2k::Scene::MapViewer::ZOOM_MAX + 2).times do
+    RGSS::Input.triggered = [RGSS::Input::Y]
+    scene.update
+  end
+  eq RPG2k::Scene::MapViewer::ZOOM_MAX, scene.instance_variable_get(:@zoom),
+     'Y clamps at ZOOM_MAX rather than growing without bound'
+
+  RPG2k::Scene::MapViewer::ZOOM_MAX.times do
+    RGSS::Input.triggered = [RGSS::Input::X]
+    scene.update
+  end
+  eq RPG2k::Scene::MapViewer::ZOOM_MIN, scene.instance_variable_get(:@zoom),
+     'X clamps at ZOOM_MIN rather than going to 0 or negative'
+end
+
+check 'Scene::Base#screen_width/#screen_height fall back to RPG2000\'s fixed 320x240 ' \
+     'when RPG2K_SCREEN_WIDTH/HEIGHT is undefined (the CRuby-only host this check itself ' \
+     'runs under), the same guard RPG2k#map_editor? uses' do
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  eq RPG2k::WIDTH, scene.send(:screen_width),
+     'undefined RPG2K_SCREEN_WIDTH falls back to RPG2000\'s own resolution, not a NameError'
+  eq RPG2k::HEIGHT, scene.send(:screen_height)
 end
 
 check "ChipsetEditor's C toggles passability (all four direction bits at once) " \

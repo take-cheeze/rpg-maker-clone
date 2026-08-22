@@ -1368,6 +1368,19 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_PREVIEW_ANIMATION"),
                 mrb_fixnum_value(FLAGS_rpg2k_preview_animation));
+  // The screen size actually configured for this run -- FLAGS_width/height,
+  // already finalized above (the XP/VX auto-detect override, if the command
+  // line didn't set either flag itself). Scene::MapViewer reads this to fill
+  // whatever window the user asked for rather than sitting in a fixed
+  // 320x240 corner of it; see Scene::Base#screen_width's own comment for why
+  // that's safe for a debug-only tool where real gameplay scenes can't do
+  // the same.
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_SCREEN_WIDTH"),
+                mrb_fixnum_value(FLAGS_width));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_SCREEN_HEIGHT"),
+                mrb_fixnum_value(FLAGS_height));
   // Whether the RGSS script host runs the project's own scripts (the default)
   // or the built-in flow does. Resolved from --rgss_script_host and the
   // RGSS_SCRIPT_HOST environment variable above, because the Ruby side cannot

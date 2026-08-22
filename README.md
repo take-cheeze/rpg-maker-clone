@@ -110,7 +110,11 @@
   deliberate, explicit opt-in `--test_play` itself is, so requiring both
   would only be redundant typing. Interactive F9 access still requires
   `--test_play` as always; this only affects launching straight into a tool
-  from the command line:
+  from the command line. The Map Editor also fills whatever screen size
+  `--width`/`--height` asks for (RPG2000/2003's own fixed 320x240 only binds
+  real gameplay, not this debug-only tool), and its own **Y**/**X** keys zoom
+  each tile from the original 1px up to 8px — useful on a bigger screen,
+  where 1px/tile would otherwise be too fine-grained to paint precisely:
 
   ```sh
   ./rpg_maker_clone --iterm --game_dir path/to/game --rpg2k_preview_map=5 \
