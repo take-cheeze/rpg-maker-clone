@@ -6522,6 +6522,41 @@ The work below is roughly ordered by the critical path to a walkable game
   frame by frame confirms the down arrow starts on, flips off at exactly
   the 20th frame, and swaps places with the up arrow once scrolled to the
   last slot.
+  ✅ **Follow-up (2026-08-22): the pause-arrow `ARROW_BLINK_FRAMES = 20` this
+  screen's own scroll arrows reused is now independently re-verified against
+  a genuine RPG_RT.exe, not just EasyRPG's source -- confirmed correct, no
+  code change.** `RPG2k::Window`'s own comment on it said outright there was
+  "no real RPG_RT frame in this repo to measure this against" when it was
+  ported from EasyRPG Player's `src/window.cpp` -- exactly the kind of
+  citation this session's methodology (verify against the real runtime, not
+  a reimplementation) now treats as worth re-checking on its own, and
+  Nepheshel's own genuine `RPG_RT.exe` supplies that frame now. Built a
+  synthetic autostart map event (a plain, non-transparent 3-line Show
+  Message, terminated with the mandatory `code 10` BlankLine) injected into
+  a copy of a genuine Nepheshel map, resumed on real RPG_RT.exe under wine
+  from a genuine save positioned there (`gen-lcf-save-wine.bash` +
+  `gen-rpg2k-save.rb --map --clear-scene`), landing the message box's pause
+  arrow on screen the instant the map loads with nothing else animating.
+  Burst-capturing ~10 frames/sec while it sat paused and thresholding the
+  arrow glyph's mean brightness gave a clean two-level signal: 14 on-runs
+  averaging ~0.20s, 14 off-runs averaging ~0.24s (both coarse, at this
+  sampling grain), and — the more reliable measure, since it cancels
+  per-transition sampling jitter — a 13-cycle average on-to-on period of
+  **0.654s**, which lands on the 40-frame (20-on + 20-off) cycle this
+  engine already codes at RPG_RT's confirmed 60fps (ADR 0021: 0.667s) far
+  closer than any other plausible frame count (a 30-frame cycle would be
+  0.5s, 48 frames 0.8s). The arrow also started in its "on" phase the
+  instant the window paused in every capture, matching `Window#pause=`'s own
+  immediate-visible behaviour. No fix needed — reported as a confirmed-
+  correct negative result, and the comment on `ARROW_BLINK_FRAMES` updated
+  to record the re-verification rather than just citing EasyRPG. This had no
+  regression test at all before now (the existing frame-by-frame coverage
+  above only pins the *SaveLoad scroll arrows*, which reuse the constant
+  but are a structurally different call site) — covered by a new
+  `scripts/rpg2k_scene_check.rb` check driving `RPG2k::Window#pause=`/
+  `#update` directly and asserting the arrow sprite's `visible` flag through
+  one full 40-frame cycle (on at frame 0, off at frame 20, on again at the
+  frame-40 wrap).
   ✅ **This screen always opened with the cursor on slot 1, when real RPG_RT
   opens on whichever slot was saved most recently (2026-08-20).** Confirmed
   against EasyRPG's own live source: `Scene_File::Start` (`src/
