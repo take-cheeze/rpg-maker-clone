@@ -3727,18 +3727,36 @@ class RPG2k
         win
       end
 
-      # A text panel of `lines` at depth `z`, sized to fit its content -- used
-      # for the battle-event page message window. Positioned at the top
-      # (`BATTLE_EVENT_MSG_Y`) for an RPG2003 database, or flush against the
-      # bottom edge for RPG2000 -- see that constant's own citation.
+      # A text panel of `lines` at depth `z`, used for the battle-event page
+      # message window -- RPG_RT's own fixed 320x80 panel (`BATTLE_PANEL_Y`/
+      # `BATTLE_PANEL_H`, the exact rect this file's other battle windows
+      # already share -- see their own citation above `BATTLE_PANEL_Y`),
+      # never a box sized to fit its content. Confirmed against genuine
+      # RPG_RT.exe under wine: Nepheshel's own troop pages never use Show
+      # Message (`analyze_game.rb --troops` finds none), so this needed a
+      # synthetic turn-0 troop battle-event page injected directly into a
+      # copy of the database and a synthetic autostart Enemy Encounter
+      # event injected into a copy of a map (both restored afterward) --
+      # the resulting screen (640x480 physical, RPG2000's 320x240 logical
+      # doubled) showed the message panel's border flush against the
+      # screen's left edge (x=0..1), right edge (x=638..639) and bottom
+      # edge, its top edge at physical y=320 == logical y=160, i.e. exactly
+      # `x=0, y=BATTLE_PANEL_Y (160), width=SCREEN_W (320), height=
+      # BATTLE_PANEL_H (80)` -- while this method's old box measured
+      # `x=10, width=SCREEN_W-20 (300), height=` the message's own one-line
+      # content height, the same stale "inset 10px, content-sized" shape
+      # already fixed for the (field) message window, the shop list window
+      # and the Inn prompt window. Positioned at the top (`BATTLE_EVENT_MSG_Y`)
+      # for an RPG2003 database, or flush against the bottom edge
+      # (`BATTLE_PANEL_Y`) for RPG2000 -- only the size was wrong; the
+      # RPG2000/RPG2003 y split above was already correct and untouched.
       def battle_text_window(lines, z)
-        inner_w = SCREEN_W - 20 - Window::BORDER * 2
-        inner_h = [lines.length, 1].max * BATTLE_LINE_H
-        y = @state.party.rpg2003? ? BATTLE_EVENT_MSG_Y : SCREEN_H - inner_h - Window::BORDER * 2
-        win = Window.new(10, y, SCREEN_W - 20, inner_h + Window::BORDER * 2)
+        inner_w = SCREEN_W - Window::BORDER * 2
+        y = @state.party.rpg2003? ? BATTLE_EVENT_MSG_Y : BATTLE_PANEL_Y
+        win = Window.new(0, y, SCREEN_W, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
-        c = Bitmap.new(inner_w, inner_h)
+        c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         lines.each_with_index do |line, i|
           c.draw_text 0, i * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, line

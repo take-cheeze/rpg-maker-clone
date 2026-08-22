@@ -15198,6 +15198,34 @@ check 'a battle-event page message sits at the bottom for RPG2000, the ' \
   eq RPG2k::Scene::Battle::BATTLE_EVENT_MSG_Y, win2k3.y, 'RPG2003 sits at the top'
 end
 
+# Confirmed against genuine RPG_RT.exe under wine (see #battle_text_window's
+# own citation): a synthetic turn-0 troop battle-event page's Show Message
+# drew a panel flush against the screen's left, right and bottom edges,
+# logically `x=0, y=160, width=320, height=80` -- the same fixed 320x80 panel
+# every other battle window in this file already uses (`BATTLE_PANEL_Y`/
+# `BATTLE_PANEL_H`), not a box sized to its one-line content. The check above
+# only ever compared `win2k.y` against `SCREEN_H - win2k.height`, which holds
+# tautologically regardless of what `height` actually is, so it could not
+# have caught the pre-fix content-fit box (a single short line -> ~30px tall,
+# 10px inset) on its own.
+check "a battle-event page message panel is RPG_RT's fixed 320x80 rect, " \
+      'not a box sized to its content' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'Hi')]) }
+  scene, _st = battle_scene_with_pages(pages)
+  90.times do
+    scene.update
+    ui = battle_ui(scene)
+    break if ui && ui[:event_win]
+  end
+  win = battle_ui(scene)[:event_win]
+  ok win, 'the message panel is up'
+  eq 0, win.x, 'flush against the left edge, not inset 10px'
+  eq RPG2k::Scene::Battle::SCREEN_W, win.width, 'the fixed 320px width, not 300px'
+  eq RPG2k::Scene::Battle::BATTLE_PANEL_H, win.height, 'the fixed 80px height, not content-fit'
+  eq RPG2k::Scene::Battle::BATTLE_PANEL_Y, win.y, 'flush against the bottom edge at the fixed y'
+end
+
 check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
   90.times do
