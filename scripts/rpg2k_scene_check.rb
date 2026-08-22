@@ -15439,6 +15439,13 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   shop = scene.instance_variable_get(:@shop)
   eq :command, shop[:screen]
   ok shop[:status].nil?, 'the command menu highlights no single item -- no panel'
+  # Confirmed against genuine RPG_RT.exe under wine: the command menu (no
+  # side panels) fills the whole screen, flush to the left edge -- not the
+  # old inset-10px, 300px-wide box, the same stale anti-pattern ADR 0021
+  # already fixed for the message window.
+  eq 0, shop[:window].x, 'the list window is flush to the screen\'s left edge'
+  eq RPG2k::Scene::Map::SCREEN_W, shop[:window].width,
+     'and full screen width, with no side panels to leave room for'
 
   RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
   scene.update
@@ -15464,6 +15471,12 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   ok status_win.y < gold_win.y, 'the status panel sits above the gold panel, not beside it'
   eq RPG2k::Scene::Map::SHOP_STATUS_W, gold_win.width,
      "the gold panel is the status panel's own width, not a narrower fixed box"
+  # The list window itself narrows to leave room for that column -- also
+  # confirmed against genuine RPG_RT.exe (the list's own right edge lands
+  # exactly where the panel column starts), not the old full-width box.
+  eq 0, shop[:window].x, 'the buy list also stays flush to the left edge'
+  eq status_x, shop[:window].width,
+     'and narrows to exactly where the status/gold column begins, no gap or overlap'
 
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the second good (Herb, id 5)
   scene.update
@@ -15484,6 +15497,9 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   ok !shop[:status].nil?, 'the quantity counter keeps the status panel visible, for the same item'
   texts = window_texts(shop[:status])
   ok texts.include?('0'), 'still describing the Herb the counter was opened for'
+  eq status_x, shop[:window].width,
+     'the quantity counter keeps the narrowed list width too, following ' \
+     'SHOP_PANELS_VISIBLE_ON rather than being buy-screen-only'
 
   RGSS::Input.triggered = [RGSS::Input::C] # commit the purchase
   scene.update
