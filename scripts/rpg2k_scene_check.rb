@@ -17762,6 +17762,21 @@ check 'Scene::Menu shows the party\'s own Gold, and keeps it current across ' \
      "Gold is refreshed on resume, matching Scene_Menu::Continue's own gold_window->Refresh()"
 end
 
+# The command list's width was a bare, uncited `108` -- independently
+# pixel-measured against a genuine `RPG_RT.exe` frame (Nepheshel, wine): the
+# command window (top-left) and the Gold window (bottom-left, directly
+# beneath it) share the exact same right border x, one continuous 88px-wide
+# column, not 108.
+check "Scene::Menu's command list is the same width as the Gold window " \
+      'directly beneath it (88px, not the old uncited 108)' do
+  scene = menu_scene(RPG2k::Scene::Menu, menu_state)
+  cmd = scene.instance_variable_get(:@command)
+  gold = scene.instance_variable_get(:@gold)
+  eq 88, cmd.width, 'command list width matches the pixel-measured RPG_RT frame'
+  eq cmd.width, gold.width, 'command list and Gold window are the same width'
+  eq cmd.x, gold.x, 'command list and Gold window share the same left edge'
+end
+
 check 'opening Scene::Menu auto-cancels an Erase Screen black-out (yado.tk)' do
   st = menu_state
   st.screen.erase(Game::Transition::FADE_OUT, 1) # settle fully erased

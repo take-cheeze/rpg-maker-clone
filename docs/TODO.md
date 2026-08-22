@@ -5483,6 +5483,32 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k_scene_check.rb` check (Gold renders on open; the panel
   hides on `#suspend` and returns with a refreshed figure on `#resume`),
   confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (2026-08-22): the command list itself (Item/Skill/Equip/
+  Save/End Game, top-left) was 20px too wide, visibly misaligning it
+  against the Gold window directly beneath it -- an EasyRPG-source-citation
+  audit (this session's methodology: re-check every pre-methodology-change
+  claim against genuine RPG_RT, not just take it on trust) turned this up
+  even though `build_windows`'s `cw = 108` carried no citation at all, not
+  even an EasyRPG one -- it was simply an old, uncited guess.** Reached a
+  live field menu on a genuine `RPG_RT.exe` (Nepheshel, wine) by loading a
+  `--clear-scene`, `--map 16` save (moving off the starting bedroom map,
+  371, sidesteps a long unskippable wake-up narrative its own autostart
+  event runs even after declining the "play the opening demo" prompt
+  Continue shows first -- landing on a plain, already-explored town map
+  instead reaches the menu in five keypresses with no narrative to wait
+  out), then Escape. Pixel-scanning the captured frame's left column: the
+  command window's own right border and the Gold window's own right border
+  (already 88px, `GOLD_WINDOW_W`, itself only ever cited from EasyRPG
+  before now) land at the *exact same x* -- both windows forming one
+  continuous 88px-wide column, not the command window's own separate,
+  wider 108px box the old code drew. Fixed by replacing the bare `108`
+  with a new shared `LEFT_COLUMN_W = 88` constant that `GOLD_WINDOW_W` now
+  aliases too, documenting the visual relationship the pixel evidence
+  showed rather than two independent magic numbers that happened to almost
+  match. Covered by a new `scripts/rpg2k_scene_check.rb` check (the command
+  list's width is exactly 88, and matches the Gold window's own width and
+  left edge), confirmed to fail against the pre-fix code (`expected 88,
+  got 108`).
   ✅ **The field menu screens now play RPG2000's four system sound effects
   (cursor-move, decision, cancel, buzzer), the "bigger, separate piece of
   work" the disabled-Save fix above left open.** Confirmed against three
