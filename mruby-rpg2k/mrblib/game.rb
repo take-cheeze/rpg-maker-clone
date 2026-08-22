@@ -1972,18 +1972,28 @@ module Game
     end
 
     # The six base stats at `level`. Real database rows expose the full growth
-    # curve (six shorts per level) via LCF::Array1D#int16_values; index it by
-    # level, clamped to the curve's length. A row that only offers a single
-    # `status` hash (the test fixtures, or a database without a curve) is treated
-    # as level-independent. With a class set the class row's curve wins.
+    # curve via LCF::Array1D#int16_values(31) as six contiguous max_level-sized
+    # blocks -- one block per stat in STAT_NAMES order (every level's max_hp,
+    # then every level's max_mp, then atk, def, int, agi), NOT max_level rows of
+    # six stats each. Confirmed against a genuine RPG_RT.exe: an actor whose
+    # curve blocks were independently distinguishable (non-symmetric across
+    # stats) was equipped and levelled identically in this engine and under
+    # real RPG_RT, and only a stat-major (six-blocks-of-max_level) reading of
+    # the raw shorts reproduced RPG_RT's displayed ATK/DEF/SPI/AGI exactly --
+    # the previously-assumed row-major (max_level rows of six) reading was
+    # correct only by coincidence on actors whose curve happens to be
+    # level-count-1 (a single row, where the two layouts are indistinguishable)
+    # and was off by as much as 2.3x on a real multi-level curve. A row that
+    # only offers a single `status` hash (the test fixtures, or a database
+    # without a curve) is treated as level-independent. With a class set the
+    # class row's curve wins.
     def base_stats(level)
       a = curve_row
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
       if curve && curve.size >= STAT_NAMES.size
         levels = curve.size / STAT_NAMES.size
         lv = level > levels ? levels : level
-        base = (lv - 1) * STAT_NAMES.size
-        return STAT_NAMES.each_index.map { |i| curve[base + i] || 0 }
+        return STAT_NAMES.each_index.map { |i| curve[(i * levels) + (lv - 1)] || 0 }
       end
       st = (a.respond_to?(:status) ? a.status : nil) || {}
       STAT_NAMES.map { |k| st[k] || 0 }

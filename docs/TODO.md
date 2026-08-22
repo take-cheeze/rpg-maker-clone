@@ -6002,7 +6002,34 @@ The work below is roughly ordered by the critical path to a walkable game
   logic expects at this exact story point, it is not merely a valid actor
   id to resolve, and finding out what would take more than this survey's
   established edit-and-diff technique. Left for whoever picks this up next.
-  ✅ **Continue could silently lose a save's own Save/Teleport/Escape access,
+  ✅ **Follow-up (2026-08-22): reproduced cleanly and root-caused. ~~Not fixed
+  ... needs a second, independently reproduced RPG_RT capture before acting
+  on it either way.~~** A second cycle, using `Game::State`/`Save01.lsd`
+  editing plus `Continue` (not the blind title-navigation retries that left
+  the first capture ambiguous), reproduced the exact same numbers again on
+  the same actor (デモ用, id 15) -- ruling out a mid-cascade artifact. The
+  real cause: `LCF::Array1D#int16_values(31)`'s raw shorts are laid out
+  **stat-major** -- six `max_level`-sized blocks (every level's max_hp, then
+  every level's max_mp, then atk, def, int, agi) -- not row-major (`max_level`
+  rows of six stats each) as `Game::Actor#base_stats`/`#curve_row`
+  (`mruby-rpg2k/mrblib/game.rb`) and this repo's own ADR 0015 had assumed
+  since that assumption was first written, uncited. Confirmed decisively on
+  actor 1 (リト, Nepheshel's real default party leader, chunk 109's own
+  field-1 pick over デモ用's demo-mode override) at level 50 with the same
+  five-item equipment set: real `RPG_RT.exe`'s Equip screen showed
+  ATK/DEF/SPI/AGI = 450/292/268/130, exactly matching a stat-major reading of
+  actor 1's raw curve bytes plus its equipment bonuses; a row-major reading
+  gave 270/307/118/130, wrong on three of four. Fixed by changing
+  `#base_stats`'s indexing from `curve[((lv-1)*6)+i]` to
+  `curve[(i*levels)+(lv-1)]`; `#curve_row` itself (which row supplies the
+  curve) needed no change. **A separate, narrower anomaly surfaced during the
+  same investigation and is deliberately NOT folded into this fix:** actor 15
+  specifically (not actor 1, not any other actor tried) shows a flat **+500**
+  on ATK/SPI/AGI (never DEF) whenever any weapon occupies its weapon slot,
+  independent of which weapon or of `exp`, with no database or save field
+  found that structurally explains it -- tracked as its own future follow-up,
+  likely an unmodelled item/actor mechanic specific to that one "demo"
+  character, not a `base_stats` problem.
   overridden by whatever the current map's tree happens to say instead.**
   Chasing the Save screen with the fixed crop-region retry (above) turned up
   a correctness bug, not just a UI one: `Scene::Map#initialize`

@@ -3573,6 +3573,20 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # Same reasoning: appended last, nil reads as 0 via
                            # the reader methods, matching the schema default.
                            :battle_x, :battle_y, :battler_animation)
+# Transpose a level-major curve (max_level rows of six stats: L1's six
+# stats, then L2's, ...) into the stat-major layout #int16_values(31) really
+# carries (six max_level-sized blocks: every level's max_hp, then every
+# level's max_mp, then atk, def, int, agi) -- confirmed against a genuine
+# RPG_RT.exe, see Game::Actor#base_stats's own comment. Building fixtures in
+# the more readable level-major shape and transposing them here, rather than
+# hand-writing the stat-major arrays directly, keeps each fixture's per-level
+# intent easy to read and avoids re-deriving the interleaving by hand at
+# every call site.
+def to_stat_major(level_major, stat_count = 6)
+  levels = level_major.size / stat_count
+  (0...stat_count).flat_map { |i| (0...levels).map { |lv| level_major[(lv * stat_count) + i] } }
+end
+
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
@@ -4069,8 +4083,8 @@ check 'to_lsd/from_lsd round-trips a live Change Class, and the battle ' \
   3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
   job1 = []
   3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
-  players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, nil) }
-  jobs = { 1 => JobRow.new('Mage', job1) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), [], 0, nil) }
+  jobs = { 1 => JobRow.new('Mage', to_stat_major(job1)) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   hero = st.party.leader
@@ -4130,8 +4144,8 @@ check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
   3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
   job1 = []
   3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
-  players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 1, nil) }
-  jobs = { 1 => JobRow.new('Mage', job1) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), [], 1, nil) }
+  jobs = { 1 => JobRow.new('Mage', to_stat_major(job1)) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   hero = st.party.leader
@@ -4741,10 +4755,36 @@ check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do
   eq [100, 30], [hero.hp, hero.mp]
 end
 
+check 'Actor base stats read the growth curve stat-major, not row-major, ' \
+      'per level' do
+  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: a real
+  # save was edited to level 50 with a known five-item equipment set on two
+  # different actors and resumed under the real Enterbrain runtime, reading
+  # the Equip screen's own displayed ATK/DEF/SPI/AGI. On a witness actor
+  # whose curve blocks are all independently distinguishable (no two stats
+  # share a coincidentally-identical sequence), only a stat-major reading
+  # (six max_level-sized blocks: every level's max_hp, then every level's
+  # max_mp, then atk, def, int, agi) reproduced RPG_RT's numbers exactly;
+  # the previously-assumed row-major reading (max_level rows of six stats)
+  # was off by as much as 2.3x. A fixture deliberately shaped the same way
+  # (no stat's per-level sequence coincides with another's) below proves the
+  # same distinction: under the old row-major reading this would instead
+  # report L1 = [11, 111, 22, 222, 33, 333] and L2 = [44, 444, 55, 555, 66,
+  # 666]. Values stay under RPG_RT's own 999 stat ceiling
+  # (#base_param_limit) so that clamp can't mask the difference between the
+  # two readings.
+  curve = [11, 111,  22, 222,  33, 333,  44, 444,  55, 555,  66, 666]
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, curve) }, [1])
+  a = Game::Party.new(db).leader
+  eq [11, 22, 33, 44, 55, 66], [a.max_hp, a.max_mp, a.atk, a.def, a.int, a.agi]
+  a.set_level(2)
+  eq [111, 222, 333, 444, 555, 666], [a.max_hp, a.max_mp, a.atk, a.def, a.int, a.agi]
+end
+
 check 'Actor base stats scale with level from the growth curve' do
-  # Two levels, six stats each: L1 = maxhp10/maxmp5/atk3/def2/int1/agi4,
-  # L2 = double each (except as listed).
-  curve = [10, 5, 3, 2, 1, 4,  20, 10, 6, 4, 2, 8]
+  # Stat-major (six max_level-sized blocks): L1 = maxhp10/maxmp5/atk3/def2/
+  # int1/agi4, L2 = double each (except as listed).
+  curve = [10, 20, 5, 10, 3, 6, 2, 4, 1, 2, 4, 8]
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, curve) }, [1])
   a = Game::Party.new(db).leader
   eq 1, a.level
@@ -5202,9 +5242,10 @@ check 'An ordinary level change carries a live Change Parameters adjustment ' \
   # unconditionally rebuilt both @base and @base_raw from the bare level
   # curve on every call, silently discarding any live change_param delta the
   # moment the actor's level changed by any means.
+  # Stat-major (six max_level-sized blocks): atk 50 -> 52 from level 1 to 2,
+  # every other stat flat.
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1,
-                                            [10, 5, 50, 2, 1, 4,   # level 1
-                                             10, 5, 52, 2, 1, 4]) }, # level 2
+                                            [10, 10, 5, 5, 50, 52, 2, 2, 1, 1, 4, 4]) },
                        [1])
   a = Game::Party.new(db).leader
   eq 50, a.atk                                  # level 1 curve atk
@@ -5338,12 +5379,12 @@ def class_db(class_id = 0, actor_learns = [[10, 1]])
   job2 = []
   3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
   players = {
-    1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, class_id,
+    1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), actor_learns, class_id,
                         [1, 2, 0, -1, -1, -1, -1]),
   }
   jobs = {
-    1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
-    2 => JobRow.new('Mage', job2, [[31, 1]]),
+    1 => JobRow.new('Warrior', to_stat_major(job1), [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
+    2 => JobRow.new('Mage', to_stat_major(job2), [[31, 1]]),
   }
   # A real Battle Commands table (chunk 29) defining ids 1..8, so
   # #change_battle_commands' own existence check (see its citation) does
@@ -5546,11 +5587,11 @@ def class_db_named_skills(actor_learns = [[10, 1]])
   job1 = []
   3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
   players = {
-    1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, 0,
+    1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), actor_learns, 0,
                         [1, 2, 0, -1, -1, -1, -1]),
   }
   jobs = {
-    1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
+    1 => JobRow.new('Warrior', to_stat_major(job1), [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
   }
   # rpg2003: true -- Change Class is RPG2003-only (see class_db's own note).
   FakeActorDB.new(players, [1], {},
@@ -5891,8 +5932,8 @@ check "Game::Actor#battler_animation_id warns and returns 0 for a dangling datab
 end
 
 check "Game::Actor#battler_animation_id prefers the runtime override a Change Class event set" do
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 0) }
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 4) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 0) }
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [], nil, battler_animation: 4) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
   a.change_class(1, 1, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
@@ -5905,9 +5946,9 @@ check "Game::Actor#battler_animation_id ignores a database-default starting clas
   # RPG2003 lets an actor start in a class (chunk 11 field 57) with no Change
   # Class event ever firing -- EasyRPG's own comment on this is explicit
   # ("not applied ... only when the 'Change Class' event command is used").
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 1) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 1) }
   players[1].battler_animation = 3
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 4) }
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [], nil, battler_animation: 4) }
   anims = { 3 => FakeBattlerAnimation.new('Fighter', 20, {}) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil, battleranimations: anims)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
@@ -5928,12 +5969,12 @@ check "Game::Actor#strong_defence?/#force_ai?/#double_hand?/#equipment_fixed? al
   # method's own explicit comment: "The class settings are not applied when
   # the actor has a class on startup but only when the 'Change Class' event
   # command is used."
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 1) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 1) }
   players[1].strong_defence = false
   players[1].force_ai = false
   players[1].double_hand = false
   players[1].equipment_fixed = false
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [],
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [],
                            strong_defence: true, force_ai: true,
                            double_hand: true, equipment_fixed: true) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
@@ -5953,8 +5994,8 @@ end
 
 check "Game::Actor#battler_animation_id falls back to 1 when Change Class leaves the actor " \
       'in a class whose own battler_animation is 0' do
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 0) }
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 0) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 0) }
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [], nil, battler_animation: 0) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
   a.change_class(1, 1, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
@@ -6145,9 +6186,10 @@ check 'Change Parameters raises max MP with a variable operand' do
 end
 
 check 'Change Level command raises the level and rescales stats' do
-  # Two-level curve: L1 maxhp10/atk3, L2 maxhp20/atk6.
+  # Two-level curve, stat-major (six max_level-sized blocks: max_hp, max_mp,
+  # atk, def, int, agi): L1 maxhp10/atk3, L2 maxhp20/atk6.
   db = FakeActorDB.new(
-    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8]) }, [1])
+    { 1 => CurveRow.new('Hero', '', 0, 1, [10, 20, 5, 10, 3, 6, 2, 4, 1, 2, 4, 8]) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   a = st.party.actor_by_id(1)
   eq [1, 10, 3], [a.level, a.max_hp, a.atk]
@@ -6163,12 +6205,14 @@ check 'Change Level command raises the level and rescales stats' do
   eq 1, a.level
 end
 
-# A three-level growth curve (six stats per level) for the level-up-message
-# checks: enough levels to gain more than one at a time.
+# A three-level growth curve, stat-major (six max_level-sized blocks), for the
+# level-up-message checks: enough levels to gain more than one at a time.
+# L1 hp10/mp5/atk3/def2/int1/agi4, L2 hp20/mp10/atk6/def4/int2/agi8,
+# L3 hp30/mp15/atk9/def6/int3/agi12.
 def three_level_db
   FakeActorDB.new(
     { 1 => CurveRow.new('Hero', '', 0, 1,
-                        [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8, 30, 15, 9, 6, 3, 12]) },
+                        [10, 20, 30, 5, 10, 15, 3, 6, 9, 2, 4, 6, 1, 2, 3, 4, 8, 12]) },
     [1])
 end
 
@@ -6216,12 +6260,13 @@ check 'Change EXP with the show-message flag announces a level-up' do
   ok !it.waiting?, 'a single level gained -> a single message'
 end
 
-# A three-level growth curve with a learn table, for the skill-learned-message
-# checks: skill 201 at level 2, skill 202 at level 3.
+# A three-level growth curve (stat-major, same values as three_level_db above)
+# with a learn table, for the skill-learned-message checks: skill 201 at
+# level 2, skill 202 at level 3.
 def skill_level_db(learns = [[201, 2], [202, 3]])
   FakeActorDB.new(
     { 1 => SkillRow.new('Hero', '', 0, 1,
-                        [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8, 30, 15, 9, 6, 3, 12],
+                        [10, 20, 30, 5, 10, 15, 3, 6, 9, 2, 4, 6, 1, 2, 3, 4, 8, 12],
                         learns) },
     [1], {},
     { 201 => fake_skill(name: 'Fireball'), 202 => fake_skill(name: 'Iceball') })
@@ -7159,12 +7204,12 @@ check 'a use_skill equipment item restricted by class_set is only usable by ' \
   items = { 4 => fake_item(type: 1, skill_id: 8, use_skill: true,
                            class_set: [false, false, true], name: 'Class Rune') }
   players = {
-    1 => ClassedRow.new('Warrior', '', 0, 3, actor_curve, [], 1, nil),
-    2 => ClassedRow.new('Mage', '', 0, 3, actor_curve, [], 2, nil),
+    1 => ClassedRow.new('Warrior', '', 0, 3, to_stat_major(actor_curve), [], 1, nil),
+    2 => ClassedRow.new('Mage', '', 0, 3, to_stat_major(actor_curve), [], 2, nil),
   }
   jobs = {
-    1 => JobRow.new('Fighter', job1),
-    2 => JobRow.new('Mage', job2),
+    1 => JobRow.new('Fighter', to_stat_major(job1)),
+    2 => JobRow.new('Mage', to_stat_major(job2)),
   }
   db = FakeActorDB.new(players, [1, 2], items, skills, jobs,
                        rpg2003: true, equipment_setting: 1)
@@ -7198,10 +7243,10 @@ check 'an ordinary medicine is gated by class_set too, under "by Class"' do
   items = { 4 => fake_item(type: 6, rhp: 40, class_set: [false, false, true],
                            name: 'Mage Draught') }
   players = {
-    1 => ClassedRow.new('Warrior', '', 0, 3, actor_curve, [], 1, nil),
-    2 => ClassedRow.new('Mage', '', 0, 3, actor_curve, [], 2, nil),
+    1 => ClassedRow.new('Warrior', '', 0, 3, to_stat_major(actor_curve), [], 1, nil),
+    2 => ClassedRow.new('Mage', '', 0, 3, to_stat_major(actor_curve), [], 2, nil),
   }
-  jobs = { 1 => JobRow.new('Fighter', job1), 2 => JobRow.new('Mage', job2) }
+  jobs = { 1 => JobRow.new('Fighter', to_stat_major(job1)), 2 => JobRow.new('Mage', to_stat_major(job2)) }
   db = FakeActorDB.new(players, [1, 2], items, {}, jobs,
                        rpg2003: true, equipment_setting: 1)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
@@ -10007,8 +10052,8 @@ check 'a fresh actor starts with the EXP for its initial level' do
 end
 
 check 'gain_exp levels the actor up across thresholds and recomputes stats' do
-  # Per-level curve (level-major, six stats per level): max_hp 100/120/140.
-  curve = [100, 20, 10, 8, 6, 5, 120, 22, 11, 9, 7, 6, 140, 24, 12, 10, 8, 7]
+  # Stat-major curve (six max_level-sized blocks): max_hp 100/120/140.
+  curve = [100, 120, 140, 20, 22, 24, 10, 11, 12, 8, 9, 10, 6, 7, 8, 5, 6, 7]
   a = exp_actor(initial_level: 1, max_level: 3, curve: curve,
                 exp_basic: 100, exp_increase: 0, exp_correction: 0)
   eq 1, a.level

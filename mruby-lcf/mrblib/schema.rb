@@ -98,6 +98,11 @@ module LCF
             23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
             24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
 
+            # `order:` names only the first six raw shorts -- a level-1-only
+            # view real code never actually reads for a multi-level curve
+            # (see Game::Actor#base_stats's own comment): the full raw array
+            # is stat-major (six max_level-sized blocks, one per stat here),
+            # confirmed against a genuine RPG_RT.exe, not row-major.
             31 => { name: :status, type: :int16_array, order: [:max_hp, :max_mp, :atk, :def, :int, :agi] },
 
             41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
@@ -855,7 +860,11 @@ module LCF
             22 => { name: :equipment_fixed, type: :bool, default: false },   # 装備固定
             23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
             24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
-            31 => { name: :parameters, type: :int16_array },                 # 能力値 (short[6][level])
+            # 能力値 -- stat-major: six max_level-sized blocks (max_hp, max_mp,
+            # atk, def, int, agi), read the same way as the actor row's own
+            # field 31 above (Game::Actor#base_stats/#curve_row), confirmed
+            # against a genuine RPG_RT.exe.
+            31 => { name: :parameters, type: :int16_array },
             41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
             42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
             43 => { name: :exp_correction, type: :int, default: 0 },
