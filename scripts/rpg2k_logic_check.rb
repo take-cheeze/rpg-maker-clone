@@ -4405,8 +4405,8 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
   saved = st.to_lsd[103][3]
   ok !saved.nil?, 'chunk 103 carries the shown picture'
   eq 'backdrop', saved.name
-  eq 200, saved.current_x.to_i
-  eq 150, saved.current_y.to_i
+  eq 200, saved.finish_x.to_i
+  eq 150, saved.finish_y.to_i
   eq 150, saved.zoom
   # Game.opacity_to_trans(191) == 100 - 191*100/255 == 26 -- not 25: this
   # codebase's own Game::Picture keeps opacity (0..255), not RPG_RT's own
@@ -4441,6 +4441,57 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
   # already follow.
   empty_st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   eq nil, empty_st.to_lsd[103], 'no shown pictures means no chunk 103 at all'
+end
+
+check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' \
+      'the glide instead of snapping straight to its target' do
+  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: a save
+  # edited with chunk 103's current_x/y (fields 4/5) and finish_x/y (31/32)
+  # deliberately different, time_left (51) still counting down, resumed
+  # under the real runtime as a picture visibly still gliding from the
+  # current position toward the finish one -- not sitting statically at
+  # either (see SAVE_PICTURE's own comment for the full field-mapping
+  # evidence). #to_lsd previously wrote only the picture's own live values
+  # into fields 31/32/etc (the finish/rest fields) and never wrote
+  # time_left at all, so a picture saved mid-move round-tripped as though
+  # it had already arrived; #restore_pictures never read the fields needed
+  # to do otherwise.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.show_picture(5, name: 'banner', x: 10, y: 20, zoom: 100,
+                  opacity: 255, red: 100, green: 100, blue: 100, saturation: 100)
+  st.move_picture(5, 210, 120, 50, 0, 40, 60, 80, 100, 40) # -> (210, 120) over 40 frames
+  st.pictures[5].update # one frame already elapsed, so current != its own start
+
+  saved = st.to_lsd[103][5]
+  ok !saved.nil?, 'the mid-move picture is written to chunk 103'
+  eq 39, saved.time_left, 'one frame already elapsed off the saved move'
+  eq st.pictures[5].x, saved.current_x.to_i
+  eq st.pictures[5].y, saved.current_y.to_i
+  eq 210, saved.finish_x.to_i
+  eq 120, saved.finish_y.to_i
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.pictures[5]
+  ok restored.moving?, 'the restored picture resumes as still in flight'
+  eq 39, restored.frames_left
+  eq st.pictures[5].x, restored.x
+  eq st.pictures[5].y, restored.y
+  eq 210, restored.finish_x.to_i
+  eq 120, restored.finish_y.to_i
+
+  # And it keeps gliding, rather than sitting frozen at the restored position.
+  before_x = restored.x
+  restored.update
+  ok restored.x != before_x, 'the resumed move keeps advancing toward its target'
+
+  # A picture at rest (never moved) writes/restores exactly as before --
+  # time_left absent/0 means the new fields are never even consulted.
+  st.show_picture(6, name: 'still', x: 5, y: 5)
+  still_saved = st.to_lsd[103][6]
+  eq 0, (still_saved.time_left || 0)
+  still_round = Game::State.from_lsd(db, st.to_lsd)
+  ok !still_round.pictures[6].moving?, 'a picture never moved restores at rest'
 end
 
 # -- the permanent actor roster (Game::Actors) --------------------------------
