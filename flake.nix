@@ -180,6 +180,18 @@
           #     own "memset(p, ...); return p;" idiom optimization, which
           #     silently becomes "return memset(...)" and returns PPSSPP's
           #     wrong 0 instead of the real pointer.
+          #   - sysclib_strchr/sysclib_strrchr (SysclibForKernel again) call
+          #     std::string::find(str, c) -- "find this whole string inside
+          #     itself starting at offset c" -- where they meant
+          #     find((char)c). Every lookup therefore returns the string
+          #     itself for c == 0 and NULL for everything else, whatever the
+          #     string holds, and newlib's path splitting on '/' rides on
+          #     exactly these two.
+          #   - Core/HLE/sceIo.cpp's path-taking functions (sceIoDopen,
+          #     sceIoChdir, sceIoRemove, sceIoRmdir) dereference the guest
+          #     pointer WrapU_C hands them without checking it, so a bad
+          #     path builds a std::string from nullptr and terminates the
+          #     host process -- the same class as the LwMutex bug above.
           ppsspp = pkgs.ppsspp.overrideAttrs (old: {
             patches = (old.patches or [ ]) ++ [
               ./nix/patches/ppsspp-lwmutex-workarea-validate.patch
@@ -187,6 +199,8 @@
               ./nix/patches/ppsspp-x64analyzer-8bit-mov.patch
               ./nix/patches/ppsspp-sysclibforkernel-missing-functions.patch
               ./nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch
+              ./nix/patches/ppsspp-sysclib-strchr-strrchr.patch
+              ./nix/patches/ppsspp-sceio-null-path-validate.patch
             ];
           });
         }
