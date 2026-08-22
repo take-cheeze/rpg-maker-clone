@@ -4229,13 +4229,30 @@ module Game
       db_item(id).switch_id
     end
 
-    # The bag's field-usable items as `[id, count]` pairs in ascending id order,
-    # for the item menu's list. `state` is optional, passed straight through to
-    # #field_usable? (see there) for a special item invoking an Escape/Teleport
-    # skill.
+    # Every held item as `[id, count]` pairs in ascending id order, for the
+    # item menu's list -- confirmed against RPG_RT's own live source:
+    # `Window_Item::CheckInclude` (`src/window_item.cpp`) is a trivial
+    # `item_id > 0` check with no usability filter at all, so a weapon,
+    # shield, armor, helmet or accessory sitting in the bag is listed (and
+    # drawn disabled) exactly like a usable medicine, not omitted -- pixel-
+    # sampled against a genuine RPG_RT frame under wine, which draws an
+    # unusable held item's row in a visibly darker color rather than leaving
+    # it off the list. Usability (#field_usable?) is a separate concern the
+    # menu scene consults only for the row's color and whether Decision does
+    # anything, matching `CheckEnable`'s own split from `CheckInclude`. A
+    # party-held id with no matching database row (a shrunk-database
+    # dangling reference) is the one thing still excluded here -- there is
+    # nothing to draw a name for -- with the same warning #field_usable? used
+    # to print as a side effect of filtering it out.
     def field_items(state = nil)
-      @items.keys.sort.select { |id| field_usable?(id, state) }
-            .map { |id| [id, item_count(id)] }
+      @items.keys.sort.select do |id|
+        it = db_item(id)
+        if it.nil?
+          $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
+                       'matching database row, excluding from field menu'
+        end
+        it
+      end.map { |id| [id, item_count(id)] }
     end
 
     # The HP and SP a medicine restores to `actor`: the flat amount plus a

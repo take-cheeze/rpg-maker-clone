@@ -4562,7 +4562,7 @@ The work below is roughly ordered by the critical path to a walkable game
    real source) and a new check for a pure `affect_attack`-only "Battle
    Horn" accessory, all three confirmed to fail against the pre-fix code.
    See `changelog.d/use-skill-item-usability-scope-only.fixed.md`.
-- 🚧 **Known, researched gap, deliberately deferred to its own investigation
+- ✅ **Known, researched gap, deliberately deferred to its own investigation
   (2026-08-19): the field/battle Item menu excludes every held item that
   fails `#field_usable?`/`#battle_usable?` from the list entirely, instead
   of listing it disabled the way RPG_RT does.** Confirmed directly against
@@ -4612,6 +4612,41 @@ The work below is roughly ordered by the critical path to a walkable game
   file), `Scene::ItemMenu`'s choose-item dispatch
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
   selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
+  ✅ **Follow-up (2026-08-22): the field-menu half is now fixed, re-verified
+  against genuine RPG_RT.exe rather than trusting the EasyRPG-only citation
+  above.** Edited a genuine Nepheshel save's inventory chunk to hold a
+  Medicine (usable, control) and a Weapon (unusable, test subject), resumed
+  it under both this engine and real `RPG_RT.exe` under wine, and opened the
+  field Item menu on both: real RPG_RT shows both items, the weapon in a
+  visibly darker color; this engine showed only the Medicine. Pixel-sampled
+  the two glyph regions in the reference frame directly — the usable Herb's
+  colors cluster around bright white-blue (`(165,211,255)` etc.), the
+  unusable Weapon's around a distinctly darker `(99,166,247)` — confirming
+  both halves in the same frame: RPG_RT lists the item *and* draws it
+  disabled, matching the deferred bullet's own citation exactly. Fixed by
+  dropping the usability filter from `#field_items` (keeping the "no
+  matching database row" dangling-item exclusion, a different, defensible
+  corner case the fetched source says nothing about and this codebase's own
+  existing test already pins), and colouring each `Scene::ItemMenu` row via
+  the same windowskin-swatch `#draw_system_text` helper (index 0 enabled /
+  3 disabled) the title screen's Continue label already uses — confirmed
+  reusable rather than a guess, since the wine capture's own measured colors
+  are consistent with that same swatch convention. `#choose_item` gained the
+  identical "buzz and stay, no dispatch" guard `Scene::SkillMenu#choose_skill`
+  already has for a disabled entry. **The battle-menu half stays open,
+  scoped out of this pass**: `#battle_items`/`#battle_usable?` have the
+  identical shape and the deferred bullet's own EasyRPG citation says both
+  windows share the same `Window_Item` class, but that specific claim was
+  not independently re-verified against genuine RPG_RT this session, so
+  `#battle_items` still filters by `#battle_usable?` pending its own
+  check. Covered by three widened `scripts/rpg2k_logic_check.rb`
+  `field_items` fixtures (a held-but-unusable weapon; a skill book fixture
+  with the same; a switch item usable on one side only) now asserting the
+  unusable entry is listed (with a paired `field_usable?` assertion that it
+  is still not usable, only its listing changed) and a new
+  `scripts/rpg2k_scene_check.rb` check driving a live `Scene::ItemMenu`
+  (Decision on a listed-but-disabled row plays Buzzer, casts nothing, and
+  stays on the list) — all four confirmed to fail against the pre-fix code.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
   target, or flying — instead of staying listed and disabled, and the same
