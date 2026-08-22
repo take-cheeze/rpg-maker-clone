@@ -1824,8 +1824,18 @@ class RPG2k
         elsif (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !items.empty?
           move_battle_item_cursor(-1)
         elsif Input.trigger?(Input::C)
-          play_system_se(SFX_DECISION)
           item_id, _count = @ui[:items][@ui[:item_i]]
+          # A row now can hold an item #battle_items lists but is not
+          # battle-usable (see its own doc comment) -- selectable, since the
+          # cursor moves freely onto it, but Decision just buzzes and stays,
+          # the same "greyed entry" shape the field Item menu's
+          # Scene::ItemMenu#choose_item already gates its own dispatch
+          # behind.
+          unless @state.party.battle_usable?(item_id)
+            play_system_se(SFX_BUZZER)
+            return
+          end
+          play_system_se(SFX_DECISION)
           it = @state.party.db_item(item_id)
           @ui[:pending] = { kind: :item, item_id: item_id, it: it }
           close_battle_item
@@ -3449,7 +3459,13 @@ class RPG2k
       # *rows* scrolls, keeping `sel`'s own row in view, the way
       # `Window_Selectable`'s own scrolling does for an oversized troop or
       # skill list.
-      def battle_list_window(x, w, labels, sel, z, column_max: 1)
+      # `idxs`, parallel to `labels`, is an optional windowskin swatch index
+      # per row (0 enabled / 3 disabled, `Scene::Base#draw_system_text`'s own
+      # convention) -- nil (every caller except #draw_battle_item) keeps the
+      # plain flat-white `draw_text` every list here has always used; only
+      # the item list can hold a listed-but-disabled row (see
+      # #draw_battle_item).
+      def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil)
         rows = BATTLE_VISIBLE_ROWS
         inner_w = w - Window::BORDER * 2
         col_w = inner_w / column_max
@@ -3465,7 +3481,12 @@ class RPG2k
           row = i / column_max
           next if row < scroll || row >= scroll + rows
           col = i % column_max
-          c.draw_text col * col_w, (row - scroll) * BATTLE_LINE_H, col_w, BATTLE_LINE_H, label
+          y = (row - scroll) * BATTLE_LINE_H
+          if idxs
+            draw_system_text(c, col * col_w, y, col_w, BATTLE_LINE_H, label, windowskin, idxs[i])
+          else
+            c.draw_text col * col_w, y, col_w, BATTLE_LINE_H, label
+          end
         end
         win.contents = c
         unless labels.empty?
@@ -3496,15 +3517,18 @@ class RPG2k
         @ui[:skill_win] = nil
       end
 
-      # The party's battle items as "Name  xN", with a cursor.
+      # The party's battle items as "Name  xN", with a cursor. A listed but
+      # not battle-usable item (see Game::Party#battle_items) draws in the
+      # windowskin's disabled swatch, matching the field Item menu.
       def draw_battle_item
         @ui[:item_win].dispose if @ui[:item_win]
         labels = @ui[:items].map do |id, count|
           it = @state.party.db_item(id)
           "#{it ? it.name : "Item #{id}"}  x#{count}"
         end
+        idxs = @ui[:items].map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
         @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
-                                            column_max: BATTLE_LIST_COLUMN_MAX)
+                                            column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs)
       end
 
       def close_battle_item

@@ -5954,10 +5954,26 @@ module Game
       end
     end
 
-    # The bag's battle-usable items as `[id, count]` pairs in ascending id order.
+    # Every held item as `[id, count]` pairs in ascending id order, for the
+    # battle item list -- mirrors #field_items exactly (see its own doc
+    # comment for the full citation): confirmed against genuine RPG_RT.exe,
+    # not just EasyRPG's "same Window_Item class" claim #field_items already
+    # warned this method's own inclusion still needed independent checking --
+    # a live battle with a usable Herb and a field-only (battle-unusable)
+    # Smelling Salts held listed *both* in the item window, the unusable one
+    # in the identical measured "disabled" swatch color the field-menu fix
+    # found. #battle_usable? is now consulted only for enablement, the same
+    # split as the field menu. The dangling-item exclusion (and its warning)
+    # stays, the same defensible corner case #field_items keeps.
     def battle_items
-      @items.keys.sort.select { |id| battle_usable?(id) }
-            .map { |id| [id, item_count(id)] }
+      @items.keys.sort.select do |id|
+        it = db_item(id)
+        if it.nil?
+          $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
+                       'matching database row, excluding from battle menu'
+        end
+        it
+      end.map { |id| [id, item_count(id)] }
     end
 
     # The HP / SP a medicine restores to a battle `target` (Combatant snapshot)
