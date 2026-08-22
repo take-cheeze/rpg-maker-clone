@@ -14556,6 +14556,20 @@ module Game
         # RPG2000 save (or a 2003 save whose party never touched Row) never
         # gains the field.
         e[91] = a.battle_row if a.battle_row != Battle::ROW_FRONT
+        # A live Change Parameters edit (#change_param) survives Save/
+        # Continue too -- see SAVE_PARTY_ACTOR's own comment for the
+        # genuine-RPG_RT verification. `@base_raw` is the curve plus this
+        # modifier with no equipment folded in, so subtracting the curve
+        # back out isolates the same delta #change_param itself computes;
+        # only written per-stat when actually nonzero, the same
+        # eliding-writer convention every field above follows.
+        raw = a.base_raw
+        curve = a.base_stats(a.level)
+        # Field ids in STAT_NAMES order (max_hp, max_mp, atk, def, int, agi).
+        [33, 34, 41, 42, 43, 44].each_with_index do |field, i|
+          delta = raw[i] - curve[i]
+          e[field] = delta if delta != 0
+        end
         actors[a.id] = e
       end
       save[108] = actors
@@ -14887,6 +14901,24 @@ module Game
           actor.restore_class(cid) if cid && cid != -1
           actor.set_level(sa.level) if sa.level
           actor.exp = sa.exp if sa.exp
+          # A live Change Parameters edit (#change_param) -- #set_level just
+          # above re-seeds @base/@base_raw from the level-derived baseline,
+          # discarding it, so it's restored after, the same order the
+          # Marshal-save path (Party#load_state) already uses. hp_mod/sp_mod
+          # (fields 33/34) default to -1 (liblcf's own "never touched"
+          # sentinel, distinct from a real 0 the other four fields already
+          # use); the other four default to 0 outright. Confirmed against a
+          # genuine RPG_RT.exe -- see SAVE_PARTY_ACTOR's own comment.
+          hp_mod = sa.hp_mod
+          sp_mod = sa.sp_mod
+          mods = [hp_mod && hp_mod != -1 ? hp_mod : 0,
+                  sp_mod && sp_mod != -1 ? sp_mod : 0,
+                  sa.attack_mod || 0, sa.defense_mod || 0,
+                  sa.spirit_mod || 0, sa.agility_mod || 0]
+          if mods.any? { |m| m != 0 }
+            curve = actor.base_stats(actor.level)
+            actor.restore_base(curve.each_index.map { |i| curve[i] + mods[i] })
+          end
           actor.equip(sa.equipment) if sa.equipment
           actor.skills = sa.skills if sa.skills
           actor.states = sa.states if sa.states

@@ -1307,6 +1307,27 @@ module LCF
       # declare yet -- 0 (RowType_front) is both liblcf's own default and the
       # only row RPG2000 ever writes.
       91 => { name: :row, type: :int, default: 0 }, # 隊列 (2003)
+
+      # The live Change Parameters shadow (Game::Actor#change_param's
+      # @base_raw, isolated from the level curve) -- confirmed against a
+      # genuine RPG_RT.exe, not just liblcf's field table: editing field 41
+      # (attack_mod) on a real save and resuming changed the Equip screen's
+      # displayed ATK by exactly that amount; editing field 33 (hp_mod)
+      # likewise changed the Status screen's Max HP by exactly that amount.
+      # liblcf's own generator table (`generator/csv/fields.csv`) marks
+      # hp_mod/sp_mod's default as -1, unlike the other four (0) -- an actor
+      # that has never had a Change Parameters edit at all always leaves
+      # this whole field range absent, so -1 vs. 0 never actually matters to
+      # this codebase's own writer (see #to_lsd's own comment), but the -1
+      # default is kept here to read a genuine third-party save's own
+      # "never touched" sentinel the same way liblcf itself does, rather
+      # than misreading it as a real -1 HP modifier.
+      33 => { name: :hp_mod, type: :int, default: -1 },
+      34 => { name: :sp_mod, type: :int, default: -1 },
+      41 => { name: :attack_mod, type: :int, default: 0 },
+      42 => { name: :defense_mod, type: :int, default: 0 },
+      43 => { name: :spirit_mod, type: :int, default: 0 },
+      44 => { name: :agility_mod, type: :int, default: 0 },
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/37.html
