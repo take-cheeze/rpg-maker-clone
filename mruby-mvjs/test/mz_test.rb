@@ -1033,3 +1033,47 @@ assert 'MV::Effekseer.smoke_test renders real, visible pixels from a downloaded 
   assert_true result.is_a?(Integer) && result > 0,
               "expected visible pixels from a real effect, got #{result.inspect}"
 end
+
+assert 'the Effekseer shim routes a real .efkefc through native simulation, not the synthetic fallback' do
+  # The three shim tests above (survives the real call sequence / loads and
+  # reports honestly / retires handles) all exercise hand-built fixtures
+  # (garbage bytes with the right magic, a bare `{}`, a missing file) that
+  # deliberately fail native Effekseer parsing -- proving the shim's
+  # *fallback* path (see EFFEKSEER_SHIM_JS's own comment on why that is a
+  # strict superset of its old, always-synthetic behavior). This test proves
+  # the other half: genuinely real content takes the real, native-backed
+  # path instead.
+  path = "../../data/labyria/Labyria/effects/Flash.efkefc"
+  skip "no such fixture (data/labyria not downloaded)" unless File.exist?(path)
+  skip "Effekseer backend unavailable" unless MV::Effekseer.available?
+
+  MV::JS.base_dir = "mvjs_effekseer_native_fixture"
+  begin
+    Dir.mkdir("mvjs_effekseer_native_fixture") rescue nil
+    Dir.mkdir("mvjs_effekseer_native_fixture/effects") rescue nil
+    bytes = File.open(path, "rb") { |f| f.read }
+    File.open("mvjs_effekseer_native_fixture/effects/Flash.efkefc", "wb") do |f|
+      f.write(bytes)
+    end
+
+    MV::JS.eval(MZ.effekseer_shim_js)
+    MV::JS.eval(
+      "globalThis.__ctx4 = effekseer.createContext(); __ctx4.init(); " \
+      "globalThis.__effect4 = __ctx4.loadEffect('effects/Flash.efkefc', 1, " \
+      "function(){}, function(){});"
+    )
+    # A real native effect handle (nonzero) -- proof Effekseer::Effect::Create
+    # actually parsed this file, unlike the garbage/bogus fixtures above.
+    assert_true MV::JS.eval("__effect4._native") != 0
+
+    MV::JS.eval("globalThis.__h4 = __ctx4.play(__effect4, 0, 0, 0);")
+    # A real play handle is >= 0 (Effekseer::Handle); the synthetic fallback
+    # never sets `_native` on its handle at all.
+    assert_true MV::JS.eval("typeof __h4._native === 'number' && __h4._native >= 0")
+  ensure
+    File.delete("mvjs_effekseer_native_fixture/effects/Flash.efkefc") rescue nil
+    Dir.delete("mvjs_effekseer_native_fixture/effects") rescue nil
+    Dir.delete("mvjs_effekseer_native_fixture") rescue nil
+    MV::JS.base_dir = ""
+  end
+end

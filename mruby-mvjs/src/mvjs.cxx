@@ -640,6 +640,10 @@ void install_host_globals(JSContext* ctx) {
   // The WebGL bridge (getContext('webgl') -> native GLES2), defined in
   // mvwebgl.cxx. After the canvas bridge, since it extends getContext.
   mv_install_webgl(ctx);
+  // The Effekseer simulation bridge (__mv_efk* natives), defined in
+  // mvefk.cxx. MZ::EFFEKSEER_SHIM_JS (mz.rb) is evaluated later, per-game,
+  // and calls into these; independent of the canvas/WebGL bridges above.
+  mv_install_effekseer(ctx);
 }
 
 // -- the persistent host -----------------------------------------------------

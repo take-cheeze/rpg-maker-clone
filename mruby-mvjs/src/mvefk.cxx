@@ -2,6 +2,8 @@
 
 #include "mvefk.hxx"
 
+#include "mvhost.hxx"  // mv_install_effekseer's declaration; always available.
+
 // Unlike mvgl.cxx (which decides purely from `__has_include`, since EGL/
 // GLES2 headers/libs are found via the default system search path with no
 // extra wiring needed), this gate hinges on a define mrbgem.rake sets
@@ -23,9 +25,11 @@
 
 #include <GLES3/gl3.h>
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "Effekseer.h"
 #include "EffekseerRendererGL.h"
@@ -205,7 +209,380 @@ bool smoke_test(const char* path,
   return true;
 }
 
+// -- persistent JS-bridge simulation context ---------------------------------
+
+namespace {
+
+// One entry per live ContextId (index + 1; 0 is the null id), mirroring
+// mvwebgl.cxx's g_gl idiom. A context outlives individual effects/handles;
+// MZ creates exactly one for the whole game (Graphics.effekseer) and never
+// destroys it, but context_destroy exists for tests.
+struct Context {
+  Effekseer::ManagerRef manager;
+  // Effects loaded into this context, by EffectId (index + 1; 0 is null),
+  // kept alive here since Effekseer::Handle alone does not hold a strong
+  // reference the caller can query back.
+  std::vector<Effekseer::EffectRef> effects;
+};
+
+std::vector<Context*> g_contexts;
+
+Context* find_context(ContextId ctx) {
+  if (ctx < 1 || static_cast<std::size_t>(ctx) > g_contexts.size())
+    return nullptr;
+  return g_contexts[static_cast<std::size_t>(ctx) - 1];
+}
+
+}  // namespace
+
+ContextId context_create() {
+  if (!available()) {
+    warn("context_create: backend not available", nullptr);
+    return 0;
+  }
+  auto* c = new Context();
+  // Same instance cap as smoke_test's own Manager::Create -- headroom for a
+  // real game's several-animations-at-once case, not tuned per-effect.
+  c->manager = Effekseer::Manager::Create(2000);
+  if (!c->manager) {
+    warn("context_create: Effekseer::Manager::Create failed", nullptr);
+    delete c;
+    return 0;
+  }
+  c->manager->SetCoordinateSystem(Effekseer::CoordinateSystem::RH);
+  g_contexts.push_back(c);
+  return static_cast<ContextId>(g_contexts.size());
+}
+
+void context_destroy(ContextId ctx) {
+  Context* c = find_context(ctx);
+  if (!c)
+    return;
+  delete c;
+  g_contexts[static_cast<std::size_t>(ctx) - 1] = nullptr;
+}
+
+EffectId effect_load(ContextId ctx,
+                     const std::uint8_t* bytes,
+                     std::size_t len,
+                     float magnification) {
+  Context* c = find_context(ctx);
+  if (!c || !bytes || len == 0)
+    return 0;
+  Effekseer::EffectRef effect = Effekseer::Effect::Create(
+      c->manager, bytes, static_cast<int32_t>(len), magnification);
+  if (!effect)
+    return 0;
+  c->effects.push_back(effect);
+  return static_cast<EffectId>(c->effects.size());
+}
+
+void effect_release(ContextId ctx, EffectId effect) {
+  Context* c = find_context(ctx);
+  if (!c || effect < 1 || static_cast<std::size_t>(effect) > c->effects.size())
+    return;
+  c->effects[static_cast<std::size_t>(effect) - 1] = nullptr;
+}
+
+std::int32_t play(ContextId ctx, EffectId effect, float x, float y, float z) {
+  Context* c = find_context(ctx);
+  if (!c || effect < 1 || static_cast<std::size_t>(effect) > c->effects.size())
+    return -1;
+  const Effekseer::EffectRef& e =
+      c->effects[static_cast<std::size_t>(effect) - 1];
+  if (!e)
+    return -1;
+  return c->manager->Play(e, x, y, z);
+}
+
+void set_location(ContextId ctx,
+                  std::int32_t handle,
+                  float x,
+                  float y,
+                  float z) {
+  Context* c = find_context(ctx);
+  if (!c || handle < 0)
+    return;
+  c->manager->SetLocation(handle, x, y, z);
+}
+
+void set_rotation(ContextId ctx,
+                  std::int32_t handle,
+                  float x,
+                  float y,
+                  float z) {
+  Context* c = find_context(ctx);
+  if (!c || handle < 0)
+    return;
+  c->manager->SetRotation(handle, x, y, z);
+}
+
+void set_scale(ContextId ctx, std::int32_t handle, float x, float y, float z) {
+  Context* c = find_context(ctx);
+  if (!c || handle < 0)
+    return;
+  c->manager->SetScale(handle, x, y, z);
+}
+
+void set_speed(ContextId ctx, std::int32_t handle, float speed) {
+  Context* c = find_context(ctx);
+  if (!c || handle < 0)
+    return;
+  c->manager->SetSpeed(handle, speed);
+}
+
+void stop(ContextId ctx, std::int32_t handle) {
+  Context* c = find_context(ctx);
+  if (!c || handle < 0)
+    return;
+  c->manager->StopEffect(handle);
+}
+
+bool handle_exists(ContextId ctx, std::int32_t handle) {
+  Context* c = find_context(ctx);
+  if (!c || handle < 0)
+    return false;
+  return c->manager->Exists(handle);
+}
+
+void update(ContextId ctx, float delta_frame) {
+  Context* c = find_context(ctx);
+  if (!c)
+    return;
+  c->manager->Update(delta_frame);
+}
+
+void stop_all(ContextId ctx) {
+  Context* c = find_context(ctx);
+  if (!c)
+    return;
+  c->manager->StopAllEffects();
+}
+
 }  // namespace mvefk
+
+// -- JS bridge (__mv_efk* natives) -------------------------------------------
+//
+// Installed unconditionally (both branches of this file define
+// mv_install_effekseer): MZ::EFFEKSEER_SHIM_JS calls these natives
+// regardless of whether the real backend is compiled in, exactly like it
+// already unconditionally calls __mv_existsSync/__mv_readFileBytes. Where
+// mvefk's real functions are unavailable, every one of them already
+// no-ops/returns its failure sentinel (see mvefk.hxx), so this stays a
+// single code path either way -- only the JS side branches (on whether
+// context_create returned a nonzero id), matching how it already branches
+// on the honest-diagnostic magic-byte check.
+
+namespace {
+
+int32_t gi(JSContext* ctx, int argc, JSValueConst* argv, int i) {
+  int32_t v = 0;
+  if (i < argc)
+    JS_ToInt32(ctx, &v, argv[i]);
+  return v;
+}
+
+double gd(JSContext* ctx, int argc, JSValueConst* argv, int i) {
+  double v = 0;
+  if (i < argc)
+    JS_ToFloat64(ctx, &v, argv[i]);
+  return v;
+}
+
+// Mirrors mvwebgl.cxx's view_bytes: accepts a TypedArray view or a bare
+// ArrayBuffer (EFFEKSEER_SHIM_JS always passes a Uint8Array, but this stays
+// consistent with the rest of the host's bridges). `*hold` must be freed by
+// the caller once done with the returned pointer.
+uint8_t* efk_view_bytes(JSContext* ctx,
+                        JSValueConst v,
+                        size_t* out_len,
+                        JSValue* hold) {
+  size_t off = 0, len = 0, bpe = 0;
+  JSValue ab = JS_GetTypedArrayBuffer(ctx, v, &off, &len, &bpe);
+  if (JS_IsException(ab)) {
+    JS_FreeValue(ctx, ab);
+    JS_FreeValue(ctx, JS_GetException(ctx));
+    size_t raw = 0;
+    uint8_t* p = JS_GetArrayBuffer(ctx, &raw, v);
+    if (!p) {
+      JS_FreeValue(ctx, JS_GetException(ctx));
+      *hold = JS_UNDEFINED;
+      *out_len = 0;
+      return nullptr;
+    }
+    *hold = JS_DupValue(ctx, v);
+    *out_len = raw;
+    return p;
+  }
+  size_t sz = 0;
+  uint8_t* p = JS_GetArrayBuffer(ctx, &sz, ab);
+  *hold = ab;
+  *out_len = len;
+  return p ? p + off : nullptr;
+}
+
+JSValue js_efk_context_create(JSContext* ctx,
+                              JSValueConst,
+                              int,
+                              JSValueConst*) {
+  return JS_NewUint32(ctx, mvefk::context_create());
+}
+
+JSValue js_efk_context_destroy(JSContext* ctx,
+                               JSValueConst,
+                               int argc,
+                               JSValueConst* argv) {
+  mvefk::context_destroy(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_effect_load(JSContext* ctx,
+                           JSValueConst,
+                           int argc,
+                           JSValueConst* argv) {
+  const mvefk::ContextId cid =
+      static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0));
+  size_t len = 0;
+  JSValue hold = JS_UNDEFINED;
+  uint8_t* bytes =
+      argc > 1 ? efk_view_bytes(ctx, argv[1], &len, &hold) : nullptr;
+  const float mag =
+      argc > 2 ? static_cast<float>(gd(ctx, argc, argv, 2)) : 1.0f;
+  const mvefk::EffectId eid = mvefk::effect_load(cid, bytes, len, mag);
+  JS_FreeValue(ctx, hold);
+  return JS_NewUint32(ctx, eid);
+}
+
+JSValue js_efk_effect_release(JSContext* ctx,
+                              JSValueConst,
+                              int argc,
+                              JSValueConst* argv) {
+  mvefk::effect_release(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                        static_cast<mvefk::EffectId>(gi(ctx, argc, argv, 1)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_play(JSContext* ctx,
+                    JSValueConst,
+                    int argc,
+                    JSValueConst* argv) {
+  const int32_t h =
+      mvefk::play(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                  static_cast<mvefk::EffectId>(gi(ctx, argc, argv, 1)),
+                  static_cast<float>(gd(ctx, argc, argv, 2)),
+                  static_cast<float>(gd(ctx, argc, argv, 3)),
+                  static_cast<float>(gd(ctx, argc, argv, 4)));
+  return JS_NewInt32(ctx, h);
+}
+
+JSValue js_efk_set_location(JSContext* ctx,
+                            JSValueConst,
+                            int argc,
+                            JSValueConst* argv) {
+  mvefk::set_location(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                      gi(ctx, argc, argv, 1),
+                      static_cast<float>(gd(ctx, argc, argv, 2)),
+                      static_cast<float>(gd(ctx, argc, argv, 3)),
+                      static_cast<float>(gd(ctx, argc, argv, 4)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_set_rotation(JSContext* ctx,
+                            JSValueConst,
+                            int argc,
+                            JSValueConst* argv) {
+  mvefk::set_rotation(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                      gi(ctx, argc, argv, 1),
+                      static_cast<float>(gd(ctx, argc, argv, 2)),
+                      static_cast<float>(gd(ctx, argc, argv, 3)),
+                      static_cast<float>(gd(ctx, argc, argv, 4)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_set_scale(JSContext* ctx,
+                         JSValueConst,
+                         int argc,
+                         JSValueConst* argv) {
+  mvefk::set_scale(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                   gi(ctx, argc, argv, 1),
+                   static_cast<float>(gd(ctx, argc, argv, 2)),
+                   static_cast<float>(gd(ctx, argc, argv, 3)),
+                   static_cast<float>(gd(ctx, argc, argv, 4)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_set_speed(JSContext* ctx,
+                         JSValueConst,
+                         int argc,
+                         JSValueConst* argv) {
+  mvefk::set_speed(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                   gi(ctx, argc, argv, 1),
+                   static_cast<float>(gd(ctx, argc, argv, 2)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_stop(JSContext* ctx,
+                    JSValueConst,
+                    int argc,
+                    JSValueConst* argv) {
+  mvefk::stop(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+              gi(ctx, argc, argv, 1));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_exists(JSContext* ctx,
+                      JSValueConst,
+                      int argc,
+                      JSValueConst* argv) {
+  return JS_NewBool(ctx, mvefk::handle_exists(static_cast<mvefk::ContextId>(
+                                                  gi(ctx, argc, argv, 0)),
+                                              gi(ctx, argc, argv, 1)));
+}
+
+JSValue js_efk_update(JSContext* ctx,
+                      JSValueConst,
+                      int argc,
+                      JSValueConst* argv) {
+  mvefk::update(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                static_cast<float>(gd(ctx, argc, argv, 1)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_stop_all(JSContext* ctx,
+                        JSValueConst,
+                        int argc,
+                        JSValueConst* argv) {
+  mvefk::stop_all(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)));
+  return JS_UNDEFINED;
+}
+
+void reg(JSContext* ctx,
+         JSValue g,
+         const char* name,
+         JSCFunction* fn,
+         int argc) {
+  JS_SetPropertyStr(ctx, g, name, JS_NewCFunction(ctx, fn, name, argc));
+}
+
+}  // namespace
+
+void mv_install_effekseer(JSContext* ctx) {
+  JSValue g = JS_GetGlobalObject(ctx);
+  reg(ctx, g, "__mv_efkContextCreate", js_efk_context_create, 0);
+  reg(ctx, g, "__mv_efkContextDestroy", js_efk_context_destroy, 1);
+  reg(ctx, g, "__mv_efkEffectLoad", js_efk_effect_load, 3);
+  reg(ctx, g, "__mv_efkEffectRelease", js_efk_effect_release, 2);
+  reg(ctx, g, "__mv_efkPlay", js_efk_play, 5);
+  reg(ctx, g, "__mv_efkSetLocation", js_efk_set_location, 5);
+  reg(ctx, g, "__mv_efkSetRotation", js_efk_set_rotation, 5);
+  reg(ctx, g, "__mv_efkSetScale", js_efk_set_scale, 5);
+  reg(ctx, g, "__mv_efkSetSpeed", js_efk_set_speed, 3);
+  reg(ctx, g, "__mv_efkStop", js_efk_stop, 2);
+  reg(ctx, g, "__mv_efkExists", js_efk_exists, 2);
+  reg(ctx, g, "__mv_efkUpdate", js_efk_update, 2);
+  reg(ctx, g, "__mv_efkStopAll", js_efk_stop_all, 1);
+  JS_FreeValue(ctx, g);
+}
 
 #else  // !MVJS_HAVE_EFFEKSEER
 
@@ -223,6 +600,60 @@ bool smoke_test(const char* /*path*/,
   return false;
 }
 
+ContextId context_create() {
+  return 0;
+}
+
+void context_destroy(ContextId /*ctx*/) {}
+
+EffectId effect_load(ContextId /*ctx*/,
+                     const std::uint8_t* /*bytes*/,
+                     std::size_t /*len*/,
+                     float /*magnification*/) {
+  return 0;
+}
+
+void effect_release(ContextId /*ctx*/, EffectId /*effect*/) {}
+
+std::int32_t play(ContextId /*ctx*/,
+                  EffectId /*effect*/,
+                  float /*x*/,
+                  float /*y*/,
+                  float /*z*/) {
+  return -1;
+}
+
+void set_location(ContextId /*ctx*/,
+                  std::int32_t /*handle*/,
+                  float /*x*/,
+                  float /*y*/,
+                  float /*z*/) {}
+void set_rotation(ContextId /*ctx*/,
+                  std::int32_t /*handle*/,
+                  float /*x*/,
+                  float /*y*/,
+                  float /*z*/) {}
+void set_scale(ContextId /*ctx*/,
+               std::int32_t /*handle*/,
+               float /*x*/,
+               float /*y*/,
+               float /*z*/) {}
+void set_speed(ContextId /*ctx*/, std::int32_t /*handle*/, float /*speed*/) {}
+void stop(ContextId /*ctx*/, std::int32_t /*handle*/) {}
+
+bool handle_exists(ContextId /*ctx*/, std::int32_t /*handle*/) {
+  return false;
+}
+
+void update(ContextId /*ctx*/, float /*delta_frame*/) {}
+void stop_all(ContextId /*ctx*/) {}
+
 }  // namespace mvefk
+
+// No natives registered: EFFEKSEER_SHIM_JS feature-detects their absence
+// (typeof g.__mv_efkContextCreate !== 'function') and stays on its
+// synthetic, diagnostic-only path, exactly as it did before this bridge
+// existed.
+void mv_install_effekseer(JSContext*) {}
 
 #endif  // MVJS_HAVE_EFFEKSEER

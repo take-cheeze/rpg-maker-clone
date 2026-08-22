@@ -35,6 +35,14 @@ const uint8_t* mv_canvas_pixels(int handle, int* w, int* h);
 // on-screen. Defined in mvwebgl.cxx.
 const uint8_t* mv_webgl_pixels(int handle, int* w, int* h);
 
+// Install the Effekseer simulation bridge: the __mv_efk* natives
+// `MZ::EFFEKSEER_SHIM_JS` (mz.rb) calls into for real (rather than
+// synthetic) effect loading/playback where the native backend is compiled
+// in. A no-op registering natives that report "unavailable" where it is not
+// (mvefk.cxx's own #else stub branch), which keeps the shim's existing
+// diagnostic-only fallback behavior. Defined in mvefk.cxx.
+void mv_install_effekseer(JSContext* ctx);
+
 // Resolve a game-relative asset path against the configured game base dir (set
 // from Ruby via `MV::JS.base_dir=`). MV's own JavaScript requests data/assets
 // with paths relative to the game root (e.g. `data/System.json`, `img/...`),

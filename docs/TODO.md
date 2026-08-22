@@ -22031,9 +22031,22 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         bugs found and fixed along the way (`DrawParameter` population,
         `GetCameraProjectionMatrix` read-ordering) and a third real fix (an
         explicit `Manager::Flip()` before drawing, needed for a one-shot
-        simulate-then-draw call). `MZ::EFFEKSEER_SHIM_JS`'s JS bridge still
-        needs wiring to these natives — that was deliberately staged to
-        come after the native pipeline was proven, which it now is.
+        simulate-then-draw call).
+      - ✅ **Effekseer JS bridge: real simulation wired, rendering still
+        deferred.** `MZ::EFFEKSEER_SHIM_JS`'s `loadEffect`/`play`/`update`/
+        `stopAll` now route through a real, persistent `Effekseer::Manager`
+        (new `__mv_efk*` natives, `mvefk.cxx`'s `context_create`/
+        `effect_load`/`play`/... and `mv_install_effekseer`) wherever the
+        loaded file genuinely parses — a synthetic or malformed effect (as
+        this project's own pre-existing shim tests deliberately use) still
+        falls back to the original fixed-20-frame handle unchanged, so this
+        is a strict superset of the prior behavior. Deliberately not the
+        rendering half: no `EffekseerRendererGL::Renderer`, no GL context —
+        drawing needs Effekseer's renderer to share the exact GL context/FBO
+        PIXI's own WebGL renderer (`mvwebgl.cxx`) is using mid-frame, a
+        separate, higher-risk integration staged as its own follow-up. See
+        docs/adr/0004's "M6.2 addendum 3" for the full design and why the
+        fallback path had to stay exact.
 
 ## Tooling
 
