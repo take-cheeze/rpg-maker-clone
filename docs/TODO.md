@@ -6166,6 +6166,58 @@ The work below is roughly ordered by the critical path to a walkable game
   same `|| Input.repeat?(...)` way or explicitly confirmed (with a citation
   and a regression test) to be correctly discrete-only, except
   `debug_menu.rb`, left open pending a genuine classic-F9-menu reference.
+  ✅ **Follow-up (2026-08-22): `debug_menu.rb`'s own Switch/Variable pages
+  finally got that genuine reference — and it turned out the deferred
+  key-repeat gap was the least of what was wrong.** Confirmed directly
+  against real RPG_RT.exe under wine (a genuine Nepheshel save, its own
+  switch table edited directly, F9 opened under Test Play): RPG_RT does not
+  draw a single flat per-id list at all — it draws *two* windows side by
+  side, a left one listing ten coarse "blocks" of ten ids each (e.g.
+  `S[ 0041-0050 ]`) and a right one previewing the highlighted block's own
+  ten individual ids — with two independent cursor/focus levels. Block
+  focus (the default on opening): Up/Down moves the block cursor ±1,
+  *wrapping* within the current 100-id screen (verified: Up from block 0
+  landed on block 9, same screen); Left/Right instead pages the whole
+  screen by 100 ids, *preserving* the highlighted block's index (verified:
+  block index 3 stayed index 3 after paging); C drills into the
+  highlighted block's row focus. Row focus: Up/Down moves ±1 among the
+  block's own ten ids, wrapping *locally* within that block (verified: row
+  9 + Down → row 0 of the same block, not the next); Left/Right do nothing
+  there; C toggles a switch instantly (confirmed OFF→ON on a real save) or
+  opens the variable editor unchanged; B returns to block focus, a second B
+  closes the menu (confirmed with two real Escape presses). Both levels
+  auto-repeat on a held key, closing the deferred key-repeat gap this
+  bullet left open as a side effect. A Switch row's value draws bracketed,
+  `[ ON ]`/`[ OFF ]`, confirmed by pixel crop; a Variable row's own format
+  was never independently reached this session, so it stays untouched
+  rather than guessed. What actually cycles a genuine RPG_RT install
+  between just these two pages was not identified — Left/Right, Q/W,
+  PageUp/PageDown, Tab, Shift, Space and more were all tried and none of
+  them flipped the page — so that binding is left unasserted; this
+  codebase's own Map/Chipset/Animation additions (not genuine RPG_RT pages
+  at all) keep cycling on Left/Right as before, while Switch/Variable now
+  cycle on the L/R shoulder buttons instead, freed up since Left/Right
+  means "page the screen" there now — both purely this engine's own
+  tooling wiring for a five-page menu real RPG_RT never had, not an RPG_RT
+  fidelity claim. `debug_menu.rb` rewritten with a `@focus` (`:block`/
+  `:row`) state machine, two `Window`s (`@left_window`/`@right_window`,
+  geometry measured directly off the wine screenshot: y=32, height 176,
+  split at x=96 of the 320px screen), wrap-around `move_block`/`move_row`,
+  a cursor-preserving `turn_page`, and `Input.repeat?` throughout. Covered
+  by new `scripts/rpg2k_scene_check.rb` checks (block/row focus, wrap,
+  paging, toggle and the L/R mode-cycle; the two-window geometry; the
+  Switch bracket format), plus updates to the pre-existing Map/Animation
+  mode-cycle checks whose steps assumed the old Left/Right binding — 7 of
+  898 confirmed to fail against the pre-fix code before the fix. **A prior
+  cycle's independent investigation of this same screen was discarded
+  before reaching this entry**: its transcript showed it had read EasyRPG
+  Player's own `window_actortarget.cpp`/`scene_actortarget.cpp`/
+  `game_targets.cpp` (an unrelated screen, the item/skill target-confirm
+  UI, not this one) while investigating, violating this whole series' own
+  no-EasyRPG-source rule even though its final report never disclosed
+  having done so — its finding was discarded unshipped, and this entry is
+  the result of a from-scratch redo that consulted no EasyRPG/Player
+  source at any point.
   ✅ **Follow-up (2026-08-19): Right/Left did nothing at all during
   ally-target selection, when real RPG_RT treats them as full equivalents
   of Down/Up there — correcting this bullet's own claim that
