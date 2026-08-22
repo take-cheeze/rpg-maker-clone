@@ -19232,15 +19232,19 @@ check 'Scene::ItemMenu: a switch item flips its switch, consumes one, and closes
   ok scene.instance_variable_get(:@message).nil?, 'no confirmation message, matching Escape/Teleport'
 end
 
-check 'Scene::ItemMenu: a switch item that consumed nothing reports "no effect" and ' \
-      'leaves the menu open' do
+check 'Scene::ItemMenu: a switch item that consumed nothing plays only Buzzer and ' \
+      'leaves the menu open with no message -- matching a genuine RPG_RT.exe under ' \
+      'wine, which shows no message window at all for a no-effect Decision on this ' \
+      'screen (see #apply_item\'s own citation)' do
   parent = fake_parent(fake_db)
   state = Game::State.new(SwitchItemStubParty.new, 1, 0, 0)
   scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Audio.reset_se
   scene.send(:apply_switch_item, 999) # not a switch item this stub recognises -- #use_switch_item returns nil
   ok state.party.use_switch_item_calls.empty?, 'nothing consumed'
   ok !parent.pop_to_map_called, 'the menu stays open'
-  ok !scene.instance_variable_get(:@message).nil?, 'a message is shown'
+  eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'Buzzer plays'
+  ok !scene.instance_variable_get(:@message), 'no message window (the ivar no longer exists at all)'
 end
 
 # A party whose only item is a special (type 9) one invoking an all-ally scope

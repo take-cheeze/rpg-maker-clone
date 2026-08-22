@@ -4316,6 +4316,60 @@ The work below is roughly ordered by the critical path to a walkable game
   switch and closes the whole menu stack with no message), both confirmed
   to fail against the pre-fix code (`NoMethodError: undefined method
   'use_special_switch_item'` / `expected true, got false`).
+  ✅ **Follow-up (2026-08-22): the "no confirmation message" fact this whole
+  passage's fixes rest on had never actually been checked against a genuine
+  RPG_RT.exe — every citation above is EasyRPG Player's own C++ source,
+  mislabeled in a few places as "RPG_RT's own live source" from before this
+  session's methodology change. Directly confirmed now, and the four leftover
+  `show_message("It had no effect.")` calls this same passage's fixes left
+  behind (in `Scene::ItemMenu#apply_switch_item`/`#apply_escape_item`/
+  `#apply_special_switch_item`/`#apply_teleport_item`, plus three siblings in
+  `Scene::SkillMenu#apply_switch_skill`/`#apply_escape_skill`/
+  `#apply_teleport_skill`) removed as dead, self-contradicting code.**
+  Reached a genuine field Item-menu target-confirm screen on a real
+  `RPG_RT.exe` (Nepheshel, wine): loaded a `--map 16 --clear-scene` save (this
+  cycle's own scratch-edit of chunk 109 added a single held Antidote, item
+  #8 — a status-cure medicine with no HP/SP recovery of its own, so using it
+  on a target with none of its six curable states is unconditionally a
+  no-effect use with no other game state to arrange), opened the field menu,
+  Item, the one held item, and Decision on the only party member. Screenshots
+  before and after the Decision press are pixel-identical: no message window
+  appears, the screen stays on the same target-confirm list, and the item's
+  displayed count is unchanged (not consumed) — matching `#apply_item`'s
+  already-implemented Buzzer-only handling exactly. This confirms the
+  no-message behavior on solid ground for the first time, but it also exposed
+  that `#apply_switch_item` and its six siblings above still called
+  `show_message("It had no effect.")` in their own failure branches — code
+  this same passage's history (see `#apply_item`'s citation, added
+  2026-08-20) had already established was wrong for the ordinary medicine/
+  skill case and removed there, but never revisited in these seven
+  special-item/switch/Escape/Teleport siblings, leaving them showing a
+  message the rest of the file had just proven RPG_RT never shows. Every one
+  of these seven branches turns out to be unreachable through ordinary play
+  regardless: `#choose_item`/`#choose_skill` (see the `escape_skill_
+  available?`/`teleport_skill_available?` pre-checks a few paragraphs up, and
+  the plain `it.type == ITEM_SWITCH`/held-item-list membership for the switch
+  case) already buzz-and-return before ever dispatching into a branch whose
+  own use/cast could still fail — so this is dead-code cleanup with no
+  observable behavior change, not a live gameplay fix, and is reported as
+  such rather than as a reachable discrepancy. Fixed by dropping the
+  `show_message` call from all seven (leaving the existing `play_system_se
+  (SFX_BUZZER)` alone), and removing the now-fully-unused `show_message`/
+  `drive_message`/`close_message` methods and `@message` ivar/dispatch from
+  both `item_menu.rb` and `skill_menu.rb` entirely — that machinery only ever
+  existed to serve these calls and (long since removed) the ordinary-case
+  "Used on X."/"casts Y!" success message; nothing else in either file reads
+  or writes `@message`. `#show_message`'s own window (`Window.new(20,
+  SCREEN_H - 40, w, 14 + Window::BORDER * 2)`, uncited, content-sized rather
+  than RPG_RT's real fixed message panel — the exact "inset 10px,
+  content-sized" shape already fixed elsewhere) goes with it rather than
+  being reshaped, since nothing draws it any more. `scripts/rpg2k_scene_
+  check.rb`'s one test that had asserted the opposite ("Scene::ItemMenu: a
+  switch item that consumed nothing reports 'no effect' and leaves the menu
+  open") is rewritten to assert Buzzer-only/no-message instead, confirmed to
+  fail against the pre-fix code (`@message` was truthy). No EasyRPG/Player
+  source was consulted to reach this conclusion — only the screenshots above
+  and reading this codebase's own existing citations for self-contradiction.
   **Dual-wield equipping is done too, the opposite rule to two-handed.** A
   weapon's own *combat* effect (a 二刀流 weapon swinging twice) was read
   already (ADR 0033); what remained was the *actor*-row 二刀流 (`double_hand`,
