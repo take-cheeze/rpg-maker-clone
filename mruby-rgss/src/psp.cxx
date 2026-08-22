@@ -114,6 +114,33 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
 
 }  // namespace
 
+// Emit the draw-buffer post-condition as a libc-free marker, for the reason
+// psp_display_create's call site explains. Same hand-rolled hex as
+// psp_lvgl_assert_halt: pspsdk's sysclib_snprintf is not dependable here.
+void psp_report_drawbufs(const void* b1,
+                         const void* b2,
+                         size_t n1,
+                         size_t n2,
+                         size_t want) {
+  static const char kLabel[] = "RPG2K_PSP_DRAWBUF ";
+  const unsigned vals[5] = {
+      static_cast<unsigned>(reinterpret_cast<uintptr_t>(b1)),
+      static_cast<unsigned>(reinterpret_cast<uintptr_t>(b2)),
+      static_cast<unsigned>(n1), static_cast<unsigned>(n2),
+      static_cast<unsigned>(want)};
+  char line[8 + 5 * 9];
+  int len = 0;
+  for (unsigned i = 0; i < sizeof(kLabel) - 1; ++i)
+    line[len++] = kLabel[i];
+  for (int v = 0; v < 5; ++v) {
+    for (int i = 0; i < 8; ++i)
+      line[len++] = "0123456789abcdef"[(vals[v] >> ((7 - i) * 4)) & 0xf];
+    line[len++] = (v == 4) ? '\n' : ' ';
+  }
+  sceIoWrite(1, line, len);
+  sceIoWrite(2, line, len);
+}
+
 lv_display_t* psp_display_create(int32_t hor_res, int32_t ver_res) {
   // Point the display controller at the start of VRAM (uncached mirror) with a
   // 512-pixel stride in RGB565.
@@ -181,6 +208,16 @@ lv_display_t* psp_display_create(int32_t hor_res, int32_t ver_res) {
   // free" assert deeper in this ADR's P1 trail actually traced back to.
   g_buf1.resize(buf_bytes);
   g_buf2.resize(buf_bytes);
+  // Check the post-condition rather than trusting it. This toolchain has
+  // already been caught miscompiling vector growth in exactly this spot
+  // (bug 7, assign()), and the failure mode is silent: a null or wild data()
+  // is handed to lv_display_set_buffers, LVGL and flush_cb write through it,
+  // and the damage only surfaces much later and far away as TLSF's
+  // "block already marked as free" in lv_tlsf_realloc. Reporting the pointers
+  // here turns that into a one-line answer. Cheap -- it runs once, at display
+  // creation.
+  psp_report_drawbufs(g_buf1.data(), g_buf2.data(), g_buf1.size(),
+                      g_buf2.size(), buf_bytes);
 
   lv_display_set_buffers(disp, g_buf1.data(), g_buf2.data(),
                          static_cast<uint32_t>(buf_bytes),
@@ -255,9 +292,37 @@ uint64_t psp_input_scan(void) {
 // failure (rather than a silent halt) before this loops forever, matching the
 // libc-free-write reasoning app/psp/main.cxx's StrBuf/psp_write already use.
 extern "C" void psp_lvgl_assert_halt(void) {
-  static const char kMarker[] = "RPG2K_PSP_LVGL_ASSERT\n";
-  sceIoWrite(1, kMarker, sizeof(kMarker) - 1);
-  sceIoWrite(2, kMarker, sizeof(kMarker) - 1);
+  static const char kMarker[] = "RPG2K_PSP_LVGL_ASSERT at 0x";
+  // LV_ASSERT_HANDLER expands at the failing assert's own call site, so this
+  // return address is the LVGL instruction that tripped -- resolve it with
+  // `psp-addr2line -f -i -e build-psp/rpg2k_psp <addr>`. Without it the marker
+  // says only "an LVGL assert fired", which is not enough to act on:
+  // LV_USE_LOG is 0 (app/psp/lv_conf.h) so nothing else names which one, and
+  // this binary links hundreds of distinct call sites to this handler -- far
+  // too many to narrow by disassembly. Finding the TLSF assert in
+  // lv_tlsf_realloc took exactly this.
+  //
+  // $ra is read directly rather than via __builtin_return_address(0): this
+  // function never returns, and GCC's analysis of that makes the builtin
+  // report an address inside the caller that is not its call site (measured:
+  // it named lv_tlsf_realloc's epilogue rather than either
+  // `jal psp_lvgl_assert_halt` return address in that function). The MIPS
+  // prologue only saves $ra, it does not clobber it, so reading the register
+  // before any call here is exact.
+  unsigned pc;
+  __asm__ volatile("move %0, $ra" : "=r"(pc));
+  // Formatted by hand rather than with snprintf: PPSSPP logs pspsdk's
+  // sysclib_snprintf as "Not fully implemented", and this has to survive a
+  // halt with no working libc -- the same reasoning app/psp/main.cxx's
+  // StrBuf/psp_write already use.
+  char hex[9];
+  for (int i = 0; i < 8; ++i)
+    hex[i] = "0123456789abcdef"[(pc >> ((7 - i) * 4)) & 0xf];
+  hex[8] = '\n';
+  for (int fd = 1; fd <= 2; ++fd) {
+    sceIoWrite(fd, kMarker, sizeof(kMarker) - 1);
+    sceIoWrite(fd, hex, sizeof(hex));
+  }
   for (;;)
     sceKernelDelayThread(1000000);  // 1s; never returns.
 }

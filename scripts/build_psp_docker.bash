@@ -28,6 +28,7 @@ set -euo pipefail
 # Usage:
 #   scripts/build_psp_docker.bash [BUILD_DIR]     # default: build-psp-docker
 #   CLEAN=1 scripts/build_psp_docker.bash         # wipe BUILD_DIR first
+#   REBUILD_IMAGE=1 scripts/build_psp_docker.bash # rebuild the derived image
 #
 #   The default deliberately is *not* `build-psp`, which is where the native
 #   build lands: keeping them apart is what lets you boot both EBOOTs under
@@ -41,8 +42,15 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${1:-build-psp-docker}"
-IMAGE=pspdev/pspdev:latest
+BASE_IMAGE=pspdev/pspdev:latest
 TABLES_DIR=.native-build-tables
+
+# Packages the pspdev image does not ship. Keep this list identical to the
+# `apk add` in .github/workflows/build.yml's `psp` job -- CI installs them per
+# run, this script bakes them into a derived image instead (see PREPARED_IMAGE
+# below), and the two silently diverging would mean local builds stop matching
+# CI's.
+APK_PACKAGES="ruby ruby-rake build-base git gperf bison"
 
 cd "$REPO_ROOT"
 
@@ -97,13 +105,70 @@ fetch_table \
 # `docker run` prints a per-layer progress block, which -q reduces to the
 # resolved digest. Worth keeping visible -- pspdev/pspdev is a moving :latest
 # tag, so the digest is the only record of which toolchain a build used.
-echo "== $IMAGE"
-docker pull -q "$IMAGE"
+echo "== $BASE_IMAGE"
+docker pull -q "$BASE_IMAGE"
+
+# Bake the two slow per-run setup steps -- installing $APK_PACKAGES, and
+# building the patched psp-fixup-imports (which fetches pspsdk over the
+# network and compiles a host tool) -- into a derived image, and reuse it.
+# CI does both inline every run because its container is thrown away; locally
+# they are pure repeated cost, and the whole point of this script is a build
+# you can iterate on.
+#
+# The tag is a digest of everything the derived layers depend on: the base
+# image's own digest (pspdev/pspdev is a moving :latest tag), the package
+# list, and the fixup script plus the patch files it applies. Any of those
+# changing produces a different tag and therefore a rebuild, so a stale image
+# cannot silently survive an update -- which matters more here than the time
+# saved, since a stale psp-fixup-imports is exactly the failure this repo
+# already spent a PR on.
+PREPARED_TAG="$(
+  {
+    docker image inspect --format '{{index .Id}}' "$BASE_IMAGE"
+    echo "$APK_PACKAGES"
+    cat "$REPO_ROOT/scripts/build_psp_fixup_imports.bash" \
+        "$REPO_ROOT/patches/psp-fixup-imports-jal-relocation-aware.patch" \
+        "$REPO_ROOT/patches/psp-fixup-imports-config.h"
+  } | sha256sum | cut -c1-16
+)"
+PREPARED_IMAGE="rpg2k-pspdev:$PREPARED_TAG"
+
+if [ "${REBUILD_IMAGE:-0}" = 1 ]; then
+  docker image rm -f "$PREPARED_IMAGE" >/dev/null 2>&1 || true
+fi
+
+if docker image inspect "$PREPARED_IMAGE" >/dev/null 2>&1; then
+  echo "== reusing $PREPARED_IMAGE"
+else
+  echo "== preparing $PREPARED_IMAGE (one-off; reused by later runs)"
+  # A minimal build context rather than the repo: $REPO_ROOT carries the
+  # submodules, and handing docker a multi-gigabyte context to copy three
+  # files out of would cost more than the setup this is avoiding. The script
+  # resolves its own repo root from its location, so the layout below is what
+  # puts patches/ where it expects to find it.
+  CTX="$(mktemp -d)"
+  trap 'rm -rf "$CTX"' EXIT
+  mkdir -p "$CTX/scripts" "$CTX/patches"
+  cp "$REPO_ROOT/scripts/build_psp_fixup_imports.bash" "$CTX/scripts/"
+  cp "$REPO_ROOT/patches/psp-fixup-imports-jal-relocation-aware.patch" \
+     "$REPO_ROOT/patches/psp-fixup-imports-config.h" "$CTX/patches/"
+  cat > "$CTX/Dockerfile" <<DOCKERFILE
+FROM $BASE_IMAGE
+RUN apk add --no-cache $APK_PACKAGES
+COPY scripts/ /ctx/scripts/
+COPY patches/ /ctx/patches/
+RUN bash /ctx/scripts/build_psp_fixup_imports.bash && rm -rf /ctx
+DOCKERFILE
+  docker build -q -t "$PREPARED_IMAGE" "$CTX" >/dev/null
+  rm -rf "$CTX"
+  trap - EXIT
+fi
 
 # The container runs as root, so everything it writes into the bind mount --
 # BUILD_DIR, and the generated lex.def / y.tab.c and applied patches inside
 # 3rd/mruby -- lands root-owned in the working tree. Hand them back at the end
-# rather than running as the host user throughout, which would break `apk add`.
+# rather than running as the host user throughout, which would break `apk add`
+# when the image is being prepared.
 echo "== building $BUILD_DIR"
 docker run --rm \
   -v "$REPO_ROOT:/src" -w /src \
@@ -111,9 +176,7 @@ docker run --rm \
   -e "jis0208_table=/src/$TABLES_DIR/JIS0208.TXT" \
   -e "BUILD_DIR=$BUILD_DIR" \
   -e "HOST_UID=$(id -u)" -e "HOST_GID=$(id -g)" \
-  "$IMAGE" sh -euc '
-    apk add --no-cache ruby ruby-rake build-base git gperf bison
-    bash scripts/build_psp_fixup_imports.bash
+  "$PREPARED_IMAGE" sh -euc '
     psp-cmake -S app/psp -B "$BUILD_DIR"
     cmake --build "$BUILD_DIR" -j"$(nproc)"
     chown -R "$HOST_UID:$HOST_GID" "$BUILD_DIR" 3rd/mruby
