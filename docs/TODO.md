@@ -257,6 +257,43 @@ The work below is roughly ordered by the critical path to a walkable game
     position and remaining frames, and keeps advancing on a further
     `#update`; a picture at rest still round-trips unchanged), confirmed to
     fail against the pre-fix code.
+    ✅ **Follow-up (2026-08-22): `to_lsd` now writes the camera scroll too
+    (chunk 111 fields 1/2, `scroll_x`/`scroll_y`) — every save this engine
+    exported for a genuine RPG_RT/EasyRPG to load rendered the map's
+    top-left corner instead of the hero-centred view, and the write was
+    skipped entirely (the whole chunk 111 was omitted) on the common case
+    of an untouched map with no live event/substitution/encounter/parallax
+    override.** This codebase's own `game.rb` doc comment on the write site
+    had claimed the omission was fine, "matching the 'view derives from the
+    hero' fallback ADR 0021 documents" — backwards: ADR 0021's own
+    "comparing an ordinary map" addendum, added 2026-08-04 from a genuine
+    RPG_RT capture, already recorded the opposite finding directly above
+    that comment's citation — RPG_RT restores the camera from the save
+    rather than deriving it from the hero, and an edited save with these
+    fields absent drew (0, 0), the map's top-left corner, regardless of
+    the hero's tile. That finding was acted on for `scripts/gen-rpg2k-save.rb`
+    (a test-harness helper that edits a save to move the party) at the
+    time, but never for this engine's own `#to_lsd`, the code path a real
+    player's Save actually runs. Fixed by computing the same 1/16-pixel
+    top-left `Game.camera_offset` already derives every frame in
+    `Scene::Map#camera_position` — `Game.camera_offset(hero_px + TILE/2,
+    SCREEN_W/H, self.map.width/height * TILE)` — from `State#x`/`#y` (tile
+    coordinates, matching the hero record's own chunk 104 fields) and the
+    now-attached `State#map`, and widening the chunk-111 write guard to
+    fire whenever a map is loaded (previously it fired only when some
+    *other* chunk-111 field was also live). This is a write-only fix:
+    `.from_lsd` still does not consume `scroll_x`/`scroll_y` and does not
+    need to — this engine's own renderer derives the camera live from the
+    hero every frame regardless, so an unmodelled reader is not a gap, only
+    real RPG_RT/EasyRPG needs the field populated on the way out. Covered
+    by a new `scripts/rpg2k_logic_check.rb` check (a 30x30-tile map, hero
+    at tile (10, 10) — far enough from every edge that the camera centres
+    rather than clamps, disambiguating "hero-centred" from both "always
+    (0, 0)" and an unclamped "hero pixel verbatim" — asserts the exact
+    expected `scroll_x`/`scroll_y`, and that chunk 111 is written at all
+    with no other override live; a State with no map loaded still omits
+    chunk 111 entirely, unaffected), confirmed to fail against the pre-fix
+    code.
   - ✅ **`Game::State#to_lsd` output is loadable by RPG_RT.** It round-tripped
     through our own parser (`scripts/lcf_save_roundtrip.rb`) but the genuine
     runtime left "Continue" dead, with no error anywhere. The assumed cause —
