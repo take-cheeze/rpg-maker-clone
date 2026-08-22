@@ -42,16 +42,24 @@
           build = pkgs.stdenv.mkDerivation {
             name = "rpg-maker-clone";
             srcs = [ ./. ];
+            # bison and gperf regenerate vendored mruby's own compiler
+            # (mrbgems/mruby-compiler/core/{parse.y,keywords} ->
+            # y.tab.c/lex.def) whenever a 3rd/mruby patch touches either
+            # source -- a no-op on an ordinary build, since the checked-in
+            # generated files are already newer, but load-bearing the moment
+            # one does (patches/mruby-defined-keyword.patch, the first to).
             nativeBuildInputs =
               with pkgs;
               [
                 autoconf
                 automake
+                bison
                 ccache
                 cmake
                 cmake-format
                 emscripten
                 git
+                gperf
                 lhasa
                 libXi
                 mold
