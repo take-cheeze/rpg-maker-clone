@@ -1593,8 +1593,17 @@ const char* kCanvasPreamble = R"MVJS(
       // Graphics._disableContextMenu walks document.body.getElementsByTagName('*').
       getElementsByTagName: function () { return []; },
       getElementsByClassName: function () { return []; },
+      // A real browser's document.body/documentElement report the viewport
+      // size here; some MV/MZ corescript builds compute their initial screen
+      // resolution from this rect rather than (or as well as) window.innerWidth
+      // /innerHeight -- an all-zero stand-in made that path land on a 0x0
+      // Graphics.width/height, which PIXI then silently fails to render into
+      // (Graphics.initialize returns false, "Failed to initialize graphics.").
+      // Match window.innerWidth/innerHeight, our fixed viewport, so both paths
+      // agree.
       getBoundingClientRect: function () {
-        return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+        var w = g.innerWidth, h = g.innerHeight;
+        return { left: 0, top: 0, right: w, bottom: h, width: w, height: h };
       },
       focus: function () {}, blur: function () {}, click: function () {},
     };

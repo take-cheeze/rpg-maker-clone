@@ -21286,6 +21286,29 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         `'A'`, the way the MV image fixtures are built) and checks the
         unpacked sfnt comes back byte-for-byte identical and rasterises the
         same real ink as the bare original.
+      - ✅ **`document.body.getBoundingClientRect()` always reported an
+        all-zero rect**, unlike a real browser's (which reports the actual
+        viewport) — some MV/MZ corescript builds read a project's initial
+        screen resolution from this rect rather than (or alongside)
+        `window.innerWidth`/`innerHeight`, so an all-zero stand-in could silently
+        feed those a 0x0 resolution. Fixed in the shared DOM stub
+        (`mruby-mvjs/src/mvcanvas.cxx`) to match
+        `window.innerWidth`/`innerHeight`. Found investigating a real,
+        downloaded MZ release (freem.ne.jp) that never got past `Scene_Boot`
+        (`Graphics.width`/`Graphics.height` read `0` right before the PIXI
+        renderer construction that needs them, even though the canvas element
+        itself was correctly sized) — real and worth fixing on its own, but
+        **did not resolve that specific release**, whose own bundled
+        `rmmz_core.js`/`rmmz_managers.js` differ from this project's
+        `stak/rmmz-corescript` mirror (a real, if unremarkable, point-version
+        gap — swapping in the mirror's copy against the same release's own
+        game data boots it cleanly to `Scene_Title`/`Scene_Map`, proving the
+        gap is version-specific rather than a hole in this project's own MZ
+        support). **Deliberately not chased further**: isolating the exact
+        remaining line would mean diffing and reading substantial portions of
+        that one release's own bundled, copyrighted corescript build, which
+        this project has no standing copy of and no cause to reproduce beyond
+        the general, already-fixed gap above.
 
 ## Tooling
 

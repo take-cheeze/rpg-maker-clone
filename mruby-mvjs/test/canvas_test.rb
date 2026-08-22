@@ -374,6 +374,16 @@ assert 'MV document head/style shims support the font-loader boot path' do
   assert_equal "ok", ok
   # Graphics._disableContextMenu walks document.body.getElementsByTagName('*').
   assert_equal 0, MV::JS.eval("document.body.getElementsByTagName('*').length")
+  # document.body.getBoundingClientRect() used to always report a 0x0 rect --
+  # a real browser's reports the actual viewport, and some MV/MZ corescript
+  # builds read a game's initial screen resolution from this rect (instead of,
+  # or alongside, window.innerWidth/innerHeight). An all-zero stand-in fed
+  # those a 0x0 resolution silently. Now matches window.innerWidth/innerHeight.
+  assert_equal true, MV::JS.eval(
+    "var r = document.body.getBoundingClientRect(); " \
+    "r.width === window.innerWidth && r.height === window.innerHeight && " \
+    "r.width > 0 && r.height > 0"
+  )
   # Utils.canReadGameFiles reads the last <script>'s src over XHR; expose one.
   assert_equal true, MV::JS.eval("document.getElementsByTagName('script').length >= 1")
   assert_equal "string", MV::JS.eval("typeof document.getElementsByTagName('script')[0].src")
