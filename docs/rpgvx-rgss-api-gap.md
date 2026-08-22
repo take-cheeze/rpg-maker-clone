@@ -492,23 +492,52 @@ memory consumer 256 MB did not cover: the game aborted with
 it. Desktop-only, same as before (`include/lv_conf.h`; the PSP and Wio
 builds keep their own separately-tuned pools).
 
-**Still open, and deeper than `module_function`: mruby's VM has no `$!`
-("currently handled exception") at all.** `rescue => e` binds the exception
-to the clause's own local variable, but the special global CRuby code
-routinely reads instead — `$!`, what `Exception#message`/`#backtrace`
-resolve through implicitly when a method's default argument or a nested
-`raise` (no arguments — CRuby re-raises `$!`) needs "whatever is currently
-being rescued" without it being threaded through as an explicit parameter —
-is simply never written anywhere accessible from Ruby. Traced to the VM
-opcode itself: `OP_EXCEPT` in `3rd/mruby/src/vm.c` copies the caught
-exception into a bytecode *register* (a local stack slot) and immediately
-clears `mrb->exc` to `NULL`, with no call to `mrb_gv_set` or any other
-globally-visible store. Confirmed with an isolated reproduction — even a bare
-`rescue => e; $! ...` inside the *same* method reads `nil`, so this is not
-specific to crossing a call boundary. It is why the same error-log utility's
-`save(filename = nil, exception = $!)` — called as `TKG::ErrorLog.save()`
-from directly inside `rescue; TKG::ErrorLog.save(); raise; end` — receives
-`exception = nil` and crashes on `exception.message`.
+**Fixed: mruby's VM had no `$!` ("currently handled exception") at all.**
+`rescue => e` binds the exception to the clause's own local variable, but
+the special global CRuby code routinely reads instead — `$!`, what
+`Exception#message`/`#backtrace` resolve through implicitly when a method's
+default argument or a nested `raise` (no arguments — CRuby re-raises `$!`)
+needs "whatever is currently being rescued" without it being threaded
+through as an explicit parameter — was simply never written anywhere
+accessible from Ruby. Traced to the VM opcode itself: `OP_EXCEPT` in
+`3rd/mruby/src/vm.c` copied the caught exception into a bytecode *register*
+(a local stack slot) and immediately cleared `mrb->exc` to `NULL`, with no
+call to `mrb_gv_set` or any other globally-visible store. Confirmed with an
+isolated reproduction — even a bare `rescue => e; $! ...` inside the *same*
+method read `nil`, so this was not specific to crossing a call boundary. It
+is why the same error-log utility's `save(filename = nil, exception = $!)`
+— called as `TKG::ErrorLog.save()` from directly inside `rescue;
+TKG::ErrorLog.save(); raise; end` — received `exception = nil` and crashed
+on `exception.message`.
+
+Fixed by `patches/mruby-dollar-bang-scoped.patch` (that patch's own preamble
+has the full trail, including two earlier approaches that were tried and
+rejected: codegen-level save/restore around rescue bodies, which regressed
+the compiler's register allocation, and a sticky global that leaked into
+unrelated code and broke three core mrbtest cases). The fix that stuck adds
+`errinfo`/`errinfo_ci_depth` to `mrb_state`: `OP_EXCEPT` sets `errinfo` to
+the caught exception and records the call-frame depth that owns it — by the
+time `OP_EXCEPT` runs, mruby's own exception search has already popped
+every frame between the raise site and the frame whose `rescue` matches, so
+that depth is simply the current one, no deferred capture needed — and
+`cipop` (mruby's existing frame-pop) clears `errinfo` once execution returns
+to a shallower depth, so it is visible for the whole rescue body (including
+calls the body itself makes) but never leaks past the owning frame's
+return. `mrb_gv_get`/`mrb_gv_set` special-case the `"$!"` symbol to read and
+write `errinfo` directly, so both a Ruby-level `$!` and a bare `raise`
+(kernel.c) see the same value uniformly. Companion fix in the same patch: a
+bare `raise` — CRuby's documented way to re-raise `$!` — always raised a
+fresh, empty `RuntimeError` instead, since `mrb_f_raise` had nothing to fall
+back to; with `errinfo` now tracked, its zero-argument case re-raises it
+directly, no wrapping of every `raise` call needed (the earlier, rejected
+idea for fixing this half on its own). One known gap versus real Ruby: this
+scopes `$!` to the whole call frame, not to each individual `rescue`
+clause, so two `rescue` clauses in the same frame with no intervening call
+share one slot — not believed to matter for any known real game script.
+Verified against a real repro of this exact pattern (`$!` readable and
+correct inside the rescue and from a callee it invokes, `nil` again once the
+frame returns; a bare `raise` re-raising the original class and message)
+and the full mruby test suite (zero regressions from a core VM change).
 
 That `SceneManager.run` rescue wraps the game's *entire* run loop, so this is
 not a one-time cosmetic loss: every fatal exception this game hits, of any
@@ -736,22 +765,20 @@ regressions from a compiler-level change), and the real, unmodified
 516-line script — `Object.const_defined?(:MapFog)` now returns `true`
 after it runs.
 
-mruby's bare `raise` (no arguments) has the same
-root cause from the other side: real Ruby re-raises `$!`, but mruby's
-`mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
-fresh, empty `RuntimeError` instead of re-raising what was actually caught.
-Both are fixable *only* by hooking `Kernel#raise` itself (there is no other
-point where the about-to-be-raised object is observable in time to stash it)
-— wrapping every `raise` call in the whole engine in an extra begin/rescue to
-capture and stash the exception before it propagates, on every platform this
-build targets, PSP included, where call-stack depth is already the tightest
-constraint. That blast radius — every exception, in every maker's runtime,
-sharing this one build — is a different order of risk than a script that
-opts into the bare `module_function` idiom or calls `Time#strftime`, for a
-fix whose payoff is mostly log-message fidelity in one utility script's
-crash handler. Left alone rather than patched; a project that genuinely needs
-`$!` semantics would want this revisited with its own scoped, targeted
-design rather than a global `raise` wrapper.
+mruby's bare `raise` (no arguments) had the same root cause from the other
+side: real Ruby re-raises `$!`, but mruby's `mrb_f_raise` had no `$!` to
+fall back to, so a bare `raise` always raised a fresh, empty `RuntimeError`
+instead of re-raising what was actually caught. An earlier pass at this
+considered both fixable *only* by hooking `Kernel#raise` itself — wrapping
+every `raise` call in the whole engine in an extra begin/rescue to capture
+and stash the exception before it propagates, on every platform this build
+targets, PSP included, where call-stack depth is already the tightest
+constraint — and left both alone rather than take on that blast radius for
+one utility script's log fidelity. `$!` itself turned out to have a much
+smaller, VM-internal fix (see above); once that fix's `mrb->errinfo` field
+existed, the wrapping was never needed for `raise` either — `mrb_f_raise`'s
+zero-argument case now just re-raises `mrb->errinfo` directly when one is
+in scope. Both are fixed by `patches/mruby-dollar-bang-scoped.patch`.
 
 ## What this means for turning the host on
 
@@ -765,14 +792,15 @@ tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
 its windows, and — packed or loose — finds its graphics and its music, and
 reopens its own stock `RPG::` script sections without a superclass mismatch.
 Tilemap item 1's remaining polish (the flat "above characters" layer) is the
-only item left in the six sections above; item 7's `$!`/bare-`raise` gap
-stands, and per a real release it is the reason each fix above only reveals
-the *next* wall one at a time rather than the game running to completion in
-one pass. Ten real bugs have been found and fixed this way so far
+only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
+now fixed too (`patches/mruby-dollar-bang-scoped.patch`, above), so the same
+real release's own crash-reporter add-on now sees the actual exception
+instead of masking it behind an unrelated `NoMethodError`, and re-raises it
+correctly. Eleven real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
-`Sprite#width`/`#height`, and the `::Const = value` compiler bug above)
-without needing `$!` itself fixed — the temporary VM probe finds the real
-exception directly regardless. Where the next wall stands past the
-`マップフォグ` fix is not yet traced.
+`Sprite#width`/`#height`, the `::Const = value` compiler bug, and `$!`/bare-
+`raise` itself) — the first ten via the temporary VM probe, finding the real
+exception directly regardless of `$!` being masked at the time. Where the
+next wall stands past the `マップフォグ` fix is not yet traced.

@@ -20831,17 +20831,9 @@ screen (544×416). Full rationale:
     `false` even after execution reaches unrelated code far past it), so
     a later event's own "Script" command that expects `MapFog` fails.
     Narrowed this far across two rounds of isolated reproduction without
-    fully explaining it; see the item 7 write-up for the full trace.
-    Fixing `$!` itself is
-    fixable only by wrapping `Kernel#raise` itself (the sole point where the
-    about-to-be-raised object is observable), which would add overhead and
-    stack depth to *every* exception in the shared build across every maker
-    and every platform (PSP's stack headroom included) for what is mostly
-    log-message fidelity in one utility script — see the item 7 write-up for
-    the full reasoning on why that trade isn't taken here; the temporary VM
-    probe keeps finding the real gaps without it. That tenth masked
-    exception is now fixed: the real bug was in the vendored mruby compiler
-    itself, not the class variable — `gen_colon3_assign`
+    fully explaining it; see the item 7 write-up for the full trace. That
+    tenth masked exception is now fixed: the real bug was in the vendored
+    mruby compiler itself, not the class variable — `gen_colon3_assign`
     (`3rd/mruby/mrbgems/mruby-compiler/core/codegen.c`), the codegen for an
     explicit top-level `::Const = value`, emitted `OP_SETCONST` instead of
     `OP_SETMCNST`, so the pushed `Object` base was silently ignored and the
@@ -20856,6 +20848,21 @@ screen (544×416). Full rationale:
     `patches/mruby-colon3-assign-setmcnst.patch`, applied at build time by
     `scripts/apply_mruby_patch.bash`; see the item 7 write-up for the full
     trace.
+  - ✅ **`$!` and bare `raise` re-raise, previously left unfixed** — item
+    7's own long-standing gap: mruby's VM never wrote `$!` anywhere
+    Ruby-visible, so the crash-reporter add-on that gap kept masking
+    exceptions behind (`rescue; TKG::ErrorLog.save(); raise; end`, reading
+    `exception = $!` as `nil`) always crashed with an unrelated
+    `NoMethodError` instead of logging the real one. An earlier pass ruled
+    out the only fix then apparent — wrapping every `raise` call in the
+    shared build to stash the about-to-be-raised object, too broad a change
+    for one utility script's log fidelity. Fixed instead by scoping `$!` to
+    the call frame containing its `rescue` clause via mruby's own existing
+    frame-pop (`cipop`), which needed no such wrapping and, as a direct
+    consequence, made the bare-`raise` fix trivial too (`mrb_f_raise`'s
+    zero-argument case simply re-raises the same tracked value). Ships as
+    `patches/mruby-dollar-bang-scoped.patch`; see the item 7 write-up for
+    the two earlier, rejected approaches and the full mechanism.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).

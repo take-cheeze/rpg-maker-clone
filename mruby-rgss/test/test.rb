@@ -5,6 +5,60 @@
 GAME_DIR = "" unless Object.const_defined?(:GAME_DIR)
 RTP_DIR = "" unless Object.const_defined?(:RTP_DIR)
 
+# Regression test for the vendored mruby VM bug fixed by
+# patches/mruby-dollar-bang-scoped.patch: `$!` (the exception a currently
+# executing rescue clause is handling) was never implemented, so it always
+# read `nil` inside a rescue clause -- silently breaking any script (a real
+# VX Ace game's crash-reporter add-on, docs/rpgvx-rgss-api-gap.md item 7,
+# among them) that inspects `$!` rather than the block-local variable bound
+# by `rescue => e`. Scoped to the call frame containing the rescue clause,
+# using mruby's existing frame-pop (cipop) as the point where it goes out of
+# scope again -- so it is readable for the whole rescue body, including from
+# a helper the rescue body calls, but does not leak into unrelated code that
+# runs after that frame has returned.
+assert "$! is set for the duration of the frame containing a rescue clause" do
+  def rgss_test_dollar_bang_message
+    # Read from a call the rescue body makes, not just the rescue body
+    # itself, to prove $! is visible to callees within the same frame.
+    $!.message
+  end
+
+  def rgss_test_dollar_bang_rescue
+    raise ArgumentError, "boom"
+  rescue => e
+    assert_equal e, $!
+    assert_equal "boom", rgss_test_dollar_bang_message
+  end
+
+  assert_nil $!
+  rgss_test_dollar_bang_rescue
+  assert_nil $!
+end
+
+# Companion regression test, same patch: a bare `raise` (no arguments) is
+# meant to re-raise whatever `$!` currently holds -- CRuby's own documented
+# behavior, used by a real VX Ace game's crash-reporter add-on to re-raise
+# after logging (docs/rpgvx-rgss-api-gap.md item 7's `rescue;
+# TKG::ErrorLog.save(); raise; end`). Without a working `$!`, mruby's
+# `mrb_f_raise` (src/kernel.c) had nothing to fall back to, so a bare
+# `raise` always raised a fresh, empty RuntimeError instead -- silently
+# discarding the original exception's class and message.
+assert "a bare raise re-raises the exception $! currently holds" do
+  def rgss_test_bare_raise_rescue
+    raise ArgumentError, "original"
+  rescue
+    raise # no arguments -- re-raise $!, not a fresh RuntimeError
+  end
+
+  begin
+    rgss_test_bare_raise_rescue
+    assert_true false # must not reach here
+  rescue => e
+    assert_equal ArgumentError, e.class
+    assert_equal "original", e.message
+  end
+end
+
 # Regression test for the vendored mruby compiler bug fixed by
 # patches/mruby-colon3-assign-setmcnst.patch: `::Const = value`, written from
 # inside a nested module, used to silently land on the enclosing module
