@@ -14,8 +14,19 @@ actor's max HP/SP (and the four battle stats) from the database at the actor's
 *initial* level and never scaled them, so a resumed level-8 hero kept level-1
 maxima and `from_lsd` restored current HP/MP against the wrong ceiling. The
 database actually stores a full growth curve -- chunk 31 of each actor is six
-shorts (maxHP, maxSP, atk, def, int, agi) *per level* -- but the schema's `status`
-accessor, via its `order:` mapping, only ever surfaced the first (level-1) row.
+shorts (maxHP, maxSP, atk, def, int, agi) ~~*per level*~~ -- but the schema's
+`status` accessor, via its `order:` mapping, only ever surfaced the first
+(level-1) row.
+
+**Correction (2026-08-22):** the "six shorts per level" (row-major) layout
+above was never verified against real RPG_RT and was wrong. The raw shorts
+are actually stat-major -- six `max_level`-sized blocks, one per stat, not
+`max_level` rows of six -- confirmed against a genuine `RPG_RT.exe`'s
+displayed stats and fixed in `Game::Actor#base_stats`; see the dated
+Follow-up on the Nepheshel-Equip-screen stat-mismatch entry in
+`docs/TODO.md` for the full verification. This ADR's own decision below
+(scaling stats by level via `int16_values(31)`) was and remains correct;
+only the byte layout assumed while indexing into it was wrong.
 
 ## Decision
 
