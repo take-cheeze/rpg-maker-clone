@@ -111,6 +111,15 @@ bool smoke_test(const char* path,
   Effekseer::Handle handle = manager->Play(effect, 0.0f, 0.0f, 0.0f);
   for (int i = 0; i < warmup_frames; ++i)
     manager->Update(1.0f);
+  // Manager::Update's autoFlip (on by default, used here) syncs the
+  // render-visible DrawSet snapshot at the *start* of Update, from state as
+  // of the previous Update call -- so without this, DrawHandle below would
+  // draw the state as of warmup_frames-1, one full simulation step stale.
+  // A real per-frame game loop never notices (each frame's draw is always
+  // one step behind that frame's own Update, consistently), but a one-shot
+  // simulate-then-draw call like this one needs an explicit extra Flip() to
+  // see the just-completed frame's state.
+  manager->Flip();
 
   glBindFramebuffer(GL_FRAMEBUFFER, mvgl::default_framebuffer(ctx));
   glViewport(0, 0, width, height);

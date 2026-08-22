@@ -1000,24 +1000,36 @@ assert 'MV::Effekseer.available? tracks the same GLES3-capable backend as MV::GL
   end
 end
 
-assert 'MV::Effekseer.smoke_test against a real, downloaded MZ game effect' do
+assert 'MV::Effekseer.smoke_test renders real, visible pixels from a downloaded MZ effect' do
   # Not a synthetic fixture: 91 real, unmodified .efkefc files ship with a
   # real downloaded MZ release under data/labyria (gitignored -- present only
   # on a machine that has actually fetched it, absent in a bare CI checkout),
   # exercising the vendored Effekseer C++ SDK (3rd/effekseer) against content
-  # this project did not author. See mvefk.hxx for exactly what a non-nil
-  # result here proves and does not: it confirms the file parses, the effect
-  # plays and simulates (a real, deterministic instance count), and the full
-  # render pipeline runs with no GL error -- not yet that anything visible
-  # renders, which is open work (see docs/TODO.md's Effekseer entry).
+  # this project did not author. A non-zero result here is the strongest
+  # signal mvefk.hxx describes: the file parses, the effect plays and
+  # simulates, and the full render pipeline actually puts pixels on screen
+  # (not just "ran with no GL error") -- confirming the native GL pipeline
+  # renders real particle content end to end.
+  #
+  # Flash.efkefc specifically (not the smaller HitPhysical.efkefc): tracing
+  # through why an earlier pass at this test saw zero lit pixels for
+  # HitPhysical found that ALL of that effect's live particles live on a
+  # NoneType (no assigned renderer) node -- Effekseer's own
+  # InstanceContainer::Draw skips NoneType/Root nodes unconditionally,
+  # regardless of RenderingPriority, so that file has no visual output by
+  # design, not a rendering bug. Flash.efkefc's Sprite/Ring nodes hold real
+  # instances and reliably produce both draw calls and lit pixels, so it is
+  # a better fixture for a test whose job is proving the pipeline renders.
+  #
   # Relative to this test binary's own working directory (3rd/mruby, where
   # the mruby_test ctest target runs rake from -- see CMakeLists.txt's
   # WORKING_DIRECTORY on that target).
-  path = "../../data/labyria/Labyria/effects/HitPhysical.efkefc"
+  path = "../../data/labyria/Labyria/effects/Flash.efkefc"
   skip "no such fixture (data/labyria not downloaded)" unless File.exist?(path)
   skip "Effekseer backend unavailable" unless MV::Effekseer.available?
 
   result = MV::Effekseer.smoke_test(path)
   assert_true !result.nil?, "smoke_test failed to load/simulate a real effect"
-  assert_true result.is_a?(Integer) && result >= 0
+  assert_true result.is_a?(Integer) && result > 0,
+              "expected visible pixels from a real effect, got #{result.inspect}"
 end

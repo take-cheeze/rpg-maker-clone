@@ -513,7 +513,7 @@ JavaScript loads and interprets the JSON.
       7x spread between first and last). Equal-area cells make the measurement
       the same 36.2% of the centre box every run.
     - **M6.2 addendum 2 — native Effekseer: vendored, built, GL pipeline
-      proven; visible rendering still open.** The blockers the previous
+      renders real, visible particles.** The blockers the previous
       addendum listed as reasons to stay unattempted are resolved: a real
       `.efkefc` now exists to test against (91 of them ship unmodified with a
       real downloaded MZ release under `data/labyria`, gitignored, present
@@ -578,37 +578,49 @@ JavaScript loads and interprets the JSON.
         the top of that call) — reading it beforehand silently returns a
         stale or unset value with no error from either library.
 
-      **Still open, deliberately not chased further this round**: even with
-      both pitfalls above fixed, `renderer->GetDrawCallCount()` reads `0`
-      after the draw — some further condition still keeps every one of the
-      40 live particle instances from reaching an actual GPU draw call, with
-      no GL error and no exception to point at it. Reading
-      `ManagerImplemented::CanDraw` (`Effekseer.Manager.cpp`) by hand did not
-      turn up a further, obviously-wrong input on this project's side: it
-      checks `drawSet.IsShown` (explicitly initialised `true` where a
-      `DrawSet` is constructed), a `CameraCullingMask & GetLayerBits()`
-      overlap (both default to `1` — a fresh effect's `layer_` defaults to
-      `0`, and `DrawParameter()`'s own constructor sets
-      `CameraCullingMask = 1`, matching), and a sphere-culling check that
-      only runs at all when the effect's own authored `Culling.Shape` is
-      `Sphere`. None of those three explains an unconditional `0`. This is
-      exactly the risk the previous addendum flagged as the hard part —
-      reconciling a native renderer's own state and conventions with no
-      browser reference to diff against — now narrowed from "nothing is
-      proven" to "one specific, further culling or submission gate, not yet
-      isolated." The natural next step is adding temporary instrumentation
-      *inside* `CanDraw`/the sprite-submission path (a local, uncommitted
-      patch to the vendored tree, the same technique this project already
-      uses for diagnosing real games' own script bugs) rather than guessing
-      further from the outside.
+      **Resolved in a follow-up pass**: `renderer->GetDrawCallCount()`
+      reading `0` for `HitPhysical.efkefc` turned out not to be a pipeline
+      bug at all. Temporary instrumentation *inside* `CanDraw`/`DrawHandle`/
+      `InstanceContainer::Draw` (a local, uncommitted patch to the vendored
+      tree, per the previous addendum's own suggested next step) walked the
+      actual instance-container tree at draw time and found the real cause:
+      every one of `HitPhysical.efkefc`'s ~40 live particles lives directly
+      on a node whose `EffectNodeType` is `NoneType` (no renderer type
+      assigned), and `InstanceContainer::Draw` (`Effekseer.InstanceContainer.cpp`)
+      unconditionally skips its whole render body for `Root`/`NoneType`
+      nodes — `if (effectNode_->GetType() != Root && ... != NoneType)` —
+      regardless of `RenderingPriority` (which this node has set, `0`, so it
+      is still walked; it is just never drawn once reached). That one file's
+      only "particles" are a behaviour-only layer with no assigned visual
+      output, so zero draw calls is *correct* for it, not a symptom of
+      anything wrong in this project's integration.
+
+      Proof the pipeline itself has no gap: re-running the same smoke test
+      against `Flash.efkefc` (another of the 91 real files, whose particles
+      sit on real `Sprite`/`Ring` nodes) produced `GetDrawCallCount() == 2`
+      and — the test that actually matters — 535 of 4096 pixels (64×64)
+      differing from the clear colour by more than the tolerance, i.e. real,
+      visible rendering. `mruby-mvjs/test/mz_test.rb`'s Effekseer test now
+      asserts on `Flash.efkefc` and requires a *positive* lit-pixel count
+      (not merely non-nil), so it fails loudly if this ever regresses.
+
+      One additional real fix landed alongside this: `mvefk::smoke_test`
+      now calls `manager->Flip()` explicitly after its warmup loop, before
+      building `DrawParameter`. `Manager::Update`'s `autoFlip` (the default,
+      used here) syncs the render-visible `DrawSet` snapshot at the *start*
+      of `Update`, from state as of the *previous* `Update` call — so
+      without an explicit extra `Flip()`, a one-shot simulate-then-draw call
+      like this one would draw state that is a full simulation step stale.
+      A real per-frame game loop never notices this (every frame's draw is
+      consistently one step behind that frame's own `Update`), but it
+      matters for a synchronous smoke test that wants to see the
+      just-completed frame.
 
       **Explicitly not started**: wiring `MZ::EFFEKSEER_SHIM_JS`'s no-op
       methods to real `mvefk`-backed natives (the JS-bridge milestone this
       addendum was staged ahead of, per the previous addendum's own
-      recommendation) — doing that before the draw-call gap above is
-      understood would make a JS-bridge bug and a native-rendering bug
-      indistinguishable from each other, the exact ordering risk landing
-      this in isolation first was meant to avoid.
+      recommendation) — now unblocked, since the native GL pipeline is
+      confirmed to render real, visible content end to end.
 
       It also shows why M6.3g's frame check is not redundant with the log: with
       the animation's sheet renamed away, `[MZ-ANIM]` still reports
