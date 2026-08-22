@@ -18656,6 +18656,28 @@ check 'Scene::SaveLoad: State#preview_faces, when set, is drawn instead of the l
      'snapshot overrides the live actor\'s own faceset entirely'
 end
 
+check 'Scene::SaveLoad: State#preview_level/#preview_hp, when set, are drawn instead of ' \
+      'the live leader\'s own level/hp' do
+  # Confirmed against a genuine RPG_RT.exe under wine (see State#preview_level's
+  # own citation): the real file-select screen draws Lv/HP from the save's
+  # title-chunk snapshot, not from whatever the leader's live actor data says
+  # once loaded. Deliberately setting the two to disagree proves the snapshot
+  # wins, the same shape the sibling preview_faces check above already proves
+  # for the face row.
+  st = menu_state
+  st.party.leader = st.party.actors.first # live: Lv5, 80 HP (MenuStubActor)
+  st.preview_level = 42
+  st.preview_hp = 777
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
+  ok texts.include?('42'), 'the level drawn is the snapshot\'s 42, not the live actor\'s 5'
+  ok texts.include?('777'), 'the HP drawn is the snapshot\'s 777, not the live actor\'s 80'
+  ok !texts.any? { |t| t == ' 5' }, 'the live actor\'s own level does not leak through'
+  ok !texts.any? { |t| t == ' 80' }, 'the live actor\'s own hp does not leak through'
+end
+
 check 'Scene::SaveLoad: a member with no FaceSet draws no thumbnail; only the first four ' \
       'members ever draw one' do
   st = wrap_menu_state

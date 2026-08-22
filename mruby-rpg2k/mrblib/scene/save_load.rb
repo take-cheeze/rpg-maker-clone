@@ -369,8 +369,15 @@ class RPG2k
         if state
           leader = state.party.leader
           name = leader ? leader.name.to_s : ''
-          level = leader ? leader.level : 0
-          hp = leader ? leader.hp : 0
+          # The title-chunk snapshot (`State#preview_level`/`#preview_hp`,
+          # see its own citation) when the save carries one, falling back to
+          # the live leader's own level/hp only for a state that never had a
+          # snapshot to read (the Marshal round-trip path) -- the same
+          # snapshot-first, live-fallback shape `#draw_slot_faces` already
+          # uses for the face row below.
+          has_preview = state.respond_to?(:preview_level) && !state.preview_level.nil?
+          level = has_preview ? state.preview_level : (leader ? leader.level : 0)
+          hp = has_preview ? state.preview_hp : (leader ? leader.hp : 0)
           draw_system_text c, 0, LINE_H, inner_w, LINE_H, name, @skin
           rpg2003 = state.party.respond_to?(:rpg2003?) && state.party.rpg2003?
           draw_level_hp(c, LINE_H * 2, level, hp, rpg2003)

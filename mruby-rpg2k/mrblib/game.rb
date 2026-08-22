@@ -14049,6 +14049,22 @@ module Game
     # per-actor chunk, which has no FaceSet fields at all) and so needs no
     # separate snapshot.
     attr_accessor :preview_faces
+    # The file-select screen's own level/HP snapshot (title chunk 100, fields
+    # 12/13, `hero_level`/`hero_hp`) -- nil for a state that never carried one
+    # (a Marshal round-trip, or a state built directly rather than loaded from
+    # a genuine `.lsd`). Confirmed against a genuine RPG_RT.exe under wine
+    # exactly like `#preview_faces` above: a synthetic save whose title chunk
+    # was edited to a level/HP the party leader's own live actor data (chunk
+    # 108) never carried (7/321 against a live 50/600) showed precisely the
+    # edited 7/321 on the real file-select screen, proving `Window_SaveFile`
+    # draws this pair from the title chunk directly, never from any Actor
+    # object. `#to_lsd` already writes this snapshot from the leader's own
+    # level/hp at save time (see its own comment); only the read side was
+    # missing. `Scene::SaveLoad#draw_level_hp` reads this when present,
+    # falling back to the live leader's own level/hp only when it is nil --
+    # correct for the Marshal round-trip path, which is not lossy and so
+    # needs no separate snapshot.
+    attr_accessor :preview_level, :preview_hp
     # Teleport / Escape skill destinations registered by Set Teleport Target
     # (11810) and Set Escape Target (11830). `teleport_targets` is a hash keyed
     # by map id → `{ x:, y:, switch_id: }`; `escape_target` is nil or one such
@@ -15192,6 +15208,16 @@ module Game
           name && !name.empty? ? [name, index] : nil
         end
         state.preview_faces = faces if faces.any?
+        # The level/HP pair the file-select screen actually draws -- see
+        # State#preview_level/#preview_hp. Independently nil-checked (unlike
+        # the name promotion above, which already guarantees party.leader.name
+        # matches title.hero_name one way or another) because there is no
+        # equivalent stat-sync step for level/hp: the promoted leader's own
+        # chunk-108 entry happens to agree in every genuine save this codebase
+        # has seen, but RPG_RT itself never reads that entry for this screen
+        # at all, so this build should not either.
+        state.preview_level = title.hero_level unless title.hero_level.nil?
+        state.preview_hp = title.hero_hp unless title.hero_hp.nil?
       end
       # Chunk 102 is the screen tint transition; only #restore_tint's tint
       # sub-fields are modelled here (see #to_lsd's own comment on chunk 102

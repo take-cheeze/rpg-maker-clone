@@ -4231,6 +4231,37 @@ check 'to_lsd/from_lsd round-trips the file-select screen\'s face-thumbnail ' \
      "(got #{no_face_round.preview_faces.inspect})"
 end
 
+check 'to_lsd/from_lsd round-trips the file-select screen\'s level/HP snapshot ' \
+      '(State#preview_level/#preview_hp), independent of the loaded actor\'s own data' do
+  # Confirmed against a genuine RPG_RT.exe under wine: a synthetic save whose
+  # title chunk (100, fields 12/13) was edited to a level/HP (7/321) the
+  # party leader's own live actor data (chunk 108) never carried (50/600)
+  # showed exactly 7/321 on the real file-select screen -- Window_SaveFile
+  # draws this pair from the title chunk directly, never from any Actor
+  # object. #to_lsd already writes hero_level/hero_hp from the leader's own
+  # level/hp at save time; this proves #from_lsd reads them back into their
+  # own snapshot fields rather than leaving the screen to re-derive from
+  # whatever the loaded actor says.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 12, max_hp: 250, max_mp: 30,
+                                     atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.party.leader.hp = 111
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq 12, round.preview_level, 'the leader\'s level round-trips via the title chunk'
+  eq 111, round.preview_hp, 'the leader\'s (non-max) hp round-trips via the title chunk'
+
+  # The snapshot has to stay independent of the loaded actor once read back --
+  # mutating the live actor afterwards (as further gameplay in a resumed game
+  # would) must not retroactively change what the title chunk itself cached,
+  # or a subsequent file-select redraw of an *unrelated* slot sharing this
+  # State object would show the wrong number.
+  round.party.leader.hp = 1
+  eq 111, round.preview_hp,
+     'the preview snapshot does not alias the live actor\'s own hp'
+end
+
 check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
   actor_curve = []
   3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
