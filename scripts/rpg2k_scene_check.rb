@@ -994,6 +994,40 @@ check 'RPG2k::Window blinks its selection cursor between the windowskin\'s ' \
   eq 64, bmp.blt_calls.first[3].x, 'wraps back to the steady cursor block (64)'
 end
 
+check 'RPG2k::Window pause arrow blinks on a 20-frame-on/20-frame-off cycle, ' \
+      'starting visible, matching RPG_RT' do
+  # ARROW_BLINK_FRAMES (main.rb) was ported from EasyRPG Player's
+  # src/window.cpp with no genuine-RPG_RT measurement behind it -- the
+  # comment on it said so outright. Independently re-verified under wine: a
+  # synthetic autostart Show Message event injected into a genuine Nepheshel
+  # map, resumed on real RPG_RT.exe from a genuine save, burst-captured at
+  # ~10 fps while the message sat paused. The pause arrow's on/off runs
+  # measured ~0.20s / ~0.24s (coarse, ~0.1s sampling grain) and a full
+  # on-to-on cycle averaged 0.654s over 13 cycles -- matching the 40-frame
+  # (20 on + 20 off) cycle at RPG_RT's confirmed 60fps (ADR 0021) far closer
+  # than any other plausible frame count, and starting in the "on" phase the
+  # instant the window paused, exactly as coded here. No fix needed; this
+  # pins the now-confirmed-correct behaviour, which had no regression test.
+  win = RPG2k::Window.new(0, 0, 64, 64)
+  win.windowskin = Bitmap.new('System/Skin1', true)
+  arrow = win.instance_variable_get(:@arrow_sprite)
+
+  win.pause = true
+  ok arrow.visible, 'the arrow starts visible the instant pause begins'
+
+  19.times { win.update } # frames 1..19: still the "on" half
+  ok arrow.visible, 'still on through frame 19'
+
+  win.update # frame 20: the last "on" frame (arrow_anim now 20)
+  ok !arrow.visible, 'off from frame 20 (arrow_anim == ARROW_BLINK_FRAMES) onward'
+
+  19.times { win.update } # frames 21..39: still the "off" half
+  ok !arrow.visible, 'still off through frame 39'
+
+  win.update # frame 40 wraps arrow_anim back to 0: on again
+  ok arrow.visible, 'back on at the 40-frame wrap'
+end
+
 check "RPG2k::Window keeps its selection cursor visible, frozen, once " \
       'inactive -- it does not hide it' do
   # Confirmed against RPG_RT's own live source: `Window::Draw`'s cursor

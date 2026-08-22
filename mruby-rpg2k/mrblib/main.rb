@@ -41,10 +41,18 @@ class RPG2k
 
     # Geometry of the blinking "waiting for input" arrow: an 8px-tall strip
     # inside the frame block (32,0)-(64,32) of the System windowskin, blitted
-    # centred at the bottom of the window. Unlike Game::WindowCursor, there is
-    # no real RPG_RT frame in this repo to measure this against, so the source
-    # rect and the 20-frames-on/20-frames-off blink are ported from EasyRPG
-    # Player's src/window.cpp.
+    # centred at the bottom of the window. The source rect and the
+    # 20-frames-on/20-frames-off blink were originally ported from EasyRPG
+    # Player's src/window.cpp with no genuine-RPG_RT measurement behind them.
+    # Independently re-verified since (2026-08-22): a synthetic autostart Show
+    # Message event injected into a genuine Nepheshel map, resumed on real
+    # RPG_RT.exe under wine from a genuine save, burst-captured while the
+    # message sat paused -- the arrow's on/off runs and a 13-cycle average
+    # full period of 0.654s land squarely on the 40-frame (20 on + 20 off)
+    # cycle this engine already coded, at RPG_RT's confirmed 60fps (ADR 0021),
+    # and it starts in the "on" phase the instant the window pauses, exactly
+    # as coded here. See scripts/rpg2k_scene_check.rb's "pause arrow blinks
+    # on a 20-frame-on/20-frame-off cycle" check.
     ARROW_SRC_X = 40
     ARROW_SRC_Y = 16
     ARROW_W = 16
