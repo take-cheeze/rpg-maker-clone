@@ -21774,6 +21774,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         `setProjectionMatrix` siblings; `Labyria` now boots clean through
         `Scene_Splash` → `Scene_Title` → `Scene_Map` and every headless
         probe (move/message/menu/save/audio/battle) reports.
+      - 🚧 **Native Effekseer: vendored, built, GL pipeline proven; visible
+        rendering still open.** `3rd/effekseer` (the real C++ SDK, MIT,
+        pinned to release tag `1807`) is now vendored and built against this
+        project's own GLES3 context, with three real upstream build gaps
+        found and fixed in this project's own CMake (a missing
+        `<EGL/egl.h>` include, two undeclared GL enums under pure GLES3, an
+        unneeded OpenAL dependency). `MV::Effekseer.smoke_test`
+        (`mruby-mvjs/src/mvefk.cxx`) creates a real context, loads a real,
+        unmodified `.efkefc` file (91 of them ship with a real downloaded MZ
+        release), and confirms genuine particle simulation (a live,
+        deterministic instance count) — but `renderer->GetDrawCallCount()`
+        still reads `0` after the draw, with no GL error anywhere, meaning
+        something still keeps every simulated particle from reaching an
+        actual GPU draw call. See docs/adr/0004's "M6.2 addendum 2" for the
+        full diagnostic trail (two other real integration bugs found and
+        fixed along the way) and what the natural next step looks like.
+        Deliberately does not touch `MZ::EFFEKSEER_SHIM_JS`'s JS bridge yet
+        — that is staged to come after this specific gap is understood, not
+        before.
 
 ## Tooling
 

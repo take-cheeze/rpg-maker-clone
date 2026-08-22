@@ -45,6 +45,7 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
   # libgles2-mesa-dev / libegl1-mesa-dev on apt and by the `libglvnd` (headers +
   # dispatch) buildInput in flake.nix. (mvgl used OSMesa until Mesa dropped that
   # frontend; EGL surfaceless is its supported replacement.)
+  have_egl = false
   if ENV["MRUBY_TARGET"] != "emscripten"
     have_egl =
       begin
@@ -54,5 +55,48 @@ MRuby::Gem::Specification.new('mruby-mvjs') do |spec|
         false
       end
     linker.libraries << "EGL" << "GLESv2" if have_egl
+  end
+
+  # Effekseer (github.com/effekseer/Effekseer, MIT, vendored at
+  # 3rd/effekseer, pinned to release tag 1807): the real particle engine RPG
+  # Maker MZ ships as `js/libs/effekseer.min.js`, built here as a native
+  # renderer against the same mvgl.cxx GLES3 context above (mvefk.cxx). Gated
+  # the same way as EGL above, plus its own GLES3 header probe -- the top
+  # level CMakeLists.txt builds the Effekseer/EffekseerRendererCommon/
+  # EffekseerRendererGL static libraries (also gated on both) into
+  # PROJECT_BUILD_DIR/3rd/effekseer/Dev/Cpp/<lib>, so this only needs to find
+  # their headers and link the result; see that file's own comments for why
+  # GLES3 (not GLES2) and for the two small upstream-gap workarounds
+  # (eglGetProcAddress's missing include, GL_BGRA/GL_DEPTH_COMPONENT32) those
+  # libraries themselves needed to compile -- neither applies here since this
+  # gem only consumes Effekseer's public headers, never GraphicsDevice.cpp or
+  # GLExtension.cpp directly.
+  if have_egl
+    have_gles3 =
+      begin
+        system("echo '#include <GLES3/gl3.h>' | #{cc.command} -E -x c++ - " \
+               ">/dev/null 2>&1")
+      rescue StandardError
+        false
+      end
+    if have_gles3
+      effekseer_dir = "#{dir}/../3rd/effekseer/Dev/Cpp"
+      cxx.include_paths << "#{effekseer_dir}/Effekseer"
+      cxx.include_paths << "#{effekseer_dir}/EffekseerRendererCommon"
+      cxx.include_paths << "#{effekseer_dir}/EffekseerRendererGL"
+      cxx.defines << "__EFFEKSEER_RENDERER_GLES3__"
+      build_dir = ENV["PROJECT_BUILD_DIR"]
+      linker.library_paths << "#{build_dir}/3rd/effekseer/Dev/Cpp/Effekseer"
+      linker.library_paths <<
+        "#{build_dir}/3rd/effekseer/Dev/Cpp/EffekseerRendererCommon"
+      linker.library_paths <<
+        "#{build_dir}/3rd/effekseer/Dev/Cpp/EffekseerRendererGL"
+      # Link order matters for a static-library chain like this one (GNU ld
+      # resolves left to right): EffekseerRendererGL depends on
+      # EffekseerRendererCommon, which depends on Effekseer, so each must
+      # come before what it depends on.
+      linker.libraries << "EffekseerRendererGL" << "EffekseerRendererCommon" <<
+        "Effekseer"
+    end
   end
 end

@@ -512,6 +512,103 @@ JavaScript loads and interprets the JSON.
       control, and rings made the evidence depend on which frame it caught (a
       7x spread between first and last). Equal-area cells make the measurement
       the same 36.2% of the centre box every run.
+    - **M6.2 addendum 2 — native Effekseer: vendored, built, GL pipeline
+      proven; visible rendering still open.** The blockers the previous
+      addendum listed as reasons to stay unattempted are resolved: a real
+      `.efkefc` now exists to test against (91 of them ship unmodified with a
+      real downloaded MZ release under `data/labyria`, gitignored, present
+      only where actually fetched), and the real Effekseer C++ SDK is now
+      vendored at `3rd/effekseer` (github.com/effekseer/Effekseer, MIT,
+      pinned to release tag `1807`) rather than left as a hypothetical. What
+      this addendum lands and what it does not are deliberately kept
+      separate, per this ADR's own standing rule not to guess past what is
+      proven:
+
+      **Landed and proven**, in `mruby-mvjs/src/mvefk.cxx`/`.hxx`
+      (mirroring `mvgl.hxx`'s own `available()`/`smoke_test()` idiom) plus
+      `CMakeLists.txt` and `mrbgem.rake` wiring:
+      - The vendored `Effekseer`/`EffekseerRendererCommon`/
+        `EffekseerRendererGL` static libraries build cleanly against this
+        project's own surfaceless-EGL/GLES3 context, gated identically to
+        `mvgl.cxx`'s own EGL/GLES availability check plus a separate GLES3
+        header probe (Effekseer's `GraphicsDevice.cpp` needs real ES3 —
+        multiple render-target attachments, VAOs, float/half-float texture
+        formats — that plain ES2 does not declare, unlike this project's own
+        GL calls which stay ES2-only even though the context itself is
+        ES3-capable). Three real upstream gaps were found and fixed entirely
+        in this project's own build files, not by patching the vendored
+        tree: `GLExtension.cpp`'s `eglGetProcAddress` calls need
+        `<EGL/egl.h>`, which upstream only `#include`s under
+        `__ANDROID__`/`__EMSCRIPTEN__` (force-included via
+        `target_compile_options(... -include EGL/egl.h)`); `GraphicsDevice.cpp`
+        references `GL_BGRA`/`GL_DEPTH_COMPONENT32`, which
+        `<GLES3/gl3.h>` does not declare (defined directly via
+        `target_compile_definitions`, using the real desktop-GL numeric
+        values — identical to their `_EXT`/`_OES` GLES-extension spellings on
+        every driver); and `USE_OPENAL` defaults on for non-MSVC and pulls in
+        `EffekseerSoundAL`, which fails configure with no OpenAL installed —
+        turned off, since MZ's real Sound Manager already runs through this
+        project's own WebAudio bridge (`mv.rb`'s `AUDIO_BRIDGE_JS`) and
+        Effekseer never needs to play anything itself here.
+      - `mvefk::smoke_test` creates a real off-screen GLES3 context
+        (`mvgl::create`), stands up a real `Effekseer::Manager` +
+        `EffekseerRendererGL::Renderer` bound to it, loads a real, unmodified
+        `.efkefc` file, plays it, and steps its simulation forward — all
+        proven against `HitPhysical.efkefc` (one of the 91 real files):
+        `Effekseer::Effect::Create` parses the file successfully,
+        `manager->Play` returns a live handle, and
+        `manager->GetTotalInstanceCount()` confirms real particle instances
+        spawn and persist across `Update()` calls (40, after a 20-frame
+        warmup) — genuine simulation, not merely a non-null handle.
+      - The full render call sequence (`renderer->BeginRendering()` →
+        `manager->DrawHandle()` → `renderer->EndRendering()` →
+        `mvgl::pixels()` readback) runs end to end against this project's
+        own FBO with zero GL errors at every stage checked (`glGetError`
+        after the draw; framebuffer binding confirmed unchanged via
+        `GL_FRAMEBUFFER_BINDING` at each step). Two real integration
+        pitfalls surfaced and were fixed while proving this, both documented
+        in `mvefk.cxx`'s own comments: `Manager::DrawHandle`'s default
+        `DrawParameter()` leaves `ViewProjectionMatrix`/`ZNear`/`ZFar`
+        unset, which is a separate, CPU-side culling input from whatever
+        camera/projection the renderer itself was given (independent code
+        paths in upstream Effekseer, not obviously coupled from the public
+        API); and `Renderer::GetCameraProjectionMatrix()` only reflects a
+        `SetCameraMatrix`/`SetProjectionMatrix` call once `BeginRendering()`
+        has actually run (it recomputes the combined matrix internally, at
+        the top of that call) — reading it beforehand silently returns a
+        stale or unset value with no error from either library.
+
+      **Still open, deliberately not chased further this round**: even with
+      both pitfalls above fixed, `renderer->GetDrawCallCount()` reads `0`
+      after the draw — some further condition still keeps every one of the
+      40 live particle instances from reaching an actual GPU draw call, with
+      no GL error and no exception to point at it. Reading
+      `ManagerImplemented::CanDraw` (`Effekseer.Manager.cpp`) by hand did not
+      turn up a further, obviously-wrong input on this project's side: it
+      checks `drawSet.IsShown` (explicitly initialised `true` where a
+      `DrawSet` is constructed), a `CameraCullingMask & GetLayerBits()`
+      overlap (both default to `1` — a fresh effect's `layer_` defaults to
+      `0`, and `DrawParameter()`'s own constructor sets
+      `CameraCullingMask = 1`, matching), and a sphere-culling check that
+      only runs at all when the effect's own authored `Culling.Shape` is
+      `Sphere`. None of those three explains an unconditional `0`. This is
+      exactly the risk the previous addendum flagged as the hard part —
+      reconciling a native renderer's own state and conventions with no
+      browser reference to diff against — now narrowed from "nothing is
+      proven" to "one specific, further culling or submission gate, not yet
+      isolated." The natural next step is adding temporary instrumentation
+      *inside* `CanDraw`/the sprite-submission path (a local, uncommitted
+      patch to the vendored tree, the same technique this project already
+      uses for diagnosing real games' own script bugs) rather than guessing
+      further from the outside.
+
+      **Explicitly not started**: wiring `MZ::EFFEKSEER_SHIM_JS`'s no-op
+      methods to real `mvefk`-backed natives (the JS-bridge milestone this
+      addendum was staged ahead of, per the previous addendum's own
+      recommendation) — doing that before the draw-call gap above is
+      understood would make a JS-bridge bug and a native-rendering bug
+      indistinguishable from each other, the exact ordering risk landing
+      this in isolation first was meant to avoid.
 
       It also shows why M6.3g's frame check is not redundant with the log: with
       the animation's sheet renamed away, `[MZ-ANIM]` still reports

@@ -172,6 +172,111 @@ if(NOT EMSCRIPTEN)
   endif()
 endif()
 
+# Effekseer's GraphicsDevice.cpp needs the real <GLES3/gl3.h> header (see below)
+# -- normally shipped alongside <GLES2/gl2.h> by the same package
+# (libgles2-mesa-dev / libglvnd's headers), but not guaranteed, so this is
+# probed for separately rather than assumed once GL_LIBS is non-empty.
+set(HAVE_GLES3_HEADER FALSE)
+if(GL_LIBS)
+  # A raw compiler probe, not check_include_file_cxx: CMAKE_REQUIRED_* is global
+  # state several of the subprojects add_subdirectory'd above (lvgl, ng-log) run
+  # their own checks through without resetting afterward, and by this point in
+  # the configure it reliably makes check_include_file_cxx report GLES3/gl3.h
+  # absent even when a bare compiler invocation finds it fine.
+  # mruby-mvjs/mrbgem.rake's own have_egl probe already uses exactly this
+  # direct-compiler-invocation shape for the same header-presence question, one
+  # layer down (Ruby's `system` there, CMake's execute_process here) -- same
+  # technique, same reason to trust it over the module.
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E echo "#include <GLES3/gl3.h>"
+    COMMAND ${CMAKE_CXX_COMPILER} -E -x c++ -
+    RESULT_VARIABLE GLES3_HEADER_PROBE_RESULT
+    OUTPUT_QUIET ERROR_QUIET)
+  if(GLES3_HEADER_PROBE_RESULT EQUAL 0)
+    set(HAVE_GLES3_HEADER TRUE)
+  endif()
+endif()
+
+# Effekseer (github.com/effekseer/Effekseer, MIT, vendored at 3rd/effekseer,
+# pinned to release tag 1807): the real particle engine RPG Maker MZ ships as
+# `js/libs/effekseer.min.js` for battle animations. Only built where the GL
+# backend above is actually available -- Effekseer's own GL renderer needs a
+# real GLES context to draw into, the same one mvgl.cxx/mvwebgl.cxx already
+# expose, so building it anywhere GL_LIBS is empty (Emscripten, a GL-less host)
+# would be dead weight with nothing to link it into.
+#
+# `add_subdirectory` on the real repo root (not Dev/Cpp directly) matters: the
+# root CMakeLists.txt appends its own cmake/ dir to CMAKE_MODULE_PATH and
+# `include(FilterFolder)` before descending into Dev -- Dev/Cpp's own
+# CMakeLists.txt calls that function unqualified, so skipping straight to
+# Dev/Cpp fails configure with "Unknown CMake command "filterfolder"". BUILD_GL
+# defaults ON upstream (forced here for clarity, not because the default is
+# wrong) and gates `Effekseer`/`EffekseerRendererCommon` (always built) plus
+# `EffekseerRendererGL`; every other backend (DX9/11/12, Vulkan, Metal, WebGPU,
+# the sound backends) stays off since nothing here sets its BUILD_*/USE_*
+# option. BUILD_EXAMPLES/BUILD_TOOLS default ON upstream and are forced off here
+# -- left alone they add_subdirectory(Examples)/Tool, each with their own
+# dependency surface this build has no use for. USE_OPENGLES3, not 2: mvgl.cxx's
+# own GL calls only ever need the ES2 (`<GLES2/gl2.h>`) subset, but the EGL
+# context it creates really is ES3 (EGL_CONTEXT_MAJOR_VERSION 3, falling back to
+# ES2 only where the driver lacks it -- true on the apt/nix llvmpipe builds this
+# targets). Effekseer's own GraphicsDevice.cpp needs real ES3: multiple render
+# target attachments (GL_COLOR_ATTACHMENT1-3), VAOs (GL_VERTEX_ARRAY_BINDING),
+# and float/half- float texture formats
+# (GL_RED/GL_RG/GL_HALF_FLOAT/GL_DEPTH24_STENCIL8), none of which plain ES2
+# declares -- USE_OPENGLES2 fails to compile on exactly these symbols.
+set(EFFEKSEER_LIBS "")
+if(NOT EMSCRIPTEN
+   AND GL_LIBS
+   AND HAVE_GLES3_HEADER)
+  set(BUILD_GL
+      ON
+      CACHE BOOL "" FORCE)
+  set(BUILD_EXAMPLES
+      OFF
+      CACHE BOOL "" FORCE)
+  set(BUILD_TOOLS
+      OFF
+      CACHE BOOL "" FORCE)
+  set(USE_OPENGLES3
+      ON
+      CACHE BOOL "" FORCE)
+  # Effekseer's own sound backends are for engines with no audio pipeline of
+  # their own; MZ's real Sound Manager already runs through this project's own
+  # WebAudio bridge (mv.rb's AUDIO_BRIDGE_JS), so Effekseer never needs to play
+  # anything itself. USE_OPENAL defaults ON on non-MSVC and this sandbox has no
+  # OpenAL installed, which without this fails configure outright (Dev/Cpp's
+  # CMakeLists.txt add_subdirectory(EffekseerSoundAL)s unconditionally under
+  # USE_OPENAL, then set_property()s a target that silently never got created).
+  set(USE_OPENAL
+      OFF
+      CACHE BOOL "" FORCE)
+  add_subdirectory(3rd/effekseer EXCLUDE_FROM_ALL)
+  # Upstream bug, not ours to fix in the vendored tree: GLExtension.cpp calls
+  # eglGetProcAddress whenever __EFFEKSEER_RENDERER_GLES2__/_GLES3__ is defined
+  # (the correct way to resolve GL extension procs on any EGL-backed GLES
+  # platform), but only #includes <EGL/egl.h> under __ANDROID__ or
+  # __EMSCRIPTEN__ -- missing exactly our case, desktop Linux + EGL + GLES.
+  # Force-including the header (rather than patching the submodule) keeps the
+  # fix entirely in this build's own CMake, since it is a real, narrow gap in a
+  # codepath this project actually exercises, not a local patch to carry.
+  target_compile_options(EffekseerRendererGL PRIVATE -include EGL/egl.h)
+  # Same story, a different two symbols: GraphicsDevice.cpp's B8G8R8A8_UNORM and
+  # 32-bit depth-only texture branches reference GL_BGRA and
+  # GL_DEPTH_COMPONENT32 unconditionally, but neither is declared by
+  # <GLES3/gl3.h> -- they are desktop-GL/extension enums
+  # (GL_BGRA_EXT/GL_DEPTH_COMPONENT32_OES have the identical values on every
+  # driver, since GLES extensions standardised on the desktop GL numbers).
+  # Defining the real numeric constants directly is simpler than routing through
+  # the _EXT/_OES spellings and correct either way: this only affects whether
+  # the *symbol* resolves at compile time, not whether the driver accepts the
+  # enum at runtime, and MZ's own effects use plain RGBA8/D24S8 (mvgl.cxx's own
+  # FBO format), never triggering either branch.
+  target_compile_definitions(EffekseerRendererGL
+                             PRIVATE GL_BGRA=0x80E1 GL_DEPTH_COMPONENT32=0x81A7)
+  set(EFFEKSEER_LIBS Effekseer EffekseerRendererCommon EffekseerRendererGL)
+endif()
+
 set(MRUBY_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/mruby")
 if(EMSCRIPTEN)
   # The native "host" build only produces mrbc; the app links the cross build.
@@ -260,6 +365,7 @@ target_link_libraries(
   uni-algo::uni-algo
   qjs
   ${CMAKE_DL_LIBS}
+  ${EFFEKSEER_LIBS}
   ${GL_LIBS})
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
