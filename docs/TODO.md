@@ -21642,6 +21642,30 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         that one release's own bundled, copyrighted corescript build, which
         this project has no standing copy of and no cause to reproduce beyond
         the general, already-fixed gap above.
+      - ✅ **`Graphics._createEffekseerContext` silently reset `Graphics._app`
+        to `null`, turning into an opaque "Failed to initialize graphics."
+        one call later.** `EFFEKSEER_SHIM_JS` (`mruby-mvjs/mrblib/mz.rb`)
+        gave the stub context an `init()` but not the
+        `setRestorationOfStatesFlag()` real `effekseer.min.js` also exposes;
+        `rmmz_core.js`'s `Graphics._createEffekseerContext` calls both back
+        to back and wraps the pair in its own `try/catch` that resets
+        `Graphics._app = null` on *any* exception, so the missing method
+        threw "not a function", was swallowed there, and only surfaced a
+        scene later as `SceneManager.initGraphics`'s generic
+        `Graphics.initialize()` false check — with no stack frame pointing
+        at Effekseer at all. Found against a real downloaded MZ game
+        (`Labyria`), whose boot never got past this even though `mz-sample`
+        and the freem.ne.jp release above both did (neither happens to hit
+        this exact call pair before something else already stops them).
+        Root-caused by temporarily instrumenting the stub's catch blocks
+        with `console.error(e.message + e.stack)` in a scratch copy of the
+        game's own `rmmz_core.js` (gitignored `data/`, never committed) to
+        get past the game's own swallowed exception, which pointed straight
+        at the missing method. Fixed with one more no-op method on the
+        stub context, exactly like its `beginDraw`/`endDraw`/
+        `setProjectionMatrix` siblings; `Labyria` now boots clean through
+        `Scene_Splash` → `Scene_Title` → `Scene_Map` and every headless
+        probe (move/message/menu/save/audio/battle) reports.
 
 ## Tooling
 

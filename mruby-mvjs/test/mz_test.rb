@@ -195,6 +195,24 @@ assert 'MZ.effekseer_shim_js replaces window.effekseer with the diagnostic stub'
   assert_true js.include?("EFKEFC")
 end
 
+assert 'the Effekseer stub survives Graphics._createEffekseerContext\'s real call sequence' do
+  # rmmz_core.js's Graphics._createEffekseerContext calls init() and then
+  # unconditionally setRestorationOfStatesFlag(false) on the context before
+  # ever touching the effect-loading API this stub otherwise exercises. A
+  # real downloaded game (Labyria) hit this: the stub had init() but not
+  # setRestorationOfStatesFlag, so the second call threw "not a function",
+  # was swallowed by rmmz_core.js's own try/catch, and silently reset
+  # Graphics._app to null -- turning into an opaque "Failed to initialize
+  # graphics." a scene later with no clue an Effekseer call was the cause.
+  MV::JS.eval(MZ.effekseer_shim_js)
+  MV::JS.eval(
+    "globalThis.__ctx3 = effekseer.createContext(); " \
+    "__ctx3.init(); __ctx3.setRestorationOfStatesFlag(false); " \
+    "globalThis.__ctx3_survived = true;"
+  )
+  assert_true MV::JS.eval("__ctx3_survived")
+end
+
 assert 'the Effekseer stub loads a real effect file and reports it, honestly' do
   # Exercised against the real host and real files on disk, through the same
   # __mv_existsSync/__mv_readFileBytes natives every other MZ asset uses.
