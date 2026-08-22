@@ -6290,6 +6290,52 @@ The work below is roughly ordered by the critical path to a walkable game
   for a multi-actor scenario, not something this cycle chased down further.
   No fix shipped for either open half, per this session's own "no partial
   fix for a narrowly-verified case" rule.
+  ✅ **Follow-up (cycle #122, 2026-08-22): `status_menu.rb`'s solo-party
+  RIGHT/LEFT claim is not merely un-re-run yet — it is structurally
+  unreachable against every genuine RPG_RT ground truth this session has,
+  so it stays permanently unverifiable with current tooling, not a retry
+  target.** Picked back up cycle #121's exact stuck point: navigating a
+  fresh solo-party save (`gen-lcf-save-wine.bash` + `gen-rpg2k-save.rb
+  --map 12 --clear-scene`, party `[1]`) into the field menu under genuine
+  RPG_RT.exe (wine) landed the same way — Down x3 from Item puts the
+  cursor on a row with **no visible text at all**. Stepping through the
+  list one Down at a time (screenshots captured after each) showed this is
+  not a stuck cursor or a missed keypress: the list is exactly **five**
+  rows — Item, Skill, Equip, [blank], a fifth non-blank row — and a fifth
+  Down wraps back to Item, no sixth row to scroll to. A sanity probe on the
+  same save/session (Down x2 to Equip, Return, Return) reached the real
+  Equip screen fine, so Return delivery itself was never the problem.
+  Reading `RPG_RT.ldb` chunk 21 (Term) directly confirmed why: Nepheshel's
+  own `battle_save` term (id 110) is the **empty string**, and `status`
+  (id 118) is too — RPG_RT still draws the Save row, just unlabelled, and
+  there is no Status row to land on at all. The reason: `Scene::Menu::
+  RPG2K_COMMAND_KEYS` (`mruby-rpg2k/mrblib/scene/menu.rb`) is `[:item,
+  :skill, :equip, :save, :end_game]` — RPG2000's field menu is a fixed
+  five-command list with **no Status entry**, full stop; `:status` only
+  ever enters `#build_commands`'s output through `RPG2K3_COMMAND_IDS` when
+  `db.rpg2003?` and the game's own `menu_commands` chunk includes id 5. So
+  for the *only* genuine ground truth this session has (Nepheshel, RPG2000)
+  `Scene::StatusMenu` is never reachable via the field menu at all — the
+  blank row cycle #121 got stuck on **is** Save (with an empty term), not
+  Status. `status_menu.rb`'s own screen only exists for RPG2003, and the
+  one RPG2003 test-bed available (`mtf-meido-action`) has no genuine
+  `RPG_RT.exe`, only EasyRPG's Player.exe, which this session's methodology
+  excludes as ground truth. So there is no available combination of
+  (genuine RPG_RT + a game that actually shows a Status command) to re-run
+  this claim against — closing the loop on why cycle #121 got stuck, not
+  by resolving the navigation, but by showing the target menu row doesn't
+  exist for this game. No code change needed for this specific claim (still
+  correctly un-fixed, pending a real RPG2003 `RPG_RT.exe` becoming
+  available); **what genuinely was EasyRPG-sourced and got fixed instead**:
+  `Scene::Menu::RPG2K_COMMAND_KEYS`'s doc comment (`menu.rb`) and the
+  `scripts/rpg2k_scene_check.rb` check pinning it were both previously
+  cited only to EasyRPG's `Scene_Menu::CreateCommandWindow`; both now cite
+  this cycle's direct RPG_RT confirmation (five rows, wraps at five, Save's
+  own empty term) instead, mirroring the `equip_menu.rb`/
+  `ARROW_BLINK_FRAMES` precedent for re-citing a correct-but-EasyRPG-sourced
+  claim once independently confirmed. The adjacent multi-actor
+  discrete-vs-repeat question from cycle #121 was not chased further this
+  cycle (out of scope once the solo-party half turned out unreachable).
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Confirmed
   against EasyRPG Player's actual source: `Scene_Order::vUpdate` (`src/

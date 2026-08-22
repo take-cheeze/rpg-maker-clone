@@ -34,11 +34,21 @@ class RPG2k
       LEFT_COLUMN_W = 88
 
       # RPG2000's field menu is a *fixed* five commands with no separate Status
-      # entry -- EasyRPG's `Scene_Menu::CreateCommandWindow`'s `Player::IsRPG2k()`
-      # branch hardcodes exactly Item / Skill / Equipment / Save / Quit
-      # regardless of database content (a per-actor status readout has no
-      # screen of its own in RPG2000; the party list already shown here is
+      # entry regardless of database content (a per-actor status readout has
+      # no screen of its own in RPG2000; the party list already shown here is
       # what stands in for it, and Equip already shows the full stat block).
+      # Independently confirmed against a genuine RPG_RT.exe under wine
+      # (cycle #122): Nepheshel (RPG2000, no `menu_commands` chunk) draws
+      # exactly five command rows for a solo party, wrapping Down from the
+      # fifth back to the first -- Item / Skill / Equip, then a *blank* row
+      # (Nepheshel's own `battle_save` Term, id 110, is the empty string --
+      # confirmed by reading `RPG_RT.ldb` chunk 21 directly -- yet RPG_RT
+      # still draws the row, just with no label, so Save is unconditionally
+      # present, only its text is missing) and a fifth non-blank row (End
+      # Game). No sixth row exists to scroll to. This was previously cited
+      # only to EasyRPG's `Scene_Menu::CreateCommandWindow`'s
+      # `Player::IsRPG2k()` branch (Item/Skill/Equipment/Save/Quit,
+      # unconditional); that reference is now redundant, not load-bearing.
       # RPG2003 replaces this fixed list with the System database's own
       # customizable one -- see RPG2K3_COMMAND_IDS below -- so this constant
       # is the RPG2000 (and RPG2003-without-a-menu_commands-chunk) default.
