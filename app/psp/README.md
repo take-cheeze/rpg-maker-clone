@@ -117,7 +117,7 @@ idle path (`RPG2K_PSP_GAME_START none not_found`). The job is currently
 **non-blocking** (the required build gate is the `psp` job) — a holdover
 from when the EBOOT did not boot to completion under PPSSPP-headless; now
 that it does (see below), promoting `psp-smoke` to a required check is
-worth revisiting. Nine independent bugs were found and root-caused
+worth revisiting. Ten independent bugs were found and root-caused
 chasing that boot-to-completion goal; eight of them fixed, the remaining
 one (pspsdk's own upstream bug) no longer reachable — **boot now
 completes**:
@@ -264,8 +264,92 @@ none not_found` → a continuous `RPG2K_PSP_BRINGUP` heartbeat, running
 cleanly for over 850,000 frames with zero errors, stopped only by the
 test harness's own timeout. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full nine-bug trail, including the eliminated theories along
-the way. To reproduce any of this locally, run
+P1 for the full trail, including the eliminated theories along
+the way.
+
+That state no longer reproduces on `master`. Boot now dies inside
+`mrb_open()` again, on a **tenth bug** — this one in the toolchain, not
+in this project or the emulator. Any C++ `throw` aborts in libgcc's
+`uw_init_context_1` (`unwind-dw2.c`, `gcc_assert (code ==
+_URC_NO_REASON)`), which fires when `uw_frame_state_for` cannot find an
+FDE for the frame it is unwinding. mruby is built with the C++ exception
+ABI — automatic, because gems here ship `.cxx` sources — so `MRB_THROW`
+is a real throw and the first one during interpreter init is fatal. The
+defect is not the CFI: `.eh_frame` is complete, correctly bracketed,
+inside a `PT_LOAD`, and registered before `main()` by `crt0` → `_init` →
+`frame_dummy` → `__register_frame_info`. It is libgcc's own
+`fde_radixsort` — an 8-bit-digit radix sort needing four passes to cover
+a 32-bit address, whose output is exactly the state after two. Measured
+on this EBOOT: the array it produces has 1460 inversions against the
+full `pc_begin` and **zero** against `pc_begin & 0xffff`, so it is
+perfectly sorted on the low halfword. Every code address here is
+`0x08xxxxxx`, so that ordering is useless and `search_object`'s binary
+search misses every entry; a linear scan finds the FDE immediately.
+Eliminated first, each by measurement rather than argument: the CFI data
+itself, registration, `__builtin_return_address(0)`, libgcc's packed
+unaligned read in `unwind-pe.h`, and `memmove`/`memset` through the
+emulator's HLE. Worked around in `psp_unwind_fde.cxx`, which overrides
+`__register_frame_info`/`_Unwind_Find_FDE`/`__deregister_frame_info` and
+answers lookups from an index it sorts itself; with it, boot reaches
+`RPG2K_PSP_MRUBY_OPEN ok` → `RPG2K_PSP_GAME_START` → a continuous
+`RPG2K_PSP_BRINGUP` heartbeat again. Not upstreamed to pspdev yet, and
+worth reporting there: nothing about it is specific to this project, and
+it breaks C++ exceptions for every PSP binary this toolchain builds.
+Since it is only reachable when something actually throws, it was
+presumably dormant through the nine-bug trail above rather than newly
+introduced.
+
+### The `-O2` build is broken, and the build type is now pinned
+
+`app/psp/CMakeLists.txt` pins `CMAKE_BUILD_TYPE` (through
+`RPG2K_PSP_BUILD_TYPE`) because it used to be *ambient*: CMake initialises it
+from the environment variable of the same name, and this repo's nix devshell
+exports `CMAKE_BUILD_TYPE=RelWithDebInfo`. A local build inside `nix develop`
+therefore got `-O2 -g -DNDEBUG` while the `psp` CI job, in a bare container
+with no such variable, got an empty build type and no optimisation at all --
+two undeclared, different builds of the same commit, which is how an
+`-O2`-only failure went unnoticed.
+
+At `-O2` the EBOOT halts on LVGL's TLSF assert
+(`!block_is_free(block)` in `lv_tlsf_realloc`) during `lv_init()`, before
+anything here has touched LVGL's pool. Unoptimised it boots to completion.
+Confirmed by building in the *same* container both ways, so the environment
+is not the variable -- only the flag is. **Open.** Eliminated so far, each by
+measurement:
+
+- **The draw buffers.** `psp_display_create` reports its post-condition
+  (`RPG2K_PSP_DRAWBUF`); both pointers are non-null and both sizes exact at
+  `-O2`, and the assert fires before that marker is even reached. Not a
+  recurrence of bug 7's `std::vector` miscompile.
+- **Strict aliasing.** `lv_tlsf.c` type-puns block headers heavily, but
+  `-fno-strict-aliasing` at `-O2` still asserts.
+- **`lv_tlsf.c` itself.** Compiling only that translation unit at `-O0` with
+  the rest at `-O2` does not fix it -- the failure *moves*, to near-null guest
+  reads and a PPSSPP host segfault. TLSF's assert is a consistency check on
+  headers living in memory anything can scribble on, so it is where the damage
+  is noticed, not necessarily where it is caused.
+- **`psp_unwind_fde.cxx`.** Compiling only it at `-O0` leaves the failure
+  intact. (This does not establish that file is *correct* under optimisation --
+  the `-O2` build never runs far enough to throw -- only that it is not the
+  cause.)
+- **PPSSPP's sysclib return values.** Near-null pointers at `-O2` are bug 9's
+  signature (GCC exploiting its knowledge that `memset` returns its first
+  argument against an HLE returning 0), so every sysclib function was
+  re-audited: `memcpy`/`strcpy`/`strcat`/`strncpy` return their destination,
+  `memset`/`memmove` do too via
+  `nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch`, and the four
+  added by `nix/patches/ppsspp-sysclibforkernel-missing-functions.patch`
+  (`tolower`/`strtoul`/`memchr`/`strncat`) are all correct. Not a recurrence.
+
+The failure mode changes when unrelated code shifts the binary -- the same
+layout sensitivity bug 7 showed -- so per-translation-unit bisection does not
+converge on it. Whoever picks this up should probably reach for pool canaries
+or guarded allocations rather than more bisecting. Until then `Debug` is
+pinned, and the cost is measured and small: unoptimised `.text` is ~260 KB
+larger, against a boot reporting 782 KB heap free, a 256 KB LVGL pool running
+at 1.4%, and a 256 KB main stack at 6.4%.
+
+To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
 `ppsspp` package output (see above) rather than nixpkgs' unpatched one —

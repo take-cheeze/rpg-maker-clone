@@ -1,5 +1,6 @@
 /build
 /build-psp
+/build-psp-docker
 /wasm-build
 /emsdk
 # Downloaded test-bed games live under data/ and are not committed, except the
