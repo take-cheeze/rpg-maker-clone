@@ -1191,33 +1191,55 @@ module LCF
     # https://w.atwiki.jp/rpg2kpsp/pages/21.html
     #
     # Runtime state of a "show picture" command (chunk 103 of the save file),
-    # one entry per picture number. The rpg2kpsp analysis only labels a subset
-    # of the fields; the position/movement slots (2-5, 8, 11-14, 31, 32) hold
-    # `double` coordinates whose exact meaning it does not give.
+    # one entry per picture number.
     #
-    # 31/32 were identified as the *live* position by experiment against the
-    # genuine RPG_RT: each candidate pair was rewritten in a real Nepheshel save
-    # and the resumed frame compared against the unedited one. Moving 31/32 from
-    # (160,120) to (80,60) shifted the picture up-left by exactly that much,
-    # leaving black at the right and bottom edges; editing 2/3 or 4/5 changed
-    # nothing on screen. (A control confirmed the runtime really does restore
-    # picture state from the save rather than re-showing it: renaming field 1
-    # swapped the displayed image.) 2/3 and 4/5 look like a move's start and
-    # finish, which a still picture does not use -- both read 160/120 here, the
-    # centre of the 320x240 screen -- but that is not proven, so they stay
-    # unnamed. See ADR 0021.
+    # Field 31/32 were identified as *a* live position by experiment against
+    # the genuine RPG_RT (rewriting them in a real Nepheshel save and
+    # comparing the resumed frame against the unedited one moved the picture
+    # exactly as edited), but that experiment only ever exercised a picture at
+    # rest -- and liblcf's own generator table (`generator/csv/fields.csv`)
+    # names 31/32 `finish_x`/`finish_y`: the move's *target*, not its
+    # in-flight position. The two agree exactly at rest, which is why the
+    # earlier experiment could not tell them apart -- real RPG_RT re-syncs
+    # current to finish every idle frame the same way `Game::Picture#update`
+    # already does here. The genuinely live position (and zoom/transparency/
+    # tone) sit at fields 4/5/7/8/11-14 instead, confirmed by a second
+    # experiment: a save edited to have current_x/y (4/5) and finish_x/y
+    # (31/32) genuinely differ, with time_left (51) still counting down,
+    # resumed under real RPG_RT as a picture visibly still gliding from the
+    # current position toward the finish one -- not sitting statically at
+    # either.
     SAVE_PICTURE = {
       1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
-      # RPG2000 screen coordinates of the picture's *centre*, as doubles.
-      31 => { name: :current_x, type: :double },        # 表示位置Ｘ (中心)
-      32 => { name: :current_y, type: :double },        # 表示位置Ｙ (中心)
+      # The picture's genuinely live position/zoom/transparency/tone, only
+      # meaningful while a move is still in flight (time_left > 0) -- see
+      # this table's own comment above. Defaults match a fresh Game::Picture
+      # so an old save written before these fields existed (or a picture
+      # that has never moved, time_left always 0) restores identically to
+      # before: #restore_pictures only ever reads these when time_left > 0.
+      4 => { name: :current_x, type: :double, default: 0.0 },
+      5 => { name: :current_y, type: :double, default: 0.0 },
+      7 => { name: :current_zoom, type: :double, default: 100.0 },
+      8 => { name: :current_transparency, type: :double, default: 0.0 },
+      11 => { name: :current_tone_red, type: :double, default: 100.0 },
+      12 => { name: :current_tone_green, type: :double, default: 100.0 },
+      13 => { name: :current_tone_blue, type: :double, default: 100.0 },
+      14 => { name: :current_tone_saturation, type: :double, default: 100.0 },
       9 => { name: :visible, type: :bool, default: false }, # 表示するか (0 非表示 / 1 表示)
+      # The picture's resting/target position -- see this table's own
+      # comment above for why these are named finish_*, not current_*.
+      31 => { name: :finish_x, type: :double },         # 表示位置Ｘ (中心)
+      32 => { name: :finish_y, type: :double },         # 表示位置Ｙ (中心)
       33 => { name: :zoom, type: :int },                # 拡大率
       34 => { name: :transparency, type: :int },        # 透明度
       41 => { name: :tone_red, type: :int },            # 色調：赤(R)
       42 => { name: :tone_green, type: :int },          # 色調：緑(G)
       43 => { name: :tone_blue, type: :int },           # 色調：青(B)
       44 => { name: :tone_saturation, type: :int },     # 色調：彩度(S)
+      # How many frames remain in an in-flight Move Picture; 0 (the default,
+      # covering both a still picture and an old save missing this field
+      # entirely) means fields 4/5/7/8/11-14 above are not consulted at all.
+      51 => { name: :time_left, type: :int, default: 0 },
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/40.html

@@ -221,6 +221,42 @@ The work below is roughly ordered by the critical path to a walkable game
     field exactly; a State with no shown pictures gets no chunk 103 at all),
     confirmed to fail against the pre-fix code (`NoMethodError` on a nil
     chunk).
+    ✅ **Follow-up (2026-08-22): fields 31/32 were mislabelled `current_x`/
+    `current_y` in this codebase's own schema — they are real RPG_RT's
+    `finish_x`/`finish_y`, the move's *target*, and a picture still
+    mid-Move-Picture when saved silently snapped straight to that target on
+    Continue instead of resuming its glide.** The two agree exactly at
+    rest (which is why the original field-identification experiment above
+    could not tell them apart — real RPG_RT re-syncs current to finish
+    every idle frame, the same thing `Game::Picture#update` already does
+    here), so this was never wrong for a still picture, only a moving one.
+    Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: a save
+    edited so chunk 103's fields 4/5 (`current_x`/`current_y`) and 31/32
+    (`finish_x`/`finish_y`) deliberately differ, with field 51
+    (`time_left`) still counting down, resumed under the real runtime as a
+    picture visibly still gliding from the saved current position toward
+    the saved finish one over the following seconds — not sitting
+    statically at either. Fixed by declaring the genuinely-live fields
+    (`mruby-lcf/mrblib/schema.rb`'s `SAVE_PICTURE`: 4/5 current position,
+    7/8 current zoom/transparency, 11-14 current tone, 51 time_left) and
+    renaming 31/32 to `finish_x`/`finish_y` to match liblcf's own
+    `generator/csv/fields.csv`; `Game::Picture` gained small `finish_*`/
+    `frames_left` readers alongside its existing `#move_to`/`#moving?`, the
+    same shape `Game::Screen#tint_save_data`/`#restore_tint` already used
+    for the screen-tint chunk. `#to_lsd` now writes the current_*/time_left
+    fields too, only while `#moving?` (a still picture writes only
+    31-44 as before — no format change for the common case).
+    `.restore_pictures` shows a mid-move picture at its saved current
+    values, then immediately restarts the move toward the saved finish
+    values over the saved `time_left`, instead of always reading
+    31/32/etc. An old save missing these fields entirely reads `time_left`
+    as its schema default (0) and restores exactly as before — unaffected.
+    Covered by a new `scripts/rpg2k_logic_check.rb` check (a picture
+    started moving, advanced one frame, then round-tripped through
+    `to_lsd`/`.from_lsd` resumes `#moving?` with the exact same in-flight
+    position and remaining frames, and keeps advancing on a further
+    `#update`; a picture at rest still round-trips unchanged), confirmed to
+    fail against the pre-fix code.
   - ✅ **`Game::State#to_lsd` output is loadable by RPG_RT.** It round-tripped
     through our own parser (`scripts/lcf_save_roundtrip.rb`) but the genuine
     runtime left "Continue" dead, with no error anywhere. The assumed cause —

@@ -8392,6 +8392,21 @@ module Game
     def red; @red.to_i; end
     def green; @green.to_i; end
     def blue; @blue.to_i; end
+
+    # The in-flight move's own target values and remaining frame count (nil/0
+    # when never moved or already arrived) -- for `.lsd` chunk 103's own
+    # finish_*/time_left fields, which #to_lsd writes from these while
+    # #moving?, see SAVE_PICTURE's own comment on why fields 31/32/etc are
+    # named finish_*, not current_*.
+    def finish_x; @tx; end
+    def finish_y; @ty; end
+    def finish_zoom; @tzoom; end
+    def finish_opacity; @topacity; end
+    def finish_red; @tred; end
+    def finish_green; @tgreen; end
+    def finish_blue; @tblue; end
+    def finish_saturation; @tsat; end
+    def frames_left; @frames; end
     def saturation; @saturation.to_i; end
 
     def initialize(id, opts = {})
@@ -14563,26 +14578,52 @@ module Game
       # `Player::LoadSavegame` (`src/player.cpp`) restores it unconditionally
       # on every load -- the same chunk `.from_lsd`/`.restore_pictures`
       # (above) already reads, just never written here. Field mapping is the
-      # exact mirror of `.restore_pictures`' own read (see its comment for
-      # why the numbers need no separate guesswork): 1 name, 31/32 current_x/
-      # current_y, 33 zoom, 34 transparency (`Game.opacity_to_trans`, the
-      # inverse of the live command's own `#trans_to_opacity`), 41-44 the
-      # red/green/blue/saturation tone. `@pictures` only ever holds currently
-      # -shown pictures (#erase_picture deletes the entry outright), so every
-      # entry present is live and belongs in the save.
+      # exact mirror of `.restore_pictures`' own read (see `SAVE_PICTURE`'s
+      # own comment for why 31/32/etc are finish_*, not current_*): 1 name,
+      # 31/32 finish_x/finish_y, 33 zoom, 34 transparency
+      # (`Game.opacity_to_trans`, the inverse of the live command's own
+      # `#trans_to_opacity`), 41-44 the red/green/blue/saturation tone -- a
+      # picture at rest writes its own live values as both, matching real
+      # RPG_RT's own current-tracks-finish idle sync. `@pictures` only ever
+      # holds currently-shown pictures (#erase_picture deletes the entry
+      # outright), so every entry present is live and belongs in the save.
+      # A picture still mid-Move-Picture (#moving?) additionally writes its
+      # own genuinely-live current_*/time_left fields (4/5/7/8/11-14/51) so a
+      # resumed Continue keeps gliding from exactly where it was, rather than
+      # snapping straight to the move's target the instant the save reloads.
       unless @pictures.empty?
         pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
         @pictures.each do |id, p|
           e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
           e[1] = p.name
-          e[31] = p.x
-          e[32] = p.y
-          e[33] = p.zoom
-          e[34] = Game.opacity_to_trans(p.opacity)
-          e[41] = p.red
-          e[42] = p.green
-          e[43] = p.blue
-          e[44] = p.saturation
+          if p.moving?
+            e[4] = p.x
+            e[5] = p.y
+            e[7] = p.zoom
+            e[8] = Game.opacity_to_trans(p.opacity)
+            e[11] = p.red
+            e[12] = p.green
+            e[13] = p.blue
+            e[14] = p.saturation
+            e[31] = p.finish_x
+            e[32] = p.finish_y
+            e[33] = p.finish_zoom
+            e[34] = Game.opacity_to_trans(p.finish_opacity)
+            e[41] = p.finish_red
+            e[42] = p.finish_green
+            e[43] = p.finish_blue
+            e[44] = p.finish_saturation
+            e[51] = p.frames_left
+          else
+            e[31] = p.x
+            e[32] = p.y
+            e[33] = p.zoom
+            e[34] = Game.opacity_to_trans(p.opacity)
+            e[41] = p.red
+            e[42] = p.green
+            e[43] = p.blue
+            e[44] = p.saturation
+          end
           pics[id] = e
         end
         save[103] = pics
@@ -15117,20 +15158,45 @@ module Game
     # 0..255 opacity for the live command. There is nothing save-format-specific
     # left to guess: the save's fields and the command's params are the same
     # numbers, so they are read the same way here.
+    #
+    # A picture still mid-Move-Picture when the save was written (time_left,
+    # field 51, > 0) is shown at its genuinely live current_*/current_x/y
+    # (fields 4/5/7/8/11-14) instead of its finish_*/31/32/etc, then
+    # immediately started moving again toward finish_*/31/32/etc over the
+    # saved time_left frames -- confirmed against a genuine RPG_RT.exe: a
+    # save edited with current and finish deliberately different, resumed
+    # under the real runtime, visibly kept gliding from the saved current
+    # position toward the saved finish one rather than sitting statically at
+    # either. See SAVE_PICTURE's own comment for the field-mapping evidence.
+    # `pic.time_left`/`current_*` both default to 0/the same neutral values a
+    # fresh `Game::Picture` starts at, so a save written before this landed
+    # (missing all of fields 4/5/7/8/11-14/51) reads time_left as 0 and
+    # restores identically to before -- unaffected by this change.
     def self.restore_pictures(state, pictures)
       return unless pictures
       pictures.each do |id, pic|
         next unless pic
         name = pic.name
         next if name.nil? || name.empty?
-        transparency = pic.transparency
+        time_left = pic.time_left || 0
+        moving = time_left > 0
+        transparency = moving ? pic.current_transparency : pic.transparency
         state.show_picture(id, name: name,
-                               x: (pic.current_x || 0).to_i,
-                               y: (pic.current_y || 0).to_i,
-                               zoom: pic.zoom,
+                               x: ((moving ? pic.current_x : pic.finish_x) || 0).to_i,
+                               y: ((moving ? pic.current_y : pic.finish_y) || 0).to_i,
+                               zoom: moving ? pic.current_zoom : pic.zoom,
                                opacity: transparency ? Game.trans_to_opacity(transparency) : nil,
-                               red: pic.tone_red, green: pic.tone_green,
-                               blue: pic.tone_blue, saturation: pic.tone_saturation)
+                               red: moving ? pic.current_tone_red : pic.tone_red,
+                               green: moving ? pic.current_tone_green : pic.tone_green,
+                               blue: moving ? pic.current_tone_blue : pic.tone_blue,
+                               saturation: moving ? pic.current_tone_saturation : pic.tone_saturation)
+        next unless moving
+        finish_trans = pic.transparency
+        state.move_picture(id, (pic.finish_x || 0).to_i, (pic.finish_y || 0).to_i,
+                           pic.zoom,
+                           finish_trans ? Game.trans_to_opacity(finish_trans) : 255,
+                           pic.tone_red, pic.tone_green, pic.tone_blue,
+                           pic.tone_saturation, time_left)
       end
     end
 
