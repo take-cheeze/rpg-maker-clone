@@ -3204,12 +3204,16 @@ class RPG2k
       end
 
       # One party member's row as [text, x, colour index] segments: name,
-      # condition, then the HP / SP gauges.
+      # condition, then the HP / SP gauges. The HP/MP segments carry three
+      # extra trailing fields (cur, max, can_knockout) that #battle_status_window
+      # uses to recolor just the current-value figure -- the name/state
+      # segments leave them nil (a 3-element array, same as always), which
+      # the shared drawing loop's destructuring already tolerates.
       def battle_status_row(b)
         hp = b.hp < 0 ? 0 : b.hp
          [[b.name, STATUS_NAME_X, 0], battle_state_segment(b),
-          ["HP #{hp}/#{b.display_max_hp}", STATUS_HP_X, 0],
-          ["MP #{b.mp}/#{b.display_max_mp}", STATUS_MP_X, 0]]
+          ['HP', STATUS_HP_X, 0, hp, b.display_max_hp, true],
+          ['MP', STATUS_MP_X, 0, b.mp, b.display_max_mp, false]]
       end
 
       # The condition column, as a status-panel segment: the same reading the
@@ -3761,6 +3765,37 @@ class RPG2k
       # returns these four segments in ascending-x order, so "the next
       # segment's x" is always the next column's own origin; the last segment
       # (SP) clips to the panel's own inner edge instead, same as before.
+      # Draws "LABEL cur/max" the way #battle_status_window's HP/MP columns
+      # need it: only the current-value figure recolors via
+      # #value_font_color (Scene::Base) -- critical (index 4, ≤ 1/4 max) or
+      # knocked-out (index 5, HP only) -- the label and "/max" suffix stay
+      # the ordinary swatch. Mirrors Scene::StatusMenu#draw_stat_segment,
+      # which the field Status screen already uses for the identical rule;
+      # confirmed against genuine RPG_RT.exe under wine that the battle
+      # status panel follows it too (a save edited to a below-1/4-max HP
+      # showed only the HP figure recoloring, "/max" and "MP" unchanged).
+      # Clips the whole "LABEL cur/max" run to `w` first (matching every
+      # other column's own overflow guard, `#clip_text_to_width`) and only
+      # then splits the surviving text back into its three colored pieces,
+      # so a column too narrow for the full string still can't bleed into
+      # its neighbour.
+      def draw_battle_stat_segment(c, x, y, w, label, cur, max, can_knockout)
+        full = "#{label} #{cur}/#{max}"
+        clipped = clip_text_to_width(c, full, w)
+        label_part = clipped[0, label.length + 1] || ''
+        rest = clipped[(label.length + 1)..-1] || ''
+        cur_s = cur.to_s
+        cur_part = rest[0, cur_s.length] || ''
+        max_part = rest[cur_s.length..-1] || ''
+        color = value_font_color(cur, max, can_knockout)
+        cx = x
+        draw_system_text c, cx, y, w, BATTLE_LINE_H, label_part, windowskin
+        cx += c.text_size(label_part).width
+        draw_system_text c, cx, y, w, BATTLE_LINE_H, cur_part, windowskin, color
+        cx += c.text_size(cur_part).width
+        draw_system_text c, cx, y, w, BATTLE_LINE_H, max_part, windowskin
+      end
+
       def battle_status_window(rows, cursor_idx = nil)
         inner_w = BATTLE_STATUS_W - Window::BORDER * 2
         win = Window.new(battle_status_x, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
@@ -3769,12 +3804,17 @@ class RPG2k
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         rows.each_with_index do |segments, i|
-          segments.each_with_index do |(text, x, color), j|
+          segments.each_with_index do |(text, x, color, cur, max, can_knockout), j|
             next_x = j + 1 < segments.size ? segments[j + 1][1] : inner_w
             w = next_x - x
-            draw_system_text c, x, i * BATTLE_LINE_H, w, BATTLE_LINE_H,
-                             clip_text_to_width(c, text.to_s, w), windowskin,
-                             color
+            y = i * BATTLE_LINE_H
+            if cur
+              draw_battle_stat_segment(c, x, y, w, text, cur, max, can_knockout)
+            else
+              draw_system_text c, x, y, w, BATTLE_LINE_H,
+                               clip_text_to_width(c, text.to_s, w), windowskin,
+                               color
+            end
           end
         end
         win.contents = c

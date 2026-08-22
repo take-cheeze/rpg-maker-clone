@@ -18006,6 +18006,39 @@ line) and is left for a future pass. Covered by a new
 and a critical MP figure blend from their own distinct windowskin
 swatch cells (indices 5 and 4) while the HP max figure stays on the
 default swatch (index 0), confirmed to fail against the pre-fix code.
+✅ **Follow-up (2026-08-22): the battle status panel's own HP/SP columns
+now recolor too, independently re-verified against genuine RPG_RT.exe
+rather than left as the EasyRPG-sourced deferral above.** Edited a
+genuine Nepheshel save's actor HP directly and resumed a live battle
+under wine: the baseline frame (HP 600/700, not critical) draws
+`"HP600/700 MP600"` in one uniform light-blue swatch throughout, but
+dropping HP to 100/700 (≤ 700/4) shows **only** the "100" figure
+recolor to a golden-yellow swatch — pixel-sampled `(255,243,123)` etc.,
+distinctly different from the unchanged `(165,211,255)`-family "/700"
+suffix and "MP600" column — confirming real RPG_RT applies the exact
+same per-figure rule here as the field Status screen. Fixed by having
+`#battle_status_row` (`mruby-rpg2k/mrblib/scene/battle.rb`) hand its
+HP/MP segments the raw `cur`/`max`/`can_knockout` triple instead of a
+pre-formatted flat string (three trailing array elements the existing
+name/state segments simply leave nil, so the shared drawing loop's
+destructuring needed no other change), and a new
+`#draw_battle_stat_segment` — mirroring `Scene::StatusMenu
+#draw_stat_segment`'s three-colored-run shape, adapted to this panel's
+own fixed-width columns — draws label/current-figure/`"/max"`
+separately via `#value_font_color`, still clipping the whole run first
+(`#clip_text_to_width`) so the existing overflow-into-the-neighbouring-
+column guard is unaffected. The knockout (index 5) half of this fix
+was not independently wine-confirmed this cycle — wiping this
+particular save's only party member triggers RPG_RT's own Game Over
+before the battle window could be captured — so it's implemented by
+symmetry with the already-battle-agnostic `#value_font_color` and the
+already-confirmed field-screen behavior, not a direct capture. Covered
+by two `scripts/rpg2k_scene_check.rb` checks: a new one driving
+`#battle_status_row`/`#value_font_color` directly with a full, critical
+and knocked-out HP fixture, asserting indices 0/4/5 (and that MP never
+reads knockout-grey even at 0); and the existing column-overflow check,
+updated to reconstruct each now-three-call segment before asserting its
+clipped text — both confirmed to fail against the pre-fix code.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.

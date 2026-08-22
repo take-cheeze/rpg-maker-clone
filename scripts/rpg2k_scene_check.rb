@@ -16332,29 +16332,69 @@ check 'the battle status panel clips each column to the gap before its own neigh
   ensure
     RGSS::Bitmap.send(:define_method, :text_size, original_text_size)
   end
+  # #draw_battle_stat_segment now draws each of HP/SP as three consecutive
+  # calls (label, current-value figure, "/max"), not one -- reconstruct the
+  # segment's full text from its three parts to check the same clipping
+  # this test always has, undisturbed by the recolor split.
   calls = ui[:status_win].contents.draw_calls
-  hp_call = calls.find { |a| a[4].start_with?('HP') }
-  mp_call = calls.find { |a| a[4].start_with?('MP') }
-  ok hp_call, 'the HP segment was drawn'
-  ok mp_call, 'the SP segment was drawn'
+  hp_idx = calls.index { |a| a[4].start_with?('HP') }
+  mp_idx = calls.index { |a| a[4].start_with?('MP') }
+  ok hp_idx, 'the HP segment was drawn'
+  ok mp_idx, 'the SP segment was drawn'
+  hp_call = calls[hp_idx]
+  mp_call = calls[mp_idx]
+  hp_text = calls[hp_idx, 3].map { |a| a[4] }.join
+  mp_text = calls[mp_idx, 3].map { |a| a[4] }.join
 
   eq hp_gap, hp_call[2],
      "HP's own width is the #{hp_gap}px gap up to the SP column, not the panel's own edge"
   eq mp_gap, mp_call[2],
      "SP's own width is the #{mp_gap}px gap up to the panel's own inner edge"
 
-  ok hp_call[4].length * 6 <= hp_gap,
-     "HP's drawn text (#{hp_call[4].inspect}) was sliced to fit its own #{hp_gap}px column " \
+  ok hp_text.length * 6 <= hp_gap,
+     "HP's drawn text (#{hp_text.inspect}) was sliced to fit its own #{hp_gap}px column " \
      "instead of overrunning into SP's"
-  ok mp_call[4].length * 6 <= mp_gap,
-     "SP's drawn text (#{mp_call[4].inspect}) was sliced to fit its own tiny #{mp_gap}px " \
+  ok mp_text.length * 6 <= mp_gap,
+     "SP's drawn text (#{mp_text.inspect}) was sliced to fit its own tiny #{mp_gap}px " \
      'column instead of running off the panel'
-  eq 'HP 999/999', hp_call[4],
+  eq 'HP 999/999', hp_text,
      "HP's own 60px column is exactly enough for RPG2000's own 999 ceiling -- " \
      "the comment on STATUS_NAME_X's own block -- so this drew whole, untruncated"
-  ok mp_call[4].length < 'MP 999/999'.length,
+  ok mp_text.length < 'MP 999/999'.length,
      "SP 999/999 does not fit #{mp_gap}px at 6px/character, so it was genuinely truncated " \
      'rather than bleeding off the panel'
+end
+
+# Minimal stand-in for a battle Combatant, exposing exactly what
+# #battle_status_row reads (name/hp/mp/display_max_*/states) -- confirmed
+# against genuine RPG_RT.exe under wine: a save edited to a below-1/4-max HP
+# showed only the HP figure recoloring in the battle status panel (golden
+# swatch, index 4), never the "/max" suffix or the MP column, matching the
+# field Status screen's own already-implemented #value_font_color rule.
+BattleStatusRowFixture = Struct.new(:name, :hp, :max_hp, :mp, :max_mp, :states) do
+  def display_max_hp; hp && hp > max_hp ? hp : max_hp; end
+  def display_max_mp; mp && mp > max_mp ? mp : max_mp; end
+end
+
+check 'battle_status_row carries the HP/MP current-value figure\'s own colour, ' \
+      'not a single flat colour for the whole segment' do
+  scene, = battle_at_command(nil)
+  battle = scene.instance_variable_get(:@battle)
+  full = BattleStatusRowFixture.new('Hero', 100, 100, 50, 50, [])
+  critical = BattleStatusRowFixture.new('Ally', 10, 100, 50, 50, []) # 10 <= 100/4
+  knocked_out = BattleStatusRowFixture.new('Down', 0, 100, 50, 50, [])
+
+  full_hp, full_mp = battle.send(:battle_status_row, full)[2, 2]
+  crit_hp, = battle.send(:battle_status_row, critical)[2, 1]
+  ko_hp, = battle.send(:battle_status_row, knocked_out)[2, 1]
+
+  eq [100, 100, true], full_hp[3..5], 'the HP segment carries cur/max/can_knockout, not a flat string'
+  eq [50, 50, false], full_mp[3..5], 'the MP segment carries its own cur/max, and never knocks out'
+
+  eq 0, battle.send(:value_font_color, *full_hp[3..5]), 'full HP draws the ordinary colour'
+  eq 4, battle.send(:value_font_color, *crit_hp[3..5]), 'HP at 1/10 of max draws the critical colour'
+  eq 5, battle.send(:value_font_color, *ko_hp[3..5]), 'HP at 0 draws the knockout colour'
+  eq 0, battle.send(:value_font_color, *full_mp[3..5]), 'MP never reads knockout-grey even at 0'
 end
 
 check 'the status panel swaps sides with whichever 76px window is showing beside it' do
