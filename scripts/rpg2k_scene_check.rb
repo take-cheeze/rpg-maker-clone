@@ -13160,11 +13160,18 @@ end
 # whenever a save exists, unconditionally alongside `SetItemEnabled` -- the
 # cursor starts on Continue, not New Game, so a returning player does not have
 # to move down manually before resuming.
-check 'a save exists: the title cursor starts on Continue, not New Game' do
+check 'a save exists: the title cursor still starts on New Game, not Continue' do
+  # Confirmed against a genuine RPG_RT.exe (Nepheshel, under wine): booted
+  # three separate times against a valid, working save (Continue enabled and
+  # un-grayed, confirmed by successfully opening a correctly-populated
+  # file-select screen from it), the title cursor sat on New Game every
+  # time. A prior version of this check asserted the opposite, sourced only
+  # from EasyRPG's source rather than the genuine runtime -- see the dated
+  # Follow-up on the title-screen entry in docs/TODO.md.
   parent = TitleParent.new(fake_db, nil, false, true)
   scene = RPG2k::Scene::Title.new(parent)
-  eq 1, scene.instance_variable_get(:@selected_index),
-     'RPG_RT starts the cursor on Continue when a save exists (Scene_Title::Refresh)'
+  eq 0, scene.instance_variable_get(:@selected_index),
+     "a save's presence only ungrays Continue, it does not move the initial cursor"
 end
 
 check 'no save data: the title cursor still starts on New Game' do

@@ -1,4 +1,5 @@
-- **Title screen:** The cursor now starts on Continue instead of New Game
-  when a save exists, matching RPG_RT (`Scene_Title::Refresh`'s
-  `command_window->SetIndex(1)`). Covered by two new
-  `scripts/rpg2k_scene_check.rb` checks.
+- **Title screen:** The cursor always starts on New Game, whether or not a
+  save exists — a prior fix here had it start on Continue whenever a save
+  exists, sourced only from EasyRPG's source; confirmed against a genuine
+  RPG_RT.exe that this was wrong, and reverted. A save's presence still
+  ungrays Continue, it just does not move the initial cursor.
