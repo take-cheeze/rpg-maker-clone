@@ -56,3 +56,11 @@ only the byte layout assumed while indexing into it was wrong.
   level-up are still not modelled, and `exp` is stored but no gain-exp path
   consumes it yet -- follow-up. The growth curve is read straight from the
   database, so no save fixture is bundled.
+
+(An independently-discovered, differently-worded report of this same
+row-major/stat-major mixup briefly lived here as a second "Follow-up" dated
+2026-08-20, citing liblcf's `RawStruct<rpg::Parameters>::ReadLcf` and a real
+player's damage report rather than a live RPG_RT capture. It described the
+identical fix landed above and is folded into the single "Correction
+(2026-08-22)" note near the top of this file rather than kept as a
+duplicate.)

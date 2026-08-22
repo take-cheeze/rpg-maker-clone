@@ -10596,7 +10596,19 @@ module Game
     # an enemy defaulting to the front row is never adjusted). The `row` is
     # read through Combatant#row (nil defaults to the front row, the only row
     # RPG2000 knows).
+    #
+    # `@rpg2003` gated first: the front row is every RPG2000 ally's permanent
+    # default (there is no Row command to ever leave it), so the `offense`
+    # branch below is not the no-op its own row-never-changes reasoning
+    # promises -- unlike the `defender` branch, which really is a no-op there
+    # (row can never read ROW_BACK), `row == ROW_FRONT` is trivially true for
+    # every ally, on every attack, in every RPG2000 fight. Without this gate a
+    # plain RPG2000 basic attack silently took RPG2003's +25% front-row bonus
+    # on every single swing -- confirmed against a real RPG2000 database
+    # (Nepheshel): a level 1 actor's very first hit read 25% higher than
+    # `Battle.attack_damage` alone accounts for.
     def row_adjusted?(battler, offense)
+      return false unless @rpg2003
       row = battler.respond_to?(:row) ? battler.row : ROW_FRONT
       if offense
         ally?(battler) && row == ROW_FRONT

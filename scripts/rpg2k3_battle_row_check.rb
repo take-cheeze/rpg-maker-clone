@@ -140,7 +140,7 @@ def actor_combatant(name, atk, dfn, agi)
   c
 end
 
-bat = Game::Battle.new([front], [front], Game::Rng.new(1))
+bat = Game::Battle.new([front], [front], Game::Rng.new(1), rpg2003: true)
 attacker = actor_combatant('Atk', 100, 0, 20)
 target_front = bat.enemies[0]
 target_back = target_front.dup
@@ -184,11 +184,30 @@ end
 #   front defender: unchanged 62
 #   back  defender: 75 * 62 / 100 = 46        (defender row, after attribute)
 dmg_bat = Game::Battle.new([attacker], [target_front], Game::Rng.new(1),
-                           nil, false, false, false)
+                           nil, false, false, false, rpg2003: true)
 
 check 'a front-row attacker deals +25% damage vs a front-row defender' do
   entry = dmg_bat.send(:deal_attack, attacker, target_front)
   eq 62, entry[:damage]
+end
+
+# RPG2000 has no Row command at all -- every ally is permanently on the
+# front row, which is exactly `row_adjusted?`'s own offense-side trigger
+# condition (`ally?(battler) && row == ROW_FRONT`). Confirmed directly
+# against `row_adjusted?`'s own doc comment ("RPG_RT 2003's row mechanic")
+# and ADR 0053's Phase 1 note: this is an RPG2003-only mechanic, so an
+# otherwise-identical RPG2000 battle (`rpg2003: false`, the default) must
+# deal the plain, un-adjusted 50 damage here, not 62 -- `row_adjusted?`
+# gates on `@rpg2003` first for exactly this reason.
+dmg_bat_2k = Game::Battle.new([attacker], [target_front], Game::Rng.new(1),
+                              nil, false, false, false)
+
+check "an RPG2000 front-row attacker deals no row bonus at all -- RPG2000 " \
+      'has no Row command, so this is not a no-op the way it looks' do
+  eq false, dmg_bat_2k.row_adjusted?(attacker, true),
+     'row_adjusted? must gate on @rpg2003, not just the row value'
+  entry = dmg_bat_2k.send(:deal_attack, attacker, target_front)
+  eq 50, entry[:damage], 'plain attack_damage(100, 0), no +25% row bonus'
 end
 
 check 'a back-row defender takes -25% damage from the same swing' do

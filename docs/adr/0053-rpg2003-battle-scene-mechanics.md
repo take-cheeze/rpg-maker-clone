@@ -113,6 +113,20 @@ front-row default; wired into the `ruby-checks` CI job. The existing
 `rpg2k_logic_check.rb` and `rpg2k_scene_check.rb` suites stay green because no
 fixture sets a back row.
 
+✅ **Follow-up (2026-08-20): "RPG2000 never sets a row, so every term is a
+no-op there" was only true for the *defender* term.** `row_adjusted?` read
+`row == ROW_FRONT` for an attacker without first checking `@rpg2003`, and the
+front row is every RPG2000 ally's permanent, unchangeable default (there is
+no Row command to ever leave it) -- so the +25% attacker bonus fired on
+*every* RPG2000 basic attack, silently, for the whole life of this feature.
+The back-row defender term really was a no-op (row can never read `ROW_BACK`
+outside 2003), which is why nothing caught the asymmetry: `row_adjusted?`
+now returns `false` outright unless `@rpg2003`, and the two
+`rpg2k3_battle_row_check.rb` fixtures that built a `Game::Battle` to exercise
+it (and previously relied on the default `rpg2003: false`) now pass
+`rpg2003: true`, matching what they were actually testing. See
+`changelog.d/rpg2000-row-bonus-leak.fixed.md`.
+
 ## Phase 2 — implementation notes (2026-08-16)
 
 The active-time (gauge) model is in place in `mruby-rpg2k/mrblib/game.rb`;
