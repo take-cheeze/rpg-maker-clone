@@ -47,11 +47,15 @@
   already has, held down instead of tapped); press **F9** to open a debug
   menu listing every switch and variable, ten at a time, with a signed number
   editor for variables. A third page (Left/Right past Switch/Variable), Map —
-  this engine's own addition, not part of genuine RPG_RT's F9 menu — opens a
-  whole-map viewer: every tile of the current map at one pixel per tile
-  (green passable, dark red blocked), with a marker for the player and every
-  active map event, panned with the arrow keys and recentred on the player
-  with C. **R** enters Select mode, a single-tile cursor (arrow keys move it,
+  this engine's own addition, not part of genuine RPG_RT's F9 menu — steps a
+  selected map id (Up/Down by one, L/R by ten, the same convention the
+  Animation page below uses for its own id) and opens a whole-map viewer for
+  it with C: every tile of the selected map at one pixel per tile (green
+  passable, dark red blocked), with a marker for the player and every active
+  map event when it's the player's own current map (a different id opens a
+  fresh, read-only-until-edited view of that map instead — no player marker,
+  since the player isn't standing on it), panned with the arrow keys and
+  recentred with C. **R** enters Select mode, a single-tile cursor (arrow keys move it,
   the viewport auto-scrolling to keep it in view) that reports the tile
   underneath — coordinates, passable/blocked, and any map event standing
   there — and warps the player onto it with C, through the same queued-warp
@@ -112,9 +116,13 @@
   `--test_play` as always; this only affects launching straight into a tool
   from the command line. The Map Editor also fills whatever screen size
   `--width`/`--height` asks for (RPG2000/2003's own fixed 320x240 only binds
-  real gameplay, not this debug-only tool), and its own **Y**/**X** keys zoom
+  real gameplay, not this debug-only tool), and its own **+**/**-** keys zoom
   each tile from the original 1px up to 8px — useful on a bigger screen,
-  where 1px/tile would otherwise be too fine-grained to paint precisely:
+  where 1px/tile would otherwise be too fine-grained to paint precisely (not
+  **Y**/**X**: the SDL desktop backend's own default layout already binds the
+  physical X key to Cancel and leaves Y unbound, so +/- — already wired to
+  the same keys on every backend for RPG2003's Key Input Processing — avoids
+  that collision):
 
   ```sh
   ./rpg_maker_clone --iterm --game_dir path/to/game --rpg2k_preview_map=5 \

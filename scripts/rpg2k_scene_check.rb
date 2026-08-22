@@ -19577,6 +19577,68 @@ check 'the debug menu Map page opens Scene::MapViewer on C' do
   ok pushed.first.is_a?(RPG2k::Scene::MapViewer), 'the pushed scene is the map viewer'
 end
 
+check "the debug menu Map page's @map_id defaults to the player's own current map, and C " \
+     "with that default selected reuses the live Game::Map object rather than loading a " \
+     "second copy of it" do
+  st = menu_state
+  st.map = fake_map(7, {})
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # Switch -> Variable
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # Variable -> Map
+  eq 7, scene.instance_variable_get(:@map_id), "defaults to the player's own current map id"
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  viewer = scene.parent.pushed.first
+  ok viewer.is_a?(RPG2k::Scene::MapViewer)
+  ok viewer.instance_variable_get(:@map).equal?(st.map),
+     'the same id as the current map reuses the live Game::Map object, unchanged from before'
+  ok viewer.instance_variable_get(:@live), 'so it is marked live'
+end
+
+check "the debug menu Map page's own Up/Down/L/R step @map_id (Up/Down +-1, L/R +-10, " \
+     "clamped at a floor of 1 -- the same convention the Animation page already uses for " \
+     "its own id, since Left/Right are already claimed by #cycle_mode) independently of the " \
+     "player's live map, and C then opens a freshly loaded (not live) viewer for it" do
+  st = menu_state
+  st.map = fake_map(7, {})
+  scene = menu_scene(RPG2k::Scene::DebugMenu, st)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update # -> Map page, @map_id == 7
+
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  eq 8, scene.instance_variable_get(:@map_id), 'Up steps +1'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  eq 7, scene.instance_variable_get(:@map_id), 'Down steps -1'
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update
+  eq 17, scene.instance_variable_get(:@map_id), 'R jumps +10'
+  RGSS::Input.triggered = [RGSS::Input::L]
+  scene.update
+  eq 7, scene.instance_variable_get(:@map_id), 'L jumps back -10'
+  3.times do
+    RGSS::Input.triggered = [RGSS::Input::L]
+    scene.update
+  end
+  eq 1, scene.instance_variable_get(:@map_id), 'clamped at a floor of 1, never zero or negative'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  viewer = scene.parent.pushed.first
+  ok viewer.is_a?(RPG2k::Scene::MapViewer)
+  ok !viewer.instance_variable_get(:@map).equal?(st.map),
+     "a different id from the player's own current map loads a fresh Game::Map instead of " \
+     'reusing the live one'
+  eq 1, viewer.instance_variable_get(:@map).id
+  ok !viewer.instance_variable_get(:@live), 'so it is not marked live'
+end
+
 check 'MapViewer marks the player and every map event, and reads every tile as ' \
      'passable when the chipset carries no passability table' do
   ev = event(2, 2, page)
@@ -19910,13 +19972,15 @@ check "MapViewer's Edit mode hint is wider than the 320px screen at a " \
      "the 72-char Edit-mode hint wrapped onto #{footer_calls.size} line(s), expected at least 2"
   ok footer_calls.all? { |(_x, _y, _w, _h, text)| text.length * 6 <= contents.width },
      'every wrapped line actually fits within the screen, not just the box #draw_text was given'
-  eq 'Arrows:Move C:Paint CTRL:Pick SHIFT:Layer R:Save B:Exit Y/X:Zoom',
+  eq 'Arrows:Move C:Paint CTRL:Pick SHIFT:Layer R:Save B:Exit +/-:Zoom',
      footer_calls.map { |c| c[4] }.join(' '),
      'wrapping only rejoins words with single spaces -- no word was dropped, duplicated, or reordered'
 end
 
-check 'Y/X zoom the MapViewer in and out, scaling drawn tile size and shrinking/growing ' \
-     'the tile viewport to match, clamped to ZOOM_MIN/ZOOM_MAX' do
+check '+/- zoom the MapViewer in and out, scaling drawn tile size and shrinking/growing ' \
+     'the tile viewport to match, clamped to ZOOM_MIN/ZOOM_MAX -- PLUS/MINUS rather than ' \
+     'the RGSS face-button ids X/Y, whose physical keys are already taken (X cancels, and ' \
+     'Y is unbound) on the SDL backend\'s own default layout' do
   map_w = 6; map_h = 5
   st = menu_state
   st.map = Game::Map.new(1, OpenStruct.new(width: map_w, height: map_h, chipset_id: 1,
@@ -19928,9 +19992,9 @@ check 'Y/X zoom the MapViewer in and out, scaling drawn tile size and shrinking/
   view_w_before = scene.instance_variable_get(:@view_w)
   view_h_before = scene.instance_variable_get(:@view_h)
 
-  RGSS::Input.triggered = [RGSS::Input::Y]
+  RGSS::Input.triggered = [RGSS::Input::PLUS]
   scene.update
-  eq 2, scene.instance_variable_get(:@zoom), 'Y steps the zoom up by one'
+  eq 2, scene.instance_variable_get(:@zoom), '+ steps the zoom up by one'
   eq view_w_before / 2, scene.instance_variable_get(:@view_w),
      'doubling the pixels-per-tile halves how many tiles the same-size viewport can show'
   eq view_h_before / 2, scene.instance_variable_get(:@view_h)
@@ -19941,24 +20005,64 @@ check 'Y/X zoom the MapViewer in and out, scaling drawn tile size and shrinking/
   ok row0, 'row 0 is drawn 2px tall at zoom 2x, not the original 1px'
   eq map_w * 2, row0[2], 'and 2px wide per tile across the whole passable run'
 
-  RGSS::Input.triggered = [RGSS::Input::X]
+  RGSS::Input.triggered = [RGSS::Input::MINUS]
   scene.update
-  eq 1, scene.instance_variable_get(:@zoom), 'X steps the zoom back down'
+  eq 1, scene.instance_variable_get(:@zoom), '- steps the zoom back down'
   eq view_w_before, scene.instance_variable_get(:@view_w), 'back to the original tile count'
 
   (RPG2k::Scene::MapViewer::ZOOM_MAX + 2).times do
-    RGSS::Input.triggered = [RGSS::Input::Y]
+    RGSS::Input.triggered = [RGSS::Input::PLUS]
     scene.update
   end
   eq RPG2k::Scene::MapViewer::ZOOM_MAX, scene.instance_variable_get(:@zoom),
-     'Y clamps at ZOOM_MAX rather than growing without bound'
+     '+ clamps at ZOOM_MAX rather than growing without bound'
 
   RPG2k::Scene::MapViewer::ZOOM_MAX.times do
-    RGSS::Input.triggered = [RGSS::Input::X]
+    RGSS::Input.triggered = [RGSS::Input::MINUS]
     scene.update
   end
   eq RPG2k::Scene::MapViewer::ZOOM_MIN, scene.instance_variable_get(:@zoom),
-     'X clamps at ZOOM_MIN rather than going to 0 or negative'
+     '- clamps at ZOOM_MIN rather than going to 0 or negative'
+end
+
+check 'a Scene::MapViewer opened with map: other than state.map (Scene::DebugMenu\'s Map ' \
+     "page browsing a different id -- see #open_map_viewer) is not live: its cursor centres " \
+     "on the browsed map's own middle tile rather than the live player's position, which " \
+     "could be out of bounds (or simply meaningless) on a map the player isn't actually on, " \
+     'and it draws no player marker at all' do
+  st = menu_state
+  st.x = 3; st.y = 4
+  st.map = fake_map(1, {}) # the player's own live map, distinct from the one being browsed
+  foreign = Game::Map.new(9, OpenStruct.new(width: 20, height: 16, chipset_id: 1,
+                                            lower_layer: Array.new(20 * 16, 0),
+                                            upper_layer: Array.new(20 * 16, 0),
+                                            events: {}))
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st, map: foreign)
+  ok !scene.instance_variable_get(:@live), 'map: other than state.map is not live'
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update # -> Select mode
+  eq foreign.width / 2, scene.instance_variable_get(:@cx),
+     "the cursor opens on the browsed map's own middle tile, not the live player's (3, 4)"
+  eq foreign.height / 2, scene.instance_variable_get(:@cy)
+
+  contents = scene.instance_variable_get(:@contents)
+  ok !contents.fill_calls.any? { |(*rest)| rest.last == RPG2k::Scene::MapViewer::PLAYER_COLOR },
+     "no player marker is drawn on a map the player isn't actually standing on"
+end
+
+check 'Scene::MapViewer opened with no map: (or map: state.map explicitly) behaves exactly ' \
+     'as before this parameter existed -- live, centred on the real player position' do
+  st = menu_state
+  st.x = 3; st.y = 4
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st)
+  ok scene.instance_variable_get(:@live), 'defaulting map: to state.map is live'
+
+  RGSS::Input.triggered = [RGSS::Input::R]
+  scene.update
+  eq 3, scene.instance_variable_get(:@cx), "the cursor opens on the live player's own tile"
+  eq 4, scene.instance_variable_get(:@cy)
 end
 
 check 'Scene::Base#screen_width/#screen_height fall back to RPG2000\'s fixed 320x240 ' \
