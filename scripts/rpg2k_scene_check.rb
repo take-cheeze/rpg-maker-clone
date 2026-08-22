@@ -17255,6 +17255,11 @@ class MenuStubParty
                       # that exercises a stat-affecting (halve/double) state
   end
   def field_items(_state = nil); []; end
+  # Every stub item under test here is meant to be usable -- Scene::ItemMenu
+  # now consults this to decide whether Decision buzzes-and-stays instead of
+  # dispatching, mirroring Game::Party#field_usable?; a stub testing that
+  # specific disabled path overrides this.
+  def field_usable?(_id, _state = nil); true; end
   def field_skills(_actor, _state = nil); []; end
   def reorder(new_order); @actors = new_order.map { |i| @actors[i] }; end
   # Mirrors Game::Party#stat_mode/#adjust_stat/#effective_atk (etc, see
@@ -18784,6 +18789,50 @@ check 'Scene::ItemMenu: a successful use stays on the target screen, ' \
   scene.update
   RGSS::Input.reset
   eq :items, scene.instance_variable_get(:@mode)
+end
+
+# A single held item that #field_items now lists (an unequipped weapon,
+# say) but #field_usable? still refuses -- Game::Party's own list-vs-usable
+# split is covered by scripts/rpg2k_logic_check.rb; this stub only has to
+# hand the scene one listed-but-disabled row so the check below can pin the
+# RGSS wiring: Decision on it buzzes and stays, exactly like an unavailable
+# skill already does in Scene::SkillMenu#choose_skill.
+class DisabledFieldItemStubParty < MenuStubParty
+  ITEM_ID = 50
+
+  attr_reader :use_item_calls
+
+  def initialize
+    super
+    @use_item_calls = []
+  end
+
+  def field_items(_state = nil); [[ITEM_ID, 1]]; end
+  def field_usable?(id, _state = nil); id != ITEM_ID; end
+
+  def db_item(id)
+    return nil unless id == ITEM_ID
+    OpenStruct.new(name: 'Plain Sword', type: 1, scope: 1) # type 1 = weapon
+  end
+
+  def use_item(id, actor = nil)
+    @use_item_calls << [id, actor]
+    []
+  end
+end
+
+check 'Scene::ItemMenu: choosing a listed-but-unusable item plays Buzzer, ' \
+      'not Decision, casts nothing, and stays on the list' do
+  st = Game::State.new(DisabledFieldItemStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, st)
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the one, disabled item
+  scene.update
+  RGSS::Input.reset
+  eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'Buzzer plays instead of Decision'
+  ok st.party.use_item_calls.empty?, 'nothing was cast'
+  ok scene.instance_variable_get(:@message).nil?, 'no message, no confirm screen opened'
+  eq :items, scene.instance_variable_get(:@mode), 'stays on the item list'
 end
 
 check 'Scene::ItemMenu: a switch item flips its switch, consumes one, and closes ' \

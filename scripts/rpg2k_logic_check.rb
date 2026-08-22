@@ -6741,15 +6741,17 @@ check 'to_lsd/from_lsd round-trips the 使用回数 tally (chunk 109 field 14)' 
   eq 1, round.party.item_count(4)
 end
 
-check 'field_items lists only held medicines, in id order with counts' do
+check 'field_items lists every held item in id order with counts, including ' \
+      'an unusable one -- RPG_RT lists it disabled, it does not omit it' do
   items = { 5 => fake_item(type: 6, rhp: 50),   # medicine
             7 => fake_item(type: 1, atk: 10),   # weapon -- not field-usable
             9 => fake_item(type: 6, rsp: 10) }  # medicine
   st = item_party(items)
   st.party.gain_item(9, 2)
   st.party.gain_item(5, 1)
-  st.party.gain_item(7, 1)   # weapon in the bag but not usable from the menu
-  eq [[5, 1], [9, 2]], st.party.field_items
+  st.party.gain_item(7, 1)   # weapon in the bag, listed but not menu-usable
+  eq [[5, 1], [7, 1], [9, 2]], st.party.field_items
+  ok !st.party.field_usable?(7), 'still not usable -- only listing changed'
 end
 
 check 'a field-only medicine is kept out of battle; every medicine is in the field' do
@@ -6802,7 +6804,8 @@ check 'a switch item reads its own pair of occasion flags' do
   st = item_party(items)
   st.party.gain_item(5, 1)
   st.party.gain_item(6, 1)
-  eq [[5, 1]], st.party.field_items, 'only the field-flagged switch item'
+  eq [[5, 1], [6, 1]], st.party.field_items, 'both listed -- the battle-flagged one just disabled here'
+  ok !st.party.field_usable?(6), 'still not field-usable, only listing changed'
   eq [[6, 1]], st.party.battle_items, 'only the battle-flagged one'
 end
 
@@ -6998,13 +7001,15 @@ check 'a medicine flagged reverse_state_effect still cures on use, exactly like 
   eq 1, st.party.item_count(5), 'a no-op use does not consume another'
 end
 
-check 'field_items includes skill books alongside medicines' do
+check 'field_items includes skill books alongside medicines, and the ' \
+      'unusable weapon too, just disabled' do
   items = { 5 => fake_item(type: 6, rhp: 10),       # medicine
             8 => fake_item(type: 7, skill_id: 42),  # skill book
             3 => fake_item(type: 1, atk: 5) }       # weapon (not usable)
   st = item_party(items)
   [5, 8, 3].each { |id| st.party.gain_item(id, 1) }
-  eq [[5, 1], [8, 1]], st.party.field_items
+  eq [[3, 1], [5, 1], [8, 1]], st.party.field_items
+  ok !st.party.field_usable?(3)
 end
 
 check 'a skill book teaches its skill to the target and is consumed' do

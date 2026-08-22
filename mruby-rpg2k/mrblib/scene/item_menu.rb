@@ -142,6 +142,15 @@ class RPG2k
           return
         end
         id, = items[@item_index]
+        # A row now can hold an item #field_items lists but is not
+        # field-usable (see its own doc comment) -- selectable, since the
+        # cursor moves freely onto it, but Decision just buzzes and stays,
+        # the same "greyed entry" shape Scene::SkillMenu#choose_skill
+        # already gates its own dispatch behind.
+        unless @state.party.field_usable?(id, @state)
+          play_system_se(SFX_BUZZER)
+          return
+        end
         it = @state.party.db_item(id)
         sk = (it && (it.type == Game::Party::ITEM_SPECIAL ||
                     (it.use_skill && (1..5).cover?(it.type)))) ?
@@ -626,14 +635,23 @@ class RPG2k
         # RPG_RT under wine, which shows a blank list row (still with a
         # visible, empty cursor box; see #refresh_item_cursor) rather than
         # any "no items" message.
+        #
+        # A row whose item is not field-usable (an unequipped weapon/shield/
+        # armor/helmet/accessory, say) is still drawn, in the windowskin's
+        # disabled swatch (index 3) rather than the enabled one (0) -- the
+        # same convention the title screen's Continue label uses, and
+        # confirmed here directly: pixel-sampling a genuine RPG_RT frame
+        # (a held, unusable Dagger next to a usable Herb) found the two
+        # rows in visibly different, distinct colors.
         rows.each_with_index do |(id, count), i|
           it = @state.party.db_item(id)
           name = (it && it.name.to_s)
           name = "Item #{id}" if name.nil? || name.empty?
           x = (i % COLUMN_MAX) * col_w
           y = (i / COLUMN_MAX) * LINE_H
-          c.draw_text x, y + 2, col_w - 40, LINE_H, name
-          c.draw_text x + col_w - 40, y + 2, 40, LINE_H, ":#{count}"
+          idx = @state.party.field_usable?(id, @state) ? 0 : 3
+          draw_system_text(c, x, y + 2, col_w - 40, LINE_H, name, @skin, idx)
+          draw_system_text(c, x + col_w - 40, y + 2, 40, LINE_H, ":#{count}", @skin, idx)
         end
         @item_window.contents = c
         refresh_item_cursor
