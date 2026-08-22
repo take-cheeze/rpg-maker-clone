@@ -5311,9 +5311,17 @@ class RPG2k
         end
       end
 
+      # Docks under the status panel, sharing its own width -- confirmed
+      # against genuine RPG_RT.exe under wine: a live shop's right-hand
+      # column (border-color pixel scan against a real frame) shows the
+      # status box then the gold box directly beneath it, both the same
+      # 136px width, not a narrower box pinned to the top like this used to
+      # draw. #draw_shop_status's own window uses the identical SHOP_STATUS_W
+      # / SHOP_LINE_H*2+BORDER*2 shape this stacks below.
       def build_shop_gold_window
-        gw = 88
-        win = Window.new(SCREEN_W - gw - 6, 6, gw, SHOP_LINE_H + Window::BORDER * 2)
+        gw = SHOP_STATUS_W
+        win = Window.new(SCREEN_W - gw - 6, 6 + SHOP_LINE_H * 2 + Window::BORDER * 2,
+                         gw, SHOP_LINE_H + Window::BORDER * 2)
         win.z = 300
         win.windowskin = @windowskin
         win
@@ -5394,7 +5402,7 @@ class RPG2k
         visible = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen])
         @shop[:gold].visible = visible
         return unless visible
-        gw = 88
+        gw = SHOP_STATUS_W
         c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, SHOP_LINE_H,
@@ -5441,7 +5449,12 @@ class RPG2k
         end
         win = @shop[:status]
         unless win
-          win = Window.new(6, 6, SHOP_STATUS_W, SHOP_LINE_H * 2 + Window::BORDER * 2)
+          # Right-aligned, not the screen's left edge -- confirmed against
+          # genuine RPG_RT.exe under wine (see #build_shop_gold_window's own
+          # doc comment for the capture this and the gold panel's position
+          # both come from).
+          win = Window.new(SCREEN_W - SHOP_STATUS_W - 6, 6,
+                           SHOP_STATUS_W, SHOP_LINE_H * 2 + Window::BORDER * 2)
           win.z = 300
           win.windowskin = @windowskin
           @shop[:status] = win

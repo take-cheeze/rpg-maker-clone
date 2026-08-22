@@ -15451,6 +15451,20 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   ok texts.include?('2'), 'two Potions already held'
   ok texts.include?('1'), 'one Potion equipped across the party'
 
+  # Confirmed against genuine RPG_RT.exe under wine (border-color pixel scan
+  # of a live shop's right-hand column): the status panel and the gold panel
+  # sit right-aligned, status stacked directly above gold, both the same
+  # width -- not the status panel pinned to the screen's left edge with a
+  # narrower gold box at the top-right, the layout this used to draw.
+  status_win = shop[:status]
+  gold_win = scene.instance_variable_get(:@shop)[:gold]
+  status_x = RPG2k::Scene::Map::SCREEN_W - RPG2k::Scene::Map::SHOP_STATUS_W - 6
+  eq status_x, status_win.x, "the status panel is right-aligned, not at the screen's left edge"
+  eq status_x, gold_win.x, 'the gold panel shares the same right-aligned x as the status panel'
+  ok status_win.y < gold_win.y, 'the status panel sits above the gold panel, not beside it'
+  eq RPG2k::Scene::Map::SHOP_STATUS_W, gold_win.width,
+     "the gold panel is the status panel's own width, not a narrower fixed box"
+
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the second good (Herb, id 5)
   scene.update
   RGSS::Input.triggered = []
