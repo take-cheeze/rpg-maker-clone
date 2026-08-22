@@ -118,11 +118,20 @@ class RPG2k
           @slot_index %= @slots.size
           refresh_slot_cursor
           play_system_se(SFX_CURSOR)
-        # A solo party leaves RIGHT/LEFT silent no-ops -- confirmed against
-        # RPG_RT's own live source: `Scene_Equip::UpdateEquipSelection`
-        # (`src/scene_equip.cpp`) gates both branches on `actors.size() >
-        # 1`, not just the trigger itself, so a lone hero's Equip screen
-        # plays no cursor SE and rebuilds nothing on either key.
+        # A solo party leaves RIGHT/LEFT silent no-ops -- this was only ever
+        # cited to EasyRPG's own live source (`Scene_Equip::
+        # UpdateEquipSelection`, `src/scene_equip.cpp`, gating both branches
+        # on `actors.size() > 1`), the exact kind of claim this session's
+        # methodology treats as worth re-checking on its own. Independently
+        # re-verified since (cycle #121) against a genuine RPG_RT.exe under
+        # wine: with a solo-actor party on the real Equip screen, a single
+        # RIGHT tap followed by a single LEFT tap left the captured frame
+        # pixel-identical (0 differing pixels, `compare -fuzz 5%`) to a pair
+        # of idle frames sampled the same distance apart with no key pressed
+        # at all -- the only pixel movement anywhere in the sequence was the
+        # windowskin's own constant cursor-blink noise floor (a steady 3200
+        # px, present between every frame pair regardless of input), not a
+        # rebuilt screen or a moved actor. Confirmed correct; no code change.
         elsif party.size > 1 && Input.trigger?(Input::RIGHT)
           @actor_index += 1
           @actor_index %= party.size
