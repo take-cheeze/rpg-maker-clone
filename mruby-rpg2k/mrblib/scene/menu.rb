@@ -23,6 +23,16 @@ class RPG2k
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
 
+      # Width of the command list (top-left) and the Gold window (bottom-
+      # left, see GOLD_WINDOW_W) -- independently pixel-measured against a
+      # genuine `RPG_RT.exe` frame (Nepheshel, wine): both windows' right
+      # borders land at the exact same x, forming one continuous column with
+      # the party status panel filling the rest of the screen beside them.
+      # The command window used to hardcode a bare, uncited `108` here --
+      # 20px too wide, visibly misaligning it against the Gold window
+      # directly beneath it.
+      LEFT_COLUMN_W = 88
+
       # RPG2000's field menu is a *fixed* five commands with no separate Status
       # entry -- EasyRPG's `Scene_Menu::CreateCommandWindow`'s `Player::IsRPG2k()`
       # branch hardcodes exactly Item / Skill / Equipment / Save / Quit
@@ -280,7 +290,7 @@ class RPG2k
       end
 
       def build_windows
-        cw = 108
+        cw = LEFT_COLUMN_W
         @command = Window.new(0, 0, cw, @commands.size * LINE_H + Window::BORDER * 2)
         @command.z = 400
         @command.windowskin = @skin
@@ -323,8 +333,10 @@ class RPG2k
       # alike. `Window_Gold::Refresh` (`src/window_gold.cpp`) draws the
       # amount then the `gold` term via `DrawCurrencyValue`
       # (`src/window_base.cpp`) -- the identical no-space "amount then term"
-      # rendering `Scene::StatusMenu`'s own Gold line already uses.
-      GOLD_WINDOW_W = 88
+      # rendering `Scene::StatusMenu`'s own Gold line already uses. Its
+      # width is the same `LEFT_COLUMN_W` the command list above it uses --
+      # see that constant's own citation.
+      GOLD_WINDOW_W = LEFT_COLUMN_W
       GOLD_WINDOW_H = 32
 
       def build_gold_window
