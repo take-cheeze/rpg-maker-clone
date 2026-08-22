@@ -53,6 +53,12 @@ bool g_bgm_valid = false;      // a BGM is set and should resume after an ME
 std::string g_bgm_path;
 int g_bgm_volume = 100;
 bool g_me_active = false;  // an ME is playing over the (suspended) BGM
+// The BGM's own playback position (see bgm_pos) at the instant an ME
+// interrupted it, so replay_bgm can resume there instead of restarting the
+// track -- captured once per ME (see me_play/me_play_mem), not on a second ME
+// that replaces one already playing, which would otherwise read 0 (bgm_pos
+// reports 0 while g_me_active) and lose the original resume point.
+int g_bgm_resume_pos_ms = 0;
 // The BGM's encoded bytes when it came out of an encrypted archive rather than
 // a file (empty otherwise). update() replays the BGM after a music effect
 // finishes, and there is no path to replay from in that case, so the bytes have
@@ -255,8 +261,12 @@ void free_music(void) {
 
 // Start `music`, which has just been loaded. Shared tail of the two loaders
 // below. Note: for music, 1 (not 0) is the portable "play once" value — some
-// decoders treat 0 as "loop forever".
-bool start_music(const std::string& what, int volume, int loops) {
+// decoders treat 0 as "loop forever". pos_ms > 0 seeks to that position
+// (RGSS3's Audio.bgm_play resume point) once playback has actually started; a
+// decoder that cannot seek (or fails to) is left playing from the beginning
+// rather than treated as a load failure — the track is still audible, just not
+// resumed.
+bool start_music(const std::string& what, int volume, int loops, int pos_ms) {
   Mix_VolumeMusic(to_mix_volume(volume));
   if (Mix_PlayMusic(g_music, loops) < 0) {
     LOG(WARNING) << "Audio: failed to play music '" << what
@@ -272,6 +282,20 @@ bool start_music(const std::string& what, int volume, int loops) {
   if (seconds > 0.0)
     g_music_duration_ms = (int)(seconds * 1000.0);
 #endif
+  if (pos_ms > 0) {
+    // One-time seek at play start, not a per-frame poll -- unlike
+    // Mix_GetMusicPosition (see g_music_start_ms's comment), this is not on any
+    // hot path, so MIDI's cost there does not apply here.
+    if (Mix_SetMusicPosition(pos_ms / 1000.0) == 0) {
+      // Back-date the clock so bgm_pos() (elapsed since g_music_start_ms)
+      // reports the seeked position immediately, not 0.
+      g_music_start_ms -= (Uint64)pos_ms;
+    } else {
+      LOG(WARNING) << "Audio: could not seek music '" << what << "' to "
+                   << pos_ms
+                   << "ms, playing from the beginning: " << Mix_GetError();
+    }
+  }
   return true;
 }
 
@@ -298,7 +322,13 @@ void log_music_load_failure(const std::string& what, int size = -1) {
 
 // Free and replace the current music with a freshly loaded stream, then play it
 // (loops = -1 loops forever, 1 plays once). Returns false on load failure.
-bool play_music(const std::string& path, int volume, int loops) {
+// pos_ms defaults to 0 (play from the beginning) for the ME/replay callers
+// below, which never seek; bgm_play (the one caller a resume position reaches)
+// passes the real value through.
+bool play_music(const std::string& path,
+                int volume,
+                int loops,
+                int pos_ms = 0) {
   free_music();
   {
     // The music stream is opened on the game-loop thread. For MIDI this is the
@@ -311,7 +341,7 @@ bool play_music(const std::string& path, int volume, int loops) {
     log_music_load_failure(path);
     return false;
   }
-  return start_music(path, volume, loops);
+  return start_music(path, volume, loops, pos_ms);
 }
 
 // The same, from encoded bytes. The bytes are copied into g_music_bytes first:
@@ -321,7 +351,8 @@ bool play_music_mem(const std::string& name,
                     const void* data,
                     int size,
                     int volume,
-                    int loops) {
+                    int loops,
+                    int pos_ms = 0) {
   free_music();
   g_music_bytes.assign(static_cast<const char*>(data),
                        static_cast<size_t>(size));
@@ -342,27 +373,32 @@ bool play_music_mem(const std::string& name,
     g_music_bytes.clear();
     return false;
   }
-  return start_music(name, volume, loops);
+  return start_music(name, volume, loops, pos_ms);
 }
 
 // Replay the BGM, from wherever it came from. Used to resume after a music
 // effect ends; an archived BGM has no path, only the bytes kept in g_bgm_bytes.
+// Resumes at g_bgm_resume_pos_ms (see me_play/me_play_mem), matching real
+// RGSS: a Music Effect interrupts the map BGM and it picks back up where it
+// left off, not from the top.
 bool replay_bgm(void) {
+  const int pos_ms = g_bgm_resume_pos_ms;
+  g_bgm_resume_pos_ms = 0;
   if (!g_bgm_bytes.empty())
     return play_music_mem(g_bgm_path, g_bgm_bytes.data(),
-                          (int)g_bgm_bytes.size(), g_bgm_volume, -1);
-  return play_music(g_bgm_path, g_bgm_volume, -1);
+                          (int)g_bgm_bytes.size(), g_bgm_volume, -1, pos_ms);
+  return play_music(g_bgm_path, g_bgm_volume, -1, pos_ms);
 }
 
 // -- BGM --------------------------------------------------------------------
 
-void bgm_play(const char* path, int volume, int /*pitch*/) {
+void bgm_play(const char* path, int volume, int /*pitch*/, int pos_ms) {
   g_me_active = false;
   g_bgm_valid = true;
   g_bgm_path = path;
   g_bgm_bytes.clear();  // a file now, not archived bytes
   g_bgm_volume = volume;
-  play_music(g_bgm_path, volume, -1);
+  play_music(g_bgm_path, volume, -1, pos_ms);
 }
 
 // Live volume change for whichever BGM is currently playing, with no restart:
@@ -399,14 +435,15 @@ void bgm_play_mem(const char* name,
                   const void* data,
                   int size,
                   int volume,
-                  int /*pitch*/) {
+                  int /*pitch*/,
+                  int pos_ms) {
   g_me_active = false;
   g_bgm_valid = true;
   g_bgm_path = name;  // for diagnostics only; there is no file
   g_bgm_bytes.assign(static_cast<const char*>(data), static_cast<size_t>(size));
   g_bgm_volume = volume;
   if (!play_music_mem(g_bgm_path, g_bgm_bytes.data(), (int)g_bgm_bytes.size(),
-                      volume, -1))
+                      volume, -1, pos_ms))
     g_bgm_bytes.clear();
 }
 
@@ -483,6 +520,11 @@ int bgs_pos(void) {
 
 void me_play(const char* path, int volume, int /*pitch*/) {
   // Play once over the BGM; update() restores the BGM when the effect ends.
+  // Capture the BGM's own position now, before g_me_active flips bgm_pos() to
+  // 0 -- but only on the first ME of a run, not one that replaces another
+  // already playing, which would capture 0 and lose the real resume point.
+  if (!g_me_active)
+    g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
   if (!play_music(path, volume, 1))
     g_me_active = false;  // load failed: nothing to wait for.
@@ -493,6 +535,8 @@ void me_play_mem(const char* name,
                  int size,
                  int volume,
                  int /*pitch*/) {
+  if (!g_me_active)
+    g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
   if (!play_music_mem(name, data, size, volume, 1))
     g_me_active = false;

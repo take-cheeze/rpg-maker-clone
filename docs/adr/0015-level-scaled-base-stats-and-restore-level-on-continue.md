@@ -14,8 +14,19 @@ actor's max HP/SP (and the four battle stats) from the database at the actor's
 *initial* level and never scaled them, so a resumed level-8 hero kept level-1
 maxima and `from_lsd` restored current HP/MP against the wrong ceiling. The
 database actually stores a full growth curve -- chunk 31 of each actor is six
-shorts (maxHP, maxSP, atk, def, int, agi) *per level* -- but the schema's `status`
-accessor, via its `order:` mapping, only ever surfaced the first (level-1) row.
+shorts (maxHP, maxSP, atk, def, int, agi) ~~*per level*~~ -- but the schema's
+`status` accessor, via its `order:` mapping, only ever surfaced the first
+(level-1) row.
+
+**Correction (2026-08-22):** the "six shorts per level" (row-major) layout
+above was never verified against real RPG_RT and was wrong. The raw shorts
+are actually stat-major -- six `max_level`-sized blocks, one per stat, not
+`max_level` rows of six -- confirmed against a genuine `RPG_RT.exe`'s
+displayed stats and fixed in `Game::Actor#base_stats`; see the dated
+Follow-up on the Nepheshel-Equip-screen stat-mismatch entry in
+`docs/TODO.md` for the full verification. This ADR's own decision below
+(scaling stats by level via `int16_values(31)`) was and remains correct;
+only the byte layout assumed while indexing into it was wrong.
 
 ## Decision
 
@@ -46,23 +57,10 @@ accessor, via its `order:` mapping, only ever surfaced the first (level-1) row.
   consumes it yet -- follow-up. The growth curve is read straight from the
   database, so no save fixture is bundled.
 
-✅ **Follow-up (2026-08-20): the curve layout itself was wrong.** This ADR's
-own context section claimed chunk 31 is "six shorts (maxHP, maxSP, atk, def,
-int, agi) *per level*" -- interleaved -- and `base_stats` indexed it that way
-(`(level - 1) * 6 + stat_index`). That is not what liblcf writes. Its own
-reader, `RawStruct<rpg::Parameters>::ReadLcf` (`src/ldb_parameters.cpp`),
-reads six *separate*, same-length runs back to back -- every level's maxHP,
-then every level's maxSP, then atk/def/int/agi -- and this project's `status`
-cross-check (`curve[0..5]` equalling the schema's own level-1 `status` hash,
-cited above as confirmation) never actually tested the layout: `status`'s
-`order:` mapping decodes the identical first six raw shorts the same
-stride-6 way, so the two agreed by construction, not by checking against an
-independent source. Caught from a real player report of ally damage reading
-roughly double real RPG_RT for the same fight, traced through a real
-database (Nepheshel): the interleaved reading's level-1 ATK (59) was actually
-the level-3 entry of the maxHP run. `base_stats` now reads `n = curve.size /
-6` same-length blocks and indexes `curve[stat_index * n + (level - 1)]`,
-matching the reference reader; the hand-built curve fixtures across
-`rpg2k_logic_check.rb` (`CurveRow`/`ClassedRow`/`JobRow` growth tables) were
-rewritten from interleaved rows to the same six-block layout via a shared
-`block_curve` test helper. See `changelog.d/actor-growth-curve-block-layout.fixed.md`.
+(An independently-discovered, differently-worded report of this same
+row-major/stat-major mixup briefly lived here as a second "Follow-up" dated
+2026-08-20, citing liblcf's `RawStruct<rpg::Parameters>::ReadLcf` and a real
+player's damage report rather than a live RPG_RT capture. It described the
+identical fix landed above and is folded into the single "Correction
+(2026-08-22)" note near the top of this file rather than kept as a
+duplicate.)

@@ -80,6 +80,59 @@ function(rpg2k_add_mruby)
       MRUBY_BUILD_DIR=${mruby_build_dir}
       PROJECT_BUILD_DIR=${ARG_PROJECT_BUILD_DIR} ${ARG_MRB_OPTS})
 
+  # Vendored mruby carries a real upstream compiler bug (patches/mruby-colon3-
+  # assign-setmcnst.patch's own preamble has the full trail): `::Const = value`
+  # written inside a nested module/class body silently defines the constant on
+  # the *lexically enclosing* module instead of at the top level -- no
+  # exception, just the wrong owner. Real, not vendor-specific: `ruby -e 'module
+  # Foo; ::Bar = 42; end; p Object.const_defined?(:Bar)'` prints true, mruby's
+  # does not. This submodule tracks upstream mruby/mruby directly (no fork this
+  # project controls to carry the fix on), so it is patched in place here
+  # instead, the same way patches/psp-fixup-imports-jal-relocation-aware. patch
+  # is applied to a fetched pspsdk checkout -- via a real script
+  # (scripts/apply_mruby_patch.bash), not a `patch` call embedded straight in
+  # this COMMAND: it needs a dry-run-first idempotency check across repeat
+  # configures/builds without re-cloning the submodule, and that redirect- heavy
+  # shell logic does not survive CMake's own command-line escaping reliably
+  # inline. The script itself fails loudly (not silently) if the patch stops
+  # applying, e.g. after a future submodule bump moves the patched code -- see
+  # its own preamble.
+  set(mruby_colon3_patch
+      "${ARG_REPO_ROOT}/patches/mruby-colon3-assign-setmcnst.patch")
+
+  # Vendored mruby never implemented `$!` (Kernel#$!, "the exception the current
+  # rescue clause is handling") -- it always reads nil, even inside an active
+  # rescue (patches/mruby-dollar-bang-scoped.patch's own preamble has the full
+  # trail, including two rejected earlier approaches). Found via a real VX Ace
+  # game's bundled crash-reporter add-on (docs/rpgvx-rgss-api-gap.md, item 7),
+  # which calls `$!.message` inside its own rescue clause and got a
+  # NoMethodError instead, masking the game's original exception behind an
+  # unrelated crash. Same patch-in-place treatment as the colon3 patch above,
+  # for the same reason (no fork of upstream mruby/mruby this project controls).
+  set(mruby_dollar_bang_patch
+      "${ARG_REPO_ROOT}/patches/mruby-dollar-bang-scoped.patch")
+
+  # The vendored mruby-marshal gem
+  # (patches/mruby-marshal-dump-load-protocol.patch's own preamble has the full
+  # trail) deviates from real Ruby's marshal_dump/marshal_load protocol two
+  # ways: Marshal.dump calls a custom marshal_dump with a stray nil argument
+  # instead of the zero arguments real Ruby passes it, and Marshal.load calls a
+  # custom marshal_load as a class factory method instead of allocating an
+  # instance and calling the real instance-level protocol on it. Found via a
+  # real VX Ace game's own Game_Interpreter, which defines a real,
+  # standards-conforming pair to control what a battle-start snapshot serializes
+  # -- every VX Ace game reaches this the first time an event's "Battle
+  # Processing" command runs. This gem is its own separate submodule
+  # (`take-cheeze/mruby-marshal`, vendored under 3rd/mruby-marshal rather than
+  # nested in 3rd/mruby's own gem tree), not one this project's own mrbgem tree
+  # carries, so it gets the same patch-in-place treatment as the two 3rd/mruby
+  # patches above -- apply_mruby_patch.bash takes the target directory as a
+  # parameter, so it patches this second checkout, in a different location, with
+  # no changes of its own.
+  set(mruby_marshal_protocol_patch
+      "${ARG_REPO_ROOT}/patches/mruby-marshal-dump-load-protocol.patch")
+  set(mruby_marshal_prefix "${ARG_REPO_ROOT}/3rd/mruby-marshal")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -92,6 +145,12 @@ function(rpg2k_add_mruby)
   # BSD/macOS) replaces the symlink in place instead.
   add_custom_command(
     OUTPUT "${libmruby_a}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_colon3_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_dollar_bang_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
+            "${mruby_marshal_prefix}" "${mruby_marshal_protocol_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -100,7 +159,9 @@ function(rpg2k_add_mruby)
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME}/mgem-list && ${mrb_opts} rake
       -v
     WORKING_DIRECTORY "${mruby_prefix}"
-    DEPENDS "${ARG_REPO_ROOT}/build_config.rb" ${mrb_files})
+    DEPENDS "${ARG_REPO_ROOT}/build_config.rb" "${mruby_colon3_patch}"
+            "${mruby_dollar_bang_patch}" "${mruby_marshal_protocol_patch}"
+            ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
 

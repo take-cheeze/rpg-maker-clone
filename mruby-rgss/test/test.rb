@@ -5,6 +5,75 @@
 GAME_DIR = "" unless Object.const_defined?(:GAME_DIR)
 RTP_DIR = "" unless Object.const_defined?(:RTP_DIR)
 
+# Regression test for the vendored mruby VM bug fixed by
+# patches/mruby-dollar-bang-scoped.patch: `$!` (the exception a currently
+# executing rescue clause is handling) was never implemented, so it always
+# read `nil` inside a rescue clause -- silently breaking any script (a real
+# VX Ace game's crash-reporter add-on, docs/rpgvx-rgss-api-gap.md item 7,
+# among them) that inspects `$!` rather than the block-local variable bound
+# by `rescue => e`. Scoped to the call frame containing the rescue clause,
+# using mruby's existing frame-pop (cipop) as the point where it goes out of
+# scope again -- so it is readable for the whole rescue body, including from
+# a helper the rescue body calls, but does not leak into unrelated code that
+# runs after that frame has returned.
+assert "$! is set for the duration of the frame containing a rescue clause" do
+  def rgss_test_dollar_bang_message
+    # Read from a call the rescue body makes, not just the rescue body
+    # itself, to prove $! is visible to callees within the same frame.
+    $!.message
+  end
+
+  def rgss_test_dollar_bang_rescue
+    raise ArgumentError, "boom"
+  rescue => e
+    assert_equal e, $!
+    assert_equal "boom", rgss_test_dollar_bang_message
+  end
+
+  assert_nil $!
+  rgss_test_dollar_bang_rescue
+  assert_nil $!
+end
+
+# Companion regression test, same patch: a bare `raise` (no arguments) is
+# meant to re-raise whatever `$!` currently holds -- CRuby's own documented
+# behavior, used by a real VX Ace game's crash-reporter add-on to re-raise
+# after logging (docs/rpgvx-rgss-api-gap.md item 7's `rescue;
+# TKG::ErrorLog.save(); raise; end`). Without a working `$!`, mruby's
+# `mrb_f_raise` (src/kernel.c) had nothing to fall back to, so a bare
+# `raise` always raised a fresh, empty RuntimeError instead -- silently
+# discarding the original exception's class and message.
+assert "a bare raise re-raises the exception $! currently holds" do
+  def rgss_test_bare_raise_rescue
+    raise ArgumentError, "original"
+  rescue
+    raise # no arguments -- re-raise $!, not a fresh RuntimeError
+  end
+
+  begin
+    rgss_test_bare_raise_rescue
+    assert_true false # must not reach here
+  rescue => e
+    assert_equal ArgumentError, e.class
+    assert_equal "original", e.message
+  end
+end
+
+# Regression test for the vendored mruby compiler bug fixed by
+# patches/mruby-colon3-assign-setmcnst.patch: `::Const = value`, written from
+# inside a nested module, used to silently land on the enclosing module
+# instead of at the top level. Discovered because a real VX Ace game's
+# bundled add-on (docs/rpgvx-rgss-api-gap.md, item 7) relies on exactly this
+# pattern to publish its own top-level API and never finished setting up.
+assert "nested `::Const = value` defines the constant at the top level" do
+  module RGSSTestColon3Outer
+    ::RGSSTestColon3Target = self
+  end
+  assert_true Object.const_defined?(:RGSSTestColon3Target)
+  assert_true RGSSTestColon3Target.equal?(RGSSTestColon3Outer)
+  Object.send(:remove_const, :RGSSTestColon3Target)
+end
+
 # From: https://github.com/uni-algo/uni-algo?tab=readme-ov-file#normalization-functions
 assert "RGSS.to_nfd" do
   assert_equal RGSS.to_nfd("Ŵ"), "W\u0302"
@@ -55,6 +124,46 @@ assert "RGSS::Color equality and marshal" do
   loaded = Marshal.load(Marshal.dump(a))
   assert_true loaded.is_a?(RGSS::Color)
   assert_true a == loaded
+end
+
+# Regression test for two real bugs in the vendored 3rd/mruby-marshal gem
+# (patches/mruby-marshal-dump-load-protocol.patch's own preamble has the
+# full trail), both found via a real VX Ace game's own Game_Interpreter
+# (which defines a real, standards-conforming marshal_dump/marshal_load pair
+# to control what its own battle-start snapshot serializes --
+# BattleManager#setup, reached the first time any event's "Battle
+# Processing" command runs):
+#
+#   - Marshal.dump called a custom marshal_dump with one (stray nil)
+#     argument instead of the zero arguments real Ruby's protocol defines,
+#     raising ArgumentError on any class that defines one.
+#   - Marshal.load called a custom marshal_load as a *class* factory method
+#     (`klass.marshal_load data`, returning a whole new object) instead of
+#     real Ruby's protocol -- allocate a new instance without running
+#     #initialize, then call the *instance* method `#marshal_load(data)` on
+#     it to restore state in place -- raising NoMethodError on any class
+#     whose marshal_load is defined the standard way (an instance method,
+#     not `self.`).
+class RGSSTestMarshalDump
+  def initialize(v = nil)
+    @v = v
+  end
+
+  attr_reader :v
+
+  def marshal_dump
+    @v
+  end
+
+  def marshal_load(v)
+    @v = v
+  end
+end
+
+assert "Marshal round-trips a custom marshal_dump/marshal_load pair" do
+  loaded = Marshal.load(Marshal.dump(RGSSTestMarshalDump.new(42)))
+  assert_true loaded.is_a?(RGSSTestMarshalDump)
+  assert_equal 42, loaded.v
 end
 
 assert "RGSS::Tone basics and clamping" do
@@ -1326,8 +1435,8 @@ assert "RGSS::Audio plays a packed track through RGSS.asset_archive" do
   class << RGSS::Audio
     alias _bgm_play_mem_orig _bgm_play_mem
     alias _can_play_mem_orig _can_play_mem?
-    def _bgm_play_mem(name, bytes, volume, pitch)
-      $audio_mem_capture = [name, bytes, volume, pitch]
+    def _bgm_play_mem(name, bytes, volume, pitch, pos = 0)
+      $audio_mem_capture = [name, bytes, volume, pitch, pos]
       nil
     end
     # No backend is installed in this binary, so pretend one is: without it the
@@ -1460,8 +1569,8 @@ assert "RGSS::Audio finds an upper-case extension in the archive" do
   class << RGSS::Audio
     alias _bgm_play_mem_orig2 _bgm_play_mem
     alias _can_play_mem_orig2 _can_play_mem?
-    def _bgm_play_mem(name, bytes, volume, pitch)
-      $audio_mem_capture = [name, bytes, volume, pitch]
+    def _bgm_play_mem(name, bytes, volume, pitch, pos = 0)
+      $audio_mem_capture = [name, bytes, volume, pitch, pos]
       nil
     end
     def _can_play_mem? = true
@@ -1516,6 +1625,15 @@ end
 # accepted it.
 assert "RGSS::Audio.bgm_play accepts RGSS3's 4th (pos) argument" do
   assert_nil RGSS::Audio.bgm_play("Theme1", 80, 90, 5)
+end
+
+# Same RGSS3 4th (pos) argument as bgm_play above, but real stock RPG::BGS#play
+# passes it too -- BGS has no seekable backend to honour it with (unlike BGM,
+# its playback is a one-shot sample channel), so unlike bgm_play this accepts
+# and ignores a nonzero pos rather than raising ArgumentError on every VX Ace
+# game whose event system plays a BGS the stock way.
+assert "RGSS::Audio.bgs_play accepts RGSS3's 4th (pos) argument" do
+  assert_nil RGSS::Audio.bgs_play("Theme1", 80, 90, 5)
 end
 
 assert "RGSS::Audio.se_play resolves a name to a real file" do
@@ -1709,6 +1827,23 @@ assert "RGSS::Input::N0..N9/PLUS..PERIOD are distinct ids continuing past F12" d
   ensure
     RGSS::Input.release(RGSS::Input::N3)
     RGSS::Input.release(RGSS::Input::PERIOD)
+  end
+end
+
+# Graphics.brightness= drives a real Sprite/Bitmap (the fade overlay) since it
+# actually draws now, and Sprite.new needs a live display the headless test
+# binary lacks (see the Sprite/Tilemap note above) -- so every brightness=
+# exercised as plain Ruby logic below stubs the private #brightness_sprite out
+# for a fake that just remembers the opacity it was given, the same way other
+# native calls are stubbed elsewhere in this file. The real overlay is
+# exercised by RGSS.effect_probe (native, against a live display).
+class << RGSS::Graphics
+  alias _brightness_sprite_orig brightness_sprite
+  def brightness_sprite
+    return @fake_brightness_sprite if @fake_brightness_sprite
+    o = Object.new
+    def o.opacity=(v); @opacity = v; end
+    @fake_brightness_sprite = o
   end
 end
 

@@ -3817,9 +3817,17 @@ mrb_value plane_set_bmp(mrb_state* M, mrb_value self) {
   return bmp;
 }
 
+// Same same-value guard as Tilemap#ox=/#oy= (see the comment there): real
+// RGSS reassigns a Plane's ox/oy every frame regardless of whether it moved
+// (a fog/parallax layer scrolling with the map), and this engine's retile is
+// a CPU-side re-composite rather than a cheap draw-time offset, so without
+// this guard a stationary Plane still pays a full retile every frame.
 mrb_value plane_set_ox(mrb_state* M, mrb_value self) {
   mrb_int ox;
   mrb_get_args(M, "i", &ox);
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == ox)
+    return self;
   mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(ox));
   plane_retile(M, self);
   return self;
@@ -3828,6 +3836,9 @@ mrb_value plane_set_ox(mrb_state* M, mrb_value self) {
 mrb_value plane_set_oy(mrb_state* M, mrb_value self) {
   mrb_int oy;
   mrb_get_args(M, "i", &oy);
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == oy)
+    return self;
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(oy));
   plane_retile(M, self);
   return self;
@@ -5000,9 +5011,21 @@ mrb_value tilemap_set_visible(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// Real RGSS treats `ox`/`oy` as a cheap, hardware-composited draw offset --
+// stock Spriteset_Map#update reassigns it every single frame regardless of
+// whether the camera actually moved. This engine instead re-composites the
+// whole visible tile grid into a CPU-side canvas on every assignment, so
+// without a same-value guard, a stationary camera still pays a full refresh
+// every frame -- observed via a real VX Ace game's boot hanging for minutes
+// on hundreds of consecutive `ox=`/`oy=` calls, each to the exact same
+// value already stored, before the game's own script host ever reaches its
+// first Graphics.update.
 mrb_value tilemap_set_ox(mrb_state* M, mrb_value self) {
   mrb_int v;
   mrb_get_args(M, "i", &v);
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
+  if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == v)
+    return self;
   mrb_iv_set(M, self, mrb_intern_lit(M, "@ox"), mrb_fixnum_value(v));
   tilemap_refresh(M, self);
   return self;
@@ -5011,6 +5034,9 @@ mrb_value tilemap_set_ox(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_oy(mrb_state* M, mrb_value self) {
   mrb_int v;
   mrb_get_args(M, "i", &v);
+  const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@oy"));
+  if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == v)
+    return self;
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(v));
   tilemap_refresh(M, self);
   return self;

@@ -1299,6 +1299,17 @@ class MZ
   # are read by the next frame's #sync_input. One-shot; a no-op during normal
   # play. Mirrors MV#maybe_move_test, and reuses MV's probe cadence and direction
   # cycle so both runtimes are exercised the same way.
+  #
+  # Before any direction is held, the probe checks whether $gameMessage is
+  # already busy (see MV.message_busy?): a real game's opening autorun event
+  # can run a Show Text/Show Choices sequence the instant the map loads, and a
+  # blocking message window swallows movement input frame after frame — the
+  # probe would report "did not move" not because the engine failed to walk
+  # the player, but because it never got a turn against the game's own event.
+  # If it is, confirm gets tapped (see MV.confirm_settle_tap) until the
+  # message clears or MV::MOVE_SETTLE_MAX_FRAMES runs out; if it never was
+  # busy to begin with, movement starts immediately, exactly as before this
+  # existed.
   def maybe_move_test
     return if @move_test_done
     return unless move_test_requested?
@@ -1312,6 +1323,17 @@ class MZ
       @move_test_done = true
       $stderr.puts "[MZ-MOVE] never reached the map (scene #{current_scene})"
       return
+    end
+
+    unless @move_settled
+      @move_settle_frame ||= 0
+      if MV.message_busy? && @move_settle_frame < MV::MOVE_SETTLE_MAX_FRAMES
+        MV.confirm_settle_tap(@move_settle_frame)
+        @move_settle_frame += 1
+        return
+      end
+      RGSS::Input.release(RGSS::Input::C)
+      @move_settled = true
     end
 
     @move_frame ||= 0

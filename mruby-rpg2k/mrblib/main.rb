@@ -59,6 +59,7 @@ class RPG2k
       @contents = nil
       @windowskin = nil
       @cursor_rect = Rect.new(0, 0, 0, 0)
+      @cursor_frame = 0
       @active = true
       @visible = true
       @pause = false
@@ -229,12 +230,26 @@ class RPG2k
     end
 
     # Present so the game loop can drive per-frame behaviour: advances the
-    # open/close animation while one is running, and the pause-arrow blink
-    # while `pause` is set. The cursor highlight itself is drawn steadily
-    # (RPG_RT alternates two cursor frames, but Nepheshel's own skin draws
-    # both identically -- see Game::WindowCursor), so nothing else needs a
-    # per-frame tick yet.
+    # open/close animation while one is running, the selection-cursor blink
+    # while the window is active, and the pause-arrow blink while `pause` is
+    # set. Confirmed directly against RPG_RT's live source: `Window::Update`
+    # (`src/window.cpp`) advances `cursor_frame` by 1 every frame the window
+    # is active, wrapping at 21, and `Window::Draw` blits from the
+    # windowskin's `cursor1` block while `cursor_frame <= 10` or `cursor2`
+    # otherwise -- Game::WindowCursor::FRAME1_X/FRAME2_X already hold both
+    # source-rect x-offsets (64/96), but only FRAME1_X was ever read here,
+    # so the highlight never blinked at all -- invisible against the one
+    # bundled test windowskin that happens to draw both blocks identically,
+    # but wrong against any windowskin whose two blocks actually differ.
     def update
+      if @active
+        @cursor_frame += 1
+        @cursor_frame = 0 if @cursor_frame > 20
+        # Only the two actual transitions (steady -> alternate frame, and
+        # back) need a redraw -- matches RPG_RT's own draw-time branch,
+        # which reads the same source rect for every frame in between.
+        draw_cursor if @cursor_frame == 0 || @cursor_frame == 11
+      end
       if @anim_frames_left > 0
         @anim_frames_left -= 1
         if @anim_frames_left <= 0
@@ -421,9 +436,18 @@ class RPG2k
     # rather than as a flat bar; Game::WindowCursor holds the geometry measured
     # off a genuine RPG_RT frame. Without a windowskin there is nothing to blit,
     # so the old solid bar stays as the fallback.
+    #
+    # An inactive window still draws its cursor -- confirmed against RPG_RT's
+    # own live source: `Window::Draw`'s cursor block (`src/window.cpp`) reads
+    # only `cursor_rect`/`animation_frames`/`cursor_frame`, with no `active`
+    # check anywhere; `active` only gates whether `Window::Update` keeps
+    # *advancing* `cursor_frame` (and so blinking) at all -- an inactive
+    # window's highlight simply freezes on whichever frame it last stopped at
+    # instead of vanishing. `#update`'s own `@cursor_frame` advance already
+    # ports that `active` gate correctly; this method used to add a second,
+    # uncited one of its own that hid the highlight outright.
     def draw_cursor
       @cursor_bmp.clear
-      return unless @active
       r = @cursor_rect
       return if r.width <= 0 || r.height <= 0
 
@@ -443,7 +467,7 @@ class RPG2k
     # are clipped to half the height each.
     def draw_cursor_skin(x, y, w, h)
       c = Game::WindowCursor::CORNER
-      sx = Game::WindowCursor::FRAME1_X
+      sx = @cursor_frame <= 10 ? Game::WindowCursor::FRAME1_X : Game::WindowCursor::FRAME2_X
       sy = Game::WindowCursor::FRAME_Y
       sz = Game::WindowCursor::SIZE
       sk = @windowskin
@@ -688,7 +712,7 @@ class RPG2k
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.
     scene = Scene::Map.new(self, state)
-    @scenes.last.dispose
+    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
     # A machine-readable marker so a headless run (see --rpg2k_new_game and
     # scripts/compare-nepheshel-wine.bash) can assert the map scene was really
@@ -842,7 +866,7 @@ class RPG2k
     # it as), which re-deriving from the current map's tree here would
     # silently discard. See Scene::Map#initialize's own comment.
     scene = Scene::Map.new(self, state, apply_access: false)
-    @scenes.last.dispose
+    @scenes.each { |s| s.dispose if s.respond_to?(:dispose) }
     @scenes = [scene]
     # Same marker start_new_game emits, so a headless run resuming a save (see
     # --rpg2k_continue) can assert which map it landed on -- which for a save

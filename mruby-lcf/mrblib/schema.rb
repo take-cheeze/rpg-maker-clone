@@ -98,6 +98,11 @@ module LCF
             23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
             24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
 
+            # `order:` names only the first six raw shorts -- a level-1-only
+            # view real code never actually reads for a multi-level curve
+            # (see Game::Actor#base_stats's own comment): the full raw array
+            # is stat-major (six max_level-sized blocks, one per stat here),
+            # confirmed against a genuine RPG_RT.exe, not row-major.
             31 => { name: :status, type: :int16_array, order: [:max_hp, :max_mp, :atk, :def, :int, :agi] },
 
             41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
@@ -340,7 +345,14 @@ module LCF
             7 => { name: :airship_pass, type: :bool, default: true },
             9 => { name: :airship_land, type: :bool, default: true },
             11 => { name: :bush_depth, type: :int, default: 0 },
-            15 => { name: :footstep, type: :string, default: '' },
+            # RPG2003 field 0x0F is a full `Sound` struct (filename + volume +
+            # tempo + balance, liblcf's own `generator/csv/fields.csv`:
+            # `Terrain,footstep,f,Sound,0x0F,...`), not a bare filename --
+            # the same shape every other Sound-typed database field here
+            # already uses (see `SE` above). Confirmed against EasyRPG's
+            # actual C++ source: `src/generated/lcf/rpg/terrain.h` declares
+            # `Sound footstep;`.
+            15 => { name: :footstep, type: :Array1D, elements: SE },
             16 => { name: :on_damage_se, type: :bool, default: false },
             17 => { name: :background_type, type: :int, default: 0 },
             21 => { name: :background_a_name, type: :string, default: '' },
@@ -848,7 +860,11 @@ module LCF
             22 => { name: :equipment_fixed, type: :bool, default: false },   # 装備固定
             23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
             24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
-            31 => { name: :parameters, type: :int16_array },                 # 能力値 (short[6][level])
+            # 能力値 -- stat-major: six max_level-sized blocks (max_hp, max_mp,
+            # atk, def, int, agi), read the same way as the actor row's own
+            # field 31 above (Game::Actor#base_stats/#curve_row), confirmed
+            # against a genuine RPG_RT.exe.
+            31 => { name: :parameters, type: :int16_array },
             41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
             42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
             43 => { name: :exp_correction, type: :int, default: 0 },
@@ -1175,33 +1191,55 @@ module LCF
     # https://w.atwiki.jp/rpg2kpsp/pages/21.html
     #
     # Runtime state of a "show picture" command (chunk 103 of the save file),
-    # one entry per picture number. The rpg2kpsp analysis only labels a subset
-    # of the fields; the position/movement slots (2-5, 8, 11-14, 31, 32) hold
-    # `double` coordinates whose exact meaning it does not give.
+    # one entry per picture number.
     #
-    # 31/32 were identified as the *live* position by experiment against the
-    # genuine RPG_RT: each candidate pair was rewritten in a real Nepheshel save
-    # and the resumed frame compared against the unedited one. Moving 31/32 from
-    # (160,120) to (80,60) shifted the picture up-left by exactly that much,
-    # leaving black at the right and bottom edges; editing 2/3 or 4/5 changed
-    # nothing on screen. (A control confirmed the runtime really does restore
-    # picture state from the save rather than re-showing it: renaming field 1
-    # swapped the displayed image.) 2/3 and 4/5 look like a move's start and
-    # finish, which a still picture does not use -- both read 160/120 here, the
-    # centre of the 320x240 screen -- but that is not proven, so they stay
-    # unnamed. See ADR 0021.
+    # Field 31/32 were identified as *a* live position by experiment against
+    # the genuine RPG_RT (rewriting them in a real Nepheshel save and
+    # comparing the resumed frame against the unedited one moved the picture
+    # exactly as edited), but that experiment only ever exercised a picture at
+    # rest -- and liblcf's own generator table (`generator/csv/fields.csv`)
+    # names 31/32 `finish_x`/`finish_y`: the move's *target*, not its
+    # in-flight position. The two agree exactly at rest, which is why the
+    # earlier experiment could not tell them apart -- real RPG_RT re-syncs
+    # current to finish every idle frame the same way `Game::Picture#update`
+    # already does here. The genuinely live position (and zoom/transparency/
+    # tone) sit at fields 4/5/7/8/11-14 instead, confirmed by a second
+    # experiment: a save edited to have current_x/y (4/5) and finish_x/y
+    # (31/32) genuinely differ, with time_left (51) still counting down,
+    # resumed under real RPG_RT as a picture visibly still gliding from the
+    # current position toward the finish one -- not sitting statically at
+    # either.
     SAVE_PICTURE = {
       1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
-      # RPG2000 screen coordinates of the picture's *centre*, as doubles.
-      31 => { name: :current_x, type: :double },        # 表示位置Ｘ (中心)
-      32 => { name: :current_y, type: :double },        # 表示位置Ｙ (中心)
+      # The picture's genuinely live position/zoom/transparency/tone, only
+      # meaningful while a move is still in flight (time_left > 0) -- see
+      # this table's own comment above. Defaults match a fresh Game::Picture
+      # so an old save written before these fields existed (or a picture
+      # that has never moved, time_left always 0) restores identically to
+      # before: #restore_pictures only ever reads these when time_left > 0.
+      4 => { name: :current_x, type: :double, default: 0.0 },
+      5 => { name: :current_y, type: :double, default: 0.0 },
+      7 => { name: :current_zoom, type: :double, default: 100.0 },
+      8 => { name: :current_transparency, type: :double, default: 0.0 },
+      11 => { name: :current_tone_red, type: :double, default: 100.0 },
+      12 => { name: :current_tone_green, type: :double, default: 100.0 },
+      13 => { name: :current_tone_blue, type: :double, default: 100.0 },
+      14 => { name: :current_tone_saturation, type: :double, default: 100.0 },
       9 => { name: :visible, type: :bool, default: false }, # 表示するか (0 非表示 / 1 表示)
+      # The picture's resting/target position -- see this table's own
+      # comment above for why these are named finish_*, not current_*.
+      31 => { name: :finish_x, type: :double },         # 表示位置Ｘ (中心)
+      32 => { name: :finish_y, type: :double },         # 表示位置Ｙ (中心)
       33 => { name: :zoom, type: :int },                # 拡大率
       34 => { name: :transparency, type: :int },        # 透明度
       41 => { name: :tone_red, type: :int },            # 色調：赤(R)
       42 => { name: :tone_green, type: :int },          # 色調：緑(G)
       43 => { name: :tone_blue, type: :int },           # 色調：青(B)
       44 => { name: :tone_saturation, type: :int },     # 色調：彩度(S)
+      # How many frames remain in an in-flight Move Picture; 0 (the default,
+      # covering both a still picture and an old save missing this field
+      # entirely) means fields 4/5/7/8/11-14 above are not consulted at all.
+      51 => { name: :time_left, type: :int, default: 0 },
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/40.html
@@ -1317,6 +1355,26 @@ module LCF
     SAVE_MAP_EVENT = {
       1 => { name: :scroll_x, type: :int, default: 0 }, # 1/16 px
       2 => { name: :scroll_y, type: :int, default: 0 }, # 1/16 px
+      # A live Change Encounter Rate (11740) override, or -1/absent for "no
+      # override, use the map's own encounter rate" -- confirmed against
+      # liblcf's own generator table (`generator/csv/fields.csv`):
+      # `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`, matching
+      # `Game_Map::PrepareSave`/`SetEncounterSteps` (`src/game_map.cpp`).
+      3 => { name: :encounter_steps, type: :int, default: -1 },
+      # A live Change Parallax Background (11720) override, or an absent/
+      # blank name for "no override, use the map's own panorama" --
+      # confirmed against liblcf's own generator table
+      # (`generator/csv/fields.csv`): `SaveMapInfo,parallax_name,f,String,
+      # 0x20,...` through `...,parallax_vert_speed,f,Int32,0x26,...`, seven
+      # fields matching `Game_Map::Parallax::ChangeBG`/`GetParallaxParams`
+      # (`src/game_map.cpp`) exactly.
+      32 => { name: :parallax_name, type: :string, default: '' },
+      33 => { name: :parallax_horz, type: :bool, default: false },
+      34 => { name: :parallax_vert, type: :bool, default: false },
+      35 => { name: :parallax_horz_auto, type: :bool, default: false },
+      36 => { name: :parallax_horz_speed, type: :int, default: 0 },
+      37 => { name: :parallax_vert_auto, type: :bool, default: false },
+      38 => { name: :parallax_vert_speed, type: :int, default: 0 },
       11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
       21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
       22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
@@ -1492,16 +1550,34 @@ module LCF
       28 => { name: :face4_index, type: :int, default: 0 },
     }
 
+    # liblcf's SaveScreen (generator/csv/fields.csv), the screen-tint subset
+    # only -- flash/shake/pan/weather/battle-animation are a separate, larger
+    # save-state surface this codebase does not yet model at all in
+    # Game::Screen, and are left out here too.
+    SAVE_SCREEN = {
+      1 => { name: :tint_finish_red, type: :int, default: 100 },
+      2 => { name: :tint_finish_green, type: :int, default: 100 },
+      3 => { name: :tint_finish_blue, type: :int, default: 100 },
+      4 => { name: :tint_finish_sat, type: :int, default: 100 },
+      11 => { name: :tint_current_red, type: :double, default: 100.0 },
+      12 => { name: :tint_current_green, type: :double, default: 100.0 },
+      13 => { name: :tint_current_blue, type: :double, default: 100.0 },
+      14 => { name: :tint_current_sat, type: :double, default: 100.0 },
+      15 => { name: :tint_time_left, type: :int, default: 0 },
+    }
+
     # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk
     # map. Chunks 109 (inventory) and 114 (common-event state), still marked
     # unanalysed on that wiki, were identified against a real Save01.lsd (see
-    # ADR 0011). Chunk 102 (screen effects), 112 (a one-byte flag) and 200 (a
+    # ADR 0011). Chunk 102 (screen effects) is now handled for its tint fields
+    # only (see SAVE_SCREEN above). Chunk 112 (a one-byte flag) and 200 (a
     # non-standard high-id extension chunk) are still left out until confirmed.
     SAVE_DATA = {
       name: :Save, type: :Array1D,
       elements: {
         100 => { name: :title, type: :Array1D, elements: SAVE_TITLE },
         101 => { name: :system, type: :Array1D, elements: SAVE_SYSTEM },
+        102 => { name: :screen, type: :Array1D, elements: SAVE_SCREEN },
         103 => { name: :pictures, type: :Array2D, elements: SAVE_PICTURE },
         104 => { name: :hero, type: :Array1D, elements: SAVE_MOVABLE },
         105 => { name: :boat, type: :Array1D, elements: SAVE_MOVABLE },

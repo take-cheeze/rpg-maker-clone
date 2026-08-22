@@ -10,8 +10,10 @@ class RPG2k
     #   * `:save`, from Scene::Menu's Save command, with the running
     #     Game::State to write out. Every slot -- occupied or not -- is
     #     selectable; confirming one calls RPG2k#save_game(state, slot) and
-    #     shows the same "Game saved." / "Save failed." feedback the menu
-    #     used to show inline, then returns to the menu.
+    #     pops straight back to the menu the same frame, no feedback of any
+    #     kind either way -- confirmed against RPG_RT's own live source,
+    #     `Scene_Save::Action` (`src/scene_save.cpp`), which discards
+    #     `Save`'s own boolean result outright.
     #   * `:load`, from Scene::Title's Continue entry, with `state` nil (there
     #     is no running game yet). Only an occupied slot is selectable;
     #     confirming one calls RPG2k#continue_game(slot), which tears down the
@@ -96,10 +98,9 @@ class RPG2k
         # One Game::State (or nil for an empty slot) per slot, read once so
         # scrolling the list never re-touches disk.
         @slots = (1..SLOT_COUNT).map { |slot| parent.load_save_state(slot) }
-        @index = 0
-        @top = 0
+        @index = initial_index
+        @top = [@index - VISIBLE_SLOTS + 1, 0].max
         @arrow_anim = 0
-        @message = nil
         @slot_windows = []
         build_header_window
         build_slot_windows
@@ -107,7 +108,6 @@ class RPG2k
       end
 
       def dispose
-        close_message
         @header_window.dispose if @header_window
         @slot_windows.each(&:dispose)
         @up_arrow.dispose if @up_arrow
@@ -116,29 +116,30 @@ class RPG2k
 
       def update
         tick_arrows
-        return drive_message if @message
 
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @parent.pop
         # Holding Down/Up auto-repeats the cursor after the initial delay, not
-        # just a single step per tap -- EasyRPG's `Window_Selectable::Update`
-        # (`src/window_selectable.cpp`), which this screen's file list is a
-        # subclass of, falls through to `Input::IsRepeated` right after its
-        # own `IsTriggered` check. The timing genuinely matches this build's
-        # own `Input.repeat?` already: EasyRPG's `start_repeat_time = 23`/
+        # just a single step per tap. `Window_SaveFile` (`src/window_savefile.cpp`)
+        # is a plain `Window_Base`, not a `Window_Selectable` -- real RPG_RT's
+        # own `Scene_File::vUpdate` (`src/scene_file.cpp`) hand-rolls this
+        # list's index/scroll logic itself, entirely separate from
+        # `Window_Selectable`'s generic cursor machinery every item/skill/
+        # message list goes through (correcting this comment's own earlier,
+        # mistaken citation). Its repeat timing still genuinely matches this
+        # build's own `Input.repeat?`: EasyRPG's `start_repeat_time = 23`/
         # `repeat_time = 4` (`src/input.cpp`) first fires once `press_time`
-        # reaches 24 (23 is not a multiple of 4, 24 is) and every 4 frames
-        # after, exactly the 24-then-every-4 timing `Input.repeat?`
-        # documents (`mruby-rgss/mrblib/lib.rb`), already measured against
-        # genuine RPG_RT.exe -- so this is a pure wiring gap, not a new
-        # timing to invent, matching the identical `#trigger? ||
-        # #repeat?` gate `Scene::Map#drive_number_input`'s Enter Number
-        # digit widget already uses for the same reason.
+        # reaches 24 and every 4 frames after, exactly the 24-then-every-4
+        # timing `Input.repeat?` documents (`mruby-rgss/mrblib/lib.rb`),
+        # already measured against genuine RPG_RT.exe. `#move_selection`'s
+        # own comment covers the one real nuance `vUpdate` adds on top of
+        # that timing: a *held* Down/Up does not wrap past the last/first
+        # slot, only a fresh tap does.
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
-          move_selection 1
+          move_selection(1, allow_wrap: Input.trigger?(Input::DOWN))
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
-          move_selection(-1)
+          move_selection(-1, allow_wrap: Input.trigger?(Input::UP))
         elsif Input.trigger?(Input::C)
           confirm_selection
         end
@@ -146,8 +147,58 @@ class RPG2k
 
       private
 
-      def move_selection(delta)
-        @index = (@index + delta) % SLOT_COUNT
+      # Move the slot cursor by `delta`, wrapping past the first/last slot
+      # only when `allow_wrap` is true. Confirmed against RPG_RT's own live
+      # source: `Scene_File::vUpdate` (`src/scene_file.cpp`) advances
+      # `index = (index + 1) % file_windows.size()` unconditionally on a
+      # fresh `IsTriggered(DOWN)` (so a tap at the last slot always wraps to
+      # the first), but on a bare `IsRepeated(DOWN)` (the key still held past
+      # the auto-repeat threshold) that same advance is gated on `index <
+      # max_index` -- a sustained hold simply stops moving at the last slot
+      # rather than cycling back around, the mirror image for Up at the
+      # first slot. `#update` passes `allow_wrap:` true only for the frame a
+      # direction is freshly pressed, matching that split exactly.
+      # RPG_RT opens this screen with the cursor already on whichever slot
+      # was saved most recently, not always slot 1 -- confirmed against
+      # EasyRPG's own live source: `Scene_File::Start` (`src/scene_file.cpp`)
+      # sets `index = latest_slot; top_index = std::max(0, index - 2);`,
+      # where `latest_slot`/`latest_time` (`UpdateLatestTimestamp`) track
+      # whichever populated slot's `title.timestamp` (chunk 100 field 1) is
+      # the largest, defaulting to slot 0 when no save has one at all.
+      # `Game::State#to_lsd` already writes that exact field into each
+      # slot's exported `Save<N>.lsd` sibling (`title[1] = timestamp.to_f`,
+      # defaulting to the real save-time "now") -- reading it back here is
+      # the same genuine on-disk field RPG_RT itself reads, not a
+      # filesystem-mtime proxy.
+      def initial_index
+        best = 0
+        best_time = -Float::INFINITY
+        (1..SLOT_COUNT).each do |slot|
+          ts = slot_timestamp(slot)
+          next unless ts && ts > best_time
+          best_time = ts
+          best = slot - 1
+        end
+        best
+      end
+
+      # A slot's `title.timestamp`, read straight from its exported
+      # `Save<N>.lsd` sibling -- nil for a slot with no `.lsd`, an unreadable
+      # one, or one with no title chunk at all (the same defensive shape
+      # `RPG2k#load_save_state` already uses for this exact file).
+      def slot_timestamp(slot)
+        path = parent.lsd_path(slot)
+        return nil unless path && File.exist?(path)
+        title = LCF::SaveData.new(File.open(path, "rb"))[100]
+        title && title.timestamp
+      rescue StandardError
+        nil
+      end
+
+      def move_selection(delta, allow_wrap:)
+        target = @index + delta
+        return if (target == SLOT_COUNT || target == -1) && !allow_wrap
+        @index = target % SLOT_COUNT
         @top = @index if @index < @top
         @top = @index - VISIBLE_SLOTS + 1 if @index >= @top + VISIBLE_SLOTS
         refresh_slot_windows
@@ -155,15 +206,24 @@ class RPG2k
         play_system_se(SFX_CURSOR)
       end
 
+      # A :save confirm pops straight back to the menu the same frame, with
+      # no feedback of any kind -- confirmed against RPG_RT's own live
+      # source: `Scene_Save::Action` (`src/scene_save.cpp`) is just `Save(fs,
+      # index + 1); Scene::Pop();`, discarding `Save`'s own boolean result
+      # outright -- there is no "Save failed." path in real RPG_RT at all,
+      # a save I/O failure pops exactly the same as a success. `Scene_Menu::
+      # UpdateCommand`'s own Save case (`src/scene_menu.cpp`) is just
+      # `Scene::Push(std::make_shared<Scene_Save>())`, so this class's own
+      # prior comment attributing the fabricated message to "the same
+      # feedback the menu used to show inline" cited no real RPG_RT source
+      # for that claim, only this codebase's own earlier code.
       def confirm_selection
         slot = @index + 1
         case @mode
         when :save
           play_system_se(SFX_DECISION)
-          ok = @parent.save_game(@state, slot)
-          @slots[@index] = @parent.load_save_state(slot) if ok
-          refresh_slot_windows
-          show_message(ok ? "Game saved." : "Save failed.")
+          @parent.save_game(@state, slot)
+          @parent.pop
         when :load
           # An empty slot has nothing to resume -- refused (Buzzer), like the
           # selection key on a title screen Continue with no save at all
@@ -396,35 +456,6 @@ class RPG2k
         cell
       end
 
-      # The "Game saved." / "Save failed." feedback banner, mirroring
-      # Scene::Menu's own #show_message/#drive_message/#close_message: shown
-      # after a :save confirm, dismissed by the player, and only then does
-      # this screen pop back to the menu -- so the message is never missed.
-      def drive_message
-        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        close_message
-        @parent.pop
-      end
-
-      def show_message(text)
-        return if @message
-        w = SCREEN_W - 40
-        win = Window.new(20, SCREEN_H - LINE_H - Window::BORDER * 2 - 4, w,
-                         LINE_H + Window::BORDER * 2)
-        win.z = 500
-        win.windowskin = @skin
-        c = Bitmap.new(w - Window::BORDER * 2, LINE_H)
-        c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, c.width, LINE_H, text
-        win.contents = c
-        @message = { window: win }
-      end
-
-      def close_message
-        return unless @message
-        @message[:window].dispose
-        @message = nil
-      end
     end
   end
 end

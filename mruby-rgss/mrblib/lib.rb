@@ -199,6 +199,28 @@ module RGSS
                    "did not shape the dissolve"
       ok = false
     end
+
+    # Graphics.brightness=: the grey sprite (still up, per Graphics.transition
+    # above leaving it visible = false -- bring it back first) darkened toward
+    # black, then restored, against the same base frame_mean read at the top.
+    sprite.visible = true
+    Graphics.update
+    Graphics.brightness = 0
+    Graphics.update
+    dark = frame_mean
+    Graphics.brightness = 255
+    Graphics.update
+    restored = frame_mean
+    $stderr.puts "[RGSS-PROBE] dark=#{dark.inspect} restored=#{restored.inspect}"
+    unless dark[0] < base[0] - 40 && dark[1] < base[1] - 40 && dark[2] < base[2] - 40
+      $stderr.puts "[RGSS-PROBE] FAIL Graphics.brightness=0 did not darken the frame"
+      ok = false
+    end
+    if (restored[0] - base[0]).abs > 10
+      $stderr.puts "[RGSS-PROBE] FAIL Graphics.brightness=255 did not restore the frame"
+      ok = false
+    end
+
     sprite.dispose
     bitmap.dispose
     viewport.dispose
@@ -444,6 +466,38 @@ module RGSS
     Audio.bgm_stop
     Graphics.update
     stopped = Audio.bgm_pos
+
+    # RGSS3's Audio.bgm_play pos (mid-track resume): seek 1000ms into the 2s
+    # probe tone and check bgm_pos reads back near there rather than near 0.
+    # Informational, not a pass/fail gate -- Mix_SetMusicPosition's decoder
+    # support varies (solid for OGG/FLAC, weaker for MOD/MIDI/some WAV
+    # decoders), and #bgm_play already falls back to playing from the
+    # beginning when it fails, exactly as it did before this existed. A
+    # decoder that cannot seek here is a real, known limitation, not a broken
+    # build.
+    Audio.bgm_play(path, 100, 100, 1000)
+    seek_got = wait_for_bgm_pos
+    Audio.bgm_stop
+    Graphics.update
+
+    # A Music Effect interrupting the BGM resumes it where it left off once
+    # the effect ends, not from the beginning (real RGSS3 behaviour; see
+    # me_stop -> replay_bgm in src/sdl_audio.cxx, which now threads the BGM's
+    # own captured position through the same seek this probe measured above).
+    # Informational, same reasoning as the seek checks above.
+    Audio.bgm_play(path)
+    # Run well past wait_for_bgm_pos's first nonzero read: pre_me and
+    # me_resumed both being small numbers could look like "resumed" even if
+    # the BGM had actually restarted, so give the BGM real ground to have
+    # covered before interrupting it.
+    30.times { Graphics.update }
+    pre_me = Audio.bgm_pos
+    Audio.me_play(path)
+    5.times { Graphics.update }
+    Audio.me_stop
+    me_resumed = wait_for_bgm_pos
+    Audio.bgm_stop
+    Graphics.update
     File.delete(path) if File.exist?(path)
 
     archive = Object.new
@@ -461,12 +515,22 @@ module RGSS
       packed = wait_for_bgm_pos
       Audio.se_play("Beep")
       Audio.bgm_stop
+      Graphics.update
+
+      # The same seek, through the packed/archived path this time (a released
+      # game's whole Audio/ tree is packed, so this -- not the loose path
+      # above -- is what an actual VX Ace game's mid-track resume reaches).
+      Audio.bgm_play("Probe", 100, 100, 1000)
+      packed_seek_got = wait_for_bgm_pos
+      Audio.bgm_stop
     ensure
       self.asset_archive = previous
     end
 
     $stderr.puts "[RGSS-AUDIO] loose=#{loose} stopped=#{stopped} " \
-                 "packed=#{packed}"
+                 "seek_requested=1000 seek_got=#{seek_got} packed=#{packed} " \
+                 "packed_seek_got=#{packed_seek_got} pre_me=#{pre_me} " \
+                 "me_resumed=#{me_resumed}"
     if loose.zero?
       $stderr.puts "[RGSS-AUDIO] FAIL a loose file did not play (no audio " \
                    "device, or this SDL_mixer cannot report a position) — the " \
@@ -1037,19 +1101,19 @@ module RGSS
       # `pos` is RGSS3-only (VX Ace added it over XP/VX's 3-argument form) --
       # real scripts pass it to resume a BGM from where a prior track left
       # off (RPG::BGM#replay, a bare `Audio.bgm_play(f, v, p, pos)` in a
-      # volume-control add-on). No backend here seeks a mid-stream start
-      # position, so it is accepted (matching the real signature real
-      # scripts call with) and warned about once rather than raising
-      # ArgumentError on every VX Ace game that calls it -- the track still
-      # plays, just from its own beginning.
+      # volume-control add-on). Milliseconds, the same unit #bgm_pos reports
+      # in, so `Audio.bgm_play(f, v, p, Audio.bgm_pos)` round-trips exactly --
+      # a real VX Ace script's own hardcoded literal may use a different
+      # native unit (unconfirmed; SDL_mixer's own seek call takes seconds, and
+      # secondary sources disagree on RGSS3's), so a value from anywhere other
+      # than this engine's own #bgm_pos is not guaranteed to land on the same
+      # instant a real game would land on. Seeking can still fail (some
+      # decoders, e.g. MOD/MIDI, do not support it); a failed seek plays from
+      # the track's own beginning rather than not playing at all.
       def bgm_play(filename, volume = 100, pitch = 100, pos = 0)
-        RGSS.warn_once(
-          "Audio.bgm_play pos (mid-track resume) is not implemented yet " \
-          "(stub, plays from the beginning)"
-        ) unless pos == 0
         path = resolve(filename, MUSIC_DIRS)
-        return _bgm_play(path, volume, pitch) if path
-        play_packed(:bgm, filename, volume, pitch)
+        return _bgm_play(path, volume, pitch, pos) if path
+        play_packed(:bgm, filename, volume, pitch, pos)
       end
 
       # Re-applies volume to the already-playing BGM stream in place, with no
@@ -1078,7 +1142,14 @@ module RGSS
         _bgm_pos
       end
 
-      def bgs_play(filename, volume = 100, pitch = 100)
+      # `pos` mirrors #bgm_play's 4th argument -- RGSS3's stock RPG::BGS#play
+      # passes it the same way RPG::BGM#play does -- but BGS has no seekable
+      # backend to honour it with (see #play_packed's own comment: its
+      # sample-channel playback never reports a position to resume from), so
+      # it is accepted and, if actually nonzero, warned about once rather
+      # than raising ArgumentError on every game that calls #play this way.
+      def bgs_play(filename, volume = 100, pitch = 100, pos = 0)
+        RGSS.warn_once("Audio.bgs_play: pos is not supported; ignoring") if pos != 0
         path = resolve(filename, MUSIC_DIRS)
         return _bgs_play(path, volume, pitch) if path
         play_packed(:bgs, filename, volume, pitch)
@@ -1148,7 +1219,14 @@ module RGSS
       #
       # Returns nil either way — RGSS's Audio.*_play has no return value, and a
       # miss here is the same "asset not found" silence the disk path gives.
-      def play_packed(kind, filename, volume, pitch)
+      #
+      # `pos` is BGM's own mid-track resume position (see #bgm_play); every
+      # other kind ignores it. It has to be threaded through here too, not
+      # just the disk path in #bgm_play, because a released game's whole
+      # Audio/ tree is packed into one encrypted archive with nothing loose on
+      # disk (see RGSS.asset_archive) -- this is the path that actually
+      # carries a resume for a released game.
+      def play_packed(kind, filename, volume, pitch, pos = 0)
         return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
         name, bytes = archive ? find_packed(archive, kind, filename) : nil
@@ -1169,7 +1247,7 @@ module RGSS
           return nil
         end
         case kind
-        when :bgm then _bgm_play_mem(name, bytes, volume, pitch)
+        when :bgm then _bgm_play_mem(name, bytes, volume, pitch, pos)
         when :bgs then _bgs_play_mem(name, bytes, volume, pitch)
         when :me then _me_play_mem(name, bytes, volume, pitch)
         else _se_play_mem(name, bytes, volume, pitch)
@@ -1267,6 +1345,11 @@ module RGSS
     # object; RGSS z values are ordinary integers, so pick one past anything a
     # game would set.
     TRANSITION_Z = 0x40000000
+    # The brightness fade overlay sits just under the transition's own
+    # full-screen sprite (above every game object either way; #transition
+    # forces brightness back to 255 before it runs, so in practice the two
+    # never need to be visible at once).
+    BRIGHTNESS_Z = TRANSITION_Z - 1
 
     class << self
       attr_accessor :frame_count, :frame_rate
@@ -1284,27 +1367,50 @@ module RGSS
         duration.to_i.times { update }
       end
 
-      # 0 (black) .. 255 (normal). Stored so a script's fade bookkeeping is
-      # consistent; the value is not applied to what is drawn yet — that needs
-      # the same native screen-tone support the RPG2000 tint is waiting on, so
-      # say so once rather than pretending the screen darkened.
+      # 0 (black) .. 255 (normal). Drawn as a full-screen black overlay above
+      # every game object (see #brightness_sprite) whose opacity is
+      # `255 - value` — the same technique #transition already uses for its
+      # own full-screen dissolve, just a plain fade instead of a shaped one.
       def brightness=(value)
         value = 0 if value < 0
         value = 255 if value > 255
-        RGSS.warn_stub("Graphics.brightness= (tracked, not drawn)") unless value == 255
         @brightness = value
+        if value >= 255
+          brightness_sprite.opacity = 0 if @brightness_sprite
+        else
+          brightness_sprite.opacity = 255 - value
+        end
       end
 
-      # RGSS2+ fades: run the frames the fade would take (so the game's timing
-      # is right) and leave the brightness at its end value.
+      # RGSS2+ fades: step brightness from its current value to the target (0
+      # for fadeout, 255 for fadein) over `duration` frames, one Graphics.update
+      # per step — not run the frames first and jump to the end value, which
+      # would hold the screen at its *starting* brightness for the whole fade
+      # and only change it on the last frame. `duration <= 0` jumps straight to
+      # the target with no frame pumped, same as RGSS's own instant case.
       def fadeout(duration)
-        wait(duration)
-        self.brightness = 0
+        start = @brightness
+        if duration <= 0
+          self.brightness = 0
+          return
+        end
+        duration.times do |i|
+          self.brightness = start - (start * (i + 1) / duration)
+          update
+        end
       end
 
       def fadein(duration)
-        wait(duration)
-        self.brightness = 255
+        start = @brightness
+        if duration <= 0
+          self.brightness = 255
+          return
+        end
+        diff = 255 - start
+        duration.times do |i|
+          self.brightness = start + (diff * (i + 1) / duration)
+          update
+        end
       end
 
       # RGSS's scene change: `freeze` grabs the current screen and `transition`
@@ -1331,7 +1437,10 @@ module RGSS
       def transition(duration = 8, filename = nil, vague = 40)
         frozen = @frozen
         @frozen = nil
-        @brightness = 255
+        # Through the setter, not a raw ivar write: a scene change always
+        # starts from full brightness, and the brightness overlay (if a
+        # previous fadeout left it visible) has to be hidden again too.
+        self.brightness = 255
         return wait(duration) if frozen.nil? || duration <= 0
 
         map = _transition_map(filename)
@@ -1377,6 +1486,30 @@ module RGSS
         nil
       end
 
+      private
+
+      # The full-screen black sprite #brightness= fades in and out of view,
+      # created once and kept alive at BRIGHTNESS_Z (opacity 0, i.e.
+      # invisible, whenever brightness is 255) rather than allocated fresh on
+      # every fade -- a game commonly fades in and out many times a session
+      # (every battle, every map transfer). Recreated if the screen size
+      # changes out from under it (#resize_screen is normally called once at
+      # boot, before any fade, but nothing stops a script calling it again).
+      def brightness_sprite
+        if @brightness_sprite && @brightness_sprite.bitmap &&
+           @brightness_sprite.bitmap.width == width &&
+           @brightness_sprite.bitmap.height == height
+          return @brightness_sprite
+        end
+        @brightness_sprite.dispose if @brightness_sprite
+        bmp = Bitmap.new(width, height)
+        bmp.fill_rect(0, 0, width, height, Color.new(0, 0, 0, 255))
+        @brightness_sprite = Sprite.new
+        @brightness_sprite.bitmap = bmp
+        @brightness_sprite.z = BRIGHTNESS_Z
+        @brightness_sprite.opacity = 0
+        @brightness_sprite
+      end
     end
   end
 

@@ -374,6 +374,16 @@ assert 'MV document head/style shims support the font-loader boot path' do
   assert_equal "ok", ok
   # Graphics._disableContextMenu walks document.body.getElementsByTagName('*').
   assert_equal 0, MV::JS.eval("document.body.getElementsByTagName('*').length")
+  # document.body.getBoundingClientRect() used to always report a 0x0 rect --
+  # a real browser's reports the actual viewport, and some MV/MZ corescript
+  # builds read a game's initial screen resolution from this rect (instead of,
+  # or alongside, window.innerWidth/innerHeight). An all-zero stand-in fed
+  # those a 0x0 resolution silently. Now matches window.innerWidth/innerHeight.
+  assert_equal true, MV::JS.eval(
+    "var r = document.body.getBoundingClientRect(); " \
+    "r.width === window.innerWidth && r.height === window.innerHeight && " \
+    "r.width > 0 && r.height > 0"
+  )
   # Utils.canReadGameFiles reads the last <script>'s src over XHR; expose one.
   assert_equal true, MV::JS.eval("document.getElementsByTagName('script').length >= 1")
   assert_equal "string", MV::JS.eval("typeof document.getElementsByTagName('script')[0].src")
@@ -419,6 +429,34 @@ assert 'MV canvas text API is wired (fillText/strokeText/measureText)' do
     "c.textBaseline='alphabetic'; c.fillStyle='#ffffff'; " \
     "c.strokeStyle='rgba(0,0,0,0.5)'; c.lineWidth=4; " \
     "c.strokeText('Hi', 4, 6, 8); c.fillText('Hi', 4, 6, 8); null"
+  )
+end
+
+assert 'MV canvas measureText: a font shorthand without "GameFont" always uses '\
+      'the rough per-character estimate' do
+  # Regression: a bare font-agnostic measureText (the pre-fix behavior) can't
+  # tell '28px GameFont, sans-serif' from '28px sans-serif' apart, so
+  # Graphics.isFontLoaded('GameFont') -- which measures exactly that pair and
+  # waits for the widths to diverge -- never sees them differ and hangs
+  # Scene_Boot on any MV project whose corescript uses that classic detection
+  # (rather than the newer FontFaceSet path our document.fonts stand-in
+  # already covers). A real game (extracted from an Enigma Virtual Box-packed
+  # RPG Maker MV release) hit exactly this: stuck at Scene_Boot until its own
+  # 20s timeout, `Error: Failed to load GameFont`.
+  #
+  # Fixed by having measureText route a font shorthand that doesn't name
+  # "GameFont" through the same rough text.length*pixel*0.5 estimate used when
+  # no game font is loaded at all, guaranteeing it differs from the real
+  # metrics measured against an actual loaded font -- asserted here by its
+  # exact value, so this holds whether or not this test environment happens to
+  # have a real font loaded.
+  assert_equal 100.0, MV::JS.eval(
+    "var c=document.createElement('canvas').getContext('2d'); " \
+    "c.font='40px sans-serif'; c.measureText('abcde').width"
+  )
+  assert_equal 40.0, MV::JS.eval(
+    "var c=document.createElement('canvas').getContext('2d'); " \
+    "c.font='40px serif'; c.measureText('ab').width"
   )
 end
 

@@ -380,18 +380,18 @@ class RPG2k
       # help file" (their comment). So a genuine RPG2000 database's own
       # `levitate` flag has no on-screen effect whatsoever, real RPG_RT bug and
       # all; only an RPG2003 one draws the +/-4px, 256-frame-period sine bob
-      # (`round(sin(2*PI*frame/256) * 4)`, their `frame` a per-battler counter
-      # incremented once per battle frame) computed here from this scene's own
-      # per-battle `@ui[:frame]` instead -- a single shared phase for
-      # every levitating member rather than EasyRPG's per-battler-randomized
-      # start offset, since nothing in either wiki mirror (both unreachable
-      # this session) describes members desyncing from one another, only that
-      # each one "changes its Y position".
+      # (`round(sin(2*PI*frame/256) * 4)`). Each member bobs on its own
+      # randomized phase, not in lockstep -- `#flying_phase`'s own citation
+      # confirms EasyRPG's `frame` is a *per-battler* counter, independently
+      # seeded 0..63 per battler at battle start, so `member.flying_phase`
+      # (rolled once by `Game::Troop#initialize`) is added to this scene's
+      # own shared per-frame tick, which still advances every member in
+      # lockstep the way `Game_Battler::UpdateBattle` does.
       FLYING_AMPLITUDE = 4
       FLYING_PERIOD = 256
       def flying_offset(member)
         return 0 unless member.levitate && @state.party.rpg2003?
-        frame = @ui[:frame] || 0
+        frame = (@ui[:frame] || 0) + (member.flying_phase || 0)
         (Math.sin(2 * Math::PI * frame / FLYING_PERIOD.to_f) * FLYING_AMPLITUDE).round
       end
 
@@ -804,8 +804,18 @@ class RPG2k
         bmp
       end
 
-      # Where a battle-event page's message panel sits — above the action banner,
-      # so a page talking mid-round does not fight it for the same row.
+      # Where a battle-event page's message panel sits when the database is
+      # RPG2003 -- the top of the screen. Confirmed against RPG_RT's own live
+      # source: `Game_Message::GetRealPosition` (`src/game_message.cpp`) is
+      # `if (Game_Battle::IsBattleRunning()) { return Feature::
+      # HasRpg2kBattleSystem() ? 2 : 0; }` -- position 2 (bottom) for an
+      # RPG2000 database, position 0 (top) for RPG2003 -- overriding any
+      # Message-Options position entirely while a battle is running.
+      # `Feature::HasRpg2kBattleSystem` (`src/feature.cpp`) is a pure
+      # database-edition check (`Player::IsRPG2k()`), unrelated to
+      # `battle_type`/gauge mode. See `#battle_text_window`, which picks
+      # between this and the bottom (`BATTLE_PANEL_Y`, content-height
+      # adjusted) by `@state.party.rpg2003?`.
       BATTLE_EVENT_MSG_Y = 8
 
       # The backdrop this encounter fights over. Enemy Encounter's own param2
@@ -1626,18 +1636,33 @@ class RPG2k
         draw_battle_skill
       end
 
+      # Move a battle Item/Skill list cursor by `delta` cells (a row for
+      # +-BATTLE_LIST_COLUMN_MAX, a column for +-1), left in place if the
+      # target cell is off the grid -- confirmed against RPG_RT's own live
+      # source: `Window_Selectable::Update` (`src/window_selectable.cpp`)
+      # bounds Down/Up by `index < item_max - column_max`/`index >=
+      # column_max` (blocked rather than wrapped past either end, genuinely
+      # column-locked) and Right/Left by the flat `index < item_max -
+      # 1`/`index > 0` (no row-boundary term at all) -- the identical
+      # mechanism `Scene::ItemMenu#move_item_cursor` already uses for the
+      # field item/skill grid, which never propagated to battle's own
+      # Item/Skill lists.
+      def move_battle_list_index(index, delta, size)
+        target = index + delta
+        return nil if target.negative? || target >= size
+        target
+      end
+
       def drive_battle_skill
         skills = @ui[:skills]
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !skills.empty?
-          @ui[:skill_i] += 1
-          @ui[:skill_i] %= skills.length
-          draw_battle_skill
-          play_system_se(SFX_CURSOR)
+          move_battle_skill_cursor(BATTLE_LIST_COLUMN_MAX)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !skills.empty?
-          @ui[:skill_i] -= 1
-          @ui[:skill_i] %= skills.length
-          draw_battle_skill
-          play_system_se(SFX_CURSOR)
+          move_battle_skill_cursor(-BATTLE_LIST_COLUMN_MAX)
+        elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && !skills.empty?
+          move_battle_skill_cursor(1)
+        elsif (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !skills.empty?
+          move_battle_skill_cursor(-1)
         elsif Input.trigger?(Input::C)
           confirm_battle_skill
         elsif Input.trigger?(Input::B)
@@ -1646,6 +1671,14 @@ class RPG2k
           @ui[:phase] = :command
           draw_battle_command
         end
+      end
+
+      def move_battle_skill_cursor(delta)
+        target = move_battle_list_index(@ui[:skill_i], delta, @ui[:skills].length)
+        return unless target
+        @ui[:skill_i] = target
+        draw_battle_skill
+        play_system_se(SFX_CURSOR)
       end
 
       # Choose the highlighted skill: if the caster cannot afford its SP, or is
@@ -1783,15 +1816,13 @@ class RPG2k
       def drive_battle_item
         items = @ui[:items]
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !items.empty?
-          @ui[:item_i] += 1
-          @ui[:item_i] %= items.length
-          draw_battle_item
-          play_system_se(SFX_CURSOR)
+          move_battle_item_cursor(BATTLE_LIST_COLUMN_MAX)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !items.empty?
-          @ui[:item_i] -= 1
-          @ui[:item_i] %= items.length
-          draw_battle_item
-          play_system_se(SFX_CURSOR)
+          move_battle_item_cursor(-BATTLE_LIST_COLUMN_MAX)
+        elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && !items.empty?
+          move_battle_item_cursor(1)
+        elsif (Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !items.empty?
+          move_battle_item_cursor(-1)
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
           item_id, _count = @ui[:items][@ui[:item_i]]
@@ -1850,16 +1881,36 @@ class RPG2k
         end
       end
 
+      def move_battle_item_cursor(delta)
+        target = move_battle_list_index(@ui[:item_i], delta, @ui[:items].length)
+        return unless target
+        @ui[:item_i] = target
+        draw_battle_item
+        play_system_se(SFX_CURSOR)
+      end
+
       # -- Ally target (heal skill / medicine) --------------------------------
 
+      # Right/Left move the ally-target cursor exactly like Down/Up --
+      # confirmed against RPG_RT's own live source: `Window_BattleStatus::
+      # Update` (`src/window_battlestatus.cpp`), the window that drives this
+      # cursor (`Scene_Battle::status_window`, active during ally-target
+      # selection), gates its "next ally" step on `IsRepeated(DOWN) ||
+      # IsRepeated(RIGHT) || IsTriggered(SCROLL_DOWN)` and its "previous
+      # ally" step on the Up/Left/SCROLL_UP mirror -- deliberately
+      # bypassing the generic `Window_Selectable::Update` cursor logic
+      # ("skipped on purpose (breaks up/down-logic)", the function's own
+      # comment) to fold Right/Left into the same single up/down axis.
       def drive_battle_ally_target
         allies = battle_ally_targets
-        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !allies.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN) ||
+            Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && !allies.empty?
           @ui[:ally_i] += 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target
           play_system_se(SFX_CURSOR)
-        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !allies.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP) ||
+               Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !allies.empty?
           @ui[:ally_i] -= 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target
@@ -2207,7 +2258,37 @@ class RPG2k
       # when the ally flag is clear, or a single screen-centre animation (the
       # same ally-side fallback above) when it is set, since RPG2000's
       # front-view battle draws no ally sprite to point at.
+      # A single-target request (`req[:target] >= 0`) no-ops when the index
+      # names no actual party/troop slot -- confirmed against RPG_RT's own
+      # live source: `Game_Interpreter_Battle::CommandShowBattleAnimation`
+      # (`src/game_interpreter_battle.cpp`) leaves `battler_target` null (and
+      # so never calls `ShowBattleAnimation` at all) for an Ally index
+      # (1-based, `target -= 1` first) outside `0...GetBattlerCount()`, or an
+      # Enemy index outside `0...GetBattlerCount()` -- both plain party/troop
+      # array bounds checks, dead members included, RPG_RT never consults
+      # `Exists()`/`IsDead()` here. `#start_battle_page_animation` used to
+      # draw an out-of-range Ally target at screen-centre regardless
+      # (`elsif req[:allies]` never even looked at the index) and an
+      # out-of-range Enemy target through `#battle_animation_pixel`'s own
+      # "no sprite" fallback, which is also screen-centre -- neither path
+      # ever no-op'd. A per-slot battle-event page reused across encounters
+      # with different party/troop sizes (e.g. an "Ally 4" animation on a
+      # 3-member party) flashed a spurious screen-centre animation, and
+      # stalled the page for the animation's own duration on a "wait for
+      # completion" request, where real RPG_RT plays nothing and falls
+      # through the same tick.
+      def battle_page_target_resolves?(req)
+        return true unless req[:target] && req[:target] >= 0
+        if req[:allies]
+          idx = req[:target] - 1
+          idx >= 0 && idx < @state.party.actors.size
+        else
+          req[:target] < (@ui[:foes] || []).size
+        end
+      end
+
       def start_battle_page_animation(req)
+        return nil unless battle_page_target_resolves?(req)
         targets =
           if req[:target] && req[:target] < 0
             whole_side_anim_targets(req[:allies])
@@ -2362,8 +2443,7 @@ class RPG2k
       def drive_battle_event_message(it)
         unless @ui[:event_win]
           lines = it.wait_kind == :choice ? it.choice_labels : it.message_lines
-          @ui[:event_win] =
-            battle_text_window(lines || [], BATTLE_EVENT_MSG_Y, 340)
+          @ui[:event_win] = battle_text_window(lines || [], 340)
           return # shown this frame; take the button from the next one
         end
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
@@ -2524,6 +2604,20 @@ class RPG2k
         # this is RPG2000's "turns passed in latest battle" (Game::State
         # #last_battle_turns, LCF inventory chunk 109 field 41).
         @state.last_battle_turns = @ui[:battle].turn
+        # Tally the Control Variables "Other" battle counters here, together and
+        # unconditionally, matching EasyRPG's `Scene_Battle::EndBattle`
+        # (`src/scene_battle.cpp`): `IncBattleCount()` runs for every result
+        # (victory/escape/defeat/abort alike) before the individual win/escape/
+        # defeat counter and before the game-over dispatch that can follow a
+        # defeat -- not scattered across the moment the encounter is armed (long
+        # before the fight has actually concluded) and a resume path a
+        # game-over-ending defeat skips entirely.
+        @state.battle_count += 1
+        case result
+        when :victory then @state.win_count += 1
+        when :defeat  then @state.defeat_count += 1
+        when :escape  then @state.escape_count += 1
+        end
         # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
         # party knocked out ends the game; every other outcome resumes the event.
         game_over = result == :defeat && @req[:defeat_game_over] &&
@@ -2835,8 +2929,18 @@ class RPG2k
       # Everything the action announces: what it did, then the conditions it
       # changed. `log_round` traces all of it and `show_battle_action` banners
       # all of it, so the console and the screen never disagree.
+      # The per-turn state reminder line (Combatant#turn_state_message, via
+      # `entry[:state_message]`) opens the banner, ahead of the action's own
+      # lines -- RPG_RT shows it right at the start of the battler's turn,
+      # before whatever it goes on to do (`Scene_Battle_Rpg2k::
+      # ProcessBattleActionBegin`, `src/scene_battle_rpg2k.cpp`). A blank
+      # reminder (a healed state with no configured `message_recovery`,
+      # which RPG_RT still flashes for but has no text to show) is dropped
+      # rather than rendered as an empty line.
       def battle_action_lines(entry)
-        battle_action_body(entry) + battle_state_lines(entry)
+        lines = battle_action_body(entry) + battle_state_lines(entry)
+        msg = entry[:state_message]
+        msg && !msg.empty? ? [msg] + lines : lines
       end
 
       # The result window's text: the outcome, and on a win the EXP / gold gained
@@ -2993,6 +3097,18 @@ class RPG2k
       # long skill list) scrolls: the panel's fixed 64px content area (80 minus
       # the 8px border on each side) divided by the 16px row height.
       BATTLE_VISIBLE_ROWS = 4
+      # The battle Item/Skill lists are a two-column grid, not a single
+      # stacked column -- confirmed against RPG_RT's own live source:
+      # `Window_Item`/`Window_Skill` (`src/window_item.cpp`/
+      # `src/window_skill.cpp`) both set `column_max = 2` in their own
+      # constructors, and `Window_BattleSkill` (`src/window_skill.h`)
+      # inherits `Window_Skill` unchanged -- `Scene_Battle::CreateUi`
+      # (`src/scene_battle.cpp`) backs the battle screen's item/skill windows
+      # with exactly these classes. The enemy-target list (`Window_Command`,
+      # `column_max = 1`) and the ally-target list (`Window_BattleStatus`,
+      # hand-rolled) are correctly single-column already -- this constant is
+      # only for #draw_battle_item/#draw_battle_skill.
+      BATTLE_LIST_COLUMN_MAX = 2
 
       # Column origins within the status panel's contents, in the order RPG_RT's
       # battle status window uses them: who, what condition they are in, then the
@@ -3326,26 +3442,35 @@ class RPG2k
       # A bottom-anchored list window of `labels` with the cursor on `sel`, at
       # left edge `x` and width `w`, fixed to the panel's own height (80px, the
       # shape every RPG_RT battle list window shares) — the shared shape of the
-      # Skill / Item / target / ally-target menus. A list longer than
-      # `BATTLE_VISIBLE_ROWS` scrolls, keeping `sel` in view, the way
+      # Skill / Item / target / ally-target menus. `column_max` (1 for every
+      # caller except #draw_battle_item/#draw_battle_skill, see
+      # `BATTLE_LIST_COLUMN_MAX`) lays `labels` out row-major across that many
+      # columns instead of one; a list longer than `BATTLE_VISIBLE_ROWS`
+      # *rows* scrolls, keeping `sel`'s own row in view, the way
       # `Window_Selectable`'s own scrolling does for an oversized troop or
       # skill list.
-      def battle_list_window(x, w, labels, sel, z)
+      def battle_list_window(x, w, labels, sel, z, column_max: 1)
         rows = BATTLE_VISIBLE_ROWS
-        scroll = labels.length > rows ? [[sel - rows + 1, 0].max, labels.length - rows].min : 0
+        inner_w = w - Window::BORDER * 2
+        col_w = inner_w / column_max
+        row_count = column_max > 1 ? [(labels.length / column_max.to_f).ceil, 1].max : labels.length
+        sel_row = sel / column_max
+        scroll = row_count > rows ? [[sel_row - rows + 1, 0].max, row_count - rows].min : 0
         win = Window.new(x, BATTLE_PANEL_Y, w, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
-        inner_w = w - Window::BORDER * 2
         c = Bitmap.new(inner_w, BATTLE_PANEL_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |label, i|
-          next if i < scroll || i >= scroll + rows
-          c.draw_text 0, (i - scroll) * BATTLE_LINE_H, inner_w, BATTLE_LINE_H, label
+          row = i / column_max
+          next if row < scroll || row >= scroll + rows
+          col = i % column_max
+          c.draw_text col * col_w, (row - scroll) * BATTLE_LINE_H, col_w, BATTLE_LINE_H, label
         end
         win.contents = c
         unless labels.empty?
-          win.cursor_rect = Rect.new(0, (sel - scroll) * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)
+          sel_col = sel % column_max
+          win.cursor_rect = Rect.new(sel_col * col_w, (sel_row - scroll) * BATTLE_LINE_H, col_w, BATTLE_LINE_H)
         end
         win
       end
@@ -3361,7 +3486,8 @@ class RPG2k
           sk = @state.party.db_skill(sid)
           "#{sk ? sk.name : "Skill #{sid}"}  #{cost}"
         end
-        @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325)
+        @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325,
+                                             column_max: BATTLE_LIST_COLUMN_MAX)
       end
 
       def close_battle_skill
@@ -3377,7 +3503,8 @@ class RPG2k
           it = @state.party.db_item(id)
           "#{it ? it.name : "Item #{id}"}  x#{count}"
         end
-        @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325)
+        @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
+                                            column_max: BATTLE_LIST_COLUMN_MAX)
       end
 
       def close_battle_item
@@ -3572,14 +3699,14 @@ class RPG2k
         win
       end
 
-      # A text panel of `lines` at vertical position `y` and depth `z`, sized to
-      # fit its content -- used for the battle-event page message window, which
-      # this screen deliberately keeps off the bottom panel's rect (see
-      # `BATTLE_EVENT_MSG_Y`) so a page talking mid-round does not fight the
-      # action banner for the same row.
-      def battle_text_window(lines, y, z)
+      # A text panel of `lines` at depth `z`, sized to fit its content -- used
+      # for the battle-event page message window. Positioned at the top
+      # (`BATTLE_EVENT_MSG_Y`) for an RPG2003 database, or flush against the
+      # bottom edge for RPG2000 -- see that constant's own citation.
+      def battle_text_window(lines, z)
         inner_w = SCREEN_W - 20 - Window::BORDER * 2
         inner_h = [lines.length, 1].max * BATTLE_LINE_H
+        y = @state.party.rpg2003? ? BATTLE_EVENT_MSG_Y : SCREEN_H - inner_h - Window::BORDER * 2
         win = Window.new(10, y, SCREEN_W - 20, inner_h + Window::BORDER * 2)
         win.z = z
         win.windowskin = windowskin

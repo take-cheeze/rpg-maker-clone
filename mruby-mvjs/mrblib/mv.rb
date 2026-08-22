@@ -26,6 +26,35 @@ class MV
   MOVE_PROBE_DWELL = 20
   MOVE_PROBE_FRAMES = 80
 
+  # Settle window before the move probe starts holding a direction (see
+  # #maybe_move_test): only paid when $gameMessage is actually busy, and the
+  # confirm-key tap cadence within it.
+  #
+  # RGSS's own script-host driver (mruby-rpgxp/mrblib/script_host.rb) taps
+  # confirm every CONFIRM_EVERY frames from boot onward and only suppresses it
+  # once its move probe starts holding a direction; a real game's autorun
+  # opening dialogue (a Show Text/Show Choices sequence that runs the instant
+  # the map loads, before the player can act) gets cleared by one of those taps
+  # long before the probe needs to walk. MV/MZ's probe had no equivalent: it
+  # started holding a direction the instant Scene_Map appeared, so a blocking
+  # message window swallowed the input frame after frame and every real game
+  # with an opening cutscene reported "did not move" — not because the engine
+  # failed to walk the player, but because the probe never got a turn.
+  #
+  # A fixed-length settle window (paid on every run, dialogue or not) was
+  # tried first and reverted: measured against the real data/Lunatic-Core bed
+  # under CI's own tight `--timeout_ms=6000` budget, 60 extra frames of
+  # confirm-tapping were enough to blow straight through it with zero probe
+  # output, because a confirm tap that actually lands on a real game can
+  # advance real event logic (more loads, more rendering), not just close an
+  # empty window. #message_busy? makes the wait conditional instead: a game
+  # with no opening dialogue (message_busy? false the instant Scene_Map
+  # appears) pays nothing and moves exactly as before; MOVE_SETTLE_MAX_FRAMES
+  # is only a safety cap on a game that is genuinely still busy.
+  MOVE_SETTLE_MAX_FRAMES = 180
+  CONFIRM_TAP_EVERY = 20
+  CONFIRM_TAP_HOLD = 4
+
   # The files that unambiguously mark a directory as an RPG Maker MV project:
   # the core engine script and the system database. (MZ uses `js/rmmz_core.js`
   # instead and is a separate, later target — see ADR 0004, milestone M6.)
@@ -145,6 +174,33 @@ class MV
       dirs = [RGSS::Input::DOWN, RGSS::Input::RIGHT,
               RGSS::Input::UP, RGSS::Input::LEFT]
       dirs[(frame / MOVE_PROBE_DWELL) % dirs.length]
+    end
+
+    # Taps the confirm key (RGSS::Input::C, MV/MZ's "ok") once every
+    # CONFIRM_TAP_EVERY frames, held for CONFIRM_TAP_HOLD of them — enough to
+    # register as a press through #sync_input without holding it into the next
+    # tap's window. `frame` is the caller's own settle-window frame counter
+    # (0-based), not the global frame count, so a probe that starts settling
+    # later in the run still gets its first tap at the same relative offset.
+    def confirm_settle_tap(frame)
+      phase = frame % CONFIRM_TAP_EVERY
+      RGSS::Input.press(RGSS::Input::C) if phase == 0
+      RGSS::Input.release(RGSS::Input::C) if phase == CONFIRM_TAP_HOLD
+    end
+
+    # Whether $gameMessage currently holds text a Window_Message is (or is
+    # about to be) showing — the same read the message probe uses
+    # (#maybe_message_test) to avoid stacking its own message onto a game's.
+    # Used by the move probe's settle window to decide whether it has anything
+    # to wait out at all. `false` (not busy, or the engine is not up yet)
+    # whenever the read itself fails, so a probe never hangs waiting on this.
+    def message_busy?
+      MV::JS.eval(
+        "(typeof $gameMessage !== 'undefined' && $gameMessage && " \
+        "$gameMessage.isBusy()) ? true : false"
+      ) == true
+    rescue StandardError
+      false
     end
 
     # JS that pushes a pointer sample (canvas x/y, left-button pressed) into MV's
@@ -512,10 +568,31 @@ class MV
   # input actually walks the player, not just that the map renders. The input is
   # pushed into MV by next frame's #sync_input. One-shot; a no-op during normal
   # play (flag unset).
+  #
+  # Before any direction is held, the probe checks whether $gameMessage is
+  # already busy (see .message_busy?): a real game's opening autorun event can
+  # run a Show Text/Show Choices sequence the instant the map loads, and a
+  # blocking message window swallows movement input frame after frame — the
+  # probe would report "did not move" not because the engine failed to walk
+  # the player, but because it never got a turn against the game's own event.
+  # If it is, confirm gets tapped (see .confirm_settle_tap) until the message
+  # clears or MOVE_SETTLE_MAX_FRAMES runs out; if it never was busy to begin
+  # with, movement starts immediately, exactly as before this existed.
   def maybe_move_test
     return if @move_test_done
     return unless move_test_requested?
     return unless current_scene == "Scene_Map"
+
+    unless @move_settled
+      @move_settle_frame ||= 0
+      if self.class.message_busy? && @move_settle_frame < MOVE_SETTLE_MAX_FRAMES
+        self.class.confirm_settle_tap(@move_settle_frame)
+        @move_settle_frame += 1
+        return
+      end
+      RGSS::Input.release(RGSS::Input::C)
+      @move_settled = true
+    end
 
     @move_frame ||= 0
     if @move_frame.zero?

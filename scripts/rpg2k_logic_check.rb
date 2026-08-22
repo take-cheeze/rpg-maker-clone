@@ -25,6 +25,7 @@ module RGSS
       def bgm_volume(*a); (@log ||= []) << [:bgm_volume, *a]; end
       def bgm_pan(*a); (@log ||= []) << [:bgm_pan, *a]; end
       def bgm_fade(*a); (@log ||= []) << [:bgm_fade, *a]; end
+      def bgm_stop(*a); (@log ||= []) << [:bgm_stop, *a]; end
       def se_play(*a);  (@log ||= []) << [:se, *a];  end
       def se_stop(*a);  (@log ||= []) << [:se_stop, *a]; end
     end
@@ -98,14 +99,15 @@ end
 # A grid world implementing the MoveRoute/MoveType `world` protocol. Passability
 # is a set of blocked [x, y] tiles; everything else is walkable.
 class FakeWorld
-  attr_accessor :hero, :switches, :sounds, :rolls
+  attr_accessor :hero, :switches, :sounds, :rolls, :in_sight
 
-  def initialize(blocked: [], hero: [0, 0], rolls: [])
+  def initialize(blocked: [], hero: [0, 0], rolls: [], in_sight: true)
     @blocked = blocked
     @hero = hero
     @switches = {}
     @sounds = []
     @rolls = rolls # queued values for random(n); falls back to 0
+    @in_sight = in_sight
   end
 
   def passable?(character, dir)
@@ -120,6 +122,7 @@ class FakeWorld
   def set_switch(id, on); @switches[id] = on; end
   def play_sound(*a); @sounds << a; end
   def random(_n); @rolls.empty? ? 0 : @rolls.shift; end
+  def in_sight?(_character); @in_sight; end
 end
 
 # Build an LCF::MoveCommand-alike without loading the native parser.
@@ -186,7 +189,25 @@ check 'direction_toward/away point at and away from a target' do
   eq 6, c.direction_toward(9, 6)  # dx dominates -> east
   eq 2, c.direction_toward(5, 9)  # pure vertical -> south
   eq 4, c.direction_away(9, 5)    # away from east -> west
-  eq 2, c.direction_toward(5, 5)  # already there -> keep facing
+end
+
+check 'direction_toward: an exact tie (and the same-tile case) resolves ' \
+      'vertically, landing on Down -- not the horizontal axis and not ' \
+      '"keep the current facing"' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # GetDirectionToCharacter` (src/game_character.cpp) compares with a
+  # strict `>` (`std::abs(sx) > std::abs(sy)`), so `abs(dx) == abs(dy)`
+  # (a genuine diagonal tie, or the degenerate dx == dy == 0 same-tile
+  # case) falls to the vertical branch, landing on Down since `sy > 0` is
+  # false when `sy == 0`. A prior version of this method compared with
+  # `>=` (tying to the *horizontal* axis instead) and special-cased the
+  # same-tile case to "keep the current facing" -- neither of which the
+  # reference does. Starting the character facing Up (8) rather than Down
+  # (2) rules out a same-tile result of 2 being a coincidental match with
+  # "keep facing" rather than the genuine Down default.
+  c = Game::Character.new(5, 5, 8)
+  eq 2, c.direction_toward(9, 9), 'a 4-and-4 diagonal tie lands on Down, not East'
+  eq 2, c.direction_toward(5, 5), 'the same-tile case also lands on Down'
 end
 
 # -- MoveRoute: movement ------------------------------------------------------
@@ -498,6 +519,60 @@ check 'diagonal move needs both cardinals and faces vertical' do
   eq 2, c3.direction, 'reverted to Down, not left turned toward the wall (8)'
 end
 
+check 'Move Forward continues a diagonal last move diagonally, not along ' \
+      'one collapsed cardinal axis' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # Direction` (src/game_character.h) is an 8-way enum (Up/Right/Down/Left/
+  # UpRight/DownRight/DownLeft/UpLeft); `UpdateMoveRoute`'s diagonal case
+  # (`SetDirection(cmd)`, src/game_character.cpp) sets it to the literal
+  # diagonal value, and `move_forward` does nothing but `break` before
+  # `Move(GetDirection())` reuses whatever `GetDirection()` still holds --
+  # so a route "Move Upper-Right, Move Forward" moves diagonally *twice*
+  # (2 tiles right, 2 tiles up), not diagonally then straight up.
+  route = R.new([mc(R::MOVE_UPRIGHT), mc(R::MOVE_FORWARD)])
+  c = Game::Character.new(2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [3, 1], [c.x, c.y]
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 0], [c.x, c.y], 'continues diagonally -- both axes advance again, ' \
+     'not just the vertical one'
+end
+
+# Confirmed against RPG_RT's own live source: `Game_Character::UpdateFacing`
+# (`src/game_character.cpp`) only reverses the prior facing when it matches
+# *neither* of the diagonal's two cardinal components -- it never
+# unconditionally snaps to the diagonal's vertical part the way the check
+# above's default-Down starting facing alone could not tell apart from the
+# correct axis-preserving rule (Down is on the vertical axis either way, so
+# both rules agree there). Starting on the *horizontal* axis instead is what
+# actually distinguishes them.
+check 'a diagonal move keeps the axis already faced, not always the ' \
+      'vertical component' do
+  # Facing Right (horizontal axis) before an Up-Right step: RPG_RT keeps the
+  # horizontal axis, landing on Right (the diagonal's own horizontal part),
+  # not Up.
+  route = R.new([mc(R::MOVE_UPRIGHT)])
+  c = Game::Character.new(2, 2, 6) # starts facing Right
+  eq :moved, route.step(c, FakeWorld.new)
+  eq 6, c.direction, 'stayed on the horizontal axis it was already facing'
+
+  # Facing Left (horizontal axis, but the *wrong* horizontal component) before
+  # the same Up-Right step: neither of Up-Right's components (Up, Right)
+  # matches Left, so RPG_RT reverses it -- landing on Right, not Up.
+  route2 = R.new([mc(R::MOVE_UPRIGHT)])
+  c2 = Game::Character.new(2, 2, 4) # starts facing Left
+  eq :moved, route2.step(c2, FakeWorld.new)
+  eq 6, c2.direction, 'reversed onto the diagonal\'s own horizontal component'
+
+  # Facing Up (vertical axis, already one of the two components): stays Up,
+  # matching the default-Down check above's "vertical" case but now proven
+  # by an axis-preservation rule rather than a hardcoded one.
+  route3 = R.new([mc(R::MOVE_UPRIGHT)])
+  c3 = Game::Character.new(2, 2, 8) # starts facing Up
+  eq :moved, route3.step(c3, FakeWorld.new)
+  eq 8, c3.direction, 'stayed on the vertical axis it was already facing'
+end
+
 check 'move forward steps in the current facing' do
   route = R.new([mc(R::MOVE_FORWARD)])
   c = Game::Character.new(4, 4, 4) # facing west
@@ -535,13 +610,22 @@ check 'a Face Direction sub-command overrides an earlier Direction Fix ON in the
   eq 8, c.direction
 end
 
-check 'move forward after a Direction-Fix move continues in the last direction actually moved' do
-  # yado.tk: "One Step Forward" is documented to continue in the direction
-  # last *walked*, not the sprite's displayed facing -- the follow-up this
-  # codebase scoped out of the Face Direction fix above, since #direction
-  # alone cannot tell the two apart once a locked move and an explicit Face
-  # command have diverged. Character#last_move_direction (added for this)
-  # is what Move Forward now reads instead of #direction.
+check 'move forward after an explicit Face command continues in the newly ' \
+      'faced direction, even under an active Direction-Fix lock' do
+  # Confirmed against RPG_RT's own live source rather than an uncited
+  # yado.tk claim this check used to repeat (the opposite of this):
+  # `Game_Character::UpdateMoveRoute` (src/game_character.cpp) uses one
+  # single shared `direction` field for both purposes -- its Face/Turn
+  # branch's `SetDirection(...)` (Face Up/Right/Down/Left, or
+  # Turn90DegreeRight/Left/Turn180Degree/TurnRandom/TurnTowardCharacter/
+  # TurnAwayFromCharacter, each itself a SetDirection call) writes the
+  # exact same `direction` a later Move-command branch's
+  # `Move(GetDirection())` reads for Move Forward -- with no lock check
+  # anywhere in the Face/Turn branch. So "Face Up" immediately followed by
+  # "Move Forward" walks north in real RPG_RT, not east (the direction last
+  # physically walked before the Face command), lock or no lock.
+  # Character#last_move_direction is what Move Forward reads; #face!
+  # (Face/Turn sub-commands) now updates it exactly like #move does.
   route = R.new([mc(R::LOCK_FACING), mc(R::MOVE_RIGHT), mc(R::FACE_UP),
                  mc(R::MOVE_FORWARD)], repeat: false)
   c = Game::Character.new(5, 5, 2) # facing south
@@ -550,12 +634,12 @@ check 'move forward after a Direction-Fix move continues in the last direction a
   route.step(c, w) # Move Right: last-moved direction east, facing stays south
   eq [6, 5], [c.x, c.y]
   eq 6, c.last_move_direction
-  route.step(c, w) # Face Up: turns the sprite north; last-moved direction untouched
+  route.step(c, w) # Face Up: turns the sprite north, and last_move_direction with it
   eq 8, c.direction
-  eq 6, c.last_move_direction
-  route.step(c, w) # One Step Forward: continues east (last walked), not north (facing)
-  eq [7, 5], [c.x, c.y]
-  eq 8, c.direction # the lock is still on, so the step itself doesn't re-face south
+  eq 8, c.last_move_direction
+  route.step(c, w) # One Step Forward: continues north (newly faced), not east
+  eq [6, 4], [c.x, c.y]
+  eq 8, c.direction
 end
 
 check 'a fixed-direction Animation Type suppresses movement-driven facing, but ' \
@@ -667,6 +751,40 @@ check 'MoveType stationary and custom yield no autonomous direction' do
   eq nil, Game::MoveType.next_direction(Game::MoveType::CUSTOM, c, w)
 end
 
+check 'MoveType random is a relative roll off the event\'s own current ' \
+      'facing, not a uniform pick among the four absolute cardinals -- ' \
+      'confirmed against RPG_RT\'s own live source: Game_Event::' \
+      'MoveTypeRandom (src/game_event.cpp) draws Rand::GetRandomNumber(0, ' \
+      '9): 0-2 keep going straight, 3-4 turn left, 5-6 turn right, 7 turns ' \
+      '180, and 8-9 skip the move attempt entirely -- returning before ' \
+      'Move() is ever called' do
+  # Facing right (6): TURN_LEFT[6] == 8 (up), TURN_RIGHT[6] == 2 (down),
+  # TURN_180[6] == 4 (left).
+  c = Game::Character.new(0, 0, 6)
+
+  # draw 0-2: continue straight, no turn -- still the current facing.
+  eq 6, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [0]))
+  eq 6, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [2]))
+
+  # draw 3-4: turn 90 degrees left and attempt that new direction.
+  eq 8, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [3]))
+  eq 8, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [4]))
+
+  # draw 5-6: turn 90 degrees right and attempt that new direction.
+  eq 2, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [5]))
+  eq 2, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [6]))
+
+  # draw 7: turn 180 degrees and attempt that new direction.
+  eq 4, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [7]))
+
+  # draw 8-9: skip this decision entirely -- nil, not a move in the
+  # character's current direction and not any other real direction value,
+  # so #step_event's `move_autonomous(...) if dir` never even calls
+  # #move_autonomous this tick, exactly like RPG_RT never calling Move().
+  eq nil, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [8]))
+  eq nil, Game::MoveType.next_direction(Game::MoveType::RANDOM, c, FakeWorld.new(rolls: [9]))
+end
+
 check 'MoveType vertical bounces off a blocked tile' do
   c = Game::Character.new(2, 2, 8) # heading up
   # Up (2,1) is blocked, so it should reverse to down.
@@ -676,11 +794,52 @@ check 'MoveType vertical bounces off a blocked tile' do
   eq 8, Game::MoveType.next_direction(Game::MoveType::VERTICAL, c, FakeWorld.new)
 end
 
-check 'MoveType toward/away chase and flee the hero' do
-  c = Game::Character.new(0, 0)
-  w = FakeWorld.new(hero: [0, 5])
+check 'MoveType vertical/horizontal-cycle defaults to Down/Right (not Up/' \
+      'Left) when the event is caught facing off its own cycle axis -- ' \
+      'confirmed against RPG_RT\'s own live source: Game_Event::' \
+      'MoveTypeCycle (src/game_event.cpp) only continues in ReverseDir(' \
+      'default_dir) when already facing exactly that; any other current ' \
+      'facing (on-axis or not) moves default_dir instead, and ' \
+      'MoveTypeCycleUpDown/MoveTypeCycleLeftRight pass Down/Right as that ' \
+      'default' do
+  # Vertical-cycle event facing sideways (Left/6): neither pair member, so
+  # it must fall to the RPG_RT default (Down), not the old code's Up.
+  c = Game::Character.new(2, 2, 4)
+  eq 2, Game::MoveType.next_direction(Game::MoveType::VERTICAL, c, FakeWorld.new)
+
+  # Horizontal-cycle event facing vertically (Down/2): neither pair member,
+  # so it must fall to the RPG_RT default (Right), not the old code's Left.
+  c2 = Game::Character.new(2, 2, 2)
+  eq 6, Game::MoveType.next_direction(Game::MoveType::HORIZONTAL, c2, FakeWorld.new)
+end
+
+check 'MoveType toward/away chase and flee the hero, gated on sight and a ' \
+      '1-in-10 roll -- confirmed against RPG_RT\'s own live source: ' \
+      'Game_Event::MoveTypeTowardsOrAwayPlayer (src/game_event.cpp) only ' \
+      'computes the real direction on a draw of 2-9 out of a 0-9 roll ' \
+      '(0 keeps the current facing, 1 is a random cardinal), and only while ' \
+      'on screen -- picking a random cardinal unconditionally off screen' do
+  c = Game::Character.new(0, 0, 6) # facing right
+  # In sight, draw 2 (>= 2): the real geometric direction.
+  w = FakeWorld.new(hero: [0, 5], rolls: [2])
   eq 2, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w)
+  w = FakeWorld.new(hero: [0, 5], rolls: [2])
   eq 8, Game::MoveType.next_direction(Game::MoveType::AWAY, c, w)
+
+  # In sight, draw 0: keeps the character's own current facing, not the
+  # geometric direction toward/away the hero.
+  w = FakeWorld.new(hero: [0, 5], rolls: [0])
+  eq 6, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w)
+
+  # In sight, draw 1: a fully random cardinal (the queued random(4) draw),
+  # not the geometric direction either.
+  w = FakeWorld.new(hero: [0, 5], rolls: [1, 3])
+  eq 8, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w) # CARDINALS[3] == 8
+
+  # Off screen: always a random cardinal, no attempt to track the hero at
+  # all, regardless of what random(10) would have drawn.
+  w = FakeWorld.new(hero: [0, 5], in_sight: false, rolls: [1])
+  eq 4, Game::MoveType.next_direction(Game::MoveType::TOWARD, c, w) # CARDINALS[1] == 4
 end
 
 # -- Rng ----------------------------------------------------------------------
@@ -814,6 +973,42 @@ check 'Message.scan resolves a nested \V[] argument inside \c[]/\s[] too ' \
   eq [{ text: 'a', color: 0 }, { text: 'b', color: 5 }, { text: 'c', color: 0 }], s[:segments]
   s2 = Game::Message.scan('a\s[\V[3]]b', vars, names)
   eq [{ at: 1, speed: 12 }], s2[:speeds]
+end
+
+check 'Message.scan\'s \N[]-id-0-means-party-leader convenience only applies ' \
+      'when a digit or resolvable \V[] was actually read inside the brackets' do
+  # Confirmed directly against RPG_RT's live source: `Game_Message::
+  # ParseParam` (`src/game_message.cpp`) guards the substitution on
+  # `values.front() == 0 && got_valid_number` -- a bracket that parsed
+  # nothing at all (`\N[]`, or `\N[x]` where `x` is neither a digit nor
+  # `\V[]`/`\v[]`) leaves the id at 0, which real RPG_RT's own
+  # `DefaultCommandInserter` (`src/pending_message.cpp`) then misses on
+  # `GetActor(0)` and expands to an empty string, not the leader's name.
+  vars = Game::Variables.new
+  vars[5] = 0
+  seen = []
+  names = ->(id) { seen << id; id.zero? ? 'Leader' : nil }
+
+  s = Game::Message.scan('\N[0]', vars, names)
+  eq 'Leader', s[:segments].map { |seg| seg[:text] }.join,
+     'an explicit \\N[0] still substitutes the leader'
+
+  seen.clear
+  s2 = Game::Message.scan('\N[]', vars, names)
+  eq '', s2[:segments].map { |seg| seg[:text] }.join,
+     'a bare \\N[] with nothing parsed resolves to blank, not the leader'
+  ok !seen.include?(0), 'the leader lookup (id 0) must never be attempted for an unparsed bracket'
+
+  seen.clear
+  s3 = Game::Message.scan('\N[x]', vars, names)
+  eq '', s3[:segments].map { |seg| seg[:text] }.join,
+     'a non-digit, non-\\V[] bracket body resolves to blank too'
+
+  seen.clear
+  s4 = Game::Message.scan('\N[\V[5]]', vars, names)
+  eq 'Leader', s4[:segments].map { |seg| seg[:text] }.join,
+     'a nested \\V[] that resolves to 0 still counts as "a number was read" -- ' \
+     'leader substitution applies'
 end
 
 check 'Message.scan flags \$ (show gold) and drops it from the text' do
@@ -1335,6 +1530,31 @@ check 'interpreter change gold/items updates the party' do
   it.update
   eq 100, st.party.gold
   eq 2, st.party.items[3]
+end
+
+check 'Change Items no-ops when a variable-sourced amount has the wrong ' \
+      'sign for the chosen operation, instead of flipping direction' do
+  # Confirmed against RPG_RT's own live source: `Game_Interpreter::
+  # CommandChangeItems` (src/game_interpreter.cpp) computes its value
+  # through the same `OperateValue` a variable-sourced amount can make
+  # negative even under "Add", then refuses to apply it at all -- "Add
+  # item can't be used to remove an item and remove item can't be used to
+  # add one" -- unless the sign still matches. `CommandChangeGold` has no
+  # such guard, so this is Change Items-specific.
+  st = new_state
+  st.party.gain_item(3, 5)
+  st.party.gain_item(4, 5)
+  st.variables[1] = -2
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::CHANGE_ITEMS, [0, 0, 3, 1, 1]),  # Add item 3, amount = var[1] (-2)
+    FakeCmd.new(IC::CHANGE_ITEMS, [1, 0, 4, 1, 1]),  # Remove item 4, amount = var[1] (-2)
+  ])
+  it.update
+  eq 5, st.party.items[3],
+     'Add with a negative operand no-ops rather than removing 2'
+  eq 5, st.party.items[4],
+     'Remove with a negative operand (which flips positive) no-ops rather than adding 2'
 end
 
 check 'interpreter pauses on a message and resumes' do
@@ -2115,13 +2335,19 @@ check 'Tint Screen with a wait pauses until the transition settles' do
   eq 0, st.screen.tint[0]
 end
 
-check 'Tint Screen with an instant (zero-duration) transition does not wait' do
+check 'Tint Screen with an instant (zero-duration) transition still waits one frame' do
   st = new_state
   it = Game::Interpreter.new(st)
-  it.start([FakeCmd.new(IC::TINT_SCREEN, [50, 60, 70, 100, 0, 1])]) # dur 0, wait 1
+  it.start([FakeCmd.new(IC::TINT_SCREEN, [50, 60, 70, 100, 0, 1]), # dur 0, wait 1
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
   it.update
-  ok !it.waiting?, 'nothing to wait for when the tint is immediate'
-  eq [50, 60, 70, 100], st.screen.tint
+  eq [50, 60, 70, 100], st.screen.tint, 'the tint itself applies immediately'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  ok !st.switches[1], 'the following command has not run yet'
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[1], 'resumed the very next frame, since nothing is left animating'
 end
 
 check 'Shake Screen without a wait starts a shake and does not pause' do
@@ -2242,6 +2468,21 @@ check 'Flash Screen with a wait pauses until the flash fades out' do
   it.update
   eq true, st.switches[2], 'resumed once the flash faded'
   eq 0, st.screen.flash_color[3]
+end
+
+check 'Flash Screen with an instant (zero-duration) flash still waits one frame' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::FLASH_SCREEN, [31, 0, 0, 20, 0, 1]), # dur 0, wait 1
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  eq 0, st.screen.flash_color[3], 'a zero-duration flash settles at no flash immediately'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  ok !st.switches[1], 'the following command has not run yet'
+  st.screen.update until !st.screen.busy? # the scene advances it each frame
+  it.resume
+  it.update
+  eq true, st.switches[1], 'resumed the very next frame, since nothing is left animating'
 end
 
 check 'RPG2003 Flash Screen mode 1 (Begin) strobes indefinitely and never pauses' do
@@ -2873,7 +3114,7 @@ check 'Teleport converts its RPG2003 facing argument to a numpad direction' do
   # (and Game::State#direction) speak the 2/4/6/8 numpad. Passing it through
   # raw made 1 and 3 into numbers that are not directions at all.
   { 1 => 8, 2 => 6, 3 => 2, 4 => 4 }.each do |param, numpad|
-    st = new_state
+    st = new_state(rpg2003: true)
     it = Game::Interpreter.new(st)
     it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, param])])
     it.update
@@ -2883,18 +3124,32 @@ end
 
 check 'Teleport with no facing argument keeps the current one' do
   # 0 is what an RPG2000 project writes — the edition that has no such argument.
-  st = new_state
+  st = new_state(rpg2003: true)
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 0])])
   it.update
   eq [5, 3, 9, 0], it.teleport, 'nothing to face, so the scene leaves it alone'
 
   # An out-of-range value means the same rather than an invalid direction.
-  st2 = new_state
+  st2 = new_state(rpg2003: true)
   it2 = Game::Interpreter.new(st2)
   it2.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 9])])
   it2.update
   eq [5, 3, 9, 0], it2.teleport
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Game_Interpreter_Map::
+# CommandTeleport` (`src/game_interpreter_map.cpp`) reads param3 only `if
+# (com.parameters.size() > 3 && Player::IsRPG2k3Commands())` -- a genuine
+# RPG2000 binary never reads a facing argument at all, regardless of what
+# the command's own parameter list happens to hold.
+check "Teleport's facing argument is ignored outright on an RPG2000 database" do
+  st = new_state(rpg2003: false)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::TELEPORT, [5, 3, 9, 3])]) # 3 = down -> numpad 2, if read
+  it.update
+  eq [5, 3, 9, 0], it.teleport,
+     'RPG2000 never reads a 4th Teleport parameter, even when one is present'
 end
 
 # -- Store Terrain ID / Store Event ID ---------------------------------------
@@ -3115,6 +3370,48 @@ check 'Play BGM with the file already playing does not restart it' do
   eq [50], volumes, 'the still-playing track had its volume re-applied live instead of doing nothing'
 end
 
+check 'Play BGM with the same file restarts it after a Fade Out BGM, unlike ' \
+      'an ordinary same-file replay' do
+  # Confirmed directly against RPG_RT's live source: `Game_System::BgmPlay`
+  # (`src/game_system.cpp`) gates its "same track: adjust volume in place,
+  # don't restart" shortcut on `!data.music_stopping`, and
+  # `Game_System::BgmFade` (Fade Out BGM, 11520) always sets `data.
+  # music_stopping = true` alongside the fade -- so a Play BGM of the exact
+  # track just faded out DOES restart it from the top, unlike the ordinary
+  # same-file no-restart case the check just above this one covers.
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::FADEOUT_BGM, [400]),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town town], names, 'the second Play BGM restarted the track after the fade-out, ' \
+                           'not skipped as an in-place volume tick'
+end
+
+check 'Play Memorized BGM restarts its track after a Fade Out BGM, unlike ' \
+      'an ordinary same-file replay' do
+  # Same gate as the check above, on Play Memorized BGM's own restart path --
+  # `Game_System::PlayMemorizedBGM` is a bare `BgmPlay` call, so it shares
+  # the identical `!data.music_stopping` shortcut.
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::FADEOUT_BGM, [400]),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town town], names, 'Play Memorized BGM restarted the track after the fade-out'
+end
+
 check 'Play BGM with a different file still restarts (or starts) playback' do
   RGSS::Audio.log = []
   st = new_state
@@ -3170,13 +3467,30 @@ check 'Play BGM re-applies pan on a same-file re-trigger, not just a fresh start
   eq [20, 80], pans, 'pan is re-applied on the same-file branch too'
 end
 
-# -- Play SE "(OFF)" ----------------------------------------------------------
+# -- Play SE/BGM "(OFF)" ------------------------------------------------------
+# Confirmed against EasyRPG's actual C++ source: the editor's "(OFF)" choice
+# is encoded as the literal 5-character string "(OFF)" (liblcf's own schema
+# default for both the Music and Sound structs), not as a blank filename --
+# an uncited assumption this project's own prior fix had made. `Game_System::
+# SePlay` (src/game_system.cpp) treats the two differently: a genuinely blank
+# name is a silent no-op (`if (se.name.empty()) { return; }`), while only the
+# literal "(OFF)" stops every playing SE (`else if (se.name == "(OFF)") {
+# if (stop_sounds) Audio().SE_Stop(); return; }`).
 
-check 'Play SE with a blank name (the editor\'s "(OFF)" choice) stops every SE' do
+check 'Play SE with a genuinely blank name is a silent no-op, not a stop-all' do
   RGSS::Audio.log = []
   st = new_state
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: '')])
+  it.update
+  eq [], RGSS::Audio.log, 'a blank name neither plays nor stops anything'
+end
+
+check 'Play SE with the literal "(OFF)" name stops every SE' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: '(OFF)')])
   it.update
   eq [[:se_stop]], RGSS::Audio.log, 'the SE-stop-all backend call ran, and no SE played'
 end
@@ -3188,6 +3502,36 @@ check 'Play SE with a real file name plays it, not a stop-all' do
   it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: 'cursor')])
   it.update
   eq [[:se, 'cursor', 80, 100]], RGSS::Audio.log
+end
+
+check 'Play BGM with the literal "(OFF)" name stops the current track' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: '(OFF)'),
+  ])
+  it.update
+  eq [[:bgm, 'town', 80, 100], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
+     'the second Play BGM stops the track just started, rather than trying ' \
+     'to play a file literally named "(OFF)"'
+  eq nil, it.instance_variable_get(:@state).current_bgm,
+     'the tracked current BGM is cleared too, matching BgmStop\'s own ' \
+     'current_music.name = "(OFF)"'
+end
+
+check 'Play BGM with a blank name also stops the current track' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: ''),
+  ])
+  it.update
+  eq [[:bgm, 'town', 80, 100], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
+     'BgmPlay treats a blank name exactly like "(OFF)" -- both stop'
 end
 
 # -- actor HP / MP commands ---------------------------------------------------
@@ -3229,15 +3573,18 @@ FakePlayerRow = Struct.new(:name, :charset_name, :charset_index,
                            # Same reasoning: appended last, nil reads as 0 via
                            # the reader methods, matching the schema default.
                            :battle_x, :battle_y, :battler_animation)
-# A real LCF growth curve (chunk 31 / #int16_values(31)) as `levels` calls to
-# `blk`, each returning one level's [maxhp, maxsp, atk, def, int, agi] --
-# liblcf's `RawStruct<rpg::Parameters>::ReadLcf` (src/ldb_parameters.cpp)
-# reads it as six *separate* same-length runs back to back (every level's
-# maxhp, then every level's maxsp, then atk/def/int/agi), not six shorts
-# interleaved per level, so this transposes the per-level rows into that
-# stat-major layout before flattening.
-def block_curve(levels)
-  (0...levels).map { |i| yield i }.transpose.flatten
+# Transpose a level-major curve (max_level rows of six stats: L1's six
+# stats, then L2's, ...) into the stat-major layout #int16_values(31) really
+# carries (six max_level-sized blocks: every level's max_hp, then every
+# level's max_mp, then atk, def, int, agi) -- confirmed against a genuine
+# RPG_RT.exe, see Game::Actor#base_stats's own comment. Building fixtures in
+# the more readable level-major shape and transposing them here, rather than
+# hand-writing the stat-major arrays directly, keeps each fixture's per-level
+# intent easy to read and avoids re-deriving the interleaving by hand at
+# every call site.
+def to_stat_major(level_major, stat_count = 6)
+  levels = level_major.size / stat_count
+  (0...stat_count).flat_map { |i| (0...levels).map { |lv| level_major[(lv * stat_count) + i] } }
 end
 
 # Like FakePlayerRow but exposing the full growth curve the way a real LCF row
@@ -3485,7 +3832,16 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # also persists onto the map. Appended last, same
                           # reason again -- nil reads as 0/battle-only via
                           # #state_field, the schema's own default.
-                          :type)
+                          :type,
+                          # ... and `message_affected`: the per-turn reminder
+                          # (Game::Battle#turn_state_message) a battler still
+                          # carrying this state opens its turn with, distinct
+                          # from message_actor/message_enemy (which fire only
+                          # the instant it lands). Appended last, same reason
+                          # again -- nil reads as "no reminder configured" via
+                          # States.field, matching the schema's own blank
+                          # default.
+                          :message_affected)
 # A state row carrying only the fields a check names, with the rest at the
 # database defaults — notably reduce_hit_ratio 100, which is "does not blind".
 def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
@@ -3500,7 +3856,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                hp_change_type: Game::States::CHANGE_TYPE_LOSE,
                sp_change_type: Game::States::CHANGE_TYPE_LOSE,
                avoid_attacks: false, reflect_magic: false, cursed: false,
-               type: 0)
+               type: 0, affected_msg: nil)
   FakeStateDef.new(restriction, hp_val, hp_max, sp_val, sp_max, hold_turn,
                    auto_release, release_by_attack, reduce_hit_ratio,
                    restrict_skill, restrict_skill_level,
@@ -3510,7 +3866,7 @@ def fake_state(restriction: 0, hp_val: 0, hp_max: 0, sp_val: 0, sp_max: 0,
                    affect_type, affect_attack, affect_defense,
                    affect_spirit, affect_agility,
                    hp_change_type, sp_change_type, avoid_attacks, reflect_magic,
-                   cursed, type)
+                   cursed, type, affected_msg)
 end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
@@ -3630,14 +3986,15 @@ FakeBattlerAnimation = Struct.new(:name, :speed, :poses)
 FakeBattlerAnimationPose = Struct.new(:name, :battler_name, :battler_index,
                                       :animation_type, :battle_animation_id)
 
-def party_state(enemy_group: Hash.new(true))
+def party_state(enemy_group: Hash.new(true), rpg2003: false)
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
                            max_hp: 100, max_mp: 30, atk: 10, def: 8),
     2 => FakePlayerRow.new('Ally', '', 0, 3,
                            max_hp: 50, max_mp: 20, atk: 6, def: 5),
   }
-  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], enemy_group: enemy_group)),
+  Game::State.new(Game::Party.new(FakeActorDB.new(players, [1, 2], rpg2003: rpg2003,
+                                                   enemy_group: enemy_group)),
                   1, 0, 0)
 end
 
@@ -3722,10 +4079,12 @@ end
 # which always re-seeds class_id from there).
 check 'to_lsd/from_lsd round-trips a live Change Class, and the battle ' \
       'commands it materializes' do
-  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
-  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
-  players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, nil) }
-  jobs = { 1 => JobRow.new('Mage', job1) }
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), [], 0, nil) }
+  jobs = { 1 => JobRow.new('Mage', to_stat_major(job1)) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   hero = st.party.leader
@@ -3781,10 +4140,12 @@ check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
 end
 
 check 'to_lsd/from_lsd round-trips a Change Class back to "no class" (id 0)' do
-  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
-  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
-  players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 1, nil) }
-  jobs = { 1 => JobRow.new('Mage', job1) }
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), [], 1, nil) }
+  jobs = { 1 => JobRow.new('Mage', to_stat_major(job1)) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   hero = st.party.leader
@@ -4022,6 +4383,115 @@ check 'restore_pictures restores zoom, opacity and tone, not just name/position'
   eq 100, plain.green
   eq 100, plain.blue
   eq 100, plain.saturation
+end
+
+check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Save::Prepare`
+  # (`src/scene_save.cpp`) writes `save.pictures = Main_Data::game_pictures->
+  # GetSaveData()` unconditionally on every save, and `Player::LoadSavegame`
+  # (`src/player.cpp`) restores it unconditionally on every load -- so a
+  # picture shown via Show Picture (11110) survives a genuine Save/Continue.
+  # `#to_lsd` never wrote chunk 103 at all (see the "restore_pictures..."
+  # check above, whose own comment used to note this), so any shown picture
+  # silently vanished the instant this engine's own Save/Continue ran, even
+  # though loading a genuine external RPG_RT save with pictures already
+  # worked (that path only ever exercises .from_lsd, never .to_lsd).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.show_picture(3, name: 'backdrop', x: 200, y: 150, zoom: 150,
+                  opacity: Game.trans_to_opacity(25), # == 191, see the check above
+                  red: 50, green: 60, blue: 70, saturation: 80)
+
+  saved = st.to_lsd[103][3]
+  ok !saved.nil?, 'chunk 103 carries the shown picture'
+  eq 'backdrop', saved.name
+  eq 200, saved.finish_x.to_i
+  eq 150, saved.finish_y.to_i
+  eq 150, saved.zoom
+  # Game.opacity_to_trans(191) == 100 - 191*100/255 == 26 -- not 25: this
+  # codebase's own Game::Picture keeps opacity (0..255), not RPG_RT's own
+  # native 0..100 transparency, as its live ground truth (#trans_to_opacity
+  # only ever converts one way for the live command), so a save round-trip
+  # through both integer-truncating conversions is not perfectly lossless.
+  # Real RPG_RT itself has no such drift (`Game_Pictures::Picture::data.
+  # current_top_trans` is the 0..100 value directly, confirmed against
+  # `src/game_pictures.cpp`) -- a pre-existing, separate precision gap noted
+  # in docs/TODO.md, out of scope for this fix.
+  eq 26, saved.transparency
+  eq 50, saved.tone_red
+  eq 60, saved.tone_green
+  eq 70, saved.tone_blue
+  eq 80, saved.tone_saturation
+
+  # End-to-end through .from_lsd too, at the two values that round-trip
+  # exactly (0 and 255 are each other's fixed point under both conversions,
+  # see the arithmetic above) so this assertion is not itself muddied by the
+  # same rounding the transparency check above already covers directly.
+  st.show_picture(4, name: 'clean', x: 10, y: 20, opacity: 255)
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.pictures[4]
+  ok !restored.nil?, 'the picture round-trips through a real .lsd write/read'
+  eq 'clean', restored.name
+  eq 10, restored.x
+  eq 20, restored.y
+  eq 255, restored.opacity, 'opacity 255 (trans 0) is a fixed point of both conversions'
+
+  # A State with no pictures shown must not gain a stray chunk 103 at all --
+  # the same "absent means nothing to restore" rule chunk 111's own fields
+  # already follow.
+  empty_st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, empty_st.to_lsd[103], 'no shown pictures means no chunk 103 at all'
+end
+
+check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' \
+      'the glide instead of snapping straight to its target' do
+  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: a save
+  # edited with chunk 103's current_x/y (fields 4/5) and finish_x/y (31/32)
+  # deliberately different, time_left (51) still counting down, resumed
+  # under the real runtime as a picture visibly still gliding from the
+  # current position toward the finish one -- not sitting statically at
+  # either (see SAVE_PICTURE's own comment for the full field-mapping
+  # evidence). #to_lsd previously wrote only the picture's own live values
+  # into fields 31/32/etc (the finish/rest fields) and never wrote
+  # time_left at all, so a picture saved mid-move round-tripped as though
+  # it had already arrived; #restore_pictures never read the fields needed
+  # to do otherwise.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.show_picture(5, name: 'banner', x: 10, y: 20, zoom: 100,
+                  opacity: 255, red: 100, green: 100, blue: 100, saturation: 100)
+  st.move_picture(5, 210, 120, 50, 0, 40, 60, 80, 100, 40) # -> (210, 120) over 40 frames
+  st.pictures[5].update # one frame already elapsed, so current != its own start
+
+  saved = st.to_lsd[103][5]
+  ok !saved.nil?, 'the mid-move picture is written to chunk 103'
+  eq 39, saved.time_left, 'one frame already elapsed off the saved move'
+  eq st.pictures[5].x, saved.current_x.to_i
+  eq st.pictures[5].y, saved.current_y.to_i
+  eq 210, saved.finish_x.to_i
+  eq 120, saved.finish_y.to_i
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.pictures[5]
+  ok restored.moving?, 'the restored picture resumes as still in flight'
+  eq 39, restored.frames_left
+  eq st.pictures[5].x, restored.x
+  eq st.pictures[5].y, restored.y
+  eq 210, restored.finish_x.to_i
+  eq 120, restored.finish_y.to_i
+
+  # And it keeps gliding, rather than sitting frozen at the restored position.
+  before_x = restored.x
+  restored.update
+  ok restored.x != before_x, 'the resumed move keeps advancing toward its target'
+
+  # A picture at rest (never moved) writes/restores exactly as before --
+  # time_left absent/0 means the new fields are never even consulted.
+  st.show_picture(6, name: 'still', x: 5, y: 5)
+  still_saved = st.to_lsd[103][6]
+  eq 0, (still_saved.time_left || 0)
+  still_round = Game::State.from_lsd(db, st.to_lsd)
+  ok !still_round.pictures[6].moving?, 'a picture never moved restores at rest'
 end
 
 # -- the permanent actor roster (Game::Actors) --------------------------------
@@ -4336,13 +4806,36 @@ check 'Actor change_hp/change_mp/full_heal clamp within their bounds' do
   eq [100, 30], [hero.hp, hero.mp]
 end
 
+check 'Actor base stats read the growth curve stat-major, not row-major, ' \
+      'per level' do
+  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: a real
+  # save was edited to level 50 with a known five-item equipment set on two
+  # different actors and resumed under the real Enterbrain runtime, reading
+  # the Equip screen's own displayed ATK/DEF/SPI/AGI. On a witness actor
+  # whose curve blocks are all independently distinguishable (no two stats
+  # share a coincidentally-identical sequence), only a stat-major reading
+  # (six max_level-sized blocks: every level's max_hp, then every level's
+  # max_mp, then atk, def, int, agi) reproduced RPG_RT's numbers exactly;
+  # the previously-assumed row-major reading (max_level rows of six stats)
+  # was off by as much as 2.3x. A fixture deliberately shaped the same way
+  # (no stat's per-level sequence coincides with another's) below proves the
+  # same distinction: under the old row-major reading this would instead
+  # report L1 = [11, 111, 22, 222, 33, 333] and L2 = [44, 444, 55, 555, 66,
+  # 666]. Values stay under RPG_RT's own 999 stat ceiling
+  # (#base_param_limit) so that clamp can't mask the difference between the
+  # two readings.
+  curve = [11, 111,  22, 222,  33, 333,  44, 444,  55, 555,  66, 666]
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, curve) }, [1])
+  a = Game::Party.new(db).leader
+  eq [11, 22, 33, 44, 55, 66], [a.max_hp, a.max_mp, a.atk, a.def, a.int, a.agi]
+  a.set_level(2)
+  eq [111, 222, 333, 444, 555, 666], [a.max_hp, a.max_mp, a.atk, a.def, a.int, a.agi]
+end
+
 check 'Actor base stats scale with level from the growth curve' do
-  # Two levels, six stats each: L1 = maxhp10/maxmp5/atk3/def2/int1/agi4,
-  # L2 = double each (except as listed). Six same-length runs back to back --
-  # every level's maxhp, then every level's maxmp, then atk/def/int/agi --
-  # matching liblcf's own `RawStruct<rpg::Parameters>::ReadLcf`, not six
-  # shorts interleaved per level.
-  curve = [10, 20,  5, 10,  3, 6,  2, 4,  1, 2,  4, 8]
+  # Stat-major (six max_level-sized blocks): L1 = maxhp10/maxmp5/atk3/def2/
+  # int1/agi4, L2 = double each (except as listed).
+  curve = [10, 20, 5, 10, 3, 6, 2, 4, 1, 2, 4, 8]
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, curve) }, [1])
   a = Game::Party.new(db).leader
   eq 1, a.level
@@ -4442,6 +4935,32 @@ check 'equipping RPG2003 cursed armor does NOT inflict a state left at its ' \
   a.add_state(4)
   eq [4], a.states, 'an "Ends"-type state landed by ordinary infliction is still forced'
   eq nil, a.remove_state(4), 'and an ordinary cure still cannot touch it while the armor is worn'
+end
+
+check 'equipping RPG2003 cursed armor crowds out a lower-priority state ' \
+      'already carried, the same as a lethal hit or a landed skill state does' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live: `State::Add`
+  # (`src/state.cpp`) runs its crowding-out pass -- clearing any state 10+
+  # priority points below the resulting significant state -- unconditionally,
+  # inside every single call, with no caller-side opt-out. `Game_Battler::
+  # AddState` (`src/game_battler.cpp`) calls it via `State::Add(...)`, and
+  # `Game_Actor::AdjustEquipmentStates` (`src/game_actor.cpp`) funnels equip-
+  # triggered infliction through the identical `AddState` -- so equipping a
+  # cursed item that forces a high-priority state gets the same crowding-out
+  # a lethal hit (#knock_out!) or a landed skill state already does in this
+  # codebase, which had been the one state-infliction call site here that
+  # never paired #add_state with the #Game::States.prune pass every other
+  # one already does.
+  items = { 20 => fake_item(type: 3, state_set: [0, 0, 0, 1], reverse_state: true) } # armor, state 4
+  situation = { 2 => fake_state(type: 1, priority: 10), # low priority
+                4 => fake_state(type: 1, priority: 90) } # the cursed state, high priority
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
+                       [1], items, {}, {}, situation, rpg2003: true)
+  a = Game::Party.new(db).leader
+  a.add_state(2)
+  eq [2], a.states, 'carrying the low-priority ailment already'
+  a.equip_item(20)
+  eq [4], a.states, 'the cursed state crowded out the ailment 10+ priority below it'
 end
 
 check 'RPG2003 cursed armor set as *starting* gear inflicts its state from the ' \
@@ -4774,9 +5293,10 @@ check 'An ordinary level change carries a live Change Parameters adjustment ' \
   # unconditionally rebuilt both @base and @base_raw from the bare level
   # curve on every call, silently discarding any live change_param delta the
   # moment the actor's level changed by any means.
+  # Stat-major (six max_level-sized blocks): atk 50 -> 52 from level 1 to 2,
+  # every other stat flat.
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1,
-                                            [10, 10,  5, 5,  50, 52,  # atk: L1 50, L2 52
-                                             2, 2,  1, 1,  4, 4]) },
+                                            [10, 10, 5, 5, 50, 52, 2, 2, 1, 1, 4, 4]) },
                        [1])
   a = Game::Party.new(db).leader
   eq 50, a.atk                                  # level 1 curve atk
@@ -4788,21 +5308,28 @@ check 'An ordinary level change carries a live Change Parameters adjustment ' \
   eq 72, a.atk
 end
 
-check 'Change Parameters tracks an unclamped total under the displayed clamp' do
-  # yado.tk `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
-  # 1..999 (1..9999 for HP/MP), but RPG_RT keeps accumulating the *real*
-  # total underneath -- a big drop below the floor doesn't "spend" any of a
-  # later raise until the raw total genuinely climbs back past the floor.
+check "Change Parameters clamps the modifier itself to +/-999 on every " \
+      'call, not the displayed total' do
+  # RPG_RT's own Game_Actor::SetBaseAtk (src/game_actor.cpp) clamps
+  # data.attack_mod -- a shadow entirely separate from the level curve --
+  # to +/-MaxStatBaseValue() (999) via ClampStatMod on every single call,
+  # before the curve and equipment are ever added and the combined total
+  # clamped again to 1..999. So a deep debuff can never bank more magnitude
+  # in the modifier than its own +/-999 ceiling, and a partial recovery
+  # afterward reflects immediately once the (already-bounded) modifier
+  # crosses back over the curve's own threshold.
   db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
   a = Game::Party.new(db).leader
-  eq 3, a.atk                                     # base atk starts at 3
-  a.change_param(Game::Actor::PARAM_ATK, -2000)    # raw 3 - 2000 = -1997
-  eq 1, a.atk                                      # clamped to the floor
-  a.change_param(Game::Actor::PARAM_ATK, 1000)     # raw -1997 + 1000 = -997
-  eq 1, a.atk                                      # still floored -- raw is still negative
-  a.change_param(Game::Actor::PARAM_ATK, 1000)     # raw -997 + 1000 = 3
-  eq 3, a.atk                                      # raw crossed back above 1: unclamps
-  # An ordinary, never-clamped sequence is untouched by the shadow tracking.
+  eq 3, a.atk                                     # base atk starts at 3, mod 0
+  a.change_param(Game::Actor::PARAM_ATK, -2000)    # mod clamp(0-2000,-999,999) = -999
+  eq 1, a.atk                                      # curve 3 + mod -999 = -996, floored to 1
+  a.change_param(Game::Actor::PARAM_ATK, 1000)     # mod clamp(-999+1000,..) = 1
+  eq 4, a.atk                                      # curve 3 + mod 1 = 4 -- reacts immediately,
+                                                     # not still floored the way an unclamped
+                                                     # running total would leave it
+  a.change_param(Game::Actor::PARAM_ATK, 1000)     # mod clamp(1+1000,-999,999) = 999
+  eq 999, a.atk                                     # curve 3 + mod 999 = 1002, capped at 999
+  # An ordinary, never-clamped sequence is unaffected by the modifier clamp.
   a.change_param(Game::Actor::PARAM_DEF, 5)        # base def 2 -> 7
   eq 7, a.def
   a.change_param(Game::Actor::PARAM_DEF, -3)       # 7 -> 4
@@ -4821,21 +5348,22 @@ check 'Party save round-trips a Change Parameters adjustment across Continue' do
   hero.gain_exp(500) # level up, so Continue's #set_exp also re-derives @base via
                       # #set_level -- the common case, not just the fresh-object one
   hero.change_param(Game::Actor::PARAM_DEF, 5)      # ordinary, never-clamped: 2 -> 7
-  hero.change_param(Game::Actor::PARAM_ATK, -2000)  # floors atk at 1, raw deep negative
-  hero.change_param(Game::Actor::PARAM_ATK, 1000)   # raw still negative -- stays floored
+  hero.change_param(Game::Actor::PARAM_ATK, -2000)  # mod clamps to -999, floors atk at 1
   eq 7, hero.def
   eq 1, hero.atk
   loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
   eq hero.level, loaded.level      # the level-up itself round-tripped too
   eq 7, loaded.def                 # ordinary adjustment survives Continue
   eq 1, loaded.atk                 # still floored, not reverted to the level-derived base
-  # The floor is still the hidden shadow total (raw -997), not a fresh clamp:
-  # one more +1000 crosses it back above 1 on the reloaded actor exactly as it
-  # does on the live one, rather than needing a second raise the way a
-  # freshly-floored (raw -1997) actor would.
+  # The floor is still the persisted -999 modifier, not a fresh clamp with no
+  # memory of it: a +1000 raise lands at curve 3 + mod 1 = 4 on the reloaded
+  # actor exactly as it does on the live one -- a fresh, never-adjusted actor
+  # given the same +1000 would instead land at curve 3 + mod 999 = 999
+  # (mod clamp(0+1000,-999,999) = 999), proving the saved modifier really did
+  # round-trip rather than resetting to 0.
   loaded.change_param(Game::Actor::PARAM_ATK, 1000)
   hero.change_param(Game::Actor::PARAM_ATK, 1000)
-  eq 3, loaded.atk
+  eq 4, loaded.atk
   eq hero.atk, loaded.atk
 end
 
@@ -4895,16 +5423,19 @@ end
 # checks: the actor is a level-3 "Fighter" curve, class 1 is twice as strong and
 # class 2 half as strong, and each class teaches its own skill.
 def class_db(class_id = 0, actor_learns = [[10, 1]])
-  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] } # levels 1..3, six stats each
-  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] } # class 1: double the actor's HP curve, distinct battle stats
-  job2 = block_curve(3) { |i| [50 + i * 10, 10, 5 + i, 4, 3, 2] }
+  actor_curve = [] # levels 1..3, six stats each
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = [] # class 1: double the actor's HP curve, distinct battle stats
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  job2 = []
+  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
   players = {
-    1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, class_id,
+    1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), actor_learns, class_id,
                         [1, 2, 0, -1, -1, -1, -1]),
   }
   jobs = {
-    1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
-    2 => JobRow.new('Mage', job2, [[31, 1]]),
+    1 => JobRow.new('Warrior', to_stat_major(job1), [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
+    2 => JobRow.new('Mage', to_stat_major(job2), [[31, 1]]),
   }
   # A real Battle Commands table (chunk 29) defining ids 1..8, so
   # #change_battle_commands' own existence check (see its citation) does
@@ -4912,7 +5443,11 @@ def class_db(class_id = 0, actor_learns = [[10, 1]])
   # a genuine RPG2003 database always carries this table for any project
   # that uses the command at all.
   commands = (1..8).each_with_object({}) { |i, h| h[i] = FakeBattleCommand.new("Cmd#{i}", 1) }
-  FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil,
+  # rpg2003: true -- Change Class / Change Battle Commands are both
+  # RPG2003-only (Interpreter#do_change_class/#do_change_battle_commands'
+  # own IsRPG2k3Commands() gate), and every check built on this fixture
+  # exercises one or the other.
+  FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil, rpg2003: true,
                   battlecommands: FakeBattleCommandsTable.new(commands, 0))
 end
 
@@ -5098,18 +5633,21 @@ end
 # EasyRPG's Game_Actor::ChangeClass (src/game_actor.cpp) calls the same
 # LearnLevelSkills(1, new_level, pm) Change Level/Change EXP do.
 def class_db_named_skills(actor_learns = [[10, 1]])
-  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
-  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
   players = {
-    1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, actor_learns, 0,
+    1 => ClassedRow.new('Hero', '', 0, 3, to_stat_major(actor_curve), actor_learns, 0,
                         [1, 2, 0, -1, -1, -1, -1]),
   }
   jobs = {
-    1 => JobRow.new('Warrior', job1, [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
+    1 => JobRow.new('Warrior', to_stat_major(job1), [[21, 1], [22, 3]], [3, 0, -1, -1, -1, -1, -1]),
   }
+  # rpg2003: true -- Change Class is RPG2003-only (see class_db's own note).
   FakeActorDB.new(players, [1], {},
                   { 21 => fake_skill(name: 'Slash'), 22 => fake_skill(name: 'Cleave') },
-                  jobs)
+                  jobs, nil, nil, rpg2003: true)
 end
 
 check 'Change Class announces each newly-learned skill by name, not just the level' do
@@ -5148,6 +5686,42 @@ check 'Change Class stays quiet about a skill the actor already knew going in' d
      'skill 21 was already known, so only the newly-learned skill 22 is named'
 end
 
+check 'Change Class still announces the level even when its Reset/Add skill ' \
+      'mode happens to teach nothing new' do
+  # Confirmed directly against RPG_RT's live source: `Game_Actor::
+  # ChangeClass` (`src/game_actor.cpp`) gates its level-up line on
+  # `new_level > 1 && (new_level > prev_level || new_skill !=
+  # eSkillNoChange)` -- a skill-*mode* check, never a check of whatever
+  # `LearnLevelSkills` (called only for Reset/Add) actually taught. A
+  # Reset/Add class swap that happens to teach nothing new (the actor
+  # already knows every skill the new class's learn table offers) still
+  # shows the line -- only skill_mode NO_CHANGE (or a level that never
+  # exceeds 1) stays quiet.
+  st = Game::State.new(Game::Party.new(class_db_named_skills), 1, 0, 0)
+  a = st.party.actor_by_id(1)
+  # Teach both of class 1's learn-table skills (21 at level 1, 22 at level
+  # 3) up front, so a RESET class change at the same level 3 teaches nothing
+  # new at all.
+  it0 = Game::Interpreter.new(st)
+  it0.start([FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 21]),
+             FakeCmd.new(IC::CHANGE_SKILLS, [1, 1, 0, 0, 22])])
+  it0.update
+  eq [10, 21, 22], a.skills.sort
+
+  it = Game::Interpreter.new(st)
+  # class 1, keep level 3 (level1 flag off), skills reset, params no-change,
+  # show message on.
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 1, 0, Game::Actor::CLASS_SKILL_RESET,
+                         Game::Actor::CLASS_PARAM_NO_CHANGE, 1])])
+  it.update
+  eq :message, it.wait_kind, 'RPG_RT still announces the level, taught nothing new or not'
+  eq ['Hero is now level 3!'], it.message_lines, 'no newly-learned skill to name'
+  it.resume
+  it.update
+  ok !it.waiting?
+end
+
 check 'Change Battle Commands adds, removes and clears the command list' do
   st = class_state
   a = st.party.actor_by_id(1)
@@ -5168,6 +5742,38 @@ check 'Change Battle Commands stops at six commands plus Row' do
   a = class_state.party.actor_by_id(1)
   (3..8).each { |id| a.change_battle_commands(true, id) }
   eq [1, 2, 3, 4, 5, 6, 0], a.battle_commands, 'the seventh add is dropped'
+end
+
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandChangeClass`/`CommandChangeBattleCommands` (`src/
+# game_interpreter.cpp`) both open with `if (!Player::IsRPG2k3Commands()) {
+# return true; }`, before any other logic -- an RPG2000-compatible database
+# no-ops both commands outright, the same edition gate `#do_force_flee`/
+# `#do_enable_combo`/`#do_call_common_event` already carry. `class_id: 0`
+# ("no class") and the "clear to Row alone" battle-commands case are used
+# deliberately here: both apply their side effect (EXP reset, list clear)
+# unconditionally, with no existence-table guard of their own that would
+# otherwise coincidentally make them inert on a table-less RPG2000 database
+# regardless of this gate -- a weaker test using a positive class/command id
+# would not actually distinguish the fixed code from the broken code.
+check 'Change Class and Change Battle Commands are RPG2000 no-ops' do
+  st = party_state # rpg2003: false by default
+  a = st.party.actor_by_id(1)
+  a.exp = 99_999 # nowhere near any real level threshold
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_CLASS,
+                        [1, 1, 0, 0, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                         Game::Actor::CLASS_PARAM_NO_CHANGE, 0])])
+  it.update
+  eq 99_999, a.exp,
+     "Change Class's own unconditional EXP reset must not run on an RPG2000 database"
+
+  a.instance_variable_set(:@battle_commands, [3, 4, 0])
+  it2 = Game::Interpreter.new(st)
+  it2.start([FakeCmd.new(IC::CHANGE_BATTLE_COMMANDS, [1, 1, 0, 0])]) # clear (id 0, remove)
+  it2.update
+  eq [3, 4, 0], a.battle_commands,
+     "Change Battle Commands' own unconditional clear-to-Row must not run either"
 end
 
 # RPG_RT's own `Game_Actor::ChangeBattleCommands` (src/game_actor.cpp)
@@ -5231,7 +5837,8 @@ check 'a class change and its battle commands survive Save / Continue' do
 end
 
 check "Game::Actor#battle_command_row resolves a positive id via the database's Battle Commands table" do
-  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
   players = { 1 => ClassedRow.new('Hero', '', 0, 3, actor_curve, [], 0, [5, 0, -1, -1, -1, -1, -1]) }
   table = FakeBattleCommandsTable.new({ 5 => FakeBattleCommand.new('Cast Fire', 2) }, 0)
   db = FakeActorDB.new(players, [1], {}, {}, {}, nil, nil, battlecommands: table)
@@ -5376,8 +5983,8 @@ check "Game::Actor#battler_animation_id warns and returns 0 for a dangling datab
 end
 
 check "Game::Actor#battler_animation_id prefers the runtime override a Change Class event set" do
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 0) }
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 4) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 0) }
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [], nil, battler_animation: 4) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
   a.change_class(1, 1, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
@@ -5390,9 +5997,9 @@ check "Game::Actor#battler_animation_id ignores a database-default starting clas
   # RPG2003 lets an actor start in a class (chunk 11 field 57) with no Change
   # Class event ever firing -- EasyRPG's own comment on this is explicit
   # ("not applied ... only when the 'Change Class' event command is used").
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 1) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 1) }
   players[1].battler_animation = 3
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 4) }
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [], nil, battler_animation: 4) }
   anims = { 3 => FakeBattlerAnimation.new('Fighter', 20, {}) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil, battleranimations: anims)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
@@ -5413,12 +6020,12 @@ check "Game::Actor#strong_defence?/#force_ai?/#double_hand?/#equipment_fixed? al
   # method's own explicit comment: "The class settings are not applied when
   # the actor has a class on startup but only when the 'Change Class' event
   # command is used."
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 1) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 1) }
   players[1].strong_defence = false
   players[1].force_ai = false
   players[1].double_hand = false
   players[1].equipment_fixed = false
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [],
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [],
                            strong_defence: true, force_ai: true,
                            double_hand: true, equipment_fixed: true) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
@@ -5438,8 +6045,8 @@ end
 
 check "Game::Actor#battler_animation_id falls back to 1 when Change Class leaves the actor " \
       'in a class whose own battler_animation is 0' do
-  players = { 1 => ClassedRow.new('Hero', '', 0, 5, [100, 30, 10, 8, 6, 4] * 20, [], 0) }
-  jobs = { 1 => JobRow.new('Warrior', [120, 40, 12, 10, 8, 6] * 20, [], nil, battler_animation: 0) }
+  players = { 1 => ClassedRow.new('Hero', '', 0, 5, to_stat_major([100, 30, 10, 8, 6, 4] * 20), [], 0) }
+  jobs = { 1 => JobRow.new('Warrior', to_stat_major([120, 40, 12, 10, 8, 6] * 20), [], nil, battler_animation: 0) }
   db = FakeActorDB.new(players, [1], {}, {}, jobs)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
   a.change_class(1, 1, Game::Actor::CLASS_SKILL_NO_CHANGE, Game::Actor::CLASS_PARAM_NO_CHANGE)
@@ -5630,7 +6237,8 @@ check 'Change Parameters raises max MP with a variable operand' do
 end
 
 check 'Change Level command raises the level and rescales stats' do
-  # Two-level curve: L1 maxhp10/atk3, L2 maxhp20/atk6.
+  # Two-level curve, stat-major (six max_level-sized blocks: max_hp, max_mp,
+  # atk, def, int, agi): L1 maxhp10/atk3, L2 maxhp20/atk6.
   db = FakeActorDB.new(
     { 1 => CurveRow.new('Hero', '', 0, 1, [10, 20, 5, 10, 3, 6, 2, 4, 1, 2, 4, 8]) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
@@ -5648,12 +6256,14 @@ check 'Change Level command raises the level and rescales stats' do
   eq 1, a.level
 end
 
-# A three-level growth curve (six stats per level) for the level-up-message
-# checks: enough levels to gain more than one at a time.
+# A three-level growth curve, stat-major (six max_level-sized blocks), for the
+# level-up-message checks: enough levels to gain more than one at a time.
+# L1 hp10/mp5/atk3/def2/int1/agi4, L2 hp20/mp10/atk6/def4/int2/agi8,
+# L3 hp30/mp15/atk9/def6/int3/agi12.
 def three_level_db
   FakeActorDB.new(
     { 1 => CurveRow.new('Hero', '', 0, 1,
-                        [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8, 30, 15, 9, 6, 3, 12]) },
+                        [10, 20, 30, 5, 10, 15, 3, 6, 9, 2, 4, 6, 1, 2, 3, 4, 8, 12]) },
     [1])
 end
 
@@ -5701,12 +6311,13 @@ check 'Change EXP with the show-message flag announces a level-up' do
   ok !it.waiting?, 'a single level gained -> a single message'
 end
 
-# A three-level growth curve with a learn table, for the skill-learned-message
-# checks: skill 201 at level 2, skill 202 at level 3.
+# A three-level growth curve (stat-major, same values as three_level_db above)
+# with a learn table, for the skill-learned-message checks: skill 201 at
+# level 2, skill 202 at level 3.
 def skill_level_db(learns = [[201, 2], [202, 3]])
   FakeActorDB.new(
     { 1 => SkillRow.new('Hero', '', 0, 1,
-                        [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8, 30, 15, 9, 6, 3, 12],
+                        [10, 20, 30, 5, 10, 15, 3, 6, 9, 2, 4, 6, 1, 2, 3, 4, 8, 12],
                         learns) },
     [1], {},
     { 201 => fake_skill(name: 'Fireball'), 202 => fake_skill(name: 'Iceball') })
@@ -6370,6 +6981,24 @@ check 'a skill book on an actor who already knows the skill does nothing' do
   eq 1, st.party.item_count(8)                 # not consumed
 end
 
+check 'a skill book does nothing on a downed actor -- unlike Medicine, ' \
+      'Book/Seed have no ko_only-style exception' do
+  # Confirmed against RPG_RT's own live source: Game_Actor::UseItem
+  # (src/game_actor.cpp) only reaches its Type_book/Type_material branches
+  # inside an `if (!IsDead())` guard; falling through to
+  # Game_Battler::UseItem (src/game_battler.cpp) for a dead actor lands on
+  # neither type at all (only Medicine/Switch/skill-invoking items are
+  # handled there), so the item is silently never consumed.
+  st = item_party({ 8 => fake_item(type: 7, skill_id: 42) })
+  st.party.gain_item(8, 1)
+  hero = st.party.leader
+  hero.change_hp(-9999)                        # KO
+  eq false, st.party.item_effective?(8, hero)
+  eq [], st.party.use_item(8, hero)
+  eq false, hero.knows_skill?(42), 'nothing learned'
+  eq 1, st.party.item_count(8)                 # not consumed
+end
+
 check 'a seed permanently raises the target stats (points2 set) and is consumed' do
   st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
   st.party.gain_item(9, 2)
@@ -6379,6 +7008,19 @@ check 'a seed permanently raises the target stats (points2 set) and is consumed'
   eq 150, hero.max_hp                           # +50 base max HP
   eq 15, hero.atk                               # +5 base attack (atk_points2)
   eq 1, st.party.item_count(9)                  # one seed consumed
+end
+
+check 'a seed does nothing on a downed actor -- the identical Game_Actor::' \
+      'UseItem `if (!IsDead())` gate as a skill book' do
+  st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
+  st.party.gain_item(9, 1)
+  hero = st.party.leader                        # max_hp 100, atk 10
+  hero.change_hp(-9999)                         # KO
+  eq false, st.party.item_effective?(9, hero)
+  eq [], st.party.use_item(9, hero)
+  eq 100, hero.max_hp, 'no stat change'
+  eq 10, hero.atk, 'no stat change'
+  eq 1, st.party.item_count(9)                  # not consumed
 end
 
 check 'field_items includes seeds; a seed with no boost is ineffective' do
@@ -6448,49 +7090,67 @@ check 'a switch skill is cast for its switch, and only where its flags allow' do
   ok st.party.cast_switch_skill(hero, 99).nil?
 end
 
-check 'an Escape skill is hidden with no runtime state, then gated on access ' \
-      'and a registered target, and warps there for free -- but not while flying' do
+check 'an Escape skill is always listed on the field menu, even unavailable, ' \
+      'but only warps once access and a registered target are there -- and ' \
+      'never while flying' do
+  # Confirmed against RPG_RT's own live source: `Window_Skill::CheckInclude`
+  # (`src/window_skill.cpp`) is `if (!Game_Battle::IsBattleRunning()) return
+  # true;` outside battle, with no per-type filter -- a known Escape skill
+  # is always listed, whether or not it is castable right now.
+  # `Algo::IsSkillUsable`'s own Type_escape arm (access, a registered
+  # target, not flying) is what `Window_Skill::CheckEnable` (greying the
+  # entry) and #cast_escape_skill (the actual cast) both gate on instead.
   skills = { 6 => fake_skill(name: 'Escape', type: Game::Party::SKILL_ESCAPE,
                              sp_cost: 4) }
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)
   hero.learn_skill(6)
   # No state at all -- the bare #field_skill?(sk) a fixture check would call --
-  # reads exactly like the old "not built" behaviour.
-  eq [], st.party.field_skills(hero), 'unsupported with no state to gate on'
-  ok st.party.unsupported_field_skill?(st.party.db_skill(6))
+  # still lists it: list membership never reads state for this type any more.
+  eq [[6, 4]], st.party.field_skills(hero), 'listed even with no state to gate castability on'
+  ok st.party.unsupported_field_skill?(st.party.db_skill(6)),
+     'castability is still state-dependent, even though listing no longer is'
   ok st.party.cast_escape_skill(hero, 6, nil).nil?
-  # State present, but access off (the RPG2000 default) and no target set.
-  eq [], st.party.field_skills(hero, st)
+  # State present, but access off (the RPG2000 default) and no target set --
+  # still listed, just not castable.
+  eq [[6, 4]], st.party.field_skills(hero, st)
+  ok !st.party.escape_skill_available?(st)
   st.escape_access = true
-  eq [], st.party.field_skills(hero, st), 'access alone is not enough -- no target yet'
+  eq [[6, 4]], st.party.field_skills(hero, st), 'still listed -- access alone is not enough to cast'
+  ok !st.party.escape_skill_available?(st), 'access alone is not enough -- no target yet'
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   eq [[6, 4]], st.party.field_skills(hero, st)
+  ok st.party.escape_skill_available?(st)
   before = hero.mp
   eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.cast_escape_skill(hero, 6, st))
   eq before - 4, hero.mp, "the warp costs the skill's SP like any other cast"
-  # Flying (boarded the airship) bars it even with access and a target set --
-  # EasyRPG's Algo::IsSkillUsable Type_escape arm reads Game_Player::IsFlying.
+  # Flying (boarded the airship) bars casting even with access and a target
+  # set -- EasyRPG's Algo::IsSkillUsable Type_escape arm reads Game_Player::
+  # IsFlying -- but the skill stays listed, just uncastable (Buzzer on
+  # selection, Scene::SkillMenu#choose_skill).
   st.boarded = :airship
-  eq [], st.party.field_skills(hero, st), 'the airship blocks it'
+  eq [[6, 4]], st.party.field_skills(hero, st), 'still listed -- the airship only blocks casting'
   ok st.party.cast_escape_skill(hero, 6, st).nil?
   st.boarded = nil
   # A skill that is not Escape casts nothing through the Escape path.
   ok st.party.cast_escape_skill(hero, 99, st).nil?
 end
 
-check 'a Teleport skill lists every registered destination and warps to the ' \
-      'one chosen' do
+check 'a Teleport skill is always listed on the field menu, even with no ' \
+      'destinations registered, but only warps once one is chosen and ' \
+      'reachable' do
   skills = { 7 => fake_skill(name: 'Warp', type: Game::Party::SKILL_TELEPORT,
                              sp_cost: 3) }
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)
   hero.learn_skill(7)
-  eq [], st.party.field_skills(hero, st), 'no targets registered yet'
+  eq [[7, 3]], st.party.field_skills(hero, st), 'listed even with no targets registered yet'
+  ok !st.party.teleport_skill_available?(st)
   st.teleport_access = true
   st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
-  eq [[7, 3]], st.party.field_skills(hero, st), 'access plus any target offers it'
+  eq [[7, 3]], st.party.field_skills(hero, st), 'access plus any target still lists it'
+  ok st.party.teleport_skill_available?(st)
   before = hero.mp
   eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.cast_teleport_skill(hero, 7, st, 5))
   eq before - 3, hero.mp
@@ -6498,9 +7158,10 @@ check 'a Teleport skill lists every registered destination and warps to the ' \
   before = hero.mp
   ok st.party.cast_teleport_skill(hero, 7, st, 999).nil?
   eq before, hero.mp, 'an unknown destination spends no SP'
-  # Riding the airship bars Teleport the same way it bars Escape.
+  # Riding the airship bars casting the same way it bars Escape, without
+  # hiding the entry.
   st.boarded = :airship
-  eq [], st.party.field_skills(hero, st)
+  eq [[7, 3]], st.party.field_skills(hero, st), 'still listed -- the airship only blocks casting'
   ok st.party.cast_teleport_skill(hero, 7, st, 5).nil?
 end
 
@@ -6581,9 +7242,12 @@ end
 check 'a use_skill equipment item restricted by class_set is only usable by ' \
       'an actor in one of its listed classes, under the RPG2003 "by Class" ' \
       'equipment setting' do
-  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
-  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
-  job2 = block_curve(3) { |i| [50 + i * 10, 10, 5 + i, 4, 3, 2] }
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  job2 = []
+  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
   skills = { 8 => fake_skill(name: 'Elixir', scope: 3, sp_cost: 99, power: 40, hp: true) }
   # class_set index 0 is EasyRPG's reserved "no class" slot, never a real
   # class -- the first real class is index 1. Index 1 (class 1) false,
@@ -6591,12 +7255,12 @@ check 'a use_skill equipment item restricted by class_set is only usable by ' \
   items = { 4 => fake_item(type: 1, skill_id: 8, use_skill: true,
                            class_set: [false, false, true], name: 'Class Rune') }
   players = {
-    1 => ClassedRow.new('Warrior', '', 0, 3, actor_curve, [], 1, nil),
-    2 => ClassedRow.new('Mage', '', 0, 3, actor_curve, [], 2, nil),
+    1 => ClassedRow.new('Warrior', '', 0, 3, to_stat_major(actor_curve), [], 1, nil),
+    2 => ClassedRow.new('Mage', '', 0, 3, to_stat_major(actor_curve), [], 2, nil),
   }
   jobs = {
-    1 => JobRow.new('Fighter', job1),
-    2 => JobRow.new('Mage', job2),
+    1 => JobRow.new('Fighter', to_stat_major(job1)),
+    2 => JobRow.new('Mage', to_stat_major(job2)),
   }
   db = FakeActorDB.new(players, [1, 2], items, skills, jobs,
                        rpg2003: true, equipment_setting: 1)
@@ -6621,16 +7285,19 @@ end
 # is equally subject to, not a use_skill-equipment-only rule -- an ordinary
 # medicine with a class_set is gated the exact same way.
 check 'an ordinary medicine is gated by class_set too, under "by Class"' do
-  actor_curve = block_curve(3) { |i| [100 + i * 10, 20, 10 + i, 8, 6, 4] }
-  job1 = block_curve(3) { |i| [200 + i * 10, 40, 20 + i, 16, 12, 8] }
-  job2 = block_curve(3) { |i| [50 + i * 10, 10, 5 + i, 4, 3, 2] }
+  actor_curve = []
+  3.times { |i| actor_curve.concat([100 + i * 10, 20, 10 + i, 8, 6, 4]) }
+  job1 = []
+  3.times { |i| job1.concat([200 + i * 10, 40, 20 + i, 16, 12, 8]) }
+  job2 = []
+  3.times { |i| job2.concat([50 + i * 10, 10, 5 + i, 4, 3, 2]) }
   items = { 4 => fake_item(type: 6, rhp: 40, class_set: [false, false, true],
                            name: 'Mage Draught') }
   players = {
-    1 => ClassedRow.new('Warrior', '', 0, 3, actor_curve, [], 1, nil),
-    2 => ClassedRow.new('Mage', '', 0, 3, actor_curve, [], 2, nil),
+    1 => ClassedRow.new('Warrior', '', 0, 3, to_stat_major(actor_curve), [], 1, nil),
+    2 => ClassedRow.new('Mage', '', 0, 3, to_stat_major(actor_curve), [], 2, nil),
   }
-  jobs = { 1 => JobRow.new('Fighter', job1), 2 => JobRow.new('Mage', job2) }
+  jobs = { 1 => JobRow.new('Fighter', to_stat_major(job1)), 2 => JobRow.new('Mage', to_stat_major(job2)) }
   db = FakeActorDB.new(players, [1, 2], items, {}, jobs,
                        rpg2003: true, equipment_setting: 1)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
@@ -6662,14 +7329,20 @@ check 'class_set is ignored under the default "by Actor" equipment setting' do
      "have excluded both"
 end
 
-check 'a special item invoking an Escape skill is hidden with no runtime ' \
-      'state, then gated on access/target like the skill itself, and warps ' \
-      'for free without spending an SP the item never had' do
-  # #field_usable? used to call #field_skill? with no `state` at all, so an
-  # item wrapping an Escape/Teleport skill always read unusable -- the same
-  # gap #field_skills used to have before it started threading `state`
-  # through, just never closed on the item side. See docs/TODO.md's "Menu
-  # scene" entry.
+check 'a special item invoking an Escape skill is always listed on the ' \
+      'field menu, even unavailable, but only warps once access and a ' \
+      'registered target are there -- and never while flying, for free ' \
+      'without spending an SP the item never had' do
+  # #field_usable?'s special-item branch defers to #field_skill?, which now
+  # always lists a known Escape/Teleport skill regardless of runtime state --
+  # see docs/TODO.md's "Menu scene" entry and Game::Party#field_skill?'s own
+  # doc comment, both confirmed against RPG_RT's own live source:
+  # `Window_Item::CheckInclude` (`src/window_item.cpp`) is a trivial
+  # `item_id > 0` check with no per-skill filter at all, so any held item is
+  # always listed; `#escape_skill_available?` backs only `CheckEnable`
+  # (`Window_Item::CheckEnable` -> `Game_Party::IsItemUsable` ->
+  # `Algo::IsSkillUsable`), gating whether *casting* it actually does
+  # anything, not whether it appears.
   skills = { 6 => fake_skill(name: 'Scroll of Escape',
                              type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
   items = { 3 => fake_item(type: 9, skill_id: 6, name: 'Scroll') }
@@ -6677,40 +7350,49 @@ check 'a special item invoking an Escape skill is hidden with no runtime ' \
   hero = st.party.actor_by_id(1)
   ok !hero.knows_skill?(6), 'the item is the cost -- the caster need not know it'
   st.party.gain_item(3, 2)
-  ok !st.party.field_usable?(3), 'unsupported with no state to gate on'
-  ok st.party.use_special_escape_item(3, hero, nil).nil?, 'and casts nothing'
+  ok st.party.field_usable?(3), 'listed even with no state to gate on'
+  ok st.party.use_special_escape_item(3, hero, nil).nil?, 'but casts nothing'
   eq 2, st.party.item_count(3), 'nothing consumed'
-  # State present, but access off (the RPG2000 default) and no target set.
-  ok !st.party.field_usable?(3, st)
+  # State present, but access off (the RPG2000 default) and no target set --
+  # still listed, just not castable yet.
+  ok st.party.field_usable?(3, st)
+  ok !st.party.escape_skill_available?(st)
   st.escape_access = true
-  ok !st.party.field_usable?(3, st), 'access alone is not enough -- no target yet'
+  ok st.party.field_usable?(3, st)
+  ok !st.party.escape_skill_available?(st), 'access alone is not enough -- no target yet'
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   ok st.party.field_usable?(3, st)
+  ok st.party.escape_skill_available?(st)
   eq [[3, 2]], st.party.field_items(st)
   before = hero.mp
   eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.use_special_escape_item(3, hero, st))
   eq before, hero.mp, 'free -- the item pays, not the caster'
   eq 1, st.party.item_count(3), 'one was consumed'
-  # Flying bars it even with access and a target set, same as the skill path.
+  # Flying bars it even with access and a target set, same as the skill path
+  # -- still listed, just not castable.
   st.boarded = :airship
-  ok !st.party.field_usable?(3, st), 'the airship blocks it'
+  ok st.party.field_usable?(3, st), 'still listed while flying'
+  ok !st.party.escape_skill_available?(st), 'the airship blocks it'
   ok st.party.use_special_escape_item(3, hero, st).nil?
   eq 1, st.party.item_count(3), 'and nothing more is consumed by a failed cast'
 end
 
-check 'a special item invoking a Teleport skill offers every registered ' \
-      'destination and warps to the one chosen, for free' do
+check 'a special item invoking a Teleport skill is always listed on the ' \
+      'field menu, even with no destinations registered, and warps to the ' \
+      'one chosen once available, for free' do
   skills = { 7 => fake_skill(name: 'Scroll of Teleport',
                              type: Game::Party::SKILL_TELEPORT, sp_cost: 3) }
   items = { 4 => fake_item(type: 9, skill_id: 7, name: 'Scroll') }
   st = skill_party(skills, items)
   hero = st.party.actor_by_id(1)
   st.party.gain_item(4, 1)
-  ok !st.party.field_usable?(4, st), 'no destinations registered yet'
+  ok st.party.field_usable?(4, st), 'listed even with no destinations registered yet'
+  ok !st.party.teleport_skill_available?(st)
   st.teleport_access = true
   st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
-  ok st.party.field_usable?(4, st), 'access plus any target offers it'
+  ok st.party.field_usable?(4, st)
+  ok st.party.teleport_skill_available?(st), 'access plus any target offers it'
   before = hero.mp
   eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.use_special_teleport_item(4, hero, st, 5))
   eq before, hero.mp, 'free -- no SP spent for an item cast'
@@ -6722,20 +7404,59 @@ check 'a special item invoking a Teleport skill offers every registered ' \
   eq 1, st.party.item_count(4), 'an unregistered destination consumes nothing'
 end
 
+check 'a special item invoking a Switch skill flips its switch and warps ' \
+      'nowhere, for free without spending an SP the item never had' do
+  # Confirmed against RPG_RT's own live source: `Scene_Item::vUpdate`'s
+  # `Type_switch` skill arm (src/scene_item.cpp) sits right beside its
+  # Escape/Teleport siblings -- consuming the item, playing the skill's own
+  # sound effect, and flipping `skill->switch_id` on the very same Decision
+  # press, no target/picker of any kind, the identical "no state, no SP"
+  # shape #use_special_escape_item/#use_special_teleport_item already have.
+  skills = { 8 => fake_skill(name: 'Scroll of Summon',
+                             type: Game::Party::SKILL_SWITCH, sp_cost: 5, switch_id: 22) }
+  items = { 6 => fake_item(type: 9, skill_id: 8, name: 'Scroll') }
+  st = skill_party(skills, items)
+  hero = st.party.actor_by_id(1)
+  ok !hero.knows_skill?(8), 'the item is the cost -- the caster need not know it'
+  st.party.gain_item(6, 2)
+  eq [[6, 2]], st.party.field_items(st), 'field_occasion alone is enough -- no state needed to appear'
+  before = hero.mp
+  eq 22, st.party.use_special_switch_item(6, hero), 'casting returns the switch to flip'
+  eq before, hero.mp, 'free -- the item pays, not the caster'
+  eq 1, st.party.item_count(6), 'one was consumed'
+  # An id that names no such item casts nothing and consumes nothing.
+  ok st.party.use_special_switch_item(999, hero).nil?
+  eq 1, st.party.item_count(6), 'unaffected'
+end
+
 check 'a use_skill equipment item invoking an Escape skill is menu-usable purely by ' \
-      "scope, matching real RPG_RT's own use_skill shortcut -- access/target only " \
-      'gate the cast itself, and a plain weapon is never treated as one' do
+      "scope, matching real RPG_RT's own use_skill shortcut, but never warps -- " \
+      'only a genuine special item does that, and a plain weapon is never treated ' \
+      'as either' do
   # Confirmed against EasyRPG's actual C++ source, fetched live:
   # `Game_Party::IsItemUsable` (src/game_party.cpp) checks `item->use_skill`
   # *before* its own `switch (item->type)`, and its own comment flags the
   # result as "RPG_RT BUG: Does not check if skill is usable" -- `skill &&
   # (in_battle || scope == Scope_self/_ally/_party)`, nothing about escape
-  # access or a registered target at all; those only gate the actual warp
-  # (`#cast_escape_skill`'s own `#escape_skill_available?`, unchanged here).
-  # A prior version of this test asserted the opposite -- that #field_usable?
-  # itself withheld the item until access/target existed -- reusing
-  # #field_skill?'s general Escape-type handling without checking this
-  # use_skill-specific branch of IsItemUsable against the real source.
+  # access or a registered target at all. A prior version of this test
+  # asserted the opposite -- that #field_usable? itself withheld the item
+  # until access/target existed -- reusing #field_skill?'s general
+  # Escape-type handling without checking this use_skill-specific branch of
+  # IsItemUsable against the real source.
+  #
+  # #use_special_escape_item now never returns a destination for a use_skill
+  # equipment item, access/target notwithstanding -- confirmed against
+  # `Scene_Item::vUpdate` (`src/scene_item.cpp`), whose whole ReserveTeleport
+  # dispatch is gated on `item.type == Type_special`; an equipment item
+  # invoking the very same Escape skill instead goes through
+  # `Game_Battler::UseSkill`'s "SE only, no warp, always succeeds" branch
+  # (`Game::Party#use_item`/`#use_equip_skill_item` here), regardless of
+  # escape access or a registered target -- neither gates it at all, since
+  # nothing about the actual warp is ever attempted. A prior version of this
+  # test asserted the opposite -- that a use_skill equipment item eventually
+  # warped once access and a target both existed, the exact bug
+  # `#use_special_escape_item`'s own doc comment now cites `Scene_Item::
+  # vUpdate` and `Game_Battler::UseSkill` to correct.
   skills = { 6 => fake_skill(name: 'Blade Escape',
                              type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
   items = { 3 => fake_item(type: 1, skill_id: 6, use_skill: true, name: 'Escape Blade') }
@@ -6743,27 +7464,37 @@ check 'a use_skill equipment item invoking an Escape skill is menu-usable purely
   hero = st.party.actor_by_id(1)
   st.party.gain_item(3, 2)
   ok st.party.field_usable?(3, st), 'listed by scope alone, before access/target exist at all'
-  ok st.party.use_special_escape_item(3, hero, st).nil?, 'the cast itself still needs access'
+  ok st.party.use_special_escape_item(3, hero, st).nil?, 'never a special-item cast -- no access yet either'
   st.escape_access = true
-  ok st.party.field_usable?(3, st)
-  ok st.party.use_special_escape_item(3, hero, st).nil?, 'access alone is not enough -- no target yet'
   st.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
+  ok st.party.field_usable?(3, st)
+  ok st.party.use_special_escape_item(3, hero, st).nil?,
+     'access and a registered target both present now -- still nil, equipment never takes this path'
   before = hero.mp
-  eq({ map_id: 3, x: 4, y: 5, switch_id: nil }, st.party.use_special_escape_item(3, hero, st))
-  eq before, hero.mp, 'free -- the item pays, not the caster'
+  affected = st.party.use_item(3, hero)
+  eq [hero], affected, 'the ordinary item-use path succeeds -- ' \
+                        "Game_Battler::UseSkill's Escape/Teleport branch always sets was_used = true"
+  eq before, hero.mp, 'free -- no SP spent for an item cast'
   eq 2, st.party.item_count(3), 'equipment is not consumed -- a reusable tool, like #use_equip_skill_item'
   # A plain weapon (no use_skill flag) must never be treated as an escape item.
   plain = { 5 => fake_item(type: 1, skill_id: 6, use_skill: false, name: 'Plain Blade') }
   st2 = skill_party(skills, plain)
+  st2.party.gain_item(5, 1)
   st2.escape_access = true
   st2.escape_target = { map_id: 3, x: 4, y: 5, switch_id: nil }
   ok !st2.party.field_usable?(5, st2), 'a plain weapon is not menu-usable even matching the skill'
   ok st2.party.use_special_escape_item(5, st2.party.actor_by_id(1), st2).nil?,
      'and is not cast as an escape item'
+  eq [], st2.party.use_item(5, st2.party.actor_by_id(1)), 'nor through the ordinary item-use path'
 end
 
 check 'a use_skill equipment item invoking a Teleport skill is menu-usable purely by ' \
-      'scope, matching real RPG_RT -- destinations only gate the cast itself' do
+      'scope, matching real RPG_RT, but never warps -- only a genuine special item ' \
+      'does that' do
+  # See the Escape check above for the full citation chain -- identical
+  # reasoning, `Scene_Item::vUpdate`'s Type_special-only ReserveTeleport/
+  # Scene_Teleport gate and `Game_Battler::UseSkill`'s shared "SE only, no
+  # warp, always succeeds" branch apply the same way to Teleport.
   skills = { 7 => fake_skill(name: 'Blade Teleport',
                              type: Game::Party::SKILL_TELEPORT, sp_cost: 3) }
   items = { 4 => fake_item(type: 1, skill_id: 7, use_skill: true, name: 'Warp Blade') }
@@ -6771,13 +7502,17 @@ check 'a use_skill equipment item invoking a Teleport skill is menu-usable purel
   hero = st.party.actor_by_id(1)
   st.party.gain_item(4, 1)
   ok st.party.field_usable?(4, st), 'listed by scope alone, before any destination is registered'
-  ok st.party.use_special_teleport_item(4, hero, st, 5).nil?, 'the cast itself still needs a destination'
+  ok st.party.use_special_teleport_item(4, hero, st, 5).nil?, 'never a special-item cast -- no destination yet either'
   st.teleport_access = true
   st.teleport_targets[10] = { x: 1, y: 2, switch_id: nil }
   st.teleport_targets[5]  = { x: 8, y: 9, switch_id: nil }
   ok st.party.field_usable?(4, st)
+  ok st.party.use_special_teleport_item(4, hero, st, 5).nil?,
+     'destinations registered now -- still nil, equipment never takes this path'
   before = hero.mp
-  eq({ map_id: 5, x: 8, y: 9, switch_id: nil }, st.party.use_special_teleport_item(4, hero, st, 5))
+  affected = st.party.use_item(4, hero)
+  eq [hero], affected, 'the ordinary item-use path succeeds -- ' \
+                        "Game_Battler::UseSkill's Escape/Teleport branch always sets was_used = true"
   eq before, hero.mp, 'free -- no SP spent for an item cast'
   eq 1, st.party.item_count(4), 'equipment is not consumed -- a reusable tool'
 end
@@ -6859,6 +7594,34 @@ check 'field_skills lists only known field-usable ally skills; can_cast? checks 
   eq false, st.party.can_cast?(hero, 99)       # unknown skill
 end
 
+check "field_skill? excludes a state-only skill whose state is battle-only, " \
+      "not flagged to continue after battle" do
+  # Confirmed against RPG_RT's own live source: `Algo::IsSkillUsable`
+  # (src/algo.cpp), called from `Game_Battler::IsSkillUsable` with
+  # `require_states_persist` hard-`true` for this exact purpose, only
+  # counts a `state_effects` entry when `state->type ==
+  # Persistence_persists` -- a battle-only state (the schema default) never
+  # makes the skill field-usable, even though it is a perfectly ordinary
+  # skill in battle (states self-clear at battle end regardless, so there
+  # is nothing left to cure once the field menu is even reachable).
+  situation = {
+    3 => fake_state(type: 0), # battle-only (the schema default)
+    4 => fake_state(type: 1), # "Continues after battle"
+  }
+  skills = {
+    12 => fake_skill(name: 'Wake Up', scope: 3, sp_cost: 2, state_effects: [0, 0, 1]),
+    13 => fake_skill(name: 'Refresh', scope: 3, sp_cost: 2, state_effects: [0, 0, 0, 1]),
+  }
+  st = skill_party(skills, {}, situation: situation)
+  hero = st.party.actor_by_id(1)
+  [12, 13].each { |s| hero.learn_skill(s) }
+  caster = Game::Battle.from_actor(hero)
+  eq [[12, 2], [13, 2]], st.party.battle_skills(hero, caster),
+     'both are perfectly ordinary skills in battle'
+  eq [[13, 2]], st.party.field_skills(hero),
+     'the battle-only state cure is hidden from the field menu; the persisting one is offered'
+end
+
 # A database shrink can leave a caster's learned skill id dangling -- shown
 # as "?" in the editor, docs/TODO.md's runtime error catalog. #db_skill
 # silently resolves that to nil, and #field_skill? just as silently excludes
@@ -6912,6 +7675,29 @@ check "can_cast?: a weapon-type Attribute skill needs a weapon carrying it equip
   # The magic-type attribute never gates, equipped or not.
   hero.equip([])
   eq true, st.party.can_cast?(hero, 8)
+end
+
+check "can_cast?: an affect_attr_defence skill is exempt from the weapon " \
+      'check even when it names a weapon-type Attribute' do
+  # RPG_RT's Game_Actor::IsSkillUsable (src/game_actor.cpp) wraps its whole
+  # weapon-equip loop in `if (!skill->affect_attr_defence) { ... }` -- a
+  # resistance-shift buff skill never needs a matching weapon equipped,
+  # regardless of which attribute it names.
+  props = { 1 => AttrTypeRow.new(0) } # weapon-type
+  skills = {
+    9 => fake_skill(name: 'Fire Ward', scope: 3, sp_cost: 1,
+                    attribute_effects: [true], affect_attr_defence: true),
+  }
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  st = Game::State.new(
+    Game::Party.new(FakeActorDB.new(players, [1], {}, skills, {}, nil, props)), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(9)
+  hero.equip([]) # no weapon at all
+  eq true, st.party.can_cast?(hero, 9),
+     'a defence-shift skill needs no matching weapon, unlike an ordinary ' \
+     'weapon-type Attribute skill'
 end
 
 # 封印 / Silence: EasyRPG's Game_Battler::IsSkillUsable (src/game_battler.cpp)
@@ -7081,9 +7867,14 @@ check 'a cure skill removes only its state_effects states (usable at full HP)' d
   eq 26, hero.mp                               # 30 - 4, consumed
 end
 
-check 'a revive skill cures the death state, then its HP recovery lands' do
+check 'a revive skill cures the death state, then its HP recovery lands, ' \
+      'one short of the raw effect' do
   # Cures state 1 (戦闘不能) and heals. States apply first: the cure revives the
-  # ally to 1 HP, then the recovery lands. effect = power 20 + mrate 40*int12/40 = 32.
+  # ally to 1 HP, then the recovery lands -- but one HP short of the raw
+  # effect, since RPG_RT's own `Game_Battler::UseSkill`
+  # (`src/game_battler.cpp`) applies `ChangeHp(effect - revived, false)` on
+  # top of the cure's own floor-to-1, not the full `effect`. effect = power
+  # 20 + mrate 40*int12/40 = 32, landing at 1 + (32 - 1) = 32.
   skills = { 6 => fake_skill(name: 'Life', scope: 3, sp_cost: 6,
                              power: 20, mrate: 40, hp: true, state_effects: [1]) }
   st = skill_party(skills)
@@ -7094,7 +7885,7 @@ check 'a revive skill cures the death state, then its HP recovery lands' do
   eq true, ally.dead?
   eq [ally], st.party.cast_skill(hero, 6, ally)
   eq false, ally.dead?
-  eq 33, ally.hp                               # revived to 1, then +32
+  eq 32, ally.hp                               # revived to 1, then +31 (32 - 1)
 end
 
 check 'a revival skill with Affect HP off heals a percentage of max HP, ' \
@@ -7140,6 +7931,28 @@ check 'a plain heal skill cannot revive a downed ally' do
   ally.change_hp(-9999)                        # KO
   eq [], st.party.cast_skill(hero, 7, ally)    # a plain heal can't touch a KO'd actor
   eq true, ally.dead?
+  eq 30, hero.mp                               # nothing spent
+end
+
+check 'an SP-restoring skill cannot touch a downed ally either' do
+  # Confirmed against RPG_RT's own live source: `Game_Battler::UseSkill`
+  # (src/game_battler.cpp) gates SP restoration behind the identical
+  # `!IsDead()` guard its HP sibling carries just above it (`effect > 0 &&
+  # skill->affect_sp && !HasFullSp() && !IsDead()`) -- a non-reviving skill
+  # must leave a downed target's SP untouched exactly like it leaves HP
+  # untouched, the same rule the "plain heal" check just above already
+  # covers for the HP branch.
+  skills = { 10 => fake_skill(name: 'Refresh SP', scope: 3, sp_cost: 5,
+                              power: 20, mrate: 40, sp: true) }
+  st = skill_party(skills)
+  hero = st.party.actor_by_id(1)
+  ally = st.party.actor_by_id(2)
+  hero.learn_skill(10)
+  ally.change_hp(-9999)                        # KO
+  ally.mp = 0
+  eq [], st.party.cast_skill(hero, 10, ally)   # a plain SP-restore can't touch a KO'd actor
+  eq true, ally.dead?
+  eq 0, ally.mp, 'SP is not restored on a downed, non-revived target'
   eq 30, hero.mp                               # nothing spent
 end
 
@@ -7688,16 +8501,28 @@ ensure
   RGSS::Audio.bgm_pos = nil
 end
 
-check 'battle counters advance: Enemy Encounter and its outcome' do
+# Confirmed against EasyRPG's actual C++ source: `Scene_Battle::EndBattle`
+# (`src/scene_battle.cpp`) tallies all four "Other" battle counters together,
+# unconditionally, at battle *end* -- not scattered across the moment an
+# Enemy Encounter arms its wait (well before the fight has even opened) and
+# a resume path a game-over-ending defeat can skip. This codebase's own
+# counterpart is `Scene::Battle#finish_battle` (`mruby-rpg2k/mrblib/scene/
+# battle.rb`, covered end-to-end by `scripts/rpg2k_scene_check.rb`'s "the
+# battle-entry count does not tick until the fight actually ends" and "a
+# game-over-ending fight still counts as a battle entered" checks); at the
+# bare-interpreter level exercised here, neither arming the encounter nor
+# #resume_battle touches any of the four counters any more.
+check 'Enemy Encounter and #resume_battle leave the "Other" battle counters ' \
+      'untouched -- that tally now happens only in Scene::Battle#finish_battle' do
   st = new_state
   it = Game::Interpreter.new(st)
   # Enemy Encounter (troop 1, no handlers): suspends on a :battle wait.
   it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0])])
   it.update
-  eq 1, st.battle_count, 'entering a battle bumps the battle count'
-  eq 0, st.win_count
+  eq 0, st.battle_count, 'arming the encounter alone does not bump it here'
   it.resume_battle(:victory)
-  eq 1, st.win_count, 'a victory bumps the win count'
+  eq 0, st.battle_count, 'nor does resuming the outcome'
+  eq 0, st.win_count
   eq 0, st.defeat_count
   eq 0, st.escape_count
 end
@@ -8431,6 +9256,30 @@ check 'Move Picture eases the picture and its wait flag pauses the interpreter' 
   eq true, st.switches[1], 'the command after the waited move ran'
 end
 
+check 'Move Picture with an instant (zero-duration) move still waits one frame' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::SHOW_PICTURE,
+               [1, 0, 0, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0], string: 'p'),
+    # Move to (60,0) over 0 tenths (instant) with the wait flag set, then a
+    # switch we can watch to prove the interpreter still paused one frame.
+    FakeCmd.new(IC::MOVE_PICTURE,
+               [1, 0, 60, 0, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 0, 1]),
+    FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])
+  ])
+  it.update # Show
+  it.update # Move -> snaps instantly but still waits
+  eq 60, st.pictures[1].x, 'the move itself applies immediately'
+  ok !st.pictures[1].moving?, 'nothing left to interpolate'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  ok !st.switches[1], 'the following command has not run yet'
+  st.update_pictures # the scene advances pictures each frame
+  it.resume
+  it.update
+  eq true, st.switches[1], 'resumed the very next frame, since nothing is left moving'
+end
+
 check 'Erase Picture removes the picture' do
   st = new_state
   # Show alone first, to confirm it is present before erasing.
@@ -8467,19 +9316,24 @@ end
 
 # -- Player Visibility / Return to Title --------------------------------------
 
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandPlayerVisibility` (`src/game_interpreter.cpp`, code 11310) is
+# `bool hidden = (com.parameters[0] == 0); player->SetSpriteHidden(hidden);`
+# -- param0 *zero* hides the player, non-zero shows it, the reverse of an
+# earlier, uncited pass here that had the polarity backwards.
 check 'Set Transparent Flag toggles the player-transparent state, non-blocking' do
   st = party_state
   it = Game::Interpreter.new(st)
-  it.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [1]),
+  it.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [0]),
             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
   it.update
-  eq true, st.player_transparent, 'param0 != 0 hides the player'
+  eq true, st.player_transparent, 'param0 == 0 hides the player'
   ok !it.waiting?, 'Set Transparent Flag must not pause the interpreter'
   eq true, st.switches[1], 'the command after it still ran'
   it2 = Game::Interpreter.new(st)
-  it2.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [0])])
+  it2.start([FakeCmd.new(IC::PLAYER_VISIBILITY, [1])])
   it2.update
-  eq false, st.player_transparent, 'param0 == 0 shows the player again'
+  eq false, st.player_transparent, 'param0 != 0 shows the player again'
 end
 
 check 'player_transparent round-trips through the save' do
@@ -8963,7 +9817,7 @@ end
 # the Teleport tests above) is what converts that same 1-based encoding into
 # this runtime's own numpad direction, reused verbatim here.
 check 'Change Event Location carries the RPG2003 facing sub-parameter, constant mode only' do
-  st = party_state
+  st = party_state(rpg2003: true)
   st.variables[7] = 4
   st.variables[8] = 9
   it = Game::Interpreter.new(st)
@@ -8974,6 +9828,16 @@ check 'Change Event Location carries the RPG2003 facing sub-parameter, constant 
   eq 2, reqs.size
   eq 2, reqs[0][:dir], 'constant mode: param4=3 (down) -> numpad 2'
   eq 0, reqs[1][:dir], 'variable mode never applies the facing param at all'
+end
+
+check "Change Event Location's facing argument is ignored outright on an RPG2000 database" do
+  st = party_state(rpg2003: false)
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CHANGE_EVENT_LOCATION, [3, 0, 5, 6, 3])]) # constant, face down
+  it.update
+  reqs = it.take_location_requests
+  eq 1, reqs.size
+  eq 0, reqs[0][:dir], 'RPG2000 has no facing sub-parameter at all'
 end
 
 check 'Trade Event Locations queues a :swap request' do
@@ -9239,9 +10103,8 @@ check 'a fresh actor starts with the EXP for its initial level' do
 end
 
 check 'gain_exp levels the actor up across thresholds and recomputes stats' do
-  # Per-stat curve (stat-major, six same-length runs back to back): max_hp
-  # 100/120/140, max_mp 20/22/24, atk 10/11/12, def 8/9/10, int 6/7/8, agi 5/6/7.
-  curve = [100, 120, 140,  20, 22, 24,  10, 11, 12,  8, 9, 10,  6, 7, 8,  5, 6, 7]
+  # Stat-major curve (six max_level-sized blocks): max_hp 100/120/140.
+  curve = [100, 120, 140, 20, 22, 24, 10, 11, 12, 8, 9, 10, 6, 7, 8, 5, 6, 7]
   a = exp_actor(initial_level: 1, max_level: 3, curve: curve,
                 exp_basic: 100, exp_increase: 0, exp_correction: 0)
   eq 1, a.level
@@ -9811,12 +10674,22 @@ check 'a zero or negative quantity is not a transaction' do
   ok !shop.did_transaction
 end
 
-check 'Shop sellable_items lists only held, priced goods in id order' do
+# Confirmed against RPG_RT's own live source: `Window_ShopSell`
+# (`src/window_shopsell.cpp`) inherits `Window_Item::CheckInclude`/
+# `Refresh` (`src/window_item.cpp`) unchanged -- a plain `item_id > 0`
+# filter with no price check at all -- and only overrides `CheckEnable`
+# (`item->price > 0`), which `Scene_Shop::UpdateSellSelection`
+# (`src/scene_shop.cpp`) reads to Buzz instead of opening the quantity
+# counter. A price-0 (key) item the party holds is listed, just refused.
+check 'Shop sellable_items lists every held item, id order -- a price-0 ' \
+      '(key) item stays listed even though it cannot actually be sold' do
   st, shop = shop_setup(0, { 3 => 100, 5 => 40, 8 => 0 })
-  st.party.gain_item(8, 1) # price 0 -> not sellable
+  st.party.gain_item(8, 1) # price 0 -- listed, but #sellable?/#max_sell refuse it
   st.party.gain_item(5, 2)
   st.party.gain_item(3, 1)
-  eq [3, 5], shop.sellable_items
+  eq [3, 5, 8], shop.sellable_items
+  ok !shop.sellable?(8), 'still not actually sellable'
+  eq 0, shop.max_sell(8), 'and the quantity counter refuses to open for it'
 end
 
 check 'Open Shop parses the mode and goods and suspends on :shop' do
@@ -10404,6 +11277,182 @@ check 'to_lsd/from_lsd round-trips a live Tile Substitution table (chunk 111 fie
   eq [{}, {}], old.tile_substitutions, 'no saved table means every tile shows its own graphic'
 end
 
+check 'to_lsd/from_lsd round-trips a live Change Encounter Rate override ' \
+      '(chunk 111 field 3)' do
+  # Real RPG_RT's SaveMapInfo.encounter_steps (liblcf generator/csv/
+  # fields.csv: `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`) restores a
+  # Save/Continue on the same map to whatever Change Encounter Rate (11740)
+  # had overridden -- Game_Map::PrepareSave/SetEncounterSteps
+  # (src/game_map.cpp) confirmed directly against EasyRPG's own live source;
+  # #to_lsd/.from_lsd previously never touched field 3 at all, so the
+  # override silently reverted to the map's own default the moment a real
+  # save was reloaded.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.encounter_rate = 7
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq 7, round.encounter_rate
+
+  # -1 is the schema's own "no override" sentinel (matching liblcf's real
+  # default) -- a State that never ran Change Encounter Rate must not write
+  # field 3 at all, and from_lsd must leave a fresh State's own nil (use the
+  # map's own rate) alone rather than invent an override.
+  never_overridden = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, Game::State.from_lsd(db, never_overridden.to_lsd).encounter_rate,
+     'no Change Encounter Rate this session means no override round-trips'
+
+  # A save written before this landed simply omits field 3 (or chunk 111
+  # entirely, if no event ever recorded a position/substitution either);
+  # from_lsd must leave that same nil alone rather than crash reading an
+  # absent field.
+  legacy = st.to_lsd
+  legacy[111].delete(3)
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.encounter_rate, 'no saved override means the map\'s own rate applies'
+end
+
+check 'to_lsd/from_lsd round-trips a live Change Parallax Background ' \
+      'override (chunk 111 fields 32-38)' do
+  # Real RPG_RT's SaveMapInfo.parallax_name/horz/vert/horz_auto/horz_speed/
+  # vert_auto/vert_speed (liblcf generator/csv/fields.csv: `SaveMapInfo,
+  # parallax_name,f,String,0x20,...` through `...,parallax_vert_speed,f,
+  # Int32,0x26,...`) restore a Save/Continue on the same map to whatever
+  # Change Parallax Background (11720) had overridden --
+  # Game_Map::Parallax::ChangeBG/GetParallaxParams (src/game_map.cpp)
+  # confirmed directly against EasyRPG's own live source, the same `map_info`
+  # struct `SetupFromSave` restores wholesale before ChangeBG re-derives the
+  # live panorama from it. #to_lsd/.from_lsd previously never touched these
+  # fields at all, so the override silently reverted to the map's own
+  # panorama the moment a real save was reloaded.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.set_parallax(name: 'Clouds', loop_x: true, loop_y: false,
+                  auto_x: true, sx: 2, auto_y: false, sy: 0)
+
+  saved = st.to_lsd
+  round = Game::State.from_lsd(db, saved)
+  eq({ name: 'Clouds', loop_x: true, loop_y: false, auto_x: true, sx: 2,
+       auto_y: false, sy: 0 }, round.parallax)
+
+  # A blank/absent name is real RPG_RT's own "no override" sentinel
+  # (GetParallaxParams' `map_info.parallax_name.empty()` check) -- a State
+  # that never ran Change Parallax Background must not write these fields at
+  # all, and from_lsd must leave a fresh State's own nil (use the map's own
+  # panorama) alone rather than invent an override.
+  never_overridden = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, Game::State.from_lsd(db, never_overridden.to_lsd).parallax,
+     'no Change Parallax Background this session means no override round-trips'
+
+  # A save written before this landed simply omits fields 32-38 (or chunk
+  # 111 entirely, if no event ever recorded a position/substitution either);
+  # from_lsd must leave that same nil alone rather than crash reading absent
+  # fields.
+  legacy = st.to_lsd
+  (32..38).each { |f| legacy[111].delete(f) }
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.parallax, 'no saved override means the map\'s own panorama applies'
+end
+
+check 'to_lsd/from_lsd round-trips Set Teleport Target / Set Escape Target ' \
+      '(chunk 110)' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Save::Prepare`/
+  # `Player::LoadSavegame` (`src/scene_save.cpp`/`src/player.cpp`) round-trip
+  # `save.targets` via `Game_Targets::GetSaveData`/`SetSaveData`
+  # (`src/game_targets.cpp`) unconditionally on every save -- the escape
+  # target always at array id 0, every teleport target keyed by its own
+  # destination map id. #to_lsd/.from_lsd previously never touched chunk 110
+  # at all (only this engine's own portable Marshal save round-tripped these
+  # registries -- see the "Targets / rate / system audio round-trip through
+  # the save" check above, `to_h`/.load only), so a real Save/Continue
+  # silently dropped every registered target, even though the Escape/
+  # Teleport skills (Game::Battle#cast_escape_skill/#cast_teleport_skill)
+  # already consume them live.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.escape_target = { map_id: 8, x: 3, y: 5, switch_id: 20 }
+  st.teleport_targets[4] = { x: 7, y: 9, switch_id: 12 }
+  st.teleport_targets[6] = { x: 1, y: 2, switch_id: nil }
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq({ map_id: 8, x: 3, y: 5, switch_id: 20 }, round.escape_target)
+  eq({ x: 7, y: 9, switch_id: 12 }, round.teleport_targets[4])
+  eq({ x: 1, y: 2, switch_id: nil }, round.teleport_targets[6])
+
+  # A State that never ran either command must not invent a target on
+  # round-trip -- array id 0's own map_id reads absent/0, RPG_RT's own
+  # "never set" sentinel (a default-constructed SaveTarget), not a real
+  # destination.
+  never_set = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  round2 = Game::State.from_lsd(db, never_set.to_lsd)
+  eq nil, round2.escape_target, 'no Set Escape Target this session means no target round-trips'
+  eq({}, round2.teleport_targets, 'no Set Teleport Target this session means no targets round-trip')
+
+  # A save written before this landed simply omits chunk 110 entirely;
+  # from_lsd must leave those same defaults alone rather than crash reading
+  # an absent chunk.
+  legacy = st.to_lsd
+  legacy.delete(110)
+  old = Game::State.from_lsd(db, legacy)
+  eq nil, old.escape_target
+  eq({}, old.teleport_targets)
+end
+
+check 'to_lsd/from_lsd round-trips a live screen tint transition (chunk 102)' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Save::Save`
+  # (`src/scene_save.cpp`) writes `save.screen = Main_Data::game_screen->
+  # GetSaveData()` unconditionally on every save, and `Player::LoadSavegame`
+  # (`src/player.cpp`) restores it unconditionally on every load via
+  # `Game_Screen::SetSaveData` (`src/game_screen.cpp`), a wholesale struct
+  # replace -- so a Tint Screen (11030) transition still in flight when the
+  # game is saved must resume interpolating from exactly where it left off,
+  # not restart or snap to its finish value. #to_lsd/.from_lsd previously
+  # never touched chunk 102 at all -- schema.rb's own comment on SAVE_DATA
+  # flagged it as "left out until confirmed" -- so a real Save/Continue
+  # silently dropped every standing or in-progress tint.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.screen.tint_to(50, 60, 70, 80, 40) # a transition still 40 frames from done
+  st.screen.instance_variable_set(:@r, 62.5) # partway through interpolating
+  st.screen.instance_variable_set(:@g, 68.0)
+  st.screen.instance_variable_set(:@b, 73.5)
+  st.screen.instance_variable_set(:@sat, 82.0)
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq [50, 60, 70, 80],
+     [round.screen.instance_variable_get(:@tr), round.screen.instance_variable_get(:@tg),
+      round.screen.instance_variable_get(:@tb), round.screen.instance_variable_get(:@tsat)]
+  eq [62.5, 68.0, 73.5, 82.0],
+     [round.screen.instance_variable_get(:@r), round.screen.instance_variable_get(:@g),
+      round.screen.instance_variable_get(:@b), round.screen.instance_variable_get(:@sat)]
+  eq 40, round.screen.instance_variable_get(:@frames),
+     'a mid-transition tint must resume with its remaining frame count intact, not restart or settle'
+  ok round.screen.tinting?, 'the restored tint must still report itself as in-flight'
+
+  # A tint that had already settled (frames == 0, current == finish) writes
+  # nothing at all -- chunk 102 is omitted entirely, the same "omit when
+  # neutral" convention the unplaced-vehicle chunks already follow -- and a
+  # State that never tinted at all must not invent a tint on round-trip.
+  never_tinted = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  saved = never_tinted.to_lsd
+  eq nil, saved[102], 'a State that never tinted must not write chunk 102 at all'
+  round2 = Game::State.from_lsd(db, saved)
+  eq [100, 100, 100, 100], round2.screen.tint
+  eq false, round2.screen.tinting?
+
+  # A save written before this landed simply omits chunk 102 entirely;
+  # from_lsd must leave the fresh Screen.new neutral defaults alone rather
+  # than crash reading an absent chunk.
+  st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st2.screen.tint_to(0, 0, 0, 100, 30)
+  legacy = st2.to_lsd
+  legacy.delete(102)
+  old = Game::State.from_lsd(db, legacy)
+  eq [100, 100, 100, 100], old.screen.tint
+  eq false, old.screen.tinting?
+end
+
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
 # 0=up/1=right/2=down/3=left (Game_Character::Direction's own enum order),
 # not this runtime's numpad convention (2/4/6/8) -- the two schemes only
@@ -10835,6 +11884,47 @@ check 'Appear Randomly leaves every member visible without the flag set, or ' \
      'the flag is off -- an always-succeeding roll still hides nobody'
   eq 0, Game::Troop.new(appear_random_db, 1).members.count(&:hidden),
      'no RNG handed in at all -- the pass is skipped entirely, not rolled against a default'
+end
+
+LevitateRow = Struct.new(:name, :max_hp, :max_sp, :attack, :defense, :spirit,
+                         :agility, :exp, :gold, :levitate)
+
+def levitate_db
+  BattleDB.new(
+    { 2 => LevitateRow.new('Bat', 12, 0, 3, 2, 2, 9, 3, 4, true) },
+    { 1 => GroupRow.new('Bats', { 1 => GroupMember.new(2, 0, 0, false),
+                                  2 => GroupMember.new(2, 0, 0, false),
+                                  3 => GroupMember.new(2, 0, 0, false),
+                                  4 => GroupMember.new(2, 0, 0, false) }) })
+end
+
+check 'Game::Troop rolls each levitating member its own independent ' \
+      'flying_phase (0..63) when built with an RNG' do
+  # RPG_RT's Game_Battler::ResetBattle seeds each battler's own
+  # frame_counter independently at battle start (Rand::GetRandomNumber(0,
+  # 63)) -- Game::Troop#initialize ports this per levitating member, in
+  # member order, right after the Appear Randomly pass above (narrowed to
+  # levitating members only -- see the citation on the roll itself -- since
+  # a non-levitating member's own phase is never observable).
+  troop = Game::Troop.new(levitate_db, 1, Game::Rng.new(7))
+  phases = troop.members.map(&:flying_phase)
+  ok phases.all? { |p| p >= 0 && p < 64 }, 'every roll lands in 0..63'
+  ok phases.uniq.size > 1, 'a real seed spreads the four members across ' \
+                           'more than one shared phase'
+end
+
+check 'Game::Troop leaves flying_phase at 0 with no RNG handed in' do
+  troop = Game::Troop.new(levitate_db, 1)
+  ok troop.members.all? { |m| m.flying_phase == 0 },
+     'no RNG at all -- the roll is skipped entirely, not defaulted from a seed'
+end
+
+check "Game::Troop never rolls flying_phase for a non-levitating member, " \
+      "so an ordinary fight's RNG draw count is unaffected" do
+  db = appear_random_db(flag: false) # 4 identical, non-levitating members
+  troop = Game::Troop.new(db, 1, Game::Rng.new(7))
+  ok troop.members.all? { |m| m.flying_phase == 0 },
+     'no member here carries the levitate flag, so nothing is ever rolled'
 end
 
 check 'Appear Randomly never re-rolls a member already individually flagged ' \
@@ -12255,6 +13345,46 @@ check 'a lethal attack also resets stat modifiers and attribute-rank shifts, ' \
   eq 0, foe.atk_mod, 'a revived ally does not keep its stale pre-death buff'
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Game_Battler::AddState`'s Knockout branch (src/game_battler.cpp) also
+# fires `SetIsDefending(false)`/`SetCharged(false)` the instant Death
+# lands, the same statement group as the gauge/stat-modifier resets the two
+# checks above already cover -- `apply_knockout_reset`'s own doc comment
+# had claimed these two fields were "deliberately not ported" because "this
+# codebase already resets both to false at the start of every command a
+# battler is given" -- true for an ally (`#end_round` unconditionally
+# clears both for every entry in `@allies` every round) but not for an
+# enemy: `#strike`'s own `b.defending = false` only fires at the start of
+# *that enemy's own next turn*, not immediately at death, and `#charged`
+# is never reset short of actually being consumed by a subsequent charged
+# attack. An enemy that Defends (or Charges), then dies, then is revived
+# before its own next turn comes up kept the stale flag -- wrongly halving
+# incoming damage from other battlers (`#defending`) or wrongly doubling
+# its own next attack (`#charged`) -- something real RPG_RT's immediate,
+# unconditional reset at death never allows.
+check 'a lethal attack also clears a defending or charged enemy\'s stance, ' \
+      'the same Knockout branch the gauge/stat-mod fixes above already cover' do
+  hero = combatant('Hero', 999, 0, 5, 100)
+  defender = combatant('Defender', 0, 0, 5, 1)
+  defender.defending = true
+  bat = Game::Battle.new([hero], [defender], Game::Rng.new(1))
+  bat.send(:deal_attack, hero, defender)
+  ok defender.dead?, 'the hit was lethal'
+  eq false, defender.defending, 'the stale Defend stance was cleared the instant Death landed'
+
+  charger = combatant('Charger', 0, 0, 5, 1)
+  charger.charged = true
+  bat2 = Game::Battle.new([hero], [charger], Game::Rng.new(1))
+  bat2.send(:deal_attack, hero, charger)
+  ok charger.dead?, 'the hit was lethal'
+  eq false, charger.charged, 'the stale Charge was cleared the instant Death landed'
+
+  # Revival does not restore either, matching the gauge/stat-mod checks above.
+  defender.hp = 10
+  ok !defender.dead?
+  eq false, defender.defending, 'a revived enemy does not keep its stale pre-death Defend stance'
+end
+
 check "Battle#apply_to_party clears a battle combo Enable Combo armed, matching RPG_RT (2026-08-19)" do
   # Confirmed against EasyRPG's actual C++ source, fetched live:
   # `Game_Battler::ResetBattle` (src/game_battler.cpp) is `battle_combo_
@@ -12503,6 +13633,35 @@ check 'an enemy-scope attack skill with both affect_hp and affect_sp deals ' \
   eq 32, e[:damage], 'HP damage applied'
   eq 32, e[:sp_damage], 'SP damage applied, the same magnitude as the HP hit'
   eq 68, foe.hp, '100 - 32'
+  eq 18, foe.mp, '50 - 32'
+end
+
+check 'an offensive skill halves its HP effect against a defending target, ' \
+      'but leaves the SP effect untouched' do
+  # EasyRPG's Skill::vExecute: `hp_effect = IsPositive() ? effect :
+  # Algo::AdjustDamageForDefend(effect, *target)` -- an enemy-scope skill's HP
+  # branch gets the same defend-halving a plain Attack already gets, but the
+  # SP branch (and the ATK/DEF/SPI/AGI stat-mod branches) read the raw
+  # `effect` with no such adjustment.
+  skills = { 7 => fake_skill(name: 'Drain Fire', scope: 0, sp_cost: 6, power: 20,
+                             mrate: 40, hp: true, sp: true) }
+  st = skill_party(skills)
+  caster = Game::Battle.from_actor(st.party.actor_by_id(1)) # spi 12 -> effect 32
+  foe = combatant_mp('Foe', 0, 0, 5, 100, 50)
+  foe.defending = true
+  cmd = st.party.battle_skill_command(st.party.db_skill(7), caster, foe)
+  eq(-32, cmd[:hp], 'hp still carries the full, un-halved effect at this stage')
+  eq(-32, cmd[:mp], 'mp carries the identical effect, not a separate roll')
+
+  bat = Game::Battle.new([caster], [foe], Game::Rng.new(1))
+  bat.command_skill(caster, foe, name: 'Drain Fire', cost: cmd[:cost], hp: cmd[:hp],
+                    mp: cmd[:mp], attack: cmd[:attack], chance: cmd[:chance],
+                    variance: cmd[:variance])
+  bat.begin_round
+  e = bat.step_action
+  eq 16, e[:damage], 'defending halves the HP effect: 32 -> 16'
+  eq 32, e[:sp_damage], 'the SP effect is not halved by defending'
+  eq 84, foe.hp, '100 - 16'
   eq 18, foe.mp, '50 - 32'
 end
 
@@ -13128,6 +14287,33 @@ check 'battle: a heal skill restoring both HP and SP rolls each independently' d
   eq 10, hero.mp
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Algo::CalcSkillEffect`
+# (src/algo.cpp) computes one `effect` local -- attribute multiplier, then
+# `VarianceAdjustEffect`, each applied exactly once -- and `Skill::vExecute`
+# (src/game_battlealgorithm.cpp) reads that identical raw number into every
+# `affect_hp`/`affect_sp`/`affect_attack`/etc. branch it takes, each still
+# gated by its own independent `Rand::PercentChance(to_hit)` roll (the
+# check above, unaffected by this one). The *magnitude* itself is never
+# rolled twice, unlike the accuracy gate.
+check "battle: a heal skill restoring both HP and SP shares one variance " \
+      "roll, not an independent one per field" do
+  hero = combatant_mp('Hero', 0, 0, 20, 100, 100)
+  hero.hp = 50
+  hero.mp = 50
+  cmd = { variance: 5 }
+  # A single shared roll (SequenceRng value 5) must land 35 on the base-40
+  # spread; a second, independent draw (value 15) would instead land 45 --
+  # so HP and SP landing the *same* amount proves only one roll happened.
+  bat = Game::Battle.new([hero], [combatant('Foe', 0, 0, 5, 100)],
+                         SequenceRng.new([5, 15]), nil, true)
+  e = bat.send(:apply_skill_hit, hero, hero, 40, 40, cmd)
+  eq 35, e[:recover_hp], 'the shared roll (SequenceRng value 5)'
+  eq 35, e[:recover_mp], 'SP restored the identical amount as HP, not a second, ' \
+     'independent roll (value 15, which would give 45)'
+  eq 85, hero.hp
+  eq 85, hero.mp
+end
+
 # RPG_RT's `Game_BattleAlgorithm::Skill::vExecute` (src/game_battlealgorithm.cpp)
 # gates every state a skill would cure behind its own `Rand::PercentChance(
 # to_hit_states)` roll -- the same fresh-per-field idiom `#skill_effect_hits?`
@@ -13545,26 +14731,37 @@ check 'battle: a mid susceptibility (rank C 60%) both lands and resists' do
   ok results.any?(&:empty?), 'and sometimes is resisted'
 end
 
-check 'battle: Knockout (state 1) ignores state_ranks -- rank E still lands' do
-  # RPG2000 has no separate instant-death mechanic; a skill's state-effect list
-  # names Knockout (id 1, Game::Actor::DEATH_STATE) directly, and yado.tk
-  # documents its landing chance as governed solely by the skill's own
-  # occurrence-rate operand -- never scaled down by the target's A-E rank the
-  # way every other state is.
+check 'battle: Knockout (state 1) is scaled by state_ranks like any other ' \
+      'state -- rank E blocks it' do
+  # RPG2000 has no separate instant-death mechanic; a skill's state-effect
+  # list names Knockout (id 1, Game::Actor::DEATH_STATE) directly. RPG_RT's
+  # own Game_Actor::GetStateProbability (src/game_actor.cpp) has no
+  # state_id == kDeathID special case, and Game_BattleAlgorithm's infliction
+  # loops (src/game_battlealgorithm.cpp) call GetStateProbability uniformly
+  # for every flagged state id, Knockout included.
   foe = combatant('Foe', 0, 0, 5, 100)
-  foe.state_ranks = { Game::Actor::DEATH_STATE => 4 } # rank E -> 0% for any other state
+  foe.state_ranks = { Game::Actor::DEATH_STATE => 4 } # rank E -> 0%
   e = poison_cast_state(foe, Game::Actor::DEATH_STATE)
-  eq [Game::Actor::DEATH_STATE], e[:inflicted], 'Knockout lands despite rank-E "immunity"'
-  ok foe.state?(Game::Actor::DEATH_STATE)
+  eq [], e[:inflicted], 'rank-E resistance blocks Knockout the same as any other state'
+  ok !foe.state?(Game::Actor::DEATH_STATE)
 end
 
-check 'battle: an ordinary state at the same rank E is still blocked' do
-  # Control: the same rank on a non-Knockout state id keeps resisting, proving
-  # the exemption above is specific to id 1, not a general susceptibility bypass.
+check 'battle: an ordinary state at the same rank E is also blocked' do
+  # Control: a non-Knockout state id at the same rank resists identically,
+  # confirming Knockout gets no special treatment either way.
   foe = combatant('Foe', 0, 0, 5, 100)
   foe.state_ranks = { 3 => 4 }
   e = poison_cast_state(foe, 3)
   eq [], e[:inflicted]
+end
+
+check 'battle: a susceptible target (state rank A) still catches a sure ' \
+      'Knockout' do
+  foe = combatant('Foe', 0, 0, 5, 100)
+  foe.state_ranks = { Game::Actor::DEATH_STATE => 0 } # rank A -> 100%
+  e = poison_cast_state(foe, Game::Actor::DEATH_STATE)
+  eq [Game::Actor::DEATH_STATE], e[:inflicted]
+  ok foe.state?(Game::Actor::DEATH_STATE)
 end
 
 # A state the target already carries is not a silent no-op: RPG_RT reports it as
@@ -13742,8 +14939,11 @@ end
 # already-selectable downed ally (see #battle_ally_targets, which already
 # lets one be picked) silently fizzled at resolution: no SP/item spent, no
 # state cured, no HP restored, and the ally stayed dead -- the in-battle
-# path never actually revived anyone, unlike the field-menu
-# #use_medicine/#cast_skill, which were already correct.
+# path never actually revived anyone. ~~unlike the field-menu
+# #use_medicine/#cast_skill, which were already correct~~ -- that claim was
+# itself wrong: both field-menu methods over-healed a combined revive+HP
+# use by 1 (see the dedicated fix and its own citation in docs/TODO.md,
+# 2026-08-20).
 check 'Battle command_item actually revives a downed ally (RPG_RT: an ' \
       "item's target is always valid)" do
   user   = combatant('User', 0, 0, 20, 100)
@@ -13942,6 +15142,29 @@ check 'battle poison (percent of max) floors at 1 HP -- slip damage alone cannot
   ok !hero.dead?
 end
 
+check 'battle poison slip damage is not clamped to the damage-popup cap' do
+  # Confirmed against EasyRPG's actual C++ source, fetched live:
+  # `Game_Battler::ApplyConditions` (src/game_battler.cpp) computes each
+  # afflicted state's `src_hp` and hands it straight to `ChangeHp(src_hp,
+  # /* lethal = */ false)` -- no `Utils::Clamp(..., -MaxDamageValue(),
+  # MaxDamageValue())` anywhere in that path. The popup hard-cap exists at
+  # exactly three call sites in the whole codebase, all inside
+  # `game_battlealgorithm.cpp`'s Normal/Skill/SelfDestruct algorithms (see
+  # "Simulated Attack does not hard-cap damage..." below for the same
+  # citation) -- `ApplyConditions` is not one of them. A prior version of
+  # this codebase clamped the HP slip here to Game::Battle#damage_cap
+  # anyway, on an uncited assumption that the popup limit "applies to slip
+  # damage too"; it does not.
+  states = { 2 => FakeStateDef.new(0, 0, 50, 0, 0) } # 50% of max HP / turn
+  hero = combatant('Tank', 0, 0, 20, 10_000)         # max HP 10000, acts first
+  hero.states = [2]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  bat.step_action
+  eq 5_000, hero.hp, 'the full, uncapped 5000 HP slip -- not clamped to 999/9999'
+end
+
 check 'battle: a GAIN-type state heals per turn instead of draining, clamped to max' do
   # hp_change_type/sp_change_type == Game::States::CHANGE_TYPE_GAIN (a
   # "regen"-style state) adds instead of subtracts, clamped to max_hp/max_mp
@@ -13974,6 +15197,77 @@ check 'battle: a "do nothing" state (restriction 1) skips the turn' do
   bat.command_attack(hero, slime)                    # even commanded, it cannot act
   bat.run_round
   eq 100, slime.hp                                   # the asleep hero never struck
+end
+
+# Confirmed against EasyRPG's actual C++ source: Scene_Battle_Rpg2k::
+# ProcessBattleActionBegin (src/scene_battle_rpg2k.cpp) scans every state id
+# the battler either still carries or just had auto-cured this turn (not
+# Game_Battler::GetSignificantState/State::GetSignificantState -- confirmed
+# these are two genuinely distinct functions in EasyRPG's own source, the
+# latter special-casing Knockout and never considering a just-healed state),
+# keeping whichever has the highest `priority` (ties to the higher id), and
+# shows that state's own message_affected (still held) or message_recovery
+# (just healed) at the very start of the battler's turn, before its action.
+# This codebase's own docs/TODO.md had claimed the opposite -- that
+# message_affected is "deliberately still unread" because "EasyRPG ...
+# never calls it from either battle scene" -- which is simply wrong against
+# current live EasyRPG source.
+check 'battle: a still-afflicted state opens the battler\'s turn with its own ' \
+      'message_affected line' do
+  states = { 3 => fake_state(priority: 50, affected_msg: 'は毒に苦しんでいる！') } # poison, no restriction
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq 'Heroは毒に苦しんでいる！', entry[:state_message],
+     "the still-held state's own message_affected, prefixed with the battler's name"
+end
+
+check 'battle: a state with no configured message_affected opens the turn ' \
+      'with no reminder line at all' do
+  states = { 3 => fake_state(priority: 50) } # affected_msg left blank
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq nil, entry[:state_message],
+     'RPG_RT only shows the still-held case when message_affected is non-blank'
+end
+
+check 'battle: a state that auto-cures this turn opens the turn with its own ' \
+      'message_recovery instead of message_affected' do
+  # hold_turn 0, auto_release 100 -- guaranteed to clear on this very turn
+  # (#recovers_from_state? needs state_turns[id] > hold_turn, already true
+  # after this turn's own +1, and rolls under the 100% chance).
+  states = { 3 => fake_state(priority: 50, hold_turn: 0, auto_release: 100,
+                             affected_msg: 'は毒に苦しんでいる！',
+                             recovery_msg: 'の毒が治った！') }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq 'Heroの毒が治った！', entry[:state_message],
+     'a just-healed state shows its own message_recovery, not message_affected'
+end
+
+check 'battle: the higher-priority of two simultaneously-held states opens ' \
+      "the turn, a tie going to the higher id" do
+  states = { 3 => fake_state(priority: 10, affected_msg: 'は毒に苦しんでいる！'),
+             4 => fake_state(priority: 50, affected_msg: 'は暗闇に閉ざされている！') }
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [3, 4]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.begin_round
+  entry = bat.step_action
+  eq 'Heroは暗闇に閉ざされている！', entry[:state_message],
+     "state 4's higher priority (50 > 10) wins outright, no tie involved"
 end
 
 # デフォ戦bot: "once afflicted with a 'cannot act' state, curing it before your
@@ -14098,6 +15392,55 @@ check 'battle state at 0% auto_release_prob never wears off on its own' do
   eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
+# EasyRPG's Game_Battler::BattleStateHeal (src/game_battler.cpp) always rolls
+# Rand::ChanceOf(auto_release_prob, 100) once state_turns exceeds hold_turn --
+# Rand::ChanceOf (src/rand.cpp) is GetRandomNumber(1, m) <= n and always draws,
+# whatever n is; C++'s && only short-circuits on the hold_turn test, never on
+# the probability. A 0%-chance state must still burn that RNG draw every turn
+# once eligible, or this build's shared RNG stream desyncs from a real seeded
+# RPG_RT run for the rest of the fight.
+check 'battle state auto-release always consumes an RNG draw once eligible, even at 0% chance' do
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 0, 0) } # hold_turn 0, prob 0
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  rng = Game::Rng.new(1)
+  bat = Game::Battle.new([hero], [slime], rng, states)
+  bat.send(:apply_turn_states, hero) # counter 0 -> 1, > hold_turn 0: eligible, must roll
+
+  reference = Game::Rng.new(1)
+  reference.next_int
+  eq reference.instance_variable_get(:@state), rng.instance_variable_get(:@state),
+     'an always-fails-at-0% auto-release check must still burn exactly one RNG draw, matching ' \
+     "Rand::ChanceOf's unconditional GetRandomNumber call"
+end
+
+check 'battle: curing a state resets its turn-held counter, so a ' \
+      'reinflicted state does not inherit a stale duration' do
+  # RPG_RT's own State::Add/State::Remove (src/state.cpp) share one literal
+  # field for "state present" and "turns held" -- Add sets it to 1, Remove
+  # sets it to 0 -- so a cured-then-reinflicted state can never carry a
+  # stale duration into BattleStateHeal's (src/game_battler.cpp) hold_turn
+  # check. #cure_state used to remove the state from `states` without ever
+  # clearing the matching #apply_turn_states entry in this codebase's own
+  # separate `state_turns` hash, which #inflict_state never resets either.
+  states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 2, 100) } # hold_turn 2, 100% release
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.states = [5]
+  slime = combatant('Slime', 0, 0, 5, 100)
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  bat.send(:apply_turn_states, hero) # counter 1, not > 2
+  bat.send(:apply_turn_states, hero) # counter 2, not > 2 (2 is not > 2)
+  ok hero.state?(5), 'still held after two turns -- not yet eligible to auto-release'
+  bat.send(:cure_state, hero, 5)
+  ok !hero.state?(5), 'cured'
+  bat.send(:inflict_state, hero, 5)
+  ok hero.state?(5), 'reinflicted'
+  bat.send(:apply_turn_states, hero) # one turn on the freshly reinflicted state
+  ok hero.state?(5), 'counter restarted at 1, not resumed from the stale 2 -- ' \
+                      'still held, not auto-released a turn early'
+end
+
 # デフォ戦botまとめ: "'party wipe' for game-over purposes is defined as 'every
 # member is both unable to act and does not recover naturally,' not literally
 # 'every member's HP is 0' (why Stone status can wipe a party without zeroing
@@ -14132,6 +15475,24 @@ check 'battle: one incapacitated ally among others is not a party wipe' do
   slime = combatant('Slime', 0, 0, 5, 100)
   bat = Game::Battle.new([stoned, healthy], [slime], Game::Rng.new(1), states)
   ok !bat.finished?, 'a still-able ally keeps the party in the fight'
+end
+
+# RPG_RT's own Game_Battle::CheckWin/CheckLose (src/game_battle.cpp) are two
+# genuinely different tests, not one shared symmetric one: CheckWin is a bare
+# dead-or-hidden check (!IsAnyActive(), bottoming out in Exists()), with no
+# restriction/recovery concept at all -- only CheckLose widens to
+# CanActOrRecoverable(). A fully-Stoned enemy troop, unlike a fully-Stoned
+# party, does not end the fight on its own: the player can always keep
+# attacking a restricted-but-alive enemy, so real RPG_RT keeps the battle
+# running until the enemies are actually reduced to 0 HP or hidden/removed.
+check 'battle: a fully-Stoned enemy troop, still at full HP, does not end the fight' do
+  states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing, 0% auto-release
+  hero = combatant('Hero', 40, 0, 20, 100)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  slime.states = [8]
+  bat = Game::Battle.new([hero], [slime], Game::Rng.new(1), states)
+  ok !bat.finished?, 'a live-but-restricted enemy troop keeps the fight going'
+  eq 100, slime.hp, 'and nobody has actually been reduced to 0 HP'
 end
 
 # yado.tk's "unrecoverable input-blocking state lock" case, next to the
@@ -14220,19 +15581,28 @@ end
 # honour 'hits twice'/'ignores evasion,' while Berserk additionally collapses
 # an 'attack all' weapon down to a single target and disables 'always acts
 # first'." The confusion half (attack_all still spreading, hit-twice/必中
-# unaffected either way) was already covered by the 全体化/必中 checks above;
-# these four pin the berserk-specific divergence.
-check 'battle: a berserk battler with an attack_all weapon still hits only one target' do
+# unaffected either way) was already covered by the 全体化/必中 checks above.
+# The berserk-collapses-attack_all half of that same uncited claim does not
+# hold up against RPG_RT's own live source, though: `Scene_Battle_Rpg2k::
+# SelectNextActor` (`src/scene_battle_rpg2k.cpp`) constructs an identical
+# single-target `Game_BattleAlgorithm::Normal` for both the attack-ally
+# (confusion) and attack-enemy (berserk) restrictions -- the same switch just
+# picks which side `GetRandomActiveBattler()` draws from -- and
+# `Normal::vStart()` (`src/game_battlealgorithm.cpp`) then unconditionally
+# re-expands *any* single-target Normal algorithm to the whole side once the
+# weapon carries attack_all, with no restriction check anywhere in that path.
+check 'battle: a berserk battler with an attack_all weapon still hits every ' \
+      'living enemy, same as an unforced attack_all would' do
   states = { 7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
   hero = combatant('Hero', 20, 0, 20, 100)
   hero.states = [7]
-  hero.attack_all = true                                  # 全体化, would spread unforced
+  hero.attack_all = true                                  # 全体化
   foe1 = combatant('Foe1', 0, 5, 5, 50)
   foe2 = combatant('Foe2', 0, 5, 5, 50)
   bat = Game::Battle.new([hero], [foe1, foe2], Game::Rng.new(1), states)
-  entry = bat.send(:strike, hero)
-  ok entry.is_a?(Hash), 'berserk forces a single target even with 全体化 equipped'
-  ok foe1.hp == 50 || foe2.hp == 50, 'only one of the two enemies actually took a hit'
+  entries = bat.send(:strike, hero)
+  eq 2, entries.size, 'berserk with an attack_all weapon still spreads across every enemy'
+  ok foe1.hp < 50 && foe2.hp < 50, 'both enemies actually took a hit, not just one'
 end
 
 check 'battle: a berserk battler still swings twice with a 二刀流 weapon' do
@@ -14581,6 +15951,47 @@ def party_state_with_states(states, skills = {})
     Game::Party.new(FakeActorDB.new(players, [1, 2], {}, skills, {}, states)), 1, 0, 0)
 end
 
+# Confirmed against EasyRPG's live source, `ControlVariables::Actor`
+# (`src/game_interpreter_control_variables.cpp`): its Attack/Defence/
+# Intelligence/Agility cases (6-9) call straight through `Game_Actor::
+# GetAtk`/`GetDef`/`GetSpi`/`GetAgi` (`src/game_battler.cpp`), each routed
+# through `AdjustParam` -- the same halve/double-by-active-state mechanism
+# ported here as `Game::Party#effective_atk`/`#effective_def`/`#effective_int`/
+# `#effective_agi`, already used elsewhere (Simulated Attack, the Status
+# menu). Reading a stat straight off the actor (`actor.atk`, its raw base
+# value) skips that adjustment entirely.
+check 'Control Variables reads an actor\'s state-adjusted Attack, not its ' \
+      'raw base stat (operand type 5)' do
+  states = { 2 => fake_state(affect_type: 0, affect_attack: true) } # 0 = halve
+  st = party_state_with_states(states)
+  hero = st.party.actor_by_id(1) # base atk 10
+  hero.add_state(2)
+  ic = Game::Interpreter::Cmd
+  interp = Game::Interpreter.new(st)
+  interp.start([FakeCmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 5, 1, 6])]) # actor 1, attribute 6 = Attack
+  interp.update while interp.running? && !interp.waiting?
+  eq 5, st.variables[1], 'halved from the raw base of 10, not the raw value itself'
+end
+
+# Same citation, `ControlVariables::Enemy`'s Attack/Defence/Spirit/Agility
+# cases (4-7), routed through this class's own battle-Combatant-scoped
+# `Game::Battle#effective_atk`/`#effective_def`/`#effective_spi`/
+# `#effective_agi`.
+check 'Control Variables reads a troop member\'s state-adjusted Defence, ' \
+      'not its raw base stat (operand type 8)' do
+  states = { 2 => fake_state(affect_type: 0, affect_defense: true) } # 0 = halve
+  foe = combatant('Slime', 5, 10, 5, 100) # base def 10
+  foe.states = [2]
+  b = Game::Battle.new([combatant('Hero', 10, 0, 10, 100)], [foe], Game::Rng.new(1), states)
+  st = new_state
+  interp = Game::Interpreter.new(st)
+  interp.battle = b
+  ic = Game::Interpreter::Cmd
+  interp.start([FakeCmd.new(ic::CONTROL_VARS, [0, 1, 1, 0, 8, 0, 5])]) # troop member 0, attribute 5 = Defence
+  interp.update while interp.running? && !interp.waiting?
+  eq 5, st.variables[1], 'halved from the raw base of 10, not the raw value itself'
+end
+
 check 'Change Condition prunes a state it displaces, and one that displaces it' do
   states = { 2 => display_state(name: 'Poison', priority: 30),
              3 => display_state(name: 'Petrify', priority: 90) }
@@ -14843,11 +16254,37 @@ check 'map slip damage cannot kill: it floors at 1 HP' do
   eq 1, hero.hp, 'and walking on keeps it there'
   eq false, st.party.all_dead?
 
-  # A member already down slips nothing at all.
+  # A member already down is not skipped outright -- EasyRPG's
+  # `Game_Party::ApplyStateDamage` iterates every actor with no alive/dead
+  # filter, and only `ChangeHp` (not the caller) has its own dead-guard, so a
+  # dead member's affliction is still reported as "hit" even though the HP
+  # loss itself silently no-ops via #change_hp.
   ally = st.party.actor_by_id(2)
   ally.add_state(2)
   ally.set_hp(0)
-  eq [hero], st.party.apply_map_step_damage(table, 3)
+  eq [hero, ally], st.party.apply_map_step_damage(table, 3)
+  eq 0, ally.hp, 'the HP loss itself still no-ops on a dead member'
+end
+
+# Ports EasyRPG's `Game_Battler::ChangeSp` (`src/game_battler.cpp`), which --
+# unlike `ChangeHp` -- carries no `IsDead()` guard at all: a map-step state's
+# SP component keeps applying to a KO'd member exactly as it would to a
+# living one, even though that same member's HP component is silently
+# absorbed by `ChangeHp`'s own dead-guard.
+check "a dead member's SP-draining state still applies, unlike its HP half" do
+  table = { 2 => fake_state(name: 'Drain', hp_map_steps: 1, hp_map_val: 5,
+                             sp_map_steps: 1, sp_map_val: 3) }
+  st = party_state
+  ally = st.party.actor_by_id(2)
+  ally.add_state(2)
+  ally.set_hp(0)
+  before_mp = ally.mp
+  hit = st.party.apply_map_step_damage(table, 1)
+  eq [ally], hit
+  eq 0, ally.hp, 'a dead member cannot lose HP it does not have'
+  eq before_mp - 3, ally.mp, 'but the same state\'s SP loss still lands'
+  eq true, st.party.map_step_damaged?,
+     'a dead-only affected member\'s own lose-type state still counts as damage'
 end
 
 check 'map slip damage: a GAIN-type state heals instead of draining, clamped to max_hp/max_sp' do
@@ -15558,7 +16995,12 @@ check '先制攻撃 does not jump the turn order for a Skill, Item or Defend' do
      'Defend keeps the ordinary agility slot, even with the weapon still equipped'
 end
 
-check "battle: berserk drops a 先制攻撃 weapon's turn-order jump" do
+check "battle: berserk keeps a 先制攻撃 weapon's turn-order jump, same as confusion" do
+  # RPG_RT's SelectNextActor builds an identical Type::Normal attack for both
+  # a forced attack-enemy (berserk) and attack-ally (confusion) restriction,
+  # and CreateExecutionOrder's +9999 bonus keys purely on Type::Normal plus
+  # HasPreemptiveAttack -- neither depends on which restriction forced the
+  # attack, so berserk must jump the turn order exactly like confusion does.
   items = { 7 => fake_item(type: 1, atk: 5, preemptive: true) }
   states = { 9 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
   st = geared_party(items)
@@ -15567,8 +17009,8 @@ check "battle: berserk drops a 先制攻撃 weapon's turn-order jump" do
   fast_foe = combatant('FastFoe', 0, 0, 999, 100)          # far faster than the hero
   bat = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe], Game::Rng.new(1), states)
   bat.allies[0].states = [9]
-  eq [fast_foe, bat.allies[0]], bat.send(:turn_order),
-     "berserk drops the weapon's jump: agility alone decides again"
+  eq [bat.allies[0], fast_foe], bat.send(:turn_order),
+     "berserk still jumps the weapon's Attack ahead of a far faster foe"
 end
 
 check 'battle: 強力防御 halves damage a second time' do
@@ -15693,6 +17135,30 @@ check 'Simulated Attack damages the target by atk less its defence share' do
   eq 58, hero.hp # 100 HP less (50 - 8 * 400 / 400) = 42 damage
 end
 
+check "Simulated Attack reads the target's state-adjusted Defence/Spirit, " \
+      'not its raw base stat' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandSimulatedAttack` (`src/game_interpreter.cpp`) computes `atk -
+  # actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and
+  # `Game_Battler::GetDef`/`GetSpi` (`src/game_battler.cpp`) both route
+  # through `AdjustParam`, which folds in a currently-afflicted state's own
+  # halve/double Defence flag -- the same accessor every other damage
+  # formula reads, in or out of battle. A target whose Defence is halved by
+  # an active state must take more damage than its raw stat alone would
+  # suggest.
+  states = { 2 => fake_state(affect_type: 0, affect_defense: true) } # 0 = halve
+  st = party_state_with_states(states)
+  hero = st.party.actor_by_id(1) # def 8, hp 100
+  hero.add_state(2)
+  it = Game::Interpreter.new(st)
+  # scope 1, actor 1, atk 50, def-weight 400, spi-weight 0, variance 0,
+  # store-damage flag 0.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 1, 50, 400, 0, 0, 0, 0])])
+  it.update
+  eq 54, hero.hp, '100 HP less (50 - halved-def 4 * 400 / 400) = 46 damage, ' \
+                  'not 42 off the raw, unhalved def of 8'
+end
+
 check 'Simulated Attack stores the damage it dealt in a variable' do
   st = party_state
   it = Game::Interpreter.new(st)
@@ -15710,6 +17176,25 @@ check 'Simulated Attack floors the damage at zero' do
   it.update
   eq 0, st.variables[2]
   eq 100, st.party.actor_by_id(1).hp
+end
+
+check 'Simulated Attack leaves its result variable untouched when the ' \
+      'target actor id is invalid, instead of zeroing it' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandSimulatedAttack` (`src/game_interpreter.cpp`) writes the result
+  # variable *inside* its own `for (const auto& actor : GetActors(...))`
+  # loop, never reached at all when that loop is empty -- and `GetActors`
+  # returns an empty vector, without ever touching the variable, when a
+  # fixed actor id names a database row that does not exist (`if (!actor)
+  # { ...; return actors; }`). A stale value already sitting in the
+  # variable must therefore survive, not get zeroed by a target-less hit.
+  st = party_state
+  st.variables[6] = 77 # a stale value the empty-target case must not clear
+  it = Game::Interpreter.new(st)
+  # scope 1 (fixed actor), actor id 99 (no such actor), store-damage flag 1.
+  it.start([FakeCmd.new(IC::SIMULATED_ATTACK, [1, 99, 50, 0, 0, 0, 1, 6])])
+  it.update
+  eq 77, st.variables[6], 'no target resolved, so the variable is left exactly as it was'
 end
 
 # A prior version of this codebase clamped Simulated Attack's own damage
@@ -15820,11 +17305,33 @@ check 'Flash Sprite without its wait flag does not pause the interpreter' do
   eq 1, it.take_sprite_flash_requests.size
 end
 
-check 'Fade Out BGM fades the music and forgets the current track' do
+check 'Flash Sprite with an instant (zero-duration) flash still waits one frame' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # target the hero, colour 31/0/16, power 31, 0 tenths (instant), wait flag set
+  it.start([FakeCmd.new(IC::FLASH_SPRITE, [10001, 31, 0, 16, 31, 0, 1])])
+  it.update
+  reqs = it.take_sprite_flash_requests
+  eq 1, reqs.size
+  eq 0, reqs[0][:frames], 'the flash itself is instant'
+  ok it.waiting?, 'RPG_RT floors a 0.0s wait to one frame instead of skipping it'
+  eq :sprite_flash, it.wait_kind
+end
+
+check 'Fade Out BGM fades the music but keeps the current-BGM record intact' do
   # param0 is already milliseconds -- EasyRPG's CommandFadeOutBGM passes it
   # straight through to Game_System::BgmFade with no scaling (confirmed
   # against its "Duration in ms" doc comment and every real call site, all
   # bare millisecond literals).
+  #
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandFadeOutBGM` (`src/game_interpreter.cpp`) calls `Game_System::
+  # BgmFade(fadeout)` with a single argument, and `Game_System::BgmFade`
+  # (`src/game_system.h`/`.cpp`) only clears `data.current_music` when its
+  # second parameter, `clear_current_music`, is explicitly `true` --
+  # defaulted `false`, so the event command never clears it. A save taken
+  # (or a Memorize BGM issued) right after a Fade Out BGM must still see
+  # the track that was fading, not silence.
   st = new_state
   RGSS::Audio.log = []
   it = Game::Interpreter.new(st)
@@ -15833,8 +17340,25 @@ check 'Fade Out BGM fades the music and forgets the current track' do
     FakeCmd.new(IC::FADEOUT_BGM, [2000]), # 2000 ms
   ])
   it.update
-  eq nil, st.current_bgm, 'nothing is playing after a fade-out'
+  eq 'Town', st.current_bgm[:name],
+     'the current-BGM record still names the track that was fading'
   eq [:bgm_fade, 2000], RGSS::Audio.log.last, 'the parameter is passed straight through as ms'
+end
+
+check 'Memorize BGM taken after a Fade Out BGM still memorises the faded track' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::FADEOUT_BGM, [2000]),
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'fanfare'),
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []),
+  ])
+  it.update
+  eq 'town', st.current_bgm[:name],
+     'the memorized BGM is the pre-fade track, not silence'
 end
 
 check 'Play Movie records the request instead of dropping it' do
@@ -15863,15 +17387,35 @@ check 'Tile Substitution rewrites a tile on the map and flags a redraw' do
   eq false, it.take_tiles_changed, 'the flag is one-shot'
 end
 
-check 'Game::Map substitutions are per layer and undone by an identity swap' do
+# Confirmed against RPG_RT's own live source: `Game_Map::DoSubstitute`
+# (`src/game_map.cpp`) scans its persistent substitution table by *current*
+# value every call (`for (i) if (tiles[i] == old_id) tiles[i] = new_id;`),
+# not by each tile's original chipset id -- so a later substitution chains
+# through an earlier one whenever its `old_id` matches the earlier `new_id`,
+# and "substituting a tile back to its original id" does not undo a prior
+# substitution once the tile's current value has moved on. An earlier,
+# uncited pass here modelled both of these the opposite way.
+check 'Game::Map substitutions are per layer and chain by current value, ' \
+      'not by original id' do
   m = fake_map_2x2([1, 1, 1, 1], [1, 1, 1, 1])
-  m.substitute_tile(1, 1, 4) # upper only
+  m.substitute_tile(1, 1, 4) # upper: every tile originally 1 now shows 4
   eq 1, m.lower(0, 0)
   eq 4, m.upper(0, 0)
   ok m.substituted?
-  m.substitute_tile(1, 1, 1) # back to itself: drop the rewrite
-  eq 1, m.upper(0, 0)
-  ok !m.substituted?
+
+  # Chaining: retargets the earlier substitution rather than replacing it.
+  m.substitute_tile(1, 4, 7)
+  eq 7, m.upper(0, 0), 'chained through the first substitution (1 -> 4 -> 7)'
+
+  # "Back to its original id" is not how a substitution is undone: the
+  # tile's slot currently holds 7, not 1, so re-substituting old_id 1 (its
+  # original chipset id) touches nothing.
+  m.substitute_tile(1, 1, 1)
+  eq 7, m.upper(0, 0), 'substituting the original id again has no effect once chained away'
+
+  # Reverting means substituting FROM the tile's *current* id.
+  m.substitute_tile(1, 7, 1)
+  eq 1, m.upper(0, 0), 'substituting from the current id reverts the visible tile'
 end
 
 check 'Open Save Menu and Open Main Menu pause on their own wait kinds' do
@@ -16790,6 +18334,73 @@ check 'battle Conditional Branch test 5 (actor uses the ... command) reads ' \
   eq 2, st.variables[1], 'a source that is not the named actor never matches'
 end
 
+# Test 4 ("the currently-targeted troop member is param1") was previously
+# left unimplemented (see #do_conditional_battle's own citation), falling
+# straight to `else false` regardless of actual battle state. Confirmed
+# against EasyRPG's actual C++ source: `Game_Interpreter_Battle::
+# CommandConditionalBranchBattle` case 4, `result = (targets_single_enemy
+# && target_enemy_index == com.parameters[1]);`, where both fields are set
+# in `Scene_Battle_Rpg2k3::ProcessBattleActionBegin` (src/
+# scene_battle_rpg2k3.cpp) from the acting ally's own `GetOriginalSingle
+# Target()` -- the target chosen at command time -- only when that target
+# is itself an enemy. `Game::Battle#target_enemy_index` is this port's own
+# counterpart, reusing the identical `battle_source` plumbing test 5
+# already threads.
+check 'battle Conditional Branch test 4 (troop member is the current ' \
+      "target) reads Interpreter#battle_source's own resolved target" do
+  hero = combatant('Hero', 40, 0, 20, 100)
+  hero.actor = FakeSourceActor.new(1)
+  slime = combatant('Slime', 0, 0, 5, 100)
+  goblin = combatant('Goblin', 0, 0, 5, 100)
+  b = Game::Battle.new([hero], [slime, goblin], Game::Rng.new(1))
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.battle = b
+  branch = lambda do |params|
+    [FakeCmd.new(IC::CONDITIONAL_B, params, indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 1], indent: 1),
+     FakeCmd.new(IC::ELSE_BRANCH_B, [], indent: 0),
+     FakeCmd.new(IC::CONTROL_VARS, [0, 1, 1, 0, 0, 2], indent: 1),
+     FakeCmd.new(IC::END_BRANCH_B, [], indent: 0)]
+  end
+
+  # No source at all (a round-boundary check) -- unanswerable.
+  hero.action = slime
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 2, st.variables[1], 'no battle_source set -- the else branch runs'
+
+  it.battle_source = hero
+
+  # A basic Attack (#action) targeting troop slot 0 (the slime).
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 1, st.variables[1], 'a basic Attack on troop slot 0 matches index 0'
+
+  it.start(branch.call([4, 1]))
+  it.update
+  eq 2, st.variables[1], 'but not the other troop slot'
+
+  # A single-target Skill/Item's own #command[:target] overrides #action --
+  # targeting troop slot 1 (the goblin) this time.
+  hero.command = { target: goblin }
+  it.start(branch.call([4, 1]))
+  it.update
+  eq 1, st.variables[1], "a single-target Skill/Item's own resolved target wins over #action"
+
+  # An all-target action (#command[:all]) has no single troop-member target.
+  hero.command = { all: true }
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 2, st.variables[1], 'an all-target action never satisfies any troop-member test'
+
+  # A heal aimed at an ally resolves to no troop index at all.
+  hero.command = { target: hero }
+  it.start(branch.call([4, 0]))
+  it.update
+  eq 2, st.variables[1], 'a command aimed at an ally is not a troop member'
+end
+
 # Confirmed against EasyRPG's actual C++ source, fetched live:
 # `Game_Interpreter_Battle::CommandConditionalBranchBattle`
 # (src/game_interpreter_battle.cpp) reads only `com.parameters[1]` for its
@@ -17125,17 +18736,56 @@ end
 # -- RPG2003 English-release (2k3e) system commands ---------------------------
 
 check 'Open Load Menu and Exit Game raise their scene requests' do
-  it = Game::Interpreter.new(new_state)
+  it = Game::Interpreter.new(new_state(rpg2003: true))
   it.start([FakeCmd.new(IC::OPEN_LOAD_MENU, [])])
   it.update
   ok it.waiting?
   eq :load_menu, it.wait_kind
 
-  it2 = Game::Interpreter.new(new_state)
+  it2 = Game::Interpreter.new(new_state(rpg2003: true))
   it2.start([FakeCmd.new(IC::EXIT_GAME, [])])
   it2.update
   ok it2.waiting?
   eq :exit_game, it2.wait_kind
+end
+
+# Confirmed against RPG_RT's own live source: all five 2k3e system commands
+# (`CommandOpenLoadMenu`/`CommandExitGame`/`CommandToggleAtbMode`/
+# `CommandToggleFullscreen`/`CommandOpenVideoOptions`, `src/
+# game_interpreter.cpp`/`game_interpreter_map.cpp`) open with `if (!Player::
+# IsRPG2k3ECommands()) { return true; }` -- a hard no-op, not merely
+# discarding some other effect, on an RPG2000-compatible database.
+check 'all five 2k3e system commands are RPG2000 no-ops' do
+  it = Game::Interpreter.new(new_state) # rpg2003: false by default
+  it.start([FakeCmd.new(IC::OPEN_LOAD_MENU, [])])
+  it.update
+  ok !it.waiting?, 'Open Load Menu never raises its scene request on an RPG2000 database'
+
+  it2 = Game::Interpreter.new(new_state)
+  it2.start([FakeCmd.new(IC::EXIT_GAME, [])])
+  it2.update
+  ok !it2.waiting?, 'nor does Exit Game'
+
+  st = new_state
+  before_atb = st.atb_mode
+  it3 = Game::Interpreter.new(st)
+  it3.start([FakeCmd.new(IC::TOGGLE_ATB_MODE, [])])
+  it3.update
+  eq before_atb, st.atb_mode, 'Toggle ATB Mode leaves atb_mode untouched'
+
+  it4 = Game::Interpreter.new(new_state)
+  logged = capture_stderr do
+    it4.start([FakeCmd.new(IC::TOGGLE_FULLSCREEN, [])])
+    it4.update
+  end
+  eq '', logged, "Toggle Fullscreen doesn't even reach its own logged no-op message"
+
+  it5 = Game::Interpreter.new(new_state)
+  logged5 = capture_stderr do
+    it5.start([FakeCmd.new(IC::OPEN_VIDEO_OPTIONS, [])])
+    it5.update
+  end
+  eq '', logged5, "Open Video Options doesn't either"
 end
 
 # Ports EasyRPG's own `Game_Interpreter::CommandWait`
@@ -17179,7 +18829,7 @@ check 'Wait with param1 0, or on a non-RPG2003 database, or with no param1 at al
 end
 
 check 'Toggle Fullscreen / Open Video Options run on without pausing' do
-  st = new_state
+  st = new_state(rpg2003: true)
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::TOGGLE_FULLSCREEN, []),
             FakeCmd.new(IC::OPEN_VIDEO_OPTIONS, []),
@@ -17634,9 +19284,15 @@ check 'a party-level action reads the average level through the AI env' do
   ok enemy_entry([miss], ai)[:defend].nil?, 'outside it'
 end
 
-check 'an unknown condition type keeps the action out of the running' do
+check 'an out-of-range condition type still fires, matching RPG_RT\'s own ' \
+      'default: return true' do
+  # Confirmed directly against RPG_RT's live source: `EnemyAi::
+  # IsActionValid`'s own `switch (action.condition_type)`
+  # (`src/enemyai.cpp`) ends `default: return true;` -- a condition_type
+  # past the eight it recognises (e.g. a hand-edited or non-standard-tool
+  # database byte) reads as unconditionally eligible, not excluded.
   act = enemy_action(kind: 0, basic: 2, condition_type: 99)
-  ok enemy_entry([act], nil)[:defend].nil?, 'not fired unchecked'
+  eq true, enemy_entry([act], nil)[:defend], 'fires unconditionally, like RPG_RT'
 end
 
 # -- post-action switches ------------------------------------------------------
@@ -17658,12 +19314,14 @@ end
 class FakeAiSkill
   attr_accessor :name, :type, :scope, :sp_type, :sp_cost, :sp_percent, :power,
                 :physical_rate, :magical_rate, :hit, :variance, :state_effects,
-                :attribute_effects, :affect_hp, :affect_sp
+                :attribute_effects, :affect_hp, :affect_sp, :occasion_battle,
+                :switch_id
 
   def initialize(h = {})
     @name = 'Spell'; @type = 0; @scope = 0; @sp_type = 0; @sp_cost = 0
     @power = 0; @physical_rate = 0; @magical_rate = 0; @hit = 100
     @variance = 0; @affect_hp = true; @affect_sp = false
+    @occasion_battle = true
     h.each { |k, v| send("#{k}=", v) }
   end
 end
@@ -17688,6 +19346,41 @@ check 'an enemy casts an attack skill from its pattern' do
   e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], ai, foe: foe)
   eq 'Fire', e[:skill], 'the skill is named on the log'
   ok e[:damage] > 0, 'and it hurt'
+end
+
+# Confirmed directly against RPG_RT's live source: `EnemyAi::IsActionValid`
+# (`src/enemyai.cpp`) rejects a `Kind_skill` action outright when
+# `!source.IsSkillUsable(action.skill_id)` -- before the action's own weight
+# is ever computed, not merely zeroed out afterward. `Algo::IsSkillUsable`
+# (`src/algo.cpp`), which `Game_Battler::IsSkillUsable`
+# (`src/game_battler.cpp`) reaches in battle, is unconditionally false for a
+# Teleport- or Escape-type skill, and gated on the skill's own
+# `occasion_battle` flag for a Switch-type one -- an enemy's own action
+# pattern is bound by the exact same rules a field/battle actor cast is.
+check "an enemy's action pattern never fires a Teleport/Escape-type skill, " \
+      'and only fires a Switch-type one when its battle-occasion flag is set' do
+  teleport = skill_ai(1 => FakeAiSkill.new(name: 'Warp', type: Game::Party::SKILL_TELEPORT))
+  foe = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e = enemy_entry([enemy_action(kind: 1, skill_id: 1)], teleport, foe: foe)
+  ok e[:skill].nil?, "a Teleport-type skill must never be cast, got: #{e.inspect}"
+  ok e[:damage] > 0, 'falls back to a plain attack instead'
+
+  escape = skill_ai(1 => FakeAiSkill.new(name: 'Flee', type: Game::Party::SKILL_ESCAPE))
+  foe2 = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e2 = enemy_entry([enemy_action(kind: 1, skill_id: 1)], escape, foe: foe2)
+  ok e2[:skill].nil?, "an Escape-type skill must never be cast, got: #{e2.inspect}"
+
+  off_switch = skill_ai(1 => FakeAiSkill.new(name: 'Alarm', type: Game::Party::SKILL_SWITCH,
+                                             occasion_battle: false, switch_id: 4))
+  foe3 = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e3 = enemy_entry([enemy_action(kind: 1, skill_id: 1)], off_switch, foe: foe3)
+  ok e3[:skill].nil?, "a Switch-type skill with occasion_battle off must not fire, got: #{e3.inspect}"
+
+  on_switch = skill_ai(1 => FakeAiSkill.new(name: 'Alarm', type: Game::Party::SKILL_SWITCH,
+                                            occasion_battle: true, switch_id: 4))
+  foe4 = combatant_mp('Slime', 40, 0, 5, 500, 100)
+  e4 = enemy_entry([enemy_action(kind: 1, skill_id: 1)], on_switch, foe: foe4)
+  eq 'Alarm', e4[:source], 'a Switch-type skill with occasion_battle on still fires'
 end
 
 check "an enemy's attack skill inflicts its states — enemy-cast infliction" do
@@ -17913,6 +19606,76 @@ check "battle: auto_battle_raw_cost's percent-cost branch is RPG2003-only, match
                             nil, nil, rpg2003: true)
   eq 50, bat2k3.send(:auto_battle_raw_cost, sk, caster),
      'RPG2003: the percent formula applies -- 100 max_mp * 50% = 50'
+end
+
+check 'battle: auto_battle_attack_target_rank includes the RPG2003 attacker ' \
+      "row bonus, matching the real attack's own formula" do
+  # Confirmed directly against RPG_RT's live source: `Calc
+  # NormalAttackAutoBattleTargetRank` (`src/autobattle.cpp`) computes its own
+  # `base_effect` via `Algo::CalcNormalAttackEffect` (`src/algo.cpp`) -- the
+  # *identical* function `Game_BattleAlgorithm::Normal::Execute`
+  # (`src/game_battlealgorithm.cpp`) calls to resolve the real swing -- so a
+  # front-row attacker's ranking must include the same +25% bonus its real
+  # attack deals, not merely the raw, unadjusted damage. Two otherwise-
+  # identical battles seeded identically isolate the row difference from the
+  # ranking's own random jitter, since both draw the same first random value.
+  # #ally? (the row-adjustment attacker gate) keys off a Combatant carrying a
+  # live Game::Actor snapshot (`battler.actor`), so the attacker must be
+  # built via #from_actor, not the bare #combatant fixture #row_adjusted?
+  # would then always read as an enemy (never row-adjusted) regardless of
+  # #row. A second, front-row-and-able ally rides along in each battle so
+  # the constructor's own RPG2003 row safety net (every ally snaps to the
+  # front row if none of them can act from there) does not overwrite the
+  # single back-row attacker under test.
+  st1 = party_state
+  st2 = party_state
+  dummy_front1 = Game::Battle.from_actor(st1.party.actor_by_id(2))
+  attacker_front = Game::Battle.from_actor(st1.party.actor_by_id(1)) # atk 10, def 8
+  attacker_front.row = Game::Battle::ROW_FRONT
+  dummy_front2 = Game::Battle.from_actor(st2.party.actor_by_id(2))
+  attacker_back = Game::Battle.from_actor(st2.party.actor_by_id(1))
+  attacker_back.row = Game::Battle::ROW_BACK
+  # def 0, so the base swing (atk/2 - def/4 = 5) is large enough that the
+  # front row's +25% survives integer division (125*5/100 = 6, not rounded
+  # back down to 5) instead of being masked by truncation.
+  target_front = combatant('Foe', 0, 0, 5, 1000) # high hp, keeps the rank unsaturated
+  target_back = combatant('Foe', 0, 0, 5, 1000)
+
+  bat_front = Game::Battle.new([dummy_front1, attacker_front], [target_front], Game::Rng.new(1),
+                               nil, false, false, false, false, nil, nil, rpg2003: true)
+  bat_back = Game::Battle.new([dummy_front2, attacker_back], [target_back], Game::Rng.new(1),
+                              nil, false, false, false, false, nil, nil, rpg2003: true)
+  rank_front = bat_front.send(:auto_battle_attack_target_rank, attacker_front, bat_front.enemies.first)
+  rank_back = bat_back.send(:auto_battle_attack_target_rank, attacker_back, bat_back.enemies.first)
+  ok rank_front > rank_back,
+     "a front-row attacker's own +25% row bonus should rank higher than an " \
+     "identical back-row one, got front=#{rank_front} back=#{rank_back}"
+end
+
+check 'battle: auto_battle_attack_target_rank reads the target\'s ' \
+      'state-adjusted Defence, not its raw base stat' do
+  # Same citation as the row check above -- `CalcNormalAttackAutoBattleTarget
+  # Rank` shares `Algo::CalcNormalAttackEffect` with the real attack, and
+  # `Game_Battler::GetDef` (`src/game_battler.cpp`) folds in a currently-
+  # afflicted state's own halve/double Defence flag. A target whose Defence
+  # is halved by an active state must rank as easier to damage than an
+  # identical, unafflicted one.
+  states = { 2 => fake_state(affect_type: 0, affect_defense: true) } # 0 = halve
+  attacker1 = combatant('Attacker', 20, 0, 5, 100)
+  attacker2 = combatant('Attacker', 20, 0, 5, 100)
+  target_plain = combatant('Foe', 0, 10, 5, 1000)
+  target_halved = combatant('Foe', 0, 10, 5, 1000)
+  target_halved.states = [2]
+
+  bat_plain = Game::Battle.new([attacker1], [target_plain], Game::Rng.new(1), states)
+  bat_halved = Game::Battle.new([attacker2], [target_halved], Game::Rng.new(1), states)
+  rank_plain = bat_plain.send(:auto_battle_attack_target_rank, bat_plain.allies.first,
+                              bat_plain.enemies.first)
+  rank_halved = bat_halved.send(:auto_battle_attack_target_rank, bat_halved.allies.first,
+                                bat_halved.enemies.first)
+  ok rank_halved > rank_plain,
+     "a target with a halved Defence should rank easier to damage than an " \
+     "unafflicted one, got plain=#{rank_plain} halved=#{rank_halved}"
 end
 
 check 'battle: a Forced-AI actor picks a clearly-better Skill over Attack, with no manual command' do
@@ -18567,8 +20330,11 @@ check 'the same item revives an ally who is down, HP and all' do
   eq [hero], st.party.use_item(4, hero)
   ok !hero.dead?, 'back on their feet'
   # Standing up puts them on 1 HP first (the existing revive path), and the
-  # item's 25% of 100 lands on top of that.
-  eq 26, hero.hp, 'with the 25% the item restores'
+  # item's 25% of 100 lands on top of that -- but one HP short of the raw
+  # 25, since RPG_RT's `Game_Battler::UseItem` (`src/game_battler.cpp`)
+  # applies `ChangeHp(hp_change - revived, false)` on top of the cure's own
+  # floor-to-1, not the full `hp_change`.
+  eq 25, hero.hp, 'with the 25% the item restores, one short of the raw 25'
   eq 0, st.party.item_count(4), 'and it was spent'
 end
 
@@ -18580,6 +20346,32 @@ check 'an ordinary medicine is unaffected by the rule' do
   eq true, st.party.item_effective?(5, hero)
   eq [hero], st.party.use_item(5, hero)
   eq 90, hero.hp
+end
+
+check 'a medicine that does not cure Death does nothing at all to a downed ' \
+      'target -- not even curing an unrelated state or restoring MP, and ' \
+      'the item is not spent' do
+  # Confirmed against RPG_RT's own live source: `Game_Battler::UseItem`
+  # (src/game_battler.cpp) checks `IsDead()` before anything else and
+  # returns `false` immediately -- no state-cure loop, no HP change, no SP
+  # change run at all -- unless `item->state_set[0]` (state id 1, Death) is
+  # flagged. An Antidote-style item that cures some other state (Poison,
+  # state id 2 here) but not Death must leave a KO'd target's Poison
+  # untouched too, not just skip the HP/MP halves independently.
+  items = { 6 => fake_item(type: 6, rhp: 50, rsp: 20, state_set: [nil, true]) }
+  st = item_party(items)
+  st.party.gain_item(6, 1)
+  hero = st.party.actor_by_id(1)
+  hero.add_state(Game::Actor::DEATH_STATE)
+  hero.add_state(2) # Poison, alongside Death
+  hero.mp = 0
+  ok hero.dead?
+  eq [], st.party.use_item(6, hero)
+  ok hero.dead?, 'still down -- the item does not cure Death'
+  ok hero.state?(2), 'Poison is not cured either -- the whole call aborts, ' \
+                      'not just the HP/MP halves'
+  eq 0, hero.mp, 'MP is untouched'
+  eq 1, st.party.item_count(6), 'nothing is spent'
 end
 
 # An all-party revive passes over the members who never fell rather than topping
@@ -18859,26 +20651,32 @@ check 'a 二刀流 actor with one dual_attack weapon sums 2 + 1, not just 2' do
   eq 3, hero.strike_count, "the dual_attack sword's 2 swings plus the dagger's 1"
 end
 
-check "battle: a two-weapon actor's swings each roll their own weapon's to-hit, " \
-      'not a merged max' do
+check "battle: an RPG2003 two-weapon actor's swings each roll their own " \
+      "weapon's to-hit, not a merged max" do
   # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
-  # Normal::GetWeapon (src/game_battlealgorithm.cpp) resolves each swing to
-  # exactly one weapon (the primary weapon's own hit count worth of swings,
-  # then the secondary's), and Game_Actor::GetHitChance's own
+  # Normal::GetDefaultStyle (src/game_battlealgorithm.cpp) only picks
+  # Style_MultiHit -- the style whose Init sets weapon_style and so lets
+  # GetWeapon resolve a specific slot instead of WeaponAll -- when
+  # Feature::HasRpg2k3BattleSystem() (src/feature.cpp: !HasRpg2kBattleSystem,
+  # true whenever the game isn't Player::IsRPG2k()). Under that style, each
+  # swing resolves to exactly one weapon (the primary weapon's own hit count
+  # worth of swings, then the secondary's), and Game_Actor::GetHitChance's own
   # ForEachEquipment (src/game_actor.cpp) excludes the *other* weapon's slot
   # entirely -- never a merge/max across both. hit 100 always lands (its own
   # agi term collapses to zero regardless of either side's Agility); a low
   # hit rate against a much nimbler target clamps to a guaranteed miss (the
   # agi term, `100 - (100-base)*(src+tgt)/(2*src)`, goes negative and clamps
   # to 0). Before this fix, both swings read #attack_hit_rate's merged max
-  # (100, from whichever weapon has it) -- the low-hit weapon's swing would
-  # always land too, identically to the other weapon's.
+  # (100, from whichever weapon has it) regardless of RPG2000/2003 -- the
+  # low-hit weapon's swing would always land too, identically to the other
+  # weapon's, even on a non-2003 database (Style_Combined's actual rule --
+  # see the RPG2000 check just below).
   items = { 1 => fake_item(type: 1, atk: 10, hit: 100), # always lands
             2 => fake_item(type: 1, atk: 10, hit: 10) } # clamps to a guaranteed miss below
   row = FakePlayerRow.new('Hero', '', 0, 5,
                           { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
   row.double_hand = true
-  db = FakeActorDB.new({ 1 => row }, [1], items)
+  db = FakeActorDB.new({ 1 => row }, [1], items, rpg2003: true)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   actor = st.party.actor_by_id(1)
   st.party.gain_item(1, 1)
@@ -18894,19 +20692,20 @@ check "battle: a two-weapon actor's swings each roll their own weapon's to-hit, 
                             'clamped to 0 against a much nimbler target'
 end
 
-check "battle: a two-weapon actor's swings each carry their own weapon's " \
-      'elemental attribute and state, not a union of both' do
-  # Same GetWeapon/ForEachEquipment exclusion as the to-hit check above, but
-  # for Attribute::ApplyAttributeNormalAttackMultiplier and the weapon-state
-  # block of Normal::vExecute (both also gated on that swing's own resolved
-  # weapon, per EasyRPG's src/attribute.cpp and src/game_battlealgorithm.cpp).
-  # Both weapons hit 100 so accuracy never interferes; element 1 is immune
-  # (rank 4 -> 0%) and element 2 is normal (rank 2 -> 100%) on the target.
-  # The weapon states are 3 and 4, deliberately not 1: state id 1 is always
-  # Knockout (Game::States::DEATH_ID) in every real database, so inflicting
-  # it -- as this test briefly did by accident, before #inflict_state
-  # correctly started zeroing HP on landing it -- would fell the target on
-  # the very first swing and never reach the second at all.
+check "battle: an RPG2003 two-weapon actor's swings each carry their own " \
+      "weapon's elemental attribute and state, not a union of both" do
+  # Same Style_MultiHit/GetWeapon/ForEachEquipment exclusion as the to-hit
+  # check above, but for Attribute::ApplyAttributeNormalAttackMultiplier and
+  # the weapon-state block of Normal::vExecute (both also gated on that
+  # swing's own resolved weapon, per EasyRPG's src/attribute.cpp and
+  # src/game_battlealgorithm.cpp). Both weapons hit 100 so accuracy never
+  # interferes; element 1 is immune (rank 4 -> 0%) and element 2 is normal
+  # (rank 2 -> 100%) on the target. The weapon states are 3 and 4,
+  # deliberately not 1: state id 1 is always Knockout (Game::States::
+  # DEATH_ID) in every real database, so inflicting it -- as this test
+  # briefly did by accident, before #inflict_state correctly started zeroing
+  # HP on landing it -- would fell the target on the very first swing and
+  # never reach the second at all.
   items = { 1 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [true, false],
                            state_set: [0, 0, 1, 0], state_chance: 100),  # element 1, state 3
             2 => fake_item(type: 1, atk: 40, hit: 100, attribute_set: [false, true],
@@ -18914,7 +20713,7 @@ check "battle: a two-weapon actor's swings each carry their own weapon's " \
   row = FakePlayerRow.new('Hero', '', 0, 5,
                           { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
   row.double_hand = true
-  db = FakeActorDB.new({ 1 => row }, [1], items)
+  db = FakeActorDB.new({ 1 => row }, [1], items, rpg2003: true)
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   actor = st.party.actor_by_id(1)
   st.party.gain_item(1, 1)
@@ -18932,6 +20731,76 @@ check "battle: a two-weapon actor's swings each carry their own weapon's " \
   ok first[:damage] < second[:damage], "swing 2's own element (2) is unscaled, unlike swing 1's"
   eq [3], first[:inflicted], "swing 1 only rolls its own weapon's state (3)"
   eq [4], second[:inflicted], "swing 2 only rolls its own weapon's state (4), not both"
+end
+
+check "battle: an RPG2000 two-weapon actor's swings both roll the merged " \
+      "max to-hit, never one weapon's own low roll" do
+  # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
+  # Normal::GetDefaultStyle (src/game_battlealgorithm.cpp) picks
+  # Style_Combined -- not Style_MultiHit -- whenever
+  # !Feature::HasRpg2k3BattleSystem() (a non-2003 database), and Init only
+  # ever sets weapon_style under Style_MultiHit; left at its initial -1,
+  # GetWeapon always returns WeaponAll, so Game_Actor::GetHitChance's
+  # ForEachEquipment (src/game_actor.cpp) folds in *both* equipped weapons'
+  # hit fields for *every* swing (`hit = std::max(hit, item.hit)`), never one
+  # specific slot's own roll. Same fixture as the RPG2003 check above (a
+  # hit-100 and a hit-10 weapon against a much nimbler target -- the low hit
+  # rate's own agi term would clamp to a guaranteed miss if it were rolled on
+  # its own), but with no `rpg2003: true` -- so both swings must land, using
+  # the merged 100 the same way #attack_hit_rate already reports for the
+  # actor as a whole.
+  items = { 1 => fake_item(type: 1, atk: 10, hit: 100), # the merged max
+            2 => fake_item(type: 1, atk: 10, hit: 10) } # would clamp to a guaranteed miss alone
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items) # rpg2003: false, the default
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  actor = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(actor, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(actor, 2, Game::Actor::SHIELD_SLOT)
+  hero = Game::Battle.from_actor(actor)
+  foe = combatant('Foe', 0, 0, 20, 999) # much nimbler than the hero's agi 10
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), {}, false, false, true)
+  first, second = bat.send(:swing, hero, foe)
+  ok !first[:missed], 'swing 1 rolls the merged 100, and lands'
+  ok !second[:missed], "swing 2 also rolls the merged 100, not the dagger's own 10 -- " \
+                        'RPG2000 never splits by weapon'
+end
+
+check "battle: an RPG2003 two-weapon actor's swing on a genuine 0%-hit " \
+      'weapon always misses, not defaulted to the 90% unarmed rate' do
+  # Same INT_MIN-sentinel distinction #attack_hit_rate's own fix already
+  # covers (see "a weapon with its own genuine 0% hit rate is used as-is,
+  # not treated as unequipped" above), now for the per-swing #swing_weapon_
+  # data/#weapon_roll_data path a two-weapon RPG2003 actor's second swing
+  # goes through. Confirmed against the same EasyRPG source: `Game_Actor::
+  # GetHitChance`'s `ForEachEquipment<true,false>(..., weapon)` call visits
+  # exactly one slot for a single-weapon query, so `hit = std::max(INT_MIN,
+  # item.hit) == item.hit` verbatim -- the `INT_MIN` fallback to 90 only
+  # ever fires when that slot holds no weapon at all, never when the
+  # equipped weapon's own `hit` field is a genuine 0.
+  items = { 1 => fake_item(type: 1, atk: 10, hit: 100), # always lands
+            2 => fake_item(type: 1, atk: 10, hit: 0) }  # cursed: never lands
+  row = FakePlayerRow.new('Hero', '', 0, 5,
+                          { max_hp: 100, max_mp: 30, atk: 10, def: 0, agi: 10 })
+  row.double_hand = true
+  db = FakeActorDB.new({ 1 => row }, [1], items, rpg2003: true)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  actor = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1)
+  st.party.gain_item(2, 1)
+  ok st.party.equip_from_bag(actor, 1, Game::Actor::WEAPON_SLOT)
+  ok st.party.equip_from_bag(actor, 2, Game::Actor::SHIELD_SLOT)
+  hero = Game::Battle.from_actor(actor)
+  foe = combatant('Foe', 0, 0, 20, 999) # much nimbler than the hero's agi 10
+  bat = Game::Battle.new([hero], [foe], Game::Rng.new(1), {}, false, false, true)
+  first, second = bat.send(:swing, hero, foe)
+  ok !first[:missed], 'swing 1 (hit 100) always lands'
+  eq true, second[:missed], "swing 2 (the cursed hit-0 weapon) always misses -- its own " \
+                            '0%, not the 90% unarmed default a masked 0 would fall back to'
 end
 
 check 'battle: #swing actually lands three attacks when strike_count is three, ' \
@@ -18982,6 +20851,69 @@ check 'a two-handed second weapon still empties the shield-turned-weapon hand\'s
   ok st.party.equip_from_bag(hero, 4, Game::Actor::SHIELD_SLOT), 'the claymore, into the second hand'
   eq 4, hero.equipment[1]
   eq 0, hero.equipment[0], 'the two-handed claymore still claims the other hand'
+end
+
+# The Change Equipment event command (#equip_item_from_bag) bypasses
+# #equip_candidates/#equip_candidate_for? entirely -- it names no slot at
+# all, unlike the equip menu -- so it needs its own dual-wield handling.
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandChangeEquipment` (src/game_interpreter.cpp) special-cases
+# `HasTwoWeapons()` before its own `ChangeEquipment` call: a shield-type
+# item is a complete no-op, and a weapon-type item redirects into the
+# shield slot when the weapon slot already holds a non-two-handed weapon
+# and the shield slot is empty, otherwise it falls through to the ordinary
+# weapon-slot overwrite. A prior version of #equip_item_from_bag equipped
+# purely by item type regardless of #double_hand?, so a Change Equipment
+# command handing a 二刀流 actor a second weapon overwrote the first
+# instead of filling the empty second slot, and handing one a shield
+# silently jammed it into the off-hand weapon slot instead of doing
+# nothing.
+check 'Change Equipment on a 二刀流 actor: a shield is a complete no-op' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(3, 1) # shield
+  ok !st.party.equip_item_from_bag(hero, 3), 'no-op, matching HasTwoWeapons()\'s continue'
+  eq 0, hero.equipment[Game::Actor::SHIELD_SLOT], 'nothing was equipped'
+  eq 1, st.party.item_count(3), 'and the shield was never even consumed from the bag'
+end
+
+check 'Change Equipment on a 二刀流 actor: a second weapon fills the empty ' \
+      'shield slot instead of overwriting the first' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 1) # sword
+  st.party.gain_item(2, 1) # dagger
+  ok st.party.equip_item_from_bag(hero, 1), 'first weapon: the ordinary weapon slot'
+  eq [1, 0], hero.equipment[0, 2]
+  ok st.party.equip_item_from_bag(hero, 2), 'second weapon: redirected into the shield slot'
+  eq [1, 2], hero.equipment[0, 2], 'both weapons on, neither overwriting the other'
+end
+
+check 'Change Equipment on a 二刀流 actor: the redirect does not fire once ' \
+      'the shield slot is already occupied, or the standing weapon is ' \
+      'two-handed' do
+  st = double_hand_party
+  hero = st.party.actor_by_id(1)
+  st.party.gain_item(1, 2) # two swords
+  st.party.gain_item(4, 1) # claymore (two-handed)
+  ok st.party.equip_item_from_bag(hero, 1), 'first sword: the ordinary weapon slot'
+  ok st.party.equip_item_from_bag(hero, 1), 'second sword: redirected into the now-empty shield slot'
+  eq [1, 1], hero.equipment[0, 2]
+  ok st.party.equip_item_from_bag(hero, 4), 'a third weapon overwrites the weapon slot -- the shield slot is full'
+  # The claymore is two-handed, so #equip_item's own pre-existing
+  # two-handed-clearing rule (unrelated to this fix) also empties the
+  # shield slot it now claims as its second hand.
+  eq [4, 0], hero.equipment[0, 2]
+
+  st2 = double_hand_party
+  hero2 = st2.party.actor_by_id(1)
+  st2.party.gain_item(4, 1) # claymore, two-handed
+  st2.party.gain_item(1, 1) # sword
+  ok st2.party.equip_item_from_bag(hero2, 4), 'the claymore, into the weapon slot'
+  eq [4, 0], hero2.equipment[0, 2]
+  ok st2.party.equip_item_from_bag(hero2, 1),
+     'a second weapon overwrites the two-handed claymore instead of redirecting'
+  eq [1, 0], hero2.equipment[0, 2]
 end
 
 # -- 装備固定 actors (equipment_fixed) -----------------------------------------

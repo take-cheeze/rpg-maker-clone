@@ -118,12 +118,17 @@ class RPG2k
           @slot_index %= @slots.size
           refresh_slot_cursor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::RIGHT)
+        # A solo party leaves RIGHT/LEFT silent no-ops -- confirmed against
+        # RPG_RT's own live source: `Scene_Equip::UpdateEquipSelection`
+        # (`src/scene_equip.cpp`) gates both branches on `actors.size() >
+        # 1`, not just the trigger itself, so a lone hero's Equip screen
+        # plays no cursor SE and rebuilds nothing on either key.
+        elsif party.size > 1 && Input.trigger?(Input::RIGHT)
           @actor_index += 1
           @actor_index %= party.size
           rebuild_for_actor
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::LEFT)
+        elsif party.size > 1 && Input.trigger?(Input::LEFT)
           @actor_index -= 1
           @actor_index %= party.size
           rebuild_for_actor
@@ -141,7 +146,7 @@ class RPG2k
             play_system_se(SFX_DECISION)
             @cand_index = 0
             @mode = :items
-            build_cand_window
+            build_cand_window # rebuilds the stats window's preview too, via #refresh_cand_cursor
           end
         end
       end
@@ -194,6 +199,7 @@ class RPG2k
           @cand_window.dispose
           @cand_window = nil
         end
+        build_stats_window
         refresh_desc
       end
 
@@ -236,7 +242,7 @@ class RPG2k
       def build_stats_window
         @stats_window.dispose if @stats_window
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = LINE_H * 3
+        h = LINE_H * (1 + STAT_DEFS.size)
         @stats_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
         @stats_window.z = 400
         @stats_window.windowskin = @skin
@@ -244,20 +250,97 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         a = actor
         c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  #{term(:level_short, 'Lv')} #{a.level}"
-        c.draw_text 0, LINE_H, inner_w, LINE_H,
-                    "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
-                    "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
-        c.draw_text 0, LINE_H * 2, inner_w, LINE_H,
-                    "#{term(:attack, 'Atk')} #{a.atk}  #{term(:defense, 'Def')} #{a.def}  " \
-                    "#{term(:mind, 'Int')} #{a.int}  #{term(:agility, 'Agi')} #{a.agi}"
+        draw_stat_row(c, a)
         @stats_window.contents = c
+      end
+
+      # RPG2000 term / equip-bonus field / actor-accessor / effective-stat
+      # method / state-flag quintuples for the four battle stats, in the
+      # order EasyRPG's own `Window_EquipStatus::DrawParameter`
+      # (`src/window_equipstatus.cpp`) draws them (Atk/Def/Spirit/Agility --
+      # this codebase's own `term(:mind, ...)`/`#int` name RPG2000's
+      # "Spirit" stat "Int" instead, matching status_menu.rb).
+      STAT_DEFS = [
+        [:attack, 'Atk', :atk_points1, :atk, :effective_atk, :affect_attack],
+        [:defense, 'Def', :def_points1, :def, :effective_def, :affect_defense],
+        [:mind, 'Int', :spi_points1, :int, :effective_int, :affect_spirit],
+        [:agility, 'Agi', :agi_points1, :agi, :effective_agi, :affect_agility]
+      ].freeze
+
+      # Four independent stat rows -- one "label value" per row while
+      # browsing the slot list, or, while browsing candidates, "label value
+      # > new_value" comparisons -- confirmed against EasyRPG's actual
+      # `Window_EquipStatus::Refresh`/`DrawParameter`
+      # (`src/window_equipstatus.cpp`), which draws the actor name once,
+      # then loops the four stats at `y_offset + ((12 + 4) * i)` -- a
+      # genuinely separate row per stat, each an old value, an arrow, and a
+      # new value coloured by `GetNewParameterColor` (0 unchanged / 2 up / 3
+      # down), never a single combined verdict for the whole item (see
+      # #build_cand_window's own history for the summed-arrow this
+      # replaced) and never sharing a row with any other stat.
+      def draw_stat_row(c, a)
+        previewing = @mode == :items
+        cand_id = previewing ? candidates[@cand_index].first : nil
+        STAT_DEFS.each_with_index do |(term_key, label, field, accessor,
+                                        effective_method, stat_flag), i|
+          y = LINE_H * (1 + i)
+          x = 0
+          # State-adjusted (halve/double), not the raw base+equip total --
+          # confirmed against RPG_RT's own live source: `Window_EquipStatus::
+          # DrawParameter` (`src/window_equipstatus.cpp`) draws
+          # `actor.GetAtk()` et al., which run the base value through
+          # `Game_Battler::AdjustParam` (`src/game_battler.cpp`) against
+          # whatever states the actor currently carries. `Game::Party
+          # #effective_atk`/`#effective_def`/`#effective_int`/`#effective_agi`
+          # already port this (built for skill formulas); this screen never
+          # called them.
+          value = @state.party.send(effective_method, a)
+          text = "#{term(term_key, label)} #{value}"
+          c.font.color = Color.new(255, 255, 255, 255)
+          w = c.text_size(text).width
+          c.draw_text x, y, w, LINE_H, text
+          x += w
+          if previewing
+            # The preview recomputes the new *base* total (this stat's own
+            # raw base+equip accessor plus the candidate's raw point delta,
+            # matching `#effective_atk` et al.'s own base+equip reading)
+            # and only then reapplies the state halve/double, exactly
+            # mirroring `Scene_Equip::UpdateStatusWindow` (`src/
+            # scene_equip.cpp`): it rebuilds `atk`/`def`/`spi`/`agi` from
+            # `GetBaseAtk(..., equip: false)` plus each equipped item's own
+            # point field, clamps, then calls
+            # `actor.CalcValueAfterAtkStates(atk)` -- the state adjustment
+            # is the last step, not folded additively into the raw delta.
+            delta = stat_field_delta(cand_id, field)
+            # Clamped to 1..999 (`Game::Actor::MAX_EFFECTIVE_STAT`, matching
+            # `scene_equip.cpp`'s own `actor.MaxStatBaseValue()`) *before*
+            # the state adjustment -- the reference's `Utils::Clamp(atk, 1,
+            # limit)` runs ahead of `CalcValueAfterAtkStates`, not after.
+            new_base = Game.clamp(a.send(accessor) + delta, 1,
+                                   Game::Actor::MAX_EFFECTIVE_STAT)
+            new_value = @state.party.adjust_stat(
+              new_base, @state.party.stat_mode(a, stat_flag)
+            )
+            arrow_w = c.text_size('>').width
+            draw_system_text c, x, y, arrow_w, LINE_H, '>', @skin, 1
+            x += arrow_w
+            new_text = new_value.to_s
+            new_w = c.text_size(new_text).width
+            # `Window_EquipStatus::GetNewParameterColor` (same file) compares
+            # the two *displayed* (state-adjusted) values, not the raw item
+            # delta's sign -- the two usually agree, but only this matches
+            # the reference at a clamp boundary or under a halving state.
+            color_idx = new_value == value ? 0 : (new_value > value ? 2 : 3)
+            draw_system_text c, x, y, new_w, LINE_H, new_text, @skin, color_idx
+          end
+        end
       end
 
       def build_slot_window
         @slot_window.dispose if @slot_window
         inner_w = SCREEN_W - Window::BORDER * 2
         h = @slots.size * LINE_H
-        y = DESC_H + LINE_H * 3 + Window::BORDER * 2
+        y = DESC_H + LINE_H * (1 + STAT_DEFS.size) + Window::BORDER * 2
         @slot_window = Window.new(0, y, SCREEN_W, h + Window::BORDER * 2)
         @slot_window.z = 400
         @slot_window.windowskin = @skin
@@ -279,35 +362,24 @@ class RPG2k
         refresh_desc
       end
 
-      # yado.tk: the equip-list comparison arrow is the *sum* of all four
-      # combat-stat deltas between a candidate and whatever currently
-      # occupies the slot, not four separate per-stat verdicts -- a weapon
-      # that trades -2 Atk for +3 Def still draws a single Up arrow (net +1),
-      # never a mixed per-stat readout. The four fields are RPG2000's own
-      # "points1" equip-bonus set (`Game::Actor::EQUIP_BONUS_FIELD`'s combat
-      # quarter -- max HP/SP have no comparison arrow, only the four battle
-      # stats do).
+      # RPG2000's own "points1" equip-bonus set (`Game::Actor::
+      # EQUIP_BONUS_FIELD`'s combat quarter -- max HP/SP have no comparison
+      # preview, only the four battle stats do), in `STAT_DEFS`' own order.
       STAT_POINT_FIELDS = [:atk_points1, :def_points1, :spi_points1, :agi_points1].freeze
 
-      # The summed equip-bonus points of item `id` (0 for an empty slot, a
-      # missing database row, or a fixture item lacking these fields).
-      def item_stat_sum(id)
+      # Item `id`'s raw `field` value (0 for an empty slot, a missing
+      # database row, or a fixture item lacking the field).
+      def item_stat(id, field)
         return 0 if id.nil? || id == 0
         row = @state.party.db_item(id)
         return 0 unless row
-        STAT_POINT_FIELDS.reduce(0) do |s, f|
-          s + ((row.respond_to?(f) ? row.send(f) : nil) || 0)
-        end
+        (row.respond_to?(field) ? row.send(field) : nil) || 0
       end
 
-      # '^' the candidate's combined stat points beat what is equipped now,
-      # 'v' it falls short, '-' the two are equal (RPG_RT draws small
-      # triangle icons here; plain glyphs stand in since this build has no
-      # icon-cell blit for them yet).
-      def equip_compare_arrow(delta)
-        return '^' if delta > 0
-        return 'v' if delta < 0
-        '-'
+      # The summed equip-bonus points of item `id` across all four battle
+      # stats -- #equip_delta's own total, kept for that method's use.
+      def item_stat_sum(id)
+        STAT_POINT_FIELDS.reduce(0) { |s, f| s + item_stat(id, f) }
       end
 
       # The other hand's own current item id when browsing the weapon (0) or
@@ -321,9 +393,9 @@ class RPG2k
         end
       end
 
-      # The candidate's real net stat-point delta against what is equipped
-      # now -- not just the two items landing in *this* slot. Confirmed
-      # against EasyRPG's actual C++ source: `Scene_Equip::
+      # The candidate's real net delta for one raw database `field` against
+      # what is equipped now -- not just the two items landing in *this*
+      # slot. Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
       # UpdateStatusWindow` (`src/scene_equip.cpp`) also subtracts the
       # *other* hand's item when either it or the candidate is a 両手持ち
       # weapon (`Actor#two_handed?`), since equipping either one forces the
@@ -331,14 +403,23 @@ class RPG2k
       # `#free_two_handed_slot` already applies for real, which this preview
       # ignored (id 0, "Remove", never triggers it either way, matching
       # EasyRPG's own `current_item &&` guard -- removing an item never
-      # forces anything off the other hand).
-      def equip_delta(id)
-        delta = item_stat_sum(id) - item_stat_sum(actor.equipment[@slot_index])
+      # forces anything off the other hand). #draw_stat_row calls this once
+      # per battle stat; #equip_delta below is its sum across all four.
+      def stat_field_delta(id, field)
+        delta = item_stat(id, field) - item_stat(actor.equipment[@slot_index], field)
         other = other_hand_item
         if id != 0 && other && (actor.two_handed?(other) || actor.two_handed?(id))
-          delta -= item_stat_sum(other)
+          delta -= item_stat(other, field)
         end
         delta
+      end
+
+      # The candidate's combined net stat-point delta across all four battle
+      # stats -- #stat_field_delta summed, not a display value in its own
+      # right any more (see #draw_stat_row's per-stat preview, which replaced
+      # the single summed comparison arrow this method used to drive).
+      def equip_delta(id)
+        STAT_POINT_FIELDS.reduce(0) { |s, f| s + stat_field_delta(id, f) }
       end
 
       def build_cand_window
@@ -356,9 +437,7 @@ class RPG2k
           if id == 0
             c.draw_text 0, i * LINE_H, inner_w, LINE_H, "(Remove)"
           else
-            c.draw_text 0, i * LINE_H, inner_w - 80, LINE_H, item_name(id)
-            c.draw_text inner_w - 80, i * LINE_H, 40, LINE_H,
-                        equip_compare_arrow(equip_delta(id))
+            c.draw_text 0, i * LINE_H, inner_w - 40, LINE_H, item_name(id)
             c.draw_text inner_w - 40, i * LINE_H, 40, LINE_H, ":#{count}"
           end
         end
@@ -370,6 +449,7 @@ class RPG2k
         return unless @cand_window
         @cand_window.cursor_rect =
           Rect.new(0, @cand_index * LINE_H, @cand_window.contents.width, LINE_H)
+        build_stats_window
         refresh_desc
       end
     end

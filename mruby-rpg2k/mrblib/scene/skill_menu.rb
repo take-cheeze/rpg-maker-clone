@@ -104,10 +104,16 @@ class RPG2k
           move_skill_cursor(COLUMN_MAX)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_skill_cursor(-COLUMN_MAX)
+        # Right/Left cross a row boundary rather than stopping at the row's
+        # own edge -- see Scene::ItemMenu#update_items's identical comment
+        # (confirmed directly against `Window_Selectable::Update`,
+        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # bounded only by the list's own absolute start/end, no row-boundary
+        # check, unlike Down/Up's genuine column-lock).
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
-          move_skill_cursor(1) if (@skill_index + 1) % COLUMN_MAX != 0
+          move_skill_cursor(1)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
-          move_skill_cursor(-1) if @skill_index % COLUMN_MAX != 0
+          move_skill_cursor(-1)
         elsif Input.trigger?(Input::C)
           choose_skill
         end
@@ -138,18 +144,28 @@ class RPG2k
         # (`IsSkillLearned && IsSkillUsable`, `src/window_skill.cpp`) before
         # playing any SE or pushing `Scene_ActorTarget`/dispatching a
         # switch skill at all; the `else` (disabled) branch just buzzes and
-        # stays on the list. `#skills` (`Game::Party#field_skills`) already
-        # filters the listing by `#field_skill?` -- the same per-type
-        # availability `Algo::IsSkillUsable` covers on the reference's own
-        # `IsSkillUsable` -- so `Game::Party#can_cast?` (affordability, the
-        # 封印/Silence seal, weapon-Attribute gating) is everything left to
-        # check here, the same predicate `Game_Battler::IsSkillUsable`'s own
-        # pre-`Algo::IsSkillUsable` checks cover. Previously nothing gated
-        # this at all: choosing an unaffordable or sealed skill still played
-        # Decision and opened the full target-confirm screen (or, for a
-        # switch skill, cast it outright), with the failure only ever
-        # surfacing afterward as #apply_skill's "It had no effect." message.
-        if @state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)
+        # stays on the list. `#skills` (`Game::Party#field_skills`) now
+        # lists a known skill unconditionally -- confirmed against
+        # `Window_Skill::CheckInclude`, trivially `true` outside battle with
+        # no per-type filter at all, a fact this comment previously got
+        # backwards (claiming `#field_skill?` already covered per-type
+        # availability the way `IsSkillUsable`/`CheckEnable` actually does)
+        # -- so every one of `IsSkillUsable`'s checks needs covering here:
+        # `Game::Party#can_cast?` (affordability, the 封印/Silence seal,
+        # weapon-Attribute gating -- `Game_Battler::IsSkillUsable`'s own
+        # pre-`Algo::IsSkillUsable` checks) plus, for the two types
+        # `Algo::IsSkillUsable` special-cases, `#escape_skill_available?`/
+        # `#teleport_skill_available?` (access, a registered target, not
+        # flying).
+        unavailable =
+          (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
+          (sk && sk.type == Game::Party::SKILL_ESCAPE &&
+           @state.party.respond_to?(:escape_skill_available?) &&
+           !@state.party.escape_skill_available?(@state)) ||
+          (sk && sk.type == Game::Party::SKILL_TELEPORT &&
+           @state.party.respond_to?(:teleport_skill_available?) &&
+           !@state.party.teleport_skill_available?(@state))
+        if unavailable
           play_system_se(SFX_BUZZER)
           return
         end
@@ -215,32 +231,59 @@ class RPG2k
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
-          play_system_se(SFX_DECISION)
           apply_skill(@pending_skill, party[@target_index])
         end
       end
 
-      # A cast that changed nothing plays Buzzer rather than a second Decision
-      # -- see Scene::ItemMenu#apply_item's identical reasoning.
+      # A cast that changed nothing plays Buzzer rather than the skill's own
+      # animation SE -- see Scene::ItemMenu#apply_item's identical reasoning.
+      # A *successful* cast stays on this same target screen too, exactly
+      # like a no-effect one -- confirmed against RPG_RT's own live source:
+      # `Scene_ActorTarget::UpdateSkill` (`src/scene_actortarget.cpp`) never
+      # calls `Scene::Pop()` on Decision, success or failure alike; the only
+      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # `#cast_skill`'s own affordability gate already answers what happens
+      # on a repeat cast once SP runs out (an empty `affected`, the same
+      # Buzzer path), matching the reference's own SP/HP check ahead of
+      # `UseSkill` -- unaffordable buzzes, it does not auto-exit either.
+      #
+      # No confirmation message either way -- `UpdateSkill`'s own success/
+      # failure branches only ever call `SePlay`/`Refresh`, playing the
+      # skill's own `animation_id`-derived SE (`#play_animation_se`) on
+      # success, never building a message window; this class used to show
+      # "X casts Y!"/"It had no effect." here (and `#update_target` played a
+      # Decision-click SE ahead of every cast, matching neither branch), a
+      # fabricated dialog this runtime invented that also forced an extra
+      # dismiss press before the next target could be picked.
       def apply_skill(sid, target)
         affected = @state.party.cast_skill(caster, sid, target)
         if affected.empty?
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         else
-          show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+          sk = @state.party.db_skill(sid)
+          play_animation_se(sk && sk.animation_id)
         end
       end
 
       # A switch skill (type 3) spends its SP and turns on a game switch, with
       # nothing to target. This is how a Nepheshel player summons and dismisses a
       # companion — the switch is what its common event watches.
+      # A successful cast closes the whole menu stack at once, exactly like
+      # Scene::ItemMenu#apply_switch_item and this same class's own
+      # #apply_escape_skill just below -- confirmed against RPG_RT's own
+      # live source: `Scene_Skill::vUpdate`'s `Type_switch` arm
+      # (`src/scene_skill.cpp`) plays the skill's own sound effect and calls
+      # `Scene::PopUntil(Scene::Map)` on the very same Decision press, with
+      # no confirmation message at all -- the identical shape as `Type_
+      # escape` right below it, not the ordinary target-mode cast's
+      # stay-open-and-show-a-message flow (`Algo::IsNormalOrSubskill`'s own
+      # arm, which pushes a `Scene_ActorTarget` instead).
       def apply_switch_skill(sid)
         switch = @state.party.cast_switch_skill(caster, sid)
         if switch
           @state.switches[switch] = true
           play_skill_sound_effect(sid)
-          show_message("#{caster.name} casts #{skill_name(sid)}!", :cast)
+          @parent.pop_to_map
         else
           play_system_se(SFX_BUZZER)
           show_message("It had no effect.")
@@ -267,6 +310,11 @@ class RPG2k
         $stderr.puts "[RPG2k] skill SE '#{name}' playback failed: #{e.message}"
       end
 
+      # Back to the skill list, rebuilt so it reflects whatever changed while
+      # target mode was open (SP fell; a now-unaffordable skill drops out) --
+      # only reached via Cancel now that a successful cast no longer forces
+      # this on its own (see #apply_skill). Keeps the cursor in range if the
+      # list shrank.
       def leave_target
         @pending_skill = nil
         @target_lock = nil
@@ -275,29 +323,61 @@ class RPG2k
           @target_window.dispose
           @target_window = nil
         end
+        @skills = nil
+        @skill_index = skills.size - 1 if @skill_index >= skills.size
+        @skill_index = 0 if @skill_index < 0
+        build_skill_window
         refresh_desc
       end
 
+      # The destination list is a two-column grid too, not a single stacked
+      # column -- confirmed against genuine RPG_RT's own live source:
+      # `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2`
+      # (`Window_Selectable`'s `wrap_limit` default is also 2, the exact
+      # threshold `Window_Selectable::Update`'s RIGHT/LEFT handling gates on),
+      # the identical shape this class's own skill list already ports (see
+      # `COLUMN_MAX`'s comment). With exactly two destinations, DOWN/UP are
+      # no-ops (nothing in the row below/above) and RIGHT reaches the second
+      # one -- not DOWN, which this scene wrongly wired to a single-column
+      # modulo wrap with no RIGHT/LEFT handling at all.
       def update_teleport_target
         targets = teleport_targets
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_teleport_target
-        elsif (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !targets.empty?
-          @teleport_index += 1
-          @teleport_index %= targets.size
-          refresh_teleport_cursor
-          play_system_se(SFX_CURSOR)
-        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !targets.empty?
-          @teleport_index -= 1
-          @teleport_index %= targets.size
-          refresh_teleport_cursor
-          play_system_se(SFX_CURSOR)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          move_teleport_cursor(COLUMN_MAX)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          move_teleport_cursor(-COLUMN_MAX)
+        # Right/Left cross a row boundary rather than stopping at the row's
+        # own edge -- the same fix as #update_skills's identical RIGHT/LEFT
+        # handling (confirmed directly against `Window_Selectable::Update`,
+        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # bounded only by the list's own absolute start/end, no
+        # row-boundary check), never propagated to this sibling list when
+        # that one was corrected.
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          move_teleport_cursor(1)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          move_teleport_cursor(-1)
         elsif Input.trigger?(Input::C) && !targets.empty?
           play_system_se(SFX_DECISION)
           map_id, = targets[@teleport_index]
           apply_teleport_skill(@pending_skill, map_id)
         end
+      end
+
+      # Move the teleport-target cursor by `delta` grid cells, ignored if that
+      # cell is off the grid -- mirrors #move_skill_cursor exactly (see its
+      # own comment).
+      def move_teleport_cursor(delta)
+        targets = teleport_targets
+        return if targets.empty?
+        target = @teleport_index + delta
+        return if target < 0 || target >= targets.size
+        @teleport_index = target
+        refresh_teleport_cursor
+        play_system_se(SFX_CURSOR)
       end
 
       # Escape (type 1) warps to the single registered escape target with no
@@ -352,14 +432,6 @@ class RPG2k
 
       # After a successful cast, drop back to the skill list and rebuild it (SP
       # fell; a now-unaffordable skill drops out).
-      def refresh_after_cast
-        leave_target
-        @skills = nil
-        @skill_index = skills.size - 1 if @skill_index >= skills.size
-        @skill_index = 0 if @skill_index < 0
-        build_skill_window
-      end
-
       # Column width for the skill grid (see Scene::ItemMenu#item_col_w,
       # which this mirrors).
       def skill_col_w
@@ -506,11 +578,18 @@ class RPG2k
         name.nil? || name.empty? ? "Map #{map_id}" : name
       end
 
+      # Column width for the teleport-destination grid (see #update_teleport_target's
+      # grid comment above; identical formula to #skill_col_w).
+      def teleport_col_w
+        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+      end
+
       def build_teleport_window
         @teleport_window.dispose if @teleport_window
         rows = teleport_targets
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = [rows.size, 1].max * LINE_H
+        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
+        h = grid_rows * LINE_H
         @teleport_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
                                       SCREEN_W, h + Window::BORDER * 2)
         @teleport_window.z = 450
@@ -520,8 +599,11 @@ class RPG2k
         if rows.empty?
           c.draw_text 0, 0, inner_w, LINE_H, "No destinations"
         else
+          col_w = teleport_col_w
           rows.each_with_index do |(_id, name), i|
-            c.draw_text 0, i * LINE_H, inner_w, LINE_H, name
+            x = (i % COLUMN_MAX) * col_w
+            y = (i / COLUMN_MAX) * LINE_H
+            c.draw_text x, y, col_w, LINE_H, name
           end
         end
         @teleport_window.contents = c
@@ -531,18 +613,17 @@ class RPG2k
       def refresh_teleport_cursor
         return unless @teleport_window
         h = teleport_targets.empty? ? 0 : LINE_H
-        @teleport_window.cursor_rect =
-          Rect.new(0, @teleport_index * LINE_H, @teleport_window.contents.width, h)
+        x = (@teleport_index % COLUMN_MAX) * teleport_col_w
+        y = (@teleport_index / COLUMN_MAX) * LINE_H
+        @teleport_window.cursor_rect = Rect.new(x, y, teleport_col_w, h)
       end
 
       def drive_message
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        done = @message[:done]
         close_message
-        refresh_after_cast if done == :cast
       end
 
-      def show_message(text, done = nil)
+      def show_message(text)
         return if @message
         w = SCREEN_W - 40
         win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
@@ -552,7 +633,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
-        @message = { window: win, done: done }
+        @message = { window: win }
       end
 
       def close_message

@@ -105,6 +105,7 @@ class RPG2k
         @background.dispose if @background
         @command.dispose if @command
         @status.dispose if @status
+        @gold.dispose if @gold
       end
 
       # Hide this menu's own command list and status panel while a child
@@ -118,13 +119,23 @@ class RPG2k
       def suspend
         @command.visible = false if @command
         @status.visible = false if @status
+        @gold.visible = false if @gold
       end
 
       # Undo #suspend once the child screen above this menu is popped and it
-      # is active again -- called by RPG2k#pop.
+      # is active again -- called by RPG2k#pop. Redraws the gold panel too,
+      # matching EasyRPG's own `Scene_Menu::Continue` (`src/scene_menu.cpp`),
+      # which unconditionally calls `gold_window->Refresh()` (alongside the
+      # status panel's own `menustatus_window->Refresh()`, already mirrored
+      # by #refresh_status_cursor/rebuilds elsewhere) every time control
+      # returns from a popped child screen.
       def resume
         @command.visible = true if @command
         @status.visible = true if @status
+        if @gold
+          @gold.visible = true
+          draw_gold_window
+        end
       end
 
       def update
@@ -260,10 +271,12 @@ class RPG2k
       end
 
       # The Wait command row's label: `wait_on` while the fight is set to
-      # pause on its command menu (wait mode), `wait_off` once it is active.
-      # Defaults match the terms' own RPG2003 defaults ("Wait: On" / "Wait: Off").
+      # pause on its command menu (wait mode, raw `atb_mode` 1), `wait_off`
+      # once it is active (raw 0, the default) -- confirmed against
+      # EasyRPG's own `Scene_Menu` Wait row (`src/scene_menu.cpp`):
+      # `GetAtbMode() == AtbMode_atb_wait ? wait_on : wait_off`.
       def wait_label
-        @state.atb_mode == 1 ? term(:wait_off, 'Wait Off') : term(:wait_on, 'Wait On')
+        @state.atb_mode == 1 ? term(:wait_on, 'Wait On') : term(:wait_off, 'Wait Off')
       end
 
       def build_windows
@@ -272,10 +285,7 @@ class RPG2k
         @command.z = 400
         @command.windowskin = @skin
         cc = Bitmap.new(cw - Window::BORDER * 2, @commands.size * LINE_H)
-        cc.font.color = Color.new(255, 255, 255, 255)
-        @commands.each_with_index do |(_key, label), i|
-          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, label
-        end
+        draw_command_labels(cc)
         @command.contents = cc
         refresh_cursor
 
@@ -302,6 +312,34 @@ class RPG2k
         # while a window is inactive, the same mechanism the command list's
         # own cursor disappears through once focus leaves it.
         @status.active = false
+
+        build_gold_window
+      end
+
+      # The party's own Gold, bottom-left corner -- confirmed against
+      # RPG_RT's own live source: `Scene_Menu::Start` (`src/scene_menu.cpp`)
+      # creates a `Window_Gold` there unconditionally (88x32, no version or
+      # feature gate anywhere in the file), for both RPG2000 and RPG2003
+      # alike. `Window_Gold::Refresh` (`src/window_gold.cpp`) draws the
+      # amount then the `gold` term via `DrawCurrencyValue`
+      # (`src/window_base.cpp`) -- the identical no-space "amount then term"
+      # rendering `Scene::StatusMenu`'s own Gold line already uses.
+      GOLD_WINDOW_W = 88
+      GOLD_WINDOW_H = 32
+
+      def build_gold_window
+        @gold = Window.new(0, SCREEN_H - GOLD_WINDOW_H, GOLD_WINDOW_W, GOLD_WINDOW_H)
+        @gold.z = 400
+        @gold.windowskin = @skin
+        draw_gold_window
+      end
+
+      def draw_gold_window
+        inner_w = GOLD_WINDOW_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, LINE_H, "#{@state.party.gold}#{term(:gold, 'G')}"
+        @gold.contents = c
       end
 
       def refresh_cursor
@@ -319,11 +357,52 @@ class RPG2k
       def redraw_command_labels
         cc = @command.contents
         cc.clear
-        cc.font.color = Color.new(255, 255, 255, 255)
-        @commands.each_with_index do |(_key, label), i|
-          cc.draw_text 0, i * LINE_H + 2, cc.width, LINE_H, label
-        end
+        draw_command_labels(cc)
         refresh_cursor
+      end
+
+      # Whether command `key`'s row should read the windowskin's own
+      # *disabled* swatch instead of its default text colour -- confirmed
+      # directly against RPG_RT's live source: `Scene_Menu::
+      # CreateCommandWindow` (`src/scene_menu.cpp`) disables Save on
+      # `!GetAllowSave()`, Order on `GetActors().size() <= 1`, and every
+      # other command (Item/Skill/Equipment/Status/Row) on
+      # `GetActors().empty()` -- Wait/Quit/Settings/Debug are never
+      # disabled. The exact same three gates `#select_command` above
+      # already enforces as buzzer-and-refuse *behaviour*; this is only the
+      # missing visual cue RPG_RT shows before the player even tries.
+      def command_disabled?(key)
+        case key
+        when :save then !@state.save_access
+        when :order then @state.party.actors.size <= 1
+        when :item, :skill, :equip, :status, :row then @state.party.actors.empty?
+        else false
+        end
+      end
+
+      # Draw every command row into `cc`, in the windowskin's own default
+      # text colour or its *disabled* swatch (system-colour index 3) per
+      # `#command_disabled?` -- confirmed against RPG_RT's live source:
+      # `Window_Command::SetItemEnabled`/`DrawItem` (`src/window_command.cpp`)
+      # always draws a disabled row through `Font::ColorDisabled` (swatch
+      # index 3, `src/font.h`), the same windowskin-blended path every
+      # enabled row uses, not a hardcoded flat gray -- a custom windowskin
+      # whose disabled swatch is tinted shows that tint on real RPG_RT, the
+      # same rule already ported for `Scene::Title`'s Continue and
+      # `Scene::SaveLoad`'s file rows. `draw_system_text`'s own no-windowskin
+      # fallback (plain `draw_text` in the current font colour) still
+      # supplies the flat gray when there is no skin to sample.
+      def draw_command_labels(cc)
+        @commands.each_with_index do |(key, label), i|
+          y = i * LINE_H + 2
+          if command_disabled?(key)
+            cc.font.color = Color.new(128, 128, 128, 255)
+            draw_system_text cc, 0, y, cc.width, LINE_H, label, @skin, 3
+          else
+            cc.font.color = Color.new(255, 255, 255, 255)
+            draw_system_text cc, 0, y, cc.width, LINE_H, label, @skin
+          end
+        end
       end
 
       # Height of one party-status row (see #build_windows's own `y = i *

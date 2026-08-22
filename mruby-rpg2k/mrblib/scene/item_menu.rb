@@ -29,12 +29,16 @@ class RPG2k
       # confirmed against genuine RPG_RT under wine with a five-item bag,
       # which filled row-major (item 0 top-left, item 1 top-right, item 2
       # second row left, ...) and left an incomplete last row's second cell
-      # blank rather than reflowing. Cursor movement is grid-aware and does
-      # not wrap at an edge (EasyRPG's own Window_Selectable::CursorDown/Up/
-      # Right/Left shape, `cycle` off): DOWN/UP move by COLUMN_MAX and are a
-      # no-op with no cell below/above (tried pressing DOWN off the last,
-      # partial row -- the cursor simply stayed), RIGHT/LEFT move by one and
-      # are a no-op at the row's own edge.
+      # blank rather than reflowing. Cursor movement is grid-aware but not
+      # symmetric between axes -- confirmed directly against EasyRPG's own
+      # `Window_Selectable::Update` (`src/window_selectable.cpp`), which has
+      # no method actually named `CursorDown`/`Up`/`Right`/`Left`: DOWN/UP
+      # move by COLUMN_MAX and are genuinely column-locked, a no-op with no
+      # cell below/above (tried pressing DOWN off the last, partial row --
+      # the cursor simply stayed); RIGHT/LEFT move by one, bounded only by
+      # the list's own absolute start/end, with no row-boundary check at
+      # all -- RIGHT off a row's last cell flows into the next row's first
+      # cell (and LEFT the mirror), rather than stopping at the row's edge.
       COLUMN_MAX = 2
 
       def initialize parent, state
@@ -99,10 +103,21 @@ class RPG2k
           move_item_cursor(COLUMN_MAX)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_item_cursor(-COLUMN_MAX)
+        # Right/Left cross a row boundary rather than stopping at the row's
+        # own edge -- confirmed directly against RPG_RT's live source:
+        # `Window_Selectable::Update` (`src/window_selectable.cpp`) has no
+        # method actually named `CursorRight`/`CursorLeft`; its real Right/
+        # Left branches are a flat `index +- 1`, bounded only by the list's
+        # own absolute start/end (`index < item_max - 1` / `index > 0`),
+        # structurally unlike Down/Up (genuinely column-locked there,
+        # `index < item_max - column_max`). #move_item_cursor's own bound
+        # (`target < 0 || target >= items.size`) already matches this
+        # exactly -- the row-edge guard removed here was the only thing
+        # stopping Right/Left short of it.
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
-          move_item_cursor(1) if (@item_index + 1) % COLUMN_MAX != 0
+          move_item_cursor(1)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
-          move_item_cursor(-1) if @item_index % COLUMN_MAX != 0
+          move_item_cursor(-1)
         elsif Input.trigger?(Input::C)
           choose_item
         end
@@ -126,41 +141,97 @@ class RPG2k
           play_system_se(SFX_BUZZER)
           return
         end
-        play_system_se(SFX_DECISION)
         id, = items[@item_index]
         it = @state.party.db_item(id)
+        sk = (it && (it.type == Game::Party::ITEM_SPECIAL ||
+                    (it.use_skill && (1..5).cover?(it.type)))) ?
+               @state.party.db_skill(it.skill_id) : nil
+        # Only a genuine type-9 special item warps for an Escape/Teleport
+        # skill (or is buzzer-gated on access/target before it even tries)
+        # -- confirmed against genuine RPG_RT's own live source:
+        # `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its whole
+        # ReserveTeleport/Scene_Teleport dispatch behind `item.type ==
+        # Type_special`; a `use_skill`-flagged weapon/shield/armor/helmet/
+        # accessory item (schema field 71) invoking the very same skill type
+        # always falls to the generic `else` branch there instead (a plain
+        # `Scene_ActorTarget` push), and `Game_Battler::UseSkill`'s own
+        # Escape/Teleport branch for it plays only the skill's sound effect,
+        # no warp at all (see `#use_special_escape_item`'s own citation).
+        # `#use_equip_skill_item` already mirrors that exact "SE only, no
+        # warp" outcome once a target is confirmed (see its own doc), so
+        # this scene needs no special dispatch for that case beyond the
+        # ordinary `#prompt_item_target` every other targeted item already
+        # takes. This used to route a use_skill equipment item through the
+        # special-item Escape/Teleport branches too, which let it warp the
+        # party for free -- something real RPG_RT never does for such an
+        # item. A Switch-type skill is unaffected either way: `Game_Battler
+        # ::UseSkill`'s Switch branch flips the switch through the same
+        # shared `do_skill` path for both item kinds, which `#apply_special
+        # _switch_item`/`#use_special_switch_item` below already gets right
+        # for both.
+        special = it && it.type == Game::Party::ITEM_SPECIAL
+        # An Escape/Teleport-invoking special item is always listed (see
+        # Game::Party#field_skill?, which #field_usable?'s special-item
+        # branch now defers to) but only castable once access and a
+        # registered target are there. Confirmed against RPG_RT's own live
+        # source: `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its
+        # *entire* per-type dispatch behind `item_window->CheckEnable
+        # (item_id)` before ever reaching the Escape/Teleport branches --
+        # disabled plays only the buzzer and returns, no attempt, no
+        # message, exactly like an unavailable skill in
+        # Scene::SkillMenu#choose_skill. Left to #apply_escape_item /
+        # #apply_teleport_item's own nil-return fallback instead, this would
+        # show a fabricated "It had no effect." message and a stray
+        # Decision-then-Buzzer double beep that RPG_RT never produces for a
+        # disabled entry.
+        if special && sk && sk.type == Game::Party::SKILL_ESCAPE &&
+           @state.party.respond_to?(:escape_skill_available?) &&
+           !@state.party.escape_skill_available?(@state)
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        if special && sk && sk.type == Game::Party::SKILL_TELEPORT &&
+           @state.party.respond_to?(:teleport_skill_available?) &&
+           !@state.party.teleport_skill_available?(@state)
+          play_system_se(SFX_BUZZER)
+          return
+        end
+        play_system_se(SFX_DECISION)
         # A switch item has no actor target; an all-ally medicine skips the
         # target prompt; single-target medicines / skill books ask who to use on.
         # A special item follows the *skill* it invokes, since that is what
         # decides the scope — self (2) or all-ally (4) needs no prompt.
         if it && it.type == Game::Party::ITEM_SWITCH
           apply_switch_item(id)
-        elsif it && (it.type == Game::Party::ITEM_SPECIAL ||
-                    (it.use_skill && (1..5).cover?(it.type)))
-          # A type-9 special item, or an equipment item flagged `use_skill`
-          # (schema field 71), both invoke the skill named in `skill_id`: the
-          # invoked skill's type/scope decides the dispatch, so a self (2) or
-          # all-ally (4) skill needs no target prompt and an Escape/Teleport
-          # skill warps. Mirrors the special-item path exactly (see the
-          # type-9 fixes above); an equipment item simply reaches the same
-          # `#use_equip_skill_item` / `#use_special_escape_item` /
-          # `#use_special_teleport_item` backing as it already does for an
-          # ordinary targeted cast.
-          sk = @state.party.db_skill(it.skill_id)
-          if sk && sk.type == Game::Party::SKILL_ESCAPE
-            # Escape has one registered target and no picker -- mirroring
-            # Scene::SkillMenu#apply_escape_skill, a successful cast warps
-            # straight there with no confirmation message.
-            apply_escape_item(id)
-          elsif sk && sk.type == Game::Party::SKILL_TELEPORT
-            # Teleport opens a third list of every registered destination, the
-            # same as Scene::SkillMenu's own teleport picker.
-            @pending_item = id
-            @mode = :teleport_target
-            @teleport_index = 0
-            build_teleport_window
-            refresh_desc
-          elsif sk && (sk.scope == 2 || sk.scope == 4)
+        elsif sk && special && sk.type == Game::Party::SKILL_ESCAPE
+          # Escape has one registered target and no picker -- mirroring
+          # Scene::SkillMenu#apply_escape_skill, a successful cast warps
+          # straight there with no confirmation message. Genuine special
+          # items only -- see this method's own doc comment above.
+          apply_escape_item(id)
+        elsif sk && special && sk.type == Game::Party::SKILL_TELEPORT
+          # Teleport opens a third list of every registered destination, the
+          # same as Scene::SkillMenu's own teleport picker. Genuine special
+          # items only -- see this method's own doc comment above.
+          @pending_item = id
+          @mode = :teleport_target
+          @teleport_index = 0
+          build_teleport_window
+          refresh_desc
+        elsif sk
+          if sk.type == Game::Party::SKILL_SWITCH
+            # A switch skill has no target and no confirmation message either
+            # -- mirroring Scene::SkillMenu#apply_switch_skill, a successful
+            # cast closes the whole menu stack at once. Both item kinds take
+            # this branch -- see this method's own doc comment above.
+            apply_special_switch_item(id)
+          elsif sk.type == Game::Party::SKILL_ESCAPE || sk.type == Game::Party::SKILL_TELEPORT
+            # A use_skill equipment item invoking Escape/Teleport: no warp,
+            # no picker of its own -- the ordinary single-target prompt
+            # below, exactly like ordinary equipment (see this method's own
+            # doc comment above and #use_equip_skill_item's).
+            prompt_item_target(id)
+          elsif sk.scope == 2 || sk.scope == 4
             # Unlike a medicine (whose all-ally scope needs no actor at all --
             # #use_medicine reads the whole party off `@actors`, ignoring the
             # argument), a special item's `actor` argument is the *caster*
@@ -257,6 +328,21 @@ class RPG2k
         end
       end
 
+      # The same for a special item invoking a Switch-type skill: no target,
+      # no confirmation message -- a successful cast closes the whole menu
+      # stack at once, matching Scene::SkillMenu#apply_switch_skill (and
+      # this scene's own #apply_switch_item, the plain switch-item case).
+      def apply_special_switch_item(id)
+        switch = @state.party.use_special_switch_item(id, @state.party.leader)
+        if switch
+          @state.switches[switch] = true
+          @parent.pop_to_map
+        else
+          play_system_se(SFX_BUZZER)
+          show_message("It had no effect.")
+        end
+      end
+
       # The same for a Teleport-type skill, once a destination is chosen from
       # the list built by #build_teleport_window.
       def apply_teleport_item(id, map_id)
@@ -278,26 +364,54 @@ class RPG2k
         @parent.pop_to_map
       end
 
+      # The destination list is a two-column grid too, not a single stacked
+      # column -- confirmed against genuine RPG_RT's own live source:
+      # `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2`
+      # (`Window_Selectable`'s `wrap_limit` default is also 2, the exact
+      # threshold `Window_Selectable::Update`'s RIGHT/LEFT handling gates on),
+      # the identical shape this class's own item list already ports (see
+      # `COLUMN_MAX`'s comment). With exactly two destinations, DOWN/UP are
+      # no-ops (nothing in the row below/above) and RIGHT reaches the second
+      # one -- not DOWN, which this scene wrongly wired to a single-column
+      # modulo wrap with no RIGHT/LEFT handling at all.
       def update_teleport_target
         targets = teleport_targets
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           leave_teleport_target
-        elsif (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !targets.empty?
-          @teleport_index += 1
-          @teleport_index %= targets.size
-          refresh_teleport_cursor
-          play_system_se(SFX_CURSOR)
-        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !targets.empty?
-          @teleport_index -= 1
-          @teleport_index %= targets.size
-          refresh_teleport_cursor
-          play_system_se(SFX_CURSOR)
+        elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
+          move_teleport_cursor(COLUMN_MAX)
+        elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
+          move_teleport_cursor(-COLUMN_MAX)
+        # Right/Left cross a row boundary rather than stopping at the row's
+        # own edge -- the same fix as #update_items's identical RIGHT/LEFT
+        # handling (confirmed directly against `Window_Selectable::Update`,
+        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # bounded only by the list's own absolute start/end, no
+        # row-boundary check), never propagated to this sibling list when
+        # that one was corrected.
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          move_teleport_cursor(1)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          move_teleport_cursor(-1)
         elsif Input.trigger?(Input::C) && !targets.empty?
           play_system_se(SFX_DECISION)
           map_id, = targets[@teleport_index]
           apply_teleport_item(@pending_item, map_id)
         end
+      end
+
+      # Move the teleport-target cursor by `delta` grid cells, ignored if that
+      # cell is off the grid -- mirrors #move_item_cursor exactly (see its
+      # own comment).
+      def move_teleport_cursor(delta)
+        targets = teleport_targets
+        return if targets.empty?
+        target = @teleport_index + delta
+        return if target < 0 || target >= targets.size
+        @teleport_index = target
+        refresh_teleport_cursor
+        play_system_se(SFX_CURSOR)
       end
 
       def leave_teleport_target
@@ -325,11 +439,18 @@ class RPG2k
         name.nil? || name.empty? ? "Map #{map_id}" : name
       end
 
+      # Column width for the teleport-destination grid (see #update_teleport_target's
+      # grid comment above; identical formula to #item_col_w).
+      def teleport_col_w
+        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+      end
+
       def build_teleport_window
         @teleport_window.dispose if @teleport_window
         rows = teleport_targets
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = [rows.size, 1].max * LINE_H
+        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
+        h = grid_rows * LINE_H
         @teleport_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
                                       SCREEN_W, h + Window::BORDER * 2)
         @teleport_window.z = 450
@@ -339,8 +460,11 @@ class RPG2k
         if rows.empty?
           c.draw_text 0, 0, inner_w, LINE_H, "No destinations"
         else
+          col_w = teleport_col_w
           rows.each_with_index do |(_id, name), i|
-            c.draw_text 0, i * LINE_H, inner_w, LINE_H, name
+            x = (i % COLUMN_MAX) * col_w
+            y = (i / COLUMN_MAX) * LINE_H
+            c.draw_text x, y, col_w, LINE_H, name
           end
         end
         @teleport_window.contents = c
@@ -350,8 +474,9 @@ class RPG2k
       def refresh_teleport_cursor
         return unless @teleport_window
         h = teleport_targets.empty? ? 0 : LINE_H
-        @teleport_window.cursor_rect =
-          Rect.new(0, @teleport_index * LINE_H, @teleport_window.contents.width, h)
+        x = (@teleport_index % COLUMN_MAX) * teleport_col_w
+        y = (@teleport_index / COLUMN_MAX) * LINE_H
+        @teleport_window.cursor_rect = Rect.new(x, y, teleport_col_w, h)
       end
 
       def update_target
@@ -370,27 +495,68 @@ class RPG2k
           refresh_target_cursor
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
-          play_system_se(SFX_DECISION)
           apply_item(@pending_item, party[@target_index])
         end
       end
 
       # A used item that changed nothing (everyone already full, an
-      # ineffective status cure, ...) plays Buzzer rather than a second
-      # Decision -- matching RPG_RT's own invalid-use handling elsewhere in
+      # ineffective status cure, ...) plays Buzzer rather than the item's own
+      # success cue -- matching RPG_RT's own invalid-use handling elsewhere in
       # `Scene_Item` (a rejected action gets the same SE as a confirm on an
-      # empty list or a disabled command, not a silent no-op).
+      # empty list or a disabled command, not a silent no-op). A *successful*
+      # use stays on this same target screen too, exactly like a no-effect
+      # one -- confirmed against RPG_RT's own live source:
+      # `Scene_ActorTarget::UpdateItem` (`src/scene_actortarget.cpp`) never
+      # calls `Scene::Pop()` on Decision, success or failure alike; the only
+      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # `#use_item`'s own `item_count(id) > 0` gate already answers what
+      # happens on a repeat use once the item runs out (an empty `affected`,
+      # the same Buzzer path), matching the reference's own `GetItemCount(id)
+      # <= 0` check ahead of `UseItem` -- depletion buzzes, it does not
+      # auto-exit either.
+      #
+      # No confirmation message either way -- `UpdateItem`'s own success/
+      # failure branches only ever call `SePlay`/`Refresh`, never build a
+      # message window; this class used to show "Used on X."/"It had no
+      # effect." here (and `#update_target` played a Decision-click SE ahead
+      # of every use, matching neither branch), a fabricated dialog this
+      # runtime invented that also forced an extra dismiss press before the
+      # next target could be picked -- a genuine slowdown a screen this
+      # runtime already got right for the Switch/Escape/Teleport special
+      # items (`#apply_special_switch_item` etc.) never had.
       def apply_item(id, actor)
         affected = @state.party.use_item(id, actor)
         if affected.empty?
           play_system_se(SFX_BUZZER)
-          show_message("It had no effect.")
         else
-          names = affected.map { |a| a.name.to_s }.join(", ")
-          show_message("Used on #{names}.", :used)
+          play_item_use_se(id)
         end
       end
 
+      # The item's own success cue -- confirmed against RPG_RT's own live
+      # source: `Scene_ActorTarget::UpdateItem` plays the invoked skill's own
+      # animation SE for a Type_special item or a `use_skill`-flagged
+      # weapon/shield/armor/helmet/accessory item (the identical `do_skill`
+      # condition `Game::Party#use_special_escape_item` already mirrors for
+      # its own free-use gate), and the database's own Item system SE
+      # (`SFX_UseItem`) for every other item type.
+      def play_item_use_se(id)
+        it = @state.party.db_item(id)
+        do_skill = it && (it.type == Game::Party::ITEM_SPECIAL ||
+                           (it.use_skill && (1..5).cover?(it.type)))
+        if do_skill
+          sk = @state.party.db_skill(it.skill_id)
+          play_animation_se(sk && sk.animation_id)
+        else
+          play_system_se(SFX_ITEM)
+        end
+      end
+
+      # Back to the item list, rebuilt so it reflects whatever changed while
+      # target mode was open (a count fell, a depleted item dropped out) --
+      # only reached via Cancel now that a successful use no longer forces
+      # this on its own (see #apply_item). Keeps the cursor in range when the
+      # last of an item was used up.
       def leave_target_mode
         @pending_item = nil
         @target_lock = nil
@@ -399,18 +565,11 @@ class RPG2k
           @target_window.dispose
           @target_window = nil
         end
-        refresh_desc
-      end
-
-      # After a successful use, drop back to the item list and rebuild it (the
-      # count fell, and a depleted item leaves the list). Keeps the cursor in
-      # range when the last item is used up.
-      def refresh_after_use
-        leave_target_mode
         invalidate_items
         @item_index = items.size - 1 if @item_index >= items.size
         @item_index = 0 if @item_index < 0
         build_item_window
+        refresh_desc
       end
 
       # The highlighted item's flavour text, in a one-line banner across the
@@ -536,14 +695,10 @@ class RPG2k
 
       def drive_message
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
-        done = @message[:done]
         close_message
-        # A successful use drops back to the (rebuilt) item list; a no-effect use
-        # stays in the current mode so the player can pick another target/item.
-        refresh_after_use if done == :used
       end
 
-      def show_message(text, done = nil)
+      def show_message(text)
         return if @message
         w = SCREEN_W - 40
         win = Window.new(20, SCREEN_H - 40, w, 14 + Window::BORDER * 2)
@@ -553,7 +708,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, 14, text
         win.contents = c
-        @message = { window: win, done: done }
+        @message = { window: win }
       end
 
       def close_message

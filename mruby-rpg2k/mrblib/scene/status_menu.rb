@@ -1,19 +1,27 @@
 class RPG2k
   module Scene
     # The field status screen (main menu -> Status). Shows one party member's full
-    # detail -- name/title, level, EXP and EXP-to-next, HP/MP, the six stats and
-    # the five equipment slots; LEFT/RIGHT cycle the member. Read-only, so there
-    # is no sub-mode. The EXP-to-next figure is Game::Actor#exp_to_next
-    # (host-tested); the rest reads existing accessors.
+    # detail -- name/title, level, EXP and the next level's absolute EXP
+    # threshold, HP/MP, the six stats and the five equipment slots; LEFT/
+    # RIGHT cycle the member. Read-only, so there is no sub-mode. The "Next"
+    # figure is Game::Actor#next_level_exp -- the absolute threshold RPG_RT's
+    # own `Window_ActorStatus::DrawStatus` displays (`GetNextExpString`),
+    # not the remaining-EXP delta `#exp_to_next` computes (host-tested); the
+    # rest reads existing accessors.
     class StatusMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
       # The condition row: which line of the panel it is, its label, and where
       # the state itself starts (clear of the label).
-      STATE_ROW = 4
+      STATE_ROW = 5
       STATE_LABEL = "State".freeze
       STATE_VALUE_X = 48
+      # The HP/MP row: which line of the panel it is. Drawn separately from
+      # the flat `lines` pass below (see #draw_hp_mp_row) since, unlike every
+      # other line on this screen, its two current-value figures each need
+      # their own palette colour.
+      HP_MP_ROW = 3
 
       # `actor_index` is which party member the screen opens on -- the one
       # `Scene::Menu#enter_actor_selection` preselected from the menu's own
@@ -44,12 +52,17 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @parent.pop
-        elsif Input.trigger?(Input::RIGHT)
+        # A solo party leaves RIGHT/LEFT silent no-ops -- confirmed against
+        # RPG_RT's own live source: `Scene_Status::vUpdate`
+        # (`src/scene_status.cpp`) gates both branches on `actors.size() >
+        # 1`, not just the trigger itself, so a lone hero's Status screen
+        # plays no cursor SE and rebuilds nothing on either key.
+        elsif party.size > 1 && Input.trigger?(Input::RIGHT)
           @actor_index += 1
           @actor_index %= party.size
           build_window
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::LEFT)
+        elsif party.size > 1 && Input.trigger?(Input::LEFT)
           @actor_index -= 1
           @actor_index %= party.size
           build_window
@@ -99,15 +112,55 @@ class RPG2k
         a = @state.party.actors[@actor_index]
         title = a.title.to_s
         header = title.empty? ? a.name.to_s : "#{a.name}  #{title}"
-        nxt = a.exp_to_next
+        # The "Next" figure is the *absolute* EXP threshold for the next
+        # level, not the remaining delta -- confirmed directly against
+        # RPG_RT's live source: `Window_ActorStatus::DrawStatus`
+        # (`src/window_actorstatus.cpp`) draws the Exp row via
+        # `DrawMinMax(90, 34, -1, -1)`, whose `-1, -1` sentinel routes both
+        # halves through `actor.GetExpString(true)`/`GetNextExpString(true)`
+        # rather than the literal `min`/`max` a normal HP/MP-style call
+        # would draw; `Game_Actor::GetNextExpString` (`src/game_actor.cpp`)
+        # stringifies `GetNextExp()`, which is `exp_list[GetLevel()]` --
+        # the same absolute cumulative-total curve value `CalculateExp`
+        # produces, not a subtraction against current EXP. `#next_level_exp`
+        # (`mruby-rpg2k/mrblib/game.rb`) already computes exactly this
+        # absolute value; `#exp_to_next` instead subtracts current EXP from
+        # it, matching neither RPG_RT's own displayed number.
+        nxt = a.next_level_exp
         lines = [
           header,
+          # RPG_RT always draws a labelled Class/Profession row on this
+          # screen too, between Name and Title -- confirmed against
+          # `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`):
+          # `TextDraw(..., "Class"); DrawActorClass(actor, ...)`, with no
+          # version gate around it (unlike the RPG2003-only Row line just
+          # above it in the same function), so it draws blank rather than
+          # being omitted for an RPG2000 database with no class table.
+          # `easyrpg_status_scene_class` has no counterpart in RPG_RT's own
+          # Term chunk (an EasyRPG-only extension term), so real RPG_RT
+          # hardcodes the English label, matching this codebase's own
+          # `order.rb` precedent for "Confirm"/"Redo".
+          "Class: #{a.respond_to?(:class_name) ? a.class_name : ''}",
           "#{term(:level_short, 'Lv')} #{a.level}    " \
           "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
-          "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}    " \
-          "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}",
-          "#{term(:attack, 'Atk')} #{a.atk}   #{term(:defense, 'Def')} #{a.def}   " \
-          "#{term(:mind, 'Int')} #{a.int}   #{term(:agility, 'Agi')} #{a.agi}",
+          # Drawn separately, after this flat pass -- see #draw_hp_mp_row.
+          '',
+          # ATK/DEF/Int(Spirit)/AGI, state-adjusted -- confirmed against
+          # RPG_RT's own live source: `Window_ParamStatus::Refresh`
+          # (`src/window_paramstatus.cpp`) draws `actor.GetAtk()`/`GetDef()`/
+          # `GetSpi()`/`GetAgi()` directly, and `Game_Battler::GetAtk` et al.
+          # (`src/game_battler.cpp`) run the base value through `AdjustParam`,
+          # which halves/doubles it against whatever states the actor
+          # currently carries (`GetInflictedStates()`, not battle-scoped) --
+          # so a halving/doubling state that persists onto the map shows its
+          # effect here too, not just in battle math. `Game::Party
+          # #effective_atk`/`#effective_def`/`#effective_int`/`#effective_agi`
+          # already port this (built for skill formulas, see their own
+          # citation) but were never wired into this screen.
+          "#{term(:attack, 'Atk')} #{@state.party.effective_atk(a)}   " \
+          "#{term(:defense, 'Def')} #{@state.party.effective_def(a)}   " \
+          "#{term(:mind, 'Int')} #{@state.party.effective_int(a)}   " \
+          "#{term(:agility, 'Agi')} #{@state.party.effective_agi(a)}",
           # The condition gets a labelled row of its own, as on RPG_RT's status
           # screen (its Window_ActorInfo draws the label then the state). Only
           # the label goes through the flat pass below; the state itself is drawn
@@ -117,12 +170,79 @@ class RPG2k
         ]
         eqp = a.equipment
         @slots.each_with_index { |label, i| lines.push("#{label}: #{item_name(eqp[i])}") }
+        # RPG_RT always shows the party's own Gold on this screen -- its own
+        # `Window_Gold` (`src/window_gold.cpp`) sits right under the
+        # actor-info box, drawn unconditionally by `Scene_Status::Start`
+        # (`src/scene_status.cpp`, no visibility gate anywhere in the file) --
+        # confirmed missing here entirely, not merely mispositioned.
+        # `DrawCurrencyValue` (`src/window_base.cpp`) draws just the amount
+        # and the term, no extra label of its own.
+        lines.push("#{@state.party.gold}#{term(:gold, 'G')}")
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
         end
+        draw_hp_mp_row c, a, HP_MP_ROW * LINE_H, inner_w
         draw_actor_state c, a, STATE_VALUE_X, STATE_ROW * LINE_H,
                          inner_w - STATE_VALUE_X, LINE_H, @skin
+        draw_battle_row(c, a, inner_w) if rpg2003_party?
         @window.contents = c
+      end
+
+      # RPG_RT's own status screen additionally shows which RPG2003 battle
+      # row the displayed actor is currently in -- confirmed against
+      # `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`):
+      # `if (Feature::HasRow()) { ... TextDraw(width, 2, ..., battle_row,
+      # AlignRight); }`, right-aligned at the top of the panel, above the
+      # face/name block. `Feature::HasRow` (`src/feature.cpp`) reduces to
+      # "the database is RPG2003" for a genuine, unmodified project (its
+      # other half is an EasyRPG-only battlecommands flag with no real LCF
+      # field), so this is gated the same way the rest of this codebase
+      # gates RPG2003-only presentation: `@state.party.rpg2003?`.
+      # `easyrpg_status_scene_back/front` are likewise EasyRPG-only Term
+      # extensions absent from RPG_RT's own Term chunk, so real RPG_RT
+      # hardcodes the literal English "Front"/"Back" -- matching this file's
+      # own `"Class: ..."` precedent for the same situation.
+      def rpg2003_party?
+        @state.party.respond_to?(:rpg2003?) && @state.party.rpg2003?
+      end
+
+      # This screen's HP/MP row: RPG_RT's own `Window_ActorStatus::DrawStatus`
+      # (`src/window_actorstatus.cpp`) draws it through the same
+      # `DrawActorHp`/`DrawActorSp` (`src/window_base.cpp`) the battle status
+      # panel uses, so it carries the identical per-value colouring (see
+      # #draw_stat_segment) -- only ever applied to this screen's *current*
+      # HP/MP figures, never their label or max.
+      def draw_hp_mp_row(c, a, y, inner_w)
+        gutter = c.text_size('    ').width
+        x = draw_stat_segment(c, 0, y, inner_w, term(:hp_short, 'HP') + ' ',
+                               a.hp, a.display_max_hp, true)
+        draw_stat_segment(c, x + gutter, y, inner_w, term(:mp_short, 'MP') + ' ',
+                           a.mp, a.display_max_mp, false)
+      end
+
+      # One "LABEL current/max" run starting at `x`: `label` and the `/max`
+      # suffix draw in the default palette colour, `cur` alone through
+      # #value_font_color (`can_knockout` true only for HP, matching
+      # `DrawActorHp`'s own call -- `DrawActorSp` never passes it). Returns
+      # the x position just past the drawn run, so a caller can chain another
+      # stat after it (see #draw_hp_mp_row's own MP call).
+      def draw_stat_segment(c, x, y, inner_w, label, cur, max, can_knockout)
+        draw_system_text c, x, y, inner_w - x, LINE_H, label, @skin
+        x += c.text_size(label).width
+        color = value_font_color(cur, max, can_knockout)
+        cur_s = cur.to_s
+        draw_system_text c, x, y, inner_w - x, LINE_H, cur_s, @skin, color
+        x += c.text_size(cur_s).width
+        rest = "/#{max}"
+        draw_system_text c, x, y, inner_w - x, LINE_H, rest, @skin
+        x + c.text_size(rest).width
+      end
+
+      def draw_battle_row(bmp, actor, inner_w)
+        back = actor.respond_to?(:battle_row) && actor.battle_row == Game::Battle::ROW_BACK
+        text = back ? 'Back' : 'Front'
+        w = bmp.text_size(text).width
+        bmp.draw_text inner_w - w, 0, w, LINE_H, text
       end
     end
 

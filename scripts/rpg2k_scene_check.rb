@@ -278,6 +278,28 @@ module RGSS
   class Timeout < StandardError; end
 end
 
+# `Game::State#to_lsd`'s only native dependency (LCF.cp932_to_utf8/
+# utf8_to_cp932, a string field's encode/decode) shimmed with Ruby's own
+# Windows-31J transcoder -- exactly as scripts/rpg2k_logic_check.rb and
+# scripts/rpg2k_save_load_check.rb already do for the same reason. Needed
+# so a check can write a real Save<N>.lsd sibling straight to disk (the
+# Scene::SaveLoad initial-slot-recency check below) without loading the
+# native LCF parser this CRuby harness has no access to.
+module LCF
+  def cp932_to_utf8(s)
+    s.dup.force_encoding('Windows-31J')
+     .encode('UTF-8', invalid: :replace, undef: :replace, replace: "\u{FFFD}")
+  end
+  def utf8_to_cp932(s)
+    s.dup.encode('Windows-31J', invalid: :replace, undef: :replace)
+     .force_encoding('BINARY')
+  end
+  module_function :cp932_to_utf8, :utf8_to_cp932
+end
+lcf_lib = File.expand_path('../mruby-lcf/mrblib', __dir__)
+load File.join(lcf_lib, 'lcf.rb')
+load File.join(lcf_lib, 'schema.rb')
+
 lib = File.expand_path('../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
 load File.join(lib, 'interpreter.rb')
@@ -487,7 +509,10 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                                      hp_change_type: 1) },
     # A tiny item table the Open Shop window prices its goods from.
     item: { 3 => OpenStruct.new(name: 'Potion', price: 100),
-            5 => OpenStruct.new(name: 'Herb', price: 40) },
+            5 => OpenStruct.new(name: 'Herb', price: 40),
+            # Price 0 -- RPG2000's own way of marking a key item unsellable,
+            # for the Shop sell-list "listed but refused" check below.
+            8 => OpenStruct.new(name: 'Deed', price: 0) },
     # An enemy and a troop of two, for the placeholder Enemy Encounter victory.
     # Enemy 3 (Bat) carries the "airborne" flag (field 28, `levitate`) for the
     # RPG2003 flying-offset checks; its own troop (group 2) is a lone member
@@ -572,10 +597,20 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     # Every tile of the synthetic map is chip 0, which the fake chipset tags as
     # terrain 42 — so this one row decides whether walking hurts, and (for the
     # airship checks) whether it may fly over / land on any tile.
+    #
+    # `footstep` is a real `Sound` (filename + volume + pitch + balance, see
+    # #play_terrain_footstep_se's own citation), not a bare filename -- a
+    # plain String here is a convenience shorthand for "that filename, at the
+    # Sound schema's own default volume/pitch", auto-wrapped so every
+    # existing `footstep: 'Step1'` caller keeps working unchanged; a caller
+    # that needs a specific volume/pitch or the "(OFF)" sentinel passes an
+    # already Sound-shaped object (`respond_to?(:file)`) directly instead.
     terrain: { 42 => OpenStruct.new(damage: terrain_damage, bush_depth: bush_depth,
                                     airship_land: airship_land, airship_pass: airship_pass,
                                     boat_pass: boat_pass, ship_pass: ship_pass,
-                                    footstep: footstep, on_damage_se: on_damage_se) },
+                                    footstep: footstep.respond_to?(:file) ? footstep :
+                                      OpenStruct.new(file: footstep, volume: 100, pitch: 100),
+                                    on_damage_se: on_damage_se) },
     common_event: common,
     # Database actor rows carry the *original* names, which a \N[n] must not
     # use once the actor has been renamed in play (see the \N[n] check).
@@ -859,6 +894,61 @@ def chars(scene)
 end
 
 # -- checks -------------------------------------------------------------------
+
+check 'RPG2k::Window blinks its selection cursor between the windowskin\'s ' \
+      'two cursor blocks (source x 64/96), matching RPG_RT' do
+  # Confirmed directly against RPG_RT's live source: `Window::Update`
+  # (`src/window.cpp`) advances `cursor_frame` by 1 every frame the window
+  # is active, wrapping at 21, and `Window::Draw` blits from the
+  # windowskin's `cursor1` block (source x 64, Game::WindowCursor::FRAME1_X)
+  # while `cursor_frame <= 10`, or `cursor2` (source x 96, FRAME2_X)
+  # otherwise -- FRAME2_X already existed in this codebase but was never
+  # read anywhere, so the highlight never blinked at all.
+  win = RPG2k::Window.new(0, 0, 64, 64)
+  win.windowskin = Bitmap.new('System/Skin1', true)
+  win.cursor_rect = Rect.new(0, 0, 16, 16)
+  bmp = win.instance_variable_get(:@cursor_bmp)
+
+  10.times { win.update } # frames 1..10: still the steady half, no crossing yet
+  bmp.clear_blt_calls
+  win.update # frame 11: crosses into the alternate half
+  ok bmp.blt_calls && !bmp.blt_calls.empty?, 'the cursor redraws at the transition'
+  eq 96, bmp.blt_calls.first[3].x, 'now sourced from the alternate cursor block (96)'
+
+  9.times { win.update } # frames 12..20: still the alternate half
+  bmp.clear_blt_calls
+  win.update # frame 21 wraps to 0: back to the steady half
+  ok bmp.blt_calls && !bmp.blt_calls.empty?, 'the cursor redraws at the wrap'
+  eq 64, bmp.blt_calls.first[3].x, 'wraps back to the steady cursor block (64)'
+end
+
+check "RPG2k::Window keeps its selection cursor visible, frozen, once " \
+      'inactive -- it does not hide it' do
+  # Confirmed against RPG_RT's own live source: `Window::Draw`'s cursor
+  # block (`src/window.cpp`) reads only `cursor_rect`/`cursor_frame`, with
+  # no `active` check anywhere -- `active` only gates whether
+  # `Window::Update` keeps *advancing* (blinking) `cursor_frame` at all.
+  win = RPG2k::Window.new(0, 0, 64, 64)
+  win.windowskin = Bitmap.new('System/Skin1', true)
+  win.cursor_rect = Rect.new(0, 0, 16, 16)
+  bmp = win.instance_variable_get(:@cursor_bmp)
+  ok bmp.blt_calls && !bmp.blt_calls.empty?, 'sanity: drawn while active'
+
+  bmp.clear_blt_calls
+  win.active = false
+  ok bmp.blt_calls && !bmp.blt_calls.empty?,
+     'still drawn the instant it goes inactive, not hidden'
+  eq 64, bmp.blt_calls.first[3].x,
+     'frozen on whatever frame it stopped at (still the steady block here)'
+
+  # 20+ frames of #update while inactive never advance/blink it (the
+  # already-correct half of this gate) -- and, per the fix, never hide it
+  # either: the frozen bitmap from the moment it went inactive stays put.
+  bmp.clear_blt_calls
+  25.times { win.update }
+  ok bmp.blt_calls.nil? || bmp.blt_calls.empty?,
+     'an inactive window never redraws its cursor from #update at all'
+end
 
 check 'Scene::Map builds and ticks with no events without raising' do
   scene = new_scene({})
@@ -1315,6 +1405,32 @@ check 'a random-mover roams but stays in bounds and off the player tile' do
   ok moved, 'a random mover should have moved at least once in 300 frames'
 end
 
+check 'a blocked autonomous move does not turn the event to face the ' \
+      'obstacle -- RPG_RT reverts that facing back on nearly every failed ' \
+      'attempt' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::Move`
+  # (src/game_character.cpp) does turn to face the drawn direction before
+  # ever checking passability, but every autonomous-move caller in
+  # src/game_event.cpp (MoveTypeRandom/MoveTypeCycle/
+  # MoveTypeTowardsOrAwayPlayer) immediately reverts that turn on a blocked
+  # move unless genuinely stuck for a sustained stretch (GetMaxStopCount() +
+  # 60 frames) -- boxing an event in on all four sides means every draw is
+  # blocked, so its facing should never visibly change from whatever it
+  # started at.
+  mover     = event(2, 2, page(x_move_type: Game::MoveType::RANDOM, direction: 2))
+  wall_up    = event(2, 1, page)
+  wall_down  = event(2, 3, page)
+  wall_left  = event(1, 2, page)
+  wall_right = event(3, 2, page)
+  scene = new_scene({ 1 => mover, 2 => wall_up, 3 => wall_down,
+                       4 => wall_left, 5 => wall_right }, player: [0, 0])
+  c = chars(scene)[1]
+  60.times { scene.update }
+  eq [2, 2], [c.x, c.y], 'boxed in on all four sides -- never actually moves'
+  eq 2, c.direction, 'blocked every attempt -- facing never turns to the ' \
+                      'randomly drawn (always-blocked) direction'
+end
+
 check 'two events do not stack on the same tile' do
   # Two events collide whenever their layers match exactly (see the LAYER_*
   # comment in map.rb) -- #page's own default (LAYER_BELOW for both) already
@@ -1368,6 +1484,25 @@ check 'a same-layer event still blocks the hero' do
   eq [0, 0], [st.x, st.y], 'a same-layer event still blocks like a normal character'
 end
 
+check "a same-layer event with its own Through Mode on lets the hero walk " \
+      'straight through it' do
+  # Confirmed against EasyRPG's actual C++ source: `WouldCollide` (`src/
+  # game_map.cpp`) checks `self.GetThrough() || other.GetThrough()` first
+  # and unconditionally, before any layer test at all -- a blocker's own
+  # Through Mode (a common authoring technique so an NPC never blocks the
+  # party) exempts it from collision the same way the mover's own Through
+  # Mode already does, uniformly for the hero, another event, or a vehicle.
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  chars(scene)[1].through = true
+  RGSS::Input.dir_value = 6
+  12.times { scene.update }
+  RGSS::Input.dir_value = 0
+  eq [1, 0], [st.x, st.y],
+     "Through Mode on the blocking event should let the hero pass it, got #{[st.x, st.y]}"
+end
+
 check 'events on different layers pass through each other via Move Route' do
   # A below-layer event sits at (3,2); an above-layer event runs a custom
   # route straight through its column. #char_passable? gates layer on an
@@ -1419,6 +1554,26 @@ check 'two below-layer events collide with each other via Move Route' do
   40.times { scene.update }
   eq [2, 2], [ch.x, ch.y],
      "two below-layer events should still collide with each other, got #{[ch.x, ch.y]}"
+end
+
+check "an event's own Through Mode lets another event's Move Route pass " \
+      'through it, even on a matching layer' do
+  # The event-vs-event equivalent of "a same-layer event with its own
+  # Through Mode on lets the hero walk straight through it" above:
+  # `WouldCollide` (`src/game_map.cpp`) checks `self.GetThrough() ||
+  # other.GetThrough()` before the layer-match test, so a blocking event's
+  # own Through Mode exempts it from #char_passable?'s layer gate too, not
+  # just #passable?'s.
+  below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
+  mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
+                           route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false),
+                           layer: RPG2k::Scene::Map::LAYER_BELOW))
+  scene = new_scene({ 1 => below, 2 => mover }, player: [0, 0])
+  chars(scene)[1].through = true
+  ch = chars(scene)[2]
+  40.times { scene.update }
+  eq [3, 2], [ch.x, ch.y],
+     "Through Mode on the blocking event should let the mover cross it, got #{[ch.x, ch.y]}"
 end
 
 check 'overlap_forbidden does not block the hero on an ordinary step' do
@@ -1981,6 +2136,31 @@ check 'an action event under the player answers the action button' do
   ok st.switches[4], 'the event under the party ran'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Game_Player::
+# CheckEventTriggerHere` (`src/game_player.cpp`) -- the overlap check
+# `#try_action_trigger`'s own "under the player" branch above ports --
+# explicitly excludes a same-layer event (`ev.GetLayer() != lcf::rpg::
+# EventPage::Layers_same`), the same restriction the faced-tile check a few
+# lines below already carries. A same-layer event ordinarily can never
+# reach this branch at all (it blocks the party from ever standing on it),
+# but a page re-select can still leave one co-located with the player --
+# a switch elsewhere flips a same-layer, action-triggered page active while
+# the player already happens to occupy that exact tile, with no movement
+# in between.
+check 'a same-layer action event under the player does not answer the ' \
+      'action button by overlap' do
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME)
+  pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 4, 4, 0])]
+  scene = new_scene({ 1 => event(2, 2, pg) }, player: [2, 2])
+  st = scene.instance_variable_get(:@state)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  5.times { scene.update }
+  ok !st.switches[4], 'the same-layer event under the party must not answer the button'
+end
+
 # yado.tk: 決定キーを押してもマップイベントが実行しない (「決定キーを押しても
 # マップイベントが実行しない」バグ・エラーページ) — a below/above-characters
 # action event only answers the button by overlap (see the check above), never
@@ -2423,6 +2603,110 @@ check "a common event's Parallel Process's own Transfer Player command " \
   eq 1, st.variables[4],
      "the SAME Parallel Process interpreter kept running past the teleport " \
      'and reached marker B on the new map'
+end
+
+check "a common event's Parallel Process's own Transfer Player command is " \
+      'blocked (not dropped) while a message window is open, and retries once ' \
+      'it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter_Map::
+  # CommandTeleport`/`CommandRecallToLocation` (`src/game_interpreter_map.cpp`,
+  # codes 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
+  # return false; }`, unconditionally -- the identical block-and-retry shape
+  # already ported for Show/Move/Erase Picture (see
+  # #block_pending_picture_command). A command right after the blocked
+  # Transfer Player in the same list must not run either, until the Transfer
+  # Player itself finally succeeds -- the whole interpreter blocks at that
+  # exact command, matching the picture-command fix's own citation of
+  # `Game_Interpreter::Update`'s `if (!ExecuteCommand()) { break; }`.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::TELEPORT, [2, 0, 0, 0]),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq 1, st.map_id, 'the Transfer Player must not apply while a message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Transfer Player must not run either'
+
+  scene.send(:close_message)
+  5.times { scene.update }
+  eq 2, st.map_id, 'the Transfer Player retries and applies once the window closes'
+  eq 1, st.variables[4], 'and the command after it then runs too'
+end
+
+check "a common event's Parallel Process's own Message Options command is " \
+      'blocked (not dropped) while a different message window is open, and ' \
+      'retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandMessageOptions`/`CommandChangeFaceGraphic` (`src/
+  # game_interpreter.cpp`, codes 10120/10130) both open with `if (!Game_
+  # Message::CanShowMessage(main_flag)) { return false; }` -- the identical
+  # guard Show Message/Show Choices/Input Number themselves use, and the
+  # same block-and-retry shape already ported for Show/Move/Erase Picture,
+  # Transfer Player/Recall to Location, Battle Processing/Enemy Encounter,
+  # Change EXP/Level and Key Input Processing (see
+  # #block_pending_message_config_command).
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::MESSAGE_OPTIONS, [1, 0, 0, 0]),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq false, st.message_config.transparent,
+     'Message Options must not apply while a different message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Message Options must not run either'
+
+  scene.send(:close_message)
+  5.times { scene.update }
+  eq true, st.message_config.transparent,
+     'Message Options retries and applies once the window closes'
+  # >= 1, not == 1: unlike Transfer Player's own multi-frame map load,
+  # Message Options is instantaneous, so the Parallel Process's own
+  # "loops forever" behavior (see the Transfer Player check above) can carry
+  # it around the whole command list more than once within these frames.
+  ok st.variables[4] >= 1, 'and the command after it then runs too'
+end
+
+check "a common event's Parallel Process's own Erase Screen command is " \
+      'blocked (not dropped) while a message window is open, and retries ' \
+      'once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandEraseScreen`/`CommandShowScreen` (`src/game_interpreter.cpp`,
+  # codes 11010/11020) both open with `if (Game_Message::IsMessageActive()) {
+  # return false; }`, unconditionally -- not gated behind
+  # `IsEnglish()`/`IsPatchUnlockPics()` the way Show/Move/Erase Picture are --
+  # the same block-and-retry shape already ported for Show/Move/Erase
+  # Picture, Transfer Player/Recall to Location, Battle Processing/Enemy
+  # Encounter, Change EXP/Level, Key Input Processing and Message
+  # Options/Change Face Graphic (see #block_pending_screen_command).
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3), ECmd.new(ic::ERASE_SCREEN, [0]),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  ok !st.screen.fading? && !st.screen.erased?,
+     'Erase Screen must not apply while a message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Erase Screen must not run either'
+
+  scene.send(:close_message)
+  60.times { scene.update }
+  ok st.screen.erased?, 'Erase Screen retries and applies once the window closes'
+  ok st.variables[4] >= 1, 'and the command after it then runs too'
 end
 
 check "an unrelated event's page change does not restart another event's " \
@@ -3060,6 +3344,49 @@ check 'Key Input Proc waits for a key, stores its code, then continues' do
   ok st.switches[5], 'the event continued after the key press'
 end
 
+check 'a waiting Key Input Proc issued from a Parallel Process is blocked ' \
+      '(not armed) while a message window is open, and retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandKeyInputProc` (`src/game_interpreter.cpp`, code 11610) resets the
+  # target variable to 0 every retried frame, *then* checks `if (wait &&
+  # Game_Message::IsMessageActive()) { return false; }` -- unconditionally,
+  # the same block-and-retry shape already ported for Show/Move/Erase
+  # Picture, Teleport/Recall to Location, Battle Processing/Enemy Encounter
+  # and a "show message"-flagged Change EXP/Level. A key held down while
+  # blocked must not resolve the proc the instant it becomes armed. Issued
+  # from a Parallel Process (not the foreground) since an autostart event
+  # does not even begin while a message window is already open -- it simply
+  # waits to start until the window closes, never actually reaching this
+  # command mid-block; a Parallel Process, unlike an autostart, keeps
+  # advancing and reaching new commands while a *different* interpreter's
+  # message window sits open (see Scene::Map#parallels_paused?), which is
+  # the scenario this fix actually guards against.
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4)
+  par.event_commands = [
+    ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 1, 1, 1, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])
+  ]
+  scene = new_scene({ 1 => event(4, 4, par) })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+  # Held throughout, including while blocked -- Down, not Decision, since
+  # Decision is also this message window's own "advance/close" key and
+  # would close the very window this check means to hold open.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+
+  5.times { scene.update }
+  eq 0, st.variables[1], 'blocked -- the held key must not resolve a proc that never armed'
+  ok !st.switches[5], 'the command after it has not run either'
+
+  scene.send(:close_message)
+  scene.update # retries the same frame the window closes -- now actually arms
+  scene.update # samples the still-held key and resolves
+  eq 1, st.variables[1], 'Down stored code 1, once the window closed'
+  scene.update # the following command runs once the proc has resumed
+  ok st.switches[5], 'the event continued after the key press'
+end
+
 check 'Key Input Proc ignores keys it was not told to accept' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -3209,7 +3536,7 @@ check 'Show Picture is suppressed while a choice list is open (yado.tk)' do
 end
 
 check 'Show/Move/Erase Picture from an independently-running parallel process are ' \
-      'suppressed while a message window is open, and apply once it closes (yado.tk)' do
+      'blocked (not dropped) while a message window is open, and retry once it closes' do
   ic = Game::Interpreter::Cmd
 
   # Each sub-case opens the message window directly (via the same #open_message
@@ -3217,10 +3544,21 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   # against the parallel process's very first frame -- #step_parallels already
   # runs before #start_autostart each frame (see Scene::Map#update), so a
   # naturally-triggered message would not be open yet for the parallel
-  # process's first lap, and these commands are non-blocking no-ops once
-  # applied, not something a later suppression could retract.
+  # process's first lap.
 
   # -- Show Picture ---------------------------------------------------------
+  # RPG_RT's own dispatch loop (`Game_Interpreter::Update`,
+  # `if (!ExecuteCommand()) { break; }`) breaks the *whole* per-frame command
+  # loop for this exact interpreter when a picture command's own guard
+  # returns false -- not just that one command -- so `add_var_cmd(1)` right
+  # after the blocked Show Picture must not run either, until the message
+  # closes and the picture command itself finally succeeds
+  # (#block_pending_picture_command). This is narrower than, and does not
+  # contradict, the sibling "a message box is not a pause condition for
+  # parallel processes" rule the check just above already covers -- that
+  # rule is about *other, independent* parallel processes continuing
+  # elsewhere, not about this interpreter's own commands past a command it
+  # is itself blocked on.
   par = page(trigger: 4)
   par.event_commands = [
     ECmd.new(ic::SHOW_PICTURE, [1, 0, 100, 100, 0, 100, 0, 0, 100, 100, 100, 100],
@@ -3234,15 +3572,17 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   10.times { scene.update }
   ok !st.pictures.key?(1),
      'Show Picture from a still-running parallel process must not apply while a message window is open'
-  ok st.variables[1] > 0,
-     'the parallel process keeps advancing its non-picture commands regardless -- the sibling ' \
-     '"parallel processes were paused too broadly" fix must stay intact'
+  eq 0, st.variables[1],
+     'the command right after the blocked Show Picture must not run either -- the whole ' \
+     'interpreter is blocked on this exact command, not merely skipping it'
 
   scene.send(:close_message)
   5.times { scene.update }
-  ok st.pictures.key?(1), 'Show Picture applies once the window closes'
+  ok st.pictures.key?(1), 'Show Picture retries and applies once the window closes'
+  ok st.variables[1] > 0, 'and the command after it then runs too'
 
   # -- Move Picture -----------------------------------------------------------
+
   par2 = page(trigger: 4)
   par2.event_commands = [ECmd.new(ic::MOVE_PICTURE,
                                   [1, 0, 200, 200, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 0, 0])]
@@ -3274,6 +3614,36 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   scene3.send(:close_message)
   5.times { scene3.update }
   ok !st3.pictures.key?(1), 'Erase Picture applies once the window closes'
+end
+
+check 'a blocked Show Picture resumes the command right after it the same ' \
+      'real frame the message window closes, not one frame later' do
+  # RPG_RT's own `Game_Interpreter::Update` loop does not treat a blocked
+  # command specially once it succeeds -- `CommandShowPicture` (`src/
+  # game_interpreter.cpp`) just `return true`s like any other command the
+  # instant `Game_Message::IsMessageActive()` reads false, so the *same*
+  # `Update()` call keeps going into whatever follows, costing no further
+  # frame -- the identical reasoning already fixed for :screen/:picture/
+  # :sprite_flash/:movement.
+  ic = Game::Interpreter::Cmd
+  par = page(trigger: 4)
+  par.event_commands = [
+    ECmd.new(ic::SHOW_PICTURE, [1, 0, 100, 100, 0, 100, 0, 0, 100, 100, 100, 100],
+             string: 'pic'),
+    add_var_cmd(1),
+  ]
+  scene = new_scene({ 1 => event(4, 4, par) })
+  st = scene.instance_variable_get(:@state)
+  scene.send(:open_message, ['hi'], false)
+
+  scene.update # frame 1: the process starts, blocks on the open message
+  ok !st.pictures.key?(1), 'blocked, message window still open'
+  eq 0, st.variables[1]
+
+  scene.send(:close_message)
+  scene.update # frame 2: retries -- must succeed AND run the next command
+  ok st.pictures.key?(1), 'Show Picture retried and applied the same frame the window closed'
+  ok st.variables[1] > 0, 'and the command right after it ran that same frame too'
 end
 
 check 'parallel processes pause during battle' do
@@ -3516,20 +3886,48 @@ check "Halt All Movement lands an in-progress jump but drops the route's trailin
   ok scene.instance_variable_get(:@player_route).nil?, 'the route itself is cancelled'
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Interpreter::
+# CommandPlayerVisibility` (`src/game_interpreter.cpp`) is `bool hidden =
+# (com.parameters[0] == 0)` -- param0 zero hides.
 check 'Set Transparent Flag hides and shows the player sprite' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
-  auto.event_commands = [ECmd.new(ic::PLAYER_VISIBILITY, [1])] # transparent ON
+  auto.event_commands = [ECmd.new(ic::PLAYER_VISIBILITY, [0])] # hidden
   one_shot_auto(auto, 9011)
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   5.times { scene.update }
   spr = scene.instance_variable_get(:@player_sprite)
-  eq false, spr.visible, 'the player sprite is hidden while transparent'
+  eq false, spr.visible, 'the player sprite is hidden'
   # A second event turns it back off.
   st = scene.instance_variable_get(:@state)
   st.player_transparent = false
   scene.update
-  eq true, spr.visible, 'the player sprite shows again once transparency clears'
+  eq true, spr.visible, 'the player sprite shows again once hidden clears'
+end
+
+# The leader's own actor graphic "Transparent" flag (Change Actor Graphic /
+# the database Actor checkbox) is a wholly separate, ghost-opacity mechanism
+# from Set Transparent Flag's real hide -- confirmed against RPG_RT's own
+# live source: `Game_Actor::SetSprite` stores `data.transparency = 3`
+# (`src/game_actor.cpp`), and `Game_Character::GetOpacity` (`src/
+# game_character.cpp`) is `Clamp((8 - GetTransparency()) * 32 - 1, 0, 255)`
+# -- level 3 yields 159/255, not a hide. This codebase used to fold the two
+# into one hide-only flag.
+check 'the leader actor graphic\'s Transparent flag makes the player sprite ' \
+      'translucent, not hidden' do
+  scene = new_scene({}, player: [5, 5], members: [SlipActor.new])
+  st = scene.instance_variable_get(:@state)
+  spr = scene.instance_variable_get(:@player_sprite)
+  scene.update
+  eq true, spr.visible, 'not hidden'
+  eq 255, spr.opacity, 'fully opaque with the flag off'
+  st.party.leader.transparent = true
+  scene.update
+  eq true, spr.visible, 'the ghost flag never hides the sprite outright'
+  eq 159, spr.opacity, 'ghost-translucent, RPG_RT\'s own (8 - 3) * 32 - 1'
+  st.party.leader.transparent = false
+  scene.update
+  eq 255, spr.opacity, 'and clears back to fully opaque'
 end
 
 check 'Return to Title Screen hands control back to the app' do
@@ -3580,7 +3978,7 @@ check "Change Event Location's RPG2003 facing sub-parameter snaps another " \
   auto = page(trigger: 3) # auto-start: place event 2 at (5, 3), facing down
   auto.event_commands = [ECmd.new(ic::CHANGE_EVENT_LOCATION, [2, 0, 5, 3, 3])]
   scene = new_scene({ 1 => event(0, 4, auto), 2 => event(1, 1, page) },
-                    player: [5, 5])
+                    player: [5, 5], rpg2003: true)
   c = chars(scene)[2]
   c.direction = 8 # start facing up, so a no-op would be obvious
   5.times { scene.update }
@@ -3785,6 +4183,35 @@ check 'Input Number plays the Cursor SE on every digit move and Decision on conf
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming plays the decision SE'
+end
+
+check 'Input Number: on a single-digit widget, Right is a silent no-op but ' \
+      'Left still plays the cursor SE' do
+  # Confirmed against RPG_RT's own live source, Window_NumberInput::Update
+  # (src/window_numberinput.cpp): Right is guarded behind `if (digits_max >=
+  # 2)` -- no move, no sound, on a one-digit widget -- but Left has no such
+  # guard and always plays SFX_Cursor, even though its own modulo leaves a
+  # single-cell cursor unmoved either way. Not the symmetric pair the
+  # existing two-digit check above might suggest.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::INPUT_NUMBER, [1, 5])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+
+  ni = nil
+  12.times { scene.update; ni = scene.instance_variable_get(:@number_input); break if ni }
+  ok ni, 'the number-entry widget opened'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  eq [], RGSS::Audio.se_calls, 'Right on a single-digit widget plays nothing'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  eq 'Cursor1', RGSS::Audio.se_calls.last&.first,
+     'Left still plays the cursor SE even on a single-digit widget'
 end
 
 check 'a message types out gradually, then a button completes and dismisses it' do
@@ -4158,6 +4585,44 @@ check 'a \\. pause holds the reveal for RPG_RT\'s real 16 frames, not the docume
     break if held > 30
   end
   eq 16, held, 'RPG_RT holds a \\. pause for 16 frames, not the documented 15'
+end
+
+check 'an ordinary Decision press held throughout a \\. pause does not cut it ' \
+      'short -- only Test Play\'s own Shift fast-forward may' do
+  # Confirmed directly against RPG_RT's live source: `Window_Message::
+  # Update` (`src/window_message.cpp`) decrements `wait_count` (the counter
+  # `\.`/`\|` set via `SetWaitForNonPrintable`) and returns unconditionally
+  # while it is still positive -- entirely before the separate
+  # `GetPause()`/`WaitForInput()` branch that checks
+  # `Input::IsTriggered(DECISION/CANCEL)` even runs. `case '.'` (the same
+  # file) only ever calls `SetWaitForNonPrintable`, never `SetPause(true)`,
+  # unlike `case '!'`, which calls both -- so a `\.`/`\|` hold cannot be
+  # shortened by an ordinary button press the way a `\!` pause can.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'a\\.b')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  frames = 0
+  until reveal.pending_pause
+    scene.update
+    frames += 1
+    break if frames > 20
+  end
+  ok reveal.pending_pause, 'the \\. pause is reached'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # held throughout the pause
+  held = 0
+  until reveal.pending_pause.nil?
+    scene.update
+    held += 1
+    break if held > 30
+  end
+  RGSS::Input.reset
+  eq 16, held, 'a held Decision press must not shorten the \\. pause below its real 16 frames'
 end
 
 check 'a \\. pause at typing speed 20 holds for 20 frames, not a flat 16' do
@@ -4583,7 +5048,7 @@ check 'a teleport lands the party facing the direction it asked for' do
   auto = page(trigger: 3)
   # RPG2003's facing argument: 1 = up, which the runtime speaks as numpad 8.
   auto.event_commands = [ECmd.new(ic::TELEPORT, [1, 4, 3, 1])]
-  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0])
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [0, 0], rpg2003: true)
   st = scene.instance_variable_get(:@state)
   st.direction = 2 # facing down to start with
   20.times { scene.update }
@@ -4889,6 +5354,36 @@ check 'Proceed With Movement holds the interpreter until a forced route finishes
   200.times { scene.update } # enough frames for the freq-4 route to finish
   eq 3, c.x, 'the forced event reached the end of its route'
   ok st.switches[1], 'the interpreter resumed and ran the next command'
+end
+
+check 'Proceed With Movement resumes the command right after it the same ' \
+      'real frame the forced route finishes, not one frame later' do
+  # RPG_RT's own `Game_Interpreter::Update` loop does not unconditionally
+  # `break` on `_state.wait_movement` either -- `if (_state.wait_movement) {
+  # if (Game_Map::IsAnyMovePending()) break; _state.wait_movement = false; }`
+  # (`src/game_interpreter.cpp`) -- once every targeted route finishes, that
+  # same `Update` call falls straight through into whatever command follows.
+  # A freshly-armed forced route's own `move_timer` starts at 0
+  # (#force_event_route), so its very first step fires on the first frame
+  # #step_forced_movement is ever consulted -- a single-command route is
+  # therefore already fully done that same frame, letting this test pin an
+  # exact frame count without waiting out a real movement-frequency pace.
+  ic = Game::Interpreter::Cmd
+  cmds = [
+    ECmd.new(ic::MOVE_EVENT, [2, 4, 0, 0, R::MOVE_RIGHT]),
+    ECmd.new(ic::PROCEED_WITH_MOVEMENT, []),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 2 => event(0, 1, page) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  c = chars(scene)[2]
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update # frame 1: arms the forced route and the wait
+  eq 0, c.x, 'has not stepped yet'
+  ok !st.switches[1], 'the command after it has not run yet'
+  scene.update # frame 2: the single-step route finishes on this very frame
+  eq 1, c.x, 'the forced event stepped'
+  ok st.switches[1], 'the command after it ran the very same frame the route finished'
 end
 
 check 'Set Move Route targeting a currently-hidden map event freezes Proceed With Movement (yado.tk)' do
@@ -5198,6 +5693,33 @@ check "Move Picture's own wait flag blocks a Parallel Process's own interpreter,
   ok st.switches[1], 'the Parallel Process resumed once the move settled'
 end
 
+check "A Parallel Process's own Move Picture resumes the command right after " \
+      'it the same real frame the move settles, not one frame later' do
+  # Same reasoning as the identical foreground fix (see the Tint Screen check
+  # of the same name): Move Picture's own wait flag is RPG_RT's plain
+  # `_state.wait_time` countdown, not a "poll until still moving" mechanism,
+  # so #step_parallel must spend that same frame's own budget once it clears,
+  # exactly like it already does for :wait/:animation. 1 tenth (6 frames):
+  # the process starts on frame 1, the move occupies frames 2-7, settling
+  # exactly on frame 7 -- the switch flip must land on that same frame 7.
+  ic = Game::Interpreter::Cmd
+  pg = page(trigger: 4)
+  pg.event_commands = [
+    ECmd.new(ic::MOVE_PICTURE,
+             [1, 0, 200, 200, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 1, 1]),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0]),
+  ]
+  scene = new_scene({ 1 => event(2, 2, pg) })
+  st = scene.instance_variable_get(:@state)
+  st.pictures[1] = Game::Picture.new(1, x: 100, y: 100)
+
+  scene.update # frame 1: starts the process, runs Move Picture, arms the wait
+  6.times { scene.update } # frames 2-7: the move settles on the last of these
+  ok !st.pictures[1].moving?, 'the move has fully settled'
+  eq [200, 200], [st.pictures[1].x, st.pictures[1].y]
+  ok st.switches[1], 'the command after it ran the very same frame the move settled'
+end
+
 check "Flash Sprite's own wait flag blocks a Parallel Process's own interpreter, " \
       'not just the foreground\'s' do
   # Same defect class as the two checks just above, for the :sprite_flash
@@ -5500,6 +6022,27 @@ check 'Tint Screen with a wait holds the interpreter until the tint settles' do
   ok st.switches[1], 'the interpreter resumed once the tint settled'
 end
 
+check 'Tint Screen resumes the command right after it the same real frame the ' \
+      'tint settles, not one frame later' do
+  # RPG_RT implements Tint Screen's own wait flag with the identical
+  # `_state.wait_time` countdown the plain Wait command uses (`SetupWait`,
+  # `src/game_interpreter.cpp`), not a "poll until still animating"
+  # mechanism -- its own `Update` loop falls straight through into whatever
+  # command follows the instant that countdown clears, costing no further
+  # frame. 1 tenth (6 frames): the interpreter starts on frame 1, the tint
+  # occupies frames 2-7 (6 decrements), settling exactly on frame 7 -- the
+  # switch flip must land on that same frame 7, not frame 8.
+  cmds = [ECmd.new(Game::Interpreter::Cmd::TINT_SCREEN, [200, 100, 100, 100, 1, 1]),
+          add_var_cmd(5)]
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update # frame 1: arms the tint and the wait
+  6.times { scene.update } # frames 2-7: the tint settles on the last of these
+  ok !st.screen.tinting?, 'the tint has fully settled'
+  eq 1, st.variables[5], 'the command after it ran the very same frame the tint settled'
+end
+
 check 'Shake Screen with a wait holds the interpreter and renders with an offset' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -5652,10 +6195,52 @@ check 'a continuous-animation event advances even while standing still' do
   ev = event(2, 2, page(charset_name: 'c',
                         animation_type: Game::EventGraphic::CONTINUOUS))
   scene = new_scene({ 1 => ev }, player: [5, 4])
-  40.times { scene.update }
+  # 13: past the continuous cadence's own single period (10 frames/phase at
+  # this event's default move_speed) but nowhere near a multiple of its
+  # 4-frame phase cycle (40), which would wrap #anim_phase back around to 0
+  # and read as "never cycled".
+  13.times { scene.update }
   e = event_hashes(scene)[1]
   eq [2, 2], [e[:char].x, e[:char].y], 'it did not move'
   ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
+end
+
+# Confirmed against EasyRPG's live source, `Game_Character::
+# GetContinuousAnimFrames` (`src/game_character.h`): an idling Continuous
+# event's own cadence (ANIM_CONTINUOUS_FRAMES[2] = 10 at the default
+# move_speed) is slower than the sliding/stationary cadence
+# (ANIM_STATIONARY_FRAMES[2] = 8) the same event would use while actually
+# stepping between tiles -- not the same table reused for both.
+check 'a continuous-animation event standing still cycles on its own, ' \
+      'slower cadence than a sliding event would use' do
+  ev = event(2, 2, page(charset_name: 'c',
+                        animation_type: Game::EventGraphic::CONTINUOUS))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  e = event_hashes(scene)[1]
+  8.times { scene.update }
+  eq 0, e[:anim_phase],
+     'still on the first frame after 8 updates -- too soon for the sliding ' \
+     'cadence, which this event is not using'
+  2.times { scene.update }
+  ok e[:anim_phase] != 0, 'but the continuous cadence (10 frames) has advanced it by now'
+end
+
+# Same distinction, for a Spin-type event's own facing-rotation cadence
+# (ANIM_SPIN_FRAMES[2] = 12) -- confirmed against EasyRPG's `Game_Character::
+# GetSpinAnimFrames` (`src/game_character.h`), read unconditionally by
+# `UpdateAnimation`'s `IsSpinning()` branch, whether the event is moving or
+# not.
+check 'a spin-type event rotates its facing on its own, slower cadence ' \
+      'than a sliding event would use' do
+  ev = event(2, 2, page(charset_name: 'c', animation_type: Game::EventGraphic::SPIN))
+  scene = new_scene({ 1 => ev }, player: [5, 4])
+  e = event_hashes(scene)[1]
+  8.times { scene.update }
+  eq 0, e[:anim_phase],
+     'still on the first facing after 8 updates -- too soon for the sliding ' \
+     'cadence, which this event is not using'
+  4.times { scene.update }
+  ok e[:anim_phase] != 0, 'but the spin cadence (12 frames) has rotated it by now'
 end
 
 check 'a map with a looping, autoscrolling parallax renders without raising' do
@@ -5995,10 +6580,10 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   scene.update
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the "purchased" confirmation
-  scene.update
-  RGSS::Input.triggered = []
-  scene.update
+  # The "purchased" confirmation only leaves once its own 60-frame timer
+  # expires -- Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) never
+  # reads Input::, so a button press does not skip it.
+  60.times { scene.update }
   RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
   scene.update
   scene.update # the Transaction branch runs
@@ -6151,9 +6736,15 @@ check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   eq 3, st.party.item_count(3), 'three bought in one confirm'
   shop = scene.instance_variable_get(:@shop)
   eq :purchased, shop[:screen], 'the "purchased" confirmation shows first'
+  # RPG_RT auto-dismisses the confirmation after a flat one-second (60 frame)
+  # timer -- Scene_Shop::vUpdate's Bought/Sold cases (src/scene_shop.cpp)
+  # never read Input:: at all -- so a button press alone does nothing here.
   press(scene, RGSS::Input::C)
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'and dismissing it returns to the buy list'
+  eq :purchased, shop[:screen], 'a button press does not dismiss it early'
+  59.times { scene.update }
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'and the timer expiring on its own returns to the buy list'
 end
 
 check 'Open Shop scene: cancelling the counter buys nothing' do
@@ -6357,10 +6948,10 @@ check 'Open Shop issued from a Parallel Process opens the shop screen too' do
   scene.update
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the "purchased" confirmation
-  scene.update
-  RGSS::Input.triggered = []
-  scene.update
+  # The "purchased" confirmation only leaves once its own 60-frame timer
+  # expires -- Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) never
+  # reads Input::, so a button press does not skip it.
+  60.times { scene.update }
   RGSS::Input.triggered = [RGSS::Input::B] # leave the shop
   scene.update
   scene.update
@@ -7179,6 +7770,13 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   RGSS::Input.triggered = []
   ok parent.game_over_shown, 'a game-over defeat reached the Game Over screen'
   ok !st.switches[5], 'the rest of the event never ran'
+  # Confirmed against EasyRPG's `Scene_Battle::EndBattle` (`src/
+  # scene_battle.cpp`): the "Other" battle counters are bumped there,
+  # unconditionally, before the Game Over dispatch that can follow a
+  # defeat -- a game-over-ending defeat still counts, even though the event
+  # that opened the fight is abandoned and never resumed.
+  eq 1, st.battle_count, 'a game-over-ending fight still counts as a battle entered'
+  eq 1, st.defeat_count, 'and still counts as a defeat, even though the event never resumes'
 end
 
 check 'Game Over event command returns to the title, abandoning the event' do
@@ -7301,19 +7899,26 @@ check 'a game-over battle defeat hands its Game::State to the Game Over screen' 
   eq st, parent.game_over_state, 'carrying the very Game::State the battle ran on'
 end
 
-check 'a button still held from the battle does not skip the Game Over screen' do
+check "Game Over's very first #update already honours a Decision trigger " \
+      '-- there is no arming delay' do
+  # EasyRPG's Scene_Gameover::vUpdate (src/scene_gameover.cpp) is a bare
+  # `if (Input::IsTriggered(Input::DECISION)) { ReturnToTitleScene(); }` --
+  # no arming/pending state of any kind. An earlier version here required a
+  # key-released frame first, on the theory that the key which dismissed
+  # the battle-defeat result could otherwise skip this screen in the same
+  # frame -- but `RPG2k#show_game_over` swaps `@scenes` without ever
+  # calling `.update` on the new scene itself, so this screen's first real
+  # `#update` always lands on the *next* `#main_loop` iteration, by which
+  # point that iteration's own `Input.update` has already cleared the old
+  # trigger. That scenario can never reach this screen's very first
+  # `#update` call through the real engine loop, so a fresh Decision
+  # trigger dismisses it immediately, exactly like the reference.
   parent = fake_parent(fake_db)
   Input.reset
-  # The key that dismissed the defeat message is still down as the scene opens.
-  Input.triggered = [Input::C]
   scene = RPG2k::Scene::GameOver.new(parent)
-  scene.update
-  ok !parent.returned_to_title, 'the held key is ignored'
-  Input.reset
-  scene.update                       # released: the screen arms
   Input.triggered = [Input::C]
-  scene.update                       # pressed afresh
-  ok parent.returned_to_title, 'a fresh press dismisses it'
+  scene.update
+  ok parent.returned_to_title, 'the very first update already honours it'
   Input.reset
 end
 
@@ -7327,12 +7932,10 @@ check 'the Cancel button does not dismiss the Game Over screen -- only Decision 
   parent = fake_parent(fake_db)
   Input.reset
   scene = RPG2k::Scene::GameOver.new(parent)
-  scene.update # arm: no key held yet
   Input.triggered = [Input::B]
   scene.update
   ok !parent.returned_to_title, 'Cancel is not a dismiss trigger for this screen'
   Input.reset
-  scene.update
   Input.triggered = [Input::C]
   scene.update
   ok parent.returned_to_title, 'Decision still dismisses it, right after'
@@ -7392,6 +7995,39 @@ check "a Common Event Parallel Process's own Battle Processing now actually open
   3.times { scene.update }
   ok st.switches[1], "the Victory handler ran, on the parallel process's own command list"
   ok !st.switches[2], 'the Escape handler was skipped'
+end
+
+check "a Common Event Parallel Process's own Battle Processing is blocked " \
+      '(not run) while a message window is open, and retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter_Map::
+  # CommandEnemyEncounter` (`src/game_interpreter_map.cpp`, code 10710) opens
+  # with `if (Game_Message::IsMessageActive()) { return false; }`,
+  # unconditionally -- the identical block-and-retry shape already ported for
+  # Show/Move/Erase Picture and Transfer Player/Recall to Location, see
+  # #block_pending_battle_command. A command right after the blocked Enemy
+  # Encounter in the same list must not run either, until the Enemy
+  # Encounter itself finally succeeds -- the whole interpreter blocks at
+  # that exact command.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: Game::CommonEvent::PARALLEL, need_flag: false,
+                      switch_id: nil,
+                      event: [add_var_cmd(3),
+                              ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq nil, battle_ui(scene), 'the battle must not open while a message window is open'
+  eq 0, st.variables[4],
+     'the command right after the blocked Enemy Encounter must not run either'
+
+  scene.send(:close_message)
+  5.times { scene.update }
+  ok battle_ui(scene), 'the battle opens once the window closes'
 end
 
 # A battle a Parallel Process opened owns the single @battle_ui slot exactly
@@ -7484,6 +8120,50 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   eq nil, scene.instance_variable_get(:@name_ui), 'the widget closed'
   3.times { scene.update }
   ok st.switches[5], 'the event resumed after entry'
+end
+
+# Confirmed against RPG_RT's own live source: `Scene_Name::vUpdate`'s DONE
+# branch (`src/scene_name.cpp`) is `if (name_window->Get().empty()) {
+# name_window->Set(ToString(actor.GetName())); name_window->Refresh(); }
+# else { actor.SetName(...); Scene::Pop(); }` -- an empty typed name resets
+# the field to the actor's current name and leaves the screen open, rather
+# than resuming the event with a blank name.
+check 'Enter Hero Name: confirming a blank name refills it and stays open, ' \
+      'instead of resuming the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 2, 0], indent: 0), # actor 1, letters, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  # Confirm the OK cell straight away, with nothing typed.
+  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok scene.instance_variable_get(:@name_ui), 'the widget stays open on a blank confirm'
+  eq 'Hero', ui[:name], "refilled with the actor's current name"
+  eq 'Hero', st.party.actor_by_id(1).name, 'the actor itself is untouched so far'
+
+  # Confirming again now commits the refilled (non-blank) name.
+  ui[:sel] = RPG2k::Scene::Map::NAME_CELLS.length - 1
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq nil, scene.instance_variable_get(:@name_ui), 'now the widget closes'
+  eq 'Hero', st.party.actor_by_id(1).name
+  3.times { scene.update }
+  ok st.switches[5], 'and the event resumed'
 end
 
 check 'Enter Hero Name plays the RPG_RT system SE on every interaction' do
@@ -7748,6 +8428,96 @@ check 'Enter Hero Name: typing a kana and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
+# Same DONE/blank-confirm refusal as the letters page (see the earlier check's
+# citation) -- the kana grid's :confirm cell routes through the identical
+# #commit_name_input.
+check 'Enter Hero Name: confirming a blank kana name refills it and stays ' \
+      'open, instead of resuming the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0), # actor 1, hiragana, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  eq '', ui[:name], 'starts empty (no seed)'
+
+  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  cols = RPG2k::Scene::Map::NAME_KANA_COLS
+  last_row = rows.length - 1
+  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
+
+  # Confirm the :confirm cell straight away, with nothing typed.
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok scene.instance_variable_get(:@name_ui), 'the widget stays open on a blank confirm'
+  eq 'Hero', ui[:name], "refilled with the actor's current name"
+  eq 'Hero', st.party.actor_by_id(1).name, 'the actor itself is untouched so far'
+
+  # Confirming again now commits the refilled (non-blank) name.
+  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq nil, scene.instance_variable_get(:@name_ui), 'now the widget closes'
+  eq 'Hero', st.party.actor_by_id(1).name
+  3.times { scene.update }
+  ok st.switches[5], 'and the event resumed'
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Window_Keyboard::
+# layouts[]` (`src/window_keyboard.cpp`), the real RPG_RT keyboard table --
+# the ま row's small-kana columns are っゃゅょゎ (small-tsu, then small-ya/
+# yu/yo, then small-wa), and the last row's "vu" cell is katakana ヴ even
+# on the hiragana page (hiragana has no glyph of its own there in the
+# reference table).
+check 'Enter Hero Name: the ま row and "vu" cell match RPG_RT\'s own keyboard ' \
+      'table, not a scrambled small-kana order' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+
+  rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
+  cols = RPG2k::Scene::Map::NAME_KANA_COLS
+  ma_row = rows.index { |r| r[0] == 'ま' }
+  ok ma_row, 'the ま row exists'
+  eq %w[ま み む め も っ ゃ ゅ ょ ゎ], rows[ma_row],
+     'small-tsu, then small-ya/yu/yo, then small-wa -- not ゃゅょっー'
+
+  ui[:sel] = ma_row * cols + 5 # っ
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'っ', ui[:name], 'column 5 types small-tsu'
+
+  ui[:sel] = ma_row * cols + 9 # ゎ
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'っゎ', ui[:name], 'column 9 types small-wa, not a duplicate ー'
+
+  last_row = rows.length - 1
+  eq 'ヴ', rows[last_row][5],
+     'the hiragana page\'s own "vu" cell is katakana ヴ, not hiragana ゔ'
+end
+
 check 'Enter Hero Name: the toggle cell swaps the hiragana/katakana page' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -7924,6 +8694,53 @@ check 'Change Level show-message: the scene shows a message per level, then resu
   ok st.switches[5], 'the event resumes once both level-up messages are dismissed'
 end
 
+check "a common event's Parallel Process's own show-message Change Level " \
+      'command is blocked (not applied) while a message window is open, and ' \
+      'retries once it closes' do
+  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
+  # CommandChangeExp`/`CommandChangeLevel` (`src/game_interpreter.cpp`) both
+  # open with `bool show_msg = com.parameters[5]; if (show_msg &&
+  # !Game_Message::CanShowMessage(true)) { return false; }`, guarding the
+  # entire command -- the actor's level itself, not just the level-up
+  # message -- behind the flag, the same block-and-retry shape already
+  # ported for Show/Move/Erase Picture and Transfer Player (see
+  # #block_pending_exp_level_command). Unlike those three, this guard is
+  # conditional on the "show message" flag actually being set -- a Change
+  # Level/EXP command with the flag off never blocks at all. A Parallel
+  # Process (unlike a fresh Auto-Start event, which never even begins while
+  # a message window is open -- #event_busy?) keeps advancing during a
+  # message window by design (Message Options' "continue events"), so it is
+  # the case that actually reaches an already-running command mid-list.
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [add_var_cmd(3),
+                              ECmd.new(ic::CHANGE_LEVEL, [1, 1, 0, 0, 1, 1], indent: 0),
+                              add_var_cmd(4)])
+  scene = new_scene({}, common: { 7 => ce })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, LevelStubParty.new)
+  scene.send(:open_message, ['hi'], false)
+
+  10.times { scene.update }
+  eq 1, st.variables[3], "marker A still runs on the process's first pass"
+  eq 1, st.party.actor_by_id(1).level, 'the level must not change while a message window is open'
+  eq 0, st.variables[4], 'the command right after the blocked Change Level must not run either'
+
+  scene.send(:close_message)
+  # The retried Change Level itself queues its own level-up message once it
+  # finally applies (show_msg is set) -- dismiss it (a C press) the same way
+  # the foreground "Change Level show-message" check above does, so the
+  # process can reach marker B.
+  40.times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+    break if st.variables[4] == 1
+  end
+  eq 2, st.party.actor_by_id(1).level, 'the Change Level retries and applies once the window closes'
+  eq 1, st.variables[4], 'and the command after it then runs too'
+end
+
 check 'boarding a boat and disembarking onto the shore' do
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
@@ -7948,14 +8765,105 @@ check 'boarding a boat and disembarking onto the shore' do
   eq [0, 1], [boat.x, boat.y], 'the boat stayed where the party left it'
 end
 
-check 'a boarded boat cannot overlap a below-characters event unless it has Through Mode on' do
-  # yado.tk: a below-characters, passable-graphic event lets the *walking*
-  # hero overlap it fine (LAYER_BELOW is not LAYER_SAME, see the priority-type
-  # checks above) -- but a ship ignores that gating entirely and just asks
-  # whether the blocking event's own move route has Through Mode on. Put a
-  # LAYER_BELOW event one tile past a boarded boat, on a boat_pass tile, and
-  # confirm the boat is stopped cold by it despite the layer mismatch that
-  # would let the hero glide over it.
+# Confirmed against EasyRPG's live source: `Game_Player::GetOffVehicle`
+# (`src/game_player.cpp`) calls `Game_Map::CanDisembarkShip` (`src/
+# game_map.cpp`), which only ever tests the *landing* tile's own passability
+# (`GetPassableMask(x, y, player.GetX(), player.GetY())` derives a single
+# direction bit at `(x, y)` alone) -- unlike an ordinary step's own two-sided
+# `#passable?`, the water tile the party is leaving is never consulted.
+check 'a boat disembark only tests the landing tile\'s own passability, ' \
+      'not the water tile being left' do
+  scene = new_scene({}, player: [0, 0])
+  calls = []
+  fake_chipset = Object.new
+  fake_chipset.define_singleton_method(:passable_tile?) do |lower, upper, dir|
+    calls << [lower, upper, dir]
+    true
+  end
+  scene.instance_variable_set(:@chipset, fake_chipset)
+  scene.send(:ship_disembark_passable?, 0, 1, 2)
+  eq 1, calls.size, 'exactly one tile is asked about passability -- the landing tile alone'
+end
+
+# Confirmed against EasyRPG's live source: `Game_Map::CanDisembarkShip` has
+# no equivalent of `#vehicle_blocks?` at all -- unlike `Game_Map::
+# CanLandAirship`, a few lines above it in the same file, which does loop
+# `{ Boat, Ship }` explicitly to block a landing -- so a different boat/ship
+# parked on the landing tile never blocks disembarking here.
+check 'disembarking a boat is not blocked by a different vehicle parked on ' \
+      'the landing tile' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+
+  # Park the ship right on the shore tile the party is about to step onto.
+  ship = st.vehicle(:ship)
+  ship.map_id = st.map_id
+  ship.x = 0
+  ship.y = 0
+
+  st.direction = 8 # face up, toward (0, 0) -- the parked ship's tile
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'disembarked despite the parked ship on the landing tile'
+  eq [0, 0], [st.x, st.y], 'stepped onto the tile the ship occupies'
+end
+
+check 'each vehicle type has exactly one boarding trigger: the airship only ' \
+      'by standing on it, a boat/ship only by facing it' do
+  # Confirmed against RPG_RT's own live source: `Game_Player::GetOnVehicle`
+  # (src/game_player.cpp) checks the Airship only against the player's own
+  # tile (`GetX()`/`GetY()`), in an `if` whose `else` branch is the only
+  # place the faced tile is computed at all -- the Airship is never
+  # considered there, and Ship/Boat are never considered against the
+  # player's own tile. A prior version of `#board_vehicle` ran one generic
+  # per-type loop applying *both* checks to *every* type, which let the
+  # Airship be boarded merely by facing it from an adjacent tile (real
+  # RPG_RT does nothing there) and would have let a Boat/Ship be boarded by
+  # standing on its tile rather than facing it from the shore.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  air = st.vehicle(:airship)
+  air.map_id = st.map_id
+  air.x = 0
+  air.y = 1 # placed on the tile the party faces, not the tile it stands on
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'facing a placed airship from an adjacent tile does not board it'
+  eq [0, 0], [st.x, st.y], 'the party never stepped toward it either'
+
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 0 # right under the party -- standing on it, not facing it
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok !st.boarded?, 'standing on a placed boat does not board it'
+end
+
+check 'a boarded boat glides straight through a below-characters event, ' \
+      'the same as the walking hero' do
+  # Confirmed against EasyRPG's live source, not a divergence from the hero's
+  # own rule: `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) routes a
+  # moving boat/ship's collision through the exact same generic `WouldCollide`
+  # every other mover uses, whose own layer test is `self.GetLayer() ==
+  # other.GetLayer()`; `Game_Vehicle`'s constructor (`src/game_vehicle.cpp`)
+  # sets `SetLayer(Layers_same)` unconditionally, for every vehicle type. So a
+  # LAYER_BELOW event never matches a boat's own LAYER_SAME and is a
+  # decoration it glides straight through, exactly as the walking hero does
+  # (see the priority-type checks above) -- Through Mode is not required.
   blocker = event(0, 2, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
   scene = new_scene({ 1 => blocker }, player: [0, 0], boat_pass: true)
   st = scene.instance_variable_get(:@state)
@@ -7973,12 +8881,41 @@ check 'a boarded boat cannot overlap a below-characters event unless it has Thro
   RGSS::Input.dir_value = 2 # hold down, toward the below-characters event
   20.times { scene.update }
   RGSS::Input.dir_value = 0
+  eq 0, st.x, 'only moved along the column it was already sailing'
+  ok st.y > 1,
+     "the below-characters event's layer mismatch let the boat glide over " \
+     "it, no Through Mode needed (was at y=1, now #{st.y})"
+end
+
+check 'a boarded boat cannot overlap a same-layer event unless it has ' \
+      'Through Mode on' do
+  # The layer-matched counterpart to the check above: a LAYER_SAME event does
+  # match a boat's own fixed layer, so `WouldCollide`'s layer test fires and
+  # the boat is stopped cold, same as it would stop the walking hero -- until
+  # the blocking event's own Through Mode exempts it (`WouldCollide` checks
+  # `self.GetThrough() || other.GetThrough()` before the layer test at all).
+  blocker = event(0, 2, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_SAME))
+  scene = new_scene({ 1 => blocker }, player: [0, 0], boat_pass: true)
+  st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq :boat, st.boarded, 'boarded the boat ahead'
+  eq [0, 1], [st.x, st.y], 'stepped onto the boat tile'
+
+  RGSS::Input.dir_value = 2 # hold down, toward the same-layer event
+  20.times { scene.update }
+  RGSS::Input.dir_value = 0
   eq [0, 1], [st.x, st.y],
-     'a below-characters event stops a boat even though its layer would let ' \
-     "the hero overlap it (got #{[st.x, st.y]})"
+     "a same-layer event stops a boat, matching its own layer (got #{[st.x, st.y]})"
 
   # Turn the blocking event's own Through Mode on and try again: now the boat
-  # passes it, matching real RPG_RT's ship-specific rule.
+  # passes it.
   chars(scene)[1].through = true
   RGSS::Input.dir_value = 2
   20.times { scene.update }
@@ -8066,13 +9003,13 @@ check "a boarded hero's own Set Move Route respects the ridden vehicle's " \
   # way ordinary sailing is" above -- but every tile is still ordinarily
   # walkable on foot, so the pre-fix bug (checking on-foot passability while
   # boarded) would have let this route sail through anyway.
-  scene = new_scene({}, player: [0, 1])
+  scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
   boat.map_id = st.map_id
   boat.x = 0
   boat.y = 1
-  RGSS::Input.triggered = [RGSS::Input::C] # board the boat in place (same tile)
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat by facing it (down, the default)
   scene.update
   RGSS::Input.triggered = []
   eq :boat, st.boarded, 'boarded the boat'
@@ -8083,6 +9020,36 @@ check "a boarded hero's own Set Move Route respects the ridden vehicle's " \
   eq [0, 1], [st.x, st.y],
      "the boarded hero's own Set Move Route must not sail where the boat itself " \
      "can't -- ended at (#{st.x}, #{st.y})"
+end
+
+check 'a move route runs consecutive effect-only sub-commands in the same ' \
+      'frame as the Move that follows them, only the Move itself spending ' \
+      "the route's own pacing delay" do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # UpdateMoveRoute` (src/game_character.cpp) only calls
+  # `SetMaxStopCountFor{Step,Turn,Wait}` for a Move/Turn/Wait/Jump
+  # sub-command; every other sub-command (Switch On/Off, Speed/Frequency
+  # Up/Down, Change Graphic, Play Sound, Through Mode, Stop/Start
+  # Animation, Transparency Up/Down -- Game::MoveRoute#step's own :effect
+  # status) falls straight through to the next command within the same
+  # frame, with no pacing delay of its own at all. This used to charge one
+  # full #EVENT_MOVE_DELAY tick per sub-command regardless of kind, so a
+  # route mixing effect commands with moves (a common "reskin then step"
+  # authoring pattern) crawled through the effect commands at the route's
+  # own pace instead of running them for free.
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  route = Game::MoveRoute.new(
+    [Game::MoveCommand.new(R::SWITCH_ON, '', 1),
+     Game::MoveCommand.new(R::SWITCH_ON, '', 2),
+     Game::MoveCommand.new(R::MOVE_RIGHT)],
+    repeat: false, skippable: true)
+  scene.send(:start_player_route, route, 1) # freq 1, slowest: 96 frames/step
+  scene.update
+  ok st.switches[1] && st.switches[2],
+     'both Switch ON sub-commands ran on the same frame as the Move that follows them'
+  ok scene.instance_variable_get(:@moving),
+     "the Move itself started that same frame too, spending the route's only pacing delay"
 end
 
 check 'a Move Route request targeting a currently-ridden vehicle is ignored' do
@@ -8335,6 +9302,15 @@ check 'Move Speed is no longer dead: it drives the per-frame slide, jump and ani
   # Animation cadence is move_speed-dependent; internal 3 keeps the prior 6.
   eq 6,  scene.send(:anim_frame_period, 3)
   eq 4,  scene.send(:anim_frame_period, 5)
+  # Confirmed against EasyRPG's live source, `Game_Character::
+  # GetContinuousAnimFrames` / `GetSpinAnimFrames` (`src/game_character.h`):
+  # an idling Continuous/Fixed-Continuous event and a Spin event's own
+  # facing-rotation each use their own, slower table -- not the stationary
+  # one reused.
+  eq 8,  scene.send(:anim_continuous_period, 3)
+  eq 6,  scene.send(:anim_continuous_period, 5)
+  eq 8,  scene.send(:anim_spin_period, 3)
+  eq 4,  scene.send(:anim_spin_period, 5)
 end
 
 check "an event's database Move Speed converts from RPG_RT's real 1..6 scale, not fed through raw" do
@@ -8396,15 +9372,20 @@ check 'the airship crosses a tile in half the frames walking on foot takes' do
      "the airship's slide is exactly half the length of the on-foot one"
 end
 
-check 'the airship cannot land on a tile a map event occupies unless it has Through Mode on' do
+check 'the airship cannot land on a tile a map event occupies, Through ' \
+      'Mode or not' do
   # yado.tk: an airship can never land on a tile a map event occupies,
   # regardless of terrain. Flying itself ignores events entirely
   # (#vehicle_passable?'s airship branch never reads @event_tiles), so the
   # airship can cruise -- and be boarded -- directly over a below-characters
   # event a walking hero would just as happily overlap; landing there must
-  # still refuse it, the same vehicle-specific "any layer, only the blocking
-  # event's own Through Mode lets it through" rule already confirmed for a
-  # boarded boat/ship (see the boat/below-characters-event check above).
+  # still refuse it. Confirmed against RPG_RT's own live source:
+  # `Game_Map::CanLandAirship` (`src/game_map.cpp`) is a standalone loop
+  # over every event's `IsInPosition`/`IsActive`/`GetActivePage`, entirely
+  # separate from `WouldCollide`/`CheckOrMakeWayEx` (the function
+  # #vehicle_passable?'s own boat/ship rule reads Through Mode from) -- it
+  # never reads Through Mode at all, so an event with Through Mode ON still
+  # blocks a landing, unlike a boat/ship's own movement collision.
   blocker = event(0, 0, page(trigger: 0, layer: RPG2k::Scene::Map::LAYER_BELOW))
   scene = new_scene({ 1 => blocker }, player: [0, 0], airship_land: true)
   st = scene.instance_variable_get(:@state)
@@ -8424,13 +9405,13 @@ check 'the airship cannot land on a tile a map event occupies unless it has Thro
   RGSS::Input.triggered = []
   eq :airship, st.boarded, 'a below-characters event on the tile still blocked landing'
 
-  # Turn the blocking event's own Through Mode on and try again: now it lands.
+  # Turn the blocking event's own Through Mode on and try again: still
+  # blocked -- CanLandAirship never reads Through Mode at all.
   chars(scene)[1].through = true
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  ok !st.boarded?, 'Through Mode on the blocking event let the airship land'
-  eq [0, 0], [st.x, st.y], 'the party stands where the airship touched down'
+  eq :airship, st.boarded, 'Through Mode on the blocking event does not let the airship land'
 end
 
 check 'an unridden boat/ship blocks the hero on foot, but an unridden airship does not' do
@@ -8508,36 +9489,41 @@ end
 # `#vehicle_passable?` and `#airship_landable?`.
 check 'a moving boat collides with a different parked ship, and with a ' \
       'grounded airship' do
+  # A Boat/Ship boards only by facing it from an adjacent tile, never by
+  # standing on it -- see "board_vehicle applies the wrong boarding trigger"
+  # above -- so the party starts one tile above the boat, facing down (2, the
+  # default), and steps onto it via the ordinary facing-tile board.
   scene = new_scene({}, player: [0, 0], boat_pass: true)
   st = scene.instance_variable_get(:@state)
   boat = st.vehicle(:boat)
   boat.map_id = st.map_id
   boat.x = 0
-  boat.y = 0 # under the party; board in place
+  boat.y = 1
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  eq :boat, st.boarded, 'boarded the boat in place'
+  eq :boat, st.boarded, 'boarded the boat by facing it from the shore'
+  eq [0, 1], [st.x, st.y], 'and stepped onto its tile'
 
   ship = st.vehicle(:ship)
   ship.map_id = st.map_id
   ship.x = 1
-  ship.y = 0
+  ship.y = 1
   RGSS::Input.dir_value = 6 # hold right, straight into the parked ship
   10.times { scene.update }
   RGSS::Input.dir_value = 0
-  eq [0, 0], [st.x, st.y], 'a different parked vehicle (the ship) blocks the boat'
+  eq [0, 1], [st.x, st.y], 'a different parked vehicle (the ship) blocks the boat'
 
   # Move the ship out of the way and put a grounded airship there instead.
   ship.map_id = 0
   air = st.vehicle(:airship)
   air.map_id = st.map_id
   air.x = 1
-  air.y = 0
+  air.y = 1
   RGSS::Input.dir_value = 6
   10.times { scene.update }
   RGSS::Input.dir_value = 0
-  eq [0, 0], [st.x, st.y], 'a grounded airship blocks the boat too'
+  eq [0, 1], [st.x, st.y], 'a grounded airship blocks the boat too'
 end
 
 check 'the airship cannot land on a parked boat/ship\'s tile' do
@@ -9407,6 +10393,61 @@ check "a Common Event Parallel Process's own waited-for Show Battle Animation sh
   ok !st.switches[5], "the process is still held on its own wait that same frame, not resumed already"
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Interpreter_Map::
+# CommandShowBattleAnimation` (src/game_interpreter_map.cpp) calls
+# `GetCharacter(evt_id, ...)` unconditionally, before it ever reads `global`
+# or computes a frame count, and returns outright when that comes back null
+# -- `GetCharacter` (src/game_interpreter.cpp) is null for "This Event" (0)
+# when the calling interpreter has no owning map event, exactly what a
+# common event's own Parallel Process is. `_state.wait_time = frames` is
+# never reached in that case, so a "wait until finished" request falls
+# straight through the same tick rather than drawing on the player (this
+# codebase's own prior fallback) and stalling for the animation's real
+# duration.
+check "a common event Parallel Process's Show Battle Animation targeting " \
+      '"This Event" no-ops instead of falling back to the player, and does ' \
+      'not stall the wait' do
+  ic = Game::Interpreter::Cmd
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 0, 1], indent: 0), # animation, This Event, wait
+                              ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)])
+  scene = new_scene({}, common: { 1 => ce })
+  st = scene.instance_variable_get(:@state)
+  resumed_frame = nil
+  3.times do |i|
+    scene.update
+    resumed_frame ||= i if st.switches[5]
+  end
+  ok resumed_frame && resumed_frame <= 1,
+     'resumes within the same one-frame build/step latency every :animation wait already has, not ' \
+     "stalled for animation 8's own multi-frame missing_animation_wait duration (8 frames)"
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
+end
+
+# Same fact for a specific-but-nonexistent event id -- `GetCharacter` is
+# equally null for an id the map has no character for, regardless of
+# whether the target is "This Event" or a stale/invalid one.
+check 'a Show Battle Animation naming an event id the map has no character ' \
+      'for no-ops instead of falling back to the player' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_BATTLE_ANIM, [8, 99, 1], indent: 0), # animation, unknown event 99, wait
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  resumed_frame = nil
+  3.times do |i|
+    scene.update
+    resumed_frame ||= i if st.switches[5]
+  end
+  ok resumed_frame && resumed_frame <= 1,
+     'resumes within the same one-frame build/step latency every :animation wait already has, not ' \
+     'stalled on the animation duration'
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
+end
+
 # yado.tk: RPG_RT drops straight into Game Over the instant a wipe-triggering
 # command finds the whole party dead outside battle, regardless of which
 # event noticed it -- a Simulated Attack floor trap on a background Parallel
@@ -10000,6 +11041,32 @@ check 'the timer draws M:SS as digit-sprite cells cut from the System graphic, a
   st.timer(0).visible = false
   scene.update
   ok !spr.visible, 'clearing visibility hides the timer sprite'
+end
+
+check 'a timer past 99 minutes draws its minute-tens value across both ' \
+      'leading cells, a duplicated colon, and only the seconds-tens digit -- ' \
+      'not the naive out-of-range single-glyph index' do
+  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: 107 min 34 s
+  # (mins / 10 == 10, a genuine two-digit overflow, reachable via an uncapped
+  # Control-Variables-sourced Timer Set -- see Game::Timer#set's own comment)
+  # draws [1, 0, :, :, 3] across the five 8x16 cells -- the two decimal digits
+  # of mins/10 (10 -> "1","0"), the colon glyph a second time in the cell that
+  # would otherwise be seconds-tens... er, minutes-ones, then seconds-tens
+  # alone. minutes-ones (7) and seconds-ones (4) are both dropped entirely,
+  # not merely miscomputed -- the previous unbounded single-index formula
+  # instead read an out-of-range windowskin offset for cell 0 and still drew
+  # minutes-ones/seconds-ones normally, which does not match real RPG_RT.
+  scene = new_scene({})
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
+  st = scene.instance_variable_get(:@state)
+  st.timer(0).frames = (107 * 60 + 34) * 60 + 30 # blink-on half of the second
+  st.timer(0).visible = true
+  scene.update
+  spr = scene.instance_variable_get(:@timer_sprites)[0]
+  calls = spr.bitmap.blt_calls
+  eq [[0, 0, 40, 32, 8, 16], [8, 0, 32, 32, 8, 16], [16, 0, 112, 32, 8, 16],
+      [24, 0, 112, 32, 8, 16], [32, 0, 56, 32, 8, 16]],
+     calls.map { |x, y, src, r| [x, y, r.x, r.y, r.width, r.height] }
 end
 
 check 'the timer colon blinks off for the first half of each second' do
@@ -10726,7 +11793,11 @@ check 'Enemy Encounter scene: a special item invoking an enemy-scope skill ' \
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   eq :item, ui[:phase]
-  press_key(scene, RGSS::Input::DOWN) # Potion (id 5) -> Fire Bomb (id 7, sorted second)
+  # Potion (id 5, row 0 col 0) -> Fire Bomb (id 7, sorted second, row 0 col 1)
+  # -- the battle item list is a two-column grid (BATTLE_LIST_COLUMN_MAX),
+  # so with only two items Right crosses to the second one, not Down (there
+  # is no second row for two items to wrap across).
+  press_key(scene, RGSS::Input::RIGHT)
   press_key(scene, RGSS::Input::C)    # choose the Fire Bomb
   eq :target, ui[:phase], 'an enemy-scope item skill prompts for an enemy, not an ally'
 
@@ -11103,63 +12174,106 @@ check "Enemy Encounter scene: a battle-command list of Row alone falls back to t
      'is not a usable list on its own, so this falls back to the fixed four'
 end
 
-# A hero with two battle skills, so the skill-list cursor has more than one row
-# to wrap across (BattleMagicParty above only carries one).
-class BattleTwoSkillParty < BattleMagicParty
+# A hero with three battle skills, so the skill-list cursor (a two-column
+# grid, see BATTLE_LIST_COLUMN_MAX) has a genuine second row to cross into
+# (BattleMagicParty above only carries one, and two would both sit in the
+# same row).
+class BattleThreeSkillParty < BattleMagicParty
   def initialize
     super()
-    @hero.instance_variable_set(:@skills, [1, 2])
+    @hero.instance_variable_set(:@skills, [1, 2, 3])
   end
   def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, 3] }; end
   def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0); end
 end
 
-check 'Enemy Encounter scene: the skill list cursor wraps around' do
+# The battle Item/Skill lists are a genuine two-column grid -- confirmed
+# against RPG_RT's own live source: `Window_Item`/`Window_Skill`
+# (`src/window_item.cpp`/`src/window_skill.cpp`) both set `column_max = 2`,
+# and `Window_BattleSkill` inherits that unchanged. `Window_Selectable::
+# Update`'s own Down/Up are genuinely column-locked (`index < item_max -
+# column_max`, blocked rather than wrapped) while Right/Left are a flat
+# `index +- 1` bounded only by the list's absolute ends, no row-boundary
+# term -- the identical shape the field item/skill grid already has.
+check 'Enemy Encounter scene: the skill list cursor is a column-locked ' \
+      'two-column grid, not a single wrapping column' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
-  st.instance_variable_set(:@party, BattleTwoSkillParty.new)
+  st.instance_variable_set(:@party, BattleThreeSkillParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::C)    # open the skill list
   eq :skill, ui[:phase]
-  eq 0, ui[:skill_i], 'starts on the first skill'
+  eq 0, ui[:skill_i], 'starts on the first skill (row 0, col 0)'
+
   press_key(scene, RGSS::Input::UP)
-  eq 1, ui[:skill_i], 'Up from the first skill wraps to the last (2 skills)'
+  eq 0, ui[:skill_i], 'Up from row 0 does not move -- there is no row above'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 1, ui[:skill_i], 'Right moves within the row (col 0 -> col 1)'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 2, ui[:skill_i], 'Right crosses the row boundary into row 1 -- flat, no row-edge stop'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 2, ui[:skill_i], 'Right at the list\'s own end does not wrap'
+
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:skill_i], 'Down from the last skill wraps to the first'
+  eq 2, ui[:skill_i], 'Down does not move -- column 0 (index 2) has nothing below it'
+
+  press_key(scene, RGSS::Input::LEFT)
+  press_key(scene, RGSS::Input::LEFT)
+  eq 0, ui[:skill_i], 'Left flows back across the row boundary the same way'
 end
 
-# A hero with two battle items, so the item-list cursor has more than one row
-# to wrap across (BattleMagicParty above only carries one).
-class BattleTwoItemParty < BattleMagicParty
+# A hero with three battle items, mirroring BattleThreeSkillParty above.
+class BattleThreeItemParty < BattleMagicParty
   def initialize
     super()
-    @items = { 5 => 2, 6 => 1 }
+    @items = { 5 => 2, 6 => 1, 7 => 1 }
   end
   def db_item(id); OpenStruct.new(name: "Item#{id}"); end
 end
 
-check 'Enemy Encounter scene: the item list cursor wraps around' do
+check 'Enemy Encounter scene: the item list cursor is a column-locked ' \
+      'two-column grid, not a single wrapping column' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   scene = new_scene({ 1 => event(2, 2, auto) })
   st = scene.instance_variable_get(:@state)
-  st.instance_variable_set(:@party, BattleTwoItemParty.new)
+  st.instance_variable_set(:@party, BattleThreeItemParty.new)
   ui = battle_to_command(scene)
   press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
   press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
   press_key(scene, RGSS::Input::DOWN) # Defend -> Item
   press_key(scene, RGSS::Input::C)    # open the item list
   eq :item, ui[:phase]
-  eq 0, ui[:item_i], 'starts on the first item'
+  eq 0, ui[:item_i], 'starts on the first item (row 0, col 0)'
+
   press_key(scene, RGSS::Input::UP)
-  eq 1, ui[:item_i], 'Up from the first item wraps to the last (2 items)'
+  eq 0, ui[:item_i], 'Up from row 0 does not move -- there is no row above'
+
   press_key(scene, RGSS::Input::DOWN)
-  eq 0, ui[:item_i], 'Down from the last item wraps to the first'
+  eq 2, ui[:item_i], 'Down crosses into row 1 -- column 0 has a third item below it'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 2, ui[:item_i], 'Right at the list\'s own end does not wrap -- row 1 has only one cell'
+
+  press_key(scene, RGSS::Input::UP)
+  eq 0, ui[:item_i], 'Up flows back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 1, ui[:item_i], 'Right moves within the row (col 0 -> col 1)'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 1, ui[:item_i], 'Down does not move -- column 1 has nothing below it with only 3 items'
+
+  press_key(scene, RGSS::Input::LEFT)
+  eq 0, ui[:item_i], 'Left moves back to column 0'
 end
 
 # A two-actor party, so the ally-target cursor (heal skill / medicine) has
@@ -11191,6 +12305,34 @@ check 'Enemy Encounter scene: the ally target cursor wraps around' do
   eq 1, ui[:ally_i], 'Up from the first ally wraps to the last (2 actors)'
   press_key(scene, RGSS::Input::DOWN)
   eq 0, ui[:ally_i], 'Down from the last ally wraps to the first'
+end
+
+check 'Enemy Encounter scene: Right/Left move the ally target cursor exactly ' \
+      'like Down/Up' do
+  # Confirmed against RPG_RT's own live source: `Window_BattleStatus::Update`
+  # (src/window_battlestatus.cpp) -- the window driving this cursor while
+  # ally-target selection is active -- gates its "next ally" step on
+  # `IsRepeated(DOWN) || IsRepeated(RIGHT) || IsTriggered(SCROLL_DOWN)` and
+  # its "previous ally" step on the Up/Left/SCROLL_UP mirror, deliberately
+  # skipping the generic Window_Selectable cursor logic to fold Right/Left
+  # onto the same up/down axis.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleTwoAllyParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
+  eq 0, ui[:ally_i], 'starts on the first ally'
+  press_key(scene, RGSS::Input::LEFT)
+  eq 1, ui[:ally_i], 'Left from the first ally wraps to the last, same as Up'
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 0, ui[:ally_i], 'Right from the last ally wraps to the first, same as Down'
 end
 
 # Two actors (distinct ids) with an item_usable_by? that restricts the
@@ -11651,6 +12793,9 @@ check 'Scene::Map#flying_offset: RPG2003 + levitate is a +/-4px, 256-frame sine 
   ui = battle_to_command(scene)
   member = ui[:troop].members[0]
   ok member.levitate, 'the fixture enemy (id 3, Bat) carries the flag'
+  member.flying_phase = 0 # pin out the per-member random phase (see
+                           # #flying_phase) so this exercises the bare sine
+                           # formula against a known, controlled frame count
 
   ui[:frame] = 0
   eq 0, scene.instance_variable_get(:@battle).send(:flying_offset, member), 'frame 0: sin(0) = 0'
@@ -11673,6 +12818,9 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   ui = battle_to_command(scene)
   spr = ui[:enemy_sprites][0]
   member = ui[:troop].members[0]
+  member.flying_phase = 0 # pin out the per-member random phase (see
+                           # #flying_phase) for the same reason as the check
+                           # just above
   base_y = member.y - spr.bitmap.height / 2
   frame_before = ui[:frame]
   # Drive to the next frame landing exactly on a sine peak (frame % 256 ==
@@ -11705,6 +12853,33 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
   eq base_y2, spr2.y, 'RPG2000: still no bob after the same number of frames ' \
                       '-- the database flag is parsed but the engine never ' \
                       'draws it, a real RPG_RT quirk, not a missing feature'
+end
+
+check 'Scene::Map#flying_offset: a member\'s own flying_phase shifts its ' \
+      "bob, so two levitating members don't have to bob in lockstep" do
+  # RPG_RT's Game_Enemy::GetFlyingOffset reads a *per-battler* frame counter
+  # (Game_Battler::frame_counter), independently randomized 0..63 per
+  # battler at battle start (Game_Battler::ResetBattle) before every
+  # battler's own counter increments in lockstep -- so two levitating troop
+  # members bob on their own fixed, randomized phases relative to each
+  # other, not in unison off one shared clock.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 2)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new(rpg2003: true))
+  ui = battle_to_command(scene)
+  member = ui[:troop].members[0]
+  bat = scene.instance_variable_get(:@battle)
+
+  ui[:frame] = 64 # a quarter period at phase 0: the +4px peak
+  member.flying_phase = 0
+  eq 4, bat.send(:flying_offset, member), 'phase 0 at frame 64 is the peak, as before'
+  member.flying_phase = 64 # a full extra quarter period added on top
+  eq 0, bat.send(:flying_offset, member),
+     "the same shared frame reads differently once this member's own phase " \
+     'is folded into the sine argument'
 end
 
 # -- headless title auto-select (--rpg2k_new_game / --rpg2k_continue) ---------
@@ -11866,6 +13041,9 @@ TitleParent = Struct.new(:db, :map_tree, :hide_title_flag, :any_save_flag) do
   # check here drives that path through a TitleParent.
   def continue_calls; @continue_calls || 0; end
   def continue_game(_slot = 1); @continue_calls = continue_calls + 1; end
+  # Kept for parity with the real RPG2k#start_new_game New Game calls.
+  def new_game_calls; @new_game_calls || 0; end
+  def start_new_game; @new_game_calls = new_game_calls + 1; end
 end
 
 check 'HideTitle hides the title picture and centres the command window' do
@@ -11976,6 +13154,79 @@ check 'a save exists: Continue is flagged available and its selection key opens 
   pushed = parent.pushed.first
   ok pushed.is_a?(RPG2k::Scene::SaveLoad), "the pushed scene is Scene::SaveLoad, got #{pushed.class}"
   eq :load, pushed.instance_variable_get(:@mode), 'opened in :load mode'
+end
+
+# `Scene_Title::Refresh` (src/scene_title.cpp) calls `command_window->SetIndex(1)`
+# whenever a save exists, unconditionally alongside `SetItemEnabled` -- the
+# cursor starts on Continue, not New Game, so a returning player does not have
+# to move down manually before resuming.
+check 'a save exists: the title cursor starts on Continue, not New Game' do
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  eq 1, scene.instance_variable_get(:@selected_index),
+     'RPG_RT starts the cursor on Continue when a save exists (Scene_Title::Refresh)'
+end
+
+check 'no save data: the title cursor still starts on New Game' do
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  eq 0, scene.instance_variable_get(:@selected_index),
+     'with nothing to resume, the cursor starts on New Game as before'
+end
+
+check 'selecting New Game fades the title BGM (800ms), matching RPG_RT, ' \
+      'not a hard stop' do
+  # Confirmed directly against RPG_RT's live source: `Player::SetupNewGame`
+  # (`src/player.cpp`) is `Main_Data::game_system->BgmFade(800, true); ...`
+  # -- an 800ms fade, not `BgmStop()`'s immediate cut (`Game_System::
+  # BgmFade`/`BgmStop`, `src/game_system.cpp`, are genuinely different
+  # calls). A prior version of this method ran a blanket `Audio.bgm_stop`
+  # before every title selection, this one included.
+  parent = TitleParent.new(fake_db, nil, false, false)
+  scene = RPG2k::Scene::Title.new(parent)
+  RGSS::Audio.reset_bgm # #play_title_bgm's own construction-time bgm_play is not what this checks
+  scene.instance_variable_set(:@selected_index, 0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq [[800]], RGSS::Audio.bgm_fade_calls, 'New Game fades the BGM over 800ms'
+  eq 0, RGSS::Audio.bgm_stop_calls, 'not a hard stop'
+  eq 1, parent.new_game_calls
+end
+
+check "the headless --rpg2k_continue auto-select fades the title BGM " \
+      "(800ms) before resuming, matching RPG_RT's LoadSavegame" do
+  # Confirmed directly against RPG_RT's live source: `Player::LoadSavegame`
+  # (`src/player.cpp`) is `if (!load_on_map) { Main_Data::game_system->
+  # BgmFade(800); ... }` -- true from the title screen, the only path this
+  # headless single-slot shortcut ever takes (the interactive
+  # Scene::SaveLoad picker is a separate, deliberately-unfaded path -- see
+  # #update's own citation on why).
+  clear_title_flags
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  RGSS::Audio.reset_bgm
+  Object.const_set(:RPG2K_CONTINUE, true)
+  scene.update
+  clear_title_flags
+  eq [[800]], RGSS::Audio.bgm_fade_calls, 'the auto-continue path fades the BGM over 800ms'
+  eq 0, RGSS::Audio.bgm_stop_calls, 'not a hard stop'
+  eq 1, parent.continue_calls
+end
+
+check 'the interactive Continue picker (Scene::SaveLoad) does not fade the ' \
+      'BGM itself -- that shared :load path must not fade when reached ' \
+      'from an in-map Open Load Menu event instead' do
+  parent = TitleParent.new(fake_db, nil, false, true)
+  scene = RPG2k::Scene::Title.new(parent)
+  RGSS::Audio.reset_bgm
+  scene.instance_variable_set(:@selected_index, 1)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq [], RGSS::Audio.bgm_fade_calls,
+     'opening the picker itself does not fade -- only the headless single-slot shortcut does'
+  eq 0, parent.continue_calls, 'the picker was opened, not resumed directly'
 end
 
 # -- screen fade / flash overlays ---------------------------------------------
@@ -12426,6 +13677,67 @@ check 'Flash Sprite on the hero holds a waiting event until it decays' do
   eq 1, st.variables[5], 'the event resumed once the flash finished'
 end
 
+check 'Flash Sprite on the hero with an instant (zero-duration) flash still ' \
+      'holds the event, instead of never pausing at all' do
+  # 0 tenths (instant) with the wait flag set, then a variable bump that must
+  # not run the same frame -- RPG_RT still floors a 0.0s wait to one frame.
+  cmds = [ECmd.new(IC2::FLASH_SPRITE, [10001, 31, 0, 0, 31, 0, 1]),
+          add_var_cmd(5)]
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update
+  ok !scene.instance_variable_get(:@player_flash), 'nothing left to flash, it was instant'
+  eq 0, st.variables[5], 'the event is still held right after the flash is queued'
+  scene.update
+  eq 1, st.variables[5], 'the event resumed the very next frame -- matching RPG_RT, whose ' \
+                          'Flash Sprite wait is the identical wait_time countdown the plain ' \
+                          'Wait command uses, not a poll-until-still-animating mechanism'
+end
+
+check 'Flash Sprite targeting a vehicle (Boat) pulses the native sprite flash ' \
+      'and decays, instead of silently dropping the target' do
+  # Confirmed against RPG_RT's own live source: `Game_Character::
+  # GetCharacter` (src/game_character.cpp) resolves CharBoat/CharShip/
+  # CharAirship (10002-10004) to the live Game_Vehicle object exactly like
+  # CharPlayer/CharThisEvent, so `Game_Interpreter_Map::
+  # CommandFlashSprite`'s `event->Flash(...)` call reaches a vehicle just
+  # as it reaches the player or a map event -- nothing in real RPG_RT
+  # exempts it, unlike this codebase's prior "vehicle target = unresolved,
+  # flashes nothing" behaviour.
+  cmds = [ECmd.new(IC2::FLASH_SPRITE, [10002, 31, 0, 0, 31, 2, 0])] # boat, r g b power, 2 tenths, wait=0
+  scene = new_scene({}, player: [0, 0])
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  scene.update
+  spr = scene.instance_variable_get(:@vehicle_sprites)[:boat]
+  ok spr.flash_color, 'the boat sprite was flashed'
+  eq [248, 0, 0, 248],
+     [spr.flash_color.red, spr.flash_color.green, spr.flash_color.blue, spr.flash_color.alpha],
+     'the configured colour/power, already scaled to 0..255 the same way the player/event flash is'
+  20.times { scene.update }
+  ok !spr.flash_color, 'the vehicle flash decays away like any other'
+end
+
+check 'Flash Sprite on a vehicle with the wait flag holds the interpreter ' \
+      'until the flash decays, rather than resuming the very next update ' \
+      'because the target went unresolved' do
+  # 1 tenth = 6 frames (Interpreter::FRAMES_PER_TENTH). Before this fix the
+  # vehicle target never resolved, so #sprite_flashing? was false from the
+  # start and the wait released on the very next #update regardless of the
+  # configured duration -- checking still-0 a couple of updates in (well
+  # short of the real 6-frame duration) is what catches that, not just
+  # "it eventually reaches 1" (which the old, broken no-op path did too).
+  cmds = [ECmd.new(IC2::FLASH_SPRITE, [10002, 31, 0, 0, 31, 1, 1]), # boat, r g b power, 1 tenth, wait=1
+          add_var_cmd(5)]
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.instance_variable_get(:@interpreter).start(cmds)
+  3.times { scene.update }
+  eq 0, st.variables[5], 'still held partway through the vehicle flash duration'
+  10.times { scene.update }
+  eq 1, st.variables[5], 'the event resumed once the vehicle flash finished'
+end
+
 check 'Tile Substitution rewrites the map the scene walks on' do
   cmds = [ECmd.new(IC2::TILE_SUBSTITUTION, [0, 0, 41])]
   scene = new_scene(parallel_event(cmds), player: [0, 0])
@@ -12475,14 +13787,21 @@ check 'Tile Substitution survives a Save/Continue on the same map, unlike an ord
   eq 41, fresh.lower(3, 3), 'Continue restores the substitution onto the fresh map'
 end
 
-check 'Enter/Exit Vehicle boards the vehicle the party stands on' do
+check 'Enter/Exit Vehicle boards the vehicle the party faces' do
+  # `Game_Interpreter_Map::CommandEnterExitVehicle` (code 10840,
+  # src/game_interpreter_map.cpp) just calls `Game_Player::GetOnOffVehicle`
+  # -- the identical function the action button drives -- so a Boat/Ship
+  # boards only by facing it from an adjacent tile, never by standing on it
+  # (see "board_vehicle applies the wrong boarding trigger" above); only the
+  # Airship boards by standing on its own tile.
   cmds = [ECmd.new(IC2::ENTER_EXIT_VEHICLE, [])]
   scene = new_scene(parallel_event(cmds), player: [0, 0])
   st = scene.instance_variable_get(:@state)
+  st.direction = 2 # face down, toward (0, 1)
   boat = st.vehicle(:boat)
   boat.map_id = st.map_id
-  boat.x = st.x
-  boat.y = st.y
+  boat.x = 0
+  boat.y = 1
   scene.update
   eq :boat, st.boarded
   scene.update # the command runs again next loop and steps back off
@@ -13264,6 +14583,31 @@ check 'Terminate Battle matches neither Win/Escape/Defeat and only bumps the bat
   eq 0, st.defeat_count
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Scene_Battle::EndBattle`
+# (`src/scene_battle.cpp`) only ever bumps `IncBattleCount()` there, at
+# battle *end* -- not when the encounter is first armed, well before the
+# fight screen has even opened.
+check "the battle-entry count does not tick until the fight actually ends, " \
+      'not the instant it is entered' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::TERMINATE_BATTLE, [])]) }
+  scene, st = battle_scene_with_pages(pages)
+  eq 0, st.battle_count, 'not yet entered'
+  10.times do
+    scene.update
+    break if battle_ui(scene)
+  end
+  ok battle_ui(scene), 'the battle screen is up'
+  eq 0, st.battle_count,
+     'still not counted -- the fight has not concluded yet, only opened'
+  100.times do
+    scene.update
+    break if battle_ui(scene).nil?
+  end
+  eq nil, battle_ui(scene), 'the battle closed'
+  eq 1, st.battle_count, 'and only now does the count tick, once'
+end
+
 check 'a battle-valid Timer reaching 0:00 force-ends the fight (yado.tk)' do
   scene, st = battle_scene_with_pages({})
   10.times do
@@ -13387,6 +14731,59 @@ check "a battle page's Show Battle Animation actually holds the page, not resumi
   ok !st.switches[21], 'still held two frames later: not resumed unconditionally on the next tick'
   40.times { scene.update }
   ok st.switches[21], 'the page ran on once the animation actually finished'
+end
+
+# Confirmed against RPG_RT's own live source: `Game_Interpreter_Battle::
+# CommandShowBattleAnimation` (src/game_interpreter_battle.cpp) leaves
+# `battler_target` null -- and so never calls `ShowBattleAnimation` at all --
+# for an Ally index (1-based, `target -= 1` first) outside
+# `0...GetBattlerCount()`, or an Enemy index outside `0...GetBattlerCount()`.
+# `#start_battle_page_animation` used to draw an out-of-range Ally target at
+# screen-centre regardless (its own `elsif req[:allies]` branch never looked
+# at the index at all) and an out-of-range Enemy target through
+# `#battle_animation_pixel`'s "no sprite" fallback, which is also
+# screen-centre -- neither path ever no-op'd, and a "wait for completion"
+# request stalled for the animation's own real duration instead of RPG_RT's
+# immediate fallthrough.
+check "a battle page's Show Battle Animation no-ops for an out-of-range Ally " \
+      'index instead of flashing screen-centre' do
+  ic = Game::Interpreter::Cmd
+  # BattleStubParty defaults to a single actor (index 0); Ally target 2
+  # (1-based -> index 1) names no such member.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [8, 2, 1, 1], indent: 0), # anim 8, ally #2 (out of range), wait, allies=1
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 23, 23, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  spr_shown = false
+  150.times do
+    scene.update
+    anim_spr = scene.instance_variable_get(:@animation_sprite)
+    spr_shown ||= anim_spr && anim_spr.visible
+    break if st.switches[23]
+  end
+  ok st.switches[23], 'the page ran straight through instead of stalling on the animation duration'
+  ok !spr_shown, 'nothing was ever drawn'
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
+end
+
+check "a battle page's Show Battle Animation no-ops for an out-of-range " \
+      'Enemy index instead of flashing screen-centre' do
+  ic = Game::Interpreter::Cmd
+  # The default troop has at least two members (see the "draws over the
+  # targeted troop member's own sprite position" check below, which
+  # addresses member 1); member 99 names no such slot.
+  pages = { 1 => troop_page([ECmd.new(ic::SHOW_BATTLE_ANIM_B, [8, 99, 1], indent: 0), # anim 8, enemy #99 (out of range), wait
+                             ECmd.new(ic::CONTROL_SWITCHES, [0, 24, 24, 0], indent: 0)]) }
+  scene, st = battle_scene_with_pages(pages)
+  spr_shown = false
+  150.times do
+    scene.update
+    anim_spr = scene.instance_variable_get(:@animation_sprite)
+    spr_shown ||= anim_spr && anim_spr.visible
+    break if st.switches[24]
+  end
+  ok st.switches[24], 'the page ran straight through instead of stalling on the animation duration'
+  ok !spr_shown, 'nothing was ever drawn'
+  ok scene.instance_variable_get(:@map_animation).nil?, 'nothing was ever built to draw'
 end
 
 check "a battle page's Show Battle Animation draws over the targeted troop member's own sprite position" do
@@ -13551,6 +14948,43 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
      'the panel closed with the message'
 end
 
+# Confirmed against RPG_RT's own live source: `Game_Message::
+# GetRealPosition` (`src/game_message.cpp`) is `if (Game_Battle::
+# IsBattleRunning()) { return Feature::HasRpg2kBattleSystem() ? 2 : 0; }` --
+# position 2 (bottom) for an RPG2000 database, position 0 (top) for
+# RPG2003 -- overriding any Message-Options position outright while a
+# battle is running. `Feature::HasRpg2kBattleSystem` (`src/feature.cpp`) is
+# a pure database-edition check, unrelated to `battle_type`/gauge mode.
+check 'a battle-event page message sits at the bottom for RPG2000, the ' \
+      'top for RPG2003' do
+  ic = Game::Interpreter::Cmd
+  pages2k = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'Hi')]) }
+  scene, _st = battle_scene_with_pages(pages2k)
+  90.times do
+    scene.update
+    ui = battle_ui(scene)
+    break if ui && ui[:event_win]
+  end
+  win2k = battle_ui(scene)[:event_win]
+  ok win2k, 'the message panel is up'
+  eq RPG2k::Scene::Battle::SCREEN_H - win2k.height, win2k.y,
+     'RPG2000 sits flush against the bottom edge'
+
+  pages2k3 = { 1 => troop_page([ECmd.new(ic::SHOW_MESSAGE, [], string: 'Hi')]) }
+  scene3, _st3 = battle_scene_with_pages(
+    pages2k3, rpg2003: true, party: BattleStubParty.new(rpg2003: true),
+    battlecommands: OpenStruct.new(battle_type: 0, placement: 1)
+  )
+  90.times do
+    scene3.update
+    ui = battle_ui(scene3)
+    break if ui && ui[:event_win]
+  end
+  win2k3 = battle_ui(scene3)[:event_win]
+  ok win2k3, 'the message panel is up'
+  eq RPG2k::Scene::Battle::BATTLE_EVENT_MSG_Y, win2k3.y, 'RPG2003 sits at the top'
+end
+
 check 'a hidden troop member is not targetable until it is revealed' do
   scene, _st = battle_scene_with_pages(nil)
   90.times do
@@ -13628,6 +15062,50 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
      'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Window_Shop`
+# (`src/window_shop.cpp`) sets `index = 1` (the Buy row) exactly once, in
+# its constructor; neither `Refresh()` nor `SetMode()` (called by
+# `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`'s own Cancel
+# branch, `src/scene_shop.cpp`, to return to `BuySellLeave2`) ever touches
+# `index` again. So the command menu's own cursor persists across a trip
+# into Buy or Sell and back, rather than always snapping back to the first
+# row (Buy).
+check 'Open Shop scene: the command cursor stays on Sell after cancelling ' \
+      'out of the sell list, not snapping back to Buy' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)]
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  eq 0, shop[:index], 'starts on the first row (Buy)'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto Sell
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq 1, shop[:index], 'now on the second row (Sell)'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # enter the sell list
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen]
+
+  RGSS::Input.triggered = [RGSS::Input::B] # cancel back to the command menu
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  eq 1, shop[:index],
+     'the cursor is still on Sell, not reset to Buy (row 0)'
+end
+
 check 'Open Shop scene: buying shows the shop_purchased confirmation, then returns ' \
       'to the buy list' do
   ic = Game::Interpreter::Cmd
@@ -13655,13 +15133,20 @@ check 'Open Shop scene: buying shows the shop_purchased confirmation, then retur
   ok window_texts(shop[:window]).any? { |t| t.include?('毎度あり！') },
      'the confirmation line uses the database shop_purchased term'
 
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the confirmation
+  # Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) is a bare
+  # `timer--; if (timer == 0) SetMode(Buy);` with no Input:: read at all, so
+  # a button press does nothing here -- only the flat 60-frame timer (armed
+  # by SetMode, DEFAULT_FPS in src/options.h) dismisses it.
+  RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  scene.update
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'a button press returns to the buy list, same as EasyRPG\'s ' \
-                          'Bought -> Buy transition'
+  eq :purchased, shop[:screen], 'a button press does not dismiss it early'
+
+  59.times { scene.update }
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen], 'the timer expiring on its own returns to the buy list, ' \
+                          'same as EasyRPG\'s Bought -> Buy transition'
 end
 
 check 'Open Shop scene: selling shows the shop_sold confirmation, then returns ' \
@@ -13693,16 +15178,65 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   ok window_texts(shop[:window]).any? { |t| t.include?('毎度！') },
      'the confirmation line uses the database shop_sold term'
 
-  RGSS::Input.triggered = [RGSS::Input::B] # dismiss the confirmation (B works too)
+  # Scene_Shop::vUpdate's Sold case (src/scene_shop.cpp) never reads Input::
+  # either -- B does not dismiss it early any more than C does.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :sold, shop[:screen], 'a button press does not dismiss it early'
+
+  59.times { scene.update }
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen], 'the timer expiring on its own returns to the sell list, ' \
+                           'same as EasyRPG\'s Sold -> Sell'
+end
+
+# Confirmed against RPG_RT's own live source: `Window_ShopSell`
+# (`src/window_shopsell.cpp`) inherits `Window_Item::CheckInclude`/
+# `Refresh` (`src/window_item.cpp`) unchanged -- a plain `item_id > 0`
+# filter, no price check -- and only overrides `CheckEnable` (`item->price
+# > 0`), which `Scene_Shop::UpdateSellSelection` (`src/scene_shop.cpp`)
+# reads to Buzz instead of opening the quantity counter. A price-0 (key)
+# item the party holds stays on screen in real RPG_RT, just refuses the sale.
+check 'Open Shop scene: a price-0 (key) item stays listed on the sell ' \
+      'screen, but selecting it just buzzes' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [2, 0, 0, 0, 3], indent: 0)] # sell-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(fake_db), state)
+  party = ShopStubParty.new(0)
+  party.gain_item(3, 1)
+  party.gain_item(8, 1) # price 0 -- key item
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the shop opens straight to the sell list (sell-only)
+
+  shop = scene.instance_variable_get(:@shop)
+  eq [3, 8], shop[:model].sellable_items, 'the key item stays on the list'
+  texts = window_texts(shop[:window])
+  ok texts.any? { |t| t.include?('Deed') }, 'and is actually drawn'
+
+  # Move the cursor onto it (row 1, the second/last row) and try to select it.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.triggered = []
+  scene.update
+  eq 1, scene.instance_variable_get(:@shop)[:index], 'cursor moved onto the key item'
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
   scene.update
   shop = scene.instance_variable_get(:@shop)
-  eq :sell, shop[:screen], 'and returns to the sell list, same as EasyRPG\'s Sold -> Sell'
+  eq :sell, shop[:screen], 'refused -- still on the sell list, not the quantity counter'
+  ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Buzzer1' }, 'a Buzzer SE, not Decision'
 end
 
 check 'Open Shop scene: the status panel shows the highlighted item\'s possessed ' \
-      'and equipped counts, and disappears off the buy/sell list' do
+      'and equipped counts, and stays visible through the quantity counter and ' \
+      'purchase confirmation' do
   ic = Game::Interpreter::Cmd
   db = fake_db
   db.term.possessed_items = '所持数'
@@ -13746,14 +15280,76 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
   eq :quantity, shop[:screen]
-  ok shop[:status].nil?, 'the quantity counter highlights no single list row -- no panel'
+  # Scene_Shop::SetMode (src/scene_shop.cpp) keeps the right-hand panels
+  # visible through BuyHowMany/Bought just like Buy itself -- the panel
+  # still describes the item the counter was opened for, not "no panel".
+  ok !shop[:status].nil?, 'the quantity counter keeps the status panel visible, for the same item'
+  texts = window_texts(shop[:status])
+  ok texts.include?('0'), 'still describing the Herb the counter was opened for'
 
-  RGSS::Input.triggered = [RGSS::Input::B] # back to the buy list
+  RGSS::Input.triggered = [RGSS::Input::C] # commit the purchase
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
+  eq :purchased, shop[:screen]
+  ok !shop[:status].nil?,
+     'the purchase confirmation keeps the status panel visible too (Scene_Shop::SetMode\'s Bought case)'
+
+  # The confirmation only leaves once its own 60-frame timer runs out --
+  # Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) never reads
+  # Input:: at all.
+  60.times { scene.update } # the timer expires, back to the buy list
+  shop = scene.instance_variable_get(:@shop)
   eq :buy, shop[:screen]
   ok !shop[:status].nil?, 'the panel returns once a good is highlighted again'
+
+  RGSS::Input.triggered = [RGSS::Input::B] # back to the command menu
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  ok shop[:status].nil?, 'the command menu still shows no panel'
+end
+
+# Scene_Shop::SetMode's own right-hand-panel switch (src/scene_shop.cpp)
+# hides the party/status/gold panels for BuySellLeave and Sell alike, and
+# shows them for Buy, BuyHowMany/SellHowMany and Bought/Sold -- the gold
+# panel follows the exact same visible/hidden set as the status panel
+# checked just above (see SHOP_PANELS_VISIBLE_ON, mruby-rpg2k/mrblib/
+# scene/map.rb), not "always on".
+check 'Open Shop scene: the gold panel hides on the command menu and the ' \
+      'sell list, matching the status panel' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)] # buy+sell
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  party = ShopStubParty.new(500)
+  party.gain_item(3, 1)
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  ok !shop[:gold].visible, 'the command menu hides the gold panel'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to Sell
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Sell
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen]
+  ok !shop[:gold].visible, 'the sell list hides the gold panel too'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # open the quantity counter for the held Potion
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :quantity, shop[:screen]
+  ok shop[:gold].visible, 'the quantity counter shows the gold panel'
 end
 
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
@@ -14862,41 +16458,41 @@ end
 # ADR 0054's follow-up: the gauge fight's Wait/active presentation. The toggle
 # is the save-system `atb_mode` field (LSD chunk 140), flipped by the field
 # menu's Wait command -- *not* a Battle Commands database field, correcting
-# the ADR's own premise. In wait mode (default) the gauges freeze while any
-# command menu is open; in active mode they keep filling and a ready
-# non-controllable combatant's action interrupts the menu (EasyRPG's
+# the ADR's own premise. In active mode (raw 0, the default) the gauges keep
+# filling while any command menu is open and a ready non-controllable
+# combatant's action interrupts the menu (EasyRPG's
 # `ProcessSceneActionCommand`'s `GetAtbMode() == active && IsBattleActionPending()`
-# gate). These checks drive both through the 2003 scene.
+# gate); in wait mode (raw 1) they freeze -- confirmed against liblcf's own
+# generated `AtbMode` enum (`AtbMode_atb_active = 0, AtbMode_atb_wait = 1`),
+# the opposite of an earlier, uncited pass here that had the two raw values
+# swapped (docs/TODO.md's "Wait" entry has the same correction). These checks
+# drive both through the 2003 scene.
 
-check 'wait mode: the command menu freezes every gauge, enemy gauges included' do
+check 'active mode: the command menu keeps every gauge filling, enemy ' \
+      'gauges included -- and is also the default' do
   scene, st = battle_scene_with_pages({}, rpg2003: true,
                                       battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
-  st.atb_mode = 0 # wait mode -- also the default
+  eq 0, st.atb_mode, 'active mode is the default, no explicit set needed'
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
   hero = ui[:allies][0]
   eq true, hero.gauge_full?, 'the commanded actor\'s gauge is held full'
   enemy = ui[:battle].enemy(0)
-  # Park the enemy mid-fill so the freeze is measurable: under wait mode its
-  # gauge must not move while the menu stays up.
   enemy.gauge = Game::Battle::GAUGE_MAX / 2
   20.times { scene.update }
-  eq Game::Battle::GAUGE_MAX / 2, enemy.gauge,
-     'wait mode: the enemy\'s gauge does not fill while the command menu is open'
+  ok enemy.gauge > Game::Battle::GAUGE_MAX / 2,
+     'active mode: the enemy\'s gauge keeps filling while the command menu is open'
 end
 
-check 'active mode: the command menu keeps the gauges filling, and a ready ' \
-      'enemy\'s action interrupts it' do
+check 'active mode: a ready enemy\'s action interrupts the open command menu' do
   scene, st = battle_scene_with_pages({}, rpg2003: true,
                                       battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
-  st.atb_mode = 1 # Wait-off (active)
+  st.atb_mode = 0 # active (explicit, mirroring the default check above)
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
   enemy = ui[:battle].enemy(0)
   enemy.gauge = Game::Battle::GAUGE_MAX / 2
   20.times { scene.update }
-  ok enemy.gauge > Game::Battle::GAUGE_MAX / 2,
-     'active mode: the enemy\'s gauge keeps filling while the command menu is open'
   ui = battle_ui(scene)
   eq :command, ui[:phase], 'the menu is still up (no interrupt yet -- the enemy is not ready)'
   # Make the enemy ready: in active mode its full gauge fires *now*, mid-menu.
@@ -14917,13 +16513,21 @@ check 'active mode: the command menu keeps the gauges filling, and a ready ' \
   eq :command, ui[:phase], 'after the interrupt resolves, the ready actor\'s menu returns'
 end
 
-check 'wait mode: a ready enemy waits behind the command menu, no interrupt' do
+check 'wait mode: the command menu freezes every gauge, and a ready enemy ' \
+      'waits behind it with no interrupt' do
   scene, st = battle_scene_with_pages({}, rpg2003: true,
                                       battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
-  st.atb_mode = 0 # wait mode
+  st.atb_mode = 1 # wait mode
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the battle opened to the ready actor\'s menu'
   enemy = ui[:battle].enemy(0)
+  # Park the enemy mid-fill so the freeze is measurable: under wait mode its
+  # gauge must not move while the menu stays up.
+  enemy.gauge = Game::Battle::GAUGE_MAX / 2
+  20.times { scene.update }
+  eq Game::Battle::GAUGE_MAX / 2, enemy.gauge,
+     'wait mode: the enemy\'s gauge does not fill while the command menu is open'
+
   enemy.gauge = Game::Battle::GAUGE_MAX
   scene.update
   ui = battle_ui(scene)
@@ -14932,24 +16536,25 @@ check 'wait mode: a ready enemy waits behind the command menu, no interrupt' do
      'and its gauge is left full, waiting for the menu to close'
 end
 
-check 'a battle-page Toggle ATB Mode (5003) flips the live fight to active' do
+check 'a battle-page Toggle ATB Mode (5003) flips the live fight to wait' do
   ic = Game::Interpreter::Cmd
   # A TURN-gated page runs at the first turn boundary; its 5003 flips the
   # same save-system `atb_mode` the field menu Wait command flips, live.
   pages = { 1 => troop_page([ECmd.new(ic::TOGGLE_ATB_MODE, [])]) }
-  scene, st = battle_scene_with_pages(pages, rpg2003: true,
+  scene, st = battle_scene_with_pages(pages, party: BattleStubParty.new(rpg2003: true),
+                                      rpg2003: true,
                                       battlecommands: OpenStruct.new(battle_type: 2, placement: 1))
-  eq 0, st.atb_mode, 'the fight begins in wait mode'
+  eq 0, st.atb_mode, 'the fight begins in active mode'
   ui = battle_until_phase(scene, :command, 250)
   ok ui, 'the gauge battle opened to the ready actor\'s menu'
-  eq 1, st.atb_mode, 'the 5003 page flipped the fight to active'
-  # And the flip is live: the enemy gauge now fills behind the menu, the
-  # active-mode behaviour pinned by the checks above.
+  eq 1, st.atb_mode, 'the 5003 page flipped the fight to wait'
+  # And the flip is live: the enemy gauge no longer fills behind the menu,
+  # the wait-mode behaviour pinned by the checks above.
   enemy = ui[:battle].enemy(0)
   enemy.gauge = Game::Battle::GAUGE_MAX / 2
   20.times { scene.update }
-  ok enemy.gauge > Game::Battle::GAUGE_MAX / 2,
-     'and the flipped-to-active fight keeps the gauges filling behind the menu'
+  eq Game::Battle::GAUGE_MAX / 2, enemy.gauge,
+     'and the flipped-to-wait fight freezes the gauges behind the menu'
 end
 
 check 'an RPG2003 battle_type 0 (traditional) fight still runs the round machine, never the gauge idle loop' do
@@ -15617,6 +17222,7 @@ class MenuStubActor
     @battle_row = Game::Battle::ROW_FRONT
   end
   def exp_to_next; 120; end
+  def next_level_exp; 420; end
   def add_state(id); @states.push(id) unless @states.include?(id); end
   attr_accessor :can_act_flag
   def can_act?; @can_act_flag.nil? ? true : @can_act_flag; end
@@ -15635,13 +17241,47 @@ class MenuStubActor
 
 class MenuStubParty
   attr_reader :actors, :gold, :revision
-  attr_accessor :leader
+  attr_accessor :leader, :situation
   def initialize
     @actors = [MenuStubActor.new]; @gold = 0; @leader = nil; @revision = 0
+    @situation = nil # a state-definition table, for the one check below
+                      # that exercises a stat-affecting (halve/double) state
   end
   def field_items(_state = nil); []; end
   def field_skills(_actor, _state = nil); []; end
   def reorder(new_order); @actors = new_order.map { |i| @actors[i] }; end
+  # Mirrors Game::Party#stat_mode/#adjust_stat/#effective_atk (etc, see
+  # game.rb) -- Scene::StatusMenu/Scene::EquipMenu now read an actor's
+  # state-adjusted battle stat through the real party object rather than
+  # its bare accessor. @situation nil (the default here, matching every
+  # existing check's own state-free actors) always reads :normal, so this
+  # is a no-op for every check except the one that sets it.
+  def stat_mode(b, stat_flag)
+    return :normal unless @situation
+    half = false; dbl = false
+    (b.states || []).each do |sid|
+      d = @situation[sid]
+      next unless d && d.respond_to?(stat_flag) && d.send(stat_flag)
+      case d.respond_to?(:affect_type) ? d.affect_type : 2
+      when 0 then half = true
+      when 1 then dbl = true
+      end
+    end
+    return :double if dbl && !half
+    return :half if half && !dbl
+    :normal
+  end
+  def adjust_stat(value, mode)
+    case mode
+    when :double then value * 2
+    when :half then [value / 2, 1].max
+    else value
+    end
+  end
+  def effective_atk(b); adjust_stat(b.atk, stat_mode(b, :affect_attack)); end
+  def effective_def(b); adjust_stat(b.def, stat_mode(b, :affect_defense)); end
+  def effective_int(b); adjust_stat(b.int, stat_mode(b, :affect_spirit)); end
+  def effective_agi(b); adjust_stat(b.agi, stat_mode(b, :affect_agility)); end
   # Mirrors Game::Party#toggle_actor_row's own guard (see rpg2k_logic_check.rb
   # for that method's own coverage) -- this scene-check only needs to prove
   # Scene::Menu's `:row` dispatch actually reaches it, not re-prove the guard.
@@ -15717,6 +17357,30 @@ check 'the menu party list shows each member condition' do
                          .instance_variable_get(:@status))
   ok texts.include?('Poison'), 'and an afflicted one shows the state'
   ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
+end
+
+# RPG_RT's own `Window_Gold` on this screen -- confirmed against
+# `Scene_Menu::Start` (`src/scene_menu.cpp`), which creates one
+# unconditionally (88x32, bottom-left corner, no version/feature gate
+# anywhere in the file) for RPG2000 and RPG2003 alike, and
+# `Scene_Menu::Continue`, which refreshes it every time control returns from
+# a popped child screen (`Item`/`Skill`/`Equip`/`Status`/`Save`).
+check 'Scene::Menu shows the party\'s own Gold, and keeps it current across ' \
+      'a pushed child screen' do
+  st = menu_state
+  st.party.instance_variable_set(:@gold, 1234)
+  scene = menu_scene(RPG2k::Scene::Menu, st)
+  gold_win = scene.instance_variable_get(:@gold)
+  ok window_texts(gold_win).include?('1234G'), 'Gold is drawn on the field menu screen'
+
+  scene.suspend
+  ok !gold_win.visible, 'the gold panel hides while a child screen (Item/Skill/...) is on top'
+
+  st.party.instance_variable_set(:@gold, 5)
+  scene.resume
+  ok gold_win.visible, 'the gold panel returns once the child screen is popped'
+  ok window_texts(gold_win).include?('5G'),
+     "Gold is refreshed on resume, matching Scene_Menu::Continue's own gold_window->Refresh()"
 end
 
 check 'opening Scene::Menu auto-cancels an Erase Screen black-out (yado.tk)' do
@@ -15979,27 +17643,32 @@ check 'Scene::Menu: an RPG2003 database drives the command list from ' \
      'Status (id 5), Row (id 6), Order (id 7) and Wait (id 8) are all offered'
 end
 
+# Confirmed against liblcf's own generated `AtbMode` enum (`AtbMode_atb_active
+# = 0, AtbMode_atb_wait = 1`) and EasyRPG's `Scene_Menu` Wait row
+# (`src/scene_menu.cpp`): `GetAtbMode() == AtbMode_atb_wait ? wait_on :
+# wait_off` -- raw 0 (the default) is active mode and labels `wait_off`, raw
+# 1 is wait mode and labels `wait_on`.
 check 'Scene::Menu: the Wait command shows the current atb_mode, and toggling ' \
       'it flips the field and relabels the row' do
   db = fake_db(rpg2003: true, menu_commands: [1, 8])
   st = wrap_menu_state
-  eq 0, st.atb_mode, 'a fresh state starts in wait mode'
+  eq 0, st.atb_mode, 'a fresh state starts in active mode'
   scene = menu_scene(RPG2k::Scene::Menu, st, db)
   cmds = scene.instance_variable_get(:@commands)
   eq :wait, cmds[1].first, 'the Wait command (id 8) is offered'
-  eq ['Wait On'], [cmds[1][1]], 'wait mode labels the row with wait_on'
+  eq ['Wait Off'], [cmds[1][1]], 'active mode labels the row with wait_off'
   scene.instance_variable_set(:@index, 1)
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  eq 1, st.atb_mode, 'confirming Wait flips atb_mode to active'
+  eq 1, st.atb_mode, 'confirming Wait flips atb_mode to wait'
   cmds = scene.instance_variable_get(:@commands)
-  eq ['Wait Off'], [cmds[1][1]], 'the row relabels to wait_off after the flip'
+  eq ['Wait On'], [cmds[1][1]], 'the row relabels to wait_on after the flip'
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  eq 0, st.atb_mode, 'confirming again flips back to wait'
-  eq ['Wait On'], [cmds[1][1]], 'and the row relabels back to wait_on'
+  eq 0, st.atb_mode, 'confirming again flips back to active'
+  eq ['Wait Off'], [cmds[1][1]], 'and the row relabels back to wait_off'
 end
 
 check 'Scene::Menu: RPG2003 System.menu_commands can reorder and omit commands' do
@@ -16180,6 +17849,36 @@ check 'Scene::Order: picking every member opens the Confirm/Redo prompt, ' \
   ok scene.parent.pop_called, 'the screen closes on Confirm'
 end
 
+# Confirmed against EasyRPG's actual C++ source: `Scene_Order::UpdateOrder`
+# (`src/scene_order.cpp`), once the last member is picked, calls
+# `window_left->SetIndex(-1)` before `SetActive(false)` -- distinct from
+# simply going inactive. `Window_Selectable::UpdateCursorRect`
+# (`src/window_selectable.cpp`) special-cases a negative index to
+# `SetCursorRect(Rect())`, so real RPG_RT hides the left column's cursor
+# entirely at this transition, rather than freezing it on the now-blank
+# final row the way an ordinary inactive window's cursor otherwise would
+# (see the `RPG2k::Window#draw_cursor` "freeze, don't hide" fix, which still
+# applies to every *other* inactive window whose index is untouched).
+check 'Scene::Order: opening the Confirm/Redo prompt hides the left ' \
+      "column's cursor entirely, rather than freezing it on the blank " \
+      'final row' do
+  scene, state = order_scene
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 0
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto the only unpicked row
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C] # pick index 1 -- both picked, prompt opens
+  scene.update
+  RGSS::Input.reset
+  eq :confirm, scene.instance_variable_get(:@focus), 'both picked -- prompt opens'
+  left = scene.instance_variable_get(:@left_window)
+  eq 0, left.cursor_rect.width, "the left column's cursor is emptied, not left " \
+     'highlighting the now-blank final row'
+  eq 0, left.cursor_rect.height
+end
+
 check 'Scene::Order: Redo clears every pick and returns to the left column, ' \
       'without touching the party' do
   scene, state = order_scene
@@ -16247,6 +17946,32 @@ check 'Scene::Order: holding Down auto-repeats both the left-column pick ' \
      'a held (repeated, not triggered) Down still flips the prompt cursor to Redo'
 end
 
+# Confirmed directly against RPG_RT's live source: `Scene_Order::Confirm`
+# (`src/scene_order.cpp`) removes then re-adds every member through
+# `Game_Party::RemoveActor`/`AddActor` (`src/game_party.cpp`), and each of
+# those calls `Main_Data::game_player->ResetGraphic()` (`src/game_player.cpp`)
+# as a side effect -- re-reading slot 0's (the new leader's) CharSet name
+# onto the map sprite. `Game::Party#reorder` applies the net effect of the
+# remove/re-add dance directly rather than replaying it, so this side effect
+# needs its own explicit wiring (`#take_leader_graphic_dirty`, polled by
+# Scene::Map#update the same way Change Actor Graphic's own flag already is).
+check 'Scene::Map refreshes the leader\'s map sprite once a reorder promotes ' \
+      'a different member to the front' do
+  hero = SlipActor.new
+  hero.instance_variable_set(:@charset_name, 'Hero')
+  ally = SlipActor.new
+  ally.instance_variable_set(:@charset_name, 'Ally')
+  scene = new_scene({}, members: [hero, ally])
+  st = scene.instance_variable_get(:@state)
+  eq 'CharSet/Hero', scene.instance_variable_get(:@charset).load_name,
+     'starts on the leader\'s own charset'
+
+  st.party.reorder([1, 0]) # promote Ally to the front
+  scene.update
+  eq 'CharSet/Ally', scene.instance_variable_get(:@charset).load_name,
+     'the map sprite refreshes to the newly-promoted leader\'s charset'
+end
+
 # -- Scene::SaveLoad: the save/load file-select screen -------------------------
 #
 # Scene::Menu's Save command and Scene::Title's Continue entry both used to
@@ -16284,9 +18009,107 @@ check 'Scene::Menu: Save access forbidden refuses the selection silently, no mes
   ok scene.instance_variable_get(:@message).nil?, 'no message shown at all'
 end
 
+check 'Scene::Menu: a disabled command reads the windowskin\'s own disabled ' \
+      'swatch, not the default text colour' do
+  # Confirmed directly against RPG_RT's live source: `Scene_Menu::
+  # CreateCommandWindow` (`src/scene_menu.cpp`) disables Save on
+  # `!GetAllowSave()` and every other non-Order command on
+  # `GetActors().empty()`; `Window_Command::SetItemEnabled`/`DrawItem`
+  # (`src/window_command.cpp`) then draws a disabled row through
+  # `Font::ColorDisabled` (swatch index 3, `src/font.h`), the same
+  # windowskin-blended path every row uses -- the same convention already
+  # ported for Scene::Title's Continue and Scene::SaveLoad's file rows.
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> a real windowskin loads
+  st = wrap_menu_state
+  st.save_access = false
+  scene = menu_scene(RPG2k::Scene::Menu, st, db)
+  bc = scene.instance_variable_get(:@command).contents.blend_calls || []
+  # colour 3 -> swatch cell (3%10*16, 3/10*16+48) = (48, 48), the same
+  # geometry Scene::Title's own disabled-Continue check pins.
+  ok bc.any? { |call| call[6] == 48 && call[7] == 48 },
+     'the disabled Save label blends from swatch index 3 (48, 48)'
+
+  st.save_access = true
+  scene2 = menu_scene(RPG2k::Scene::Menu, st, db)
+  bc2 = scene2.instance_variable_get(:@command).contents.blend_calls || []
+  ok !bc2.any? { |call| call[6] == 48 && call[7] == 48 },
+     'once save access is restored, no row blends from the disabled swatch'
+end
+
+check 'Scene::Menu: an empty party disables Item/Skill/Equip too, not just Save' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  st = wrap_menu_state
+  st.party.instance_variable_set(:@actors, [])
+  scene = menu_scene(RPG2k::Scene::Menu, st, db)
+  bc = scene.instance_variable_get(:@command).contents.blend_calls || []
+  disabled_rows = bc.count { |call| call[6] == 48 && call[7] == 48 }
+  # RPG2000's fixed five commands: Item/Skill/Equip disable on an empty
+  # party; Save (gated on save_access, untouched here) and End Game (Quit,
+  # never disabled) do not.
+  eq 3, disabled_rows, "expected 3 disabled rows (Item/Skill/Equip), got #{disabled_rows}"
+end
+
 def save_load_scene(mode, state = nil, db = fake_db, parent: nil)
   parent ||= fake_parent(db)
   [RPG2k::Scene::SaveLoad.new(parent, state, mode), parent]
+end
+
+# A FakeParent whose #lsd_path points at a real tmpdir -- the only extra
+# thing #initial_index/#slot_timestamp need beyond FakeParent's own
+# #load_save_state, mirroring RPG2k#lsd_path's own zero-padded naming.
+class SaveLoadRecencyParent < FakeParent
+  def initialize(db, dir)
+    super(db) { |id| fake_map(id, {}) }
+    @dir = dir
+  end
+  def lsd_path(slot)
+    n = slot < 10 ? "0#{slot}" : slot.to_s
+    File.join(@dir, "Save#{n}.lsd")
+  end
+end
+
+# A bare Save<N>.lsd carrying only a title chunk (id 100) with the given
+# timestamp -- everything #slot_timestamp reads, without needing a
+# `Game::State#to_lsd`-compatible party fixture (MenuStubParty isn't one;
+# it is built for RGSS scene wiring, not LCF round-tripping).
+def write_title_only_lsd(path, timestamp)
+  save = LCF::SaveData.new
+  title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+  title[1] = timestamp
+  save[100] = title
+  save.save_to(path)
+end
+
+# Confirmed against RPG_RT's own live source: `Scene_File::Start`
+# (`src/scene_file.cpp`) sets `index = latest_slot; top_index = std::max(0,
+# index - 2);`, tracking whichever populated slot's `title.timestamp` is
+# the largest -- not always slot 1.
+check 'Scene::SaveLoad opens with the cursor on the most-recently-saved ' \
+      'slot, not always the first one' do
+  Dir.mktmpdir('rpg2k-save-recency') do |dir|
+    parent = SaveLoadRecencyParent.new(fake_db, dir)
+    # Slot 2 saved first (older timestamp), slot 5 saved second (newer) --
+    # explicit timestamps so ordering never depends on real wall-clock
+    # timing during the test run.
+    write_title_only_lsd(parent.lsd_path(2), 1000.0)
+    write_title_only_lsd(parent.lsd_path(5), 2000.0)
+
+    scene = RPG2k::Scene::SaveLoad.new(parent, nil, :load)
+    eq 4, scene.instance_variable_get(:@index),
+       'the cursor starts on slot 5 (index 4), the newer of the two timestamps'
+    eq 2, scene.instance_variable_get(:@top),
+       "scrolled so slot 5 is in view (top = index - #{RPG2k::Scene::SaveLoad::VISIBLE_SLOTS} + 1)"
+  end
+
+  # With no saves at all, RPG_RT's own `latest_slot` default (0) holds.
+  Dir.mktmpdir('rpg2k-save-recency-empty') do |dir|
+    parent = SaveLoadRecencyParent.new(fake_db, dir)
+    scene = RPG2k::Scene::SaveLoad.new(parent, nil, :load)
+    eq 0, scene.instance_variable_get(:@index), 'no saves at all still starts on slot 1'
+    eq 0, scene.instance_variable_get(:@top)
+  end
 end
 
 check 'Scene::SaveLoad: an empty slot shows only the file label, no placeholder text' do
@@ -16433,25 +18256,24 @@ check 'Scene::SaveLoad: a member with no FaceSet draws no thumbnail; only the fi
      'only members 2/3/4 (of 5) draw a face'
 end
 
-check 'Scene::SaveLoad :save mode: confirming a slot saves through the parent, shows a ' \
-      'message, and returns to the menu once dismissed' do
+# Confirmed against RPG_RT's own live source: `Scene_Save::Action`
+# (`src/scene_save.cpp`) is just `Save(fs, index + 1); Scene::Pop();`,
+# discarding `Save`'s own boolean result outright -- a save I/O failure
+# pops exactly the same as a success, no "Save failed." path exists at
+# all, and there is no confirmation banner of any kind either way.
+check 'Scene::SaveLoad :save mode: confirming a slot saves through the ' \
+      'parent and pops back to the menu the same frame, no message at all' do
   st = wrap_menu_state
   scene, parent = save_load_scene(:save, st)
   RGSS::Input.triggered = [RGSS::Input::C] # confirm slot 1
   scene.update
   RGSS::Input.reset
   eq [[st, 1]], parent.saved, 'RPG2k#save_game was called for slot 1 with the running state'
-  ok window_texts(scene.instance_variable_get(:@message)[:window]).include?('Game saved.'),
-     'the confirmation banner shows'
-  ok parent.pop_called.nil?, 'the screen has not popped back to the menu yet -- the ' \
-                             'banner is still up'
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the banner
-  scene.update
-  RGSS::Input.reset
-  eq 1, parent.pop_called, 'dismissing the banner pops back to the menu'
+  eq 1, parent.pop_called, 'pops back to the menu the same frame, no dismiss step'
 end
 
-check 'Scene::SaveLoad :save mode: a failed save shows "Save failed." instead' do
+check 'Scene::SaveLoad :save mode: a failed save still pops back the same ' \
+      'way, no failure message' do
   st = wrap_menu_state
   parent = fake_parent(fake_db)
   parent.save_ok = false
@@ -16459,8 +18281,7 @@ check 'Scene::SaveLoad :save mode: a failed save shows "Save failed." instead' d
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  ok window_texts(scene.instance_variable_get(:@message)[:window]).include?('Save failed.'),
-     'the failure banner shows instead of the success one'
+  eq 1, parent.pop_called, 'a failed save pops back to the menu exactly like a successful one'
 end
 
 check 'Scene::SaveLoad :load mode: an empty slot ignores the selection key' do
@@ -16512,6 +18333,47 @@ check 'Scene::SaveLoad: holding Down auto-repeats the cursor, not just a ' \
   RGSS::Input.reset
   eq 1, scene.instance_variable_get(:@index),
      'a held (repeated, not triggered) Down still moves the cursor one slot'
+end
+
+# Confirmed directly against RPG_RT's live source: `Scene_File::vUpdate`
+# (`src/scene_file.cpp`) advances the index unconditionally on a fresh
+# `IsTriggered(DOWN)` -- a tap at the last slot always wraps to the first --
+# but a bare `IsRepeated(DOWN)` (the key already auto-repeating) gates that
+# same advance on `index < max_index`: a sustained hold simply stops at the
+# last slot rather than cycling back around, only wrapping once the player
+# releases and presses again. The mirror case holds for Up at the first
+# slot. `Window_SaveFile` is a plain `Window_Base`, not a `Window_Selectable`
+# -- this nuance is `Scene_File`'s own, not the generic list-cursor machinery
+# every other menu's `#repeat?` wiring goes through.
+check 'Scene::SaveLoad: a held (not freshly tapped) Down does not wrap past ' \
+      'the last slot' do
+  scene, = save_load_scene(:load)
+  scene.instance_variable_set(:@index, RPG2k::MAX_SAVE_SLOTS - 1)
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq RPG2k::MAX_SAVE_SLOTS - 1, scene.instance_variable_get(:@index),
+     'a held Down at the last slot stays put instead of wrapping to the first'
+end
+
+check 'Scene::SaveLoad: a held (not freshly tapped) Up does not wrap past ' \
+      'the first slot' do
+  scene, = save_load_scene(:load)
+  RGSS::Input.repeated = [RGSS::Input::UP] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@index),
+     'a held Up at the first slot stays put instead of wrapping to the last'
+end
+
+check 'Scene::SaveLoad: a fresh tap of Down still wraps past the last slot' do
+  scene, = save_load_scene(:load)
+  scene.instance_variable_set(:@index, RPG2k::MAX_SAVE_SLOTS - 1)
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # a fresh tap, not merely held
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@index),
+     'unlike a held repeat, a fresh tap at the last slot does wrap to the first'
 end
 
 check 'Scene::SaveLoad: cancelling (B) pops back without touching the parent app' do
@@ -16631,12 +18493,7 @@ check 'Open Save Menu: confirming a slot in the pushed picker really saves throu
   picker.update
   RGSS::Input.reset
   eq [[st, 1]], parent.saved, 'RPG2k#save_game was called for slot 1 with the running state'
-  ok window_texts(picker.instance_variable_get(:@message)[:window]).include?('Game saved.'),
-     'the picker shows its own confirmation banner'
-  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the banner
-  picker.update
-  RGSS::Input.reset
-  eq 1, parent.pop_called, 'the picker popped itself once dismissed'
+  eq 1, parent.pop_called, 'the picker pops itself the same frame, no confirmation banner'
 end
 
 check 'Open Save Menu ignores a Change Save Access lock -- unlike Scene::Menu\'s ' \
@@ -16667,7 +18524,7 @@ end
 
 check 'Open Load Menu pushes Scene::SaveLoad in :load mode' do
   cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
-  scene = new_scene({}, player: [0, 0])
+  scene = new_scene({}, player: [0, 0], rpg2003: true)
   parent = scene.instance_variable_get(:@parent)
   st = scene.instance_variable_get(:@state)
   scene.instance_variable_get(:@interpreter).start(cmds)
@@ -16683,7 +18540,7 @@ end
 check 'Open Load Menu: cancelling the picker resumes the event -- unlike the old ' \
       'single-slot version, a cancelled load does not abandon it' do
   cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
-  scene = new_scene({}, player: [0, 0])
+  scene = new_scene({}, player: [0, 0], rpg2003: true)
   parent = scene.instance_variable_get(:@parent)
   st = scene.instance_variable_get(:@state)
   scene.instance_variable_get(:@interpreter).start(cmds)
@@ -16703,7 +18560,7 @@ end
 
 check 'Open Load Menu: confirming an occupied slot resumes the app through continue_game' do
   cmds = [ECmd.new(IC2::OPEN_LOAD_MENU, []), add_var_cmd(9)]
-  scene = new_scene({}, player: [0, 0])
+  scene = new_scene({}, player: [0, 0], rpg2003: true)
   parent = scene.instance_variable_get(:@parent)
   parent.save_states[3] = menu_state
   scene.instance_variable_get(:@interpreter).start(cmds)
@@ -16770,6 +18627,43 @@ check 'Scene::ItemMenu: the item grid cursor does not wrap, the target cursor do
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
 end
 
+# A three-item party -- WrapMenuParty's own two items both fit in the first
+# row, leaving no row boundary for Right/Left to actually cross; this needs
+# a third item (row 2, column 0 alone) to tell "stops at the row edge" apart
+# from "flows into the next row".
+class ThreeItemWrapParty < WrapMenuParty
+  def field_items(_state = nil); [[1, 3], [2, 1], [3, 2]]; end
+end
+
+def three_item_wrap_state
+  Game::State.new(ThreeItemWrapParty.new, 1, 0, 0)
+end
+
+check 'Scene::ItemMenu: Right/Left cross a row boundary rather than ' \
+      'stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) has no method actually named
+  # `CursorRight`/`CursorLeft` -- its real Right/Left branches are a flat
+  # `index +- 1` bounded only by the list's own absolute start/end, no
+  # row-boundary check, structurally unlike Down/Up's genuine column-lock.
+  scene = menu_scene(RPG2k::Scene::ItemMenu, three_item_wrap_state)
+  eq 0, scene.instance_variable_get(:@item_index), 'starts on the first item'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index), 'Right moves onto the second item, same row'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@item_index),
+     'Right from the row\'s last cell flows into the next row\'s first cell, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@item_index),
+     'Left from a row\'s first cell flows back into the previous row\'s last cell'
+end
+
 # EasyRPG's Window_Selectable::Update (the base every real RPG2000 list is
 # built on) falls through to Input::IsRepeated for all four directions
 # right after its own IsTriggered check, so holding a direction
@@ -16823,6 +18717,66 @@ class SwitchItemStubParty < MenuStubParty
     @use_switch_item_calls << id
     ITEM_SWITCH_ID
   end
+end
+
+# A single-target medicine (scope != 1, so #use_medicine reads the chosen
+# actor rather than the whole party) held x3 -- enough to use twice and still
+# have one left, so a repeat use without leaving the target screen is
+# actually observable.
+class MedicineItemStubParty < WrapMenuParty
+  MEDICINE_ID = 40
+  def field_items(_state = nil); [[MEDICINE_ID, 3]]; end
+  def db_item(id)
+    return nil unless id == MEDICINE_ID
+    OpenStruct.new(name: 'Potion', type: Game::Party::ITEM_MEDICINE, scope: 3)
+  end
+  def use_item(id, actor = nil)
+    return [] unless id == MEDICINE_ID && actor
+    [actor]
+  end
+end
+
+check 'Scene::ItemMenu: a successful use stays on the target screen, ' \
+      'matching RPG_RT, instead of dropping back to the item list' do
+  # Confirmed against RPG_RT's own live source: `Scene_ActorTarget::
+  # UpdateItem` (src/scene_actortarget.cpp) never calls `Scene::Pop()` on
+  # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
+  # does, and it never builds a message window either: only `SePlay`/
+  # `Refresh`. A successful use lets the player keep using the same item on
+  # further targets immediately, with no extra dismiss press in between.
+  state = Game::State.new(MedicineItemStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, state)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the item -- opens target selection
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # use it on the first target
+  scene.update
+  RGSS::Input.reset
+  ok scene.instance_variable_get(:@message).nil?, 'no confirmation message is ever shown'
+  eq 'ItemUse', RGSS::Audio.se_calls.last&.first, 'the item\'s own success SE plays instead'
+  eq :target, scene.instance_variable_get(:@mode), 'stays on the target screen after a successful use'
+  ok scene.instance_variable_get(:@pending_item), 'the pending item is still set, ready for another target'
+
+  # Use it again immediately on the second target -- no dismiss step, no
+  # re-navigation, just DOWN then the next Decision.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq 'ItemUse', RGSS::Audio.se_calls.last&.first, 'the second use plays the same success SE, no click first'
+  eq :target, scene.instance_variable_get(:@mode)
+
+  # Cancelling finally returns to the (rebuilt) item list.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
 end
 
 check 'Scene::ItemMenu: a switch item flips its switch, consumes one, and closes ' \
@@ -17080,6 +19034,47 @@ def escape_teleport_item_state
   st
 end
 
+# A party whose only item is a special (type 9) one invoking a Switch skill --
+# Game::Party's own decision logic (#field_usable? / #use_special_switch_item)
+# is covered by scripts/rpg2k_logic_check.rb; this stub only has to hand the
+# scene something that behaves the same way, so this stays about the RGSS
+# wiring (does confirming the item actually flip the switch and close the
+# menu stack, with no message?).
+class SwitchSkillItemStubParty < MenuStubParty
+  SWITCH_ITEM_ID = 52
+
+  def leader; @actors.first; end
+  def field_items(_state = nil); [[SWITCH_ITEM_ID, 1]]; end
+
+  def db_item(id)
+    return nil unless id == SWITCH_ITEM_ID
+    OpenStruct.new(name: 'Summon Scroll', type: Game::Party::ITEM_SPECIAL, skill_id: 32)
+  end
+
+  def db_skill(id)
+    return nil unless id == 32
+    OpenStruct.new(name: 'Summon', type: Game::Party::SKILL_SWITCH)
+  end
+
+  def use_special_switch_item(id, _actor)
+    return nil unless id == SWITCH_ITEM_ID
+    99
+  end
+end
+
+check 'Scene::ItemMenu: a special item invoking a Switch skill flips its ' \
+      'switch and closes the whole menu stack, with no confirmation message' do
+  parent = fake_parent(fake_db)
+  state = Game::State.new(SwitchSkillItemStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the only item
+  scene.update
+  RGSS::Input.reset
+  eq true, state.switches[99], 'the switch turned on'
+  ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+  ok scene.instance_variable_get(:@message).nil?, 'no confirmation message, matching a switch item/skill'
+end
+
 check 'Scene::ItemMenu: a special item invoking Escape queues its target and ' \
       'closes the menu, with no confirmation message' do
   parent = fake_parent(fake_db)
@@ -17114,7 +19109,16 @@ check 'Scene::ItemMenu: a special item invoking Teleport opens a destination ' \
      'both registered destinations, ascending by map id (this fixture parent carries no map tree)'
   ok state.pending_teleport.nil?, 'opening the list does not warp yet'
 
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  # The destination list is itself a two-column grid (confirmed against
+  # genuine RPG_RT's live source: `Window_Teleport` sets `column_max = 2`,
+  # `src/window_teleport.cpp`) -- with only two destinations, DOWN is a
+  # no-op (nothing in the row below) and RIGHT is what reaches the second
+  # one, not DOWN.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]        # no cell below -- a no-op
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@teleport_index), 'Down has nothing to move onto'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination (map 20)
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm it
@@ -17122,6 +19126,41 @@ check 'Scene::ItemMenu: a special item invoking Teleport opens a destination ' \
   RGSS::Input.reset
   eq [20, 21, 22, 0], state.pending_teleport
   ok parent.pop_to_map_called
+end
+
+check 'Scene::ItemMenu: the Teleport destination list crosses a row ' \
+      'boundary on Right/Left rather than stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) -- Right/Left are a flat `index +-
+  # 1` bounded only by the list's own absolute start/end, no row-boundary
+  # check, the same shape already fixed for the item/skill grids. A third
+  # destination is needed here: with only two, both fit in the first row
+  # and Right/Left never reach a boundary to cross.
+  parent = fake_parent(fake_db)
+  state = escape_teleport_item_state
+  state.teleport_targets[30] = { x: 31, y: 32, switch_id: nil }
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the Teleport item
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq [[10, 'Map 10'], [20, 'Map 20'], [30, 'Map 30']], scene.send(:teleport_targets)
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination, same row
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # cross into the next row's first cell
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@teleport_index),
+     'Right from the row edge flows into the next row, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]        # flow back into the previous row's last cell
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
 end
 
 check 'Scene::ItemMenu: cancelling the Teleport destination list returns to the item list' do
@@ -17185,6 +19224,42 @@ check 'Scene::SkillMenu: the skill grid cursor does not wrap, caster is fixed, '
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@target_index), 'Down from the last ally wraps to the first'
+end
+
+# A three-skill party -- WrapMenuParty's own two skills both fit in the
+# first row, leaving no row boundary for Right/Left to actually cross; see
+# Scene::ItemMenu's identical ThreeItemWrapParty for the fuller writeup.
+class ThreeSkillWrapParty < WrapMenuParty
+  def field_skills(_actor, _state = nil); [[10, 2], [11, 4], [12, 6]]; end
+end
+
+def three_skill_wrap_state
+  Game::State.new(ThreeSkillWrapParty.new, 1, 0, 0)
+end
+
+check 'Scene::SkillMenu: Right/Left cross a row boundary rather than ' \
+      'stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) has no method actually named
+  # `CursorRight`/`CursorLeft` -- its real Right/Left branches are a flat
+  # `index +- 1` bounded only by the list's own absolute start/end, no
+  # row-boundary check, structurally unlike Down/Up's genuine column-lock.
+  scene = menu_scene(RPG2k::Scene::SkillMenu, three_skill_wrap_state)
+  eq 0, scene.instance_variable_get(:@skill_index), 'starts on the first skill'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@skill_index), 'Right moves onto the second skill, same row'
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@skill_index),
+     'Right from the row\'s last cell flows into the next row\'s first cell, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@skill_index),
+     'Left from a row\'s first cell flows back into the previous row\'s last cell'
 end
 
 # See Scene::ItemMenu's identical check for the fuller writeup
@@ -17312,7 +19387,11 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
      '(this fixture parent carries no map tree)'
   ok state.pending_teleport.nil?, 'opening the list does not warp yet'
 
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  # The destination list is itself a two-column grid (confirmed against
+  # genuine RPG_RT's live source: `Window_Teleport` sets `column_max = 2`,
+  # `src/window_teleport.cpp`) -- RIGHT is what reaches the second
+  # destination, not DOWN.
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination (map 20)
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm it
@@ -17320,6 +19399,41 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
   RGSS::Input.reset
   eq [20, 21, 22, 0], state.pending_teleport
   ok parent.pop_to_map_called
+end
+
+check 'Scene::SkillMenu: the Teleport destination list crosses a row ' \
+      'boundary on Right/Left rather than stopping at the row edge' do
+  # Confirmed directly against RPG_RT's live source: `Window_Selectable::
+  # Update` (src/window_selectable.cpp) -- Right/Left are a flat `index +-
+  # 1` bounded only by the list's own absolute start/end, no row-boundary
+  # check, the same shape already fixed for the item/skill grids. A third
+  # destination is needed here: with only two, both fit in the first row
+  # and Right/Left never reach a boundary to cross.
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  state.teleport_targets[30] = { x: 31, y: 32, switch_id: nil }
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto Teleport
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq [[10, 'Map 10'], [20, 'Map 20'], [30, 'Map 30']], scene.send(:teleport_targets)
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination, same row
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # cross into the next row's first cell
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@teleport_index),
+     'Right from the row edge flows into the next row, not a no-op'
+  RGSS::Input.triggered = [RGSS::Input::LEFT]        # flow back into the previous row's last cell
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@teleport_index)
 end
 
 check 'Scene::SkillMenu: a Teleport skill turns on the chosen destination\'s own switch, ' \
@@ -17334,7 +19448,7 @@ check 'Scene::SkillMenu: a Teleport skill turns on the chosen destination\'s own
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
   scene.update
   RGSS::Input.reset
-  RGSS::Input.triggered = [RGSS::Input::DOWN]        # move onto the second destination (map 20)
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination (map 20)
   scene.update
   RGSS::Input.reset
   RGSS::Input.triggered = [RGSS::Input::C]           # confirm map 20, the one with a switch
@@ -17364,6 +19478,138 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   eq :skills, scene.instance_variable_get(:@mode)
   ok state.pending_teleport.nil?
   ok !parent.pop_to_map_called
+end
+
+# A single-target skill (scope != 2/4, so the target cursor is not locked)
+# the caster can afford twice over, so a repeat cast without leaving the
+# target screen is actually observable. `animation_id` 12 names the
+# `battle_anime` row the check below installs its own success SE on.
+class NormalTargetSkillStubParty < WrapMenuParty
+  SKILL_ID = 50
+  ANIMATION_ID = 12
+  def field_skills(_actor, _state = nil); [[SKILL_ID, 5]]; end
+  def db_skill(id)
+    return nil unless id == SKILL_ID
+    OpenStruct.new(name: 'Heal', type: Game::Party::SKILL_NORMAL, scope: 3,
+                   animation_id: ANIMATION_ID)
+  end
+  def cast_skill(caster, sid, target = nil, _free = false)
+    return [] unless sid == SKILL_ID && target
+    [target]
+  end
+end
+
+check 'Scene::SkillMenu: a successful cast stays on the target screen, ' \
+      'matching RPG_RT, instead of dropping back to the skill list' do
+  # Confirmed against RPG_RT's own live source: `Scene_ActorTarget::
+  # UpdateSkill` (src/scene_actortarget.cpp) never calls `Scene::Pop()` on
+  # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
+  # does, and it never builds a message window either: only `SePlay`/
+  # `Refresh`, playing the invoked skill's own `animation_id`-derived SE. A
+  # successful cast lets the player keep casting the same skill on further
+  # targets immediately, with no extra dismiss press in between.
+  db = fake_db
+  db.battle_anime = { NormalTargetSkillStubParty::ANIMATION_ID => OpenStruct.new(
+    timings: { 1 => OpenStruct.new(
+      se: OpenStruct.new(file: 'HealCast', volume: 90, pitch: 110)) }
+  ) }
+  state = Game::State.new(NormalTargetSkillStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state, db)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the skill -- opens target selection
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # cast on the first target
+  scene.update
+  RGSS::Input.reset
+  ok scene.instance_variable_get(:@message).nil?, 'no confirmation message is ever shown'
+  eq 'HealCast', RGSS::Audio.se_calls.last&.first,
+     "the skill's own animation SE plays instead"
+  eq :target, scene.instance_variable_get(:@mode), 'stays on the target screen after a successful cast'
+  ok scene.instance_variable_get(:@pending_skill), 'the pending skill is still set, ready for another target'
+
+  # Cast it again immediately on the second target -- no dismiss step, no
+  # re-navigation, just DOWN then the next Decision.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq 'HealCast', RGSS::Audio.se_calls.last&.first, 'the second cast plays the same SE, no click first'
+  eq :target, scene.instance_variable_get(:@mode)
+
+  # Cancelling finally returns to the (rebuilt) skill list.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :skills, scene.instance_variable_get(:@mode)
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Game_System::
+# SePlay(const RPG::Animation&)` (`src/game_system.cpp`) skips a timing
+# whose sound name fails `IsStopSoundFilename` -- true for a genuinely
+# blank name *or* the literal "(OFF)" sentinel (liblcf's own "no sound set"
+# default), not blank alone -- and falls through to the next timing's own
+# sound instead.
+check "Scene::SkillMenu: an animation's own success SE skips past a " \
+      '"(OFF)" timing to a later real one, not the reverse' do
+  db = fake_db
+  db.battle_anime = { NormalTargetSkillStubParty::ANIMATION_ID => OpenStruct.new(
+    timings: { 1 => OpenStruct.new(se: OpenStruct.new(file: '(OFF)', volume: 90, pitch: 110)),
+               2 => OpenStruct.new(se: OpenStruct.new(file: 'HealCast', volume: 90, pitch: 110)) }
+  ) }
+  state = Game::State.new(NormalTargetSkillStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state, db)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the skill -- opens target selection
+  scene.update
+  RGSS::Input.reset
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::C] # cast on the first target
+  scene.update
+  RGSS::Input.reset
+  eq 'HealCast', RGSS::Audio.se_calls.last&.first,
+     'the first timing\'s "(OFF)" sentinel is skipped, the second timing\'s ' \
+     'real sound plays instead'
+end
+
+# Confirmed against EasyRPG's actual C++ source:
+# `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect` case
+# (`src/game_character.cpp`) -- `if (move_command.parameter_string !=
+# "(OFF)" && move_command.parameter_string != "(Brak)") { ...SePlay...; }`
+# -- a Move Route "Play SE" sub-command skips playback for either sentinel
+# string, not just a blank name. `RPG2k::Scene::MapWorld`/`VehicleWorld
+# #play_sound` (`mruby-rpg2k/mrblib/scene/base.rb`) is what `Game::
+# MoveRoute`'s own PLAY_SOUND case calls through.
+check 'RPG2k::Scene::MapWorld#play_sound skips the "(OFF)"/"(Brak)" ' \
+      'sentinels, not just a blank name' do
+  world = RPG2k::Scene::MapWorld.new(nil, nil)
+  RGSS::Audio.reset_se
+  world.play_sound('(OFF)', 90, 100, 50)
+  world.play_sound('(Brak)', 90, 100, 50)
+  eq [], RGSS::Audio.se_calls, 'neither sentinel plays anything'
+  world.play_sound('bell', 90, 100, 50)
+  eq [['bell', 90, 100]], RGSS::Audio.se_calls, 'a real name still plays normally'
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Game_System::
+# SePlay(const lcf::rpg::Sound&, bool)` (`src/game_system.cpp`) -- `if
+# (se.name.empty()) { return; } else if (se.name == "(OFF)") { ...; return;
+# }` -- a system SFX slot (cursor/decision/cancel/buzzer) set to the
+# literal "(OFF)" sentinel plays nothing, the same as a genuinely blank
+# name.
+check 'Scene::Base#play_system_se treats a "(OFF)" system SFX slot as no ' \
+      'sound, not a literal filename' do
+  db = fake_db
+  db.system.cursor_se = OpenStruct.new(file: '(OFF)', volume: 100, pitch: 100)
+  scene = RPG2k::Scene::Base.new(fake_parent(db))
+  RGSS::Audio.reset_se
+  scene.send(:play_system_se, RPG2k::Scene::Base::SFX_CURSOR)
+  eq [], RGSS::Audio.se_calls, 'a "(OFF)" system SFX slot plays nothing'
 end
 
 # A party whose two field skills are self (2) and all-ally (4) scope -- real
@@ -17597,6 +19843,25 @@ check 'Scene::SkillMenu: a Switch skill plays its own sound_effect on a successf
   eq true, state.switches[17], 'the switch turned on'
   eq [['Decision1', 100, 100], ['SwitchOn', 90, 110]], RGSS::Audio.se_calls,
      "the ordinary Decision SE (confirming the choice) then the skill's own sound_effect"
+end
+
+check 'Scene::SkillMenu: a successful Switch skill closes the whole menu ' \
+      'stack at once, with no confirmation message' do
+  # Confirmed against RPG_RT's own live source: `Scene_Skill::vUpdate`'s
+  # `Type_switch` arm (src/scene_skill.cpp) plays the skill's own sound
+  # effect and calls `Scene::PopUntil(Scene::Map)` on the very same Decision
+  # press, with no confirmation message at all -- the identical shape as
+  # `Type_escape`, not the ordinary target-mode cast's stay-open-and-show-a-
+  # message flow.
+  parent = fake_parent(fake_db)
+  state = skill_sound_effect_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm the switch skill
+  scene.update
+  RGSS::Input.reset
+  eq true, state.switches[17], 'the switch turned on'
+  ok parent.pop_to_map_called, 'the whole menu stack closes rather than staying open'
+  ok scene.instance_variable_get(:@message).nil?, 'no "casts ..." message, matching a switch item'
 end
 
 check 'Scene::SkillMenu: a Switch skill with a blank sound_effect plays nothing extra and does not error' do
@@ -17911,6 +20176,28 @@ check 'Scene::EquipMenu: holding Down auto-repeats the slot and candidate ' \
      'a held (repeated, not triggered) Down still moves the candidate cursor one step'
 end
 
+# Confirmed against RPG_RT's own live source: `Scene_Equip::
+# UpdateEquipSelection` (src/scene_equip.cpp) gates both the RIGHT and LEFT
+# branches on `actors.size() > 1`, not just the key trigger itself -- a solo
+# party's Equip screen plays no cursor SE and rebuilds nothing on either key.
+check 'Scene::EquipMenu: a solo party leaves Right/Left as silent no-ops' do
+  scene = menu_scene(RPG2k::Scene::EquipMenu, menu_state)
+  eq 0, scene.instance_variable_get(:@actor_index), 'starts on the only actor'
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Right has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Right'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Left has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Left'
+end
+
 check 'Scene::EquipMenu: 装備固定 refuses to open the item list for that actor' do
   state = wrap_menu_state
   state.party.actors.first.equipment_fixed_flag = true
@@ -17966,20 +20253,137 @@ class EquipCompareParty < MenuStubParty
   def equip_candidates(_slot, _actor = nil); [[2, 1], [3, 1], [4, 1]]; end
 end
 
-check 'Scene::EquipMenu: the candidate arrow sums all four stat deltas against the worn item (yado.tk)' do
+# Confirmed against EasyRPG's actual C++ source: `Window_EquipItem::
+# CheckInclude` (`src/window_equipitem.cpp`) and the inherited `Window_Item::
+# DrawItem` draw only the item's name and stock count, no comparison glyph of
+# any kind -- the summed arrow this candidate list used to draw next to each
+# row (attributed to a fan wiki, yado.tk, rather than ever reading
+# `scene_equip.cpp` in full) never existed in real RPG_RT. The comparison
+# lives entirely in the stats window instead, checked below.
+check 'Scene::EquipMenu: the candidate list draws only a name and count, no comparison glyph' do
   state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
   state.party.actors.first.equipment[0] = 1 # weapon slot already holds item 1 (atk 10)
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
   texts = window_texts(scene.instance_variable_get(:@cand_window))
-  # Row 0 is "(Remove)" (one draw_text call); each candidate row after it is
-  # three calls -- name, arrow, count -- so the arrows land at 2, 5, 8.
-  eq '^', texts[2], 'a candidate with strictly more combined points draws Up'
-  eq 'v', texts[5], 'one with strictly fewer draws Down'
-  eq '-', texts[8], 'an exact match draws Same, not counted per-stat'
+  # Row 0 is "(Remove)" (one call); each candidate row after it is exactly
+  # two calls -- name, count -- so a summed arrow would show up as a third.
+  eq ['(Remove)', 'Better', ':1', 'Worse', ':1', 'Same', ':1'], texts,
+     'no arrow glyph anywhere in the candidate list'
 end
 
+# Confirmed against EasyRPG's actual C++ source, fetched live:
+# `Window_EquipStatus::Refresh` (`src/window_equipstatus.cpp`) draws the
+# actor name once (`DrawActorName`) and then loops exactly the four battle
+# stats (`DrawParameter`, type 0-3: Attack/Defense/Spirit/Agility) at
+# `y_offset + ((12 + 4) * i)` -- a genuinely separate row per stat, with no
+# HP/MP field anywhere in the window at all. `Scene_Equip::Start`
+# (`src/scene_equip.cpp`) confirms this is the *only* status window on the
+# screen (alongside the plain slot list) -- there is no second window
+# showing HP/MP either. docs/TODO.md's own "Menu scene" entry used to claim
+# "Equip already shows the full stat block", which this source disproves.
+check 'Scene::EquipMenu: the stats window shows no HP/MP, and each battle ' \
+      'stat is drawn on its own row' do
+  state = Game::State.new(MenuStubParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  eq 80, actor.hp
+  eq 120, actor.display_max_hp
+  eq 10, actor.mp
+  eq 30, actor.display_max_mp
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  win = scene.instance_variable_get(:@stats_window)
+  texts = window_texts(win)
+  ok !texts.any? { |t| t.include?('80') || t.include?('120') },
+     'no HP figures anywhere in the stats window'
+  ok !texts.any? { |t| t.include?('10/30') }, 'no MP figures anywhere in the stats window'
+  ok !texts.any? { |t| t.include?('HP') || t.include?('MP') },
+     'no HP/MP term labels either'
+  # Row 0 (y 0) is the name/level line; the four stats follow it, name
+  # window's own calls excluded by requiring y > 0.
+  rows = win.contents.draw_calls.select { |a| a[1].positive? }
+  eq 4, rows.size, 'exactly one draw call per battle stat, name row excluded'
+  eq [1, 2, 3, 4].map { |i| RPG2k::Scene::EquipMenu::LINE_H * i }, rows.map { |a| a[1] },
+     'each stat on its own row below the name row, one RPG2k::Scene::EquipMenu::LINE_H apart'
+end
+
+# Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
+# UpdateStatusWindow` (`src/scene_equip.cpp`) recomputes each of the four
+# battle stats independently and hands them to `Window_EquipStatus::
+# SetNewParameters`, which `DrawParameter` (`src/window_equipstatus.cpp`)
+# draws as its own old -> new pair -- never folded into one net verdict, so
+# a candidate that trades Atk for Def shows both movements at once.
+check 'Scene::EquipMenu: the stats window previews each battle stat ' \
+      'independently while browsing candidates' do
+  state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  actor.equipment[0] = 1 # weapon slot: Worn (atk 10); actor's own Atk stub is 20
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+  # #candidates leads with a "(Remove)" entry (id 0), so index 1 is the
+  # first real candidate: [0 Remove, 1 Better(id 2), 2 Worse(id 3), 3 Same(id 4)].
+  scene.instance_variable_set(:@cand_index, 1) # Better (id 2, atk 15)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('25'), 'Better\'s own delta (15 - 10 = +5) applied on top: 20 + 5 = 25'
+
+  scene.instance_variable_set(:@cand_index, 2) # Worse (id 3, atk 5)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('15'), 'Worse\'s own delta (5 - 10 = -5) applied: 20 - 5 = 15'
+
+  scene.instance_variable_set(:@cand_index, 3) # Same (id 4, atk 10)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('20'), 'no delta (10 - 10 = 0): the new value equals the old one (20)'
+
+  scene.send(:leave_items)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  eq false, texts.include?('>'), 'back on the slot list, the preview arrow is gone entirely'
+end
+
+# Confirmed against RPG_RT's own live source: `Window_EquipStatus::
+# DrawParameter` (`src/window_equipstatus.cpp`) draws `actor.GetAtk()` (the
+# state-adjusted value), and `Scene_Equip::UpdateStatusWindow` (`src/
+# scene_equip.cpp`) computes its own "new" preview by rebuilding the raw
+# base+equip total first, clamping to `MaxStatBaseValue()` (999), and only
+# then calling `actor.CalcValueAfterAtkStates` -- the state adjustment is
+# the last step in both the current and the preview column, not skipped or
+# folded additively into the raw item-swap delta.
+check 'Scene::EquipMenu: both the current and previewed stat are halved by ' \
+      'an active state' do
+  state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
+  actor = state.party.actors.first
+  actor.equipment[0] = 1 # weapon slot: Worn (atk 10); actor's own Atk stub is 20
+  actor.add_state(5)
+  state.party.situation = { 5 => OpenStruct.new(affect_type: 0, affect_attack: true) }
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  # Each stat is its own draw call here (unlike the combined status-screen
+  # line above); the Atk row is whichever one ends in " 10", not the term
+  # text (a real database's own, not this fixture's fallback labels).
+  ok texts.any? { |t| t.match?(/\b10\z/) },
+     "expected the halved current Atk (10), got: #{texts.inspect}"
+  ok !texts.any? { |t| t.match?(/\b20\z/) },
+     "the raw base Atk (20) should not still appear: #{texts.inspect}"
+
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+  scene.instance_variable_set(:@cand_index, 1) # Better (id 2, atk 15)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  # base+equip: 20 + (15 - 10) = 25, then halved: 12 (25 / 2 truncated)
+  ok texts.include?('12'),
+     "expected the halved preview (12), not a linear 10 + 5, got: #{texts.inspect}"
+end
+
+# The same per-stat preview, but through the 両手持ち forced-unequip case a
+# single summed verdict used to collapse into one arrow: Atk rises (+40 the
+# claymore, -20 the old sword) while Def falls at the same time (-25 the
+# shield the claymore forces off) -- two independent movements on one
+# candidate, exactly what #draw_stat_row's per-stat preview (and real
+# RPG_RT) shows and a single combined arrow never could.
 # An actor whose weapon-slot Claymore (id 2) is 両手持ち; MenuStubActor's own
 # stub always answers false, so a check exercising the forced-unequip side
 # effect needs this richer one instead.
@@ -18002,16 +20406,17 @@ class TwoHandedEquipParty < MenuStubParty
   def equip_candidates(_slot, _actor = nil); [[2, 1]]; end
 end
 
-check 'Scene::EquipMenu: a 両手持ち candidate also drops the other hand\'s ' \
-      'stat bonus from the preview, matching what actually equipping it does' do
-  # Confirmed against EasyRPG's actual C++ source: Scene_Equip::
-  # UpdateStatusWindow (src/scene_equip.cpp) also subtracts the *other*
-  # hand's item when either it or the candidate is 両手持ち, since equipping
-  # either one forces the opposite slot empty -- the exact side effect
-  # Actor#equip_item / #free_two_handed_slot already applies for real. A
-  # preview that only diffs the two items landing in the browsed slot would
-  # show the Claymore's own +20 Atk (40 - 20) and draw Up, even though the
-  # true net (+20 Atk, -25 Def from the forced-off Shield) is -5.
+# Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
+# UpdateStatusWindow` also subtracts the *other* hand's item when either it
+# or the candidate is 両手持ち, since equipping either one forces the
+# opposite slot empty -- the exact side effect `Actor#equip_item` /
+# `#free_two_handed_slot` already applies for real. The per-stat preview
+# shows this as two independent movements on the SAME candidate (Atk rises,
+# Def falls at once) rather than one net verdict -- a single combined arrow
+# could only ever show one of the two, or worse, cancel them into "Up" and
+# hide the shield loss entirely.
+check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' \
+      'falling at once, not one summed verdict' do
   state = Game::State.new(TwoHandedEquipParty.new, 1, 0, 0)
   actor = state.party.actors.first
   actor.equipment[0] = 1 # weapon slot: Sword, atk 20
@@ -18019,11 +20424,50 @@ check 'Scene::EquipMenu: a 両手持ち candidate also drops the other hand\'s '
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  texts = window_texts(scene.instance_variable_get(:@cand_window))
-  # Row 0 is "(Remove)"; the one candidate (Claymore) follows it, arrow at 2.
-  eq 'v', texts[2],
-     'net -5 (claymore +40 atk, sword -20 atk, forced-off shield -25 def), ' \
-     'not a naive +20 that ignores the shield the claymore forces off'
+  # #candidates leads with a "(Remove)" entry (id 0); the Claymore is index 1.
+  scene.instance_variable_set(:@cand_index, 1)
+  scene.send(:refresh_cand_cursor)
+  texts = window_texts(scene.instance_variable_get(:@stats_window))
+  ok texts.include?('40'),
+     'Atk rises: stub actor\'s own 20 + delta (claymore 40 - sword 20 = 20) = 40'
+  # Def falls in the same preview: stub actor's own 12 + delta (0 -
+  # forced-off shield's 25 = -25) = -13 -- but RPG_RT clamps the new base
+  # total to 1..999 (`Utils::Clamp(atk, 1, limit)`, `src/scene_equip.cpp`)
+  # *before* ever displaying it, the same clamp #draw_stat_row now applies,
+  # so a negative preview floors to 1, not the raw negative sum.
+  ok texts.include?('1'),
+     'Def falls to the floor in the same preview: -13 clamped to 1'
+  ok !texts.include?('-13'),
+     'the raw, unclamped negative total should not be shown at all'
+end
+
+# EasyRPG's `Window_EquipStatus::DrawParameter` (`src/window_equipstatus.cpp`)
+# colours the new value via `GetNewParameterColor` (0 unchanged / 2 up / 3
+# down), blended from the windowskin's own system-colour swatches -- the same
+# convention the disabled title-menu label and the shop status panel already
+# use elsewhere in this codebase -- not a hardcoded green/red.
+check 'Scene::EquipMenu: the stats window\'s preview colour comes from the ' \
+      'windowskin\'s own swatches, not a hardcoded colour' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> load_windowskin returns a real Bitmap
+  state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
+  state.party.actors.first.equipment[0] = 1
+  scene = menu_scene(RPG2k::Scene::EquipMenu, state, db)
+  scene.instance_variable_set(:@mode, :items)
+  scene.send(:build_cand_window)
+
+  scene.instance_variable_set(:@cand_index, 1) # Better (id 2) -- Atk rises
+  scene.send(:refresh_cand_cursor)
+  bc = scene.instance_variable_get(:@stats_window).contents.blend_calls || []
+  # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
+  ok bc.any? { |call| call[6] == 32 && call[7] == 48 },
+     'a rising stat blends from swatch index 2 (32, 48)'
+
+  scene.instance_variable_set(:@cand_index, 2) # Worse (id 3) -- Atk falls
+  scene.send(:refresh_cand_cursor)
+  bc = scene.instance_variable_get(:@stats_window).contents.blend_calls || []
+  ok bc.any? { |call| call[6] == 48 && call[7] == 48 },
+     'a falling stat blends from swatch index 3 (48, 48)'
 end
 
 check "Scene::EquipMenu: browsing the shield slot with a 両手持ち weapon " \
@@ -18085,6 +20529,73 @@ check 'Scene::EquipMenu: a dangling equipped item id logs once, not per rebuild,
   ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
+# Confirmed against RPG_RT's own live source: `Window_ActorInfo::DrawInfo`
+# (`src/window_actorinfo.cpp`) always draws a labelled Class/Profession row
+# (`TextDraw(..., "Class"); DrawActorClass(actor, ...)`), with no version
+# gate around it -- an RPG2000 database with no class table still gets the
+# row, just blank.
+check 'the status screen shows a labelled Class row' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.any? { |t| t.start_with?('Class:') },
+     "the row is labelled even with no class (RPG2000), got: #{texts.inspect}"
+  eq 'Class: ', texts.find { |t| t.start_with?('Class:') },
+     'blank value with no class table'
+
+  classed = Class.new(MenuStubActor) { def class_name; 'Paladin'; end }.new
+  st.party.instance_variable_set(:@actors, [classed])
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Class: Paladin'), "shows the class name, got: #{texts.inspect}"
+end
+
+# Confirmed against RPG_RT's own live source: `Window_ParamStatus::Refresh`
+# (`src/window_paramstatus.cpp`) draws `actor.GetAtk()`/`GetDef()`/
+# `GetSpi()`/`GetAgi()`, and `Game_Battler::GetAtk` et al. (`src/
+# game_battler.cpp`) run the base value through `AdjustParam`, which halves
+# or doubles it against whatever states the actor currently carries -- a
+# state that persists onto the map affects this screen too, not just battle
+# math.
+check 'the status screen shows a battle stat halved by an active state, ' \
+      'not the raw base value' do
+  st = menu_state
+  hero = st.party.actors.first
+  eq 20, hero.atk # MenuStubActor's own base stub value
+  hero.add_state(5)
+  st.party.situation = { 5 => OpenStruct.new(affect_type: 0, affect_attack: true) }
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  # Def/Int/Agi (12/9/14) are unaffected -- only Atk (base 20) halves to 10;
+  # matched by number rather than term text since the term table (a real
+  # database's own, unlike this fixture's bare fallback labels) is not what
+  # this check is about.
+  stat_line = texts.find { |t| t.include?('12') && t.include?('9') && t.include?('14') }
+  ok stat_line, "expected the stat row somewhere, got: #{texts.inspect}"
+  ok stat_line.match?(/\b10\b/), "expected the halved Atk (10), not the raw base (20): #{stat_line.inspect}"
+  ok !stat_line.match?(/\b20\b/), "the raw base Atk (20) should not still appear: #{stat_line.inspect}"
+end
+
+# Confirmed directly against RPG_RT's live source: `Window_ActorStatus::
+# DrawStatus` (`src/window_actorstatus.cpp`) draws the Exp row via
+# `DrawMinMax(90, 34, -1, -1)`, whose sentinel routes both halves through
+# `GetExpString`/`GetNextExpString` rather than a literal min/max pair;
+# `Game_Actor::GetNextExpString` (`src/game_actor.cpp`) stringifies
+# `GetNextExp()` -- the absolute cumulative-total curve value for the next
+# level, not a subtraction against current EXP. `MenuStubActor` gives
+# `#next_level_exp`/`#exp_to_next` distinct values (420 vs 120) precisely so
+# this check can tell which one the screen actually reads.
+check 'the status screen\'s "Next" EXP figure is the absolute next-level ' \
+      'threshold, not the remaining delta' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Lv 5    EXP 300    Next 420'),
+     "expected the absolute threshold (420), got: #{texts.inspect}"
+  ok !texts.any? { |t| t.include?('Next 120') },
+     "must not show the remaining-EXP delta (120) instead, got: #{texts.inspect}"
+end
+
 check 'the status screen gives the condition a labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
@@ -18096,6 +20607,77 @@ check 'the status screen gives the condition a labelled row' do
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
                          .instance_variable_get(:@window))
   ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
+end
+
+# RPG_RT's own `Window_Gold` (`src/window_gold.cpp`), created unconditionally
+# by `Scene_Status::Start` (`src/scene_status.cpp`, no visibility gate
+# anywhere in the file) -- confirmed missing here entirely.
+check 'the status screen shows the party\'s own Gold' do
+  st = menu_state
+  st.party.instance_variable_set(:@gold, 1234)
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('1234G'), "Gold is drawn as its own line, got: #{texts.inspect}"
+
+  # RPG_RT's Window_Gold draws unconditionally, including at 0 -- not only
+  # once the party has money.
+  st.party.instance_variable_set(:@gold, 0)
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok texts.include?('0G'), "zero Gold still shows, got: #{texts.inspect}"
+end
+
+# `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`) additionally
+# draws "Front"/"Back" right-aligned at the top of the panel whenever
+# `Feature::HasRow()` (`src/feature.cpp`) holds -- which for a genuine,
+# unmodified project reduces to "the database is RPG2003". An RPG2000
+# database never shows either label.
+check 'the status screen shows the RPG2003 battle row, gated on rpg2003?' do
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
+                         .instance_variable_get(:@window))
+  ok !texts.include?('Front') && !texts.include?('Back'),
+     "an RPG2000 party draws neither row label, got: #{texts.inspect}"
+
+  rpg2003_party = Class.new(MenuStubParty) { def rpg2003?; true; end }.new
+  st2 = Game::State.new(rpg2003_party, 1, 0, 0)
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Front'), "front row shows by default, got: #{texts.inspect}"
+
+  rpg2003_party.actors.first.battle_row = Game::Battle::ROW_BACK
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
+                         .instance_variable_get(:@window))
+  ok texts.include?('Back'), "back row shows once toggled, got: #{texts.inspect}"
+end
+
+# Confirmed directly against RPG_RT's live source: `Window_Base::
+# GetValueFontColor` (`src/window_base.cpp`), the shared routine behind
+# `DrawActorHp`/`DrawActorSp` (in turn used by `Window_ActorStatus::
+# DrawStatus`, `src/window_actorstatus.cpp`) -- the *current* HP/MP figure
+# alone recolors: knockout gray (index 5) at exactly 0 HP, critical
+# red/orange (index 4) at or below a quarter of max, the ordinary default
+# (index 0) otherwise. SP never shows the knockout colour even at 0
+# (`DrawActorSp` always passes `can_knockout` false).
+check 'the status screen colours a knocked-out HP figure and a critical MP ' \
+      'figure through the windowskin\'s own swatches, not a flat colour' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> make_windowskin returns a real Bitmap
+  st = Game::State.new(MenuStubParty.new, 1, 0, 0)
+  hero = st.party.actors.first
+  hero.instance_variable_set(:@hp, 0) # knocked out -- HP figure draws in index 5
+  hero.instance_variable_set(:@mp, 5) # <= a quarter of max_mp (30) -- index 4
+  scene = menu_scene(RPG2k::Scene::StatusMenu, st, db)
+  bc = scene.instance_variable_get(:@window).contents.blend_calls || []
+  # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
+  ok bc.any? { |call| call[4] == '0' && call[6] == 80 && call[7] == 48 },
+     "the knocked-out HP figure must blend from swatch index 5 (80, 48), got: " \
+     "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+  ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
+     "the critical MP figure must blend from swatch index 4 (64, 48), got: " \
+     "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+  ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+     'the HP max figure stays the default colour (index 0)'
 end
 
 check 'Scene::StatusMenu: the actor cursor wraps around' do
@@ -18129,6 +20711,28 @@ check 'Scene::StatusMenu: holding Right does NOT auto-cycle the actor -- ' \
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@actor_index),
      'a held (repeated, not triggered) Right does not cycle the actor'
+end
+
+# Confirmed against RPG_RT's own live source: `Scene_Status::vUpdate`
+# (src/scene_status.cpp) gates both the RIGHT and LEFT branches on
+# `actors.size() > 1`, not just the key trigger itself -- a solo party's
+# Status screen plays no cursor SE and rebuilds nothing on either key.
+check 'Scene::StatusMenu: a solo party leaves Right/Left as silent no-ops' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  eq 0, scene.instance_variable_get(:@actor_index), 'starts on the only actor'
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Right has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Right'
+
+  RGSS::Audio.reset_se
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@actor_index), 'Left has nowhere to move to'
+  eq [], RGSS::Audio.se_calls, 'a solo party plays no cursor SE on Left'
 end
 
 check 'Scene::StatusMenu: a dangling equipped item id logs once, not per rebuild, ' \
@@ -18305,6 +20909,33 @@ check 'RPG2003 terrain footstep plays every ordinary step onto that tile' do
   scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true, footstep: 'Step1')
   walk(scene, 3)
   eq 3, RGSS::Audio.se_calls.count { |c| c[0] == 'Step1' }, 'one footstep per tile walked'
+end
+
+# Confirmed against EasyRPG's actual C++ source: liblcf's own
+# `generator/csv/fields.csv` (`Terrain,footstep,f,Sound,0x0F,...`) and
+# `src/generated/lcf/rpg/terrain.h` (`Sound footstep;`) -- the field is a
+# full Sound struct (filename + volume + tempo + balance), not a bare
+# filename, the same shape `Game_System::SePlay(const lcf::rpg::Sound&,
+# bool)` (`src/game_system.cpp`) already reads for every other Sound-typed
+# database field.
+check 'RPG2003 terrain footstep plays with its own configured volume/pitch, ' \
+      'not the schema defaults' do
+  RGSS::Audio.reset_se
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true,
+                     footstep: OpenStruct.new(file: 'Step2', volume: 80, pitch: 120))
+  walk(scene, 1)
+  eq ['Step2', 80, 120], RGSS::Audio.se_calls.find { |c| c[0] == 'Step2' }
+end
+
+check 'a terrain footstep explicitly set to "(OFF)" plays nothing, matching ' \
+      'every other Sound-typed field\'s own "(OFF)" convention' do
+  RGSS::Audio.reset_se
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true,
+                     footstep: OpenStruct.new(file: '(OFF)', volume: 100, pitch: 100))
+  walk(scene, 3)
+  eq [], RGSS::Audio.se_calls, 'a "(OFF)" footstep never plays'
 end
 
 check 'RPG2000 never plays a terrain footstep, even when one is set' do
@@ -19135,6 +21766,57 @@ check 'an empty encounter list never starts a random battle' do
   RGSS::Input.dir_value = 0
   ok battle_ui(scene).nil?,
      'the roll succeeds but there is nothing to fight, so no battle opens'
+end
+
+# Confirmed against EasyRPG's live source, `Game_Map::GetEncountersAt`
+# (`src/game_map.cpp`): an "Area" map-tree node (field 4 `type` == 2, a
+# rectangular sub-region the RPG2000/2003 editor lets an author carve out of
+# a map with its own independent encounter list, field 41) is a *direct
+# child* of its owning map (field 2 `parent_map_id`) and contributes its own
+# troops into the SAME pooled random-encounter vector whenever the party's
+# tile falls inside its bounds (field 51) -- not a separate roll layered on
+# top, and not inherited by a descendant map the way Save/Teleport/Escape
+# access is (see #map_node_properties's own citation for that contrast).
+check "an Area map-tree node's own troops join the map's own random " \
+      'encounter pool while the party stands inside its bounds' do
+  area = OpenStruct.new(type: 2, parent_map_id: 1,
+                        area: { left: 2, top: 2, right: 4, bottom: 4 },
+                        enemy_groups: { 1 => OpenStruct.new(enemy_group_id: 2) })
+  tree = fake_map_tree(
+    1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1),
+    2 => area
+  )
+  outside = new_scene({}, player: [0, 0], map_tree: tree)
+  eq [1], outside.send(:candidate_troops),
+     "outside the area's [2,2)..(4,4) bounds: only the map's own troop"
+
+  inside = new_scene({}, player: [2, 2], map_tree: tree)
+  eq [1, 2], inside.send(:candidate_troops),
+     "at the area's own top-left corner (inclusive): both troops pool together"
+
+  edge = new_scene({}, player: [3, 3], map_tree: tree)
+  eq [1, 2], edge.send(:candidate_troops),
+     'still inside at [3,3], one tile short of the exclusive right/bottom edge'
+
+  just_outside = new_scene({}, player: [4, 4], map_tree: tree)
+  eq [1], just_outside.send(:candidate_troops),
+     "[4,4] is the area's own exclusive right/bottom edge -- outside again"
+end
+
+check "an Area node belonging to a different map's tree does not leak its " \
+      'troops onto this one' do
+  # parent_map_id 9, not this scene's own map id (always 1 in this harness,
+  # see #new_scene) -- a sibling map's own Area must never contribute here,
+  # regardless of how its bounds happen to overlap.
+  foreign_area = OpenStruct.new(type: 2, parent_map_id: 9,
+                                area: { left: 0, top: 0, right: 10, bottom: 10 },
+                                enemy_groups: { 1 => OpenStruct.new(enemy_group_id: 2) })
+  tree = fake_map_tree(
+    1 => FakeEncounterNode.new({ 1 => OpenStruct.new(enemy_group_id: 1) }, 1),
+    2 => foreign_area
+  )
+  scene = new_scene({}, player: [0, 0], map_tree: tree)
+  eq [1], scene.send(:candidate_troops), "only this map's own troop, the foreign area ignored"
 end
 
 check 'riding the airship skips the random-encounter roll entirely' do

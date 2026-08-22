@@ -134,8 +134,24 @@ module Game
             end
           when 'n', 'N'
             if text[i] == '['
-              val, i = parse_bracket_value(text, i, variables)
-              s = (names[val] || '').to_s
+              val, i, got_number = parse_bracket_value(text, i, variables)
+              # `\N[]`'s id-0-means-party-leader convenience
+              # (`Scene::Map#actor_name`) only applies when a digit or a
+              # resolvable nested `\V[]` was actually read inside the
+              # brackets -- confirmed directly against RPG_RT's live
+              # source: `Game_Message::ParseParam` (`src/game_message.cpp`)
+              # guards the substitution on `values.front() == 0 &&
+              # got_valid_number`, not on the value alone. A bracket that
+              # parsed nothing at all (a bare `\N[]`, or `\N[x]` where `x`
+              # is neither a digit nor `\V[]`/`\v[]`) leaves the id at 0,
+              # which is not a valid 1-based actor id -- real RPG_RT's
+              # `DefaultCommandInserter` (`src/pending_message.cpp`) then
+              # misses on `GetActor(0)` and expands to an empty string, not
+              # the leader's name. `-1` here is simply a value #actor_name's
+              # own `id.to_i.zero?` leader check will never match, so an
+              # unresolved bracket falls through to its own dangling-id
+              # blank-string path unchanged.
+              s = (names[got_number ? val : -1] || '').to_s
               cur << s
               count += s.length
             end
@@ -266,16 +282,23 @@ module Game
     #   rather than resetting to 0 -- unlike this method's own predecessor,
     #   which fell through to `String#to_i` and silently dropped everything
     #   from the first non-leading-digit character on.
+    #
+    # Returns a third element, `got_number` -- whether a digit or a
+    # resolvable nested `\V[]` was actually read (RPG_RT's own
+    # `got_valid_number`, `src/game_message.cpp`) -- callers besides `\N[]`
+    # (`\V[]`/`\C[]`/`\S[]`) have no use for it and simply destructure the
+    # first two elements, which Ruby allows without error.
     def self.parse_bracket_value(text, i, variables, depth = 1)
       n = text.length
       # No bracket at all (reachable recursively too -- a malformed nested
       # reference like `\N[\V]`, `\v` with no `[` following): RPG_RT's own
       # ParseParam returns 0 without consuming anything, matching `if (iter
       # == end || *iter != '[') { return { iter, 0 }; }`.
-      return [0, i] unless i < n && text[i] == '['
+      return [0, i, false] unless i < n && text[i] == '['
       i += 1
       value = 0
       stop_parsing = false
+      got_number = false
       while i < n && text[i] != ']'
         if stop_parsing
           i += 1
@@ -285,18 +308,20 @@ module Game
         if ch >= '0' && ch <= '9'
           value = value * 10 + ch.to_i
           i += 1
+          got_number = true
         elsif depth > 0 && ch == '\\' && i + 1 < n && (text[i + 1] == 'V' || text[i + 1] == 'v')
           var_id, i = parse_bracket_value(text, i + 2, variables, depth - 1)
           var_val = variables[var_id].to_i
           m = 10
           m *= 10 while value != 0 && m < var_val
           value = value * m + var_val
+          got_number = true
         else
           stop_parsing = true
         end
       end
       i += 1 if i < n # consume the matching ']'
-      [value, i]
+      [value, i, got_number]
     end
   end
 
@@ -582,6 +607,13 @@ module Game
   # confirmed.
   def self.trans_to_opacity(top_trans)
     (100 - clamp(top_trans, 0, 100)) * 255 / 100
+  end
+
+  # The inverse of .trans_to_opacity, for writing a live picture's current
+  # `Game::Picture#opacity` (0..255) back to chunk 103 field 34's own 0..100
+  # transparency scale on Save (Game::State#to_lsd).
+  def self.opacity_to_trans(opacity)
+    100 - clamp(opacity, 0, 255) * 100 / 255
   end
 
   # Top-left pixel of the view so the player is centred, clamped so the camera
@@ -1477,6 +1509,21 @@ module Game
     # branch on `class_id > 0`).
     attr_reader :class_id
 
+    # The class row's own display name ('' with no class row -- an RPG2000
+    # database, or an unknown/class-less id). Unlike the growth-curve/
+    # battler-animation readers below, this is *not* gated on
+    # `@class_changed`: confirmed against RPG_RT's own live source,
+    # `Game_Actor::GetClassName` (`src/game_actor.cpp`) reads straight
+    # through `GetClass()`, which resolves `data.class_id` (falling back to
+    # the database actor's own starting `class_id` when no Change Class
+    # event has run yet) with no such gate at all -- `@class_changed` only
+    # governs the separate "class settings" (`super_guard`/`lock_equipment`/
+    # `battler_animation`/etc.) `ChangeClass` itself applies, per that
+    # function's own comment already quoted above. `@class_row` is already
+    # populated unconditionally at construction from the actor's starting
+    # class id, so this just reads it straight.
+    def class_name; @class_row ? @class_row.name.to_s : ''; end
+
     def initialize(db, id)
       @db = db
       @id = id
@@ -1848,7 +1895,10 @@ module Game
     # (1) as the candidate list `Party#equip_candidates` offered it for. A
     # non-equippable item, an unknown id, or a database without an item table
     # is ignored. Drives the Change Equipment event command's equip operation
-    # (always by type, since that command names no slot).
+    # too -- ~~always by type, since that command names no slot~~: since the
+    # dual-wield redirect below, `Party#equip_item_from_bag` also passes an
+    # explicit shield-slot for a 二刀流 actor's second weapon, the same way
+    # the equip menu does.
     def equip_item(item_id, slot = nil)
       return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
       it = @db.item[item_id]
@@ -1922,33 +1972,28 @@ module Game
     end
 
     # The six base stats at `level`. Real database rows expose the full growth
-    # curve via LCF::Array1D#int16_values(31), bypassing the schema's own
-    # `status` accessor (which only ever surfaces level 1 -- see below); index
-    # it by level, clamped to the curve's length. A row that only offers a
-    # single `status` hash (the test fixtures, or a database without a curve)
-    # is treated as level-independent. With a class set the class row's curve
-    # wins.
-    #
-    # The curve is six *separate* same-length runs back to back -- every
-    # level's maxHP, then every level's maxSP, then ATK, DEF, SPI, AGI -- not
-    # six shorts interleaved per level as a prior version of this method (and
-    # STAT_NAMES' own field order) suggested. Confirmed against liblcf's own
-    # reader, `RawStruct<rpg::Parameters>::ReadLcf` (`src/ldb_parameters.cpp`):
-    # `n = length / 6; stream.Read(maxhp, n); stream.Read(maxsp, n); ...` --
-    # six sequential fixed-size reads, one per stat, each `n` (the level
-    # count) shorts long. Reading it as interleaved landed on a different
-    # stat's value entirely for every level past the first (and a different
-    # *level* of maxHP even at level 1, since only STAT_NAMES[0]'s stride-1
-    # and block-`n` offsets coincide there) -- verified against a real
-    # database (Nepheshel): the interleaved reading's level-1 ATK (59) was
-    # actually the level-3 entry of the maxHP run.
+    # curve via LCF::Array1D#int16_values(31) as six contiguous max_level-sized
+    # blocks -- one block per stat in STAT_NAMES order (every level's max_hp,
+    # then every level's max_mp, then atk, def, int, agi), NOT max_level rows of
+    # six stats each. Confirmed against a genuine RPG_RT.exe: an actor whose
+    # curve blocks were independently distinguishable (non-symmetric across
+    # stats) was equipped and levelled identically in this engine and under
+    # real RPG_RT, and only a stat-major (six-blocks-of-max_level) reading of
+    # the raw shorts reproduced RPG_RT's displayed ATK/DEF/SPI/AGI exactly --
+    # the previously-assumed row-major (max_level rows of six) reading was
+    # correct only by coincidence on actors whose curve happens to be
+    # level-count-1 (a single row, where the two layouts are indistinguishable)
+    # and was off by as much as 2.3x on a real multi-level curve. A row that
+    # only offers a single `status` hash (the test fixtures, or a database
+    # without a curve) is treated as level-independent. With a class set the
+    # class row's curve wins.
     def base_stats(level)
       a = curve_row
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
       if curve && curve.size >= STAT_NAMES.size
-        n = curve.size / STAT_NAMES.size
-        lv = level > n ? n : level
-        return STAT_NAMES.each_index.map { |i| curve[(i * n) + (lv - 1)] || 0 }
+        levels = curve.size / STAT_NAMES.size
+        lv = level > levels ? levels : level
+        return STAT_NAMES.each_index.map { |i| curve[(i * levels) + (lv - 1)] || 0 }
       end
       st = (a.respond_to?(:status) ? a.status : nil) || {}
       STAT_NAMES.map { |k| st[k] || 0 }
@@ -2059,7 +2104,25 @@ module Game
     # itself.
     def adjust_equipment_states(item_id, add)
       cursed_armor_state_ids(item_id).each do |id|
-        add ? add_state(id, allow_battle_states: false) : remove_state(id)
+        if add
+          add_state(id, allow_battle_states: false)
+          # `State::Add` (`src/state.cpp`) runs the crowding-out pass after
+          # *every* state it adds, with no caller-side opt-out -- RPG_RT's
+          # `Game_Battler::AddState` funnels every infliction path through
+          # it uniformly, equipment included: `Game_Actor::
+          # AdjustEquipmentStates` calls the identical `AddState`
+          # `#knock_out!`/#cast_skill's own skill-infliction loop already
+          # pairs with a prune call here. A cursed item forcing a
+          # high-priority state onto an actor already carrying a
+          # low-priority ailment must clear that ailment the instant the
+          # cursed state lands, the same as a lethal hit or a landed skill
+          # state already does here -- this was the one state-infliction
+          # call site in this file that missed pairing #add_state with the
+          # prune pass every other one already does.
+          @states = Game::States.prune(@states, state_table, keep: permanent_states)
+        else
+          remove_state(id)
+        end
       end
     end
 
@@ -2398,17 +2461,19 @@ module Game
 
     # Which weapon governs swing index `i` (0-based) of a two-weapon actor's
     # basic Attack -- EasyRPG's `Normal::GetWeapon`/`weapon_style`
-    # (`src/game_battlealgorithm.cpp`): the primary (weapon-slot) weapon's
-    # own hit count worth of swings, then the secondary (shield-slot)
-    # weapon's, each contributing *its own* hit rate / elemental attributes /
-    # weapon states / crit bonus rather than the merged max/union
-    # `#attack_hit_rate`/`#weapon_attributes`/`#weapon_states`/
-    # `#weapon_crit_bonus` compute across every equipped weapon-type item
-    # (correct for the ordinary single-weapon case, wrong once a second,
-    # *different* weapon governs a later swing). `Battle#deal_attack` reads
-    # this per swing; nil when fewer than two weapons are equipped, so it
-    # falls back to the ordinary merged Combatant fields.
+    # (`src/game_battlealgorithm.cpp`): `Init` only sets `weapon_style`
+    # (and so only lets `GetWeapon` return a specific slot) when
+    # `style == Style_MultiHit`, and `GetDefaultStyle` picks that style only
+    # under `Feature::HasRpg2k3BattleSystem()` -- RPG2000 (and an RPG2003
+    # game running the legacy 2k battle system) instead uses
+    # `Style_Combined`, where `weapon_style` stays `-1` and `GetWeapon`
+    # always returns `WeaponAll`, so *every* swing reads the merged max/union
+    # `GetHitChance`/etc. across both weapons, never one weapon's own data.
+    # So this per-swing split only applies to RPG2003; nil for a non-2003
+    # actor falls back to the ordinary merged Combatant fields, which is
+    # correct there regardless of how many weapons are equipped.
     def swing_weapon_data(i)
+      return nil unless rpg2003?
       weapons = equipped_weapons
       return nil unless weapons.size >= 2
       w1, w2 = weapons[0, 2]
@@ -2421,8 +2486,19 @@ module Game
     # `#swing_weapon_data` hands a specific weapon-governed swing, as
     # opposed to `#attack_hit_rate`/`#weapon_attributes`/`#weapon_states`/
     # `#crit_chance`'s own merge across every equipped weapon-type item.
+    #
+    # Same sentinel distinction `#attack_hit_rate`'s own citation makes:
+    # `Game_Actor::GetHitChance`'s `INT_MIN` (`src/game_actor.cpp`) only ever
+    # falls back to 90 when the queried slot holds no weapon at all --
+    # `ForEachEquipment`'s single-weapon call here visits exactly one item,
+    # so a genuine `hit == 0` on it (an intentionally "never lands" weapon)
+    # must return 0 as-is, not fold into the nothing-equipped default. `it`
+    # is always a real equipped weapon by the time it reaches here (`#swing_
+    # weapon_data`'s own `weapons.size >= 2` guard), so the only "absent"
+    # case left is a row with no `hit` field at all.
     def weapon_roll_data(it)
-      hit = it.respond_to?(:hit) && it.hit && it.hit > 0 ? it.hit : 90
+      h = it.respond_to?(:hit) ? it.hit : nil
+      hit = h.nil? ? 90 : h
       attrs = []
       set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
       set.each_with_index { |on, i| attrs << (i + 1) if on } if set
@@ -2909,18 +2985,42 @@ module Game
     # (max HP/MP 1..9999, the four battle stats 1..999); recomputing re-clamps the
     # current HP/MP so a lowered maximum never leaves a vital over its cap.
     #
-    # yado.tk's `2000/デフォ戦botまとめ`: the displayed/effective stat clamps to
-    # that range, but RPG_RT keeps accumulating the *unclamped* running total
-    # underneath -- lower Attack far past 1 with one call, then raise it back
-    # only part way, and the effective value stays pinned at the old clamp
-    # until the raw total genuinely climbs back past it, rather than reacting
-    # to the partial raise immediately. @base_raw is that shadow total; @base
+    # ~~yado.tk's `2000/デフォ戦botまとめ`: the displayed/effective stat clamps
+    # to that range, but RPG_RT keeps accumulating the *unclamped* running
+    # total underneath -- lower Attack far past 1 with one call, then raise
+    # it back only part way, and the effective value stays pinned at the old
+    # clamp until the raw total genuinely climbs back past it, rather than
+    # reacting to the partial raise immediately.~~ This turned out to be
+    # backwards -- confirmed against RPG_RT's own live source:
+    # `Game_Actor::SetBaseAtk`/`SetBaseDef`/`SetBaseSpi`/`SetBaseAgi`
+    # (`src/game_actor.cpp`) each clamp the *modifier itself* --
+    # `data.attack_mod` etc, a shadow entirely separate from the level curve
+    # -- to `+/-MaxStatBaseValue()` (999) via `ClampStatMod`, on every single
+    # call, before `GetBaseAtk` ever adds the curve and equipment and clamps
+    # the combined total again to `1..999`; `SetBaseMaxHp`/`SetBaseMaxSp`
+    # clamp `data.hp_mod`/`data.sp_mod` the same way via `ClampMaxHpMod`/
+    # `ClampMaxSpMod`. So a deep debuff can never bank more magnitude in the
+    # modifier than its own +/-999 ceiling, and a partial recovery afterward
+    # reflects immediately once the (already-bounded) modifier crosses back
+    # over the curve's own threshold -- it never has to "climb back" through
+    # however deep the original delta was. `@base_raw` (curve + modifier, no
+    # equipment -- see `#set_level`'s own `preserve_mod` diff) is this
+    # codebase's combined shadow; `@base_raw[type] - base_stats(@level)[type]`
+    # is the isolated modifier #set_level already computes this exact way,
+    # clamped here to `+/-base_param_limit(type)` before being added back
+    # onto the curve, matching `ClampStatMod`'s bound (the same ceiling
+    # `#base_param_limit` already uses for the *displayed* clamp, since the
+    # HP/MP edition-cap mismatch documented above this method already covers
+    # why the two ceilings aren't perfectly split by edition here). `@base`
     # (read by #recompute_stats and everything else) stays the clamped,
     # display/effective value throughout.
     def change_param(type, delta)
       return unless type >= 0 && type < STAT_NAMES.size
-      @base_raw[type] += delta
-      @base[type] = Game.clamp(@base_raw[type], 1, base_param_limit(type))
+      limit = base_param_limit(type)
+      curve = base_stats(@level)[type]
+      mod = Game.clamp(@base_raw[type] - curve + delta, -limit, limit)
+      @base_raw[type] = curve + mod
+      @base[type] = Game.clamp(@base_raw[type], 1, limit)
       recompute_stats
     end
 
@@ -3069,10 +3169,14 @@ module Game
     # integer through -- a handful of bogus adds could silently exhaust the
     # six-slot capacity, starving a later, genuinely valid add of a slot it
     # should have had. Reusing #battle_command_row (already the exact
-    # existence check this needs) also makes the command correctly inert on
-    # a genuine RPG2000 database with no `battlecommands` table at all --
-    # matching `Player::IsRPG2k3Commands()`'s own gate on the real event
-    # command, which #do_change_battle_commands does not separately enforce.
+    # existence check this needs) also makes the *add* branch inert on a
+    # genuine RPG2000 database with no `battlecommands` table at all --
+    # ~~matching `Player::IsRPG2k3Commands()`'s own gate on the real event
+    # command, which #do_change_battle_commands does not separately
+    # enforce~~ not true of the "clear to Row alone" branch below (`id ==
+    # 0`, `add` false), which has no table lookup of its own and still
+    # clears the list even without one; #do_change_battle_commands now
+    # carries the real `IsRPG2k3Commands()` gate itself instead.
     def change_battle_commands(add, id)
       cmds = battle_commands
       if add
@@ -3457,6 +3561,7 @@ module Game
       @item_usage = {}
       @gold = 0
       @revision = 0
+      @leader_graphic_dirty = false
     end
 
     # Serialise the mutable party state (see State#to_h). Beyond HP/MP this keeps
@@ -3577,9 +3682,30 @@ module Game
     # but the leader can be -- `#leader` is simply `@actors.first` -- which is
     # why this bumps @revision the same as #promote_to_leader above, the
     # existing precedent for a leader change with no membership change.
+    #
+    # `Game_Party::AddActor`/`RemoveActor` (`src/game_party.cpp`) -- the pair
+    # `Confirm()` calls once per member during the remove/re-add dance -- each
+    # unconditionally call `Main_Data::game_player->ResetGraphic()` as a side
+    # effect, and `Game_Player::ResetGraphic()` (`src/game_player.cpp`) re-reads
+    # slot 0's (the new leader's) CharSet name/index/transparency onto the map
+    # sprite. Skipping the replay (above) also skipped this side effect, so
+    # `@leader_graphic_dirty` reproduces it directly: set unconditionally here,
+    # the same way real RPG_RT's own call is unconditional, not only when the
+    # leader actually changed.
     def reorder(new_order)
       @actors = new_order.map { |i| @actors[i] }
       @revision += 1
+      @leader_graphic_dirty = true
+    end
+
+    # One-shot read of #reorder's own leader-graphic side effect -- the
+    # `Interpreter#take_actor_graphic_changed` idiom (`mruby-rpg2k/mrblib/
+    # interpreter.rb`), applied here since a reorder is driven entirely by
+    # Scene::Order rather than an interpreter command.
+    def take_leader_graphic_dirty
+      v = @leader_graphic_dirty
+      @leader_graphic_dirty = false
+      v
     end
 
     # RPG2003's field-menu **Row** command (`RPG2K3_COMMAND_IDS` id 6,
@@ -3629,8 +3755,21 @@ module Game
     # RPG_RT's rule, and it is why nothing on this path has to re-check for a
     # game over the way the twelve event commands that *can* wipe the party
     # do. A **gain** clamps to max_hp/max_sp the same way change_hp/change_mp
-    # already clamp an ordinary heal. A member who is already down slips
-    # nothing at all.
+    # already clamp an ordinary heal.
+    #
+    # A member who is already down does NOT slip nothing: EasyRPG's
+    # `Game_Party::ApplyStateDamage` (`src/game_party.cpp`) iterates
+    # `GetActors()` with no alive/dead filter at all, for both the HP and SP
+    # loops, and `Game_Battler::ChangeSp` (`src/game_battler.cpp`) carries no
+    # `IsDead()` guard of its own -- only `ChangeHp` does (`if (IsDead())
+    # return 0;`, matching this class's own `#change_hp`'s `return @hp if
+    # dead?`). So a KO'd member's own HP loss silently no-ops (already true
+    # via #change_hp), but an SP-draining/regenerating state on that same
+    # member still applies in full, and RPG_RT's `damage` bool -- set
+    # unconditionally in the lose branch regardless of whether `ChangeHp`
+    # actually changed anything -- still fires. This method mirrors that: it
+    # must not skip a dead actor outright, only rely on #change_hp's own
+    # internal no-op for the HP half.
     #
     # `table` is the database `situation` array; a caller without one (the seeded
     # harness fixtures) drains nothing. Returns the actors actually affected
@@ -3640,7 +3779,7 @@ module Game
       hit = []
       @map_step_damaged = false
       @actors.each do |actor|
-        next if actor.nil? || actor.dead?
+        next if actor.nil?
         hp = 0
         sp = 0
         actor.states.each do |id|
@@ -4243,9 +4382,9 @@ module Game
           item_cured_states(it).any? { |s| actor.state?(s) }
       when ITEM_SKILL_BOOK
         s = it.skill_id
-        !s.nil? && s != 0 && !actor.knows_skill?(s)
+        !actor.dead? && !s.nil? && s != 0 && !actor.knows_skill?(s)
       when ITEM_SEED
-        seed_boosts(it).any? { |b| b != 0 }
+        !actor.dead? && seed_boosts(it).any? { |b| b != 0 }
       when ITEM_SWITCH
         true # a switch item always flips its switch
       when ITEM_SPECIAL
@@ -4372,8 +4511,40 @@ module Game
     # weapon a reusable tool rather than a one-shot. Routing the consumption
     # through #consume_item_use is what gets that right -- this used to spend
     # the weapon on its first use and leave the party without it.
+    #
+    # An Escape/Teleport-type skill can't run through #cast_skill at all --
+    # confirmed against genuine RPG_RT's own live source: `Game_Battler::
+    # UseSkill` (`src/game_battler.cpp`) gives these two types their own
+    # branch, entirely separate from the ordinary HP/SP/state loop
+    # #cast_skill ports (`Algo::IsNormalOrSubskill`'s branch) -- it plays
+    # only `skill->sound_effect` and sets `was_used = true`, never touching
+    # HP/SP/a state, and never returning early/false the way an ordinary
+    # skill with nothing to change on this target would. Since
+    # `Game_Battler::UseItem`'s `do_skill` branch (the equipment-item
+    # counterpart to this method) forwards straight to `UseSkill` and
+    # returns its `was_used`, a use_skill equipment item invoking one of
+    # these two types always succeeds once #item_usable_by? passes --
+    # treated here as `[actor]`, a one-element "changed" list, so the
+    # caller's own empty-vs-non-empty success check (`Scene::ItemMenu#
+    # apply_item`) plays the invoked skill's own animation SE rather than
+    # Buzzer, matching `Scene_ActorTarget::UpdateItem`'s identical
+    # `do_skill`-on-success branch (see `#play_item_use_se`'s own
+    # citation). This used to fall through to #cast_skill unconditionally,
+    # which has no notion of these two types at all and always found
+    # nothing to change -- an empty `affected`, misreported to the caller
+    # as failure and playing Buzzer instead. (A Switch-type skill needs no
+    # equivalent branch here: `Scene::ItemMenu#choose_item` already routes
+    # a use_skill equipment item invoking one to `#apply_special_switch_item`/
+    # `#use_special_switch_item` before this method is ever reached, the
+    # only path that calls #use_item today -- see #use_special_switch_item's
+    # own doc.)
     def use_equip_skill_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id)
+      sk = db_skill(it.skill_id)
+      if sk && (sk.type == SKILL_ESCAPE || sk.type == SKILL_TELEPORT)
+        consume_item_use(id)
+        return [actor]
+      end
       affected = cast_skill(actor, it.skill_id, actor, true)
       consume_item_use(id) unless affected.empty?
       affected
@@ -4390,11 +4561,22 @@ module Game
     # consumed, mirroring `Scene::SkillMenu#apply_escape_skill`'s own gate.
     def use_special_escape_item(id, actor, state)
       it = db_item(id)
-      # A type-9 special item, or an equipment item flagged `use_skill` (field
-      # 71) invoking an Escape-type skill, both warp free the same way.
-      return nil unless it &&
-                        (it.type == ITEM_SPECIAL ||
-                         (it.use_skill && (1..5).cover?(it.type))) &&
+      # Only a genuine type-9 special item takes this free-warp fast path --
+      # confirmed directly against RPG_RT's live source: `Scene_Item::
+      # vUpdate`'s Escape/Teleport dispatch (`src/scene_item.cpp`) sits
+      # inside an `item.type == Type_special && item.skill_id > 0` gate, so
+      # a `use_skill`-flagged weapon/shield/armor/helmet/accessory (field 71)
+      # never reaches it at all -- it falls to the ordinary
+      # `Scene_ActorTarget` picker instead, which routes through
+      # `Game_Battler::UseItem`/`UseSkill` (`src/game_battler.cpp`); for
+      # `Type_teleport`/`Type_escape` that function only plays the skill's
+      # sound effect (`Main_Data::game_system->SePlay(skill->sound_effect);
+      # was_used = true;`) -- no `ReserveTeleport` call, no warp of any kind.
+      # A prior version of this comment assumed the two item kinds shared
+      # this fast path from `Game_Party::UseItem`'s identical `do_skill`
+      # computation without tracing one level further into what `UseSkill`
+      # itself does for these two skill types specifically.
+      return nil unless it && it.type == ITEM_SPECIAL &&
                         actor && item_usable_by?(it, actor.id)
       target = cast_escape_skill(actor, it.skill_id, state, true)
       return nil unless target
@@ -4407,16 +4589,37 @@ module Game
     # which — see `Scene::SkillMenu`'s teleport list, which this mirrors).
     def use_special_teleport_item(id, actor, state, map_id)
       it = db_item(id)
-      # A type-9 special item, or an equipment item flagged `use_skill` (field
-      # 71) invoking a Teleport-type skill, both warp free the same way.
-      return nil unless it &&
-                        (it.type == ITEM_SPECIAL ||
-                         (it.use_skill && (1..5).cover?(it.type))) &&
+      # Only a genuine type-9 special item takes this free-warp fast path --
+      # see #use_special_escape_item's own citation just above; the same
+      # `Scene_Item::vUpdate`/`Game_Battler::UseSkill` gap applies to
+      # Teleport-type skills identically.
+      return nil unless it && it.type == ITEM_SPECIAL &&
                         actor && item_usable_by?(it, actor.id)
       target = cast_teleport_skill(actor, it.skill_id, state, map_id, true)
       return nil unless target
       consume_item_use(id)
       target
+    end
+
+    # The same for a special item invoking a **Switch**-type skill: flip
+    # its switch for free (the item pays, not `actor`'s SP) and return the
+    # switch id to turn on, or nil when `id` does not name such an item or
+    # `actor` may not use it -- confirmed against RPG_RT's own live source:
+    # `Scene_Item::vUpdate`'s `Type_switch` skill arm (`src/scene_item.cpp`)
+    # sits right beside its Escape/Teleport siblings, unconditionally
+    # consuming the item and flipping `skill->switch_id` (the *skill's* own
+    # field, not the item's) on the very same Decision press, no `Game::
+    # State` needed unlike Escape/Teleport's registered-target lookup.
+    def use_special_switch_item(id, actor)
+      it = db_item(id)
+      return nil unless it &&
+                        (it.type == ITEM_SPECIAL ||
+                         (it.use_skill && (1..5).cover?(it.type))) &&
+                        actor && item_usable_by?(it, actor.id)
+      switch = cast_switch_skill(actor, it.skill_id, true)
+      return nil unless switch
+      consume_item_use(id)
+      switch
     end
 
     # A single-target medicine (scope 0) heals `actor`; an all-ally medicine
@@ -4429,6 +4632,20 @@ module Game
       cured = item_cured_states(it)
       affected = []
       targets.each do |t|
+        # A downed target blocks the item outright unless it's a revive (one
+        # that cures 戦闘不能) -- confirmed against RPG_RT's own live source:
+        # `Game_Battler::UseItem` (`src/game_battler.cpp`) checks `IsDead()`
+        # *before* anything else and returns `false` immediately -- no state
+        # cure, no HP change, no SP change at all -- unless `item->state_set
+        # [0]` (state id 1, Death) is flagged. Without this, an ordinary
+        # medicine with no Death cure (an Antidote that only cures Poison, or
+        # a plain HP/MP potion) used on a KO'd member with some other
+        # affliction silently cured it and/or topped up MP and consumed the
+        # item -- `#change_hp` already happens to no-op for a dead actor on
+        # its own (`return @hp if dead?`), which is what hid this for the HP
+        # half alone, but the cure loop and `#change_mp` below have no such
+        # guard of their own.
+        next if t.dead? && !cured.include?(Game::Actor::DEATH_STATE)
         # A 蘇生専用 item passes over anyone still standing without touching
         # them -- not even the HP restore -- which is what keeps an all-party
         # revive from topping up the members who never fell. An actor_set
@@ -4436,6 +4653,7 @@ module Game
         # usable on, even under an all-party scope.
         next if ko_only_blocked?(it, t) || !item_usable_by?(it, t.id)
         changed = false
+        was_dead = t.dead?
         # Cure first: a revive item (curing 戦闘不能) stands the actor back up so
         # the HP recovery below lands instead of being blocked as a no-op.
         cured.each do |s|
@@ -4444,10 +4662,19 @@ module Game
             changed = true
           end
         end
+        # Whether curing Death just revived `t` -- #remove_state's own
+        # bare-revival fallback already floors it to 1 HP the instant Death
+        # comes off, matching EasyRPG's `RemoveState`. `Game_Battler::
+        # UseItem` (`src/game_battler.cpp`) then adds `hp_change - revived`,
+        # not the full `hp_change`, on top of that floor
+        # (`ChangeHp(hp_change - revived, false)`), so a combined revive+HP
+        # item must not add its full recovery on top of the 1 HP the cure
+        # already granted.
+        revived = was_dead && !t.dead?
         hp, mp = item_recovery(it, t)
         before_hp = t.hp
         before_mp = t.mp
-        t.change_hp(hp) if hp > 0
+        t.change_hp(revived ? hp - 1 : hp) if hp > 0
         t.change_mp(mp) if mp > 0
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
@@ -4459,9 +4686,19 @@ module Game
     # A skill book teaches its skill (item field 53) to `actor` if the actor does
     # not already know it, consuming one book. A book with no skill, or used on an
     # actor who already knows the skill, does nothing and is not consumed.
+    # A Skill Book/Seed does nothing on a downed actor -- confirmed against
+    # RPG_RT's own live source: `Game_Actor::UseItem` (`src/game_actor.cpp`)
+    # only reaches its `Type_book`/`Type_material` branches inside an
+    # `if (!IsDead())` guard; falling through to `Game_Battler::UseItem`
+    # (`src/game_battler.cpp`) for a dead actor lands on neither type at
+    # all (only Medicine/Switch/skill-invoking items are handled there), so
+    # the item is silently never consumed and nothing changes -- unlike
+    # Medicine, the one item type genuinely meant to work on the dead
+    # (`#ko_only_blocked?`'s own `it.ko_only` case), Book/Seed have no such
+    # exception.
     def use_skill_book(it, id, actor)
       skill = it.skill_id
-      return [] unless actor && item_usable_by?(it, actor.id) &&
+      return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id) &&
                        skill && skill != 0 && !actor.knows_skill?(skill)
       actor.learn_skill(skill)
       consume_item_use(id)
@@ -4482,8 +4719,11 @@ module Game
     # A seed permanently raises `actor`'s base stats by seed_boosts (each applied
     # through Actor#change_param, so RPG2000's stat caps hold). Consumes one when
     # it carries any boost; a seed with no boost does nothing and is not consumed.
+    # A Seed does nothing on a downed actor -- see #use_skill_book's own
+    # comment for the full RPG_RT citation; this shares the identical
+    # `if (!IsDead())` gate in `Game_Actor::UseItem`.
     def use_seed(it, id, actor)
-      return [] unless actor && item_usable_by?(it, actor.id)
+      return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id)
       boosts = seed_boosts(it)
       return [] unless boosts.any? { |b| b != 0 }
       boosts.each_index { |i| actor.change_param(i, boosts[i]) if boosts[i] != 0 }
@@ -4587,10 +4827,38 @@ module Game
     # or unknown item id is a no-op, matching EasyRPG's own type-switch
     # default. Callers apply any actor_set restriction themselves (per target,
     # same as #equip_candidate_for? would) before calling this.
+    #
+    # A 二刀流 (double_hand) actor gets the same dual-wield redirect
+    # `Scene::EquipMenu` gets structurally from #equip_candidates, since this
+    # command bypasses the candidate list entirely -- confirmed against
+    # RPG_RT's own live source: `Game_Interpreter::CommandChangeEquipment`
+    # (`src/game_interpreter.cpp`) special-cases `HasTwoWeapons()` before its
+    # own `ChangeEquipment` call: a shield-type item is a complete no-op
+    # (`continue`, nothing equipped, nothing consumed); a weapon-type item
+    # equips into the *shield* slot instead when the weapon slot already
+    # holds a (non-two-handed) weapon, the shield slot is empty, and the new
+    # weapon is not two-handed either -- otherwise it falls through to the
+    # ordinary weapon-slot overwrite. Previously this method equipped purely
+    # by item type regardless of `double_hand?`, so a scripted "learn 二刀流,
+    # here is your second blade" event overwrote the first weapon instead of
+    # filling the empty second slot, and handing such an actor a shield
+    # silently jammed it into their off-hand weapon slot instead of being
+    # the no-op real RPG_RT makes it.
     def equip_item_from_bag(actor, item_id)
       return false unless actor
       slot = equip_slot_for(item_id)
       return false if slot.nil?
+      if actor.double_hand?
+        return false if slot == Actor::SHIELD_SLOT
+        if slot == Actor::WEAPON_SLOT
+          weapon = actor.equipment[Actor::WEAPON_SLOT]
+          shield = actor.equipment[Actor::SHIELD_SLOT]
+          if weapon && weapon != 0 && (shield.nil? || shield == 0) &&
+             !actor.two_handed?(weapon) && !actor.two_handed?(item_id)
+            slot = Actor::SHIELD_SLOT
+          end
+        end
+      end
       swap_equipment_through_bag(actor, item_id, slot)
     end
 
@@ -4702,9 +4970,11 @@ module Game
     # are summoned and dismissed exactly this way (skills 120–125, "ファルを召還"
     # and friends, each flipping the switch its common event watches).
     #
-    # `state` is optional and only read for the Escape / Teleport types below —
-    # every other caller (the host-side fixture checks included) can omit it and
-    # gets the old scope/occasion-only behaviour.
+    # `state` is accepted for callers that have one to pass, but `#field_skill?`
+    # itself no longer reads it -- a known Escape/Teleport skill is always
+    # listed regardless of whether it is currently usable (see
+    # `#field_skill?`'s own comment); a caller checking *usability* wants
+    # `#escape_skill_available?`/`#teleport_skill_available?` directly.
     #
     # A database shrink can leave a learned skill id with no matching row
     # (docs/TODO.md's runtime error catalog) -- `db_skill` degrades that to a
@@ -4744,18 +5014,43 @@ module Game
     def field_skill?(sk, state = nil)
       return false unless sk
       case sk.type
-      when SKILL_TELEPORT
-        teleport_skill_available?(state)
-      when SKILL_ESCAPE
-        escape_skill_available?(state)
+      when SKILL_TELEPORT, SKILL_ESCAPE
+        # A known Escape/Teleport skill is *always* listed on the field
+        # menu, whether or not it is usable right this moment -- confirmed
+        # against RPG_RT's own live source: `Window_Skill::CheckInclude`
+        # (`src/window_skill.cpp`) is `if (!Game_Battle::IsBattleRunning())
+        # return true;` outside battle, with no per-type filter at all.
+        # `#escape_skill_available?`/`#teleport_skill_available?` (access,
+        # a registered target, not flying) are `Algo::IsSkillUsable`'s own
+        # logic, which only backs `Window_Skill::CheckEnable` (greying the
+        # entry / Buzzing on selection, `Scene::SkillMenu#choose_skill`) --
+        # a genuinely separate real-engine check this method used to
+        # conflate with list membership, hiding the skill outright instead
+        # of listing it disabled.
+        true
       when SKILL_SWITCH
         field_occasion?(sk)
       else
         return false unless sk.scope >= 2
         # The raw state set, not #skill_inflicted_states: a plain antidote cures
         # rather than inflicts (`reverse_state_effect` off), and curing poison
-        # between fights is the whole point of the field skill menu.
-        sk.affect_hp || sk.affect_sp || !skill_state_ids(sk).empty?
+        # between fights is the whole point of the field skill menu. A
+        # state-only skill (no affect_hp/affect_sp) only counts if at least
+        # one of the states it touches actually "Continues after battle" --
+        # confirmed against RPG_RT's own live source: `Algo::IsSkillUsable`
+        # (`src/algo.cpp`), called from `Game_Battler::IsSkillUsable` with
+        # `require_states_persist` hard-`true` for this exact purpose, only
+        # counts a `state_effects` entry when `state->type ==
+        # Persistence_persists` -- a battle-only state (the schema default,
+        # `Battle::STATE_PERSISTS_ON_MAP`'s own inverse) never makes the
+        # skill field-usable, even though it's a perfectly ordinary skill in
+        # battle. A dangling/unknown state id fails the same way the
+        # reference's own `state &&` guard does -- not usable.
+        sk.affect_hp || sk.affect_sp ||
+          skill_state_ids(sk).any? do |id|
+            row = Game::States.row(id, state_table)
+            row.respond_to?(:type) && (row.type || 0) == Battle::STATE_PERSISTS_ON_MAP
+          end
       end
     end
 
@@ -4864,10 +5159,14 @@ module Game
     # to turn on, so the caller can flip it (the switch table lives on the state,
     # not the party -- the same split #use_switch_item already uses). nil when
     # `sid` is not a switch skill the caster can cast, and then nothing is spent.
-    def cast_switch_skill(caster, sid)
-      return nil unless switch_skill?(sid) && can_cast?(caster, sid)
+    # `free`, when true, skips the SP-cost gate/spend entirely -- the same
+    # `free` flag `#cast_escape_skill`/`#cast_teleport_skill` already carry,
+    # for a special/use_skill item's invoked switch skill (the item pays,
+    # not the caster's SP; see #use_special_switch_item).
+    def cast_switch_skill(caster, sid, free = false)
+      return nil unless switch_skill?(sid) && (free ? !caster.nil? : can_cast?(caster, sid))
       sk = db_skill(sid)
-      caster.change_mp(-skill_cost(sk, caster))
+      caster.change_mp(-skill_cost(sk, caster)) unless free
       sk.switch_id
     end
 
@@ -4902,9 +5201,19 @@ module Game
     # (dual-wield) between them -- there is no test-bed skill with two to
     # confirm that against, so it is the direct reading of "a weapon carrying
     # that same attribute" applied per attribute rather than a guess at
-    # something looser.
+    # something looser. An `affect_attr_defence` skill (a resistance-shift
+    # buff, see `#apply_attr_shift`) is exempt from this whole check,
+    # regardless of which attribute it names -- confirmed against RPG_RT's
+    # own live source: `Game_Actor::IsSkillUsable` (`src/game_actor.cpp`)
+    # wraps its entire weapon-equip loop in `if (!skill->affect_attr_defence)
+    # { ... }`, and neither `Algo::IsSkillUsable` nor `Game_Battler::
+    # IsSkillUsable` (`src/algo.cpp`/`src/game_battler.cpp`) has any such
+    # check at all -- it exists only at this one `Game_Actor` level, guarded
+    # by that flag. yado.tk's own text (cited above) never mentions the
+    # exemption.
     def weapon_attribute_ready?(caster, sk)
       return true unless sk
+      return true if sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence
       ids = skill_attributes(sk).select { |aid| attribute_weapon_type?(aid) }
       return true if ids.empty?
       equipped = caster.respond_to?(:weapon_attributes) ? caster.weapon_attributes : []
@@ -5180,7 +5489,13 @@ module Game
         before_hp = t.hp
         before_mp = t.mp
         if sk.affect_hp && amount > 0
-          t.change_hp(amount)
+          # Same `- revived` treatment as the Affect-HP-off branch just
+          # below: a combined revive+HP skill must not add its full amount
+          # on top of the 1 HP the Death cure above already granted --
+          # `Game_Battler::UseSkill` (`src/game_battler.cpp`) applies
+          # `ChangeHp(effect - revived, false)` here too, not just in its
+          # `cure_hp_percentage` sibling branch.
+          t.change_hp(revived ? amount - 1 : amount)
         elsif revived && amount > 0 && t.max_hp
           # A revival skill with Affect HP off heals a percentage of max HP
           # instead of leaving `t` on the bare revival floor of 1 --
@@ -5194,7 +5509,18 @@ module Game
           # plays here).
           t.change_hp(t.max_hp * amount / 100 - 1)
         end
-        t.change_mp(amount) if sk.affect_sp && amount > 0
+        # `!t.dead?` mirrors `Game_Battler::UseSkill`'s own SP branch
+        # (`src/game_battler.cpp`): `effect > 0 && skill->affect_sp &&
+        # !HasFullSp() && !IsDead()`, the exact same `!IsDead()` guard its HP
+        # sibling carries just above. `t.dead?` here already reflects any
+        # Death cure this same loop iteration just applied (`cured.each`,
+        # above), so a genuine revive skill with Affect SP on still restores
+        # SP correctly -- only a target still dead at this point (the skill
+        # did not cure Death) is blocked, matching the reference exactly.
+        # `#change_hp`'s own `return @hp if dead?` guard gives the HP branch
+        # this same protection incidentally; `#change_mp` has no such guard
+        # of its own, so this needed to be explicit here.
+        t.change_mp(amount) if sk.affect_sp && amount > 0 && !t.dead?
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
@@ -5669,12 +5995,23 @@ module Game
       @chipset_id = unit.chipset_id
       @lower = unit.lower_layer || []
       @upper = unit.upper_layer || []
-      # Tile Substitution (11750) rewrites, per layer: { old_id => new_id }. Kept
-      # as a lookup applied on read rather than as an edit of the layer arrays,
-      # the way RPG_RT does it — the map data stays pristine, a second
-      # substitution of the same tile replaces (not chains with) the first, and
-      # passability follows the substituted tile because every reader goes
-      # through #lower / #upper. Cleared with the map, so leaving resets it.
+      # Tile Substitution (11750) rewrites, per layer: a sparse { original_id =>
+      # current_id } deviation from identity. Kept as a lookup applied on read
+      # rather than as an edit of the layer arrays -- the map data stays
+      # pristine, and passability follows the substituted tile because every
+      # reader goes through #lower / #upper. Cleared with the map, so leaving
+      # resets it. Confirmed against RPG_RT's own live source: `Game_Map::
+      # SubstituteDown`/`SubstituteUp` (`src/game_map.cpp`) operate on a
+      # persistent 144-entry table, `map_info.lower_tiles`/`upper_tiles`,
+      # identity-initialized (`std::iota`) once per map load and mutated
+      # in place every call via `DoSubstitute`, which scans by *current*
+      # value, not original index: `for (i) if (tiles[i] == old_id) tiles[i]
+      # = new_id;`. A second substitution therefore **chains** through the
+      # first whenever its `old_id` matches the first's `new_id`, rather than
+      # independently replacing it -- and "substituting a tile back to
+      # itself" is not how a prior substitution is undone (see
+      # #substitute_tile's own doc comment for the full correction; an
+      # earlier, uncited pass here got both of these backwards).
       @substitutions = [{}, {}]
     end
 
@@ -5685,16 +6022,28 @@ module Game
     def lower(x, y); tile(@lower, 0, x, y); end
     def upper(x, y); tile(@upper, 1, x, y); end
 
-    # Tile Substitution: from now on draw (and treat) every `old_id` tile on
-    # `layer` (0 lower, 1 upper) as `new_id`. Substituting a tile back to itself
-    # drops the rewrite.
+    # Tile Substitution: from now on draw (and treat) as `new_id` every tile on
+    # `layer` (0 lower, 1 upper) that *currently* renders as `old_id` -- not
+    # just tiles whose original chipset id is `old_id`. Confirmed against
+    # RPG_RT's own live source (`Game_Map::DoSubstitute`, `src/game_map.cpp`,
+    # see the constructor's fuller citation): it scans the persistent
+    # substitution table by current value every call, so a later
+    # substitution chains through an earlier one whenever its `old_id`
+    # matches the earlier `new_id` -- e.g. substituting 5->8 then 8->12
+    # leaves *both* original tiles 5 and 8 rendering as 12, not tile 5 stuck
+    # at 8. `old_id == new_id` is not a special "undo" case either: it only
+    # resets whichever tiles currently render as `old_id` back to `old_id`
+    # (a no-op for most of them) -- reverting a specific earlier
+    # substitution means substituting *from* its current (already-rewritten)
+    # id, not its original one.
     def substitute_tile(layer, old_id, new_id)
-      table = @substitutions[layer == 0 ? 0 : 1]
-      if old_id == new_id
-        table.delete(old_id)
-      else
-        table[old_id] = new_id
-      end
+      idx = layer == 0 ? 0 : 1
+      rebuilt = {}
+      @substitutions[idx].each { |k, v| rebuilt[k] = v == old_id ? new_id : v }
+      rebuilt[old_id] = new_id unless rebuilt.key?(old_id)
+      table = {}
+      rebuilt.each { |k, v| table[k] = v unless k == v }
+      @substitutions[idx] = table
       @revision += 1
     end
 
@@ -5822,15 +6171,30 @@ module Game
     attr_accessor :fixed_facing
     attr_reader :graphic_name, :graphic_index, :x, :y
 
-    # The direction actually walked/jumped by the last successful move,
-    # distinct from #direction (the displayed sprite facing): a Direction
-    # Fix lock or an explicit Face command can turn the sprite without the
-    # character having moved a step in that direction, and the reverse --
-    # a locked move steps somewhere the sprite never turns to face. Only
-    # #move / #jump / #move_diagonal update this; #face!/#turn_* (no
-    # movement) and a blocked #do_move (turns to face an obstruction but
-    # never steps) leave it alone. yado.tk: a move-route "One Step Forward"
-    # continues in *this* direction, not the sprite's #direction.
+    # What a following move-route "Move Forward" sub-command walks in --
+    # NOT simply "the direction actually walked/jumped by the last
+    # successful move" the way an uncited yado.tk claim this comment used to
+    # repeat had it. RPG_RT's own `Game_Character::UpdateMoveRoute`
+    # (`src/game_character.cpp`) uses a single shared `direction` field for
+    # both purposes: a Face/Turn sub-command's branch (`SetDirection(...)`
+    # for Face Up/Right/Down/Left, or `Turn90DegreeRight`/`Turn90DegreeLeft`/
+    # `Turn180Degree`/`TurnRandom`/`TurnTowardCharacter`/
+    # `TurnAwayFromCharacter`, each itself a `SetDirection` call) writes the
+    # exact same `direction` a later Move-command branch's `Move(GetDirection
+    # ())` reads for Move Forward -- so `Turn Right` immediately followed by
+    # `Move Forward` walks in the *turned* direction in real RPG_RT, not
+    # whichever direction the character was last physically stepped in
+    # before the route began. #face!/#turn_right/#turn_left/#turn_around
+    # (the move-route Face/Turn sub-commands) update this field for exactly
+    # that reason; #move/#jump/#move_diagonal (actual steps) update it too,
+    # since RPG_RT's shared field is written by both. A blocked #do_move
+    # (turns to face an obstruction but never steps) still leaves it alone,
+    # matching #face's own lock-respecting, no-step nature.
+    #
+    # A plain numpad int (2/4/6/8) after #move/#jump/#face!/#turn_*, or a
+    # `[horizontal, vertical]` pair after #move_diagonal -- see
+    # #move_diagonal's own citation for why a diagonal step's full 8-way
+    # direction has to survive here, not just one cardinal component.
     attr_reader :last_move_direction
 
     # Placing a character outright -- Change Event Location, a page refresh
@@ -5899,7 +6263,9 @@ module Game
     # one of the fixed kinds -- RPG_RT still turns a "statue" NPC's sprite on
     # an explicit Face command even though it never turns while it walks.
     def face!(dir)
-      @direction = dir unless dir.nil?
+      return if dir.nil?
+      @direction = dir
+      @last_move_direction = dir
     end
 
     # Whether the move just made was a jump (a Begin Jump / End Jump block)
@@ -5948,11 +6314,44 @@ module Game
       @jumped = true
     end
 
+    # The facing a diagonal move settles on: whichever of the diagonal's two
+    # cardinal components (`horizontal`/`vertical`) shares the axis the
+    # character is *already* facing, unchanged if it was already on that
+    # axis -- confirmed against RPG_RT's own live source:
+    # `Game_Character::UpdateFacing` (`src/game_character.cpp`) only
+    # reverses the prior facing (`SetFacing((facing + 2) % 4)`) when it
+    # matches *neither* of the diagonal's two cardinal components, otherwise
+    # leaving it untouched. Since a 180-degree flip of a facing that is on
+    # neither component always lands exactly on the component sharing its
+    # own axis (Up flips to Down's opposite-axis partner... concretely: Down
+    # flips to Up, Left flips to Right), the net effect is simply "keep the
+    # vertical component if already facing vertically, keep the horizontal
+    # component if already facing horizontally" -- RPG_RT never
+    # unconditionally snaps to the diagonal's vertical part the way this
+    # method's own prior, uncited comment ("RPG2000 keeps a cardinal facing
+    # on diagonals, so we face the vertical part") claimed. A character
+    # facing Left that steps Up-Right ends up facing Right, not Up.
+    def diagonal_facing(horizontal, vertical)
+      [8, 2].include?(@direction) ? vertical : horizontal
+    end
+
     # Move one tile diagonally, combining a horizontal and a vertical direction.
-    # RPG2000 keeps a cardinal facing on diagonals, so we face the vertical part.
+    #
+    # #last_move_direction is set to the `[horizontal, vertical]` pair itself,
+    # not just one component -- confirmed against RPG_RT's own live source:
+    # `Game_Character::Direction` (`src/game_character.h`) is an 8-way enum
+    # (Up/Right/Down/Left/UpRight/DownRight/DownLeft/UpLeft), and
+    # `UpdateMoveRoute`'s diagonal case (`SetDirection(cmd)`,
+    # `src/game_character.cpp`) sets it to the literal diagonal value, which
+    # `GetDirection()` still holds the next time a Move Forward sub-command
+    # reads it -- a two-command route "Move Upper-Right, Move Forward" moves
+    # diagonally *twice*, not diagonally-then-straight-up. Storing only
+    # `vertical` here (this method's own prior behaviour) collapsed that
+    # 8-way state to 4-way, so a following Move Forward continued along one
+    # axis only and silently veered off the diagonal path real RPG_RT walks.
     def move_diagonal(horizontal, vertical)
-      face(vertical)
-      @last_move_direction = vertical
+      face(diagonal_facing(horizontal, vertical))
+      @last_move_direction = [horizontal, vertical]
       hx, = DIR_DELTA[horizontal] || [0, 0]
       _, vy = DIR_DELTA[vertical] || [0, 0]
       @x += hx
@@ -5960,22 +6359,39 @@ module Game
       @jumped = false
     end
 
-    def turn_right;  @direction = TURN_RIGHT[@direction] || @direction; end
-    def turn_left;   @direction = TURN_LEFT[@direction]  || @direction; end
-    def turn_around; @direction = TURN_180[@direction]   || @direction; end
+    def turn_right
+      @direction = TURN_RIGHT[@direction] || @direction
+      @last_move_direction = @direction
+    end
 
-    # Direction pointing from this character toward (tx, ty). Ties (and equal
-    # distance) resolve to the horizontal axis, matching RPG2000's toward-hero
-    # behaviour; returns the current facing when already on the tile.
+    def turn_left
+      @direction = TURN_LEFT[@direction] || @direction
+      @last_move_direction = @direction
+    end
+
+    def turn_around
+      @direction = TURN_180[@direction] || @direction
+      @last_move_direction = @direction
+    end
+
+    # Direction pointing from this character toward (tx, ty). ~~Ties (and
+    # equal distance) resolve to the horizontal axis, matching RPG2000's
+    # toward-hero behaviour; returns the current facing when already on the
+    # tile.~~ Corrected against RPG_RT's own live source: `Game_Character::
+    # GetDirectionToCharacter` (`src/game_character.cpp`) compares with a
+    # strict `>` (`std::abs(sx) > std::abs(sy)`), so an exact tie -- and the
+    # degenerate same-tile case (dx == dy == 0), which the reference does not
+    # special-case at all -- falls through to the *vertical* branch, and
+    # lands on Down there since `sy > 0` is false when `sy == 0`. This used
+    # to compare with `>=` and treat the same-tile case as "keep the current
+    # facing," neither of which the reference does.
     def direction_toward(tx, ty)
       dx = tx - @x
       dy = ty - @y
-      if dx.abs >= dy.abs && dx != 0
+      if dx.abs > dy.abs
         dx > 0 ? 6 : 4
-      elsif dy != 0
-        dy > 0 ? 2 : 8
       else
-        @direction
+        dy < 0 ? 8 : 2
       end
     end
 
@@ -6158,11 +6574,19 @@ module Game
       when MOVE_AWAY_HERO
         do_move(character, world, away_hero(character, world))
       when MOVE_FORWARD
-        # yado.tk: continues in the direction actually last walked/jumped,
-        # not the sprite's displayed facing -- the two can diverge under a
-        # Direction Fix lock or an explicit Face command (see
-        # Character#last_move_direction).
-        do_move(character, world, character.last_move_direction)
+        # #last_move_direction is what RPG_RT's own shared `direction` field
+        # holds at this point -- the immediately preceding Face/Turn
+        # sub-command in this same route wins over whatever the character
+        # last physically stepped in, since #face!/#turn_* update it too
+        # (see #last_move_direction's own citation). A diagonal last
+        # direction continues diagonally rather than collapsing to one
+        # cardinal axis.
+        last = character.last_move_direction
+        if last.is_a?(Array)
+          do_diagonal_dir(character, world, last[0], last[1])
+        else
+          do_move(character, world, last)
+        end
       # A Face Direction sub-command always turns the sprite, even right after
       # a Direction Fix ON earlier in the same route (yado.tk) -- #face!, not
       # the lock-respecting #face movement uses.
@@ -6357,8 +6781,21 @@ module Game
 
     def do_diagonal(character, world, id)
       horizontal, vertical = DIAGONAL[id]
+      do_diagonal_dir(character, world, horizontal, vertical)
+    end
+
+    # The shared body of a diagonal step, whether it comes from an explicit
+    # Move Upper-Right/etc. sub-command (#do_diagonal, which looks up its
+    # `horizontal`/`vertical` pair from the move id) or from Move Forward
+    # continuing a diagonal #last_move_direction (see #execute's own
+    # MOVE_FORWARD case) -- RPG_RT's own `UpdateMoveRoute`
+    # (src/game_character.cpp) has no such split at all: `Move(GetDirection())`
+    # is the one call site for every move sub-command, cardinal or diagonal
+    # alike, since `GetDirection()` is an 8-way enum that a diagonal move
+    # simply leaves set.
+    def do_diagonal_dir(character, world, horizontal, vertical)
       prev_dir = character.direction
-      character.face(vertical)
+      character.face(character.diagonal_facing(horizontal, vertical))
       passable = character.through ||
                  (world.passable?(character, horizontal) &&
                   world.passable?(character, vertical))
@@ -6387,11 +6824,16 @@ module Game
   end
 
   # Autonomous (non-custom) event movement: given a page's `move_type`, pick the
-  # direction the character should try to step next. `random` picks a cardinal;
+  # direction the character should try to step next. ~~`random` picks a
+  # cardinal~~ -- corrected against RPG_RT's own live source: `random` rolls a
+  # *relative* turn off the event's own current facing instead, and sometimes
+  # skips the move attempt entirely -- see #random_direction's own citation;
   # `vertical`/`horizontal` keep bouncing along one axis, reversing when the way
-  # ahead is blocked; `toward`/`away` chase or flee the hero. Returns a numpad
-  # direction, or nil for "no autonomous movement" (stationary) and for the
-  # custom-route type (which is driven by a MoveRoute instead).
+  # ahead is blocked; `toward`/`away` chase or flee the hero, but only most of
+  # the time and only in sight -- see #toward_away_direction's own citation.
+  # Returns a numpad direction, or nil for "no autonomous movement" (stationary,
+  # the custom-route type -- driven by a MoveRoute instead -- and a `random`
+  # draw that skips this decision's move attempt entirely).
   module MoveType
     STATIONARY = 0
     RANDOM     = 1
@@ -6403,21 +6845,88 @@ module Game
 
     def self.next_direction(type, character, world)
       case type
-      when RANDOM     then Character::CARDINALS[world.random(4)]
-      when VERTICAL   then bounce(character, world, [8, 2])
-      when HORIZONTAL then bounce(character, world, [4, 6])
-      when TOWARD
-        hx, hy = world.hero_position
-        character.direction_toward(hx, hy)
-      when AWAY
-        hx, hy = world.hero_position
-        character.direction_away(hx, hy)
+      when RANDOM     then random_direction(character, world)
+      when VERTICAL   then bounce(character, world, [2, 8])
+      when HORIZONTAL then bounce(character, world, [6, 4])
+      when TOWARD then toward_away_direction(character, world, true)
+      when AWAY   then toward_away_direction(character, world, false)
       else nil
       end
     end
 
+    # Random movement is a *relative* roll off the event's own current facing,
+    # not a uniform pick among the four absolute cardinals -- confirmed against
+    # RPG_RT's own live source: `Game_Event::MoveTypeRandom` (`src/
+    # game_event.cpp`) draws `Rand::GetRandomNumber(0, 9)`: 0-2 (30%) keep
+    # going straight with no turn at all, 3-4 (20%) turn 90 degrees left, 5-6
+    # (20%) turn 90 degrees right, 7 (10%) turn 180 degrees, and 8-9 (20%)
+    # skip the movement decision entirely -- `SetStopCount(Rand::
+    # GetRandomNumber(0, GetMaxStopCount())); return;` fires *before* `Move()`
+    # is ever called, so there is no move attempt this tick at all, not even
+    # one in the direction the character already faces.
+    # `Turn90DegreeLeft`/`Turn90DegreeRight`/`Turn180Degree` (`src/
+    # game_character.cpp`) are themselves plain `SetDirection` remaps with no
+    # passability check of their own (`GetDirection90DegreeLeft(dir)` is
+    # `(dir + 3) % 4`, `GetDirection90DegreeRight` is `(dir + 1) % 4`,
+    # `GetDirection180Degree` is `(dir + 2) % 4`, against that file's `Up = 0,
+    # Right, Down, Left` enum) -- exactly this codebase's own
+    # `Character::TURN_LEFT`/`TURN_RIGHT`/`TURN_180` hashes, confirmed to
+    # match direction-for-direction (both rotate Up -> Left -> Down -> Right
+    # -> Up for a left turn and the reverse for a right turn). Returns nil for
+    # the skip draw -- already `#step_event`'s own sentinel for "no
+    # autonomous movement this frame" (see STATIONARY/CUSTOM above), so no
+    # caller-side change was needed to keep it distinct from a real
+    # direction: nil never collides with a numpad direction (2/4/6/8 are all
+    # truthy).
+    def self.random_direction(character, world)
+      draw = world.random(10)
+      return character.direction if draw < 3
+      return Character::TURN_LEFT[character.direction]  || character.direction if draw < 5
+      return Character::TURN_RIGHT[character.direction] || character.direction if draw < 7
+      return Character::TURN_180[character.direction]   || character.direction if draw == 7
+      nil
+    end
+
+    # Approach/Away from Player is not the deterministic beeline it looks
+    # like from the command's name -- confirmed against RPG_RT's own live
+    # source: `Game_Event::MoveTypeTowardsOrAwayPlayer` (`src/game_event.cpp`)
+    # only computes the real toward/away direction 8 times out of 10 while
+    # the event is actually on screen (`Rand::GetRandomNumber(0, 9)`: 0 keeps
+    # the current facing, 1 picks a fully random cardinal, 2-9 the real
+    # direction) -- and picks a fully random cardinal unconditionally,
+    # every time, while off screen (`sx`/`sy` outside the view plus a
+    # two-tile margin, `TILE_SIZE * 2`), making no attempt to track the
+    # player at all until back in view. `GetDirectionToCharacter`/
+    # `GetDirectionAwayCharacter` are #direction_toward/#direction_away,
+    # already correct; it is this surrounding stochastic/visibility gate
+    # that was missing entirely -- every step unconditionally computed the
+    # exact geometric direction, in sight or not, which reads as a
+    # noticeably more precise (and, off screen, omniscient) chase/flee than
+    # real RPG_RT's.
+    def self.toward_away_direction(character, world, towards)
+      return Character::CARDINALS[world.random(4)] unless world.in_sight?(character)
+      draw = world.random(10)
+      return character.direction if draw == 0
+      return Character::CARDINALS[world.random(4)] if draw == 1
+      hx, hy = world.hero_position
+      towards ? character.direction_toward(hx, hy) : character.direction_away(hx, hy)
+    end
+
     # Continue along the current axis direction, reversing to the other end of
-    # `pair` when the way ahead is blocked.
+    # `pair` when the way ahead is blocked. `pair[0]` is also the default when
+    # the event is not currently facing either end of the axis at all (an
+    # independent page field, so a Vertical/Horizontal-cycle event can start
+    # -- or be knocked, by a Change Event Location or forced Face command --
+    # facing perpendicular to its own cycle axis) -- confirmed against
+    # RPG_RT's own live source: `Game_Event::MoveTypeCycle` (`src/
+    # game_event.cpp`) only continues in `ReverseDir(default_dir)` when
+    # already facing exactly that; every other current facing, on-axis or
+    # not, moves `default_dir` instead. `MoveTypeCycleUpDown`/
+    # `MoveTypeCycleLeftRight` pass `Down`/`Right` as that default (`src/
+    # game_character.h`'s `Up = 0, Right, Down, Left` enum), so `pair[0]`
+    # here is `2`/`6`, not `8`/`4` -- a Vertical/Horizontal event caught
+    # facing off-axis took its first step Up/Left instead of RPG_RT's own
+    # Down/Right until this was corrected.
     def self.bounce(character, world, pair)
       cur = pair.include?(character.direction) ? character.direction : pair[0]
       return cur if world.passable?(character, cur)
@@ -7566,6 +8075,23 @@ module Game
       end
     end
 
+    # The raw tint state for `.lsd` chunk 102: [finish_rgbs, current_rgbs,
+    # frames_left], matching liblcf's SaveScreen fields one-for-one (see
+    # #restore_tint, its inverse).
+    def tint_save_data
+      [[@tr, @tg, @tb, @tsat], [@r, @g, @b, @sat], @frames]
+    end
+
+    # Restore a tint transition read back from `.lsd` chunk 102: `finish` and
+    # `current` are each [red, green, blue, sat], `frames` the frames still
+    # left. Unlike #tint_to, `current` need not equal `finish` -- a save made
+    # mid-transition resumes interpolating from exactly where it left off.
+    def restore_tint(finish, current, frames)
+      @tr, @tg, @tb, @tsat = finish
+      @r, @g, @b, @sat = current
+      @frames = frames
+    end
+
     # Begin a timed shake of the given power and speed for `frames` frames
     # (frames <= 0 stops the shake immediately). Power/speed clamp to sane ranges.
     def shake(power, speed, frames)
@@ -7866,6 +8392,21 @@ module Game
     def red; @red.to_i; end
     def green; @green.to_i; end
     def blue; @blue.to_i; end
+
+    # The in-flight move's own target values and remaining frame count (nil/0
+    # when never moved or already arrived) -- for `.lsd` chunk 103's own
+    # finish_*/time_left fields, which #to_lsd writes from these while
+    # #moving?, see SAVE_PICTURE's own comment on why fields 31/32/etc are
+    # named finish_*, not current_*.
+    def finish_x; @tx; end
+    def finish_y; @ty; end
+    def finish_zoom; @tzoom; end
+    def finish_opacity; @topacity; end
+    def finish_red; @tred; end
+    def finish_green; @tgreen; end
+    def finish_blue; @tblue; end
+    def finish_saturation; @tsat; end
+    def frames_left; @frames; end
     def saturation; @saturation.to_i; end
 
     def initialize(id, opts = {})
@@ -7976,9 +8517,22 @@ module Game
     # non-zero price (RPG2000 marks price-0 / key items as unsellable).
     def sellable?(id); price(id) > 0 && @party.item_count(id) > 0; end
 
-    # The party's sellable items, id-ordered, for the sell list.
+    # Every item the party holds, id-ordered, for the sell list -- list
+    # membership and sellability are two different questions, confirmed
+    # against RPG_RT's own live source: `Window_ShopSell` (`src/window_
+    # shopsell.cpp`) inherits `Window_Item::CheckInclude`/`Refresh`
+    # (`src/window_item.cpp`) completely unchanged (a plain `item_id > 0`
+    # filter over every item `Game_Party::GetItems` returns, no price check
+    # anywhere in it) and only overrides `CheckEnable` (`item->price > 0`) --
+    # which gates the drawn color and, in `Scene_Shop::UpdateSellSelection`
+    # (`src/scene_shop.cpp`), Decision (`item && item->price > 0`, Buzzer
+    # otherwise). A price-0 (key) item a player holds still shows up in the
+    # Sell list in real RPG_RT, just refuses the sale -- this method used to
+    # drop it from the list outright instead, via the same `#sellable?` this
+    # class's own #max_sell already, correctly, uses for the "can it
+    # actually be sold" question that #open_shop_quantity gates Decision on.
     def sellable_items
-      @party.items.keys.select { |id| sellable?(id) }.sort
+      @party.items.keys.sort
     end
 
     # The RPG2000 per-item stack cap: a party holds at most 99 of anything.
@@ -8331,6 +8885,12 @@ module Game
       @hidden = hidden ? true : false
       @hp = @max_hp
       @sp = @max_sp
+      # This member's own randomized starting phase for the `levitate` bob's
+      # sine argument (0..63, matching EasyRPG's `frame_counter` seed --
+      # see `#flying_phase`'s own attr comment below). Rolled per member by
+      # `Troop#initialize`, not here, since only the troop has an RNG to
+      # hand; left at the schema default of 0 for a bare fixture with none.
+      @flying_phase = 0
       # Critical-hit chance as a whole percent (0 = never), from the enemy's
       # critical_hit flag and its 1-in-`critical_hit_chance` rate, truncated
       # the same way -- and for the same reason -- as Actor#crit_chance. An
@@ -8400,6 +8960,20 @@ module Game
     # it does and does not affect.
     attr_reader :levitate
 
+    # This member's own randomized starting phase (0..63) for `Scene::Battle
+    # #flying_offset`'s sine bob. RPG_RT does not bob every levitating troop
+    # member in lockstep from one shared clock: `Game_Enemy::GetFlyingOffset`
+    # (`src/game_enemy.cpp`) reads a *per-battler* `GetBattleFrameCounter()`
+    # (`Game_Battler::frame_counter`, `src/game_battler.h`), which
+    # `Game_Battler::ResetBattle` (`src/game_battler.cpp`) seeds
+    # independently per battler at battle start -- `frame_counter =
+    # Rand::GetRandomNumber(0, 63);` -- before `Game_Battler::UpdateBattle`
+    # increments every battler's own counter in lockstep for the rest of the
+    # fight (`Scene_Battle::UpdateBattlers`'s per-battler loop). So each
+    # levitating member bobs on its own fixed, randomized phase relative to
+    # the others, not in unison. Writable so `Troop#initialize` can roll it.
+    attr_accessor :flying_phase
+
     # The "Appear Transparent" flag (field 10) -- see the comment in #initialize.
     attr_reader :transparent
 
@@ -8448,6 +9022,17 @@ module Game
       row.members.each { |_, m| @members << member(db, m) } if row && row.members
       @pages = row && row.respond_to?(:pages) ? row.pages : nil
       apply_appear_randomly(row, rng) if row && rng
+      # Each levitating member's own `flying_phase` (see Enemy#flying_phase's
+      # own citation): rolled once here, in member order, the same way
+      # `Game_Battler::ResetBattle` seeds every battler's `frame_counter`
+      # independently at battle start. RPG_RT actually rolls this for every
+      # battler on both sides, levitating or not, party actor included --
+      # deliberately narrowed here to only the members whose `flying_phase`
+      # can ever be observed at all (a non-levitating member's own bob is
+      # always 0, and only a Troop's own `Enemy` members bob in the first
+      # place), so as not to shift the shared `rng`'s draw count for every
+      # ordinary fight the way a full, unconditional port would.
+      @members.each { |m| m.flying_phase = rng.random(64) if m.levitate } if rng
     end
 
     # EXP / gold / drops are only earned from members that actually fell in
@@ -8457,10 +9042,10 @@ module Game
     # its own basic Autodestruct -- see `Game::Battle#enemy_autodestruct`)
     # contributes none of the three, even though a fight can end in victory
     # while such a member is technically still at full HP:
-    # `Game::Battle#incapacitated?` (`mruby-rpg2k/mrblib/game.rb`) already
+    # `Game::Battle#enemy_active?` (`mruby-rpg2k/mrblib/game.rb`) already
     # treats hidden the same as dead for win/loss purposes (`out_of_play?`),
-    # so `alive?(@enemies)` goes false -- and victory fires -- the instant
-    # every *visible* member is down, with no requirement that a still-hidden
+    # so `enemy_active?(@enemies)` goes false -- and victory fires -- the
+    # instant every *visible* member is down, with no requirement that a still-hidden
     # one ever engaged at all. Matches EasyRPG's actual C++ source:
     # `Game_EnemyParty::GetExp`/`GetMoney`/`GenerateDrops` (`src/
     # game_enemyparty.cpp`) each loop `if (enemy.IsDead())` before
@@ -8585,6 +9170,24 @@ module Game
       party = @state && @state.respond_to?(:party) ? @state.party : nil
       return true unless party && party.respond_to?(:skill_helps_troop?)
       party.skill_helps_troop?(sk, caster, troop)
+    end
+
+    # Whether `sk` is even a legal in-battle action to name in an enemy's own
+    # action pattern -- reuses Game::Party's own #battle_skill? so an enemy's
+    # AI is gated the exact same way a field/battle actor cast is. Confirmed
+    # directly against RPG_RT's live source: `EnemyAi::IsActionValid`
+    # (`src/enemyai.cpp`) rejects a `Kind_skill` action outright when
+    # `!source.IsSkillUsable(action.skill_id)` -- before the action's own
+    # weight is ever computed -- and `Algo::IsSkillUsable` (`src/algo.cpp`),
+    # which `Game_Battler::IsSkillUsable` (`src/game_battler.cpp`) reaches in
+    # battle, is unconditionally false for an Escape/Teleport-type skill and
+    # gated on the skill's own `occasion_battle` flag for a Switch-type one.
+    # Defaults to "usable" without a party to ask, matching every other
+    # tolerant accessor here.
+    def skill_battle_usable?(sk)
+      party = @state && @state.respond_to?(:party) ? @state.party : nil
+      return true unless party && party.respond_to?(:battle_skill?)
+      party.battle_skill?(sk)
     end
 
     # Whether `caster` (a live Game::Actor, not a battle Combatant snapshot —
@@ -8788,6 +9391,14 @@ module Game
     # ... and for a state lifting, which has one wording for both sides.
     def self.recovery_message(id, table, battler_name)
       message(battler_name, field(id, table, :message_recovery))
+    end
+
+    # ... and the per-turn reminder a battler still carrying (or just having
+    # shaken off) a state gets at the very start of its own turn, before its
+    # action -- distinct from #inflict_message, which fires only the instant
+    # a state first lands. One wording for both sides, like recovery.
+    def self.affected_message(id, table, battler_name)
+      message(battler_name, field(id, table, :message_affected))
     end
 
     # ... and for one the target **already** carried when something tried to
@@ -9178,7 +9789,20 @@ module Game
                             # the battle-page `command_actor` condition. nil
                             # until an actor picks a command (an enemy, or an
                             # auto-battling ally, never records one).
-                            :last_battle_action) do
+                            :last_battle_action,
+                            # The per-turn state reminder line this battler's
+                            # turn should open with, as of the most recent
+                            # #apply_turn_states call -- the message text
+                            # itself (already resolved against this
+                            # battler's name), or nil when nothing qualifies.
+                            # EasyRPG's `Scene_Battle_Rpg2k::
+                            # ProcessBattleActionBegin` (`src/
+                            # scene_battle_rpg2k.cpp`) computes this fresh
+                            # every turn from whichever single highest-
+                            # `priority` state (ties to the higher id) the
+                            # battler either still carries or just had
+                            # auto-cured -- not accumulated across turns.
+                            :turn_state_message) do
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -9504,8 +10128,20 @@ module Game
     STATE_PERSISTS_ON_MAP = 1
 
     # True once one side has been wiped out, or the party has fled — the battle
-    # is decided.
-    def finished?; @escaped || !alive?(@allies) || !alive?(@enemies); end
+    # is decided. The two sides use genuinely different tests, not a shared
+    # symmetric one: RPG_RT's own `Game_Battle::CheckWin`/`CheckLose`
+    # (`src/game_battle.cpp`) are `!game_enemyparty->IsAnyActive()` for the
+    # enemy side against `CanActOrRecoverable()` (`incapacitated?`'s own
+    # source) per party member for the ally side -- `IsAnyActive` bottoms
+    # out in `Game_Battler::Exists()` (`src/game_battler.h`, `!IsHidden() &&
+    # !IsDead() && IsInParty()`), a bare dead-or-hidden test with no
+    # restriction/recovery check at all. The ally-side widening to "locked
+    # into a permanent do-nothing state" exists purely to avoid a stall
+    # where the player can never submit another command; the enemy side has
+    # no such risk (the player can always keep attacking a
+    # restricted-but-alive enemy), so a fully-Stoned enemy troop must still
+    # be finished off with real damage, not treated as an instant win.
+    def finished?; @escaped || !alive?(@allies) || !enemy_active?(@enemies); end
 
     # Whether the party successfully escaped this fight.
     def escaped?; @escaped; end
@@ -9627,6 +10263,38 @@ module Game
       source.last_battle_action
     end
 
+    # Conditional Branch (Battle) test 4, "the currently-targeted troop
+    # member is param1": the troop slot index of `source`'s own currently-
+    # resolved single enemy target, or nil when there is no such single
+    # target. Port of RPG_RT's own `target_enemy_index`/`targets_single_
+    # enemy` (set in `Scene_Battle_Rpg2k3::ProcessBattleActionBegin`, `src/
+    # scene_battle_rpg2k3.cpp`, right before a page's pre-action events
+    # run): only computed when `source->GetType() == Type_Ally`, from that
+    # action's own `GetOriginalSingleTarget()` -- the target chosen at
+    # command time, before any forced-restriction (Berserk/Confuse)
+    # override -- and only when that target is itself an enemy (`Type_
+    # Enemy`); an all-target action or one aimed at an ally leaves
+    # `targets_single_enemy` false. This port's own equivalent of "the
+    # original single target": a basic Attack's plain `#action` field, or a
+    # single-target Skill/Item's `#command[:target]` (nil for an all-target
+    # `#command[:all]` action). `@enemies.find_index` compares by identity
+    # (`#equal?`), not the Struct's own value equality, since two same-type
+    # enemies sharing every stat would otherwise collide onto the wrong
+    # index the way `#turn_order`'s own citation on this exact hazard
+    # already documents. Only ever resolved for an ally `source` -- RPG_RT
+    # itself only ever *sets* these fields for an acting ally; an
+    # enemy-sourced page run instead inherits whatever the last acting ally
+    # left behind (`// Enemy doesn't change the values...`), a real but
+    # rarely-observable quirk left unmodelled here.
+    def target_enemy_index(source)
+      return nil unless source
+      a = source.actor
+      return nil unless a
+      target = source.command ? (source.command[:all] ? nil : source.command[:target]) : source.action
+      return nil unless target
+      @enemies.find_index { |e| e.equal?(target) }
+    end
+
     # Force Flee (1006), target 0: let the party leave whenever it next tries.
     # RPG_RT grants the escape rather than performing it, so the player still has
     # to pick Flee — #attempt_escape then always succeeds.
@@ -9726,10 +10394,16 @@ module Game
     # all-target skill returns an array — every entry is logged now (the effects
     # all landed at once) but surfaced one per #step so the screen animates them
     # in turn. nil (no living target) passes straight through.
+    #
+    # The acting battler's own #apply_turn_states-computed per-turn state
+    # reminder (see Combatant#turn_state_message) rides on the *first* entry
+    # only, matching RPG_RT showing it once at the very start of the turn,
+    # not once per buffered hit.
     def record_action(result)
       return nil if result.nil?
       entries = result.is_a?(Array) ? result : [result]
       return nil if entries.empty?
+      entries.first[:state_message] = @acting.turn_state_message if @acting
       entries.each { |e| @log << e }
       @pending.concat(entries[1..-1])
       entries.first
@@ -10633,6 +11307,7 @@ module Game
     def apply_turn_states(b)
       can_act = true
       b.state_turns ||= {}
+      healed = []
       (b.states || []).dup.each do |id|
         d = state_def(id)
         next unless d
@@ -10640,11 +11315,22 @@ module Game
         if recovers_from_state?(b, id, d)
           b.states = b.states - [id]
           b.state_turns.delete(id)
+          healed << id
           next
         end
+        # Not clamped to #damage_cap: confirmed against EasyRPG's own live
+        # source (`Game_Battler::ApplyConditions`, `src/game_battler.cpp`) --
+        # its `ChangeHp(src_hp, /* lethal = */ false)` call carries the
+        # computed slip straight through with no `Utils::Clamp` at all. The
+        # popup hard-cap (`MaxDamageValue()`) exists at exactly three call
+        # sites in EasyRPG, all in `src/game_battlealgorithm.cpp`'s
+        # Normal/Skill/SelfDestruct algorithms (see #do_simulated_attack's
+        # own citation of this) -- `ApplyConditions` is not one of them. A
+        # prior version of this method capped the HP slip here anyway, on an
+        # uncited assumption that the popup limit "applies to slip damage
+        # too"; it does not, and the SP slip two lines down was never capped
+        # to begin with, which should have been a hint.
         hp = state_field(d, :hp_change_val) + b.max_hp * state_field(d, :hp_change_max) / 100
-        cap = damage_cap
-        hp = cap if hp > cap # the popup hard-cap applies to slip damage too
         b.hp = slip_stat(b.hp, b.max_hp, hp, state_field(d, :hp_change_type), 1) if hp > 0
         if b.max_mp && b.mp
           sp = state_field(d, :sp_change_val) + b.max_mp * state_field(d, :sp_change_max) / 100
@@ -10652,7 +11338,41 @@ module Game
         end
         can_act = false if state_field(d, :restriction) == RESTRICTION_DO_NOTHING
       end
+      b.turn_state_message = turn_state_message(b, healed)
       can_act
+    end
+
+    # `b`'s per-turn state reminder line, freshly computed for this call --
+    # EasyRPG's `Scene_Battle_Rpg2k::ProcessBattleActionBegin`'s own inline
+    # scan (`src/scene_battle_rpg2k.cpp`), not `States.significant`/EasyRPG's
+    # own separate `State::GetSignificantState` (which special-cases
+    # Knockout and never considers a just-healed state) -- confirmed these
+    # are two genuinely different functions in EasyRPG's own source, not two
+    # names for the same algorithm. Walks every id either just healed this
+    # turn or still held afterward in ascending order, keeping whichever has
+    # the highest `priority` (`>=`, so a tie goes to the later, higher id).
+    # A healed state's line always shows, even blank; a still-held one only
+    # shows if its own `message_affected` is non-blank -- matching RPG_RT's
+    # own asymmetric rule exactly, not guessed at.
+    def turn_state_message(b, healed)
+      best_id = nil
+      best_healed = false
+      best_priority = -1
+      (healed | (b.states || [])).sort.each do |id|
+        d = state_def(id)
+        next unless d
+        priority = state_field(d, :priority)
+        next if priority < best_priority
+        best_id = id
+        best_healed = healed.include?(id)
+        best_priority = priority
+      end
+      return nil unless best_id
+      if best_healed
+        States.recovery_message(best_id, @states, b.name) || ''
+      else
+        States.affected_message(best_id, @states, b.name)
+      end
     end
 
     # One state's per-turn slip applied to a single stat (`cur` against `max`):
@@ -10671,24 +11391,43 @@ module Game
 
     # Whether `b` shakes off state `id` this turn: only once it has held for more
     # than the state's `hold_turn`, then an `auto_release_prob`% roll (0 = never
-    # auto-releases). Grounded on EasyRPG's BattleStateHeal.
+    # auto-releases). Grounded on EasyRPG's live `Game_Battler::BattleStateHeal`
+    # (`src/game_battler.cpp`): `states[i] > hold_turn && Rand::ChanceOf(auto_
+    # release_prob, 100) && RemoveState(...)`. C++'s `&&` only short-circuits on
+    # the `hold_turn` test -- `Rand::ChanceOf` (`src/rand.cpp`) is
+    # `GetRandomNumber(1, m) <= n` and always draws, whatever `n` is. A prior
+    # version of this method checked `prob <= 0` *before* the `hold_turn` test
+    # and returned early, skipping the RNG draw outright once a state's counter
+    # passed `hold_turn` -- for any state configured with `auto_release_prob ==
+    # 0` (a common "must be cured" ailment), that silently dropped one draw per
+    # turn from the shared stream for the rest of the fight, permanently
+    # desyncing this build's RNG sequence from a real seeded RPG_RT run.
+    # `@rng.random(100) < 0` is always false, so the observable outcome at 0%
+    # is unchanged -- only the draw itself is now consumed, same as RPG_RT.
     def recovers_from_state?(b, id, d)
-      prob = state_field(d, :auto_release_prob)
-      return false if prob <= 0
       return false unless b.state_turns[id] > state_field(d, :hold_turn)
-      @rng.random(100) < prob
+      @rng.random(100) < state_field(d, :auto_release_prob)
     end
 
-    # Whether `b` counts as out of the fight for win/loss purposes: dead or
+    # Whether `b` counts as out of the fight *for the ally side's own
+    # win/loss test only* (#alive?/#finished?'s `@allies` half): dead or
     # hidden (#out_of_play?), or locked into a "do nothing" restriction by a
-    # state with zero chance of ever shaking itself off. デフォ戦botまとめ:
-    # "party wipe" for game-over purposes means every member is both unable
-    # to act *and* does not recover naturally, not literally "every member's
-    # HP is 0" -- why a fully-Stoned party loses instantly even though nobody
-    # was ever damaged. A do-nothing state that *can* still clear itself
+    # state with zero chance of ever shaking itself off. Ported from
+    # RPG_RT's own `Game_Battler::CanActOrRecoverable`/`Game_Battle::
+    # CheckLose` (`src/game_battler.cpp`/`src/game_battle.cpp`): "party
+    # wipe" for game-over purposes means every member is both unable to act
+    # *and* does not recover naturally, not literally "every member's HP is
+    # 0" -- why a fully-Stoned party loses instantly even though nobody was
+    # ever damaged. A do-nothing state that *can* still clear itself
     # (Sleep, Paralysis with a nonzero auto_release_prob) does not count: the
     # fight keeps running, the same way #recovers_from_state? would
-    # eventually stand that battler back up on its own.
+    # eventually stand that battler back up on its own. This widening exists
+    # purely to avoid a stall where the player can never submit another
+    # command -- RPG_RT's `Game_Battle::CheckWin` (the enemy side's own
+    # test, see #enemy_active?) has no equivalent, and must not reuse this
+    # method: the player can always keep attacking a
+    # restricted-but-alive enemy, so a fully-Stoned enemy troop stays in the
+    # fight until it is actually reduced to 0 HP or removed.
     def incapacitated?(b)
       return true if b.out_of_play?
       (b.states || []).any? do |id|
@@ -10699,6 +11438,14 @@ module Game
     end
 
     def alive?(side); side.any? { |b| !incapacitated?(b) }; end
+
+    # Whether the enemy side still has anyone in the fight -- RPG_RT's own
+    # `Game_Battle::CheckWin` (see #finished?'s citation) only tests
+    # dead-or-hidden (`Exists()`), never a restriction/recovery state, so a
+    # live-but-permanently-restricted enemy troop (e.g. fully Stoned) does
+    # not end the battle on its own; unlike #alive?, this does not fold in
+    # #incapacitated?'s do-nothing-restriction check.
+    def enemy_active?(side); side.any? { |b| !b.out_of_play? }; end
 
     def refill_queue
       @rounds += 1
@@ -10808,18 +11555,26 @@ module Game
     # Whether `b`'s action this round earns the `preemptive` weapon's
     # turn-order jump: only a basic Attack qualifies (a Skill, Item or Defend
     # with the same weapon equipped keeps its ordinary agility slot, matching
-    # `CreateExecutionOrder`'s own `Type::Normal` guard). A forced
-    # attack-ally restriction (confusion) still counts, since the confused
-    # battler is still swinging a basic Attack under the hood; a forced
+    # `CreateExecutionOrder`'s own `Type::Normal` guard). ~~A forced
+    # attack-ally restriction (confusion) still counts... a forced
     # attack-enemy restriction (berserk) does not -- per the site's own
-    # デフォ戦botまとめ trivia, berserk specifically drops the weapon's
-    # preemptive jump on top of forcing the target. `preemptive` is
-    # actor-only (see Combatant), so an enemy never qualifies either way.
+    # デフォ戦botまとめ trivia~~ -- corrected against RPG_RT's own live
+    # source: `Scene_Battle_Rpg2k::SelectNextActor` (`src/
+    # scene_battle_rpg2k.cpp`) builds an identical `Game_BattleAlgorithm::
+    # Normal` for both `Restriction_attack_ally` (confusion) and
+    # `Restriction_attack_enemy` (berserk) -- the same `switch` just picks
+    # which side `GetRandomActiveBattler()` draws from -- and
+    # `CreateExecutionOrder`'s own `+= 9999` bonus and `Game_Actor::
+    # HasPreemptiveAttack` (`src/game_actor.cpp`) both key purely on
+    # `Type::Normal` plus the equipped weapon's flag, with no restriction
+    # dependency anywhere in the chain. The uncited fan-wiki claim that
+    # berserk specifically drops the bonus does not hold up against the
+    # actual source. `preemptive` is actor-only (see Combatant), so an enemy
+    # never qualifies either way.
     def preemptive_boost?(b)
       return false unless b.preemptive
       r = battler_restriction(b)
-      return false if r == RESTRICTION_ATTACK_ENEMY
-      return true if r == RESTRICTION_ATTACK_ALLY
+      return true if r == RESTRICTION_ATTACK_ALLY || r == RESTRICTION_ATTACK_ENEMY
       b.command.nil? && !b.defending && !b.skip
     end
 
@@ -10840,14 +11595,29 @@ module Game
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
         return nil unless target
-        # Berserk (attack-enemy) forces a single target even with an
+        # ~~Berserk (attack-enemy) forces a single target even with an
         # attack_all weapon in hand; confusion (attack-ally) still spreads
         # one, same as an unforced Attack would (デフォ戦botまとめ: "Berserk
         # additionally collapses an 'attack all' weapon down to a single
-        # target").
+        # target").~~ Corrected against RPG_RT's own live source:
+        # `Scene_Battle_Rpg2k::SelectNextActor` (`src/scene_battle_rpg2k.cpp`)
+        # constructs an *identical* single-target `Game_BattleAlgorithm::
+        # Normal(active_actor, random_target)` for both
+        # `Restriction_attack_ally` and `Restriction_attack_enemy` -- the same
+        # `switch` just picks which side `GetRandomActiveBattler()` draws
+        # from -- and `Normal::vStart()` (`src/game_battlealgorithm.cpp`) then
+        # unconditionally re-expands *any* single-target Normal algorithm to
+        # its target's whole side whenever the weapon carries attack_all
+        # (`GetOriginalPartyTarget() == nullptr && source->HasAttackAll(...)`
+        # -- true for every single-`Game_Battler*`-constructed Normal,
+        # forced or not), with no restriction check anywhere in that path.
+        # `SelectNextActor`'s own inline comment ("RPG_RT doesn't support
+        # 'Attack All' weapons when battler is confused or provoked") is
+        # itself stale against the actual `vStart()` code EasyRPG runs --
+        # the code, not the comment, is what real RPG_RT executes.
         pay_weapon_sp_cost(b)
         hits = combo_hits(b, :attack)
-        return swing_side(b, side_targets(target), hits) if r == RESTRICTION_ATTACK_ALLY && b.attack_all
+        return swing_side(b, side_targets(target), hits) if b.attack_all
         return swing(b, target, hits)
       end
       # A combo multiplies a skill's hits (SP paid once), never an item's --
@@ -11064,9 +11834,17 @@ module Game
         f = fatigue
         f >= a.condition_param1 && f <= a.condition_param2
       else
-        # An operand this build does not know stays out of the running rather
-        # than firing unchecked.
-        false
+        # An out-of-range condition_type (past COND_FATIGUE, the highest of
+        # the eight RPG_RT recognises) reads as unconditionally eligible, not
+        # excluded -- confirmed directly against RPG_RT's live source:
+        # `EnemyAi::IsActionValid`'s own `switch (action.condition_type)`
+        # (`src/enemyai.cpp`) ends `default: return true;`, applying
+        # identically on RPG2000 and RPG2003 (no version gate anywhere in
+        # the function). This is the mirror image of the "unset/unknown
+        # stays conservative" shape this method's own COND_ACTORS/skill-type
+        # fixes correctly use elsewhere -- this one specific fallthrough
+        # goes the other way in real RPG_RT.
+        true
       end
     end
 
@@ -11077,13 +11855,17 @@ module Game
       pct >= a.condition_param1 && pct <= a.condition_param2
     end
 
-    # Whether `b` can actually cast the skill action `a`: the skill exists and it
-    # can pay the SP. An enemy that cannot afford its spell falls through to its
-    # other actions, the way RPG_RT skips an unusable one.
+    # Whether `b` can actually cast the skill action `a`: the skill exists, is
+    # a legal in-battle action at all (not Escape/Teleport, and not a Switch
+    # skill whose battle-occasion flag is off -- see #skill_battle_usable?),
+    # and it can pay the SP. An enemy that cannot afford its spell -- or whose
+    # pattern names an illegal action entirely -- falls through to its other
+    # actions, the way RPG_RT never lets either kind enter the weighted draw.
     def enemy_skill_ready?(b, a)
       return false unless @ai
       sk = @ai.skill(a.skill_id)
       return false unless sk
+      return false unless @ai.skill_battle_usable?(sk)
       return false if skill_sealed?(b, sk) # silenced: this entry cannot fire
       cmd = @ai.skill_command(sk, b, nil)
       return false unless cmd
@@ -11390,13 +12172,18 @@ module Game
     # the one real, un-patched RPG_RT always runs; EasyRPG's other two named
     # algorithms, `AttackOnly` and `RpgRtImproved`, are its own optional,
     # non-default customizations and are not modelled here). The ranking
-    # deliberately mirrors EasyRPG's `CalcNormalAttackAutoBattleTargetRank` /
-    # `CalcSkillAutoBattleTargetRank` at `apply_variance: false` and does not
-    # layer the RPG2003 row modifiers (#row_adjusted?) into its per-target
-    # score -- the actual hit/damage a thrown attack lands (#deal_attack /
-    # #to_hit) is where those apply, and a ranking heuristic need not double-
-    # count them, so a front-row actor's +25% shows up in the damage it deals
-    # rather than being pre-empted in its auto-battle preference.
+    # mirrors EasyRPG's `CalcNormalAttackAutoBattleTargetRank` /
+    # `CalcSkillAutoBattleTargetRank` at `apply_variance: false` --
+    # `CalcNormalAttackAutoBattleTargetRank` (`src/autobattle.cpp`) computes
+    # its own `base_effect` via `Algo::CalcNormalAttackEffect`
+    # (`src/algo.cpp`), the *identical* function the real attack execution
+    # calls (`Game_BattleAlgorithm::Normal::Execute`,
+    # `src/game_battlealgorithm.cpp:716`) -- so real RPG_RT's ranking pass
+    # and the damage a thrown attack actually deals share the same RPG2003
+    # row modifiers (#row_adjusted?) and state-adjusted ATK/DEF
+    # (#effective_atk/#effective_def) by construction, not merely as an
+    # equivalent approximation. `#auto_battle_attack_target_rank` layers
+    # both in for exactly that reason (see its own citation).
     def choose_auto_battle_command(b)
       best_skill = nil
       best_sid = nil
@@ -11560,23 +12347,42 @@ module Game
     # EasyRPG's `CalcNormalAttackAutoBattleTargetRank`, `apply_variance:
     # false` (RpgRtCompat's own `attack_variance` flag) -- the base swing
     # (`Battle.attack_damage`, the same `atk/2 - def/4` formula #deal_attack
-    # itself hits with) is never spread by variance here, only scaled by the
-    # attacker's own weapon-Attribute multiplier. `emulate_bugs: true` skips
-    # the dual-wield swing-count multiplier entirely -- real RPG_RT's own
-    # documented bug, "Dual Attack is ignored" for ranking purposes, even
-    # though the swing itself still lands twice once actually thrown (see
-    # `Combatant#strike_count`, untouched by this). The `*1.5+0.5` first-
-    # enemy bonus and the final jitter-plus-`*1.5` reshaping both mirror
-    # `#auto_battle_damage_rank`'s and this function's own C++ counterpart
-    # exactly -- note the jitter step here runs unconditionally whenever
-    # `target` exists and this rank is positive, stacking with (not
-    # replacing) the first-enemy bonus above it, matching the source's own
-    # two independent `rank = rank*1.5+...` lines rather than folding them
-    # into one.
+    # itself hits with) is never spread by variance here. Confirmed against
+    # RPG_RT's own live source: `CalcNormalAttackAutoBattleTargetRank`
+    # (`src/autobattle.cpp`) computes its own `base_effect` by calling
+    # `Algo::CalcNormalAttackEffect` (`src/algo.cpp`) -- the *identical*
+    # function `Game_BattleAlgorithm::Normal::Execute`
+    # (`src/game_battlealgorithm.cpp:716`) calls to resolve the real swing --
+    # so the ranking pass reads the same state-adjusted ATK/DEF
+    # (`Game_Battler::GetAtk`/`GetDef`, ported here as #effective_atk/
+    # #effective_def) and the same RPG2003 attacker/defender row adjustment
+    # (`Feature::HasRow() && IsRowAdjusted(...)`, ported here as
+    # #row_adjusted?) the real attack applies, in the same order (attacker
+    # row -> weapon-Attribute multiplier -> defender row) -- not merely an
+    # equivalent approximation, but literally the same calculation call. A
+    # prior version of this comment (and of `#choose_auto_battle_command`'s
+    # own, see its citation) claimed the opposite -- that RPG_RT's own
+    # ranking pass deliberately omits row modifiers to avoid "double
+    # counting" them against the real attack -- an unverified, plausible-
+    # sounding inference rather than something read off this function's own
+    # source; the two calculations are not independent at all. `emulate_bugs:
+    # true` skips the dual-wield swing-count multiplier entirely -- real
+    # RPG_RT's own documented bug, "Dual Attack is ignored" for ranking
+    # purposes, even though the swing itself still lands twice once actually
+    # thrown (see `Combatant#strike_count`, untouched by this). The
+    # `*1.5+0.5` first-enemy bonus and the final jitter-plus-`*1.5`
+    # reshaping both mirror `#auto_battle_damage_rank`'s and this function's
+    # own C++ counterpart exactly -- note the jitter step here runs
+    # unconditionally whenever `target` exists and this rank is positive,
+    # stacking with (not replacing) the first-enemy bonus above it, matching
+    # the source's own two independent `rank = rank*1.5+...` lines rather
+    # than folding them into one.
     def auto_battle_attack_target_rank(b, target)
       return 0.0 unless target && !target.out_of_play?
-      dmg = Battle.attack_damage(b.atk || 0, target.def || 0)
+      dmg = Battle.attack_damage(effective_atk(b), effective_def(target))
+      dmg = 125 * dmg / 100 if row_adjusted?(b, true)
       dmg = apply_attr_multiplier(dmg, b.atk_attrs, target)
+      dmg = 75 * dmg / 100 if row_adjusted?(target, false)
       tgt_hp = target.hp
       return 0.0 if tgt_hp <= 0
       rank = [dmg, tgt_hp].min.to_f / tgt_hp
@@ -12342,6 +13148,20 @@ module Game
         hp_dmg = 0
         if hits && hp != 0
           hp_dmg = dmg
+          # An offensive skill's HP effect is halved (quartered under 強力防御)
+          # against a defending target, the same `AdjustDamageForDefend` a
+          # basic attack already gets (`#deal_attack_with_current_weapon`
+          # above) — EasyRPG's `Skill::vExecute` (`src/game_battlealgorithm.
+          # cpp`) computes `hp_effect` as `IsPositive() ? effect :
+          # Algo::AdjustDamageForDefend(effect, *target)`, i.e. every
+          # enemy-scoped skill's HP branch, not just a plain Attack. The SP
+          # effect and the ATK/DEF/SPI/AGI stat-mod branches read the same
+          # raw `effect` with no such adjustment (`Skill::vExecute` lines
+          # 1074-1136), so only `hp_dmg` gets this treatment here.
+          if target.defending && hp_dmg > 0
+            hp_dmg /= 2
+            hp_dmg /= 2 if target.strong_defence
+          end
           if cmd[:absorb] && hp_dmg > 0
             hp_dmg = target.hp if hp_dmg > target.hp
             absorbed = hp_dmg
@@ -12415,40 +13235,40 @@ module Game
           absorbed_hp: absorbed, sp_damage: sp_dmg,
           target_mp: target.mp }
       else
-        # Spread the recovery by the skill's own variance when the fight rolls
-        # it, the same way the attack branch above does: EasyRPG's
-        # `Algo::VarianceAdjustEffect` is one function applied to whichever
-        # signed effect `CalcSkillEffect` produced, not a damage-only step, so
-        # a Cure spell's heal wobbles exactly like a Fire spell's damage does.
-        # HP and SP roll independently (`#varied` draws its own random offset
-        # each call) since a skill can restore both from the same base effect
-        # and RPG_RT does not correlate the two rolls. An item's fixed effect
-        # never carries a `variance` (items have no such field), so this is a
-        # no-op there; a 0 (or absent) `hp`/`mp` clears #varied's own `base >
-        # 0` guard, so a skill that only restores one of the two leaves the
-        # other alone.
-        # The ATK/DEF/SPI/AGI modifier delta rides the identical variance roll
-        # as HP/SP (see the comment above), off `cmd[:stat_effect]` rather
-        # than `hp` itself: a buff-only skill (affect_hp clear) leaves `hp` at
-        # 0 throughout, but the modifier still applies off the skill's own
-        # base effect.
-        stat_amount = cmd[:stat_effect] || 0
-        # Elemental scaling applies to a recovery's own effect exactly the way
-        # it applies to an attack's (see #battle_skill_command's ally branch
-        # comment above) -- EasyRPG's `CalcSkillEffect` order is attribute
-        # multiplier first, then variance last, for either sign of effect.
-        hp = apply_attr_multiplier(hp, cmd[:attributes], target)
-        mp = apply_attr_multiplier(mp, cmd[:attributes], target)
-        if @variance && cmd[:variance] && cmd[:variance] > 0
-          hp = varied(hp, cmd[:variance])
-          mp = varied(mp, cmd[:variance])
-          stat_amount = varied(stat_amount, cmd[:variance])
-        end
+        # The skill's one shared, un-gated effect magnitude -- the exact same
+        # idiom the attack branch's own `dmg` local above uses (`hp != 0 ?
+        # hp : (mp != 0 ? mp : cmd[:stat_effect])`), since `#battle_skill_command`'s
+        # ally branch already builds `hp`/`mp`/`stat_effect` from the
+        # identical `base`. EasyRPG's `Skill::vExecute` (`src/
+        # game_battlealgorithm.cpp`) computes one `effect` local --
+        # `Algo::CalcSkillEffect` applies the attribute multiplier and then
+        # `VarianceAdjustEffect` exactly once each -- and reads that same raw
+        # number into every one of its `affect_hp`/`affect_sp`/`affect_attack`/
+        # `affect_defense`/`affect_spirit`/`affect_agility` branches, each
+        # still gated by its own fresh `Rand::PercentChance(to_hit)` roll (see
+        # `#skill_effect_hits?`'s own per-field calls below -- that part was
+        # already correct). Previously `hp`/`mp`/`stat_amount` each ran
+        # `#apply_attr_multiplier`/`#varied` independently, so a Cure spell
+        # restoring both HP and SP could land two different randomized
+        # amounts (and burn two RNG draws) where real RPG_RT always lands the
+        # identical one off a single draw -- `stat_amount` never even got the
+        # attribute multiplier at all, only hp/mp did.
+        effect = hp != 0 ? hp : (mp != 0 ? mp : (cmd[:stat_effect] || 0))
+        effect = apply_attr_multiplier(effect, cmd[:attributes], target)
+        effect = varied(effect, cmd[:variance]) if @variance && cmd[:variance] && cmd[:variance] > 0
+        # Same hard cap as `MaxDamageValue()`'s single clamp on EasyRPG's one
+        # shared `effect` (`Utils::Clamp(effect, -MaxDamageValue(),
+        # MaxDamageValue())`, right after `CalcSkillEffect` returns, before
+        # any affect_* branch reads it) -- applied once here for the same
+        # reason, rather than separately per field afterward (which
+        # previously left `mp` uncapped entirely).
+        rcap = recover_cap
+        effect = rcap if effect > rcap
+        hp = effect if hp != 0
+        mp = effect if mp != 0
+        stat_amount = effect
         before_hp = target.hp
         before_mp = target.mp || 0
-        rcap = recover_cap
-        hp = rcap if hp > rcap
-        stat_amount = rcap if stat_amount > rcap
         # Each affected field rolls its own, independent accuracy check --
         # EasyRPG calls `Rand::PercentChance(to_hit)` fresh inside each of
         # `affect_hp`/`affect_sp`'s own `if`, not once for the whole skill
@@ -12614,15 +13434,22 @@ module Game
     # (only an actor-built Combatant, #from_actor, carries a live `actor`).
     # 100 (unscaled) when the target (a bare fixture) models no ranks at all,
     # so a plain sim keeps landing every status.
-    # The Knockout state (id 1, `Game::Actor::DEATH_STATE`) is exempt from rank
-    # scaling entirely -- a skill's "state change" effect list can name it
-    # directly (RPG2000 has no separate instant-death mechanic), and yado.tk
-    # documents its infliction chance as governed solely by the skill's own
-    # occurrence-rate operand, never reduced by the target's A-E resistance rank.
+    # The Knockout state (id 1, `Game::Actor::DEATH_STATE`) is scaled exactly
+    # like any other state, despite an uncited yado.tk claim this codebase
+    # used to carry (and special-case) that its infliction chance was governed
+    # solely by the skill's own occurrence-rate operand, never reduced by the
+    # target's A-E resistance rank. Confirmed against RPG_RT's actual C++
+    # source: `Game_Actor::GetStateProbability`/`Game_Enemy::
+    # GetStateProbability` (`src/game_actor.cpp`/`src/game_enemy.cpp`) have no
+    # `state_id == kDeathID` special case at all, and both of
+    # `Game_BattleAlgorithm`'s infliction call sites -- the Skill state-effect
+    # loop and the weapon `state_set` loop (`src/game_battlealgorithm.cpp`) --
+    # call `target->GetStateProbability(state_id)` uniformly for every flagged
+    # state id, checking `state_id == kDeathID` only *after* a successful roll
+    # (to track whether the target just died), never to skip the roll itself.
     # An ally's own defensive equipment can scale the A-E result down further
     # still -- see Actor#state_resist_mul.
     def state_susceptibility(target, sid)
-      return 100 if sid == Game::Actor::DEATH_STATE
       ranks = target.state_ranks
       return 100 if ranks.nil? || ranks.empty?
       is_ally = ally?(target)
@@ -12670,7 +13497,7 @@ module Game
     # it -- an ordinary lethal hit (`ChangeHp` calls `AddState(kDeathID,
     # true)` itself once `new_hp <= 0`), a skill/weapon's own state-effect
     # list, Change Monster/Actor Condition, all alike. This method ports
-    # the four fields with no other reset path once a fight is already
+    # the fields with no other reset path once a fight is already
     # under way: the active-time gauge (`#gauge`), the persistent per-battle
     # ATK/DEF/SPI/AGI modifiers a buff/debuff skill accumulates onto
     # (`#atk_mod`/`#def_mod`/`#spi_mod`/`#agi_mod`, see #apply_stat_mods --
@@ -12678,11 +13505,24 @@ module Game
     # shift a skill has applied (`#attr_ranks`, see #apply_attr_shift --
     # `attribute_shift.clear()`, matched here by resetting to an empty
     # Hash, which every reader already treats identically to "no shift"
-    # via its own `ranks[aid] || 2`/`base[aid] || 2` fallback). `#defending`/
-    # `#charged` (`SetIsDefending`/`SetCharged`) are deliberately not
-    # ported: this codebase already resets both to false at the start of
-    # every command a battler is given, dead or not, so there is no gap
-    # for a Knockout-time reset to close there.
+    # via its own `ranks[aid] || 2`/`base[aid] || 2` fallback).
+    # ~~`#defending`/`#charged` (`SetIsDefending`/`SetCharged`) are
+    # deliberately not ported: this codebase already resets both to false
+    # at the start of every command a battler is given, dead or not, so
+    # there is no gap for a Knockout-time reset to close there.~~
+    # Corrected (2026-08-21): that is only true for an *ally* — `#end_round`
+    # unconditionally clears both for every entry in `@allies` regardless of
+    # whether it acted that round, but never touches `@enemies` at all, and
+    # an *enemy's* own `#defending` reset (`#strike`'s `b.defending = false`)
+    # only fires at the start of *that enemy's own next turn* -- not
+    # immediately at death the way real RPG_RT's `AddState` does -- and its
+    # `#charged` flag is never reset at all short of actually being consumed
+    # by a subsequent charged attack. Between a revival mid-round and that
+    # enemy's own next turn, a stale `#defending` wrongly halves incoming
+    # damage from other battlers' actions, and a stale `#charged` wrongly
+    # doubles the revived enemy's own next attack -- both real divergences
+    # real RPG_RT's immediate, unconditional reset at death closes. Fixed
+    # below by porting the two fields after all.
     #
     # Distinct from `Actor#atb_gauge`'s own cross-*battle* persistence fix
     # (`#apply_to_party` writing back 0 for an ally who ended the *fight*
@@ -12705,6 +13545,8 @@ module Game
         target.send("#{field}=", 0) if target.respond_to?(field)
       end
       target.attr_ranks = {} if target.respond_to?(:attr_ranks=)
+      target.defending = false if target.respond_to?(:defending=)
+      target.charged = false if target.respond_to?(:charged=)
     end
 
     # `target`'s live RPG2003 cursed-armor-forced states (`Actor
@@ -12754,6 +13596,20 @@ module Game
       return unless target.state?(sid)
       return if combatant_permanent_states(target).include?(sid)
       target.states = (target.states || []) - [sid]
+      # Clear the per-state turn counter too, the same idiom
+      # #shake_off_states already uses for its own release path -- real
+      # RPG_RT's `State::Add`/`State::Remove` (`src/state.cpp`) share one
+      # literal field for "state present" and "turns held"
+      # (`states[state_id - 1] = 1` on Add, `st = 0` on Remove;
+      # `Game_Battler::BattleStateHeal`, `src/game_battler.cpp`, increments
+      # that same field each turn), so a cured-then-reinflicted state can
+      # never inherit a stale duration there. `#apply_turn_states`'s own
+      # `state_turns` hash tracks it separately here and is only ever
+      # incremented, never reset on infliction (`#inflict_state` touches
+      # `states`/`hp` only) -- leaving a stale entry behind would make a
+      # state re-inflicted later in the same fight eligible for its
+      # auto-release roll far too early, sometimes on the very next tick.
+      target.state_turns.delete(sid) if target.state_turns
       target.hp = 1 if sid == Game::States::DEATH_ID
     end
     public :inflict_state, :cure_state, :apply_knockout_reset
@@ -12947,7 +13803,7 @@ module Game
     # `ValueOrVariable`-sourced seconds straight through with no clamp
     # either -- so a Control Variables value above 99:59 (5999 s, an
     # arbitrary, player-reachable overflow) genuinely reaches the frame
-    # counter uncapped in real RPG_RT. `Sprite_Timer::Draw`
+    # counter uncapped in real RPG_RT. ~~`Sprite_Timer::Draw`
     # (`src/sprite_timer.cpp`) indexes its digit strip at an unbounded
     # `32 + 8 * (mins / 10)` with no ceiling either, so real RPG_RT's own
     # on-screen minutes display genuinely garbles past 99 rather than
@@ -12955,7 +13811,12 @@ module Game
     # (`Scene::Map#draw_timer_digits`, `mruby-rpg2k/mrblib/scene/map.rb`)
     # already indexes its own windowskin digit strip the identical
     # unbounded way, so it reproduces the same garbled-past-99 quirk for
-    # free once this class stops clamping first.
+    # free once this class stops clamping first.~~ Correction: confirmed
+    # against a genuine RPG_RT.exe, not just its source, this claim was
+    # wrong -- RPG_RT does not garble past 99 the same way a naive
+    # unbounded single-glyph index would. See `Scene::Map#draw_timer_digits`
+    # (`mruby-rpg2k/mrblib/scene/map.rb`) for the actual, empirically
+    # characterized overflow behavior.
     def set(seconds)
       @frames = seconds * FPS + (FPS - 1)
     end
@@ -13059,6 +13920,17 @@ module Game
     # a new BGM starts; set by Scene::Map, which watches `RGSS::Audio.bgm_pos`
     # and treats a playback position that jumped backwards as a loop.
     attr_accessor :bgm_looped
+    # Whether the current BGM has been faded/stopped since it last actually
+    # started playing -- RPG_RT's own `music_stopping` flag
+    # (`Game_System::BgmFade`, `src/game_system.cpp`: `data.music_stopping =
+    # true;`, set by Fade Out BGM/11520). `Game_System::BgmPlay`'s "same
+    # track: adjust volume in place, don't restart" shortcut is gated on
+    # `!data.music_stopping` -- so a Play BGM/Play Memorized BGM of the same
+    # track right after a fade-out DOES restart it from the top, unlike an
+    # ordinary same-name replay. Cleared unconditionally at the end of every
+    # `BgmPlay` call, restart or not (`data.music_stopping = false;`), which
+    # `#play_audio`'s `:bgm` branch and `#do_play_memorized_bgm` both mirror.
+    attr_accessor :bgm_stopping
     # Whether the party leader's map sprite is hidden, toggled by the Set
     # Transparent Flag / Change Player Visibility (11310) event command. Defaults
     # off (the hero is shown) and is persisted in the save.
@@ -13123,11 +13995,14 @@ module Game
     # changes.
     attr_accessor :system_graphic, :font_id
     # RPG2003's active-time wait/active toggle (`SaveSystem.atb_mode`, LSD
-    # SAVE_SYSTEM chunk 140): 0 = wait (a gauge battle's command menu pauses
-    # the fight), 1 = active (gauges keep filling while a menu is open and a
-    # ready non-controllable combatant's action interrupts it). The field
-    # menu's Wait command (id 8) flips it and the gauge battle scene reads it;
-    # default 0 (wait), matching liblcf. RPG2000 saves never carry the chunk.
+    # SAVE_SYSTEM chunk 140): 0 = active (gauges keep filling while a menu is
+    # open and a ready non-controllable combatant's action interrupts it),
+    # 1 = wait (a gauge battle's command menu pauses the fight) -- confirmed
+    # against liblcf's own generated `AtbMode` enum (`AtbMode_atb_active =
+    # 0, AtbMode_atb_wait = 1`), the opposite of an earlier, uncited pass
+    # here. The field menu's Wait command (id 8) flips it and the gauge
+    # battle scene reads it; default 0 (active), matching liblcf. RPG2000
+    # saves never carry the chunk.
     attr_accessor :atb_mode
     # Last known-good resume position of each running Common Event Parallel
     # Process, id => a command-list index (see Game::Interpreter
@@ -13212,6 +14087,7 @@ module Game
       @current_bgm = nil
       @memorized_bgm = nil
       @bgm_looped = false
+      @bgm_stopping = false
       @player_transparent = false
       @encounter_rate = nil
       @encounter_total = 0
@@ -13243,17 +14119,36 @@ module Game
       @vehicles = { boat: Vehicle.new(:boat), ship: Vehicle.new(:ship),
                     airship: Vehicle.new(:airship) }
       @boarded = nil
-      # Screen effects: tint transition/shake/flash/fade stay transient (not
-      # serialised, so a reloaded game starts with them neutral) -- but the
-      # Pan Screen offset/lock *does* now survive a save/load, see
-      # Game::Screen#to_h/#load_h.
+      # Screen effects: the tint transition now round-trips through a real
+      # Save/Continue too (#to_lsd/.from_lsd, chunk 102's tint_finish_*/
+      # tint_current_*/tint_time_left fields -- liblcf's SaveScreen, verified
+      # against EasyRPG's own `Game_Screen::SetSaveData` (`src/game_screen.
+      # cpp`), a wholesale struct replace so a mid-transition tint resumes
+      # interpolating exactly where it left off, not merely snapped to its
+      # finish value). Shake/flash/fade/weather/battle-animation stay
+      # transient (not serialised, so a reloaded game starts them neutral) --
+      # a real gap vs RPG_RT's own SaveScreen, which models those too, left
+      # as a separate future extension. The Pan Screen offset/lock *does*
+      # also survive a save/load, but only through the internal Marshal-style
+      # snapshot (`Game::Screen#to_h`/`#load_h`, `Game::State#to_h`/`.load`,
+      # `main.rb`) used for quick-resume, not through `.lsd` chunk 102 itself.
       @screen = Screen.new
-      # Shown pictures, id => Game::Picture. Transient like @screen (RPG2000's
-      # HUD pictures are re-shown by parallel events on load), so not serialised.
+      # Shown pictures, id => Game::Picture. DOES round-trip through a real
+      # Save/Continue (#to_lsd/.from_lsd, chunk 103, SAVE_PICTURE) -- a prior
+      # version of this comment claimed otherwise; corrected the same day
+      # chunk 103 was added (see docs/TODO.md).
       @pictures = {}
       # Runtime parallax override from a Change Parallax Background command (nil =
-      # use the map's own panorama). Transient like @pictures: RPG2000 resets it
-      # to the map's default on every map change, so it is not serialised.
+      # use the map's own panorama). Reset on a map change (#clear_parallax,
+      # called alongside #erase_all_pictures) -- and, like @pictures, DOES
+      # round-trip through a real Save/Continue on the same map (#to_lsd/
+      # .from_lsd, chunk 111 fields 32-38): confirmed against RPG_RT's own
+      # live source, `Game_Map::SetupFromSave` (`src/game_map.cpp`) restores
+      # `SaveMapInfo`/`map_info` wholesale (the same struct a live Change
+      # Parallax Background writes onto) and only a genuine map change
+      # (`Game_Map::Setup`) calls `Parallax::ClearChangedBG()` -- two
+      # genuinely different triggers a prior, uncited version of this
+      # comment had conflated.
       @parallax = nil
     end
 
@@ -13665,6 +14560,87 @@ module Game
       end
       save[108] = actors
 
+      # Chunk 102 is the screen tint transition (Tint Screen, 11030) --
+      # confirmed against RPG_RT's live source: `Scene_Save::Save`
+      # (`src/scene_save.cpp`) writes `save.screen = Main_Data::game_screen->
+      # GetSaveData()` unconditionally on every save, and `Player::
+      # LoadSavegame` (`src/player.cpp`) restores it unconditionally on every
+      # load via `Game_Screen::SetSaveData`, a wholesale struct replace (`src/
+      # game_screen.cpp`) -- so a tint mid-transition resumes interpolating
+      # exactly where it left off, not merely snapped to its finish value.
+      # Only tint is modelled here (see @screen's own comment above); the
+      # shake/flash/fade/weather/battle-animation fields liblcf's SaveScreen
+      # also carries are a separate, larger gap this codebase doesn't model
+      # in Game::Screen at all yet, left as a future extension. Only written
+      # when a tint is actually in effect or in flight, the same "omit when
+      # neutral" convention the unplaced-vehicle chunks already follow.
+      unless @screen.tint == [Screen::NEUTRAL] * 4 && !@screen.tinting?
+        scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
+        finish, current, frames = @screen.tint_save_data
+        scr[1], scr[2], scr[3], scr[4] = finish
+        scr[11], scr[12], scr[13], scr[14] = current
+        scr[15] = frames
+        save[102] = scr
+      end
+
+      # Chunk 103 is every currently-shown picture (Show Picture, 11110) --
+      # confirmed against RPG_RT's live source: `Scene_Save::Prepare`
+      # (`src/scene_save.cpp`) writes `save.pictures = Main_Data::
+      # game_pictures->GetSaveData()` unconditionally on every save, and
+      # `Player::LoadSavegame` (`src/player.cpp`) restores it unconditionally
+      # on every load -- the same chunk `.from_lsd`/`.restore_pictures`
+      # (above) already reads, just never written here. Field mapping is the
+      # exact mirror of `.restore_pictures`' own read (see `SAVE_PICTURE`'s
+      # own comment for why 31/32/etc are finish_*, not current_*): 1 name,
+      # 31/32 finish_x/finish_y, 33 zoom, 34 transparency
+      # (`Game.opacity_to_trans`, the inverse of the live command's own
+      # `#trans_to_opacity`), 41-44 the red/green/blue/saturation tone -- a
+      # picture at rest writes its own live values as both, matching real
+      # RPG_RT's own current-tracks-finish idle sync. `@pictures` only ever
+      # holds currently-shown pictures (#erase_picture deletes the entry
+      # outright), so every entry present is live and belongs in the save.
+      # A picture still mid-Move-Picture (#moving?) additionally writes its
+      # own genuinely-live current_*/time_left fields (4/5/7/8/11-14/51) so a
+      # resumed Continue keeps gliding from exactly where it was, rather than
+      # snapping straight to the move's target the instant the save reloads.
+      unless @pictures.empty?
+        pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+        @pictures.each do |id, p|
+          e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+          e[1] = p.name
+          if p.moving?
+            e[4] = p.x
+            e[5] = p.y
+            e[7] = p.zoom
+            e[8] = Game.opacity_to_trans(p.opacity)
+            e[11] = p.red
+            e[12] = p.green
+            e[13] = p.blue
+            e[14] = p.saturation
+            e[31] = p.finish_x
+            e[32] = p.finish_y
+            e[33] = p.finish_zoom
+            e[34] = Game.opacity_to_trans(p.finish_opacity)
+            e[41] = p.finish_red
+            e[42] = p.finish_green
+            e[43] = p.finish_blue
+            e[44] = p.finish_saturation
+            e[51] = p.frames_left
+          else
+            e[31] = p.x
+            e[32] = p.y
+            e[33] = p.zoom
+            e[34] = Game.opacity_to_trans(p.opacity)
+            e[41] = p.red
+            e[42] = p.green
+            e[43] = p.blue
+            e[44] = p.saturation
+          end
+          pics[id] = e
+        end
+        save[103] = pics
+      end
+
       inv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_INVENTORY })
       inv[1] = @party.actors.map { |a| a.id }
       item_ids = @party.items.keys.sort
@@ -13696,19 +14672,55 @@ module Game
       inv[41] = @last_battle_turns if @last_battle_turns
       save[109] = inv
 
+      # Chunk 110 is every Set Teleport Target (11810) / Set Escape Target
+      # (11830) destination registered so far -- confirmed against RPG_RT's
+      # live source: `Scene_Save::Prepare`/`Player::LoadSavegame`
+      # (`src/scene_save.cpp`/`src/player.cpp`) round-trip `save.targets` via
+      # `Game_Targets::GetSaveData`/`SetSaveData` (`src/game_targets.cpp`)
+      # unconditionally, every save. `GetSaveData` always writes the escape
+      # target first, at array id 0 (default-constructed/empty when never
+      # set -- RPG_RT carries it regardless), followed by every teleport
+      # target keyed by its own destination map id
+      # (`AddTeleportTarget`'s own `tgt.ID = map_id`) -- the exact shape
+      # mirrored below.
+      targets = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_TARGET })
+      esc = @escape_target
+      e0 = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TARGET })
+      if esc
+        e0[1] = esc[:map_id]
+        e0[2] = esc[:x]
+        e0[3] = esc[:y]
+        e0[4] = !esc[:switch_id].nil?
+        e0[5] = esc[:switch_id] || 1
+      end
+      targets[0] = e0
+      @teleport_targets.each do |map_id, t|
+        e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TARGET })
+        e[1] = map_id
+        e[2] = t[:x]
+        e[3] = t[:y]
+        e[4] = !t[:switch_id].nil?
+        e[5] = t[:switch_id] || 1
+        targets[map_id] = e
+      end
+      save[110] = targets
+
       # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) is the currently-loaded map's
       # own live event table, mirrored straight from #map_event_positions/
       # #map_event_route_index, plus its Tile Substitution table
-      # (#tile_substitutions, fields 21/22) -- all three already scoped to the
-      # current map only, see their own doc comments above. Camera scroll
-      # (SAVE_MAP_EVENT fields 1/2) is not modelled by this codebase, so it
-      # stays absent, matching the "view derives from the hero" fallback ADR
-      # 0021 documents. Omitted entirely on a State with neither recorded
-      # positions nor a live substitution (e.g. a fresh, unplayed save), the
-      # same "absent means nothing to restore" rule the unplaced-vehicle
-      # chunks above use.
+      # (#tile_substitutions, fields 21/22), a live Change Encounter Rate
+      # override (#encounter_rate, field 3) and a live Change Parallax
+      # Background override (#parallax, fields 32-38) -- all five already
+      # scoped to the current map only, see their own doc comments above.
+      # Camera scroll (SAVE_MAP_EVENT fields 1/2) is not modelled by this
+      # codebase, so it stays absent, matching the "view derives from the
+      # hero" fallback ADR 0021 documents. Omitted entirely on a State with
+      # none of these four recorded (e.g. a fresh, unplayed save), the same
+      # "absent means nothing to restore" rule the unplaced-vehicle chunks
+      # above use.
       lower_subs, upper_subs = @tile_substitutions
-      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty?
+      unless @map_event_positions.empty? && lower_subs.empty? && upper_subs.empty? &&
+             !@encounter_rate && !@parallax
         mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
         unless @map_event_positions.empty?
           events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
@@ -13726,6 +14738,16 @@ module Game
         end
         mapev[21] = self.class.tile_replacement_bytes(lower_subs) unless lower_subs.empty?
         mapev[22] = self.class.tile_replacement_bytes(upper_subs) unless upper_subs.empty?
+        mapev[3] = @encounter_rate if @encounter_rate
+        if @parallax
+          mapev[32] = @parallax[:name].to_s
+          mapev[33] = @parallax[:loop_x]
+          mapev[34] = @parallax[:loop_y]
+          mapev[35] = @parallax[:auto_x]
+          mapev[36] = @parallax[:sx]
+          mapev[37] = @parallax[:auto_y]
+          mapev[38] = @parallax[:sy]
+        end
         save[111] = mapev
       end
 
@@ -13918,6 +14940,27 @@ module Game
       state.vehicle(:boat).load_movable(save.boat)
       state.vehicle(:ship).load_movable(save.ship)
       state.vehicle(:airship).load_movable(save.airship)
+      # Chunk 110 (SAVE_TARGET): every Set Teleport Target/Set Escape Target
+      # destination, the same shape #to_lsd writes -- see that method's own
+      # citation. Array id 0 is always the escape slot (RPG_RT's own
+      # `Game_Targets::GetSaveData` convention); `map_id` absent/0 there
+      # means "never set" (matching a default-constructed `SaveTarget`, the
+      # same sentinel real RPG_RT itself carries when Set Escape Target was
+      # never run). Every other id is a teleport target keyed by its own
+      # destination map id.
+      targets = save[110]
+      if targets
+        esc = targets[0]
+        if esc && esc.map_id && esc.map_id != 0
+          state.escape_target = { map_id: esc.map_id, x: esc.x || 0, y: esc.y || 0,
+                                  switch_id: esc.switch_on ? esc.switch_id : nil }
+        end
+        targets.each do |id, t|
+          next if id == 0 || t.map_id.nil?
+          state.teleport_targets[t.map_id] =
+            { x: t.x || 0, y: t.y || 0, switch_id: t.switch_on ? t.switch_id : nil }
+        end
+      end
       # The leader's on-map sprite override (a Change Sprite Association), stored
       # in the hero chunk's CharSet fields.
       if party.leader && hero.charset_name && !hero.charset_name.empty?
@@ -14009,6 +15052,19 @@ module Game
           end
         end
       end
+      # Chunk 102 is the screen tint transition; only #restore_tint's tint
+      # sub-fields are modelled here (see #to_lsd's own comment on chunk 102
+      # for why). An absent chunk (a save written before this fix, or one
+      # made while the tint genuinely sat at neutral) leaves the fresh
+      # `Screen.new` neutral defaults in place.
+      scr = save[102]
+      if scr
+        state.screen.restore_tint([scr.tint_finish_red, scr.tint_finish_green,
+                                    scr.tint_finish_blue, scr.tint_finish_sat],
+                                   [scr.tint_current_red, scr.tint_current_green,
+                                    scr.tint_current_blue, scr.tint_current_sat],
+                                   scr.tint_time_left)
+      end
       restore_pictures(state, save[103])
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
       # save written before this landed simply omits them, leaving the fresh
@@ -14065,6 +15121,28 @@ module Game
           upper ? tile_replacement_hash(upper) : {},
         ]
       end
+      # The same chunk's own Change Encounter Rate override (field 3): -1 (its
+      # schema default, matching liblcf's own `SaveMapInfo.encounter_steps`)
+      # or absent both mean "no override, use the map's own rate", the same
+      # `nil` #encounter_rate already means live -- see
+      # Scene::Map#current_encounter_steps.
+      steps = map_events && map_events.encounter_steps
+      state.encounter_rate = steps if steps && steps >= 0
+      # The same chunk's own Change Parallax Background override (fields
+      # 32-38): a blank/absent name means "no override, use the map's own
+      # panorama" -- matching `GetParallaxParams`'s own `map_info.
+      # parallax_name.empty()` check (`src/game_map.cpp`), which real RPG_RT
+      # itself cannot distinguish from "never overridden" either (`Parallax::
+      # ClearChangedBG` writes a default-constructed, empty-name Params).
+      pname = map_events && map_events.parallax_name
+      if pname && !pname.empty?
+        state.set_parallax(name: pname, loop_x: !!map_events.parallax_horz,
+                           loop_y: !!map_events.parallax_vert,
+                           auto_x: !!map_events.parallax_horz_auto,
+                           sx: map_events.parallax_horz_speed,
+                           auto_y: !!map_events.parallax_vert_auto,
+                           sy: map_events.parallax_vert_speed)
+      end
       state
     end
 
@@ -14092,20 +15170,45 @@ module Game
     # 0..255 opacity for the live command. There is nothing save-format-specific
     # left to guess: the save's fields and the command's params are the same
     # numbers, so they are read the same way here.
+    #
+    # A picture still mid-Move-Picture when the save was written (time_left,
+    # field 51, > 0) is shown at its genuinely live current_*/current_x/y
+    # (fields 4/5/7/8/11-14) instead of its finish_*/31/32/etc, then
+    # immediately started moving again toward finish_*/31/32/etc over the
+    # saved time_left frames -- confirmed against a genuine RPG_RT.exe: a
+    # save edited with current and finish deliberately different, resumed
+    # under the real runtime, visibly kept gliding from the saved current
+    # position toward the saved finish one rather than sitting statically at
+    # either. See SAVE_PICTURE's own comment for the field-mapping evidence.
+    # `pic.time_left`/`current_*` both default to 0/the same neutral values a
+    # fresh `Game::Picture` starts at, so a save written before this landed
+    # (missing all of fields 4/5/7/8/11-14/51) reads time_left as 0 and
+    # restores identically to before -- unaffected by this change.
     def self.restore_pictures(state, pictures)
       return unless pictures
       pictures.each do |id, pic|
         next unless pic
         name = pic.name
         next if name.nil? || name.empty?
-        transparency = pic.transparency
+        time_left = pic.time_left || 0
+        moving = time_left > 0
+        transparency = moving ? pic.current_transparency : pic.transparency
         state.show_picture(id, name: name,
-                               x: (pic.current_x || 0).to_i,
-                               y: (pic.current_y || 0).to_i,
-                               zoom: pic.zoom,
+                               x: ((moving ? pic.current_x : pic.finish_x) || 0).to_i,
+                               y: ((moving ? pic.current_y : pic.finish_y) || 0).to_i,
+                               zoom: moving ? pic.current_zoom : pic.zoom,
                                opacity: transparency ? Game.trans_to_opacity(transparency) : nil,
-                               red: pic.tone_red, green: pic.tone_green,
-                               blue: pic.tone_blue, saturation: pic.tone_saturation)
+                               red: moving ? pic.current_tone_red : pic.tone_red,
+                               green: moving ? pic.current_tone_green : pic.tone_green,
+                               blue: moving ? pic.current_tone_blue : pic.tone_blue,
+                               saturation: moving ? pic.current_tone_saturation : pic.tone_saturation)
+        next unless moving
+        finish_trans = pic.transparency
+        state.move_picture(id, (pic.finish_x || 0).to_i, (pic.finish_y || 0).to_i,
+                           pic.zoom,
+                           finish_trans ? Game.trans_to_opacity(finish_trans) : 255,
+                           pic.tone_red, pic.tone_green, pic.tone_blue,
+                           pic.tone_saturation, time_left)
       end
     end
 

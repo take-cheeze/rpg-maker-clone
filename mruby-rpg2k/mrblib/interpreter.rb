@@ -807,17 +807,15 @@ module Game
 
     # Resume an Enemy Encounter with the battle's outcome (:victory, :escape or
     # :defeat). Rewards (EXP / gold on victory) are granted by the scene, which
-    # owns the battle; this only steers event flow. Escape with the "end event
-    # processing" mode abandons the rest of the event; otherwise, when the
-    # command carries [Victory] / [Escape] / [Defeat] handler branches, jump into
-    # the matching one. A game-over on defeat is the scene's concern.
+    # owns the battle; this only steers event flow. The Control Variables
+    # "Other" battle counters are already tallied by the time this runs --
+    # Scene::Battle#finish_battle's job now, unconditionally, matching
+    # EasyRPG's `Scene_Battle::EndBattle` -- so a game-over-ending defeat
+    # (which skips this method entirely) still counts. Escape with the "end
+    # event processing" mode abandons the rest of the event; otherwise, when
+    # the command carries [Victory] / [Escape] / [Defeat] handler branches,
+    # jump into the matching one. A game-over on defeat is the scene's concern.
     def resume_battle(result)
-      # Tally the outcome for the Control Variables "Other" operand.
-      case result
-      when :victory then @state.win_count += 1
-      when :defeat  then @state.defeat_count += 1
-      when :escape  then @state.escape_count += 1
-      end
       if result == :escape && @battle_escape_aborts
         @index = @list.size
         @call_stack = []
@@ -1214,8 +1212,11 @@ module Game
     # position (0 top / 1 middle / 2 bottom), param2 whether the window may move
     # aside to avoid the hero (0 fixed / 1 auto-position — so `position_fixed`
     # is the param2 == 0 case, matching RPG_RT), param3 whether other events keep
-    # running while the message shows. Sets global state; it does not pause.
+    # running while the message shows. Sets global state; blocks-and-retries
+    # first while a *different* message window is already open (see
+    # #block_pending_message_config_command), same as Show Message itself.
     def do_message_options(cmd)
+      return if block_pending_message_config_command
       cfg = @state.message_config
       cfg.transparent = cmd.param(0) != 0
       cfg.position = cmd.param(1)
@@ -1226,11 +1227,13 @@ module Game
     # Change Face Graphic: select the face shown beside the next messages. The
     # command string is the FaceSet file name (empty clears the face); param0 is
     # the cell index (0..15), param1 puts the face on the right, param2 mirrors
-    # it. Persists for the rest of *this* event's execution content (does not
-    # pause), but -- unlike Message Options -- is not sticky game-wide: #update
-    # auto-clears it once this interpreter's own command list genuinely
-    # finishes, via the @face_owner claim set/dropped here.
+    # it. Persists for the rest of *this* event's execution content, but --
+    # unlike Message Options -- is not sticky game-wide: #update auto-clears it
+    # once this interpreter's own command list genuinely finishes, via the
+    # @face_owner claim set/dropped here. Blocks-and-retries first while a
+    # *different* message window is already open, same as Message Options.
     def do_change_face(cmd)
+      return if block_pending_message_config_command
       cfg = @state.message_config
       name = cmd.string || ''
       if name.empty?
@@ -1321,7 +1324,13 @@ module Game
     #                     further-extended param list (out of scope, see
     #                     below). param7/param8 are a separate "timed input"
     #                     countdown-variable feature, still unmodelled.
-    # The interpreter only records the request and suspends on a :key_input
+    # A waiting proc (param1 set) first blocks-and-retries while a message
+    # window or choice list is open anywhere in the scene, the same as
+    # Show/Move/Erase Picture, Teleport/Recall to Location, Battle
+    # Processing/Enemy Encounter and a "show message"-flagged Change EXP/
+    # Level (#block_pending_key_input_command, see its own citation) -- a
+    # no-wait proc is never gated by this at all. Once past that, the
+    # interpreter only records the request and suspends on a :key_input
     # wait; the owning scene samples real input (triggered edges when waiting,
     # held state otherwise) and calls resume_key_input with the resulting code.
     # Numbers/Operators decoded into `accepted` are sampled by
@@ -1335,6 +1344,12 @@ module Game
     def do_key_input(cmd)
       var_id = cmd.param(0)
       wait = cmd.param(1) != 0
+      # RPG_RT clears the variable every retried frame while a waiting proc
+      # is pending, before it even checks whether a message window blocks it
+      # (`CommandKeyInputProc`'s own citation above) -- reset first, then
+      # check the block, so the reset still happens on every retry.
+      variables[var_id] = 0 if wait && var_id && var_id > 0
+      return if block_pending_key_input_command(wait)
       size = cmd.parameters.size
       accepted = { decision: cmd.param(3) != 0, cancel: cmd.param(4) != 0,
                    shift: false, down: false, left: false, right: false,
@@ -1364,9 +1379,6 @@ module Game
       end
       @input_variable = var_id
       @key_input_request = { wait: wait, accepted: accepted }
-      # RPG_RT clears the variable while a waiting proc is pending; a no-wait proc
-      # overwrites it below via the scene's immediate resume.
-      variables[var_id] = 0 if wait && var_id && var_id > 0
       @wait_kind = :key_input
       @waiting = true
     end
@@ -1463,6 +1475,7 @@ module Game
     # Threaded onto `@battle_request` as `:background`/`:terrain_id`, read
     # back by `Scene::Battle#encounter_backdrop`.
     def do_enemy_encounter(cmd)
+      return if block_pending_battle_command
       escape_mode = cmd.param(3)
       troop_id = cmd.param(0) == 0 ? cmd.param(1) : variables[cmd.param(1)]
       @battle_indent = cmd.indent
@@ -1480,7 +1493,6 @@ module Game
       when 1 then @battle_request[:background] = cmd.string.to_s
       when 2 then @battle_request[:terrain_id] = cmd.param(8)
       end
-      @state.battle_count += 1 # a battle was entered (Control Variables "Other")
       @wait_kind = :battle
       @waiting = true
     end
@@ -1496,8 +1508,8 @@ module Game
     # into the [Escape] handler if the command carries one, ending the event
     # outright under the "abort on escape" escape mode, or otherwise simply
     # falling through to the command right after the encounter -- but does not
-    # bump the win/escape/defeat "Other" battle counters (#resume_battle's
-    # job), since no battle was ever actually fought.
+    # bump the "Other" battle counters (Scene::Battle#finish_battle's job),
+    # since no battle was ever actually fought.
     def skip_invalid_troop(troop_id)
       $stderr.puts "[RPG2k] Enemy Encounter: enemy group #{troop_id} not " \
                    'found, skipping battle'
@@ -1515,8 +1527,10 @@ module Game
     # not a command in any list. Same request shape #do_enemy_encounter
     # builds and the same :battle wait, but with no [Victory]/[Escape]/[Defeat]
     # handler to route into and nothing to end early on an "abort" escape
-    # mode, so #resume_battle's job shrinks to tallying the outcome and
-    # clearing the wait. Only valid while this interpreter is otherwise idle
+    # mode, so #resume_battle's job shrinks to just clearing the wait --
+    # Scene::Battle#finish_battle tallies the "Other" battle counters for
+    # every encounter, scripted or random alike. Only valid while this
+    # interpreter is otherwise idle
     # (Scene::Map only calls it from ordinary player movement, never while an
     # event is running); escape is always allowed. A wipe is game over unless
     # the database's own RPG2003 Death Handler is active
@@ -1547,7 +1561,6 @@ module Game
                           first_strike: first_strike,
                           defeat_game_over: !party.death_handler?, random: true,
                           headless: headless ? true : false }
-      @state.battle_count += 1
       @wait_kind = :battle
       @waiting = true
     end
@@ -1818,6 +1831,16 @@ module Game
     # companion, and its party status display is built out of them, so a
     # dismissed member used to be listed at level 0. Only an id the database has
     # no row for reads as 0.
+    #
+    # Attack/Defence/Intelligence/Agility read the actor's *state-adjusted*
+    # value, not its raw base stat: confirmed against EasyRPG's live source,
+    # `ControlVariables::Actor` (`src/game_interpreter_control_variables.cpp`),
+    # whose cases 6-9 call straight through `Game_Actor::GetAtk`/`GetDef`/
+    # `GetSpi`/`GetAgi` (`src/game_battler.cpp`), each routed through
+    # `AdjustParam` — the same halve/double-by-active-state mechanism this
+    # codebase's own `Game::Party#effective_atk`/`#effective_def`/
+    # `#effective_int`/`#effective_agi` already model and already use
+    # elsewhere (Simulated Attack's `#do_simulated_attack`, the Status menu).
     def actor_operand(cmd)
       actor = party.roster[cmd.param(5)]
       return 0 unless actor
@@ -1829,10 +1852,10 @@ module Game
       when 3 then actor.mp
       when 4 then actor.max_hp
       when 5 then actor.max_mp
-      when 6 then actor.atk
-      when 7 then actor.def
-      when 8 then actor.int
-      when 9 then actor.agi
+      when 6 then party.effective_atk(actor)
+      when 7 then party.effective_def(actor)
+      when 8 then party.effective_int(actor)
+      when 9 then party.effective_agi(actor)
       when 10, 11, 12, 13, 14 then actor.equipment[attr - 10] || 0
       else 0
       end
@@ -1843,6 +1866,15 @@ module Game
     # the same one Change Monster HP uses — and param6 the attribute (0 HP,
     # 1 SP, 2 max HP, 3 max SP, 4 attack, 5 defence, 6 spirit, 7 agility).
     # Outside a battle, or for a member that is not in this troop, it reads 0.
+    #
+    # Attack/Defence/Spirit/Agility read the enemy's *state-adjusted* value,
+    # the same citation as #actor_operand above (`ControlVariables::Enemy`'s
+    # cases 4-7 route through the identical `Game_Battler::GetAtk`/`GetDef`/
+    # `GetSpi`/`GetAgi`/`AdjustParam` chain) -- ported here via this class's
+    # own `Game::Battle#effective_atk`/`#effective_def`/`#effective_spi`/
+    # `#effective_agi`, the battle-Combatant-scoped counterpart of
+    # `Party#effective_*` above, already used elsewhere in this same battle
+    # engine (e.g. `#deal_attack_with_current_weapon`).
     def enemy_operand(cmd)
       foe = @battle && @battle.enemy(cmd.param(5))
       return 0 unless foe
@@ -1851,10 +1883,10 @@ module Game
       when 1 then foe.mp || 0
       when 2 then foe.max_hp
       when 3 then foe.max_mp || 0
-      when 4 then foe.atk
-      when 5 then foe.def
-      when 6 then foe.spi
-      when 7 then foe.agi
+      when 4 then @battle.effective_atk(foe)
+      when 5 then @battle.effective_def(foe)
+      when 6 then @battle.effective_spi(foe)
+      when 7 then @battle.effective_agi(foe)
       else 0
       end
     end
@@ -1944,10 +1976,23 @@ module Game
       party.gain_gold(cmd.param(0) == 0 ? v : -v)
     end
 
+    # Confirmed against RPG_RT's own live source: `Game_Interpreter::
+    # CommandChangeItems` (`src/game_interpreter.cpp`) computes its signed
+    # `value` through the same `OperateValue` a variable-sourced amount can
+    # make negative even under "Add", then refuses to apply it at all --
+    # "Add item can't be used to remove an item and remove item can't be
+    # used to add one" -- unless the sign still matches the chosen
+    # operation. `Game_Interpreter::CommandChangeGold` calls the identical
+    # `OperateValue` with no such guard, so this asymmetric no-op is
+    # specific to Change Items. Without it, a variable holding a negative
+    # amount silently flips Add into a removal (or Remove into a gain)
+    # instead of doing nothing.
     def do_change_items(cmd)
       item = cmd.param(1) == 0 ? cmd.param(2) : variables[cmd.param(2)]
       amount = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
-      party.gain_item(item, cmd.param(0) == 0 ? amount : -amount)
+      value = cmd.param(0) == 0 ? amount : -amount
+      return if cmd.param(0) == 0 ? value < 0 : value > 0
+      party.gain_item(item, value)
     end
 
     # Change Party Member (10330): add or remove the actor named by param2 (a
@@ -2009,14 +2054,13 @@ module Game
     # Change EXP: add (or, when the operation is "remove", subtract) an amount of
     # experience to the target actors, re-deriving each one's level and base
     # stats from the growth curve. Uses the same scope/operation/operand layout
-    # as Change HP (stat_targets / stat_amount); the show-level-up-message flag is
-    # ignored (no battle/message UI drives it here).
-    # Change EXP: add or remove experience for the target actors, which may cross
-    # one or more level thresholds. param5 is the "show message" flag — when set,
-    # each level an actor gains queues a level-up message (drained by #resume).
+    # as Change HP (stat_targets / stat_amount). May cross one or more level
+    # thresholds; param5 is the "show message" flag — when set, each level an
+    # actor gains queues a level-up message (drained by #resume).
     def do_change_exp(cmd)
-      amount = stat_amount(cmd)
       show_msg = cmd.param(5) != 0
+      return if block_pending_exp_level_command(show_msg)
+      amount = stat_amount(cmd)
       stat_targets(cmd).each do |a|
         before = a.level
         before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
@@ -2031,13 +2075,12 @@ module Game
 
     # Change Level: add or subtract levels for the target actors, recomputing
     # their base stats and re-aligning EXP to the new level. Same scope/operation/
-    # operand layout as Change EXP.
-    # Change Level: add or remove levels for the target actors. param5 is the
-    # "show message" flag — when set, each level an actor gains queues a level-up
-    # message (drained by #resume).
+    # operand layout as Change EXP; param5 is the "show message" flag — when set,
+    # each level an actor gains queues a level-up message (drained by #resume).
     def do_change_level(cmd)
-      amount = stat_amount(cmd)
       show_msg = cmd.param(5) != 0
+      return if block_pending_exp_level_command(show_msg)
+      amount = stat_amount(cmd)
       stat_targets(cmd).each do |a|
         before = a.level
         before_skills = show_msg && a.respond_to?(:skills) ? a.skills.dup : []
@@ -2200,6 +2243,18 @@ module Game
     # at 0, then spread by `Algo::VarianceAdjustEffect` and floored at 0 again.
     # The hit can be lethal.
     #
+    # The variable write happens once per resolved target, from inside
+    # RPG_RT's own target-resolution loop -- confirmed against
+    # `Game_Interpreter::CommandSimulatedAttack` (`src/game_interpreter.cpp`):
+    # `Main_Data::game_variables->Set(com.parameters[7], result)` sits inside
+    # the `for (const auto& actor : GetActors(...))` loop, never reached at
+    # all when that loop is empty. `GetActors` (same file) returns an empty
+    # vector without ever touching the variable when a fixed actor ID names a
+    # row the database doesn't have, or a variable-actor mode's variable
+    # holds an invalid/stale ID (`if (!actor) { ...; return actors; }`,
+    # modes 1/2). An empty target list therefore leaves the variable exactly
+    # as it was, not zeroed.
+    #
     # Deliberately **not** clamped to `Game::Battle#damage_cap`. A prior
     # version of this method assumed it should be, by analogy with the
     # normal-attack/skill/self-destruct damage-popup cap ("RPG_RT's damage
@@ -2217,15 +2272,31 @@ module Game
     # `Game_Battler::ChangeHp` directly, neither of which clamps either.
     def do_simulated_attack(cmd)
       atk = cmd.param(2)
-      damage = 0
+      store_result = cmd.param(6) != 0
       stat_targets(cmd).each do |a|
-        damage = atk - (a.def * cmd.param(3)) / 400 - (a.int * cmd.param(4)) / 800
+        # Reads the target's state-adjusted Defence/Spirit, not the raw base
+        # stat -- `Game_Interpreter::CommandSimulatedAttack` (`src/
+        # game_interpreter.cpp`) computes `atk - actor->GetDef() * def /
+        # 400 - actor->GetSpi() * spi / 800`, and `Game_Battler::GetDef`/
+        # `GetSpi` (`src/game_battler.cpp`) both route through `AdjustParam`,
+        # which folds in a currently-afflicted state's own halve/double
+        # Defence/Spirit flag (`affect_defense`/`affect_spirit`) -- the same
+        # accessor every other damage formula reads, in or out of battle.
+        # `Game::Party#effective_def`/`#effective_int`
+        # (`mruby-rpg2k/mrblib/game.rb`) already port that exact formula for
+        # this identical "map-side, non-battle actor" situation (see
+        # `scene/status_menu.rb`'s own use of them), so a target afflicted
+        # by a Weaken-type status -- including one an RPG2003 cursed item is
+        # currently forcing on -- now takes the correct amount of damage
+        # instead of one computed off its unadjusted stat.
+        damage = atk - (party.effective_def(a) * cmd.param(3)) / 400 -
+                 (party.effective_int(a) * cmd.param(4)) / 800
         damage = 0 if damage < 0
         damage = simulated_attack_variance(damage, cmd.param(5))
         damage = 0 if damage < 0
         a.change_hp(-damage, true)
+        variables[cmd.param(7)] = damage if store_result
       end
-      variables[cmd.param(7)] = damage if cmd.param(6) != 0
       check_game_over
     end
 
@@ -2298,9 +2369,17 @@ module Game
     # than keeping the current one, param4 is the skill mode and param5 the
     # parameter mode (see Game::Actor::CLASS_SKILL_* / CLASS_PARAM_*), and param6
     # is the "show level-up message" flag the Change Level command also carries.
-    # An RPG2000 project cannot emit this, and a database without a class table
-    # leaves every actor class-less, so the command self-limits to 2003 data.
+    # Confirmed against RPG_RT's own live source: `Game_Interpreter::
+    # CommandChangeClass` (`src/game_interpreter.cpp`) opens with `if
+    # (!Player::IsRPG2k3Commands()) { return true; }`, before any other logic
+    # -- an RPG2000-compatible run no-ops the command outright. ~~An RPG2000
+    # project cannot emit this... so the command self-limits to 2003 data~~
+    # was an unverified assumption, not something read off this function's own
+    # source: `class_id: 0` ("no class") still runs `#change_class`'s other
+    # side effects (recomputing `@base`/`@exp`/clearing `@battle_commands`)
+    # regardless of whether the database carries a class table at all.
     def do_change_class(cmd)
+      return unless party.rpg2003?
       class_id = cmd.param(2)
       level_1 = cmd.param(3) != 0
       skill_mode = cmd.param(4)
@@ -2312,17 +2391,22 @@ module Game
         next unless a.change_class(class_id, level_1 ? 1 : a.level,
                                    skill_mode, param_mode)
         # Unlike Change Level (which announces every level crossed) RPG_RT shows
-        # a single line here, and shows it whenever the class change taught new
-        # skills even if the level itself did not move (EasyRPG's ChangeClass,
-        # which calls the identical LearnLevelSkills(1, new_level, pm) Change
-        # Level/Change EXP use -- see queue_level_up_messages's own comment).
-        # The actual skill diff (rather than a skill-mode guess) also decides
-        # whether there is anything to announce at all: a RESET/ADD class swap
-        # that happens to teach nothing the actor didn't already know stays
-        # quiet, matching a level that didn't move.
+        # a single line here, and shows it whenever the level exceeds 1 and
+        # either the level actually rose or the skill mode was Reset/Add --
+        # regardless of whether that mode actually taught anything the actor
+        # didn't already know. Confirmed against RPG_RT's own live source:
+        # `Game_Actor::ChangeClass` (`src/game_actor.cpp`) gates its
+        # `PushLine(GetLevelUpMessage(...))` on `new_level > 1 && (new_level >
+        # prev_level || new_skill != eSkillNoChange)` -- a mode check, never a
+        # check of whatever `LearnLevelSkills` (called only for Reset/Add)
+        # actually taught. One of several known-quirky, deliberately-preserved
+        # RPG_RT behaviours EasyRPG's own comments flag in this function. A
+        # RESET/ADD class swap that happens to teach nothing new (e.g.
+        # swapping between two classes whose level 1..N learn tables the actor
+        # has already fully absorbed) still shows the line.
         next unless show_msg
         new_skills = a.respond_to?(:skills) ? a.skills - before_skills : []
-        next unless a.level > 1 && (a.level > before || !new_skills.empty?)
+        next unless a.level > 1 && (a.level > before || skill_mode != Game::Actor::CLASS_SKILL_NO_CHANGE)
         lines = [level_up_message(a, a.level)]
         new_skills.each do |sid|
           sk = party.db_skill(sid)
@@ -2336,8 +2420,17 @@ module Game
 
     # Change Battle Commands (1009), RPG2003-only: add (param3 non-zero) or
     # remove battle command param2 from the target actor(s). Removing command 0
-    # clears the list back to the Row entry alone.
+    # clears the list back to the Row entry alone. Confirmed against RPG_RT's
+    # own live source: `Game_Interpreter::CommandChangeBattleCommands`
+    # (`src/game_interpreter.cpp`) opens with the identical `if (!Player::
+    # IsRPG2k3Commands()) { return true; }` gate Change Class carries -- an
+    # RPG2000-compatible run no-ops the command outright, including the
+    # "clear to Row alone" (id 0, remove) branch, which -- unlike the "add"
+    # branch's own `#battle_command_row` existence check -- has no table
+    # lookup of its own to make it inert on a table-less database by
+    # construction (see `Game::Actor#change_battle_commands`).
     def do_change_battle_commands(cmd)
+      return unless party.rpg2003?
       cmd_id = cmd.param(2)
       add = cmd.param(3) != 0
       stat_targets(cmd).each { |a| a.change_battle_commands(add, cmd_id) }
@@ -2790,12 +2883,11 @@ module Game
     # `command_actor` trigger condition), just never threaded from
     # `#run_battle_events`'s own `source` through to the interpreter that
     # actually runs the page's in-body commands. Test 4 ("the currently-
-    # targeted troop member is param1") remains unimplemented: RPG_RT's own
-    # `target_enemy_index`/`targets_single_enemy` (set in `Scene_Battle_
-    # Rpg2k3::ProcessBattleActionBegin`, right before a page's pre-action
-    # events run) has no counterpart anywhere in this codebase yet -- a
-    # narrower, separate piece of state than `source` alone provides, left
-    # as its own follow-up.
+    # targeted troop member is param1") is now implemented too -- see
+    # #battle_target_enemy_condition/`Game::Battle#target_enemy_index`, this
+    # port's own counterpart of RPG_RT's `target_enemy_index`/`targets_
+    # single_enemy` pair, reusing the identical `battle_source` plumbing
+    # test 5 already threads.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
       skip_to([Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B], cmd.indent)
@@ -2812,6 +2904,7 @@ module Game
         compare(variables[cmd.param(1)], rhs, cmd.param(4))
       when 2 then battle_actor_condition(cmd)
       when 3 then battle_enemy_condition(cmd)
+      when 4 then battle_target_enemy_condition(cmd)
       when 5 then battle_command_condition(cmd)
       else false
       end
@@ -2883,6 +2976,20 @@ module Game
     def battle_command_condition(cmd)
       return false unless @battle
       @battle.actor_command(cmd.param(1), battle_source) == cmd.param(2)
+    end
+
+    # Test 4, "the currently-targeted troop member is param1" -- EasyRPG's
+    # `Game_Interpreter_Battle::CommandConditionalBranchBattle` case 4:
+    # `result = (targets_single_enemy && target_enemy_index ==
+    # com.parameters[1]);`. `Game::Battle#target_enemy_index` is this port's
+    # own counterpart of RPG_RT's `target_enemy_index`/`targets_single_
+    # enemy` pair, reusing the identical `battle_source` plumbing
+    # `#battle_command_condition` (test 5) already threads from
+    # `#run_battle_events`; a nil result (no single enemy target resolved)
+    # never matches any `cmd.param(1)`.
+    def battle_target_enemy_condition(cmd)
+      return false unless @battle
+      @battle.target_enemy_index(battle_source) == cmd.param(1)
     end
 
     # -- conditional branch ---------------------------------------------------
@@ -3029,12 +3136,23 @@ module Game
     # one". It is not the runtime's 2/4/6/8 numpad direction, and passing it
     # through raw set two of the four values to numbers that are not directions
     # at all (1 and 3, which no delta or charset row matches) and a third to the
-    # wrong one — only "left" happened to line up. An RPG2000 project writes 0
+    # wrong one — only "left" happened to line up. ~~An RPG2000 project writes 0
     # here, so converting unconditionally is the same as EasyRPG's
-    # `IsRPG2k3Commands` guard for the games that can emit it.
+    # `IsRPG2k3Commands` guard for the games that can emit it.~~ Corrected
+    # against RPG_RT's own live source: `Game_Interpreter_Map::CommandTeleport`
+    # (`src/game_interpreter_map.cpp`) reads param3 only `if
+    # (com.parameters.size() > 3 && Player::IsRPG2k3Commands())` — a genuine
+    # RPG2000 binary never reads it at all, regardless of what the parameter
+    # array happens to hold, the same edition gate `#do_flash_screen`/
+    # `#do_shake_screen` already carry a few methods below. "An RPG2000
+    # project writes 0 here" is not something this command's own reference
+    # source relies on or guarantees for every possible on-disk command list
+    # (a hand-edited/imported one included), so converting unconditionally
+    # was an uncited equivalence claim, not an actual port of the guard.
     def do_teleport(cmd)
-      @teleport = [cmd.param(0), cmd.param(1), cmd.param(2),
-                   teleport_facing(cmd.param(3))]
+      return if block_pending_teleport_command
+      dir = @state.party.rpg2003? && cmd.parameters.size > 3 ? teleport_facing(cmd.param(3)) : 0
+      @teleport = [cmd.param(0), cmd.param(1), cmd.param(2), dir]
       @wait_kind = :teleport
       @waiting = true
     end
@@ -3061,6 +3179,7 @@ module Game
     # the owning scene loads the map and moves the player; the current facing is
     # kept (direction 0).
     def do_recall_location(cmd)
+      return if block_pending_teleport_command
       @teleport = [variables[cmd.param(0)], variables[cmd.param(1)],
                    variables[cmd.param(2)], 0]
       @wait_kind = :teleport
@@ -3083,7 +3202,9 @@ module Game
     # runtime's own numpad direction, so it is reused verbatim here rather
     # than duplicated. EasyRPG only applies it "for the constant case, not
     # for variables" (its own comment) -- the appointment-mode check below
-    # mirrors that.
+    # mirrors that. The `rpg2003?`/`parameters.size` half of that same cited
+    # guard had been quoted here without actually being applied in the code
+    # below it -- fixed to match #do_teleport's own identical correction.
     def do_change_event_location(cmd)
       x = cmd.param(2)
       y = cmd.param(3)
@@ -3092,7 +3213,7 @@ module Game
         x = variables[x]
         y = variables[y]
       end
-      dir = variable_mode ? 0 : teleport_facing(cmd.param(4))
+      dir = (!variable_mode && @state.party.rpg2003? && cmd.parameters.size > 4) ? teleport_facing(cmd.param(4)) : 0
       @location_requests.push({ op: :set, target: cmd.param(0), x: x, y: y, dir: dir })
     end
 
@@ -3216,11 +3337,13 @@ module Game
     # Set Transparent Flag (Change Player Visibility): toggle whether the party
     # leader's map sprite is hidden. Non-blocking — it only records the flag on
     # the shared game state; the owning scene reads it each frame. The polarity
-    # (param0 non-zero = transparent / hidden) follows EasyRPG's
-    # `SetSpriteHidden(parameters[0] != 0)`; the flag persists through Save /
-    # Continue.
+    # (param0 zero = hidden) follows RPG_RT's own live source: `Game_Interpreter
+    # ::CommandPlayerVisibility` (`src/game_interpreter.cpp`, code 11310) is
+    # `bool hidden = (com.parameters[0] == 0); player->SetSpriteHidden(hidden);`
+    # -- the reverse of an earlier, uncited pass here that had param0 non-zero
+    # meaning hidden instead. The flag persists through Save / Continue.
     def do_player_visibility(cmd)
-      @state.player_transparent = cmd.param(0) != 0
+      @state.player_transparent = cmd.param(0) == 0
     end
 
     # Flash Sprite (11320): pulse a character's sprite with a colour that decays
@@ -3231,6 +3354,21 @@ module Game
     # the duration in tenths of a second and param6 the wait flag. Queued for the
     # owning scene (which owns the sprites); with the wait flag set the event also
     # pauses on a :sprite_flash wait until the scene reports the flash finished.
+    # RPG_RT always honours the wait flag, even for a 0.0s flash: `Game_Interpreter
+    # _Map::CommandFlashSprite` (`src/game_interpreter_map.cpp`) calls
+    # `SetupWait(tenths)` unconditionally whenever the wait flag is set, and
+    # `SetupWait` floors a 0 duration to one frame rather than skipping the
+    # wait -- the same rule already fixed for Tint/Flash Screen and Move
+    # Picture. `Scene::Map#apply_sprite_flash` already returns nil (no flash
+    # attached) for a 0-duration request, so `#sprite_flashing?` is false the
+    # instant it applies, and the `:sprite_flash` wait dispatcher's own
+    # `resume unless sprite_flashing?` clears the wait as soon as it is
+    # checked -- still pausing the event at least one frame, matching the
+    # floor, even if this dispatcher (unlike `:wait`'s own documented "resume
+    # and keep spending this frame's budget" idiom) does not yet resume and
+    # continue in that identical frame; that gap is pre-existing and shared
+    # by every duration of Tint/Flash Screen, Move Picture and Flash Sprite
+    # alike, not something this fix changes.
     FLASH_CHANNEL_SCALE = 8
 
     def do_flash_sprite(cmd)
@@ -3243,7 +3381,7 @@ module Game
         power: cmd.param(4) * FLASH_CHANNEL_SCALE,
         frames: frames
       )
-      return unless cmd.param(6) != 0 && frames > 0
+      return unless cmd.param(6) != 0
       @wait_kind = :sprite_flash
       @waiting = true
     end
@@ -3289,11 +3427,31 @@ module Game
     end
 
     # -- RPG2003 English-release (2k3e) system commands ------------------------
+    #
+    # All five below are gated on `party.rpg2003?`, matching RPG_RT's own
+    # `Player::IsRPG2k3ECommands()` guard each carries (`if (!Player::
+    # IsRPG2k3ECommands()) { return true; }`, confirmed against live source
+    # for all five: `CommandExitGame`/`CommandToggleFullscreen`/
+    # `CommandOpenVideoOptions` in `src/game_interpreter.cpp`,
+    # `CommandOpenLoadMenu`/`CommandToggleAtbMode` in
+    # `src/game_interpreter_map.cpp`) -- the same "return unless
+    # party.rpg2003?" shape `#do_change_class`/`#do_change_battle_commands`
+    # already carry a few hundred lines up, and these five's own dispatch
+    # neighbors (`#do_force_flee`/`#do_enable_combo`/`#do_call_common_event`)
+    # carry too. `IsRPG2k3ECommands()` is technically narrower still (`Is
+    # RPG2k3E()` = `IsRPG2k3() && IsEnglish()`, the *English*-release 2003
+    # command set specifically) -- this codebase does not model an
+    # English/Japanese RPG2003 distinction anywhere (see
+    # `#block_pending_picture_command`'s own citation on `!Player::
+    # IsEnglish()` for the same already-established simplification), so
+    # falling back to the coarser `rpg2003?` boundary already tracked
+    # everywhere else in this file is the correct in-pattern choice here too.
 
     # Open Load Menu (5001): leave the map for the save-slot loader, the way
     # Return to Title leaves it. Raised as a :load_menu request; there is nothing
     # to resume, because whatever the player loads replaces this scene.
     def do_open_load_menu(_cmd)
+      return unless party.rpg2003?
       @wait_kind = :load_menu
       @waiting = true
     end
@@ -3302,12 +3460,13 @@ module Game
     # by an event. Raised as an :exit_game request the scene answers by leaving
     # the process; nothing resumes.
     def do_exit_game(_cmd)
+      return unless party.rpg2003?
       @wait_kind = :exit_game
       @waiting = true
     end
 
     # Toggle ATB Mode (5003): flip the save-system wait/active toggle
-    # (`SaveSystem.atb_mode`, LSD chunk 140) between wait (0) and active (1) —
+    # (`SaveSystem.atb_mode`, LSD chunk 140) between active (0) and wait (1) —
     # the same field the field menu's Wait command (id 8) flips, so a gauge
     # battle's command menu starts freezing / keeping the gauges running
     # accordingly (RPG2k3::Scene::Battle#atb_accumulating? reads it live).
@@ -3315,6 +3474,7 @@ module Game
     # (`data.atb_mode = !data.atb_mode`), and RPG_RT's 2k3e "Toggle ATB Mode"
     # command is the event-driven path to the same setting. The event runs on.
     def do_toggle_atb_mode(_cmd)
+      return unless party.rpg2003?
       @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
     end
 
@@ -3324,10 +3484,12 @@ module Game
     # cannot change mode — the command is a logged no-op rather than a silent
     # one, and the event runs straight on.
     def do_toggle_fullscreen(_cmd)
+      return unless party.rpg2003?
       $stderr.puts '[RPG2k] Toggle Fullscreen: this display has no fullscreen mode'
     end
 
     def do_open_video_options(_cmd)
+      return unless party.rpg2003?
       $stderr.puts '[RPG2k] Open Video Options: no video-options screen in this build'
     end
 
@@ -3357,6 +3519,7 @@ module Game
     # an instant style (the cuts, or a transition onto a screen already in that
     # state) settles at once and does not wait at all.
     def do_erase_screen(cmd)
+      return if block_pending_screen_command
       style = Game::Transition.erase_style(cmd.param(0), teleport_transition(0))
       @state.screen.erase(style)
       return unless @state.screen.fading?
@@ -3365,6 +3528,7 @@ module Game
     end
 
     def do_show_screen(cmd)
+      return if block_pending_screen_command
       style = Game::Transition.show_style(cmd.param(0), teleport_transition(1))
       @state.screen.show(style)
       return unless @state.screen.fading?
@@ -3384,14 +3548,23 @@ module Game
 
     # Tint Screen: transition the shared screen tint to the RPG2000 channels
     # param0..3 (red / green / blue / saturation, each 0..200) over param4 tenths
-    # of a second. When param5 (the wait flag) is set and the transition takes
-    # time, pause until it finishes — the owning scene advances Game::Screen each
-    # frame and resumes us once it settles.
+    # of a second. When param5 (the wait flag) is set, pause until it finishes —
+    # the owning scene advances Game::Screen each frame and resumes us once it
+    # settles. RPG_RT always honours the wait flag, even for a 0.0s transition:
+    # `Game_Interpreter::CommandTintScreen` (`src/game_interpreter.cpp`) calls
+    # `SetupWait(tenths)` unconditionally whenever the wait flag is set, and
+    # `SetupWait` (same file) explicitly floors a 0 duration to one frame ("0.0
+    # waits 1 frame") rather than skipping the wait. A 0.0s tint therefore still
+    # blocks the interpreter for exactly one frame, which the `:screen` wait
+    # dispatcher (`Scene::Map`'s wait-kind handler) already provides for free —
+    # `@state.screen.busy?` is false the instant a 0-duration tint applies, so
+    # the very next frame's dispatch resumes us, the same one-frame floor
+    # `#drive_wait` gives an ordinary `Wait 0.0s` command.
     def do_tint_screen(cmd)
       frames = cmd.param(4) * FRAMES_PER_TENTH
       @state.screen.tint_to(cmd.param(0), cmd.param(1), cmd.param(2),
                             cmd.param(3), frames)
-      return unless cmd.param(5) != 0 && @state.screen.tinting?
+      return unless cmd.param(5) != 0
       @wait_kind = :screen
       @waiting = true
     end
@@ -3400,6 +3573,11 @@ module Game
     # peak strength param3, fading out over param4 tenths of a second. When param5
     # (the wait flag) is set, pause until it fades — the owning scene advances
     # Game::Screen each frame and resumes us once no screen effect is animating.
+    # As with Tint Screen, RPG_RT always honours the wait flag on the one-shot
+    # mode, even for a 0.0s flash: `Game_Interpreter::CommandFlashScreen`
+    # (`src/game_interpreter.cpp`) calls `SetupWait(tenths)` unconditionally
+    # whenever the wait flag is set on the mode-0 path, and `SetupWait` floors a
+    # 0 duration to one frame rather than skipping the wait.
     # RPG2003 extends the command with a param6 mode byte (0 one-shot / 1 begin a
     # repeating strobe / 2 end one), matching EasyRPG's `CommandFlashScreen`
     # (src/game_interpreter.cpp): a command list carrying no 7th parameter (an
@@ -3429,7 +3607,7 @@ module Game
         frames = cmd.param(4) * FRAMES_PER_TENTH
         @state.screen.flash(cmd.param(0) * FLASH_SCALE, cmd.param(1) * FLASH_SCALE,
                             cmd.param(2) * FLASH_SCALE, cmd.param(3) * FLASH_SCALE, frames)
-        return unless cmd.param(5) != 0 && @state.screen.flashing?
+        return unless cmd.param(5) != 0
         @wait_kind = :screen
         @waiting = true
       end
@@ -3479,17 +3657,183 @@ module Game
       end
     end
 
-    # Whether Show/Move/Erase Picture must no-op this call: per yado.tk, real
-    # RPG_RT fully suppresses all three picture commands while any message
-    # window or choice list is open, anywhere in the scene — including a
-    # picture command reached by an already-running parallel process while a
-    # *different* interpreter's message window sits on screen (parallel
-    # processes keep advancing during a message window, see
-    # Scene::Map#parallels_paused?; this is the narrower rule layered on top
-    # of that). Without a map_info hook (a headless interpreter, or a battle
-    # page) there is no message window to suppress against.
-    def picture_commands_suppressed?
+    # Whether a message-gated command (Show/Move/Erase Picture, Teleport,
+    # Recall to Location — see #block_pending_picture_command /
+    # #block_pending_teleport_command) must block this call: real RPG_RT
+    # blocks each of these while any message window or choice list is open,
+    # anywhere in the scene — including a command reached by an
+    # already-running parallel process while a *different* interpreter's
+    # message window sits on screen (parallel processes keep advancing
+    # during a message window, see Scene::Map#parallels_paused?; this is the
+    # narrower rule layered on top of that). Without a map_info hook (a
+    # headless interpreter, or a battle page) there is no message window to
+    # block against.
+    def message_window_blocks_command?
       @map_info.respond_to?(:message_window_open?) && @map_info.message_window_open?
+    end
+
+    # Real RPG_RT does not permanently discard a Show/Move/Erase Picture
+    # command reached while a message window or choice list is open — it
+    # blocks the interpreter on that exact command and retries it every
+    # subsequent frame, so the very same command still takes effect once the
+    # message clears. Confirmed directly against RPG_RT's live source:
+    # `Game_Interpreter::CommandShowPicture`/`CommandMovePicture`/
+    # `CommandErasePicture` (`src/game_interpreter.cpp`, codes 11110/11120/
+    # 11130) each open with the identical guard `if (!Player::IsEnglish() &&
+    # !Player::IsPatchUnlockPics() && Game_Message::IsMessageActive()) {
+    # return false; }` — and the main dispatch loop (`Game_Interpreter::
+    # Update`) only advances `frame->current_command` when the handler
+    # returns `true` (`if (!ExecuteCommand()) { break; }` ... `if
+    # (index_before_exec == frame->current_command) { frame->current_command
+    # ++; }`), so a `false` return re-attempts the identical command on the
+    # next `Update()` rather than dropping it. Rewinds `@index` back onto
+    # this same command (#update already advanced past it before calling
+    # #execute) and suspends on a new :picture_blocked wait so Scene::Map can
+    # retry it once the message window closes — the same block-and-retry
+    # shape this codebase's own :screen/:picture/:sprite_flash waits already
+    # use, just gated on a different condition.
+    def block_pending_picture_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :picture_blocked
+      @waiting = true
+      true
+    end
+
+    # Real RPG_RT does not run a Transfer Player / Recall to Location command
+    # while a message window or choice list is open either — the identical
+    # block-and-retry shape #block_pending_picture_command already ports, on
+    # a different pair of commands. Confirmed directly against RPG_RT's live
+    # source: `Game_Interpreter_Map::CommandTeleport`/
+    # `CommandRecallToLocation` (`src/game_interpreter_map.cpp`, codes
+    # 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
+    # return false; }`, unconditionally — not gated behind
+    # `IsRPG2k3Commands()`, so this is base RPG2000 behaviour, not an
+    # RPG2003-only rule. Without this guard, a still-running parallel
+    # process (Message Options' "continue events" flag lets one keep
+    # advancing past another event's open Show Text, see
+    # Scene::Map#parallels_paused?) could warp the map out from under an
+    # on-screen message window instead of waiting for it to close first.
+    def block_pending_teleport_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :teleport_blocked
+      @waiting = true
+      true
+    end
+
+    # Real RPG_RT does not run an Erase Screen / Show Screen command while a
+    # message window or choice list is open either -- the identical
+    # block-and-retry shape #block_pending_picture_command already ports, on
+    # a fourth pair of commands. Confirmed directly against RPG_RT's live
+    # source: `Game_Interpreter::CommandEraseScreen`/`CommandShowScreen`
+    # (`src/game_interpreter.cpp`, codes 11010/11020) both open with `if
+    # (Game_Message::IsMessageActive()) { return false; }`, unconditionally --
+    # not gated behind `IsEnglish()`/`IsPatchUnlockPics()` the way Show/Move/
+    # Erase Picture are, so this is base RPG2000 behaviour with no edition
+    # exception at all. Without this guard, a still-running parallel process
+    # could cut the screen to black (or back) out from under an on-screen
+    # message window instead of waiting for it to close first.
+    def block_pending_screen_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :screen_blocked
+      @waiting = true
+      true
+    end
+
+    # Real RPG_RT does not open a battle from a Battle Processing / Enemy
+    # Encounter command while a message window or choice list is open
+    # either — the identical block-and-retry shape
+    # #block_pending_picture_command/#block_pending_teleport_command already
+    # port, on a third command. Confirmed directly against RPG_RT's live
+    # source: `Game_Interpreter_Map::CommandEnemyEncounter`
+    # (`src/game_interpreter_map.cpp`, code 10710) opens with `if
+    # (Game_Message::IsMessageActive()) { return false; }`, unconditionally
+    # — not gated behind `IsRPG2k3Commands()` or `main_flag`, so this is
+    # base RPG2000 behaviour, not an RPG2003-only rule, and applies the same
+    # way to a scripted Enemy Encounter command as to any other. Without
+    # this guard, a still-running parallel process (Message Options'
+    # "continue events" flag lets one keep advancing past another event's
+    # open Show Text, see Scene::Map#parallels_paused?) could cut straight
+    # to the battle screen over an on-screen message window instead of
+    # waiting for it to close first.
+    def block_pending_battle_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :battle_blocked
+      @waiting = true
+      true
+    end
+
+    # Change EXP (10410) / Change Level (10420) block-and-retry the same way,
+    # but only when their own "show message" flag is set -- confirmed
+    # directly against RPG_RT's live source: `Game_Interpreter::
+    # CommandChangeExp`/`CommandChangeLevel` (`src/game_interpreter.cpp`)
+    # both open with `bool show_msg = com.parameters[5]; if (show_msg &&
+    # !Game_Message::CanShowMessage(true)) { return false; }`, guarding the
+    # *entire* command -- the actor's EXP/level and re-derived base stats
+    # included, not just the level-up message -- behind the flag. With
+    # `show_msg` clear neither command ever calls `CanShowMessage` at all,
+    # unlike Show/Move/Erase Picture, Teleport/Recall to Location and Battle
+    # Processing/Enemy Encounter, which block unconditionally regardless of
+    # any flag. Without this, a still-running parallel process (Message
+    # Options' "continue events" flag) could apply a Change EXP/Level's
+    # stat change and level-up message a frame early, while a different
+    # event's message window still sits on screen.
+    def block_pending_exp_level_command(show_msg)
+      return false unless show_msg && message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :exp_level_blocked
+      @waiting = true
+      true
+    end
+
+    # A waiting Key Input Processing command block-and-retries the same way
+    # too, but only in its own wait mode -- confirmed directly against
+    # RPG_RT's live source: `Game_Interpreter::CommandKeyInputProc`
+    # (`src/game_interpreter.cpp`, code 11610) resets the target variable to
+    # 0 every retried frame first (`if (wait) { Main_Data::game_variables->
+    # Set(var_id, 0); ... }`), *then* checks `if (wait &&
+    # Game_Message::IsMessageActive()) { return false; }` -- unconditionally,
+    # not gated behind any edition/patch check, the same base RPG2000
+    # behaviour as Teleport/Recall to Location/Enemy Encounter. A no-wait
+    # proc (param1 clear) never calls `IsMessageActive` at all and always
+    # samples immediately, matching every other block-and-retry command's own
+    # flag-gated shape (Change EXP/Level's `show_msg`). Without this guard, a
+    # still-running parallel process's own Key Input Processing could resolve
+    # the instant an accepted key is pressed while a different event's
+    # message window still sits on screen, instead of waiting for it to
+    # close first -- the same bug class already fixed for the other four
+    # commands.
+    def block_pending_key_input_command(wait)
+      return false unless wait && message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :key_input_blocked
+      @waiting = true
+      true
+    end
+
+    # Message Options (10120) / Change Face Graphic (10130) block-and-retry
+    # the same way too -- confirmed directly against RPG_RT's live source:
+    # `Game_Interpreter::CommandMessageOptions`/`CommandChangeFaceGraphic`
+    # (`src/game_interpreter.cpp`) both open with the identical guard Show
+    # Message/Show Choices/Input Number themselves use, `if (!Game_Message::
+    # CanShowMessage(main_flag)) { return false; }` -- unconditionally, the
+    # same base RPG2000 behaviour as the other block-and-retry commands.
+    # Without this guard, a still-running parallel process (Message Options'
+    # own "continue events" flag lets one keep advancing past another
+    # event's open Show Text) could mutate the shared, global message
+    # window's transparency/position/face image while a *different* event's
+    # window is already showing on screen, visibly altering it mid-display
+    # instead of only taking effect once that window closes and this one's
+    # own message opens.
+    def block_pending_message_config_command
+      return false unless message_window_blocks_command?
+      @index -= 1
+      @wait_kind = :message_config_blocked
+      @waiting = true
+      true
     end
 
     # Show Picture (11110): display picture param0 from the string file name at
@@ -3502,7 +3846,7 @@ module Game
     def do_show_picture(cmd)
       id = cmd.param(0)
       return if id <= 0
-      return if picture_commands_suppressed?
+      return if block_pending_picture_command
       @state.show_picture(id,
                           name: picture_name(cmd),
                           x: picture_coord(cmd, 2), y: picture_coord(cmd, 3),
@@ -3518,24 +3862,34 @@ module Game
     # tone over param14 tenths of a second. When the wait flag (param15) is set,
     # pause until the move finishes — the scene advances the pictures each frame
     # and resumes us once none is moving. Same parameter layout as Show Picture,
-    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture).
+    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture). RPG_RT
+    # always honours the wait flag, even for a 0.0s move: `Game_Interpreter::
+    # CommandMovePicture` (`src/game_interpreter.cpp`) calls
+    # `SetupWait(params.duration)` unconditionally whenever `options.wait` is
+    # set, and `SetupWait` explicitly floors a 0 duration to one frame ("0.0
+    # waits 1 frame") rather than skipping the wait -- the same rule already
+    # fixed for Tint/Flash Screen. A 0.0s move therefore still blocks the
+    # interpreter for exactly one frame, which the `:picture` wait dispatcher
+    # (`Scene::Map`'s wait-kind handler, `@state.pictures_moving?`) already
+    # provides for free -- a 0-duration move snaps to its target instantly
+    # (`Picture#move_to`/`#finish_move`), so the very next frame's dispatch
+    # resumes us.
     def do_move_picture(cmd)
-      return if picture_commands_suppressed?
+      return if block_pending_picture_command
       id = cmd.param(0)
       frames = cmd.param(14) * FRAMES_PER_TENTH
       @state.move_picture(id, picture_coord(cmd, 2), picture_coord(cmd, 3),
                           cmd.param(5), trans_to_opacity(cmd.param(6)),
                           cmd.param(8), cmd.param(9), cmd.param(10),
                           cmd.param(11), frames)
-      return unless cmd.param(15) != 0 && @state.pictures[id] &&
-                    @state.pictures[id].moving?
+      return unless cmd.param(15) != 0
       @wait_kind = :picture
       @waiting = true
     end
 
     # Erase Picture (11130): remove picture param0 from the screen.
     def do_erase_picture(cmd)
-      return if picture_commands_suppressed?
+      return if block_pending_picture_command
       @state.erase_picture(cmd.param(0))
     end
 
@@ -3614,9 +3968,16 @@ module Game
     end
 
     # Fade Out BGM (11520): fade the music to silence over param0
-    # milliseconds, then leave nothing playing. Clears the current-BGM
-    # record so a Memorize BGM taken afterwards memorises silence, as
-    # RPG_RT does. Non-blocking — the event runs on while the music fades.
+    # milliseconds, then leave nothing playing. The current-BGM record
+    # survives the fade untouched -- a Memorize BGM taken afterwards still
+    # memorises the track that was fading, not silence. Confirmed directly
+    # against RPG_RT's live source: `Game_Interpreter::CommandFadeOutBGM`
+    # (`src/game_interpreter.cpp`) calls `Main_Data::game_system->
+    # BgmFade(fadeout)` with a single argument, and `Game_System::BgmFade`
+    # (`src/game_system.h`/`.cpp`) only clears `data.current_music` when its
+    # second parameter, `clear_current_music`, is explicitly `true` --
+    # defaulted to `false`, so the event command never sets it. Non-blocking
+    # — the event runs on while the music fades.
     #
     # param0 is already milliseconds, not tenths of a second: EasyRPG's
     # `CommandFadeOutBGM` (src/game_interpreter.cpp) passes
@@ -3628,8 +3989,11 @@ module Game
     # `RGSS::Audio.bgm_fade` already expects milliseconds too --
     # `Scene::Menu`'s own End Game call passes `bgm_fade(400)` directly.
     def do_fadeout_bgm(cmd)
-      @state.current_bgm = nil
       @state.bgm_looped = false
+      # `Game_System::BgmFade` (`src/game_system.cpp`) always sets `data.
+      # music_stopping = true` alongside the fade itself -- see Game::State
+      # #bgm_stopping's own doc comment for what this ungates.
+      @state.bgm_stopping = true
       RGSS::Audio.bgm_fade(cmd.param(0))
     rescue StandardError => e
       $stderr.puts "[RPG2k] BGM fade-out failed: #{e.message}"
@@ -3666,8 +4030,13 @@ module Game
     # param1 the map id; on add, param2/param3 are the tile x/y and an optional
     # switch (param4 flags its presence, param5 is the switch id) gates the
     # target's availability. Stored in a Game::State registry keyed by map id.
-    # Nothing consumes it yet — the Teleport skill is not executed — so this is
-    # modelled purely for save fidelity, mirroring the access flags.
+    # ~~Nothing consumes it yet -- the Teleport skill is not executed -- so
+    # this is modelled purely for save fidelity, mirroring the access
+    # flags.~~ Stale: `Game::Battle#cast_teleport_skill`/`#teleport_skill_
+    # available?` (`mruby-rpg2k/mrblib/game.rb`) do consume this registry now.
+    # Also round-trips through a real Save/Continue (chunk 110,
+    # `Game::State#to_lsd`/`.from_lsd`'s own citation), not just this
+    # engine's own portable Marshal save.
     def do_set_teleport_target(cmd)
       map_id = cmd.param(1)
       if cmd.param(0) != 0
@@ -3681,9 +4050,11 @@ module Game
 
     # Set Escape Target: register the single destination the Escape skill jumps
     # to. param0 map id, param1/param2 the tile x/y, and an optional switch
-    # (param3 flags its presence, param4 the switch id). Like the teleport
+    # (param3 flags its presence, param4 the switch id). ~~Like the teleport
     # registry this is stored for save fidelity only; the Escape skill is not
-    # executed yet.
+    # executed yet.~~ Stale, same correction as #do_set_teleport_target's own
+    # comment: `Game::Battle#cast_escape_skill`/`#escape_skill_available?`
+    # already consume it, and it round-trips through a real Save/Continue too.
     def do_set_escape_target(cmd)
       switch_id = cmd.param(3) != 0 ? cmd.param(4) : nil
       @state.escape_target =
@@ -3764,7 +4135,12 @@ module Game
     def do_play_memorized_bgm(_cmd)
       bgm = @state.memorized_bgm
       return if bgm.nil? || bgm[:name].nil? || bgm[:name].empty?
-      same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == bgm[:name]
+      # Gated on !#bgm_stopping too, same as #play_audio's :bgm branch --
+      # `PlayMemorizedBGM` is a bare `BgmPlay` call, so it shares that
+      # method's own `!data.music_stopping` restart gate (see
+      # Game::State#bgm_stopping's own doc comment).
+      same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == bgm[:name] &&
+                                   !@state.bgm_stopping
       if same_file_already_playing
         RGSS::Audio.bgm_volume(bgm[:volume] || 100)
       else
@@ -3779,6 +4155,9 @@ module Game
       # `Music` struct straight to a new play call either way.
       RGSS::Audio.bgm_pan(bgm[:balance] || 50)
       @state.current_bgm = bgm.dup
+      # Cleared unconditionally, restart or not -- see #play_audio's own
+      # matching reset.
+      @state.bgm_stopping = false
     rescue StandardError => e
       $stderr.puts "[RPG2k] memorized BGM playback failed: #{e.message}"
       nil
@@ -3786,16 +4165,35 @@ module Game
 
     def play_audio(kind, cmd)
       name = cmd.string
-      if name.nil? || name.empty?
-        # Selecting "(OFF)" for the SE field (an empty string, same encoding
-        # as any other blank filename) is not a no-op like a blank BGM field
-        # is: real RPG_RT stops every currently-playing sound effect at once
-        # (SE is truly polyphonic, unlike the single-channel BGM slot, so
-        # there is no single "current" track for an empty name to leave
-        # alone the way Play BGM does — yado.tk). Play BGM's own blank-name
-        # case stays an untouched no-op; nothing here establishes RPG_RT
-        # treats a blank Play BGM the same way, so that stays unaddressed.
-        RGSS::Audio.se_stop if kind == :se
+      blank = name.nil? || name.empty?
+      # Corrected against EasyRPG's actual C++ source (this method's own
+      # prior comment here had assumed selecting the editor's "(OFF)" choice
+      # is encoded as a blank string, an uncited claim — it is instead the
+      # literal 5-character text "(OFF)", liblcf's own schema default for
+      # both the Music and Sound structs). `Game_System::BgmPlay`
+      # (`src/game_system.cpp`): `if (!bgm.name.empty() && bgm.name !=
+      # "(OFF)") { ...play... } else { BgmStop(); }` — blank *and* "(OFF)"
+      # both stop the current track unconditionally. `Game_System::SePlay`
+      # (same file) instead treats the two differently: `if (se.name.empty())
+      # { return; } else if (se.name == "(OFF)") { if (stop_sounds)
+      # Audio().SE_Stop(); return; }` — a genuinely blank name is a silent
+      # no-op, while only the literal "(OFF)" stops every playing SE (gated
+      # on `stop_sounds`, always true for the Play SE event command itself —
+      # `Game_Interpreter::CommandPlaySound`, `src/game_interpreter.cpp`).
+      if kind == :bgm
+        if blank || name == '(OFF)'
+          RGSS::Audio.bgm_stop
+          @state.current_bgm = nil
+          # `Game_System::BgmPlay` clears `data.music_stopping` unconditionally
+          # at the very end, including this stop branch -- see Game::State
+          # #bgm_stopping's own doc comment.
+          @state.bgm_stopping = false
+          return
+        end
+      elsif blank
+        return
+      elsif name == '(OFF)'
+        RGSS::Audio.se_stop
         return
       end
       if kind == :bgm
@@ -3807,19 +4205,27 @@ module Game
         balance = cmd.parameters.size > 3 ? cmd.param(3) : 50
         # BGM has a single channel, and RPG_RT special-cases re-triggering Play
         # BGM with the file that's already current: it does NOT break and
-        # restart the track from the top the way any other Play BGM does
-        # (yado.tk), but it does re-apply the command's own volume to the
-        # still-playing track (`RGSS::Audio.bgm_volume`, backed by
-        # `Mix_VolumeMusic` — see `src/sdl_audio.cxx`, which applies live with
-        # no restart, unlike `bgm_play`'s `Mix_PlayMusic`). Tempo stays
-        # unaddressed: SDL_mixer has no live pitch control for a playing music
-        # stream (only a freshly started one). Balance/pan is wired the same
-        # live-update way via `RGSS::Audio.bgm_pan` (backed by
-        # `Mix_SetPanning(MIX_CHANNEL_POST, ...)` — the only technique that
-        # reaches a Mix_Music stream at all, see `src/sdl_audio.cxx`), applied
-        # on every Play BGM regardless of same-file-or-not since it has no
-        # per-track state to restart.
-        same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name
+        # restart the track from the top the way any other Play BGM does --
+        # confirmed against `Game_System::BgmPlay` (`src/game_system.cpp`)
+        # itself, not merely a fan-wiki claim -- but it does re-apply the
+        # command's own volume to the still-playing track
+        # (`RGSS::Audio.bgm_volume`, backed by `Mix_VolumeMusic` — see
+        # `src/sdl_audio.cxx`, which applies live with no restart, unlike
+        # `bgm_play`'s `Mix_PlayMusic`). Tempo stays unaddressed: SDL_mixer has
+        # no live pitch control for a playing music stream (only a freshly
+        # started one). Balance/pan is wired the same live-update way via
+        # `RGSS::Audio.bgm_pan` (backed by `Mix_SetPanning(MIX_CHANNEL_POST,
+        # ...)` — the only technique that reaches a Mix_Music stream at all,
+        # see `src/sdl_audio.cxx`), applied on every Play BGM regardless of
+        # same-file-or-not since it has no per-track state to restart.
+        #
+        # That no-restart shortcut is itself gated on `!data.music_stopping`
+        # in real RPG_RT (`BgmPlay`'s own `if (!data.music_stopping &&
+        # previous_music.name == bgm.name)`) -- a Fade Out BGM (11520) of this
+        # exact track since it last started DOES force a fresh restart here,
+        # matching `#bgm_stopping`'s own doc comment.
+        same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name &&
+                                     !@state.bgm_stopping
         # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
         # as the "current system BGM" regardless of whether playback succeeds)
         # -- balance included, since `Game_System::MemorizeBGM`
@@ -3832,6 +4238,9 @@ module Game
           @state.bgm_looped = false # a fresh track has not looped yet
           RGSS::Audio.bgm_play(name, volume, pitch)
         end
+        # Cleared unconditionally, restart or not -- `BgmPlay`'s own `data.
+        # music_stopping = false;` runs after the if/else either way.
+        @state.bgm_stopping = false
         RGSS::Audio.bgm_pan(balance)
       else
         # PlaySE parameters: [volume, tempo, balance].

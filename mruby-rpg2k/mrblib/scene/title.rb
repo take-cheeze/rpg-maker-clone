@@ -34,7 +34,6 @@ class RPG2k
           term(:continue, 'Continue'),
           term(:shutdown, 'Shutdown')
         ]
-        @selected_index = 0
 
         # RPG_RT grays out and skips over Continue when there is no save to
         # resume. `any_save_exists?` (main.rb) covers both our own Marshal
@@ -42,6 +41,14 @@ class RPG2k
         # across every one of the MAX_SAVE_SLOTS slots -- which one, if any,
         # is now Scene::SaveLoad's own question to ask once Continue opens it.
         @continue_available = continue_available?
+
+        # RPG_RT starts the cursor on Continue, not New Game, whenever a save
+        # exists -- confirmed against EasyRPG's own `Scene_Title::Refresh`
+        # (`src/scene_title.cpp`): `if (continue_enabled)
+        # command_window->SetIndex(1);` fires unconditionally alongside (not
+        # instead of) `SetItemEnabled(1, continue_enabled)`, so a save's
+        # presence moves the initial selection, not just the grayed-out look.
+        @selected_index = @continue_available ? 1 : 0
 
         # RPG_RT sizes the window to the widest label plus one border on each
         # side — no extra padding — and one 16px row per entry.
@@ -123,9 +130,17 @@ class RPG2k
           # `vUpdate()` around calling it at all).
           play_system_se(SFX_BUZZER)
         elsif confirmed || (auto = auto_select?)
-          Audio.bgm_stop
           case @selected_index
           when 0  # New Game
+            # RPG_RT does not hard-cut the title music -- `Player::
+            # SetupNewGame` (`src/player.cpp`) is `Main_Data::game_system->
+            # BgmFade(800, true); ...`, an 800ms fade, not `BgmStop()`'s
+            # immediate stop (the two are genuinely different `Game_System`
+            # calls, confirmed against `src/game_system.cpp`). The blanket
+            # `Audio.bgm_stop` this method used to run before every
+            # selection (including this one) skipped straight to silence
+            # instead.
+            Audio.bgm_fade(800)
             play_system_se(SFX_DECISION)
             parent.start_new_game
           when 1  # Continue
@@ -136,14 +151,35 @@ class RPG2k
             # before this screen existed, which is all
             # scripts/compare-nepheshel-wine.bash (watching stderr for the
             # [RPG2k-MAP] marker only #continue_game emits) needs.
+            #
+            # The headless auto-select path fades here too, matching
+            # `Player::LoadSavegame`'s own `if (!load_on_map) { BgmFade(800);
+            # ... }` (`src/player.cpp`) -- true from the title, the only case
+            # this shortcut ever takes. The interactive `Scene::SaveLoad`
+            # push is deliberately left alone: that scene's own `:load` mode
+            # is shared with the RPG2003 in-map "Open Load Menu" event
+            # (`Scene::Map#perform_event_load`), which per
+            # `LoadSavegame`'s own `load_on_map` guard must NOT fade --
+            # giving the title-only path its own fade needs a flag threaded
+            # through `SaveLoad.new`, left as a separate, well-scoped
+            # follow-up rather than folded in here.
             play_system_se(SFX_DECISION)
-            auto ? parent.continue_game : parent.push(Scene::SaveLoad.new(parent, nil, :load))
+            if auto
+              Audio.bgm_fade(800)
+              parent.continue_game
+            else
+              parent.push(Scene::SaveLoad.new(parent, nil, :load))
+            end
           when 2  # Shutdown
             # No confirmation dialog -- EasyRPG's own `CommandShutdown` plays
             # Decision then exits immediately (a fade-out transition into
             # `Scene::Pop`), unlike the field menu's own End Game command,
             # which pushes a yes/no confirm screen this runtime does not
-            # model either.
+            # model either. `CommandShutdown` (`src/scene_title.cpp`) makes
+            # no BGM call at all -- confirmed by reading its full body -- so
+            # this branch touches neither `bgm_fade` nor `bgm_stop`, matching
+            # the blanket `Audio.bgm_stop` this method used to run
+            # unconditionally before every selection, this one included.
             play_system_se(SFX_DECISION)
             exit
           end

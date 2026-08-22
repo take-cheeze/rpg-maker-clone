@@ -41,8 +41,29 @@ class RPG2k
       # Walk-animation frame cadence by move_speed, port 0..5, matching EasyRPG's
       # GetStationaryAnimFrames (limits[] = {12,10,8,6,5,4}, 0-indexed by the
       # same real-minus-1 offset); the default (2) keeps the prior 6-frame
-      # period, so existing animation pacing is unchanged.
+      # period, so existing animation pacing is unchanged. Governs an event
+      # while it is actually sliding between tiles.
       ANIM_STATIONARY_FRAMES = { 0 => 12, 1 => 10, 2 => 8, 3 => 6, 4 => 5, 5 => 4 }.freeze
+
+      # A Continuous/Fixed-Continuous event's own idle cadence -- slower than
+      # #ANIM_STATIONARY_FRAMES, not the same table reused. Confirmed against
+      # EasyRPG's live source, `Game_Character::GetContinuousAnimFrames`
+      # (`src/game_character.h`): `limits[] = {16,12,10,8,7,6}`. Real RPG_RT's
+      # `UpdateAnimation` (`src/game_character.cpp`) actually blends this with
+      # the stationary table while genuinely moving too (`GetAnimCount() >=
+      # continuous_limit || (stopped && GetAnimCount() >= stationary_limit)`),
+      # but the dominant, most visible effect -- and the one this fixes -- is
+      # that an idle Continuous/Fixed-Continuous event (a torch, a waterwheel,
+      # an "always animates" NPC) cycles noticeably slower than one that is
+      # actually walking, not on the identical cadence.
+      ANIM_CONTINUOUS_FRAMES = { 0 => 16, 1 => 12, 2 => 10, 3 => 8, 4 => 7, 5 => 6 }.freeze
+
+      # A Spin-type event's own facing-rotation cadence, slower again.
+      # Confirmed against EasyRPG's `Game_Character::GetSpinAnimFrames`
+      # (`src/game_character.h`): `limits[] = {24,16,12,8,6,4}` -- `Update
+      # Animation`'s `IsSpinning()` branch reads this and only this table,
+      # unconditionally, whether the event is moving or not.
+      ANIM_SPIN_FRAMES = { 0 => 24, 1 => 16, 2 => 12, 3 => 8, 4 => 6, 5 => 4 }.freeze
 
       # Clamp a (possibly out-of-range) internal move_speed to the port's own
       # 0..5 scale -- the real RPG2000 Move Speed field is 1..6 (see
@@ -56,8 +77,15 @@ class RPG2k
       # Quarter-tile units advanced per frame while jumping at `s`.
       def jump_slide_step(s); JUMP_SLIDE_STEP[clamp_speed(s)] || 6; end
 
-      # Walk-animation period (frames per phase) at `s`.
+      # Walk-animation period (frames per phase) at `s`, while actually sliding.
       def anim_frame_period(s); ANIM_STATIONARY_FRAMES[clamp_speed(s)] || 6; end
+
+      # Idle-animation period for a Continuous/Fixed-Continuous event standing
+      # still at `s`.
+      def anim_continuous_period(s); ANIM_CONTINUOUS_FRAMES[clamp_speed(s)] || 8; end
+
+      # Facing-rotation period for a Spin-type event at `s`.
+      def anim_spin_period(s); ANIM_SPIN_FRAMES[clamp_speed(s)] || 12; end
 
       # Advance a slide by `step` quarter-tile units. Folds the whole TILE-units
       # into `move_count` (the integer, display-side progress) and returns the new
@@ -92,8 +120,11 @@ class RPG2k
       EVENT_MOVE_DELAY = { 1 => 96, 2 => 64, 3 => 40, 4 => 24,
                            5 => 12, 6 => 6, 7 => 3, 8 => 1 }.freeze
 
-      # (Walk-animation cadence is now move_speed-dependent; see
-      # ANIM_STATIONARY_FRAMES and #anim_frame_period below.)
+      # (Walk-animation cadence is move_speed-dependent, and split by whether
+      # an event is sliding, idling Continuous, or Spinning; see
+      # ANIM_STATIONARY_FRAMES / ANIM_CONTINUOUS_FRAMES / ANIM_SPIN_FRAMES and
+      # #anim_frame_period / #anim_continuous_period / #anim_spin_period
+      # below.)
 
       # Event-page start conditions (the page `trigger` field): how the event's
       # command list is set off.
@@ -388,6 +419,17 @@ class RPG2k
       end
 
       def update
+        # RPG2003's Order screen (party reorder) is driven entirely by
+        # Scene::Order, with no interpreter command of its own to carry the
+        # leader-graphic-refresh flag #apply_graphic_change already polls for
+        # Change Actor Graphic -- so it is polled here instead, the very
+        # first thing once this scene is on top again, the same "catch up on
+        # whatever the pushed screen did" timing #state.pending_teleport
+        # (just below) already uses for a different pushed-screen side
+        # effect. See Game::Party#reorder's own citation of RPG_RT's
+        # `Game_Party::AddActor`/`RemoveActor`/`Game_Player::ResetGraphic`.
+        refresh_player_graphic if @state.party.respond_to?(:take_leader_graphic_dirty) &&
+                                   @state.party.take_leader_graphic_dirty
         # An Escape / Teleport field skill queues its destination here rather
         # than jumping directly -- it is cast from the skill menu, a scene with
         # none of this one's map-load machinery, and this scene does not even
@@ -1766,9 +1808,42 @@ class RPG2k
           # step_parallel call before its own next command ever ran, one
           # frame later than real RPG_RT -- yado.tk's "chaining two Show
           # Battle Animation calls back-to-back produces a visible one-frame
-          # stutter", the parallel-process half. Other wait kinds keep their
-          # old one-frame-per-call pacing.
-          unless (wait_kind == :wait || wait_kind == :animation) && !it.waiting?
+          # stutter", the parallel-process half. Tint/Flash Screen, Move
+          # Picture and Flash Sprite's own wait flags are the identical
+          # `_state.wait_time` countdown the plain Wait command uses in real
+          # RPG_RT (`SetupWait`, `src/game_interpreter.cpp`/
+          # `game_interpreter_map.cpp`), not a "poll until still animating"
+          # mechanism, so :screen/:picture/:sprite_flash get the same
+          # same-frame treatment here too -- the identical fix
+          # #drive_event's foreground dispatcher just received for those
+          # three wait kinds. :movement's own `_state.wait_movement` check
+          # in real RPG_RT's `Update` loop is not an unconditional `break`
+          # either (`src/game_interpreter.cpp`), and each of the four
+          # `_blocked` kinds' underlying command (`CommandShowPicture`/
+          # `CommandMovePicture`/`CommandErasePicture`, `CommandTeleport`/
+          # `CommandRecallToLocation`, `CommandEnemyEncounter`,
+          # `CommandChangeExp`/`CommandChangeLevel`) just `return false`
+          # with the command index untouched while blocked -- RPG_RT's own
+          # loop re-executes that identical command the instant the block
+          # clears, in that same frame, the same as any other retried
+          # command -- so all five join the same-frame list too, matching
+          # #drive_event's foreground dispatcher exactly. A waiting Key
+          # Input Processing command's own block (`CommandKeyInputProc`,
+          # `src/game_interpreter.cpp`) has the identical `return false`
+          # shape, so it joins the list too, and so does Message Options /
+          # Change Face Graphic's own block (`CommandMessageOptions`/
+          # `CommandChangeFaceGraphic`, `src/game_interpreter.cpp`), and so
+          # does Erase/Show Screen's own block (`CommandEraseScreen`/
+          # `CommandShowScreen`, `src/game_interpreter.cpp`). Other wait
+          # kinds keep their old one-frame-per-call pacing.
+          unless (wait_kind == :wait || wait_kind == :animation ||
+                  wait_kind == :screen || wait_kind == :picture ||
+                  wait_kind == :sprite_flash || wait_kind == :movement ||
+                  wait_kind == :picture_blocked || wait_kind == :teleport_blocked ||
+                  wait_kind == :battle_blocked || wait_kind == :exp_level_blocked ||
+                  wait_kind == :key_input_blocked || wait_kind == :message_config_blocked ||
+                  wait_kind == :screen_blocked) &&
+                 !it.waiting?
             apply_interpreter_requests(it, p[:event])
             return record_parallel_progress(p)
           end
@@ -1999,6 +2074,57 @@ class RPG2k
           # Move Picture's own wait flag, the parallel-process equivalent of
           # the :screen case just above.
           it.resume unless @state.pictures_moving?
+        elsif it.wait_kind == :picture_blocked
+          # A Show/Move/Erase Picture command issued from a Parallel Process
+          # while a message window or choice list is open -- the parallel-
+          # process equivalent of #drive_event's own :picture_blocked case
+          # just above, see #block_pending_picture_command for the citation.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :teleport_blocked
+          # A Transfer Player / Recall to Location command issued from a
+          # Parallel Process while a message window or choice list is open --
+          # the parallel-process equivalent of #drive_event's own
+          # :teleport_blocked case, see #block_pending_teleport_command for
+          # the citation. Before this branch existed a blocked teleport
+          # simply never reached :teleport_blocked at all (the guard is what
+          # raises it in the first place); this and the interpreter-side fix
+          # land together.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :battle_blocked
+          # A Battle Processing / Enemy Encounter command issued from a
+          # Parallel Process while a message window or choice list is open --
+          # the parallel-process equivalent of #drive_event's own
+          # :battle_blocked case, see #block_pending_battle_command for the
+          # citation.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :exp_level_blocked
+          # A "show message"-flagged Change EXP / Change Level command
+          # issued from a Parallel Process while a message window or choice
+          # list is open -- the parallel-process equivalent of #drive_event's
+          # own :exp_level_blocked case, see
+          # Interpreter#block_pending_exp_level_command for the citation.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :key_input_blocked
+          # A waiting Key Input Processing command issued from a Parallel
+          # Process while a message window or choice list is open -- the
+          # parallel-process equivalent of #drive_event's own
+          # :key_input_blocked case, see
+          # Interpreter#block_pending_key_input_command for the citation.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :message_config_blocked
+          # A Message Options / Change Face Graphic command issued from a
+          # Parallel Process while a *different* message window or choice
+          # list is open -- the parallel-process equivalent of #drive_event's
+          # own :message_config_blocked case, see
+          # Interpreter#block_pending_message_config_command for the citation.
+          it.resume unless message_window_open?
+        elsif it.wait_kind == :screen_blocked
+          # An Erase Screen / Show Screen command issued from a Parallel
+          # Process while a message window or choice list is open -- the
+          # parallel-process equivalent of #drive_event's own :screen_blocked
+          # case, see Interpreter#block_pending_screen_command for the
+          # citation.
+          it.resume unless message_window_open?
         elsif it.wait_kind == :sprite_flash
           # Flash Sprite's own wait flag, the parallel-process equivalent of
           # the :screen/:picture cases just above.
@@ -2150,12 +2276,27 @@ class RPG2k
         return unless Input.trigger?(Input::C)
         # An action event **under the player** fires too: RPG_RT checks the tile
         # the party is standing on before the one it faces, which is how a
-        # trigger-0 event on a doorway tile answers the action button. Overlap
-        # answers the button regardless of priority type, so this check alone
-        # is how a below/above-characters action event (see below) is ever
-        # reachable at all.
+        # trigger-0 event on a doorway tile answers the action button. ~~Overlap
+        # answers the button regardless of priority type~~ -- corrected against
+        # RPG_RT's own live source: `Game_Player::CheckEventTriggerHere`
+        # (`src/game_player.cpp`), which this overlap check and
+        # `#try_action_trigger`'s own faced-tile check below both port,
+        # excludes a same-layer event explicitly (`ev.GetLayer() !=
+        # lcf::rpg::EventPage::Layers_same`) -- the overlap check is
+        # LAYER_SAME-excluded, the exact opposite of "regardless of priority
+        # type". A below/above-characters action event (typically one whose
+        # graphic is an upper-layer chip, which defaults to LAYER_BELOW) is
+        # what this check is actually for; a LAYER_SAME event blocks the
+        # party from ever standing on it in the first place (see
+        # #char_passable?'s own LAYER_SAME collision), so it can never
+        # legitimately reach this branch at all -- the missing exclusion only
+        # mattered for the one way a same-layer event *can* end up
+        # co-located with the player anyway: its page re-selects to a
+        # blocking, action-triggered LAYER_SAME page while the player already
+        # happens to be standing on that exact tile (e.g. a switch flips
+        # elsewhere, with no movement in between).
         here = event_at(@state.x, @state.y)
-        return start_event(here, true) if actionable?(here)
+        return start_event(here, true) if actionable?(here) && here[:layer] != LAYER_SAME
 
         # The faced tile only answers the button for a LAYER_SAME event: RPG_RT
         # ties this to priority type the same way it ties collision to it
@@ -2262,20 +2403,35 @@ class RPG2k
       # Board a vehicle placed on the current map at the party's tile (airship) or
       # the tile it faces (boat / ship, boarded from the shore). Steps onto the
       # vehicle's tile and returns whether a vehicle was boarded.
+      #
+      # Each vehicle type has exactly one trigger, never both -- confirmed
+      # against RPG_RT's own live source: `Game_Player::GetOnVehicle`
+      # (`src/game_player.cpp`) checks the airship only against the player's
+      # own tile (`GetX()`/`GetY()`), in an `if` whose `else` branch is the
+      # only place `front_x`/`front_y` (the faced tile) are computed at all --
+      # the airship is never considered there, and Ship/Boat (checked in that
+      # order) are never considered against the player's own tile. This used
+      # to run one generic per-type loop applying *both* checks to *every*
+      # type, which let the airship be boarded merely by facing it from an
+      # adjacent tile (real RPG_RT does nothing there -- the action falls
+      # through to whatever ordinary event sits on that tile instead) and,
+      # symmetrically, would have let a boat/ship be boarded by standing on
+      # its tile rather than facing it from the shore.
       def board_vehicle
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
-        Game::Vehicle::TYPES.each do |type|
+        airship = @state.vehicle(:airship)
+        if airship.placed? && airship.map_id == @state.map_id &&
+           airship.x == @state.x && airship.y == @state.y
+          board_as(:airship)
+          return true
+        end
+        [:ship, :boat].each do |type|
           v = @state.vehicle(type)
-          next unless v.placed? && v.map_id == @state.map_id
-          if v.x == @state.x && v.y == @state.y
-            board_as(type)
-            return true
-          elsif v.x == fx && v.y == fy
-            @state.x = fx
-            @state.y = fy
-            board_as(type)
-            return true
-          end
+          next unless v.placed? && v.map_id == @state.map_id && v.x == fx && v.y == fy
+          @state.x = fx
+          @state.y = fy
+          board_as(type)
+          return true
         end
         false
       end
@@ -2315,13 +2471,38 @@ class RPG2k
           return
         end
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
-        return false unless passable?(fx, fy, @state.direction)
+        return false unless ship_disembark_passable?(fx, fy, @state.direction)
         follow_vehicle # the vehicle is left where the party is getting off
         @state.x = fx
         @state.y = fy
         @state.boarded = nil
         restore_pre_vehicle_bgm # the map BGM resumes
         true
+      end
+
+      # Whether the landing tile (x, y) admits a disembarking boat/ship,
+      # heading `dir`. A dedicated, one-sided test -- NOT #passable? -- since
+      # RPG_RT's own disembark check is narrower than an ordinary step.
+      # Confirmed against EasyRPG's live source: `Game_Player::GetOffVehicle`
+      # (`src/game_player.cpp`) calls `Game_Map::CanDisembarkShip` (`src/
+      # game_map.cpp`), which (1) only tests the *landing* tile's own entry
+      # passability (`GetPassableMask(x, y, player.GetX(), player.GetY())`
+      # derives just the one direction bit at `(x, y)`; the water tile the
+      # party is standing on is never passed to `IsPassableTile` at all,
+      # unlike an ordinary step's own two-sided `#passable?` check), (2)
+      # calls `IsPassableTile(nullptr, bit, x, y)` with a null mover -- no
+      # `boat_pass`/`ship_pass` terrain gate applies to *landing*, only to
+      # sailing there in the first place -- and (3) has no equivalent of
+      # `#vehicle_blocks?` at all (unlike `Game_Map::CanLandAirship`, a few
+      # lines above it in the same file, which does loop `{ Boat, Ship }`
+      # explicitly): a boat/ship parked on the landing tile never blocks
+      # disembarking here. Only a same-layer, non-Through event still does.
+      def ship_disembark_passable?(x, y, dir)
+        return false unless @map.in_bounds?(x, y)
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME && !b[:char].through }
+        return true if @chipset.nil?
+        @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
+                                 Game::Character::TURN_180[dir] || dir)
       end
 
       # Whether the airship may land on tile (x, y): the database terrain's
@@ -2331,15 +2512,24 @@ class RPG2k
       # ignores events entirely (#vehicle_passable?'s airship branch never
       # reads @event_tiles, so the airship can cruise directly over a
       # below-characters event a walking hero would just as happily overlap),
-      # so this is the one place events reach it at all — and, once they do,
-      # this follows the same vehicle-specific rule #vehicle_passable? already
-      # uses for a boat/ship (`!blocker[:char].through`): any layer blocks,
-      # priority-type/overlap_forbidden gating is ignored entirely, and only
-      # the blocking event's own Through Mode lets it through. A tile with no
-      # terrain data (a bare fixture) is landable.
+      # so this is the one place events reach it at all. Confirmed against
+      # RPG_RT's own live source: `Game_Map::CanLandAirship`
+      # (`src/game_map.cpp`) is a standalone loop -- `if (ev.IsInPosition(x,
+      # y) && ev.IsActive() && ev.GetActivePage() != nullptr) return false;`
+      # -- entirely separate from `WouldCollide`/`CheckOrMakeWayEx` (the
+      # function `#vehicle_passable?`'s own boat/ship rule legitimately
+      # reads `GetThrough()` from). `CanLandAirship` never reads Through
+      # Mode at all: any event with a currently-active page blocks a
+      # landing, Through Mode or not -- unlike a boat/ship's own movement
+      # collision, an airship landing is not itself a "pass through" move,
+      # it is occupying the ground tile outright. `blockers_at` already only
+      # ever indexes an event with a currently active page (the same
+      # `IsActive() && GetActivePage() != nullptr` test), so any blocker it
+      # returns here blocks unconditionally. A tile with no terrain data (a
+      # bare fixture) is landable.
       def airship_landable?(x, y)
         return false unless @map.in_bounds?(x, y)
-        return false if blockers_at(x, y).any? { |b| !b[:char].through }
+        return false if blockers_at(x, y).any?
         # A Boat/Ship parked on the ground blocks a landing too, matching
         # `Game_Map::CanLandAirship`'s own `for (auto vid: { Boat, Ship })`
         # loop (`src/game_map.cpp`) -- see `#vehicle_blocks?`.
@@ -2395,7 +2585,15 @@ class RPG2k
       # back into a map that itself had no BGM used to leave the vehicle's own
       # track still playing, neither of which real RPG_RT does.
       def play_bgm_or_stop(music)
-        if music && music[:name] && !music[:name].to_s.empty?
+        # The doc comment above already cites "(OFF) means play nothing" from
+        # `BgmPlay`'s own source, but this condition itself only ever checked
+        # for a blank name -- never the literal "(OFF)" text `BgmPlay`
+        # actually compares against (liblcf's own Music-struct schema
+        # default). A vehicle/pre-battle/pre-inn BGM explicitly set to
+        # "(OFF)" in the editor fell through to `#play_bgm` and tried to
+        # play a file literally named "(OFF)" instead of stopping.
+        name = music && music[:name] ? music[:name].to_s : ''
+        if !name.empty? && name != '(OFF)'
           play_bgm(music)
         else
           RGSS::Audio.bgm_stop
@@ -2625,16 +2823,20 @@ class RPG2k
       # the way, falling back to on-foot passability when the map has no terrain
       # data.
       #
-      # A boat / ship's event-blocking rule is a real divergence from the
-      # hero's own (yado.tk quirk): the walking hero is priority-type-gated —
-      # a below/above-characters event with a passable graphic never blocks it
-      # (see `passable?` / `char_passable?`, which key off `blocker[:layer]`).
-      # A ship ignores that entirely and just asks whether the blocking
-      # event's *own* move route has Through Mode on
+      # A moving boat / ship's event-blocking rule is layer-gated, exactly like
+      # the hero's own (see `passable?` / `char_passable?`, which key off
+      # `blocker[:layer]`) -- confirmed against EasyRPG's live source, not a
+      # divergence: `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) routes a
+      # moving boat/ship's collision through the exact same generic
+      # `WouldCollide` every other mover uses, whose own layer test is
+      # `self.GetLayer() == other.GetLayer()`; `Game_Vehicle`'s constructor
+      # (`src/game_vehicle.cpp`) sets `SetLayer(Layers_same)` unconditionally,
+      # for every vehicle type, never overridden elsewhere. So a below/above-
+      # characters event a boat/ship's own layer never matches is a decoration
+      # it glides straight through, the same as the hero does -- Through Mode
       # (`blocker[:char].through`, the same accessor `char_passable?` and
-      # `passable?` check for the mover's own Through Mode) — a below-
-      # characters, passable-graphic event the hero strolls over still stops
-      # a ship dead unless that specific event has Through Mode enabled.
+      # `passable?` check) is a *separate*, additional exemption on top of the
+      # layer gate, not the only one.
       def vehicle_passable?(x, y, dir, type)
         return false unless @map.in_bounds?(x, y)
         row = terrain_row_at(x, y)
@@ -2642,7 +2844,7 @@ class RPG2k
           return true if row.nil?
           return row.airship_pass ? true : false
         end
-        return false if blockers_at(x, y).any? { |b| !b[:char].through }
+        return false if blockers_at(x, y).any? { |b| !b[:char].through && b[:layer] == LAYER_SAME }
         # A moving Boat/Ship also collides with a *different* parked
         # Boat/Ship, and with a grounded Airship -- `Game_Map::
         # CheckOrMakeWayEx` (`src/game_map.cpp`) loops `{ Boat, Ship }` for
@@ -2725,6 +2927,35 @@ class RPG2k
         @events.each { |e| step_event(e, allow_trigger: allow_trigger) }
       end
 
+      # Run `route`'s sub-commands until one actually costs a frame of pacing
+      # delay (a Move/Turn/Wait/Jump, `Game::MoveRoute#step`'s own :moved/
+      # :blocked/:turned/:waited statuses) or the route finishes -- an
+      # effect-only sub-command (Switch On/Off, Speed/Frequency Up/Down,
+      # Change Graphic, Play Sound, Through Mode, Stop/Start Animation,
+      # Transparency Up/Down) runs free in the same frame as whatever
+      # follows it, never spending a pacing tick of its own. Confirmed
+      # against RPG_RT's own live source: `Game_Character::UpdateMoveRoute`
+      # (`src/game_character.cpp`) only calls `SetMaxStopCountFor{Step,Turn,
+      # Wait}` for those four command kinds; every other sub-command falls
+      # straight through to the next command within the same `while (true)`
+      # frame, guarded only against an infinite same-frame loop on a
+      # repeating route made entirely of effect commands
+      # (`current_index == start_index`, mirrored here via `route.index`
+      # wrapping back to where this burst started). Every #step call site
+      # below used to charge one full pacing delay per sub-command
+      # regardless of kind, so a route mixing effect commands with moves
+      # (a common "reskin then step" authoring pattern) crawled at
+      # #EVENT_MOVE_DELAY's pace through commands RPG_RT spends no time on
+      # at all.
+      def run_route_step(route, character, world)
+        start = route.index
+        status = route.step(character, world)
+        while status == :effect && !route.done? && route.index != start
+          status = route.step(character, world)
+        end
+        status
+      end
+
       def step_event(e, allow_trigger: true)
         # Cleared unconditionally, before any early return, so a crossing
         # recognised on some earlier frame (see #move_autonomous /
@@ -2748,7 +2979,7 @@ class RPG2k
         oy = ch.y
         status = nil
         if forced
-          status = forced.step(ch, @world) unless forced.done?
+          status = run_route_step(forced, ch, @world) unless forced.done?
           if forced.done? # revert to page movement
             e[:forced_route] = nil
             # The page's own Move Frequency reasserts itself once the forced
@@ -2758,7 +2989,7 @@ class RPG2k
             ch.move_frequency = page_move_frequency(e[:page])
           end
         elsif e[:route]
-          status = e[:route].step(ch, @world) unless e[:route].done?
+          status = run_route_step(e[:route], ch, @world) unless e[:route].done?
         else
           dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
           move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
@@ -2795,12 +3026,15 @@ class RPG2k
 
       # Advance each event's pixel slide and walk-animation phase once per frame.
       # An event "moves" for animation purposes while it is sliding between two
-      # tiles (see reoccupy / event_sliding?); such events — and any
-      # continuous/spin animation type — cycle their walk frames on a
-      # move_speed-dependent cadence (see #anim_frame_period), while an event
-      # resting on a tile shows its page pose. Game::EventGraphic.frame reads
-      # @moving / @anim_phase to pick the drawn column, and event_pixel reads the
-      # slide for the draw position.
+      # tiles (see reoccupy / event_sliding?); such events cycle their walk
+      # frames on the (fastest) #anim_frame_period cadence, while a Continuous/
+      # Fixed-Continuous or Spin type standing still instead cycles on its own,
+      # slower #anim_continuous_period / #anim_spin_period -- confirmed against
+      # EasyRPG's `Game_Character::UpdateAnimation` (`src/game_character.cpp`),
+      # which reads a distinct table per case rather than one shared cadence.
+      # An event resting on a tile with neither type shows its page pose.
+      # Game::EventGraphic.frame reads @moving / @anim_phase to pick the drawn
+      # column, and event_pixel reads the slide for the draw position.
       def animate_events
         @events.each { |e| animate_event(e) }
       end
@@ -2822,7 +3056,16 @@ class RPG2k
         return unless Game::EventGraphic.animated?(type)
         return unless sliding || Game::EventGraphic.continuous?(type)
         e[:anim_count] += 1
-        return if e[:anim_count] < anim_frame_period(ch.move_speed)
+        # Sliding always uses the (fastest) stationary-per-frame table; an
+        # event merely idling in place -- Spin rotating its facing, or a
+        # Continuous/Fixed-Continuous type cycling its walk frame with nobody
+        # pushing it -- uses its own slower table instead of reusing this one
+        # (see #ANIM_CONTINUOUS_FRAMES / #ANIM_SPIN_FRAMES above).
+        period = if sliding then anim_frame_period(ch.move_speed)
+                 elsif type == Game::EventGraphic::SPIN then anim_spin_period(ch.move_speed)
+                 else anim_continuous_period(ch.move_speed)
+                 end
+        return if e[:anim_count] < period
         e[:anim_count] = 0
         e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
       end
@@ -2838,13 +3081,31 @@ class RPG2k
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
-      # an event-touch (trigger 2) event instead of moving; any other obstacle
-      # just turns the event to face it. `allow_trigger: false` (the "keep
-      # moving during an open message" pass, see #step_events) still turns the
-      # event to face the player but never starts one -- there is only one
-      # foreground @interpreter, already mid-message, and RPG2000 never shows
-      # two message windows at once, so a second event's commands have nowhere
-      # safe to run until the first message closes.
+      # an event-touch (trigger 2) event instead of moving. ~~Any other
+      # obstacle just turns the event to face it~~ -- corrected against
+      # RPG_RT's own live source: `Game_Character::Move` (`src/
+      # game_character.cpp`) does turn to face `dir` immediately, before ever
+      # checking passability (`SetDirection(dir); UpdateFacing();` precede
+      # the `MakeWay` calls) -- but every autonomous-movement caller in `src/
+      # game_event.cpp` (`MoveTypeRandom`/`MoveTypeCycle`/
+      # `MoveTypeTowardsOrAwayPlayer`, all sharing the identical shape)
+      # immediately reverts that on a blocked move: `if (IsStopping()) { if
+      # (IsWaitingForegroundExecution() || (GetStopCount() >=
+      # GetMaxStopCount() + 60)) { SetStopCount(0); } else {
+      # SetDirection(prev_dir); if (!IsFacingLocked()) {
+      # SetFacing(prev_dir); } } }`. Since a movement decision only comes up
+      # once every `GetMaxStopCount()` frames (64 at the default frequency 3)
+      # and the extra threshold is `+ 60` *more* frames on top of that, the
+      # sprite's visible facing does not change on the overwhelmingly common
+      # blocked attempt -- only once genuinely stuck for a sustained stretch
+      # does RPG_RT finally let it settle facing the obstruction, which this
+      # method does not attempt to reproduce (a bounded blocked-streak
+      # counter would need its own follow-up). `allow_trigger: false` (the
+      # "keep moving during an open message" pass, see #step_events) still
+      # turns the event to face the player but never starts one -- there is
+      # only one foreground @interpreter, already mid-message, and RPG2000
+      # never shows two message windows at once, so a second event's
+      # commands have nowhere safe to run until the first message closes.
       def move_autonomous(e, dir, allow_trigger: true)
         ch = e[:char]
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
@@ -2874,8 +3135,6 @@ class RPG2k
                              e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
         elsif @world.passable?(ch, dir)
           ch.move(dir)
-        else
-          ch.face(dir)
         end
       end
 
@@ -3195,21 +3454,52 @@ class RPG2k
       end
 
       # Reload the party leader's CharSet graphic and apply its transparency to
-      # the player sprite, forcing a redraw on the next frame. The transparency
-      # flag hides the sprite outright (the renderer has no partial-opacity path).
+      # the player sprite, forcing a redraw on the next frame.
       def refresh_player_graphic
         @charset = load_charset
         @last_frame = nil
-        @player_sprite.visible = !player_hidden?
+        apply_player_visibility
         @player_bmp.clear unless @charset
       end
 
-      # Whether the party leader's map sprite should be hidden this frame: either
-      # the Set Transparent Flag command hid the player, or the leader's own
-      # actor graphic carries the (rarely used) semi-transparent flag.
+      # Whether the party leader's map sprite is genuinely hidden this frame --
+      # the Set Transparent Flag command (11310), which RPG_RT itself calls
+      # "Change Player Visibility" and implements as a real hide. Confirmed
+      # against RPG_RT's own live source: `Game_Interpreter::
+      # CommandPlayerVisibility` (`src/game_interpreter.cpp`) is `bool hidden =
+      # (com.parameters[0] == 0); player->SetSpriteHidden(hidden);` -- a wholly
+      # separate mechanism from #player_translucent? below (`IsSpriteHidden()`
+      # vs `GetOpacity()`, both independently gating `Game_Character::
+      # IsVisible()`).
       def player_hidden?
+        @state.player_transparent ? true : false
+      end
+
+      # Whether the leader's *actor graphic* carries RPG2000's "Transparent"
+      # ghost flag (the ChangeActorGraphic/database Actor checkbox) -- this
+      # does not hide the sprite, it makes it translucent. Confirmed against
+      # RPG_RT's own live source: `Game_Actor::SetSprite` stores `data.
+      # transparency = transparent ? 3 : 0` (`src/game_actor.cpp`), and
+      # `Game_Character::GetOpacity` (`src/game_character.cpp`) is `Clamp((8 -
+      # GetTransparency()) * 32 - 1, 0, 255)` -- level 3 yields opacity
+      # 159/255 (~62%), not 0. This codebase used to fold this flag into
+      # #player_hidden? and hide the sprite outright instead.
+      def player_translucent?
         leader = @state.party.leader
-        @state.player_transparent || (leader && leader.transparent) ? true : false
+        leader && leader.transparent ? true : false
+      end
+
+      # RPG_RT's own opacity for the "Transparent" ghost flag (see
+      # #player_translucent?'s citation) -- `(8 - 3) * 32 - 1 == 159`.
+      TRANSLUCENT_OPACITY = 159
+
+      # Apply both independent visibility signals to the player sprite: a
+      # real Set Transparent Flag hide, and the leader graphic's own
+      # translucent-ghost opacity, every frame so the hero hides/shows and
+      # fades as events toggle either one.
+      def apply_player_visibility
+        @player_sprite.visible = !player_hidden?
+        @player_sprite.opacity = player_translucent? ? TRANSLUCENT_OPACITY : 255
       end
 
       # -- Change Map Tileset -------------------------------------------------
@@ -3376,8 +3666,20 @@ class RPG2k
 
       # Start the character flashes an interpreter queued this step (11320). The
       # hero and map events both keep their flash as a decaying colour the
-      # renderer tones their CharSet frame with; a target that cannot be resolved
-      # (a vehicle, or an unknown event id) simply flashes nothing.
+      # renderer tones their CharSet frame with; a Boat/Ship/Airship target
+      # instead pulses the native RGSS `Sprite#flash` primitive
+      # #fire_map_target_flash already uses for the same vehicle-target case
+      # under Show Battle Animation's flash_scope -- confirmed against RPG_RT's
+      # own live source: `Game_Character::GetCharacter`
+      # (`src/game_character.cpp`) resolves `CharBoat`/`CharShip`/`CharAirship`
+      # (10002-10004) to the live `Game_Vehicle` object exactly like
+      # `CharPlayer`/`CharThisEvent`, so `Game_Interpreter_Map::
+      # CommandFlashSprite`'s `event->Flash(...)` call reaches a vehicle just
+      # as it reaches the player or a map event -- nothing in real RPG_RT
+      # exempts it. ~~a target that cannot be resolved (a vehicle, or an
+      # unknown event id) simply flashes nothing~~ was true only for the
+      # unknown-event-id half; a vehicle target is not actually unresolvable.
+      # An unknown event id is still a silent no-op.
       def apply_sprite_flash_requests(interp, this_event)
         reqs = interp.take_sprite_flash_requests
         return if reqs.nil? || reqs.empty?
@@ -3405,6 +3707,13 @@ class RPG2k
           flash
         when 0, MOVE_TARGET_THIS
           this_event ? (this_event[:flash] = flash) : nil
+        when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
+          spr = @vehicle_sprites && @vehicle_sprites[type]
+          return nil unless spr
+          spr.flash(Color.new(flash[:red], flash[:green], flash[:blue], flash[:power]), flash[:frames])
+          flash[:vehicle] = true
+          flash
         else
           ev = @events.find { |e| e[:id] == r[:target] }
           ev ? (ev[:flash] = flash) : nil
@@ -3429,6 +3738,13 @@ class RPG2k
         @last_frame = nil if @player_flash
         @player_flash = tick_flash(@player_flash)
         @events.each { |e| e[:flash] = tick_flash(e[:flash]) if e[:flash] }
+        # A vehicle-target Flash Sprite has no CharSet-tone hash of its own to
+        # decay here (its visuals are the native sprite #update_vehicle_flashes
+        # already drives) -- @flash_wait's `:vehicle` marker is only ever set
+        # by #apply_sprite_flash's own vehicle branch, so this can never
+        # double-decay the identical object the @player_flash/event lines
+        # above already tick.
+        @flash_wait = tick_flash(@flash_wait) if @flash_wait && @flash_wait[:vehicle]
       end
 
       def tick_flash(flash)
@@ -3868,7 +4184,7 @@ class RPG2k
         @vehicle_route_timers[type] -= 1
         return if @vehicle_route_timers[type] > 0
         @vehicle_route_timers[type] = EVENT_MOVE_DELAY[ch.move_frequency] || 40
-        route.step(ch, @vehicle_worlds[type]) unless route.done?
+        run_route_step(route, ch, @vehicle_worlds[type]) unless route.done?
         v = @state.vehicle(type)
         v.x = ch.x
         v.y = ch.y
@@ -3936,7 +4252,7 @@ class RPG2k
         # already does for #try_move (the input-driven path, see
         # @state.boarded? above).
         world = @state.boarded? ? @vehicle_worlds[@state.boarded] : @world
-        @player_route.step(@player_char, world) unless @player_route.done?
+        run_route_step(@player_route, @player_char, world) unless @player_route.done?
         # Mirror Through Mode out to the standing flag every step (not just when
         # the route ends), so a Halt All Movement mid-route sees whatever the
         # route had set so far rather than the mirror's now-discarded state.
@@ -4035,7 +4351,7 @@ class RPG2k
         e[:move_timer] = EVENT_MOVE_DELAY[e[:forced_freq] || ch.move_frequency] || 40
         ox = ch.x
         oy = ch.y
-        e[:forced_route].step(ch, @world) unless e[:forced_route].done?
+        run_route_step(e[:forced_route], ch, @world) unless e[:forced_route].done?
         e[:forced_route] = nil if e[:forced_route].done?
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
@@ -4142,9 +4458,15 @@ class RPG2k
         return false unless @map.in_bounds?(nx, ny)
         return false if nx == @state.x && ny == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
+        # A blocker's own Through Mode exempts it from every collision test
+        # below, not just the layer one -- `WouldCollide` (`src/
+        # game_map.cpp`) checks `self.GetThrough() || other.GetThrough()`
+        # first and unconditionally, before either the overlap-forbidden or
+        # the layer test, uniformly for the hero, another event, or a
+        # vehicle (see `#passable?`'s own citation).
         return false if blockers_at(nx, ny).any? do |b|
-          b[:layer] == character.layer ||
-            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
+          !b[:char].through && (b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden])))
         end
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
@@ -4174,12 +4496,13 @@ class RPG2k
         # anything on screen to notice it by.
         return true if x == character.x && y == character.y
         return false unless @map.in_bounds?(x, y)
-        # Same layer-gated occupancy rule as #char_passable? (see its comment).
+        # Same layer-gated occupancy rule as #char_passable? (see its
+        # comment) -- including the same blocker-Through exemption.
         return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
         return false if blockers_at(x, y).any? do |b|
-          b[:layer] == character.layer ||
-            (!hero && (character.overlap_forbidden || b[:overlap_forbidden]))
+          !b[:char].through && (b[:layer] == character.layer ||
+            (!hero && (character.overlap_forbidden || b[:overlap_forbidden])))
         end
         return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
@@ -4392,9 +4715,153 @@ class RPG2k
             end
             return
           when :teleport then perform_teleport(@interpreter.teleport)
-          when :movement then @interpreter.resume if step_forced_movement
-          when :screen then @interpreter.resume unless @state.screen.busy?
-          when :picture then @interpreter.resume unless @state.pictures_moving?
+          when :movement
+            @interpreter.resume if step_forced_movement
+            # Same reasoning as :screen/:picture/:sprite_flash below: RPG_RT's
+            # own `Game_Interpreter::Update` loop does not unconditionally
+            # `break` on `_state.wait_movement` either -- `if
+            # (_state.wait_movement) { if (Game_Map::IsAnyMovePending())
+            # break; _state.wait_movement = false; }` (`src/
+            # game_interpreter.cpp`) -- once every targeted route finishes,
+            # that same `Update` call falls straight through into whatever
+            # command follows, costing no further frame.
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :screen
+            @interpreter.resume unless @state.screen.busy?
+            # Same "spend this frame's own step budget immediately" idiom as
+            # :wait/:animation above: Tint Screen and one-shot Flash Screen's
+            # own wait flag is implemented with the identical `_state.
+            # wait_time` countdown the plain Wait command uses (`SetupWait`,
+            # `src/game_interpreter.cpp`, called from both `CommandTintScreen`
+            # and `CommandFlashScreen`) -- not a "poll until still animating"
+            # mechanism -- so real RPG_RT's own `Update` loop falls straight
+            # through into whatever command follows the instant that
+            # countdown clears, rather than costing a further frame.
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :picture
+            @interpreter.resume unless @state.pictures_moving?
+            # Same reasoning as :screen just above: Move Picture's own wait
+            # flag is `SetupWait(params.duration)`, the identical `_state.
+            # wait_time` field, in `CommandMovePicture`
+            # (`src/game_interpreter.cpp`).
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :picture_blocked
+            # A Show/Move/Erase Picture command reached while a message
+            # window or choice list is open (#block_pending_picture_command)
+            # -- real RPG_RT retries the identical command every subsequent
+            # frame rather than dropping it, see that method's own citation.
+            # The retry itself is not a "wait", though: `CommandShowPicture`/
+            # `CommandMovePicture`/`CommandErasePicture` (`src/
+            # game_interpreter.cpp`) each just `return false` with the
+            # command index untouched while a message window blocks them --
+            # RPG_RT's own `Update` loop keeps looping and re-executes that
+            # same command the instant the block clears, in that same frame,
+            # exactly like every other `ExecuteCommand` retry. Since
+            # `#block_pending_picture_command` already rewinds `@index` back
+            # onto the blocked command, re-invoking `#update` the moment the
+            # block clears reproduces that -- it re-attempts the identical
+            # command this frame, not the next one, matching RPG_RT.
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :teleport_blocked
+            # A Transfer Player / Recall to Location command reached while a
+            # message window or choice list is open
+            # (#block_pending_teleport_command) -- the identical
+            # block-and-retry shape as :picture_blocked just above, see that
+            # method's own citation and :picture_blocked's own same-frame
+            # reasoning (`Game_Interpreter_Map::CommandTeleport`/
+            # `CommandRecallToLocation`, `src/game_interpreter_map.cpp`, the
+            # identical `return false` with the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :battle_blocked
+            # A Battle Processing / Enemy Encounter command reached while a
+            # message window or choice list is open
+            # (#block_pending_battle_command) -- the identical
+            # block-and-retry shape as :picture_blocked/:teleport_blocked
+            # above, see that method's own citation and :picture_blocked's
+            # own same-frame reasoning (`Game_Interpreter_Map::
+            # CommandEnemyEncounter`, `src/game_interpreter_map.cpp`, the
+            # identical `return false` with the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :exp_level_blocked
+            # A "show message"-flagged Change EXP / Change Level command
+            # reached while a message window or choice list is open
+            # (#block_pending_exp_level_command) -- the identical
+            # block-and-retry shape as :picture_blocked/:teleport_blocked/
+            # :battle_blocked above, see that method's own citation and
+            # :picture_blocked's own same-frame reasoning
+            # (`Game_Interpreter::CommandChangeExp`/`CommandChangeLevel`,
+            # `src/game_interpreter.cpp`, the identical `return false` with
+            # the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :key_input_blocked
+            # A waiting Key Input Processing command reached while a message
+            # window or choice list is open (#block_pending_key_input_command)
+            # -- the identical block-and-retry shape as :picture_blocked/
+            # :teleport_blocked/:battle_blocked/:exp_level_blocked above, see
+            # that method's own citation and :picture_blocked's own
+            # same-frame reasoning (`Game_Interpreter::CommandKeyInputProc`,
+            # `src/game_interpreter.cpp`, the identical `return false` with
+            # the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :message_config_blocked
+            # A Message Options / Change Face Graphic command reached while a
+            # *different* message window or choice list is open
+            # (#block_pending_message_config_command) -- the identical
+            # block-and-retry shape as :picture_blocked/:teleport_blocked/
+            # :battle_blocked/:exp_level_blocked/:key_input_blocked above, see
+            # that method's own citation and :picture_blocked's own
+            # same-frame reasoning (`Game_Interpreter::CommandMessageOptions`/
+            # `CommandChangeFaceGraphic`, `src/game_interpreter.cpp`, the
+            # identical `return false` with the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
+          when :screen_blocked
+            # An Erase Screen / Show Screen command reached while a message
+            # window or choice list is open (#block_pending_screen_command)
+            # -- the identical block-and-retry shape as :picture_blocked/
+            # :teleport_blocked/:battle_blocked/:exp_level_blocked/
+            # :key_input_blocked/:message_config_blocked above, see that
+            # method's own citation and :picture_blocked's own same-frame
+            # reasoning (`Game_Interpreter::CommandEraseScreen`/
+            # `CommandShowScreen`, `src/game_interpreter.cpp`, the identical
+            # `return false` with the index untouched).
+            @interpreter.resume unless message_window_open?
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :return_title then perform_return_to_title
           when :game_over then perform_game_over
           when :name_input then drive_name_input
@@ -4419,7 +4886,16 @@ class RPG2k
               @interpreter.update
               apply_interpreter_requests(@interpreter, @active_event)
             end
-          when :sprite_flash then @interpreter.resume unless sprite_flashing?
+          when :sprite_flash
+            @interpreter.resume unless sprite_flashing?
+            # Same reasoning as :screen/:picture above: Flash Sprite's own
+            # wait flag is `SetupWait(tenths)`, the identical `_state.
+            # wait_time` field, in `Game_Interpreter_Map::CommandFlashSprite`
+            # (`src/game_interpreter_map.cpp`).
+            unless @interpreter.waiting?
+              @interpreter.update
+              apply_interpreter_requests(@interpreter, @active_event)
+            end
           when :save_menu then perform_event_save
           when :menu then perform_event_menu
           when :load_menu then perform_event_load
@@ -4778,8 +5254,9 @@ class RPG2k
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
-                  window: nil, gold: build_shop_gold_window, status: nil,
-                  terms: shop_terms(req[:type]), browsed: false, interp: it }
+                  cmd_index: 0, window: nil, gold: build_shop_gold_window,
+                  status: nil, terms: shop_terms(req[:type]), browsed: false,
+                  interp: it }
         draw_shop
       end
 
@@ -4905,7 +5382,18 @@ class RPG2k
         draw_shop_status(lines)
       end
 
+      # The gold and status panels share one visible/hidden set: RPG_RT's
+      # right-hand panels (Scene_Shop::SetMode, src/scene_shop.cpp) are shown
+      # for Buy, BuyHowMany/SellHowMany and Bought/Sold, and hidden for
+      # BuySellLeave and Sell -- not "whichever screen highlights one item",
+      # the reasoning a prior pass here used, which got the Sell list and the
+      # quantity/confirmation screens backwards.
+      SHOP_PANELS_VISIBLE_ON = %i[buy quantity purchased sold].freeze
+
       def draw_shop_gold
+        visible = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen])
+        @shop[:gold].visible = visible
+        return unless visible
         gw = 88
         c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
@@ -4919,14 +5407,20 @@ class RPG2k
       # SHOP_LINE_H label line each, plus the ordinary window border.
       SHOP_STATUS_W = 136
 
-      # The item id the status panel should describe: whichever row the
-      # cursor sits on in the buy or sell list. The command menu, the
-      # quantity counter and the purchase/sale confirmation don't highlight
-      # a single item, so there is nothing for the panel to show there.
+      # The item id the status panel should describe. On the buy list it is
+      # whichever row the cursor sits on; on the quantity counter and the
+      # purchase/sale confirmation it is the item the counter was opened for
+      # (kept alive in `@shop[:quantity]` through the confirmation screen --
+      # see #drive_shop_quantity / #drive_shop_confirm). The command menu and
+      # the sell list get no status panel at all, matching SHOP_PANELS_VISIBLE_ON.
       def shop_status_item_id(lines)
-        return nil unless @shop[:screen] == :buy || @shop[:screen] == :sell
-        return nil if lines.nil? || lines.empty?
-        lines[@shop[:index]][1]
+        case @shop[:screen]
+        when :buy
+          return nil if lines.nil? || lines.empty?
+          lines[@shop[:index]][1]
+        when :quantity, :purchased, :sold
+          @shop[:quantity] && @shop[:quantity][:id]
+        end
       end
 
       # The status panel beside the buy/sell list: the `possessed_items` /
@@ -5010,15 +5504,21 @@ class RPG2k
       end
 
       # The purchased / sold confirmation shown right after a transaction
-      # commits (Game::Shop#buy / #sell): a single line, dismissed on a
-      # button press the same way the battle event message panel is (see
-      # #drive_battle_event_message), then back to the list it came from --
-      # EasyRPG's own Scene_Shop::Bought / Sold modes return to Buy / Sell
-      # respectively (a timed auto-dismiss there; button-driven here to match
-      # every other message screen in this scene).
+      # commits (Game::Shop#buy / #sell): a single line, auto-dismissed after
+      # a flat one-second timer, then back to the list it came from.
+      # Confirmed directly against EasyRPG's live source, `Scene_Shop::
+      # vUpdate` (src/scene_shop.cpp): its `Bought` / `Sold` cases are a bare
+      # `timer--; if (timer == 0) SetMode(Buy/Sell);`, and `SetMode` arms
+      # `timer = DEFAULT_FPS` (`src/options.h`: `#define DEFAULT_FPS 60`) on
+      # entry. `UpdateNumberInput` -- the only place this scene reads
+      # `Input::` during the Buy/Sell flow -- has no `Bought`/`Sold` case at
+      # all, so a button press neither dismisses the confirmation early nor
+      # does anything else while it is up.
       def drive_shop_confirm
-        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
+        @shop[:confirm_timer] -= 1
+        return if @shop[:confirm_timer] > 0
         @shop[:screen] = @shop[:screen] == :purchased ? :buy : :sell
+        @shop[:quantity] = nil
         draw_shop
       end
 
@@ -5054,8 +5554,11 @@ class RPG2k
           model = @shop[:model]
           mode = q[:mode]
           mode == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
-          @shop[:quantity] = nil
+          # @shop[:quantity] survives into :purchased/:sold -- the status
+          # panel there still needs its item id (see #shop_status_item_id) --
+          # and is only cleared once #drive_shop_confirm leaves the screen.
           @shop[:screen] = mode == :buy ? :purchased : :sold
+          @shop[:confirm_timer] = 60
           draw_shop
           play_system_se(SFX_DECISION)
         elsif Input.trigger?(Input::B)
@@ -5133,8 +5636,22 @@ class RPG2k
         # shopkeeper's line on returning to the command menu switches from a
         # first-time greeting to "anything else?" for the rest of it.
         @shop[:browsed] = true if screen == :buy || screen == :sell
+        # The command menu's own cursor position persists across a trip into
+        # Buy/Sell and back, rather than always snapping to the first row --
+        # confirmed against EasyRPG's actual C++ source: `Window_Shop`
+        # (`src/window_shop.cpp`) sets `index = 1` (the Buy row) exactly once,
+        # in its constructor; neither `Refresh()` nor `SetMode()` (called by
+        # `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`'s own Cancel
+        # branch, `src/scene_shop.cpp`, to return to `BuySellLeave2`) ever
+        # touches `index` again. So cancelling out of the Sell list, say,
+        # returns to the command menu with Sell still highlighted, not Buy.
+        # Saved/restored here rather than in a fresh field per screen, since
+        # only the command menu has a cursor position worth remembering
+        # across a screen change -- Buy/Sell/the quantity counter always
+        # start a fresh browse at their own first row.
+        @shop[:cmd_index] = @shop[:index] if @shop[:screen] == :command
         @shop[:screen] = screen
-        @shop[:index] = 0
+        @shop[:index] = screen == :command ? (@shop[:cmd_index] || 0) : 0
         draw_shop
       end
 
@@ -5397,7 +5914,17 @@ class RPG2k
       # long-vowel mark, then a symbol row, and a final row of six kana plus
       # the page-toggle and confirm cells (each drawn two columns wide, so the
       # last row fills the same 10 columns as the rows above it).
-      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ゔ] + %i[toggle confirm]).freeze
+      # Confirmed against EasyRPG's actual C++ source: `Window_Keyboard::
+      # layouts[]` (`src/window_keyboard.cpp`), the real RPG_RT keyboard
+      # table -- the ま/マ row's small kana column order is っゃゅょゎ, not
+      # ゃゅょっー (small-tsu had drifted three columns right, and the last
+      # column was a stray duplicate of the ー already on the row below,
+      # rather than small-wa ゎ/ヮ); the last row's "vu" cell is katakana
+      # ヴ on *both* the hiragana and katakana pages in the reference table
+      # (hiragana has no glyph of its own there), not hiragana ゔ on the
+      # hiragana page; and the や/ヤ row's final cell is the white star ☆
+      # (U+2606), not the black star ★ (U+2605).
+      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ヴ] + %i[toggle confirm]).freeze
       NAME_KANA_LAST_KATAKANA = (%w[ラ リ ル レ ロ ヴ] + %i[toggle confirm]).freeze
       NAME_HIRAGANA_ROWS = [
         %w[あ い う え お が ぎ ぐ げ ご],
@@ -5406,8 +5933,8 @@ class RPG2k
         %w[た ち つ て と ば び ぶ べ ぼ],
         %w[な に ぬ ね の ぱ ぴ ぷ ぺ ぽ],
         %w[は ひ ふ へ ほ ぁ ぃ ぅ ぇ ぉ],
-        %w[ま み む め も ゃ ゅ ょ っ ー],
-        %w[や ゆ よ わ ん ー 〜 ・ ＝ ★],
+        %w[ま み む め も っ ゃ ゅ ょ ゎ],
+        %w[や ゆ よ わ ん ー 〜 ・ ＝ ☆],
         NAME_KANA_LAST_HIRAGANA
       ].freeze
       NAME_KATAKANA_ROWS = [
@@ -5417,8 +5944,8 @@ class RPG2k
         %w[タ チ ツ テ ト バ ビ ブ ベ ボ],
         %w[ナ ニ ヌ ネ ノ パ ピ プ ペ ポ],
         %w[ハ ヒ フ ヘ ホ ァ ィ ゥ ェ ォ],
-        %w[マ ミ ム メ モ ャ ュ ョ ッ ー],
-        %w[ヤ ユ ヨ ワ ン ー 〜 ・ ＝ ★],
+        %w[マ ミ ム メ モ ッ ャ ュ ョ ヮ],
+        %w[ヤ ユ ヨ ワ ン ー 〜 ・ ＝ ☆],
         NAME_KANA_LAST_KATAKANA
       ].freeze
       NAME_KANA_COLS = 10
@@ -5457,7 +5984,7 @@ class RPG2k
           background = build_field_background(@windowskin)
           if req[:charset] == 2
             @name_ui = { name: req[:seed] || '', sel: 0, win: nil, kana: false,
-                         background: background, interp: it }
+                         actor_id: req[:actor_id], background: background, interp: it }
             draw_name_input
           else
             @name_ui = { name: req[:seed] || '', sel: 0, kana: true,
@@ -5568,9 +6095,27 @@ class RPG2k
         @name_ui[:kana] ? draw_kana_name_input : draw_name_input
       end
 
+      # A blank confirm does not close the widget -- confirmed against
+      # RPG_RT's own live source: `Scene_Name::vUpdate`'s DONE branch
+      # (`src/scene_name.cpp`) is `if (name_window->Get().empty()) {
+      # name_window->Set(ToString(actor.GetName())); name_window->Refresh();
+      # } else { actor.SetName(...); Scene::Pop(); }` -- an empty typed name
+      # resets the field back to the actor's current name and leaves the
+      # screen open, rather than resuming the event with an empty string.
+      # This check lives in the single shared `vUpdate` (gated only on
+      # which cell was picked), so it applies identically to every keyboard
+      # page -- the kana grid's own :confirm cell routes through this same
+      # method.
       def commit_name_input
-        name = @name_ui[:name]
-        interp = @name_ui[:interp]
+        ui = @name_ui
+        if ui[:name].empty?
+          actor = roster_actor(ui[:actor_id])
+          ui[:name] = actor ? actor.name.to_s : ''
+          ui[:kana] ? draw_kana_name_input : draw_name_input
+          return
+        end
+        name = ui[:name]
+        interp = ui[:interp]
         close_name_input
         interp.resume_name_input(name)
       end
@@ -5932,12 +6477,58 @@ class RPG2k
       # build the frame-by-frame player from a raw `battle_animation` request
       # hash, or arm the timed-wait fallback when there is no drawable
       # animation.
+      #
+      # An unresolved map target (see #animation_target_resolves?) waits
+      # exactly 0, not #missing_animation_wait's animation-duration fallback
+      # -- confirmed against RPG_RT's own live source: `Game_Interpreter_Map::
+      # CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`) calls
+      # `GetCharacter(evt_id, ...)` unconditionally, before it ever looks at
+      # `global` or computes a frame count, and returns outright when that is
+      # null -- `_state.wait_time = frames` is simply never reached, so a
+      # "wait until finished" request on an unresolved target falls straight
+      # through to the next command the same tick rather than stalling for
+      # the animation's own real duration (or the invalid-animation-id
+      # fallback's timing either). A battle-page request (`req[:battle]`)
+      # gets the identical treatment for an out-of-range Ally/Enemy index --
+      # see `Scene::Battle#battle_page_target_resolves?`'s own citation of
+      # `Game_Interpreter_Battle::CommandShowBattleAnimation`'s matching null
+      # `battler_target` check.
       def begin_map_animation(req)
+        unresolved =
+          req && (req[:battle] ? @battle && !@battle.battle_page_target_resolves?(req)
+                                : !animation_target_resolves?(req[:target]))
+        if unresolved
+          @map_animation = nil
+          @anim_wait = 0
+          return
+        end
         @map_animation = start_map_animation(req)
         if @map_animation
           fire_animation_flashes(@map_animation) # frame 0 flashes
         else
           @anim_wait = missing_animation_wait(req[:animation])
+        end
+      end
+
+      # Whether Show Battle Animation's map target id names something real to
+      # draw over -- confirmed against RPG_RT's own live source:
+      # `Game_Interpreter::GetCharacter` (`src/game_interpreter.cpp`) returns
+      # null both for "This Event" (0) when the calling interpreter has no
+      # owning map event (a common/parallel event -- `GetThisEventId() == 0`)
+      # and for a specific event id the map has no character for; either way
+      # `CommandShowBattleAnimation` no-ops the *entire* command, including a
+      # "Whole screen" one, since the null check runs before `global` is even
+      # read. The player and every vehicle slot always resolve --
+      # `Game_Character::GetCharacter` constructs those unconditionally,
+      # never returning null for them.
+      def animation_target_resolves?(target)
+        case target
+        when MOVE_TARGET_PLAYER, MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
+          true
+        when 0, MOVE_TARGET_THIS
+          !@active_event.nil?
+        else
+          @events.any? { |e| e[:id] == target }
         end
       end
 
@@ -6128,6 +6719,7 @@ class RPG2k
       def start_map_animation(req)
         return nil unless req
         return @battle.start_battle_page_animation(req) if req[:battle]
+        return nil unless animation_target_resolves?(req[:target])
         flash_target = map_animation_flash_target(req[:target])
         targets =
           if req[:global]
@@ -6184,14 +6776,13 @@ class RPG2k
 
       # The character a map-triggered flash_scope-1 timing (see
       # #fire_map_target_flash) should pulse: `:player`, a specific `@events`
-      # entry (this event / a named map event id), a `Game::Vehicle::TYPES`
-      # symbol (`:boat`/`:ship`/`:airship`) for a vehicle slot, or nil when
-      # the target id names nothing (a stale/invalid event id no live event
-      # matches). Mirrors #animation_target_pixel's own target-id decoding
-      # exactly, including its "this event" -> player fallback when there is
-      # no active event (a common event Parallel Process's own Show Battle
-      # Animation) and its `Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]`
-      # idiom for a vehicle slot.
+      # entry (this event / a named map event id), or a `Game::Vehicle::TYPES`
+      # symbol (`:boat`/`:ship`/`:airship`) for a vehicle slot. Only ever
+      # called once #animation_target_resolves?(target) has already passed
+      # (see #start_map_animation), so the "this event, no active event" and
+      # "unknown event id" cases it decodes have both already been ruled
+      # out -- this ~~falls back to `:player`~~ no longer needs a fallback
+      # for either.
       def map_animation_flash_target(target)
         case target
         when MOVE_TARGET_PLAYER then :player
@@ -6293,13 +6884,17 @@ class RPG2k
       end
 
       # The target character's map-pixel position: the player, the running event
-      # ("this event" / 0), a vehicle slot, or a map event by id, defaulting to
-      # the player. yado.tk: a vehicle target reads that vehicle's real,
-      # currently-live x/y off `Game::State` (the same source
-      # `#event_operand`'s Control Variables "character position" vehicle fix
-      # reads) even when the vehicle is not on the map this scene has loaded --
-      # RPG_RT does not check that the two agree before placing the animation,
-      # the same blind-read quirk as the Control Variables fix.
+      # ("this event" / 0), a vehicle slot, or a map event by id. Only ever
+      # called once #animation_target_resolves?(target) has already passed
+      # (see #start_map_animation), so its "this event, no active event" and
+      # "unknown event id" ~~fall back to the player~~ branches are dead --
+      # both cases are already ruled out by then. yado.tk: a vehicle target
+      # reads that vehicle's real, currently-live x/y off `Game::State` (the
+      # same source `#event_operand`'s Control Variables "character
+      # position" vehicle fix reads) even when the vehicle is not on the map
+      # this scene has loaded -- RPG_RT does not check that the two agree
+      # before placing the animation, the same blind-read quirk as the
+      # Control Variables fix.
       def animation_target_pixel(target)
         case target
         when MOVE_TARGET_PLAYER then player_pixel
@@ -7372,7 +7967,8 @@ class RPG2k
         # speeds up one paragraph's reveal, it does not blow through
         # paragraph after paragraph on its own. Gated on RPG2k#test_play the
         # same way #debug_through? is, so a released game never sees it.
-        fast_forward = confirm || (@parent.test_play && Input.press?(Input::SHIFT))
+        shift_forward = @parent.test_play && Input.press?(Input::SHIFT)
+        fast_forward = confirm || shift_forward
         unless reveal.done?
           pause = reveal.pending_pause
           # A `:page` pause (synthetic, at a page boundary) means the current
@@ -7393,7 +7989,7 @@ class RPG2k
           # `\.` / `\|` holds, which clear on their own.
           @message[:window].pause = pause ? pause[:kind] == :key : false
           if pause
-            drive_message_pause(reveal, pause, fast_forward)
+            drive_message_pause(reveal, pause, fast_forward, shift_forward)
           elsif fast_forward
             reveal.reveal_all
           else
@@ -7420,11 +8016,23 @@ class RPG2k
       end
 
       # Hold the reveal at a pacing code: `\!` waits for a button, `\.` / `\|`
-      # count down a fixed number of frames (a button skips the wait). A `\.`
-      # pause's own length depends on the `\s[n]` typing speed in effect at
-      # that point in the text (see #speed_at and MSG_PAUSE_QUARTER's own
-      # comment); `\|` never varies.
-      def drive_message_pause(reveal, pause, pressed)
+      # count down a fixed number of frames that an ordinary Decision/Cancel
+      # press cannot cut short -- confirmed directly against RPG_RT's live
+      # source: `Window_Message::Update` (`src/window_message.cpp`)
+      # decrements `wait_count` (the counter `\.`/`\|` set via
+      # `SetWaitForNonPrintable`) and returns unconditionally while it is
+      # still positive, entirely before the separate `GetPause()`/
+      # `WaitForInput()` branch that checks `Input::IsTriggered(DECISION/
+      # CANCEL)` even runs -- and `case '.'`/`case '|'` (the same file) only
+      # ever call `SetWaitForNonPrintable`, never `SetPause(true)`, unlike
+      # `case '!'`, which calls both. A `\.` pause's own length depends on
+      # the `\s[n]` typing speed in effect at that point in the text (see
+      # #speed_at and MSG_PAUSE_QUARTER's own comment); `\|` never varies.
+      # `shift_forward` alone (Test Play's own fast-forward, see
+      # #drive_text_message) still cuts a `\.`/`\|` wait short, mirroring
+      # `SetWaitForNonPrintable`'s own `if (!instant_speed)` guard around
+      # `SetWait` -- an ordinary player confirm press must not.
+      def drive_message_pause(reveal, pause, pressed, shift_forward)
         if pause[:kind] == :key
           reveal.release_pause if pressed
           return
@@ -7436,7 +8044,7 @@ class RPG2k
                                        MSG_PAUSE_QUARTER + Game.clamp(speed - 16, 0, 4)
                                      end
         @message[:pause_frames] -= 1
-        if pressed || @message[:pause_frames] <= 0
+        if shift_forward || @message[:pause_frames] <= 0
           @message[:pause_frames] = nil
           reveal.release_pause
         end
@@ -7574,7 +8182,14 @@ class RPG2k
           model.left
           draw_number_input
           play_system_se(SFX_CURSOR)
-        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+        # Right is a no-op -- no move, no sound -- on a single-digit widget:
+        # confirmed against RPG_RT's own live source, `Window_NumberInput::
+        # Update` (src/window_numberinput.cpp) guards only its Right branch
+        # behind `if (digits_max >= 2)`; Left has no such guard and always
+        # plays the Cursor SE, even though its own modulo leaves a
+        # single-cell cursor unmoved either way. Not the symmetric pair a
+        # single `#left`/`#right` gate would suggest.
+        elsif (Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && model.digits >= 2
           model.right
           draw_number_input
           play_system_se(SFX_CURSOR)
@@ -7757,13 +8372,22 @@ class RPG2k
       # damaged someone (EasyRPG's `!terrain->on_damage_se || red_flash`),
       # turning it from an ambient step sound into the terrain's own damage-tick
       # SE instead of playing on every ordinary step onto that terrain.
+      # Confirmed against EasyRPG's actual C++ source: `Game_Player::
+      # BeginMove` (`src/game_player.cpp`) calls `Main_Data::game_system->
+      # SePlay(terrain->footstep)` -- a full `Sound` (filename + volume +
+      # tempo + balance), read by `Game_System::SePlay(const lcf::rpg::
+      # Sound&, bool)` (`src/game_system.cpp`), which treats a blank name
+      # *or* the literal "(OFF)" sentinel as silent no-ops, the same
+      # convention every other Sound-typed field in this codebase already
+      # follows (see `#db_system_se`/`#play_animation_se`).
       def play_terrain_footstep_se(row, damaged)
         return unless @db.respond_to?(:rpg2003?) && @db.rpg2003?
         return unless row && row.respond_to?(:footstep) && row.respond_to?(:on_damage_se)
         return if row.on_damage_se && !damaged
-        name = row.footstep
-        return if name.nil? || name.empty?
-        RGSS::Audio.se_play(name)
+        se = row.footstep
+        name = se && se.respond_to?(:file) ? se.file : nil
+        return if name.nil? || name.empty? || name == '(OFF)'
+        RGSS::Audio.se_play(name, se.volume, se.pitch)
       rescue StandardError => e
         $stderr.puts "[RPG2k] Terrain: footstep SE playback failed: #{e.message}"
       end
@@ -7811,19 +8435,54 @@ class RPG2k
       end
 
       # Troop ids the party's current tile can start a fight from: the map's
-      # own encounter list (map-tree field 41), filtered by each troop's own
+      # own encounter list (map-tree field 41) plus every "Area" sub-region
+      # (field 4 == 2) that is this map's own direct child and whose bounds
+      # (field 51) cover the party's tile, filtered by each troop's own
       # terrain_set (enemy_group chunk field 5) -- a per-terrain-tag allow list
       # a troop's editor page can restrict it to. An omitted entry (the array
       # too short to reach this tile's tag) defaults to allowed, the same
       # "missing entry reads as the field's default" rule the rest of this
-      # runtime's bit tables already follow.
+      # runtime's bit tables already follow. Confirmed against EasyRPG's live
+      # source, `Game_Map::GetEncountersAt` (`src/game_map.cpp`): it pools an
+      # Area node's own `encounters` list into the *same* vector as the map's
+      # own, so `PrepareEncounter` draws uniformly across both -- not a
+      # separate roll layered on top.
       def candidate_troops
-        row = map_node_properties
-        return [] unless row && row.respond_to?(:enemy_groups) && row.enemy_groups
         tag = terrain_id(@state.x, @state.y)
-        row.enemy_groups.map { |_, e| e.enemy_group_id }.select do |tid|
+        troop_ids(map_node_properties).concat(area_troop_ids).select do |tid|
           troop_allowed_on_terrain?(tid, tag)
         end
+      end
+
+      def troop_ids(row)
+        return [] unless row && row.respond_to?(:enemy_groups) && row.enemy_groups
+        row.enemy_groups.map { |_, e| e.enemy_group_id }
+      end
+
+      # Every Area node's own troop ids, for an Area that is a direct child of
+      # the current map (field 2, `parent_map_id`) and whose rectangle (field
+      # 51) contains the party's tile. `left`/`top` inclusive, `right`/
+      # `bottom` exclusive -- this schema's own field-51 comment already notes
+      # they are stored as `X2 + 1` / `Y2 + 1`, matching EasyRPG's `Rect::
+      # IsOutOfBounds`, worked through by hand: `!player_rect.IsOutOfBounds
+      # (area_rect)` reduces to `area.left <= x < area.right && area.top <= y
+      # < area.bottom`.
+      def area_troop_ids
+        props = map_properties
+        return [] unless props
+        troops = []
+        props.each do |_, row|
+          next unless row.respond_to?(:type) && row.type == 2
+          next unless row.respond_to?(:parent_map_id) && row.parent_map_id == @state.map_id
+          area = row.respond_to?(:area) ? row.area : nil
+          next unless area && area_contains?(area, @state.x, @state.y)
+          troops.concat(troop_ids(row))
+        end
+        troops
+      end
+
+      def area_contains?(area, x, y)
+        x >= area[:left] && x < area[:right] && y >= area[:top] && y < area[:bottom]
       end
 
       def troop_allowed_on_terrain?(tid, tag)
@@ -7956,8 +8615,16 @@ class RPG2k
         # the fuller citation). Every event on the tile gets a say
         # (#blockers_at), not just one of them: a below-characters decal and
         # a same-as-characters NPC can share a tile, and the NPC must still
-        # block even though the decal alone would not.
-        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME }
+        # block even though the decal alone would not. A blocker's own
+        # Through Mode exempts it from this entirely, the same as the
+        # mover's: `WouldCollide` (`src/game_map.cpp`) checks `self.
+        # GetThrough() || other.GetThrough()` before any layer test at all,
+        # uniformly for the hero, another event, or a vehicle -- an NPC
+        # authored with Through Mode on (a common technique so it never
+        # blocks the party) must let the hero walk straight through it,
+        # matching `#vehicle_passable?`'s own already-correct `!b[:char].
+        # through` idiom just above.
+        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME && !b[:char].through }
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
         # never does, on foot or otherwise (block_airship: false — the hero
@@ -8035,6 +8702,27 @@ class RPG2k
         { x: pixel[0] - cam_x + TILE / 2, y: pixel[1] - cam_y + TILE }
       end
 
+      # Whether `character` is on screen, plus a two-tile margin -- confirmed
+      # against RPG_RT's own live source: `Game_Event::
+      # MoveTypeTowardsOrAwayPlayer` (`src/game_event.cpp`) computes `sx =
+      # GetScreenX(); sy = GetScreenY()` (the same screen-pixel math
+      # #character_screen_position's own citation already ports) and tests
+      # `sx >= -offset && sx <= Player::screen_width + offset && sy >=
+      # -offset && sy <= Player::screen_height + offset`, `offset ==
+      # TILE_SIZE * 2`. Used to gate Move Type Approach/Away from Player's
+      # own randomness (see Game::MoveType.next_direction) -- an off-screen
+      # chaser gets no special treatment there at all, not even a degraded
+      # one, so this uses the character's plain tile position rather than
+      # #event_pixel's mid-slide interpolation (a fresh autonomous-move
+      # decision is only ever made between slides, never mid-step).
+      def char_in_sight?(character)
+        cam_x, cam_y = camera_position
+        sx = character.x * TILE - cam_x + TILE / 2
+        sy = character.y * TILE - cam_y + TILE
+        offset = TILE * 2
+        sx >= -offset && sx <= SCREEN_W + offset && sy >= -offset && sy <= SCREEN_H + offset
+      end
+
       # Current position of vehicle `type` in map pixels: the party's own
       # interpolated pixel position while it's the one being ridden
       # (#player_pixel, so it reads in lockstep with the hero mid-step),
@@ -8046,7 +8734,7 @@ class RPG2k
         return nil unless v.placed? && v.map_id == @state.map_id
         @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
-      public :camera_position, :character_screen_position
+      public :camera_position, :character_screen_position, :char_in_sight?
 
       # The rest of the "services Scene::Battle calls back into" (see the
       # readers next to #dispose): BGM, backdrop, animation-player and
@@ -8076,9 +8764,9 @@ class RPG2k
           @player_sprite.x = px - cam_x - (Game::CharSet::WIDTH - TILE) / 2
           @player_sprite.y = py - cam_y - (Game::CharSet::HEIGHT - TILE) -
                              player_jump_offset
-          # Reflect the Set Transparent Flag command (and any leader graphic flag)
-          # every frame so the hero hides/shows as events toggle it.
-          @player_sprite.visible = !player_hidden?
+          # Reflect the Set Transparent Flag command (and the leader graphic's
+          # own translucent-ghost flag) every frame -- see #apply_player_visibility.
+          apply_player_visibility
           RGSS::Profiler.section("map.chars") do
             draw_player_frame
             draw_vehicles cam_x, cam_y, px, py
@@ -8199,15 +8887,33 @@ class RPG2k
       # off for the first half of every real second, on for the second half --
       # independent of the four digit cells either side of it, which always
       # draw regardless of the blink.
+      #
+      # `mins` overflowing past 99 (reachable via an uncapped Control-
+      # Variables-sourced Timer Set, see `Game::Timer#set`'s own comment) is
+      # NOT the naive "index the digit strip past its end" garble a single
+      # unbounded `mins / 10` lookup would produce -- confirmed against a
+      # genuine RPG_RT.exe: for `mins` 100..999 (i.e. `mins / 10` itself a
+      # two-digit 10..99), the widget draws that two-digit value's own tens
+      # and ones digits in cells 0-1, the colon glyph a SECOND time in cell 3
+      # (not `mins % 10`, and not `secs % 10` either), and only `secs / 10`
+      # in cell 4 -- `mins % 10` and `secs % 10` are both dropped entirely,
+      # not merely miscomputed. `mins >= 1000` (over 16.7 real hours) departs
+      # from even this pattern and is left unhandled, same as before.
       def draw_timer_digits(bmp, timer)
         s = timer.seconds
         mins = s / 60
         secs = s % 60
-        cells = [mins / 10, mins % 10, nil, secs / 10, secs % 10]
+        mins_tens = mins / 10
+        cells =
+          if mins_tens >= 10 && mins_tens < 100
+            [mins_tens / 10, mins_tens % 10, nil, nil, secs / 10]
+          else
+            [mins_tens, mins % 10, nil, secs / 10, secs % 10]
+          end
         bmp.clear
         blink_off = (timer.frames % Game::Timer::FPS) < Game::Timer::FPS / 2
         cells.each_with_index do |digit, i|
-          next if digit.nil? && blink_off # the colon cell, mid-blink-off
+          next if digit.nil? && blink_off # a colon cell, mid-blink-off
           src_x = digit.nil? ? TIMER_COLON_SRC_X : TIMER_DIGIT_SRC_X + TIMER_DIGIT_W * digit
           bmp.blt i * TIMER_DIGIT_W, 0, @windowskin,
                   Rect.new(src_x, TIMER_DIGIT_SRC_Y, TIMER_DIGIT_W, TIMER_DIGIT_H)

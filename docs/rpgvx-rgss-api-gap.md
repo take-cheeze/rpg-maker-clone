@@ -174,8 +174,27 @@ RPG2000 side can adopt it rather than growing its own.
 
 Not covered: `Window` (its contents are composed by a different path, and RGSS
 puts windows in their own viewport, so a map tint does not tint the message
-window anyway) and `Graphics.brightness`, which stays tracked-not-drawn — VX
-fades through `@viewport3.color`, which does draw.
+window anyway).
+
+**`Graphics.brightness`/`fadeout`/`fadein` are drawn too, now** — a real gap
+found and fixed independently of the VX viewport-color work above, on the XP
+side: VX/VX Ace fade through `@viewport3.color` (drawn, as above), but RMXP's
+own stock scripts (`Scene_Gameover`, `Scene_End`, several post-battle screens)
+call plain `Graphics.fadeout`/`fadein` directly, and `Graphics.brightness=`
+(`mruby-rgss/mrblib/lib.rb`) only ever tracked the value — a real XP game
+would previously show no visual fade at all in those spots. Fixed with the
+same overlay technique `Graphics.transition` already uses for its own
+full-screen dissolve (proven, native, tested): a full-screen black `Sprite`
+at `BRIGHTNESS_Z` (just under `TRANSITION_Z`), created once and kept alive,
+whose opacity is `255 - brightness`. `fadeout`/`fadein` themselves needed a
+second, related fix once brightness was real: they ran all `duration` frames
+first and only set the end value afterward, which had been an invisible bug
+(brightness was never drawn either way) that would have become a visible
+"nothing happens, then instant cut to black" the moment the overlay existed —
+now each fades one step per frame. Verified against the real
+`--rgss_effect_probe` CTest, through a live display: `Graphics.brightness = 0`
+darkens `frame_mean` to `[0, 0, 0]` from a `[128, 128, 128]` base, and
+`Graphics.brightness = 255` restores it exactly.
 
 ### 3. `Graphics.freeze` / `transition` / `snap_to_bitmap` — scene transitions dissolve ✅
 
@@ -473,23 +492,52 @@ memory consumer 256 MB did not cover: the game aborted with
 it. Desktop-only, same as before (`include/lv_conf.h`; the PSP and Wio
 builds keep their own separately-tuned pools).
 
-**Still open, and deeper than `module_function`: mruby's VM has no `$!`
-("currently handled exception") at all.** `rescue => e` binds the exception
-to the clause's own local variable, but the special global CRuby code
-routinely reads instead — `$!`, what `Exception#message`/`#backtrace`
-resolve through implicitly when a method's default argument or a nested
-`raise` (no arguments — CRuby re-raises `$!`) needs "whatever is currently
-being rescued" without it being threaded through as an explicit parameter —
-is simply never written anywhere accessible from Ruby. Traced to the VM
-opcode itself: `OP_EXCEPT` in `3rd/mruby/src/vm.c` copies the caught
-exception into a bytecode *register* (a local stack slot) and immediately
-clears `mrb->exc` to `NULL`, with no call to `mrb_gv_set` or any other
-globally-visible store. Confirmed with an isolated reproduction — even a bare
-`rescue => e; $! ...` inside the *same* method reads `nil`, so this is not
-specific to crossing a call boundary. It is why the same error-log utility's
-`save(filename = nil, exception = $!)` — called as `TKG::ErrorLog.save()`
-from directly inside `rescue; TKG::ErrorLog.save(); raise; end` — receives
-`exception = nil` and crashes on `exception.message`.
+**Fixed: mruby's VM had no `$!` ("currently handled exception") at all.**
+`rescue => e` binds the exception to the clause's own local variable, but
+the special global CRuby code routinely reads instead — `$!`, what
+`Exception#message`/`#backtrace` resolve through implicitly when a method's
+default argument or a nested `raise` (no arguments — CRuby re-raises `$!`)
+needs "whatever is currently being rescued" without it being threaded
+through as an explicit parameter — was simply never written anywhere
+accessible from Ruby. Traced to the VM opcode itself: `OP_EXCEPT` in
+`3rd/mruby/src/vm.c` copied the caught exception into a bytecode *register*
+(a local stack slot) and immediately cleared `mrb->exc` to `NULL`, with no
+call to `mrb_gv_set` or any other globally-visible store. Confirmed with an
+isolated reproduction — even a bare `rescue => e; $! ...` inside the *same*
+method read `nil`, so this was not specific to crossing a call boundary. It
+is why the same error-log utility's `save(filename = nil, exception = $!)`
+— called as `TKG::ErrorLog.save()` from directly inside `rescue;
+TKG::ErrorLog.save(); raise; end` — received `exception = nil` and crashed
+on `exception.message`.
+
+Fixed by `patches/mruby-dollar-bang-scoped.patch` (that patch's own preamble
+has the full trail, including two earlier approaches that were tried and
+rejected: codegen-level save/restore around rescue bodies, which regressed
+the compiler's register allocation, and a sticky global that leaked into
+unrelated code and broke three core mrbtest cases). The fix that stuck adds
+`errinfo`/`errinfo_ci_depth` to `mrb_state`: `OP_EXCEPT` sets `errinfo` to
+the caught exception and records the call-frame depth that owns it — by the
+time `OP_EXCEPT` runs, mruby's own exception search has already popped
+every frame between the raise site and the frame whose `rescue` matches, so
+that depth is simply the current one, no deferred capture needed — and
+`cipop` (mruby's existing frame-pop) clears `errinfo` once execution returns
+to a shallower depth, so it is visible for the whole rescue body (including
+calls the body itself makes) but never leaks past the owning frame's
+return. `mrb_gv_get`/`mrb_gv_set` special-case the `"$!"` symbol to read and
+write `errinfo` directly, so both a Ruby-level `$!` and a bare `raise`
+(kernel.c) see the same value uniformly. Companion fix in the same patch: a
+bare `raise` — CRuby's documented way to re-raise `$!` — always raised a
+fresh, empty `RuntimeError` instead, since `mrb_f_raise` had nothing to fall
+back to; with `errinfo` now tracked, its zero-argument case re-raises it
+directly, no wrapping of every `raise` call needed (the earlier, rejected
+idea for fixing this half on its own). One known gap versus real Ruby: this
+scopes `$!` to the whole call frame, not to each individual `rescue`
+clause, so two `rescue` clauses in the same frame with no intervening call
+share one slot — not believed to matter for any known real game script.
+Verified against a real repro of this exact pattern (`$!` readable and
+correct inside the rescue and from a callee it invokes, `nil` again once the
+frame returns; a bare `raise` re-raising the original class and message)
+and the full mruby test suite (zero regressions from a core VM change).
 
 That `SceneManager.run` rescue wraps the game's *entire* run loop, so this is
 not a one-time cosmetic loss: every fatal exception this game hits, of any
@@ -526,14 +574,53 @@ way, one at a time, each hidden behind the identical crash until fixed:
   volume-control add-on script called directly — see the real
   `RPG::BGM#play` reopened by this same release's add-on). Every VX Ace
   game whose title screen calls `Audio.bgm_play` with 4 arguments raised
-  `ArgumentError` right there. Accepting the 4th argument needs no real fix
-  behind it — no backend here seeks a mid-stream start position, and this
-  engine's own `RPG::BGM` never calls the 4-arg form internally either (see
-  `mruby-rpgvx/mrblib/rgss2_runtime.rb`'s own `BGM.play_audio`, still
-  3-arg) — so `bgm_play` now accepts `pos = 0`, warns once that seeking is
-  unsupported when it is non-zero, and plays the track from its own
-  beginning, matching the real signature real scripts call with instead of
-  raising.
+  `ArgumentError` right there. First fixed by accepting `pos = 0` and
+  warning once that seeking was unsupported when it was non-zero — no
+  backend seeked a mid-stream start position at the time.
+
+  **Later, seeking itself was implemented**, once the fix above's own
+  warning made it an obvious next target: `pos` now threads through to
+  `Mix_SetMusicPosition` (`src/sdl_audio.cxx`'s `start_music`), on both the
+  loose-file and packed-archive paths (a released game's whole `Audio/`
+  tree is packed, so the archive path — `_bgm_play_mem`, not `_bgm_play` —
+  is what an actual game's resume reaches). `pos` is milliseconds, the same
+  unit `Audio.bgm_pos` already returns, so `Audio.bgm_play(f, v, p,
+  Audio.bgm_pos)` round-trips exactly through this engine's own two halves;
+  a real VX Ace script's own hardcoded literal may use a different native
+  unit (secondary sources disagree on RGSS3's own — one empirical report
+  put "a couple of seconds" at a raw value in the millions, ruling out
+  simple seconds-as-float or milliseconds-as-int, and none of the
+  authoritative sources could be reached to settle it), so this is a
+  best-effort match, not a confirmed one. A decoder that cannot seek (or
+  fails to) still plays from the track's own beginning rather than not
+  playing at all. Verified against the real `--rgss_audio_probe` CTest,
+  through SDL_mixer against a real (dummy-driver) audio device: seeking a
+  2-second synthetic WAV to 1000ms reads back `bgm_pos` near 1000 on both
+  the loose and packed paths (`seek_got`/`packed_seek_got` in its
+  `[RGSS-AUDIO]` log line) — not just accepted without raising, the
+  resume is real.
+
+- **Fixed: BGM never resumed after a Music Effect, and `RPG::BGM#replay`
+  never passed its stored `pos` through.** The two related gaps the fix
+  above left open. `Audio.me_play`/`me_play_mem` (`src/sdl_audio.cxx`) now
+  capture the BGM's own position (`bgm_pos()`) the instant an ME
+  interrupts it — only on the first ME of a run, not one that replaces
+  another already playing, which would read 0 (`bgm_pos` reports 0 while
+  an ME is active) and lose the real resume point — and `me_stop`'s
+  `replay_bgm()` seeks there instead of always restarting the track,
+  matching real RGSS3 (an ME plays once over the map BGM, which picks back
+  up where it left off). `RPG::BGM#replay`
+  (`mruby-rpgvx/mrblib/rgss2_runtime.rb`) is now overridden on `BGM` itself
+  (the other three `AudioPlayback` channels keep the shared "just `#play`
+  again" default, since only BGM's backend can resume a position — `BGS`'s
+  own `pos` field exists for save-format fidelity, but its sample-channel
+  backend never reports one to resume from; `ME`/`SE` have no `pos` field
+  at all) to call `Audio.bgm_play` with its own stored `volume`/`pitch`/
+  `pos` — what a save loaded mid-track relies on. Verified against the
+  real `--rgss_audio_probe` CTest: playing a BGM, letting it advance past
+  500ms, interrupting it with an ME and stopping the ME reads `bgm_pos`
+  back near where it was (`pre_me`/`me_resumed` in its `[RGSS-AUDIO]` log
+  line), not reset to 0.
 
 - **Fixed: `RPG::CommonEvent` had no `#autorun?` / `#parallel?`.** A real
   data-layer gap in `mruby-rpgvx/mrblib/rgss2_data.rb`: `CommonEvent` only
@@ -629,62 +716,158 @@ that clearing it costs most of a short budget on its own. Raising
 below that, a `RGSS::Timeout` in a probe run means "give it more wall
 clock," not "something broke."
 
-**Found, not fixed, and only partly understood: a real VX Ace game's own
-bundled `マップフォグ` ("Map Fog") add-on never finishes setting up, and a
-later event's inline "Script" command that depends on it fails as a
-result.** The add-on's very first line, `module BMSP; @@includes ||= {}`,
-is the sole place in this release's whole 213-section bundle that touches
-`@@includes` — a fresh, never-before-set class variable. Real Ruby handles
-`@@cvar ||= value` on a variable like that without raising (confirmed
-directly: `ruby -e 'module Foo; @@x ||= {}; end'` runs clean), and mruby's
-own compiler has code specifically meant to match that
-(`3rd/mruby/mrbgems/mruby-compiler/core/codegen.c`, `codegen_op_asgn`,
-~line 5471: `||=`/`&&=` on a class variable or constant wraps the read in
-a compiler-generated rescue that turns the `NameError` into `false` rather
-than letting it escape, mirroring the CRuby behaviour exactly). The
-temporary `OP_EXCEPT` probe used throughout this document shows that
-generated rescue actually firing and catching the `NameError` — which
-first looked like proof the line was harmless, since the probe fires on
-*every* caught exception, this compiler-internal one included, and
-execution visibly continues well past it (an isolated run of the whole
-516-line script reaches a *different*, unrelated failure over 280 lines
-later). But a targeted check straight after running the same script
-in isolation — `Object.const_defined?(:MapFog)`, right where the script's
-own `module Interface; ::MapFog = self` sits between those two points —
-comes back `false`. So somewhere between the class-variable rescue
-catching cleanly and execution reaching that later, unrelated failure, a
-plain top-level constant assignment that runs in between stops taking
-effect, without raising anything of its own. In the real game this is
-what a later event's own inline `Script` command hits:
-`NameError: uninitialized constant
-TKG::ErrorLog::Extend_Interpreter::MapFog`, because `::MapFog` was never
-actually set. Two rounds of isolated reproduction (a minimal synthetic
-`@@cvar ||=`, the same through the real script host's own `eval` call,
-and finally the real script's full 516 lines run standalone) narrowed
-this down this far without fully explaining it — genuinely tracing it
-further needs mruby VM-level tooling (breakpoints, instruction-level
-tracing) beyond what a source read and a VM-opcode probe can resolve, and
-any real fix would live in the vendored `3rd/mruby` submodule regardless,
-the same category of call as `$!` below. Left alone rather than patched
-further; documented here at the depth it was actually traced to, rather
-than guessed past.
+**Found and fixed: a real VX Ace game's own bundled `マップフォグ` ("Map
+Fog") add-on used to never finish setting up, so a later event's inline
+"Script" command that depends on it failed.** The add-on's own
+`module Interface; ::MapFog = self` — an explicit *top-level* constant
+assignment, written from inside a nested module — silently landed on the
+lexically enclosing module instead of at the top level, no exception
+raised. (An earlier pass at this same failure suspected the add-on's
+preceding `module BMSP; @@includes ||= {}` — a fresh, never-before-set
+class variable — but that line is handled correctly: mruby's compiler
+already wraps `||=`/`&&=` on a class variable or constant in a
+compiler-generated rescue that turns the `NameError` into `false` rather
+than letting it escape, mirroring real Ruby exactly. That was a red
+herring; the actual bug has nothing to do with class variables, and a
+name-collision theory formed while re-investigating — that the nested
+module and the top-level target sharing a name (`MapFog`) mattered —
+was disproven the same way, by renaming the nested module and watching
+the failure persist identically.)
 
-mruby's bare `raise` (no arguments) has the same
-root cause from the other side: real Ruby re-raises `$!`, but mruby's
-`mrb_f_raise` has no `$!` to fall back to, so a bare `raise` always raises a
-fresh, empty `RuntimeError` instead of re-raising what was actually caught.
-Both are fixable *only* by hooking `Kernel#raise` itself (there is no other
-point where the about-to-be-raised object is observable in time to stash it)
-— wrapping every `raise` call in the whole engine in an extra begin/rescue to
-capture and stash the exception before it propagates, on every platform this
-build targets, PSP included, where call-stack depth is already the tightest
-constraint. That blast radius — every exception, in every maker's runtime,
-sharing this one build — is a different order of risk than a script that
-opts into the bare `module_function` idiom or calls `Time#strftime`, for a
-fix whose payoff is mostly log-message fidelity in one utility script's
-crash handler. Left alone rather than patched; a project that genuinely needs
-`$!` semantics would want this revisited with its own scoped, targeted
-design rather than a global `raise` wrapper.
+The real bug is in `gen_colon3_assign`
+(`3rd/mruby/mrbgems/mruby-compiler/core/codegen.c`), the codegen for
+`::Const = value` (`NODE_COLON3` in assignment position): it pushes
+`Object` via `OP_OCLASS` — exactly mirroring `gen_colon2_assign`'s
+handling of the explicit-base form `Foo::Const = value`, which correctly
+finishes with `OP_SETMCNST` (the opcode that reads that pushed value as
+the constant's owner) — but then emits `OP_SETCONST` instead.
+`OP_SETCONST`'s own VM handler (`3rd/mruby/src/vm.c`) never reads that
+pushed value at all; it always targets
+`MRB_PROC_TARGET_CLASS(ci->proc)`, the current lexically enclosing
+class/module — exactly right for a *bare* `Const = value`, but wrong for
+`::Const = value`, whose entire point is to bypass the enclosing scope.
+The *read* path already gets this right — `codegen_colon3` pairs the same
+`OP_OCLASS` push with `OP_GETMCNST`, not `OP_GETCONST` — so this reads as
+a copy/paste slip in the assignment counterpart that was never given its
+own read/write symmetry check. Confirmed against real CRuby: `ruby -e
+'module Foo; ::Bar = 42; end; p Object.const_defined?(:Bar)'` prints
+`true`; mruby's did not.
+
+Since this submodule tracks upstream `mruby/mruby` directly (no fork
+this project controls to carry the fix on), the fix ships as
+`patches/mruby-colon3-assign-setmcnst.patch` (one line:
+`gen_colon3_assign` now finishes with `OP_SETMCNST`), applied
+idempotently at build time by `scripts/apply_mruby_patch.bash` — the
+same `patches/` + apply-script convention already used for the PSP
+toolchain's own patch. Verified against: a minimal synthetic repro
+matching the real semantics, the full mruby test suite (zero
+regressions from a compiler-level change), and the real, unmodified
+516-line script — `Object.const_defined?(:MapFog)` now returns `true`
+after it runs.
+
+mruby's bare `raise` (no arguments) had the same root cause from the other
+side: real Ruby re-raises `$!`, but mruby's `mrb_f_raise` had no `$!` to
+fall back to, so a bare `raise` always raised a fresh, empty `RuntimeError`
+instead of re-raising what was actually caught. An earlier pass at this
+considered both fixable *only* by hooking `Kernel#raise` itself — wrapping
+every `raise` call in the whole engine in an extra begin/rescue to capture
+and stash the exception before it propagates, on every platform this build
+targets, PSP included, where call-stack depth is already the tightest
+constraint — and left both alone rather than take on that blast radius for
+one utility script's log fidelity. `$!` itself turned out to have a much
+smaller, VM-internal fix (see above); once that fix's `mrb->errinfo` field
+existed, the wrapping was never needed for `raise` either — `mrb_f_raise`'s
+zero-argument case now just re-raises `mrb->errinfo` directly when one is
+in scope. Both are fixed by `patches/mruby-dollar-bang-scoped.patch`.
+
+**Found and fixed: with `$!` finally working, the same real VX Ace release's
+crash-reporter add-on stopped masking exceptions -- and the game hung for
+minutes instead, on something that had nothing to do with `$!` at all.**
+Booting past the `マップフォグ` fix with `$!` in place produced total
+silence: no scene transition, no exception, no `[RPGXP-HOST-SCENE]` marker,
+just CPU pinned at 100% for as long as the run was given (tested past four
+minutes). Diagnosed by attaching `gdb` to the running headless process mid-hang
+(a real C++ backtrace, not the temporary `OP_EXCEPT` `fprintf` probe used
+above -- this hang was native, not a masked Ruby exception) and sampling it
+repeatedly: every sample landed inside `Tilemap#ox=`/`#oy=` or
+`Plane#ox=`/`#oy=` (`mruby-rgss/src/lib.cxx`), specifically inside their own
+`tilemap_refresh`/`plane_retile` — a full CPU-side re-composite of the visible
+tile grid or fog layer into an offscreen canvas. A temporary call counter
+confirmed why: hundreds of consecutive calls to the exact same already-stored
+`ox`/`oy` value. Real RGSS's stock `Spriteset_Map#update` reassigns
+`tilemap.ox`/`oy` (and a fog `Plane`'s own ox/oy) unconditionally every
+single frame, whether the camera moved or not — real RGSS treats this as a
+cheap, hardware-composited draw offset, so the redundant reassignment costs
+nothing there. This engine's `ox=`/`oy=` had no such guard, so a
+**stationary** camera still paid a full re-composite every frame. Fixed by
+adding a same-value early return to both setters on both classes (`tilemap_set_ox`/
+`_oy`, `plane_set_ox`/`_oy`) — one frame's worth of camera position, camera
+position, cheap to compare, wildly cheaper than the composite it used to
+force every time regardless. Past this fix, the release now reaches real
+event/battle content within seconds, not minutes.
+
+That real content immediately needed three more, smaller fixes, each just
+past where the last one stopped:
+
+- **Fixed: `Audio.bgs_play` rejected RGSS3's 4th (`pos`) argument** — the
+  same class of gap `Audio.bgm_play`'s `pos` argument fix (above) closed for
+  BGM, left open for BGS. Real RGSS3's stock `RPG::BGS#play` passes `pos` the
+  same way `RPG::BGM#play` does, but BGS's own backend
+  (`Mix_PlayChannel`-based, `src/sdl_audio.cxx`) has no seekable position to
+  resume the way `Mix_Music` does for BGM (this project's own earlier
+  `RPG::BGM#replay` work already noted this: "BGS's own `pos` field exists
+  for save-format fidelity, but its sample-channel backend never reports one
+  to resume from"). Every VX Ace game whose event system plays a BGS via the
+  stock 4-argument call raised `ArgumentError: wrong number of arguments
+  (given 4, expected 1..3)` the moment it ran. Fixed by accepting a 4th
+  `pos = 0` argument and warning once (`RGSS.warn_once`) if it is ever
+  actually nonzero, rather than raising — matching the *first* step of BGM's
+  own fix history, before real seeking was implemented there; BGS has no
+  seekable backend to build the rest of that fix on.
+- **Fixed: `Marshal.dump` called a custom `marshal_dump` with a stray
+  argument.** A real bug in the vendored `mruby-marshal` gem (its own
+  separate submodule, `take-cheeze/mruby-marshal` — not nested in
+  `3rd/mruby`'s own gem tree, so it gets its own patch file the same way):
+  `Marshal.dump` called a class's `marshal_dump` with one argument (a
+  literal `nil`) instead of the zero arguments real Ruby's documented
+  protocol defines for it — a leftover copy/paste from the `marshal_load`
+  call two cases below it in the same function, which legitimately does take
+  one argument (the dumped data). Found via a real VX Ace game's own
+  `Game_Interpreter`, which defines a real, standards-conforming
+  `marshal_dump` (RGSS3's own `BattleManager#save_battle_start_objects`
+  reached the first time any event's "Battle Processing" command runs, to
+  snapshot the interpreter's own state) — `ArgumentError: wrong number of
+  arguments (given 1, expected 0)`, raised from inside
+  `Game_Interpreter#marshal_dump` itself.
+- **Fixed: `Marshal.load` called a custom `marshal_load` as a class method
+  instead of real Ruby's instance-level protocol.** Fixing the argument
+  count above immediately surfaced a second, deeper incompatibility in the
+  same gem: `Marshal.load` called `SomeClass.marshal_load(data)` — a
+  *class*-level factory method expected to return a whole new, fully-restored
+  object — instead of real Ruby's actual protocol, which allocates a new
+  instance *without* running `#initialize` (`Class#allocate`) and then calls
+  the *instance* method `#marshal_load(data)` on that allocation to restore
+  its state in place. `Game_Interpreter#marshal_load` is defined the real,
+  standard way (an instance method), so calling it as a class method raised
+  `NoMethodError: undefined method 'marshal_load' for Class`. Both fixes
+  ship together as `patches/mruby-marshal-dump-load-protocol.patch` (that
+  patch's own preamble has the full trail, including a CRuby confirmation of
+  both directions and why this gem's own bundled test needed updating to the
+  corrected protocol alongside the fix itself).
+
+With all four of these in place, the same real release now runs its own
+`BattleManager#setup` (a full object-graph `Marshal` round-trip) and reaches
+into its bundled 吹きだしウィンドウ ("bubble window") speech-bubble add-on's
+own event-driven call path — new ground for this whole investigation, not
+reached even briefly before. It stops there on a fifth, different-shaped
+issue: `NoMethodError: undefined method 'defined?' for Module`, from inside
+that add-on's own `call_sceman_hukidasi`. `defined?` is ordinarily a Ruby
+*keyword* (`defined?(expr)`), not a real method invoked with a receiver, so
+this reads like an mruby compiler corner case in how some particular
+argument shape to `defined?` gets compiled — plausibly related in spirit to
+the `::Const = value` compiler bug found and fixed earlier in this same
+document, but not yet traced to a specific codegen path the way that one
+was. Left for the next round.
 
 ## What this means for turning the host on
 
@@ -698,14 +881,18 @@ tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
 its windows, and — packed or loose — finds its graphics and its music, and
 reopens its own stock `RPG::` script sections without a superclass mismatch.
 Tilemap item 1's remaining polish (the flat "above characters" layer) is the
-only item left in the six sections above; item 7's `$!`/bare-`raise` gap
-stands, and per a real release it is the reason each fix above only reveals
-the *next* wall one at a time rather than the game running to completion in
-one pass. Nine real bugs have been found and fixed this way so far
+only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
+now fixed too (`patches/mruby-dollar-bang-scoped.patch`, above), so the same
+real release's own crash-reporter add-on now sees the actual exception
+instead of masking it behind an unrelated `NoMethodError`, and re-raises it
+correctly. Fifteen real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
-`Sprite#width`/`#height`) without needing `$!` itself fixed — the temporary
-VM probe finds the real exception directly regardless. A tenth wall, this
-one traced but not fixed (the `@@includes`/`::MapFog` class-variable and
-constant-assignment interaction above), is where the game stands now.
+`Sprite#width`/`#height`, the `::Const = value` compiler bug, `$!`/bare-
+`raise` itself, the `Tilemap`/`Plane` `ox=`/`oy=` redundant-refresh hang,
+`Audio.bgs_play`'s `pos` argument, and `Marshal`'s `marshal_dump`/
+`marshal_load` protocol mismatches) — the first ten via the temporary VM
+probe, finding the real exception directly regardless of `$!` being masked
+at the time. Where the next wall stands past `defined?` being called as a
+method inside 吹きだしウィンドウ's own event path is not yet traced.
