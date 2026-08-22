@@ -152,8 +152,15 @@ class Checker
 
     Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
       base = File.basename(f)
-      lmu = LCF::MapUnit.new(File.open(f, 'rb'))
+      original = File.binread(f)
+      lmu = LCF::MapUnit.new(StringIO.new(original.dup))
       walk(lmu, LCF::Schema::MAP_UNIT, base)
+      # A genuine .lmu carries a trailing 0x00 root terminator that .lsd/.ldb
+      # do not -- #to_lcf used to drop it for every file type, so a
+      # from-scratch or round-tripped map file came out one byte short and a
+      # genuine RPG_RT.exe hung on a black screen trying to load one.
+      rebuilt = lmu.to_lcf
+      fail "#{base}: round-trip not byte-exact (#{rebuilt.bytesize} vs #{original.bytesize} bytes)" if rebuilt != original
       w = lmu.width.to_i
       h = lmu.height.to_i
       fail "#{base}: non-positive dimensions #{w}x#{h}" if w <= 0 || h <= 0

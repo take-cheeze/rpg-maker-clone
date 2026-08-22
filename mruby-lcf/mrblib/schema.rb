@@ -1640,15 +1640,20 @@ module LCF
     def header; raise end
     def schema; raise end
 
+    # Whether the root chunk list ends with a trailing 0x00 terminator.
+    # `.lsd` (SaveData) and `.ldb` (Database) do not -- confirmed by a
+    # byte-exact round-trip of a genuine RPG_RT.ldb and Save01.lsd with no
+    # appended byte -- so this defaults to false. `.lmu` (MapUnit) is the one
+    # exception: overridden below.
+    def terminate_root?; false end
+
     # Serialise the whole file back to bytes: the BER-length-prefixed header
     # string followed by the root object's own serialisation. The inverse of
     # #initialize; a file read and written back without edits reproduces it
-    # byte-for-byte. The top-level chunk list runs to EOF with no terminator
-    # (matching a real .lsd), so the root Array1D is serialised with
-    # terminate=false. Multi-section (Array-schema) files are not yet writable.
+    # byte-for-byte. Multi-section (Array-schema) files are not yet writable.
     def to_lcf
       raise 'section-based file serialization not implemented' if schema.is_a? Array
-      root = @root.is_a?(LCF::Array1D) ? @root.to_lcf(false) : @root.to_lcf
+      root = @root.is_a?(LCF::Array1D) ? @root.to_lcf(terminate_root?) : @root.to_lcf
       LCF.write_ber(header.bytesize) + LCF.binstr(header) + LCF.binstr(root)
     end
 
@@ -1694,6 +1699,15 @@ module LCF
   class MapUnit < File
     def header; "LcfMapUnit" end
     def schema; LCF::Schema::MAP_UNIT end
+
+    # Unlike .lsd/.ldb, a genuine .lmu carries a trailing 0x00 root
+    # terminator -- confirmed by round-tripping real Nepheshel Map*.lmu
+    # files: every one came out exactly one byte short without this, and
+    # byte-identical to the original with it. Confirmed to matter at
+    # runtime too: a genuine RPG_RT.exe hangs on a black screen loading a
+    # map file written without this byte, and loads it correctly once
+    # appended.
+    def terminate_root?; true end
   end
 
   class SaveData < File

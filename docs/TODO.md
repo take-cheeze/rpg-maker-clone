@@ -8528,7 +8528,20 @@ Everything below is unverified against the codebase.
   keeps rendering.) Covered by a new `scripts/rpg2k_scene_check.rb` check
   (a picture shown and mid-move stays visible, keeps compositing every
   frame, and keeps advancing its move while a message window is open, then
-  is still visible once the window closes). ✅ **changing maps clears all
+  is still visible once the window closes).
+  ✅ **Follow-up (2026-08-22): re-verified against a genuine RPG_RT.exe,
+  not just EasyRPG's source — still correct.** The claim above was sourced
+  only from EasyRPG's C++, exactly the kind of citation this session's
+  methodology (verify against the real runtime, not a reimplementation) now
+  treats as worth re-checking on its own. Built a synthetic autostart map
+  event (Show Picture positioned outside the message window's screen band,
+  then Show Message) and resumed a genuine save on that map under both this
+  engine and real RPG_RT.exe (Nepheshel, under wine): the genuine runtime
+  draws the picture and the message window simultaneously, matching this
+  engine's own frame. No hide-on-message-open behaviour exists in real
+  RPG_RT for a non-overlapping picture. No code change needed — reported as
+  a confirmed-correct negative result.
+  ✅ **changing maps clears all
   Pictures — except via Teleport or Escape (skill/item), which don't clear
   them** — confirmed and fixed, see the "Full-site sweep" **Pictures**
   cluster below (the Teleport/Escape `keep_pictures:` fix). ✅ **semi-
@@ -21544,6 +21557,30 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
 
 ## Tooling
 
+- ✅ **`LCF::File#to_lcf` dropped `.lmu`'s required trailing root terminator
+  (2026-08-22).** ADR 0018's "the top-level chunk list has no terminator"
+  finding was proven only against `.lsd`; `File#to_lcf` applied it to every
+  file type unconditionally, including `.lmu` (`MapUnit`), which does not
+  share the rule. Confirmed by round-tripping genuine Nepheshel `Map*.lmu`
+  files: every one came out exactly one byte short, and byte-identical to
+  the original with a single `0x00` appended — `.ldb`/`.lsd` round-trip
+  byte-exact with no such byte, confirming this is `.lmu`-specific, not a
+  blanket rule. Confirmed to matter at runtime, not just as a byte-diff: a
+  genuine RPG_RT.exe hangs on a solid black screen loading a map file
+  written without this byte (this engine, which never needed the byte to
+  parse the file, renders the same map fine — a real divergence in what the
+  two runtimes accept), and loads correctly once it is appended. Fixed with
+  a `#terminate_root?` predicate on `LCF::File` (default `false`, matching
+  `.lsd`/`.ldb`), overridden to `true` in `MapUnit` — see ADR 0018's
+  addendum. Nothing in the shipped engine currently calls `MapUnit#save_to`
+  during normal play (only `.lsd` saves are ever written at runtime), so
+  this was not a live gameplay bug — it matters to `scripts/lcf_testbed_check.rb`'s
+  own round-trip fidelity and to any future map-authoring tool, this
+  section's own next bullet. Covered by widening that same script's
+  existing per-map loop with a byte-exact round-trip assertion over every
+  `.lmu` in every configured test-bed game (1099 maps across three games),
+  confirmed to fail on all 1099 (each exactly one byte short) against the
+  pre-fix code before the fix.
 - 🚧 Editor with [imgui](https://github.com/ocornut/imgui) — no in-repo
   level/database editor exists yet; there is no `imgui` submodule under `3rd/`
   and nothing in `src/`/`include/` references it. Every maker here plays a
