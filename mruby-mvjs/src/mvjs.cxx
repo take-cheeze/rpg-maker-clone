@@ -38,6 +38,7 @@
 // encode via stbi_write_png_to_func, writing the bytes to the file ourselves.
 #include <stb_image_write.h>
 
+#include "mvefk.hxx"
 #include "mvgl.hxx"
 #include "mvhost.hxx"
 #include "rgss_bitmap.hxx"
@@ -1126,6 +1127,33 @@ mrb_value gl_available(mrb_state* mrb, mrb_value /*self*/) {
   return mrb_bool_value(mvgl::available());
 }
 
+// MV::Effekseer.smoke_test(path, width = 64, height = 64, warmup_frames = 20)
+// -> the count of rendered pixels that differ from the clear colour (an
+// Integer, possibly 0), or nil on failure (load error, GL context failure).
+// See mvefk.hxx's own comment for exactly what this proves and does not.
+mrb_value efk_smoke_test(mrb_state* mrb, mrb_value /*self*/) {
+  const char* path;
+  mrb_int len;
+  mrb_int width = 64;
+  mrb_int height = 64;
+  mrb_int warmup_frames = 20;
+  mrb_get_args(mrb, "s|iii", &path, &len, &width, &height, &warmup_frames);
+  std::uint32_t lit = 0;
+  if (!mvefk::smoke_test(std::string(path, static_cast<size_t>(len)).c_str(),
+                         static_cast<int>(width), static_cast<int>(height),
+                         static_cast<int>(warmup_frames), &lit))
+    return mrb_nil_value();
+  return mrb_fixnum_value(static_cast<mrb_int>(lit));
+}
+
+// MV::Effekseer.available? -> whether the native Effekseer backend was
+// compiled in. False wherever MV::GL.available? is (Emscripten, a build
+// missing the EGL/GLES headers) or GLES3 specifically is absent — see
+// mvefk.hxx's own comment for why ES3, not just ES2, is required.
+mrb_value efk_available(mrb_state* mrb, mrb_value /*self*/) {
+  return mrb_bool_value(mvefk::available());
+}
+
 // MV::Font.unpack_woff(bytes) -> the bare sfnt bytes, or nil if `bytes` is a
 // WOFF the unpacker (mvcanvas.cxx) rejects as malformed. A non-WOFF input is
 // returned unchanged. See mv_font_unpack's comment (mvhost.hxx) for why this
@@ -1183,6 +1211,13 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   mrb_define_class_method(mrb, gl, "smoke_test", gl_smoke_test,
                           MRB_ARGS_NONE());
   mrb_define_class_method(mrb, gl, "available?", gl_available, MRB_ARGS_NONE());
+
+  // MV::Effekseer — the native particle renderer (see mvefk.hxx).
+  RClass* efk = mrb_define_class_under(mrb, mv, "Effekseer", mrb->object_class);
+  mrb_define_class_method(mrb, efk, "smoke_test", efk_smoke_test,
+                          MRB_ARGS_ARG(1, 3));
+  mrb_define_class_method(mrb, efk, "available?", efk_available,
+                          MRB_ARGS_NONE());
 
   // MV::Font — CI coverage for the WOFF unpacker (mvcanvas.cxx) behind the
   // process-cached GameFont singleton.

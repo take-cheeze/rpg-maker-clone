@@ -988,3 +988,36 @@ assert 'MZ .woff unpacking: MV::Font.smoke_test/unpack_woff reject non-fonts' do
   assert_nil MV::Font.smoke_test("not a font", 0x41, 24)
   assert_nil MV::Font.unpack_woff("wOFF" + ("\x00" * 4)) # too short to hold a table dir
 end
+
+assert 'MV::Effekseer.available? tracks the same GLES3-capable backend as MV::GL' do
+  # mvefk.cxx compiles its real implementation only where mvgl.cxx's own
+  # EGL/GLES2 backend is present *and* the GLES3 header Effekseer's
+  # GraphicsDevice.cpp needs is too (see CMakeLists.txt's own comment on why
+  # ES3, not ES2) -- so this can be strictly stronger than MV::GL.available?
+  # but never weaker.
+  if MV::Effekseer.available?
+    assert_true MV::GL.available?
+  end
+end
+
+assert 'MV::Effekseer.smoke_test against a real, downloaded MZ game effect' do
+  # Not a synthetic fixture: 91 real, unmodified .efkefc files ship with a
+  # real downloaded MZ release under data/labyria (gitignored -- present only
+  # on a machine that has actually fetched it, absent in a bare CI checkout),
+  # exercising the vendored Effekseer C++ SDK (3rd/effekseer) against content
+  # this project did not author. See mvefk.hxx for exactly what a non-nil
+  # result here proves and does not: it confirms the file parses, the effect
+  # plays and simulates (a real, deterministic instance count), and the full
+  # render pipeline runs with no GL error -- not yet that anything visible
+  # renders, which is open work (see docs/TODO.md's Effekseer entry).
+  # Relative to this test binary's own working directory (3rd/mruby, where
+  # the mruby_test ctest target runs rake from -- see CMakeLists.txt's
+  # WORKING_DIRECTORY on that target).
+  path = "../../data/labyria/Labyria/effects/HitPhysical.efkefc"
+  skip "no such fixture (data/labyria not downloaded)" unless File.exist?(path)
+  skip "Effekseer backend unavailable" unless MV::Effekseer.available?
+
+  result = MV::Effekseer.smoke_test(path)
+  assert_true !result.nil?, "smoke_test failed to load/simulate a real effect"
+  assert_true result.is_a?(Integer) && result >= 0
+end

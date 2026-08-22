@@ -35,3 +35,6 @@
 [submodule "3rd/quickjs"]
 	path = 3rd/quickjs
 	url = https://github.com/quickjs-ng/quickjs.git
+[submodule "3rd/effekseer"]
+	path = 3rd/effekseer
+	url = https://github.com/effekseer/Effekseer.git
