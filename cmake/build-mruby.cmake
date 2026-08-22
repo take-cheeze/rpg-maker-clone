@@ -100,16 +100,15 @@ function(rpg2k_add_mruby)
   set(mruby_colon3_patch
       "${ARG_REPO_ROOT}/patches/mruby-colon3-assign-setmcnst.patch")
 
-  # Vendored mruby never implemented `$!` (Kernel#$!, "the exception the
-  # current rescue clause is handling") -- it always reads nil, even inside
-  # an active rescue (patches/mruby-dollar-bang-scoped.patch's own preamble
-  # has the full trail, including two rejected earlier approaches). Found
-  # via a real VX Ace game's bundled crash-reporter add-on
-  # (docs/rpgvx-rgss-api-gap.md, item 7), which calls `$!.message` inside
-  # its own rescue clause and got a NoMethodError instead, masking the
-  # game's original exception behind an unrelated crash. Same patch-in-place
-  # treatment as the colon3 patch above, for the same reason (no fork of
-  # upstream mruby/mruby this project controls).
+  # Vendored mruby never implemented `$!` (Kernel#$!, "the exception the current
+  # rescue clause is handling") -- it always reads nil, even inside an active
+  # rescue (patches/mruby-dollar-bang-scoped.patch's own preamble has the full
+  # trail, including two rejected earlier approaches). Found via a real VX Ace
+  # game's bundled crash-reporter add-on (docs/rpgvx-rgss-api-gap.md, item 7),
+  # which calls `$!.message` inside its own rescue clause and got a
+  # NoMethodError instead, masking the game's original exception behind an
+  # unrelated crash. Same patch-in-place treatment as the colon3 patch above,
+  # for the same reason (no fork of upstream mruby/mruby this project controls).
   set(mruby_dollar_bang_patch
       "${ARG_REPO_ROOT}/patches/mruby-dollar-bang-scoped.patch")
 
