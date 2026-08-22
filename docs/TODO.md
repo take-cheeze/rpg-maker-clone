@@ -21171,6 +21171,24 @@ screen (544×416). Full rationale:
     LVGL parent each frame with no further changes needed. With this fix,
     the same real release's headless run goes several minutes into
     `Scene_Battle` with no crash at all.
+  - ✅ **`RPG::UsableItem#battle_ok?`/`#menu_ok?` were not implemented at
+    all.** Past the `Window#viewport=` wall, the same real release's enemy
+    AI hit a seventh: `NoMethodError: undefined method 'battle_ok?' for
+    RPG::Skill`, from `Game_BattlerBase#occasion_ok?` deciding whether an
+    enemy's skill is usable during `Game_Enemy#make_actions`. RGSS3's own
+    stock `occasion_ok?` dispatches on these two rather than comparing
+    `occasion` directly -- confirmed against RPG Maker MV's own
+    `rpg_objects.js` (`isOccasionOk`, a line-for-line port of VX Ace's Ruby
+    that inlines the identical two checks). This engine's `RPG::UsableItem`
+    (the real ancestor of `RPG::Skill`/`RPG::Item`, confirmed via
+    `mruby-rpgxp/mrblib/rgss_data.rb`'s own `class Skill < UsableItem`)
+    had the `occasion` field itself but never the two convenience methods
+    real games' own default scripts call. Fixed with two small mrblib
+    methods on `UsableItem` (`mruby-rpgvx/mrblib/rgss2_data.rb`), matching
+    the editor's Occasion dropdown exactly (0 Always, 1 Only in Battle, 2
+    Only from the Menu, 3 Never). With this fix, the same real release's
+    headless Test Battle run gets past its enemies' first action-selection
+    pass with no crash.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).

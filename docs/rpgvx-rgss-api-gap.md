@@ -934,6 +934,29 @@ lookup with `defined?(SceneManager)`.
   real release's headless run no longer crashes within the first several
   minutes of `Scene_Battle`, well past this wall.
 
+- **Fixed: `RPG::UsableItem#battle_ok?`/`#menu_ok?` were not implemented at
+  all.** Once past the `Window#viewport=` wall, the same real release's
+  enemy AI hit a seventh: `NoMethodError: undefined method 'battle_ok?' for
+  RPG::Skill`, from `Game_BattlerBase#occasion_ok?` deciding whether an
+  enemy's skill is usable during `Game_Enemy#make_actions`. RGSS3's own
+  stock `occasion_ok?` dispatches on these two methods rather than
+  comparing the `occasion` field directly (`item.battle_ok?` in battle,
+  `item.menu_ok?` from the menu) — confirmed against RPG Maker MV's own
+  `rpg_objects.js` (`Game_BattlerBase.prototype.isOccasionOk`, a line-for-
+  line port of VX Ace's Ruby that inlines the same two checks:
+  `occasion === 0 || occasion === 1` for battle, `occasion === 0 ||
+  occasion === 2` for the menu). This engine's `RPG::UsableItem` (the real
+  ancestor of `RPG::Skill`/`RPG::Item` — confirmed via
+  `mruby-rpgxp/mrblib/rgss_data.rb`'s own `class Skill < UsableItem`
+  declaration, VX Ace's `rgss2_data.rb` only reopens it to add fields, not
+  redeclaring the hierarchy) had the `occasion` field itself but never the
+  two convenience methods real games' own default scripts call. Added as
+  two small mrblib methods on `UsableItem`
+  (`mruby-rpgvx/mrblib/rgss2_data.rb`), matching the editor's Occasion
+  dropdown exactly (0 Always, 1 Only in Battle, 2 Only from the Menu, 3
+  Never). With this fix, the same real release's headless Test Battle run
+  gets past its enemies' very first action-selection pass with no crash.
+
 ## What this means for turning the host on
 
 For VX / VX Ace the script host is not an alternative to a built-in flow — it is
@@ -950,17 +973,19 @@ only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
 now fixed too (`patches/mruby-dollar-bang-scoped.patch`, above), so the same
 real release's own crash-reporter add-on now sees the actual exception
 instead of masking it behind an unrelated `NoMethodError`, and re-raises it
-correctly. Seventeen real bugs have been found and fixed this way so far
+correctly. Eighteen real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
 `Sprite#width`/`#height`, the `::Const = value` compiler bug, `$!`/bare-
 `raise` itself, the `Tilemap`/`Plane` `ox=`/`oy=` redundant-refresh hang,
 `Audio.bgs_play`'s `pos` argument, `Marshal`'s `marshal_dump`/
-`marshal_load` protocol mismatches, the missing `defined?` keyword, and the
-missing `Window#viewport=`) — the first ten via the temporary VM probe,
-finding the real exception directly regardless of `$!` being masked at the
-time. With `defined?` and `Window#viewport=` both fixed, the same real
-release's headless Test Battle run now goes several minutes into
-`Scene_Battle` with no crash at all; where its next wall stands (if any)
-past that is not yet traced.
+`marshal_load` protocol mismatches, the missing `defined?` keyword, the
+missing `Window#viewport=`, and the missing
+`RPG::UsableItem#battle_ok?`/`#menu_ok?`) — the first ten via the temporary
+VM probe, finding the real exception directly regardless of `$!` being
+masked at the time. With `defined?`, `Window#viewport=` and
+`battle_ok?`/`menu_ok?` all fixed, the same real release's headless Test
+Battle run now gets past its enemies' first action-selection pass with no
+crash at all; where its next wall stands (if any) past that is not yet
+traced.
