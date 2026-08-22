@@ -1532,6 +1532,33 @@ The work below is roughly ordered by the critical path to a walkable game
   button press alone no longer dismisses the confirmation; the screen only
   advances once 60 frames have actually elapsed), all confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-22): the status and gold panels were positioned
+  wrong, not just wrong-shaped — the status panel sat at the screen's left
+  edge and the gold panel was a narrower box pinned to the top-right,
+  independently re-verified and corrected against genuine RPG_RT.exe rather
+  than left on the EasyRPG-sourced visibility fix above.** Reached a live
+  Shop scene with zero synthetic event editing — Nepheshel's own shop NPC
+  (`Map0016.lmu`, event 4, an authentic, shipped Open Shop) — by editing a
+  genuine save's position/gold fields and driving real `RPG_RT.exe` under
+  wine. Border-color pixel scan of the captured frame's right-hand column
+  gave exact native geometry: a status box (136px wide, 45px tall) directly
+  above a gold box, same 136px width, 29px tall — both right-aligned, not
+  the status panel's own 6px-from-the-left position or the gold panel's old
+  88px width. Fixed by moving `#draw_shop_status`'s window construction to
+  `SCREEN_W - SHOP_STATUS_W - 6` (from a hardcoded `6`) and
+  `#build_shop_gold_window`/`#draw_shop_gold` to share `SHOP_STATUS_W`
+  (dropping the separate `gw = 88`) and dock directly beneath the status
+  panel instead of beside it at the same `y`. **Known, deliberately
+  out-of-scope gap this surfaced but did not fix**: real RPG_RT's Buy list
+  itself narrows to make room for the side panels (measured at roughly 55%
+  of the window's width), while this codebase's list window stays full-width
+  on every shop screen regardless of panel visibility — a separate, larger
+  layout change left for a future pass, the same way this shop UI's own
+  history above has repeatedly scoped fixes narrowly. Covered by four new
+  assertions in the existing `scripts/rpg2k_scene_check.rb` status-panel
+  check (status panel x, gold panel x matches it, status sits above gold,
+  gold panel width matches the status panel's), confirmed to fail against
+  the pre-fix code before the fix.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
