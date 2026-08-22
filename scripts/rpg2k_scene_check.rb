@@ -11815,6 +11815,35 @@ check 'Enemy Encounter scene: confirming a skill missing its required weapon ' \
   eq 'Decision1', RGSS::Audio.se_calls.last[0]
 end
 
+check '#draw_battle_skill colours each row from the same ' \
+      '#battle_skill_unavailable? gate #confirm_battle_skill buzzes on -- ' \
+      'so a listed skill is never drawn enabled while unusable or vice versa' do
+  # #draw_battle_skill's own disabled-swatch colouring (index 0 enabled / 3
+  # disabled, matching the field Skill menu's genuine-RPG_RT-confirmed
+  # convention -- see its own comment) is driven by this exact shared
+  # helper, so pinning the helper's per-row verdict against a mixed
+  # affordable/unaffordable skill list is what keeps the two in lock-step
+  # without needing a loaded windowskin bitmap in this host harness (which
+  # `new_scene`'s stub `db` never has -- Scene::SkillMenu's own colour check
+  # loads one through `menu_scene` instead, see its own comment).
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  party = BattleWeaponGateParty.new
+  party.weapon_ready = true # isolate the SP-affordability half of the gate
+  st.instance_variable_set(:@party, party)
+  battle_to_command(scene)
+
+  battle = scene.instance_variable_get(:@battle)
+  cheap_sk = party.db_skill(1) # Fire, cost 3 in BattleMagicParty's own battle_skills
+  eq false, battle.send(:battle_skill_unavailable?, 3, cheap_sk),
+     'affordable (3 SP against 10 MP) is not unavailable -- draws enabled (idx 0)'
+  eq true, battle.send(:battle_skill_unavailable?, 15, cheap_sk),
+     'unaffordable (15 SP against 10 MP) is unavailable -- draws disabled (idx 3)'
+end
+
 check 'Enemy Encounter scene: an item-triggered heal bypasses the weapon-Attribute ' \
       'gate -- no skill-eligibility check runs for it at all' do
   # Regression guard: #confirm_battle_skill's new weapon-Attribute check lives
@@ -20137,6 +20166,31 @@ check 'Scene::SkillMenu: choosing a currently-unusable skill just buzzes and sta
   RGSS::Input.reset
   eq :target, scene.instance_variable_get(:@mode), 'a usable skill still opens target-confirm'
   eq [['Decision1', 100, 100]], RGSS::Audio.se_calls
+end
+
+check 'Scene::SkillMenu: a listed-but-unusable skill row reads the windowskin\'s ' \
+      'own disabled swatch, an affordable one the enabled swatch' do
+  # Confirmed directly against a genuine RPG_RT.exe under wine, not by
+  # analogy alone: a party leader with one affordable (2 SP against 5
+  # current) and two unaffordable (8/20 SP) self-scope field skills
+  # pixel-sampled the affordable row's glyph at (165,211,255) and an
+  # unaffordable row's at (99,166,247) -- the exact two colours
+  # Scene::ItemMenu's own already-fixed disabled-swatch capture measured for
+  # its usable/unusable rows, confirming the same windowskin-swatch
+  # convention (index 0 enabled / 3 disabled) applies to the Skill list too.
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> a real windowskin loads
+  parent = fake_parent(db)
+  state = Game::State.new(SkillGateStubParty.new, 1, 0, 0)
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  bc = scene.instance_variable_get(:@skill_window).contents.blend_calls || []
+  # colour 3 -> swatch cell (3%10*16, 3/10*16+48) = (48, 48); colour 0 ->
+  # (0, 48) -- the same geometry Scene::Menu's own disabled-command check
+  # and Scene::ItemMenu's own disabled-row check both already pin.
+  ok bc.any? { |call| call[6] == 48 && call[7] == 48 },
+     'the unaffordable (SEALED_SID) row blends from swatch index 3 (48, 48)'
+  ok bc.any? { |call| call[6] == 0 && call[7] == 48 },
+     'the affordable (READY_SID) row blends from swatch index 0 (0, 48)'
 end
 
 # A party whose four field skills exercise #apply_switch_skill /
