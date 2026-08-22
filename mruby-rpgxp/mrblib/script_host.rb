@@ -260,12 +260,38 @@ class RPGXP
     @scene_name = nil
     @map_frame = nil
 
+    # The game's own idea of "what scene is up", across two different real
+    # conventions this engine's three RGSS variants use. XP and VX (RGSS/RGSS2)
+    # run `$scene.main while $scene`, a plain global `Main` assigns and reads
+    # directly. VX Ace (RGSS3) replaced that with `SceneManager` (`Main` calls
+    # `SceneManager.run`, which loops `SceneManager.scene.main`) and its stock
+    # scripts never touch `$scene` at all -- confirmed against a real VX Ace
+    # release's full 213-section bundle: zero `$scene =` assignments, every
+    # scene class threaded through `SceneManager` instead. Every probe below
+    # used to key on `$scene` alone, so on a real VX Ace game it stayed nil
+    # forever: `report_scene` never fired, `@map_frame` never got set, and
+    # every probe that waits on it (move/menu/battle/save) silently never
+    # started, even though the game itself was booting and running fine --
+    # confirmed by gdb, which caught the process mid-`Tilemap#refresh` on a
+    # real map with no crash, just an invisible one to every probe here.
+    # `$scene` is checked first since it is cheaper and still correct for
+    # XP/VX.
+    def self.current_scene
+      return $scene unless $scene.nil?
+      return nil unless defined?(SceneManager) && SceneManager.respond_to?(:scene)
+      begin
+        SceneManager.scene
+      rescue StandardError
+        nil
+      end
+    end
+
     # Called once per driven frame, from the wrapper above. Two jobs, both about
     # being able to *see* what a game's own engine is doing from a log:
     #
-    #   * report each scene the game moves to. `$scene` is the game's own global
-    #     (RGSS's Main loops `$scene.main while $scene != nil`), so this reads
-    #     what it already publishes and modifies nothing.
+    #   * report each scene the game moves to (see #current_scene above for
+    #     what "the game's own scene" means across RGSS/RGSS2/RGSS3), so this
+    #     reads what the game already publishes and modifies nothing.
     #   * with --rgss_host_new_game, tap the confirm key so a headless run gets
     #     off the game's own title screen without a keyboard.
     #   * with --rgss_host_move_test, walk the party once the game's own map
@@ -290,7 +316,7 @@ class RPGXP
     end
 
     def self.report_scene
-      scene = $scene
+      scene = current_scene
       return if scene.nil?
       name = scene.class.to_s
       return if name == @scene_name
@@ -350,7 +376,7 @@ class RPGXP
     # a keyboard.
     #
     # `$game_player` is the game's own global; only its published `x`/`y` are
-    # read (see report_scene, which reads `$scene` the same way).
+    # read (see report_scene, which reads the game's own scene the same way).
     #
     # The two counts are a budget, not a preference: the probe finishes
     # MOVE_SETTLE + MOVE_HOLD * MOVE_DIRS frames after the map appears, and a
@@ -479,7 +505,7 @@ class RPGXP
 
     def self.finish_save_probe
       @save_done = true
-      scene = $scene
+      scene = current_scene
       name = scene.nil? ? "?" : scene.class.to_s
       $stderr.puts "[RPGXP-HOST-SAVE] scene=#{name} " \
                    "reached=#{been_through?("Scene_Save")} frame=#{@frames}"
@@ -530,7 +556,7 @@ class RPGXP
 
     def self.finish_battle_probe
       @battle_done = true
-      scene = $scene
+      scene = current_scene
       name = scene.nil? ? "?" : scene.class.to_s
       $stderr.puts "[RPGXP-HOST-BATTLE] scene=#{name} " \
                    "reached=#{name.include?("Scene_Battle")} frame=#{@frames}"
@@ -538,7 +564,7 @@ class RPGXP
 
     def self.finish_menu_probe
       @menu_done = true
-      scene = $scene
+      scene = current_scene
       name = scene.nil? ? "?" : scene.class.to_s
       # "Opened" means the game left its map for something else — which is what
       # cancel does on a stock map, and what a game with its own menu script

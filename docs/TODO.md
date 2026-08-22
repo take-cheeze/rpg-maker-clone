@@ -21236,6 +21236,34 @@ screen (544×416). Full rationale:
     Only from the Menu, 3 Never). With this fix, the same real release's
     headless Test Battle run gets past its enemies' first action-selection
     pass with no crash.
+  - ✅ **The headless probe harness (`--rgss_host_new_game`/`move_test`/
+    `menu_test`/`battle_test`/`save_test`) was silently blind on every real
+    VX Ace game.** `RPGXP::ScriptHost.report_scene` and every probe's finish
+    method read `$scene` directly -- correct for XP and VX (RGSS/RGSS2),
+    whose stock `Main` runs `$scene.main while $scene`, but VX Ace (RGSS3)
+    replaced that with `SceneManager` (`Main` calls `SceneManager.run`, which
+    loops `SceneManager.scene.main`), and its stock scripts never assign
+    `$scene` at all. Confirmed against a real downloaded VX Ace release's
+    full 213-section bundle: zero `$scene =` assignments anywhere, every
+    scene threaded through `SceneManager` instead -- so `$scene` stayed `nil`
+    for the life of the process, `report_scene` never fired, `@map_frame`
+    never got set, and every probe that waits on it silently never started.
+    The game itself was running fine the whole time: a headless run against
+    it produced no crash and no probe output at all (not even
+    `[RPGXP-HOST-SCENE]`, logged on every scene change), which read as an
+    inert or hung run. Two rounds of gdb sampling ruled out a hang -- the
+    process was caught mid-`Tilemap#refresh` on a real map in one sample and
+    in `Graphics.update`'s frame-pacing sleep in the next, healthy per-frame
+    variation -- before a temporary, never-committed frame counter confirmed
+    `$scene` was `nil` at frame 600 while real rendering work was
+    demonstrably happening. Fixed with `ScriptHost.current_scene`, which
+    reads `$scene` first (cheaper, and still correct for XP/VX) and falls
+    back to `SceneManager.scene` when it is `nil` and `SceneManager` is
+    defined; every prior `$scene` read now goes through it. With this fix
+    the same release reports `Scene_Title` at frame 1 and `Scene_Map` at
+    frame 87 -- probe visibility restored with no change to the game's own
+    scripts. This affected every RGSS3 game's headless testability, not any
+    one release's playability.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).
