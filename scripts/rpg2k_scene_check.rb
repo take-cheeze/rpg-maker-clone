@@ -8057,23 +8057,31 @@ check "Game Over's very first #update already honours a Decision trigger " \
   Input.reset
 end
 
-# Verified against EasyRPG Player's actual C++ source rather than assumed
-# from this screen's own resemblance to a message/choice/menu window (every
-# one of which does accept Cancel): `Scene_Gameover::vUpdate`
-# (src/scene_gameover.cpp) checks only `Input::IsTriggered(Input::DECISION)`
-# -- there is no reference to `Input::CANCEL` anywhere in the file. Pressing
-# Cancel on the real Game Over screen does nothing at all.
-check 'the Cancel button does not dismiss the Game Over screen -- only Decision does' do
+# Confirmed against a genuine RPG_RT.exe under wine (2026-08-22): a
+# synthetic autostart Game Over (12420) map event put both a Decision press
+# and, independently, a Cancel press to the real Game Over screen (each
+# sent well after the screen had settled, past its own opening picture
+# fade), and both alike faded straight to the title screen. This screen
+# behaves like every other message/choice/menu window in this engine
+# (every one of which accepts Cancel as well as Decision) -- unlike what
+# EasyRPG's `Scene_Gameover::vUpdate` (src/scene_gameover.cpp) does, which
+# checks only `Input::IsTriggered(Input::DECISION)`. This check used to
+# pin the EasyRPG-sourced claim ("Cancel does nothing here"); it now pins
+# the confirmed opposite.
+check 'the Cancel button dismisses the Game Over screen, same as Decision' do
   parent = fake_parent(fake_db)
   Input.reset
   scene = RPG2k::Scene::GameOver.new(parent)
   Input.triggered = [Input::B]
   scene.update
-  ok !parent.returned_to_title, 'Cancel is not a dismiss trigger for this screen'
+  ok parent.returned_to_title, 'Cancel dismisses this screen too'
   Input.reset
+
+  parent2 = fake_parent(fake_db)
+  scene2 = RPG2k::Scene::GameOver.new(parent2)
   Input.triggered = [Input::C]
-  scene.update
-  ok parent.returned_to_title, 'Decision still dismisses it, right after'
+  scene2.update
+  ok parent2.returned_to_title, 'Decision still dismisses it too'
   Input.reset
 end
 

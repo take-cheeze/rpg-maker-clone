@@ -6381,6 +6381,47 @@ The work below is roughly ordered by the critical path to a walkable game
   genuine reference runtime rather than a difference in rendered output,
   there was no actionable code fix to extract from it -- reported here
   rather than chased further, and not left as a partially-verified claim.
+  ✅ **Follow-up (cycle #124, 2026-08-22): `game_over.rb`'s "only Decision
+  dismisses the Game Over screen, Cancel does nothing" claim was wrong --
+  real RPG_RT.exe accepts Cancel too, identically to Decision. Fixed.**
+  This was a literal, explicitly-labelled port of EasyRPG's
+  `Scene_Gameover::vUpdate` (src/scene_gameover.cpp), which checks only
+  `Input::IsTriggered(Input::DECISION)` -- exactly the kind of never-
+  re-run-against-real-RPG_RT claim this session's methodology treats as
+  worth checking. Built a synthetic autostart Game Over (12420) map event
+  (the same injection pattern as the `ARROW_BLINK_FRAMES` probe: a bare
+  `{code: 12420}` command list terminated by the mandatory `code 10`
+  BlankLine) on a copy of Nepheshel's map 12, resumed from a genuine save
+  positioned there. Real RPG_RT dropped straight into the Game Over screen
+  as expected. A single, cleanly-isolated Escape press -- sent well after
+  the screen had visibly settled, ruling out the picture's own brief
+  opening fade as a confound -- faded straight to the title screen,
+  pixel-for-pixel the same transition a single Return press produces from
+  the same starting point. **One dead end chased first and ruled out
+  before trusting this result**: an earlier, hastier pair of attempts
+  (two Escape presses in quick succession, both taken right as the screen
+  first appeared) gave inconsistent results run to run -- sometimes
+  reaching the title within ~3s, sometimes not -- which briefly looked
+  like "Cancel needs two presses". Controls ruled that out on both sides:
+  no key at all left the screen static and unchanging for a full 10s (no
+  auto-timeout), and even a *single* Decision press taken right as the
+  screen first appeared also failed to dismiss it within several seconds
+  -- so the flakiness was an artifact of pressing right at scene entry
+  (plausibly a brief window-focus race in this project's own wine test
+  harness immediately after the map-to-Game-Over scene transition, not
+  necessarily a real RPG_RT input lock -- left unresolved, since nailing
+  that down further wasn't needed once testing a single well-timed press
+  of each key gave a clean, unambiguous, reproducible answer for the
+  actual question). Fixed `Scene::GameOver#update`
+  (`mruby-rpg2k/mrblib/scene/game_over.rb`) to also accept
+  `Input.trigger?(Input::B)` (Cancel), matching every other message/
+  choice/menu window in this engine, all of which already accept Cancel.
+  The pre-existing `scripts/rpg2k_scene_check.rb` check that pinned the
+  old (wrong) claim -- "the Cancel button does not dismiss the Game Over
+  screen -- only Decision does" -- is now "the Cancel button dismisses
+  the Game Over screen, same as Decision", asserting both keys return to
+  title from a fresh screen; confirmed to fail against the pre-fix code
+  (`Cancel dismisses this screen too` raised).
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Confirmed
   against EasyRPG Player's actual source: `Scene_Order::vUpdate` (`src/
