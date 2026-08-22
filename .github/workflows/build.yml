@@ -1333,7 +1333,14 @@ jobs:
         # which then compiles the target .rb sources to bytecode), and that
         # half runs the ambient `gcc`, not psp-gcc -- confirmed missing by a
         # real CI run ("sh: gcc: not found") once Ruby alone was installed;
-        # `git` is for scripts/build_psp_fixup_imports.bash, below.
+        # `git` is for scripts/build_psp_fixup_imports.bash, below. `gperf`
+        # and `bison` regenerate mruby-compiler's lexer/grammar
+        # (mrbgems/mruby-compiler/core/{keywords,parse.y} -> lex.def/
+        # y.tab.c) whenever a patch touches either source -- normally a
+        # no-op since the checked-in generated files are already newer, but
+        # patches/mruby-defined-keyword.patch touches both, and this bare
+        # container has neither tool by default (confirmed missing by a real
+        # CI run, "sh: gperf: not found", once that patch first shipped).
         #
         # That script replaces the image's own /usr/local/pspdev/bin/
         # psp-fixup-imports (a host tool `cmake --build` invokes automatically
@@ -1353,7 +1360,7 @@ jobs:
             -e cp932_table=/src/.native-build-tables/bestfit932.txt \
             -e jis0208_table=/src/.native-build-tables/JIS0208.TXT \
             pspdev/pspdev:latest sh -euc '
-            apk add --no-cache ruby ruby-rake build-base git
+            apk add --no-cache ruby ruby-rake build-base git gperf bison
             bash scripts/build_psp_fixup_imports.bash
             psp-cmake -S app/psp -B build-psp
             cmake --build build-psp -j"$(nproc)"

@@ -5,6 +5,82 @@
 GAME_DIR = "" unless Object.const_defined?(:GAME_DIR)
 RTP_DIR = "" unless Object.const_defined?(:RTP_DIR)
 
+# Regression test for patches/mruby-defined-keyword.patch: vendored mruby
+# never implemented the `defined?` keyword at all -- neither the lexer nor
+# the grammar recognized it, so `defined?(Foo)` parsed as a plain method
+# call named `defined?` and raised NoMethodError. Found via a real VX Ace
+# game's speech-bubble add-on (docs/rpgvx-rgss-api-gap.md), which guards a
+# SceneManager lookup with `defined?(SceneManager)` and crashed on the very
+# first frame it ran. Real, not vendor-specific: upstream mruby 3.3.0 has
+# never implemented this keyword either (confirmed against its own
+# codegen.c/parse.y/keywords sources); this project's own maintainer had
+# evidently started addressing it (the NODE_DEFINED/mrb_ast_defined_node AST
+# scaffolding already existed) but never finished wiring it up.
+#
+# The values below are the exact answers a real CRuby 3.3.6 interpreter
+# gives for each expression shape (verified directly, not from documentation
+# alone). Two intentional simplifications versus CRuby, both safe (neither
+# ever evaluates anything with side effects, so `defined?(raise "x")` still
+# never raises):
+#  - Ruby recursively checks definedness of array-literal elements and call
+#    arguments (`defined?([undefined_var])` => nil); this implementation
+#    does not recurse and answers "expression"/"method" for those from the
+#    outer node type alone.
+#  - Class variables are resolved via `self` when `self` is already a
+#    Module/Class and via `self.class` otherwise (mrblib/kernel.rb's private
+#    `__defined_cvar_scope`), not via Ruby's full lexical-cref chain -- this
+#    matches the common cases (instance methods, singleton/class methods)
+#    but not every possible nesting.
+assert "defined? matches real Ruby's answers for each expression shape" do
+  @rgss_defined_test_iv = 1
+  $rgss_defined_test_gv = 1
+  class RgssDefinedTestCVarHost
+    @@rgss_defined_test_cv = 1
+    def self.check
+      defined?(@@rgss_defined_test_cv)
+    end
+  end
+  def rgss_defined_test_yield_no
+    defined?(yield)
+  end
+  def rgss_defined_test_yield_yes
+    defined?(yield)
+  end
+
+  cases = [
+    ["nil", defined?(nil), "nil"],
+    ["true", defined?(true), "true"],
+    ["false", defined?(false), "false"],
+    ["self", defined?(self), "self"],
+    ["String (const, found)", defined?(String), "constant"],
+    ["NoSuchThing (const, missing)", defined?(NoSuchThing), nil],
+    ["String::NoSuchConst (colon2, missing)", defined?(String::NoSuchConst), nil],
+    ["::Kernel (colon3, found)", defined?(::Kernel), "constant"],
+    ["puts (method, found)", defined?(puts), "method"],
+    ["no_such_method_xyz (method, missing)", defined?(no_such_method_xyz), nil],
+    ["1+1 (operator call)", defined?(1 + 1), "method"],
+    ["local var after assign", (rgss_defined_test_lv = 1; defined?(rgss_defined_test_lv)), "local-variable"],
+    ["assignment (never performed)", defined?(rgss_defined_test_lv2 = 1), "assignment"],
+    ["ivar set", defined?(@rgss_defined_test_iv), "instance-variable"],
+    ["ivar unset", defined?(@rgss_defined_test_never_set), nil],
+    ["gvar set", defined?($rgss_defined_test_gv), "global-variable"],
+    ["gvar unset", defined?($rgss_defined_test_never_set), nil],
+    ["cvar set, from a class method", RgssDefinedTestCVarHost.check, "class variable"],
+    ["yield without block", rgss_defined_test_yield_no, nil],
+    ["yield with block", rgss_defined_test_yield_yes { }, "yield"],
+    ["array literal (default: expression)", defined?([1, 2, 3]), "expression"],
+  ]
+
+  cases.each do |label, actual, expected|
+    assert_equal expected, actual, "defined?: #{label}"
+  end
+
+  # `rgss_defined_test_lv2` was only ever referenced inside the
+  # `defined?(rgss_defined_test_lv2 = 1)` case above (and never as a plain
+  # read), so if the assignment had actually run it would be 1 here.
+  assert_nil rgss_defined_test_lv2, "assignment inside defined? must not actually run"
+end
+
 # Regression test for the vendored mruby VM bug fixed by
 # patches/mruby-dollar-bang-scoped.patch: `$!` (the exception a currently
 # executing rescue clause is handling) was never implemented, so it always

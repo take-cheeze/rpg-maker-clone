@@ -859,15 +859,58 @@ With all four of these in place, the same real release now runs its own
 `BattleManager#setup` (a full object-graph `Marshal` round-trip) and reaches
 into its bundled 吹きだしウィンドウ ("bubble window") speech-bubble add-on's
 own event-driven call path — new ground for this whole investigation, not
-reached even briefly before. It stops there on a fifth, different-shaped
+reached even briefly before. It stopped there on a fifth, different-shaped
 issue: `NoMethodError: undefined method 'defined?' for Module`, from inside
-that add-on's own `call_sceman_hukidasi`. `defined?` is ordinarily a Ruby
-*keyword* (`defined?(expr)`), not a real method invoked with a receiver, so
-this reads like an mruby compiler corner case in how some particular
-argument shape to `defined?` gets compiled — plausibly related in spirit to
-the `::Const = value` compiler bug found and fixed earlier in this same
-document, but not yet traced to a specific codegen path the way that one
-was. Left for the next round.
+that add-on's own `call_sceman_hukidasi`, which guards a `SceneManager`
+lookup with `defined?(SceneManager)`.
+
+- **Fixed: the `defined?` keyword was not implemented at all.** Not a
+  corner case in how some argument shape gets compiled, as first suspected
+  — vendored mruby's lexer and grammar never recognized `defined?` as a
+  keyword in the first place, so `defined?(expr)` always parsed as an
+  ordinary method call named `defined?` and failed the moment it was
+  actually called with a receiver, exactly as seen here. Confirmed real,
+  not vendor-specific: upstream mruby 3.3.0 has never implemented this
+  keyword either. This project's own maintainer had evidently started
+  addressing it before this fix — the `NODE_DEFINED`/
+  `mrb_ast_defined_node` AST scaffolding already existed in
+  `mrbgems/mruby-compiler/core/node.h` — but the lexer, grammar, and a real
+  codegen were never wired up; `codegen_defined` was a stub that
+  unconditionally returned `nil`. `patches/mruby-defined-keyword.patch`
+  (that patch's own preamble has the full trail) adds the missing keyword
+  to the lexer and grammar (using `not`'s own two forms — `not expr` and
+  `not(expr)` — as the direct structural template, since real Ruby's
+  `defined?` has the same two forms) and replaces the codegen stub with
+  real per-expression-type logic: `nil`/`true`/`false`/`self`, an
+  already-declared local variable, and any assignment form are answered at
+  compile time with zero evaluation (matching real Ruby's own behavior of
+  never actually performing the assignment in `defined?(x = 1)`); constant
+  reads reuse the normal read codegen wrapped in a compiler-generated
+  rescue region (constant reads have no side effects, so discarding any
+  exception is safe); method calls (including operators, which are
+  `NODE_CALL` under the hood) answer via `respond_to?` rather than
+  invoking the method, matching real Ruby's `defined?(raise "x")` =>
+  `"method"` (never raises); instance/class/global variables and `yield`
+  each answer via a single boolean-returning self-send; and anything else
+  (literals, `if`/`case` used as an expression, etc.) defaults to
+  `"expression"`, matching real Ruby's own default. Every expected value
+  was checked directly against a real CRuby 3.3.6 interpreter, not from
+  documentation alone — see the dedicated regression test in
+  `mruby-rgss/test/test.rb` for the full table and the two documented,
+  intentional simplifications versus real Ruby (both safe: neither ever
+  evaluates anything with side effects).
+
+  With this fix in place, the same real release no longer crashes here at
+  all: attaching gdb to a running headless instance mid-boot shows it
+  inside `Graphics.update`'s own frame-throttling `nanosleep`, i.e.
+  genuinely executing its normal per-frame game loop rather than stuck or
+  crashed. Whether its title screen responds to the engine's headless
+  auto-confirm tooling the way the XP/2000/2003 hosts' do is not yet
+  confirmed — no `[RPGXP-HOST-SCENE]` log was observed within several
+  minutes of headless run, which may mean a slow intro/logo sequence ahead
+  of a stock `Scene_Title`, a custom title screen this game's own scripts
+  substitute for it, or simply more boot time than was given. Left for the
+  next round to trace further.
 
 ## What this means for turning the host on
 
@@ -885,14 +928,15 @@ only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
 now fixed too (`patches/mruby-dollar-bang-scoped.patch`, above), so the same
 real release's own crash-reporter add-on now sees the actual exception
 instead of masking it behind an unrelated `NoMethodError`, and re-raises it
-correctly. Fifteen real bugs have been found and fixed this way so far
+correctly. Sixteen real bugs have been found and fixed this way so far
 (`Dir.glob`, `Color.new`/`Tone.new`, the desktop heap, `Window#contents`,
 `Audio.bgm_play`'s `pos` argument, `RPG::CommonEvent#autorun?`/`#parallel?`,
 `Bitmap#draw_text`'s non-`String` coercion, `RPG::EventCommand#initialize`,
 `Sprite#width`/`#height`, the `::Const = value` compiler bug, `$!`/bare-
 `raise` itself, the `Tilemap`/`Plane` `ox=`/`oy=` redundant-refresh hang,
-`Audio.bgs_play`'s `pos` argument, and `Marshal`'s `marshal_dump`/
-`marshal_load` protocol mismatches) — the first ten via the temporary VM
-probe, finding the real exception directly regardless of `$!` being masked
-at the time. Where the next wall stands past `defined?` being called as a
-method inside 吹きだしウィンドウ's own event path is not yet traced.
+`Audio.bgs_play`'s `pos` argument, `Marshal`'s `marshal_dump`/
+`marshal_load` protocol mismatches, and the missing `defined?` keyword) —
+the first ten via the temporary VM probe, finding the real exception
+directly regardless of `$!` being masked at the time. With `defined?` fixed,
+the same real release now runs its normal frame loop with no crash at all;
+where its next wall stands (if any) past that is not yet traced.
