@@ -17829,11 +17829,13 @@ end
 
 check 'Scene::Menu: choosing Item pushes Scene::ItemMenu directly' do
   # RPG2K_COMMAND_KEYS order is Item, Skill, Equip, Save, End Game -- RPG2000
-  # has no Status entry at all (see Scene::Menu's own doc comment, ported from
-  # EasyRPG's Scene_Menu::CreateCommandWindow). Item acts on one confirm,
-  # unlike Skill/Equip/Status below, which hand focus to the party-status
-  # panel first -- confirm Item actually reaches Scene::ItemMenu rather than
-  # falling into the generic "not implemented yet" message.
+  # has no Status entry at all (see Scene::Menu's own doc comment, now
+  # independently confirmed against a genuine RPG_RT.exe under wine, cycle
+  # #122: Nepheshel draws exactly these five rows, wrapping Down from the
+  # fifth back to the first). Item acts on one confirm, unlike Skill/Equip/
+  # Status below, which hand focus to the party-status panel first --
+  # confirm Item actually reaches Scene::ItemMenu rather than falling into
+  # the generic "not implemented yet" message.
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
   scene.instance_variable_set(:@index, 0)
   RGSS::Input.triggered = [RGSS::Input::C]
