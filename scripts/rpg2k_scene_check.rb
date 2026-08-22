@@ -18617,18 +18617,43 @@ check 'Scene::SaveLoad: an occupied slot draws each party member\'s own face thu
   eq 2, calls.length, 'one face thumbnail blitted per party member'
 
   x0, y0, cell0, rect0 = calls[0]
-  eq [80, 0, 0, 0, 48, 48], [x0, y0, rect0.x, rect0.y, rect0.width, rect0.height],
-     'first member lands at the box\'s own right-anchored start (304 - 4*56)'
+  eq [88, 0, 0, 0, 48, 48], [x0, y0, rect0.x, rect0.y, rect0.width, rect0.height],
+     'first member lands at the box\'s own right-anchored start ' \
+     '(304 - (3*56 + 48), flush with no trailing gap past the last face)'
   eq [[0, 0, 96, 0, 48, 48]],
      cell0.blt_calls.map { |cx, cy, _s, r| [cx, cy, r.x, r.y, r.width, r.height] },
      'cropped straight from Faces1 cell 2 (x=96,y=0), no scaling'
 
   x1, y1, cell1, rect1 = calls[1]
-  eq [136, 0, 0, 0, 48, 48], [x1, y1, rect1.x, rect1.y, rect1.width, rect1.height],
+  eq [144, 0, 0, 0, 48, 48], [x1, y1, rect1.x, rect1.y, rect1.width, rect1.height],
      'second member sits one 56px pitch to the right of the first'
   eq [[0, 0, 48, 48, 48, 48]],
      cell1.blt_calls.map { |cx, cy, _s, r| [cx, cy, r.x, r.y, r.width, r.height] },
      'cropped from Faces2 cell 5 (x=48,y=48), the sheet\'s second row'
+end
+
+check 'Scene::SaveLoad: State#preview_faces, when set, is drawn instead of the live ' \
+      'party\'s own faceset data' do
+  # Confirmed against a genuine RPG_RT.exe under wine (see State#preview_faces'
+  # own citation): the real file-select screen draws this row from the save's
+  # title-chunk snapshot, not from whatever the party/actor data says once
+  # loaded. Deliberately setting the two disagree proves the snapshot wins.
+  st = wrap_menu_state
+  st.party.actors[0].faceset_name = 'ActorFace'
+  st.party.actors[0].faceset_index = 0
+  st.party.leader = st.party.actors.first
+  st.preview_faces = [['SnapshotFace', 3], nil, nil, nil]
+  parent = fake_parent(fake_db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, fake_db, parent: parent)
+  contents = scene.instance_variable_get(:@slot_windows)[0].contents
+  calls = contents.blt_calls
+  eq 1, calls.length, 'one thumbnail, from the snapshot\'s single non-nil slot'
+  cell = calls[0][2]
+  eq [[0, 0, 144, 0, 48, 48]],
+     cell.blt_calls.map { |cx, cy, _s, r| [cx, cy, r.x, r.y, r.width, r.height] },
+     'cropped from SnapshotFace cell 3 (x=144,y=0), not ActorFace -- the ' \
+     'snapshot overrides the live actor\'s own faceset entirely'
 end
 
 check 'Scene::SaveLoad: a member with no FaceSet draws no thumbnail; only the first four ' \

@@ -52,11 +52,11 @@ class RPG2k
       # already matches this exactly, which is why a slot box fits one row
       # of faces with no extra vertical space to spare.
       FACE_SIZE = 48
-      # EasyRPG's Window_SaveFile lays its four face slots out at
-      # `cx = 92 + i * 56` (Window_Base::DrawFace, 8px of gap past each
-      # 48px cell) -- this screen's own box is a different width, so the
-      # row is anchored to the box's own right edge instead of reusing that
-      # absolute offset, keeping the 56px pitch between slots.
+      # The 56px pitch between face slots (48px cell + 8px gap) -- confirmed
+      # against a genuine RPG_RT.exe under wine: a synthetic save whose title
+      # chunk pointed all four face slots at the same FaceSet sheet at
+      # indices 0-3 showed them at x=96/152/208/264 (logical, i.e. screen
+      # pixels) on the real screen, an exact 56px stride.
       FACE_SPACING = 56
       MAX_SLOT_FACES = 4
 
@@ -374,7 +374,7 @@ class RPG2k
           draw_system_text c, 0, LINE_H, inner_w, LINE_H, name, @skin
           rpg2003 = state.party.respond_to?(:rpg2003?) && state.party.rpg2003?
           draw_level_hp(c, LINE_H * 2, level, hp, rpg2003)
-          draw_slot_faces(c, inner_w, state.party.actors)
+          draw_slot_faces(c, inner_w, state)
         end
         win.contents = c
         win.cursor_rect = if slot_index == @index
@@ -414,20 +414,42 @@ class RPG2k
       end
 
       # Up to `MAX_SLOT_FACES` party face thumbnails, right-anchored within
-      # the slot box, one member per slot in seat order (`actors[0..3]`, the
-      # same per-member order `Game::State#to_lsd` already writes them in).
-      # A member with no FaceSet set (a blank name) simply leaves its slot
-      # empty, matching `#draw_message_face`'s own "blank name -> no face"
-      # rule (`Scene::Map#load_face_bitmap`).
-      def draw_slot_faces(c, inner_w, actors)
-        start_x = inner_w - MAX_SLOT_FACES * FACE_SPACING
-        actors.first(MAX_SLOT_FACES).each_with_index do |actor, i|
-          name = actor.respond_to?(:faceset_name) ? actor.faceset_name : nil
+      # the slot box, at the same 56px pitch in seat order, flush against the
+      # box's own right edge -- the last face's right edge lands exactly on
+      # `inner_w`, with no trailing 56-48=8px gap past it (unlike the gap
+      # between each pair of faces). Confirmed against a genuine RPG_RT.exe
+      # under wine: a synthetic save's four same-sheet faces measured at
+      # x=96/152/208/264 on the real screen, landing the fourth face's right
+      # edge (264+48) exactly on this screen's own 312 = 320-8 content
+      # boundary -- `inner_w - MAX_SLOT_FACES * FACE_SPACING` (this file's
+      # prior formula) instead reserved a phantom fifth gap after the last
+      # face, measurably landing the whole row 8px too far left (x=88 instead
+      # of 96, confirmed against our own engine's screenshot of the same
+      # save before this fix).
+      #
+      # The real screen also draws this row from the save's own title-chunk
+      # snapshot (`Game::State#preview_faces`, see its own citation), not
+      # from whatever the slot's party/actor data says -- so that is tried
+      # first, falling back to deriving from the live party's own members
+      # (`actors[0..3]`, the same per-member order `Game::State#to_lsd`
+      # writes the snapshot in) only when a state never carried one (the
+      # Marshal round-trip path, which loses nothing and so never needs the
+      # snapshot). A blank name -- no FaceSet set, or a snapshot slot the
+      # save left empty -- simply leaves that slot empty, matching
+      # `#draw_message_face`'s own "blank name -> no face" rule
+      # (`Scene::Map#load_face_bitmap`).
+      def draw_slot_faces(c, inner_w, state)
+        pairs = state.respond_to?(:preview_faces) ? state.preview_faces : nil
+        pairs ||= state.party.actors.first(MAX_SLOT_FACES).map do |actor|
+          [actor.respond_to?(:faceset_name) ? actor.faceset_name : nil,
+           actor.respond_to?(:faceset_index) ? actor.faceset_index : 0]
+        end
+        start_x = inner_w - ((MAX_SLOT_FACES - 1) * FACE_SPACING + FACE_SIZE)
+        pairs.first(MAX_SLOT_FACES).each_with_index do |(name, index), i|
           next if name.nil? || name.empty?
           sheet = load_face_bitmap(name)
           next unless sheet
-          index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
-          cell = build_face_cell(sheet, index)
+          cell = build_face_cell(sheet, index || 0)
           c.blt start_x + i * FACE_SPACING, 0, cell, Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
         end
       end
