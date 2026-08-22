@@ -1,0 +1,213 @@
+mruby gap: `$!` (Kernel#$!, "the exception currently being handled") is not
+implemented at all -- it always reads `nil`, even from inside an active
+`rescue` clause. Real Ruby scopes it dynamically to the nearest enclosing
+rescue: `begin; raise "x"; rescue => e; $!.message; end` returns `"x"` in
+CRuby, but raises `NoMethodError: undefined method 'message' for nil` in
+unpatched mruby.
+
+Found via a real VX Ace game (docs/rpgvx-rgss-api-gap.md, item 7) whose
+bundled crash-reporter add-on relies on `$!.message` inside its own
+rescue clause to build a user-facing error report; with `$!` always nil,
+the report itself blew up with a NoMethodError, masking the game's
+original exception behind a second, unrelated crash.
+
+Two earlier approaches were tried and rejected before this one:
+
+  1. Save/restore `$!` at the codegen level, around each rescue body.
+     Rejected: interacts badly with the compiler's register allocation
+     across rescue/ensure boundaries, causing hard-to-isolate regressions
+     elsewhere in the compiler test suite.
+  2. A sticky global, written in OP_EXCEPT and never cleared. Passed an
+     initial smoke test but leaks the last-seen exception into unrelated
+     code that runs later in the same or a deeper call frame -- broke
+     three core mrbtest cases (`Kernel.raise`, `Kernel#raise`,
+     `Exception 5`) that rely on `$!`-equivalent state NOT surviving past
+     the rescue that set it.
+
+This patch instead scopes `$!` to the call frame that contains the
+`rescue` clause, using mruby's own existing frame-pop (`cipop`, vm.c) as
+the hook for detecting when that scope ends -- no codegen or register-
+allocation changes needed, and no leaking past the owning frame's return.
+
+Mechanics, added to `mrb_state` (include/mruby.h):
+
+  - `errinfo` / `errinfo_ci_depth`: OP_EXCEPT (vm.c) sets `errinfo` to the
+    exception the rescue clause it is entering will handle, and captures
+    the current call-frame depth (`mrb->c->ci - mrb->c->cibase`) as the
+    depth that owns it. This capture is correct as-is, not one frame too
+    deep: by the time OP_EXCEPT runs, mruby's own exception search
+    (`L_RAISE` in vm.c) has already popped every frame between the raise
+    site and the frame whose `rescue` matches, so `mrb->c->ci` already IS
+    that owning frame. `cipop` then clears `errinfo` once execution
+    returns to a shallower depth than that -- i.e. once the frame owning
+    the rescue (or an enclosing one) has itself returned. Calls the
+    rescue body makes push a deeper frame and pop back down to the same
+    depth, so they never trip this early.
+  - `errinfo_sym`: `$!`'s interned symbol, cached on first use so every
+    ordinary global-variable access does not pay for re-interning it.
+  - GC marking for `errinfo` (src/gc.c), alongside the existing marking
+    for `mrb->exc`, so a `$!` value survives a collection during the
+    rescue body.
+  - `mrb_gv_get`/`mrb_gv_set` (src/variable.c) special-case the `$!`
+    symbol to read/write `errinfo` directly instead of the ordinary
+    globals table -- transparent to both a Ruby-level `$!` reference and
+    a bare `raise` re-raise (mrbgems/mruby-error's C-level lookup goes
+    through the same `mrb_gv_get`), so both see the same value uniformly.
+
+Known gap versus real Ruby: this scopes to the whole call frame, not to
+each individual `rescue` clause. Two `rescue` clauses in the *same* frame
+with no intervening call (e.g. two sequential `begin/rescue` blocks in
+one method) share one slot, so the second one's `$!` remains set (masking
+whatever the first one saw) until the whole frame returns, rather than
+being restored the moment the first rescue's own block ends. This did not
+warrant chasing further: no known real game script nests rescues this way
+within a single method, and doing better would need per-rescue codegen
+changes -- exactly the approach rejected above for its regression risk.
+
+Companion fix, same real game (docs/rpgvx-rgss-api-gap.md item 7's own
+notes on this had previously ruled it out): a bare `raise` (no arguments)
+is documented CRuby behavior for re-raising whatever `$!` currently holds
+-- used by this game's crash-reporter add-on to re-raise after logging.
+`mrb_f_raise` (src/kernel.c) had no `$!` to fall back to, so a bare
+`raise` always raised a fresh, empty RuntimeError instead, discarding the
+original exception's class and message. Earlier analysis considered this
+fixable only by wrapping every `raise` call in the engine in an extra
+begin/rescue to stash the about-to-be-raised object -- too broad a change
+to take on for one utility script's log fidelity. `errinfo` above removes
+that obstacle: `mrb_f_raise`'s zero-argument case now simply re-raises
+`mrb->errinfo` when one is in scope, with no wrapping needed anywhere.
+
+--- a/include/mruby.h
++++ b/include/mruby.h
+@@ -269,6 +269,33 @@ typedef struct mrb_state {
+
+   struct RObject *exc;                    /* exception */
+
++  /* `$!` -- the exception a currently-executing rescue clause is handling.
++   * Set in OP_EXCEPT (vm.c) to the innermost caught exception, captured at
++   * the call-frame depth OP_EXCEPT runs at: by the time it runs, mruby's
++   * exception search (L_RAISE in vm.c) has already popped every frame
++   * between the raise site and the frame owning the matching rescue clause,
++   * so mrb->c->ci at that point already IS the owning frame. Cleared in
++   * cipop once that frame (or a shallower one) returns, so it does not leak
++   * into unrelated code that runs after the rescue's own frame has exited;
++   * calls the rescue body itself makes push and pop back to the same depth,
++   * so they never trip this. Read and written exclusively through
++   * mrb_gv_get/mrb_gv_set's special case for the "$!" symbol (variable.c) --
++   * never stored in the ordinary globals table -- so both `$!` from Ruby and
++   * a bare `raise` (kernel.c) see it uniformly. Coarser than real Ruby's
++   * per-rescue-clause scoping: two `rescue` clauses nested in the *same*
++   * frame (no intervening call) share one slot, so the inner one's `$!`
++   * masks the outer's until the whole frame returns, rather than restoring
++   * right at the inner rescue's end.
++   */
++  struct RObject *errinfo;
++  mrb_int errinfo_ci_depth;
++  mrb_sym errinfo_sym;                    /* "$!", interned lazily and
++                                              cached (mrb_gv_get/set,
++                                              variable.c) so every ordinary
++                                              global access does not re-intern
++                                              it; 0 (never a valid mrb_sym)
++                                              means not yet cached. */
++
+   struct RObject *top_self;
+   struct RClass *object_class;            /* Object class */
+   struct RClass *class_class;
+--- a/src/gc.c
++++ b/src/gc.c
+@@ -1047,6 +1047,7 @@ root_scan_phase(mrb_state *mrb, mrb_gc *gc)
+   mrb_gc_mark(mrb, (struct RBasic*)mrb->top_self);
+   /* mark exception */
+   mrb_gc_mark(mrb, (struct RBasic*)mrb->exc);
++  mrb_gc_mark(mrb, (struct RBasic*)mrb->errinfo);
+
+   mark_context(mrb, mrb->c);
+   if (mrb->root_c != mrb->c) {
+@@ -1144,6 +1145,7 @@ final_marking_phase(mrb_state *mrb, mrb_gc *gc)
+     mark_context(mrb, mrb->root_c);
+   }
+   mrb_gc_mark(mrb, (struct RBasic*)mrb->exc);
++  mrb_gc_mark(mrb, (struct RBasic*)mrb->errinfo);
+
+   /* mark pre-allocated exception */
+   clear_error_object(mrb, mrb->nomem_err);
+--- a/src/variable.c
++++ b/src/variable.c
+@@ -1579,6 +1579,10 @@ mrb_gv_get(mrb_state *mrb, mrb_sym sym)
+ {
+   mrb_value v;
+
++  if (mrb->errinfo_sym == 0) mrb->errinfo_sym = mrb_intern_lit(mrb, "$!");
++  if (sym == mrb->errinfo_sym) {
++    return mrb->errinfo ? mrb_obj_value(mrb->errinfo) : mrb_nil_value();
++  }
+   if (iv_get(mrb, mrb->globals, sym, &v))
+     return v;
+   return mrb_nil_value();
+@@ -1599,6 +1603,16 @@ mrb_gv_set(mrb_state *mrb, mrb_sym sym, mrb_value v)
+ {
+   iv_tbl *t;
+
++  if (mrb->errinfo_sym == 0) mrb->errinfo_sym = mrb_intern_lit(mrb, "$!");
++  if (sym == mrb->errinfo_sym) {
++    /* Never stored in the ordinary globals table -- see mrb_gv_get and the
++     * mrb_state field's own comment (mruby.h). An explicit `$! = x` from
++     * Ruby (rare, but legal) sets the *current* frame's scope directly,
++     * same as OP_EXCEPT would. */
++    mrb->errinfo = mrb_nil_p(v) ? NULL : mrb_obj_ptr(v);
++    mrb->errinfo_ci_depth = mrb->c->ci - mrb->c->cibase;
++    return;
++  }
+   if (!mrb->globals) {
+     mrb->globals = iv_new(mrb);
+   }
+--- a/src/vm.c
++++ b/src/vm.c
+@@ -502,6 +502,13 @@ cipop(mrb_state *mrb)
+     mrb_exc_raise(mrb, mrb_obj_value(mrb->nomem_err));
+   }
+   c->ci--;
++  /* `$!` (mrb->errinfo) is scoped to the call frame that contained the
++   * rescue clause which set it; once that frame (or a shallower one) has
++   * returned, it can no longer be in scope. See the mrb_state field's own
++   * comment (mruby.h). */
++  if (mrb->errinfo && (c->ci - c->cibase) < mrb->errinfo_ci_depth) {
++    mrb->errinfo = NULL;
++  }
+   return c->ci;
+ }
+
+@@ -2139,6 +2146,17 @@ RETRY_TRY_BLOCK:
+           exc = mrb_nil_value();
+           break;
+         }
++        if (mrb->exc->tt == MRB_TT_EXCEPTION) {
++          /* `$!` for the rescue clause this exception is entering; see the
++           * mrb_state field's own comment (mruby.h) for the scoping this
++           * gives and its one known gap (nested rescues sharing a frame).
++           * By the time OP_EXCEPT runs, the exception search (L_RAISE) has
++           * already popped every frame between the raise site and the
++           * frame owning this rescue clause, so mrb->c->ci here already IS
++           * that owning frame -- captured directly, no deferral needed. */
++          mrb->errinfo = mrb->exc;
++          mrb->errinfo_ci_depth = mrb->c->ci - mrb->c->cibase;
++        }
+         mrb->exc = NULL;
+       }
+       regs[a] = exc;
+--- a/src/kernel.c
++++ b/src/kernel.c
+@@ -515,6 +515,13 @@ mrb_f_raise(mrb_state *mrb, mrb_value self)
+   mrb->c->ci->mid = 0;
+   switch (argc) {
+   case 0:
++    /* Real Ruby re-raises `$!` -- see the mrb_state field's own comment
++     * (mruby.h) -- when a rescue clause is still active; only fall back to
++     * a fresh, empty RuntimeError outside of one, matching CRuby's own
++     * "no `$!` to re-raise" behavior for a bare `raise` outside rescue. */
++    if (mrb->errinfo) {
++      mrb_exc_raise(mrb, mrb_obj_value(mrb->errinfo));
++    }
+     mrb_raise(mrb, E_RUNTIME_ERROR, "");
+     break;
+   case 1:

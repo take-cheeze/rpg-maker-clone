@@ -100,6 +100,18 @@ function(rpg2k_add_mruby)
   set(mruby_colon3_patch
       "${ARG_REPO_ROOT}/patches/mruby-colon3-assign-setmcnst.patch")
 
+  # Vendored mruby never implemented `$!` (Kernel#$!, "the exception the current
+  # rescue clause is handling") -- it always reads nil, even inside an active
+  # rescue (patches/mruby-dollar-bang-scoped.patch's own preamble has the full
+  # trail, including two rejected earlier approaches). Found via a real VX Ace
+  # game's bundled crash-reporter add-on (docs/rpgvx-rgss-api-gap.md, item 7),
+  # which calls `$!.message` inside its own rescue clause and got a
+  # NoMethodError instead, masking the game's original exception behind an
+  # unrelated crash. Same patch-in-place treatment as the colon3 patch above,
+  # for the same reason (no fork of upstream mruby/mruby this project controls).
+  set(mruby_dollar_bang_patch
+      "${ARG_REPO_ROOT}/patches/mruby-dollar-bang-scoped.patch")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -114,6 +126,8 @@ function(rpg2k_add_mruby)
     OUTPUT "${libmruby_a}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_colon3_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_dollar_bang_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -123,7 +137,7 @@ function(rpg2k_add_mruby)
       -v
     WORKING_DIRECTORY "${mruby_prefix}"
     DEPENDS "${ARG_REPO_ROOT}/build_config.rb" "${mruby_colon3_patch}"
-            ${mrb_files})
+            "${mruby_dollar_bang_patch}" ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
 
