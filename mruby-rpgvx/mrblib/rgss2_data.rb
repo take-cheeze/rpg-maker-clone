@@ -100,6 +100,19 @@ module RPG
   class UsableItem < BaseItem
     include UsableItemFields
 
+    # RGSS3's own stock Game_BattlerBase#occasion_ok? dispatches on these two
+    # rather than comparing `occasion` itself, so a skill/item needs them
+    # directly: the editor's Occasion dropdown is 0 (Always), 1 (Only in
+    # Battle), 2 (Only from the Menu), 3 (Never) -- 0/1 usable in battle,
+    # 0/2 usable from the menu.
+    def battle_ok?
+      occasion == 0 || occasion == 1
+    end
+
+    def menu_ok?
+      occasion == 0 || occasion == 2
+    end
+
     # An RGSS3 damage formula: `type` (none/HP damage/MP recover/...), the
     # element, the Ruby `formula` string the engine evals, its `variance`
     # percentage and whether it can crit.

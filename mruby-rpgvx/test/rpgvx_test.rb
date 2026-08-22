@@ -154,6 +154,27 @@ assert "VX RPG::Skill carries the fixed damage fields" do
   assert_nil loaded.features
 end
 
+assert "RPG::UsableItem#battle_ok?/#menu_ok? dispatch on occasion, RGSS3's own Game_BattlerBase#occasion_ok? logic" do
+  # The editor's Occasion dropdown: 0 Always, 1 Only in Battle, 2 Only from
+  # the Menu, 3 Never -- 0/1 usable in battle, 0/2 usable from the menu.
+  [
+    [0, true, true],
+    [1, true, false],
+    [2, false, true],
+    [3, false, false],
+  ].each do |occasion, battle_ok, menu_ok|
+    skill = RPG::Skill.new
+    skill.occasion = occasion
+    assert_equal battle_ok, skill.battle_ok?, "occasion #{occasion} battle_ok?"
+    assert_equal menu_ok, skill.menu_ok?, "occasion #{occasion} menu_ok?"
+
+    item = RPG::Item.new
+    item.occasion = occasion
+    assert_equal battle_ok, item.battle_ok?, "occasion #{occasion} battle_ok?"
+    assert_equal menu_ok, item.menu_ok?, "occasion #{occasion} menu_ok?"
+  end
+end
+
 assert "VX RPG::Map is a three-layer table with plain troop encounters" do
   map = RPG::Map.new
   map.width = 3
