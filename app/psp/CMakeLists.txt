@@ -17,6 +17,64 @@ project(rpg2k_psp C CXX ASM)
 
 set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
 
+# create_pbp_file's POST_BUILD chain runs "$ENV{PSPDEV}/bin/psp-fixup-imports"
+# over the freshly linked ELF (see $PSPDEV/psp/share/CreatePBP.cmake). That tool
+# has to be the JAL-relocation-aware build scripts/build_psp_fixup_imports.bash
+# produces, not pspdev's stock one: the stock tool assumes every call site
+# referencing a given PSP module is already physically contiguous in the linked
+# binary's import metadata, which main.cxx's own ordinary control flow does not
+# satisfy, and when it isn't it silently assigns some imports to the wrong
+# module and still exits 0.
+#
+# Nothing downstream notices. The EBOOT links, packs, and boots far enough to
+# print RPG2K_PSP_BOOT, but SysMemUserForUser ends up overlapping
+# ThreadManForUser's stub table, which strands sceKernelAllocPartitionMemory and
+# sceKernelGetBlockHeadAddr unbound -- so _sbrk never gets a heap, the first
+# real malloc() never returns, and user_main deadlocks before the frame loop
+# starts. That is indistinguishable at a glance from the pspuser/pspkernel
+# link-order bug the target_link_libraries comment below describes, which is
+# exactly why this is worth catching here instead of in a headless emulator run.
+#
+# Checked up here rather than beside create_pbp_file at the bottom so a stock
+# toolchain fails in seconds, not after configuring LVGL, uni-algo and mruby.
+#
+# Detected by a format string only the patched tool carries: it is built from
+# pspdev's own pinned pspsdk source, so nothing else about the binary
+# (timestamp, size, --help output) reliably separates the two.
+set(FIXUP_IMPORTS "$ENV{PSPDEV}/bin/psp-fixup-imports")
+if(NOT EXISTS "${FIXUP_IMPORTS}")
+  message(
+    FATAL_ERROR
+      "psp-fixup-imports not found at \"${FIXUP_IMPORTS}\" -- PSPDEV must "
+      "point at the pspdev installation this build links against.")
+endif()
+# Re-run configure (and so this check) whenever the tool itself is replaced;
+# installing the patched build is not a source change, so nothing else here
+# would notice it had happened.
+set_property(
+  DIRECTORY
+  APPEND
+  PROPERTY CMAKE_CONFIGURE_DEPENDS "${FIXUP_IMPORTS}")
+# REPO_ROOT is spelled relative to this directory, so normalise it before it
+# goes into a message a reader is meant to paste into a shell.
+get_filename_component(REPO_ROOT_ABS "${REPO_ROOT}" ABSOLUTE)
+file(
+  STRINGS "${FIXUP_IMPORTS}" FIXUP_IMPORTS_PATCHED
+  REGEX "Repointed .* jal instruction"
+  LIMIT_COUNT 1)
+if(NOT FIXUP_IMPORTS_PATCHED)
+  message(
+    FATAL_ERROR
+      "\"${FIXUP_IMPORTS}\" is pspdev's stock psp-fixup-imports. Building "
+      "against it produces an EBOOT whose PSP imports resolve to the wrong "
+      "modules -- it will boot far enough to look fine and then hang. Install "
+      "the patched build over it first:\n"
+      "    bash ${REPO_ROOT_ABS}/scripts/build_psp_fixup_imports.bash\n"
+      "then force a relink (rm ${CMAKE_CURRENT_BINARY_DIR}/rpg2k_psp), since "
+      "replacing the tool does not by itself make anything rebuild. See "
+      "patches/psp-fixup-imports-jal-relocation-aware.patch.")
+endif()
+
 # pspsdk static libraries are built without gp-relative small-data addressing;
 # every object linked with them (LVGL, uni-algo, mruby and our own) must match,
 # so force -G0 at directory scope before any of them are added.

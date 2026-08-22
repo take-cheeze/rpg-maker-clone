@@ -4,8 +4,8 @@ set -euo pipefail
 
 # Build a patched replacement for pspdev's psp-fixup-imports (a host tool the
 # PSP CMake toolchain runs automatically after linking rpg2k_psp), and drop it
-# wherever the caller wants it -- normally straight over the pspdev image's
-# own /usr/local/pspdev/bin/psp-fixup-imports, so the rest of the build (an
+# wherever the caller wants it -- normally straight over the pspdev
+# installation's own bin/psp-fixup-imports, so the rest of the build (an
 # unmodified `psp-cmake` + `cmake --build`) picks it up transparently.
 #
 # Why: the stock tool requires every call site referencing a given PSP module
@@ -20,10 +20,21 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/build_psp_fixup_imports.bash [OUTPUT_PATH]
-#     OUTPUT_PATH defaults to /usr/local/pspdev/bin/psp-fixup-imports, i.e.
-#     "replace the toolchain's own copy in place" -- the right default both
-#     for the psp CI job (see .github/workflows/build.yml) and for local
-#     reproduction inside the same pspdev/pspdev container the CI job uses.
+#     OUTPUT_PATH defaults to $PSPDEV/bin/psp-fixup-imports, i.e. "replace the
+#     toolchain's own copy in place". $PSPDEV is pspdev's own standard
+#     installation-root variable, so keying on it puts the patched tool on
+#     whichever SDK the build actually invokes: pspdev/pspdev:latest exports
+#     PSPDEV=/usr/local/pspdev, so the psp CI job (see
+#     .github/workflows/build.yml) resolves exactly the path this used to
+#     hardcode, while a native SDK gets its own root -- this repo's .envrc
+#     exports PSPDEV=$HOME/dev/pspdev. Hardcoding the container path instead
+#     meant a native toolchain silently kept the *stock* psp-fixup-imports:
+#     the script reported success, having installed into a /usr/local/pspdev
+#     nothing in the build ever reads, and the EBOOT it then produced had the
+#     misordered imports this whole patch exists to prevent.
+#
+#     Falls back to /usr/local/pspdev when $PSPDEV is unset, so a bare
+#     `docker run` that skips the image's environment still works.
 #
 # Needs: git, a native (host) C compiler (`cc`), and network access to
 # github.com. The pspdev/pspdev image ships neither by default; `apk add
@@ -33,7 +44,8 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATCHES_DIR="$REPO_ROOT/patches"
-OUTPUT_PATH="${1:-/usr/local/pspdev/bin/psp-fixup-imports}"
+PSPDEV_ROOT="${PSPDEV:-/usr/local/pspdev}"
+OUTPUT_PATH="${1:-$PSPDEV_ROOT/bin/psp-fixup-imports}"
 
 # Pinned in patches/psp-fixup-imports-jal-relocation-aware.patch's own
 # preamble too; keep the two in sync if this ever moves. Confirmed (by
