@@ -4126,6 +4126,53 @@ check 'to_lsd/from_lsd round-trips a Change Battle Commands edit with no ' \
   eq false, restored.class_changed?, 'and no spurious class change was recorded'
 end
 
+check 'to_lsd/from_lsd round-trips a live Change Parameters edit on every ' \
+      'base stat' do
+  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: a real
+  # save was edited to set chunk 108 field 41 (attack_mod) on a known actor,
+  # resumed under real RPG_RT, and the Equip screen's displayed ATK changed
+  # by exactly that amount; field 33 (hp_mod) likewise changed the Status
+  # screen's displayed Max HP by exactly that amount. #to_lsd/.from_lsd
+  # never touched fields 33/34/41-44 at all, so a live Change Parameters
+  # edit -- #change_param's own @base_raw shadow, already correctly
+  # round-tripped through this engine's own Marshal save format via
+  # Actor#restore_base -- silently reverted to the level curve's bare value
+  # the instant a genuine Save/Continue ran.
+  db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  a = st.party.leader
+  # Six distinguishable deltas -- one per stat, no two the same -- so a
+  # field mixup (e.g. hp_mod's field id swapped with atk_mod's) shows up as
+  # a wrong value rather than passing by coincidence.
+  a.change_param(Game::Actor::PARAM_MAX_HP, 50)
+  a.change_param(Game::Actor::PARAM_MAX_MP, 20)
+  a.change_param(Game::Actor::PARAM_ATK, 7)
+  a.change_param(Game::Actor::PARAM_DEF, -1)
+  a.change_param(Game::Actor::PARAM_INT, 13)
+  a.change_param(Game::Actor::PARAM_AGI, 17)
+  eq [60, 25, 10, 1, 14, 21], [a.max_hp, a.max_mp, a.atk, a.def, a.int, a.agi]
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.party.leader
+  eq [60, 25, 10, 1, 14, 21],
+     [restored.max_hp, restored.max_mp, restored.atk, restored.def, restored.int, restored.agi],
+     'every Change Parameters edit survives Save/Continue via a real .lsd, not just this engine\'s own Marshal format'
+
+  # An actor nobody ever ran Change Parameters on writes none of the six
+  # fields at all -- the same "omit when nothing to restore" convention
+  # chunk 102/111's own overrides already follow -- and round-trips to the
+  # bare level curve, not some stray zero-delta entry.
+  untouched_db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
+  untouched_st = Game::State.new(Game::Party.new(untouched_db), 1, 0, 0)
+  saved = untouched_st.to_lsd[108][1]
+  eq 0, saved.attack_mod, 'no Change Parameters this session means no mod fields written -- reads back at the neutral default'
+  untouched_round = Game::State.from_lsd(untouched_db, untouched_st.to_lsd)
+  eq [10, 5, 3, 2, 1, 4],
+     [untouched_round.party.leader.max_hp, untouched_round.party.leader.max_mp,
+      untouched_round.party.leader.atk, untouched_round.party.leader.def,
+      untouched_round.party.leader.int, untouched_round.party.leader.agi]
+end
+
 check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
       'as it was' do
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,

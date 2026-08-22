@@ -11128,6 +11128,39 @@ not yet verified:
   class or command id would coincidentally already be blocked by the
   existing per-id existence checks on a table-less database, masking the
   actual gap), confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-22): the deferred Change-Parameters stat-mod
+  fields are now done too.** The "genuine unit conversion" concern that
+  deferred `attack_mod`/`defense_mod`/`spirit_mod`/`agility_mod`/`hp_mod`/
+  `sp_mod` above turns out already solved by this codebase's own existing
+  `#change_param`, which the fix reuses rather than re-deriving: `@base_raw`
+  (the absolute curve+mod running total) minus `#base_stats(level)` (the
+  bare curve at the actor's *current* level, already reading through
+  `#curve_row` so it transparently picks the class curve once Change Class
+  has run) isolates the same delta EasyRPG's own `*_mod` fields represent —
+  exactly the arithmetic `#change_param` itself already performs
+  (`@base_raw[type] - curve + delta`), just run in reverse to serialise
+  instead of to apply a new edit. Confirmed against a genuine RPG_RT.exe,
+  not EasyRPG's source: a real save was edited to set field 41
+  (`attack_mod`) on a known actor, resumed under the real runtime, and the
+  Equip screen's displayed ATK changed by exactly that amount; field 33
+  (`hp_mod`) likewise changed the Status screen's displayed Max HP by
+  exactly that amount, confirming both the field ids and that the +delta
+  lands on the *effective* stat the same way `#change_param` already
+  assumes. liblcf's own generator table (`generator/csv/fields.csv`) marks
+  `hp_mod`/`sp_mod`'s default as **-1** (its own "never touched" sentinel,
+  unlike the other four fields' plain **0**) — read specially so a genuine
+  third-party save's own untouched sentinel isn't misread as a real -1 HP
+  modifier, though this codebase's own writer never needs to care (it omits
+  the whole field range outright when nothing changed, the same
+  eliding-writer convention every sibling field on this chunk already
+  follows). Fixed in `Game::State#to_lsd`/`.from_lsd`
+  (`mruby-rpg2k/mrblib/game.rb`) and `LCF::Schema::SAVE_PARTY_ACTOR`
+  (`mruby-lcf/mrblib/schema.rb`, fields 33/34/41-44). Covered by a new
+  `scripts/rpg2k_logic_check.rb` check (six deliberately distinguishable
+  Change Parameters deltas, one per stat, all round-trip through a real
+  `.lsd` write/read exactly; an actor nobody ever ran the command on writes
+  none of the six fields and round-trips to the bare level curve),
+  confirmed to fail against the pre-fix code before the fix.
 - ✅ **A Change Actor Sprite / Change Vehicle Graphic override's *index* now
   round-trips through `.lsd` at the correct liblcf tag — it was being
   written to, and read from, the wrong field of the save's hero/vehicle
