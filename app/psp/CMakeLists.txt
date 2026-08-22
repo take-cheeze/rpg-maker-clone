@@ -277,7 +277,7 @@ create_pbp_file(
   TARGET
   rpg2k_psp
   ICON_PATH
-  NULL
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../assets/psp/icon0.png
   BACKGROUND_PATH
   NULL
   PREVIEW_PATH
