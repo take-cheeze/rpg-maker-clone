@@ -33,28 +33,30 @@ class RPG2k
         play_gameover_bgm
       end
 
-      # A literal port of EasyRPG's `Scene_Gameover::vUpdate`
-      # (src/scene_gameover.cpp): `if (Input::IsTriggered(Input::DECISION))
-      # { Scene::ReturnToTitleScene(); }` -- the whole method, no Cancel
-      # anywhere in the file (unlike the message/choice/menu windows this
-      # screen otherwise resembles, Cancel does not also dismiss it) and no
-      # arming/pending state of any kind. An earlier version here required a
-      # key-released frame before arming, on the theory that the key which
-      # dismissed the battle-defeat result could otherwise skip this screen
-      # in the same frame -- but `RPG2k#show_game_over` swaps `@scenes`
-      # without ever calling `.update` on the new scene itself, so this
-      # screen's first real `#update` always lands on the *next*
-      # `#main_loop` iteration, by which point that iteration's own
-      # `Input.update` has already cleared the old trigger (`@triggered` is
-      # reset at the top of every `Input.update` call, and only a genuine
-      # new key-down event sets it again) -- the scenario the arming gate
-      # defended against cannot occur through this engine's actual update
-      # loop, and the gate itself introduced a real divergence: a player
-      # merely still *holding* Cancel (which does nothing here) when this
-      # screen appears had a fresh Decision press silently ignored until
-      # they let go, something real RPG_RT never does.
+      # Confirmed directly against a genuine RPG_RT.exe under wine (not just
+      # EasyRPG's source, which this was originally ported from and which
+      # claims only Decision dismisses this screen -- `Scene_Gameover::
+      # vUpdate`, src/scene_gameover.cpp): **Cancel dismisses the Game Over
+      # screen too, identically to Decision.** A synthetic autostart Game
+      # Over (12420) map event dropped real RPG_RT.exe onto this screen with
+      # nothing else animating; a single, cleanly-isolated Escape press
+      # (sent well after the screen had settled, ruling out the picture's
+      # own brief opening fade as a confound) faded straight to the title
+      # screen -- pixel-for-pixel the same transition a single Return press
+      # produces from the same starting state. So this screen behaves like
+      # every other message/choice/menu window in offering Cancel as a
+      # second way to back out, not the one exception EasyRPG's source
+      # claimed.
+      #
+      # No arming/pending state of any kind (matching this screen's
+      # pre-existing reasoning for Decision, which still holds): `RPG2k#
+      # show_game_over` swaps `@scenes` without calling `.update` on the new
+      # scene itself, so this screen's first real `#update` always lands on
+      # the *next* `#main_loop` iteration, by which point that iteration's
+      # own `Input.update` has already reset stale triggers from the
+      # previous scene.
       def update
-        return unless Input.trigger?(Input::C)
+        return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
         parent.return_to_title
       end
 
