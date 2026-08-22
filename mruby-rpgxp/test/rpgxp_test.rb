@@ -287,6 +287,55 @@ assert "ScriptHost.run returns false when the project ships no scripts" do
   assert_false RPGXP::ScriptHost.run(FakeScriptDB.new([]))
 end
 
+# current_scene is what every probe (move/menu/battle/save) and report_scene
+# key on to see the game's own scene. A real VX Ace release's full script
+# bundle never assigns `$scene` at all (RGSS3 replaced it with `SceneManager`,
+# see the method's own comment) -- confirmed against a real downloaded VX Ace
+# game's 213-section bundle, which left every probe silently inert (the game
+# ran and rendered fine; `$scene` alone just never went non-nil).
+assert "ScriptHost.current_scene reads $scene first, when set (XP/VX)" do
+  previous = $scene
+  begin
+    $scene = "fake XP/VX scene"
+    assert_equal "fake XP/VX scene", RPGXP::ScriptHost.current_scene
+  ensure
+    $scene = previous
+  end
+end
+
+assert "ScriptHost.current_scene falls back to SceneManager.scene (VX Ace)" do
+  previous_scene = $scene
+  had_scene_manager = Object.const_defined?(:SceneManager)
+  previous_scene_manager = had_scene_manager ? SceneManager : nil
+  begin
+    $scene = nil
+    fake_manager = Object.new
+    def fake_manager.scene
+      "fake VX Ace scene"
+    end
+    Object.const_set(:SceneManager, fake_manager)
+    assert_equal "fake VX Ace scene", RPGXP::ScriptHost.current_scene
+  ensure
+    $scene = previous_scene
+    Object.send(:remove_const, :SceneManager) if Object.const_defined?(:SceneManager)
+    Object.const_set(:SceneManager, previous_scene_manager) if had_scene_manager
+  end
+end
+
+assert "ScriptHost.current_scene is nil with neither $scene nor SceneManager" do
+  previous_scene = $scene
+  had_scene_manager = Object.const_defined?(:SceneManager)
+  previous_scene_manager = had_scene_manager ? SceneManager : nil
+  begin
+    $scene = nil
+    Object.send(:remove_const, :SceneManager) if had_scene_manager
+    assert_nil RPGXP::ScriptHost.current_scene
+  ensure
+    $scene = previous_scene
+    Object.const_set(:SceneManager, previous_scene_manager) if had_scene_manager
+  end
+end
+
 # The RGSS standard library (mrblib/rgss_library.rb) — the classes RGSS104E.dll
 # supplies and no project ships. These tests run in the *built* engine, where
 # RPG::Sprite really does subclass the native RGSS::Sprite; they are what would
