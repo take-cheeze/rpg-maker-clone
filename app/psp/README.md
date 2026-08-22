@@ -117,7 +117,7 @@ idle path (`RPG2K_PSP_GAME_START none not_found`). The job is currently
 **non-blocking** (the required build gate is the `psp` job) — a holdover
 from when the EBOOT did not boot to completion under PPSSPP-headless; now
 that it does (see below), promoting `psp-smoke` to a required check is
-worth revisiting. Nine independent bugs were found and root-caused
+worth revisiting. Ten independent bugs were found and root-caused
 chasing that boot-to-completion goal; eight of them fixed, the remaining
 one (pspsdk's own upstream bug) no longer reachable — **boot now
 completes**:
@@ -264,8 +264,42 @@ none not_found` → a continuous `RPG2K_PSP_BRINGUP` heartbeat, running
 cleanly for over 850,000 frames with zero errors, stopped only by the
 test harness's own timeout. See
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)'s
-P1 for the full nine-bug trail, including the eliminated theories along
-the way. To reproduce any of this locally, run
+P1 for the full trail, including the eliminated theories along
+the way.
+
+That state no longer reproduces on `master`. Boot now dies inside
+`mrb_open()` again, on a **tenth bug** — this one in the toolchain, not
+in this project or the emulator. Any C++ `throw` aborts in libgcc's
+`uw_init_context_1` (`unwind-dw2.c`, `gcc_assert (code ==
+_URC_NO_REASON)`), which fires when `uw_frame_state_for` cannot find an
+FDE for the frame it is unwinding. mruby is built with the C++ exception
+ABI — automatic, because gems here ship `.cxx` sources — so `MRB_THROW`
+is a real throw and the first one during interpreter init is fatal. The
+defect is not the CFI: `.eh_frame` is complete, correctly bracketed,
+inside a `PT_LOAD`, and registered before `main()` by `crt0` → `_init` →
+`frame_dummy` → `__register_frame_info`. It is libgcc's own
+`fde_radixsort` — an 8-bit-digit radix sort needing four passes to cover
+a 32-bit address, whose output is exactly the state after two. Measured
+on this EBOOT: the array it produces has 1460 inversions against the
+full `pc_begin` and **zero** against `pc_begin & 0xffff`, so it is
+perfectly sorted on the low halfword. Every code address here is
+`0x08xxxxxx`, so that ordering is useless and `search_object`'s binary
+search misses every entry; a linear scan finds the FDE immediately.
+Eliminated first, each by measurement rather than argument: the CFI data
+itself, registration, `__builtin_return_address(0)`, libgcc's packed
+unaligned read in `unwind-pe.h`, and `memmove`/`memset` through the
+emulator's HLE. Worked around in `psp_unwind_fde.cxx`, which overrides
+`__register_frame_info`/`_Unwind_Find_FDE`/`__deregister_frame_info` and
+answers lookups from an index it sorts itself; with it, boot reaches
+`RPG2K_PSP_MRUBY_OPEN ok` → `RPG2K_PSP_GAME_START` → a continuous
+`RPG2K_PSP_BRINGUP` heartbeat again. Not upstreamed to pspdev yet, and
+worth reporting there: nothing about it is specific to this project, and
+it breaks C++ exceptions for every PSP binary this toolchain builds.
+Since it is only reachable when something actually throws, it was
+presumably dormant through the nine-bug trail above rather than newly
+introduced.
+
+To reproduce any of this locally, run
 PPSSPP's headless binary with `--log` (needed to surface the `sceIoWrite`
 output). CI and a local build both go through this flake's own patched
 `ppsspp` package output (see above) rather than nixpkgs' unpatched one —

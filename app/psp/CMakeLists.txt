@@ -177,8 +177,12 @@ rpg2k_add_mruby(
 # PSP_BUILD the same way it always was. Compiling it here directly too, as the
 # earlier HAL-only bring-up did, would double-define every symbol in it
 # (psp_display_create, psp_input_scan, ...) once both this executable and
-# libmruby.a define them.
-add_executable(rpg2k_psp main.cxx)
+# libmruby.a define them. psp_unwind_fde.cxx must stay listed here, ahead of
+# every library: it overrides two libgcc symbols and only wins the link because
+# objects named in add_executable() precede the libraries under
+# -Wl,--allow-multiple-definition (set below). See the file's own preamble for
+# what it works around.
+add_executable(rpg2k_psp main.cxx psp_unwind_fde.cxx)
 
 target_compile_definitions(rpg2k_psp PRIVATE PSP_BUILD LV_CONF_INCLUDE_SIMPLE)
 target_include_directories(rpg2k_psp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
