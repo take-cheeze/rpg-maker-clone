@@ -565,9 +565,11 @@
   ```
 
 - Controls: arrow keys or `WASD` to move, `Z`/`Enter`/`Space` to confirm (C),
-  `X`/`Esc` to cancel (B), `C` for the A button, `Q` or `Ctrl-C` to quit. The
-  same reference is drawn as a one-line legend on the top row above the game
-  image
+  `X`/`Esc` to cancel (B), `C` for the A button, `L`/`R` for the shoulder
+  buttons (DebugMenu page/block jumps, the debug editors' layer/mode
+  switches, shop and formation-change scrolling, ...), `Q` or `Ctrl-C` to
+  quit. The same reference is drawn as a one-line legend on the top row
+  above the game image
 - The Test Play debug keys (see "Map exploration" above) work here too, held
   the same hold-to-repeat way the movement keys are: `T` stands in for Ctrl
   and `F` for Shift, since a raw terminal cannot tell a genuine Ctrl/Shift
