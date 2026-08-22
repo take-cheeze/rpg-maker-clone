@@ -2173,6 +2173,10 @@ module RGSS
       @stretch = v
     end
 
+    def viewport=(v)
+      @viewport = v
+    end
+
     def update
       nil
     end
