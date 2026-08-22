@@ -2,6 +2,17 @@
 /build-psp
 /wasm-build
 /emsdk
+
+# Android (app/android): Gradle/AGP build output, the CMake/ninja tree AGP's
+# externalNativeBuild drives underneath it, Gradle's own local cache, and the
+# machine-local SDK path Gradle writes on first configure -- none of it is
+# portable across machines, matching how /build (the desktop CMake tree) is
+# ignored above.
+/app/android/build
+/app/android/app/build
+/app/android/app/.cxx
+/app/android/.gradle
+/app/android/local.properties
 # Downloaded test-bed games live under data/ and are not committed, except the
 # hand-authored MV and MZ samples (data/mv-sample, data/mz-sample), which each
 # have their own .gitignore for the engine files they fetch. Ignore data/

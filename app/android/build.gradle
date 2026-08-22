@@ -1,0 +1,10 @@
+// Top-level build file. This project is additive to and independent of the
+// desktop/wasm CMake build at the repo root -- it does not touch it, and vice
+// versa. See app/android/README.md and docs/adr/0058-android-port.md.
+plugins {
+    id 'com.android.application' version '8.5.2' apply false
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
