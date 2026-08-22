@@ -324,6 +324,7 @@ class MZ
     "(function(g){ " \
     "function makeContext(){ var ctx = { _handles: [] }; " \
     "ctx.init = function(){}; " \
+    "ctx.setRestorationOfStatesFlag = function(){}; " \
     "ctx.loadEffect = function(url, mag, onLoad, onError){ " \
     "var exists = (typeof g.__mv_existsSync === 'function') && " \
     "g.__mv_existsSync(url); " \
