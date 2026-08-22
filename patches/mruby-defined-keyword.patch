@@ -112,7 +112,7 @@ real CRuby 3.3.6 interpreter for every case, not from documentation alone.
 @@ -828,6 +828,15 @@ new_break(parser_state *p, node *c)
    return (node*)n;
  }
- 
+
 +/* struct: defined_node(expr) */
 +static node*
 +new_defined(parser_state *p, node *c)
@@ -177,7 +177,7 @@ real CRuby 3.3.6 interpreter for every case, not from documentation alone.
 @@ -6239,15 +6239,271 @@ codegen_colon3(codegen_scope *s, node *varnode, int val)
    if (val) push();
  }
- 
+
 +/* Unconditionally pushes a literal string at cursp(). Used for the `defined?`
 + * cases whose answer is known at compile time (keywords, local variables,
 + * assignments, and the generic literal/expression fallback). */
@@ -449,7 +449,7 @@ real CRuby 3.3.6 interpreter for every case, not from documentation alone.
 +    break;
    }
  }
- 
+
 --- a/mrblib/kernel.rb
 +++ b/mrblib/kernel.rb
 @@ -42,4 +42,16 @@ module Kernel
