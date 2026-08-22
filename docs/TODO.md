@@ -20863,6 +20863,45 @@ screen (544×416). Full rationale:
     zero-argument case simply re-raises the same tracked value). Ships as
     `patches/mruby-dollar-bang-scoped.patch`; see the item 7 write-up for
     the two earlier, rejected approaches and the full mechanism.
+  - ✅ **`Tilemap#ox=`/`#oy=` and `Plane#ox=`/`#oy=` refreshed on every
+    frame even when unchanged, hanging the same real release for minutes
+    past the `$!` fix.** With `$!` no longer masking it, the release's own
+    crash-reporter stopped hiding the real exception -- and the game hung
+    on something unrelated: real RGSS's stock `Spriteset_Map#update`
+    reassigns `tilemap.ox`/`oy` (and a fog `Plane`'s own) every single
+    frame whether the camera moved or not, cheap in real RGSS (a
+    hardware-composited draw offset) but not in this engine, whose
+    `ox=`/`oy=` re-composited the whole visible tile grid or fog layer
+    from scratch on every call, guard-less. Diagnosed with `gdb` attached
+    to the hung headless process (a real C++ backtrace, not the `$!`
+    write-up's Ruby-level probe) and a temporary call counter confirming
+    hundreds of consecutive calls at the same already-stored value. Fixed
+    by adding a same-value early return to all four setters
+    (`mruby-rgss/src/lib.cxx`); see the item 7 write-up for the fuller
+    trace.
+  - ✅ **`Audio.bgs_play` rejected RGSS3's 4th (`pos`) argument, the same
+    gap `Audio.bgm_play` already had fixed.** Real stock `RPG::BGS#play`
+    passes `pos` the same way `RPG::BGM#play` does, but BGS's own backend
+    has no seekable position to resume (unlike BGM's `Mix_Music`). Fixed
+    by accepting and warning once on a nonzero `pos` rather than raising,
+    matching BGM's own fix history before real seeking was added there --
+    BGS has no seekable backend to build that half on.
+  - ✅ **`Marshal.dump`/`Marshal.load` (vendored `mruby-marshal` gem, its
+    own separate submodule) violated real Ruby's `marshal_dump`/
+    `marshal_load` protocol two ways** — a stray argument passed to
+    `marshal_dump` (real Ruby passes none), and `marshal_load` invoked as
+    a class factory method instead of an allocated instance's own method.
+    Both found via a real VX Ace game's own `Game_Interpreter`, which
+    defines both the real, standard way to control what
+    `BattleManager#save_battle_start_objects` serializes -- reached the
+    first time any event's "Battle Processing" command runs. Ships as
+    `patches/mruby-marshal-dump-load-protocol.patch`; see the item 7
+    write-up for the CRuby confirmation and the fuller trace.
+  - Next wall past all four fixes above: `defined?` called as a method
+    (`NoMethodError: undefined method 'defined?' for Module`) inside the
+    same release's bundled 吹きだしウィンドウ speech-bubble add-on's own
+    event-driven call path -- not yet traced to a specific mruby codegen
+    path.
   - Remaining, all native `mruby-rgss` work: `Viewport#tone` on `Window`
     contents (a different composite path; RGSS keeps windows in their own
     viewport, so a map tint does not tint the message window anyway).
