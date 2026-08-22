@@ -16,6 +16,7 @@ project(rpg_maker_clone C CXX)
 option(USE_MOLD "Link with mold when available" ON)
 if(USE_MOLD
    AND NOT EMSCRIPTEN
+   AND NOT ANDROID
    AND CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
   include(CheckLinkerFlag)
   check_linker_flag(CXX "-fuse-ld=mold" CXX_LINKER_SUPPORTS_MOLD)
@@ -54,6 +55,59 @@ if(EMSCRIPTEN)
   # ${SDL2_MIXER_LIB}, left empty here as the -sUSE_SDL_MIXER port covers it.
   add_library(SDL2::SDL2 INTERFACE IMPORTED)
   set(SDL2_MIXER_LIB "")
+elseif(ANDROID)
+  # Android has no system SDL2/SDL2_mixer package (there is no system linker
+  # path an APK's native libs can resolve against at all) -- every SDL2
+  # Android app vendors the source and builds it as part of its own native
+  # library, the same way app/android's Gradle project points its CMake build
+  # straight at this file. See docs/adr/0058-android-port.md.
+  #
+  # Both build SHARED (their own CMakeLists.txt default): app/android's Java
+  # SDLActivity subclass loads "libSDL2.so" and "libSDL2_mixer.so" before
+  # "lib${PROJECT_NAME}.so" (SDLActivity.getLibraries()) -- the same shape as
+  # the official SDL android-project template's commented-out SDL2_mixer
+  # line. SDL2_mixer's own CMakeLists.txt picks between the SDL2::SDL2 and
+  # SDL2::SDL2-static targets to link against based on *its own*
+  # BUILD_SHARED_LIBS, so both must build shared together rather than
+  # statically linking SDL2_mixer into this project's own library: that would
+  # need the SDL2::SDL2-static target, which building SDL2 shared never
+  # defines.
+  #
+  # Force this as a CACHE FORCE, not a plain set(): SDL2_mixer's own
+  # CMakeLists.txt declares `option(BUILD_SHARED_LIBS ... ON)`, and option()
+  # only seeds a cache entry that doesn't exist yet -- on a from-scratch
+  # configure a plain set() here would lose to that option() call once
+  # add_subdirectory(3rd/SDL_mixer) below runs, and the *global* default this
+  # variable controls (every add_library() below that doesn't say
+  # STATIC/SHARED, including lvgl/gflags/ng-log/qjs/uni-algo further down)
+  # would stay ON instead of going back OFF afterwards -- confirmed the hard
+  # way: a first pass at this left every one of those shared too, nine .so
+  # files in the APK instead of the two this comment documents.
+  set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+  add_subdirectory(3rd/SDL EXCLUDE_FROM_ALL)
+  # Match the codec set the Emscripten build ships (see its SDL2_MIXER_FORMATS
+  # comment above): OGG Vorbis + MIDI. SDL2_mixer bundles its own stb_vorbis.h
+  # and TiMidity decoders directly (src/codecs/{stb_vorbis,timidity}) -- no
+  # extra vendoring needed for either, unlike the FLAC/MP3/Opus/MOD/WavPack
+  # codecs below, which pull in their own external/ submodules this project
+  # does not initialize. Trimming them out keeps the Android native build to
+  # the same audio formats every other target already supports, instead of
+  # silently growing a second, wider codec matrix only this platform has.
+  set(SDL2MIXER_VORBIS "STB" CACHE STRING "" FORCE)
+  set(SDL2MIXER_MIDI_TIMIDITY ON CACHE BOOL "" FORCE)
+  set(SDL2MIXER_FLAC OFF CACHE BOOL "" FORCE)
+  set(SDL2MIXER_MP3 OFF CACHE BOOL "" FORCE)
+  set(SDL2MIXER_OPUS OFF CACHE BOOL "" FORCE)
+  set(SDL2MIXER_MOD OFF CACHE BOOL "" FORCE)
+  set(SDL2MIXER_WAVPACK OFF CACHE BOOL "" FORCE)
+  set(SDL2MIXER_GME OFF CACHE BOOL "" FORCE)
+  set(SDL2MIXER_CMD OFF CACHE BOOL "" FORCE)
+  add_subdirectory(3rd/SDL_mixer EXCLUDE_FROM_ALL)
+  set(SDL2_MIXER_LIB SDL2_mixer::SDL2_mixer)
+  # Back to static for everything below (lvgl, gflags, ng-log, qjs, uni-algo)
+  # -- matching the desktop build, which links all of those into the single
+  # executable rather than shipping each as its own shared object.
+  set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 else()
   find_package(SDL2 REQUIRED)
   # SDL2_mixer 2.6+ ships a CMake config exporting SDL2_mixer::SDL2_mixer; fall
@@ -104,6 +158,20 @@ set(CONFIG_LV_BUILD_DEMOS
     OFF
     CACHE BOOL "" FORCE)
 add_subdirectory(3rd/lvgl EXCLUDE_FROM_ALL)
+if(ANDROID)
+  # LVGL's own CMakeLists.txt globs its SDL driver sources
+  # (src/drivers/sdl/*.c) unconditionally and leans on
+  # __has_include(<SDL2/SDL.h>) to opt them in, rather than a find_package or
+  # option of its own. That finds SDL2's headers for free on the desktop
+  # build -- a system SDL2 install already sits on the compiler's default
+  # search path -- but not here, where SDL2 is vendored fresh with no system
+  # install at all (see the elseif(ANDROID) block above). Give the lvgl
+  # target the real include path (and link it) explicitly -- CMP0079 NEW
+  # since the `lvgl` target belongs to 3rd/lvgl's own CMakeLists.txt, not
+  # this one.
+  cmake_policy(SET CMP0079 NEW)
+  target_link_libraries(lvgl PUBLIC SDL2::SDL2)
+endif()
 
 set(WITH_GTEST OFF)
 set(WITH_GFLAGS
@@ -147,6 +215,16 @@ set(BUILD_TESTING ${old_build_testing})
 # uses the browser's WebGL; a build without them, e.g. darwin) mvgl.cxx compiles
 # to inert stubs (its __has_include guard), so we only link them when found
 # rather than REQUIRE them. The apt and nix builds both provide them.
+#
+# Android also finds and links both here -- despite mvgl.cxx's own
+# !defined(__ANDROID__) guard keeping it off the real EGL desktop path (its
+# libEGL.so does not export eglGetPlatformDisplay, unlike the apt/nix Mesa
+# builds -- see mvgl.cxx and docs/adr/0058-android-port.md) -- because LVGL's
+# own OpenGL ES driver (3rd/lvgl/src/drivers/opengles, compiled unconditionally
+# the same __has_include-driven way the SDL driver above is) calls plain
+# GLES2 entry points (glViewport, glClear, ...) that Android's real
+# libGLESv2.so does provide; only the desktop-EGL-1.5-specific symbol was
+# ever missing.
 set(GL_LIBS "")
 if(NOT EMSCRIPTEN)
   # Plain find_library resolves the libraries on apt (they sit in the system
@@ -294,6 +372,24 @@ if(EMSCRIPTEN)
   # Tell build_config.rb to emit the emscripten cross build, and give it native
   # compilers to build mrbc with (CXX=/CC= below point at em++/emcc).
   set(MRUBY_EXTRA_OPTS MRUBY_TARGET=emscripten "HOST_CC=cc" "HOST_CXX=c++")
+elseif(ANDROID)
+  # Same reasoning as the Emscripten branch above: this configure's own
+  # CMAKE_C_COMPILER/CMAKE_CXX_COMPILER are the NDK's cross clang (set by
+  # android.toolchain.cmake), and the "host" MRuby::Build below -- which only
+  # exists to produce the natively-executable mrbc bytecode compiler -- must
+  # not use it. HOST_CC/HOST_CXX force it back to the ambient native
+  # compiler; the android cross target (build_config.rb) picks up its own
+  # NDK clang independently via mruby's built-in :android toolchain
+  # (ANDROID_NDK_HOME/ANDROID_ARCH/ANDROID_PLATFORM below), not through
+  # CMAKE_CXX_COMPILER at all.
+  set(MRUBY_TARGET_NAME "android")
+  set(MRUBY_EXTRA_OPTS
+      MRUBY_TARGET=android
+      "HOST_CC=cc"
+      "HOST_CXX=c++"
+      "ANDROID_NDK_HOME=$ENV{ANDROID_NDK_HOME}"
+      "ANDROID_ARCH=${ANDROID_ABI}"
+      "ANDROID_PLATFORM=${ANDROID_NATIVE_API_LEVEL}")
 else()
   set(MRUBY_TARGET_NAME "host")
   set(MRUBY_EXTRA_OPTS "")
@@ -344,16 +440,28 @@ if(EMSCRIPTEN)
   add_custom_target(onigmo_clean DEPENDS "${ONIGMO_A}")
 endif()
 
-add_executable(
-  ${PROJECT_NAME}
-  src/main.cxx
-  src/sdl_input.cxx
-  src/sdl_audio.cxx
-  src/voicevox_tts.cxx
-  src/log_console.cxx
-  src/log_bridge.cxx
-  src/window_title.cxx
-  src/error_dump.cxx)
+set(RPG_SOURCES
+    src/main.cxx
+    src/sdl_input.cxx
+    src/sdl_audio.cxx
+    src/voicevox_tts.cxx
+    src/log_console.cxx
+    src/log_bridge.cxx
+    src/window_title.cxx
+    src/error_dump.cxx)
+if(ANDROID)
+  # SDLActivity (app/android) loads a JNI shared library, not a process it can
+  # exec -- Android has no argv-taking process launcher for an app's own
+  # native code the way a desktop OS or the PSP's EBOOT loader does.
+  # SDL2main's src/main/android/SDL_android_main.c (linked below) is the real
+  # JNI entry point Java calls; it forwards into this project's own renamed
+  # SDL_main (src/main.cxx's ordinary `int main`, renamed by SDL.h's
+  # `#define main SDL_main` on every platform including this one -- see
+  # docs/adr/0058-android-port.md).
+  add_library(${PROJECT_NAME} SHARED ${RPG_SOURCES})
+else()
+  add_executable(${PROJECT_NAME} ${RPG_SOURCES})
+endif()
 target_link_libraries(
   ${PROJECT_NAME}
   mruby
@@ -367,6 +475,9 @@ target_link_libraries(
   ${CMAKE_DL_LIBS}
   ${EFFEKSEER_LIBS}
   ${GL_LIBS})
+if(ANDROID)
+  target_link_libraries(${PROJECT_NAME} SDL2main log android)
+endif()
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
 
@@ -629,11 +740,18 @@ if(EMSCRIPTEN)
   endif()
 endif()
 
-install(TARGETS ${PROJECT_NAME} RUNTIME)
+# Android's Gradle build never runs `cmake --install` -- externalNativeBuild
+# copies the built .so into the APK itself -- and a SHARED library target
+# needs the LIBRARY, not RUNTIME, keyword to install correctly on a
+# non-Windows platform, so skip the whole install() surface below rather than
+# have it silently do the wrong thing for anyone who does invoke it by hand.
+if(NOT ANDROID)
+  install(TARGETS ${PROJECT_NAME} RUNTIME)
+endif()
 
 # Ship the MIDI patch set beside the binary so an installed build keeps working
 # without the source tree. src/sdl_audio.cxx probes <exe>/../share/... for it.
-if(NOT EMSCRIPTEN AND EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
+if(NOT EMSCRIPTEN AND NOT ANDROID AND EXISTS ${TIMIDITY_ASSET_DIR}/timidity.cfg)
   include(GNUInstallDirs)
   install(DIRECTORY ${TIMIDITY_ASSET_DIR}/
           DESTINATION ${CMAKE_INSTALL_DATADIR}/rpg-maker-clone/timidity)
@@ -642,7 +760,7 @@ endif()
 # Same for the default UI font, which src/main.cxx probes for at
 # RGSS_DEFAULT_FONT_INSTALL_DIR. OFL.txt sits in the same directory and is
 # installed with it, as the licence requires.
-if(NOT EMSCRIPTEN AND EXISTS ${DEFAULT_FONT_ASSET_DIR})
+if(NOT EMSCRIPTEN AND NOT ANDROID AND EXISTS ${DEFAULT_FONT_ASSET_DIR})
   include(GNUInstallDirs)
   install(
     DIRECTORY ${DEFAULT_FONT_ASSET_DIR}/
@@ -656,7 +774,13 @@ endif()
 
 enable_testing()
 
-if(NOT EMSCRIPTEN)
+# These ctests all exec the just-built ${PROJECT_NAME} (or mruby's own rake
+# test binaries) directly on the machine running the configure -- fine for the
+# desktop build, meaningless for Emscripten (a browser runtime, not a host
+# executable) and for Android (an ARM/x86 .so a Gradle/Java host can't exec
+# either; the closest equivalent would be an instrumented run under
+# adb/an emulator, not wired up here -- see docs/adr/0058-android-port.md).
+if(NOT EMSCRIPTEN AND NOT ANDROID)
   add_test(
     NAME mruby_test
     COMMAND env ${MRB_OPTS} rake test

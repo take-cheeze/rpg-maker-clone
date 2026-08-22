@@ -116,13 +116,15 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
 end
 
-# When cross-compiling (Emscripten, or the Wio Terminal below) the host build
-# only exists to produce the `mrbc` bytecode compiler, which must run natively
-# during the cross build; the actual libmruby.a is produced by the cross build.
+# When cross-compiling (Emscripten, Android, or the Wio Terminal below) the
+# host build only exists to produce the `mrbc` bytecode compiler, which must
+# run natively during the cross build; the actual libmruby.a is produced by
+# the cross build.
 emscripten = ENV['MRUBY_TARGET'] == 'emscripten'
 wio = ENV['MRUBY_TARGET'] == 'wio'
 psp = ENV['MRUBY_TARGET'] == 'psp'
-cross = emscripten || wio || psp
+android = ENV['MRUBY_TARGET'] == 'android'
+cross = emscripten || wio || psp || android
 
 MRuby::Build.new do |conf|
   toolchain :gcc
@@ -131,13 +133,39 @@ MRuby::Build.new do |conf|
 
   if cross
     # Force native host compilers so `mrbc` runs on the build machine even when
-    # CMake hands us emcc/em++ via CC/CXX (emscripten). For the Wio and PSP
-    # builds the host toolchain is invoked natively already, so the default
-    # cc/c++ are fine.
-    if emscripten
+    # CMake hands us a cross compiler via CC/CXX (emscripten's em++, or
+    # Android's NDK clang++ -- root CMakeLists.txt's ANDROID branch configures
+    # this whole project against the NDK toolchain, this "host" build included,
+    # so without the override toolchain :gcc's own ENV['CC']/ENV['CXX'] fallback
+    # would pick that cross compiler right back up). For the Wio and PSP builds
+    # the host toolchain is invoked natively already, so the default cc/c++ are
+    # fine.
+    if emscripten || android
       conf.cc.command = ENV['HOST_CC'] || 'cc'
       conf.cxx.command = ENV['HOST_CXX'] || 'c++'
       conf.linker.command = ENV['HOST_CXX'] || 'c++'
+    end
+
+    if android
+      # toolchain :gcc above already read ENV['CFLAGS']/ENV['CXXFLAGS'] (both
+      # set by root CMakeLists.txt's ANDROID branch to CMAKE_C_FLAGS, which
+      # the NDK's android.toolchain.cmake seeds with cross-target flags:
+      # -DANDROID, -D_FORTIFY_SOURCE=2, -fstack-protector-strong, ...) into
+      # conf.cc.flags/conf.cxx.flags before this block ever ran. Those are
+      # exactly right for the android cross target below (mruby's own
+      # :android toolchain hardcodes its own real cross flags and never reads
+      # CFLAGS/CXXFLAGS at all), but this "host" build compiles NATIVELY (the
+      # command override just above) to produce mrbc -- and Android's
+      # -DANDROID on a native compile broke it outright: it changes which
+      # branch of mruby-compiler/core/parse.y's generated C++ lexer compiles,
+      # and the result no longer compiles ("'mrb_reserved_word' was not
+      # declared in this scope"). Reset to gcc.rake's own plain
+      # native-compiler defaults (what it would have used with
+      # CFLAGS/CXXFLAGS unset) plus enable_debug's -g3 -O0 from above, instead
+      # of the cross target's flags.
+      conf.cc.flags = [%w[-std=gnu99], %w[-g -O3 -Wall -Wundef], %w[-g3 -O0]]
+      conf.cxx.flags = [%w[-g -O3 -Wall -Wundef], %w[-g3 -O0]]
+      conf.linker.flags = []
     end
 
     conf.gem core: 'mruby-bin-mrbc'
@@ -326,6 +354,53 @@ if emscripten
       # (e.g. a real archive of 5.5 MiB blew past a prior 4 MiB cap here).
       # Disable the cap outright, matching the native builds.
       t.defines << 'MRB_STR_LENGTH_MAX=0'
+    end
+
+    rpg_maker_gems(conf)
+  end
+end
+
+if android
+  # Cross build for Android (NDK, via mruby's own built-in :android toolchain
+  # -- tasks/toolchains/android.rake, upstream mruby, not something this
+  # project carries). Produces a libmruby.a that app/android's Gradle build
+  # links, through root CMakeLists.txt's own ANDROID branch (see
+  # docs/adr/0058-android-port.md).
+  #
+  # NOTE: like the Wio and PSP builds, this is the starting point for the
+  # port -- a single ABI (arm64-v8a, matching app/android/app/build.gradle's
+  # abiFilters) rather than the full armeabi-v7a/arm64-v8a/x86/x86_64 set a
+  # Play Store release would ship. Adding a second ABI is a matter of
+  # widening both that abiFilters list and the ANDROID_ARCH root
+  # CMakeLists.txt is configured with per build -- mruby's own toolchain
+  # already parameterizes on it (MRuby::Toolchain::Android::ARCHITECTURES).
+  # It is only built when MRUBY_TARGET=android, so it never affects the
+  # desktop or wasm builds.
+  MRuby::CrossBuild.new('android') do |conf|
+    # ANDROID_NDK_HOME/ANDROID_ARCH/ANDROID_PLATFORM come from root
+    # CMakeLists.txt's ANDROID branch (the real NDK path and the ABI/API level
+    # CMake itself was configured with via android.toolchain.cmake), so this
+    # target always matches whatever the surrounding C++ build is doing rather
+    # than a second, independently-maintained guess at the same values.
+    toolchain :android,
+              ndk_home: ENV['ANDROID_NDK_HOME'],
+              arch: ENV['ANDROID_ARCH'],
+              sdk_version: Integer(ENV.fetch('ANDROID_PLATFORM', '28'))
+
+    # The real triple mruby's :android toolchain targets (aarch64 for
+    # arm64-v8a); needed for mruby-onig-regexp's autotools-built onigmo to
+    # enter cross-compile mode. Only covers the one ABI this port currently
+    # builds -- widening ARCHITECTURES support above needs a matching case
+    # here.
+    conf.host_target = 'aarch64-linux-android'
+
+    enable_debug
+
+    [conf.cc, conf.cxx].each do |t|
+      t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
+      # Bionic (Android's libc) is Linux-based and mruby's string.c already
+      # detects __linux__ to default MRB_STR_LENGTH_MAX to unlimited, unlike
+      # the Wio/PSP bare-metal targets above -- so no override is needed here.
     end
 
     rpg_maker_gems(conf)
