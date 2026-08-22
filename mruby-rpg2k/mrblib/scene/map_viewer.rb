@@ -101,11 +101,23 @@ class RPG2k
       # parameter existed. @live (below) tells the two apart so this scene
       # never draws the player or another map's wandered-event positions on
       # top of a map the player isn't actually on.
-      def initialize(parent, state, map: nil, start_mode: :pan)
+      # `quit_on_close:` -- set by RPG2k#open_map_editor (the
+      # --rpg2k_map_editor flag) -- makes B in pan mode quit the whole process
+      # instead of popping back to whatever this viewer was pushed on top of.
+      # --rpg2k_map_editor pushes this scene straight onto a freshly-built
+      # Scene::Map (skipping F9 entirely, see #open_map_editor's own comment),
+      # so an ordinary #pop there would drop the CLI flag's whole point --
+      # jumping straight into the editor for a quick edit or a headless
+      # screenshot -- into an ordinary, playable field map instead of ending
+      # the run. Left false (the default) for every other caller, including
+      # F9's own Map page, where popping back to the debug menu underneath is
+      # exactly the wanted behaviour.
+      def initialize(parent, state, map: nil, start_mode: :pan, quit_on_close: false)
         super parent
         @state = state
         @map = map || state.map
         @live = @map.equal?(state.map)
+        @quit_on_close = quit_on_close
         @chipset = build_chipset
         @skin = make_windowskin
         @background = build_field_background(@skin)
@@ -153,7 +165,7 @@ class RPG2k
 
       def update_pan
         if Input.trigger?(Input::B)
-          @parent.pop
+          close
         elsif Input.trigger?(Input::C)
           center_on_player
           refresh
@@ -205,6 +217,12 @@ class RPG2k
         elsif move_cursor
           refresh
         end
+      end
+
+      # See @quit_on_close's own comment on #initialize.
+      def close
+        return exit if @quit_on_close
+        @parent.pop
       end
 
       def enter_select_mode

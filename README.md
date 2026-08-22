@@ -106,7 +106,12 @@
   `--rpg2k_preview_animation=<id>` each start New Game and immediately push
   the F9 debug menu's Map Editor, Chipset editor or Animation preview
   (see "Map exploration" above) straight onto the screen, skipping opening F9
-  and paging to them by hand. Combine with `--rpg2k_preview_map` to choose
+  and paging to them by hand. Closing the Map Editor or Chipset editor (B)
+  exits the process instead of falling back to the ordinary playable map
+  underneath — the flag skipped past F9 to get there, so an unqualified pop
+  would land in a live, controllable game rather than ending the run; opening
+  either editor from F9 itself still just pops back to the debug menu.
+  Combine with `--rpg2k_preview_map` to choose
   which map (and so which chipset) is open, and with the terminal backends
   below and `--timeout_ms` for a headless screenshot. Unlike every other flag
   on this page, these three do **not** need `--test_play`/`Game.ini`

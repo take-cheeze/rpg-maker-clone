@@ -19776,6 +19776,21 @@ check 'R enters MapViewer Select mode on the player tile; B backs out to pan mod
   eq 1, scene.parent.pop_called, 'a second B, now back in pan mode, closes it'
 end
 
+check 'MapViewer.new(..., quit_on_close: true) -- what --rpg2k_map_editor uses -- ' \
+     'exits the whole process on B in pan mode instead of popping back to the ' \
+     'ordinary playable map the flag skipped past' do
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::MapViewer.new(fake_parent(fake_db), st, quit_on_close: true)
+  exit_called = false
+  scene.define_singleton_method(:exit) { exit_called = true }
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok exit_called, 'B calls exit instead of @parent.pop'
+  ok !scene.parent.pop_called, 'the parent is never popped when quit_on_close is set'
+end
+
 check 'MapViewer Select mode reports the tile under the cursor: coordinates, ' \
      'passability, and any event standing there' do
   ev = event(4, 1, page)
@@ -20130,6 +20145,22 @@ check "ChipsetEditor's R saves the database and rebuilds the live map's chipset"
     ok rebuilt, "the live map scene's chipset was rebuilt so the edit shows immediately"
     ok !scene.instance_variable_get(:@dirty), 'saving clears the unsaved flag'
   end
+end
+
+check 'ChipsetEditor.new(..., quit_on_close: true) -- what --rpg2k_chipset_editor uses -- ' \
+     'exits the whole process on B instead of popping back to the ordinary playable ' \
+     'map the flag skipped past' do
+  db = fake_db
+  st = menu_state
+  st.map = fake_map(1, {})
+  scene = RPG2k::Scene::ChipsetEditor.new(fake_parent(db), st, quit_on_close: true)
+  exit_called = false
+  scene.define_singleton_method(:exit) { exit_called = true }
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok exit_called, 'B calls exit instead of @parent.pop'
+  ok !scene.parent.pop_called, 'the parent is never popped when quit_on_close is set'
 end
 
 check 'the debug menu Animation page adjusts an id (Up/Down by one, L/R by ten) and ' \

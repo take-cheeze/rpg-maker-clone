@@ -48,9 +48,19 @@ class RPG2k
       TEXT_COLOR = Color.new(255, 255, 255, 255)
       HINT_COLOR = Color.new(200, 200, 200, 255)
 
-      def initialize(parent, state)
+      # `quit_on_close:` -- set by RPG2k#open_chipset_editor (the
+      # --rpg2k_chipset_editor flag) -- makes B quit the whole process instead
+      # of popping back to whatever this editor was pushed on top of. See
+      # Scene::MapViewer#initialize's own comment on the identical parameter:
+      # the flag pushes this scene straight onto a freshly-built Scene::Map,
+      # skipping F9 entirely, so an ordinary #pop would drop into an ordinary,
+      # playable field map instead of ending the run. Left false (the
+      # default) for F9's own Chipset page, where popping back to the debug
+      # menu underneath is exactly the wanted behaviour.
+      def initialize(parent, state, quit_on_close: false)
         super parent
         @state = state
+        @quit_on_close = quit_on_close
         @chipset_id = state.map ? state.map.chipset_id : 1
         @chip = @db.respond_to?(:chipset) ? @db.chipset[@chipset_id] : nil
         @skin = make_windowskin
@@ -73,7 +83,7 @@ class RPG2k
 
       def update
         if Input.trigger?(Input::B)
-          @parent.pop
+          close
         elsif Input.trigger?(Input::L)
           switch_tab
         elsif Input.trigger?(Input::C)
@@ -86,6 +96,12 @@ class RPG2k
       end
 
       private
+
+      # See @quit_on_close's own comment on #initialize.
+      def close
+        return exit if @quit_on_close
+        @parent.pop
+      end
 
       def switch_tab
         @tab = @tab == :lower ? :upper : :lower
