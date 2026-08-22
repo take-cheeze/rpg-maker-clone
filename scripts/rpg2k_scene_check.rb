@@ -17891,10 +17891,9 @@ end
 
 check 'Scene::Menu: End Game opens a Yes/No confirmation instead of quitting ' \
       'outright' do
-  # Confirmed against EasyRPG's own Scene_Menu::UpdateCommand (`case Quit:`
-  # plays the Decision SE and pushes Scene_End, never touching the title
-  # directly) and Scene_End::CreateCommandWindow (cursor defaults to index
-  # 1, "No" -- a stray confirm press must not quit the game).
+  # Selecting End Game must not quit outright; confirmed against a genuine
+  # RPG_RT.exe (Nepheshel, wine) that the cursor opens already on "はい"
+  # (Yes), the top row -- see #open_end_game_confirm's own comment.
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
   scene.instance_variable_set(:@index, 4)  # End Game, last of RPG2K_COMMAND_KEYS
   RGSS::Input.triggered = [RGSS::Input::C]
@@ -17904,8 +17903,8 @@ check 'Scene::Menu: End Game opens a Yes/No confirmation instead of quitting ' \
      'selecting End Game alone must not hand control back to the app'
   eq :end_game_confirm, scene.instance_variable_get(:@focus),
      'a Yes/No prompt opens instead'
-  eq 1, scene.instance_variable_get(:@confirm_index),
-     'the cursor starts on "No" (index 1), matching Scene_End::CreateCommandWindow'
+  eq 0, scene.instance_variable_get(:@confirm_index),
+     'the cursor starts on "Yes" (index 0), matching genuine RPG_RT'
 end
 
 check 'Scene::Menu: confirming "No" on the End Game prompt returns to the ' \
@@ -17913,9 +17912,15 @@ check 'Scene::Menu: confirming "No" on the End Game prompt returns to the ' \
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
   scene.instance_variable_set(:@index, 4)
   RGSS::Input.triggered = [RGSS::Input::C]
-  scene.update                                    # open the prompt (cursor on No)
+  scene.update                                    # open the prompt (cursor on Yes)
   RGSS::Input.reset
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN]      # move the cursor to "No"
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@confirm_index)
   RGSS::Audio.reset_bgm
+
   RGSS::Input.triggered = [RGSS::Input::C]         # confirm "No"
   scene.update
   RGSS::Input.reset
@@ -17944,16 +17949,12 @@ check 'Scene::Menu: confirming "Yes" on the End Game prompt fades the BGM ' \
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
   scene.instance_variable_set(:@index, 4)
   RGSS::Input.triggered = [RGSS::Input::C]
-  scene.update                                    # open the prompt (cursor on No)
+  scene.update                                    # open the prompt (cursor on Yes)
   RGSS::Input.reset
   RGSS::Audio.reset_bgm
-
-  RGSS::Input.triggered = [RGSS::Input::UP]        # move the cursor to "Yes"
-  scene.update
-  RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@confirm_index)
 
-  RGSS::Input.triggered = [RGSS::Input::C]         # confirm "Yes"
+  RGSS::Input.triggered = [RGSS::Input::C]         # confirm "Yes" outright
   scene.update
   RGSS::Input.reset
   ok scene.parent.returned_to_title,
