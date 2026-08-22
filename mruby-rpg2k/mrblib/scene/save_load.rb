@@ -159,17 +159,23 @@ class RPG2k
       # first slot. `#update` passes `allow_wrap:` true only for the frame a
       # direction is freshly pressed, matching that split exactly.
       # RPG_RT opens this screen with the cursor already on whichever slot
-      # was saved most recently, not always slot 1 -- confirmed against
-      # EasyRPG's own live source: `Scene_File::Start` (`src/scene_file.cpp`)
-      # sets `index = latest_slot; top_index = std::max(0, index - 2);`,
-      # where `latest_slot`/`latest_time` (`UpdateLatestTimestamp`) track
-      # whichever populated slot's `title.timestamp` (chunk 100 field 1) is
-      # the largest, defaulting to slot 0 when no save has one at all.
-      # `Game::State#to_lsd` already writes that exact field into each
-      # slot's exported `Save<N>.lsd` sibling (`title[1] = timestamp.to_f`,
-      # defaulting to the real save-time "now") -- reading it back here is
-      # the same genuine on-disk field RPG_RT itself reads, not a
-      # filesystem-mtime proxy.
+      # was saved most recently, not always slot 1 -- independently
+      # confirmed against a genuine RPG_RT.exe under wine (cycle #123), not
+      # just EasyRPG's source (`Scene_File::Start`, `src/scene_file.cpp`,
+      # whose `index = latest_slot; ...` shape this was originally, and
+      # still correctly, ported from). Two title-only `Save<N>.lsd` siblings
+      # written directly into Nepheshel's game dir, differing only in chunk
+      # 100 field 1 (`title.timestamp`): with slot 2 given the larger value,
+      # a fresh RPG_RT.exe boot -> Continue landed the cursor on File 2, not
+      # File 1; swapping which slot carried the larger timestamp swapped
+      # which slot the cursor landed on too (File 1 the second time) --
+      # ruling out "just the highest-numbered occupied slot" as an
+      # alternative explanation for the first result. `Game::State#to_lsd`
+      # already writes that exact field into each slot's exported
+      # `Save<N>.lsd` sibling (`title[1] = timestamp.to_f`, defaulting to
+      # the real save-time "now") -- reading it back here is the same
+      # genuine on-disk field RPG_RT itself reads, not a filesystem-mtime
+      # proxy.
       def initial_index
         best = 0
         best_time = -Float::INFINITY
