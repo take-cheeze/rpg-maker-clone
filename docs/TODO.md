@@ -11773,11 +11773,42 @@ not yet verified:
   `@state.party.rpg2003?` — `BATTLE_EVENT_MSG_Y` (top) for RPG2003, or
   flush against the screen's bottom edge (`SCREEN_H - inner_h -
   Window::BORDER * 2`, computed from the panel's own content height since
-  this codebase's message panel is content-fit rather than RPG_RT's fixed
-  size) for RPG2000. Covered by a new `scripts/rpg2k_scene_check.rb` check
+  ~~this codebase's message panel is content-fit rather than RPG_RT's fixed
+  size~~ **(corrected below: RPG_RT's panel is not content-fit either — it's
+  the same fixed 320x80 rect this file's other battle windows already
+  use)**) for RPG2000. Covered by a new `scripts/rpg2k_scene_check.rb` check
   (an RPG2000 battle-event message sits flush against the bottom edge; an
   RPG2003 one sits at `BATTLE_EVENT_MSG_Y`), confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **Follow-up (2026-08-22): the battle-event message panel itself still
+  carried the same stale "inset 10px, content-sized" shape already fixed for
+  the (field) message window, the shop list window and the Inn prompt
+  window — only its top/bottom position (above) had been corrected, not its
+  size.** `#battle_text_window` built `Window.new(10, y, SCREEN_W - 20,
+  inner_h + Window::BORDER*2)` with `inner_h` sized to the message's own
+  line count. Confirmed against genuine RPG_RT.exe under wine: Nepheshel's
+  own troop battle-event pages never use Show Message
+  (`analyze_game.rb --troops` finds none across all 3265 troop pages), so
+  this needed a synthetic turn-0 troop page injected into a copy of the
+  database plus a synthetic autostart Enemy Encounter (with its full
+  canonical Victory/Escape/EndBattle trailing structure) injected into a
+  copy of a map, both restored afterward — real RPG_RT's resulting panel
+  border sat flush against the screen's left edge (physical `x=0..1`),
+  right edge (`x=638..639`) and bottom edge, top edge at physical `y=320`,
+  i.e. exactly `x=0, y=BATTLE_PANEL_Y (160), width=SCREEN_W (320),
+  height=BATTLE_PANEL_H (80)` — the identical fixed rect
+  `#battle_panel_window` and this file's status/command/target windows
+  already share, not a box measuring `x=10, width=300,
+  height=` one line's worth. Fixed by building
+  `Window.new(0, y, SCREEN_W, BATTLE_PANEL_H)` instead, keeping the
+  RPG2000-vs-RPG2003 `y` split above untouched since only the size was
+  wrong. Covered by a new `scripts/rpg2k_scene_check.rb` check asserting
+  the panel's exact `x`/`width`/`height`/`y` against
+  `BATTLE_PANEL_Y`/`BATTLE_PANEL_H`/`SCREEN_W` — the existing check above
+  only ever compared `win2k.y` against `SCREEN_H - win2k.height`, which
+  holds tautologically regardless of what `height` actually is, so it could
+  not have caught this on its own — confirmed to fail against the pre-fix
+  code before the fix.
 - ✅ **Weather Effects now clamps an RPG2003-only weather type back to none on
   RPG2000, and clamps strength to at most 2 on every edition — both used to
   be stored verbatim off the raw command bytes with no bound at all.**
