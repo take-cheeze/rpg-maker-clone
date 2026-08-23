@@ -310,12 +310,16 @@ with no such variable, got an empty build type and no optimisation at all --
 two undeclared, different builds of the same commit, which is how an
 `-O2`-only failure went unnoticed.
 
-At `-O2` the EBOOT halts on LVGL's TLSF assert
-(`!block_is_free(block)` in `lv_tlsf_realloc`) during `lv_init()`, before
-anything here has touched LVGL's pool. Unoptimised it boots to completion.
-Confirmed by building in the *same* container both ways, so the environment
-is not the variable -- only the flag is. **Open.** Eliminated so far, each by
-measurement:
+At `-O2` the EBOOT used to halt on LVGL's TLSF assert
+(`!block_is_free(block)` in `lv_tlsf_realloc`) during `lv_init()`.
+**Resolved:** that was never an optimisation bug. It was bug 11 below --
+`psp-fixup-imports` not repointing tail-call `j` instructions -- and
+optimisation merely emits more tail calls, so it hit more mis-dispatched
+stubs. With that fixed, `-O2` and `-Os` both boot to
+`RPG2K_PSP_GAME_START` and hold a heartbeat, and the pin is now
+`MinSizeRel`: every byte of `.text` is live RAM on this target, and `-Os`
+saves 373 KB against `Debug`. The candidates ruled out along the way, each
+by measurement, are kept because the eliminations are still sound:
 
 - **The draw buffers.** `psp_display_create` reports its post-condition
   (`RPG2K_PSP_DRAWBUF`); both pointers are non-null and both sizes exact at

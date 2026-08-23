@@ -21,28 +21,26 @@ project(rpg2k_psp C CXX ASM)
 # -O2 -g -DNDEBUG while the `psp` CI job, which runs in a bare pspdev container
 # with no such variable, got an empty build type and therefore no optimisation
 # flags at all. Two different builds of the same commit, neither declared
-# anywhere, and the difference is not cosmetic: at -O2 this EBOOT halts on
-# LVGL's TLSF assert (`!block_is_free(block)` in lv_tlsf_realloc,
-# 3rd/lvgl/src/stdlib/builtin/lv_tlsf.c:1215) during display setup, while the
-# unoptimised build boots to completion. Confirmed by building in the *same*
-# container both ways: only the flag changed, and only the -O2 build asserts.
+# anywhere, which is how an optimisation-dependent failure went unnoticed.
 #
-# So this is deliberately the unoptimised build, plus -g: it is the only
-# configuration proven to reach RPG2K_PSP_MRUBY_OPEN and a running
-# RPG2K_PSP_BRINGUP heartbeat, and while the port is still in bring-up (ADR
-# 0047's P1 is about measuring this target at all) accurate line info and absent
-# inlining are worth more than code size. The cost is measured and affordable:
-# unoptimised .text is ~260 KB larger, against a boot that reports 782 KB heap
-# free, a 256 KB LVGL pool running at 1.4%, and a 256 KB main stack at 6.4%. -g
-# adds no RAM cost -- debug sections are not in a PT_LOAD.
+# MinSizeRel (-Os -DNDEBUG) is the right default for this target: the whole
+# EBOOT is loaded into the console's ~24 MB at launch, so every byte of .text is
+# live RAM, and -Os buys 373 KB against Debug and 118 KB against -O2 here
+# (2095840 / 2477972 / 2217032 bytes of .text respectively), with no behavioural
+# difference measured -- all three reach RPG2K_PSP_GAME_START and hold a
+# RPG2K_PSP_BRINGUP heartbeat.
 #
-# Provisional. Once the -O2 failure is root-caused, MinSizeRel (-Os -DNDEBUG) is
-# the better long-term answer for a target whose whole image is RAM-resident at
-# launch. Override deliberately with -DRPG2K_PSP_BUILD_TYPE=<type>; setting
+# This was pinned to Debug for a while because -O2 halted on LVGL's TLSF assert.
+# That turned out not to be an optimisation bug at all: bug 11 in
+# app/psp/README.md, psp-fixup-imports not repointing tail-call `j`
+# instructions. Optimisation simply emits more tail calls, so it hit more
+# mis-dispatched stubs. With the fix, -O2 and -Os both boot cleanly.
+#
+# Override deliberately with -DRPG2K_PSP_BUILD_TYPE=<type>; setting
 # CMAKE_BUILD_TYPE directly (or via the environment) is intentionally ignored,
 # since that ambient behaviour is the bug this pin exists to prevent.
 set(RPG2K_PSP_BUILD_TYPE
-    "Debug"
+    "MinSizeRel"
     CACHE STRING "Optimisation level for the PSP EBOOT")
 set(CMAKE_BUILD_TYPE
     "${RPG2K_PSP_BUILD_TYPE}"
