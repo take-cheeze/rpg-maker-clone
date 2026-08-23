@@ -18760,19 +18760,21 @@ check 'Scene::SaveLoad :load mode: confirming an occupied slot resumes it' do
   eq [1], parent.continue_calls, 'RPG2k#continue_game was called for the confirmed slot'
 end
 
-check 'Scene::SaveLoad: Down/Up move and wrap across all MAX_SAVE_SLOTS' do
+check 'Scene::SaveLoad: Down/Up move the cursor and clamp, never wrap, at ' \
+      'either end of MAX_SAVE_SLOTS' do
   scene, = save_load_scene(:load)
-  RPG2k::MAX_SAVE_SLOTS.times do
+  (RPG2k::MAX_SAVE_SLOTS + 3).times do
     RGSS::Input.triggered = [RGSS::Input::DOWN]
     scene.update
     RGSS::Input.reset
   end
-  eq 0, scene.instance_variable_get(:@index), 'DOWN pressed MAX_SAVE_SLOTS times wraps back to 0'
+  eq RPG2k::MAX_SAVE_SLOTS - 1, scene.instance_variable_get(:@index),
+     'DOWN pressed past the last slot clamps there instead of wrapping to 0'
   RGSS::Input.triggered = [RGSS::Input::UP]
   scene.update
   RGSS::Input.reset
-  eq RPG2k::MAX_SAVE_SLOTS - 1, scene.instance_variable_get(:@index),
-     'UP from slot 1 wraps to the last slot'
+  eq RPG2k::MAX_SAVE_SLOTS - 2, scene.instance_variable_get(:@index),
+     'UP from the last slot moves up by one, same as any other slot'
 end
 
 # EasyRPG's Window_Selectable::Update (src/window_selectable.cpp) falls
@@ -18792,17 +18794,14 @@ check 'Scene::SaveLoad: holding Down auto-repeats the cursor, not just a ' \
      'a held (repeated, not triggered) Down still moves the cursor one slot'
 end
 
-# Confirmed directly against RPG_RT's live source: `Scene_File::vUpdate`
-# (`src/scene_file.cpp`) advances the index unconditionally on a fresh
-# `IsTriggered(DOWN)` -- a tap at the last slot always wraps to the first --
-# but a bare `IsRepeated(DOWN)` (the key already auto-repeating) gates that
-# same advance on `index < max_index`: a sustained hold simply stops at the
-# last slot rather than cycling back around, only wrapping once the player
-# releases and presses again. The mirror case holds for Up at the first
-# slot. `Window_SaveFile` is a plain `Window_Base`, not a `Window_Selectable`
-# -- this nuance is `Scene_File`'s own, not the generic list-cursor machinery
-# every other menu's `#repeat?` wiring goes through.
-check 'Scene::SaveLoad: a held (not freshly tapped) Down does not wrap past ' \
+# This list never wraps at either end, on a tap or a held key alike --
+# independently confirmed against a genuine RPG_RT.exe under wine (cycle
+# #127); see Scene::SaveLoad#update's own citation for the frame-by-frame
+# evidence. `Window_SaveFile` is a plain `Window_Base`, not a
+# `Window_Selectable` -- this list's index/scroll logic is `Scene_File`'s
+# own, not the generic list-cursor machinery every other menu's `#repeat?`
+# wiring goes through.
+check 'Scene::SaveLoad: a held (not freshly tapped) Down does not move past ' \
       'the last slot' do
   scene, = save_load_scene(:load)
   scene.instance_variable_set(:@index, RPG2k::MAX_SAVE_SLOTS - 1)
@@ -18813,7 +18812,7 @@ check 'Scene::SaveLoad: a held (not freshly tapped) Down does not wrap past ' \
      'a held Down at the last slot stays put instead of wrapping to the first'
 end
 
-check 'Scene::SaveLoad: a held (not freshly tapped) Up does not wrap past ' \
+check 'Scene::SaveLoad: a held (not freshly tapped) Up does not move past ' \
       'the first slot' do
   scene, = save_load_scene(:load)
   RGSS::Input.repeated = [RGSS::Input::UP] # held, but not a fresh trigger
@@ -18823,14 +18822,27 @@ check 'Scene::SaveLoad: a held (not freshly tapped) Up does not wrap past ' \
      'a held Up at the first slot stays put instead of wrapping to the last'
 end
 
-check 'Scene::SaveLoad: a fresh tap of Down still wraps past the last slot' do
+check 'Scene::SaveLoad: a fresh tap of Down at the last slot does not wrap ' \
+      'either' do
   scene, = save_load_scene(:load)
   scene.instance_variable_set(:@index, RPG2k::MAX_SAVE_SLOTS - 1)
   RGSS::Input.triggered = [RGSS::Input::DOWN] # a fresh tap, not merely held
   scene.update
   RGSS::Input.reset
+  eq RPG2k::MAX_SAVE_SLOTS - 1, scene.instance_variable_get(:@index),
+     'a fresh tap at the last slot stays put too -- this list never wraps, ' \
+     'tap or hold alike'
+end
+
+check 'Scene::SaveLoad: a fresh tap of Up at the first slot does not wrap ' \
+      'either' do
+  scene, = save_load_scene(:load)
+  RGSS::Input.triggered = [RGSS::Input::UP] # a fresh tap, not merely held
+  scene.update
+  RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@index),
-     'unlike a held repeat, a fresh tap at the last slot does wrap to the first'
+     'a fresh tap at the first slot stays put too -- this list never wraps, ' \
+     'tap or hold alike'
 end
 
 check 'Scene::SaveLoad: cancelling (B) pops back without touching the parent app' do

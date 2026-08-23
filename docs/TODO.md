@@ -6445,6 +6445,42 @@ The work below is roughly ordered by the critical path to a walkable game
   reassigning `save[101] = sys` before serialising, not investigated further
   as a library defect since no runtime call site was found using the
   lossy pattern.
+  ✅ **Follow-up (cycle #127, 2026-08-23): the file-select list's own
+  "a fresh tap wraps past the first/last slot, a held key just stops there"
+  claim was wrong on the wrap half -- real RPG_RT never wraps this list at
+  either end, tap or hold alike. Fixed.** That claim (added in the
+  2026-08-19 follow-up above) was cited only to EasyRPG's `Scene_File::
+  vUpdate` -- the exact class of claim this session's methodology treats as
+  worth re-checking on its own, and never independently re-verified since.
+  Booted a genuine RPG_RT.exe under wine fresh (Title -> Down -> Return,
+  landing on the file-select screen with the cursor on File 1, no map load
+  needed) and drove it directly: a single Up tap from File 1 left the
+  captured frame pixel-identical to the one before it (still File 1, no
+  scroll) -- confirmed the input pipeline itself was live by then tapping
+  Down three times and watching the list scroll/advance normally. Walked
+  Down to File 15 (`MAX_SAVE_SLOTS`, the last slot) with 14 taps, then
+  tapped Down once more: frame unchanged, still File 15, no wrap to File 1;
+  a further ~1.5s hold of Down there, and a matching hold of Up back at
+  File 1, both likewise left the frame unchanged. All four probes (tap-Up-
+  at-first, tap-Down-at-last, hold-Down-at-last, hold-Up-at-first) agree:
+  this list simply clamps at both ends and never wraps, contradicting the
+  "a fresh tap wraps, a hold does not" shape entirely -- not a narrower
+  refinement of it. Fixed by dropping the `allow_wrap:` parameter from
+  `#move_selection` (`mruby-rpg2k/mrblib/scene/save_load.rb`) entirely: it
+  now clamps unconditionally (`return if target < 0 || target >=
+  SLOT_COUNT`), matching the bounded, no-wrap shape every other list in
+  this codebase already uses (e.g. `Scene::ItemMenu#move_item_cursor`'s
+  identical `return if target < 0 || target >= items.size`) rather than
+  singling this screen out with wrap-then-un-wrap logic. `#update`'s and
+  `#move_selection`'s own comments updated to record the finding and drop
+  the EasyRPG citation. `scripts/rpg2k_scene_check.rb`'s four wrap-adjacent
+  checks updated to match: the two held-key checks were already asserting
+  the (unchanged) correct behaviour and needed only their citation comment
+  swapped, while the two fresh-tap checks (which asserted the now-wrong
+  wrap) were rewritten to assert clamping instead, confirmed to fail
+  against the pre-fix code (`expected 14, got 0` for the Down case)
+  before the fix. Full suite reconfirmed passing after the fix (903
+  checks).
   ✅ **Follow-up (cycle #124, 2026-08-22): `game_over.rb`'s "only Decision
   dismisses the Game Over screen, Cancel does nothing" claim was wrong --
   real RPG_RT.exe accepts Cancel too, identically to Decision. Fixed.**
