@@ -65,6 +65,38 @@ void delay_cb(uint32_t ms) {
   sceKernelDelayThread(ms * 1000u);
 }
 
+// Exchange the red and blue channels of `count` RGB565 pixels while copying,
+// turning LVGL's RGB565 into the BGR565 the PSP display controller scans out.
+// Green (bits 5..10) is common to both and passes through untouched.
+void swap_rb_row(uint16_t* dst, const uint16_t* src, int32_t count) {
+  int32_t i = 0;
+  // The 32-bit path needs both sides 4-byte aligned; a row can start on an odd
+  // pixel because of g_offset_x, so peel one pixel when it does.
+  if (count > 0 &&
+      ((reinterpret_cast<uintptr_t>(dst) | reinterpret_cast<uintptr_t>(src)) &
+       3u) != 0u) {
+    const uint16_t v = src[0];
+    dst[0] = static_cast<uint16_t>(((v & 0x001Fu) << 11) | (v & 0x07E0u) |
+                                   ((v >> 11) & 0x001Fu));
+    i = 1;
+  }
+  if (((reinterpret_cast<uintptr_t>(dst + i) |
+        reinterpret_cast<uintptr_t>(src + i)) &
+       3u) == 0u) {
+    for (; i + 1 < count; i += 2) {
+      const uint32_t v = *reinterpret_cast<const uint32_t*>(src + i);
+      *reinterpret_cast<uint32_t*>(dst + i) = ((v & 0x001F001Fu) << 11) |
+                                              (v & 0x07E007E0u) |
+                                              ((v >> 11) & 0x001F001Fu);
+    }
+  }
+  for (; i < count; ++i) {
+    const uint16_t v = src[i];
+    dst[i] = static_cast<uint16_t>(((v & 0x001Fu) << 11) | (v & 0x07E0u) |
+                                   ((v >> 11) & 0x001Fu));
+  }
+}
+
 // Copy one rendered rectangle into the VRAM framebuffer. LVGL hands RGB565
 // pixels packed at the rectangle's own width, in the *logical* canvas's
 // coordinate space; g_offset_x/g_offset_y translate that into panel-relative
@@ -75,11 +107,20 @@ void delay_cb(uint32_t ms) {
 // allocation. The framebuffer's fixed 512-pixel line stride is accounted for
 // in the destination row stride either way.
 //
-// NOTE: the PSP's 565 display format is BGR-ordered (red in the low 5 bits)
-// while LVGL's RGB565 puts red high, so the red/blue channels are swapped on
-// screen. Harmless for this bring-up (it still proves display + input); when
-// the real scene tree lands this is the one knob to fix -- either a per-pixel
-// swap here or an LVGL BGR color format -- verified against PPSSPP.
+// The PSP's 565 display format is BGR-ordered (red in the low 5 bits) while
+// LVGL's RGB565 puts red high, so every pixel's red and blue channels have to
+// be exchanged on the way into VRAM or the panel shows the image with red and
+// blue transposed. LVGL cannot do it for us: its RGB565_SWAPPED is a *byte*
+// swap for endianness, not a channel swap, so it produces something different
+// again. Hence the per-pixel rewrite below instead of the plain memcpy this
+// used to be.
+//
+// Two pixels are converted per 32-bit word where the row's alignment allows
+// it, which halves the loop trip count for the common case; a full 320x240
+// redraw is 76800 pixels and this runs on every flush, so it is worth not
+// doing one halfword at a time. The scalar path handles an odd leading pixel
+// and an odd trailing pixel, and any row whose source or destination is not
+// 4-byte aligned.
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   const int32_t w = lv_area_get_width(area);
   const int32_t h = lv_area_get_height(area);
@@ -106,7 +147,7 @@ void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
       continue;
 
     uint16_t* dst = g_fb + dst_y * PSP_BUF_WIDTH + dst_x;
-    std::memcpy(dst, row_src, static_cast<size_t>(copy_w) * 2);
+    swap_rb_row(dst, row_src, copy_w);
   }
 
   lv_display_flush_ready(disp);
