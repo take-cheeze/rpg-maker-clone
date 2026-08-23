@@ -372,43 +372,39 @@
           # patched psp-fixup-imports app/psp/CMakeLists.txt insists on ships
           # inside it.
           #
-          # Host tools mirror what the psp CI job's container gets from apk
-          # plus what mruby's host half needs on a nix machine (the gperf/
-          # bison trap from PSP-HANDOFF.md's environment notes applies here
-          # too: without them, a stale direnv shell fails in mruby's lexer
-          # regeneration and leaves a zero-byte lex.def behind).
+          # The shell *is* packages.build, overrideAttrs'd like
+          # devShells.default above, rather than a fresh mkShell re-listing
+          # the host tools: every addition to the package build's
+          # environment (cmake/ninja/ruby/autoconf/automake/pre-commit, the
+          # gperf/bison pair mruby's lexer regeneration needs on a nix
+          # machine -- the trap PSP-HANDOFF.md's environment notes describe,
+          # where a stale direnv shell fails mid-regeneration and leaves a
+          # zero-byte lex.def behind) reaches PSP builds without a second
+          # copy of the list drifting out of sync. Only what PSP work adds
+          # beyond the native baseline lives here.
           #
           # Linux-only: packages.pspdev is an x86_64-linux tarball and
           # packages.ppsspp is Linux-only anyway. On darwin, use the default
           # devshell plus upstream's macOS release tarball by hand.
-          psp = pkgs.mkShell {
-            packages =
-              with pkgs;
-              [
+          psp = self.packages.${system}.build.overrideAttrs (old: {
+            nativeBuildInputs =
+              old.nativeBuildInputs
+              ++ [
                 self.packages.${system}.pspdev
-                cmake
-                ninja
-                ruby
-                bison
-                gperf
-                git
-                autoconf
-                automake
-                pkg-config
-                pre-commit
+                pkgs.pkg-config
               ]
               ++ nixpkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
                 self.packages.${system}.ppsspp
               ];
             PSPDEV = "${self.packages.${system}.pspdev}";
             CMAKE_BUILD_TYPE = "MinSizeRel";
-            shellHook = ''
+            shellHook = old.shellHook + ''
               echo "psp shell: PSPDEV=$PSPDEV"
               "$PSPDEV/bin/psp-gcc" --version | head -1
               echo "build:  psp-cmake -S app/psp -B build-psp && cmake --build build-psp"
               echo "run:    ppsspp-headless --log --graphics=software build-psp/EBOOT.PBP"
             '';
-          };
+          });
         }
       );
     };
