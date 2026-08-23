@@ -71,9 +71,31 @@ about this fix is specific to this project's binary, but applied locally
 here in the meantime the same way this repo's own PPSSPP patches are
 (nix/patches/).
 
+Update: the original version of this patch repointed only `jal`. MIPS has a
+second direct jump, `j`, and the compiler emits it for a *tail call* -- any
+function whose last act is calling the import. LVGL's delay hook here,
+`void delay_cb(uint32_t ms) { sceKernelDelayThread(ms * 1000); }`, compiles
+to a bare `j sceKernelDelayThread` with no `jal` anywhere. This project's
+own EBOOT has 49 such sites against 1642 `jal`s, and every one of them was
+left pointing at its pre-reorder address, silently invoking whichever
+import the regroup left sitting there.
+
+The symptom was hard to read because it is layout-dependent. delay_cb's
+tail call landed on sceIoRemove in one build and sceIoDread in another, so
+LVGL's once-per-frame *timing* call surfaced as a once-per-frame
+*filesystem* syscall with nonsense arguments -- the millisecond count
+(0x4a38, 19000us) reinterpreted as a path pointer -- and moved to a
+different, sometimes fatal, syscall whenever unrelated code shifted the
+binary. That is also why adding a few lines of diagnostics to the guest
+could turn a working boot into an emulator crash, and why the failure
+appeared to be memory corruption: nothing was corrupt, the call simply went
+somewhere else. Fixed by accepting MIPS_OP_J alongside MIPS_OP_JAL. The
+rewrite already preserves the instruction's opcode field, so a `j` stays a
+`j`.
+
 --- a/tools/psp-fixup-imports.c
 +++ b/tools/psp-fixup-imports.c
-@@ -648,6 +648,105 @@
+@@ -648,6 +648,113 @@
  #define MIPS_JR_31 0x03e00008
  #define MIPS_NOP   0x0
 
@@ -98,6 +120,7 @@ here in the meantime the same way this repo's own PPSSPP patches are
 +}
 +
 +#define MIPS_OP_JAL 0x3
++#define MIPS_OP_J   0x2
 +
 +/* Every function's own trampoline slot in g_stubtext (.sceStub.text) sits at
 + * a FIXED address, g_stubtext->iAddr + originalIndex*8 -- every `jal` in the
@@ -108,7 +131,14 @@ here in the meantime the same way this repo's own PPSSPP patches are
 + * that function's real, callable address -- so every one of those `jal`s
 + * has to be repointed at the function's new slot to match, or callers
 + * silently invoke whichever *other* function the reordering left sitting at
-+ * the address they still target. remap[i] gives the new address for the
++ * the address they still target. Both forms of the direct jump matter:
++ * `jal` for an ordinary call, and `j` for a tail call, which the compiler
++ * emits whenever the import is the last thing a function does -- a plain
++ * `void wrapper(x) { sce_thing(x); }` compiles to `j sce_thing` with no
++ * `jal` anywhere. Missing those leaves a working-looking binary whose tail
++ * calls land on whichever stub the reorder happens to leave at the old
++ * address, which is layout-dependent and therefore moves with unrelated
++ * changes. remap[i] gives the new address for the
 + * function that used to sit at slot i; scanRewriteJal patches every `jal`
 + * in every SHF_EXECINSTR section (.text/.init/.fini -- real code only,
 + * never a data section a stray matching bit pattern could show up in) whose
@@ -143,7 +173,7 @@ here in the meantime the same way this repo's own PPSSPP patches are
 +			unsigned int target;
 +			int i;
 +
-+			if(op != MIPS_OP_JAL)
++			if((op != MIPS_OP_JAL) && (op != MIPS_OP_J))
 +			{
 +				continue;
 +			}
@@ -179,7 +209,7 @@ here in the meantime the same way this repo's own PPSSPP patches are
  int fixup_imports(void)
  {
  	unsigned int *pText;
-@@ -671,6 +770,113 @@
+@@ -671,6 +778,113 @@
  		fprintf(stderr, "Import count %d\n", count);
  	}
 
