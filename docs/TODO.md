@@ -6604,6 +6604,59 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #130, 2026-08-23): `battle.rb`'s battle-scene
+  key-repeat claim -- the whole reason every one of its six cursor spots
+  gained `|| Input.repeat?(...)` back on 2026-08-18 -- is now independently
+  confirmed against a genuine RPG_RT.exe, not just EasyRPG's source.
+  Confirmed correct, no code change.** That original fix (`#drive_battle_
+  options`/`#drive_battle_command`/`#drive_battle_target`/`#drive_battle_
+  skill`/`#drive_battle_item`/`#drive_battle_ally_target`) was cited only to
+  EasyRPG's `Scene_Battle::UpdateUi` (`src/scene_battle.cpp`) and, unlike
+  most of this session's other menu/list screens, was never re-run against
+  real RPG_RT afterward -- flagged as "still open" through this whole
+  series' own cycle-by-cycle bookkeeping above and never picked back up
+  until now. Built a synthetic autostart Enemy Encounter (troop 103) on a
+  copy of Nepheshel's map 12, reusing the exact genuine Victory/Escape/
+  EndBattle trailing command structure (codes 20710/20711/20713) copied
+  verbatim from a real boss encounter already in the game data (Map0478
+  event 2 page 2) rather than hand-authoring one, per this session's own
+  established gotcha that a scripted Enemy Encounter needs its full
+  canonical trailing shape to run cleanly. Resumed a genuine, repositioned
+  save into it under wine: the autostart fires immediately on map load, no
+  player movement needed, landing straight on the battle options window
+  (Fight / Auto Battle / Escape, cursor defaulting to Fight). Two separate
+  runs, each holding Down continuously (one keydown, no release) and
+  capturing frames mid-hold: in the options window the cursor advanced
+  Fight -> Auto Battle -> Escape -> (wrapping) Fight -> Auto Battle/Escape
+  again, all within one un-released hold; in the per-actor command window
+  (reached by confirming Fight) the cursor advanced Attack -> Skill, then
+  Skill -> Defend -> Item within a single later interval, then wrapped back
+  to Attack -- again with no keyup in between captures. A trigger-only
+  cursor (`Input.trigger?` with no `Input.repeat?` fallthrough) would have
+  stopped dead at the first row reached and stayed there for the rest of the
+  hold; both windows instead kept advancing repeatedly through the same
+  continuous press, multiple times each, including a wrap in both cases --
+  unambiguous, direct confirmation of genuine auto-repeat on both of the two
+  windows tested. The remaining four spots (`#drive_battle_target`/`#drive_
+  battle_skill`/`#drive_battle_item`/`#drive_battle_ally_target`) were not
+  independently re-run this cycle, but share the identical `Input.trigger?
+  (...) || Input.repeat?(...)` code shape and the identical, uniform
+  EasyRPG citation (all six `Window_Selectable`s driven by the same
+  `UpdateUi` loop, with no stated per-window exception the way `equip_menu
+  .rb`'s actor-switch RIGHT/LEFT needed one) -- unlike the Equip candidate
+  list saga, there is no known or suspected structural difference between
+  the two windows tested here and these four to justify treating them as a
+  separately-verified case. Comments on `#drive_battle_command` (whose doc
+  comment is where the original citation lived) and `#drive_battle_options`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) updated to record the
+  re-verification and its own evidence, mirroring the `ARROW_BLINK_FRAMES`/
+  `equip_menu.rb` precedent; the matching `scripts/rpg2k_scene_check.rb`
+  check (already covering all three of the options/command/enemy-target
+  cursors via a synthetic held-repeat flag) had its own citation comment
+  updated the same way. No behavioural change, so the full suite stayed at
+  905 checks throughout. `Map0012.lmu` and `Save01.lsd` were edited only as
+  scratch copies for this probe and restored to their original bytes
+  (byte-identical by `md5sum`) once the wine session was torn down.
   ✅ **Follow-up (cycle #124, 2026-08-22): `game_over.rb`'s "only Decision
   dismisses the Game Over screen, Cancel does nothing" claim was wrong --
   real RPG_RT.exe accepts Cancel too, identically to Decision. Fixed.**

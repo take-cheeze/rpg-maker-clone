@@ -1252,17 +1252,34 @@ class RPG2k
       end
 
       # Per-actor command menu: Attack, Skill, Defend or Item. Holding Down/Up
-      # auto-repeats the cursor after the initial delay -- confirmed against
-      # EasyRPG's actual source: `Scene_Battle::UpdateUi` (`src/
-      # scene_battle.cpp`), called unconditionally every frame from
-      # `Scene_Battle_Rpg2k::vUpdate`, calls `.Update()` on every one of
+      # auto-repeats the cursor after the initial delay -- originally only
+      # confirmed against EasyRPG's source (`Scene_Battle::UpdateUi`, `src/
+      # scene_battle.cpp`, called unconditionally every frame from
+      # `Scene_Battle_Rpg2k::vUpdate`, calling `.Update()` on every one of
       # `command_window`/`status_window`/`item_window`/`skill_window`/
       # `target_window`/`options_window` -- all genuine `Window_Selectable`s,
       # whose own `Update()` is what drives the cursor via the standard
-      # trigger-then-repeat (see `Scene::ItemMenu#update_items`'s fuller
-      # writeup and docs/TODO.md), before `SetActive`/`GetActive` ever gates
-      # which one's Decision/Cancel handling actually runs. So every cursor
-      # spot in this scene gains `|| #repeat?` the same way.
+      # trigger-then-repeat, before `SetActive`/`GetActive` ever gates which
+      # one's Decision/Cancel handling actually runs), now independently
+      # confirmed against a genuine RPG_RT.exe under wine (cycle #130): a
+      # synthetic autostart Enemy Encounter (troop 103, its own genuine
+      # Victory/Escape/EndBattle trailing structure copied verbatim from a
+      # real Nepheshel boss page) injected into a copy of map 12. A single
+      # continuous hold of Down -- one keydown, no release -- from this
+      # window's own default (Attack, the top row) advanced the cursor
+      # through multiple rows (Attack -> Skill, stalled, then Skill -> Defend
+      # -> Item within one later interval, and on to a wrap back to Attack),
+      # captured mid-hold with no intervening keyup; a trigger-only cursor
+      # would have stopped dead at the first row it reached and stayed there
+      # until release. The sibling options window (`#drive_battle_options`,
+      # just below) was independently confirmed the same way in the same
+      # cycle: a single hold there cycled Fight -> Auto Battle -> Escape ->
+      # (wrap) Fight -> ... with no release either. Both are the same
+      # `Input.trigger?(...) || Input.repeat?(...)` shape as the other four
+      # spots this scene fixed in the same original pass (`#drive_battle_
+      # target`/`#drive_battle_skill`/`#drive_battle_item`/`#drive_battle_
+      # ally_target`), so every cursor spot in this scene gains `|| #repeat?`
+      # the same way.
       def drive_battle_command
         if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @ui[:cmd] += 1
@@ -1358,7 +1375,9 @@ class RPG2k
       # the state machine's own root here (matching
       # `ProcessSceneActionFightAutoEscape`'s `eWaitForInput` substate, which
       # has no cancel handling at all -- there is no parent state to cancel
-      # back to).
+      # back to). Down/Up auto-repeat on a held key -- see #drive_battle_
+      # command's own comment for the cycle #130 genuine-RPG_RT re-verification
+      # covering this window too.
       def drive_battle_options
         rows = battle_option_rows
         if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)

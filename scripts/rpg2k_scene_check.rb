@@ -11634,15 +11634,20 @@ check 'Enemy Encounter scene: casting an attack Skill damages a foe and spends S
   eq 7, ui[:allies].first.mp, 'the caster spent 3 SP (10 -> 7)'
 end
 
-# EasyRPG's Scene_Battle::UpdateUi (src/scene_battle.cpp), called
-# unconditionally every frame from Scene_Battle_Rpg2k::vUpdate, calls
-# .Update() on every one of command_window/status_window/item_window/
-# skill_window/target_window/options_window -- all genuine
-# Window_Selectables, whose own Update() drives the cursor via the
-# standard trigger-then-repeat, before SetActive/GetActive ever gates which
-# one's Decision/Cancel handling runs (see Scene::Order's identical shape).
-# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold
-# a key across frames without it also reading as a fresh trigger.
+# Originally only confirmed against EasyRPG's source (Scene_Battle::UpdateUi,
+# src/scene_battle.cpp, called unconditionally every frame from
+# Scene_Battle_Rpg2k::vUpdate, calling .Update() on every one of
+# command_window/status_window/item_window/skill_window/target_window/
+# options_window -- all genuine Window_Selectables, whose own Update() drives
+# the cursor via the standard trigger-then-repeat, before SetActive/GetActive
+# ever gates which one's Decision/Cancel handling runs; see Scene::Order's
+# identical shape) -- now independently confirmed against a genuine RPG_RT.exe
+# under wine too (cycle #130, see battle.rb's #drive_battle_command comment):
+# a single continuous hold of Down in a real encounter moved the options and
+# command-window cursors through multiple rows -- including a mid-hold wrap
+# -- with no intervening key release. `RGSS::Input.repeated` (distinct from
+# `.triggered`) lets this check hold a key across frames without it also
+# reading as a fresh trigger.
 check 'Enemy Encounter scene: holding Down auto-repeats the battle options, ' \
       'command and enemy-target cursors alike' do
   ic = Game::Interpreter::Cmd
