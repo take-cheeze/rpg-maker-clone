@@ -6123,6 +6123,19 @@ class RPG2k
       # EasyRPG's Scene_Name::vUpdate Cancel branch exactly (`if
       # (name_window->Get().size() > 0) { ...Cancel...; Erase(); } else {
       # ...Buzzer...; }`).
+      #
+      # Independently re-verified since (cycle #125, 2026-08-23) directly
+      # against a genuine RPG_RT.exe under wine, not just EasyRPG's source --
+      # this whole widget was ported from EasyRPG before this project's own
+      # methodology started requiring that (see docs/TODO.md's own account of
+      # cycle #114). A synthetic autostart Enter Hero Name (10740, actor 1,
+      # charset 0/hiragana) map event on a copy of Nepheshel's map 12,
+      # resumed from a genuine save positioned there: on a name reading "リ"
+      # (one kana typed), a single Cancel press erased exactly that one
+      # character down to empty, matching this method's own branch exactly;
+      # a further Cancel press on the now-empty field left the field and the
+      # whole screen visibly unchanged (buzzer-only, confirmed by the
+      # unchanged screenshot, not just inferred from silence).
       def name_input_cancel
         if @name_ui[:name].empty?
           play_system_se(SFX_BUZZER)
@@ -6137,17 +6150,31 @@ class RPG2k
         @name_ui[:kana] ? draw_kana_name_input : draw_name_input
       end
 
-      # A blank confirm does not close the widget -- confirmed against
-      # RPG_RT's own live source: `Scene_Name::vUpdate`'s DONE branch
-      # (`src/scene_name.cpp`) is `if (name_window->Get().empty()) {
-      # name_window->Set(ToString(actor.GetName())); name_window->Refresh();
-      # } else { actor.SetName(...); Scene::Pop(); }` -- an empty typed name
-      # resets the field back to the actor's current name and leaves the
-      # screen open, rather than resuming the event with an empty string.
-      # This check lives in the single shared `vUpdate` (gated only on
-      # which cell was picked), so it applies identically to every keyboard
-      # page -- the kana grid's own :confirm cell routes through this same
-      # method.
+      # A blank confirm does not close the widget -- originally ported from
+      # EasyRPG's `Scene_Name::vUpdate` DONE branch (`src/scene_name.cpp`,
+      # mislabeled "RPG_RT's own live source" at the time this was written,
+      # before this project's own methodology required checking such claims
+      # against the genuine binary -- see docs/TODO.md's cycle #114 account):
+      # `if (name_window->Get().empty()) { name_window->Set(ToString(actor.
+      # GetName())); name_window->Refresh(); } else { actor.SetName(...);
+      # Scene::Pop(); }` -- an empty typed name resets the field back to the
+      # actor's current name and leaves the screen open, rather than
+      # resuming the event with an empty string. This check lives in the
+      # single shared `vUpdate` (gated only on which cell was picked), so it
+      # applies identically to every keyboard page -- the kana grid's own
+      # :confirm cell routes through this same method.
+      #
+      # Independently re-verified since (cycle #125, 2026-08-23) directly
+      # against a genuine RPG_RT.exe under wine: a synthetic autostart Enter
+      # Hero Name (10740, actor 1 "リト", charset 0/hiragana) map event on a
+      # copy of Nepheshel's map 12, resumed from a genuine save positioned
+      # there. Navigated the cursor straight to the grid's own 決定
+      # (Confirm) cell with no character typed (a single Up wraps from the
+      # top-left cell to the confirm row, then Right x7 reaches Confirm --
+      # both screenshotted to confirm the cursor landed where expected) and
+      # pressed Decision: the screen stayed open and the name field filled
+      # with the actor's real name ("リト"), matching this method's blank
+      # branch exactly -- it did not resume the event or leave the screen.
       def commit_name_input
         ui = @name_ui
         if ui[:name].empty?
