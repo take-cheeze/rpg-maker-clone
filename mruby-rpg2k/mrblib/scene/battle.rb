@@ -1568,19 +1568,36 @@ class RPG2k
       end
 
       # Enemy target-selection menu: pick which living enemy the Attack (or an
-      # enemy-scope Skill) hits.
+      # enemy-scope Skill) hits. When there are more living foes than the
+      # window's own BATTLE_VISIBLE_ROWS (4), Down/Up is clamped to rows 1..4
+      # -- blocked, not wrapped, at either end, the same shape
+      # `#move_battle_list_index` already uses for the battle Item/Skill
+      # grids -- instead of this method's own pre-existing plain modulo wrap,
+      # which stays exactly as it was for a troop of 4 or fewer (see
+      # #move_battle_target_cursor). Confirmed against a genuine RPG_RT.exe
+      # (cycle #131): on a troop of 6 (member x/y positions read straight off
+      # the .ldb, each individually killed to identify which one the cursor
+      # actually had, since every member of a wild troop shares one on-screen
+      # name), Down held/tapped repeatedly from row 1 stops dead at row 4 and
+      # *never* reaches members 5/6 -- no scroll, no wrap-around back to row 1
+      # either, even after 8 discrete taps and a 2.5s hold well past the
+      # point auto-repeat would have cycled through the rest. Up from row 1
+      # is symmetric: it never reaches member 6. A same-shape probe on a
+      # troop of exactly 4 (which fits the window with no overflow) shows the
+      # opposite: Down from row 4 *does* wrap back to row 1 -- and a troop of
+      # 3 confirms Up from row 1 wraps to row 3. So only the overflow case
+      # (more living foes than the window's 4 visible rows) needed a fix:
+      # real RPG_RT cannot select past the 4 rows it first draws at all, it
+      # does not scroll this particular list the way the Item/Skill grids do.
+      # `#drive_battle_ally_target`'s identical-shaped modulo needs no
+      # matching change -- RPG2000's own party cap keeps `allies.length` at 4
+      # or fewer always, so it can never hit the overflow case this fixes.
       def drive_battle_target
         foes = living_foes
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !foes.empty?
-          @ui[:target_i] += 1
-          @ui[:target_i] %= foes.length
-          draw_battle_target
-          play_system_se(SFX_CURSOR)
+          move_battle_target_cursor(1, foes.length)
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !foes.empty?
-          @ui[:target_i] -= 1
-          @ui[:target_i] %= foes.length
-          draw_battle_target
-          play_system_se(SFX_CURSOR)
+          move_battle_target_cursor(-1, foes.length)
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
           target = foes[@ui[:target_i]]
@@ -1608,6 +1625,24 @@ class RPG2k
             draw_battle_command
           end
         end
+      end
+
+      # Move the enemy-target cursor by `delta` (+-1) over `foes_count` living
+      # foes: a plain modulo wrap when they all fit in the window
+      # (`foes_count <= BATTLE_VISIBLE_ROWS`, this method's own pre-existing
+      # behaviour, unchanged), blocked at either end with no wrap at all once
+      # `foes_count` overflows it -- see #drive_battle_target's own comment
+      # for the cycle #131 evidence behind the split.
+      def move_battle_target_cursor(delta, foes_count)
+        if foes_count > BATTLE_VISIBLE_ROWS
+          target = @ui[:target_i] + delta
+          return if target.negative? || target >= BATTLE_VISIBLE_ROWS
+          @ui[:target_i] = target
+        else
+          @ui[:target_i] = (@ui[:target_i] + delta) % foes_count
+        end
+        draw_battle_target
+        play_system_se(SFX_CURSOR)
       end
 
       def pending_kind; @ui[:pending] && @ui[:pending][:kind]; end
@@ -3131,9 +3166,13 @@ class RPG2k
       # from the options window, so the status window's footprint here is
       # always its command-phase one (#battle_status_x's `0`).
       BATTLE_TARGET_W = 136
-      # How many rows show at once before a longer list (an 8-monster troop, a
-      # long skill list) scrolls: the panel's fixed 64px content area (80 minus
-      # the 8px border on each side) divided by the 16px row height.
+      # How many rows fit at once: the panel's fixed 64px content area (80
+      # minus the 8px border on each side) divided by the 16px row height. A
+      # longer Item/Skill list scrolls past this, keeping the cursor's row in
+      # view (`#move_battle_list_index`); the enemy-target list does not --
+      # see #drive_battle_target's own comment (cycle #131) -- a troop with
+      # more living members than this cannot have the extra ones targeted by
+      # the player's cursor at all, real RPG_RT included.
       BATTLE_VISIBLE_ROWS = 4
       # The battle Item/Skill lists are a two-column grid, not a single
       # stacked column -- confirmed against RPG_RT's own live source:
@@ -3488,9 +3527,11 @@ class RPG2k
       # caller except #draw_battle_item/#draw_battle_skill, see
       # `BATTLE_LIST_COLUMN_MAX`) lays `labels` out row-major across that many
       # columns instead of one; a list longer than `BATTLE_VISIBLE_ROWS`
-      # *rows* scrolls, keeping `sel`'s own row in view, the way
-      # `Window_Selectable`'s own scrolling does for an oversized troop or
-      # skill list.
+      # *rows* scrolls, keeping `sel`'s own row in view, for a long Item/Skill
+      # list. The enemy-target list never actually sends a `sel` past
+      # `BATTLE_VISIBLE_ROWS - 1` any more (#drive_battle_target caps it), so
+      # this scrolls it in principle only -- real RPG_RT does not scroll that
+      # particular list at all, see that method's own comment.
       # `idxs`, parallel to `labels`, is an optional windowskin swatch index
       # per row (0 enabled / 3 disabled, `Scene::Base#draw_system_text`'s own
       # convention) -- nil (every caller except #draw_battle_item/

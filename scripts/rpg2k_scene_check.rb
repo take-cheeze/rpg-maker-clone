@@ -554,6 +554,18 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
         pages: nil),
       4 => OpenStruct.new(name: 'Red Slimes', members: {
         1 => OpenStruct.new(enemy_id: 5, x: 100, y: 80, invisible: false) },
+        pages: nil),
+      # Six Slimes -- one more than the enemy-target window's own
+      # BATTLE_VISIBLE_ROWS (4) -- for the cycle #131 overflow-clamp check.
+      # Its own lone extra rows keep it from disturbing the two-Slime troop's
+      # assertions above.
+      5 => OpenStruct.new(name: 'Many Slimes', members: {
+        1 => OpenStruct.new(enemy_id: 2, x: 40, y: 80, invisible: false),
+        2 => OpenStruct.new(enemy_id: 2, x: 90, y: 80, invisible: false),
+        3 => OpenStruct.new(enemy_id: 2, x: 140, y: 80, invisible: false),
+        4 => OpenStruct.new(enemy_id: 2, x: 190, y: 80, invisible: false),
+        5 => OpenStruct.new(enemy_id: 2, x: 240, y: 80, invisible: false),
+        6 => OpenStruct.new(enemy_id: 2, x: 290, y: 80, invisible: false) },
         pages: nil) },
     # A drawable battle animation (id 8): four frames, with a screen flash timing
     # on frame 1. (Id 7 is intentionally absent so that test exercises the
@@ -12095,6 +12107,39 @@ check 'Enemy Encounter scene: the command and target cursors wrap around' do
   eq 1, ui[:target_i], 'Up from the first foe wraps to the last (2 Slimes)'
   press_key(scene, RGSS::Input::DOWN)
   eq 0, ui[:target_i], 'Down from the last foe wraps to the first'
+end
+
+# A troop with more living members than the enemy-target window's own
+# BATTLE_VISIBLE_ROWS (4) is a genuinely different case from the 2-Slime wrap
+# check above -- confirmed against a real RPG_RT.exe (cycle #131, see
+# #drive_battle_target's own comment): the cursor cannot advance past row 4 at
+# all when a troop overflows the window, and does not wrap back to row 1
+# either, unlike the small (<= 4) case just above.
+check 'Enemy Encounter scene: the target cursor is clamped, not wrapped, ' \
+      'when a troop overflows the 4-row window' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 5) # 6 Slimes
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::C) # open the enemy target list (6 Slimes)
+  eq :target, ui[:phase]
+  eq 0, ui[:target_i], 'starts on the first foe'
+
+  4.times { press_key(scene, RGSS::Input::DOWN) }
+  eq 3, ui[:target_i],
+     'Down stops dead at row 4 (the last visible row) -- it does not reach ' \
+     'the 5th/6th Slime, and does not wrap back to row 1 either'
+
+  press_key(scene, RGSS::Input::UP)
+  press_key(scene, RGSS::Input::UP)
+  press_key(scene, RGSS::Input::UP)
+  press_key(scene, RGSS::Input::UP)
+  eq 0, ui[:target_i],
+     'Up from row 4 comes back to row 1 the ordinary way, then stops dead ' \
+     'there -- it does not wrap forward to the 6th Slime'
 end
 
 check 'Enemy Encounter scene: the command menu is drawn Attack / Skill / Defend / Item' do
