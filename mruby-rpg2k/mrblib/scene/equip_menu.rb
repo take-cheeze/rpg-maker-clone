@@ -2,9 +2,10 @@ class RPG2k
   module Scene
     # The field equip screen (main menu -> Equip). Shows one party member's five
     # equipment slots and current stats; LEFT/RIGHT cycle the member. Choosing a
-    # slot lists the bag's items that fit it (plus Remove); choosing one equips it
-    # -- swapping the previously-worn item back into the bag -- or empties the
-    # slot. The bag-aware equip logic is Game::Party#equip_candidates /
+    # slot lists the bag's items that fit it, plus Remove when (and only when)
+    # nothing does; choosing one equips it -- swapping the previously-worn
+    # item back into the bag -- or (choosing Remove) empties the slot. See
+    # #candidates. The bag-aware equip logic is Game::Party#equip_candidates /
     # equip_from_bag / unequip_to_bag (host-tested); this is the RGSS UI over it,
     # mirroring Scene::ItemMenu's helpers. A two-handed weapon empties the other
     # hand (Actor#free_two_handed_slot) and a 二刀流 actor's shield slot lists
@@ -160,11 +161,33 @@ class RPG2k
         end
       end
 
+      # The slot's fitting bag items -- a leading Remove entry (id 0) is
+      # prepended only when the bag holds nothing that fits, never
+      # alongside real candidates. (A 二刀流 actor's shield slot lists
+      # weapons instead of shields, which is why `actor` goes along -- see
+      # Game::Party#equip_candidates.) Confirmed against a genuine RPG_RT.exe
+      # under wine (cycle #128): with the weapon slot's bag empty, opening
+      # the candidate list drew exactly one row, blank-labelled, whose
+      # Decision genuinely unequipped the worn weapon (returning it to the
+      # bag, the slot list's own row going blank) -- so that blank row is a
+      # real, functional Remove, not a placeholder. With one bag weapon
+      # (the item just unequipped), the list drew exactly that one row and
+      # nothing else -- no separate Remove option alongside it. With two
+      # bag weapons, the list drew exactly those two and, again, no Remove
+      # row at all. So real RPG_RT's rule is "Remove exists only when nothing
+      # else does" -- this codebase previously prepended it unconditionally,
+      # making it a genuine third, always-selectable entry alongside every
+      # real one. **Deliberately not addressed here**: with >=2 real
+      # candidates, real RPG_RT lays them out two to a row (a real
+      # discrepancy from this window's own single-item-per-row drawing,
+      # visible in the same wine capture) -- a separate, structurally
+      # distinct layout question, not re-verified in enough detail (exact
+      # column width/wrap behaviour) to fix safely in the same pass; left
+      # as a follow-up.
       def candidates
-        # The slot's fitting bag items, with a leading Remove entry (id 0). A
-        # 二刀流 actor's shield slot lists weapons instead of shields, which is
-        # why `actor` goes along -- see Game::Party#equip_candidates.
-        @candidates ||= [[0, 0]] + @state.party.equip_candidates(@slot_index, actor)
+        return @candidates if @candidates
+        real = @state.party.equip_candidates(@slot_index, actor)
+        @candidates = real.empty? ? [[0, 0]] : real
       end
 
       def update_items
