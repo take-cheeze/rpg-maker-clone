@@ -349,7 +349,47 @@ pinned, and the cost is measured and small: unoptimised `.text` is ~260 KB
 larger, against a boot reporting 782 KB heap free, a 256 KB LVGL pool running
 at 1.4%, and a 256 KB main stack at 6.4%.
 
-### Open: a failed file operation on every frame
+### Bug 11: psp-fixup-imports did not repoint tail calls
+
+`psp-fixup-imports` reorders import stubs and repoints the call sites that
+target them, but the patched tool scanned only for `jal`. MIPS has a second
+direct jump, `j`, which the compiler emits for a **tail call** -- any function
+whose last act is calling the import. LVGL's delay hook in
+`mruby-rgss/src/psp.cxx` is exactly that:
+
+```c
+void delay_cb(uint32_t ms) { sceKernelDelayThread(ms * 1000); }
+```
+
+It compiles to a bare `j sceKernelDelayThread` with no `jal` anywhere. This
+EBOOT has **49 such sites against 1642 `jal`s**, and every one was left
+pointing at its pre-reorder address, silently invoking whichever import the
+regroup left sitting there.
+
+The symptom was hard to read because it is layout-dependent. `delay_cb`'s tail
+call landed on `sceIoRemove` in one build and `sceIoDread` in another, so
+LVGL's once-per-frame *timing* call surfaced as a once-per-frame *filesystem*
+syscall with nonsense arguments -- `a0 = 0x4a38`, the 19000us delay
+reinterpreted as a path pointer -- and moved to a different, sometimes fatal,
+syscall whenever unrelated code shifted the binary. Which is also why adding a
+few lines of diagnostics to the guest could turn a working boot into an
+emulator crash, and why this looked for a long time like layout-sensitive
+memory corruption. Nothing was corrupt: the call simply went somewhere else.
+
+What finally identified it was reading the guest's registers at the bad
+syscall rather than reasoning from the call graph. `_unlink` sets `a0 = sp`
+before calling `sceIoRemove`; the live `a0` was `0x00004a38` while `sp` was
+`0x09fbf9a0`, which proved the call never came through `_unlink` at all,
+despite `_unlink` being the only static `jal` to that stub.
+
+Fixed by accepting `MIPS_OP_J` alongside `MIPS_OP_JAL` in
+`patches/psp-fixup-imports-jal-relocation-aware.patch`; the rewrite already
+preserves the opcode field, so a `j` stays a `j`. Verified: `delay_cb`'s tail
+call now resolves to `sceKernelDelayThread`, the per-frame bogus `sceIoRemove`
+and `sceIoDread` calls drop to zero, and 212623 real delays are issued across
+a 1066-heartbeat run.
+
+### Superseded: the "failed file operation on every frame"
 
 With the two PPSSPP patches above in, the EBOOT boots to Nepheshel's title
 screen and holds it, but the frame loop performs one failed file operation per
@@ -366,10 +406,10 @@ frame -- tens of thousands per run. Its identity changed when
   `_unlink_r` -> `_unlink` -> `sceIoRemove`, and `_unlink` passes the stack
   buffer `__path_absolute` filled in.
 
-Both are "a file operation with a bad argument, every frame". What has *not*
-been established is whether they are the same underlying call: the two
-observations come from builds that differ in both the emulator and the guest
-binary, so the change cannot be attributed to either on this evidence.
+Both were the same thing, and neither was a file operation: bug 11 above.
+The earlier caution about not attributing the change to either the emulator
+or the guest was right to be cautious and wrong about the cause -- it was the
+stub layout moving under an unrepointed tail call.
 
 Two things make it worth chasing rather than ignoring. `mrb_sys_fail` raises
 when the HAL call fails, and mruby here is built with the C++ exception ABI --
