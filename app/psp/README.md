@@ -69,7 +69,22 @@ What runs today:
 
 ## Building
 
-Requires the [pspdev toolchain](https://github.com/pspdev/pspdev) with `$PSPDEV`
+On Nix, `nix develop .#psp` is the whole setup: it provides the pspdev
+toolchain itself (this flake packages upstream's release tarball as
+`.#pspdev`, with the patched `psp-fixup-imports` already compiled in), the
+host tools mruby's half of the build needs, and this flake's patched
+`ppsspp-headless` for running the result — no hand-installed SDK, and the
+script step below is unnecessary:
+
+```sh
+nix develop .#psp
+psp-cmake -S app/psp -B build-psp
+cmake --build build-psp          # -> build-psp/EBOOT.PBP
+ppsspp-headless --log --graphics=software build-psp/EBOOT.PBP
+```
+
+Otherwise: install the [pspdev toolchain](https://github.com/pspdev/pspdev)
+with `$PSPDEV`
 set (it provides `psp-gcc`, the CMake toolchain file and `create_pbp_file`).
 Run `scripts/build_psp_fixup_imports.bash` first — it replaces the
 toolchain's own `$PSPDEV/bin/psp-fixup-imports` with a patched build; see

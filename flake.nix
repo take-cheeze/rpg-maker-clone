@@ -120,6 +120,113 @@
           };
         }
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          # The pspdev cross-toolchain ($PSPDEV: psp-gcc/binutils/newlib/
+          # pspsdk headers, psp-cmake and the CreatePBP.cmake plumbing app/psp's
+          # CMakeLists.txt drives), packaged from upstream's own release tarball.
+          # nixpkgs has no pspsdk/psptoolchain package (checked the pinned
+          # channel), so this fills the gap rather than overriding one.
+          #
+          # Why the release tarball instead of building psptoolchain from
+          # source: the toolchain is a chain of autotools cross-builds
+          # (binutils -> gcc stage 1 -> newlib -> gcc stage 2) that takes hours
+          # and has never been packaged for nix; upstream attaches a ready-made
+          # x86_64-linux build to every GitHub release, and the toolchain turns
+          # out to be fully relocatable -- psp-gcc compiles PSP ELFs straight
+          # out of an extracted tarball wherever it sits, no baked-in
+          # /usr/local/pspdev. autoPatchelfHook repoints the host tools'
+          # interpreters/RPATHs at the nix closure (the bundled MIPS objects
+          # are left alone; they are not x86_64 ELF).
+          #
+          # Version pinning matters beyond reproducibility here: the release
+          # tag fixes which pspsdk commit ships, and scripts/'
+          # build_psp_fixup_imports.bash + patches/'
+          # psp-fixup-imports-jal-relocation-aware.patch pin the *same* commit
+          # (314b2083, v20260801's "Add AMCTRL_OBJS to libpspkernel_a_LIBADD")
+          # as the source the patched psp-fixup-imports below is compiled
+          # from. Bump all three together, and re-check that the stock tool
+          # the tarball ships still matches the patch's assumptions when you
+          # do (the patch's preamble says how to tell).
+          #
+          # That patched tool replaces the tarball's stock psp-fixup-imports in
+          # the same postInstall: app/psp/CMakeLists.txt refuses to configure
+          # against the stock one (it misorders imports so several genuine
+          # PSP module imports silently resolve wrong at runtime -- see the
+          # patch preamble and ADR 0047's bug 11 trail), so a devshell whose
+          # SDK still carried it would fail loudly anyway. Building it inside
+          # this derivation (rather than asking the shell hook to run the
+          # script) keeps the sandbox honest: no network fetch of pspsdk at
+          # shell-entry time, the sources come from the fetchzip pin instead.
+          pspdev =
+            let
+              version = "20260801";
+              # The exact pspsdk commit the release tarball ships and the fixup
+              # patch was written against (see above).
+              pspsdkFixupSrc = pkgs.fetchzip {
+                url = "https://github.com/pspdev/pspsdk/archive/314b2083f2e1eaf145fc5de342736336fe1f0148.tar.gz";
+                hash = "sha256-fy/PBRvol6G3o9nNlm+TLtUIJze9Xt/G+D4xYy4G6MM=";
+              };
+            in
+            pkgs.stdenv.mkDerivation {
+              pname = "pspdev";
+              inherit version;
+              src = pkgs.fetchurl {
+                url = "https://github.com/pspdev/pspdev/releases/download/v${version}/pspdev-ubuntu-latest-x86_64.tar.gz";
+                hash = "sha256-emyy3iG/vB1KoG0Q0KRcVH3tyPbhyPx/+Me6bu5mfuY=";
+              };
+              sourceRoot = "pspdev";
+              nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+              # Host-side shared objects the tarball's tools link against that
+              # Ubuntu ships and a nix closure does not. zstd is the big one --
+              # binutils and cc1/cc1plus are built with
+              # --enable-compressed-debug-sections, so they all want
+              # libzstd.so.1; gmp/mpfr/mpc are gcc's own arithmetic; xz/expat/
+              # ncurses/readline/libusb are psp-gdb and the download tools.
+              # (libarchive/curl/openssl/gpgme would only serve the bundled
+              # pacman, which installPhase drops.)
+              buildInputs = with pkgs; [
+                stdenv.cc.cc.lib
+                zlib
+                zstd
+                gmp
+                mpfr
+                libmpc
+                xz
+                expat
+                ncurses
+                readline
+                libusb1
+              ];
+              dontConfigure = true;
+              dontBuild = true;
+              installPhase = ''
+                # The image bundles pacman (+ its libgpgme dependency) for
+                # installing psp-packages into the SDK at image build time;
+                # nothing here consumes it, and nixpkgs' gpgme has a different
+                # soname than Ubuntu's, so autoPatchelf can never satisfy it.
+                # Drop the tree rather than pin a library nothing calls.
+                rm -rf ./share/pacman
+                cp -r . "$out"
+              '';
+              postFixup = ''
+                # Compile the JAL-relocation-aware psp-fixup-imports from the
+                # pinned pspsdk sources plus this repo's patch, exactly the two
+                # steps scripts/build_psp_fixup_imports.bash performs on a
+                # hand-installed SDK (its config.h note applies verbatim:
+                # tools/types.h includes config.h unguarded).
+                cp -r "${pspsdkFixupSrc}" ./fixup-src
+                chmod -R u+w ./fixup-src
+                patch -s -p1 -d ./fixup-src < ${./patches/psp-fixup-imports-jal-relocation-aware.patch}
+                cp ${./patches/psp-fixup-imports-config.h} ./fixup-src/config.h
+                cc -O2 -DHAVE_CONFIG_H \
+                  -I./fixup-src -I./fixup-src/tools \
+                  -o ./fixup-built \
+                  ./fixup-src/tools/psp-fixup-imports.c \
+                  ./fixup-src/tools/getopt_long.c \
+                  ./fixup-src/tools/sha1.c
+                install -m 755 ./fixup-built "$out/bin/psp-fixup-imports"
+              '';
+            };
+
           # The emulator the `psp-smoke` CI job boots the EBOOT under. Based on
           # nixpkgs' own package, but the local patch below changes its output
           # hash, so it no longer matches what cache.nixos.org has prebuilt for
@@ -256,6 +363,52 @@
               export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             '';
           });
+
+          # PSP development: everything `psp-cmake`/`cmake --build` needs to
+          # configure and build app/psp's EBOOT, plus this flake's patched
+          # PPSSPP headless build for running it (the same binary CI's
+          # psp-smoke job uses). The toolchain is the packaged upstream
+          # release above -- no hand-installed ~/dev/pspdev required; the
+          # patched psp-fixup-imports app/psp/CMakeLists.txt insists on ships
+          # inside it.
+          #
+          # Host tools mirror what the psp CI job's container gets from apk
+          # plus what mruby's host half needs on a nix machine (the gperf/
+          # bison trap from PSP-HANDOFF.md's environment notes applies here
+          # too: without them, a stale direnv shell fails in mruby's lexer
+          # regeneration and leaves a zero-byte lex.def behind).
+          #
+          # Linux-only: packages.pspdev is an x86_64-linux tarball and
+          # packages.ppsspp is Linux-only anyway. On darwin, use the default
+          # devshell plus upstream's macOS release tarball by hand.
+          psp = pkgs.mkShell {
+            packages =
+              with pkgs;
+              [
+                self.packages.${system}.pspdev
+                cmake
+                ninja
+                ruby
+                bison
+                gperf
+                git
+                autoconf
+                automake
+                pkg-config
+                pre-commit
+              ]
+              ++ nixpkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                self.packages.${system}.ppsspp
+              ];
+            PSPDEV = "${self.packages.${system}.pspdev}";
+            CMAKE_BUILD_TYPE = "MinSizeRel";
+            shellHook = ''
+              echo "psp shell: PSPDEV=$PSPDEV"
+              "$PSPDEV/bin/psp-gcc" --version | head -1
+              echo "build:  psp-cmake -S app/psp -B build-psp && cmake --build build-psp"
+              echo "run:    ppsspp-headless --log --graphics=software build-psp/EBOOT.PBP"
+            '';
+          };
         }
       );
     };
