@@ -20670,19 +20670,46 @@ check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around'
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@actor_index), 'Right from the last actor wraps to the first'
 
-  # The equip-candidate list (Remove + the two fitting bag items = 3 rows).
+  # The equip-candidate list: the two fitting bag items, no Remove entry
+  # alongside them (real candidates exist, so Remove is left out -- #candidates).
   scene.instance_variable_set(:@mode, :items)
   scene.instance_variable_set(:@cand_index, 0)
   scene.send(:build_cand_window)
-  eq 3, scene.send(:candidates).size, 'Remove plus the two candidates'
+  eq 2, scene.send(:candidates).size, 'just the two candidates, no Remove'
   RGSS::Input.triggered = [RGSS::Input::UP]
   scene.update
   RGSS::Input.reset
-  eq 2, scene.instance_variable_get(:@cand_index), 'Up from the first candidate wraps to the last'
+  eq 1, scene.instance_variable_get(:@cand_index), 'Up from the first candidate wraps to the last'
   RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@cand_index), 'Down from the last candidate wraps to the first'
+end
+
+# A party whose weapon slot has nothing in the bag that fits it at all --
+# the boundary case #candidates' own Remove-inclusion rule turns on.
+class NoCandidateParty < MenuStubParty
+  def equip_candidates(_slot, _actor = nil); []; end
+end
+
+# Confirmed against a genuine RPG_RT.exe under wine (cycle #128, Nepheshel):
+# with the weapon slot's bag empty, the candidate list drew exactly one row,
+# blank-labelled, whose Decision genuinely unequipped the worn weapon
+# (returned to the bag, the slot list's own row going blank) -- a real,
+# functional Remove, not a placeholder. With one, then two, real bag
+# weapons, the list drew exactly those and nothing else -- no separate
+# Remove row alongside real candidates, in either count. This codebase used
+# to prepend a Remove entry (id 0) unconditionally, making it a permanent
+# extra choice alongside every real one, which real RPG_RT never shows.
+check 'Scene::EquipMenu: #candidates only includes Remove when the bag has ' \
+      'nothing else that fits' do
+  empty_scene = menu_scene(RPG2k::Scene::EquipMenu, Game::State.new(NoCandidateParty.new, 1, 0, 0))
+  eq [[0, 0]], empty_scene.send(:candidates),
+     'an empty bag: Remove is the sole entry'
+
+  full_scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
+  eq [[7, 2], [8, 1]], full_scene.send(:candidates),
+     'a non-empty bag: just the real candidates, no Remove alongside them'
 end
 
 # The slot and candidate cursors live on genuine Window_Selectable
@@ -20809,9 +20836,10 @@ check 'Scene::EquipMenu: the candidate list draws only a name and count, no comp
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
   texts = window_texts(scene.instance_variable_get(:@cand_window))
-  # Row 0 is "(Remove)" (one call); each candidate row after it is exactly
-  # two calls -- name, count -- so a summed arrow would show up as a third.
-  eq ['(Remove)', 'Better', ':1', 'Worse', ':1', 'Same', ':1'], texts,
+  # No Remove row (real candidates exist -- #candidates); each candidate row
+  # is exactly two calls -- name, count -- so a summed arrow would show up
+  # as a third.
+  eq ['Better', ':1', 'Worse', ':1', 'Same', ':1'], texts,
      'no arrow glyph anywhere in the candidate list'
 end
 
@@ -20863,19 +20891,19 @@ check 'Scene::EquipMenu: the stats window previews each battle stat ' \
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  # #candidates leads with a "(Remove)" entry (id 0), so index 1 is the
-  # first real candidate: [0 Remove, 1 Better(id 2), 2 Worse(id 3), 3 Same(id 4)].
-  scene.instance_variable_set(:@cand_index, 1) # Better (id 2, atk 15)
+  # Real candidates exist, so #candidates leaves Remove out entirely
+  # (see its own comment): [0 Better(id 2), 1 Worse(id 3), 2 Same(id 4)].
+  scene.instance_variable_set(:@cand_index, 0) # Better (id 2, atk 15)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
   ok texts.include?('25'), 'Better\'s own delta (15 - 10 = +5) applied on top: 20 + 5 = 25'
 
-  scene.instance_variable_set(:@cand_index, 2) # Worse (id 3, atk 5)
+  scene.instance_variable_set(:@cand_index, 1) # Worse (id 3, atk 5)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
   ok texts.include?('15'), 'Worse\'s own delta (5 - 10 = -5) applied: 20 - 5 = 15'
 
-  scene.instance_variable_set(:@cand_index, 3) # Same (id 4, atk 10)
+  scene.instance_variable_set(:@cand_index, 2) # Same (id 4, atk 10)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
   ok texts.include?('20'), 'no delta (10 - 10 = 0): the new value equals the old one (20)'
@@ -20912,7 +20940,8 @@ check 'Scene::EquipMenu: both the current and previewed stat are halved by ' \
 
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  scene.instance_variable_set(:@cand_index, 1) # Better (id 2, atk 15)
+  # Real candidates exist, so #candidates leaves Remove out; Better is index 0.
+  scene.instance_variable_set(:@cand_index, 0) # Better (id 2, atk 15)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
   # base+equip: 20 + (15 - 10) = 25, then halved: 12 (25 / 2 truncated)
@@ -20966,8 +20995,9 @@ check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' 
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  # #candidates leads with a "(Remove)" entry (id 0); the Claymore is index 1.
-  scene.instance_variable_set(:@cand_index, 1)
+  # The lone real candidate (the Claymore) is index 0 -- no Remove entry
+  # alongside it, since a real candidate exists (see #candidates).
+  scene.instance_variable_set(:@cand_index, 0)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
   ok texts.include?('40'),
@@ -20998,14 +21028,15 @@ check 'Scene::EquipMenu: the stats window\'s preview colour comes from the ' \
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
 
-  scene.instance_variable_set(:@cand_index, 1) # Better (id 2) -- Atk rises
+  # Real candidates exist, so #candidates leaves Remove out: Better is index 0.
+  scene.instance_variable_set(:@cand_index, 0) # Better (id 2) -- Atk rises
   scene.send(:refresh_cand_cursor)
   bc = scene.instance_variable_get(:@stats_window).contents.blend_calls || []
   # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
   ok bc.any? { |call| call[6] == 32 && call[7] == 48 },
      'a rising stat blends from swatch index 2 (32, 48)'
 
-  scene.instance_variable_set(:@cand_index, 2) # Worse (id 3) -- Atk falls
+  scene.instance_variable_set(:@cand_index, 1) # Worse (id 3) -- Atk falls
   scene.send(:refresh_cand_cursor)
   bc = scene.instance_variable_get(:@stats_window).contents.blend_calls || []
   ok bc.any? { |call| call[6] == 48 && call[7] == 48 },

@@ -6481,6 +6481,60 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (`expected 14, got 0` for the Down case)
   before the fix. Full suite reconfirmed passing after the fix (903
   checks).
+  ✅ **Follow-up (cycle #128, 2026-08-23): `equip_menu.rb`'s candidate item
+  list always prepended a "(Remove)" entry (id 0) ahead of the bag's real
+  candidates -- real RPG_RT.exe only offers Remove when the bag has
+  *nothing else* that fits the slot, never alongside a real candidate.
+  Fixed.** Investigated as a sibling of #127's wrap-vs-clamp hunt (a
+  hand-rolled list outside the generic clamp-list convention `item_menu.rb`/
+  `skill_menu.rb` already use) -- the slot list itself (Weapon/Shield/
+  Armor/Helmet/Accessory, DOWN/UP) turned out fine: a genuine RPG_RT.exe
+  under wine (Nepheshel, a repositioned real save, Menu -> Equip) showed Up
+  from the first slot landing on the last and Down from the last landing on
+  the first, both directions, matching this codebase's own existing
+  `@slot_index %= @slots.size` exactly -- confirmed correct, no change
+  needed there. Continuing into the *candidate* item list (choosing a slot
+  opens the bag's fitting items) surfaced the real bug instead: with the
+  weapon slot's bag empty (edited into the save directly, the established
+  `LCF::Array1D`/reassign-to-parent technique), the candidate list drew
+  *one* row, blank-labelled, and pressing Decision on it genuinely
+  unequipped the worn weapon -- the slot list's own row went blank and the
+  weapon reappeared in the bag, confirming this blank row is a real,
+  functional Remove, not a placeholder. Adding two ownable weapons to the
+  bag (ids with no actor_set restriction, so any actor can wear them) and
+  reopening the same list showed *exactly* those two rows and nothing else
+  -- no Remove alongside them. Removing the equipped weapon (leaving one
+  real bag item, the one just unequipped) showed *exactly* that one row,
+  again with no separate Remove option. All three data points (0, 1, 2 real
+  candidates) agree: Remove is the sole entry when the bag has nothing that
+  fits, and is dropped entirely the moment it does. `EquipMenu#candidates`
+  (`mruby-rpg2k/mrblib/scene/equip_menu.rb`) used to be `[[0, 0]] +
+  @state.party.equip_candidates(...)` unconditionally, making Remove a
+  permanent extra choice next to every real one; fixed to prepend it only
+  when the real list is empty (`real.empty? ? [[0, 0]] : real`). **Side
+  finding, not fixed this cycle, a structurally distinct and less-verified
+  question left for a follow-up**: with two or more real candidates, real
+  RPG_RT laid them out two to a row (`ダガー` and `グラディウス` side by
+  side, half-width each, in the same wine capture that found the bug
+  above), where this codebase's own `#build_cand_window` still draws one
+  full-width row per item -- a real layout mismatch, but its exact geometry
+  (column width scaling, wrap-to-a-second-row behaviour) was not
+  characterised precisely enough this cycle to fix safely alongside the
+  Remove-inclusion rule, since both live in the same method and a rushed
+  layout change risked getting the interaction between them wrong.
+  `scripts/rpg2k_scene_check.rb`'s existing candidate-list checks (which
+  all assumed the old unconditional-Remove shape) updated throughout to the
+  corrected indices/sizes -- the wrap check's own "3 rows" became "2 rows,
+  no Remove" (`WrapMenuParty`'s bag is never empty), the comparison-glyph
+  check dropped `'(Remove)'` from its expected draw-call list, and every
+  `@cand_index` set to skip past a no-longer-existing leading Remove row
+  (the per-stat-preview, halved-by-state, two-handed-forced-unequip and
+  preview-colour checks) shifted down by one -- plus a new dedicated check
+  (`#candidates only includes Remove when the bag has nothing else that
+  fits`) pinning both boundary cases directly. Full suite reconfirmed
+  passing after the fix (904 checks, up from 903; the equip-scene edits
+  were index/count corrections to already-passing checks, not new failures
+  fixed).
   ✅ **Follow-up (cycle #124, 2026-08-22): `game_over.rb`'s "only Decision
   dismisses the Game Over screen, Cancel does nothing" claim was wrong --
   real RPG_RT.exe accepts Cancel too, identically to Decision. Fixed.**
