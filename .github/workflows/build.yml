@@ -1389,15 +1389,17 @@ jobs:
     # that from a from-source PPSSPP compile on every run into a one-time cost,
     # replacing the hand-rolled tree cache PPSSPP used to be built from.
     #
-    # NON-BLOCKING (continue-on-error): PPSSPP's headless HLE only partially
-    # implements pspsdk's libc stdio (printf/strlen resolve to firmware stubs),
-    # which the EBOOT's markers lean on, so capture can be flaky under the
-    # emulator even though the EBOOT builds and boots. The required gate is the
-    # `psp` build; this job stays informational (its log is uploaded) until the
-    # emulator path is solid.
+    # BLOCKING: this used to run with continue-on-error while PPSSPP's headless
+    # HLE only partially implemented pspsdk's libc stdio (printf/strlen
+    # resolved to firmware stubs), which the EBOOT's markers lean on, making
+    # capture flaky even when the EBOOT itself booted fine. The ten-bug trail
+    # in app/psp/README.md (five of them PPSSPP HLE/interpreter bugs, patched
+    # in nix/patches/ and applied via this flake's own `packages.ppsspp`) fixed
+    # that, and the frame loop now runs for the whole timeout window (thousands
+    # of BRINGUP heartbeats per run), so the job asserts both markers and
+    # gates the build alongside `psp`.
     needs: psp
     runs-on: ubuntu-24.04
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:
@@ -1454,14 +1456,18 @@ jobs:
           # (the markers, or the tail when they are missing) are echoed here.
           ./ppsspp/bin/ppsspp-headless --log --graphics=software --timeout=15 \
             "$EBOOT" > "$GITHUB_WORKSPACE/headless.log" 2>&1 || true
-          echo "=== asserting the EBOOT booted (and ideally pumped frames) ==="
+          echo "=== asserting the EBOOT booted and pumped frames ==="
           # RPG2K_PSP_BOOT proves it booted with output captured; RPG2K_PSP_BRINGUP
-          # (the per-second heartbeat) additionally proves the frame loop runs.
-          if grep -qE 'RPG2K_PSP_(BOOT|BRINGUP)' "$GITHUB_WORKSPACE/headless.log"; then
+          # (the per-second heartbeat) additionally proves the frame loop runs --
+          # required separately, because BRINGUP was unreachable for weeks while
+          # the boot crashed before the first heartbeat, so a BOOT-only grep
+          # would have passed a build that never pumped a frame.
+          if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless.log" &&
+             grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless.log"; then
             grep -E 'RPG2K_PSP_(BOOT|BRINGUP)' "$GITHUB_WORKSPACE/headless.log" \
               | head -5
           else
-            echo "no bring-up marker in the emulator log; last 100 lines:"
+            echo "boot or bring-up marker missing from the emulator log; last 100 lines:"
             tail -100 "$GITHUB_WORKSPACE/headless.log"
             exit 1
           fi
