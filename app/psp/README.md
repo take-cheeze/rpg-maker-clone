@@ -288,16 +288,21 @@ search misses every entry; a linear scan finds the FDE immediately.
 Eliminated first, each by measurement rather than argument: the CFI data
 itself, registration, `__builtin_return_address(0)`, libgcc's packed
 unaligned read in `unwind-pe.h`, and `memmove`/`memset` through the
-emulator's HLE. Worked around in `psp_unwind_fde.cxx`, which overrides
-`__register_frame_info`/`_Unwind_Find_FDE`/`__deregister_frame_info` and
-answers lookups from an index it sorts itself; with it, boot reaches
-`RPG2K_PSP_MRUBY_OPEN ok` → `RPG2K_PSP_GAME_START` → a continuous
-`RPG2K_PSP_BRINGUP` heartbeat again. Not upstreamed to pspdev yet, and
-worth reporting there: nothing about it is specific to this project, and
-it breaks C++ exceptions for every PSP binary this toolchain builds.
-Since it is only reachable when something actually throws, it was
-presumably dormant through the nine-bug trail above rather than newly
-introduced.
+emulator's HLE. Worked around at the time in `psp_unwind_fde.cxx`, which
+overrode `__register_frame_info`/`_Unwind_Find_FDE`/
+`__deregister_frame_info` and answered lookups from an index it sorted
+itself. **Resolved (2026-08-23): that file is gone.** The mis-sort was
+measured before bug 11 below was fixed, and with 49 mis-targeted tail
+calls in the EBOOT any observation of libgcc behaviour was confounded;
+once #1304 landed, libgcc's own FDE handling passes every probe this
+port has — a throw/catch behind a noinline call, a 16-deep recursive
+unwind crossing allocator and TLS activity, and real gameplay: Nepheshel
+New Game raises, rescues, and runs for millions of frames on stock
+libgcc with the override deleted. The override also sat directly on
+every throw's path (`_Unwind_Find_FDE`), so dropping it removes a whole
+class of "is the EH layer itself sane?" doubt from future debugging.
+Worth reporting upstream regardless if an older pspdev still ships the
+broken sort: nothing about it is specific to this project.
 
 ### The `-O2` build is broken, and the build type is now pinned
 
@@ -418,7 +423,8 @@ stub layout moving under an unrepointed tail call.
 Two things make it worth chasing rather than ignoring. `mrb_sys_fail` raises
 when the HAL call fails, and mruby here is built with the C++ exception ABI --
 so a rescued Ruby exception per frame means a real C++ throw and unwind per
-frame, through the FDE index `psp_unwind_fde.cxx` rebuilds. And no Ruby in
+frame, through the FDE index `psp_unwind_fde.cxx` rebuilt at the time (since
+deleted -- see above). And no Ruby in
 this tree calls `File.delete` per frame; the only non-test occurrence is a
 one-off probe in `mruby-rgss/mrblib/lib.rb`. Something is reaching it that the
 source does not obviously explain.
