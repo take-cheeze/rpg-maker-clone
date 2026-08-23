@@ -6604,6 +6604,53 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #131, 2026-08-23): of the four battle cursor spots
+  cycle #130 left unverified, `#drive_battle_target` (enemy targeting) turned
+  out to have a real bug -- not about key-repeat (that part re-confirmed
+  fine), but about wrap-vs-clamp at the list boundary once a troop has more
+  living members than the window's own four visible rows. Fixed.** Built two
+  more synthetic autostart Enemy Encounters on copies of Nepheshel's map 12
+  (same tail-splice pattern as #130's probe, swapping only the troop id
+  param on the copied 10710 command): a 6-Killer-Bee troop (id 16) and, for
+  the exact-boundary control, a 3-Blood-Bat troop (id 5) and a 4-Zombie troop
+  (id 37). Since every member of a wild troop shares one on-screen name, the
+  cursor's real target couldn't be read off the text list alone -- instead
+  each probe attacked-to-kill from a known cursor position and read the
+  troop's own member x/y off the .ldb (`enemy_group[id].members`) to see
+  *which* sprite actually died, an unambiguous per-member signal. Results:
+  on the 6-Bee troop, holding/tapping Down from row 1 stops dead at row 4 and
+  never reaches members 5/6 (confirmed by attacking from there: the 4th
+  member died, not the 5th/6th) -- no scroll, no wrap either, even across 8
+  discrete taps and a 2.5s hold well past where auto-repeat would have
+  cycled through the rest; Up from row 1 is symmetric (member 1 died after
+  3 Up taps, never member 6). On the 3-Bat and 4-Zombie troops (both fitting
+  the 4-row window with no overflow), the *opposite* holds: Up from row 1
+  wraps to the last row (member 3 died) and Down from the last row of an
+  exactly-4 troop wraps back to row 1 (row 1 stayed highlighted after a 4th
+  Down tap) -- ordinary modulo wrap, matching this method's own pre-existing
+  code. So the bug was specifically the overflow case: `drive_battle_target`
+  wrapped `@ui[:target_i]` modulo the *full* living-foe count regardless,
+  which both let the cursor reach members past row 4 (via `battle_list_
+  window`'s scrolling, which real RPG_RT's enemy-target list does not do at
+  all) and wrapped it back to row 1 from the true last member instead of
+  stopping at row 4. Fixed by splitting `#drive_battle_target`'s Down/Up into
+  a new `#move_battle_target_cursor(delta, foes_count)`: plain modulo wrap
+  when `foes_count <= BATTLE_VISIBLE_ROWS` (unchanged), blocked at either end
+  with no wrap at all once it overflows -- the same block-not-wrap shape
+  `#move_battle_list_index` already uses for the Item/Skill grids.
+  `#drive_battle_ally_target`'s identical-shaped modulo needed no matching
+  change: RPG2000's own party cap keeps `allies.length` at 4 or fewer always,
+  so it can never hit the overflow case this fixes. `#drive_battle_skill`/
+  `#drive_battle_item` were not re-examined this cycle (they already use the
+  correct block-not-wrap `#move_battle_list_index`, not this method's old
+  modulo). New `scripts/rpg2k_scene_check.rb` check (a 6-Slime fixture troop,
+  `enemy_group[5]`) asserting Down from row 1 stops at row 4 rather than
+  reaching row 5 or wrapping, confirmed to fail against the pre-fix code
+  (a stashed diff of just `battle.rb`) before the fix -- `expected 3, got 4`.
+  Full suite reconfirmed passing (906 checks, up from 905).
+  `Map0012.lmu`/`Save01.lsd` were edited only as scratch copies for these
+  probes and restored to their original bytes (byte-identical by `md5sum`)
+  once each wine session was torn down.
   ✅ **Follow-up (cycle #130, 2026-08-23): `battle.rb`'s battle-scene
   key-repeat claim -- the whole reason every one of its six cursor spots
   gained `|| Input.repeat?(...)` back on 2026-08-18 -- is now independently
