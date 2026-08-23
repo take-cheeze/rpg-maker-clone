@@ -6407,6 +6407,44 @@ The work below is roughly ordered by the critical path to a walkable game
   genuine reference runtime rather than a difference in rendered output,
   there was no actionable code fix to extract from it -- reported here
   rather than chased further, and not left as a partially-verified claim.
+  ✅ **Follow-up (cycle #126, 2026-08-23): `#confirm_selection`'s own ":save
+  confirm pops back with no feedback at all" claim, cited only to EasyRPG's
+  source and mislabeled at the time as "RPG_RT's own live source," is now
+  independently confirmed against a genuine RPG_RT.exe -- confirmed correct,
+  no code change.** Reached the real Save screen by editing Save01.lsd's own
+  system chunk (field 123, `save_allowed`) directly to force Change Save
+  Access on -- a save-side edit, not an injected Change Save Access *event*,
+  deliberately avoiding the exact command cycle #123 already found crashes
+  real RPG_RT.exe outright. Booted real RPG_RT.exe under wine (`TestPlay`
+  argument, needed for F9 later in the same session but incidental here),
+  Continued onto the repositioned map-12 save, opened the field menu, picked
+  the (now-enabled) Save command, selected the already-occupied File 1 and
+  pressed Decision: the very next captured frame already shows the plain
+  command list with no window or message in between, and `Save01.lsd` on
+  disk changed size and content in that same step (16986 -> 17366 bytes),
+  confirming the save genuinely happened rather than silently failing or
+  the screen simply freezing. Comment on `#confirm_selection`
+  (`mruby-rpg2k/mrblib/scene/save_load.rb`) updated to record the
+  re-verification and drop the "RPG_RT's own live source" mislabeling,
+  mirroring the `ARROW_BLINK_FRAMES`/`equip_menu.rb`/save-cursor precedents
+  above; the existing checks (`scripts/rpg2k_scene_check.rb`, "confirming a
+  slot saves through the ..." / "a failed save still pops back the same ...")
+  already covered this and needed no changes, confirmed still passing (902
+  checks). **Side finding, not chased further this cycle**: a nested
+  `LCF::Array1D`/`Array2D` obtained by `parent[id]` (a cached *decode*) can be
+  mutated in place (`sys[123] = true`) with the mutation visible on that same
+  object immediately afterward, but `parent.to_lcf` silently drops it --
+  serialisation reads only `parent`'s own raw-bytes cache, never the
+  decoded-object cache `#[]` populates, so the edit is lost unless the
+  mutated object is explicitly written back with `parent[id] = child` (the
+  pattern `Game::State#to_lsd`'s own save-system chunk already follows
+  correctly, which is presumably why this has not been an observed
+  in-engine bug). Caught only because this cycle's own scratch script did
+  the natural-looking `sys = save[101]; sys[123] = true; save.to_lcf` and
+  silently produced an unedited file; fixed in the scratch tooling by
+  reassigning `save[101] = sys` before serialising, not investigated further
+  as a library defect since no runtime call site was found using the
+  lossy pattern.
   ✅ **Follow-up (cycle #124, 2026-08-22): `game_over.rb`'s "only Decision
   dismisses the Game Over screen, Cancel does nothing" claim was wrong --
   real RPG_RT.exe accepts Cancel too, identically to Decision. Fixed.**

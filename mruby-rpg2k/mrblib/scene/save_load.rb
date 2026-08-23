@@ -213,16 +213,22 @@ class RPG2k
       end
 
       # A :save confirm pops straight back to the menu the same frame, with
-      # no feedback of any kind -- confirmed against RPG_RT's own live
-      # source: `Scene_Save::Action` (`src/scene_save.cpp`) is just `Save(fs,
-      # index + 1); Scene::Pop();`, discarding `Save`'s own boolean result
-      # outright -- there is no "Save failed." path in real RPG_RT at all,
-      # a save I/O failure pops exactly the same as a success. `Scene_Menu::
-      # UpdateCommand`'s own Save case (`src/scene_menu.cpp`) is just
-      # `Scene::Push(std::make_shared<Scene_Save>())`, so this class's own
-      # prior comment attributing the fabricated message to "the same
-      # feedback the menu used to show inline" cited no real RPG_RT source
-      # for that claim, only this codebase's own earlier code.
+      # no feedback of any kind -- this was previously cited only to
+      # EasyRPG's `Scene_Save::Action` (`src/scene_save.cpp`, `Save(fs,
+      # index + 1); Scene::Pop();`), mislabeled at the time as "RPG_RT's own
+      # live source." Independently confirmed (cycle #126, 2026-08-23)
+      # against a genuine RPG_RT.exe under wine: with Change Save Access
+      # forced on (a save's own system chunk field 123, edited directly --
+      # the same class of scratch edit already established for switches),
+      # opening the field menu's Save command, picking the already-occupied
+      # File 1 and pressing Decision closed the file-select screen and
+      # returned to the command list with no window/message of any kind in
+      # between -- the very next captured frame already shows the plain
+      # command list, and `Save01.lsd` on disk changed size and content in
+      # that same step, confirming the save genuinely happened rather than
+      # silently failing. There is no "Save failed."/"Game saved." path in
+      # real RPG_RT at all -- a save pops back exactly the same way whether
+      # or not the write actually succeeds.
       def confirm_selection
         slot = @index + 1
         case @mode
