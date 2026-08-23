@@ -454,14 +454,16 @@ The pieces below are scaffolded but **not** part of the EBOOT yet:
   runtime project loader, since the PSP EBOOT has no command line and no
   way to be told a different location after it starts.
 - **Validating ADR 0047's P2 numbers.** The mruby/LVGL allocator split itself
-  is decided and wired (mruby's whole heap lives in its own 8 MB arena, see
+  is decided and wired (mruby's whole heap lives in its own fixed arena, see
   `main.cxx`'s `mrb_basic_alloc_func` — LVGL's pool only aligns to 4 bytes on
   32-bit, too weak for mruby's word boxing, so sharing it is not an option
-  the way it is on desktop). What still needs a real game running at
-  `kGameDir` is confirming the arena size is right: the `RPG2K_PSP_BRINGUP`
-  heartbeat reports free RAM and LVGL's pool high-water mark, and the
-  mruby arena's own usage is the gap between `sceKernelTotalFreeMemSize` and
-  those two, once a title actually runs on hardware or an emulator.
+  the way it is on desktop). The size is now game-validated: Nepheshel's
+  New Game pins the arena at ~12.0 MB steady-state under PPSSPP-headless
+  (the title screen alone sits at ~4.3 MB), so the arena is 12 MB — 8 MB
+  exhausted mid-map-load and the failed-allocation unwind corrupted VM state
+  (see ADR 0047's P2 follow-up), and 16 MB starves the shared newlib heap.
+  The `RPG2K_PSP_BRINGUP` heartbeat now reports the arena's own occupancy as
+  `arena_used=` directly, next to free RAM and LVGL's pool high-water mark.
 - **Accelerated rendering.** The bring-up flushes with a CPU `memcpy` into the
   framebuffer. Moving the blit onto the `sceGu` GPU is a later optimisation,
   and the natural place to also do real scaling (above) instead of clipping.
@@ -474,11 +476,14 @@ fit inside the PSP's ~24 MB of RAM still needs a real game run on real
 hardware or an emulator with a Memory Stick image, not just CI's `psp-smoke`.
 [`docs/adr/0047-psp-memory-budget.md`](../../docs/adr/0047-psp-memory-budget.md)
 works through that, including the P2 allocator split, which is now decided and
-wired: mruby's entire heap lives in a fixed 8 MB arena of its own
+wired: mruby's entire heap lives in a fixed 12 MB arena of its own
 (`main.cxx`'s `mrb_basic_alloc_func`) rather than sharing LVGL's pool (whose
 TLSF only 4-byte-aligns on 32-bit — too weak for mruby's word boxing) or
 growing unbounded on plain malloc, so the interpreter OOMs into a catchable
-`NoMemoryError` instead of colliding with the decoded-bitmap heap. `lv_conf.h`'s
+`NoMemoryError` instead of colliding with the decoded-bitmap heap. The size
+is measured, not guessed: Nepheshel's New Game pins steady-state usage at
+~12.0 MB (8 MB exhausted and corrupted mid-map; see ADR 0047's P2 follow-up),
+while 16 MB takes RAM the decoded-bitmap/newlib heap needs. `lv_conf.h`'s
 `LV_MEM_SIZE` therefore covers only LVGL's own widgets and internals, and the
 decoded bitmaps stay in a third, uncapped pool as before. That pool is 256 KB,
 cut down from an original 4 MB once P2 established what is actually left for
@@ -508,8 +513,8 @@ PSP every PT_LOAD segment of the EBOOT is mapped into RAM at launch, so a
 read-only table is live memory, not just file size. The
 `RPG2K_PSP_BRINGUP` heartbeat is the place to read the
 result: `free`/`maxfree` from `sceKernelTotalFreeMemSize` are the device's real
-free RAM, `lvgl_used`/`lvgl_max` are LVGL's pool, and the mruby arena's usage is
-the gap between them once a game is actually running.
+free RAM, `lvgl_used`/`lvgl_max` are LVGL's pool, and `arena_used=` is the
+mruby arena's occupancy once a game is actually running.
 
 For a packed RPG Maker XP/VX/VX Ace title,
 [`scripts/rgssad_unpack.rb`](../../scripts/rgssad_unpack.rb) unpacks

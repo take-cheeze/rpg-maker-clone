@@ -958,6 +958,38 @@ the interpreter-linking slice, in this order:
   LVGL only) instead of describing the un-taken shared-pool option. The 8 MB
   figure is a generous placeholder to be validated against a real game
   on-device, exactly as the BRINGUP heartbeat (P1) measures.
+
+  **Follow-up (2026-08-23, the validation P2 asked for): 8 MB was not
+  generous — it was too small, and exhausting it corrupted rather than
+  degraded.** Nepheshel's New Game fills the arena to its last byte during
+  the first map load; the title screen alone sits at ~4.3 MB, which is why
+  weeks of title-screen bring-up never saw this. What happens at exhaustion
+  is *not* the clean catchable `NoMemoryError` this section promised:
+  `mrb_realloc_simple`'s recovery path runs `mrb_full_gc` and retries, and
+  when even that fails the resulting raise has to unwind through
+  `cipop`'s env-unshare allocation and friends — allocation failures inside
+  that unwind leave the callinfo chain pointing into freed memory (observed:
+  frames in the just-freed old ci array after a growth realloc moved it, and
+  eventually an entry whose address sits on the native C stack), and the next
+  raise aborts inside `catch_handler_find`'s pc-range assert. Diagnosed by
+  dumping the walk's frames from inside mruby (`[vm] raw @=` traces), then
+  bisected by swapping the arena for plain malloc — the crash vanished — and
+  confirmed by usage instrumentation (`RPG2K_PSP_ARENA_OOM used=8388480`,
+  i.e. 100% full, fired *before* any corruption). The allocator's own logic
+  is sound: it survives millions of randomized alloc/free/reload ops with
+  integrity checks on host, and guarded runs on target show every pointer
+  arriving in-range with the free list ordered right up to exhaustion.
+  Resolution: arena sized to **12 MB** (measured working size — millions of
+  New Game frames, steady-state occupancy pinned at ~12.0 MB because mruby
+  grows to fill capacity and GCs under pressure, one transient exhaustion per
+  few minutes recovered cleanly by the GC retry). 16 MB boots but starves the
+  newlib/sbrk heap decoded bitmaps and `__cxa_allocate_exception` share
+  (`std::bad_alloc` mid-map), so the ceiling is real. The heartbeat now
+  reports `arena_used=` alongside the system figures so the next game to
+  outgrow the arena shows up as a number instead of a crash. Known sharp
+  edge left open on purpose: a game that genuinely exhausts 12 MB will hit
+  the same corrupting-unwind cliff until the failure paths are hardened —
+  treat `arena_used` approaching capacity as the early warning.
 - **P2a — `LV_MEM_SIZE` cut from 4 MB to 256 KB.** Once P2 moved mruby onto
   its own arena, checked what is actually left for LVGL's pool to cover:
   decoded bitmaps bypass it (Finding 3), the LVGL partial-render draw buffers

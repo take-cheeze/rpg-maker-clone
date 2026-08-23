@@ -165,14 +165,22 @@ lv_obj_t* g_status_label = nullptr;
 //
 // This is a first-fit free-list allocator with splitting and coalescing; every
 // block is 16-byte aligned (enough for the 8-byte RVALUE alignment mruby's
-// word boxing needs on 32-bit). The size should be validated against a real
-// game on-device -- the BRINGUP heartbeat below already reports free RAM --
-// but 8 MB is generous: the rpg2k+lcf+rgss mrblib costs ~1.4 MB of class
-// definitions on a 64-bit host (roughly half on the PSP's 32-bit MIPS), and a
-// real LCF database (Nepheshel's 1.3 MB .ldb) plus the maps and scene objects
-// fit well inside, while still leaving most of the ~24 MB for the LVGL pool,
-// the draw buffers and the decoded-bitmap heap.
-constexpr size_t kMrbArenaSize = 8u * 1024u * 1024u;
+// word boxing needs on 32-bit). The size is validated against a real game
+// (Nepheshel, New Game) under PPSSPP-headless: at 8 MB the arena fills to its
+// last byte during the first map load and the failed-allocation recovery paths
+// (mrb_realloc_simple's full-GC-and-retry, then a NoMemoryError raise that
+// itself has to unwind through cipop's env-unshare allocation) corrupt the VM
+// callinfo chain -- frames pointing into freed memory and even onto the native
+// C stack -- which aborts inside catch_handler_find on the very next raise.
+// At 12 MB the same scenario runs millions of frames with steady-state usage
+// pinned at ~12.0 MB (mruby grows to fill capacity and GCs under pressure;
+// one transient exhaustion per 3 minutes, recovered cleanly by the GC retry),
+// while 16 MB starves the newlib/sbrk heap that decoded bitmaps and the C++
+// exception machinery share (std::bad_alloc during map play). So 12 MB is the
+// measured working size on this ~24 MB target: the heartbeat below reports the
+// arena's own occupancy (arena_used) alongside the system figures, for the day
+// a game outgrows it.
+constexpr size_t kMrbArenaSize = 12u * 1024u * 1024u;
 alignas(16) uint8_t g_mrb_arena[kMrbArenaSize];
 
 constexpr size_t kMrbAlign = 16;
@@ -184,6 +192,17 @@ static_assert(sizeof(MrbBlock) <= kMrbAlign,
               "block header must fit one alignment unit");
 
 MrbBlock* g_mrb_free = nullptr;
+
+void mrb_arena_init();
+
+// Live bytes (payload + headers) currently handed out, for the heartbeat.
+size_t mrb_arena_used() {
+  mrb_arena_init();
+  size_t free_bytes = 0;
+  for (MrbBlock* b = g_mrb_free; b; b = b->next)
+    free_bytes += kMrbAlign + b->size;
+  return kMrbArenaSize - free_bytes;
+}
 
 size_t mrb_align_up(size_t n) {
   return (n + kMrbAlign - 1) & ~(kMrbAlign - 1);
@@ -667,6 +686,8 @@ int main(void) {
       sb.sint(stack_free);
       sb.str(" stack_used_max=");
       sb.uint(stack_used_max);
+      sb.str(" arena_used=");
+      sb.uint(static_cast<unsigned>(mrb_arena_used()));
       sb.str("\n");
       psp_write(buf, sb.length());
     }
