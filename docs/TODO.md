@@ -5863,6 +5863,32 @@ The work below is roughly ordered by the critical path to a walkable game
   table cell-for-cell; typing the corrected small-tsu and small-wa cells
   produces the right characters; the hiragana page's own "vu" cell is
   katakana ヴ), confirmed to fail against the pre-fix code before the fix.
+  ✅ **Follow-up (cycle #125, 2026-08-23): the two Cancel/blank-confirm
+  claims above — both cited only to EasyRPG's source, one of them
+  mislabeled "RPG_RT's own live source" at the time — are now independently
+  confirmed against a genuine RPG_RT.exe, no code change needed.** Built a
+  synthetic autostart Enter Hero Name (10740, actor 1 "リト", charset
+  0/hiragana) map event on a copy of Nepheshel's map 12, resumed from a
+  genuine save positioned there, under real RPG_RT.exe/wine. On a name
+  reading "リ" (one kana typed), a single Cancel press erased exactly that
+  character down to empty, matching `#name_input_cancel`'s existing branch;
+  a further Cancel press on the now-empty field left the field and the
+  whole screen visibly unchanged (confirmed by the unchanged screenshot,
+  not inferred from silence) — buzzer-only. Separately, navigating straight
+  to the grid's own 決定 (Confirm) cell with nothing typed and pressing
+  Decision left the screen open with the field refilled to the actor's real
+  name ("リト"), matching `#commit_name_input`'s blank branch exactly — it
+  did not resume the event. Comments on both methods
+  (`mruby-rpg2k/mrblib/scene/map.rb`) updated to record the re-verification
+  and stop mislabeling the EasyRPG citation as RPG_RT's own source.
+  **Side finding, not chased further**: charset `2` ("Latin alphabet",
+  offered per `#drive_name_input`'s own comment "for English-patched
+  games") made real RPG_RT.exe hang on a solid-black screen for 20+ seconds
+  (process alive, screen a constant `(0,0,0)`) where charset `0` on the
+  same map/event worked instantly — a genuine, reproducible divergence, but
+  left uninvestigated since it's unclear whether charset 2 is even a
+  legitimate RPG2000 value versus an RPG2003-only extension, and this
+  environment has no genuine RPG_RT2003.exe to settle that distinction.
 - ✅ **The same "silent embedded widget" family, found once more: Open Shop
   and Show Inn played zero sound effects at all (2026-08-18).** Verified
   against RPG_RT's actual behavior via EasyRPG Player's own C++ source,
