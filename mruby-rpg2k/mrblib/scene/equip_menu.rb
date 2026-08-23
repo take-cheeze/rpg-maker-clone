@@ -2,10 +2,11 @@ class RPG2k
   module Scene
     # The field equip screen (main menu -> Equip). Shows one party member's five
     # equipment slots and current stats; LEFT/RIGHT cycle the member. Choosing a
-    # slot lists the bag's items that fit it, plus Remove when (and only when)
-    # nothing does; choosing one equips it -- swapping the previously-worn
-    # item back into the bag -- or (choosing Remove) empties the slot. See
-    # #candidates. The bag-aware equip logic is Game::Party#equip_candidates /
+    # slot lists the bag's items that fit it, in a two-column grid, with Remove
+    # always appended after them (drawn as a blank cell -- see #candidates);
+    # choosing one equips it -- swapping the previously-worn item back into the
+    # bag -- or (choosing Remove) empties the slot. See #candidates. The
+    # bag-aware equip logic is Game::Party#equip_candidates /
     # equip_from_bag / unequip_to_bag (host-tested); this is the RGSS UI over it,
     # mirroring Scene::ItemMenu's helpers. A two-handed weapon empties the other
     # hand (Actor#free_two_handed_slot) and a 二刀流 actor's shield slot lists
@@ -20,6 +21,18 @@ class RPG2k
       # (see #build_desc_window) -- the stats/slot/candidate windows below it
       # are all offset down by this much.
       DESC_H = LINE_H + Window::BORDER * 2
+
+      # The candidate list is a two-column grid, not a single stacked column
+      # -- confirmed against genuine RPG_RT under wine with a four-candidate
+      # bag (ダガー/グラディウス/マンゴーシュ/アサシンダガー, none actor-
+      # restricted), which filled row-major (candidate 0 top-left, candidate
+      # 1 top-right, candidate 2 second row left, ...), the same COLUMN_MAX=2
+      # shape already ported to Scene::ItemMenu/Scene::SkillMenu -- see
+      # #candidates and #build_cand_window's own doc comments for the fuller
+      # writeup (row-major layout, always-appended trailing Remove cell,
+      # fixed window height) and #update_items for the cursor-navigation
+      # citation.
+      COLUMN_MAX = 2
 
       # `actor_index` is which party member the screen opens on -- the one
       # `Scene::Menu#enter_actor_selection` preselected from the menu's own
@@ -161,33 +174,58 @@ class RPG2k
         end
       end
 
-      # The slot's fitting bag items -- a leading Remove entry (id 0) is
-      # prepended only when the bag holds nothing that fits, never
-      # alongside real candidates. (A 二刀流 actor's shield slot lists
+      # The slot's fitting bag items, with a trailing Remove entry (id 0)
+      # always appended after them. (A 二刀流 actor's shield slot lists
       # weapons instead of shields, which is why `actor` goes along -- see
-      # Game::Party#equip_candidates.) Confirmed against a genuine RPG_RT.exe
-      # under wine (cycle #128): with the weapon slot's bag empty, opening
-      # the candidate list drew exactly one row, blank-labelled, whose
-      # Decision genuinely unequipped the worn weapon (returning it to the
-      # bag, the slot list's own row going blank) -- so that blank row is a
-      # real, functional Remove, not a placeholder. With one bag weapon
-      # (the item just unequipped), the list drew exactly that one row and
-      # nothing else -- no separate Remove option alongside it. With two
-      # bag weapons, the list drew exactly those two and, again, no Remove
-      # row at all. So real RPG_RT's rule is "Remove exists only when nothing
-      # else does" -- this codebase previously prepended it unconditionally,
-      # making it a genuine third, always-selectable entry alongside every
-      # real one. **Deliberately not addressed here**: with >=2 real
-      # candidates, real RPG_RT lays them out two to a row (a real
-      # discrepancy from this window's own single-item-per-row drawing,
-      # visible in the same wine capture) -- a separate, structurally
-      # distinct layout question, not re-verified in enough detail (exact
-      # column width/wrap behaviour) to fix safely in the same pass; left
-      # as a follow-up.
+      # Game::Party#equip_candidates.)
+      #
+      # Cycle #128 found the Remove-inclusion bug (this codebase used to
+      # *prepend* Remove unconditionally, making it a permanent extra choice
+      # ahead of every real one) but concluded from a 0/1/2-real-candidate
+      # comparison that real RPG_RT *drops* Remove entirely once any real
+      # candidate exists -- because none of those captures ever pressed
+      # DOWN past the last visibly-populated row. **Follow-up (cycle #129):
+      # that conclusion was wrong.** Confirmed against a genuine RPG_RT.exe
+      # under wine with a *four*-candidate bag (ダガー/グラディウス/
+      # マンゴーシュ/アサシンダガー, filling a complete 2x2 grid -- see
+      # COLUMN_MAX): pressing DOWN twice from the top-left cell (column-
+      # locked, landing on row 2's own left cell each time) reached a fifth,
+      # visually blank cell one row below the last full row -- still
+      # genuinely selectable (a cursor box draws around it) and with its own
+      # distinct stat-preview delta, confirmed *identical* (870 -> 150 on
+      # the Atk row, both times) to the blank Remove row a separate 2-real-
+      # candidate capture (ダガー/グラディウス only, same actor/equipped
+      # weapon) reached the same way -- proving both are the same computed
+      # entry (id 0, unequip), not a rendering artifact. Pressing LEFT from
+      # that cell moved the cursor to the *last real* candidate (row 2's own
+      # right cell, アサシンダガー) -- a genuine row-crossing flat-index
+      # move, confirmed by its own distinct stat delta and description text
+      # -- so Remove is a real, ordinary list entry at row-major position
+      # `real.size`, not a separate mode. So the true rule is simply "the
+      # real candidates, plus Remove always appended after them" -- id 0
+      # never has special positioning, and is never omitted; #build_cand_
+      # window draws it as a blank cell (see its own doc comment) which is
+      # why a short list *looks* like it has no Remove option unless the
+      # cursor is actually moved onto it.
       def candidates
         return @candidates if @candidates
         real = @state.party.equip_candidates(@slot_index, actor)
-        @candidates = real.empty? ? [[0, 0]] : real
+        @candidates = real + [[0, 0]]
+      end
+
+      # Cursor movement mirrors Scene::ItemMenu#move_item_cursor exactly --
+      # DOWN/UP move by a whole row (COLUMN_MAX cells) and UP/DOWN off the
+      # grid's own top/bottom is a no-op (confirmed: two DOWNs from the
+      # trailing Remove cell described above left the cursor exactly there,
+      # not wrapping); RIGHT/LEFT move by one cell, bounded only by the
+      # list's own absolute ends, with no row-boundary check -- confirmed by
+      # the LEFT-from-Remove row-crossing move documented on #candidates.
+      def move_cand_cursor(delta)
+        target = @cand_index + delta
+        return if target < 0 || target >= candidates.size
+        @cand_index = target
+        refresh_cand_cursor
+        play_system_se(SFX_CURSOR)
       end
 
       def update_items
@@ -195,15 +233,13 @@ class RPG2k
           play_system_se(SFX_CANCEL)
           leave_items
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
-          @cand_index += 1
-          @cand_index %= candidates.size
-          refresh_cand_cursor
-          play_system_se(SFX_CURSOR)
+          move_cand_cursor(COLUMN_MAX)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
-          @cand_index -= 1
-          @cand_index %= candidates.size
-          refresh_cand_cursor
-          play_system_se(SFX_CURSOR)
+          move_cand_cursor(-COLUMN_MAX)
+        elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
+          move_cand_cursor(1)
+        elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
+          move_cand_cursor(-1)
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
           apply_choice
@@ -247,7 +283,7 @@ class RPG2k
       # (e.g. a weapon's "[斬光風龍神]イリスの想いを宿す時の剣"); this scene
       # drew no such banner at all. Tracks whichever item is currently under
       # the cursor: the slot's own equipped item in :slots mode, or the
-      # highlighted candidate in :items mode (blank for the leading Remove
+      # highlighted candidate in :items mode (blank for the trailing Remove
       # entry and for an empty slot, matching there being no item to
       # describe).
       def build_desc_window
@@ -368,11 +404,20 @@ class RPG2k
         end
       end
 
+      # Y (screen-absolute) both the slot list and the candidate grid open
+      # at -- confirmed against genuine RPG_RT under wine: the candidate
+      # window (see #build_cand_window) starts at exactly this same row,
+      # replacing the slot list in place while browsing candidates, not
+      # anchored to the bottom of whatever content it happens to hold.
+      def slot_window_y
+        DESC_H + LINE_H * (1 + STAT_DEFS.size) + Window::BORDER * 2
+      end
+
       def build_slot_window
         @slot_window.dispose if @slot_window
         inner_w = SCREEN_W - Window::BORDER * 2
         h = @slots.size * LINE_H
-        y = DESC_H + LINE_H * (1 + STAT_DEFS.size) + Window::BORDER * 2
+        y = slot_window_y
         @slot_window = Window.new(0, y, SCREEN_W, h + Window::BORDER * 2)
         @slot_window.z = 400
         @slot_window.windowskin = @skin
@@ -454,24 +499,53 @@ class RPG2k
         STAT_POINT_FIELDS.reduce(0) { |s, f| s + stat_field_delta(id, f) }
       end
 
+      # Column width for the candidate grid -- identical formula to
+      # Scene::ItemMenu#item_col_w (see COLUMN_MAX's own doc comment).
+      def cand_col_w
+        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+      end
+
+      # The candidate window is a fixed-size grid, not sized to the
+      # candidate count -- confirmed against genuine RPG_RT under wine: a
+      # 2-real-candidate capture and a 4-real-candidate capture (same actor,
+      # same slot) drew a window with *pixel-identical* top/bottom borders
+      # both times (measured off the wine framebuffer), always starting at
+      # #slot_window_y (replacing the slot list in place) and always
+      # reaching exactly the bottom of the screen -- six grid rows' worth of
+      # interior regardless of how many of those cells a real entry (or the
+      # trailing Remove cell -- see #candidates) actually occupies; the rest
+      # draw as empty background. This codebase used to size the window
+      # tightly to `candidates.size` rows and anchor it to the *bottom* of
+      # the screen, which only happened to look right when the list was
+      # long enough to reach that same six-row mark. **Not independently
+      # re-verified beyond 5 entries** (4 real + Remove, this cycle's own
+      # test bag) whether real RPG_RT scrolls or otherwise handles a
+      # candidate count that would overflow the six-row/twelve-cell grid --
+      # left unaddressed, since #move_cand_cursor's own bound
+      # (`candidates.size`) never lets the cursor reach a cell past the
+      # real content either way, matching every capture actually taken.
       def build_cand_window
         @cand_window.dispose if @cand_window
         rows = candidates
         inner_w = SCREEN_W - Window::BORDER * 2
-        h = rows.size * LINE_H
-        @cand_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
-                                  SCREEN_W, h + Window::BORDER * 2)
+        y = slot_window_y
+        h = SCREEN_H - y - Window::BORDER * 2
+        @cand_window = Window.new(0, y, SCREEN_W, h + Window::BORDER * 2)
         @cand_window.z = 450
         @cand_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
+        col_w = cand_col_w
         rows.each_with_index do |(id, count), i|
-          if id == 0
-            c.draw_text 0, i * LINE_H, inner_w, LINE_H, "(Remove)"
-          else
-            c.draw_text 0, i * LINE_H, inner_w - 40, LINE_H, item_name(id)
-            c.draw_text inner_w - 40, i * LINE_H, 40, LINE_H, ":#{count}"
-          end
+          # Remove (id 0) draws nothing -- confirmed against genuine RPG_RT
+          # under wine, which shows a blank cell there (still a real,
+          # selectable, functional entry; see #candidates), not the literal
+          # "(Remove)" label this codebase used to draw.
+          next if id == 0
+          x = (i % COLUMN_MAX) * col_w
+          yy = (i / COLUMN_MAX) * LINE_H
+          c.draw_text x, yy, col_w - 40, LINE_H, item_name(id)
+          c.draw_text x + col_w - 40, yy, 40, LINE_H, ":#{count}"
         end
         @cand_window.contents = c
         refresh_cand_cursor
@@ -479,8 +553,10 @@ class RPG2k
 
       def refresh_cand_cursor
         return unless @cand_window
-        @cand_window.cursor_rect =
-          Rect.new(0, @cand_index * LINE_H, @cand_window.contents.width, LINE_H)
+        col_w = cand_col_w
+        x = (@cand_index % COLUMN_MAX) * col_w
+        y = (@cand_index / COLUMN_MAX) * LINE_H
+        @cand_window.cursor_rect = Rect.new(x, y, col_w, LINE_H)
         build_stats_window
         refresh_desc
       end

@@ -20648,7 +20648,7 @@ check 'Scene::Map resumes the saved BGM on Continue even while boarded, ' \
   eq [], RGSS::Audio.bgm_calls, 'nothing was playing at save time, so nothing plays now'
 end
 
-check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around' do
+check 'Scene::EquipMenu: the slot list and actor cursors wrap around' do
   scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@slot_index), 'starts on the first slot'
   RGSS::Input.triggered = [RGSS::Input::UP]
@@ -20669,47 +20669,98 @@ check 'Scene::EquipMenu: the slot list, actor and candidate cursors wrap around'
   scene.update
   RGSS::Input.reset
   eq 0, scene.instance_variable_get(:@actor_index), 'Right from the last actor wraps to the first'
-
-  # The equip-candidate list: the two fitting bag items, no Remove entry
-  # alongside them (real candidates exist, so Remove is left out -- #candidates).
-  scene.instance_variable_set(:@mode, :items)
-  scene.instance_variable_set(:@cand_index, 0)
-  scene.send(:build_cand_window)
-  eq 2, scene.send(:candidates).size, 'just the two candidates, no Remove'
-  RGSS::Input.triggered = [RGSS::Input::UP]
-  scene.update
-  RGSS::Input.reset
-  eq 1, scene.instance_variable_get(:@cand_index), 'Up from the first candidate wraps to the last'
-  RGSS::Input.triggered = [RGSS::Input::DOWN]
-  scene.update
-  RGSS::Input.reset
-  eq 0, scene.instance_variable_get(:@cand_index), 'Down from the last candidate wraps to the first'
 end
 
 # A party whose weapon slot has nothing in the bag that fits it at all --
-# the boundary case #candidates' own Remove-inclusion rule turns on.
+# the boundary case #candidates' own trailing-Remove rule still covers
+# (a list of nothing but Remove).
 class NoCandidateParty < MenuStubParty
   def equip_candidates(_slot, _actor = nil); []; end
 end
 
-# Confirmed against a genuine RPG_RT.exe under wine (cycle #128, Nepheshel):
-# with the weapon slot's bag empty, the candidate list drew exactly one row,
-# blank-labelled, whose Decision genuinely unequipped the worn weapon
-# (returned to the bag, the slot list's own row going blank) -- a real,
-# functional Remove, not a placeholder. With one, then two, real bag
-# weapons, the list drew exactly those and nothing else -- no separate
-# Remove row alongside real candidates, in either count. This codebase used
-# to prepend a Remove entry (id 0) unconditionally, making it a permanent
-# extra choice alongside every real one, which real RPG_RT never shows.
-check 'Scene::EquipMenu: #candidates only includes Remove when the bag has ' \
-      'nothing else that fits' do
+# Confirmed against a genuine RPG_RT.exe under wine. Cycle #128 first found
+# this list's real/Remove membership (with the weapon slot's bag empty, the
+# candidate list drew exactly one row, blank-labelled, whose Decision
+# genuinely unequipped the worn weapon -- a real, functional Remove, not a
+# placeholder) but concluded from captures that never pressed Down past the
+# last visibly-populated row that Remove disappears entirely once any real
+# candidate exists. **Follow-up (cycle #129): that conclusion was wrong.** A
+# four-real-candidate bag (filling a complete 2x2 grid) still had a fifth,
+# selectable cell one row below the last full row, with a stat-preview delta
+# matching (870 -> 150 on the Atk row) a separate 2-real-candidate capture's
+# own trailing blank cell exactly -- both are the same Remove entry (id 0),
+# always appended after the real candidates, just drawn blank (see
+# #build_cand_window). See #candidates' own doc comment for the fuller
+# writeup, including the LEFT-from-Remove row-crossing move that confirmed
+# it is an ordinary list entry, not a separate mode.
+check 'Scene::EquipMenu: #candidates always appends Remove after the real ' \
+      'candidates, never omitting or leading with it' do
   empty_scene = menu_scene(RPG2k::Scene::EquipMenu, Game::State.new(NoCandidateParty.new, 1, 0, 0))
   eq [[0, 0]], empty_scene.send(:candidates),
      'an empty bag: Remove is the sole entry'
 
   full_scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
-  eq [[7, 2], [8, 1]], full_scene.send(:candidates),
-     'a non-empty bag: just the real candidates, no Remove alongside them'
+  eq [[7, 2], [8, 1], [0, 0]], full_scene.send(:candidates),
+     'a non-empty bag: the real candidates, then Remove appended after them'
+end
+
+# The equip-candidate list is a two-column grid, not a wraparound single
+# column -- confirmed against genuine RPG_RT under wine (cycle #129, a
+# four-real-candidate bag): row-major fill, DOWN/UP genuinely column-locked
+# (a whole row, blocked rather than wrapped past either end) and RIGHT/LEFT
+# a flat +-1 bounded only by the list's own absolute ends, crossing a row
+# boundary rather than stopping at it -- the identical shape already ported
+# to Scene::ItemMenu's own item grid (see its ThreeItemWrapParty check).
+# wrap_menu_state's two real candidates plus the always-appended trailing
+# Remove entry (see #candidates) makes three: [0]=id 7 (row 0 col 0),
+# [1]=id 8 (row 0 col 1), [2]=Remove (row 1 col 0) -- enough to exercise
+# every edge this shape has.
+check 'Scene::EquipMenu: the candidate grid is column-locked on Down/Up and ' \
+      'crosses row boundaries on Right/Left, with no wraparound' do
+  scene = menu_scene(RPG2k::Scene::EquipMenu, wrap_menu_state)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode), 'Decision on the first slot opens the candidate list'
+  eq 3, scene.send(:candidates).size, 'two real candidates plus the trailing Remove entry'
+  eq 0, scene.instance_variable_get(:@cand_index), 'starts on the first candidate'
+
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@cand_index), "Up off the grid's own top is a no-op, not a wrap"
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@cand_index), 'Down moves a whole row, onto Remove (row 1 col 0)'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@cand_index),
+     "Down off the grid's own bottom is a no-op, not a wrap"
+
+  RGSS::Input.triggered = [RGSS::Input::LEFT]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@cand_index),
+     "Left from row 1's only cell flows back into row 0's last cell, not a no-op"
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@cand_index), 'Right flows forward onto Remove the same way'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]
+  scene.update
+  RGSS::Input.reset
+  eq 2, scene.instance_variable_get(:@cand_index), "Right off the grid's own end is a no-op"
+
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 0, scene.instance_variable_get(:@cand_index), 'Up moves back a whole row onto the first candidate'
 end
 
 # The slot and candidate cursors live on genuine Window_Selectable
@@ -20741,8 +20792,11 @@ check 'Scene::EquipMenu: holding Down auto-repeats the slot and candidate ' \
   RGSS::Input.repeated = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
-  eq 1, scene.instance_variable_get(:@cand_index),
-     'a held (repeated, not triggered) Down still moves the candidate cursor one step'
+  # A whole row (COLUMN_MAX cells), not one -- the candidate list is a
+  # two-column grid (see COLUMN_MAX's own doc comment), same as the slot
+  # list's own single-column Down being one step.
+  eq RPG2k::Scene::EquipMenu::COLUMN_MAX, scene.instance_variable_get(:@cand_index),
+     'a held (repeated, not triggered) Down still moves the candidate cursor one row'
 end
 
 # Confirmed against RPG_RT's own live source: `Scene_Equip::
@@ -20836,11 +20890,12 @@ check 'Scene::EquipMenu: the candidate list draws only a name and count, no comp
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
   texts = window_texts(scene.instance_variable_get(:@cand_window))
-  # No Remove row (real candidates exist -- #candidates); each candidate row
-  # is exactly two calls -- name, count -- so a summed arrow would show up
-  # as a third.
+  # The trailing Remove entry (see #candidates) draws nothing at all (a
+  # blank cell -- #build_cand_window), so it contributes no text calls
+  # either; each real candidate row is exactly two calls -- name, count --
+  # so a summed arrow would show up as a third.
   eq ['Better', ':1', 'Worse', ':1', 'Same', ':1'], texts,
-     'no arrow glyph anywhere in the candidate list'
+     'no arrow glyph anywhere in the candidate list, and nothing drawn for Remove'
 end
 
 # Confirmed against EasyRPG's actual C++ source, fetched live:
@@ -20891,8 +20946,9 @@ check 'Scene::EquipMenu: the stats window previews each battle stat ' \
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  # Real candidates exist, so #candidates leaves Remove out entirely
-  # (see its own comment): [0 Better(id 2), 1 Worse(id 3), 2 Same(id 4)].
+  # Remove is appended after the real candidates (see #candidates), so the
+  # real ones keep their original indices: [0 Better(id 2), 1 Worse(id 3),
+  # 2 Same(id 4), 3 Remove].
   scene.instance_variable_set(:@cand_index, 0) # Better (id 2, atk 15)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
@@ -20940,7 +20996,7 @@ check 'Scene::EquipMenu: both the current and previewed stat are halved by ' \
 
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  # Real candidates exist, so #candidates leaves Remove out; Better is index 0.
+  # Remove trails the real candidates (see #candidates); Better is still index 0.
   scene.instance_variable_set(:@cand_index, 0) # Better (id 2, atk 15)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
@@ -20995,8 +21051,8 @@ check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' 
   scene = menu_scene(RPG2k::Scene::EquipMenu, state)
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
-  # The lone real candidate (the Claymore) is index 0 -- no Remove entry
-  # alongside it, since a real candidate exists (see #candidates).
+  # The lone real candidate (the Claymore) is still index 0 -- Remove trails
+  # it, at index 1 (see #candidates).
   scene.instance_variable_set(:@cand_index, 0)
   scene.send(:refresh_cand_cursor)
   texts = window_texts(scene.instance_variable_get(:@stats_window))
@@ -21028,7 +21084,7 @@ check 'Scene::EquipMenu: the stats window\'s preview colour comes from the ' \
   scene.instance_variable_set(:@mode, :items)
   scene.send(:build_cand_window)
 
-  # Real candidates exist, so #candidates leaves Remove out: Better is index 0.
+  # Remove trails the real candidates (see #candidates): Better is still index 0.
   scene.instance_variable_set(:@cand_index, 0) # Better (id 2) -- Atk rises
   scene.send(:refresh_cand_cursor)
   bc = scene.instance_variable_get(:@stats_window).contents.blend_calls || []

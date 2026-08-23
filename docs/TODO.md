@@ -6535,6 +6535,75 @@ The work below is roughly ordered by the critical path to a walkable game
   passing after the fix (904 checks, up from 903; the equip-scene edits
   were index/count corrections to already-passing checks, not new failures
   fixed).
+  ✅ **Follow-up (cycle #129, 2026-08-23): the deferred two-column candidate
+  layout is fixed, and along the way cycle #128's own "Remove is dropped
+  entirely once a real candidate exists" conclusion turned out to be
+  wrong -- Remove is always appended after the real candidates, just drawn
+  blank.** Confirmed against a genuine RPG_RT.exe under wine (Nepheshel, the
+  weapon slot's bag edited directly to hold four unrestricted weapons --
+  ダガー/グラディウス/マンゴーシュ/アサシンダガー, filling a complete 2x2
+  grid): row-major fill (candidate 0 top-left, 1 top-right, 2 second-row
+  left, ...), the same `COLUMN_MAX = 2` shape already ported to
+  `Scene::ItemMenu`/`Scene::SkillMenu`. Column split and row height
+  pixel-measured off the wine framebuffer (640x480, 2x the game's real
+  320x240) confirm the *same* geometry those two already use --
+  `(SCREEN_W - BORDER*2) / COLUMN_MAX` column width, `LINE_H` (16) row
+  height -- not a distinct formula, once the 2x capture scale is accounted
+  for. Cursor navigation matches too: DOWN/UP move a whole row and stop dead
+  at the grid's own top/bottom (two DOWNs from the top-left cell of a full
+  2x2 grid landed on a fifth cell one row below the last full row and
+  stayed there on a third DOWN); RIGHT/LEFT move one cell, crossing a row
+  boundary rather than stopping at it (confirmed directly: LEFT from that
+  fifth cell moved onto the grid's own last *real* candidate, in the row
+  above).
+  That fifth cell is the real finding: with a complete 2x2 grid (4 real
+  candidates, no room left in either drawn row), the cursor could still
+  move one row further down onto a genuinely selectable, blank cell with
+  its own distinct stat-preview delta -- **identical** (870 -> 150 on the
+  Atk row) to the blank trailing cell a separate 2-real-candidate capture
+  (ダガー/グラディウス only, same actor/equipped weapon) reached the same
+  way, proving both are the same computed entry: Remove (id 0), always
+  appended one grid position after the real candidates, just rendered with
+  no text. Cycle #128's own three-data-point comparison (0/1/2 real
+  candidates) never pressed DOWN past the last visibly-populated row, so it
+  read "no third row of text" as "Remove is gone" rather than "Remove is
+  there but blank" -- an easy mistake once the list is a grid rather than a
+  single column, since a short list's trailing Remove cell sits one row
+  below whatever is actually drawn. The candidate *window* itself is also
+  fixed-size, not sized to content -- confirmed by comparing the wine
+  framebuffer's own window border pixels between the 2-candidate and
+  4-candidate captures: pixel-identical top and bottom edges both times,
+  always starting at the same row the slot list itself opens at (`#slot_
+  window_y`, factored out of `#build_slot_window` and reused) and always
+  reaching the bottom of the screen -- six grid rows' worth of interior
+  regardless of how many cells actually hold something. This codebase's own
+  `#build_cand_window` used to size the window tightly to `candidates.size`
+  rows, bottom-anchored, which only happened to look right once the list
+  was long enough to reach that same six-row mark on its own.
+  `EquipMenu#candidates` (`mruby-rpg2k/mrblib/scene/equip_menu.rb`) changed
+  from `real.empty? ? [[0, 0]] : real` to `real + [[0, 0]]` (Remove always
+  appended, never omitted, never leading); `#build_cand_window` rewritten
+  for the row-major 2-column grid, the fixed height/position, and to draw
+  nothing for Remove (it used to draw the literal text "(Remove)", which
+  real RPG_RT never shows either); `#refresh_cand_cursor` now places the
+  cursor rect per grid cell; `#update_items`/new `#move_cand_cursor` mirror
+  `Scene::ItemMenu#move_item_cursor` exactly (DOWN/UP by `COLUMN_MAX`,
+  RIGHT/LEFT by 1, both bounded only by the list's absolute ends, no wrap).
+  `scripts/rpg2k_scene_check.rb`'s own candidate-list checks updated
+  throughout: the old wrap-around candidate assertions (wrong for a grid)
+  split out of the slot/actor wrap check into a new dedicated grid-
+  navigation check (column-lock, row-crossing, no wrap, using
+  `wrap_menu_state`'s two real candidates + trailing Remove = three
+  entries); the Remove-inclusion check corrected to assert `real + [Remove]`
+  instead of "real only"; the held-Down auto-repeat check's expected
+  candidate index corrected from 1 to `COLUMN_MAX`; every other candidate
+  check's stale "no Remove alongside real candidates" comment corrected
+  (their actual index assertions were already right, since Remove trailing
+  the real ones does not renumber them). Full suite reconfirmed passing
+  (905 checks, up from 904); the three touched/new checks confirmed to fail
+  against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
+  the fix -- wrong candidates-list contents, wrong candidate count, and an
+  undefined `COLUMN_MAX` constant respectively.
   ✅ **Follow-up (cycle #124, 2026-08-22): `game_over.rb`'s "only Decision
   dismisses the Game Over screen, Cancel does nothing" claim was wrong --
   real RPG_RT.exe accepts Cancel too, identically to Decision. Fixed.**
