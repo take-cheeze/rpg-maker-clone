@@ -204,6 +204,35 @@ own nine-bug bring-up trail documents:
 
 ## Consequences
 
+**Update (2026-08-23): the port has since run on a real device** (`C330`,
+`arm64-v8a`), and the bullets below were written before that. What changed:
+
+- The window did come up, but died in `CHECK(display)`: Android's video
+  backend never implements `CreateWindowFramebuffer`, so
+  `SDL_CreateWindowTexture` — which `SDL_HINT_FRAMEBUFFER_ACCELERATION=0`
+  switches off — is its *only* window-framebuffer path. The #449 workaround
+  is now skipped under `__ANDROID__`, exactly as it already was under
+  macOS/Cocoa (`src/main.cxx`).
+- Boot then failed in `mrb_open()` with `NameError: uninitialized constant
+  Dir`: mruby 4.0 moved `Dir` out of `mruby-io` into its own core gem, and
+  nothing declared it for the cross build — the desktop binary only ever had
+  it through the host build's `enable_test` leaking `mruby-rgss`'s
+  test-suite dependency into the game link. `rpg_maker_gems` now declares
+  `mruby-dir` explicitly (`build_config.rb`).
+- Native stderr turned out to be invisible (SDL's activity does not redirect
+  it), so ng-log output and error reports vanished; diagnosing anything meant
+  rebuilding blind. `main.cxx` now bridges fd 2 through logcat (tag `RPG2K`)
+  before logging initialises.
+- With input confirmed working over injected key events, **on-screen touch
+  controls landed**: `src/sdl_input.cxx` maps SDL finger events to RGSS keys
+  by window zone (left 40% floating D-pad anchored at the touch-down point,
+  upper/lower right split B/C), so a phone plays without attached hardware.
+  A real game (Nepheshel, pushed via adb to the external-files directory)
+  boots to its title screen and plays.
+
+The remaining bullets still hold except where quoted above; "no on-screen
+touch controls yet" is no longer true.
+
 - Android joins the desktop, wasm, Wio Terminal and PSP builds as a fully
   additive target: none of the CMake/`build_config.rb` changes here touch any
   existing branch's behavior (verified by building each of the three real

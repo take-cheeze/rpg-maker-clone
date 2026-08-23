@@ -11,16 +11,45 @@ builds use, with its own `ANDROID` branches doing the platform-specific work),
 so there is one build description, not a fork of it. The design is in
 [`docs/adr/0058-android-port.md`](../../docs/adr/0058-android-port.md).
 
-## Status: native build bring-up — untested on a device or emulator
+## Status: runs on a real device
 
 This produces a real, installable debug APK (verified with `aapt dump
 badging` and `unzip -l`) that packages `libSDL2.so`, `libSDL2_mixer.so` and
 `librpg_maker_clone.so` (mruby, LVGL, gflags, ng-log, uni-algo and
-quickjs-ng all linked statically into the latter). It has **not** been run on
-a real device or an emulator — none was available in the environment this
-port was built in — so anything past "it links and packages" (does the window
-actually appear, does input work, does audio play) is unconfirmed. See the
-ADR's Consequences section for the full list of what is bring-up-scope only.
+quickjs-ng all linked statically into the latter). It has been built,
+installed and run on a real device (`C330`, `arm64-v8a`): Nepheshel (the
+RPG2000 test bed) boots to its title screen, renders through LVGL's software
+rasteriser over SDL's window-texture path, and plays — title menu, opening
+demo choice and map walking — with the touch controls described below.
+
+Three on-device findings shaped the code since the first bring-up commit:
+
+- **`SDL_HINT_FRAMEBUFFER_ACCELERATION=0` killed the only window-framebuffer
+  path Android has.** The #449 desktop workaround is now skipped under
+  `__ANDROID__` (same reason it is already skipped for macOS/Cocoa).
+- **`Dir` was missing from the cross-built mruby.** mruby 4.0 moved it out of
+  `mruby-io` into its own core gem; the game binary only had it by accident
+  via a test-suite dependency leak that does not exist in cross builds.
+  `build_config.rb` declares `mruby-dir` explicitly now.
+- **Native stderr was invisible.** SDL's Android activity never redirects it
+  to logcat, so ng-log output and error reports vanished. `main.cxx` bridges
+  fd 2 into logcat under the `RPG2K` tag as its first action.
+
+See ADR 58's Consequences for the full list of what remains
+bring-up-scope-only (MV/MZ rendering, one ABI, no project picker).
+
+## Touch controls
+
+With no keyboard or gamepad attached, the window itself is the controller:
+touch positions map onto RGSS keys by zone. The left 40% of the window is a
+*floating* D-pad — drag from wherever the thumb lands; direction comes from
+the offset against the touch-down anchor (dead zone ~4% of the window edge),
+and diagonals work. The right side splits into **B / cancel** (upper) and
+**C / confirm-A** (lower) at half height; the middle band is dead space so a
+resting thumb triggers nothing. Each finger keeps its own role, so steering
+with one thumb while tapping menus with the other works. Implementation:
+`src/sdl_input.cxx` (SDL finger events → the same RGSS::Input buffer the
+keyboard watch feeds).
 
 ## Building
 
@@ -64,16 +93,11 @@ game" scope for this first slice.
 
 ## Not yet wired (later slices)
 
-- **Running on a real device or emulator.** See Status above.
 - **RPG Maker MV/MZ (the WebGL/quickjs-ng maker).** `mruby-mvjs/src/mvgl.cxx`
   compiles to its inert-stub fallback on Android — its desktop/Mesa-oriented
   EGL surfaceless path calls a symbol (`eglGetPlatformDisplay`) Android's
   `libEGL.so` does not export. RPG2000/2003, XP and VX/VX Ace are unaffected.
   See the ADR's Decision section.
-- **On-screen touch controls.** The wasm build's on-screen keypad
-  (`src/shell.html`) has no Android equivalent yet; a physical
-  keyboard/gamepad is the only input path SDL2's Android backend wires up on
-  its own.
 - **An in-app project picker/importer.** `adb push` to a fixed path is the
   only way to get a game onto the device right now (see Building above).
 - **More than one ABI.** Bring-up scope is `arm64-v8a` only
@@ -82,3 +106,13 @@ game" scope for this first slice.
 - **Signing/release packaging, a Play Store listing, ProGuard/R8 rules beyond
   the stock template.** `proguard-rules.pro` is currently empty;
   `buildTypes.release` exists but has not been exercised.
+
+## Debugging on-device
+
+Native stderr reaches logcat under the `RPG2K` tag (see Status above), so:
+
+```sh
+adb logcat -c && adb shell am start -n org.rpg2k.android/.RpgMakerCloneActivity
+adb logcat -d -s RPG2K        # engine logs + full error reports
+adb logcat -d | grep -E 'F libc|F DEBUG'   # native aborts / tombstone headers
+```

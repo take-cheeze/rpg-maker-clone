@@ -48,6 +48,16 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # while the CRuby host checks pass. See scripts/rpg2k_boot_check.bash.
   conf.gem core: 'mruby-enum-ext'
   conf.gem core: 'mruby-io'
+  # Dir: mruby-io stopped shipping it in mruby 4.0 -- the class moved to this
+  # dedicated core gem (with its own hal-posix-dir/hal-win-dir backend, chosen
+  # automatically the same way mruby-io picks its HAL). Nothing in the shared
+  # list declared it, so the desktop binary only ever had Dir by accident:
+  # mruby-rgss declares it as a *test* dependency below and the host build's
+  # enable_test leaked that into the game link, while every cross target
+  # (Android confirmed on-device) died in mrb_open() with "NameError:
+  # uninitialized constant Dir" the moment mruby-rpgxp's rgss_library.rb --
+  # which patches Dir.glob over it -- loaded. Declare it for real.
+  conf.gem core: 'mruby-dir'
   conf.gem core: 'mruby-numeric-ext'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web

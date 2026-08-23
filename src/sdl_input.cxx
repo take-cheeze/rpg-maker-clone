@@ -177,6 +177,112 @@ int map_key(SDL_Keycode k) {
   }
 }
 
+// Virtual gamepad: SDL touch events mapped to RGSS keys by window zone, so a
+// phone or tablet plays without attached hardware. The left 40% of the window
+// is a *floating* D-pad -- the direction set is read from each drag's offset
+// against its own touch-down anchor, so no exact spot has to be hit; the right
+// half splits into B (cancel, upper) and C (confirm/A, lower), and the middle
+// band is dead so a resting thumb triggers nothing. Each finger keeps its own
+// role and held-key set, so steering with one thumb while tapping menus with
+// the other works.
+constexpr float VPAD_DPAD_MAX_X = 0.4f;
+constexpr float VPAD_BUTTON_MIN_X = 0.6f;
+constexpr float VPAD_CONFIRM_MIN_Y = 0.5f;
+constexpr float VPAD_DEAD_ZONE = 0.04f;
+
+enum VpadRole { VPAD_NONE, VPAD_DPAD, VPAD_CANCEL, VPAD_CONFIRM };
+
+struct VpadFinger {
+  SDL_FingerID id;
+  float anchor_x, anchor_y;
+  VpadRole role;
+  int held[2];
+  int held_count;
+};
+
+VpadFinger vpad_fingers[8] = {};
+int vpad_finger_total = 0;
+
+VpadFinger* vpad_finger_find(SDL_FingerID id) {
+  for (int i = 0; i < vpad_finger_total; ++i)
+    if (vpad_fingers[i].id == id)
+      return &vpad_fingers[i];
+  return nullptr;
+}
+
+void vpad_keys_sync(VpadFinger& f, const int* want, int want_count) {
+  for (int i = 0; i < f.held_count;) {
+    bool still = false;
+    for (int j = 0; j < want_count && !still; ++j)
+      still = f.held[i] == want[j];
+    if (!still) {
+      rgss_sdl_input_push(f.held[i], false);
+      f.held[i--] = f.held[--f.held_count];
+      continue;
+    }
+    ++i;
+  }
+  for (int i = 0; i < want_count; ++i) {
+    bool already = false;
+    for (int j = 0; j < f.held_count && !already; ++j)
+      already = want[i] == f.held[j];
+    if (!already)
+      rgss_sdl_input_push(want[i], true), f.held[f.held_count++] = want[i];
+  }
+}
+
+void vpad_down(const SDL_TouchFingerEvent& e) {
+  VpadRole role = VPAD_NONE;
+  if (e.x < VPAD_DPAD_MAX_X)
+    role = VPAD_DPAD;
+  else if (e.x > VPAD_BUTTON_MIN_X)
+    role = e.y > VPAD_CONFIRM_MIN_Y ? VPAD_CONFIRM : VPAD_CANCEL;
+  if (role == VPAD_NONE || vpad_finger_find(e.fingerId))
+    return;
+  if (vpad_finger_total >= 8)
+    return;
+  VpadFinger& f = vpad_fingers[vpad_finger_total++];
+  f.id = e.fingerId;
+  f.anchor_x = e.x;
+  f.anchor_y = e.y;
+  f.role = role;
+  f.held_count = 0;
+  if (role == VPAD_CONFIRM)
+    vpad_keys_sync(f, (const int[]){KEY_C}, 1);
+  else if (role == VPAD_CANCEL)
+    vpad_keys_sync(f, (const int[]){KEY_B}, 1);
+}
+
+void vpad_move(const SDL_TouchFingerEvent& e) {
+  VpadFinger* f = vpad_finger_find(e.fingerId);
+  if (!f || f->role != VPAD_DPAD)
+    return;
+  const float dx = e.x - f->anchor_x;
+  const float dy = e.y - f->anchor_y;
+  int want[2], want_count = 0;
+  if (dy < -VPAD_DEAD_ZONE)
+    want[want_count++] = KEY_UP;
+  else if (dy > VPAD_DEAD_ZONE)
+    want[want_count++] = KEY_DOWN;
+  if (dx < -VPAD_DEAD_ZONE)
+    want[want_count++] = KEY_LEFT;
+  else if (dx > VPAD_DEAD_ZONE)
+    want[want_count++] = KEY_RIGHT;
+  vpad_keys_sync(*f, want, want_count);
+}
+
+void vpad_up(const SDL_TouchFingerEvent& e) {
+  for (int i = 0; i < vpad_finger_total; ++i) {
+    if (vpad_fingers[i].id != e.fingerId)
+      continue;
+    VpadFinger& f = vpad_fingers[i];
+    for (int k = 0; k < f.held_count; ++k)
+      rgss_sdl_input_push(f.held[k], false);
+    vpad_fingers[i] = vpad_fingers[--vpad_finger_total];
+    return;
+  }
+}
+
 int SDLCALL event_watch(void* /*user*/, SDL_Event* event) {
   int key = -1;
   bool press = false;
@@ -195,6 +301,15 @@ int SDLCALL event_watch(void* /*user*/, SDL_Event* event) {
       break;
     // Pointer -> RGSS mouse state (MV's TouchInput reads it). Coordinates are
     // window pixels; the SDL backend renders MV 1:1, so they are canvas pixels.
+    case SDL_FINGERDOWN:
+      vpad_down(event->tfinger);
+      return 0;
+    case SDL_FINGERMOTION:
+      vpad_move(event->tfinger);
+      return 0;
+    case SDL_FINGERUP:
+      vpad_up(event->tfinger);
+      return 0;
     case SDL_MOUSEMOTION:
       rgss_sdl_mouse_push(event->motion.x, event->motion.y,
                           (event->motion.state & SDL_BUTTON_LMASK) != 0);
