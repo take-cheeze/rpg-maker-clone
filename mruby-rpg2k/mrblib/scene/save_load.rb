@@ -121,25 +121,31 @@ class RPG2k
           play_system_se(SFX_CANCEL)
           @parent.pop
         # Holding Down/Up auto-repeats the cursor after the initial delay, not
-        # just a single step per tap. `Window_SaveFile` (`src/window_savefile.cpp`)
-        # is a plain `Window_Base`, not a `Window_Selectable` -- real RPG_RT's
-        # own `Scene_File::vUpdate` (`src/scene_file.cpp`) hand-rolls this
-        # list's index/scroll logic itself, entirely separate from
-        # `Window_Selectable`'s generic cursor machinery every item/skill/
-        # message list goes through (correcting this comment's own earlier,
-        # mistaken citation). Its repeat timing still genuinely matches this
-        # build's own `Input.repeat?`: EasyRPG's `start_repeat_time = 23`/
-        # `repeat_time = 4` (`src/input.cpp`) first fires once `press_time`
-        # reaches 24 and every 4 frames after, exactly the 24-then-every-4
-        # timing `Input.repeat?` documents (`mruby-rgss/mrblib/lib.rb`),
-        # already measured against genuine RPG_RT.exe. `#move_selection`'s
-        # own comment covers the one real nuance `vUpdate` adds on top of
-        # that timing: a *held* Down/Up does not wrap past the last/first
-        # slot, only a fresh tap does.
+        # just a single step per tap. `Window_SaveFile` is a plain
+        # `Window_Base`, not a `Window_Selectable` -- real RPG_RT's own
+        # `Scene_File::vUpdate` hand-rolls this list's index/scroll logic
+        # itself, entirely separate from `Window_Selectable`'s generic cursor
+        # machinery every item/skill/message list goes through.
+        #
+        # This list never wraps past the first/last slot at all, on a tap or a
+        # held key alike -- independently confirmed against a genuine
+        # RPG_RT.exe under wine (cycle #127): from the file-select screen's
+        # opening cursor (File 1), a single Up tap left the captured frame
+        # unchanged (still File 1, no scroll); walking Down to File 15 (the
+        # last of MAX_SAVE_SLOTS) and tapping Down once more likewise left the
+        # frame unchanged, as did a full ~1.5s hold of Down there and of Up
+        # back at File 1. This replaces an earlier claim -- cited only to
+        # EasyRPG's own `Scene_File::vUpdate` (`index = (index + 1) %
+        # file_windows.size()` unconditionally on a fresh trigger, gated on
+        # `index < max_index` only on a bare repeat) -- that a fresh tap
+        # wraps around while a held key stops at the boundary; real RPG_RT
+        # does neither, matching this list's own siblings instead (e.g.
+        # `Scene::ItemMenu#move_item_cursor`'s identical bounded, no-wrap
+        # `return if target < 0 || target >= size`).
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
-          move_selection(1, allow_wrap: Input.trigger?(Input::DOWN))
+          move_selection(1)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
-          move_selection(-1, allow_wrap: Input.trigger?(Input::UP))
+          move_selection(-1)
         elsif Input.trigger?(Input::C)
           confirm_selection
         end
@@ -147,17 +153,6 @@ class RPG2k
 
       private
 
-      # Move the slot cursor by `delta`, wrapping past the first/last slot
-      # only when `allow_wrap` is true. Confirmed against RPG_RT's own live
-      # source: `Scene_File::vUpdate` (`src/scene_file.cpp`) advances
-      # `index = (index + 1) % file_windows.size()` unconditionally on a
-      # fresh `IsTriggered(DOWN)` (so a tap at the last slot always wraps to
-      # the first), but on a bare `IsRepeated(DOWN)` (the key still held past
-      # the auto-repeat threshold) that same advance is gated on `index <
-      # max_index` -- a sustained hold simply stops moving at the last slot
-      # rather than cycling back around, the mirror image for Up at the
-      # first slot. `#update` passes `allow_wrap:` true only for the frame a
-      # direction is freshly pressed, matching that split exactly.
       # RPG_RT opens this screen with the cursor already on whichever slot
       # was saved most recently, not always slot 1 -- independently
       # confirmed against a genuine RPG_RT.exe under wine (cycle #123), not
@@ -201,10 +196,13 @@ class RPG2k
         nil
       end
 
-      def move_selection(delta, allow_wrap:)
+      # Move the slot cursor by `delta`, clamped at the first/last slot -- see
+      # #update's own citation for why this never wraps, on a tap or a held
+      # key alike.
+      def move_selection(delta)
         target = @index + delta
-        return if (target == SLOT_COUNT || target == -1) && !allow_wrap
-        @index = target % SLOT_COUNT
+        return if target < 0 || target >= SLOT_COUNT
+        @index = target
         @top = @index if @index < @top
         @top = @index - VISIBLE_SLOTS + 1 if @index >= @top + VISIBLE_SLOTS
         refresh_slot_windows
