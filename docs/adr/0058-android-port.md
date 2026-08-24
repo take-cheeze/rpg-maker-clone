@@ -230,6 +230,30 @@ own nine-bug bring-up trail documents:
   A real game (Nepheshel, pushed via adb to the external-files directory)
   boots to its title screen and plays.
 
+**Update (2026-08-24): the zones became a visible pad, and the picture
+centred.** Invisible zones play but teach nothing, so `src/android_vpad_ui.cxx`
+draws the same layout as LVGL widgets on `lv_layer_top()` — D-pad cross
+bottom-left, B/C circles right, translucent, highlighting held keys. The
+widgets are pure affordance (no click handlers; the zone logic stays the only
+input path), and press feedback reaches them through a small queue drained by
+an `lv_timer`, because the SDL event watch fires inside `lv_timer_handler`'s
+own pump and must not touch LVGL objects re-entrantly. The B circle sits at
+40% of display height on purpose: the zone split is window-mid-height, and a
+cluster-stacked B would have labelled a button that confirms. Two more
+phone-shape consequences landed with it: the game picture is now *centred*
+(mruby-rgss hangs every game object off one style-less game-root container
+instead of the active screen — `parent_object`/`vp_init`; the shell centres
+that root in the letterbox on boot and on `LV_EVENT_RESOLUTION_CHANGED`,
+instead of pinning the 4:3 picture top-left above black bands), and LVGL's
+perf monitor (FPS/CPU) is on for Android only in `include/lv_conf.h`
+(`LV_USE_SYSMON`/`LV_USE_OBSERVER`/`LV_USE_PERF_MONITOR` — the label sits
+top-right, clear of the pad). The launcher icon is the project's Sapphire
+Chip, replacing SDL's default. One known gap recorded in
+`app/android/README.md`: quitting from the title menu leaves the
+`SDLActivity` process alive, and a relaunch into it dies on a second gflags
+parse — force-stop clears it, and a fix wants the activity to exit its
+process on game quit.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 

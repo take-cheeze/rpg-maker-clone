@@ -51,6 +51,26 @@ with one thumb while tapping menus with the other works. Implementation:
 `src/sdl_input.cxx` (SDL finger events → the same RGSS::Input buffer the
 keyboard watch feeds).
 
+The zones are also **drawn**: `src/android_vpad_ui.cxx` renders a D-pad cross
+bottom-left and B/C circles on the right on LVGL's top layer, translucent over
+the scene, highlighting whichever control is held. The widgets have no click
+handlers — they only show where the zones are; input still comes from the zone
+logic above, so a thumb anywhere in a left-side zone steers.
+
+## Centred picture and FPS counter
+
+A phone window is not 4:3. The SDL surface resizes LVGL's display to
+window/zoom, and mruby-rgss hangs every game object off a single *game root*
+container; the shell centres that root in the display (`src/android_vpad_ui.cxx`)
+so the game picture sits mid-screen with letterbox on all sides, and the pad's
+corners land in the black bands. An FPS/CPU readout (LVGL's perf monitor,
+Android-only in `include/lv_conf.h`) shows in the top-right corner.
+
+## Launcher icon
+
+The launcher uses the project's Sapphire Chip mark (`assets/logo/`), scaled
+into each `mipmap-*` density — not SDL's default asset.
+
 ## Building
 
 Requires:
@@ -116,3 +136,10 @@ adb logcat -c && adb shell am start -n org.rpg2k.android/.RpgMakerCloneActivity
 adb logcat -d -s RPG2K        # engine logs + full error reports
 adb logcat -d | grep -E 'F libc|F DEBUG'   # native aborts / tombstone headers
 ```
+
+Known issue: quitting the game from its title menu leaves the `SDLActivity`
+process alive in the background, and relaunching into that process fails a
+second time around — gflags rejects the activity's `--game_dir` argument
+("unknown command line flag") and the run dies. `adb shell am force-stop
+org.rpg2k.android` (or swiping the app out of recents) clears it; a proper fix
+wants the activity to exit its process on game quit.

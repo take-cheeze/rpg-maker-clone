@@ -746,6 +746,15 @@ extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 // Only meaningful for the SDL window backend.
 extern "C" void rgss_sdl_input_init(void);
 
+#ifdef __ANDROID__
+// Draws the visible virtual gamepad (src/android_vpad_ui.cxx) on LVGL's top
+// layer and centres the game picture in the phone-shaped window. Android-only:
+// desktop windows have keyboards and the browser page draws its own keypad in
+// HTML (src/shell.html). Takes the game's own resolution, which the window is
+// not (Android's is the phone screen), so the overlay knows the letterbox.
+extern "C" void rgss_vpad_overlay_init(int game_w, int game_h);
+#endif
+
 // Opens the audio device and installs the SDL_mixer backend for RGSS::Audio
 // (src/sdl_audio.cxx). A no-op if audio cannot be initialised. rgss_audio_
 // shutdown tears it down on the native exit path.
@@ -1306,6 +1315,11 @@ int main(int argc, char** argv) {
     // SDL is initialised by lv_sdl_window_create above; install the keyboard
     // watch now so key events reach RGSS::Input.
     rgss_sdl_input_init();
+#ifdef __ANDROID__
+    // The display exists now, so the pad can size itself off the resolution
+    // and the game root can be centred in the window.
+    rgss_vpad_overlay_init(FLAGS_width, FLAGS_height);
+#endif
   }
 
   // Bring up audio for every backend (SDL_mixer initialises the SDL audio

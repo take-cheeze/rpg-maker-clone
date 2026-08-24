@@ -19,6 +19,22 @@ extern "C" void rgss_sdl_mouse_push(int x, int y, bool pressed);
 
 namespace {
 
+#ifdef __ANDROID__
+// The Android visible-pad overlay (src/android_vpad_ui.cxx) mirrors every
+// *pad-driven* key transition as a pressed look on its widgets. Keyboard
+// presses deliberately skip this: the pad highlights what the thumbs do.
+extern "C" void rgss_vpad_overlay_key(int key, bool press);
+#endif
+
+void vpad_notify(int key, bool press) {
+#ifdef __ANDROID__
+  rgss_vpad_overlay_key(key, press);
+#else
+  (void)key;
+  (void)press;
+#endif
+}
+
 // RGSS::Input key ids. Mirrors the constants in mruby-rgss/mrblib/lib.rb.
 enum RgssKey {
   KEY_UP = 0,
@@ -217,6 +233,7 @@ void vpad_keys_sync(VpadFinger& f, const int* want, int want_count) {
       still = f.held[i] == want[j];
     if (!still) {
       rgss_sdl_input_push(f.held[i], false);
+      vpad_notify(f.held[i], false);
       f.held[i--] = f.held[--f.held_count];
       continue;
     }
@@ -227,7 +244,8 @@ void vpad_keys_sync(VpadFinger& f, const int* want, int want_count) {
     for (int j = 0; j < f.held_count && !already; ++j)
       already = want[i] == f.held[j];
     if (!already)
-      rgss_sdl_input_push(want[i], true), f.held[f.held_count++] = want[i];
+      rgss_sdl_input_push(want[i], true), vpad_notify(want[i], true),
+          f.held[f.held_count++] = want[i];
   }
 }
 
@@ -276,8 +294,10 @@ void vpad_up(const SDL_TouchFingerEvent& e) {
     if (vpad_fingers[i].id != e.fingerId)
       continue;
     VpadFinger& f = vpad_fingers[i];
-    for (int k = 0; k < f.held_count; ++k)
+    for (int k = 0; k < f.held_count; ++k) {
       rgss_sdl_input_push(f.held[k], false);
+      vpad_notify(f.held[k], false);
+    }
     vpad_fingers[i] = vpad_fingers[--vpad_finger_total];
     return;
   }

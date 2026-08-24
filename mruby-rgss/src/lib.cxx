@@ -3197,9 +3197,36 @@ lv_obj_t* viewport_content(lv_obj_t* outer) {
   return lv_obj_get_child(outer, 0);
 }
 
+// The one object every game-side display thing hangs off -- viewport frames
+// (vp_init) and viewport-less sprites/windows/canvases (parent_object) alike.
+// A style-less, display-sized container one level below the active screen, so
+// a platform shell can move the whole game picture as a single object:
+// Android's window is phone-shaped while the game is 4:3, and the shell
+// centres the root in the leftover letterbox (src/android_vpad_ui.cxx).
+// Everywhere else it sits at (0,0), where it renders nothing and changes
+// nothing. Created once per process on first use -- scenes only ever add
+// children, and the percentage size tracks resolution changes by itself.
+lv_obj_t* game_root(lv_display_t* disp) {
+  static lv_obj_t* root = nullptr;
+  if (root)
+    return root;
+  root = lv_obj_create(lv_display_get_screen_active(disp));
+  lv_obj_remove_style_all(root);
+  lv_obj_remove_flag(root, static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_SCROLLABLE |
+                                                      LV_OBJ_FLAG_CLICKABLE));
+  lv_obj_set_size(root, lv_pct(100), lv_pct(100));
+  return root;
+}
+
+// Exported for the platform shells (src/android_vpad_ui.cxx centres it under
+// __ANDROID__): the container every game object hangs off.
+extern "C" lv_obj_t* rgss_game_root_obj(lv_display_t* disp) {
+  return game_root(disp);
+}
+
 lv_obj_t* parent_object(mrb_state* M, mrb_value vp) {
   if (mrb_nil_p(vp))
-    return lv_display_get_screen_active(get_display(M));
+    return game_root(get_display(M));
 
   mrb_assert(mrb_type(vp) == MRB_TT_DATA && DATA_TYPE(vp) == &obj_type);
   return viewport_content(reinterpret_cast<lv_obj_t*>(DATA_PTR(vp)));
@@ -5768,8 +5795,7 @@ mrb_value vp_init(mrb_state* M, mrb_value self) {
     h = lv_display_get_vertical_resolution(d);
   }
 
-  lv_obj_t* screen = lv_display_get_screen_active(get_display(M));
-  lv_obj_t* outer = lv_obj_create(screen);
+  lv_obj_t* outer = lv_obj_create(game_root(get_display(M)));
   lv_obj_remove_style_all(outer);
   lv_obj_remove_flag(outer, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_set_scrollbar_mode(outer, LV_SCROLLBAR_MODE_OFF);

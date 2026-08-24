@@ -493,6 +493,11 @@ target_link_libraries(
   ${GL_LIBS})
 if(ANDROID)
   target_link_libraries(${PROJECT_NAME} SDL2main log android)
+  # Android-only visible virtual-gamepad overlay (src/android_vpad_ui.cxx):
+  # draws sdl_input.cxx's touch zones as LVGL widgets on lv_layer_top() so they
+  # are discoverable on a phone -- the browser build's counterpart is the shell
+  # page's HTML keypad plus src/wasm_keypad.cxx.
+  target_sources(${PROJECT_NAME} PRIVATE src/android_vpad_ui.cxx)
 endif()
 target_include_directories(${PROJECT_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/3rd/inicpp)
