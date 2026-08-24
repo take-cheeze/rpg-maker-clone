@@ -88,9 +88,10 @@ number that motivated the question.
 
 ### Finding 3 — the one real idea PicoRuby surfaced: a bounded allocator, without switching VMs
 
-PicoRuby's `estalloc` (`mrbgems/picoruby-machine/lib/estalloc`, MIT-licensed,
-small — `est_init`/`picorb_heap_realloc`/`picorb_heap_stat`, a few hundred
-lines) is a fixed-arena allocator wired in through the exact same seam this
+PicoRuby's `estalloc` (`mrbgems/picoruby-machine/lib/estalloc`, BSD
+3-Clause licensed, small — `est_init`/`est_realloc`/`est_free`/
+`est_take_statistics`, ~1,300 lines total across `estalloc.c`/`.h`) is a
+fixed-arena (TLSF) allocator wired in through the exact same seam this
 project already uses: mruby 4.0's single global `mrb_basic_alloc_func`
 (`src/main.cxx:701` today routes this through `lvallocf`/LVGL, per ADR 0047
 Finding 1 — that ADR's own `src/main.cxx:638` citation has since drifted
@@ -112,6 +113,59 @@ against it fails — `mrb_open_allocf` was part of the pre-4.0 per-state
 allocator API ADR 0047 Finding 1 says 4.0 removed); ADR 0007 predates ADR
 0047's own correction on this point and should be read with that in mind.
 
+### Finding 4 — the estalloc idea prototyped and measured; it works, at a real overhead cost
+
+Vendored `estalloc.c`/`estalloc.h` unmodified (plain files, no PicoRuby build
+system involved) and wired them behind a custom `mrb_basic_alloc_func` —
+the same seam `lvallocf` occupies in `src/main.cxx` today — in a scratch
+harness. Built a real (non-scratch, but not committed) `3rd/mruby` host
+config carrying this project's actual `rpg_maker_gems` list minus only the
+gems needing LVGL/SDL2/onigmo-bundling/quickjs to link (`mruby-rgss`,
+`mruby-lcf`, `mruby-rpg2k`, `mruby-rpgxp`, `mruby-rpgvx`, `mruby-mvjs`) —
+`mruby-onig-regexp` came along anyway as a transitive dependency, so the
+only real gap from this project's true gem set is the five C-extension
+gems, whose *mrblib* (not their C/C++ extension code) is exercised the same
+way as Finding 2. Then loaded the real `RGSS`/`LCF`/`RPG2k` mrblib bytecode
+into that estalloc-backed VM and drove it to a fixed arena's edge:
+
+```
+# 4 MiB arena
+after_open     total=4194304 used=105304 free=4088272 max_free=4088272 frag=1
+after_load     total=4194304 used=1490992 free=2702584 max_free=2628352 frag=5
+after_close    total=4194304 used=8      free=4193568 max_free=4193568 frag=0
+
+# 1.5 MiB arena -- fits, tight
+after_open     total=1572864 used=105304 free=1466832 max_free=1466832 frag=1
+after_load     total=1572864 used=1491000 free=81136  max_free=75432  frag=3
+
+# below ~1.31-1.5 MiB -- doesn't fit
+(unknown):0: Out of memory (NoMemoryError)   # raised cleanly, then mruby's
+                                              # own OOM-fallback path aborts
+```
+
+Three real results:
+
+- **It works end to end.** `mrb_open()`, loading all 24 mrblib files (the
+  same 4 `...::Color` NameErrors as Finding 2, from constants only the C
+  extension defines — expected, not an estalloc artifact), and `mrb_close()`
+  all function correctly against the arena. Teardown is clean: `used` drops
+  from 1.49 MB to 8 B, meaning mruby's GC-driven free path returns
+  essentially everything to `estalloc`, not just to mruby's own free lists —
+  no leak internal to this wiring.
+- **estalloc costs real overhead over `realloc`.** Finding 2's plain-`malloc`
+  tally measured 1,196,981 B live for the same 24-file load; estalloc's own
+  `used` stat reports 1,490,992 B for the identical input — **~24% more**,
+  the TLSF block-header/alignment cost of a general-purpose fixed-arena
+  allocator. Worth knowing before assuming "bounded" is free.
+- **A ~1.5 MB arena is the practical minimum for the full RGSS/LCF/RPG2k
+  class set as it exists today**, comfortable at 2–4 MB. That is nowhere
+  near ADR 0007's Wio Terminal budget ("a few tens of KB" left for the
+  entire live mruby heap after LVGL/stack/statics) — confirming, with a real
+  number instead of an estimate, that a Wio Terminal port needs either a
+  much smaller class surface than the full desktop engine or per-maker
+  lazy loading, not just a different allocator. It fits the PSP's ~24 MB
+  budget with room to spare either way.
+
 ## Decision
 
 **Do not migrate this project's Ruby engine to PicoRuby (or FemtoRuby).**
@@ -122,13 +176,18 @@ investigation), plus reimplementing or dropping gems PicoRuby's ecosystem
 doesn't carry (`mruby-onig-regexp`, `mruby-marshal`, `mruby-stringio`),
 for zero measured memory benefit.
 
-Instead, pursue the two levers Findings 2 and 3 actually point at, neither
-of which requires an engine change:
+Instead, pursue the two levers Findings 2–4 actually point at, neither of
+which requires an engine change:
 
-- Vendor `estalloc` (or write an equivalently small fixed-arena allocator)
-  behind `mrb_basic_alloc_func`, giving the Wio Terminal and PSP ports a
-  bounded, instrumented mruby heap — this is a follow-up prototyping task,
-  not part of this ADR.
+- Vendor `estalloc` behind `mrb_basic_alloc_func`, giving the Wio Terminal
+  and PSP ports a bounded, instrumented mruby heap. Finding 4 prototyped
+  and validated this — it works cleanly end to end, at a measured ~24%
+  allocator-overhead cost, with a ~1.5 MB practical minimum for today's
+  full RGSS/LCF/RPG2k class set. Landing it as real, reviewed
+  `src/main.cxx`/`CMakeLists.txt` changes (across every build target this
+  project ships) is separate follow-up work this ADR does not do — the
+  prototype lived in a scratch harness, not this repo's tree, matching
+  Finding 2's own method.
 - Treat the whole-file asset loading ADR 0007 (Finding: "the real blocker")
   and ADR 0047 (Finding 2: `RGSSAD.open`, LCF whole-file reads) already
   flagged as the actual dominant cost: a released XP/VX game's packed
@@ -151,13 +210,20 @@ much larger compatibility break is weak until proven otherwise.
 
 - Closes the "should we migrate to PicoRuby" question with measurements
   instead of priors — reusable by any future ADR that reopens it: the
-  1.17–1.4 MB RGSS/LCF/RPG2k figure, the ~0.1 MB bare-interpreter figure
-  either engine pays, and the `mrb_open_allocf` API-currency correction to
-  ADR 0007 are now recorded here rather than needing to be re-derived.
+  1.17–1.5 MB RGSS/LCF/RPG2k figure (method-dependent: plain `realloc` vs.
+  `estalloc`), the ~0.1 MB bare-interpreter figure either engine pays, the
+  `mrb_open_allocf` API-currency correction to ADR 0007, and a validated,
+  working `estalloc`-behind-`mrb_basic_alloc_func` prototype with real
+  `used`/`free`/`max_free`/`frag` numbers are now recorded here rather than
+  needing to be re-derived.
 - No runtime or build code changes ship with this ADR — the `build_config/
-  host-minimal.rb` file used for Finding 2's PicoRuby measurement was
-  scratch and is not part of this repo's tree.
-- Follow-up work this ADR motivates but does not do: prototyping
-  `estalloc` (or equivalent) behind `mrb_basic_alloc_func`, and continuing
-  ADR 0007/0047's streaming-asset-loading roadmap, which remains the
-  actual gating cost for a real game on constrained hardware.
+  host-minimal.rb` and `build_config/host-estalloc.rb` files, and the
+  vendored `estalloc.c`/`.h` copies, used for Findings 2 and 4 were all
+  scratch and are not part of this repo's tree.
+- Follow-up work this ADR motivates but does not do: landing `estalloc` (or
+  equivalent) behind `mrb_basic_alloc_func` as real, reviewed
+  `src/main.cxx`/build-system changes across every target this project
+  ships (desktop, wasm, Wio, PSP, Android) — Finding 4 only proves the
+  mechanism works and sizes the arena, not the production wiring — and
+  continuing ADR 0007/0047's streaming-asset-loading roadmap, which remains
+  the actual gating cost for a real game on constrained hardware.
