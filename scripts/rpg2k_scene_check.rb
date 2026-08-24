@@ -12414,14 +12414,16 @@ class BattleThreeSkillParty < BattleMagicParty
   def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0); end
 end
 
-# The battle Item/Skill lists are a genuine two-column grid -- confirmed
-# against RPG_RT's own live source: `Window_Item`/`Window_Skill`
-# (`src/window_item.cpp`/`src/window_skill.cpp`) both set `column_max = 2`,
-# and `Window_BattleSkill` inherits that unchanged. `Window_Selectable::
-# Update`'s own Down/Up are genuinely column-locked (`index < item_max -
-# column_max`, blocked rather than wrapped) while Right/Left are a flat
-# `index +- 1` bounded only by the list's absolute ends, no row-boundary
-# term -- the identical shape the field item/skill grid already has.
+# The battle Item/Skill lists are a genuine two-column grid -- originally
+# only cited to EasyRPG's `Window_Item`/`Window_Skill`
+# (`src/window_item.cpp`/`src/window_skill.cpp`, both setting
+# `column_max = 2`) and `Window_Selectable::Update`'s column-locked Down/Up
+# vs. flat Right/Left. Now independently confirmed for the item side against
+# a genuine RPG_RT.exe under wine (cycle #133) -- see `#drive_battle_item`'s
+# own comment (`mruby-rpg2k/mrblib/scene/battle.rb`) for the full writeup,
+# including the 1/2/8/9-item boundary cases the checks just below and further
+# down this file (the exact-8-item grid, the 9-item scroll-to-overflow, and
+# the held-Down repeat) pin that this one check alone did not cover.
 check 'Enemy Encounter scene: the skill list cursor is a column-locked ' \
       'two-column grid, not a single wrapping column' do
   ic = Game::Interpreter::Cmd
@@ -12501,6 +12503,136 @@ check 'Enemy Encounter scene: the item list cursor is a column-locked ' \
 
   press_key(scene, RGSS::Input::LEFT)
   eq 0, ui[:item_i], 'Left moves back to column 0'
+end
+
+# An exact 4-row/2-column grid (8 items, no overflow) -- the boundary
+# BattleThreeItemParty's odd 3-item list cannot reach: its own last cell has
+# a full row above it, unlike the partial-row case. Confirmed against a
+# genuine RPG_RT.exe under wine (cycle #133, see #drive_battle_item's own
+# comment): the cursor stops dead at row 3/col 1, the grid's own last cell,
+# with no wrap back to row 0 and no scroll (there is nowhere left to scroll
+# to -- all 4 rows are already on screen).
+class BattleEightItemParty < BattleMagicParty
+  def initialize
+    super()
+    @items = (1..8).to_h { |id| [id, 1] }
+  end
+  def db_item(id); OpenStruct.new(name: "Item#{id}"); end
+end
+
+check 'Enemy Encounter scene: the item grid does not wrap at an exact ' \
+      'full 8-item/4-row grid' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleEightItemParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+
+  press_key(scene, RGSS::Input::DOWN)
+  press_key(scene, RGSS::Input::DOWN)
+  press_key(scene, RGSS::Input::DOWN)
+  eq 6, ui[:item_i], 'three Downs reach row 3, col 0 (index 6) -- the grid\'s last row'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 7, ui[:item_i], 'Right reaches the grid\'s own last cell (row 3, col 1)'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 7, ui[:item_i], 'Down at the last cell does not wrap back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 7, ui[:item_i], 'Right at the last cell does not wrap either'
+end
+
+# A 9th item past the exact 8-item/4-row grid -- the case
+# BattleEightItemParty cannot reach: this list overflows the window's own
+# BATTLE_VISIBLE_ROWS, so #battle_list_window has to scroll (unlike the
+# enemy-target list, which cycle #131 found does *not* scroll and instead
+# hard-caps at its own visible rows). Confirmed against a genuine RPG_RT.exe
+# under wine (cycle #133): a held Down genuinely scrolls the window to reveal
+# the 9th item, alone in a fifth, partial row, then blocks there -- no wrap,
+# and (like BattleThreeItemParty's odd row) no phantom trailing cell to its
+# right either.
+class BattleNineItemParty < BattleMagicParty
+  def initialize
+    super()
+    @items = (1..9).to_h { |id| [id, 1] }
+  end
+  def db_item(id); OpenStruct.new(name: "Item#{id}"); end
+end
+
+check 'Enemy Encounter scene: the item grid scrolls to reach a 9th item ' \
+      'past a full 8-cell grid, then blocks with no wrap or phantom cell' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleNineItemParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+
+  4.times { press_key(scene, RGSS::Input::DOWN) }
+  eq 8, ui[:item_i], 'four Downs reach the 9th item (index 8), alone in row 4'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 8, ui[:item_i], 'Down past the 9th item does not wrap back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 8, ui[:item_i], 'Right off the partial row\'s lone cell does not reach a ' \
+                      'phantom cell -- unlike the equip candidate list\'s trailing Remove'
+end
+
+# `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
+# key across frames without it also reading as a fresh trigger, exercising
+# the `#repeat?` half of `#drive_battle_item`/`#drive_battle_skill`'s own
+# gate on its own -- the two of the six battle cursors cycle #130's own
+# held-Down check (further up this file) did not cover. Confirmed against a
+# genuine RPG_RT.exe under wine (cycle #133, see #drive_battle_item's own
+# comment): a single continuous hold advanced the item grid's cursor through
+# multiple rows within one hold, exactly like the options/command/enemy-
+# target cursors cycle #130 already confirmed.
+check 'Enemy Encounter scene: holding Down auto-repeats the battle item ' \
+      'and skill grid cursors too' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleThreeItemParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
+  scene.update
+  RGSS::Input.reset
+  eq 2, ui[:item_i], 'a held (repeated, not triggered) Down still moves the item grid cursor'
+
+  scene2 = new_scene({ 1 => event(2, 2, auto) })
+  scene2.instance_variable_get(:@state).instance_variable_set(:@party, BattleThreeSkillParty.new)
+  ui2 = battle_to_command(scene2)
+  press_key(scene2, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene2, RGSS::Input::C)    # open the skill list
+  eq :skill, ui2[:phase]
+
+  RGSS::Input.repeated = [RGSS::Input::DOWN]
+  scene2.update
+  RGSS::Input.reset
+  eq 2, ui2[:skill_i], 'a held (repeated, not triggered) Down still moves the skill grid cursor'
 end
 
 # A single held item that #battle_items now lists (a field-only medicine,

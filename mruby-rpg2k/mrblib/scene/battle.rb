@@ -1692,15 +1692,22 @@ class RPG2k
 
       # Move a battle Item/Skill list cursor by `delta` cells (a row for
       # +-BATTLE_LIST_COLUMN_MAX, a column for +-1), left in place if the
-      # target cell is off the grid -- confirmed against RPG_RT's own live
-      # source: `Window_Selectable::Update` (`src/window_selectable.cpp`)
-      # bounds Down/Up by `index < item_max - column_max`/`index >=
-      # column_max` (blocked rather than wrapped past either end, genuinely
-      # column-locked) and Right/Left by the flat `index < item_max -
-      # 1`/`index > 0` (no row-boundary term at all) -- the identical
-      # mechanism `Scene::ItemMenu#move_item_cursor` already uses for the
-      # field item/skill grid, which never propagated to battle's own
-      # Item/Skill lists.
+      # target cell is off the grid -- originally only cited to EasyRPG's
+      # `Window_Selectable::Update` (`src/window_selectable.cpp`), the same
+      # column-locked-Down/Up, flat-Right/Left shape `Scene::ItemMenu#
+      # move_item_cursor` already uses for the field item/skill grid. Now
+      # independently confirmed against a genuine RPG_RT.exe under wine
+      # (cycle #133, `#drive_battle_item`'s own comment has the full
+      # writeup): `#drive_battle_item` specifically, at every list-size
+      # boundary this method's own shape distinguishes (1 item, 2 items/one
+      # full row, an odd 3-item partial-second-row, an exact 8-item/4-row
+      # grid with no overflow, and a 9-item overflow that scrolls) -- every
+      # single case matched this method's pre-existing behaviour exactly, so
+      # no change was needed here. `#drive_battle_skill` was not itself
+      # re-run this cycle, but shares this exact method and
+      # `#battle_list_window` with `#drive_battle_item`, not merely the same
+      # claimed shape -- see that method's own comment for what would be
+      # needed to close it out independently.
       def move_battle_list_index(index, delta, size)
         target = index + delta
         return nil if target.negative? || target >= size
@@ -1876,6 +1883,36 @@ class RPG2k
         draw_battle_item
       end
 
+      # Independently re-verified against a genuine RPG_RT.exe under wine
+      # (cycle #133), companion work to cycle #130's re-verification of
+      # `#drive_battle_command`/`#drive_battle_options` and cycle #131's fix
+      # to `#drive_battle_target` -- this one was the first of the three
+      # `#drive_battle_skill`/`#drive_battle_item`/`#drive_battle_ally_target`
+      # cursors those two cycles left unrun. A synthetic autostart Enemy
+      # Encounter (troop 103, the same probe cycles #130/#131 used, tail-
+      # spliced onto a copy of Nepheshel's map 12) with the debug save's
+      # inventory chunk (109) hand-edited to hold exactly 1/2/3/8/9 held
+      # items -- every list-size case this grid's own shape distinguishes:
+      # a single cell (blocked in all four directions, including a 1.2s held
+      # Down); one full row (Right/Left cross it, Down/Up blocked -- no
+      # second row exists); an odd 3-item list (Down reaches the partial
+      # second row's lone cell, Right off the end of it does *not* reach a
+      # hidden/phantom cell the way the equip candidate list's trailing
+      # Remove entry does -- cycle #129's own finding does not generalise
+      # here); an exact 8-item/4-row grid with no overflow (a continuous
+      # 1.5s Down hold auto-repeats row 0 -> row 1 -> row 2 -> row 3 within
+      # one hold, confirming genuine key-repeat same as cycle #130's own
+      # finding, then stops dead at row 3/col 1, the grid's own last cell --
+      # neither wrapping to row 0 nor scrolling for lack of anywhere to
+      # scroll to); and a 9-item overflow (a 2.5s Down hold reaches the 9th
+      # item alone in a fifth, partial row -- the window genuinely *does*
+      # scroll to reveal it, unlike the enemy-target list cycle #131 found
+      # does not scroll at all -- then blocks there with no wrap and no
+      # phantom trailing cell, exactly mirroring the 3-item case). Every one
+      # of these matched `#move_battle_list_index`'s pre-existing behaviour
+      # exactly, so this method needed no change -- confirmed correct, not
+      # merely inherited from a shared code shape, the same outcome cycle
+      # #130 reached for the options/command cursors.
       def drive_battle_item
         items = @ui[:items]
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !items.empty?

@@ -6604,6 +6604,62 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #133, 2026-08-24): of the three `#drive_battle_skill`/
+  `#drive_battle_item`/`#drive_battle_ally_target` battle cursors cycles
+  #130/#131 left unrun, `#drive_battle_item`'s key-repeat and grid wrap/
+  clamp behaviour is now independently re-verified against genuine
+  RPG_RT.exe -- confirmed correct on every list-size boundary tested, no
+  code change needed.** Built a synthetic autostart Enemy Encounter (troop
+  103, the same probe cycles #130/#131 used) by tail-splicing Map0478 event
+  2 page 2's own Enemy-Encounter-through-EndBattle command block (codes
+  10710/20710/20711/20713/0, troop id left unchanged) onto a new event 22 on
+  a scratch copy of Nepheshel's map 12, autostart-triggered. Repositioned
+  the debug save onto it (`gen-rpg2k-save.rb --map 12 --at 40,15
+  --clear-scene`) and hand-edited its inventory chunk (109)'s `item_ids`/
+  `item_counts`/`item_count` fields through five separate wine sessions, one
+  per list-size boundary the battle Item grid's own 2-column/4-row shape
+  distinguishes: 1 item (single cell), 2 items (one full row), 3 items (odd,
+  a partial second row), 8 items (an exact 4-row grid, no overflow) and 9
+  items (overflow past the grid). Every scenario: Continue -> file 1 ->
+  autostart fires -> dismiss the "X appeared!" message -> confirm Fight ->
+  Down x3 to Item -> Decision opens the item list, then held/tapped
+  Down/Up/Right/Left. Results, all matching this codebase's pre-existing
+  `#move_battle_list_index`/`#drive_battle_item` exactly: 1 item blocked in
+  all four directions (including a 1.2s held Down); 2 items let Right/Left
+  cross the row with Down/Up blocked (no second row); 3 items let Down reach
+  the partial second row's lone cell with Right off its end *not* reaching a
+  phantom cell -- unlike the equip candidate list's trailing Remove entry
+  (cycle #129), that finding does not generalise here; 8 items auto-repeated
+  through a continuous 1.5s Down hold (row 0 -> 1 -> 2 -> 3 within one hold,
+  confirming genuine key-repeat the same way cycle #130 did for the
+  options/command cursors) then stopped dead at the grid's own last cell,
+  neither wrapping nor scrolling; 9 items scrolled (a genuine pixel scroll,
+  confirmed on-screen -- the window's small down-arrow scroll indicator was
+  visible before the hold) via a 2.5s Down hold to reveal the 9th item alone
+  in a fifth, partial row -- unlike the enemy-target list, which cycle #131
+  found does *not* scroll and hard-caps instead -- then blocked there the
+  same way the 3-item case did, no wrap, no phantom cell. Since nothing
+  needed fixing, comments in `battle.rb` (`#move_battle_list_index`,
+  `#drive_battle_item`) and the matching `scripts/rpg2k_scene_check.rb`
+  citation were updated to record the re-verification, mirroring the
+  precedent cycle #130 set for a "confirmed correct" outcome; three new
+  checks added (an exact-8-item no-wrap check, a 9-item scroll-and-block
+  check, and a held-Down repeat check for the item/skill grids, two of the
+  six battle cursors cycle #130's own repeat check did not cover) --
+  confirmed to catch a regression (a deliberately injected modulo-wrap bug
+  in `#move_battle_list_index` failed 4 of 911 checks, including both new
+  grid checks) before being reverted. Full suite reconfirmed passing (911
+  checks, up from 908). `#drive_battle_skill` was not independently re-run
+  this cycle (it shares `#move_battle_list_index`/`#battle_list_window`
+  with `#drive_battle_item` exactly, not merely the same claimed shape, so
+  this is not a fresh guess the way the pre-cycle-133 state was) and
+  `#drive_battle_ally_target` remains untouched -- Nepheshel's debug save
+  still cannot be grown past its one solo actor (cycle #132's own open item
+  (c)), so its wrap/clamp behaviour past a single ally is still
+  unverifiable against the genuine binary; both are left for a future
+  cycle. `Map0012.lmu`/`Save01.lsd` were edited only as scratch copies for
+  these probes and restored to their original bytes (byte-identical by
+  `md5sum`) once each wine session was torn down.
   ✅ **Follow-up (cycle #132, 2026-08-24): the field Item/Skill menus'
   actor-target-confirm screen ("who to use this on") was a guess this
   session had never independently re-run against genuine RPG_RT.exe -- a
