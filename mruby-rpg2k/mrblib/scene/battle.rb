@@ -2049,26 +2049,51 @@ class RPG2k
 
       # -- Ally target (heal skill / medicine) --------------------------------
 
-      # Right/Left move the ally-target cursor exactly like Down/Up --
-      # confirmed against RPG_RT's own live source: `Window_BattleStatus::
-      # Update` (`src/window_battlestatus.cpp`), the window that drives this
-      # cursor (`Scene_Battle::status_window`, active during ally-target
-      # selection), gates its "next ally" step on `IsRepeated(DOWN) ||
-      # IsRepeated(RIGHT) || IsTriggered(SCROLL_DOWN)` and its "previous
-      # ally" step on the Up/Left/SCROLL_UP mirror -- deliberately
-      # bypassing the generic `Window_Selectable::Update` cursor logic
-      # ("skipped on purpose (breaks up/down-logic)", the function's own
-      # comment) to fold Right/Left into the same single up/down axis.
+      # Only Down/Up move the ally-target cursor -- Right/Left are dead input
+      # here, not folded onto the same axis.
+      #
+      # Independently re-verified (cycle #136, 2026-08-24), overturning a
+      # prior cycle's own claim (which had secretly cited EasyRPG source,
+      # since removed) that Right/Left mirror Down/Up. Confirmed against
+      # genuine RPG_RT.exe under wine (Nepheshel), using a technique cycle
+      # #135 had time-boxed away from and this cycle finished: a synthetic
+      # autostart event on a scratch copy of Map0012, carrying live `Change
+      # Party Member` (event code 10330, `[0, 0, <actor id>]`) commands
+      # prepended onto Map0478 event 2 page 2's own genuine Enemy-Encounter-
+      # through-EndBattle trailing structure (troop 103, codes 10710/20710/
+      # 20711/20713/0, tail-spliced verbatim as cycles #130-134 did) --
+      # letting the genuine runtime itself grow the live party in memory
+      # before battle starts, rather than hand-editing a save's `party`
+      # field (confirmed a dead end by cycle #135: it crashes RPG_RT.exe
+      # outright). This produced real, undamaged 2- and 4-member parties
+      # (デモ用+ファル; デモ用+ファル+ティララ+ディーヴァ) with no crash --
+      # unblocking this check and cycle #132's own open multi-actor
+      # question in the field target-confirm screen (see that entry's own
+      # follow-up below). Tested via Continue -> file 1 -> autostart ->
+      # confirm Fight -> Down x3 to Item -> Decision on 薬草 (single-ally
+      # scope) -> ally-target screen, screenshot-verified after every single
+      # keypress (never assuming a fixed press count, matching cycle #135's
+      # own recommended fix for its title-cursor flakiness): with 2 allies,
+      # Down/Up wrap correctly (0->1->0, and Up from 0 reaches 1) exactly as
+      # this method already computed, but Right and Left from *either* row
+      # left the cursor on the same row every single time -- rechecked with
+      # a full settle wait after each individual press once a first batched
+      # sequence looked ambiguous (proved to be simple frame lag, not a real
+      # movement, once isolated one key at a time). With 4 allies the same
+      # holds at both boundaries: Right from row 0 and row 3 both no-op,
+      # Left from row 0 no-ops (does not reach row 3 the way Up correctly
+      # does), and a plain Down x4 visits all four rows in order before
+      # wrapping, Up from row 0 wraps straight to row 3. Fixed by dropping
+      # the Right/Left arms entirely -- Down/Up (trigger or repeat) are the
+      # only inputs that move `@ui[:ally_i]`.
       def drive_battle_ally_target
         allies = battle_ally_targets
-        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN) ||
-            Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)) && !allies.empty?
+        if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !allies.empty?
           @ui[:ally_i] += 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target
           play_system_se(SFX_CURSOR)
-        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP) ||
-               Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)) && !allies.empty?
+        elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !allies.empty?
           @ui[:ally_i] -= 1
           @ui[:ally_i] %= allies.length
           draw_battle_ally_target

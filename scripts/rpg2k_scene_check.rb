@@ -12785,15 +12785,19 @@ check 'Enemy Encounter scene: the ally target cursor wraps around' do
   eq 0, ui[:ally_i], 'Down from the last ally wraps to the first'
 end
 
-check 'Enemy Encounter scene: Right/Left move the ally target cursor exactly ' \
-      'like Down/Up' do
-  # Confirmed against RPG_RT's own live source: `Window_BattleStatus::Update`
-  # (src/window_battlestatus.cpp) -- the window driving this cursor while
-  # ally-target selection is active -- gates its "next ally" step on
-  # `IsRepeated(DOWN) || IsRepeated(RIGHT) || IsTriggered(SCROLL_DOWN)` and
-  # its "previous ally" step on the Up/Left/SCROLL_UP mirror, deliberately
-  # skipping the generic Window_Selectable cursor logic to fold Right/Left
-  # onto the same up/down axis.
+check 'Enemy Encounter scene: Right/Left are dead input on the ally target cursor' do
+  # Overturns this check's own prior claim ("Right/Left move the cursor
+  # exactly like Down/Up", sourced from a since-removed EasyRPG-source
+  # citation). Independently re-verified against genuine RPG_RT.exe under
+  # wine (cycle #136, 2026-08-24, Nepheshel): a real 2-member party (デモ用
+  # + ファル, grown in-memory by a live synthetic `Change Party Member`
+  # autostart event rather than a hand-edited save) showed Right from either
+  # row and Left from either row leaving the cursor exactly where it started,
+  # every time, while Down/Up still wrap correctly -- reconfirmed again at 4
+  # members (デモ用/ファル/ティララ/ディーヴァ): Right no-ops at both the
+  # first and last row, Left no-ops at the first row (does not reach the
+  # last row the way Up correctly does). See docs/TODO.md's cycle #136 entry
+  # for the full wine transcript.
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
@@ -12808,9 +12812,15 @@ check 'Enemy Encounter scene: Right/Left move the ally target cursor exactly ' \
   press_key(scene, RGSS::Input::C)    # choose the Potion -> ally target
   eq 0, ui[:ally_i], 'starts on the first ally'
   press_key(scene, RGSS::Input::LEFT)
-  eq 1, ui[:ally_i], 'Left from the first ally wraps to the last, same as Up'
+  eq 0, ui[:ally_i], 'Left from the first ally is a no-op, unlike Up'
   press_key(scene, RGSS::Input::RIGHT)
-  eq 0, ui[:ally_i], 'Right from the last ally wraps to the first, same as Down'
+  eq 0, ui[:ally_i], 'Right from the first ally is also a no-op, unlike Down'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 1, ui[:ally_i], 'Down still moves the cursor normally'
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 1, ui[:ally_i], 'Right from the last ally is a no-op, unlike Down'
+  press_key(scene, RGSS::Input::LEFT)
+  eq 1, ui[:ally_i], 'Left from the last ally is also a no-op, unlike Up'
 end
 
 # Two actors (distinct ids) with an item_usable_by? that restricts the
