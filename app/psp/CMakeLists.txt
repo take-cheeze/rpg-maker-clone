@@ -209,7 +209,7 @@ rpg2k_add_mruby(
 # earlier HAL-only bring-up did, would double-define every symbol in it
 # (psp_display_create, psp_input_scan, ...) once both this executable and
 # libmruby.a define them.
-add_executable(rpg2k_psp main.cxx)
+add_executable(rpg2k_psp main.cxx psp_missing_syscalls.c)
 
 target_compile_definitions(rpg2k_psp PRIVATE PSP_BUILD LV_CONF_INCLUDE_SIMPLE)
 target_include_directories(rpg2k_psp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
