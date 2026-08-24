@@ -6604,6 +6604,73 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #134, 2026-08-24): `#drive_battle_skill`, the one
+  `#drive_battle_item` sibling cycle #133 left unrun, is now independently
+  re-verified against genuine RPG_RT.exe too -- confirmed correct on every
+  list-size boundary tested, no code change needed.** Getting there needed a
+  multi-skill test actor, which the debug save's own file-select screen
+  turned out to name incorrectly: its solo "デモ用" character is chunk 108's
+  actor id **15**, not id 1 -- id 1 (level 1, HP 50, no skills) is just
+  another idle roster row. This was pinned down by cross-referencing the
+  file-select screen's own displayed "LV50 HP600" (SAVE_TITLE hero_level/
+  hero_hp) against chunk 108: id 15 is the only actor row with level 50 and
+  600 HP, everything else in the roster (ids 1-14, 16-49) sits at the
+  generic level-1/40-HP idle default. Confirmed indirectly but repeatably --
+  hand-editing id 15's own chunk 108 field 52 (`skills`, `SAVE_PARTY_ACTOR`)
+  to five different skill lists across five separate wine sessions each
+  changed what the in-battle Skill menu showed exactly as expected, while an
+  earlier attempt at id 1 (this cycle's own first, wrong guess) changed
+  nothing genuine RPG_RT displayed at all. Reused cycles #130/#131/#133's own
+  probe rig: a synthetic autostart Enemy Encounter (troop 103, tail-spliced
+  from Map0478 event 2 page 2's genuine Victory/Escape/EndBattle trailing
+  structure) onto a new event 22 on a scratch copy of Nepheshel's map 12,
+  repositioned debug save (`gen-rpg2k-save.rb --map 12 --at 40,15
+  --clear-scene`), actor 15's skills hand-edited through five list-size
+  boundaries the grid's own 2-column/4-row shape distinguishes: 1 skill
+  (single cell), 2 skills (one full row), 3 skills (odd, a partial second
+  row), 8 skills (an exact 4-row grid, no overflow) and 9 skills (overflow
+  past the grid) -- skill ids 1-9 from Nepheshel's own database, all
+  `type: 0` (ordinary spells), so `Game::Party#battle_skill?` accepts every
+  one regardless of scope. Each case: Continue -> file 1 -> autostart fires
+  straight into the battle options window (this troop shows no "X appeared!"
+  message before it) -> Decision confirms Fight -> Down once (Attack ->
+  Skill) -> Decision opens the skill list, then held Down/Right/Up/Left.
+  Results, all matching this codebase's pre-existing
+  `#move_battle_list_index`/`#battle_list_window` exactly, mirroring
+  `#drive_battle_item`'s own cycle-#133 findings case for case: 1 skill
+  blocked in all four directions (including a 1.2s held Down/Right/Up/Left);
+  2 skills let Right/Left cross the row with Down/Up blocked (no second
+  row); 3 skills let Down reach the partial second row's lone cell, Right
+  off its end blocked (no phantom cell), Up back to row 0; 8 skills
+  auto-repeated through a continuous 1.5s Down hold (row 0 -> 1 -> 2 -> 3
+  within one hold, the same genuine key-repeat cycles #130/#133 already
+  confirmed) then stopped dead at the grid's own last cell on a further
+  hold, neither wrapping nor scrolling; 9 skills scrolled (the previous
+  top-left skill visibly rolled off the top of the window) via a 2.5s Down
+  hold to reveal the 9th skill alone in a fifth, partial row, then blocked
+  there with no wrap and no phantom cell to its right either (checked
+  explicitly, matching the 3-skill case). Since nothing needed fixing,
+  `#drive_battle_skill`'s own comment and `#move_battle_list_index`'s were
+  updated to record the re-verification, mirroring cycle #133's own
+  precedent; two new `scripts/rpg2k_scene_check.rb` checks added
+  (`BattleEightSkillParty`/`BattleNineSkillParty`, mirroring the existing
+  item-side fixtures exactly) for the two boundaries this file had no
+  skill-side coverage for yet, confirmed to fail (alongside the four
+  pre-existing item/skill checks that share this same code) against a
+  deliberately injected modulo-wrap regression in `#move_battle_list_index`
+  before being reverted. Full suite reconfirmed passing (913 checks, up from
+  911). This closes out the six-cursor re-verification cycles #130/#131/#133
+  chipped away at, except `#drive_battle_ally_target`, which remains blocked
+  on cycle #132's own open item (c) -- growing the debug save past its one
+  live actor. That mystery may now be one step closer to solvable: this
+  cycle's own actor-15 finding means a future attempt at it should try
+  writing chunk 109's `party` field (`SAVE_INVENTORY` field 1) as `[15, ...]`
+  rather than `[1, 2, ...]` as cycle #132 tried -- cycle #132's attempts
+  never actually named the save's own live actor in that list at all, so
+  they cannot yet be read as ruling out `party` mattering, only as ruling out
+  those particular wrong ids. `Map0012.lmu`/`Save01.lsd` were edited only as
+  scratch copies for these probes and restored to their original bytes
+  (byte-identical by `md5sum`) once each wine session was torn down.
   ✅ **Follow-up (cycle #133, 2026-08-24): of the three `#drive_battle_skill`/
   `#drive_battle_item`/`#drive_battle_ally_target` battle cursors cycles
   #130/#131 left unrun, `#drive_battle_item`'s key-repeat and grid wrap/
