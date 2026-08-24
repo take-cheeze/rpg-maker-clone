@@ -19104,6 +19104,88 @@ check 'the item / skill target list shows who is afflicted' do
   end
 end
 
+# A four-actor party -- RPG2000's own party-membership cap (see
+# Game::Party#reorder and every battle-side ally list in this codebase) --
+# for the target-confirm panel's own at-capacity boundary case below.
+class FourActorTargetParty < MenuStubParty
+  def initialize
+    super
+    @actors = Array.new(4) { MenuStubActor.new }
+  end
+end
+
+def four_actor_target_state
+  Game::State.new(FourActorTargetParty.new, 1, 0, 0)
+end
+
+check 'the item / skill target-confirm window is a right-anchored, ' \
+      'full-height panel, not a bottom bar sized to the party' do
+  # Confirmed against a genuine RPG_RT.exe under wine (cycle #132): this
+  # window used to be bottom-anchored, full screen width, and sized to
+  # `party.size * (LINE_H * 2)` -- a solo party's window was a short bar
+  # hugging the bottom edge. Real RPG_RT instead draws a *right-anchored*
+  # panel that is the *full height of the screen regardless of party size*
+  # -- confirmed directly for a solo party (the only party size reachable
+  # this cycle -- see Scene::ItemMenu::TARGET_W's own doc comment) and
+  # extrapolated here to a full 4-actor party as this fix's own capacity
+  # boundary: RPG2000 never has more than 4 members to show, and 4 rows of
+  # this panel's own fixed 48px row height (192px) comfortably fits inside
+  # the fixed 240px-tall panel with no scrolling needed, unlike the old
+  # per-party-size formula, which would have kept growing indefinitely.
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    [menu_state, four_actor_target_state].each do |st|
+      scene = menu_scene(klass, st)
+      scene.send(:build_target_window)
+      win = scene.instance_variable_get(:@target_window)
+      party_size = st.party.actors.size
+      eq RPG2k::Scene::ItemMenu::SCREEN_W - RPG2k::Scene::ItemMenu::TARGET_W, win.x,
+         "#{klass} (#{party_size} actor(s)) target window's left edge"
+      eq 0, win.y, "#{klass} (#{party_size} actor(s)) target window's top edge"
+      eq RPG2k::Scene::ItemMenu::TARGET_W, win.width,
+         "#{klass} (#{party_size} actor(s)) target window's width"
+      eq RPG2k::Scene::ItemMenu::SCREEN_H, win.height,
+         "#{klass} (#{party_size} actor(s)) target window's height"
+    end
+  end
+end
+
+check 'the item / skill target-confirm screen draws each actor on three ' \
+      'lines (name; level + HP; condition + MP), not two' do
+  # Confirmed against a genuine RPG_RT.exe under wine (cycle #132): the old
+  # layout drew name + condition on one line and "HP x/y  MP x/y" on a
+  # second. Real RPG_RT draws the name alone on the first line, level and
+  # HP on the second, and condition and MP on the third -- see
+  # Scene::ItemMenu::TARGET_W's own doc comment for the measurement.
+  st = menu_state
+  a = st.party.actors.first # MenuStubActor: level 5, hp 80/120, mp 10/30
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    scene = menu_scene(klass, st)
+    scene.send(:build_target_window)
+    win = scene.instance_variable_get(:@target_window)
+    calls = ((win.contents.draw_calls || []) + (win.contents.blend_calls || []))
+    row_y = ->(text) { calls.find { |c| c[4].to_s == text }&.at(1) }
+    row_x = ->(text) { calls.find { |c| c[4].to_s == text }&.at(0) }
+    name_y = row_y.call(a.name)
+    lv_y = row_y.call('Lv 5')
+    hp_y = row_y.call('HP 80/120')
+    mp_y = row_y.call('MP 10/30')
+    ok name_y, "#{klass} target window draws the actor's name"
+    ok lv_y, "#{klass} target window draws \"Lv 5\""
+    ok hp_y, "#{klass} target window draws \"HP 80/120\""
+    ok mp_y, "#{klass} target window draws \"MP 10/30\""
+    eq 0, name_y, "#{klass}: the name is alone on the first line"
+    eq RPG2k::Scene::ItemMenu::LINE_H, lv_y, "#{klass}: level is on the second line"
+    eq RPG2k::Scene::ItemMenu::LINE_H, hp_y, "#{klass}: HP shares the second line with level"
+    eq RPG2k::Scene::ItemMenu::LINE_H * 2, mp_y, "#{klass}: MP is on the third line"
+    # The value column (HP/MP) starts partway across the row, not flush
+    # against the label column (level/condition) -- see TARGET_VALUE_X.
+    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('HP 80/120'),
+       "#{klass}: HP starts at the value column, not right after \"Lv 5\""
+    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('MP 10/30'),
+       "#{klass}: MP starts at the value column, not right after the condition"
+  end
+end
+
 check 'Scene::ItemMenu: the item grid cursor does not wrap, the target cursor does' do
   scene = menu_scene(RPG2k::Scene::ItemMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@item_index), 'starts on the first item'

@@ -678,26 +678,64 @@ class RPG2k
         refresh_desc
       end
 
+      # The actor-target picker's own geometry -- confirmed against a genuine
+      # RPG_RT.exe under wine (cycle #132), replacing a guess this class had
+      # never independently re-verified: a *bottom-anchored, full-width* bar
+      # sized to `party.size * (LINE_H * 2)`, two lines per actor (name +
+      # condition on the first, HP/MP on the second). Real RPG_RT instead
+      # draws a **right-anchored panel the full height of the screen**,
+      # sized the same regardless of party size (RPG2000's own party cap
+      # keeps it at 4 members either way, well inside this fixed panel — the
+      # same reasoning #move_battle_target_cursor's own doc comment, cycle
+      # #131, already established for the battle-side target list), with
+      # each actor on **three** lines -- name; level + HP; condition + MP --
+      # not two, and the HP/MP *value* column starting partway across the
+      # row rather than immediately after the label. There is also a blank
+      # gutter to the left of every line, of a piece with the cursor
+      # highlight (see #refresh_target_cursor below): a plausible, but
+      # *not confirmed*, explanation is a face-graphic slot this screen does
+      # not draw into -- Nepheshel's only reachable test actor (the debug
+      # save's solo "デモ用" character) carries no faceset to test that
+      # theory against, and the party field of a hand-edited save
+      # (`inventory` chunk 109's own `party` sub-field) could not be grown
+      # past that one saved actor this cycle (RPG_RT kept showing a solo
+      # party regardless), so the multi-actor stacking below is this
+      # method's own straight-line extrapolation of the confirmed single-row
+      # geometry, not independently confirmed -- see docs/TODO.md's cycle
+      # #132 entry for the full measurement write-up and this as an open
+      # lead. Pixel values measured directly (640x480 wine capture, so
+      # divided by 2 for native 320x240 coordinates): panel at native
+      # (136, 0), 184x240 -- i.e. `SCREEN_W - TARGET_W` .. `SCREEN_W`, full
+      # `SCREEN_H`; each row 48px (three 16px lines); the label column
+      # (name/level/condition) starting 56px into the panel's own content
+      # area, the value column (HP/MP) at 114px.
+      TARGET_W = 184
+      TARGET_ROW_H = LINE_H * 3
+      TARGET_LABEL_X = 56
+      TARGET_VALUE_X = 114
+
       def build_target_window
         @target_window.dispose if @target_window
         party = @state.party.actors
-        inner_w = SCREEN_W - Window::BORDER * 2
-        h = party.size * (LINE_H * 2)
-        @target_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
-                                    SCREEN_W, h + Window::BORDER * 2)
+        inner_w = TARGET_W - Window::BORDER * 2
+        @target_window = Window.new(SCREEN_W - TARGET_W, 0, TARGET_W, SCREEN_H)
         @target_window.z = 450
         @target_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         party.each_with_index do |a, i|
-          y = i * LINE_H * 2
-          c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          y = i * TARGET_ROW_H
+          c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
+          c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
+                      "#{term(:level_short, 'Lv')} #{a.level}"
+          c.draw_text TARGET_VALUE_X, y + LINE_H, inner_w - TARGET_VALUE_X, LINE_H,
+                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}"
           # RPG_RT's target list shows each member's condition (its
           # Window_ActorTarget draws one) -- which is most of the point of the
           # list, since it is where you pick who to use an antidote on.
-          draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
-          c.draw_text 0, y + LINE_H, inner_w, LINE_H,
-                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
+          draw_actor_state c, a, TARGET_LABEL_X, y + LINE_H * 2,
+                           TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
+          c.draw_text TARGET_VALUE_X, y + LINE_H * 2, inner_w - TARGET_VALUE_X, LINE_H,
                       "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
         end
         @target_window.contents = c
@@ -713,9 +751,13 @@ class RPG2k
           @target_window.cursor_rect =
             Rect.new(0, 0, @target_window.contents.width, @target_window.contents.height)
         else
+          # Content-width, not window-width, matching the measured single-row
+          # cursor's own left edge (see the geometry comment above) --
+          # `TARGET_LABEL_X - 2` lands the highlight's left edge right at the
+          # measured card border, a couple of pixels ahead of the text itself.
           @target_window.cursor_rect =
-            Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
-                     LINE_H * 2)
+            Rect.new(TARGET_LABEL_X - 2, @target_index * TARGET_ROW_H,
+                     @target_window.contents.width - (TARGET_LABEL_X - 2), TARGET_ROW_H)
         end
       end
 
