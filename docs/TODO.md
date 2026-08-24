@@ -6604,6 +6604,98 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #136, 2026-08-24): finished cycle #135's own
+  time-boxed-away live Change Party Member technique -- it works cleanly
+  against genuine RPG_RT.exe, with no crash, and immediately unblocked
+  `#drive_battle_ally_target`'s verification, which turned up a real bug,
+  fixed.** Recipe (exactly cycle #135's own recommended one): place a
+  genuine save on Map0012 via `gen-rpg2k-save.rb --map 12 --at 40,15
+  --clear-scene`, inject a synthetic autostart event (trigger 3) carrying
+  live `Change Party Member` commands (event code 10330, `[0, 0, <actor
+  id>]`, `Interpreter#do_change_party`) prepended onto Map0478 event 2 page
+  2's own genuine Enemy-Encounter-through-EndBattle trailing structure
+  (troop 103, codes 10710/20710/20711/20713/0, tail-spliced verbatim as
+  cycles #130-134 did), then drive EasyRPG's title screen to **Continue**
+  (not New Game) -- screenshot-verifying the highlighted entry after every
+  single keypress rather than assuming a fixed press count, exactly as
+  cycle #135 flagged as the fix for its own flaky title-cursor navigation.
+  That navigation (Down once, Return, Return) turned out reliable every
+  time once screenshot-verified (four separate wine sessions, no misfire),
+  so the flakiness cycle #135 hit was evidently this session's own
+  drive-without-checking, not a genuine timing hazard in the recipe. The
+  autostart fired the moment each save loaded and genuinely grew the live
+  party in memory -- confirmed both in the field menu (Escape from the map)
+  and in battle, across four separate wine sessions building 1/2/2/4-member
+  parties (デモ用 solo; デモ用+ファル (actor 2); デモ用+ファル again, for
+  the Right/Left probe below; デモ用+ファル+ティララ+ディーヴァ (actors
+  2/3/4)) -- no crash in any of them, unlike every hand-edited-`party`-field
+  attempt cycles #132/#135 tried. This is a strictly better technique than
+  raw save-byte editing: it lets genuine RPG_RT.exe itself decide what a
+  live "add" does, rather than guessing byte layouts it then crashes on.
+  Side finding, not investigated further this cycle: with a real 2-member
+  party, the field Item target-confirm screen (`Scene::ItemMenu
+  #build_target_window`, cycle #132's own fix) drew actor 2's (ファル's)
+  own real 48x48 faceset image in the row's left gutter -- template-matched
+  pixel-exact against `FaceSet/face.png` cell index 1 (`db.player[2]
+  .faceset_name/index`) at native panel-local coordinates (8, 66), i.e. 18px
+  below row 1's own top (`TARGET_ROW_H * 1 == 48`) and extending 18px past
+  its bottom -- while actor 15 (`デモ用`)'s row 0, which has no faceset
+  assigned (`faceset_name == ''`), drew nothing there, exactly matching the
+  current code's blank gutter and confirming cycle #132's own open question
+  (1) was on the right track without quite landing it: the blank gutter
+  is real evidence of "no face configured for this one test actor", not
+  evidence there is no face slot at all -- RPG_RT does draw one when an
+  actor has a face. **Not fixed this cycle** (`#build_target_window` still
+  draws no face): the measured vertical offset (+18px into the row, +18px
+  past it) was only ever observed on a non-first row, so whether row 0's
+  own face (were `デモ用` given one) would sit at the same "+18" offset,
+  or instead be clipped/repositioned by the window's own top border, is
+  still unconfirmed and would need a test actor with both a real faceset
+  and the row-0 slot to settle safely -- left as a concrete, well-measured
+  lead for whichever cycle picks up cycle #132's open item (1) next. Cycle
+  #132's open item (3) (multi-actor row **stacking**) is however now
+  positively confirmed, separately from the face question: gridlines drawn
+  every `TARGET_ROW_H` (48 native px) onto the 2-actor wine capture landed
+  exactly on both rows' own text baselines, with no extra gap between them
+  -- `#build_target_window`'s straight-line extrapolation of one uniform
+  48px-tall row per actor, cards butting directly against each other, was
+  the right guess.
+  With a genuine multi-actor party finally reachable, immediately used it
+  (per this file's own standing instruction to cycles that crack this) to
+  verify `#drive_battle_ally_target`, the last of the six battle cursors
+  cycles #130/#131/#133/#134 left unverified -- and it was wrong. The
+  method's own prior comment claimed Right/Left move this cursor exactly
+  like Down/Up (cited, by a cycle that predates the strict no-EasyRPG-source
+  rule, to `Window_BattleStatus::Update`'s `IsRepeated(RIGHT)`/`(LEFT)`
+  gates). Tested via Continue -> file 1 -> autostart -> confirm Fight ->
+  Down x3 to Item -> Decision on 薬草 (item 1, single-ally scope, already in
+  the debug inventory) -> ally-target screen, at both the 2-ally and 4-ally
+  boundaries: Down/Up wrap exactly as this method already computed (2
+  allies: 0->1->0 on Down, Up from 0 reaches 1; 4 allies: a plain Down x4
+  visits every row in order before wrapping, Up from row 0 wraps straight
+  to row 3) -- but Right and Left, tested individually from *every* row at
+  both party sizes (row 0 and row 1 at size 2; row 0 and row 3 at size 4),
+  left the cursor exactly where it started, every single time, with a full
+  settle wait after each isolated press. (A first *batched* Right/Up/Left
+  sequence briefly looked like Right worked -- screenshotted mid-sequence,
+  it showed the wrong row -- but re-isolating each key one at a time and
+  re-checking after a full settle wait proved that was ordinary frame lag
+  in the capture, not a real cursor move; the isolated, settled reads are
+  the ones this fix relies on.) Fixed `#drive_battle_ally_target`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) to drop the Right/Left arms
+  entirely -- only Down/Up (trigger or repeat) move `@ui[:ally_i]` now.
+  `scripts/rpg2k_scene_check.rb`'s existing "Right/Left move the ally
+  target cursor exactly like Down/Up" check was inverted in place (now
+  "Right/Left are dead input on the ally target cursor", asserting a no-op
+  from both the first and last row of a 2-member party) rather than left
+  alongside a new, contradicting one, since its old premise was simply
+  wrong, not merely incomplete. Confirmed to fail against the pre-fix code
+  (a stashed diff of just `battle.rb`) before the fix, 1 of 913 checks; full
+  suite reconfirmed passing after (913 checks, same count -- an existing
+  check was corrected in place, not added to). `Map0012.lmu`/`Save01.lsd`
+  were edited only as scratch copies for every probe above and restored to
+  their original bytes (byte-identical by `md5sum`) once each wine session
+  was torn down.
   ✅ **Follow-up (cycle #135, 2026-08-24): chased cycle #134's own suggested
   next step for growing the debug save's party past its one live actor --
   writing chunk 109's `party` field (`SAVE_INVENTORY` field 1) as `[15,
