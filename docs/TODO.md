@@ -6604,6 +6604,79 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #132, 2026-08-24): the field Item/Skill menus'
+  actor-target-confirm screen ("who to use this on") was a guess this
+  session had never independently re-run against genuine RPG_RT.exe -- a
+  previous cycle's own investigation of this exact screen was discarded
+  entirely (no doc entry, nothing shipped) after it turned out to have
+  secretly consulted EasyRPG source, leaving it untouched territory. Redone
+  here from scratch against the real binary only, and the guess turned out
+  wrong on two separate axes at once: window placement and per-actor row
+  content. Fixed.** `Scene::ItemMenu#build_target_window` (and
+  `Scene::SkillMenu`'s byte-identical copy) drew a *bottom-anchored,
+  full-screen-width* bar sized to `party.size * (LINE_H * 2)`, each actor on
+  two lines (name + condition on the first, "HP x/y  MP x/y" on the
+  second). RPG_RT.exe instead draws a **right-anchored panel the full
+  height of the screen**, sized the same regardless of party size, with
+  each actor on **three** lines -- name alone; level and HP; condition and
+  MP -- and the HP/MP value column starting partway across the row rather
+  than immediately after the label. Measured under wine per ADR 0021's own
+  methodology (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1, matchbox-window-
+  manager, LANG=ja_JP.UTF-8) against `data/Nepheshel206beta/
+  Nepheshel206Rbeta/RPG_RT.exe`: a genuine save (`scripts/gen-lcf-save-
+  wine.bash`, then `scripts/gen-rpg2k-save.rb --map 12 --clear-scene` to
+  reposition it off the unskippable bedroom-wakeup map) hand-edited to carry
+  five 薬草 (item 1, a plain single-ally-scope medicine, `db.item[1].scope
+  == 0`) in its inventory chunk (109)'s `item_ids`/`item_counts` fields --
+  Continue, Escape to open the field menu, Decision on Item (already
+  selected), Decision on the (only) item, landing on the target-confirm
+  screen. Pixel-sampled the capture (640x480, so halved for native 320x240
+  coordinates): panel at native (136, 0), 184x240 (`SCREEN_W - TARGET_W` ..
+  `SCREEN_W`, the *full* `SCREEN_H`, not `party.size`-dependent); each row
+  48px (three 16px lines); the label column (name/level/condition) starting
+  56px into the panel's own content area, the value column (HP/MP) at
+  114px; a plain-modulo-wrapping single-row cursor sized to that same
+  content width, not the window's full width, its left edge landing right
+  at the row's own left margin. Fixed `#build_target_window`/
+  `#refresh_target_cursor` in both `item_menu.rb` and `skill_menu.rb`
+  identically (new `TARGET_W`/`TARGET_ROW_H`/`TARGET_LABEL_X`/
+  `TARGET_VALUE_X` constants) to match. Two new `scripts/rpg2k_scene_check
+  .rb` checks -- window geometry (right-anchored, full-height, independent
+  of a 1-actor vs. a 4-actor `FourActorTargetParty` fixture -- RPG2000's own
+  party-membership cap keeps 4 the structural ceiling, and 4 rows at 48px
+  each (192px) comfortably fits the fixed 240px panel with no scrolling,
+  unlike the old per-party-size formula) and per-row content (name on line
+  one, "Lv 5" and "HP 80/120" sharing line two, the condition and "MP
+  10/30" sharing line three, HP/MP both starting at the measured value
+  column) -- both confirmed to fail against the pre-fix code (`NameError:
+  uninitialized constant ...::TARGET_W`, then `target window draws "Lv 5"`
+  once that constant was stubbed back in) before the fix. Full suite
+  reconfirmed passing (908 checks, up from 906).
+  **Left open for a future cycle, boundary cases this investigation could
+  not reach:** (1) RPG_RT reserves a blank gutter to the left of every
+  row's text, of a piece with the cursor highlight -- a plausible but
+  *unconfirmed* explanation is a face-graphic slot this screen does not
+  draw into, since Nepheshel's only reachable test actor (the debug save's
+  solo "デモ用" character, the *sole* actor the save's F9-debug-menu
+  generation flow produces) carries no faceset to test that theory
+  against. (2) The left side of the screen (the item description /
+  quantity area) visibly re-flows too when entering target mode -- narrower,
+  and split into two stacked boxes rather than the ordinary description-bar-
+  plus-item-grid layout -- not investigated or fixed this cycle; scope was
+  kept to the target panel itself. (3) Multi-actor row *stacking* (whether
+  cards butt directly against each other at the measured 48px, and whether
+  a non-selected row's text is laid out identically to the selected one)
+  is this fix's own straight-line extrapolation from the single-actor
+  measurement, not independently confirmed: `inventory` chunk 109's `party`
+  sub-field (`SAVE_INVENTORY` field 1, `int8_array`) would not grow past
+  the save's own saved solo actor no matter how many ids were written into
+  it and read back correctly by this codebase's own parser (`[1]`, `[1,
+  2]`, and `[1, 2, 3, 4]` were all tried) -- genuine RPG_RT kept showing a
+  one-row party regardless, so real party membership is evidently gated by
+  something else this cycle did not identify (not simply "whichever actor
+  ids chunk 109 field 1 lists"). Chasing that mechanism down, or finding
+  another way to reach a genuine multi-member party from a synthetic save,
+  is the natural next step to fully close this screen out.
   ✅ **Follow-up (cycle #131, 2026-08-23): of the four battle cursor spots
   cycle #130 left unverified, `#drive_battle_target` (enemy targeting) turned
   out to have a real bug -- not about key-repeat (that part re-confirmed

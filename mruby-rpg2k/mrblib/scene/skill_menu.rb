@@ -540,26 +540,40 @@ class RPG2k
         refresh_desc
       end
 
+      # See Scene::ItemMenu's identical `TARGET_W`/`TARGET_ROW_H`/
+      # `TARGET_LABEL_X`/`TARGET_VALUE_X` doc comment (cycle #132) for the
+      # full RPG_RT measurement write-up -- this class's own target-confirm
+      # screen shares the exact same geometry (a genuine RPG_RT.exe under
+      # wine draws Scene_Skill's actor-target picker identically to
+      # Scene_Item's), so the constants and both methods below are ported
+      # verbatim from there rather than re-measured independently.
+      TARGET_W = 184
+      TARGET_ROW_H = LINE_H * 3
+      TARGET_LABEL_X = 56
+      TARGET_VALUE_X = 114
+
       def build_target_window
         @target_window.dispose if @target_window
         party = @state.party.actors
-        inner_w = SCREEN_W - Window::BORDER * 2
-        h = party.size * (LINE_H * 2)
-        @target_window = Window.new(0, SCREEN_H - h - Window::BORDER * 2,
-                                    SCREEN_W, h + Window::BORDER * 2)
+        inner_w = TARGET_W - Window::BORDER * 2
+        @target_window = Window.new(SCREEN_W - TARGET_W, 0, TARGET_W, SCREEN_H)
         @target_window.z = 450
         @target_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
+        c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         party.each_with_index do |a, i|
-          y = i * LINE_H * 2
-          c.draw_text 0, y, inner_w, LINE_H, a.name.to_s
+          y = i * TARGET_ROW_H
+          c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
+          c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
+                      "#{term(:level_short, 'Lv')} #{a.level}"
+          c.draw_text TARGET_VALUE_X, y + LINE_H, inner_w - TARGET_VALUE_X, LINE_H,
+                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}"
           # RPG_RT's target list shows each member's condition (its
           # Window_ActorTarget draws one) -- which is most of the point of the
           # list, since it is where you pick who to use an antidote on.
-          draw_actor_state c, a, 0, y, inner_w, LINE_H, @skin, 2
-          c.draw_text 0, y + LINE_H, inner_w, LINE_H,
-                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
+          draw_actor_state c, a, TARGET_LABEL_X, y + LINE_H * 2,
+                           TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
+          c.draw_text TARGET_VALUE_X, y + LINE_H * 2, inner_w - TARGET_VALUE_X, LINE_H,
                       "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
         end
         @target_window.contents = c
@@ -569,17 +583,14 @@ class RPG2k
       def refresh_target_cursor
         return unless @target_window
         # A :party lock (an all-ally skill) highlights every row at once --
-        # EasyRPG's own Window_ActorTarget::UpdateCursorRect draws exactly
-        # this for its `index < -10` ("Entire Party") case -- rather than
-        # the single-row rect a :self lock or an ordinary single-ally pick
-        # uses.
+        # see Scene::ItemMenu#refresh_target_cursor's identical comment.
         if @target_lock == :party
           @target_window.cursor_rect =
             Rect.new(0, 0, @target_window.contents.width, @target_window.contents.height)
         else
           @target_window.cursor_rect =
-            Rect.new(0, @target_index * LINE_H * 2, @target_window.contents.width,
-                     LINE_H * 2)
+            Rect.new(TARGET_LABEL_X - 2, @target_index * TARGET_ROW_H,
+                     @target_window.contents.width - (TARGET_LABEL_X - 2), TARGET_ROW_H)
         end
       end
 
