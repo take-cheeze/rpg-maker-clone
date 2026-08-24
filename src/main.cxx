@@ -1,5 +1,6 @@
 
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -31,6 +32,12 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#endif
+
+#ifdef __ANDROID__
+#include <android/log.h>
+#include <pthread.h>
+#include <unistd.h>
 #endif
 
 DEFINE_int64(timeout_ms, -1, "timeout to exit");
@@ -739,6 +746,15 @@ extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
 // Only meaningful for the SDL window backend.
 extern "C" void rgss_sdl_input_init(void);
 
+#ifdef __ANDROID__
+// Draws the visible virtual gamepad (src/android_vpad_ui.cxx) on LVGL's top
+// layer and centres the game picture in the phone-shaped window. Android-only:
+// desktop windows have keyboards and the browser page draws its own keypad in
+// HTML (src/shell.html). Takes the game's own resolution, which the window is
+// not (Android's is the phone screen), so the overlay knows the letterbox.
+extern "C" void rgss_vpad_overlay_init(int game_w, int game_h);
+#endif
+
 // Opens the audio device and installs the SDL_mixer backend for RGSS::Audio
 // (src/sdl_audio.cxx). A no-op if audio cannot be initialised. rgss_audio_
 // shutdown tears it down on the native exit path.
@@ -1012,7 +1028,49 @@ static void disable_non_test_play_flags() {
   FLAGS_term_stats = false;
 }
 
+#ifdef __ANDROID__
+static void* android_stderr_bridge_thread(void* arg) {
+  const int read_fd = *static_cast<int*>(arg);
+  delete static_cast<int*>(arg);
+  FILE* in = fdopen(read_fd, "r");
+  if (!in)
+    return nullptr;
+  char* line = nullptr;
+  size_t cap = 0;
+  while (getline(&line, &cap, in) != -1) {
+    const size_t len = strlen(line);
+    if (len && line[len - 1] == '\n')
+      line[len - 1] = '\0';
+    __android_log_write(ANDROID_LOG_INFO, "RPG2K", line);
+  }
+  free(line);
+  fclose(in);
+  return nullptr;
+}
+
+static void android_stderr_bridge_install() {
+  int fds[2];
+  if (pipe(fds) != 0)
+    return;
+  auto* read_fd = new int(fds[0]);
+  pthread_t thread;
+  if (pthread_create(&thread, nullptr, android_stderr_bridge_thread, read_fd) !=
+      0) {
+    delete read_fd;
+    close(fds[0]);
+    close(fds[1]);
+    return;
+  }
+  pthread_detach(thread);
+  dup2(fds[1], STDERR_FILENO);
+  close(fds[1]);
+}
+#endif
+
 int main(int argc, char** argv) {
+#ifdef __ANDROID__
+  android_stderr_bridge_install();
+#endif
   // Seed the script-host flag from the environment *before* parsing, so an
   // explicit --rgss_script_host on the command line still wins. The variable is
   // the documented opt-out and this mruby build has no ENV for the Ruby side to
@@ -1219,8 +1277,15 @@ int main(int argc, char** argv) {
     // it with nothing and the software renderer fails to come up at all
     // ("Window framebuffer support not available"), taking the CHECK below and
     // the whole process with it. Keep the #449 workaround off macOS.
+    //
+    // Android has the identical gap (confirmed on-device, arm64-v8a):
+    // src/video/android/ never implements CreateWindowFramebuffer, so
+    // SDL_CreateWindowTexture is the *only* window-framebuffer path there too
+    // -- there is no XImage/wl_shm-style native one to fall back to. Keep the
+    // #449 workaround off Android for the same reason it is already off
+    // macOS.
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-#ifndef __APPLE__
+#if !defined(__APPLE__) && !defined(__ANDROID__)
     SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
 #endif
     display = std::shared_ptr<lv_display_t>(
@@ -1250,6 +1315,11 @@ int main(int argc, char** argv) {
     // SDL is initialised by lv_sdl_window_create above; install the keyboard
     // watch now so key events reach RGSS::Input.
     rgss_sdl_input_init();
+#ifdef __ANDROID__
+    // The display exists now, so the pad can size itself off the resolution
+    // and the game root can be centred in the window.
+    rgss_vpad_overlay_init(FLAGS_width, FLAGS_height);
+#endif
   }
 
   // Bring up audio for every backend (SDL_mixer initialises the SDL audio

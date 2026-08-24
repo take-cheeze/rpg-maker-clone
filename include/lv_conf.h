@@ -688,16 +688,30 @@
 #define LV_USE_SNAPSHOT 1
 
 /*1: Enable system monitor component*/
+/* Android needs it for the on-screen FPS counter (LV_USE_PERF_MONITOR below);
+ * every other backend keeps the monitors off. */
+#ifdef __ANDROID__
+#define LV_USE_SYSMON   1
+#else
 #define LV_USE_SYSMON   0
+#endif
 #if LV_USE_SYSMON
     /*Get the idle percentage. E.g. uint32_t my_get_idle(void);*/
     #define LV_SYSMON_GET_IDLE lv_timer_get_idle
 
     /*1: Show CPU usage and FPS count
      * Requires `LV_USE_SYSMON = 1`*/
-    #define LV_USE_PERF_MONITOR 0
-    #if LV_USE_PERF_MONITOR
-        #define LV_USE_PERF_MONITOR_POS LV_ALIGN_BOTTOM_RIGHT
+    /* On by default for Android only: the phone has no other way to see the
+     * frame rate, and the label sits in the top-right corner clear of the
+     * virtual gamepad's B/C buttons (src/android_vpad_ui.cxx). Desktop has
+     * profilers and a title bar, and keeps it off. */
+#ifdef __ANDROID__
+#define LV_USE_PERF_MONITOR 1
+#else
+#define LV_USE_PERF_MONITOR 0
+#endif
+#if LV_USE_PERF_MONITOR
+        #define LV_USE_PERF_MONITOR_POS LV_ALIGN_TOP_RIGHT
 
         /*0: Displays performance data on the screen, 1: Prints performance data using log.*/
         #define LV_USE_PERF_MONITOR_LOG_MODE 0
@@ -753,8 +767,13 @@
 
 /*1: Enable an observer pattern implementation*/
 /* The RGSS runtime never registers observers; off to match the PSP/Wio
- * configs. */
+ * configs -- except Android, whose FPS counter (LV_USE_SYSMON /
+ * LV_USE_PERF_MONITOR above) is built on the observer API. */
+#ifdef __ANDROID__
+#define LV_USE_OBSERVER 1
+#else
 #define LV_USE_OBSERVER 0
+#endif
 
 /*1: Enable Pinyin input method*/
 /*Requires: lv_keyboard*/

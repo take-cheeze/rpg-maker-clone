@@ -1480,6 +1480,98 @@ jobs:
           path: headless.log
           if-no-files-found: warn
 
+  android:
+    # Build the Android debug APK (app/android). Like the Wio/PSP jobs, this is
+    # the external check for the port: cross-compiles mruby, LVGL,
+    # SDL2/SDL2_mixer, gflags, ng-log, uni-algo and quickjs-ng for arm64-v8a
+    # and packages them into a real APK via Gradle. It does not run the APK on
+    # a device or emulator (no equivalent of the psp-smoke job yet) -- see
+    # app/android/README.md and docs/adr/0058-android-port.md.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # 3rd/SDL and 3rd/SDL_mixer (vendored -- Android has no system SDL2
+          # package) plus every submodule the desktop build also needs.
+          submodules: recursive
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
+
+      - name: Download Unicode mapping tables
+        # See the identical step in the `psp` job above -- same two rake-time
+        # code generators, same $cp932_table/$jis0208_table gap outside the nix
+        # devshell.
+        run: |
+          mkdir -p .native-build-tables
+          fetch_table() {
+            local url="$1" dest="$2" want="$3"
+            curl -fsSL -o "$dest" "$url"
+            local got
+            got="$(python3 -c 'import hashlib,base64,sys; print(base64.b64encode(hashlib.sha256(open(sys.argv[1],"rb").read()).digest()).decode())' "$dest")"
+            if [ "$got" != "$want" ]; then
+              echo "hash mismatch for $dest" >&2
+              echo "  flake.nix pins $want" >&2
+              echo "  downloaded     $got" >&2
+              exit 1
+            fi
+          }
+          fetch_table \
+            'https://www.unicode.org/Public/MAPPINGS/VENDORS/MICSFT/WindowsBestFit/bestfit932.txt' \
+            .native-build-tables/bestfit932.txt \
+            'JhTP6jXDyGxB0zGYeTqEykTt7jzw7gATphpD+6Ts4zE='
+          fetch_table \
+            'https://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/JIS/JIS0208.TXT' \
+            .native-build-tables/JIS0208.TXT \
+            'HFcYcEV/Gcl3IGMfqD7kkVSalroUNtoSlnhqZ9hjLoc='
+
+      # gperf/bison regenerate mruby-compiler's lexer/grammar when a patch
+      # touches either source (see the `psp` job's identical comment); ubuntu
+      # runners ship bison but not gperf.
+      - run: sudo apt-get update -q && sudo apt-get install -y -q gperf
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install NDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --install "ndk;27.2.12479018" "cmake;3.22.1" \
+            --sdk_root="$ANDROID_HOME"
+
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('app/android/**/*.gradle*') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Build debug APK
+        working-directory: app/android
+        # ANDROID_NDK_HOME is set here, not via this step's own `env:` block:
+        # ${{ env.* }} only resolves workflow/job-level `env:` entries, not the
+        # runner image's own preinstalled ANDROID_HOME -- exporting it from
+        # $ANDROID_HOME inside the shell is what actually sees the runner's
+        # real SDK path.
+        env:
+          cp932_table: ${{ github.workspace }}/.native-build-tables/bestfit932.txt
+          jis0208_table: ${{ github.workspace }}/.native-build-tables/JIS0208.TXT
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+          ./gradlew :app:assembleDebug --console=plain
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-debug-apk
+          path: app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
   flake:
     if: ${{ github.event_name != 'issue_comment' }}
     # The type of runner that the job will run on
