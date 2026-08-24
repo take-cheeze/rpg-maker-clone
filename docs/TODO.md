@@ -6604,6 +6604,104 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #135, 2026-08-24): chased cycle #134's own suggested
+  next step for growing the debug save's party past its one live actor --
+  writing chunk 109's `party` field (`SAVE_INVENTORY` field 1) as `[15,
+  ...]` now that actor 15 is known to be the save's real live actor.
+  Result: it does not grow the party. It reliably **hangs genuine
+  RPG_RT.exe on a solid black screen** instead, the same way an
+  already-documented, pre-numbering-cycle finding earlier in this file
+  ("Attempted and abandoned" / a different actor id, on a different,
+  further-progressed real playthrough save) already showed for swapping in
+  actor 4 -- this cycle reproduces that same crash on the disposable F9
+  debug-save lineage too, and confirms it is not specific to that one
+  other actor id. Structural investigation only; nothing to fix in this
+  codebase (the crash is genuine RPG_RT.exe's own reaction to the edited
+  save, not a divergence from it), so no behavioural change and no
+  changelog fragment.** Rebuilt the debug save fresh via
+  `scripts/gen-lcf-save-wine.bash` rather than trusting whatever
+  `Save01.lsd` this container already had on disk (it turned out to be a
+  stale `[1, 2]` from an earlier, seemingly never-restored probe) --
+  confirmed the true default a fresh EasyRPG-F9 capture writes is
+  `party=[1]` (actor 1, the idle placeholder), **not** `[15]` -- the raw
+  field's own default content is a separate fact from which actor
+  genuinely displays, which cycle #134 already established is resolved by
+  name-matching against the title chunk regardless of this field.
+  Repositioned with `gen-rpg2k-save.rb --map 12 --at 40,15
+  --clear-scene` (the same probe rig cycles #130-134 used), then five
+  isolated wine sessions, each Continue -> file 1 -> Escape into the field
+  menu, screenshotted: **control** `[1]` (untouched) -- one row, デモ用
+  LV50 HP600/600 MP600/600, no crash (confirms the edit-and-reload pipeline
+  itself is not what's at fault below); **`[1, 2]`** -- no crash, still
+  exactly the same one row, byte-for-byte the same as control (reproduces
+  cycle #132's own finding, this time from a freshly-regenerated save
+  rather than the stale leftover one, ruling out "that leftover file was
+  already broken" as an explanation); **`[15]`** (party[0] replaced) --
+  genuine RPG_RT.exe never reaches the map at all, black screen immediately
+  after Continue; **`[15, 2]`** (cycle #134's own suggested value, verbatim)
+  -- identical black-screen hang; **`[1, 15]`** (party[0] left untouched,
+  15 appended second instead of first) -- no crash, still exactly one row,
+  identical to control. Conclusion: the crash is keyed specifically on
+  **writing anything other than the save's own already-recorded `party[0]`
+  value** -- it does not matter which id replaces it (2, 4, and 15 all
+  reproduce it now, across two unrelated saves and two unrelated actors'
+  worth of prior investigation) -- while appending additional ids *after*
+  an unchanged `party[0]` never crashes and never grows the party either.
+  So chunk 109's `party` field, whatever else it may be for, is not
+  something a same-runtime save edit can safely use to grow a party at
+  all: changing its first entry crashes, and changing anything past the
+  first entry is silently ignored. cycle #132's own "party would not grow
+  no matter how many ids were written" finding is now confirmed robust,
+  not an artifact of never trying actor 15 specifically.
+  **A second technique was attempted and time-boxed away, not completed:**
+  sourcing a genuine multi-member state from a *live* Change Party Member
+  event command (code 10330: `[0, 0, <actor id>]` adds by direct id,
+  already fully implemented by this codebase's own `Interpreter
+  #do_change_party`, 5205 uses of it in Nepheshel's own game data) instead
+  of hand-editing chunk 109's raw bytes at all -- letting the genuine
+  runtime itself decide what a real "add" does to the save, rather than
+  guessing byte layouts. A synthetic autostart event (same tail-splice-onto-
+  Map0012 technique cycles #130-134 used for Enemy Encounters) carrying
+  just `[Change Party Member Add actor 2, BlankLine]` was built and, paired
+  with a `Change Gold +777` companion command to get an unambiguous
+  present/absent signal independent of how party membership itself renders,
+  surfaced a real environmental hazard first: **New Game's own boot timing
+  under wine is not deterministic enough to reliably land on a chosen map
+  before EasyRPG's F9 debug-menu Save fires** -- one `gen-lcf-save-wine.bash`
+  run landed the captured save on map 371 (Nepheshel's own unskippable
+  bedroom map, flagged elsewhere in this file as best avoided) instead of
+  map 12, apparently timing-dependent, so an autostart event placed only on
+  map 12 cannot be trusted to run during that specific New-Game recipe.
+  Switching to the already-proven-deterministic route instead -- place a
+  genuine save on map 12 via `gen-rpg2k-save.rb` first, then drive
+  EasyRPG's own title screen to **Continue** (not New Game) into it, so the
+  autostart fires the moment the map loads -- ran into a *different*
+  reproducibility gap: navigating the title cursor from New Game down to
+  Continue was inconsistent under this session's xdotool/wine timing (a
+  single tap of Down sometimes moved the highlighted entry by two rows
+  instead of one), and debugging that interactively needed a
+  background wine session kept alive *across* separate tool invocations,
+  which repeatedly lost its X connection between calls in this harness
+  ("explicit kill or server shutdown") before the cursor behaviour could be
+  pinned down. **Left for a future cycle**: the live-Change-Party-Member
+  technique itself is sound and worth finishing -- the fix is almost
+  certainly just driving the title screen input more defensively (verify
+  the highlighted entry by screenshot after every single keypress rather
+  than assuming a fixed press count, the way this cycle's own title-menu
+  probe should have from the start) and confirming a synthetic autostart on
+  a `gen-rpg2k-save.rb`-repositioned map 12 actually fires under a genuine
+  wine `Continue`, before hand-editing the resulting `.lsd` is even
+  necessary. If it works, the natural next check is whether the *resulting*
+  `party` field differs at all from a hand-edited one, and whether real
+  RPG_RT.exe then shows more than one row in the field menu from it.
+  `Map0012.lmu`/`Save01.lsd` were edited only as scratch copies for every
+  probe above and restored to their original bytes (byte-identical by
+  `md5sum`) once each wine session was torn down; a final fresh
+  `Save01.lsd` was regenerated from the restored `Map0012.lmu` via
+  `gen-lcf-save-wine.bash` and left in place (`party=[1]`, map 12 (40,15))
+  as this container's canonical debug save for whichever cycle picks this
+  up next, since the one found on disk at the start of this cycle had
+  evidently not been restored by whichever session left it.
   ✅ **Follow-up (cycle #134, 2026-08-24): `#drive_battle_skill`, the one
   `#drive_battle_item` sibling cycle #133 left unrun, is now independently
   re-verified against genuine RPG_RT.exe too -- confirmed correct on every
