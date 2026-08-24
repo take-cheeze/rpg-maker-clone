@@ -1703,17 +1703,65 @@ class RPG2k
       # full row, an odd 3-item partial-second-row, an exact 8-item/4-row
       # grid with no overflow, and a 9-item overflow that scrolls) -- every
       # single case matched this method's pre-existing behaviour exactly, so
-      # no change was needed here. `#drive_battle_skill` was not itself
-      # re-run this cycle, but shares this exact method and
-      # `#battle_list_window` with `#drive_battle_item`, not merely the same
-      # claimed shape -- see that method's own comment for what would be
-      # needed to close it out independently.
+      # no change was needed here. `#drive_battle_skill` is now independently
+      # confirmed too (cycle #134, its own comment has the full writeup) --
+      # the same five boundary cases, all matching this method exactly, on a
+      # hand-edited skill list rather than a hand-edited item list.
       def move_battle_list_index(index, delta, size)
         target = index + delta
         return nil if target.negative? || target >= size
         target
       end
 
+      # Independently re-verified against a genuine RPG_RT.exe under wine
+      # (cycle #134) -- the one piece cycle #133 left unrun of its own
+      # closing note ("`#drive_battle_skill` was not independently re-run
+      # this cycle ... this is not a fresh guess the way the pre-cycle-133
+      # state was"). Gave the debug save's own party leader (chunk 108's
+      # actor id **15** -- not id 1, whose level/HP the SAVE_TITLE hero_
+      # level/hero_hp fields do *not* match; the file-select screen's
+      # "LV50 HP600" only lines up with actor 15's own chunk-108 row, which
+      # is what pins down which roster entry the debug save's solo "デモ用"
+      # character actually is) a hand-edited skills list (chunk 108 field 52,
+      # `SAVE_PARTY_ACTOR#skills`) via five separate wine sessions, one per
+      # list-size boundary this grid's own 2-column/4-row shape distinguishes
+      # -- the same five cases `#drive_battle_item`'s own comment covers, all
+      # drawn from database skill ids 1-9 (all `type: 0`, an ordinary spell,
+      # so `Game::Party#battle_skill?` includes every one regardless of
+      # scope): 1 skill (single cell), 2 skills (one full row), 3 skills (odd,
+      # a partial second row), 8 skills (an exact 4-row grid, no overflow) and
+      # 9 skills (overflow past the grid). Same probe rig as cycles #130/#131/
+      # #133 (a synthetic autostart Enemy Encounter, troop 103, tail-spliced
+      # onto Map0012 from Map0478 event 2 page 2's own genuine Victory/Escape/
+      # EndBattle trailing structure) -- Continue -> file 1 -> autostart fires
+      # straight into the battle options window (no "X appeared!" message this
+      # troop shows) -> Decision confirms Fight -> Down once (Attack -> Skill)
+      # -> Decision opens the skill list, then held Down/Right/Left/Up.
+      # Results, all matching `#move_battle_list_index`/`#battle_list_window`
+      # exactly, the same as `#drive_battle_item`'s own findings: 1 skill
+      # blocked in all four directions across a 1.2s held Down/Right/Up/Left;
+      # 2 skills let Right/Left cross the row with Down/Up blocked (no second
+      # row); 3 skills let Down reach the partial second row's lone cell, with
+      # Right off its end blocked (no phantom cell) and Up returning to row 0;
+      # 8 skills auto-repeated through a continuous 1.5s Down hold (row 0 -> 1
+      # -> 2 -> 3 within that one hold, confirming genuine key-repeat the same
+      # way cycle #130/#133 did) then stopped dead at the grid's own last
+      # cell on a further hold, neither wrapping nor scrolling; 9 skills
+      # scrolled (a genuine pixel scroll, confirmed on-screen -- the previous
+      # top-left skill rolled off the top of the window) via a 2.5s Down hold
+      # to reveal the 9th skill alone in a fifth, partial row, then blocked
+      # there with no wrap and no phantom cell to its right either. Since
+      # nothing needed fixing, this comment and the matching
+      # `scripts/rpg2k_scene_check.rb` checks were updated to record the
+      # re-verification, mirroring cycle #133's own precedent for
+      # `#drive_battle_item`. `#drive_battle_ally_target` remains the one
+      # battle cursor still unverified against genuine RPG_RT -- still
+      # blocked on growing the debug save past its one live actor (cycle
+      # #132's own open item (c); see this cycle's docs/TODO.md entry for
+      # what was and was not learned about that this time around).
+      # `Map0012.lmu`/`Save01.lsd` were edited only as scratch copies for
+      # these probes and restored to their original bytes (byte-identical by
+      # `md5sum`) once each wine session was torn down.
       def drive_battle_skill
         skills = @ui[:skills]
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !skills.empty?

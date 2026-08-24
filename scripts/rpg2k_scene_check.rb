@@ -12593,6 +12593,89 @@ check 'Enemy Encounter scene: the item grid scrolls to reach a 9th item ' \
                       'phantom cell -- unlike the equip candidate list\'s trailing Remove'
 end
 
+# An exact 4-row/2-column skill grid (8 skills, no overflow), mirroring
+# BattleEightItemParty above -- `#drive_battle_skill` shares
+# `#move_battle_list_index`/`#battle_list_window` with `#drive_battle_item`
+# verbatim, but was never independently exercised at this boundary until
+# cycle #134. Confirmed against a genuine RPG_RT.exe under wine (cycle #134,
+# see `#drive_battle_skill`'s own comment): the cursor stops dead at row 3/
+# col 1, the grid's own last cell, with no wrap back to row 0 and no scroll.
+class BattleEightSkillParty < BattleMagicParty
+  def initialize
+    super()
+    @hero.instance_variable_set(:@skills, (1..8).to_a)
+  end
+  def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, 3] }; end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0); end
+end
+
+check 'Enemy Encounter scene: the skill grid does not wrap at an exact ' \
+      'full 8-skill/4-row grid' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleEightSkillParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  eq :skill, ui[:phase]
+
+  press_key(scene, RGSS::Input::DOWN)
+  press_key(scene, RGSS::Input::DOWN)
+  press_key(scene, RGSS::Input::DOWN)
+  eq 6, ui[:skill_i], 'three Downs reach row 3, col 0 (index 6) -- the grid\'s last row'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 7, ui[:skill_i], 'Right reaches the grid\'s own last cell (row 3, col 1)'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 7, ui[:skill_i], 'Down at the last cell does not wrap back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 7, ui[:skill_i], 'Right at the last cell does not wrap either'
+end
+
+# A 9th skill past the exact 8-skill/4-row grid, mirroring
+# BattleNineItemParty above. Confirmed against a genuine RPG_RT.exe under
+# wine (cycle #134): a held Down genuinely scrolls the window to reveal the
+# 9th skill, alone in a fifth, partial row, then blocks there -- no wrap, and
+# (like BattleThreeSkillParty's odd row) no phantom trailing cell to its
+# right either.
+class BattleNineSkillParty < BattleMagicParty
+  def initialize
+    super()
+    @hero.instance_variable_set(:@skills, (1..9).to_a)
+  end
+  def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, 3] }; end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0); end
+end
+
+check 'Enemy Encounter scene: the skill grid scrolls to reach a 9th skill ' \
+      'past a full 8-cell grid, then blocks with no wrap or phantom cell' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleNineSkillParty.new)
+  ui = battle_to_command(scene)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  eq :skill, ui[:phase]
+
+  4.times { press_key(scene, RGSS::Input::DOWN) }
+  eq 8, ui[:skill_i], 'four Downs reach the 9th skill (index 8), alone in row 4'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 8, ui[:skill_i], 'Down past the 9th skill does not wrap back to row 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 8, ui[:skill_i], 'Right off the partial row\'s lone cell does not reach a ' \
+                       'phantom cell -- unlike the equip candidate list\'s trailing Remove'
+end
+
 # `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
 # key across frames without it also reading as a fresh trigger, exercising
 # the `#repeat?` half of `#drive_battle_item`/`#drive_battle_skill`'s own
