@@ -6604,6 +6604,81 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #137, 2026-08-25): closed cycle #132's last open
+  lead on the field Item/Skill target-confirm screen -- RPG_RT.exe does draw
+  a real 48x48 face per row when an actor has one (cycle #136 already
+  confirmed this for a non-first row), and row 0's own offset, left
+  unconfirmed by cycle #136, turned out to differ from every later row: row
+  0 draws its face flush at the top of its own row, not pushed 18px in like
+  row 1. Fixed.** Cycle #136's own multi-actor-party recipe reaches row 1
+  with a faceted actor (デモ用 id 15, no native faceset, always party
+  member 0) but never row 0, since a save's live roster always starts with
+  its one saved actor in slot 0. Rather than reorder the party (removing
+  then re-adding the original leader to push a faceted actor into slot 0
+  crashed genuine RPG_RT.exe outright -- see below), gave actor 15 itself a
+  live faceset with a Change Actor Face (event code 10640, `Interpreter#do_
+  change_actor_face`) pointing at the same `FaceSet/face.png` cell 1 actor 2
+  (ファル) already carries natively (`db.player[2].faceset_name/index`),
+  via a synthetic autostart event on a scratch copy of Map0012 (genuine
+  save repositioned with `gen-rpg2k-save.rb --map 12 --at 40,15
+  --clear-scene`, Continue -> file 1, screenshot-verified per keypress).
+  Tested two shapes under wine (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1,
+  matchbox-window-manager, LANG=ja_JP.UTF-8): actor 15 alone (a solo party,
+  isolating row 0), and actor 15 plus actor 2 added via cycle #136's own
+  proven-safe add-only Change Party Member (party `[15, 2]`, both rows
+  faceted, visible in the same capture at once). Pixel-sampled both 640x480
+  captures (halved for native 320x240): row 0's face top edge landed at
+  native y ~0 (screen y 2-4), while row 1's landed at native y 66 -- exactly
+  reproducing cycle #136's own independently-measured figure *inside this
+  same frame*, ruling out a capture-to-capture calibration error, and
+  confirmed independent of which row the cursor actually highlighted (moving
+  the cursor from row 0 to row 1 left both faces exactly where they were,
+  ruling out a "draw only the selected row's face" alternative reading).
+  Fixed `#build_target_window` in both `item_menu.rb` and `skill_menu.rb`
+  identically: a new `#draw_target_face` (plus a local `#load_face_bitmap`,
+  neither class having a `@map` to borrow `Scene::Map`'s own copy from,
+  mirroring `Scene::SaveLoad#load_face_bitmap` instead) blits the 48x48
+  `TARGET_FACE_SIZE` cell at `TARGET_FACE_X` (8), `y` for row 0 and `y +
+  TARGET_FACE_Y_EXTRA` (18) for every later row, silently drawing nothing
+  for a blank/missing faceset exactly like every other face-draw call site
+  in this codebase. Two new `scripts/rpg2k_scene_check.rb` checks -- a
+  two-actor, both-faceted party asserting row 0's face at `(8, 0)` and row
+  1's at `(8, TARGET_ROW_H + TARGET_FACE_Y_EXTRA)`, and a faceless-actor
+  party asserting no face blit at all -- the first confirmed to fail against
+  the pre-fix code (a stashed diff of just `item_menu.rb`/`skill_menu.rb`)
+  before the fix (`RuntimeError: expected 2, got 0`, since pre-fix
+  `#build_target_window` never blits a face at all); the second trivially
+  passes either way, since "no face blit" is also what the pre-fix code
+  does, so it only pins the negative case going forward. Full suite
+  reconfirmed passing (915 checks, up from 913).
+  **Left open for a future cycle:** rows 2/3 (the party-cap boundary) are
+  not confirmed to continue row 1's "+18" pattern -- reaching a 3- or
+  4-actor faceted party risked the crash below, so this is this fix's own
+  straight-line extrapolation from row 1 alone, the same shape as cycle
+  #132's original multi-row-stacking caveat before cycle #136 confirmed
+  *that* one. Separately, a genuine and reproducible RPG_RT.exe crash was
+  found and is **not yet understood**: a synthetic autostart page whose
+  command list is short (tried: a bare `Change Party Member` add, and even
+  two bare BlankLines with no actor-related command at all) crashed the
+  genuine binary outright -- not immediately, but on the *next* screen
+  transition (confirmed alive a full 2s after the map settled, dead within
+  0.3s of the following Escape keypress, reproduced across half a dozen
+  separate wine sessions) -- while a *single*-command page (one bare
+  BlankLine) and the long genuine Enemy-Encounter-through-EndBattle tail
+  cycles #130-136 always splice their own probes onto both survived clean.
+  Command *content* is therefore not the trigger; something about a *short*
+  synthetic command list specifically is. This fix's own probes worked
+  around it by keeping every command list at least as long as cycles
+  #130-136's own proven-safe shape (their genuine battle tail, escaped out
+  of via the battle options window's Escape entry rather than fought), but
+  the underlying mechanism is unidentified and worth chasing for its own
+  sake: it means a "short synthetic autostart page" cannot be assumed safe
+  by default in this test-bed, contrary to what cycles #130-136's own
+  successful long-tail recipes might suggest. `Map0012.lmu`/`Map0478.lmu`
+  (read-only, only its already-parsed `event_commands` were reused, never
+  written back)/`Save01.lsd` were edited only as scratch copies for every
+  probe above and restored to their original bytes (byte-identical by
+  `md5sum`) once each wine session was torn down.
   ✅ **Follow-up (cycle #136, 2026-08-24): finished cycle #135's own
   time-boxed-away live Change Party Member technique -- it works cleanly
   against genuine RPG_RT.exe, with no crash, and immediately unblocked
