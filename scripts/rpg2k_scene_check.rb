@@ -15616,8 +15616,13 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
   shop = scene.instance_variable_get(:@shop)
   eq :command, shop[:screen]
+  # Follow-up (cycle #144): the shopkeeper's own line is its own separate
+  # bottom-message-slot window (#draw_shop_prompt), not merged into the list
+  # window's own first row any more -- confirmed against genuine RPG_RT.exe
+  # under wine (docs/TODO.md).
+  ok window_texts(shop[:prompt]).any? { |t| t.include?('いらっしゃいませ！') },
+     'the first-visit greeting shows'
   texts = window_texts(shop[:window])
-  ok texts.any? { |t| t.include?('いらっしゃいませ！') }, 'the first-visit greeting shows'
   ok texts.any? { |t| t.include?('買う') } && texts.any? { |t| t.include?('売る') } &&
      texts.any? { |t| t.include?('やめる') }, 'the command row labels use the database terms'
 
@@ -15626,7 +15631,7 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
   eq :buy, shop[:screen]
-  ok window_texts(shop[:window]).any? { |t| t.include?('何をお求めですか？') },
+  ok window_texts(shop[:prompt]).any? { |t| t.include?('何をお求めですか？') },
      'the buy list shows its own prompt above the goods'
 
   RGSS::Input.triggered = [RGSS::Input::C] # open the quantity counter for the first good
@@ -15634,7 +15639,7 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
   eq :quantity, shop[:screen]
-  ok window_texts(shop[:window]).any? { |t| t.include?('いくつ買いますか？') },
+  ok window_texts(shop[:prompt]).any? { |t| t.include?('いくつ買いますか？') },
      'the quantity screen shows its own prompt'
 
   RGSS::Input.triggered = [RGSS::Input::B] # back to the buy list
@@ -15645,7 +15650,7 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
   eq :command, shop[:screen]
-  ok window_texts(shop[:window]).any? { |t| t.include?('他に何かご入用ですか？') },
+  ok window_texts(shop[:prompt]).any? { |t| t.include?('他に何かご入用ですか？') },
      'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
 end
 
@@ -15717,7 +15722,7 @@ check 'Open Shop scene: buying shows the shop_purchased confirmation, then retur
 
   shop = scene.instance_variable_get(:@shop)
   eq :purchased, shop[:screen], 'the purchase confirms before the list reappears'
-  ok window_texts(shop[:window]).any? { |t| t.include?('毎度あり！') },
+  ok window_texts(shop[:prompt]).any? { |t| t.include?('毎度あり！') },
      'the confirmation line uses the database shop_purchased term'
 
   # Scene_Shop::vUpdate's Bought case (src/scene_shop.cpp) is a bare
@@ -15762,7 +15767,7 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
 
   shop = scene.instance_variable_get(:@shop)
   eq :sold, shop[:screen], 'the sale confirms before the list reappears'
-  ok window_texts(shop[:window]).any? { |t| t.include?('毎度！') },
+  ok window_texts(shop[:prompt]).any? { |t| t.include?('毎度！') },
      'the confirmation line uses the database shop_sold term'
 
   # Scene_Shop::vUpdate's Sold case (src/scene_shop.cpp) never reads Input::
@@ -15967,6 +15972,104 @@ check 'Open Shop scene: the gold panel hides on the command menu and the ' \
   shop = scene.instance_variable_get(:@shop)
   eq :quantity, shop[:screen]
   ok shop[:gold].visible, 'the quantity counter shows the gold panel'
+end
+
+# Follow-up (cycle #144, 2026-08-25): a full-width, one-line item-description
+# bar above everything else -- confirmed against genuine RPG_RT.exe under
+# wine (Nepheshel's own Map0016 event 4 shop). This codebase drew nothing at
+# all here before; see docs/TODO.md for the capture this and the two checks
+# below come from.
+check 'Open Shop scene: a description bar above the list shows the highlighted ' \
+      'good\'s own database description, on both the buy and the sell list' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.item[3].description = 'HPを30ポイント回復する'
+  db.item[5].description = 'HPを10ポイント回復する'
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)] # buy+sell
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  party = ShopStubParty.new(500)
+  party.gain_item(3, 1)
+  state.instance_variable_set(:@party, party)
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+  ok shop[:desc].nil?,
+     'the command menu highlights no single good -- no bar (inferred, not directly ' \
+     'reachable through this cycle\'s own real-RPG_RT test shop; see docs/TODO.md)'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen]
+  ok window_texts(shop[:desc]).any? { |t| t.include?('HPを30ポイント回復する') },
+     'the buy list shows the highlighted (first) good\'s own description'
+  desc_win = shop[:desc]
+  eq 0, desc_win.x, "the bar is flush to the screen's left edge"
+  eq 0, desc_win.y, "and to the screen's top edge"
+  eq RPG2k::Scene::Map::SCREEN_W, desc_win.width, 'and full screen width -- not ' \
+     'narrowed for the status/gold column the way the list window is'
+  eq RPG2k::Scene::Map::SHOP_DESC_H, desc_win.height
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the second good (Herb, id 5)
+  scene.update
+  RGSS::Input.triggered = []
+  ok window_texts(scene.instance_variable_get(:@shop)[:desc])
+       .any? { |t| t.include?('HPを10ポイント回復する') },
+     'the bar tracks the cursor, like the status panel does'
+
+  RGSS::Input.triggered = [RGSS::Input::B] # back to the command menu
+  scene.update
+  RGSS::Input.triggered = []
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to Sell
+  scene.update
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Sell
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :sell, shop[:screen]
+  # Confirmed live: unlike the status/gold panels (SHOP_PANELS_VISIBLE_ON,
+  # hidden on :sell), the description bar showed on a real single-good Sell
+  # list too -- a genuinely wider visibility rule (SHOP_DESC_VISIBLE_ON), not
+  # a copy-paste of the status panel's own gating.
+  ok window_texts(shop[:desc]).any? { |t| t.include?('HPを30ポイント回復する') },
+     'the sell list shows the held good\'s own description too, even though ' \
+     'it gets no status/gold column'
+end
+
+check 'Open Shop scene: the shopkeeper prompt is a fixed 320x80 panel at the ' \
+      'screen\'s bottom message slot, not merged into the list window' do
+  # Follow-up (cycle #144): confirmed against genuine RPG_RT.exe under wine --
+  # reuses the ordinary map message window's own fixed shape/position
+  # (MSG_WIN_W/MSG_WIN_H, ADR 0021), which the shop's own ordinary prompt
+  # bar landed on exactly.
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3], indent: 0)] # buy-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # straight to the buy list (buy-only)
+
+  shop = scene.instance_variable_get(:@shop)
+  win = shop[:prompt]
+  map_mod = RPG2k::Scene::Map
+  eq 0, win.x, "the prompt bar is flush to the screen's left edge"
+  eq map_mod::MSG_WIN_W, win.width, "the message window's own fixed width"
+  eq map_mod::SCREEN_H - map_mod::MSG_WIN_H, win.y, 'flush to the bottom edge'
+  eq map_mod::MSG_WIN_H, win.height, "and the message window's own fixed height"
+
+  # The list window itself now sits right below the (hidden-on-:command,
+  # shown-here) description bar instead of floating bottom-anchored above a
+  # 6px screen margin -- also confirmed live.
+  eq map_mod::SHOP_DESC_H, shop[:window].y,
+     'the list docks directly under the description bar'
 end
 
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
