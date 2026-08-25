@@ -8570,6 +8570,14 @@ module Game
       it ? it.name.to_s : ''
     end
 
+    # Database flavour/effect text of item `id` ('' when missing) -- the line
+    # the shop screen's own description bar shows for the highlighted good,
+    # the same field `Scene::ItemMenu`'s description banner already reads.
+    def description(id)
+      it = @db.item[id]
+      it ? it.description.to_s : ''
+    end
+
     # Half the database price — what a sale returns (RPG2000 rounds down).
     def sell_price(id); price(id) / 2; end
 

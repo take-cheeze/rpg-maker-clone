@@ -1643,6 +1643,128 @@ The work below is roughly ordered by the critical path to a walkable game
   offset on Buy and the quantity counter, confirming the rule follows
   `SHOP_PANELS_VISIBLE_ON` rather than being buy-only), confirmed to fail
   against the pre-fix code before the fix.
+  ✅ **Follow-up (cycle #144, 2026-08-25): closed the item-description bar
+  half of the three-part gap the entry above flagged and left open, and
+  fixed a second, previously-unflagged defect it exposed along the way --
+  the shopkeeper's own prompt line was drawn merged into the list window's
+  own first row, not as its own separate window the way real RPG_RT draws
+  it. The third piece (a blank, for non-equipment goods, party window
+  between the description bar and the status panel) remains open -- see
+  below for exactly what is and is not covered.** Reached a live Buy/Sell
+  screen with zero synthetic event editing, the same way the entry above
+  did (Nepheshel's own shop NPC, `Map0016.lmu` event 4 -- `--map 16 --at
+  14,11 --facing up --clear-scene` stands the party directly below it) --
+  save-position-only edits, restored to the original bytes (`md5sum`-
+  confirmed) and reconfirmed clean by `scripts/lcf_save_check.rb` after
+  every probe; no `.lmu`/`.ldb` file was touched at all this cycle. Drove
+  genuine RPG_RT.exe under wine (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1,
+  matchbox-window-manager, LANG=ja_JP.UTF-8): Continue -> file 1, faced and
+  interacted with the NPC, dismissed its own scripted greeting message,
+  then drove its own scripted Show-Choices menu (this particular NPC scripts
+  Buy/Sell/Cancel itself via Show Choices + two single-mode Open Shop calls,
+  rather than using this engine's native `:command` has_menu screen -- see
+  "not directly verified" below) into a 7-good Buy list, and separately into
+  a 1-good Sell list. Corner-marker pixel scans (native coordinates, the
+  distinctive white/purple `Window::BORDER`-adjacent corner colours, not the
+  body gradient which text-shadow pixels can spuriously match) of both
+  captures found **three** things this codebase drew nothing for or drew
+  wrong:
+  (1) a full-width, one-line window at the very top of the screen (native
+  y=0, height 30 = `SHOP_LINE_H + BORDER*2`, the same one-line-plus-border
+  shape every other shop panel already uses) showing the highlighted good's
+  own database description ("HPを80ポイント程度回復する" for 薬草) -- shown
+  on **both** the Buy and the Sell list (the Sell list's single good, no
+  status/gold column at all per `SHOP_PANELS_VISIBLE_ON`, still got this bar
+  with its own description), not merely absent as the entry above phrased it
+  ("a materially larger layout gap"), but a real, separate, always-full-width
+  window this file drew zero pixels of before now;
+  (2) the shopkeeper's own prompt ("「何をお買い上げになりますか？」" on
+  Buy, its Sell equivalent on Sell) at a **fixed** bottom position, native
+  y=160 height=80 -- exactly the ordinary map message window's own
+  `MSG_WIN_W`/`MSG_WIN_H` fixed shape and bottom slot (ADR 0021), not this
+  file's pre-existing merged-into-the-list's-own-first-row shape (`header`/
+  `offset` in the old `#draw_shop`), which was previously untested against a
+  live capture and turns out to have been wrong the whole time;
+  (3) as a direct consequence of (1)+(2) bracketing it top and bottom, the
+  list window itself is **not** content-sized the way this file drew it (a
+  bottom-anchored box exactly tall enough for its own row count plus the
+  merged header) -- a 7-good Buy list and a 1-good Sell list both left the
+  list window's own bottom border at the *identical* native y (flush against
+  the new prompt bar), direct boundary-case evidence (two clearly different
+  item counts landing on the same edge) that the box has a fixed minimum
+  height, not a dynamic one, for at least this 1..7-good range. Also
+  reconfirmed, precisely, from the same captures: the status/gold panels'
+  own already-correct width/stacking/right-alignment (cycle 2026-08-22,
+  unchanged) now sit at native y=80/y=128 respectively -- not y=6/y=50 as
+  this file hardcoded before the description bar above them existed to push
+  them down.
+  Fixed `mruby-rpg2k/mrblib/scene/map.rb`: new `SHOP_DESC_H` (`SHOP_LINE_H +
+  BORDER*2`), `SHOP_STATUS_Y` (80) and `SHOP_GOLD_Y` (128) constants;
+  `#draw_shop_desc` (new, gated on a new, deliberately *wider* visibility set
+  than the status/gold panels' own `SHOP_PANELS_VISIBLE_ON` --
+  `SHOP_DESC_VISIBLE_ON` includes `:sell`, confirmed live above, while the
+  status/gold panels stay hidden there, unchanged) draws the top bar from a
+  new `Game::Shop#description(id)` (`mruby-rpg2k/mrblib/game.rb`, mirroring
+  `Scene::ItemMenu`'s own `it.description.to_s` pattern); `#draw_shop_prompt`
+  (new) draws the old `#shop_header` text into its own `MSG_WIN_W`x`MSG_WIN_H`
+  window at the screen's fixed bottom slot instead of merging it into
+  `#draw_shop`'s own list bitmap, which lost its `header`/`offset` handling
+  entirely; `#draw_shop` now top-anchors the list at `SHOP_DESC_H` (not
+  bottom-anchored above a bare `6`px margin) with height
+  `[content, #shop_list_min_inner_h].max` (a method, not a constant, purely
+  because it reads `MSG_WIN_H`/`MSG_WIN_W`, declared later in the same file --
+  a class body evaluates top-level constant expressions immediately, in file
+  order, unlike a method body's lazily-resolved constant lookups) so a
+  longer list than this fixed minimum still gets enough room instead of being
+  clipped; `#build_shop_gold_window`/`#draw_shop_status` move to
+  `SHOP_GOLD_Y`/`SHOP_STATUS_Y` instead of the old `6`/`6 + ...` margins;
+  `#close_shop` disposes the two new windows alongside the existing three.
+  **Deliberately not fixed, and left open:** the blank, for non-equipment
+  goods, party window real RPG_RT draws between the description bar and the
+  status panel (native y≈32..80, ~48px) -- this cycle did not attempt it (no
+  equipment-item shop probe was driven, and its content for an equipment good
+  is a wholly separate, unverified question), so that 48px band is left
+  undrawn (raw map background) rather than an empty bordered window the way
+  real RPG_RT shows it; whoever picks this up next should drive a shop
+  selling a weapon/armour item specifically, since a non-equipment probe
+  (this cycle's own 薬草/medicine and the entry above's own item-3/item-5
+  goods) cannot show what that box's *content* for an equippable good looks
+  like, only that it is blank for a consumable. Also not verified: whether
+  the description bar (and the list's new top-anchored position) is correct
+  on the native `:command` has_menu screen specifically -- Nepheshel's own
+  test NPC scripts its own Buy/Sell/Cancel choice menu via Show Choices
+  rather than exercising this engine's native has_menu path at all, so
+  `SHOP_DESC_VISIBLE_ON` excluding `:command` (hiding the bar there) is an
+  inference from the verified Buy/Sell pattern, not a directly-driven result
+  -- flagged with an explicit doc comment and a matching scene-check comment
+  rather than silently presented as verified. Also unverified either way:
+  real RPG_RT's behaviour once a shop's own goods list exceeds the list
+  window's fixed minimum capacity (does it scroll? does the window grow
+  taller, pushing into the now-fixed-position prompt bar below it?) --
+  Nepheshel's own two tested lists (7 goods, 1 good) both fit inside the
+  fixed minimum this fix computed from the gap between the description bar
+  and the prompt bar, so `#shop_list_min_inner_h`'s own `[content, min].max`
+  guard against clipping a longer list is a safety net, not a confirmed
+  behaviour, for any shop with more goods than that. Covered by two new
+  `scripts/rpg2k_scene_check.rb` checks (the description bar's text/
+  visibility/geometry across the command menu, Buy and Sell; the prompt
+  bar's fixed geometry and the list's new `SHOP_DESC_H` top offset) plus
+  three existing checks updated to read the shopkeeper's line from the new
+  `shop[:prompt]` window instead of the old merged `shop[:window]` row (the
+  greeting/regreeting/per-screen-prompt check, and the buy/sell confirmation-
+  term checks) -- all five confirmed to fail against the pre-fix code (a
+  stashed diff of `game.rb`/`map.rb` only) before the fix: `RuntimeError`s
+  ("the first-visit greeting shows", the two confirmation-term messages, "the
+  buy list shows the highlighted (first) good's own description") and a
+  `NoMethodError: undefined method 'x' for nil` on the prompt-geometry check,
+  since `shop[:prompt]` did not exist pre-fix. Full suite reconfirmed passing
+  (924 checks, up from 922); `rpg2k_render_check.rb` (41) and
+  `rpg2k_logic_check.rb` (1134) reconfirmed passing unaffected. `Save01.lsd`
+  (position/facing only, via `gen-rpg2k-save.rb --map 16 --at 14,11 --facing
+  up --clear-scene`) was the only game-data file touched by any probe this
+  cycle, restored to its original bytes (`md5sum`-confirmed) and the
+  canonical debug save reconfirmed clean by `scripts/lcf_save_check.rb` (map
+  12, (40,15), scene cleared, unchanged) afterward.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

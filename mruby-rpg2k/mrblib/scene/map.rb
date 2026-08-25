@@ -5273,7 +5273,8 @@ class RPG2k
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
                   cmd_index: 0, window: nil, gold: build_shop_gold_window,
-                  status: nil, terms: shop_terms(req[:type]), browsed: false,
+                  status: nil, desc: nil, prompt: nil,
+                  terms: shop_terms(req[:type]), browsed: false,
                   interp: it }
         draw_shop
       end
@@ -5307,15 +5308,19 @@ class RPG2k
         }
       end
 
-      # The line shown above the current screen's selectable rows: the
-      # shopkeeper's greeting on first entering the command menu, the same
-      # shopkeeper asking "anything else?" on returning to it after browsing
-      # (EasyRPG's Window_Shop switches from `shop_greeting` to
-      # `shop_regreeting` once the player has entered Buy or Sell mode -- a
-      # per-visit flag, not a persisted "have I shopped here before"), a
+      # The shopkeeper's own line: a greeting on first entering the command
+      # menu, the same shopkeeper asking "anything else?" on returning to it
+      # after browsing (EasyRPG's Window_Shop switches from `shop_greeting`
+      # to `shop_regreeting` once the player has entered Buy or Sell mode --
+      # a per-visit flag, not a persisted "have I shopped here before"), a
       # prompt on the buy / sell / quantity screens themselves, and the
       # purchased / sold confirmation once a transaction commits. nil for any
-      # other screen, which #draw_shop reads as "no header row".
+      # other screen, which #draw_shop_prompt reads as "hide the prompt bar".
+      # Follow-up (cycle #144, 2026-08-25): this used to be merged into the
+      # list window's own first row (`offset`/`header` in #draw_shop below,
+      # now removed) -- confirmed against genuine RPG_RT.exe under wine that
+      # it is its own separate, full-width window at the screen's bottom
+      # message slot instead; see #draw_shop_prompt.
       def shop_header
         t = @shop[:terms]
         case @shop[:screen]
@@ -5329,6 +5334,25 @@ class RPG2k
         end
       end
 
+      # Height of the one-line item-description bar at the very top of the
+      # screen (#draw_shop_desc) -- the same one-line-plus-border shape every
+      # other shop panel already uses (SHOP_LINE_H + BORDER*2), confirmed
+      # against genuine RPG_RT.exe under wine (cycle #144, see #draw_shop_desc).
+      SHOP_DESC_H = SHOP_LINE_H + Window::BORDER * 2
+
+      # Fixed vertical positions of the right-hand status/gold column,
+      # measured directly (border-corner-marker pixel scan, native
+      # coordinates) against a genuine RPG_RT.exe capture of Nepheshel's own
+      # Map0016 event 4 shop (cycle #144): status at y=80, gold at y=128 --
+      # not y=6 / y=50 as this file used to hardcode before the description
+      # bar above them existed. The 48px gap above the status panel (roughly
+      # y=32..80) is real RPG_RT's own third, always-blank-for-non-equipment-
+      # goods party window, deliberately left undrawn here -- see the
+      # "Follow-up (cycle #144" entry in docs/TODO.md for why, and for the
+      # next cycle that picks it up.
+      SHOP_STATUS_Y = 80
+      SHOP_GOLD_Y = 128
+
       # Docks under the status panel, sharing its own width -- confirmed
       # against genuine RPG_RT.exe under wine: a live shop's right-hand
       # column (border-color pixel scan against a real frame) shows the
@@ -5338,7 +5362,7 @@ class RPG2k
       # / SHOP_LINE_H*2+BORDER*2 shape this stacks below.
       def build_shop_gold_window
         gw = SHOP_STATUS_W
-        win = Window.new(SCREEN_W - gw - 6, 6 + SHOP_LINE_H * 2 + Window::BORDER * 2,
+        win = Window.new(SCREEN_W - gw - 6, SHOP_GOLD_Y,
                          gw, SHOP_LINE_H + Window::BORDER * 2)
         win.z = 300
         win.windowskin = @windowskin
@@ -5376,15 +5400,33 @@ class RPG2k
         end
       end
 
+      # The list's own fixed minimum content height -- confirmed against
+      # genuine RPG_RT.exe under wine (cycle #144): a 7-good Buy list and a
+      # single-good Sell list both left the list window's own bottom border
+      # at the identical native y (flush against the prompt bar below it,
+      # see #draw_shop_prompt), rather than shrinking to fit either list's
+      # actual row count the way this file used to draw it -- direct evidence
+      # the box is a fixed size, not content-sized, for at least this range
+      # (1..7 rows). `[content, SHOP_LIST_MIN_INNER_H].max` keeps a longer
+      # list (more goods than this constant reserves room for) from being
+      # clipped, since real RPG_RT's own behaviour past that point (does it
+      # scroll? does the window itself grow?) was not reachable with any
+      # shop this codebase's own test bed (Nepheshel) ships and is left
+      # unverified -- see the cycle #144 docs/TODO.md entry.
+      #
+      # A method, not a constant, purely because MSG_WIN_H/MSG_WIN_W (the
+      # ordinary map message window's own shape, #draw_shop_prompt reuses
+      # them too) are declared later in this same file -- a class body
+      # evaluates top-level constant expressions immediately at load time, in
+      # file order, unlike a method body's own lazily-resolved constant
+      # lookups.
+      def shop_list_min_inner_h
+        SCREEN_H - SHOP_DESC_H - MSG_WIN_H - Window::BORDER * 2
+      end
+
       def draw_shop
         lines = shop_lines
         @shop[:index] = Game.clamp(@shop[:index], 0, [lines.length - 1, 0].max)
-        # The shopkeeper's line (greeting / regreeting / a buy-sell-quantity
-        # prompt) sits above the selectable rows as one extra line, the same
-        # layout #open_inn_window uses for its own greeting.
-        header = shop_header
-        offset = header ? 1 : 0
-        row_count = lines.length + offset
         # Docks flush to the screen's left edge, not inset 10px -- the same
         # stale anti-pattern ADR 0021 already diagnosed and fixed for the
         # message window ("300px wide, inset 10px" -> "fixed 320x80 at
@@ -5397,26 +5439,109 @@ class RPG2k
         # offset from the screen's right edge.
         win_w = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen]) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
         inner_w = win_w - Window::BORDER * 2
-        inner_h = [row_count, 1].max * SHOP_LINE_H
+        row_h = [lines.length, 1].max * SHOP_LINE_H
+        inner_h = [row_h, shop_list_min_inner_h].max
         @shop[:window].dispose if @shop[:window]
-        win = Window.new(0, SCREEN_H - inner_h - Window::BORDER * 2 - 6,
-                         win_w, inner_h + Window::BORDER * 2)
+        # Top-anchored right below the description bar (#draw_shop_desc), not
+        # bottom-anchored above a 6px screen margin -- confirmed against
+        # genuine RPG_RT.exe under wine (cycle #144): the shopkeeper's own
+        # prompt (formerly this window's own merged first row, now
+        # #draw_shop_prompt's separate bottom bar) never appeared inside this
+        # window at all.
+        win = Window.new(0, SHOP_DESC_H, win_w, inner_h + Window::BORDER * 2)
         win.z = 300
         win.windowskin = @windowskin
         c = Bitmap.new(inner_w, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, SHOP_LINE_H, header if header
         lines.each_with_index do |(label, _), i|
-          c.draw_text 0, (i + offset) * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
+          c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
         end
         win.contents = c
         unless lines.empty?
-          win.cursor_rect =
-            Rect.new(0, (@shop[:index] + offset) * SHOP_LINE_H, inner_w, SHOP_LINE_H)
+          win.cursor_rect = Rect.new(0, @shop[:index] * SHOP_LINE_H, inner_w, SHOP_LINE_H)
         end
         @shop[:window] = win
         draw_shop_gold
         draw_shop_status(lines)
+        draw_shop_desc(lines)
+        draw_shop_prompt
+      end
+
+      # The full-width, one-line item-description bar above the list --
+      # confirmed against genuine RPG_RT.exe under wine (cycle #144, driving
+      # Nepheshel's own Map0016 event 4 shop): shows the highlighted good's
+      # own database description ("HPを80ポイント程度回復する" for 薬草), at
+      # native (0, 0), SCREEN_W wide, SHOP_DESC_H tall -- a real, separate
+      # window this codebase drew nothing for before. Broader than the
+      # status/gold panels' own SHOP_PANELS_VISIBLE_ON (also shown on Sell,
+      # confirmed live -- a single-good Sell list showed the same bar with
+      # the sold item's own description, even though Sell gets no status/gold
+      # column); hidden only on the command menu and whenever the current
+      # screen has no single item to describe (:command, or an empty list),
+      # which was not reachable through this cycle's own test shop (it scripts
+      # its own Buy/Sell/Cancel choice menu rather than using this engine's
+      # native :command screen) and so is inferred, not directly verified --
+      # see the cycle #144 docs/TODO.md entry.
+      SHOP_DESC_VISIBLE_ON = %i[buy sell quantity purchased sold].freeze
+
+      def shop_desc_item_id(lines)
+        return nil unless SHOP_DESC_VISIBLE_ON.include?(@shop[:screen])
+        case @shop[:screen]
+        when :buy, :sell
+          return nil if lines.nil? || lines.empty?
+          lines[@shop[:index]][1]
+        when :quantity, :purchased, :sold
+          @shop[:quantity] && @shop[:quantity][:id]
+        end
+      end
+
+      def draw_shop_desc(lines)
+        id = shop_desc_item_id(lines)
+        if id.nil?
+          @shop[:desc].dispose if @shop[:desc]
+          @shop[:desc] = nil
+          return
+        end
+        win = @shop[:desc]
+        unless win
+          win = Window.new(0, 0, SCREEN_W, SHOP_DESC_H)
+          win.z = 300
+          win.windowskin = @windowskin
+          @shop[:desc] = win
+        end
+        inner_w = SCREEN_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, SHOP_LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, @shop[:model].description(id)
+        win.contents = c
+      end
+
+      # The shopkeeper's own prompt/greeting line (#shop_header), now its own
+      # full-width window at the screen's fixed bottom message slot -- reusing
+      # the ordinary map message window's own MSG_WIN_W/MSG_WIN_H shape and
+      # bottom position (ADR 0021), which the shop screen's own capture
+      # (cycle #144) landed on exactly (native y=160, height 80). Replaces the
+      # old "merged into the list window's own first row" shape #draw_shop
+      # used before.
+      def draw_shop_prompt
+        text = shop_header
+        if text.nil?
+          @shop[:prompt].dispose if @shop[:prompt]
+          @shop[:prompt] = nil
+          return
+        end
+        win = @shop[:prompt]
+        unless win
+          win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
+          win.z = 300
+          win.windowskin = @windowskin
+          @shop[:prompt] = win
+        end
+        inner_w = MSG_WIN_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, SHOP_LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, text
+        win.contents = c
       end
 
       # The gold and status panels share one visible/hidden set: RPG_RT's
@@ -5481,8 +5606,9 @@ class RPG2k
           # Right-aligned, not the screen's left edge -- confirmed against
           # genuine RPG_RT.exe under wine (see #build_shop_gold_window's own
           # doc comment for the capture this and the gold panel's position
-          # both come from).
-          win = Window.new(SCREEN_W - SHOP_STATUS_W - 6, 6,
+          # both come from). Y is SHOP_STATUS_Y, not the screen's own 6px top
+          # margin -- see that constant's own doc comment (cycle #144).
+          win = Window.new(SCREEN_W - SHOP_STATUS_W - 6, SHOP_STATUS_Y,
                            SHOP_STATUS_W, SHOP_LINE_H * 2 + Window::BORDER * 2)
           win.z = 300
           win.windowskin = @windowskin
@@ -5709,6 +5835,8 @@ class RPG2k
         @shop[:window].dispose if @shop[:window]
         @shop[:gold].dispose if @shop[:gold]
         @shop[:status].dispose if @shop[:status]
+        @shop[:desc].dispose if @shop[:desc]
+        @shop[:prompt].dispose if @shop[:prompt]
         @shop = nil
       end
 
