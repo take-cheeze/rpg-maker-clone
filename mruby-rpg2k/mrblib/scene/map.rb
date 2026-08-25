@@ -8027,6 +8027,17 @@ class RPG2k
       def drive_text_message
         interp = @message[:interp]
         reveal = @message[:reveal]
+        # Cancel (B) dismisses a plain message exactly like Decision (C) --
+        # re-verified against genuine RPG_RT.exe under wine (cycle #143):
+        # a synthetic autostart Show Message immediately followed by a long,
+        # already-proven-safe Enemy-Encounter tail (Map0478 event 2 page 2's
+        # own genuine command list, spliced onto Map0012) showed the message
+        # box open, then a single Escape/Cancel press closed it and let the
+        # spliced Enemy Encounter fire right after -- the same outcome a
+        # Decision press produces, not "swallowed" and not "opens the field
+        # menu" (RPG_RT's own field-menu Escape handler never even sees the
+        # key: #try_open_menu's `event_busy?` guard already keeps it from
+        # firing while a message is up, independent of this line).
         confirm = Input.trigger?(Input::C) || Input.trigger?(Input::B)
         # Holding Shift during Test Play fast-forwards dialogue *while it is
         # still typing* -- same effect a C/B tap already has there (complete

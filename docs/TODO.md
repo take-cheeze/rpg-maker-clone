@@ -6604,6 +6604,110 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #143, 2026-08-25): picked up cycle #139's own
+  leftover lead (b) on the short-synthetic-autostart-list crash mystery --
+  "is Show Message (10110)/Show Choice specifically the missing ingredient,
+  since those are the one command category in the genuine 89-command
+  survivor untested so far." Result: still open, not conclusively settled
+  either way -- a new methodology obstacle specific to driving a genuine
+  Show Message window under this sandbox's wine setup blocked a clean
+  isolation within the time-box -- but one clean, decisive side test came
+  through unambiguously and closed a small, real, independent question:
+  Cancel (B) alone, while a message is open, is not itself hazardous, and
+  this engine's own pre-existing (uncited) B-dismisses-a-plain-message
+  behavior is now independently re-verified against genuine RPG_RT.exe.**
+  Confirmed this session's own wine/Nepheshel/harness setup (wine, Xvfb,
+  matchbox-window-manager, the game files, and the scratch `crashprobe/`
+  injector + driver scripts cycle #139 built) persisted across the container
+  from prior cycles with no re-setup needed; reproduced cycle #139's own
+  control pair first, before trusting any new data from the same harness --
+  a synthetic autostart page of a single bare BlankLine (`event_command_size`
+  4) survived the settle+Escape sequence, two bare BlankLines
+  (`event_command_size` 8) crashed it, both exactly matching cycle #139's own
+  figures. Built a new injector (`inject_msg.rb`, scratch-only) that swaps
+  the bare BlankLine commands for real Show Message (10110) commands
+  terminated by the genuine page-end marker (confirmed by inspecting
+  Map0478's own real tail directly: the true page-end terminator is
+  `code 0`, not `code 10` as this file's own text elsewhere says for a
+  different, simpler probe shape -- `code 10` (this project's own
+  "BlankLine" shorthand throughout cycles #130-142) is a real opcode that
+  does appear in the genuine tail, but only *mid*-list, one command before
+  the closing branch marker, never as the actual last command of the page;
+  this cycle's own new injector uses `code 0` for its own terminator
+  throughout, matching the genuine data exactly). A short (2-command) Show-Message-terminated
+  autostart page reliably reached and displayed its message on genuine
+  RPG_RT.exe every time (confirmed by screenshot each run, the typed text
+  legible and correct) -- but **synthetic Return keypresses meant to dismiss
+  that open message window proved far less reliable under this sandbox's
+  Xvfb/wine setup than every other keypress this project's own driver
+  scripts already lean on** (title navigation, file-select, opening the
+  field menu, battle command selection): across several runs, the exact
+  number of `xdotool keydown/keyup Return` presses (each held 0.25-0.3s,
+  spaced 1.0-2.0s apart) needed to actually close a one-line message and let
+  the interpreter reach its trailing terminator varied run to run -- from a
+  single press advancing a message cleanly in one run, to three consecutive
+  presses leaving the exact same frame on screen (confirmed pixel-identical,
+  not just visually similar) in another. With no reliable way inside the
+  time-box to *know*, rather than guess, that the interpreter had actually
+  finished the short list and gone idle before pressing Escape, any
+  Escape-after-a-Show-Message result gathered this cycle cannot be trusted
+  as cleanly isolating lead (b) the way cycle #139's own bare-BlankLine runs
+  could -- so this is reported as genuinely unresolved rather than stretched
+  into a claim either way. **Flagging for whoever next picks up lead (b):**
+  don't trust a fixed press count; poll a screenshot after each press and
+  compare a fixed sample point inside the message window's own background
+  (a distinct teal gradient, unlike the map's own stone-tile grey) against a
+  known "message closed" reference before proceeding, the same
+  fuzzy-pixel-sampling technique ADR 0021 and this file's own render-parity
+  checks already use elsewhere, rather than assuming N presses always closes
+  N messages.
+  Separately, one test *did* come through completely clean and is a real,
+  useful, independent result: spliced a single live Show Message onto the
+  front of the long, already-proven-safe 64-command Enemy-Encounter-through-
+  EndBattle tail (Map0478 event 2 page 2's own genuine command list, the
+  same splice technique cycles #130-138 established), so the rest of the
+  list stays long/safe and only the leading message is new. Booted genuine
+  RPG_RT.exe under wine, let the message open, and pressed Escape/Cancel
+  **while the message was still open** (deliberately not dismissing it
+  first). Result: no crash -- Escape acted as the message's own confirm key,
+  closing it and letting the spliced Enemy Encounter fire right afterward
+  exactly as if Decision had been pressed, confirmed by the post-Escape
+  capture showing the battle's own enemy sprite on screen. This rules out
+  "Escape while any message is open, by itself" as a distinct hazard
+  independent of the short-list mystery (a real, if secondary, question this
+  cycle didn't set out to test but that fell out of the harness naturally),
+  and it independently re-confirms — against genuine RPG_RT.exe, not
+  EasyRPG's source — a behavior this engine already implements correctly:
+  `Scene::Map#drive_text_message`'s `confirm = Input.trigger?(Input::C) ||
+  Input.trigger?(Input::B)` (`mruby-rpg2k/mrblib/scene/map.rb`) already
+  treats Cancel exactly like Decision for a plain (non-choice) message, but
+  carried no source citation and no *dedicated* regression check of its own
+  before now — only Decision/C's dismissal was directly checked (the
+  Shift-fast-forward check right above it), and B was otherwise only
+  exercised on the structurally different Show-Choices-cancel branch of
+  `#drive_message`. No behavior change (already correct) — added a citing
+  comment on the `confirm` line recording this cycle's re-verification, and
+  a new `scripts/rpg2k_scene_check.rb` check ("Cancel (B), not just Decision
+  (C), dismisses a plain message and resumes the event") that opens a short
+  message, confirms a first Cancel press only completes the typewriter
+  reveal (not dismiss, mirroring the existing Shift check's own "first
+  press completes, doesn't skip ahead" shape), and a second Cancel press
+  then closes the window and resumes the interpreter — confirmed to fail
+  against the pre-existing code by temporarily reverting `confirm` to
+  `Input.trigger?(Input::C)` alone, which the new check catches immediately
+  (`RuntimeError` on the "a first Cancel press completes the reveal instead
+  of dismissing" assertion, since B now does nothing at all) while every
+  other check keeps passing. Full suite reconfirmed passing
+  (922 checks, up from 921); `rpg2k_render_check.rb` (41) and
+  `rpg2k_logic_check.rb` (1134) reconfirmed passing unaffected. Lead (a)
+  (whether entering/leaving a real battle specifically repairs whatever a
+  short autostart run corrupts) remains completely untested, by this cycle
+  or any prior one — still the most promising untested lead for whoever
+  continues this mystery next. `Map0012.lmu`/`Save01.lsd` were edited only
+  as scratch copies for every probe above and restored to their original
+  bytes (byte-identical by `md5sum`) once each wine session was torn down;
+  the canonical debug save reconfirmed clean by `scripts/lcf_save_check.rb`
+  (map 12, (40,15), scene cleared, unchanged) after every probe.
   ✅ **Follow-up (cycle #142, 2026-08-25): closed the `:teleport_target`
   lead cycles #140 and #141 both explicitly left open ("that picker's own
   banner was not re-examined this cycle") on `Scene::ItemMenu` and
