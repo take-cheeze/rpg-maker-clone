@@ -1498,11 +1498,16 @@ jobs:
     # PSP build and capture what docs/adr/0047-psp-memory-budget.md's P1/P1b
     # actually need: real device memory numbers for "the database and map
     # tree loaded, Scene::Title built" (GAME_READY) and for steady-state
-    # Title (BRINGUP's scene=RPG2k::Scene::Title). RPG2K_NEW_GAME is
-    # hardcoded false in main.cxx (no command line to carry a real flag on),
-    # so the game never advances past Title on its own -- reaching Map/Menu/
-    # Battle needs either a compile-time toggle or real input scripting,
-    # neither of which exists yet; this job's scope is Title only.
+    # Title (BRINGUP's scene=RPG2k::Scene::Title). This job also drops a
+    # `.psp_ci_new_game` marker file next to Nepheshel's own data --
+    # app/psp/main.cxx checks for it and, only when present, sets
+    # RPG2K_NEW_GAME true instead of its normal hardcoded false, which makes
+    # Scene::Title auto-select "New Game" with no input needed (the same
+    # mechanism src/main.cxx's own --rpg2k_new_game already drives on
+    # desktop). That reaches Scene::Map for real numbers too, not just
+    # Title -- Menu/Battle still need either a compile-time RPG2K_NEW_GAME
+    # replacement (a specific map/troop id, say) or real input scripting,
+    # neither of which exists yet, so this job's scope stops at Map.
     #
     # Nepheshel is the same RPG2000 test-bed the desktop `build` job's own
     # "RPG2k real-game boot smoke test" step already downloads and boots, so
@@ -1585,8 +1590,14 @@ jobs:
         # it, so there is no race with PPSSPP's own first-run setup.
         run: |
           memstick="$HOME/.ppsspp"
-          mkdir -p "$memstick/PSP/GAME/rpg2k"
-          cp -r data/Nepheshel206beta/Nepheshel206Rbeta/. "$memstick/PSP/GAME/rpg2k/"
+          gamedir="$memstick/PSP/GAME/rpg2k"
+          mkdir -p "$gamedir"
+          cp -r data/Nepheshel206beta/Nepheshel206Rbeta/. "$gamedir/"
+          # app/psp/main.cxx's own opt-in: only this marker's presence flips
+          # RPG2K_NEW_GAME true, so Scene::Title auto-selects New Game and
+          # this run reaches Scene::Map instead of sitting on the title
+          # screen -- see this job's own top comment.
+          touch "$gamedir/.psp_ci_new_game"
 
       - name: Run headless with a real game
         run: |
@@ -1601,8 +1612,13 @@ jobs:
           if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless-game.log" &&
              grep -q 'RPG2K_PSP_GAME_START RPG2k ok' "$GITHUB_WORKSPACE/headless-game.log" &&
              grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless-game.log"; then
-            grep -E 'RPG2K_PSP_[A-Z_]+' "$GITHUB_WORKSPACE/headless-game.log" \
-              | head -20
+            # 30, not 20: the .psp_ci_new_game marker (see this job's own top
+            # comment) makes Title auto-select New Game, which adds the
+            # [RPG2k-MAP] transition line and a run of BRINGUP heartbeats
+            # tagged scene=RPG2k::Scene::Map worth seeing in the job's own
+            # log, not just the uploaded artifact.
+            grep -E 'RPG2K_PSP_[A-Z_]+|\[RPG2k-MAP\]' "$GITHUB_WORKSPACE/headless-game.log" \
+              | head -30
           else
             echo "boot, game-start or bring-up marker missing; last 150 lines:"
             tail -150 "$GITHUB_WORKSPACE/headless-game.log"

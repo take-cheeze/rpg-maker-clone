@@ -662,8 +662,24 @@ int main(void) {
     // here doesn't reliably unwind on this target -- see ADR 0047's bug-10
     // follow-up finding -- so leaving these undefined crashes instead of
     // being caught.
+    //
+    // RPG2K_NEW_GAME is the one exception: it is driven by whether a
+    // `.psp_ci_new_game` marker file sits next to the project's own data at
+    // kGameDir, not always false like the other three. Scene::Title's
+    // auto_select? (mruby-rpg2k/mrblib/scene/title.rb) reads it to
+    // auto-pick "New Game" with no input needed, the same mechanism
+    // src/main.cxx's own --rpg2k_new_game already drives on desktop for
+    // scripts/compare-nepheshel-wine.bash -- this just gives the PSP target
+    // a way to opt in without a command line. A real release's own game
+    // folder never carries this file (nothing in the editor or this
+    // codebase's own packaging ever writes it), so every real player still
+    // lands on an ordinary title screen; only CI's psp-smoke-game job
+    // creates it, to reach Scene::Map for ADR 0047's per-scene memory
+    // numbers instead of measuring the idle title screen forever.
+    const bool ci_new_game = path_exists(kGameDir, ".psp_ci_new_game");
     mrb_const_set(M, mrb_obj_value(M->object_class),
-                  mrb_intern_lit(M, "RPG2K_NEW_GAME"), mrb_false_value());
+                  mrb_intern_lit(M, "RPG2K_NEW_GAME"),
+                  mrb_bool_value(ci_new_game));
     mrb_const_set(M, mrb_obj_value(M->object_class),
                   mrb_intern_lit(M, "RPG2K_CONTINUE"), mrb_false_value());
     mrb_const_set(M, mrb_obj_value(M->object_class),
