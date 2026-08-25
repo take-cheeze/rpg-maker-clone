@@ -1146,9 +1146,54 @@ the interpreter-linking slice, in this order:
   exact match both ways. What's still a per-release step, not something this
   tool can do for you: excluding the packed archive from a given PSP
   deployment so `open_archive` never reads it (see Finding 2's catch) — the
-  unpacker never touches or deletes the archive itself. A streaming `RGSSAD`
-  reader remains the fallback if Memory Stick space, not RAM, turns out to be
-  the constraint for a release that can't afford the doubled storage.
+  unpacker never touches or deletes the archive itself.
+
+  **Follow-up (2026-08-25) — superseded by P3a below.** This paragraph
+  originally framed a streaming `RGSSAD` reader as a fallback worth building
+  only "if Memory Stick space, not RAM, turns out to be the constraint" —
+  that undersold it: a streaming reader removes Finding 2's actual RAM
+  blocker directly (the whole point of that finding), not just the storage
+  duplication the unpack workaround costs. It has since been built; see P3a.
+- **P3a — done: `RGSSAD` no longer reads the archive whole.**
+  `mruby-rpgxp/mrblib/rgssad.rb`'s `.open(path)` used to be `File.read` — the
+  entire encrypted archive as one `String` before anything was decoded. On
+  the PSP that string is an mruby allocation, meaning it comes out of P2's
+  fixed 12 MB arena: any archive at or beyond arena-size (a released XP/VX
+  game "routinely packs tens of MB", Finding 2) couldn't even be opened
+  without exhausting the arena outright, hitting the corrupting-exhaustion
+  cliff P2's follow-up documented — not a slowdown, a guaranteed failure.
+  `.open`/`#initialize` now accept anything seekable (a real `File`, kept
+  open for the archive's lifetime, or a `StringIO`-wrapped `String` for the
+  in-memory callers — `pack_v1`/`pack_v3`'s own round-trip tests, unchanged)
+  and read only the header plus each version's entry table up front; v1's
+  table is interleaved with entry data in the file, so parsing it means
+  seeking *past* each entry's data block without reading it, while v3's
+  table already sat separately from the data blocks even before this change.
+  `#read(name)` seeks to that entry's own offset and reads only its own
+  bytes, decrypting them the same way as before. Peak memory for opening an
+  archive is now O(entry count) — the `@entries` hash of small offset/size/
+  key records — not O(archive size); a released game's Game.rgssad no
+  longer has to fit in RAM (or the arena) at all to be opened, only each
+  asset has to fit for the moment it is being decoded, same as a loose file
+  always did. Verified three ways, since this rewrites a format parser real
+  games depend on: a standalone byte-for-byte round-trip check covering both
+  archive versions, the `.open(path)` streaming path against `.new(String)`
+  the old in-memory path (including out-of-insertion-order re-reads, to
+  exercise real seeks), an over-`MRB_ARY_LENGTH_MAX` entry, bad-header/
+  version rejection via both entry points, and a truncated-file case; then
+  `scripts/rpgxp_testbed_check.rb` against the real `OpenGame.exe` XP
+  test-bed's actual `Data/*.rxdata` packed both as v1 and v3 and read back
+  through the full `RGSSData` loader (System/Actors/Maps) and a packed
+  `Graphics/` asset, all passing; then `scripts/rpgvx_testbed_check.rb`'s
+  generated VX and VX Ace projects the same way, including the script host
+  actually running the packed project's bundled scripts for real frames.
+  Both CRuby harnesses needed a `require "stringio"` added (`StringIO` is a
+  preloaded mruby gem with no such require, but a CRuby stdlib needing one)
+  — the one portability gap this surfaced. This also fully closes Finding
+  2's RAM half for XP/VX (P3's unpack tool remains useful for the storage-
+  duplication case, now optional rather than the only fix), so the
+  Consequences risk register's "hard-blocking for any future XP/VX PSP
+  target" is resolved rather than merely mitigated.
 - **P4 — corrected; not an LVGL-cache problem.** There is no LVGL image
   cache to bound for RGSS bitmaps (Finding 3) — they live in the plain C
   runtime heap via `Bitmap::buffer`, a third pool `LV_MEM_SIZE` never
@@ -1200,13 +1245,15 @@ the interpreter-linking slice, in this order:
   Decision) rather than soft-blocking, but its *size* is still a placeholder
   awaiting on-device numbers — the BRINGUP heartbeat measures it, so that is a
   measurement follow-up, not an architectural one. P3 (RGSSAD whole-archive
-  loads) is hard-blocking for any future XP/VX PSP target; the
-  tool to close it is done, but running it and excluding the packed archive
-  is still a manual step per release, not something CI or the build enforces
-  — that's the remaining risk, not the unpack logic itself. P4 is a
-  lower-risk follow-up once a title actually renders; P5 is now measured
-  rather than guessed, leaving only the same "needs a real game" caveat P2's
-  arena size has.
+  loads) is **resolved, not just mitigated, as of P3a**: `RGSSAD` no longer
+  reads a packed archive whole, so a released XP/VX game no longer needs the
+  unpack-and-exclude-the-archive deployment step to fit the PSP's RAM (P3's
+  unpack tool is still useful for the separate, much lower-stakes case of
+  wanting to avoid the archive's storage footprint on the Memory Stick, but
+  is no longer the only thing standing between a packed release and a
+  guaranteed arena-exhaustion crash). P4 is a lower-risk follow-up once a
+  title actually renders; P5 is now measured rather than guessed, leaving
+  only the same "needs a real game" caveat P2's arena size has.
 - Follow-up: once P1's real numbers exist, replace this ADR's estimates with
   measured figures (a memory budget table, as ADR 0007 has for the Wio
   Terminal) — either as an amendment here or a superseding ADR.

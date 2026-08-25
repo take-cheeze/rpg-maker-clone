@@ -36,6 +36,10 @@
 require "tmpdir"
 require "fileutils"
 require "zlib"
+# rgssad.rb's #initialize wraps a String argument in StringIO (see its own
+# comment) to stream/seek over it the same way it does a real File -- a
+# preloaded mruby gem there, needing this explicit CRuby stdlib require here.
+require "stringio"
 
 # --- RGSS value-type shims (native classes in the real build) --------------
 
