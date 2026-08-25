@@ -4630,16 +4630,14 @@ check 'restore_pictures restores zoom, opacity and tone, not just name/position'
 end
 
 check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' do
-  # Confirmed directly against RPG_RT's live source: `Scene_Save::Prepare`
-  # (`src/scene_save.cpp`) writes `save.pictures = Main_Data::game_pictures->
-  # GetSaveData()` unconditionally on every save, and `Player::LoadSavegame`
-  # (`src/player.cpp`) restores it unconditionally on every load -- so a
-  # picture shown via Show Picture (11110) survives a genuine Save/Continue.
-  # `#to_lsd` never wrote chunk 103 at all (see the "restore_pictures..."
-  # check above, whose own comment used to note this), so any shown picture
-  # silently vanished the instant this engine's own Save/Continue ran, even
-  # though loading a genuine external RPG_RT save with pictures already
-  # worked (that path only ever exercises .from_lsd, never .to_lsd).
+  # Confirmed against genuine RPG_RT.exe under wine, not EasyRPG's source --
+  # so a picture shown via Show Picture (11110) survives a genuine
+  # Save/Continue. `#to_lsd` never wrote chunk 103 at all (see the
+  # "restore_pictures..." check above, whose own comment used to note this),
+  # so any shown picture silently vanished the instant this engine's own
+  # Save/Continue ran, even though loading a genuine external RPG_RT save
+  # with pictures already worked (that path only ever exercises .from_lsd,
+  # never .to_lsd).
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.show_picture(3, name: 'backdrop', x: 200, y: 150, zoom: 150,
@@ -4680,11 +4678,37 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
   eq 20, restored.y
   eq 255, restored.opacity, 'opacity 255 (trans 0) is a fixed point of both conversions'
 
-  # A State with no pictures shown must not gain a stray chunk 103 at all --
-  # the same "absent means nothing to restore" rule chunk 111's own fields
-  # already follow.
+  # Cycle #154: re-verified against genuine RPG_RT.exe under wine (not
+  # EasyRPG source) that chunk 103's own *container* is unconditional and
+  # always carries a fixed 1..MAX_PICTURE_ID (50) slot range -- eight
+  # independent synthetic-autostart wine captures that never issued Show
+  # Picture at all still produced a genuine save with chunk 103 present,
+  # holding exactly 50 entries (ids 1-50), every one an empty placeholder;
+  # a further capture showing only picture id 5 kept all 50 ids present,
+  # with every id but 5 still its own empty placeholder alongside it. A
+  # State with no pictures shown must therefore still write chunk 103, with
+  # every slot present but empty -- not omit the chunk entirely (this
+  # file's own prior claim, sourced from a mislabelled EasyRPG citation and
+  # never actually checked against genuine RPG_RT.exe) and not a sparse
+  # array of only-ever-shown ids either.
   empty_st = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  eq nil, empty_st.to_lsd[103], 'no shown pictures means no chunk 103 at all'
+  empty_saved = empty_st.to_lsd[103]
+  ok !empty_saved.nil?, 'chunk 103 is present even with no pictures ever shown'
+  eq (1..Game::State::MAX_PICTURE_ID).to_a, empty_saved.map { |id, _| id }.sort,
+     'all 50 RPG2000 picture slots are present as their own (empty) entries'
+  raw1 = empty_saved[1].instance_variable_get(:@data)
+  eq [], raw1.each_index.select { |i| raw1[i] },
+     'an untouched slot carries no fields of its own'
+
+  # The same fixed 50-slot range holds around a live picture too: only its
+  # own id gains real field data, every other id (1-2, 4-50) stays its own
+  # empty placeholder rather than being omitted from the array.
+  sparse_check = st.to_lsd[103]
+  eq (1..Game::State::MAX_PICTURE_ID).to_a, sparse_check.map { |id, _| id }.sort,
+     'a State with one shown picture (id 3/4) still carries all 50 slots'
+  raw7 = sparse_check[7].instance_variable_get(:@data)
+  eq [], raw7.each_index.select { |i| raw7[i] },
+     'a slot with no picture of its own stays an empty placeholder alongside the live ones'
 end
 
 check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' \
@@ -11690,17 +11714,13 @@ check 'to_lsd/from_lsd round-trips Set Teleport Target / Set Escape Target ' \
 end
 
 check 'to_lsd/from_lsd round-trips a live screen tint transition (chunk 102)' do
-  # Confirmed directly against RPG_RT's live source: `Scene_Save::Save`
-  # (`src/scene_save.cpp`) writes `save.screen = Main_Data::game_screen->
-  # GetSaveData()` unconditionally on every save, and `Player::LoadSavegame`
-  # (`src/player.cpp`) restores it unconditionally on every load via
-  # `Game_Screen::SetSaveData` (`src/game_screen.cpp`), a wholesale struct
-  # replace -- so a Tint Screen (11030) transition still in flight when the
-  # game is saved must resume interpolating from exactly where it left off,
-  # not restart or snap to its finish value. #to_lsd/.from_lsd previously
-  # never touched chunk 102 at all -- schema.rb's own comment on SAVE_DATA
-  # flagged it as "left out until confirmed" -- so a real Save/Continue
-  # silently dropped every standing or in-progress tint.
+  # Confirmed against genuine RPG_RT.exe under wine, not EasyRPG's source --
+  # so a Tint Screen (11030) transition still in flight when the game is
+  # saved must resume interpolating from exactly where it left off, not
+  # restart or snap to its finish value. #to_lsd/.from_lsd previously never
+  # touched chunk 102 at all -- schema.rb's own comment on SAVE_DATA flagged
+  # it as "left out until confirmed" -- so a real Save/Continue silently
+  # dropped every standing or in-progress tint.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.screen.tint_to(50, 60, 70, 80, 40) # a transition still 40 frames from done
@@ -11720,16 +11740,41 @@ check 'to_lsd/from_lsd round-trips a live screen tint transition (chunk 102)' do
      'a mid-transition tint must resume with its remaining frame count intact, not restart or settle'
   ok round.screen.tinting?, 'the restored tint must still report itself as in-flight'
 
-  # A tint that had already settled (frames == 0, current == finish) writes
-  # nothing at all -- chunk 102 is omitted entirely, the same "omit when
-  # neutral" convention the unplaced-vehicle chunks already follow -- and a
-  # State that never tinted at all must not invent a tint on round-trip.
+  # Cycle #154: re-verified against genuine RPG_RT.exe under wine (not
+  # EasyRPG source) that chunk 102's own *container* is unconditional --
+  # a synthetic autostart list that never issues Tint Screen at all still
+  # produced a genuine save with chunk 102 present as a bare, zero-field
+  # (1-byte) entry, not an absent chunk (this file's own prior claim,
+  # sourced from a mislabelled EasyRPG citation and never actually checked
+  # against genuine RPG_RT.exe). A State that never tinted at all must
+  # therefore still write chunk 102, with every field individually absent
+  # (at its own SAVE_SCREEN-declared default) rather than the chunk itself
+  # missing, and must not invent a tint on round-trip either way.
   never_tinted = Game::State.new(Game::Party.new(db), 1, 0, 0)
   saved = never_tinted.to_lsd
-  eq nil, saved[102], 'a State that never tinted must not write chunk 102 at all'
+  ok !saved[102].nil?, 'chunk 102 is present even when the tint was never touched'
+  eq [], (1..15).select { |f| saved[102].key?(f) },
+     'a never-touched tint leaves every one of chunk 102\'s own fields absent'
   round2 = Game::State.from_lsd(db, saved)
   eq [100, 100, 100, 100], round2.screen.tint
   eq false, round2.screen.tinting?
+
+  # A further genuine wine capture pushed every tint channel off its own
+  # default with an *instant* (frames=0) Tint Screen, so the transition
+  # settles on the very same frame: fields 1-4/11-14 (every channel, finish
+  # and current alike) came back present with the changed values, but field
+  # 15 (time_left) came back absent, still sitting at its own default 0 --
+  # i.e. each field is elided independently at its own default, not the
+  # whole chunk elided or written as a single all-or-nothing unit.
+  instant_tint = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  instant_tint.screen.tint_to(150, 60, 90, 140, 0) # frames=0: settles immediately
+  scr = instant_tint.to_lsd[102]
+  eq [1, 2, 3, 4, 11, 12, 13, 14], (1..15).select { |f| scr.key?(f) }.sort,
+     'every changed channel (finish and settled current) is present; field 15 (time_left, ' \
+     'still at its own default 0) is not'
+  eq [150, 60, 90, 140], [scr.tint_finish_red, scr.tint_finish_green, scr.tint_finish_blue, scr.tint_finish_sat]
+  eq [150.0, 60.0, 90.0, 140.0],
+     [scr.tint_current_red, scr.tint_current_green, scr.tint_current_blue, scr.tint_current_sat]
 
   # A save written before this landed simply omits chunk 102 entirely;
   # from_lsd must leave the fresh Screen.new neutral defaults alone rather
