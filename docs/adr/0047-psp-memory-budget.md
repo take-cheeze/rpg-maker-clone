@@ -1181,6 +1181,103 @@ the interpreter-linking slice, in this order:
   catchable error the game can act on, instead of corrupting the VM's
   callinfo chain. That is mruby-VM-internals work, not a PSP-port change --
   out of scope for a same-session follow-up here.
+
+  **Follow-up (2026-08-25): two real gaps in mruby's own `NoMemoryError`
+  recovery found and fixed, confirmed not to be the P1c crash itself.**
+  `patches/mruby-nomemoryerror-reentrant-alloc.patch` (a genuine upstream
+  mruby patch, `3rd/mruby` tracking `mruby/mruby.git` directly with no fork
+  this project controls) fixes two independently-verified bugs, found via a
+  host-native repro harness reusing this file's exact arena allocator
+  against precompiled mruby bytecode under gdb: (1) `mrb->nomem_err`/
+  `stack_err`/`arena_err` are pre-allocated singletons meant to make raising
+  them allocation-free, but were never frozen, so `mrb_exc_set`'s
+  backtrace-capture guard didn't protect them either -- a second allocation
+  (backtrace capture) could fail while raising the first, right when there
+  was least room to spare; (2) `mrb_open()` couldn't tell
+  `mrb_core_init_abort()`'s deliberate `mrb->exc = NULL` apart from genuine
+  success, so a bootstrap-time allocation failure could let it proceed into
+  gem init on a half-initialized state. Both are real, and both landed. But
+  a fresh `psp-smoke-game` run against the patched build reproduced the
+  exact same crash, byte-identical: `Segmentation fault (core dumped)` right
+  after `frame=200`, `arena_used=11,906,816` (94.6% of the 12 MB ceiling --
+  the same figure, within normal run-to-run noise, as every unpatched run
+  before it). Confirms what this section's own framing already said: real,
+  useful hardening, not a fix for whatever the actual corrupting mechanism
+  is -- that remains open.
+
+  **Follow-up (2026-08-25): proactive `mrb_full_gc()` when the arena crosses
+  85% used, an experiment, not yet confirmed.** `app/psp/main.cxx`'s frame
+  loop now calls `mrb_full_gc(M)` every 30 frames once `mrb_arena_used()`
+  reaches 85% of `kMrbArenaSize`, while a game is running. Rationale: mruby's
+  own GC threshold (`gc->threshold < gc->live` in `mrb_obj_alloc`,
+  `3rd/mruby/src/gc.c`) is sized off object-count growth ratios with no idea
+  this arena has a fixed 12 MB ceiling at all, so reclaimable garbage can sit
+  uncollected for a while between automatic collections -- widening the
+  window in which a real allocation has to fall back to
+  `mrb_realloc_simple`'s failed-retry-then-raise path, the doorway to the
+  still-unhardened corrupting-unwind cliff above. Forcing extra collections
+  earlier, well before the arena is actually full, claims back headroom from
+  garbage mruby's own heuristic hasn't caught up to yet, so real allocations
+  are less likely to ever need that retry path. This cannot help with two
+  other things this same crash could still be: genuine live-data growth (a
+  full GC cannot reclaim reachable objects -- see the per-frame growth this
+  ADR is separately investigating) or fragmentation (this arena is a
+  first-fit allocator with splitting/coalescing but no compaction, so total
+  free bytes and the largest contiguous free block can diverge).
+
+  **Result (2026-08-25, landed together with two real memory reductions --
+  [#1360](https://github.com/take-cheeze/rpg-maker-clone/pull/1360)): the
+  crash is gone on this run, and the arena stays comfortably clear of the
+  ceiling.** Alongside the proactive-GC change, the same PR fixed two real
+  sources of waste this ADR's own investigation found in `Scene::Map`'s
+  entry cost: `Game::CommonEvent.load` (`mruby-rpg2k/mrblib/game.rb`) no
+  longer eagerly decodes every call-only common event's command list on
+  every map transition (only auto-start/parallel ones, which are the only
+  ones anything scans automatically -- a call-only one now decodes lazily,
+  cached, the first time -- if ever -- a Call Event actually resolves it),
+  and `LCF::Array1D` (`mruby-lcf/mrblib/lcf.rb`) shares its field-name
+  lookup table per record type instead of rebuilding it on every single
+  decode. A fresh `psp-smoke-game` run with all three changes together:
+
+  ```
+  RPG2K_PSP_GAME_READY               arena_used=4,320,480   (was 4,391,744)
+  RPG2K_PSP_BRINGUP frame=0          arena_used=6,919,584   (was 10,762,352 -- -3.84 MB)
+  RPG2K_PSP_BRINGUP frame=200        arena_used=8,091,600   (was 11,887,824-11,906,816, the crash point)
+  RPG2K_PSP_BRINGUP frame=400        arena_used=10,690,512
+  RPG2K_PSP_BRINGUP frame=600        arena_used=7,171,888
+  RPG2K_PSP_BRINGUP frame=800        arena_used=7,572,736
+  RPG2K_PSP_BRINGUP frame=1000       arena_used=9,553,488
+  RPG2K_PSP_BRINGUP frame=1200       arena_used=6,834,656
+  RPG2K_PSP_BRINGUP frame=1400       arena_used=7,238,480
+  RPG2K_PSP_BRINGUP frame=1600       arena_used=8,694,064
+  ```
+
+  No `Segmentation fault`, no `::warning::...killed by signal` -- the job
+  completed normally (`ppsspp-headless`'s own `--timeout=45` ended it, not a
+  crash), eight times further into the run than any previous attempt ever
+  got (`frame=1600` vs. the old ceiling at `frame=200`). `frame=0`'s
+  -3.84 MB drop is the most telling single number: it lands before the
+  frame loop has run even once, so before the proactive-GC check could have
+  fired even a single time -- that whole drop is the two decode-eagerness
+  fixes alone, confirming this ADR's own hypothesis about where
+  `Scene::Map`'s outsized entry cost was coming from. `arena_used` now
+  oscillates in the 6.8-10.7 MB range (57-89% of the 12 MB ceiling) instead
+  of climbing monotonically toward it -- comfortable headroom remains, and
+  the sawtooth pattern (peaks followed by real drops, e.g. frame=400's
+  10.69 MB falling to frame=600's 7.17 MB) shows GC is easily keeping pace
+  now, whether or not the proactive 85%-threshold trigger ever actually
+  fired on this run (frame=400 sat just under the 85% line, so it may not
+  have).
+
+  **Caveat, stated plainly: this is not a fix for the underlying
+  corrupting-unwind mechanism**, which remains completely unhardened and
+  unconfirmed as this crash's exact root cause. What changed is that this
+  specific game, on this specific map, no longer drives the arena anywhere
+  near the danger zone -- a heavier map, a longer play session, or a
+  project that leans more on call-only common events invoked every visit
+  (defeating the lazy-decode win) could still climb back toward the
+  ceiling and rediscover the same cliff. Real, measured, and worth having;
+  not a substitute for eventually hardening the failure path itself.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

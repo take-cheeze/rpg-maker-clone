@@ -487,8 +487,16 @@ class RPG2k
         @map_events = map_events || {}
       end
 
+      # `@common[id]` is a Game::CommonEvent.load entry: `:commands` is
+      # already decoded for AUTO_START/PARALLEL (populated eagerly, see
+      # there); a CALLED-only common event carries `:chunk` (the raw,
+      # undecoded LCF entry) instead, decoded and cached into `:commands`
+      # here on first resolution -- memoized into the same entry Hash so a
+      # repeat Call Event to the same id doesn't redecode it.
       def common_event_commands(id)
-        @common[id]
+        entry = @common[id]
+        return nil unless entry
+        entry[:commands] ||= entry[:chunk] && entry[:chunk].event
       end
 
       def map_event_commands(id, page_index)

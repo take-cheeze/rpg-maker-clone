@@ -216,6 +216,25 @@ lv_obj_t* g_status_label = nullptr;
 constexpr size_t kMrbArenaSize = 12u * 1024u * 1024u;
 alignas(16) uint8_t g_mrb_arena[kMrbArenaSize];
 
+// P1c mitigation: mruby's own GC threshold (mrb_obj_alloc's `gc->threshold <
+// gc->live` in 3rd/mruby/src/gc.c) is sized off object-count growth ratios --
+// it has no idea this arena has a hard 12 MB ceiling at all, so it can let
+// reclaimable garbage pile up for a while between automatic collections. That
+// widens exactly the window this file's own comment above already flags as
+// dangerous: the closer a real allocation gets to running out of room, the
+// more likely it is to need mrb_realloc_simple's full-GC-and-retry recovery,
+// and the failure paths on the far side of *that* retry failing are the
+// unhardened corrupting-unwind cliff. Forcing an extra mrb_full_gc() here,
+// well before the arena is actually full, buys back headroom from garbage
+// mruby's own heuristic hasn't gotten around to reclaiming yet, so real
+// allocations are less likely to ever reach that retry path in the first
+// place. It cannot help with genuine live-data growth (a full GC cannot
+// reclaim reachable objects) or with fragmentation (this arena never
+// compacts), only with deferred-but-reclaimable garbage -- a real, if
+// partial, mitigation, not a fix for the underlying unwind-path gap.
+constexpr size_t kMrbArenaGcHighWater = kMrbArenaSize * 85 / 100;
+constexpr uint32_t kMrbArenaGcCheckFrames = 30;
+
 constexpr size_t kMrbAlign = 16;
 struct MrbBlock {
   size_t size;     // payload bytes, a multiple of kMrbAlign
@@ -808,6 +827,10 @@ int main(void) {
     } else {
       show_keys(psp_input_scan());
       lv_timer_handler();
+    }
+    if (have_game && frame % kMrbArenaGcCheckFrames == 0 &&
+        mrb_arena_used() >= kMrbArenaGcHighWater) {
+      mrb_full_gc(M);
     }
     if (frame % 200 == 0) {
       // ADR 0047's P5. sceKernelGetThreadStackFreeSize scans the low (deep)

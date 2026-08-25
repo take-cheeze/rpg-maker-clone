@@ -7246,13 +7246,29 @@ module Game
     PARALLEL   = 4
 
     # Load the common events from the database into plain hashes.
+    #
+    # `:commands` is decoded eagerly only for AUTO_START/PARALLEL common
+    # events -- the only ones anything here scans for every Scene::Map visit
+    # (see #eligible and its callers in scene/map.rb), so their command lists
+    # are genuinely needed up front. A CALLED-only common event (trigger 5,
+    # invoked solely via a Call Event command) is never scanned that way; its
+    # `:chunk` (the raw, undecoded LCF entry) is kept instead, and
+    # EventResolver#common_event_commands decodes-and-caches it lazily, the
+    # first time (if ever) a Call Event actually resolves that id. A real
+    # project's common events skew heavily toward reusable CALLED-only
+    # subroutines, so decoding all of them on every single map transition
+    # (this method reruns per Scene::Map.new, not once per game) was pure
+    # waste for however many of them a given map visit never calls.
     def self.load(db)
       list = []
       ce = db.common_event
       return list unless ce
       ce.each do |id, c|
-        list.push({ id: id, trigger: c.start_term, need_flag: c.need_flag,
-                    switch_id: c.switch_id, commands: c.event })
+        trigger = c.start_term
+        eager = trigger == AUTO_START || trigger == PARALLEL
+        list.push({ id: id, trigger: trigger, need_flag: c.need_flag,
+                    switch_id: c.switch_id, chunk: c,
+                    commands: (eager ? c.event : nil) })
       end
       list
     rescue StandardError => e

@@ -486,10 +486,20 @@ module LCF
         @data[idx] = s.read len
       end
 
+      # `@schema` is always one of schema.rb's shared, module-level constant
+      # Hashes (e.g. MAP_EVENT_PAGE) -- every Array1D built against a given
+      # record type is handed the exact same object, not a copy -- so the
+      # name -> chunk-id lookup table built from it is identical across every
+      # instance too. Memoized onto the schema itself instead of rebuilt into
+      # a fresh per-instance Hash: a map with a few hundred events decodes
+      # this same table hundreds of times over (once per event page and once
+      # per page's :condition sub-table) for no behavioural difference.
       if @schema
-        @sym2idx = {}
-        @schema[:elements].each do |k, e|
-          @sym2idx[e[:name]] = k
+        @sym2idx = @schema[:sym2idx]
+        unless @sym2idx
+          @sym2idx = {}
+          @schema[:elements].each { |k, e| @sym2idx[e[:name]] = k }
+          @schema[:sym2idx] = @sym2idx
         end
       end
     end
