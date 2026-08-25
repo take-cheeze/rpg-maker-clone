@@ -3481,6 +3481,16 @@ mrb_value spr_set_opacity(mrb_state* M, mrb_value self) {
     opa = 255;
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
+  // Per-frame render code pokes opacity unconditionally (the screen fade and
+  // flash sprites, every idle frame, same value). LVGL's local-style setter
+  // refreshes -- and so invalidates -- the object without comparing values,
+  // and a full-screen sprite invalidated every frame re-renders the whole
+  // display: measured ~13ms of the frame on the Android test device. The
+  // mirrored ivar is authoritative (every write goes through here), so an
+  // equal value can skip the style set entirely.
+  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@opacity"));
+  if (mrb_fixnum_p(cur) && mrb_fixnum(cur) == opa)
+    return self;
   lv_obj_set_style_opa(obj, static_cast<lv_opa_t>(opa), 0);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@opacity"), mrb_fixnum_value(opa));
   return self;
@@ -3677,8 +3687,15 @@ mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "i", &x);
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
-  lv_obj_set_x(obj, x);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@x"), mrb_fixnum_value(x));
+  // Same-value skip: render code repositions sprites every frame (the player
+  // tracks the camera whether or not it moved) and LVGL's setter invalidates
+  // without comparing. The mirrored ivar is authoritative -- every write
+  // passes through here.
+  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@x"));
+  if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != x) {
+    lv_obj_set_x(obj, x);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@x"), mrb_fixnum_value(x));
+  }
   return self;
 }
 
@@ -3687,8 +3704,12 @@ mrb_value obj_set_y(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "i", &y);
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
-  lv_obj_set_y(obj, y);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@y"), mrb_fixnum_value(y));
+  // Same-value skip, see obj_set_x.
+  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@y"));
+  if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != y) {
+    lv_obj_set_y(obj, y);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@y"), mrb_fixnum_value(y));
+  }
   return self;
 }
 
@@ -3707,11 +3728,18 @@ mrb_value obj_set_visible(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "b", &v);
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   mrb_assert(obj);
-  if (v)
-    lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
-  else
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
+  // Same-value skip, see obj_set_x: visibility is re-asserted every frame by
+  // several draw paths (pictures, vehicles, the battle gate). An unset ivar
+  // (fresh sprite) must apply: LVGL objects start visible, and nil here means
+  // "never poked", not "hidden".
+  mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  if (mrb_nil_p(cur) || mrb_test(cur) != v) {
+    if (v)
+      lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    else
+      lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    mrb_iv_set(M, self, mrb_intern_lit(M, "@visible"), mrb_bool_value(v));
+  }
   return self;
 }
 

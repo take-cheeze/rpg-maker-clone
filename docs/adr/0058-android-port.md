@@ -282,6 +282,26 @@ measured on the C330:
 Title screen 22 → 60fps; map/intro scenes roughly 2x, now bounded by mruby
 game-logic speed on this low-end CPU rather than by the present path.
 
+**Update (2026-08-25, later): the map scene stopped redrawing identical
+pixels.** With the present path fast, on-device profiling showed the frame
+still going to work whose output did not change: the tile-layer buffers were
+recomposed every frame (~19ms), the picture layer cleared its full-screen
+bitmap every frame with no pictures (~7ms), the panorama re-tiled with
+per-pixel blend blits (~49ms a walking frame), and per-frame
+`opacity=`/`x=`/`y=` pokes of *unchanged* values invalidated full-screen
+sprites — LVGL's local-style setter refreshes without comparing (~13ms of
+whole-display re-render). Fixes, all in `Scene::Map` (mruby-rpg2k) plus
+value guards in the native sprite setters (mruby-rgss): the layer
+composition, picture layer and panorama now keep last frame's pixels when
+nothing they show moved; the tile-animation step re-blits only the cells
+that follow it; the panorama memcpy-copies instead of blending; the native
+`opacity=`/`x=`/`y=`/`visible=` setters skip the style set on an equal
+value. Measured: intro map 14 → 40-45fps, overworld 26fps standing, battle
+53-59fps, `gfx.lvgl` 22 → ~2.5ms on a static frame. The floor is now mruby
+game logic on the device's CPU; known follow-ups are C-side quad batching
+for animation-step spikes on autotile-heavy maps and the scrolling present
+path.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 

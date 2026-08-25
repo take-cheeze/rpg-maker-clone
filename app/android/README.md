@@ -69,7 +69,8 @@ Android-only in `include/lv_conf.h`) shows in the top-right corner.
 ## Frame rate
 
 The present path is tuned for the phone (measured on a C330, arm64-v8a, with
-Nepheshel — title screen 22 → 60fps, map scenes roughly 2x):
+Nepheshel — title screen 22 → 60fps, map scenes 14 → 40-45fps, overworld
+26fps standing, battle 53-59fps):
 
 - **The SDL renderer is accelerated on Android** (`LV_SDL_ACCELERATED 1` under
   `__ANDROID__` in `include/lv_conf.h`; every other target keeps the software
@@ -89,9 +90,20 @@ Nepheshel — title screen 22 → 60fps, map scenes roughly 2x):
   only for the GPU to stretch them again. The trade: the letterbox bands
   shrink to the picture's sides, so the virtual pad overlaps the picture's
   edges (translucently) instead of sitting in the bands.
+- **The map scene skips redraw whose output would not change**
+  (`Scene::Map` in `mruby-rpg2k`): the tile-layer composition, the picture
+  layer and the panorama keep last frame's pixels when nothing they show
+  moved, the tile-animation step re-blits only the cells that follow it, and
+  the panorama copies instead of per-pixel blending. On the native side,
+  `Sprite#opacity=`/`x=`/`y=`/`visible=` skip LVGL's style set when the value
+  is unchanged — LVGL's setter invalidates without comparing, and a
+  full-screen sprite poked every frame re-rendered the whole display (~13ms).
 
-What remains is mruby game-logic speed on a low-end CPU — event-heavy scenes
-sit around 25fps with the graphics work at ~14ms of the frame.
+What remains is mruby game-logic speed on a low-end CPU (the interpreter and
+event bookkeeping are the biggest single block of a standing-still frame),
+plus two known follow-ups: the tile-animation step still re-blits every
+autotile cell on autotile-heavy maps (~50ms spikes), and walking across a
+panorama map re-tiles it every frame (~20ms) on top of the scrolling present.
 
 ## Launcher icon
 
