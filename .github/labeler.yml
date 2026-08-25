@@ -121,6 +121,13 @@
           - "mruby-rgss/src/psp*.cxx"
           - "include/psp.hxx"
 
+"platform:android":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/android/**"
+          - "src/android*.cxx"
+          - "docs/adr/0058-android-port.md"
+
 "platform:wio":
   - changed-files:
       - any-glob-to-any-file:
