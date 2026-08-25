@@ -2744,6 +2744,128 @@ The work below is roughly ordered by the critical path to a walkable game
   convention field 41 and now field 61 both empirically show -- this cycle
   only spot-checked 41/61/121, not an exhaustive field-by-field audit of
   the whole table.
+  ✅ **Follow-up (cycle #153, 2026-08-25): picked up cycle #152's own closing
+  question -- whether any other SAVE_SYSTEM field this codebase's own
+  `to_lsd` writes unconditionally actually follows real RPG_RT.exe's
+  "present only when different from the declared default" convention
+  (fields 41/61/121 were only spot-checked, not the whole table) -- and
+  found and fixed a second genuine instance: SAVE_SYSTEM fields 42/43/44
+  (`message_position`/`message_prevent_overlap`/`message_continue_events`),
+  the rest of the message-window-config cluster field 41
+  (`message_transparent`) belongs to, were *also* written unconditionally
+  by `Game::State#to_lsd`, every one of them, on every single save this
+  codebase ever produced -- not spot-checked at all by cycle #152, which
+  only tested field 41 itself.** Reused cycle #150/#151/#152's own
+  `LCF::MapUnit`-based injector design (fresh scratch dir this session,
+  `Map0012_orig.lmu`/`Save01_clean.lsd` re-copied from cycle #150's own
+  saved copies and re-verified byte-identical: `c2fa69a0.../3ab5bb01...`,
+  matching every prior cycle back to #148) to build a single autostart event
+  around Change Message Options (10120, this codebase's own
+  `Cmd::MESSAGE_OPTIONS`) followed by Open Save Menu (11910), then drove the
+  real save UI under the same Xvfb (640x480x16, `LIBGL_ALWAYS_SOFTWARE=1`,
+  matchbox-window-manager, `LANG=ja_JP.UTF-8`, `WINEARCH=win32`,
+  `WINEPREFIX=~/.wine-nepheshel32`) setup down to the empty File 2 slot to
+  produce genuine `Save02.lsd` files, inspected field-by-field with this
+  project's own `LCF::Array1D` raw-`@data` reader (bypassing the schema, so
+  a field's mere physical presence is visible independent of its decoded
+  value) -- the same technique cycle #152 established. **A methodology
+  stumble worth recording for the next cycle attempting a similarly "instant"
+  autostart list:** the first attempt used an autostart list of exactly one
+  command (bare Open Save Menu, no Wait first) and genuine RPG_RT.exe never
+  opened the Save Menu at all -- confirmed alive throughout (`ps`, high CPU)
+  but stuck on the map indefinitely, with the injected event itself
+  independently confirmed correctly encoded (re-read back via a direct
+  `LCF::MapUnit` decode: right position, trigger=3/autostart, the exact
+  single command expected). Adding a 20-frame Wait before Open Save Menu
+  (the same duration cycle #152's own injector already used) fixed it
+  immediately and every mode reached the Save Menu reliably after that; this
+  was not chased further as its own mystery (a command list whose *entire*
+  effect completes on the very first renderable frame is not a shape a real
+  player-triggered Open Save Menu ever takes anyway, so it is flagged here
+  rather than folded into the separate autostart-crash-mystery writeups
+  above, which are specifically about >=2-*content*-command lists surviving
+  to a *later* surface-creating transition, a different shape entirely) --
+  every real probe below already includes the Wait, so it did not affect
+  any result. **Four scenarios, each independently run once, all via Change
+  Message Options' own four params (transparent/position/fixed-vs-auto/
+  continue-events):** never issued at all (fields 41-44 all absent, the
+  known baseline both `Save01_clean.lsd` itself and cycle #152's own spot
+  check already showed for field 41); issued with every param reproducing
+  the exact default state -- transparent=0, position=2/bottom, param2=1
+  (auto, i.e. `position_fixed=false`, `Game::MessageConfig`'s own
+  constructor default per direct inspection of `mruby-rpg2k/mrblib/game.rb`)
+  and continue=0 (all four fields still absent, identical to never issuing
+  the command -- this **caught a self-inflicted mistake before it reached
+  the fix**: the first pass at this scenario used param2=0, which actually
+  requests `position_fixed=true`, silently testing a *changed* field 43
+  while believing it tested the default; cross-checking the constructor's
+  own default before trusting the result caught this); issued with every
+  param different from default -- transparent=1, position=0/top, param2=0
+  (fixed, differing from the false default) and continue=1 (all four
+  fields present: 41=`[1]`, 42=`[0]`, 43=`[0]`, 44=`[1]`, matching the
+  changed values exactly); and the same changed call followed by a further
+  Change Message Options putting every param back to the exact default
+  (all four fields absent again, not present-holding-the-default-value) --
+  pinning the same per-value, not per-touch, "omit at default" convention
+  cycle #152 already established for field 61, now confirmed across this
+  entire four-field cluster rather than field 41 alone. **Fixed** by
+  changing the four unconditional `sys[41..44] = ...` assignments in
+  `Game::State#to_lsd` (`mruby-rpg2k/mrblib/game.rb`) to conditional writes
+  guarded on each field's own away-from-default test (`if mc.transparent`;
+  `if mc.position != MessageConfig::POS_BOTTOM`; `if mc.position_fixed`,
+  since field 43 stores the *inverse* of that flag; `if
+  mc.continue_events`) -- `.from_lsd`'s own read side already handled an
+  absent field correctly via the schema's declared defaults (`sys.
+  message_transparent || 0`, etc.) and needed no change. Covered by a new
+  `scripts/rpg2k_logic_check.rb` check asserting all four fields are absent
+  on a freshly-constructed state, present once every one of the four
+  `MessageConfig` values is pushed away from its own default (round-tripping
+  back to the same changed values through a fresh `Game::State.from_lsd`),
+  and absent again once every value is reset back to the exact default --
+  confirmed to fail against the pre-fix code (`git stash` of just
+  `schema.rb`/`game.rb`) with a precise, specific error: `RuntimeError:
+  expected false, got true (field 41 is absent on a freshly-constructed
+  state ...)`, i.e. the very first assertion, since pre-fix `to_lsd` wrote
+  field 41 (and 42-44) on every state regardless of value. `Map0012.lmu`/
+  `Save01.lsd` were restored to their original bytes (byte-identical by
+  `md5sum` against the same `c2fa69a0.../3ab5bb01...` values every prior
+  cycle back to #148 recorded) and every scratch `Save02.lsd` this cycle's
+  own probes produced was removed from the game directory (never a tracked
+  fixture) after every run; `git status` on `data/` came back clean. No
+  EasyRPG source was consulted for any claim in this cycle, and no web
+  search was used either -- the only outside reference was liblcf's own
+  `generator/csv/fields.csv` field id/type for fields 41-44 (already in this
+  table from a prior cycle, not newly added here), this file's own standing
+  narrow exception, and every behavioral claim (the fields' genuine
+  per-value presence convention) traces to this cycle's own genuine
+  RPG_RT.exe wine captures and this codebase's own pre-fix/post-fix test
+  runs. **Aside (not chased, out of scope for this fix):** while reading
+  `to_lsd` for this audit, several of its own surrounding comments
+  ("confirmed against RPG_RT's live source: `Scene_Save::Prepare`
+  (`src/scene_save.cpp`) ...") are, on inspection, EasyRPG Player's actual
+  C++ source file names mislabeled "RPG_RT's live source" -- the same
+  pre-existing mislabeling this file's own cycle #125/#126 entries already
+  found and fixed elsewhere (Enter Hero Name, save-confirm), evidently not
+  yet swept from every occurrence. This task's own standing instruction
+  limits the "known legacy debt, leave alone" exception to shop-code
+  comments specifically, so these are flagged here rather than either
+  silently left or fixed outside this cycle's actual scope (chunks 102/103/
+  104 in `to_lsd`, unrelated to the SAVE_SYSTEM audit this cycle actually
+  did) -- worth a dedicated future cycle to re-verify each against genuine
+  RPG_RT.exe the way #125/#126 did, not assumed wrong just because the
+  citation style matches a known-bad pattern. Full suite reconfirmed
+  passing, `scripts/rpg2k_logic_check.rb` up by 1: `scripts/
+  rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k_logic_check.rb` (1137), `scripts/rpg2k3_battle_row_check.rb`
+  (19) and `scripts/rpg2k3_battle_gauge_check.rb` (15). **Left open for a
+  future cycle:** fields 51-54 (Change Face Graphic's own save-system
+  cluster) were not checked and may show the same pattern, by analogy but
+  not yet confirmed; the crash mystery's own two still-untested threads are
+  unchanged from cycle #151/#152's own framing; the "extraneous Return kills
+  RPG_RT" aside from cycle #152 is unchanged too; and the rest of
+  SAVE_SYSTEM beyond 41-44/61/121 (fields 71-140) is still unaudited for
+  this same unconditional-write question -- this cycle closed the specific
+  cluster cycle #152 flagged, not the whole table.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

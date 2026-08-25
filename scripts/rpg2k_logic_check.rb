@@ -4398,6 +4398,67 @@ check 'to_lsd/from_lsd round-trips bgm_stopping (liblcf SaveSystem field ' \
   eq false, round2.bgm_stopping, 'an absent field reads back as "not stopping"'
 end
 
+check 'to_lsd omits SAVE_SYSTEM fields 41-44 (message-window config) when ' \
+      'each one sits at its own schema default, matching genuine RPG_RT.exe' do
+  # Cycle #153: confirmed against a genuine RPG_RT.exe save under wine that
+  # this whole cluster -- all four set together by Change Message Options
+  # (10120) -- follows the exact same "present only when different from the
+  # declared default" convention field 61 already established, not the
+  # unconditional write this codebase's own #to_lsd had before this fix
+  # (every prior save this engine produced carried explicit 0/false-valued
+  # 41-44 bytes a genuine RPG_RT.exe save never does). Evidence: a synthetic
+  # autostart Change Message Options call whose four params reproduce the
+  # exact default state (transparent=0, position=2/bottom, param2=1 i.e.
+  # position_fixed=false, continue=0) left fields 41-44 all absent,
+  # identical to never issuing the command at all; the same call with every
+  # param changed away from default (transparent=1, position=0/top,
+  # param2=0 i.e. position_fixed=true, continue=1) wrote all four fields
+  # present with the changed values (41=1, 42=0, 43=0, 44=1); and a further
+  # Change Message Options call resetting every param back to the default
+  # left all four absent again -- a per-value comparison at save time, not
+  # an ever-touched flag.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  saved = st.to_lsd[101]
+  [41, 42, 43, 44].each do |id|
+    eq false, saved.key?(id),
+       "field #{id} is absent on a freshly-constructed state (message " \
+       'config untouched, matching its own schema default)'
+  end
+
+  st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  mc = st2.message_config
+  mc.transparent = true
+  mc.position = Game::MessageConfig::POS_TOP
+  mc.position_fixed = true
+  mc.continue_events = true
+  saved2 = st2.to_lsd[101]
+  eq true, saved2.key?(41), 'field 41 present once transparent differs from its default (false)'
+  eq true, saved2.key?(42), 'field 42 present once position differs from its default (bottom)'
+  eq true, saved2.key?(43), 'field 43 present once position_fixed differs from its default (false)'
+  eq true, saved2.key?(44), 'field 44 present once continue_events differs from its default (false)'
+  round2 = Game::State.from_lsd(db, st2.to_lsd)
+  eq true, round2.message_config.transparent, 'transparent itself round-trips true'
+  eq Game::MessageConfig::POS_TOP, round2.message_config.position, 'position round-trips top'
+  eq true, round2.message_config.position_fixed, 'position_fixed round-trips true'
+  eq true, round2.message_config.continue_events, 'continue_events round-trips true'
+
+  # Changed, then reset back to the exact default -- mirrors this cycle's
+  # own "changed_then_reset" genuine-RPG_RT probe: the fields go absent
+  # again, not "present, but re-holding the default value".
+  mc.transparent = false
+  mc.position = Game::MessageConfig::POS_BOTTOM
+  mc.position_fixed = false
+  mc.continue_events = false
+  saved3 = st2.to_lsd[101]
+  [41, 42, 43, 44].each do |id|
+    eq false, saved3.key?(id),
+       "field #{id} is absent again once every message-config value is put " \
+       'back to its default, not left present holding the default value'
+  end
+end
+
 check 'a Fade Out BGM followed by a Save/Continue boundary still forces the ' \
       'next same-file Play BGM to restart, not silently adjust volume in place' do
   # The behavioural point of the round-trip above: pre-fix, bgm_stopping was
