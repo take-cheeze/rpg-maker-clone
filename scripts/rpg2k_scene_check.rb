@@ -16122,6 +16122,61 @@ check 'Open Shop scene: the mystery band above the status panel is a window, ' \
      'the band hides again once a non-equipment good is highlighted'
 end
 
+# Follow-up (cycle #146, 2026-08-25): closed cycle #145's own last-open shop
+# gap -- identified the mystery band's icon itself via asset forensics (a
+# windowskin dump decoded through this project's own tolerant PNG inflater,
+# and a pixel-for-pixel crop compare against a fresh genuine RPG_RT.exe
+# capture of the same Map0015 weapon shop) and reproduced it. See
+# `Scene::Map#draw_shop_party`'s own doc comment for the full evidence.
+check 'Open Shop scene: the equipment party band blits the measured System-' \
+      'graphic droplet icon at its measured offset' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.item[3].type = 6 # Potion -- ordinary consumable, not equipment
+  db.item[11] = OpenStruct.new(name: 'Short Sword', price: 200, type: 1) # weapon
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 11], indent: 0)] # buy-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  skin = Bitmap.new('System/skin', true)
+  scene.instance_variable_set(:@windowskin, skin)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # straight to the buy list (buy-only)
+
+  shop = scene.instance_variable_get(:@shop)
+  ok shop[:party].nil?, 'the first good (a Potion) is not equipment -- no band, no blit'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the Short Sword
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  win = shop[:party]
+  map_mod = RPG2k::Scene::Map
+  ok win.contents, 'the equipment band now has drawn contents, not a bare frame'
+  calls = win.contents.blt_calls
+  ok calls && calls.size == 1, 'exactly one icon blit, once at window creation'
+  ox, oy, src, rect = calls.first
+  eq 22, ox, "the icon's measured interior x offset"
+  eq 22, oy, "the icon's measured interior y offset"
+  eq skin.object_id, src.object_id, 'blitted from the live windowskin'
+  eq map_mod::SHOP_PARTY_ICON_SRC, rect, 'from the measured 8x8 System-graphic cell'
+  eq 128, rect.x, "the droplet icon's own x in the System graphic"
+  eq 16, rect.y, "the droplet icon's own y in the System graphic"
+  eq 8, rect.width, 'an 8x8 cell'
+  eq 8, rect.height, 'an 8x8 cell'
+
+  # Re-hiding and re-showing the band (a different equipment good) must not
+  # blit again onto the same contents bitmap -- the icon is static, so this
+  # would either be a silent no-op duplicate or, worse, a sign the offset
+  # depends on which good is highlighted, which the live capture (identical
+  # crop for both a 150G dagger and an 800G broad sword) ruled out.
+  RGSS::Input.triggered = [RGSS::Input::UP] # back to the Potion -- band hides
+  scene.update
+  RGSS::Input.triggered = []
+  ok scene.instance_variable_get(:@shop)[:party].nil?, 'hidden again for the Potion'
+end
+
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
   ic = Game::Interpreter::Cmd
   db = fake_db
