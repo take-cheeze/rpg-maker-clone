@@ -6301,16 +6301,42 @@ class RPG2k
 
       # -- Enter Hero Name (name-entry widget) --------------------------------
       #
-      # RPG2000's own screen offers three character sets, chosen by the
-      # command's "initial character type" parameter: hiragana (0), katakana
-      # (1) or, for English-patched games, the Latin alphabet (2). The
-      # hiragana/katakana pages share one gojuuon grid with a face portrait
-      # and a name-so-far field above it (#draw_kana_name_input and friends);
-      # the alphabet page keeps the flat Latin/digit grid this widget always
-      # had (#draw_name_input and friends) — RPG_RT never lets the two mix,
-      # so neither does this build.
+      # RPG2000's own command only ever has two legitimate values for its
+      # "initial character type" parameter: hiragana (0) and katakana (1).
+      # There is no genuine "Latin alphabet" charset -- confirmed against
+      # genuine RPG_RT.exe under wine (cycle #149): a synthetic autostart
+      # Enter Hero Name spliced onto a copy of Nepheshel's map 12 opened the
+      # kana grid instantly for charset 0 and 1, but charset 2 -- and charset
+      # 3, tested identically -- each threw a genuine
+      # `EXCEPTION_ACCESS_VIOLATION` inside RPG_RT.exe itself (`WINEDEBUG=+seh`
+      # captured `code=c0000005` at a small, near-null faulting address,
+      # `info[1]` around `0xfd`, consistent with indexing a two-entry internal
+      # table with an out-of-range value and dereferencing whatever came back)
+      # -- caught by the game's own SEH handler chain (the same handler
+      # addresses for both 2 and 3) rather than surfacing any visible crash
+      # dialog, leaving the process alive but permanently stuck: no widget
+      # ever appears, the screen never repaints again (a black client area,
+      # confirmed by pixel scan, for 35+ real seconds), and the process goes
+      # idle rather than busy-looping (`ps` showed falling %CPU and `S`
+      # sleeping state throughout, unlike the `R` running state charset 0/1
+      # show while actually drawing). So a genuine RPG2000 game's own editor
+      # never legitimately produces anything but 0 or 1 here, and "for
+      # English-patched games, the Latin alphabet (2)" (this comment's own
+      # prior claim) was never a real RPG_RT feature to begin with -- nothing
+      # genuine exists to reproduce for any other value. This build still
+      # treats charset 2 specially and opens a flat Latin/digit grid for it
+      # anyway (any other out-of-range value falls back to the ordinary
+      # hiragana kana grid instead, see #drive_name_input below) purely as
+      # this codebase's own usability extension for entering non-Japanese
+      # text -- not a reproduction of any genuine RPG_RT.exe behavior, since
+      # genuine RPG_RT.exe has none to reproduce here. The hiragana/katakana
+      # pages share one gojuuon grid with a face portrait and a name-so-far
+      # field above it (#draw_kana_name_input and friends); the letters page
+      # keeps the flat Latin/digit grid this widget always had
+      # (#draw_name_input and friends) -- RPG_RT never lets the two mix, so
+      # neither does this build.
 
-      # -- Letters page (charset 2) --------------------------------------
+      # -- Letters page (charset 2, this build's own extension -- see above) --
 
       # The selectable cells: the character set, then two control cells — BS
       # (backspace) and OK (confirm).
@@ -6381,10 +6407,13 @@ class RPG2k
       NAME_GRID_Y = 80   # NAME_TOP_Y + NAME_FACE_WIN + NAME_TOP_GAP
 
       # Drive the name-entry screen shown during a :name_input wait. Charset 2
-      # (Latin alphabet) opens the flat letters grid; charsets 0 and 1 open the
-      # kana grid on the matching page. Either way the widget is seeded with
-      # the actor's current name when the command asked for it, and commits to
-      # the actor and resumes the event when confirmed.
+      # opens this build's own flat letters grid (see the doc comment above --
+      # genuine RPG_RT.exe has no working charset 2 to match, it access-
+      # violates instead); charsets 0, 1, and anything else open the kana grid,
+      # on the katakana page for exactly charset 1 and hiragana otherwise.
+      # Either way the widget is seeded with the actor's current name when the
+      # command asked for it, and commits to the actor and resumes the event
+      # when confirmed.
       #
       # `it` defaults to the foreground @interpreter, but #drive_parallel_wait
       # passes its own parallel interpreter here too -- see its :name_input

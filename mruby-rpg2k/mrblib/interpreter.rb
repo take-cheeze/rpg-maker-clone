@@ -1393,12 +1393,20 @@ module Game
     # choices (accept selectable only when affordable) and the gold window, then
     # resumes via resume_inn. Charging gold and healing the party happen there.
     # Enter Hero Name (10740): open the name-entry screen for the actor whose id
-    # is param0. param1 is the initial character set (0 hiragana, 1 katakana,
-    # 2 letters — our widget offers the letter set), param2 the "seed with the
-    # current name" flag. Suspends on a :name_input wait carrying the actor id and
-    # the seed name; the scene drives the entry widget and calls #resume_name_input
-    # with the entered name. A no-op (no wait) for an actor not in the party, since
-    # this build only instantiates party actors.
+    # is param0. param1 is the initial character set -- genuinely only 0
+    # (hiragana) or 1 (katakana) in RPG2000; any other value permanently
+    # locks up genuine RPG_RT.exe with an internal access violation rather
+    # than opening any kind of "English"/Latin widget (confirmed against
+    # genuine RPG_RT.exe under wine, cycle #149 -- see the doc comment on
+    # Scene::Map's own Enter Hero Name section for the full trace). This
+    # build still accepts any other value and opens a widget for it anyway
+    # (charset 2 specifically gets its own Latin/digit grid, purely a
+    # usability extension with no genuine behavior behind it to match), param2
+    # the "seed with the current name" flag. Suspends on a :name_input wait
+    # carrying the actor id and the seed name; the scene drives the entry
+    # widget and calls #resume_name_input with the entered name. A no-op (no
+    # wait) for an actor not in the party, since this build only instantiates
+    # party actors.
     def do_name_input(cmd)
       actor = identity_target(cmd)
       return unless actor

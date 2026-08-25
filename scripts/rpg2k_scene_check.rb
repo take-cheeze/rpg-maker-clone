@@ -8541,6 +8541,40 @@ check 'Enter Hero Name: hiragana/katakana grid opens on the requested page, seed
      'the name-so-far field shows the seeded characters, underscored past them'
 end
 
+# Genuine RPG_RT.exe has no legitimate charset past 0 (hiragana) and 1
+# (katakana) at all -- confirmed against the real binary under wine (cycle
+# #149): charset 2 *and* charset 3, tested identically, each throw a genuine
+# `EXCEPTION_ACCESS_VIOLATION` inside RPG_RT.exe itself (`WINEDEBUG=+seh`
+# caught `code=c0000005`, caught by the game's own SEH handler chain rather
+# than surfacing a crash dialog) and permanently lock up the engine -- no
+# widget of any kind, genuine or otherwise. So there is no real "3 means X"
+# behavior to reproduce here; this pins what this codebase's own, unrelated
+# design choice actually does with an out-of-range value that is not exactly
+# 2 (this build's own Latin-grid trigger, see the doc comment on this
+# section) -- it falls back to the ordinary hiragana kana grid, the same
+# widget charset 0 opens, rather than raising or opening the letters grid.
+check 'Enter Hero Name: a charset value other than 0/1/2 falls back to the ' \
+      'hiragana kana grid (this codebase\'s own choice -- genuine RPG_RT.exe ' \
+      'has no working behavior for it to match, see comment above)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 3, 0], indent: 0), # actor 1, charset 3, no seed
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  ok ui[:kana], 'charset 3 opens the kana widget, not the letters grid'
+  eq :hiragana, ui[:page], 'an out-of-range charset that is not exactly 1 defaults to hiragana'
+end
+
 check 'Enter Hero Name: typing a kana and confirming renames the actor' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
