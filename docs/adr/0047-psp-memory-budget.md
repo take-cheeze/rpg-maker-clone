@@ -1181,6 +1181,50 @@ the interpreter-linking slice, in this order:
   catchable error the game can act on, instead of corrupting the VM's
   callinfo chain. That is mruby-VM-internals work, not a PSP-port change --
   out of scope for a same-session follow-up here.
+
+  **Follow-up (2026-08-25): two real gaps in mruby's own `NoMemoryError`
+  recovery found and fixed, confirmed not to be the P1c crash itself.**
+  `patches/mruby-nomemoryerror-reentrant-alloc.patch` (a genuine upstream
+  mruby patch, `3rd/mruby` tracking `mruby/mruby.git` directly with no fork
+  this project controls) fixes two independently-verified bugs, found via a
+  host-native repro harness reusing this file's exact arena allocator
+  against precompiled mruby bytecode under gdb: (1) `mrb->nomem_err`/
+  `stack_err`/`arena_err` are pre-allocated singletons meant to make raising
+  them allocation-free, but were never frozen, so `mrb_exc_set`'s
+  backtrace-capture guard didn't protect them either -- a second allocation
+  (backtrace capture) could fail while raising the first, right when there
+  was least room to spare; (2) `mrb_open()` couldn't tell
+  `mrb_core_init_abort()`'s deliberate `mrb->exc = NULL` apart from genuine
+  success, so a bootstrap-time allocation failure could let it proceed into
+  gem init on a half-initialized state. Both are real, and both landed. But
+  a fresh `psp-smoke-game` run against the patched build reproduced the
+  exact same crash, byte-identical: `Segmentation fault (core dumped)` right
+  after `frame=200`, `arena_used=11,906,816` (94.6% of the 12 MB ceiling --
+  the same figure, within normal run-to-run noise, as every unpatched run
+  before it). Confirms what this section's own framing already said: real,
+  useful hardening, not a fix for whatever the actual corrupting mechanism
+  is -- that remains open.
+
+  **Follow-up (2026-08-25): proactive `mrb_full_gc()` when the arena crosses
+  85% used, an experiment, not yet confirmed.** `app/psp/main.cxx`'s frame
+  loop now calls `mrb_full_gc(M)` every 30 frames once `mrb_arena_used()`
+  reaches 85% of `kMrbArenaSize`, while a game is running. Rationale: mruby's
+  own GC threshold (`gc->threshold < gc->live` in `mrb_obj_alloc`,
+  `3rd/mruby/src/gc.c`) is sized off object-count growth ratios with no idea
+  this arena has a fixed 12 MB ceiling at all, so reclaimable garbage can sit
+  uncollected for a while between automatic collections -- widening the
+  window in which a real allocation has to fall back to
+  `mrb_realloc_simple`'s failed-retry-then-raise path, the doorway to the
+  still-unhardened corrupting-unwind cliff above. Forcing extra collections
+  earlier, well before the arena is actually full, claims back headroom from
+  garbage mruby's own heuristic hasn't caught up to yet, so real allocations
+  are less likely to ever need that retry path. This cannot help with two
+  other things this same crash could still be: genuine live-data growth (a
+  full GC cannot reclaim reachable objects -- see the per-frame growth this
+  ADR is separately investigating) or fragmentation (this arena is a
+  first-fit allocator with splitting/coalescing but no compaction, so total
+  free bytes and the largest contiguous free block can diverge). Not yet
+  validated against a real `psp-smoke-game` run -- pending CI.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
