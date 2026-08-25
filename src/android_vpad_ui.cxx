@@ -25,7 +25,10 @@
 // windows have real keyboards, and the browser build draws its keypad in HTML
 // (src/shell.html).
 
+#include <SDL2/SDL.h>
 #include <lvgl.h>
+
+#include <cmath>
 
 // mruby-rgss's game root (src/lib.cxx): the container every game object hangs
 // off, which this file centres in the display's letterbox.
@@ -142,9 +145,44 @@ void center_game_root(void) {
                  (ver - g_game_h) / 2 > 0 ? (ver - g_game_h) / 2 : 0);
 }
 
+// The SDL surface arrives phone-shaped and fixed (SDLActivity owns its size),
+// and LVGL's SDL driver answers the resize by setting the display to
+// window/zoom -- with main.cxx's static zoom (2 for the 320x240 makers) that
+// leaves a 1198x679 surface rendering at 599x339: LVGL software-rasters 2.8x
+// the game's own pixels and uploads them, only for the GPU to stretch them
+// again on the way out. Measured on-device (C330) that render+present is
+// ~16ms of a ~45ms map-scene frame -- 22fps where the game logic itself would
+// keep up. Fit the zoom so the *display height* equals the game's instead:
+// the game picture then rasters 1:1, the letterbox shrinks to side bands, and
+// the GPU does the upscale (non-integer, but nearest-neighbour -- the same
+// look the browser build asks for with image-rendering: pixelated). Runs on
+// every resolution change; the guards make it a no-op once fitted and break
+// the re-entry loop (set_zoom fires this event again).
+void fit_zoom_to_game(void) {
+  lv_display_t* disp = lv_display_get_default();
+  int w = 0, h = 0;
+  SDL_GetWindowSize(lv_sdl_window_get_window(disp), &w, &h);
+  // Before Android's surface arrives the window still reads as the size
+  // lv_sdl_window_create asked for -- the game's own resolution, which
+  // main.cxx's zoom already fits. Fitting here would divide by a zoom
+  // measured against a window that is about to be replaced.
+  if (w <= 0 || h <= 0 || (w == g_game_w && h == g_game_h))
+    return;
+  const float want = static_cast<float>(h) / static_cast<float>(g_game_h);
+  if (std::fabs(want - lv_sdl_window_get_zoom(disp)) < 0.01f)
+    return;
+  // Re-enters this callback once (zoom now matches, second pass returns);
+  // the set_resolution below then re-fires it for the centring pass.
+  lv_sdl_window_set_zoom(disp, want);
+  lv_display_set_resolution(disp, static_cast<int32_t>(std::lround(w / want)),
+                            static_cast<int32_t>(std::lround(h / want)));
+}
+
 void display_event_cb(lv_event_t* e) {
-  if (lv_event_get_code(e) == LV_EVENT_RESOLUTION_CHANGED)
+  if (lv_event_get_code(e) == LV_EVENT_RESOLUTION_CHANGED) {
+    fit_zoom_to_game();
     center_game_root();
+  }
 }
 
 }  // namespace
@@ -225,7 +263,9 @@ extern "C" void rgss_vpad_overlay_init(int game_w, int game_h) {
 
   // Centre the game now and again whenever the display resizes (the surface
   // size lands as an SDL RESIZED event shortly after boot, and rotation can
-  // change it again later).
+  // change it again later). The zoom fit runs first so the centring sees the
+  // final resolution.
+  fit_zoom_to_game();
   center_game_root();
   lv_display_add_event_cb(disp, display_event_cb, LV_EVENT_RESOLUTION_CHANGED,
                           nullptr);

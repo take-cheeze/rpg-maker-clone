@@ -66,6 +66,33 @@ so the game picture sits mid-screen with letterbox on all sides, and the pad's
 corners land in the black bands. An FPS/CPU readout (LVGL's perf monitor,
 Android-only in `include/lv_conf.h`) shows in the top-right corner.
 
+## Frame rate
+
+The present path is tuned for the phone (measured on a C330, arm64-v8a, with
+Nepheshel — title screen 22 → 60fps, map scenes roughly 2x):
+
+- **The SDL renderer is accelerated on Android** (`LV_SDL_ACCELERATED 1` under
+  `__ANDROID__` in `include/lv_conf.h`; every other target keeps the software
+  renderer). Android has no native window-framebuffer path, so the software
+  renderer presents through `SDL_CreateWindowTexture` — which measured ~63ms
+  a frame of CPU stretch-and-copy. The GPU renderer uploads the game-sized
+  texture and stretches on the way out (~5ms). `src/main.cxx` accordingly
+  skips its `SDL_HINT_RENDER_DRIVER=software` hint there.
+- **The display refresh period is one game frame (16ms)** on Android
+  (`LV_DEF_REFR_PERIOD`); LVGL's stock 33ms caps the *picture* at ~25fps no
+  matter how fast the frames render, because the refresh timer is what puts
+  pixels on the screen.
+- **The display zoom fits the game's own height**
+  (`fit_zoom_to_game` in `src/android_vpad_ui.cxx`): the game picture
+  rasters 1:1 and the GPU stretches it to the full window, instead of LVGL
+  software-rastering 2.8x the game's pixels (window/2 on a 1198x679 surface)
+  only for the GPU to stretch them again. The trade: the letterbox bands
+  shrink to the picture's sides, so the virtual pad overlaps the picture's
+  edges (translucently) instead of sitting in the bands.
+
+What remains is mruby game-logic speed on a low-end CPU — event-heavy scenes
+sit around 25fps with the graphics work at ~14ms of the frame.
+
 ## Launcher icon
 
 The launcher uses the project's Sapphire Chip mark (`assets/logo/`), scaled
