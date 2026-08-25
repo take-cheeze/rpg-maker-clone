@@ -2367,6 +2367,124 @@ The work below is roughly ordered by the critical path to a walkable game
   remains completely untouched this cycle (four prior attempts: cycles
   #135/#137-138/#139/#143), still this file's single longest-running open
   investigation.
+  ✅ **Follow-up (cycle #150, 2026-08-25): a fifth, fresh attempt at the
+  short-synthetic-autostart-page crash mystery (open since cycle #135,
+  cycles #137-139/#143 all previously inconclusive on mechanism). Result:
+  still not root-caused, but this cycle lands real, decisive, reproducible
+  new evidence on both *what kind* of failure it is and *when* it becomes
+  fatal -- genuinely new ground no prior attempt reached, not a repeat of any
+  previously-ruled-out hypothesis (command count/byte length/branch structure
+  stay untouched, per this file's own standing instruction not to re-chase
+  those).** Reused cycle #139's own scratch harness (an `LCF::MapUnit`-based
+  injector plus a wine driver, both still present in this session's own
+  scratch dir, byte-identical originals re-verified: `Map0012_orig.lmu`
+  md5sum `c2fa69a0...`, `Save01_clean.lsd` md5sum `3ab5bb01...`, matching
+  cycles #148/#149's own recorded values) and reproduced its exact control
+  pair first before trusting anything new: a synthetic autostart page of 1
+  bare BlankLine (`event_command_size` 4) survives Continue -> file 1 ->
+  settle 2.5s -> Escape; 2 bare BlankLines (`event_command_size` 8) crashes
+  it, both matching cycles #137-143's own figures exactly. **New methodology
+  this cycle applied that no prior attempt on this specific mystery did**
+  (cycle #149 used it for the unrelated charset-2 hang, but never for this
+  one): booted every probe under `WINEDEBUG=+seh` and captured the genuine
+  in-process exception trace, cross-checked against direct `ps -eo
+  pid,stat,pcpu,comm` process-table sampling every 0.5s for 4s after each
+  keypress (not just `kill -0`, which only proves *a* process with that PID
+  died, not that RPG_RT.exe itself is genuinely gone) and `xdotool search
+  --name '.'` window-list sampling in the same loop. **Finding 1: this is a
+  genuine, complete process termination, mechanistically distinct from cycle
+  #149's own charset-2/3 finding.** Post-crash sampling found zero surviving
+  `RPG_RT.exe` process in the table at any of 8 samples across 0.5-4s
+  (`ps ... | grep -i RPG_RT` empty every time) and zero surviving
+  application windows (only matchbox's own window remained) -- unlike
+  charset 2/3, which stayed alive (`ps` `STAT` `R`/`S`) behind a real,
+  new `Nepheshel Ver2.04b`-titled modal window this project's own Xvfb never
+  painted. **Finding 2: no genuine `c0000005` (`EXCEPTION_ACCESS_VIOLATION`)
+  ever appears in any of this cycle's traces** (`grep -c c0000005` zero
+  across every crash-run log gathered) -- ruling out "same access-violation
+  mechanism as charset 2/3" as a hypothesis. The only exception traffic
+  visible around the crash is repeated `RaiseException(code=0xEEDFADE,
+  flags=1)` calls -- and this same code fires just as often in the
+  *surviving* N=1 control (18-39 occurrences per run on both sides), so its
+  mere occurrence is not the differentiator; a live web search (not EasyRPG
+  source -- see disclosure below) confirms `0xEEDFADE` is a well-documented,
+  Borland/Delphi-runtime-specific "language exception" marker used
+  internally to implement Delphi's own `try/except`, not itself indicative
+  of memory corruption -- independent confirmation, from a source outside
+  this project entirely, that genuine `RPG_RT.exe` (RPG Maker 2000's own
+  runtime) is a Delphi-compiled binary, worth recording for how any future
+  cycle should read a `WINEDEBUG=+seh` trace of it. **Finding 3 (the
+  decisive one): counting `err:d3d:context_choose_pixel_format` trace lines
+  gives a clean, perfectly reproducible 3/4/5 signature that isolates
+  exactly when the crash becomes possible, not just that it happens.**
+  Across 11 independent wine sessions (three N=1 runs each followed by
+  Escape or by a plain movement key; two N=2-followed-by-movement runs; five
+  N=2-or-N=200-followed-by-Escape runs) the count of this trace line was
+  *always* exactly 3 for N=1 regardless of what followed it (Escape or
+  Down), *always* exactly 4 for a 2-command autostart followed by a plain
+  movement key press (no crash -- confirmed alive and stable via `ps`/window
+  sampling out to 4s, reproduced twice), and *always* exactly 5 for a
+  2-command (or, tested identically, a 200-command, reusing cycle #139's own
+  boundary) autostart followed by Escape/field-menu (crash, reproduced five
+  times) -- zero variance across all 11 runs. Marker-annotated logs (this
+  cycle's own driver writes `>>>>>> MARKER: ... <<<<<<` lines into the same
+  fd wine's own stderr is redirected to, so ordering is real and not
+  reconstructed) place the 4th context negotiation *before* the "file
+  loaded, autostart running/done" marker in every N=2 run, i.e. it happens
+  as a side effect of the short list itself finishing, independent of
+  whatever comes next -- and this 4th-context state is not itself fatal (the
+  movement-only runs sit on it indefinitely with no crash). The 5th
+  negotiation, present only in the Escape/crash runs, coincides with
+  `WINNLSEnableIME`-stub lines for the field menu's own new window, and
+  process death follows within roughly 0.5s. **Net conclusion:** completing
+  an autostart list of >= 2 commands (vs exactly 1) leaves genuine
+  `RPG_RT.exe` holding one extra, unbalanced DirectDraw/Direct3D pixel-format
+  renegotiation that a 1-command list never triggers; that state alone is
+  harmless (movement afterward is completely stable), but is fatal
+  specifically when something else *also* tries to negotiate a new
+  rendering surface on top of it (the field menu) -- directly answering this
+  file's own long-standing "does it depend on what happens on the next
+  transition" question for the one transition type tested: a
+  non-surface-creating transition (movement) is safe, a surface-creating one
+  (the field menu) is fatal, on the *identical* short command list. This is
+  new, decisive, actionable information no prior cycle on this mystery
+  reached (cycles #137-143 only ever had a binary alive/dead symptom from
+  `kill -0`, with no visibility into what internally differed). **Still
+  unresolved and left for the next cycle:** *why* a >= 2-command list (but
+  not a 1-command one) triggers that extra pixel-format renegotiation at
+  completion time in the first place (this would need actual disassembly of
+  `RPG_RT.exe` to pin down further, outside this project's own
+  wine-observation-only methodology); whether every surface-creating
+  transition is equally fatal or just the field menu specifically (only one
+  was tested this cycle -- battle entry, a map teleport, and the save/load
+  screen all remain untested and are this cycle's own strongest lead for
+  next); and the player-triggered (non-autostart) angle this file's own task
+  brief explicitly suggested was not reached this cycle either, timeboxed
+  out in favor of finishing the d3d-context isolation once it started
+  yielding a clean signal. **No runtime behavior was changed and none was
+  warranted** -- consistent with cycles #139/#143/#149's own standing
+  position, this remains a genuine crash in real `RPG_RT.exe` with no
+  working reference behavior for this codebase to copy; reproducing a crash
+  would make this build strictly worse, not more faithful. No regression
+  test was added for the same reason (nothing in this codebase's own runtime
+  changed). No EasyRPG source was consulted for any behavioral claim in this
+  cycle -- the only outside reference used was one web search on the
+  generic, application-independent meaning of the Win32 exception code
+  `0xEEDFADE`, unrelated to RPG_RT's own specific behavior and not a
+  narrower case of the liblcf CSV exception, disclosed here in full; every
+  other claim traces to this cycle's own genuine RPG_RT.exe wine captures
+  (`ps` process-table samples, `xdotool` window-list samples, and
+  `WINEDEBUG=+seh` traces). `Map0012.lmu`/`Save01.lsd` were restored to
+  their original bytes (byte-identical by `md5sum` against the same
+  `c2fa69a0.../3ab5bb01...` values cycles #148/#149 recorded) after every
+  probe; `scripts/lcf_testbed_check.rb` (1099 maps/22858 events) and
+  `scripts/lcf_save_check.rb` (map 12, (40,15), scene cleared) both
+  reconfirmed clean at the end. Full suite reconfirmed passing unaffected:
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb`
+  (41), `scripts/rpg2k_logic_check.rb` (1134), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15) -- all unchanged from cycle #149, since no production code was
+  touched this cycle.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
