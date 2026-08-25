@@ -541,8 +541,9 @@ class RPG2k
       end
 
       # See Scene::ItemMenu's identical `TARGET_W`/`TARGET_ROW_H`/
-      # `TARGET_LABEL_X`/`TARGET_VALUE_X` doc comment (cycle #132, extended
-      # cycle #137 with the face-drawing geometry) for the full RPG_RT
+      # `TARGET_ROW_PITCH`/`TARGET_LABEL_X`/`TARGET_VALUE_X` doc comment
+      # (cycle #132, extended cycle #137 with the face-drawing geometry and
+      # cycle #138 with the real 58px row pitch) for the full RPG_RT
       # measurement write-up -- this class's own target-confirm screen shares
       # the exact same geometry (a genuine RPG_RT.exe under wine draws
       # Scene_Skill's actor-target picker identically to Scene_Item's), so
@@ -550,11 +551,11 @@ class RPG2k
       # than re-measured independently.
       TARGET_W = 184
       TARGET_ROW_H = LINE_H * 3
+      TARGET_ROW_PITCH = 58
       TARGET_LABEL_X = 56
       TARGET_VALUE_X = 114
       TARGET_FACE_X = 8
       TARGET_FACE_SIZE = 48
-      TARGET_FACE_Y_EXTRA = 18
 
       def build_target_window
         @target_window.dispose if @target_window
@@ -566,8 +567,8 @@ class RPG2k
         c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         party.each_with_index do |a, i|
-          y = i * TARGET_ROW_H
-          draw_target_face c, a, i, y
+          y = i * TARGET_ROW_PITCH
+          draw_target_face c, a, y
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
@@ -586,15 +587,14 @@ class RPG2k
       end
 
       # See Scene::ItemMenu#draw_target_face's identical comment/citation.
-      def draw_target_face(c, actor, row, y)
+      def draw_target_face(c, actor, y)
         return unless actor.respond_to?(:faceset_name)
         face = load_face_bitmap(actor.faceset_name)
         return unless face
         index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
         src = Rect.new((index % 4) * TARGET_FACE_SIZE, (index / 4) * TARGET_FACE_SIZE,
                        TARGET_FACE_SIZE, TARGET_FACE_SIZE)
-        face_y = row.zero? ? y : y + TARGET_FACE_Y_EXTRA
-        c.blt TARGET_FACE_X, face_y, face, src
+        c.blt TARGET_FACE_X, y, face, src
       end
 
       # See Scene::ItemMenu#load_face_bitmap's identical comment.
@@ -615,7 +615,7 @@ class RPG2k
             Rect.new(0, 0, @target_window.contents.width, @target_window.contents.height)
         else
           @target_window.cursor_rect =
-            Rect.new(TARGET_LABEL_X - 2, @target_index * TARGET_ROW_H,
+            Rect.new(TARGET_LABEL_X - 2, @target_index * TARGET_ROW_PITCH,
                      @target_window.contents.width - (TARGET_LABEL_X - 2), TARGET_ROW_H)
         end
       end

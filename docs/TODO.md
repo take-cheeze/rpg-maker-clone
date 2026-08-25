@@ -6679,6 +6679,98 @@ The work below is roughly ordered by the critical path to a walkable game
   written back)/`Save01.lsd` were edited only as scratch copies for every
   probe above and restored to their original bytes (byte-identical by
   `md5sum`) once each wine session was torn down.
+  ✅ **Follow-up (cycle #138, 2026-08-25): closed cycle #137's own open lead
+  on the field Item/Skill target-confirm screen's rows 2/3 -- and in doing so
+  found cycle #137's own "row 0 flush, every later row pushed a flat +18px"
+  model was itself wrong past row 1. RPG_RT.exe does not pack these rows
+  edge-to-edge at the 48px row height at all: it pitches them 58px apart (a
+  10px gap between rows), and that 58px pitch is uniform starting at row 0 --
+  there is no row-0 special case. Fixed.** Cycle #137's own two-row
+  measurement (row 0 at native y 0, row 1 at native y 66) cannot actually
+  distinguish its own model from this one, since `48*1 + 18 == 58*1 + 0` --
+  the two formulas only diverge from row 2 onward, which cycle #137 could not
+  yet reach. Reached this cycle with a real 4-actor faceted party: デモ用
+  (id 15, the debug save's own live actor, normally faceless) given actor 2's
+  own face via a live Change Actor Face (event code 10640, cell 1 of
+  `FaceSet/face.png`) so row 0 could be tested with a face too, plus ファル/
+  ティララ/ディーヴァ (ids 2/3/4, each already carrying a real native
+  faceset at cells 1/2/3) added via cycle #136's proven-safe Change Party
+  Member technique -- all four via one synthetic autostart event on a
+  scratch copy of Map0012 whose command list is the live Change Actor Face
+  plus three Change Party Member commands prepended onto Map0478 event 2
+  page 2's own genuine Enemy-Encounter-through-EndBattle tail (troop 103,
+  codes 10710/20710/20711/20713/0, tail-spliced verbatim as cycles #130-137
+  did), keeping the spliced list at least as long as that proven-safe shape
+  throughout -- deliberately the same "long synthetic list" workaround
+  cycle #137 flagged, since the short-list crash below remains unexplained
+  and this fix had no need to poke at it. Tested under wine (Xvfb
+  640x480x16, LIBGL_ALWAYS_SOFTWARE=1, matchbox-window-manager,
+  LANG=ja_JP.UTF-8): Continue -> file 1 -> autostart fired (party grew to
+  4 with no crash, reproducing cycle #136's own finding) -> the battle the
+  spliced Enemy Encounter opens presented a party-wide 戦う/オート/逃げる
+  tactics menu this time (not the per-actor 攻撃/特殊技能/防御/アイテム menu
+  cycles #130-137's battle-side probes saw -- ESC from the per-actor menu
+  reliably surfaced it) -> 逃げる (Escape) selected, ending the battle
+  cleanly back on the map, no crash -- then the field menu -> アイテム ->
+  薬草 opened the actual target-confirm screen with all four rows visible
+  and faceted at once. All four faces template-matched pixel-exact against
+  genuine `FaceSet/face.png`'s own cells (`compare -metric RMSE
+  -subimage-search`, RMSE ~0 on every match) at content-local y = 0, 58,
+  116, 174 -- exactly `58 * row`, no row-0 exception -- cross-confirmed two
+  independent ways: the selection cursor's own top border (detected by its
+  distinct windowskin colour, unrelated to face content) landed on the
+  identical four values, and an overlaid gridline at those four values
+  visually lined up with every row's face *and* name-text top in the same
+  capture. Boundary cases checked: row 0 (the previously-disputed one, now
+  measured directly with a real face rather than inferred), row 1 (cycle
+  #137's own reproduced control value), and rows 2/3 (the party-cap
+  boundary this fix was chasing, both landing exactly on the `58 * row`
+  line with no drift). Sanity check: 4 rows at this pitch top out at
+  content-local y `58 * 3 + 48 == 222`, two pixels inside
+  `#build_target_window`'s own `SCREEN_H - Window::BORDER * 2 == 224`-tall
+  content bitmap with no room to spare -- a good sign 58 is the real
+  constant and not a coincidental near-fit. Fixed `#build_target_window`,
+  `#draw_target_face` and `#refresh_target_cursor` in both `item_menu.rb`
+  and `skill_menu.rb` identically: replaced `TARGET_FACE_Y_EXTRA`'s
+  row-zero-exception model with a single `TARGET_ROW_PITCH = 58` used for
+  every row's own position (face, text, and the selection cursor's y) while
+  `TARGET_ROW_H` (48, unchanged) stays only the row's own content height --
+  used for the cursor rectangle's height and the three text lines' internal
+  offsets, which do not move. `scripts/rpg2k_scene_check.rb`'s own
+  two-actor face check was widened to a full four-actor `FacedTargetParty`
+  and rewritten to assert `i * TARGET_ROW_PITCH` for every row 0-3 instead
+  of the old row-0-vs-row-1 special case; a new check pins the cursor
+  rectangle's y at the same `TARGET_ROW_PITCH` stride while its height
+  stays `TARGET_ROW_H`. Both confirmed to fail against the pre-fix code (a
+  stashed diff of just `item_menu.rb`/`skill_menu.rb`) before the fix --
+  both checks reference the new `TARGET_ROW_PITCH` constant directly in
+  their own assertions, so both raise the same `NameError:
+  uninitialized constant RPG2k::Scene::ItemMenu::TARGET_ROW_PITCH`
+  against pre-fix code that has not yet defined it, 2 of 916 checks;
+  full suite reconfirmed passing after (916 checks, up from 915).
+  `scripts/rpg2k_render_check.rb` (41 checks) and `scripts/
+  rpg2k_logic_check.rb` (1134 checks) reconfirmed passing unaffected.
+  `Map0012.lmu`/`Map0478.lmu` (read-only, only its already-parsed
+  `event_commands` were reused, never written back)/`Save01.lsd` were
+  edited only as scratch copies for every probe above and restored to their
+  original bytes (byte-identical by `md5sum`) once the wine session was
+  torn down; `scripts/lcf_testbed_check.rb` reconfirmed 1099 maps/22858
+  events (back to its pre-probe count) parse cleanly afterward.
+  **Not chased this cycle:** cycle #137's own separately-flagged short-list
+  autostart crash remains completely unexplained -- this fix's own probe
+  reused the exact same long-list workaround rather than poking at the
+  boundary, so it adds no new data point either way (it is simply one more
+  confirmation the long-list shape stays safe, this time at 4 added
+  Change-Party-Member/Change-Actor-Face commands deep rather than 1). One
+  incidental observation for whoever does chase it: this cycle's battle
+  encounter surfaced the party-wide 戦う/オート/逃げる tactics menu on
+  entry, where cycle #136's own otherwise-identical recipe (same troop 103,
+  same tail) went straight to the per-actor 攻撃/特殊技能/防御/アイテム
+  menu instead -- both are genuine RPG_RT battle-command screens (ESC from
+  the per-actor menu reaches the tactics one either way), so this is
+  probably just an existing per-troop or per-save setting rather than
+  anything this cycle's own event edits caused, but it was not investigated
+  and is worth a note in case a future cycle finds it significant.
   ✅ **Follow-up (cycle #136, 2026-08-24): finished cycle #135's own
   time-boxed-away live Change Party Member technique -- it works cleanly
   against genuine RPG_RT.exe, with no crash, and immediately unblocked
