@@ -288,7 +288,12 @@ class RPG2k
         @target_lock = lock
         @target_index = lock ? leader_target_index : 0
         build_target_window
-        refresh_desc
+        # The description banner and item-list box both narrow/change content
+        # for :target mode -- see #left_panel_w and #build_possessed_window.
+        # Both rebuild their own content (including a #refresh_desc call), so
+        # this needs no separate refresh_desc of its own.
+        build_desc_window
+        build_item_window
       end
 
       # The party roster index of the leader -- who a special/use_skill
@@ -586,20 +591,41 @@ class RPG2k
         @item_index = items.size - 1 if @item_index >= items.size
         @item_index = 0 if @item_index < 0
         build_item_window
-        refresh_desc
+        # Back to full width now that :target mode's own narrowed banner is
+        # gone -- see #left_panel_w. Rebuilds rather than a plain
+        # #refresh_desc so the width actually changes back, not just the text.
+        build_desc_window
+      end
+
+      # The description banner and the item-list box below it both run the
+      # full screen width in :items mode, but narrow to leave room for the
+      # right-anchored target panel once :target mode is entered -- confirmed
+      # against genuine RPG_RT.exe under wine (cycle #140): both boxes sit
+      # flush against the target panel's own left edge (`SCREEN_W -
+      # TARGET_W`), not the full screen. Left at the full-width :items
+      # formula for :teleport_target too, matching that mode's own
+      # unchanged, unnarrowed banner (out of scope this cycle -- see
+      # #build_possessed_window's own doc comment).
+      def left_panel_w
+        @mode == :target ? SCREEN_W - TARGET_W : SCREEN_W
       end
 
       # The highlighted item's flavour text, in a one-line banner across the
       # very top of the screen -- confirmed against genuine RPG_RT under
       # wine (e.g. "HPを80ポイント程度回復する" for a healing item), the same
       # gap Scene::EquipMenu had. Tracks the item under the cursor in :items
-      # mode; the :target/:teleport_target pickers keep showing the pending
-      # item's own description, since it is still the one thing on screen a
-      # description could be about.
+      # mode. Once :target mode narrows this banner (see #left_panel_w), real
+      # RPG_RT switches its text too -- confirmed against genuine RPG_RT.exe
+      # under wine (cycle #140): it shows the pending item's own *name*
+      # ("薬草"), not its description, while target mode is open. :teleport_
+      # target is untouched (still the pending item's description) -- that
+      # picker's own banner was not re-examined this cycle, see
+      # #build_possessed_window's own doc comment for why.
       def build_desc_window
         @desc_window.dispose if @desc_window
-        inner_w = SCREEN_W - Window::BORDER * 2
-        @desc_window = Window.new(0, 0, SCREEN_W, DESC_H)
+        w = left_panel_w
+        inner_w = w - Window::BORDER * 2
+        @desc_window = Window.new(0, 0, w, DESC_H)
         @desc_window.z = 400
         @desc_window.windowskin = @skin
         @desc_contents = Bitmap.new(inner_w, LINE_H)
@@ -616,7 +642,13 @@ class RPG2k
                @pending_item
              end
         it = id && id != 0 ? @state.party.db_item(id) : nil
-        text = it ? it.description.to_s : ''
+        text = if it.nil?
+                 ''
+               elsif @mode == :target
+                 it.name.to_s
+               else
+                 it.description.to_s
+               end
         @desc_contents.clear
         @desc_contents.font.color = Color.new(255, 255, 255, 255)
         @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
@@ -627,8 +659,14 @@ class RPG2k
         (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
       end
 
+      # The item grid itself in :items mode; a single-row "held count" box in
+      # its place once :target mode is entered -- see #build_possessed_window.
       def build_item_window
         @item_window.dispose if @item_window
+        if @mode == :target
+          build_possessed_window
+          return
+        end
         rows = items
         inner_w = SCREEN_W - Window::BORDER * 2
         grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
@@ -676,6 +714,45 @@ class RPG2k
         y = (@item_index / COLUMN_MAX) * LINE_H
         @item_window.cursor_rect = Rect.new(x, y, item_col_w, LINE_H)
         refresh_desc
+      end
+
+      # The "held count" box that replaces the item grid once :target mode is
+      # entered -- confirmed against genuine RPG_RT.exe under wine (cycle
+      # #140): the item list is not merely covered by the target panel, it is
+      # replaced outright by a second, short box directly under the
+      # (also-narrowed, see #left_panel_w) description banner -- together the
+      # two read as the "narrower, split into two stacked boxes" cycle #132
+      # first flagged as an open lead without investigating. Measured on a
+      # single-target medicine (薬草) with a bag count of 5: the box sits at
+      # the item grid's own top-left corner (`(0, DESC_H)`), is exactly
+      # `DESC_H` tall (one row) regardless of how many items are actually in
+      # the bag -- there is only ever the one pending item to report on here
+      # -- and as wide as the narrowed banner above it. Its one line is the
+      # database's own `possessed_items` term ("所持数"/"Possessed") flush
+      # left, and the held count flush right (`align` 2) -- independently
+      # matching `Scene::Map#draw_shop_status`'s own identical "term left,
+      # count right" row and its own separately-measured `SHOP_STATUS_W ==
+      # 136 == SCREEN_W - TARGET_W` panel width, a real recurring RPG_RT
+      # layout rather than a coincidence of this one screen.
+      #
+      # :teleport_target is deliberately not given the same treatment: this
+      # cycle only drove the plain single-target-medicine path under wine, so
+      # whether the destination-teleport picker's own left column reflows the
+      # same way is unverified and left open for a future cycle -- applying
+      # this same fix there on the strength of this cycle's one probe would
+      # be guessing, not verifying.
+      def build_possessed_window
+        w = left_panel_w
+        inner_w = w - Window::BORDER * 2
+        @item_window = Window.new(0, DESC_H, w, DESC_H)
+        @item_window.z = 400
+        @item_window.windowskin = @skin
+        c = Bitmap.new(inner_w, LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, LINE_H, term(:possessed_items, 'Possessed')
+        count = @pending_item ? @state.party.item_count(@pending_item) : 0
+        c.draw_text 0, 0, inner_w, LINE_H, count.to_s, 2
+        @item_window.contents = c
       end
 
       # The actor-target picker's own geometry -- confirmed against a genuine

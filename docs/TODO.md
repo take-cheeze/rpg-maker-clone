@@ -6604,6 +6604,100 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #140, 2026-08-25): closed cycle #132's other open
+  lead on the field Item menu's actor-target-confirm screen -- the item
+  description area on the left visibly "re-flows into two boxes" when
+  entering target mode, flagged but never investigated. It is a real,
+  three-part discrepancy: the description banner and item grid do not just
+  get covered by the (already-fixed, cycle #137/#138) right-anchored target
+  panel, they genuinely narrow to make room for it, and the item grid is
+  replaced outright by a new single-row "held count" box, not merely
+  hidden underneath. Fixed for `Scene::ItemMenu` only -- see below for why
+  `Scene::SkillMenu`'s identical-looking code was deliberately left alone.**
+  Reused the canonical debug save cycle #139 already regenerated and left
+  in place (`data/Nepheshel206beta/Nepheshel206Rbeta/Save01.lsd`, map 12,
+  (40,15), scene cleared, a single 薬草/id-1 medicine x5 in the bag --
+  reconfirmed unchanged by `scripts/lcf_save_check.rb` both before and
+  after this cycle's probes, since nothing here ever wrote to it) rather
+  than regenerating one, since it already sits exactly where cycle #132's
+  own item-target-confirm probe needs to be. Drove genuine RPG_RT.exe under
+  wine (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1, matchbox-window-manager,
+  LANG=ja_JP.UTF-8): Continue -> file 1, Escape (field menu), Decision
+  (Item, already selected), Decision (the only item) -> target-confirm
+  screen. Pixel-sampled the capture (640x480, halved for native 320x240):
+  where `Scene::ItemMenu` used to leave the pre-existing full-width
+  description banner and item grid completely untouched behind the new
+  right-anchored target panel, real RPG_RT instead draws two short,
+  narrowed boxes, each `DESC_H` (32px) tall: the description banner at
+  (0, 0) narrows from the full `SCREEN_W` to `SCREEN_W - TARGET_W` (136px,
+  flush against the target panel's own left edge -- border-pattern-
+  measured directly, not inferred) and its text switches from the item's
+  flavour text ("HPを80ポイント程度回復する") to the item's own bare *name*
+  ("薬草"); directly below it, at the item grid's own former top-left
+  corner `(0, DESC_H)`, a second box the same narrowed width and exactly
+  one row tall replaces the grid outright, showing the database's own
+  `possessed_items` term ("所持数") flush left and the bag's actual held
+  count ("5") flush right -- confirmed by a template/border scan finding
+  *two* separate bordered boxes with a real gap between them, not one
+  window whose content changed, and by the area below the second box
+  showing the raw map background (a different, brighter tile colour with
+  no window border pattern at all), proving nothing else is drawn there --
+  the old item grid is gone, not just covered. The measured 136px width
+  and the "term left, count right" row shape independently match
+  `Scene::Map#draw_shop_status`'s own `SHOP_STATUS_W` panel and its
+  `possessed_items`/right-`align`-2-count row (a prior cycle's own
+  citation-heavy doc comment on that method, re-read as pre-existing
+  context here, not re-derived) -- real, recurring RPG_RT UI constants
+  rather than a coincidence of this one screen. Fixed `mruby-rpg2k/mrblib/
+  scene/item_menu.rb`: a new `#left_panel_w` (full `SCREEN_W` in `:items`
+  mode, `SCREEN_W - TARGET_W` in `:target` mode) drives both `#build_desc_
+  window`'s window width and a new `#build_possessed_window` (a one-row
+  box at `(0, DESC_H)` showing `term(:possessed_items, 'Possessed')` left
+  and `@state.party.item_count(@pending_item)` right, `align` 2) that
+  `#build_item_window` now dispatches to whenever `@mode == :target`
+  instead of building the ordinary grid; `#refresh_desc` now shows the
+  pending item's name rather than its description specifically in
+  `:target` mode. `#enter_target_confirm`/`#leave_target_mode` now rebuild
+  both boxes (not just `#refresh_desc`) so the *width* actually changes on
+  the way in and back out, not just the text. Two of the four host-test
+  `MenuStubParty` fixtures this screen's own checks already use had no
+  `item_count` method at all (only real `Game::Party` and a couple of
+  shop-specific stubs did) -- added one to the shared `MenuStubParty` base
+  class, deriving it from the same `[id, count]` pairs `#field_items`
+  already returns, so every existing subclass picked it up for free. New
+  `scripts/rpg2k_scene_check.rb` check (reusing the existing
+  `MedicineItemStubParty` fixture) asserting both boxes' width/position/
+  height in `:items` vs. `:target` mode, the banner's name-vs-description
+  text switch, the held-count box's label/count/right-alignment, and that
+  Cancel reverts both boxes to their full-width `:items` shape -- confirmed
+  to fail against the pre-fix code (a stashed diff of just `item_menu.rb`)
+  before the fix (`expected 136, got 320`, since pre-fix `#build_desc_
+  window` never narrows at all). Full suite reconfirmed passing (917
+  checks, up from 916); `rpg2k_render_check.rb` (41) and `rpg2k_logic_
+  check.rb` (1134) reconfirmed passing unaffected.
+  **Deliberately not touched, and left open:** `Scene::SkillMenu`'s
+  identical-shaped target-confirm screen was *not* given the same fix.
+  This cycle only drove the plain single-target-medicine path through
+  `Scene::ItemMenu`; skills have no "held count" concept at all (a skill
+  is cast, not consumed from a bag), so whatever RPG_RT's analogous
+  left-side reflow shows there -- plausibly an "MP消費"/cost box rather
+  than a "所持数"/count box, but genuinely unverified -- is a different
+  claim this cycle never drove under wine. Applying this fix's own shape
+  there on the strength of one screen's probe would be guessing, not
+  verifying, the same restraint cycle #130's own battle-cursor writeup
+  already established for exactly this situation. Likewise `:teleport_
+  target` mode's own banner (reached from the same item list via a
+  Teleport-invoking special item) was left completely alone -- `#left_
+  panel_w`/`#build_possessed_window` are gated on `@mode == :target`
+  specifically, not "any non-`:items` mode", so that picker's pre-existing,
+  unverified full-width banner is untouched by this fix either way. Also
+  not chased: whether the held-count box's own number stays live if the
+  player uses the item repeatedly without leaving the target screen (see
+  `#apply_item`'s own doc comment -- a successful use never rebuilds
+  either the target panel's HP/MP or this new possessed-count box, so both
+  would go stale together after a use) -- pre-existing behaviour for the
+  target panel's HP/MP already, not a regression this fix introduces, and
+  not independently verified against real RPG_RT this cycle either way.
   ✅ **Follow-up (cycle #139, 2026-08-25): structural investigation into the
   cycle #137/#138 short-synthetic-autostart-page crash, left unchased three
   cycles running. Result: a real, wide-ranging finding that rules out every
