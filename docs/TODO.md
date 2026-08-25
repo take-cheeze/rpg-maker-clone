@@ -2485,6 +2485,145 @@ The work below is roughly ordered by the critical path to a walkable game
   rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
   (15) -- all unchanged from cycle #149, since no production code was
   touched this cycle.
+  ✅ **Follow-up (cycle #151, 2026-08-25): picked up cycle #150's own
+  strongest lead -- whether battle entry, a map Teleport, and Open Save Menu
+  are equally fatal on top of the identical >=2-command-autostart-list
+  precondition the field menu (Escape) was found fatal on top of. Result:
+  a genuine, reproducible, three-for-three "no" -- directly answering cycle
+  #150's own open question, and narrowing the mystery further than any prior
+  cycle.** Reused cycle #150's own `LCF::MapUnit` injector/wine-driver
+  design (still present in this session's own scratch dir; `Map0012_orig.lmu`
+  re-verified `c2fa69a0...`, `Save01_clean.lsd` re-verified `3ab5bb01...`,
+  matching every prior cycle's own recorded values) and, before trusting any
+  new result, re-reproduced cycle #150's own two control points fresh in
+  this session: a bare 2-BlankLine autostart list settled 2.5s then Escaped
+  still crashes (`err:d3d:context_choose_pixel_format` count 5, process
+  gone) and the same list settled then moved (Down) still survives at count
+  4 -- both exact matches, ruling out environment drift before building on
+  top of it. **A real methodology trap surfaced first and cost most of this
+  cycle's own time: appending *any* further command at all to the tested
+  N-BlankLine list -- even a genuine terminal (`code 0`, the same tail
+  cycle #143's own `inject_msg.rb` already established as authentic, not
+  synthetic) with no surface-creating command anywhere near it, and even an
+  inert Control Switches flip -- silently prevents the count-4-at-completion
+  signature from ever occurring at all** (a dedicated control, `N=2
+  BlankLine + terminal only`, settled then moved: alive, but count stuck at
+  3, never 4 -- confirmed twice). This meant an initial design (the
+  Battle/Teleport/Save command appended directly onto the same N-BlankLine
+  list, exactly as this file's own prior task brief suggested trying first)
+  never actually re-created cycle #150's own precondition at all -- it
+  looked safe (alive, count stuck at 3) for a trivial reason unrelated to
+  the transition being tested, and would have been a false negative if
+  reported as-is. Caught by treating "did the precondition actually form"
+  as its own checkpoint rather than trusting the final alive/dead readout
+  alone -- a genuine process lesson for whoever extends this injector next.
+  **Fixed by decoupling the two halves entirely**: Event A is left byte-for-
+  byte identical to cycle #150's own bare N-BlankLine construction (verified
+  via the same `verify.rb` this project's prior cycles already used -- 2
+  commands, `event_command_size=8`, nothing else), autostart as before; the
+  real surface command (Enemy Encounter 10710 / Teleport 10810 / Open Save
+  Menu 11910) moved to a wholly separate Event B one tile east, trigger=1
+  (player touch) rather than appended to Event A's own list -- which also
+  means the driver settles 2.5s (matching cycle #150's own Escape timing
+  exactly) and only then walks the party onto it via `xdotool`, a genuine
+  player-triggered, non-autostart action for at least this second half of
+  the sequence (cycle #150's own flagged "player-triggered angle... not
+  reached" -- addressed here for the transition-triggering action itself;
+  see caveat below on what remains unaddressed). With this design the
+  precondition reliably re-forms (`D3D_COUNT_PRE_TRANSITION=4`, matching
+  cycle #150's own signature exactly, confirmed on every run below) before
+  the real transition ever fires. **Result, reproduced individually for all
+  three and each independently re-run once for confirmation:** walking onto
+  Enemy Encounter, Teleport (same map, a different tile) or Open Save Menu
+  leaves `RPG_RT.exe` fully alive across a full 6s/12-sample `ps`+`xdotool`
+  window every time, with the `err:d3d:context_choose_pixel_format` count
+  unchanged at 4 both immediately before and 6s after the transition (never
+  climbing to 5, the crash-associated value) -- the opposite of Escape/the
+  field menu on the identical precondition. **Confirmed this was not a
+  silently-hung false negative**: a follow-up probe walked onto each of the
+  three events and then, once settled alive at count 4 again, sent Escape --
+  all three immediately reproduced cycle #150's own exact fatal signature
+  (count 4 -> 5, `ps`-confirmed process death within 0.5s), proving `RPG_RT.
+  exe` was genuinely alive and fully processing input the entire time, and
+  that the >=2-list's "primed" state survives an intervening non-fatal
+  transition undisturbed. Independently, since the same
+  Battle/Teleport/Save LCF commands were also exercised in the very design
+  that turned out not to re-form the precondition (the appended-to-the-same-
+  list attempt above, count stuck at 3), and *there* all three visibly
+  rendered correctly and interactively (screenshots: a two-enemy battle
+  screen with a live Attack/Auto/Escape command menu; the party's view
+  genuinely changed to a different part of the map after the Teleport,
+  confirmed by a full-frame pixel diff against the pre-teleport view; the
+  real file-select "セーブしますか？" screen with Save01's own actual
+  LV50/HP600 preview data) -- ruling out "the injected commands are inert or
+  malformed" as an alternative explanation for the count-4 case's own
+  alive-and-stable result. **A capture-only artifact was found and worth
+  recording so a future cycle doesn't mistake it for a symptom**: once the
+  count-4 (or higher) state is reached, `xwd`-based root-window screenshot
+  capture of `RPG_RT.exe`'s own client area goes solid black (only the
+  window's own title bar, drawn by matchbox itself, still captures) --
+  confirmed *pixel-identical* to cycle #150's own already-published safe
+  "N=2 + movement" screenshots (`n2move_t01.png` vs `n2move_t08.png`,
+  `diff.getbbox()` `None`) despite the party genuinely moving on-screen in
+  that known-safe case, and reproduced regardless of which of this cycle's
+  own three transitions was tried -- so this is a pre-existing, universal
+  capture limitation of this environment for the count>=4 state, not
+  something this cycle's own tests introduced or a sign any of them
+  silently failed; `ps`/`xdotool` process sampling and the `+seh` d3d-count
+  trace remain the only reliable signals once that state is reached, exactly
+  as cycle #150's own methodology already relied on. **A direct
+  `strace -f -e trace=%file` attach across the transition (looking for a
+  `Save0*.lsd` file read as independent proof the Save screen's own file-
+  select list opened) was attempted but came back inconclusive** -- zero
+  file-class syscalls were observed on the attached thread group in either
+  direction, most likely a wine/ptrace signal-handling interaction rather
+  than genuine zero file activity (plausible per general Win32/ptrace
+  knowledge, not verified further) -- abandoned in favor of the Escape-
+  interactivity check above, which gave an unambiguous, reproducible
+  positive result by a different route. **Net conclusion: not every
+  surface-creating transition is equally fatal on top of the >=2-list
+  precondition -- specifically the field menu (Escape) is, while battle
+  entry, Teleport and Open Save Menu, despite all being genuine new-scene
+  transitions from `RPG_RT.exe`'s own black-box perspective, are not**, at
+  least not through this cycle's own player-touch-triggered route. **Left
+  open for the next cycle**: *why* the field menu specifically differs
+  mechanistically from these three (a real disassembly-free hypothesis
+  worth trying next: does the field menu redraw at a different surface
+  resolution/mode than the map, battle, save and teleport screens all
+  share, since RPG2000's field menu is the one screen among these that
+  visually differs most in layout from the plain map view); whether a >=2-
+  command list completing via a **non-autostart** trigger (e.g. a parallel-
+  process event active from frame 1, rather than autostart) reproduces the
+  identical count-4 signature at all, since this cycle's own Event A stayed
+  autostart throughout and only the second, transition-firing half used a
+  player-touch trigger -- the deeper "does autostart itself matter for the
+  list side" question remains untouched; and the appended-command-
+  suppresses-count-4 finding itself deserves its own follow-up (is it the
+  *presence* of a further command, the specific *content*, or specifically
+  that the list's last executed action is no longer a genuine no-op, that
+  breaks the signature?) since it is now a load-bearing methodology detail
+  for any future cycle extending this same injector. **No runtime behavior
+  was changed and none was warranted** -- same standing position as cycles
+  #139/#143/#149/#150: every observation here is of genuine `RPG_RT.exe`'s
+  own black-box behavior with no working reference implementation for this
+  codebase to copy, and no regression test was added for the same reason
+  (nothing in this codebase's own runtime changed). **No EasyRPG source was
+  consulted for any claim in this cycle, and no web search was used either**
+  (unlike cycle #150's own single, disclosed, unrelated search) -- every
+  claim traces to this cycle's own genuine `RPG_RT.exe` wine captures
+  (`ps` process-table samples, `xdotool` window/interaction sampling,
+  `WINEDEBUG=+seh` d3d-count traces, `strace` file-class tracing, and
+  pixel-level screenshot diffing via Pillow). `Map0012.lmu`/`Save01.lsd`
+  were restored to their original bytes (byte-identical by `md5sum` against
+  the same `c2fa69a0.../3ab5bb01...` values every prior cycle back to #148
+  recorded) after every probe; `scripts/lcf_testbed_check.rb` (1099
+  maps/22858 events) and `scripts/lcf_save_check.rb` (map 12, (40,15),
+  scene cleared) both reconfirmed clean at the end. Full suite reconfirmed
+  passing unaffected: `scripts/rpg2k_scene_check.rb` (929), `scripts/
+  rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb` (1134),
+  `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) -- all unchanged from cycle #150, since
+  no production code was touched this cycle.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
