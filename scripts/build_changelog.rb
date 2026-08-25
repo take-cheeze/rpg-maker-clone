@@ -36,12 +36,38 @@ HEADINGS = {
   "security" => "Security",
 }.freeze
 
+# The time each fragment was first added to the repo, keyed by absolute path:
+# the `git log` commit date it was introduced in, so entries render in the
+# order changes actually landed instead of alphabetically by slug. A fragment
+# with no git history yet (freshly created, uncommitted) falls back to its
+# file mtime, so it sorts after everything already committed.
+def fragment_added_at(paths)
+  log = `git -C #{ROOT} log --reverse --diff-filter=A --name-only --format=@@%ct -- #{FRAGMENT_DIR}`
+  added = {}
+  timestamp = nil
+  log.each_line do |line|
+    line = line.chomp
+    if line.start_with?("@@")
+      timestamp = line[2..].to_i
+    elsif !line.empty?
+      path = File.join(ROOT, line)
+      added[path] ||= timestamp
+    end
+  end
+  paths.to_h { |p| [p, added[p] || File.mtime(p).to_i] }
+end
+
 # A fragment file is `<slug>.<category>.md`. Returns [category, path] pairs
-# grouped by category, in canonical order, each list sorted by filename so the
-# output is deterministic regardless of filesystem order.
+# grouped by category, in canonical order, each list sorted by the date it was
+# added (oldest first, ties broken by filename) so the output is deterministic
+# and reflects when changes actually landed.
 def load_fragments
+  paths = Dir.glob(File.join(FRAGMENT_DIR, "*.*.md"))
+  added_at = fragment_added_at(paths)
+  paths = paths.sort_by { |p| [added_at[p], File.basename(p)] }
+
   grouped = Hash.new { |h, k| h[k] = [] }
-  Dir.glob(File.join(FRAGMENT_DIR, "*.md")).sort.each do |path|
+  paths.each do |path|
     name = File.basename(path, ".md")
     category = name.split(".").last
     unless CATEGORIES.include?(category)
