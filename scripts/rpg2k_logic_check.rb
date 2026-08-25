@@ -4370,6 +4370,66 @@ check 'to_lsd/from_lsd round-trips the current and memorized BGM\'s balance, ' \
   eq 60, round.memorized_bgm[:balance], 'and its balance round-trips too'
 end
 
+check 'to_lsd/from_lsd round-trips bgm_stopping (liblcf SaveSystem field ' \
+      '61), present only while it is actually true' do
+  # Cycle #152: confirmed against a genuine RPG_RT.exe save under wine that
+  # field 61 ("music_stopping") is written only while the flag is true --
+  # see SAVE_SYSTEM's own comment in schema.rb for the three-scenario
+  # evidence (no fade ever issued / mid-fade / faded-then-replayed, gathered
+  # via a synthetic autostart Play BGM -> Fade Out BGM -> Open Save Menu
+  # list driven through the real save UI).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.bgm_stopping = true
+  saved = st.to_lsd
+  eq true, saved[101].key?(61),
+     'field 61 is physically present when bgm_stopping is true, matching ' \
+     'the genuine mid-fade save gathered this cycle'
+  round = Game::State.from_lsd(db, saved)
+  eq true, round.bgm_stopping, 'bgm_stopping itself round-trips true'
+
+  st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  saved2 = st2.to_lsd
+  eq false, saved2[101].key?(61),
+     'field 61 is omitted entirely when bgm_stopping is false (the default), ' \
+     'matching both the never-faded and the faded-then-replayed genuine saves'
+  round2 = Game::State.from_lsd(db, saved2)
+  eq false, round2.bgm_stopping, 'an absent field reads back as "not stopping"'
+end
+
+check 'a Fade Out BGM followed by a Save/Continue boundary still forces the ' \
+      'next same-file Play BGM to restart, not silently adjust volume in place' do
+  # The behavioural point of the round-trip above: pre-fix, bgm_stopping was
+  # session-only (never written by #to_lsd nor read by .from_lsd), so it
+  # silently reset to false on every load -- a game that faded a track out,
+  # saved, and continued would then wrongly skip the restart on the very
+  # next same-name Play BGM, unlike genuine RPG_RT (whose `music_stopping`
+  # flag is part of the persisted SaveSystem chunk).
+  RGSS::Audio.log = []
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    FakeCmd.new(IC::FADEOUT_BGM, [400]),
+  ])
+  it.update
+  eq true, st.bgm_stopping, 'sanity: the Fade Out BGM set the in-memory flag before any save'
+
+  # A brand new State/Interpreter built from the saved bytes, exactly as a
+  # real Continue does -- not the same live objects the fade ran on.
+  loaded = Game::State.from_lsd(db, st.to_lsd)
+  it2 = Game::Interpreter.new(loaded)
+  it2.start([FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town')])
+  it2.update
+  names = RGSS::Audio.log.select { |e| e[0] == :bgm }.map { |e| e[1] }
+  eq %w[town town], names,
+     'the post-load Play BGM of the same track restarted it -- pre-fix this ' \
+     'stayed at a single entry, since bgm_stopping silently reset to false ' \
+     'across the save/load boundary'
+end
+
 check 'to_lsd/from_lsd round-trips both Timer Operation countdowns' do
   # docs/TODO.md used to call the game timer the one field the .lsd export
   # "cannot yet carry", guessing it would need "a documented chunk id" of its

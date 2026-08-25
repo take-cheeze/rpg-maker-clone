@@ -14008,6 +14008,12 @@ module Game
     # ordinary same-name replay. Cleared unconditionally at the end of every
     # `BgmPlay` call, restart or not (`data.music_stopping = false;`), which
     # `#play_audio`'s `:bgm` branch and `#do_play_memorized_bgm` both mirror.
+    # Round-trips through Save/Continue as liblcf's SaveSystem field 61 (see
+    # `#to_lsd`/`.from_lsd`'s own field-61 comments and SAVE_SYSTEM in
+    # schema.rb for the genuine-RPG_RT wine evidence this cycle gathered for
+    # it) -- a save taken mid-fade and reloaded now correctly forces the next
+    # same-name Play BGM to restart, matching real RPG_RT rather than
+    # silently resetting to "not stopping" on every load.
     attr_accessor :bgm_stopping
     # Whether the party leader's map sprite is hidden, toggled by the Set
     # Transparent Flag / Change Player Visibility (11310) event command. Defaults
@@ -14594,6 +14600,13 @@ module Game
       sys[52] = mc.face_index || 0
       sys[53] = mc.face_right ? 1 : 0
       sys[54] = mc.face_flipped ? true : false
+      # liblcf's `music_stopping` (field 61) -- written only when true,
+      # confirmed against a genuine RPG_RT.exe save under wine (see
+      # SAVE_SYSTEM's own comment in schema.rb): a fresh Fade Out BGM
+      # produces a save with this field present as a single 0x01 byte, while
+      # both a save taken with no fade ever issued and one taken after a
+      # later Play BGM cleared the flag back to false both omit it entirely.
+      sys[61] = true if @bgm_stopping
       sys[75] = bgm_chunk(@current_bgm) if @current_bgm
       sys[78] = bgm_chunk(@memorized_bgm) if @memorized_bgm
       # Change System BGM (10660) / Change System SFX (10670) overrides, one
@@ -15142,6 +15155,10 @@ module Game
       mc.face_index = sys.face_index || 0
       mc.face_right = (sys.face_right_position || 0) != 0
       mc.face_flipped = sys.face_flip ? true : false
+      # An absent field 61 (the schema's own default) means "not stopping",
+      # matching a genuine save that never wrote the field at all -- see
+      # SAVE_SYSTEM's own comment in schema.rb.
+      state.bgm_stopping = sys.bgm_stopping ? true : false
       # Overridden BGM playback state; an empty file name means "none".
       state.current_bgm = bgm_from_chunk(sys.current_bgm)
       state.memorized_bgm = bgm_from_chunk(sys.stored_bgm)
