@@ -6273,6 +6273,12 @@ class RPG2k
       def set_map_layers_visible(visible)
         @map_viewport.visible = visible if @map_viewport
         @upper_viewport.visible = visible if @upper_viewport
+        # Coming back from a battle hide: the composed buffers still hold the
+        # pre-fight pixels -- correct if nothing moved while they were off
+        # screen, but the fight may have moved anything, so the first draw
+        # after the show recomposes rather than trusting the stale frame.
+        @layers_dirty = true if visible && @layers_visible == false
+        @layers_visible = visible
       end
 
       # Game over: the party was wiped in an encounter that ends the game on
@@ -9521,11 +9527,40 @@ class RPG2k
       # scrolls with the camera, otherwise it holds its screen position. (Tone is
       # carried on the picture but not yet applied — that needs native tone
       # support, like the screen tint.)
+      # Redraw the picture layer, or -- when no picture would draw differently
+      # from the last frame -- keep last frame's pixels. The clear alone is a
+      # full-screen fill that marks the bitmap dirty, and a dirty bitmap makes
+      # the display layer invalidate and re-render the whole picture sprite, so
+      # redrawing "the same nothing" every frame cost real time on a low-end
+      # device even on maps with no picture at all. The signature covers
+      # everything #draw_picture reads; the camera and screen shake only matter
+      # when a picture is actually shown (an empty layer is the same cleared
+      # bitmap whatever the camera does).
       def draw_pictures(cam_x, cam_y)
-        @picture_bmp.clear
         pics = @state.pictures
+        sig = pictures_signature pics, cam_x, cam_y
+        return if sig == @pictures_sig
+        @pictures_sig = sig
+        @picture_bmp.clear
         return if pics.empty?
         pics.keys.sort.each { |id| draw_picture pics[id], cam_x, cam_y }
+      end
+
+      # One array describing the whole picture layer's drawn output: the shown
+      # pictures' every draw input, plus the camera/shake the map-fixed and
+      # shake-affected pictures hang off. Comparing arrays compares values, so
+      # a picture mid-Move-Picture (interpolated per frame) reads dirty until
+      # it arrives.
+      def pictures_signature(pics, cam_x, cam_y)
+        return [].freeze if pics.empty?
+        sig = [cam_x, cam_y, @state.screen.shake_offset]
+        pics.keys.sort.each do |id|
+          p = pics[id]
+          sig.concat [id, p.name, p.use_transparent_color, p.x, p.y, p.zoom,
+                      p.opacity, p.red, p.green, p.blue, p.saturation,
+                      p.fixed_to_map]
+        end
+        sig
       end
 
       # A picture's RPG2000 tone channel (0..200, 100 neutral) as an RGSS Tone
@@ -9635,11 +9670,28 @@ class RPG2k
         oy = Game::Parallax.axis_offset(@par_loop_y, @par_auto_y, @par_sy,
                                         @anim_frame, cam_y, SCREEN_H,
                                         @map.height * TILE, ih)
+        # The re-tile is a full-screen copy; while the camera (or an autoscroll)
+        # sits still it redraws the identical picture every frame. Skip those --
+        # same contract as #draw_layers' composition skip: an untouched bitmap
+        # stays clean, so the display layer has nothing to re-render either.
+        # Identity for the image: a new map's panorama is a new object, and
+        # Bitmap#== must not be a pixel compare here.
+        if @parallax_drawn && @parallax_drawn[0] == ox && \
+           @parallax_drawn[1] == oy && @parallax_drawn[2].equal?(@parallax_img)
+          return
+        end
+        @parallax_drawn = [ox, oy, @parallax_img]
         @parallax_bmp.clear
         src = Rect.new(0, 0, iw, ih)
         parallax_tiles(oy, ih, SCREEN_H, @par_loop_y).each do |dy|
           parallax_tiles(ox, iw, SCREEN_W, @par_loop_x).each do |dx|
-            @parallax_bmp.blt dx, dy, @parallax_img, src
+            # #copy_blt, not #blt, for the same reason #draw_layers copies its
+            # tile cache that way: the destination was just cleared, so blending
+            # onto it returns the source unchanged, and #blt pays a per-pixel
+            # read/blend/write for nothing. While walking this redraws the whole
+            # panorama every frame -- on the Android test device the blend cost
+            # ~49ms of a ~90ms frame, the memcpy ~5.
+            @parallax_bmp.copy_blt dx, dy, @parallax_img, src
           end
         end
       end
@@ -9673,6 +9725,16 @@ class RPG2k
       # into these same two buffers (see #event_target_buffer), which is exactly
       # why the buffers stay separate from the cache rather than being drawn to
       # directly.
+      #
+      # When nothing the buffers show has changed -- same sub-tile scroll
+      # offset, cache still valid, no event redrawn differently -- the whole
+      # composition is skipped and the buffers keep last frame's pixels. This
+      # is the common frame while standing still, reading a message or watching
+      # a still demo scene, and skipping it is what lets the display layer skip
+      # too: an untouched Bitmap stays clean, so RGSS::Graphics.update does not
+      # invalidate the layer sprites and LVGL re-renders only what actually
+      # moved. On a low-end device the recompose plus the re-render it triggered
+      # measured a third of the whole frame budget.
       def draw_layers cam_x, cam_y
         first_tx = cam_x / TILE
         first_ty = cam_y / TILE
@@ -9687,9 +9749,21 @@ class RPG2k
           cf = Game::ChipsetLayout.anim_c(@anim_frame)
         end
 
+        rebuilt = false
         unless tile_cache_valid?(first_tx, first_ty, abf, cf)
           rebuild_tile_cache(first_tx, first_ty, abf, cf)
+          rebuilt = true
         end
+
+        if !rebuilt && !@layers_dirty &&
+           @drawn_ox == ox && @drawn_oy == oy &&
+           @drawn_party_y == @state.y && !events_dirty?
+          return
+        end
+        @layers_dirty = false
+        @drawn_ox = ox
+        @drawn_oy = oy
+        @drawn_party_y = @state.y
 
         @lower_bmp.clear
         @upper_bmp.clear
@@ -9709,6 +9783,46 @@ class RPG2k
         @upper_bmp.copy_blt 0, 0, @upper_tiles, src
 
         draw_events cam_x, cam_y
+        # The signatures must describe what was *just drawn*, not some earlier
+        # frame: a compose forced by a rebuild or a flash may have drawn a state
+        # whose signature was never stored, and a later frame that matches it
+        # has to be able to trust the skip.
+        @event_draw_sigs = @events.map { |e| event_draw_sig(e) }
+      end
+
+      # Whether any event would composite differently from the last completed
+      # composition. One signature per event covering exactly what #draw_event
+      # reads -- which CharSet cell (direction/column derived from the anim
+      # inputs), where it sits (pixel position, jump arc, bush depth), how it
+      # blends (translucency) and which buffer it lands in (page layer, and for
+      # the same-as-hero layer the y-sort against the party). A frame where
+      # every signature repeats redraws the same pixels into the same buffers,
+      # so the composition as a whole can keep last frame's output. An event
+      # mid-Flash recomposes every frame by the global flash check in
+      # #events_dirty? -- its tone changes per frame, cheaper to over-draw than
+      # to fingerprint.
+      def event_draw_sig(e)
+        ch = e[:char]
+        dir, col = Game::EventGraphic.frame(e[:anim_type], e[:base_dir],
+                                            e[:base_pattern], ch.direction,
+                                            e[:anim_phase], e[:moving])
+        epx, epy = event_pixel(e)
+        [ch.graphic_name, ch.graphic_index, dir, col, epx, epy,
+         e[:translucent], event_jump_offset(e), event_bush_depth(e),
+         event_target_buffer(e).equal?(@upper_bmp)]
+      end
+
+      # Whether any event's #event_draw_sig differs from the last composed
+      # frame's, or the event set itself changed (page rebuilds swap the
+      # entries). Signatures are stored positionally, matching @events, so a
+      # rebuild that reorders or resizes the list reads as dirty -- always safe,
+      # merely sometimes conservative.
+      def events_dirty?
+        return true if @player_flash || @events.any? { |e| e[:flash] }
+        sigs = @events.map { |e| event_draw_sig(e) }
+        dirty = sigs != @event_draw_sigs
+        @event_draw_sigs = sigs
+        dirty
       end
 
       # Whether the cached tile buffers still show what this frame wants.
@@ -9742,18 +9856,38 @@ class RPG2k
         @tiles_built = false
       end
 
-      # Record that this tile ties the grid to one of the animation inputs.
+      # Record that this tile ties the grid to one of the animation inputs,
+      # returning which one (nil for a tile that moves with neither) so the
+      # full build can also list the cell for #patch_anim_cells.
       def note_anim_input(id)
         case Game::ChipsetLayout.anim_input(id)
-        when :abf then @tiles_uses_abf = true
-        when :cf  then @tiles_uses_cf = true
+        when :abf then @tiles_uses_abf = true; :abf
+        when :cf  then @tiles_uses_cf = true; :cf
         end
       end
 
       # Re-blit the whole visible grid into the cached buffers, on whole-tile
       # boundaries (the scroll remainder is applied when they are copied out).
       # This is the expensive path the cache exists to avoid running per frame.
+      #
+      # When *only* the animation inputs moved -- the grid still covers the same
+      # tiles of the same map, chipset and revision -- the full pass is pure
+      # waste for every cell whose tiles do not read the animation: those pixels
+      # are identical. #patch_anim_cells re-blits just the cells that do (#anim_cells,
+      # recorded by the full pass below), which on a real map is a handful of
+      # water/animated chips rather than all 336 cells -- the difference between
+      # an ~80ms rebuild ten times a second and a few ms.
       def rebuild_tile_cache(first_tx, first_ty, abf, cf)
+        if @tiles_built && @anim_cells &&
+           @tiles_tx == first_tx && @tiles_ty == first_ty &&
+           @tiles_map.equal?(@map) && @tiles_revision == @map.revision &&
+           @tiles_chipset.equal?(@chipset) && @tiles_chipset_bmp.equal?(@chipset_bmp)
+          patch_anim_cells abf, cf
+          @tiles_abf = abf
+          @tiles_cf = cf
+          return
+        end
+
         @lower_tiles.clear
         @upper_tiles.clear
         # Whether anything actually drawn this pass moves with the animation
@@ -9761,6 +9895,7 @@ class RPG2k
         # assuming every map animates.
         @tiles_uses_abf = false
         @tiles_uses_cf = false
+        @anim_cells = []
 
         (0...ROWS).each do |ry|
           (0...COLS).each do |rx|
@@ -9772,8 +9907,10 @@ class RPG2k
             lower = @map.lower(tx, ty)
             upper = @map.upper(tx, ty)
             upper_drawn = !Game::ChipsetLayout.upper_blank?(upper)
-            note_anim_input lower
-            note_anim_input upper if upper_drawn
+            lower_input = note_anim_input lower
+            upper_input = upper_drawn ? note_anim_input(upper) : nil
+            @anim_cells << [rx, ry, lower, upper, upper_drawn] if
+              lower_input || upper_input
 
             if @chipset_bmp
               draw_tile @lower_tiles, lower, dx, dy, abf, cf
@@ -9813,6 +9950,24 @@ class RPG2k
         @tiles_revision = @map.revision
         @tiles_chipset = @chipset
         @tiles_chipset_bmp = @chipset_bmp
+      end
+
+      # Re-blit only the animation-following cells of the cached grid (see
+      # #rebuild_tile_cache). Reads exactly what the full pass draws for those
+      # cells, so the patched grid is pixel-identical to a full rebuild.
+      def patch_anim_cells(abf, cf)
+        @anim_cells.each do |rx, ry, lower, upper, upper_drawn|
+          dx = rx * TILE
+          dy = ry * TILE
+          draw_tile @lower_tiles, lower, dx, dy, abf, cf
+          if upper_drawn
+            if @chipset.elevated?(upper)
+              draw_tile @upper_tiles, upper, dx, dy, abf, cf
+            else
+              draw_tile @lower_tiles, upper, dx, dy, abf, cf
+            end
+          end
+        end
       end
 
       # Draw every event's graphic into the tile buffers, layered so it composits
