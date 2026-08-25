@@ -1488,7 +1488,19 @@ module LCF
       32 => { name: :switches, type: :bool_array },
       33 => { name: :variable_size, type: :int, default: 0 },
       34 => { name: :variables, type: :int32_array },
-      # 0 = normal, 1 = transparent.
+      # 0 = normal, 1 = transparent. Confirmed against a genuine RPG_RT.exe
+      # save under wine (cycle #153): fields 41-44, all set together by
+      # Change Message Options (10120), are each written only when they
+      # differ from the default given here -- a synthetic autostart Change
+      # Message Options call that reproduces the exact default state (and,
+      # separately, a call that changes every field then a further call that
+      # resets them all back) leaves the corresponding field(s) absent
+      # exactly as if the command had never run at all, while any field
+      # actually left different from its default is present with that
+      # value. This is a per-value comparison at save time, not an
+      # ever-touched flag -- the same convention already confirmed for field
+      # 61 (`bgm_stopping`, see that field's own comment below), now spot
+      # checked across this whole cluster too rather than field 41 alone.
       41 => { name: :message_transparent, type: :int, default: 0 },
       # 0 = top, 1 = middle, 2 = bottom.
       42 => { name: :message_position, type: :int, default: 2 },

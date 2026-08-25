@@ -14590,12 +14590,28 @@ module Game
       sys[34] = variables
       # Message-window configuration (field 41 transparency is 0/1, 43 is the
       # inverse of our "pinned" flag: prevent-overlap true == not position_fixed,
-      # 53 face side is 0 left / 1 right).
+      # 53 face side is 0 left / 1 right). Fields 41-44 are each written only
+      # when they differ from SAVE_SYSTEM's own declared default for that
+      # field (message_transparent false/0, message_position 2/bottom,
+      # message_prevent_overlap true i.e. position_fixed false,
+      # message_continue_events false) -- confirmed against a genuine
+      # RPG_RT.exe save under wine this cycle: a synthetic autostart Change
+      # Message Options (10120) call whose four params reproduce the exact
+      # default state left every one of 41-44 absent (identical to never
+      # issuing the command at all), the same call with all four params
+      # changed away from default wrote all four fields present with the
+      # changed values, and a further Change Message Options call putting
+      # every param back to the default left all four absent again -- the
+      # same value-based (not "ever touched") "omit at default" convention
+      # field 61 (`bgm_stopping`) already established, now confirmed to
+      # extend across this whole message-config field cluster too, not just
+      # field 41 alone as cycle #152's own single-value spot check left
+      # open.
       mc = @message_config
-      sys[41] = mc.transparent ? 1 : 0
-      sys[42] = mc.position
-      sys[43] = mc.position_fixed ? false : true
-      sys[44] = mc.continue_events ? true : false
+      sys[41] = 1 if mc.transparent
+      sys[42] = mc.position if mc.position != MessageConfig::POS_BOTTOM
+      sys[43] = false if mc.position_fixed
+      sys[44] = true if mc.continue_events
       sys[51] = mc.face_name || ''
       sys[52] = mc.face_index || 0
       sys[53] = mc.face_right ? 1 : 0
