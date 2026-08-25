@@ -17905,6 +17905,13 @@ class MenuStubParty
                       # that exercises a stat-affecting (halve/double) state
   end
   def field_items(_state = nil); []; end
+  # Mirrors Game::Party#item_count off the same [id, count] pairs #field_items
+  # already returns -- Scene::ItemMenu's target-confirm screen now reads this
+  # for its own "held count" box (cycle #140's #build_possessed_window).
+  def item_count(id)
+    pair = field_items.find { |i, _| i == id }
+    pair ? pair[1] : 0
+  end
   # Every stub item under test here is meant to be usable -- Scene::ItemMenu
   # now consults this to decide whether Decision buzzes-and-stays instead of
   # dispatching, mirroring Game::Party#field_usable?; a stub testing that
@@ -19692,6 +19699,70 @@ check 'Scene::ItemMenu: a successful use stays on the target screen, ' \
   scene.update
   RGSS::Input.reset
   eq :items, scene.instance_variable_get(:@mode)
+end
+
+check 'Scene::ItemMenu: the description banner and item-list box both narrow ' \
+      'and are replaced by a "held count" box once target mode is entered, ' \
+      'and revert on Cancel' do
+  # Confirmed against genuine RPG_RT.exe under wine (cycle #140): cycle
+  # #132 flagged this screen's left side as visibly "re-flowing into two
+  # boxes" without investigating further. It is not a cosmetic overlap of
+  # the pre-existing full-width banner/grid by the (already-fixed)
+  # right-anchored target panel -- both boxes genuinely narrow to
+  # `SCREEN_W - TARGET_W` and the item grid is replaced outright by a
+  # single-row box, not merely covered. See #build_possessed_window's own
+  # doc comment for the measurement.
+  state = Game::State.new(MedicineItemStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::ItemMenu, state)
+  narrow_w = RPG2k::Scene::ItemMenu::SCREEN_W - RPG2k::Scene::ItemMenu::TARGET_W
+
+  desc = scene.instance_variable_get(:@desc_window)
+  item_win = scene.instance_variable_get(:@item_window)
+  eq RPG2k::Scene::ItemMenu::SCREEN_W, desc.width, ':items mode: banner is full width'
+  eq RPG2k::Scene::ItemMenu::SCREEN_W, item_win.width, ':items mode: item grid is full width'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the (only) item -- opens target mode
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  desc = scene.instance_variable_get(:@desc_window)
+  qty = scene.instance_variable_get(:@item_window)
+  eq narrow_w, desc.width, ':target mode: banner narrows to SCREEN_W - TARGET_W'
+  eq 0, desc.x, 'banner stays at the screen\'s left edge'
+  eq 0, desc.y, 'banner stays at the top'
+  eq RPG2k::Scene::ItemMenu::DESC_H, desc.height, 'banner height is unchanged'
+  eq narrow_w, qty.width, ':target mode: the held-count box is the same narrowed width'
+  eq 0, qty.x, 'held-count box stays at the screen\'s left edge'
+  eq RPG2k::Scene::ItemMenu::DESC_H, qty.y, 'held-count box sits where the item grid\'s own top row did'
+  eq RPG2k::Scene::ItemMenu::DESC_H, qty.height,
+     'held-count box is exactly one row tall, not sized to the (irrelevant) item count'
+
+  desc_texts = window_texts(desc)
+  eq ['Potion'], desc_texts, 'the banner shows the pending item\'s own name, not its description'
+  qty_texts = window_texts(qty)
+  ok qty_texts.include?('Possessed'), 'the held-count box labels itself with the possessed_items ' \
+                                       'term (English fallback here, blank in the fixture db)'
+  ok qty_texts.include?('3'), 'and shows the bag\'s actual held count (3, from MedicineItemStubParty)'
+  # The count is right-aligned (Bitmap#draw_text's `align` 2), the same
+  # "label left, count right" row Scene::Map#draw_shop_status already draws
+  # for its own independently-measured SHOP_STATUS_W(136) == this screen's
+  # own narrowed width.
+  count_call = (qty.contents.draw_calls || []).find { |c| c[4] == '3' }
+  ok count_call, 'the count is drawn'
+  eq 2, count_call[5], 'right-aligned (align 2), not flush left beside the label'
+
+  # Cancel reverts both boxes back to their full-width, description-showing
+  # :items shape -- not just a mode-variable flip with stale geometry left
+  # over from target mode.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
+  desc = scene.instance_variable_get(:@desc_window)
+  item_win = scene.instance_variable_get(:@item_window)
+  eq RPG2k::Scene::ItemMenu::SCREEN_W, desc.width, 'Cancel: banner is back to full width'
+  eq RPG2k::Scene::ItemMenu::SCREEN_W, item_win.width, 'Cancel: item grid is back to full width'
 end
 
 # A single held item that #field_items now lists (an unequipped weapon,
