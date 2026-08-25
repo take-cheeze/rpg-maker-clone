@@ -32,6 +32,17 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
+      # sccache's GHA backend stores one cache blob per compilation unit, so
+      # every run that's allowed to write can mint a large number of small
+      # cache entries -- on a repo this commit-heavy, doing that on every PR
+      # and manual run (not just the pushes that actually update master)
+      # multiplies fast. Only a push to master grows the shared cache;
+      # every other trigger (pull_request, workflow_dispatch off master)
+      # still reads whatever master already wrote (so a warm sccache is
+      # still faster) but can't write new blobs of its own.
+      SCCACHE_GHA_RW_MODE: >-
+        ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master')
+            && 'READ_WRITE' || 'READ_ONLY' }}
       # Optional: routes the game-archive/asset downloads below through the
       # CORS proxy's R2 cache (cors-proxy/, docs/cors-proxy.md) instead of the
       # origin host, as a fallback for when the "cache test game" step below
