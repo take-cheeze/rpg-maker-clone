@@ -2866,6 +2866,152 @@ The work below is roughly ordered by the critical path to a walkable game
   SAVE_SYSTEM beyond 41-44/61/121 (fields 71-140) is still unaudited for
   this same unconditional-write question -- this cycle closed the specific
   cluster cycle #152 flagged, not the whole table.
+  ✅ **Follow-up (cycle #154, 2026-08-25): picked up cycle #153's own
+  closing aside -- the EasyRPG-mislabeled "confirmed against RPG_RT's live
+  source: `Scene_Save::...` (`src/scene_save.cpp`)" comments on
+  `Game::State#to_lsd`'s chunks 102 (screen tint)/103 (pictures)/110
+  (targets), the same mislabeling pattern cycle #125/#126 already fixed
+  elsewhere -- and, unlike those two prior fixes, found the underlying
+  behavioral claim itself was *right* for two of the three (chunks 102/103)
+  while this file's own code had drifted from it, a real, verifiable
+  behavioral gap distinct from the citation problem alone.** Re-derived and
+  tested each claim independently against genuine RPG_RT.exe under wine (no
+  EasyRPG source was consulted at all, for the citation fix or for the
+  underlying claims -- only liblcf's own `generator/csv/fields.csv`-style
+  field ids already in this codebase's own schema.rb, this file's standing
+  narrow exception, and this cycle's own fresh wine captures), reusing
+  cycle #150-153's own `LCF::MapUnit`-based autostart-event injector
+  harness verbatim (`Map0012_orig.lmu`/`Save01_clean.lsd`, re-verified
+  byte-identical this cycle too: `c2fa69a0.../3ab5bb01...`, matching every
+  prior cycle back to #148) under the same Xvfb (640x480x16,
+  `LIBGL_ALWAYS_SOFTWARE=1`, matchbox-window-manager, `LANG=ja_JP.UTF-8`,
+  `WINEARCH=win32`, `WINEPREFIX=~/.wine-nepheshel32`) setup, and cycle
+  #152/#153's own raw-`@data` `LCF::Array1D`/`Array2D` reader technique to
+  inspect genuine Save2.lsd bytes at the *top-level chunk* granularity this
+  time (bypassing not just field defaults but chunk presence itself, so a
+  chunk id's mere existence in the file -- independent of whatever it
+  decodes to -- is directly visible). **Three synthetic autostart
+  scenarios, each independently run once (plus re-using eight further
+  genuine Save2.lsd captures already sitting in this session's own scratch
+  dir from cycles #152/#153's own unrelated probes, none of which ever
+  touched Tint Screen, Show Picture or Set Teleport/Escape Target either,
+  as free additional confirmation of the untouched-baseline shape):** an
+  autostart list that never issues Tint Screen, Show Picture or Set
+  Teleport/Escape Target at all; one issuing a single Tint Screen (11030)
+  with every channel pushed off its own default (100) but `frames=0`
+  (instant, so the transition completes the same frame); and one issuing a
+  single Show Picture (11110) for id 5 only. **Chunk 102 (tint):** every
+  untouched capture (9 total) produced a genuine save with chunk 102
+  *present* as a bare 1-byte, zero-field container -- never an absent
+  chunk, contradicting this file's own prior "omit the whole chunk when
+  neutral" code (which, in an irony the prior comment's own text already
+  half-admitted, cited "unconditional" while implementing the opposite);
+  the instant-tint capture wrote fields 1-4/11-14 (every channel, finish
+  and settled-current alike) present with the changed values while leaving
+  field 15 (`time_left`, still at its own default 0 since the transition
+  had already completed) absent -- i.e. the *container* is unconditional
+  but each *field* is elided independently at its own SAVE_SCREEN-declared
+  default, the identical convention cycle #152/#153 already established
+  for SAVE_SYSTEM's message-config cluster, not the all-or-nothing
+  "omit the whole chunk" shape this file used before. **Chunk 103
+  (pictures):** every untouched capture (9 total) produced a genuine save
+  with chunk 103 *present*, holding exactly `MAX_PICTURE_ID` (50, RPG2000's
+  own Show Picture id ceiling, already a named constant in this codebase)
+  sub-entries, ids 1-50, every one an empty placeholder -- never an absent
+  chunk, and never fewer than 50 ids either; the id-5 capture kept all 50
+  ids present, with only id 5 carrying real field data and every other id
+  (1-4, 6-50) still its own empty placeholder alongside it -- so the whole
+  50-wide slot range is unconditional and only a slot's *own* field
+  presence is sparse, the opposite of this file's prior "omit the id from
+  the array entirely unless a picture has ever been shown there" shape,
+  which also, as a side effect, could never produce more than however many
+  ids had actually been touched. **Chunk 110 (targets):** all 9 untouched
+  captures produced a genuine save with chunk 110 present, holding exactly
+  one entry -- array id 0, the escape-target slot, every one of its own
+  fields individually absent -- which is precisely this file's own
+  existing code already did (array id 0 always written, fields left at
+  their schema defaults when `@escape_target` is nil); this claim, alone
+  of the three, needed only the citation swap, no code change. **Fixed**
+  chunks 102/103 in `Game::State#to_lsd` (`mruby-rpg2k/mrblib/game.rb`) to
+  match: chunk 102 now always builds and assigns its `LCF::Array1D`, with
+  each of its own 9 fields (1-4/11-14/15) written only `if` it differs from
+  `Screen::NEUTRAL`/`0`, instead of the old `unless @screen.tint ==
+  neutral && !tinting?` guard around the whole chunk; chunk 103 now always
+  iterates `1..MAX_PICTURE_ID` and writes one entry per id (populated from
+  `@pictures[id]` when present, an untouched empty `Array1D` otherwise),
+  instead of the old `unless @pictures.empty?` guard iterating only
+  `@pictures`'s own (possibly non-contiguous, always sparse) keys. Chunk
+  110's comment was re-cited to genuine RPG_RT.exe evidence with no code
+  change. `.from_lsd`'s own read side needed no change for either chunk --
+  an absent field already decoded to its schema default before this fix,
+  and still does after it; only the *write* side's shape moved to match
+  genuine RPG_RT.exe. Covered by rewriting the two existing `scripts/
+  rpg2k_logic_check.rb` checks that had asserted the old (now-wrong) "no
+  chunk 102/103 at all when untouched" shape as fact -- `to_lsd writes
+  chunk 103 (shown pictures)...` now also asserts the container is present
+  with all 50 ids for both an empty State and one with a live picture, and
+  the new `to_lsd/from_lsd round-trips a live screen tint transition (chunk
+  102)` block now also asserts the container is present with every field
+  absent for an untouched State, plus the new instant-tint per-field
+  elision case -- confirmed to fail against the pre-fix code (`git stash`
+  of just `game.rb`) with precise, specific errors: `RuntimeError: chunk
+  103 is present even with no pictures ever shown` and `RuntimeError: chunk
+  102 is present even when the tint was never touched`, i.e. exactly the
+  two new assertions, nothing else. `Map0012.lmu`/`Save01.lsd` were
+  restored to their original bytes (byte-identical by `md5sum` against the
+  same `c2fa69a0.../3ab5bb01...` values every prior cycle back to #148
+  recorded) and every scratch `Save02.lsd` this cycle's own probes produced
+  was removed from the game directory (never a tracked fixture) after every
+  run; `git status` on `data/` came back clean. **Whether this is "merely"
+  a save-byte-format difference or a genuine behavioral one is worth being
+  honest about:** `.from_lsd` already treated an absent chunk/field the
+  same as a present-but-default one before this fix, so nothing changes in
+  what this codebase's own Save/Continue round-trips to, and
+  `scripts/compare-nepheshel-save-wine.bash`'s own header already records
+  that genuine RPG_RT.exe tolerates loading a bare engine-written save
+  missing these chunks entirely without incident ("RPG_RT does load those
+  now") -- so no crash or visible gameplay divergence was at stake. The fix
+  is still made on the same basis cycle #152/#153's own field-level fixes
+  were: this project treats an unnecessarily-diverging save-file *shape*
+  from genuine RPG_RT.exe as its own fidelity gap worth closing once
+  concretely identified and verified, not only outright crashes or visibly
+  wrong gameplay. **Two further leads spotted along the way, deliberately
+  left unfixed as out of this cycle's own container-presence scope:**
+  the id-5 Show Picture capture's chunk-103 entry carried a field-2/field-3
+  pair (both decoding to the same x/y value already present at fields 4/5
+  and 31/32) that `LCF::Schema::SAVE_PICTURE` does not model at all --
+  liblcf's own `generator/csv/fields.csv` was not available in this sandbox
+  to identify it properly (no network fetch was attempted to obtain it),
+  so it is flagged here rather than guessed at; and that same capture's
+  fields 33/34/41-44 (zoom/transparency/tone) came back absent despite the
+  slot being fully populated, purely because every value this cycle's own
+  probe happened to choose for them equals that field's own default --
+  suggesting per-value elision may reach *inside* an occupied picture slot
+  too, not only at the chunk-103-container/50-slot level this cycle
+  actually fixed, but not confirmed with a probe that deliberately varies
+  those fields off-default. Full suite reconfirmed passing, unchanged from
+  cycle #153: `scripts/rpg2k_scene_check.rb` (929), `scripts/
+  rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb` (1137, count
+  unchanged since this cycle only added assertions to two existing checks
+  rather than new check blocks), `scripts/rpg2k3_battle_row_check.rb` (19)
+  and `scripts/rpg2k3_battle_gauge_check.rb` (15). **Left open for a future
+  cycle:** the field-2/3 pair and the possible inside-a-slot elision noted
+  above; fields 51-54 and 71-140 of SAVE_SYSTEM (cycle #152/#153's own open
+  items, untouched this cycle); the crash mystery's own two still-untested
+  threads, unchanged since cycle #151/#152; and every other EasyRPG-style
+  "RPG_RT's live source" citation this file (and others under
+  `mruby-rpg2k/mrblib/`) still carries outside chunks 102/103/104/110's own
+  neighbourhood -- a repo-wide `grep` this cycle ran turned up several dozen
+  more (e.g. around `do_use_item`, `do_change_equipment`,
+  `IsSkillUsable`/`CheckInclude`, enemy AI, move routes), none inspected or
+  re-verified this cycle, each its own genuine-RPG_RT-under-wine
+  verification task the same shape as this one and cycle #125/#126 before
+  it. (One numbering note for whoever picks that up: this cycle's own
+  assignment named "chunks 102/103/104," but the third mislabeled comment
+  actually visible in `to_lsd` next to 102/103 is chunk 110's own, not
+  104's -- chunk 104 (`hero`, the movable position record) carries no
+  EasyRPG-style citation in `to_lsd` at all currently; 102/103/110 is what
+  this cycle actually found and addressed.)
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

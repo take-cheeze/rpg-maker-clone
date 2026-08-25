@@ -14717,53 +14717,92 @@ module Game
       end
       save[108] = actors
 
-      # Chunk 102 is the screen tint transition (Tint Screen, 11030) --
-      # confirmed against RPG_RT's live source: `Scene_Save::Save`
-      # (`src/scene_save.cpp`) writes `save.screen = Main_Data::game_screen->
-      # GetSaveData()` unconditionally on every save, and `Player::
-      # LoadSavegame` (`src/player.cpp`) restores it unconditionally on every
-      # load via `Game_Screen::SetSaveData`, a wholesale struct replace (`src/
-      # game_screen.cpp`) -- so a tint mid-transition resumes interpolating
-      # exactly where it left off, not merely snapped to its finish value.
+      # Chunk 102 is the screen tint transition (Tint Screen, 11030) -- its
+      # own container is confirmed unconditional and its own fields
+      # confirmed individually value-elided against genuine RPG_RT.exe under
+      # wine this cycle (not EasyRPG source, correcting a prior comment here
+      # that mislabelled EasyRPG Player's own `src/scene_save.cpp`/`src/
+      # game_screen.cpp` as "RPG_RT's live source"): a synthetic autostart
+      # list that never touches Tint Screen at all still produced a genuine
+      # Save2.lsd with chunk 102 *present* (a bare 1-byte, zero-field
+      # container, not an absent chunk), and a second list issuing one Tint
+      # Screen with every channel pushed off its own SAVE_SCREEN-declared
+      # default (100) but frames=0 (instant, so the transition completes on
+      # the same frame -- time_left settles right back to its own default 0)
+      # wrote fields 1-4/11-14 (every channel, both finish and settled
+      # current) present with the changed values while leaving field 15
+      # (time_left) absent, still sitting at its own default -- i.e. the
+      # container is unconditional but each field is elided independently at
+      # its own default, the exact convention SAVE_SYSTEM's message-config
+      # cluster (fields 41-44) already established, not the all-or-nothing
+      # "omit the whole chunk when neutral" this file previously did (which
+      # never once produced a byte-identical chunk-102 shape to genuine
+      # RPG_RT.exe for the overwhelmingly common "tint never touched" case).
       # Only tint is modelled here (see @screen's own comment above); the
       # shake/flash/fade/weather/battle-animation fields liblcf's SaveScreen
       # also carries are a separate, larger gap this codebase doesn't model
-      # in Game::Screen at all yet, left as a future extension. Only written
-      # when a tint is actually in effect or in flight, the same "omit when
-      # neutral" convention the unplaced-vehicle chunks already follow.
-      unless @screen.tint == [Screen::NEUTRAL] * 4 && !@screen.tinting?
-        scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
-        finish, current, frames = @screen.tint_save_data
-        scr[1], scr[2], scr[3], scr[4] = finish
-        scr[11], scr[12], scr[13], scr[14] = current
-        scr[15] = frames
-        save[102] = scr
-      end
+      # in Game::Screen at all yet, left as a future extension.
+      scr = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SCREEN })
+      finish, current, frames = @screen.tint_save_data
+      scr[1] = finish[0] if finish[0] != Screen::NEUTRAL
+      scr[2] = finish[1] if finish[1] != Screen::NEUTRAL
+      scr[3] = finish[2] if finish[2] != Screen::NEUTRAL
+      scr[4] = finish[3] if finish[3] != Screen::NEUTRAL
+      scr[11] = current[0] if current[0] != Screen::NEUTRAL
+      scr[12] = current[1] if current[1] != Screen::NEUTRAL
+      scr[13] = current[2] if current[2] != Screen::NEUTRAL
+      scr[14] = current[3] if current[3] != Screen::NEUTRAL
+      scr[15] = frames if frames != 0
+      save[102] = scr
 
-      # Chunk 103 is every currently-shown picture (Show Picture, 11110) --
-      # confirmed against RPG_RT's live source: `Scene_Save::Prepare`
-      # (`src/scene_save.cpp`) writes `save.pictures = Main_Data::
-      # game_pictures->GetSaveData()` unconditionally on every save, and
-      # `Player::LoadSavegame` (`src/player.cpp`) restores it unconditionally
-      # on every load -- the same chunk `.from_lsd`/`.restore_pictures`
-      # (above) already reads, just never written here. Field mapping is the
-      # exact mirror of `.restore_pictures`' own read (see `SAVE_PICTURE`'s
-      # own comment for why 31/32/etc are finish_*, not current_*): 1 name,
-      # 31/32 finish_x/finish_y, 33 zoom, 34 transparency
-      # (`Game.opacity_to_trans`, the inverse of the live command's own
-      # `#trans_to_opacity`), 41-44 the red/green/blue/saturation tone -- a
-      # picture at rest writes its own live values as both, matching real
-      # RPG_RT's own current-tracks-finish idle sync. `@pictures` only ever
-      # holds currently-shown pictures (#erase_picture deletes the entry
-      # outright), so every entry present is live and belongs in the save.
-      # A picture still mid-Move-Picture (#moving?) additionally writes its
-      # own genuinely-live current_*/time_left fields (4/5/7/8/11-14/51) so a
-      # resumed Continue keeps gliding from exactly where it was, rather than
-      # snapping straight to the move's target the instant the save reloads.
-      unless @pictures.empty?
-        pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
-        @pictures.each do |id, p|
-          e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+      # Chunk 103 is every picture slot RPG2000 offers (Show Picture, 11110)
+      # -- its own container and its own 1..MAX_PICTURE_ID (50) slot range are
+      # both confirmed unconditional against genuine RPG_RT.exe under wine
+      # this cycle (not EasyRPG source, correcting a prior comment here that
+      # mislabelled EasyRPG Player's own `src/scene_save.cpp`/`src/
+      # game_pictures.cpp` as "RPG_RT's live source"): a synthetic autostart
+      # list that never issues Show Picture at all still produced a genuine
+      # Save2.lsd with chunk 103 *present*, holding exactly 50 sub-entries
+      # (ids 1-50, RPG2000's own Show Picture id range -- `MAX_PICTURE_ID`
+      # below) every one of them an empty (zero-field) placeholder, not an
+      # absent chunk or a sparse 0-entry array; a second list showing only
+      # picture id 5 produced a save with all 50 ids still present but only
+      # id 5 carrying real field data, every other id (1-4, 6-50) still its
+      # own empty placeholder entry alongside it -- so the whole fixed-size
+      # slot range is unconditional, and only a slot's own field presence is
+      # sparse, the opposite of this file's prior "omit the id from the
+      # array entirely unless a picture has ever been shown there" shape
+      # (which also, as a side effect, only ever emitted however many ids
+      # had been *touched*, never the full 50-wide range genuine RPG_RT.exe
+      # always carries). Field mapping is the exact mirror of
+      # `.restore_pictures`' own read (see `SAVE_PICTURE`'s own comment for
+      # why 31/32/etc are finish_*, not current_*): 1 name, 31/32
+      # finish_x/finish_y, 33 zoom, 34 transparency (`Game.opacity_to_trans`,
+      # the inverse of the live command's own `#trans_to_opacity`), 41-44 the
+      # red/green/blue/saturation tone -- a picture at rest writes its own
+      # live values as both, matching real RPG_RT's own current-tracks-finish
+      # idle sync. `@pictures` only ever holds currently-shown pictures
+      # (#erase_picture deletes the entry outright), so an ordinary shown
+      # picture is a slot with an entry here and an untouched slot is
+      # nil/absent from `@pictures`, both handled below. A picture still
+      # mid-Move-Picture (#moving?) additionally writes its own genuinely-live
+      # current_*/time_left fields (4/5/7/8/11-14/51) so a resumed Continue
+      # keeps gliding from exactly where it was, rather than snapping
+      # straight to the move's target the instant the save reloads. (A
+      # second, narrower gap spotted along the way but left unfixed here,
+      # out of this cycle's own container-presence scope: genuine RPG_RT.exe
+      # also wrote a field 2/3 pair on the live id-5 entry this cycle's own
+      # probe never modelled at all -- and per-value elision may reach
+      # *inside* an occupied slot too, since fields 33/34/41-44 came back
+      # absent in that same probe despite the slot itself being fully
+      # populated, purely because every value this cycle's own probe chose
+      # for them happened to equal each field's own default. Neither was
+      # investigated further; see docs/TODO.md.)
+      pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+      (1..MAX_PICTURE_ID).each do |id|
+        p = @pictures[id]
+        e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+        if p
           e[1] = p.name
           if p.moving?
             e[4] = p.x
@@ -14793,10 +14832,10 @@ module Game
             e[43] = p.blue
             e[44] = p.saturation
           end
-          pics[id] = e
         end
-        save[103] = pics
+        pics[id] = e
       end
+      save[103] = pics
 
       inv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_INVENTORY })
       inv[1] = @party.actors.map { |a| a.id }
@@ -14830,16 +14869,22 @@ module Game
       save[109] = inv
 
       # Chunk 110 is every Set Teleport Target (11810) / Set Escape Target
-      # (11830) destination registered so far -- confirmed against RPG_RT's
-      # live source: `Scene_Save::Prepare`/`Player::LoadSavegame`
-      # (`src/scene_save.cpp`/`src/player.cpp`) round-trip `save.targets` via
-      # `Game_Targets::GetSaveData`/`SetSaveData` (`src/game_targets.cpp`)
-      # unconditionally, every save. `GetSaveData` always writes the escape
-      # target first, at array id 0 (default-constructed/empty when never
-      # set -- RPG_RT carries it regardless), followed by every teleport
-      # target keyed by its own destination map id
-      # (`AddTeleportTarget`'s own `tgt.ID = map_id`) -- the exact shape
-      # mirrored below.
+      # (11830) destination registered so far -- re-confirmed against genuine
+      # RPG_RT.exe under wine this cycle (not EasyRPG source, correcting a
+      # prior comment here that mislabelled EasyRPG Player's own `src/
+      # scene_save.cpp`/`src/player.cpp`/`src/game_targets.cpp` as "RPG_RT's
+      # live source"): eight independent synthetic-autostart wine captures,
+      # none of which ever issued Set Teleport/Escape Target, all produced a
+      # genuine save with chunk 110 *present*, holding exactly one entry --
+      # array id 0, the escape-target slot, with every one of its own fields
+      # individually absent (default-constructed/empty) since no Set Escape
+      # Target had run. That is precisely this code's own existing shape:
+      # array id 0 always written (fields left at their own defaults when
+      # `@escape_target` is nil), followed by one entry per registered
+      # teleport target keyed by its own destination map id
+      # (`AddTeleportTarget`'s own `tgt.ID = map_id`) -- so this claim, unlike
+      # its neighbours in chunks 102/103 below, needed no code change, only
+      # this citation swap.
       targets = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_TARGET })
       esc = @escape_target
       e0 = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TARGET })
@@ -15272,9 +15317,12 @@ module Game
       end
       # Chunk 102 is the screen tint transition; only #restore_tint's tint
       # sub-fields are modelled here (see #to_lsd's own comment on chunk 102
-      # for why). An absent chunk (a save written before this fix, or one
-      # made while the tint genuinely sat at neutral) leaves the fresh
-      # `Screen.new` neutral defaults in place.
+      # for why, including why the chunk itself is present unconditionally
+      # -- cycle #154). An absent chunk (a save written before this fix, or
+      # by anything else that omits it outright) leaves the fresh
+      # `Screen.new` neutral defaults in place, the same as a present chunk
+      # whose own tint fields are all individually absent at their own
+      # SAVE_SCREEN defaults.
       scr = save[102]
       if scr
         state.screen.restore_tint([scr.tint_finish_red, scr.tint_finish_green,
