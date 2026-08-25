@@ -19411,12 +19411,13 @@ check 'the item / skill target-confirm screen draws each actor on three ' \
   end
 end
 
-# A party where every member has a real faceset -- for the target-confirm
-# panel's own face-drawing checks below.
+# A full 4-actor party where every member has a real faceset -- for the
+# target-confirm panel's own face-drawing checks below, including the
+# party-cap boundary rows (2/3) cycle #138 finally reached.
 class FacedTargetParty < MenuStubParty
   def initialize
     super
-    @actors = Array.new(2) { |i| a = MenuStubActor.new; a.faceset_name = 'face'; a.faceset_index = i; a }
+    @actors = Array.new(4) { |i| a = MenuStubActor.new; a.faceset_name = 'face'; a.faceset_index = i; a }
   end
 end
 
@@ -19425,35 +19426,62 @@ def faced_target_state
 end
 
 check 'the item / skill target-confirm screen draws a 48x48 face per row, ' \
-      'row 0 flush at the top of its own row but every later row pushed ' \
-      '18px further in' do
-  # Confirmed against a genuine RPG_RT.exe under wine (cycle #137): cycle
-  # #132 left this an open question (a blank gutter to the left of every
-  # row, guessed but not confirmed to be an undrawn face slot) and cycle
-  # #136 confirmed the guess right for a non-first row (row 1's face at
-  # panel-local (8, 66) -- i.e. `1 * TARGET_ROW_H + 18`) but could not reach
-  # a faceted row 0 to settle whether row 0 follows the same "+18" rule.
-  # It does not: row 0's face sits flush at (8, 0), no +18 -- see
-  # Scene::ItemMenu::TARGET_FACE_Y_EXTRA's own doc comment for the full
-  # measurement write-up (a live Change Actor Face onto the debug save's own
-  # sole actor, both alone and side-by-side with a second, natively-faceted
-  # actor so both rows were visible in the same capture at once).
+      'every row (0 through 3) flush at its own row top, rows pitched ' \
+      '58px apart rather than packed at the 48px row height' do
+  # Confirmed against a genuine RPG_RT.exe under wine (cycle #138, closing
+  # cycle #137's own open lead): cycle #132 left this an open question (a
+  # blank gutter to the left of every row, guessed but not confirmed to be
+  # an undrawn face slot); cycle #136 confirmed the guess right for a
+  # non-first row; cycle #137 reached row 0 too but, with only two rows ever
+  # visible at once, fit a "row 0 flush, every later row pushed +18" model
+  # that a two-point measurement cannot distinguish from this cycle's own
+  # (`48*1 + 18 == 58*1 + 0`) -- and mis-measured row 0 itself by eye as
+  # "~0" when it is really 8. Cycle #138 finally reached a real 4-actor
+  # faceted party (row 0 given a face via a live Change Actor Face) and
+  # found the true rule: no row is special-cased at all -- every row's face
+  # sits flush at `row * TARGET_ROW_PITCH` (58px), confirmed pixel-exact by
+  # template-matching all four rows against genuine `FaceSet/face.png` cells
+  # and cross-checked against the selection cursor's own top border. See
+  # `TARGET_ROW_PITCH`'s own doc comment for the full measurement write-up.
   [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
     scene = menu_scene(klass, faced_target_state)
     scene.send(:build_target_window)
     win = scene.instance_variable_get(:@target_window)
     blts = win.contents.blt_calls || []
     face_blts = blts.select { |c| c[3].is_a?(RGSS::Rect) && c[3].width == 48 && c[3].height == 48 }
-    eq 2, face_blts.size, "#{klass}: one face blit per actor"
-    row0 = face_blts.find { |c| c[3].x.zero? && c[3].y.zero? } # actor 0's own cell (index 0 -> src 0,0)
-    row1 = face_blts.find { |c| c[3].x == 48 && c[3].y.zero? } # actor 1's own cell (index 1 -> src 48,0)
-    ok row0, "#{klass}: row 0's own faceset cell (index 0) was blitted"
-    ok row1, "#{klass}: row 1's own faceset cell (index 1) was blitted"
-    eq RPG2k::Scene::ItemMenu::TARGET_FACE_X, row0[0], "#{klass}: row 0 face x"
-    eq 0, row0[1], "#{klass}: row 0 face is flush at the top of its own row, not pushed in"
-    eq RPG2k::Scene::ItemMenu::TARGET_FACE_X, row1[0], "#{klass}: row 1 face x"
-    eq RPG2k::Scene::ItemMenu::TARGET_ROW_H + RPG2k::Scene::ItemMenu::TARGET_FACE_Y_EXTRA, row1[1],
-       "#{klass}: row 1 face is pushed TARGET_FACE_Y_EXTRA further into its own row"
+    eq 4, face_blts.size, "#{klass}: one face blit per actor"
+    (0..3).each do |i|
+      row = face_blts.find { |c| c[3].x == i * 48 && c[3].y.zero? } # actor i's own cell (index i -> src i*48,0)
+      ok row, "#{klass}: row #{i}'s own faceset cell (index #{i}) was blitted"
+      eq RPG2k::Scene::ItemMenu::TARGET_FACE_X, row[0], "#{klass}: row #{i} face x"
+      eq i * RPG2k::Scene::ItemMenu::TARGET_ROW_PITCH, row[1],
+         "#{klass}: row #{i} face is flush at i * TARGET_ROW_PITCH, no special-casing"
+    end
+  end
+end
+
+check 'the item / skill target-confirm screen\'s selection cursor is ' \
+      'pitched 58px per row (TARGET_ROW_PITCH), not the 48px row height' do
+  # Same cycle #138 measurement as the face check above, applied to
+  # `refresh_target_cursor`: the cursor's own box stayed the row's 48px
+  # content height (`TARGET_ROW_H`, confirmed unchanged -- the wine capture's
+  # cursor border was 48px tall at every row) but its *position* must follow
+  # the same 58px pitch as the face/text it highlights, not the old 48px
+  # `TARGET_ROW_H` stride, or it drifts out of alignment with its own row by
+  # row 2 (a 20px miss) and row 3 (a 30px miss).
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    scene = menu_scene(klass, faced_target_state)
+    scene.send(:build_target_window)
+    win = scene.instance_variable_get(:@target_window)
+    (0..3).each do |i|
+      scene.instance_variable_set(:@target_index, i)
+      scene.send(:refresh_target_cursor)
+      rect = win.cursor_rect
+      eq i * RPG2k::Scene::ItemMenu::TARGET_ROW_PITCH, rect.y,
+         "#{klass}: row #{i} cursor y follows TARGET_ROW_PITCH"
+      eq RPG2k::Scene::ItemMenu::TARGET_ROW_H, rect.height,
+         "#{klass}: row #{i} cursor height stays the row's own 48px content height"
+    end
   end
 end
 

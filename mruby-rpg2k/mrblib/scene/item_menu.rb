@@ -743,20 +743,60 @@ class RPG2k
       #
       # Pixel values measured directly (640x480 wine capture, so divided by 2
       # for native 320x240 coordinates): panel at native (136, 0), 184x240 --
-      # i.e. `SCREEN_W - TARGET_W` .. `SCREEN_W`, full `SCREEN_H`; each row
-      # 48px (three 16px lines); the label column (name/level/condition)
-      # starting 56px into the panel's own content area, the value column
-      # (HP/MP) at 114px; the face 48x48 at x=8 (ending exactly where the
-      # label column begins).
+      # i.e. `SCREEN_W - TARGET_W` .. `SCREEN_W`, full `SCREEN_H`; each row's
+      # own *content* (face + its three 16px text lines) is 48px tall, but
+      # successive rows are pitched 58px apart, not 48 -- see
+      # `TARGET_ROW_PITCH` below for the citation. The label column
+      # (name/level/condition) starts 56px into the panel's own content area,
+      # the value column (HP/MP) at 114px; the face 48x48 at x=8 (ending
+      # exactly where the label column begins).
       TARGET_W = 184
       TARGET_ROW_H = LINE_H * 3
+      # Follow-up (cycle #138, 2026-08-25): RPG_RT does *not* pack these rows
+      # edge-to-edge at the 48px `TARGET_ROW_H` cycle #132 measured from a
+      # single visible row -- it leaves a 10px gap between them, so
+      # consecutive rows are 58px apart, and that 58px pitch applies to
+      # *every* row, row 0 included. This supersedes cycle #137's own
+      # `TARGET_FACE_Y_EXTRA` model (a flush row 0 plus a flat "+18" pushed
+      # into every later row), which was a curve-fit to exactly two data
+      # points (row 0 and row 1) that happens to be indistinguishable from
+      # this one at row 1 -- `48*1 + 18 == 58*1 + 0` -- and only diverges
+      # from row 2 onward, which cycle #137 could not yet reach. Confirmed
+      # against genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+      # LIBGL_ALWAYS_SOFTWARE=1, matchbox-window-manager, LANG=ja_JP.UTF-8)
+      # with a real 4-actor faceted party (デモ用 id 15 given actor 2's own
+      # face via a live Change Actor Face, event code 10640, so row 0 could
+      # be tested with a face too; ファル/ティララ/ディーヴァ, ids 2/3/4,
+      # added via cycle #136's proven-safe Change Party Member technique) --
+      # grown via a synthetic autostart event on a scratch copy of Map0012
+      # whose command list is a live Change Actor Face plus three Change
+      # Party Member commands prepended onto Map0478 event 2 page 2's own
+      # genuine Enemy-Encounter-through-EndBattle tail (troop 103, escaped
+      # out of via the battle options window's Escape entry), keeping the
+      # spliced list at least as long as cycles #130-137's own proven-safe
+      # shape throughout. All four faces template-matched pixel-exact
+      # against `FaceSet/face.png`'s own cells (`compare -subimage-search`,
+      # RMSE ~0) at content-local y = 0, 58, 116, 174 -- i.e. `58 * row`
+      # exactly, no row-0 exception -- cross-confirmed by the selection
+      # cursor's own top border (independently detected by its windowskin
+      # colour) landing on the identical four values. This also resolves
+      # cycle #137's own "row 0 face top edge landed at native y ~0" reading
+      # as measurement slop, not a real flush-top special case: it was a
+      # manual "screen y 2-4" estimate against a 640x480 capture, 8px off
+      # the true value found here (screen y 16) -- the automated
+      # template-match this cycle used is precise to the pixel and was
+      # cross-checked two independent ways (face content and cursor border)
+      # on two separate captures, so it supersedes that earlier estimate.
+      # Bare arithmetic check: 4 rows at this 58px pitch top out at
+      # content-local y `58 * 3 + 48 == 222`, two pixels inside this
+      # method's own `SCREEN_H - Window::BORDER * 2 == 224`-tall content
+      # bitmap with no room to spare -- a good sign this is the real
+      # constant and not a coincidental near-fit.
+      TARGET_ROW_PITCH = 58
       TARGET_LABEL_X = 56
       TARGET_VALUE_X = 114
       TARGET_FACE_X = 8
       TARGET_FACE_SIZE = 48
-      # The extra push into the row every row *after* the first gets -- see
-      # this method's own citation above for why row 0 is excluded.
-      TARGET_FACE_Y_EXTRA = 18
 
       def build_target_window
         @target_window.dispose if @target_window
@@ -768,8 +808,8 @@ class RPG2k
         c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
         party.each_with_index do |a, i|
-          y = i * TARGET_ROW_H
-          draw_target_face c, a, i, y
+          y = i * TARGET_ROW_PITCH
+          draw_target_face c, a, y
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
@@ -792,19 +832,17 @@ class RPG2k
       # missing portrait draws nothing" rule `Scene::Map#load_face_bitmap`/
       # `#draw_kana_face` and `Scene::Battle#draw_battle_gauge_face` already
       # use, and `#respond_to?`-guarded the same way for a bare test-fixture
-      # actor with no faceset fields at all. Row 0 draws flush at the row's
-      # own top; every later row is pushed `TARGET_FACE_Y_EXTRA` further in
-      # -- see this class's own citation on `TARGET_FACE_Y_EXTRA` above for
-      # why the two differ.
-      def draw_target_face(c, actor, row, y)
+      # actor with no faceset fields at all. Flush at the row's own top for
+      # every row, row 0 included -- see `TARGET_ROW_PITCH`'s own citation
+      # above for why an earlier cycle once thought row 0 was special.
+      def draw_target_face(c, actor, y)
         return unless actor.respond_to?(:faceset_name)
         face = load_face_bitmap(actor.faceset_name)
         return unless face
         index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
         src = Rect.new((index % 4) * TARGET_FACE_SIZE, (index / 4) * TARGET_FACE_SIZE,
                        TARGET_FACE_SIZE, TARGET_FACE_SIZE)
-        face_y = row.zero? ? y : y + TARGET_FACE_Y_EXTRA
-        c.blt TARGET_FACE_X, face_y, face, src
+        c.blt TARGET_FACE_X, y, face, src
       end
 
       # This screen has no `@map` to borrow `#load_face_bitmap` from (unlike
@@ -832,8 +870,13 @@ class RPG2k
           # cursor's own left edge (see the geometry comment above) --
           # `TARGET_LABEL_X - 2` lands the highlight's left edge right at the
           # measured card border, a couple of pixels ahead of the text itself.
+          # The box's own *height* stays `TARGET_ROW_H` (48px, matching the
+          # row's own content) even though rows are pitched 58px apart --
+          # confirmed cycle #138: the cursor border measured 48px tall at
+          # every row, leaving the same 10px gap below it that separates the
+          # rows themselves (see `TARGET_ROW_PITCH`'s own citation).
           @target_window.cursor_rect =
-            Rect.new(TARGET_LABEL_X - 2, @target_index * TARGET_ROW_H,
+            Rect.new(TARGET_LABEL_X - 2, @target_index * TARGET_ROW_PITCH,
                      @target_window.contents.width - (TARGET_LABEL_X - 2), TARGET_ROW_H)
         end
       end
