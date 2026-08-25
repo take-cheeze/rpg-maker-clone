@@ -6604,6 +6604,88 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #139, 2026-08-25): structural investigation into the
+  cycle #137/#138 short-synthetic-autostart-page crash, left unchased three
+  cycles running. Result: a real, wide-ranging finding that rules out every
+  hypothesis this file's own open item asked about (command count, encoded
+  byte length, specific command content, branch/indent structure) without
+  landing on the true mechanism -- documented here as infrastructure for
+  whichever future cycle picks it up next, not a behavioural fix (nothing in
+  this codebase diverges from RPG_RT.exe here; the question is purely why the
+  genuine binary itself crashes).** Built a reusable harness (a CRuby
+  `LCF::MapUnit`-based injector plus a wine driver script, both scratch-only,
+  not committed) that appends one synthetic autostart (trigger 3) event to a
+  scratch copy of Map0012.lmu with an arbitrary, precisely-controlled command
+  list, boots genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+  LIBGL_ALWAYS_SOFTWARE=1, matchbox-window-manager, LANG=ja_JP.UTF-8) on a
+  freshly regenerated clean single-actor debug save (`gen-lcf-save-wine.bash`
+  -> `gen-rpg2k-save.rb --map 12 --at 40,15 --clear-scene`, replacing a stale
+  4-actor save left over uncleaned from cycle #138's own probes -- restored to
+  a clean canonical state per this file's own standing instruction), drives
+  Continue -> file 1 (screenshot-verified: title, file-select, and the loaded
+  map all confirmed genuine before every probe), waits 2.5s for the map to
+  settle, presses Escape (opening the field menu -- screenshot-confirmed to
+  actually open, not just get eaten), and reports whether the process is
+  still alive 1.6s later. Round-tripping Map0012.lmu with no edits through
+  the harness's own `LCF::MapUnit`/`Array1D`/`Array2D` reproduced the
+  original file byte-for-byte first, confirming the injector's baseline is
+  sound before drawing any conclusion from it. Controls reproduced cycles
+  #137/#138's own findings exactly: a single bare BlankLine (event_command_
+  size 4) survived; two bare BlankLines (event_command_size 8) crashed --
+  same "dead only after the next transition" shape (alive through the 2.5s
+  settle, dead within ~0.6s of the Escape press). From there, tested homogeneous
+  bare-BlankLine command lists at N = 3, 5, 10, 20, 50, and 200 (event_command_
+  size 12 through 800 bytes) -- **every single one crashed, identically to
+  N=2**, with no return to survival at any tested size. This directly rules
+  out both "short list" (a length gradient) and "total encoded byte length
+  matching field 51" as the trigger: a 200-command/800-byte page fails exactly
+  like a 2-command/8-byte one, and 800 bytes is not far short of the one
+  genuine page already known to survive (see below, 1222 bytes). Also tested
+  a 4-command page shaped like the survivor's own nested structure (a
+  Conditional Branch on an always-off switch, an indent-1 BlankLine body, an
+  End Branch, then the mandatory trailing terminator, event_command_size 25)
+  to test whether indent/branch structure itself was the missing ingredient
+  -- it crashed too, ruling that out as sufficient on its own. Dumped the
+  genuine "safe" page in full (Map0478 event 2 page 2, the one cycles
+  #130-138 always splice their own probes onto) to see what it actually is,
+  rather than assuming "long": it is not a short/medium tail at all -- **89
+  commands, 1222 bytes**, a fully scripted mid-game cutscene-into-boss-battle
+  (nested Show Message/Show Choice branches, several Change Party Graphic
+  Actor Face and Control Variable/Switch commands, the real Enemy Encounter
+  at index 25, then three parallel Victory/Escape/Defeat sub-branches each
+  running their own Show Message and stat-changing commands before
+  re-converging, ending on a bare code-0 command after the closing branch
+  marker -- not a short canonical "tail" as the wording in cycles #130-138's
+  own entries suggested, but the game's *entire* real boss-intro event).
+  **Net finding:** the surviving/crashing split is not explained by length,
+  byte size, or (on the one alternative structure tested) indent nesting
+  alone -- something specific to that one genuine page's content (a real
+  Show Message, Show Choice, Enemy Encounter, or the sheer combination) is
+  what RPG_RT's own crash path is sensitive to, and it is **not** simply "did
+  a battle happen" as a leading hypothesis going in: nothing about a battle
+  was in any of this cycle's own tested short pages, so that specific
+  question (whether *any* completed autostart interpreter run leaves the
+  same corruption, and whether entering/leaving a real battle specifically
+  repairs it as a side effect) is still open and untested, not ruled out --
+  it is this cycle's own best lead for whoever picks this up next, since nine
+  distinct short/medium synthetic shapes (2 through 200 commands, several
+  content shapes) all crashed identically while only N=1 and the one real
+  89-command battle-intro event have ever survived. A second untested lead:
+  Show Message (10110)/Show Choice specifically, since those are the one
+  category of command in the genuine survivor with no analogue in any shape
+  tried this cycle. `Map0012.lmu` was restored to its original bytes
+  (byte-identical by `md5sum` against a fresh `unzip -p` of
+  `data/Nepheshel206beta.zip`) after every probe and confirmed clean at the
+  end (`scripts/lcf_testbed_check.rb` reconfirmed 1099 maps/22858 events,
+  unchanged); the regenerated clean single-actor debug save was left in place
+  at `data/Nepheshel206beta/Nepheshel206Rbeta/Save01.lsd` (map 12, (40,15),
+  scene cleared, chunks 103/113 absent -- confirmed by `scripts/lcf_save_
+  check.rb` and byte-exact round-trip via `scripts/lcf_save_roundtrip.rb`) as
+  this cycle's own canonical replacement for the stale one it found. No
+  production code touched and no changelog fragment, per this file's own
+  standing rule for a structural-investigation-only cycle; the injector/
+  driver scripts themselves were scratch-only (not committed) since they were
+  written for this one investigation, not as a reusable test-bed tool.
   ✅ **Follow-up (cycle #137, 2026-08-25): closed cycle #132's last open
   lead on the field Item/Skill target-confirm screen -- RPG_RT.exe does draw
   a real 48x48 face per row when an actor has one (cycle #136 already
