@@ -938,6 +938,36 @@ the interpreter-linking slice, in this order:
       would force the same one-time pthread/TLS bootstrap to happen in a
       controlled spot instead of wherever the first real exception happens
       to land.
+- **P1b — done, the BRINGUP heartbeat now attributes memory to a scene and
+  isolates `mrb_open()`'s own cost (2026-08-25).** The heartbeat could
+  already show *that* memory usage changed over a run, but not what caused
+  it -- no marker knew which scene was on screen, and `mrb_open()`'s own
+  footprint (Finding 1's ~1.2-1.4 MB host-proxy estimate) was folded into
+  whatever ran after it with no device-measured split. `RPG2K_PSP_BRINGUP`
+  now carries `scene=` (`RPG2k::Scene::Title`, `RPG2k::Scene::Map`, ... for
+  RPG2k; a project's own bundled script classes for XP/VX) via a new
+  `#current_scene_name` on `RPG2k`/`RPGXP`/`RPGVX` (mruby-rpg2k,
+  mruby-rpgxp, mruby-rpgvx mrblib -- RPG2k reads its own `@scenes` stack, XP/
+  VX delegate to `ScriptHost.current_scene`, already used by the desktop
+  cross-runtime probes for the same RGSS/RGSS2 `$scene` vs. RGSS3
+  `SceneManager.scene` split). Two new markers bracket `mrb_open()`:
+  `RPG2K_PSP_PRE_MRUBY_OPEN` (LVGL/display already live, no mruby allocation
+  yet -- `arena_used` is always 0 here) and the existing
+  `RPG2K_PSP_MRUBY_OPEN`, which now also carries the same figures, so the two
+  bracket exactly what opening the interpreter and defining every gem's
+  classes costs. `RPG2K_PSP_GAME_READY` fires once on successful game
+  construction, before the frame loop's first iteration -- "memory right
+  before the title screen," none of the per-frame steady-state drift the
+  periodic heartbeat measures afterward. Every marker with these figures now
+  also carries `t_us=` (`sceKernelGetSystemTimeLow()`, the same free-running
+  clock `mruby-rgss/src/psp.cxx`'s LVGL tick callback already uses), so any
+  two markers' timestamps subtract into an elapsed duration -- `mrb_open()`
+  cost, load-to-title-screen cost, or any other interval -- without new
+  profiling code. Still needs a real game at `kGameDir` to produce anything
+  beyond the idle path's own numbers (CI's `psp-smoke` job has none, same gap
+  P1's own "measure a real game" follow-up flagged); the `mrb_open()`-bracket
+  markers are the one pair that already fire on the idle path today, since
+  they run before `kGameDir` is even consulted.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

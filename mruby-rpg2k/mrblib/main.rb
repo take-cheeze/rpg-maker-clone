@@ -544,6 +544,19 @@ class RPG2k
   # answers a question, unlike the plain `test_play` value above.
   def hide_title?; @hide_title; end
 
+  # The active scene's class name ("RPG2k::Scene::Title", "RPG2k::Scene::Map",
+  # ... -- Class#name always returns the fully-qualified path), or
+  # "none" if the stack is somehow empty (never true after #initialize, which
+  # pushes Scene::Title before returning). Exposed so a native caller with no
+  # other window into this object's state can tag a diagnostic snapshot with
+  # what the player was looking at -- the PSP bring-up heartbeat
+  # (app/psp/main.cxx) uses this to attribute its per-second memory numbers to
+  # a scene instead of just a frame count; see
+  # docs/adr/0047-psp-memory-budget.md.
+  def current_scene_name
+    @scenes.empty? ? "none" : @scenes.last.class.name
+  end
+
   # RPG_RT.exe (and the RPG2000/2003 editor's own Test Play button) is launched
   # with bare positional words instead of --flag=value ones, e.g.
   # `Game.exe TestPlay HideTitle Window`. None of those look like a flag, so

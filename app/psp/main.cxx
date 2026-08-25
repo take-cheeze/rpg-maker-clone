@@ -57,6 +57,7 @@
 #include <mruby.h>
 #include <mruby/array.h>
 #include <mruby/error.h>
+#include <mruby/string.h>
 #include <mruby/variable.h>
 #include <pspiofilemgr.h>
 #include <pspkernel.h>
@@ -113,6 +114,14 @@ class StrBuf {
   void str(const char* s) {
     while (*s && len_ + 1 < cap_)
       buf_[len_++] = *s++;
+  }
+
+  // Length-bounded variant for bytes that aren't a NUL-terminated C string --
+  // an mruby String's RSTRING_PTR/RSTRING_LEN, which mruby happens to
+  // NUL-terminate internally but which this call does not rely on.
+  void str(const char* s, size_t n) {
+    for (size_t i = 0; i < n && len_ + 1 < cap_; ++i)
+      buf_[len_++] = s[i];
   }
 
   void uint(unsigned v) {
@@ -458,6 +467,81 @@ void show_keys(uint64_t mask) {
   lv_label_set_text(g_status_label, sb.c_str());
 }
 
+// Appends " t_us=N free=N maxfree=N lvgl_used=N lvgl_max=N stack_free=N
+// stack_used_max=N arena_used=N" -- the figure tail every RPG2K_PSP_*
+// diagnostic marker in this file carries (see the BRINGUP heartbeat below for
+// what each field means; ADR 0047 is the budget these exist to measure
+// against). t_us is sceKernelGetSystemTimeLow() -- microseconds on the
+// console's own free-running clock (the same source mruby-rgss/src/psp.cxx's
+// LVGL tick callback uses), not wall-clock time or time-since-process-start:
+// subtract one marker's t_us from a later one's to get an elapsed duration
+// between them (mrb_open cost, load-to-title-screen cost, ...) without this
+// file needing to know or care what "now" means beyond that. stack_used_max
+// is a parameter rather than recomputed here because only the periodic
+// heartbeat tracks a running maximum across many samples -- a one-shot
+// marker's own high-water mark is just its single sample (see
+// append_mem_snapshot below, which fills that in for one-shot callers).
+void append_mem_fields(StrBuf& sb, int stack_free, unsigned stack_used_max) {
+  lv_mem_monitor_t mon;
+  lv_mem_monitor(&mon);
+  sb.str(" t_us=");
+  sb.uint(static_cast<unsigned>(sceKernelGetSystemTimeLow()));
+  sb.str(" free=");
+  sb.uint(static_cast<unsigned>(sceKernelTotalFreeMemSize()));
+  sb.str(" maxfree=");
+  sb.uint(static_cast<unsigned>(sceKernelMaxFreeMemSize()));
+  sb.str(" lvgl_used=");
+  sb.uint(static_cast<unsigned>(mon.total_size - mon.free_size));
+  sb.str(" lvgl_max=");
+  sb.uint(static_cast<unsigned>(mon.max_used));
+  sb.str(" stack_free=");
+  sb.sint(stack_free);
+  sb.str(" stack_used_max=");
+  sb.uint(stack_used_max);
+  sb.str(" arena_used=");
+  sb.uint(static_cast<unsigned>(mrb_arena_used()));
+}
+
+// Convenience for a one-shot marker (as opposed to the periodic BRINGUP
+// heartbeat, which tracks stack_used_max across many samples itself): samples
+// the main thread's stack once and reports that single sample as its own
+// high-water mark, since there is no earlier history to compare it against.
+void append_mem_snapshot(StrBuf& sb) {
+  const int stack_free = sceKernelGetThreadStackFreeSize(0);
+  const unsigned stack_used =
+      (stack_free >= 0 && static_cast<unsigned>(stack_free) <= kMainStackBytes)
+          ? kMainStackBytes - static_cast<unsigned>(stack_free)
+          : 0;
+  append_mem_fields(sb, stack_free, stack_used);
+}
+
+// Appends the active scene's class name ("RPG2k::Scene::Title",
+// "RPG2k::Scene::Map", ... for RPG2k; a project's own bundled script classes
+// for XP/VX, whatever they happen to be named) via each maker's
+// RPG2k#current_scene_name/RPGXP#current_scene_name/
+// RPGVX#current_scene_name (mruby-rpg2k, mruby-rpgxp, mruby-rpgvx mrblib) --
+// added alongside this file's own scene-agnostic markers so the BRINGUP
+// heartbeat can attribute its memory numbers to what the player was actually
+// looking at, not just a frame count. Appends "none" for no game running or
+// (defensively) the call itself raising -- a diagnostic marker must never be
+// the thing that aborts the frame loop. RSTRING_PTR/RSTRING_LEN are read and
+// copied out here, synchronously, rather than a raw pointer being handed back
+// to the caller -- mruby's GC gives no lifetime guarantee once the string
+// value itself is no longer reachable from this scope.
+void append_scene_name(StrBuf& sb, mrb_state* M, mrb_value game_obj) {
+  const mrb_value name = mrb_funcall(M, game_obj, "current_scene_name", 0);
+  if (M->exc) {
+    M->exc = nullptr;
+    sb.str("none");
+    return;
+  }
+  if (!mrb_string_p(name)) {
+    sb.str("none");
+    return;
+  }
+  sb.str(RSTRING_PTR(name), static_cast<size_t>(RSTRING_LEN(name)));
+}
+
 }  // namespace
 
 // Wires RGSS::_display (mruby-rgss/src/lib.cxx's get_display) to the LVGL
@@ -510,15 +594,34 @@ int main(void) {
   psp_input_init();
   build_ui();
 
+  // Baseline for "how much did mrb_open() itself cost": everything up to
+  // here (the HAL, LVGL, the display and its widgets) is already live, but no
+  // mruby allocation -- core VM state, the symbol table, or any gem's classes
+  // -- has happened yet, so arena_used is always 0 at this marker. Subtract
+  // this from RPG2K_PSP_MRUBY_OPEN's own free= (or add up arena_used, which
+  // is the more direct number: mrb_open() links every gem's mrblib in, the
+  // same "full gembox, no game loaded yet" state ADR 0047's Finding 1
+  // host-proxy measurement estimated at ~1.2-1.4 MB before a device number
+  // existed for it) to get mrb_open()'s real device cost.
+  {
+    char buf[256];
+    StrBuf sb(buf, sizeof(buf));
+    sb.str("RPG2K_PSP_PRE_MRUBY_OPEN");
+    append_mem_snapshot(sb);
+    sb.str("\n");
+    psp_write(buf, sb.length());
+  }
+
   // Open the interpreter and report whether it succeeded. `M` is kept alive
   // (never mrb_close()d) for the rest of the process, the same as every other
   // target's entry point.
   mrb_state* const M = mrb_open();
   {
-    char buf[48];
+    char buf[256];
     StrBuf sb(buf, sizeof(buf));
     sb.str("RPG2K_PSP_MRUBY_OPEN ");
     sb.str(M ? "ok" : "FAILED");
+    append_mem_snapshot(sb);
     sb.str("\n");
     psp_write(buf, sb.length());
   }
@@ -604,6 +707,23 @@ int main(void) {
     sb.str(game_start_result);
     sb.str("\n");
     psp_write(buf, sb.length());
+
+    // One-shot snapshot, only on a successful construction: the game object
+    // (database, map tree, and -- for RPG2k -- Scene::Title) is fully built,
+    // but the frame loop below has not run even once, so nothing has been
+    // drawn or updated yet. This is "memory right before the title screen"
+    // (docs/adr/0047-psp-memory-budget.md): everything the load itself cost,
+    // with none of the per-frame steady-state drift the BRINGUP heartbeat
+    // measures afterward.
+    if (have_game) {
+      char rbuf[256];
+      StrBuf rb(rbuf, sizeof(rbuf));
+      rb.str("RPG2K_PSP_GAME_READY ");
+      rb.str(game_info->class_name);
+      append_mem_snapshot(rb);
+      rb.str("\n");
+      psp_write(rbuf, rb.length());
+    }
   }
 
   // The loop runs ~200 iterations/second (5 ms delay); emit a heartbeat line
@@ -650,8 +770,6 @@ int main(void) {
       lv_timer_handler();
     }
     if (frame % 200 == 0) {
-      lv_mem_monitor_t mon;
-      lv_mem_monitor(&mon);
       // ADR 0047's P5. sceKernelGetThreadStackFreeSize scans the low (deep)
       // end of the thread's stack for the 0xFF fill pspsdk leaves there at
       // creation and reports how much of it is still untouched. Because a
@@ -670,24 +788,16 @@ int main(void) {
         if (used > stack_used_max)
           stack_used_max = used;
       }
-      char buf[192];
+      char buf[256];
       StrBuf sb(buf, sizeof(buf));
       sb.str("RPG2K_PSP_BRINGUP frame=");
       sb.uint(frame);
-      sb.str(" free=");
-      sb.uint(static_cast<unsigned>(sceKernelTotalFreeMemSize()));
-      sb.str(" maxfree=");
-      sb.uint(static_cast<unsigned>(sceKernelMaxFreeMemSize()));
-      sb.str(" lvgl_used=");
-      sb.uint(static_cast<unsigned>(mon.total_size - mon.free_size));
-      sb.str(" lvgl_max=");
-      sb.uint(static_cast<unsigned>(mon.max_used));
-      sb.str(" stack_free=");
-      sb.sint(stack_free);
-      sb.str(" stack_used_max=");
-      sb.uint(stack_used_max);
-      sb.str(" arena_used=");
-      sb.uint(static_cast<unsigned>(mrb_arena_used()));
+      sb.str(" scene=");
+      if (have_game)
+        append_scene_name(sb, M, game_obj);
+      else
+        sb.str("none");
+      append_mem_fields(sb, stack_free, stack_used_max);
       sb.str("\n");
       psp_write(buf, sb.length());
     }
