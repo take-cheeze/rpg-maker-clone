@@ -1118,6 +1118,69 @@ the interpreter-linking slice, in this order:
   landing at the same point in execution every time, which strengthens
   (without yet confirming) the arena-exhaustion hypothesis over an
   intermittent/unrelated one. Follow-ups (2) and (3) remain not started.
+
+  **Follow-up (3), partly resolved: this is P2's own already-documented
+  sharp edge, not a new mystery.** P2's follow-up below records, from the
+  original 8 MB -> 12 MB investigation: *"Known sharp edge left open on
+  purpose: a game that genuinely exhausts 12 MB will hit the same
+  corrupting-unwind cliff until the failure paths are hardened -- treat
+  `arena_used` approaching capacity as the early warning."* That is exactly
+  what happened here: `arena_used` reached 94.5% of the 12 MB ceiling
+  (11,887,824 / 12,582,912 B) at the last heartbeat before the crash. This
+  does not by itself prove the crash *is* that same corrupting-unwind path
+  (still no backtrace confirming it), but it means the PPSSPP-HLE-gap
+  alternative this entry originally weighed equally is now the less likely
+  one -- the exact failure this project already root-caused and chose not
+  to fully fix is sitting right at the scene of this crash too.
+
+  **Experiment (2026-08-25): `kMrbArenaSize` bumped from 12 MB to
+  12.5 MB** (`app/psp/main.cxx`),
+  spending 512 KiB of the ~764 KiB of OS-level headroom every heartbeat's
+  unchanged `free=782336` figure shows sitting untouched throughout every
+  run so far (proof nothing else needs it yet). This is deliberately framed
+  as an experiment, not a re-validated figure: either Nepheshel's session
+  fits inside the larger ceiling (confirming this specific crash was purely
+  capacity-bound), or it crashes again later at a correspondingly higher
+  `arena_used` (confirming the ceiling was never really the fix, and the
+  failure paths P2 already flagged need to be hardened instead of chasing
+  the size further -- there is only about 250 KiB of headroom margin left
+  after this bump before touching what the 16 MB finding already showed the
+  newlib/sbrk heap needs).
+
+  **Result (2026-08-25): the bump didn't help -- the same cliff, just
+  moved.** `psp-smoke-game`'s run against 12.5 MB reached one heartbeat
+  further than every 12 MB run before it (a new `frame=400` line that never
+  appeared at 12 MB) before segfaulting the same way:
+
+  ```
+  RPG2K_PSP_BRINGUP frame=200 scene=RPG2k::Scene::Map t_us=18729969  arena_used=11887824  (94.5% of the old 12 MB ceiling)
+  RPG2K_PSP_BRINGUP frame=400 scene=RPG2k::Scene::Map t_us=31535888  arena_used=12976496  (99.0% of the new 12.5 MB ceiling)
+  Segmentation fault (core dumped)
+  ```
+
+  `arena_used` tracks each ceiling almost exactly regardless of which
+  ceiling is in force -- 94.5% then 99.0%, both right before the crash, on
+  two different arena sizes -- which is about as clean a confirmation as a
+  single data point can give that this is genuine capacity exhaustion, not
+  an unrelated PPSSPP HLE gap coincidentally triggered by Map-scene code.
+  `free=782336` stayed unchanged again, confirming the extra 512 KiB came
+  only from the untouched OS-level headroom this experiment was designed to
+  spend, nothing else.
+
+  **Conclusion: sizing is not the fix.** With only ~131 KB left before the
+  new 12.5 MB ceiling and ~250 KB of total headroom before risking the
+  newlib/sbrk starvation the original 16 MB test already ruled out, there
+  is no more room to keep raising the number -- this map's session would
+  need a substantially larger arena than this ~24 MB target can spare to
+  outrun its own growth, and a *bigger* Nepheshel map, a real XP/VX project,
+  or simply more play time would just hit the same wall further out
+  regardless of size. The actual fix is what P2's own follow-up already
+  named: harden the `NoMemoryError` unwind path itself (the corrupting
+  interaction between `mrb_realloc_simple`'s failed-retry raise and
+  `cipop`'s env-unshare allocation) so exhaustion degrades to a real
+  catchable error the game can act on, instead of corrupting the VM's
+  callinfo chain. That is mruby-VM-internals work, not a PSP-port change --
+  out of scope for a same-session follow-up here.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
@@ -1357,15 +1420,19 @@ the interpreter-linking slice, in this order:
   mruby embedded tuning knobs, and the uni-algo table trim), and P5's
   explicit main-thread stack size plus its heartbeat fields. The three sizing
   numbers that still depend on a real database and map actually being loaded
-  are the mruby arena's 8 MB, LVGL's 256 KB, and the stack's 256 KB, all
-  three of which the heartbeat is now in place to validate.
+  are the mruby arena's size (8 MB originally, revised to 12 MB, a 12.5 MB
+  experiment tried and reverted — see P2's follow-ups and P1c), LVGL's
+  256 KB, and the stack's 256 KB, all three of which the heartbeat is now
+  in place to validate.
 - ADR 0010's "the full gem set should fit" is narrowed: it holds for gem
   *code* size, but says nothing about per-title asset memory, which Finding 2
   shows can exceed the entire 24 MB budget for an RGSSAD-packed game even
   though the Wio Terminal's port needed the same warning at a much smaller
   scale.
-- **Risk register:** P2 is now decided (a bounded 8 MB mruby arena, see the
-  Decision) rather than soft-blocking, but its *size* is still a placeholder
+- **Risk register:** P2 is now decided (a bounded mruby arena, 12 MB after a
+  12.5 MB experiment was tried and reverted — see the Decision, its
+  follow-ups, and P1c) rather than soft-blocking, but its *size* is still a
+  placeholder
   awaiting on-device numbers — the BRINGUP heartbeat measures it, so that is a
   measurement follow-up, not an architectural one. P3 (RGSSAD whole-archive
   loads) is **resolved, not just mitigated, as of P3a**: `RGSSAD` no longer
