@@ -197,21 +197,23 @@ lv_obj_t* g_status_label = nullptr;
 // (docs/adr/0047-psp-memory-budget.md's P1c) drives Nepheshel through a real
 // New Game into map 371, and `ppsspp-headless` segfaults deterministically
 // (byte-identical across three separate runs) once arena_used climbs to
-// 11,887,824 B -- 94.5% of the old 12 MB ceiling, with the OS-level
-// `sceKernelTotalFreeMemSize` figure (`free=` in the heartbeat) sitting
-// unchanged at 782,336 B (~764 KiB) throughout every marker of every run,
-// proving that headroom was never touched by anything else and is free to
-// give to the arena. 12.5 MB is a first experiment, not a re-validated
-// figure: it spends 512 KiB of that ~764 KiB margin (leaving ~250 KiB for
-// the newlib/sbrk heap decoded bitmaps and the C++ exception machinery
-// still need, per the 16 MB finding above) to see whether Nepheshel's
-// specific session fits inside it, or whether the ceiling just moves and the
-// same cliff waits further out -- exactly the open question P1c's own
-// follow-up (3) raised. Either result is useful: surviving confirms this
-// session was purely capacity-bound; crashing again (later, at a
-// correspondingly higher arena_used) strengthens the case for hardening the
-// failure paths themselves rather than keeps chasing the size.
-constexpr size_t kMrbArenaSize = 12u * 1024u * 1024u + 512u * 1024u;
+// 11,887,824 B -- 94.5% of the 12 MB ceiling. Tried spending 512 KiB of the
+// ~764 KiB of untouched OS-level headroom every heartbeat's `free=782336`
+// figure showed (12.5 MB, see PR #1357) to see whether the ceiling was the
+// real problem: it was not. The same run reached one heartbeat further
+// (arena_used 12,976,496 B at frame=400, 99.0% of the *new* 12.5 MB
+// ceiling) and then crashed the same way -- the cliff tracks whatever
+// ceiling is in force almost exactly (94.5% then 99.0%, both right before
+// the crash, on two different sizes), which is about as clean a
+// confirmation as one experiment can give that this is genuine capacity
+// exhaustion hitting the corrupting-unwind cliff above, not an unrelated
+// PPSSPP HLE gap. Reverted to 12 MB: 12.5 MB bought nothing (a bigger map,
+// a real XP/VX project, or just more play time would hit the same wall
+// further out regardless of size) while permanently spending headroom the
+// newlib/sbrk heap may need. The actual fix is hardening the unwind path
+// itself, not raising this number -- out of scope for a PSP-port change;
+// see the ADR's P1c for the full trail.
+constexpr size_t kMrbArenaSize = 12u * 1024u * 1024u;
 alignas(16) uint8_t g_mrb_arena[kMrbArenaSize];
 
 constexpr size_t kMrbAlign = 16;
