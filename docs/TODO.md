@@ -1970,6 +1970,96 @@ The work below is roughly ordered by the critical path to a walkable game
   correctness on the native `:command` has_menu screen, and real RPG_RT's
   behaviour once a shop's goods list exceeds the list window's fixed
   minimum capacity).
+  ✅ **Follow-up (cycle #147, 2026-08-25): closed cycle #144's other last-open
+  shop gap -- real RPG_RT's own behaviour once a shop's goods list exceeds
+  the list window's fixed minimum capacity. It scrolls, one row at a time,
+  and the window itself never moves or grows; this codebase's own
+  `#draw_shop` did the opposite (grew the window to fit every good at once,
+  pushing straight through the now-fixed-position prompt bar below it for
+  any shop with more than a handful of goods), now fixed.** Nepheshel's own
+  weapon shop (`Map0015.lmu` event 2, `武器屋の親父` -- the same NPC cycles
+  #145/#146 used) stocks 30 real goods, well past the 7-row list cycle #144
+  measured, and needed no synthetic event editing to reach: `--map 15 --at
+  5,9 --facing up --clear-scene` stands the party at the counter, same as
+  those two cycles.
+  Drove genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+  `LIBGL_ALWAYS_SOFTWARE=1`, matchbox-window-manager, `LANG=ja_JP.UTF-8`)
+  through the NPC's own greeting and Show Choices menu into the live Buy
+  list, then `Down` through the whole 30-good list, screenshotting at every
+  boundary that could distinguish "scrolls" from "grows": the first page
+  (goods 1..7, ダガー/Dagger highlighted), the last row of that page (goods
+  1..7 still, ファルシオン/Falchion highlighted, cursor at row 7 -- still
+  nothing has to move yet), one more `Down` past it (the decisive frame),
+  and the very last (30th) good (サーキュレット/Circlet). At the decisive
+  frame the top good (ダガー) dropped off the list and the newly-revealed
+  8th good (ハンマーヘッド/Hammerhead) appeared at the bottom -- still
+  exactly 7 rows shown, not 8. A raw-pixel column scan (Python/Pillow, not
+  eyeballed) of the list window's own bottom border at native x=50 found it
+  byte-identical across all three of these captures (first page, scrolled
+  page, last good) -- the window's own bottom edge sits at the same
+  screen position regardless of scroll depth or list length, direct
+  boundary-case evidence for "scrolls, fixed size" over "grows to fit"
+  across a 1..30-good range (1-good tested by cycle #144, 7-good by cycle
+  #144, 8..30-good boundary by this cycle).
+  One more finding worth flagging: `shop_list_min_inner_h`'s own 114px
+  native content height has room for an 8th 14px row with 2px to spare by
+  naive division (114 / 14 = 8), but RPG_RT only ever shows 7 -- confirmed
+  by directly cropping the list interior below the 7th row in the
+  unscrolled capture, which shows genuine unused blank space, not a
+  clipped or partial 8th line. So the per-page row count is its own fixed
+  constant, not derivable from the window's own pixel height, which is why
+  the fix adds `SHOP_LIST_ROWS = 7` as a named constant rather than
+  computing it from `shop_list_min_inner_h`.
+  Fixed `mruby-rpg2k/mrblib/scene/map.rb`: new `SHOP_LIST_ROWS` constant
+  (7, see above); `#draw_shop` now tracks `@shop[:scroll]` (the index of
+  the first visible good), nudged by the minimum amount needed to keep
+  `@shop[:index]` (the cursor) inside the visible `SHOP_LIST_ROWS`-row page
+  -- matching every other RPG2000 list window's own "scroll just far enough
+  to reveal the cursor" behaviour rather than snapping to a page boundary --
+  and renders only `lines[@shop[:scroll], SHOP_LIST_ROWS]` instead of every
+  good at once, with the cursor rect offset by the scroll so it still lands
+  on the right row. The window's own height stays `shop_list_min_inner_h`
+  unconditionally now (previously `[row_h, shop_list_min_inner_h].max`,
+  which grew past the minimum for any list longer than it could hold before
+  this fix capped the rendered row count). `#shop_switch` resets
+  `@shop[:scroll]` to 0 alongside `@shop[:index]` on every fresh Buy/Sell
+  browse, so re-entering a list after cancelling out of it (leaving it
+  scrolled deep in) opens back at the top, not mid-scroll. `open_shop`'s
+  initial `@shop` hash gained the `scroll: 0` key for consistency with its
+  siblings. Covered by a new `scripts/rpg2k_scene_check.rb` check (a
+  synthetic buy+sell shop with 10 goods, past `SHOP_LIST_ROWS`): asserts
+  the window's `y`/`height` are identical at the first page, the last row
+  of the first page, the decisive one-`Down`-further frame, and the last
+  (10th) good, while the *visible text* changes at each of those points the
+  way the pixel evidence above says it should (goods 1..7, then 2..8 after
+  the scroll, then 4..10 at the end) -- plus the fresh-browse reset,
+  confirmed to fail against the pre-fix code (`git stash` of `map.rb` only)
+  with `RuntimeError: eighth good not yet on screen` (`1 of 927 checks
+  FAILED`) before the fix, since the pre-fix window drew all ten goods on
+  the very first frame. Full suite reconfirmed passing (927 checks, up from
+  926); `rpg2k_render_check.rb` (41) and `rpg2k_logic_check.rb` (1134)
+  reconfirmed passing unaffected. **Not independently verified this
+  cycle**: the fix only against the mruby build (this project's own two-leg
+  verification model, ADR 0021 -- the CRuby scene-check suite plus a live
+  wine capture of the *reference* runtime) -- the mruby build itself could
+  not be exercised this cycle, a pre-existing environment gap unrelated to
+  this change (`mruby-lcf`'s codegen step reads a `$cp932_table` env var
+  that is only set inside this project's nix shell / CI, and this sandbox's
+  plain `cmake --build` has neither), so `--rpg2k_continue`/
+  `--rpg2k_new_game`-style engine-binary confirmation of this specific fix
+  is left to whichever environment has that table available. `Save01.lsd`
+  (position/facing only, via the same `gen-rpg2k-save.rb --map 15 --at 5,9
+  --facing up --clear-scene` recipe cycles #145/#146 used) was the only
+  game-data file touched by any probe this cycle, restored to its original
+  bytes (`md5sum`-confirmed: `3ab5bb01e0914663442e1973dc335596`) and the
+  canonical debug save reconfirmed clean by `scripts/lcf_save_check.rb`
+  (map 12, (40,15), scene cleared, unchanged) afterward.
+  **Still open**: the last remaining gap cycle #144 first flagged --
+  whether the description bar (and the list's own `SHOP_DESC_H`-anchored
+  position) is correct on the native `:command` has_menu screen
+  specifically, which still needs a *synthetic* Open Shop command with the
+  has_menu flag set, since no Nepheshel NPC exercises that path (candidate
+  1 from this cycle's own task list, not attempted this cycle).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

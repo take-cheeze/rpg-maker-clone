@@ -5272,7 +5272,7 @@ class RPG2k
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
-                  cmd_index: 0, window: nil, gold: build_shop_gold_window,
+                  scroll: 0, cmd_index: 0, window: nil, gold: build_shop_gold_window,
                   status: nil, party: nil, desc: nil, prompt: nil,
                   terms: shop_terms(req[:type]), browsed: false,
                   interp: it }
@@ -5400,19 +5400,13 @@ class RPG2k
         end
       end
 
-      # The list's own fixed minimum content height -- confirmed against
+      # The list window's own fixed content height -- confirmed against
       # genuine RPG_RT.exe under wine (cycle #144): a 7-good Buy list and a
       # single-good Sell list both left the list window's own bottom border
       # at the identical native y (flush against the prompt bar below it,
       # see #draw_shop_prompt), rather than shrinking to fit either list's
       # actual row count the way this file used to draw it -- direct evidence
-      # the box is a fixed size, not content-sized, for at least this range
-      # (1..7 rows). `[content, SHOP_LIST_MIN_INNER_H].max` keeps a longer
-      # list (more goods than this constant reserves room for) from being
-      # clipped, since real RPG_RT's own behaviour past that point (does it
-      # scroll? does the window itself grow?) was not reachable with any
-      # shop this codebase's own test bed (Nepheshel) ships and is left
-      # unverified -- see the cycle #144 docs/TODO.md entry.
+      # the box is a fixed size, not content-sized.
       #
       # A method, not a constant, purely because MSG_WIN_H/MSG_WIN_W (the
       # ordinary map message window's own shape, #draw_shop_prompt reuses
@@ -5424,9 +5418,50 @@ class RPG2k
         SCREEN_H - SHOP_DESC_H - MSG_WIN_H - Window::BORDER * 2
       end
 
+      # How many goods the list shows at once before it scrolls -- confirmed
+      # against genuine RPG_RT.exe under wine (cycle #147, closing cycle
+      # #144's own last-open shop question): Nepheshel's own weapon shop
+      # (`Map0015.lmu` event 2, `武器屋の親父`) stocks 30 real goods, well
+      # past the 7-row list cycle #144 measured. Driving its live Buy list
+      # from the first good (ダガー/Dagger) down to the 8th (ハンマーヘッド/
+      # Hammerhead, one `Down` past the 7th) found RPG_RT still shows exactly
+      # 7 rows -- the top row (ダガー) drops off and the new 8th good appears
+      # at the bottom -- **not** an 8-row (or taller) window, even though
+      # `shop_list_min_inner_h`'s own 114px native height has room for an 8th
+      # 14px row with 2px to spare by naive division. A raw-pixel column
+      # scan (Python/Pillow) of the list window's own bottom border (native
+      # x=50, y=152..162, spanning the row just inside the border and the
+      # border itself) came back byte-identical across the
+      # first page (index 0..6), the first scrolled page (index 7, i.e. rows
+      # 2..8) and the very last good (index 29, `Map0015`'s own 30th and
+      # final good, サーキュレット/Circlet) -- the window never moves or
+      # resizes at any of the three; only which 7 goods (and which one is
+      # highlighted) changes. So real RPG_RT reserves room for 7 rows and
+      # leaves the remaining ~16px of the fixed 114px content height
+      # unused rather than fitting an 8th row into it -- a fixed row *count*,
+      # not a derived one, which is why this is its own named constant
+      # instead of `shop_list_min_inner_h / SHOP_LINE_H` (that division
+      # rounds down to 8, one row more than RPG_RT actually shows).
+      SHOP_LIST_ROWS = 7
+
       def draw_shop
         lines = shop_lines
         @shop[:index] = Game.clamp(@shop[:index], 0, [lines.length - 1, 0].max)
+        # Scroll the fixed SHOP_LIST_ROWS-tall window instead of growing it
+        # past that -- confirmed against genuine RPG_RT.exe under wine
+        # (cycle #147, see SHOP_LIST_ROWS' own comment for the full
+        # evidence). `@shop[:scroll]` is the index of the first *visible*
+        # good; nudged by the minimum amount needed to keep the cursor
+        # (`@shop[:index]`) inside the visible page, matching every other
+        # RPG2000 list window's own "scroll just far enough to reveal the
+        # cursor" behaviour rather than snapping to a page boundary.
+        @shop[:scroll] ||= 0
+        @shop[:scroll] = @shop[:index] if @shop[:index] < @shop[:scroll]
+        if @shop[:index] > @shop[:scroll] + SHOP_LIST_ROWS - 1
+          @shop[:scroll] = @shop[:index] - SHOP_LIST_ROWS + 1
+        end
+        @shop[:scroll] = Game.clamp(@shop[:scroll], 0, [lines.length - SHOP_LIST_ROWS, 0].max)
+        visible = lines[@shop[:scroll], SHOP_LIST_ROWS] || []
         # Docks flush to the screen's left edge, not inset 10px -- the same
         # stale anti-pattern ADR 0021 already diagnosed and fixed for the
         # message window ("300px wide, inset 10px" -> "fixed 320x80 at
@@ -5439,8 +5474,15 @@ class RPG2k
         # offset from the screen's right edge.
         win_w = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen]) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
         inner_w = win_w - Window::BORDER * 2
-        row_h = [lines.length, 1].max * SHOP_LINE_H
-        inner_h = [row_h, shop_list_min_inner_h].max
+        # Always the same fixed height -- never content-sized, whether the
+        # list is short (cycle #144's single-good Sell list) or long enough
+        # to scroll (cycle #147's 30-good Buy list): #shop_list_min_inner_h
+        # already exceeds SHOP_LIST_ROWS * SHOP_LINE_H, so this is really
+        # just `shop_list_min_inner_h` now that the row count rendered can
+        # never exceed SHOP_LIST_ROWS -- kept as a `max` for clarity, not
+        # because the two branches still differ.
+        inner_h = [visible.length, 1].max * SHOP_LINE_H
+        inner_h = [inner_h, shop_list_min_inner_h].max
         @shop[:window].dispose if @shop[:window]
         # Top-anchored right below the description bar (#draw_shop_desc), not
         # bottom-anchored above a 6px screen margin -- confirmed against
@@ -5453,12 +5495,13 @@ class RPG2k
         win.windowskin = @windowskin
         c = Bitmap.new(inner_w, inner_h)
         c.font.color = Color.new(255, 255, 255, 255)
-        lines.each_with_index do |(label, _), i|
+        visible.each_with_index do |(label, _), i|
           c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
         end
         win.contents = c
         unless lines.empty?
-          win.cursor_rect = Rect.new(0, @shop[:index] * SHOP_LINE_H, inner_w, SHOP_LINE_H)
+          cursor_row = @shop[:index] - @shop[:scroll]
+          win.cursor_rect = Rect.new(0, cursor_row * SHOP_LINE_H, inner_w, SHOP_LINE_H)
         end
         @shop[:window] = win
         draw_shop_gold
@@ -5950,6 +5993,13 @@ class RPG2k
         @shop[:cmd_index] = @shop[:index] if @shop[:screen] == :command
         @shop[:screen] = screen
         @shop[:index] = screen == :command ? (@shop[:cmd_index] || 0) : 0
+        # A fresh browse also starts scrolled to the top -- #draw_shop only
+        # ever nudges @shop[:scroll] forward to follow the cursor, so without
+        # this a screen re-entered after scrolling deep into a long list
+        # (e.g. cancelling out of Buy back to the command menu, then back
+        # into Buy) would still open scrolled down instead of showing goods
+        # 1..SHOP_LIST_ROWS the way a fresh Buy/Sell always does.
+        @shop[:scroll] = 0
         draw_shop
       end
 
