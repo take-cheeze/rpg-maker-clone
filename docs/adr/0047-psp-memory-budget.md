@@ -1045,6 +1045,79 @@ the interpreter-linking slice, in this order:
   4,393,856 -> 4,935,696 -> 4,465,040 B across the four heartbeats, the same
   GC sawtooth the pre-fix run already showed), confirming the `.to_s` switch
   fixed only the name lookup and nothing else about the frame loop.
+
+  **P1c — open risk found: `Scene::Map` approaches the 12 MB arena ceiling,
+  and the emulator crashed shortly after reaching it (2026-08-25,
+  [#1352](https://github.com/take-cheeze/rpg-maker-clone/pull/1352)).**
+  `.psp_ci_new_game` (a marker file `app/psp/main.cxx` checks for next to
+  the project's own data, opt-in only -- a real release's game folder never
+  carries it) makes `Scene::Title` auto-select New Game the same way
+  `src/main.cxx`'s desktop-only `--rpg2k_new_game` flag already does, so
+  `psp-smoke-game` now reaches `Scene::Map` instead of stopping at Title.
+  The run:
+
+  ```
+  RPG2K_PSP_GAME_READY RPG2k t_us=1248338 ... arena_used=4391744
+  [RPG2k-MAP] map=371 x=10 y=7
+  RPG2K_PSP_BRINGUP frame=0   scene=RPG2k::Scene::Map t_us=5726062  lvgl_used=5640 lvgl_max=7096 stack_used_max=17600 arena_used=10762352
+  RPG2K_PSP_BRINGUP frame=200 scene=RPG2k::Scene::Map t_us=18729969 lvgl_used=6876 lvgl_max=7448 stack_used_max=17600 arena_used=11887824
+  Segmentation fault (core dumped)
+  ```
+
+  Two things worth separating. First, the real numbers: entering
+  `Scene::Map` (party built, `RPG_RT.lmt` map 371 loaded, chipset/panorama
+  decoded) jumped `arena_used` from 4,391,744 B (Title, unchanged from
+  P1b) to 10,762,352 B at the very first Map frame -- **+6.37 MB**, more
+  than 11x Title's own footprint -- and it kept climbing to 11,887,824 B by
+  frame 200 (~13 s later), leaving only about 113 KB of the 12 MB arena
+  (`kMrbArenaSize`, `app/psp/main.cxx`) unused. `lvgl_used`/`lvgl_max` also
+  jumped (2208/2208 at Title -> 6876/7448 at Map frame=200) as the map's
+  tileset/panorama bitmaps decode into LVGL's own pool, and
+  `stack_used_max` roughly doubled (3356 B post-`mrb_open()` -> 17600 B),
+  consistent with the deeper call chains map rendering and the event
+  interpreter add over gem registration alone.
+
+  Second, and separately: `ppsspp-headless` itself segfaulted (`core
+  dumped`) sometime between the `frame=200` heartbeat and `frame=400`'s
+  (which never appears), ending the run early. `psp-smoke-game`'s own
+  `|| true` after the emulator invocation exists so its *assertions* can
+  still run against whatever log exists rather than the step aborting
+  outright, and those assertions (`RPG2K_PSP_BOOT`/`GAME_START`/`BRINGUP`
+  all present) technically still passed, so the job reported success with
+  the crash sitting silently in the log -- not caught by anything, just
+  found by reading the raw output this once. Whether the crash is caused
+  by arena pressure (the fixed 12 MB `g_mrb_arena` running out, and
+  `mrb_basic_alloc_func`'s override doing something unsafe on exhaustion
+  rather than a clean `mrb_full_gc`-then-fail) or is an unrelated PPSSPP
+  HLE gap that Map-scene code is simply the first thing in this project to
+  trip (a syscall or GPU command Title never issues) is **not yet
+  determined** -- both are plausible from this one data point, and telling
+  them apart needs either a core-dump backtrace or a smaller repro, neither
+  attempted yet. Follow-up, not yet started: (1) make `psp-smoke-game`
+  itself detect and loudly flag a crash (grep the log for `Segmentation
+  fault`/`core dumped`, or check the emulator's own exit code before `||
+  true` discards it) so this stops requiring a human to notice by reading
+  raw output; (2) determine whether Nepheshel's map 371 is a representative
+  data point or unusually heavy; (3) root-cause the crash itself before
+  treating the 12 MB arena figure (P2) as validated for anything beyond an
+  idle title screen.
+
+  Follow-up (1) shipped in
+  [#1354](https://github.com/take-cheeze/rpg-maker-clone/pull/1354): the
+  emulator invocation now checks its own exit status and prints a
+  `::warning::` for a signal-killed exit (128+signal) rather than relying
+  on someone to read raw output. Its own CI run confirmed the warning fires
+  correctly (`ppsspp-headless was killed by signal 11 (exit 139)`) -- and,
+  more importantly, reproduced the *exact same crash*: identical `t_us`
+  timestamps and identical `arena_used` figures at every marker
+  (`GAME_READY` 4,391,744; `BRINGUP frame=0` 10,762,352 at `t_us=5726062`;
+  `BRINGUP frame=200` 11,887,824 at `t_us=18729969`) across two independent
+  CI runs on two different commits. `ppsspp-headless`'s emulated clock is
+  deterministic, so byte-identical figures across separate runs mean this
+  is not a timing-dependent flake -- it is a fully reproducible failure
+  landing at the same point in execution every time, which strengthens
+  (without yet confirming) the arena-exhaustion hypothesis over an
+  intermittent/unrelated one. Follow-ups (2) and (3) remain not started.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

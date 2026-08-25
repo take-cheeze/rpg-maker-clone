@@ -1619,8 +1619,25 @@ jobs:
           # Longer timeout than psp-smoke's idle-path 15s: a real database
           # and map tree load (RPG_RT.ldb/.lmt) is real work the idle path
           # never does.
+          # $status, not `|| true` on the invocation itself: a signal-killed
+          # exit (128 + signal number -- 139 for the SIGSEGV docs/adr/0047-
+          # psp-memory-budget.md's P1c hit) must not be silently absorbed
+          # the way it was there -- that run segfaulted partway through
+          # Scene::Map and still reported success because only the marker-
+          # presence asserts below gated the job, with nothing checking
+          # whether the emulator itself survived. Checked as "$status" -ge
+          # 128, not "$status" -ne 0: a plain --timeout completion (this
+          # EBOOT never calls the syscall a real Headless.cpp test-success
+          # exit would want) is expected to exit nonzero on its own and
+          # must not be flagged as if it were a crash.
+          set +e
           ./ppsspp/bin/ppsspp-headless --log --graphics=software --timeout=45 \
-            "$EBOOT" > "$GITHUB_WORKSPACE/headless-game.log" 2>&1 || true
+            "$EBOOT" > "$GITHUB_WORKSPACE/headless-game.log" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ge 128 ]; then
+            echo "::warning::ppsspp-headless was killed by signal $((status - 128)) (exit $status) -- see docs/adr/0047-psp-memory-budget.md's P1c"
+          fi
           echo "=== asserting the EBOOT booted, found the game, and pumped frames ==="
           if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless-game.log" &&
              grep -q 'RPG2K_PSP_GAME_START RPG2k ok' "$GITHUB_WORKSPACE/headless-game.log" &&
