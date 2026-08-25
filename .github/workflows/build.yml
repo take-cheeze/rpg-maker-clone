@@ -1506,9 +1506,24 @@ jobs:
     #
     # Nepheshel is the same RPG2000 test-bed the desktop `build` job's own
     # "RPG2k real-game boot smoke test" step already downloads and boots, so
-    # no new fixture is introduced. PPSSPP's headless memstick root defaults
-    # to $HOME/.ppsspp; --memstick points it at a directory this job builds
-    # itself so the layout is explicit rather than relying on that default.
+    # no new fixture is introduced.
+    #
+    # Getting the game to where the EBOOT looks for it took one wrong turn
+    # worth recording: a `--memstick=DIR` flag looked right from PPSSPP's own
+    # source (Headless.cpp checks `cmdLineOptions.memStick.has_value()`), but
+    # the first real run showed PPSSPP's arg parser never consuming it as a
+    # flag at all -- it treated the whole `--memstick=...` string as another
+    # positional boot target and tried (and failed) to run it as one,
+    # confirmed by the emulator's own log ("Test init failed for
+    # --memstick=...", right next to the real EBOOT's own "Test timeout").
+    # hrydgard/ppsspp#20552 ("Allow Linux to change memstick directory") backs
+    # this up: as of this writing Linux headless has no working way to
+    # redirect the memstick location at all. What *is* real, quoted straight
+    # from Headless.cpp's own default-path branch (taken whenever no memstick
+    # override applies): non-Windows, non-Android headless runs default
+    # `g_Config.memStickDirectory` to `$HOME/.ppsspp`, creating it if it does
+    # not exist. So instead of trying to redirect it, this job just writes
+    # Nepheshel into that same default location ahead of time.
     #
     # continue-on-error: true for now. `psp-smoke` above used to run the same
     # way while PPSSPP's headless HLE was still catching up (see its own
@@ -1564,11 +1579,14 @@ jobs:
           ./scripts/download-nepheshel.bash
 
       - name: Place Nepheshel at the EBOOT's fixed Memory Stick path
+        # $HOME/.ppsspp is headless's own default memstick root on Linux (see
+        # this job's own top comment) -- created it here ahead of time with
+        # the game already in place, rather than after the emulator creates
+        # it, so there is no race with PPSSPP's own first-run setup.
         run: |
-          memstick="$RUNNER_TEMP/memstick"
+          memstick="$HOME/.ppsspp"
           mkdir -p "$memstick/PSP/GAME/rpg2k"
           cp -r data/Nepheshel206beta/Nepheshel206Rbeta/. "$memstick/PSP/GAME/rpg2k/"
-          echo "memstick=$memstick" >> "$GITHUB_ENV"
 
       - name: Run headless with a real game
         run: |
@@ -1576,9 +1594,8 @@ jobs:
           ls -l "$EBOOT"
           # Longer timeout than psp-smoke's idle-path 15s: a real database
           # and map tree load (RPG_RT.ldb/.lmt) is real work the idle path
-          # never does. --memstick, see the placement step above.
+          # never does.
           ./ppsspp/bin/ppsspp-headless --log --graphics=software --timeout=45 \
-            --memstick="$memstick" \
             "$EBOOT" > "$GITHUB_WORKSPACE/headless-game.log" 2>&1 || true
           echo "=== asserting the EBOOT booted, found the game, and pumped frames ==="
           if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless-game.log" &&
