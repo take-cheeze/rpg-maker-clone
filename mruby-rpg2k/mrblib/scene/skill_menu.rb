@@ -218,7 +218,12 @@ class RPG2k
         @target_lock = lock
         @target_index = lock == :self ? @caster_index : 0
         build_target_window
-        refresh_desc
+        # The description banner and skill-list box both narrow/change content
+        # for :target mode -- see #left_panel_w and #build_mp_cost_window.
+        # Both rebuild their own content (including a #refresh_desc call), so
+        # this needs no separate refresh_desc of its own.
+        build_desc_window
+        build_skill_window
       end
 
       def update_target
@@ -337,7 +342,10 @@ class RPG2k
         @skill_index = skills.size - 1 if @skill_index >= skills.size
         @skill_index = 0 if @skill_index < 0
         build_skill_window
-        refresh_desc
+        # Back to full width now that :target mode's own narrowed banner is
+        # gone -- see #left_panel_w. Rebuilds rather than a plain
+        # #refresh_desc so the width actually changes back, not just the text.
+        build_desc_window
       end
 
       # The destination list is a two-column grid too, not a single stacked
@@ -448,17 +456,46 @@ class RPG2k
         (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
       end
 
+      # The description banner and the skill-list box below it both run the
+      # full screen width in :skills mode, but narrow to leave room for the
+      # right-anchored target panel once :target mode is entered -- confirmed
+      # against genuine RPG_RT.exe under wine (cycle #141), closing the lead
+      # cycle #140 deliberately left open when it fixed this same reflow for
+      # Scene::ItemMenu but not here: both boxes sit flush against the target
+      # panel's own left edge (`SCREEN_W - TARGET_W`), not the full screen --
+      # pixel-sampled at the identical native x (136, the border pattern
+      # starting right where the target panel's own left edge does) as the
+      # already-fixed Item screen. Left at the full-width :skills formula for
+      # :teleport_target too, matching that mode's own unchanged, unnarrowed
+      # banner -- this cycle only drove the ordinary self/single-ally/
+      # all-ally target-confirm path under wine, not the Teleport picker, so
+      # extending this there would be guessing, not verifying (the same
+      # restraint Scene::ItemMenu#left_panel_w's own doc comment already
+      # takes for its own Teleport picker).
+      def left_panel_w
+        @mode == :target ? SCREEN_W - TARGET_W : SCREEN_W
+      end
+
       # The highlighted skill's flavour text, in a one-line banner across the
       # very top of the screen -- see Scene::ItemMenu#build_desc_window,
       # which this mirrors exactly (the same gap, in the Skill screen
-      # instead). Tracks the skill under the cursor in :skills mode; the
-      # :target/:teleport_target pickers keep showing the pending skill's own
-      # description, since it is still the one thing on screen a description
-      # could be about.
+      # instead). Tracks the skill under the cursor in :skills mode. Once
+      # :target mode narrows this banner (see #left_panel_w), real RPG_RT
+      # switches its text too -- confirmed against genuine RPG_RT.exe under
+      # wine (cycle #141), the same swap cycle #140 already found on the Item
+      # screen: it shows the pending skill's own *name* (e.g. "マーフェ"),
+      # not its description, while target mode is open, for a single-ally
+      # (scope 3), self-locked (scope 2) and all-ally-locked (scope 4) skill
+      # alike -- all three tested, since #enter_target_confirm's own lock
+      # argument only changes cursor behaviour, not (as this fix confirms)
+      # whether the reflow happens. :teleport_target is untouched (still the
+      # pending skill's description) -- that picker's own banner was not
+      # re-examined this cycle, see #left_panel_w's own doc comment for why.
       def build_desc_window
         @desc_window.dispose if @desc_window
-        inner_w = SCREEN_W - Window::BORDER * 2
-        @desc_window = Window.new(0, 0, SCREEN_W, DESC_H)
+        w = left_panel_w
+        inner_w = w - Window::BORDER * 2
+        @desc_window = Window.new(0, 0, w, DESC_H)
         @desc_window.z = 400
         @desc_window.windowskin = @skin
         @desc_contents = Bitmap.new(inner_w, LINE_H)
@@ -475,14 +512,27 @@ class RPG2k
                 @pending_skill
               end
         sk = sid ? @state.party.db_skill(sid) : nil
-        text = sk ? sk.description.to_s : ''
+        text = if sk.nil?
+                 ''
+               elsif @mode == :target
+                 sk.name.to_s
+               else
+                 sk.description.to_s
+               end
         @desc_contents.clear
         @desc_contents.font.color = Color.new(255, 255, 255, 255)
         @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
       end
 
+      # The skill grid (plus its caster-name/MP header line) in :skills mode;
+      # a single-row "MP cost" box in its place once :target mode is entered
+      # -- see #build_mp_cost_window.
       def build_skill_window
         @skill_window.dispose if @skill_window
+        if @mode == :target
+          build_mp_cost_window
+          return
+        end
         rows = skills
         inner_w = SCREEN_W - Window::BORDER * 2
         head_h = LINE_H
@@ -527,6 +577,47 @@ class RPG2k
         end
         @skill_window.contents = c
         refresh_skill_cursor
+      end
+
+      # The "MP cost" box that replaces the skill grid (and its caster-name/
+      # MP header line) once :target mode is entered -- confirmed against
+      # genuine RPG_RT.exe under wine (cycle #141): the skill list is not
+      # merely covered by the target panel, it is replaced outright by a
+      # second, short box directly under the (also-narrowed, see
+      # #left_panel_w) description banner -- the same "narrower, split into
+      # two stacked boxes" shape cycle #140 already fixed for Scene::ItemMenu,
+      # but with the database's own `mp_cost` term ("消費ＭＰ"/"MP Cost")
+      # rather than `possessed_items`, since a skill is cast, not consumed
+      # from a bag -- resolving the guess cycle #140's own doc comment left
+      # open ("plausibly an MP消費/cost box... but genuinely unverified").
+      # Measured on a single-ally heal (マーフェ, 4 MP) and re-confirmed on a
+      # self-locked heal (再生能力, 20 MP) and an all-ally-locked heal
+      # (エレクマーシャ, 30 MP): the box sits at the skill window's own
+      # former top-left corner (`(0, DESC_H)`), is exactly `DESC_H` tall (one
+      # row) and as wide as the narrowed banner above it, regardless of scope
+      # or lock. Its one line is `term(:mp_cost, 'MP Cost')` flush left and
+      # the pending skill's own cost (`Game::Party#skill_cost`, the same value
+      # the ordinary grid row already shows) flush right (`align` 2) -- the
+      # identical "term left, value right" row shape as
+      # Scene::ItemMenu#build_possessed_window and `Scene::Map#draw_shop_
+      # status`, a real recurring RPG_RT layout rather than a coincidence of
+      # one screen.
+      #
+      # :teleport_target is deliberately not given the same treatment -- see
+      # #left_panel_w's own doc comment for why.
+      def build_mp_cost_window
+        w = left_panel_w
+        inner_w = w - Window::BORDER * 2
+        @skill_window = Window.new(0, DESC_H, w, DESC_H)
+        @skill_window.z = 400
+        @skill_window.windowskin = @skin
+        c = Bitmap.new(inner_w, LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        c.draw_text 0, 0, inner_w, LINE_H, term(:mp_cost, 'MP Cost')
+        sk = @pending_skill ? @state.party.db_skill(@pending_skill) : nil
+        cost = sk ? @state.party.skill_cost(sk, caster) : 0
+        c.draw_text 0, 0, inner_w, LINE_H, cost.to_s, 2
+        @skill_window.contents = c
       end
 
       def refresh_skill_cursor

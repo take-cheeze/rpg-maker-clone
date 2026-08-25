@@ -6604,6 +6604,125 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #141, 2026-08-25): closed the lead cycle #140 left open
+  on its own doc comment -- `Scene::SkillMenu`'s target-confirm screen gets
+  the identical description-banner-narrows/skill-list-replaced reflow cycle
+  #140 fixed for `Scene::ItemMenu`, with an "MP cost" box in place of the
+  item screen's "held count" one, resolving cycle #140's own guess ("plausibly
+  an MP消費/cost box... but genuinely unverified") in the affirmative.**
+  Getting a live probe needed a skill on the debug save's actor at all: actor
+  15 (デモ用)'s own database row (`RPG_RT.ldb` chunk 11/`player`, field 63/
+  `skills`, the `LEARNING` table) carries zero entries, and the canonical save
+  itself (chunk 108/`actors`, field 52/`skills`) had never been given any
+  either -- contrary to this file's own now-corrected assumption that the
+  debug actor already had "at least one skill". Hand-edited the save's own
+  chunk 108 field 52 across two separate wine sessions (restored to the
+  original bytes, confirmed byte-identical by `md5sum` and re-checked clean
+  by `scripts/lcf_save_check.rb`, after each) to give actor 15 three of
+  Nepheshel's own field-usable heal skills spanning every scope this screen's
+  own `#enter_target_confirm` treats differently: id 32 マーフェ (scope 3,
+  single-ally, no lock, 4 MP), id 21 再生能力 (scope 2, self-locked, 20 MP),
+  and id 35 エレクマーシャ (scope 4, all-ally-locked, 30 MP) -- following the
+  same `LCF::SaveData`/`Array2D`/`Array1D` reassign-before-`to_lcf` recipe
+  this file's own standing instructions describe (mutating the nested
+  `Array1D` in place and never reassigning it into its parent silently drops
+  the edit). Drove genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+  LIBGL_ALWAYS_SOFTWARE=1, matchbox-window-manager, LANG=ja_JP.UTF-8) on the
+  canonical debug save (map 12, (40,15), scene cleared): Continue -> file 1,
+  Escape (field menu), Down (特殊技能/Skill, second of three commands under
+  this game's own menu customisation), Decision, Decision (the solo actor
+  selection row) -> the skill list (caster name/MP header line, then a
+  1-2-column grid, both full width) -> Decision on each of the three skills
+  in turn. All three landed on the identical reflow cycle #140 already found
+  on the Item screen: the description banner (top, `DESC_H` tall) narrows
+  from `SCREEN_W` to `SCREEN_W - TARGET_W` (border-pattern-measured at the
+  same native x=136 the already-fixed Item screen uses) and its text switches
+  from the skill's description to its bare name ("マーフェ"/"再生能力"/
+  "エレクマーシャ"); directly below, at the skill window's own former
+  top-left corner `(0, DESC_H)`, a second box the same narrowed width and
+  exactly one row tall replaces the *entire* skill window outright (caster-
+  name/MP header line included, not just the grid), showing the database's
+  own `mp_cost` term ("消費ＭＰ"/confirmed present in Nepheshel's own term
+  chunk 21, byte-for-byte the same string genuine RPG_RT drew) flush left and
+  the cast skill's own cost flush right ("4"/"20"/"30", matching each skill's
+  `sp_cost` exactly) -- confirmed by the same "raw map background below the
+  second box, no third window" check cycle #140 used to prove the old skill
+  list is gone, not merely covered. The reflow, and the box's own content,
+  were identical across all three scopes/locks tested -- `#enter_target_
+  confirm`'s `lock` argument (`nil`/`:self`/`:party`) only ever changed the
+  right-anchored target panel's cursor behaviour (already fixed, cycles
+  #132/#137/#138), never whether this left-side reflow happens, closing the
+  boundary-case gap cycle #140's own doc comment flagged ("this cycle only
+  drove the plain single-target-medicine path"). Cancel reverted both boxes
+  to their full-width, description/grid-showing `:skills` shape in every
+  case, tested directly (not just inferred from the mode variable). Fixed
+  `mruby-rpg2k/mrblib/scene/skill_menu.rb` mirroring `item_menu.rb`'s own
+  cycle #140 shape exactly: a new `#left_panel_w` (full `SCREEN_W` in
+  `:skills` mode, `SCREEN_W - TARGET_W` in `:target` mode) drives both
+  `#build_desc_window`'s window width and a new `#build_mp_cost_window` (a
+  one-row box at `(0, DESC_H)` showing `term(:mp_cost, 'MP Cost')` left and
+  `@state.party.skill_cost(sk, caster)` right, `align` 2) that `#build_skill_
+  window` now dispatches to whenever `@mode == :target` instead of building
+  the ordinary header+grid; `#refresh_desc` now shows the pending skill's
+  name rather than its description specifically in `:target` mode.
+  `#enter_target_confirm`/`leave_target` now rebuild both boxes (not just
+  `#refresh_desc`) so the *width* actually changes on the way in and back
+  out, not just the text. `MenuStubParty` (the shared scene-check fixture
+  base class) gained a `#skill_cost` mirroring the `[id, cost]` pairs
+  `#field_skills` already returns -- the identical shape cycle #140 already
+  added `#item_count` there for -- so every existing `SkillMenu`-exercising
+  fixture in `scripts/rpg2k_scene_check.rb` picked it up for free (a stub's
+  `db_skill` row answers `nil` for the `id` field it never set, which simply
+  misses every pair and falls back to cost 0 rather than raising; a check
+  that cares about the shown cost sets `id:` explicitly, as the two new/
+  extended fixtures below do). New checks: a `NormalTargetSkillStubParty`-
+  based check (given an explicit `id:` on its stub skill row) asserting both
+  boxes' width/position/height in `:skills` vs. `:target` mode, the banner's
+  name-vs-description text switch, the MP-cost box's label/cost/right-
+  alignment, and that Cancel reverts both boxes to their full-width `:skills`
+  shape; a second check on the existing `SelfAllySkillStubParty` (now also
+  carrying explicit `id:` fields, plus named `SELF_COST`/`PARTY_COST`
+  constants replacing the two bare literals its `#field_skills` used to
+  return) confirming the MP-cost box's *value* tracks whichever of its
+  self-scope or all-ally-scope skill was actually chosen. A third,
+  pre-existing check (the one asserting the old, now-wrong claim that "the
+  pending skill's own description is still shown while picking a target")
+  was corrected to assert the name instead, matching the fix. All three
+  confirmed to fail against the pre-fix code (a stashed diff of just
+  `skill_menu.rb`) before the fix: `expected 136, got 320` on the width
+  assertion, a buzzer-shaped "MP-cost box shows the self-scope skill's own
+  cost" failure (the box did not exist pre-fix), and the description-vs-name
+  mismatch on the third, 3 of 919 checks. Full suite reconfirmed passing (919
+  checks, up from 917); `rpg2k_render_check.rb` (41) and `rpg2k_logic_
+  check.rb` (1134) reconfirmed passing unaffected. `:teleport_target` mode's
+  own banner (reached from the same skill list via a Teleport-type skill) was
+  left completely alone, matching cycle #140's own identical restraint on the
+  Item screen's Teleport picker -- `#left_panel_w`/`#build_mp_cost_window`
+  are gated on `@mode == :target` specifically, not "any non-`:skills` mode",
+  so that picker's pre-existing, unverified full-width banner is untouched by
+  this fix either way; this cycle only drove the ordinary self/single-ally/
+  all-ally target-confirm path under wine, not the Teleport picker, so
+  extending this there would be guessing, not verifying. Also not chased:
+  the same "does the box's own number go stale after a use without leaving
+  the target screen" question cycle #140 left open for the Item screen's
+  held-count box applies identically here (a successful cast never rebuilds
+  either the target panel's HP/MP or this new MP-cost box) -- pre-existing
+  behaviour, not a regression this fix introduces, and not independently
+  verified against real RPG_RT this cycle either way. Attempted a full
+  engine build (`cmake --build build`) to additionally sanity-check the
+  change under mruby proper (per ADR 0021's own mruby/CRuby-divergence
+  warning) rather than CRuby alone; it failed on an unrelated, pre-existing
+  environment gap (`mruby-lcf/cp932_to_unicode.rb` needs a `cp932_table` env
+  var pointing at a system WCTABLE file this sandbox does not have, needed by
+  a completely different mrbgem than the one touched here) before reaching
+  either `mruby-rpg2k` gem, so it could not be used this cycle either way --
+  flagging it for whoever next needs a real engine build in this same
+  sandbox. Compiled `skill_menu.rb` directly through the project's own
+  prebuilt `mrbc` (`build/mruby/host/mrbc/bin/mrbc`) instead, which the fix
+  passes clean -- not a full substitute for an actual mruby VM run, but it
+  does rule out a syntax-level mruby/CRuby gap, and every new construct here
+  (ternaries, string interpolation, `Window.new`/`Bitmap.new`/`draw_text`) is
+  copied verbatim from patterns `item_menu.rb` already ships in production.
   ✅ **Follow-up (cycle #140, 2026-08-25): closed cycle #132's other open
   lead on the field Item menu's actor-target-confirm screen -- the item
   description area on the left visibly "re-flows into two boxes" when
