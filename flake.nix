@@ -310,6 +310,55 @@
               ./nix/patches/ppsspp-sceio-null-path-validate.patch
             ];
           });
+
+          # The Android SDK + NDK the Gradle build (app/android) compiles
+          # against, assembled by nixpkgs' androidenv from its pinned,
+          # hash-checked copies of Google's repository XML -- the same
+          # components the CI android job installs by hand through
+          # sdkmanager ("ndk;27.2.12479018", "cmake;3.22.1" on the runner's
+          # preinstalled SDK) and the manual ~/android-sdk the README used to
+          # ask for. Versions mirror app/android/app/build.gradle's own pins:
+          # ndkVersion "27.2.12479018", compileSdk 34 (AGP 8.5.2's default
+          # build-tools 34.0.0) and externalNativeBuild's cmake "3.22.1".
+          # androidenv lays the NDK out at ndk/<version> and cmake at
+          # cmake/<version> under the SDK root, exactly where AGP's
+          # ndkVersion/cmake version lookups expect them, and the accepted
+          # licenses are baked in so Gradle never stops on an unaccepted
+          # agreement.
+          android-sdk =
+            let
+              # composeAndroidPackages takes license acceptance from the
+              # nixpkgs *config* (androidenv's license.nix), not from its own
+              # arguments, so this composition gets a pkgs instance of its own
+              # with android_sdk.accept_license set -- the licenses are baked
+              # into the SDK tree it produces, and Gradle never stops on an
+              # unaccepted agreement. The SDK components are themselves unfree
+              # (Google's SDK terms), so allowUnfree rides along. Both are
+              # scoped to this import: the flake's other outputs keep the
+              # stock config.
+              androidPkgs = import nixpkgs {
+                localSystem = system;
+                config = {
+                  android_sdk.accept_license = true;
+                  allowUnfree = true;
+                };
+              };
+            in
+            # composeAndroidPackages returns an attrset of components; the
+            # flake packages output wants one derivation, so take the
+            # assembled SDK root (the `androidsdk` member -- cmdline-tools.nix's
+            # symlink farm with platforms/, build-tools/, ndk/<version>/,
+            # cmake/<version>/ and the accepted licenses).
+            (androidPkgs.androidenv.composeAndroidPackages {
+              platformVersions = [ "34" ];
+              buildToolsVersions = [ "34.0.0" ];
+              includeNDK = true;
+              ndkVersions = [ "27.2.12479018" ];
+              cmakeVersions = [ "3.22.1" ];
+              includeEmulator = false;
+              includeSources = false;
+              includeSystemImages = false;
+            }).androidsdk;
         }
       );
 
@@ -405,6 +454,43 @@
               echo "run:    ppsspp-headless --log --graphics=software build-psp/EBOOT.PBP"
             '';
           });
+
+          # The Android build shell, to the `psp` shell what packages.pspdev is
+          # to the PSP toolchain: the base build environment (cmake/ninja/
+          # ruby/gperf/bison, the Unicode mapping tables) plus the SDK+NDK
+          # composition above and a JDK for Gradle, wired through the
+          # environment variables AGP and gradlew actually read -- ANDROID_HOME
+          # for the SDK root (AGP finds ndk/<version> and cmake/<version>
+          # inside it itself), ANDROID_NDK_HOME for anything that wants the NDK
+          # directly, JAVA_HOME so ./gradlew runs on this JDK instead of
+          # prompting a toolchain download. Gradle itself stays the wrapper
+          # (gradlew pins the distribution; first run fetches it).
+          #
+          # Linux-only, like the psp shell: CI builds the APK on ubuntu, and
+          # that is the configuration this composition is pinned and tested
+          # against. On darwin use the default devshell plus a hand-installed
+          # SDK (app/android/README.md keeps the manual recipe).
+          android = nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+            self.packages.${system}.build.overrideAttrs (old: {
+              nativeBuildInputs = old.nativeBuildInputs ++ [
+                self.packages.${system}.android-sdk
+                pkgs.jdk21
+              ];
+              # The SDK root is the derivation's libexec/android-sdk tree
+              # (deployAndroidPackage's layout) -- that is where platforms/,
+              # build-tools/, ndk/<version>/ and cmake/<version>/ live, and
+              # what AGP walks for its ndkVersion / cmake version lookups.
+              ANDROID_HOME = "${self.packages.${system}.android-sdk}/libexec/android-sdk";
+              ANDROID_NDK_HOME = "${self.packages.${system}.android-sdk}/libexec/android-sdk/ndk/27.2.12479018";
+              JAVA_HOME = "${pkgs.jdk21.home}";
+              shellHook = old.shellHook + ''
+                echo "android shell: ANDROID_HOME=$ANDROID_HOME"
+                java -version 2>&1 | head -1
+                echo "build:    (cd app/android && ./gradlew :app:assembleDebug)"
+                echo "install:  adb install -r app/android/app/build/outputs/apk/debug/app-debug.apk"
+              '';
+            })
+          );
         }
       );
     };

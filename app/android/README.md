@@ -73,13 +73,24 @@ into each `mipmap-*` density — not SDL's default asset.
 
 ## Building
 
-Requires:
+With nix, everything the build needs — the SDK (platform 34, build-tools),
+NDK 27.2.12479018, CMake 3.22.1, a JDK, the Unicode mapping tables and the
+mruby lexer tools — comes from the flake's `android` devShell, the same way
+`psp` carries the PSP toolchain (`packages.android-sdk` in `flake.nix`):
+
+```sh
+nix develop .#android -c bash -c 'cd app/android && ./gradlew :app:assembleDebug'
+# -> app/build/outputs/apk/debug/app-debug.apk
+```
+
+Without nix, the manual recipe:
 
 - An Android SDK with API 34 platform + build-tools installed
   (`ANDROID_HOME`).
 - NDK 27.2.12479018 (`app/build.gradle`'s `ndkVersion`) — installable via
   `sdkmanager --install "ndk;27.2.12479018"`, or let Android Studio prompt for
   it.
+- A JDK (17+; CI uses Temurin 21) for Gradle.
 - The Unicode mapping tables `mruby-lcf`/`mruby-rgss`'s code generators need
   at build time, same as every other target — see the root
   [`README.md`](../../README.md#build-natively-without-nix)'s "Build natively
@@ -92,6 +103,7 @@ Requires:
 ```sh
 export cp932_table=/abs/path/to/bestfit932.txt   # see the root README section above
 export jis0208_table=/abs/path/to/JIS0208.TXT
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"   # if not on PATH
 cd app/android
 ./gradlew :app:assembleDebug     # -> app/build/outputs/apk/debug/app-debug.apk
 ```
