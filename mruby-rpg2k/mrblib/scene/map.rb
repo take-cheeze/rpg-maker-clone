@@ -5643,10 +5643,9 @@ class RPG2k
       # for a non-equipment good (medicine, confirmed again this cycle) the
       # band is blank, matching cycle #144's own finding exactly.
       #
-      # **The icon itself is deliberately not reproduced here** -- its exact
-      # pixels were not identified with the confidence this codebase's other
-      # fixes require. What was ruled out, each confirmed live against
-      # genuine RPG_RT.exe under wine rather than assumed:
+      # Cycle #145 left the icon itself unreproduced. What it ruled out, each
+      # confirmed live against genuine RPG_RT.exe under wine rather than
+      # assumed:
       #   - **not a per-item stat comparator**: pixel-identical across a
       #     97x price/stat range (150G ダガー/Dagger through 1400G
       #     バスタードソード/Bastard Sword through 4500G プレートメイル/Plate
@@ -5663,11 +5662,74 @@ class RPG2k
       #     icon here, since growing the test party risked cycle #135's own
       #     documented party-field crash and was out of scope for this
       #     cycle's time-box).
-      # See the cycle #145 docs/TODO.md entry for the full evidence and
-      # exactly what a future cycle would need to identify the icon itself
-      # (most likely: a windowskin/system-graphic asset dump and a pixel-
-      # for-pixel crop compare, not a further behavioural probe).
+      #
+      # Follow-up (cycle #146, 2026-08-25): identified the icon itself via
+      # asset forensics, exactly the "windowskin/system-graphic asset dump
+      # and a pixel-for-pixel crop compare" cycle #145 suggested as the next
+      # step. Nepheshel's own System graphic (`System/システム.png`) ships a
+      # genuinely corrupt IDAT stream -- a strict `Zlib::Inflate` rejects it
+      # outright ("invalid distance too far back", 0 bytes decoded even
+      # through raw deflate with the zlib header stripped), confirmed by hand
+      # against the file's own bytes (every PNG chunk CRC still matches, so
+      # this is not transfer corruption -- the deflate stream itself has a
+      # back-reference before the start of output, RPG Maker's own
+      # historically-known "buggy windowskin PNG" shape). Decoded cleanly
+      # instead through this project's *own* tolerant inflater
+      # (`RGSS::Bitmap#bmp_decode_into` in `scripts/rgss_cruby_compat.rb`, a
+      # pure-Ruby port of `src/lib.cxx`'s `png_tol::inflate_tolerant` --
+      # already written for exactly this "RPG Maker windowskins" case per its
+      # own doc comment, just never previously exercised on this particular
+      # file), which recovered all 160x80 pixels and exposed an 8x8-celled
+      # icon grid at System-graphic (128..160, 0..32) this codebase had never
+      # read before, including four visually-identical downward "droplet"
+      # icons at y=16..24.
+      #
+      # Drove genuine RPG_RT.exe under wine to the same live weapon-shop Buy
+      # list cycle #145 reached (Map0015 event 2, `--map 15 --at 5,9
+      # --facing up --clear-scene`) and read the captured screenshot's raw
+      # pixels directly (not eyeballed): the mystery band's icon is a
+      # byte-for-byte match, modulo the wine capture's own RGB565
+      # quantisation (ADR 0021's own noted floor, ±1-3 per channel here), for
+      # the System graphic's first droplet cell at (128, 16), 8x8, scaled 2x
+      # by the capture pipeline itself -- Xvfb runs the reference at 640x480
+      # while RPG2000's native resolution is SCREEN_W x SCREEN_H (320x240);
+      # confirmed independently by every other landmark measured in the same
+      # capture (the description-bar/status-panel border dividers this cycle
+      # re-measured land on the *existing* SHOP_DESC_H=30 / SHOP_STATUS_Y=80
+      # / SHOP_GOLD_Y=128 constants once halved, reconfirming those cycle
+      # #144 constants rather than contradicting them). Confirmed fixed, not
+      # per-item: the identical crop (0 differing pixels) reappeared at the
+      # identical position for both the first-highlighted 150G ダガー/Dagger
+      # and, after moving the cursor down four rows, the 800G
+      # ブロードソード/Broad Sword -- extending cycle #145's own
+      # "pixel-identical across every stat tier" finding to *position* too,
+      # not just content. Native draw position: interior offset (22, 22)
+      # from the party window's own top-left interior corner (the icon's own
+      # absolute native pixel position, halved from the capture, measured
+      # against the window's already-established origin -- `SCREEN_W -
+      # SHOP_STATUS_W - 6 + Window::BORDER`, `SHOP_DESC_H + Window::BORDER`).
+      #
+      # Fixed: `#draw_shop_party` now blits `SHOP_PARTY_ICON_SRC` (the
+      # measured 8x8 System-graphic cell) from `@windowskin` onto the
+      # window's own contents at `SHOP_PARTY_ICON_OFFSET`, once at window
+      # creation (the icon is static -- confirmed above -- so unlike the
+      # status/gold panels' own per-frame text redraw, this needs no repaint
+      # while the window stays open). Still open for a future cycle: what
+      # this specific icon *represents* semantically (its neighbours in the
+      # same 8x8 grid -- the pink triangles at y=0..8 and the glyphs at
+      # y=24..32 -- were not identified either, and this project deliberately
+      # does not consult EasyRPG source to name them) and whether a
+      # multi-member party shows more than one copy of it -- this cycle's
+      # save still carried only the same single live party member cycle #145
+      # tested with, for the same reason (growing it risks cycle #135's
+      # documented party-field crash).
       SHOP_PARTY_H = SHOP_STATUS_Y - SHOP_DESC_H
+
+      # The equipment-good icon's own source cell in the System graphic, and
+      # its draw offset inside the party window's interior -- see the cycle
+      # #146 doc comment above for the pixel-scan evidence behind both.
+      SHOP_PARTY_ICON_SRC = Rect.new(128, 16, 8, 8)
+      SHOP_PARTY_ICON_OFFSET = [22, 22].freeze
 
       def draw_shop_party(lines)
         id = shop_status_item_id(lines)
@@ -5682,6 +5744,13 @@ class RPG2k
                            SHOP_STATUS_W, SHOP_PARTY_H)
           win.z = 300
           win.windowskin = @windowskin
+          if @windowskin
+            c = Bitmap.new(SHOP_STATUS_W - Window::BORDER * 2,
+                           SHOP_PARTY_H - Window::BORDER * 2)
+            ox, oy = SHOP_PARTY_ICON_OFFSET
+            c.blt ox, oy, @windowskin, SHOP_PARTY_ICON_SRC
+            win.contents = c
+          end
           win
         end
       end

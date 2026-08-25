@@ -1879,6 +1879,97 @@ The work below is roughly ordered by the critical path to a walkable game
   command since no Nepheshel NPC exercises that path -- and real RPG_RT's
   behaviour once a shop's goods list exceeds the list window's fixed minimum
   capacity).
+  ✅ **Follow-up (cycle #146, 2026-08-25): identified and reproduced cycle
+  #145's own last-open lead -- the equipment party band's icon -- via asset
+  forensics against Nepheshel's own System graphic, exactly the technique
+  cycle #145's own entry suggested trying next instead of another
+  behavioural probe.** Nepheshel's own `System/システム.png` (the game's
+  windowskin) turned out to ship a genuinely corrupt IDAT stream: a strict
+  `Zlib::Inflate` rejects it outright ("invalid distance too far back", 0
+  bytes decoded, confirmed both through CRuby's `zlib` directly and through
+  `convert`/PIL, all three agreeing) even though every PNG chunk's own CRC
+  still matches the file's bytes exactly (so this is not transfer/checkout
+  corruption -- the deflate stream itself has a back-reference before the
+  start of its own output, a known old-RPG-Maker-era "buggy windowskin PNG"
+  shape). It decoded cleanly through this project's *own* tolerant inflater
+  instead -- `RGSS::Bitmap#bmp_decode_into` / `#inflate_tolerant` in
+  `scripts/rgss_cruby_compat.rb`, a pure-Ruby port of `src/lib.cxx`'s
+  `png_tol::inflate_tolerant`, already written for exactly this "RPG Maker
+  windowskins" case per its own pre-existing doc comment, just never
+  previously exercised on this particular file -- which recovered all
+  160x80 pixels and exposed an 8x8-celled icon grid at System-graphic
+  (128..160, 0..32) this codebase had never read before, including four
+  visually-identical downward "droplet" icons at y=16..24.
+  Drove genuine RPG_RT.exe under wine (Xvfb, `LIBGL_ALWAYS_SOFTWARE=1`,
+  matchbox-window-manager, `LANG=ja_JP.UTF-8`) to the same live weapon-shop
+  Buy list cycle #145 reached (Nepheshel's own Map0015 event 2, `--map 15
+  --at 5,9 --facing up --clear-scene`) and read the captured screenshot's
+  raw pixels directly with a small Python script (not eyeballed): the
+  mystery band's icon is a byte-for-byte match, modulo the wine capture's
+  own RGB565 quantisation (ADR 0021's own noted floor, ±1-3 per channel
+  here), for the System graphic's first droplet cell at (128, 16), 8x8,
+  scaled 2x by the capture pipeline itself -- Xvfb runs the reference at
+  640x480 while RPG2000's own native resolution is `SCREEN_W x SCREEN_H`
+  (320x240), confirmed independently by every other landmark measured in
+  the same capture (a border-pixel scan of the description-bar and status-
+  panel dividers this cycle re-measured lands on the *existing*
+  `SHOP_DESC_H`=30 / `SHOP_STATUS_Y`=80 / `SHOP_GOLD_Y`=128 constants once
+  halved, reconfirming those cycle #144 constants rather than contradicting
+  them). Confirmed fixed, not per-item, and now with *position* pinned down
+  too, not just content: the identical crop (0 differing pixels between the
+  two captures) reappeared at the identical position for both the
+  first-highlighted 150G ダガー/Dagger and, after moving the cursor down
+  four rows, the 800G ブロードソード/Broad Sword.
+  **Methodology finding worth flagging alongside cycle #145's own wine
+  keyboard-binding note**: reaching the live Buy list this cycle needed
+  several `z` presses in a row with no visible change in between (the
+  shopkeeper's own greeting message, then its Show Choices menu, each
+  needing its own confirm) before the Buy list actually opened -- a single
+  `z` (or a `Down`/`Up` sanity check in between, while a message or choice
+  menu was still up and legitimately ignoring movement) can look
+  indistinguishable from broken input if the intermediate screens are not
+  captured too. `xdotool windowactivate` also silently no-ops on this
+  matchbox setup once RPG_RT recreates its window after a save load (no
+  `_NET_ACTIVE_WINDOW` support, confirmed by `xdotool`'s own
+  `XGetWindowProperty[_NET_ACTIVE_WINDOW] failed` stderr) -- `xdotool
+  windowfocus`, which sets input focus directly (`XSetInputFocus`) rather
+  than going through EWMH, is what actually got keys delivered again after
+  that point; re-querying the window id after every load/reload rather than
+  reusing one from an earlier boot also mattered, since RPG_RT hands out a
+  new window id on each fresh launch.
+  Fixed `mruby-rpg2k/mrblib/scene/map.rb`: `SHOP_PARTY_ICON_SRC` (`Rect.new
+  (128, 16, 8, 8)`, the measured System-graphic cell) and
+  `SHOP_PARTY_ICON_OFFSET` (`[22, 22]`, the icon's measured native offset
+  from the party window's own interior origin); `#draw_shop_party` now
+  blits the icon from `@windowskin` onto the window's own `contents` once,
+  at window creation, instead of leaving the window permanently
+  contentless (the icon is static -- confirmed above -- so unlike the
+  status/gold panels' own per-frame text redraw this needs no repaint while
+  the window stays open). Covered by a new `scripts/rpg2k_scene_check.rb`
+  check asserting the exact single `blt` call (offset, source bitmap
+  identity and source rect), confirmed to fail against the pre-fix code (a
+  `git stash` of `map.rb` only) with `1 of 926 checks FAILED` before the
+  fix. Full suite reconfirmed passing (926 checks, up from 925, matching
+  the one new check added); `rpg2k_render_check.rb` (41) and
+  `rpg2k_logic_check.rb` (1134) reconfirmed passing unaffected. `Save01.lsd`
+  (position/facing only, via the same `gen-rpg2k-save.rb --map 15 --at 5,9
+  --facing up --clear-scene` recipe cycle #145 used) was the only game-data
+  file touched by any probe this cycle, restored to its original bytes
+  (`md5sum`-confirmed) and the canonical debug save reconfirmed clean by
+  `scripts/lcf_save_check.rb` (map 12, (40,15), scene cleared, unchanged)
+  afterward; the Nbeta sibling copy was never touched.
+  **Deliberately still open**: what this specific icon *represents*
+  semantically (its neighbours in the same 8x8 grid -- the pink triangles
+  at y=0..8 and the glyphs at y=24..32 -- were not identified either, and
+  this project deliberately does not consult EasyRPG source to name them);
+  whether a multi-member party shows more than one copy of it (this cycle's
+  save still carried only the same single live party member cycle #145
+  tested with, for the same reason -- growing it risks cycle #135's own
+  documented party-field crash); and the two gaps cycle #144 first left
+  open and neither #145 nor this cycle touched (the description bar's
+  correctness on the native `:command` has_menu screen, and real RPG_RT's
+  behaviour once a shop's goods list exceeds the list window's fixed
+  minimum capacity).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
