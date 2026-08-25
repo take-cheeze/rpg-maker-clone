@@ -2060,6 +2060,184 @@ The work below is roughly ordered by the critical path to a walkable game
   specifically, which still needs a *synthetic* Open Shop command with the
   has_menu flag set, since no Nepheshel NPC exercises that path (candidate
   1 from this cycle's own task list, not attempted this cycle).
+  ✅ **Follow-up (cycle #148, 2026-08-25): closed the last remaining shop
+  gap cycle #144 first flagged and cycles #145-147 each left untouched --
+  the native `:command` has_menu screen (Buy/Sell/Leave choice menu, shown
+  when an Open Shop command allows both buying and selling). No Nepheshel
+  NPC exercises this path (every real shop NPC in the game scripts its own
+  Buy/Sell/Cancel via Show Choices instead, per cycle #144's own finding),
+  so this needed a genuinely *synthetic* Open Shop command -- built via a
+  new, reusable technique (LCF map-file injection with the CRuby-loadable
+  `mruby-lcf/mrblib` schema itself, not a scratch reimplementation): a
+  scratch Ruby script (`LCF::MapUnit`, `LCF::Array1D`/`Array2D` built via
+  their own from-scratch constructors, `LCF::Schema::MAP_UNIT`/`MAP_EVENT`/
+  `MAP_EVENT_PAGE`) that adds one brand-new event (id 90, previously unused)
+  to a copy of `Map0012.lmu` -- an unconditional, trigger-3 (autostart)
+  single page whose own event-command list is a single synthetic Open Shop
+  command (10720, `mode=0` so `allow_buy && allow_sell`, `type=0`, goods
+  `[3, 5]` -- real Nepheshel item ids, the same params shape
+  `scripts/rpg2k_scene_check.rb`'s own synthetic buy+sell checks already
+  use) followed by the **genuine** 89-command event-command list copied
+  verbatim off `Map0478.lmu` event 2 page 2 (the same real "long tail"
+  cycles #130-147 have repeatedly spliced their own synthetic autostart
+  probes onto, to sidestep the still-unexplained short-synthetic-page crash
+  tracked since cycle #135/#137/#139/#143 -- kept unchanged as a length/
+  safety margin here too, though this cycle's own probe never needed to run
+  past the Open Shop command it suspends on). Verified round-trip-safe
+  before touching genuine game data: every one of Map0012's 21 pre-existing
+  events re-serialised byte-identical (`to_lcf` compared entry-by-entry)
+  after adding the new one, the modified file re-parses and re-saves
+  idempotently, and `scripts/lcf_testbed_check.rb` re-confirmed all 543
+  maps (11363 events, up from 11362) still parse cleanly. `Map0012.lmu` was
+  the only game-data file edited (byte-diffed against a fresh backup, not
+  assumed); `Save01.lsd` was untouched this cycle -- the canonical debug
+  save already sits on map 12 (40,15), scene cleared (confirmed via
+  `scripts/lcf_save_check.rb` before touching anything), which is exactly
+  where an autostart event needs the party to be. Both restored to their
+  original bytes after every probe (`md5sum`-confirmed against the values
+  cycle #147 itself recorded: `c2fa69a0...` / `3ab5bb01...`), and
+  `scripts/lcf_testbed_check.rb`/`scripts/lcf_save_check.rb` reconfirmed
+  clean afterward.
+  Drove genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+  `LIBGL_ALWAYS_SOFTWARE=1`, matchbox-window-manager, `LANG=ja_JP.UTF-8`,
+  `xdotool windowfocus` per cycle #146's own methodology note) through
+  Continue -> file 1 -> the autostart's own Open Shop command, landing
+  directly on the `:command` screen (no NPC interaction needed -- autostart
+  fires the instant the map loads). A raw-pixel border-color column scan
+  (Python/Pillow, not eyeballed, native x=4) found **three** real, separate
+  bordered windows stacked top to bottom -- not two windows plus a hidden
+  gap, the shape this codebase's own code assumed going in: the description
+  bar (native y=0..~31, matching `SHOP_DESC_H`), the goods-list window
+  (native y=~32..~154, matching the existing `SHOP_DESC_H`-anchored
+  position and `shop_list_min_inner_h` geometry), and the bottom prompt
+  window (native y=~154..~234, matching the existing `MSG_WIN_H`-anchored
+  position) -- all three at *exactly* the same native geometry cycles
+  #144-147 already measured for the Buy/Sell screens, confirming the extra
+  command menu shifts nothing. Two of those three, however, turned out
+  **blank** rather than absent: a pixel-color scan of the description bar's
+  own interior found only smooth background-gradient colours (18 distinct
+  shades, each a large contiguous run -- zero glyph-coloured pixels), and
+  the goods-list window's interior was identically blank -- confirmed
+  across all three command rows in turn (Buy/Sell/Leave each screenshotted
+  highlighted, by pressing `Down` and re-capturing) that neither window
+  ever gains content on this screen, not merely on its first frame. This
+  falsifies cycle #144's own inference (guessed, never tested: "hidden only
+  on the command menu") for the description bar -- it is *shown*, just with
+  no text -- and reveals a genuine, previously-unknown defect in how this
+  codebase drew the goods-list window on `:command`: the current code drew
+  the Buy/Sell/Leave labels *into* that list window (`draw_shop`'s own
+  `visible`/cursor-rect handling, driven by `shop_lines`), a screen real
+  RPG_RT never puts them on at all.
+  Where real RPG_RT actually draws them, a glyph-row pixel scan of the
+  bottom prompt window found decisively: merged directly beneath the
+  greeting/regreeting line, inside the *same* `MSG_WIN_W x MSG_WIN_H`
+  window -- the greeting text plus three selectable rows (visible,
+  cursor-highlighted, and confirmed live to move with `Down`/track the
+  correct row and to persist the regreeting-vs-greeting distinction cycle
+  #144 already modelled) at a measured **16-native-pixel** row pitch, not
+  the shop list's own 14px `SHOP_LINE_H`/`INN_LINE_H` -- i.e. this is built
+  from the ordinary *message* window's own `MSG_LINE_H` text metric, not
+  the shop list's. This is the exact same "message text with a choice list
+  attached directly beneath it" shape this codebase's own Show Inn prompt
+  already implements for its own Accept/Cancel pair
+  (`#open_inn_window`/`#set_inn_cursor`), and the same shape Nepheshel's own
+  choice-scripted shop NPCs build by hand via Show Message + Show Choices
+  (cycle #144's own finding) -- strong, convergent evidence that RPG_RT's
+  native has_menu screen is not a bespoke "shop command window" at all, but
+  literally the same message-plus-attached-choice-list primitive reused.
+  Backed out of the command menu (`B`) to confirm the regreeting swap and
+  cursor persistence (cycle #144/#146's own already-modelled behaviour)
+  still held with the fix's own new rendering path, then advanced into Buy
+  (`z`, not `Return` -- cycle #145's own keyboard-binding finding, `Return`
+  still confirmed inert on this map/build) to directly re-confirm the
+  ordinary Buy list (goods 3/5, real descriptions and prices) renders
+  exactly as cycles #144-147 already established, with the extra command
+  menu in front changing nothing about it.
+  Fixed `mruby-rpg2k/mrblib/scene/map.rb`: `draw_shop`'s list-window content
+  is now `[]` (blank, no cursor) whenever `@shop[:screen] == :command`,
+  instead of `shop_lines`' own three command rows -- the cursor-rect guard
+  changed from `unless lines.empty?` to `unless visible.empty?` so it stays
+  suppressed on `:command` without disturbing any other screen (`visible`
+  and `lines` coincide there already). `SHOP_DESC_VISIBLE_ON` now includes
+  `:command`, and `draw_shop_desc` no longer treats a `nil` id as "dispose
+  the window" -- it always builds/keeps the window open once the shop is,
+  drawing the highlighted good's description when there is one and an empty
+  string otherwise, so the description bar is visible-but-blank on
+  `:command` (confirmed) and, by the same now-unified rule, on an empty
+  Buy/Sell list too (an extension by inference -- that specific case is
+  still not reachable through any known genuine shop and remains untested
+  either way, flagged in the method's own doc comment same as before).
+  `draw_shop_prompt` now dispatches to a new `#draw_shop_command_prompt` on
+  `:command`, which draws the greeting/regreeting line plus the three
+  command rows (from `shop_lines`, reusing its existing terms/ordering
+  unchanged) into the one prompt window at `MSG_LINE_H` spacing, with
+  `cursor_rect` at row `1 + @shop[:index]` (offset by the one greeting
+  line, mirroring `#set_inn_cursor`'s identical "greeting lines then choice
+  rows" offset pattern) -- every other screen's `#draw_shop_prompt` path is
+  untouched. Covered by three changes to `scripts/rpg2k_scene_check.rb`:
+  the existing "description bar" check's own `:command` assertion flipped
+  from "window is nil" to "window exists, draws only an empty string"; the
+  existing "shopkeeper terms" check's own command-row-labels assertion
+  moved from reading `shop[:window]` to reading `shop[:prompt]` (plus a new
+  assertion that `shop[:window]` draws nothing at all on `:command`); and a
+  new check driving the command cursor through all three rows, asserting
+  the prompt window's own fixed geometry, `MSG_LINE_H`-spaced `cursor_rect`
+  position at each row, and that the list window's `cursor_rect` stays at
+  its all-zero default throughout -- all three confirmed to fail against
+  the pre-fix code (`git stash` of `map.rb` only) with exactly these
+  errors: `RuntimeError: the command row labels use the database terms, in
+  the prompt window`, `RuntimeError: expected 16, got 0 (row 0 (Buy)
+  selected...)`, and `RuntimeError: the description bar is a real window on
+  the command menu too, just blank -- not hidden` (`3 of 928 checks
+  FAILED`) -- not a vacuous pass on either side. Full suite reconfirmed
+  passing (928 checks, up from 927); `rpg2k_render_check.rb` (41),
+  `rpg2k_logic_check.rb` (1134), `rpg2k3_battle_row_check.rb` (19) and
+  `rpg2k3_battle_gauge_check.rb` (15) all reconfirmed passing unaffected.
+  **Also independently verified against the mruby build itself this
+  cycle** -- the environment gap prior cycles kept hitting
+  (`mruby-lcf`'s codegen step reading `$cp932_table`/`$jis0208_table` from
+  outside the nix shell/CI) turned out avoidable without nix after all: the
+  two Unicode mapping tables the flake fetches are the same two files
+  `scripts/native-build-without-nix.bash` already downloads and pins by
+  hash for exactly this situation, so fetching them by hand and exporting
+  the two env vars let `cmake --build build --target rpg_maker_clone` (this
+  session's pre-existing, partially-configured `build/` directory) complete
+  cleanly. Ran the resulting `./build/rpg_maker_clone --game_dir ...
+  --test_play --rpg2k_continue` under its own headless Xvfb/matchbox
+  session against the *same* injected Map0012/Save01, and screenshot-
+  compared its own `:command` screen against the genuine RPG_RT.exe capture
+  above: a border-color column scan (the same native x=4 scan used against
+  the genuine capture) landed on matching window boundaries at every edge
+  (within 1-4px of jitter, consistent with ADR 0021's own already-documented
+  RGB565-quantisation floor), and pressing `Down` on the mruby build's own
+  window reproduced the identical cursor-moves-to-Sell frame, layout-for-
+  layout, that the genuine capture showed. This is the first cycle able to
+  close the loop with all three legs (CRuby scene-check, genuine RPG_RT.exe
+  under wine, and this project's own compiled engine binary) in one pass
+  rather than leaving the mruby leg as a standing gap; worth flagging to
+  future cycles that this build path is available in this kind of sandboxed
+  environment without nix.
+  No EasyRPG source was consulted for any part of this cycle's
+  investigation or fix -- every claim above traces to either the genuine
+  RPG_RT.exe wine captures or this project's own prior, already-verified
+  code/comments (the Show Inn prompt, cycles #144-147's own shop-geometry
+  findings). The pre-existing `drive_shop_command` doc comment citing
+  EasyRPG's `Window_Shop::Update`/`Scene_Shop::UpdateCommandSelection` for
+  Decision/Cancel dispatch predates this project's strict no-EasyRPG-source
+  rule (flagged as such already, same as several other shop-code comments
+  cycle #145 already noted) and was left alone -- this cycle's own fix
+  touches rendering only, not that dispatch logic, so nothing here depended
+  on it either way.
+  **Still open**: whether a shop whose description bar/list/prompt windows
+  interact with the still-unreproduced equipment-party-band icon (cycles
+  #145/#146) on the `:command` screen itself -- not applicable, since the
+  party band is gated on a highlighted *good*, which `:command` never has,
+  but not independently re-confirmed live this cycle since no equipment
+  good was probed here; the empty-Buy/Sell-list description-bar inference
+  above (extended from the `:command` finding, not independently tested);
+  and the long-deferred short-synthetic-autostart-page crash (candidate 2)
+  and Enter Hero Name charset-2 hang (candidate 3) from this cycle's own
+  task list, neither attempted this cycle.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

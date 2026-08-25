@@ -5461,7 +5461,18 @@ class RPG2k
           @shop[:scroll] = @shop[:index] - SHOP_LIST_ROWS + 1
         end
         @shop[:scroll] = Game.clamp(@shop[:scroll], 0, [lines.length - SHOP_LIST_ROWS, 0].max)
-        visible = lines[@shop[:scroll], SHOP_LIST_ROWS] || []
+        # The command menu's own Buy/Sell/Leave rows are never drawn into
+        # this list window -- confirmed against genuine RPG_RT.exe under
+        # wine (cycle #148, a synthetic mode=0 Open Shop command spliced
+        # onto Map0012 via a new autostart event): on the native :command
+        # has_menu screen this window is a real, bordered window at its
+        # usual position/size (same border-pixel geometry as every other
+        # screen, confirmed by a column scan) but always empty -- no text,
+        # no cursor -- across all three command rows in turn (Buy/Sell/Leave
+        # each screenshotted highlighted in turn showed the identical blank
+        # window). The actual choice list renders merged into the bottom
+        # prompt window instead -- see #draw_shop_command_prompt.
+        visible = @shop[:screen] == :command ? [] : (lines[@shop[:scroll], SHOP_LIST_ROWS] || [])
         # Docks flush to the screen's left edge, not inset 10px -- the same
         # stale anti-pattern ADR 0021 already diagnosed and fixed for the
         # message window ("300px wide, inset 10px" -> "fixed 320x80 at
@@ -5499,7 +5510,7 @@ class RPG2k
           c.draw_text 0, i * SHOP_LINE_H, inner_w, SHOP_LINE_H, label
         end
         win.contents = c
-        unless lines.empty?
+        unless visible.empty?
           cursor_row = @shop[:index] - @shop[:scroll]
           win.cursor_rect = Rect.new(0, cursor_row * SHOP_LINE_H, inner_w, SHOP_LINE_H)
         end
@@ -5520,13 +5531,26 @@ class RPG2k
       # status/gold panels' own SHOP_PANELS_VISIBLE_ON (also shown on Sell,
       # confirmed live -- a single-good Sell list showed the same bar with
       # the sold item's own description, even though Sell gets no status/gold
-      # column); hidden only on the command menu and whenever the current
-      # screen has no single item to describe (:command, or an empty list),
-      # which was not reachable through this cycle's own test shop (it scripts
-      # its own Buy/Sell/Cancel choice menu rather than using this engine's
-      # native :command screen) and so is inferred, not directly verified --
-      # see the cycle #144 docs/TODO.md entry.
-      SHOP_DESC_VISIBLE_ON = %i[buy sell quantity purchased sold].freeze
+      # column).
+      #
+      # Follow-up (cycle #148, 2026-08-25): the command menu is *not* a
+      # fourth hidden case after all -- confirmed against genuine RPG_RT.exe
+      # under wine (a synthetic mode=0 Open Shop command, allow_buy and
+      # allow_sell both set, spliced onto a new autostart event on Map0012):
+      # the native :command has_menu screen shows this exact window too, at
+      # the identical position, still bordered -- a raw-pixel scan of its
+      # interior found nothing but the background gradient (no glyph-colour
+      # pixels at all), i.e. present but blank, not disposed. Cycle #144's
+      # own guess that it hides on :command was an unverified inference and
+      # turned out wrong; #shop_desc_item_id already returned nil there
+      # (correctly -- no single good is ever highlighted on the command
+      # menu), so the fix is only in #draw_shop_desc no longer treating a nil
+      # id as "hide the window" -- it draws blank text instead, extending the
+      # same "always shown, blank without an id" reading to the other nil-id
+      # case (an empty Buy/Sell list) by inference, since that case is still
+      # not directly reachable through any known genuine shop and was never
+      # independently verified either way before or after this fix.
+      SHOP_DESC_VISIBLE_ON = %i[command buy sell quantity purchased sold].freeze
 
       def shop_desc_item_id(lines)
         return nil unless SHOP_DESC_VISIBLE_ON.include?(@shop[:screen])
@@ -5541,11 +5565,6 @@ class RPG2k
 
       def draw_shop_desc(lines)
         id = shop_desc_item_id(lines)
-        if id.nil?
-          @shop[:desc].dispose if @shop[:desc]
-          @shop[:desc] = nil
-          return
-        end
         win = @shop[:desc]
         unless win
           win = Window.new(0, 0, SCREEN_W, SHOP_DESC_H)
@@ -5556,7 +5575,7 @@ class RPG2k
         inner_w = SCREEN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, SHOP_LINE_H, @shop[:model].description(id)
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, id ? @shop[:model].description(id) : ''
         win.contents = c
       end
 
@@ -5567,7 +5586,11 @@ class RPG2k
       # (cycle #144) landed on exactly (native y=160, height 80). Replaces the
       # old "merged into the list window's own first row" shape #draw_shop
       # used before.
+      #
+      # The command menu draws differently in this same window -- see
+      # #draw_shop_command_prompt.
       def draw_shop_prompt
+        return draw_shop_command_prompt if @shop[:screen] == :command
         text = shop_header
         if text.nil?
           @shop[:prompt].dispose if @shop[:prompt]
@@ -5586,6 +5609,47 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, text
         win.contents = c
+      end
+
+      # The native :command has_menu screen's greeting/regreeting line and its
+      # Buy/Sell/Leave choices, merged into one window -- confirmed against
+      # genuine RPG_RT.exe under wine (cycle #148, see #draw_shop's own
+      # citation for the full setup): the three choice rows are *not* drawn
+      # into the main list window (#draw_shop leaves it blank on :command)
+      # but directly below the greeting text, inside this same
+      # MSG_WIN_W x MSG_WIN_H bottom window -- the same "message text with a
+      # choice list attached directly beneath it" shape this codebase's own
+      # Show Inn prompt already uses for its own Accept/Cancel pair
+      # (#open_inn_window / #set_inn_cursor), and the same shape Nepheshel's
+      # own choice-scripted shop NPCs use when *they* build a Buy/Sell/Cancel
+      # menu by hand via Show Message + Show Choices (docs/TODO.md's own
+      # cycle #144 entry) -- real RPG_RT's native has_menu screen turns out to
+      # be built from that identical primitive, not a bespoke command window.
+      #
+      # Row spacing is MSG_LINE_H (16 native), not SHOP_LINE_H/INN_LINE_H (14)
+      # -- measured directly off the wine capture (a glyph-row pixel scan of
+      # the four text rows landed on a 16px-native pitch, matching this
+      # window's own ordinary message-line metric, not the shop list's own
+      # compressed one), which makes sense once this is understood to be the
+      # message window's own text renderer rather than the shop list's.
+      def draw_shop_command_prompt
+        rows = shop_lines
+        text_lines = [shop_header] + rows.map { |label, _| label }
+        win = @shop[:prompt]
+        unless win
+          win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
+          win.z = 300
+          win.windowskin = @windowskin
+          @shop[:prompt] = win
+        end
+        inner_w = MSG_WIN_W - Window::BORDER * 2
+        c = Bitmap.new(inner_w, text_lines.length * MSG_LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        text_lines.each_with_index do |line, i|
+          c.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
+        end
+        win.contents = c
+        win.cursor_rect = Rect.new(0, (1 + @shop[:index]) * MSG_LINE_H, inner_w, MSG_LINE_H)
       end
 
       # The gold and status panels share one visible/hidden set: RPG_RT's
