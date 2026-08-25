@@ -19411,6 +19411,67 @@ check 'the item / skill target-confirm screen draws each actor on three ' \
   end
 end
 
+# A party where every member has a real faceset -- for the target-confirm
+# panel's own face-drawing checks below.
+class FacedTargetParty < MenuStubParty
+  def initialize
+    super
+    @actors = Array.new(2) { |i| a = MenuStubActor.new; a.faceset_name = 'face'; a.faceset_index = i; a }
+  end
+end
+
+def faced_target_state
+  Game::State.new(FacedTargetParty.new, 1, 0, 0)
+end
+
+check 'the item / skill target-confirm screen draws a 48x48 face per row, ' \
+      'row 0 flush at the top of its own row but every later row pushed ' \
+      '18px further in' do
+  # Confirmed against a genuine RPG_RT.exe under wine (cycle #137): cycle
+  # #132 left this an open question (a blank gutter to the left of every
+  # row, guessed but not confirmed to be an undrawn face slot) and cycle
+  # #136 confirmed the guess right for a non-first row (row 1's face at
+  # panel-local (8, 66) -- i.e. `1 * TARGET_ROW_H + 18`) but could not reach
+  # a faceted row 0 to settle whether row 0 follows the same "+18" rule.
+  # It does not: row 0's face sits flush at (8, 0), no +18 -- see
+  # Scene::ItemMenu::TARGET_FACE_Y_EXTRA's own doc comment for the full
+  # measurement write-up (a live Change Actor Face onto the debug save's own
+  # sole actor, both alone and side-by-side with a second, natively-faceted
+  # actor so both rows were visible in the same capture at once).
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    scene = menu_scene(klass, faced_target_state)
+    scene.send(:build_target_window)
+    win = scene.instance_variable_get(:@target_window)
+    blts = win.contents.blt_calls || []
+    face_blts = blts.select { |c| c[3].is_a?(RGSS::Rect) && c[3].width == 48 && c[3].height == 48 }
+    eq 2, face_blts.size, "#{klass}: one face blit per actor"
+    row0 = face_blts.find { |c| c[3].x.zero? && c[3].y.zero? } # actor 0's own cell (index 0 -> src 0,0)
+    row1 = face_blts.find { |c| c[3].x == 48 && c[3].y.zero? } # actor 1's own cell (index 1 -> src 48,0)
+    ok row0, "#{klass}: row 0's own faceset cell (index 0) was blitted"
+    ok row1, "#{klass}: row 1's own faceset cell (index 1) was blitted"
+    eq RPG2k::Scene::ItemMenu::TARGET_FACE_X, row0[0], "#{klass}: row 0 face x"
+    eq 0, row0[1], "#{klass}: row 0 face is flush at the top of its own row, not pushed in"
+    eq RPG2k::Scene::ItemMenu::TARGET_FACE_X, row1[0], "#{klass}: row 1 face x"
+    eq RPG2k::Scene::ItemMenu::TARGET_ROW_H + RPG2k::Scene::ItemMenu::TARGET_FACE_Y_EXTRA, row1[1],
+       "#{klass}: row 1 face is pushed TARGET_FACE_Y_EXTRA further into its own row"
+  end
+end
+
+check 'the item / skill target-confirm screen draws no face for an actor ' \
+      'with no faceset set' do
+  # MenuStubActor defaults to a blank faceset_name -- matching
+  # Scene::Map#load_face_bitmap's own "blank name -> no face" rule, the same
+  # one the debug save's solo "デモ用" actor exercised for real (cycle #136).
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    scene = menu_scene(klass, menu_state)
+    scene.send(:build_target_window)
+    win = scene.instance_variable_get(:@target_window)
+    blts = win.contents.blt_calls || []
+    face_blts = blts.select { |c| c[3].is_a?(RGSS::Rect) && c[3].width == 48 && c[3].height == 48 }
+    eq 0, face_blts.size, "#{klass}: no face blit for a faceless actor"
+  end
+end
+
 check 'Scene::ItemMenu: the item grid cursor does not wrap, the target cursor does' do
   scene = menu_scene(RPG2k::Scene::ItemMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@item_index), 'starts on the first item'

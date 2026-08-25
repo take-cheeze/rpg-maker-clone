@@ -692,27 +692,71 @@ class RPG2k
       # not two, and the HP/MP *value* column starting partway across the
       # row rather than immediately after the label. There is also a blank
       # gutter to the left of every line, of a piece with the cursor
-      # highlight (see #refresh_target_cursor below): a plausible, but
-      # *not confirmed*, explanation is a face-graphic slot this screen does
-      # not draw into -- Nepheshel's only reachable test actor (the debug
-      # save's solo "デモ用" character) carries no faceset to test that
-      # theory against, and the party field of a hand-edited save
-      # (`inventory` chunk 109's own `party` sub-field) could not be grown
-      # past that one saved actor this cycle (RPG_RT kept showing a solo
-      # party regardless), so the multi-actor stacking below is this
-      # method's own straight-line extrapolation of the confirmed single-row
-      # geometry, not independently confirmed -- see docs/TODO.md's cycle
-      # #132 entry for the full measurement write-up and this as an open
-      # lead. Pixel values measured directly (640x480 wine capture, so
-      # divided by 2 for native 320x240 coordinates): panel at native
-      # (136, 0), 184x240 -- i.e. `SCREEN_W - TARGET_W` .. `SCREEN_W`, full
-      # `SCREEN_H`; each row 48px (three 16px lines); the label column
-      # (name/level/condition) starting 56px into the panel's own content
-      # area, the value column (HP/MP) at 114px.
+      # highlight (see #refresh_target_cursor below) -- cycle #132 guessed
+      # this might be an undrawn face-graphic slot but could not confirm it
+      # (Nepheshel's only reachable test actor, the debug save's solo
+      # "デモ用" character, carries no faceset); cycle #136 then confirmed
+      # the guess right for a *non-first* row (row 1: actor 2, ファル, drew
+      # its real 48x48 FaceSet/face.png cell 1 at panel-local (8, 66)) but
+      # left row 0's own offset unconfirmed. Settled this cycle (#137, with a
+      # genuine RPG_RT.exe under wine): row 0 draws its face **flush at the
+      # top of its own row** (panel-local (8, 0)), *not* at the same "+18px
+      # into the row" offset row 1 (and, unconfirmed, every later row) uses.
+      # Measured by giving the debug save's own sole actor (15, デモ用, no
+      # native faceset) a live Change Actor Face (event code 10640) onto the
+      # same FaceSet/face.png cell 1 actor 2 already carries, so row 0 could
+      # be tested directly -- both alone and side-by-side with actor 2 (added
+      # to the party without ever removing the original leader, cycle #136's
+      # own proven-safe shape) so both rows' faces were visible in the same
+      # capture at once: row 0's face top edge landed at native y ~0 (screen
+      # y ~2-4 of a 640x480 capture) while row 1's landed at native y 66,
+      # exactly reproducing cycle #136's own figure in the same frame --
+      # ruling out a capture-to-capture calibration error -- and confirmed
+      # independent of which row the cursor was actually highlighting (the
+      # two faces stayed exactly where they were when the cursor moved from
+      # row 0 to row 1, so this is a per-row-index quirk, not a
+      # currently-selected-row one). Rows 2/3 (unreachable without risking
+      # the party-growth crash below) are *not* confirmed to continue the
+      # "+18" pattern past row 1 -- left as this fix's own open lead, the
+      # same shape as cycle #132's original multi-row-stacking caveat.
+      #
+      # Left as a genuine, separate open lead this cycle could not chase
+      # further (out of scope for the face question above): a synthetic
+      # autostart page carrying *only* a Change Party Member and/or Change
+      # Actor Face command or two (a short command list, well short of the
+      # genuine Enemy-Encounter-through-EndBattle tail cycles #130-136's own
+      # probes always spliced onto) crashed genuine RPG_RT.exe outright, but
+      # only on the *next* screen transition (confirmed alive for a full 2s
+      # after the map settled, dead within 0.3s of the following Escape) --
+      # even a page with **no actor-related command at all** (two bare
+      # BlankLines) reproduced it, while a *single*-command page (one
+      # BlankLine) and the long genuine battle-tail-based pages (cycles
+      # #130-136's own recipe, and this cycle's own working recipe) did not.
+      # Command content is therefore not the trigger; something about a
+      # *short* synthetic command list specifically is. Not chased further --
+      # this cycle's own probes worked around it by keeping the spliced
+      # command list exactly as long as cycles #130-136's proven-safe shape
+      # (their full Enemy-Encounter-through-EndBattle tail, escaped out of
+      # rather than fought) -- but it is a real, reproducible crash a future
+      # cycle investigating short synthetic autostart pages should know about
+      # before assuming a short page is automatically safe.
+      #
+      # Pixel values measured directly (640x480 wine capture, so divided by 2
+      # for native 320x240 coordinates): panel at native (136, 0), 184x240 --
+      # i.e. `SCREEN_W - TARGET_W` .. `SCREEN_W`, full `SCREEN_H`; each row
+      # 48px (three 16px lines); the label column (name/level/condition)
+      # starting 56px into the panel's own content area, the value column
+      # (HP/MP) at 114px; the face 48x48 at x=8 (ending exactly where the
+      # label column begins).
       TARGET_W = 184
       TARGET_ROW_H = LINE_H * 3
       TARGET_LABEL_X = 56
       TARGET_VALUE_X = 114
+      TARGET_FACE_X = 8
+      TARGET_FACE_SIZE = 48
+      # The extra push into the row every row *after* the first gets -- see
+      # this method's own citation above for why row 0 is excluded.
+      TARGET_FACE_Y_EXTRA = 18
 
       def build_target_window
         @target_window.dispose if @target_window
@@ -725,6 +769,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         party.each_with_index do |a, i|
           y = i * TARGET_ROW_H
+          draw_target_face c, a, i, y
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
@@ -740,6 +785,38 @@ class RPG2k
         end
         @target_window.contents = c
         refresh_target_cursor
+      end
+
+      # Row `row`'s 48x48 face crop, or nothing at all for an actor with no
+      # faceset set (or one that fails to load) -- matching the same "a
+      # missing portrait draws nothing" rule `Scene::Map#load_face_bitmap`/
+      # `#draw_kana_face` and `Scene::Battle#draw_battle_gauge_face` already
+      # use, and `#respond_to?`-guarded the same way for a bare test-fixture
+      # actor with no faceset fields at all. Row 0 draws flush at the row's
+      # own top; every later row is pushed `TARGET_FACE_Y_EXTRA` further in
+      # -- see this class's own citation on `TARGET_FACE_Y_EXTRA` above for
+      # why the two differ.
+      def draw_target_face(c, actor, row, y)
+        return unless actor.respond_to?(:faceset_name)
+        face = load_face_bitmap(actor.faceset_name)
+        return unless face
+        index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
+        src = Rect.new((index % 4) * TARGET_FACE_SIZE, (index / 4) * TARGET_FACE_SIZE,
+                       TARGET_FACE_SIZE, TARGET_FACE_SIZE)
+        face_y = row.zero? ? y : y + TARGET_FACE_Y_EXTRA
+        c.blt TARGET_FACE_X, face_y, face, src
+      end
+
+      # This screen has no `@map` to borrow `#load_face_bitmap` from (unlike
+      # Scene::Battle's own face draw) -- mirrors `Scene::SaveLoad#load_face_
+      # bitmap` exactly, including the colour-key transparency every FaceSet
+      # sheet needs.
+      def load_face_bitmap(name)
+        return nil if name.nil? || name.empty?
+        Bitmap.new "FaceSet/#{name}", true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] face graphic '#{name}' load failed: #{e.message}"
+        nil
       end
 
       def refresh_target_cursor

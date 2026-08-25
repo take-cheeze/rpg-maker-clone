@@ -541,16 +541,20 @@ class RPG2k
       end
 
       # See Scene::ItemMenu's identical `TARGET_W`/`TARGET_ROW_H`/
-      # `TARGET_LABEL_X`/`TARGET_VALUE_X` doc comment (cycle #132) for the
-      # full RPG_RT measurement write-up -- this class's own target-confirm
-      # screen shares the exact same geometry (a genuine RPG_RT.exe under
-      # wine draws Scene_Skill's actor-target picker identically to
-      # Scene_Item's), so the constants and both methods below are ported
-      # verbatim from there rather than re-measured independently.
+      # `TARGET_LABEL_X`/`TARGET_VALUE_X` doc comment (cycle #132, extended
+      # cycle #137 with the face-drawing geometry) for the full RPG_RT
+      # measurement write-up -- this class's own target-confirm screen shares
+      # the exact same geometry (a genuine RPG_RT.exe under wine draws
+      # Scene_Skill's actor-target picker identically to Scene_Item's), so
+      # the constants and methods below are ported verbatim from there rather
+      # than re-measured independently.
       TARGET_W = 184
       TARGET_ROW_H = LINE_H * 3
       TARGET_LABEL_X = 56
       TARGET_VALUE_X = 114
+      TARGET_FACE_X = 8
+      TARGET_FACE_SIZE = 48
+      TARGET_FACE_Y_EXTRA = 18
 
       def build_target_window
         @target_window.dispose if @target_window
@@ -563,6 +567,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         party.each_with_index do |a, i|
           y = i * TARGET_ROW_H
+          draw_target_face c, a, i, y
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
@@ -578,6 +583,27 @@ class RPG2k
         end
         @target_window.contents = c
         refresh_target_cursor
+      end
+
+      # See Scene::ItemMenu#draw_target_face's identical comment/citation.
+      def draw_target_face(c, actor, row, y)
+        return unless actor.respond_to?(:faceset_name)
+        face = load_face_bitmap(actor.faceset_name)
+        return unless face
+        index = actor.respond_to?(:faceset_index) ? (actor.faceset_index || 0) : 0
+        src = Rect.new((index % 4) * TARGET_FACE_SIZE, (index / 4) * TARGET_FACE_SIZE,
+                       TARGET_FACE_SIZE, TARGET_FACE_SIZE)
+        face_y = row.zero? ? y : y + TARGET_FACE_Y_EXTRA
+        c.blt TARGET_FACE_X, face_y, face, src
+      end
+
+      # See Scene::ItemMenu#load_face_bitmap's identical comment.
+      def load_face_bitmap(name)
+        return nil if name.nil? || name.empty?
+        Bitmap.new "FaceSet/#{name}", true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] face graphic '#{name}' load failed: #{e.message}"
+        nil
       end
 
       def refresh_target_cursor
