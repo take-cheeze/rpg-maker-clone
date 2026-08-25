@@ -16177,6 +16177,105 @@ check 'Open Shop scene: the equipment party band blits the measured System-' \
   ok scene.instance_variable_get(:@shop)[:party].nil?, 'hidden again for the Potion'
 end
 
+# Follow-up (cycle #147, 2026-08-25): closed cycle #144's other last-open shop
+# gap -- what real RPG_RT does once a shop's own goods list exceeds the list
+# window's fixed minimum capacity. Confirmed against genuine RPG_RT.exe under
+# wine (Nepheshel's own 30-good weapon shop, Map0015 event 2): the window
+# scrolls, one row at a time as the cursor passes its bottom edge, and never
+# grows -- see `Scene::Map::SHOP_LIST_ROWS`'s own doc comment for the full
+# pixel evidence (a corner-marker scan of the list window's own bottom border
+# came back byte-identical at the first page, the first scrolled page, and
+# the very last of the 30 goods).
+check 'Open Shop scene: a goods list past SHOP_LIST_ROWS scrolls, never grows ' \
+      'the list window' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  ids = (20..29).to_a # 10 goods -- past SHOP_LIST_ROWS (7)
+  ids.each_with_index { |id, i| db.item[id] = OpenStruct.new(name: "Sword#{i}", price: 100 + i) }
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, *ids], indent: 0)] # buy+sell
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+  eq :command, scene.instance_variable_get(:@shop)[:screen]
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Buy (first row)
+  scene.update
+  RGSS::Input.triggered = []
+
+  map_mod = RPG2k::Scene::Map
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen]
+  eq 10, shop[:model].goods.length, 'all ten goods are real, just more than one page shows'
+  win0 = shop[:window]
+  fixed_y, fixed_h = win0.y, win0.height
+  eq map_mod::SHOP_DESC_H, fixed_y
+  texts = window_texts(win0)
+  ok texts.any? { |t| t.include?('Sword0') }, 'first good visible'
+  ok texts.any? { |t| t.include?('Sword6') }, 'seventh good (last of the first page) visible'
+  ok !texts.any? { |t| t.include?('Sword7') }, 'eighth good not yet on screen'
+  eq 0, shop[:scroll], 'scrolled to the top on a fresh browse'
+
+  6.times do # move the cursor down through the first page's own 6 remaining rows
+    RGSS::Input.triggered = [RGSS::Input::DOWN]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  shop = scene.instance_variable_get(:@shop)
+  eq 6, shop[:index], 'cursor on the seventh good, still the last row of the first page'
+  eq 0, shop[:scroll], 'still no scroll -- the cursor has not yet passed the visible page'
+  win6 = shop[:window]
+  eq fixed_y, win6.y, "the window hasn't moved just from filling its first page"
+  eq fixed_h, win6.height, "...or grown"
+
+  # The decisive boundary: one more Down, past the 7th (last visible) row.
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq 7, shop[:index], 'cursor on the eighth good'
+  eq 1, shop[:scroll], 'the window scrolled down exactly one row to follow it'
+  win7 = shop[:window]
+  eq fixed_y, win7.y, 'the window did not move down the screen'
+  eq fixed_h, win7.height, 'the window did not grow -- this is the cycle #144 gap this closes'
+  texts = window_texts(win7)
+  ok !texts.any? { |t| t.include?('Sword0') }, 'the first good scrolled off the top'
+  ok texts.any? { |t| t.include?('Sword7') }, 'the eighth good scrolled onto the bottom'
+
+  # Drive to the very last good (index 9) and confirm the window is still
+  # exactly the same box, with the scroll clamped so the last page is full.
+  2.times do
+    RGSS::Input.triggered = [RGSS::Input::DOWN]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  shop = scene.instance_variable_get(:@shop)
+  eq 9, shop[:index], 'cursor on the tenth (last) good'
+  eq 3, shop[:scroll], 'scroll clamped to 10 - SHOP_LIST_ROWS, so the last page is full'
+  win_last = shop[:window]
+  eq fixed_y, win_last.y
+  eq fixed_h, win_last.height
+  texts = window_texts(win_last)
+  ok texts.any? { |t| t.include?('Sword9') }, 'the last good is visible'
+  ok texts.any? { |t| t.include?('Sword3') }, 'and the page is full seven rows (goods 4..10)'
+  ok !texts.any? { |t| t.include?('Sword2') }, 'not goods before that -- exactly one page'
+
+  # Cancelling back to the command menu and re-entering Buy resets the scroll
+  # to the top, matching every other RPG2000 list window's own fresh-browse
+  # behaviour (the same rule #shop_switch already applied to @shop[:index]).
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  RGSS::Input.triggered = [RGSS::Input::C] # choose Buy again
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  eq :buy, shop[:screen]
+  eq 0, shop[:scroll], 'a fresh browse starts scrolled to the top again'
+  eq 0, shop[:index]
+end
+
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
   ic = Game::Interpreter::Cmd
   db = fake_db
