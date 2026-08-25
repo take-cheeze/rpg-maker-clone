@@ -1359,7 +1359,7 @@ class RPG2k
       # id (they are global) plus this map's raw events for map-event page calls.
       def build_resolver
         common = {}
-        @common.each { |c| common[c[:id]] = c[:commands] }
+        @common.each { |c| common[c[:id]] = c }
         map_events = (@map.unit.events rescue nil)
         EventResolver.new(common, map_events)
       rescue StandardError
