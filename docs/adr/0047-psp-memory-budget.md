@@ -1036,8 +1036,15 @@ the interpreter-linking slice, in this order:
   `mruby-rpgvx/mrblib/lib.rb`): `Module#to_s` (`mrb_mod_to_s`, core mruby,
   `3rd/mruby/src/class.c`) resolves through the identical `mrb_class_path`
   machinery and returns the same qualified name for a named class, with no
-  extra gem. Not yet re-verified against a fresh `psp-smoke-game` run with
-  the fix in place -- follow-up.
+  extra gem. Verified against a fresh `psp-smoke-game` run with the fix in
+  place ([#1349](https://github.com/take-cheeze/rpg-maker-clone/pull/1349),
+  2026-08-25): every `RPG2K_PSP_BRINGUP` heartbeat now reads
+  `scene=RPG2k::Scene::Title`, from `frame=0` (`t_us=1280186`) through
+  `frame=600` (`t_us=11310745`) -- the same run's other figures are
+  unchanged (`arena_used` still 4,391,744 B at `GAME_READY`, drifting
+  4,393,856 -> 4,935,696 -> 4,465,040 B across the four heartbeats, the same
+  GC sawtooth the pre-fix run already showed), confirming the `.to_s` switch
+  fixed only the name lookup and nothing else about the frame loop.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
