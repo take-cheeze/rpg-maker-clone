@@ -65,6 +65,20 @@ class RPGXP
 
   attr_reader :db, :title
 
+  # The active scene's class name, mirroring RPG2k#current_scene_name
+  # (mruby-rpg2k/mrblib/main.rb) -- see there for why a native caller wants
+  # this. Unlike RPG2k's own @scenes stack, this engine runs the game's own
+  # bundled scripts (see the class comment above), so "the active scene" is
+  # whatever *they* publish -- ScriptHost.current_scene already resolves that
+  # across both real conventions (RGSS/RGSS2's `$scene`, RGSS3's
+  # `SceneManager.scene`; script_host.rb). "none" covers the script host being
+  # disabled, a project shipping no scripts, or the host simply not having
+  # reported a scene yet.
+  def current_scene_name
+    scene = ScriptHost.enabled? ? ScriptHost.current_scene : nil
+    scene ? scene.class.name : "none"
+  end
+
   # One frame of the game: one resume of the host's Fiber, which runs the
   # scripts' own loop up to their next Graphics.update. Both the desktop
   # `loop { main_loop }` and the web per-frame `emscripten_set_main_loop`

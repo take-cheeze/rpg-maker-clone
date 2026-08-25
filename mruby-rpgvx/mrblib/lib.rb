@@ -134,6 +134,14 @@ class RPGVX
 
   attr_reader :db, :edition, :title
 
+  # The active scene's class name -- see RPGXP#current_scene_name
+  # (mruby-rpgxp/mrblib/lib.rb) for what this means and why; VX / VX Ace
+  # shares that engine's ScriptHost wholesale (@use_script_host above).
+  def current_scene_name
+    scene = RPGXP::ScriptHost.enabled? ? RPGXP::ScriptHost.current_scene : nil
+    scene ? scene.class.name : "none"
+  end
+
   # The edition's display name, for logs ("RPG Maker VX Ace").
   def maker_name
     @edition ? self.class.edition_name(@edition) : "RPG Maker VX"
