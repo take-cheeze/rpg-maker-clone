@@ -1051,6 +1051,33 @@ the interpreter-linking slice, in this order:
     `MRB_NO_METHOD_CACHE`, which would cost dispatch speed), shrinking GC heap
     page granularity and the initial khash bucket counts with no behaviour
     change.
+  - **Follow-up (2026-08-25), the same lever applied to stb_image.** The
+    asset search this engine performs only ever tries `.png`, `.jpg`/`.jpeg`,
+    `.bmp` (via stb — see docs/adr/0025's XP RTP finding) and `.xyz` (a
+    custom decoder in `lib.cxx`, not stb's); stb's other format decoders
+    (GIF, PSD, TGA, HDR, PIC, PNM) were being compiled in with no caller
+    anywhere in the codebase (confirmed by grep for every format-specific
+    `stbi__*` symbol). `mruby-rgss/src/lib.cxx` now defines `STBI_NO_GIF`/
+    `STBI_NO_PSD`/`STBI_NO_TGA`/`STBI_NO_HDR`/`STBI_NO_PIC`/`STBI_NO_PNM`
+    ahead of `#include <stb_image.h>`, universally (every target links the
+    same `lib.cxx`). Host-side proxy measurement (same caveat as Finding 1 —
+    not a device number): `lib.o`'s `.text` falls from 422,046 B to
+    384,968 B, ~37 KB, on an x86-64 `-O3` build; the PSP's 32-bit MIPS
+    `.text` for the same removed code is plausibly smaller but not zero. The
+    `psp` cross-build additionally defines `STBI_NO_STDIO` (`build_config.rb`),
+    dropping stb's `FILE*`-based `stbi_load(path, ...)`/`stbi_load_from_file`
+    family: the only caller in this codebase is `mruby-mvjs/src/mvcanvas.cxx`
+    (MV/MZ's `Image` loader), and the `psp` cross-build already excludes
+    `mruby-mvjs` (`include_mvjs: false`, ADR 0010) — `mruby-rgss`'s own
+    `bmp_decode_into` always reads bytes itself first and decodes via
+    `stbi_load_from_memory`/`stbi_info_from_memory`, neither of which is
+    guarded by `STBI_NO_STDIO` in the vendored stb fork. Confirmed safe for
+    the shared TU by building the `host` mruby target (which does link
+    `mruby-mvjs`) with only the six format defines and without
+    `STBI_NO_STDIO`: `mvcanvas.cxx`'s `stbi_load` call still resolves and
+    `libmruby.a` links clean. Not yet re-measured against a `psp`
+    cross-build (no `psp-gcc` toolchain in this pass); the reasoning is the
+    same PT_LOAD-resident-code argument as the rest of P6, not a new one.
 - **P3 — done (the tool; the deployment step itself is still per-release).**
   `scripts/rgssad_unpack.rb` unpacks a `Game.rgssad`/`.rgss2a`/`.rgss3a`
   (desktop-side, reusing the existing `RPGXP::RGSSAD` reader rather than
