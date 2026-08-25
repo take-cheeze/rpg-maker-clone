@@ -1255,8 +1255,9 @@ int main(int argc, char** argv) {
     CHECK(display);
   } else {
     // RPG2000/2003, XP, VX(Ace) and MV all draw through LVGL's own software
-    // rasteriser (LV_SDL_ACCELERATED 0 in lv_conf.h already asks SDL for
-    // SDL_RENDERER_SOFTWARE, not SDL_RENDERER_ACCELERATED); only MZ's WebGL
+    // rasteriser (LV_SDL_ACCELERATED 0 in lv_conf.h asks SDL for
+    // SDL_RENDERER_SOFTWARE, not SDL_RENDERER_ACCELERATED -- except on
+    // Android, which wants the GPU present path, see below); only MZ's WebGL
     // backend needs a real GL context, and that is a wholly separate
     // off-screen EGL context in mruby-mvjs/src/mvgl.cxx, never this window.
     // SDL_HINT_RENDER_DRIVER alone is not enough on SDL3 (reached here via
@@ -1284,7 +1285,15 @@ int main(int argc, char** argv) {
     // -- there is no XImage/wl_shm-style native one to fall back to. Keep the
     // #449 workaround off Android for the same reason it is already off
     // macOS.
+    //
+    // Android also skips the software-driver hint: lv_conf.h builds LVGL's
+    // SDL backend with LV_SDL_ACCELERATED 1 there (the software present path
+    // measured ~63ms a frame on-device -- see lv_conf.h), and an
+    // SDL_RENDERER_ACCELERATED request must not be steered back to the
+    // software driver by this hint.
+#ifndef __ANDROID__
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+#endif
 #if !defined(__APPLE__) && !defined(__ANDROID__)
     SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
 #endif

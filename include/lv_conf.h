@@ -61,7 +61,18 @@
  *====================*/
 
 /*Default display refresh, input device read and animation step period.*/
+/* Android runs this at one game frame (16ms) instead of LVGL's 33ms stock
+ * default: the refresh timer is what actually puts pixels on the screen, so
+ * at 33ms the picture updated at ~25fps whatever the render cost -- with the
+ * accelerated SDL present path (LV_SDL_ACCELERATED below) a refresh fits in
+ * ~10ms, comfortably inside 16. Desktop and wasm keep the stock period; the
+ * game loop there already paces itself and their present paths are cheaper
+ * per refresh than the phone's. */
+#ifdef __ANDROID__
+#define LV_DEF_REFR_PERIOD  16      /*[ms]*/
+#else
 #define LV_DEF_REFR_PERIOD  33      /*[ms]*/
+#endif
 
 /*Default Dot Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  *(Not so important, you can adjust it to modify default sizes and spaces)*/
@@ -816,7 +827,22 @@
     #define LV_SDL_BUF_COUNT       2    /*1 or 2*/
     #define LV_SDL_FULLSCREEN      0    /*1: Make the window full screen by default*/
     #define LV_SDL_DIRECT_EXIT     1    /*1: Exit the application when all SDL windows are closed*/
+    /* Desktop keeps the software renderer: the game already rasterises in
+     * software, and the #449 workaround (src/main.cxx) wants no GPU companion
+     * renderer anywhere near the window surface. Android is the exception --
+     * measured on-device (C330, arm64-v8a) the software renderer's present
+     * path (SDL_GetWindowSurface over SDL_CreateWindowTexture, the only
+     * window-framebuffer path Android has) CPU-stretches the framebuffer to
+     * the full window and copies the whole surface again on every
+     * SDL_RenderPresent: ~63ms of the ~64ms frame, 22fps on the title screen.
+     * The accelerated renderer instead uploads the game-sized texture and
+     * lets the GPU do the stretch and the swap, which is what every other
+     * SDL2 Android app does. */
+#ifdef __ANDROID__
+    #define LV_SDL_ACCELERATED     1    /**< 1: Use hardware acceleration*/
+#else
     #define LV_SDL_ACCELERATED     0    /**< 1: Use hardware acceleration*/
+#endif
 #endif
 
 /*Use X11 to open window on Linux desktop and handle mouse and keyboard*/

@@ -254,6 +254,34 @@ Chip, replacing SDL's default. One known gap recorded in
 parse — force-stop clears it, and a fix wants the activity to exit its
 process on game quit.
 
+**Update (2026-08-25): the present path was tuned for frame rate.** The
+on-device perf monitor showed 22fps on the title screen with ~63ms of the
+~64ms frame spent in LVGL's flush — not in the game. Three fixes, each
+measured on the C330:
+
+- **The SDL renderer is now accelerated on Android** (`LV_SDL_ACCELERATED 1`
+  under `__ANDROID__` in `include/lv_conf.h`; desktop/wasm keep 0). The
+  software renderer's only Android present path is `SDL_CreateWindowTexture`
+  (this ADR's own finding above), and it CPU-stretches the framebuffer to the
+  full window and copies the surface again on every present. The GPU renderer
+  — what every other SDL2 Android app uses — uploads the game-sized texture
+  and stretches on the way out: flush fell 63ms → ~5ms, and a doubled,
+  mirrored picture the software path produced on this device went with it.
+  `src/main.cxx` skips its `SDL_HINT_RENDER_DRIVER=software` hint under
+  `__ANDROID__` so the accelerated request is not steered back.
+- **`LV_DEF_REFR_PERIOD` is 16ms on Android** (stock 33ms elsewhere): the
+  refresh timer is what actually presents, so 33ms capped the picture at
+  ~25fps whatever the frame cost.
+- **The display zoom fits the game's height** (`fit_zoom_to_game` in
+  `src/android_vpad_ui.cxx`): the static zoom-2 layout rendered LVGL at
+  window/2 = 599x339 — 2.8x the game's pixels — for the GPU to stretch again.
+  Fitting the zoom to the game height renders the picture 1:1 and halves the
+  software-raster and upload cost in map scenes; the pad now overlaps the
+  picture's translucent edges instead of the letterbox bands.
+
+Title screen 22 → 60fps; map/intro scenes roughly 2x, now bounded by mruby
+game-logic speed on this low-end CPU rather than by the present path.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
