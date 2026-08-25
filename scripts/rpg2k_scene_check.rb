@@ -15620,11 +15620,21 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   # bottom-message-slot window (#draw_shop_prompt), not merged into the list
   # window's own first row any more -- confirmed against genuine RPG_RT.exe
   # under wine (docs/TODO.md).
-  ok window_texts(shop[:prompt]).any? { |t| t.include?('いらっしゃいませ！') },
+  #
+  # Follow-up (cycle #148): the command menu's own Buy/Sell/Leave row labels
+  # turn out to belong in *this* window too, merged directly below the
+  # greeting line -- not in the list window (#draw_shop_command_prompt) --
+  # confirmed against genuine RPG_RT.exe under wine (a synthetic mode=0 Open
+  # Shop command, docs/TODO.md). The list window (shop[:window]) draws no
+  # text at all on the command menu.
+  prompt_texts = window_texts(shop[:prompt])
+  ok prompt_texts.any? { |t| t.include?('いらっしゃいませ！') },
      'the first-visit greeting shows'
-  texts = window_texts(shop[:window])
-  ok texts.any? { |t| t.include?('買う') } && texts.any? { |t| t.include?('売る') } &&
-     texts.any? { |t| t.include?('やめる') }, 'the command row labels use the database terms'
+  ok prompt_texts.any? { |t| t.include?('買う') } && prompt_texts.any? { |t| t.include?('売る') } &&
+     prompt_texts.any? { |t| t.include?('やめる') },
+     'the command row labels use the database terms, in the prompt window'
+  ok window_texts(shop[:window]).all?(&:empty?),
+     'the list window itself draws none of the command labels'
 
   RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
   scene.update
@@ -15652,6 +15662,58 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   eq :command, shop[:screen]
   ok window_texts(shop[:prompt]).any? { |t| t.include?('他に何かご入用ですか？') },
      'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
+end
+
+# Follow-up (cycle #148, 2026-08-25): closes the last-open shop gap cycle
+# #144 first flagged and cycles #145-147 each left untouched -- whether the
+# description bar and the list's own SHOP_DESC_H-anchored geometry hold on
+# the native :command has_menu screen. They do (same window, same position,
+# on every screen), but the command menu's own Buy/Sell/Leave choices turn
+# out to live in the *prompt* window instead of the list -- see
+# #draw_shop_command_prompt's own citation for the full wine evidence
+# (a synthetic mode=0 Open Shop command spliced onto a new autostart event
+# on Map0012, screenshotted through Buy/Sell/Leave highlighted in turn).
+check 'Open Shop scene: the command menu\'s own cursor lives in the prompt ' \
+      'window, at MSG_LINE_H spacing below the greeting -- not in the list' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [0, 0, 0, 0, 3, 5], indent: 0)]
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db = fake_db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # the command menu opens (mode 0: buy+sell)
+  shop = scene.instance_variable_get(:@shop)
+  eq :command, shop[:screen]
+
+  win = shop[:prompt]
+  eq 0, win.x, "the prompt window is the ordinary bottom message slot"
+  eq RPG2k::Scene::Map::SCREEN_H - RPG2k::Scene::Map::MSG_WIN_H, win.y
+  eq RPG2k::Scene::Map::MSG_WIN_W, win.width
+  eq RPG2k::Scene::Map::MSG_WIN_H, win.height
+  msg_line_h = RPG2k::Scene::Map::MSG_LINE_H
+  eq 1 * msg_line_h, win.cursor_rect.y,
+     'row 0 (Buy) selected -- cursor sits one MSG_LINE_H row below the greeting'
+  eq msg_line_h, win.cursor_rect.height
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto Sell
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  win = shop[:prompt]
+  eq 2 * msg_line_h, win.cursor_rect.y, 'row 1 (Sell) selected -- two rows down'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto Leave
+  scene.update
+  RGSS::Input.triggered = []
+  win = scene.instance_variable_get(:@shop)[:prompt]
+  eq 3 * msg_line_h, win.cursor_rect.y, 'row 2 (Leave) selected -- three rows down'
+
+  # The list window (goods box) never gets a cursor on the command menu --
+  # SHOP_LIST_ROWS' own boundary-case machinery has nothing to scroll here.
+  list_win = scene.instance_variable_get(:@shop)[:window]
+  eq 0, list_win.cursor_rect.width,
+     'the list window carries no cursor rect while on the command menu'
 end
 
 # Confirmed against EasyRPG's actual C++ source: `Window_Shop`
@@ -15997,9 +16059,15 @@ check 'Open Shop scene: a description bar above the list shows the highlighted '
 
   shop = scene.instance_variable_get(:@shop)
   eq :command, shop[:screen]
-  ok shop[:desc].nil?,
-     'the command menu highlights no single good -- no bar (inferred, not directly ' \
-     'reachable through this cycle\'s own real-RPG_RT test shop; see docs/TODO.md)'
+  # Follow-up (cycle #148): confirmed against genuine RPG_RT.exe under wine --
+  # the command menu still shows this window (same position/size as every
+  # other shop screen), just with no text in it, since no single good is
+  # ever highlighted there; it is not hidden/disposed the way cycle #144's
+  # own inference guessed. See docs/TODO.md.
+  ok !shop[:desc].nil?, 'the description bar is a real window on the ' \
+     'command menu too, just blank -- not hidden'
+  ok window_texts(shop[:desc]).all?(&:empty?),
+     'and it draws no text while the command menu has no single good to describe'
 
   RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
   scene.update
