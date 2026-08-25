@@ -1765,6 +1765,120 @@ The work below is roughly ordered by the critical path to a walkable game
   cycle, restored to its original bytes (`md5sum`-confirmed) and the
   canonical debug save reconfirmed clean by `scripts/lcf_save_check.rb` (map
   12, (40,15), scene cleared, unchanged) afterward.
+  ✅ **Follow-up (cycle #145, 2026-08-25): closed cycle #144's own last-open
+  shop gap -- driven a live Buy list of genuine weapon/armour goods and found
+  real RPG_RT draws a bordered window in the mystery band, specifically when
+  the highlighted good is equipment; the icon inside it is not reproduced,
+  with precisely what was and was not ruled out below.** Cycle #144 confirmed
+  the band real RPG_RT draws between the description bar and the status
+  panel but only tested a non-equipment good (薬草/medicine), leaving both
+  "is it ever non-blank" and "what does an equipment good show" open. This
+  cycle found Nepheshel's own database ships a genuine, shipped weapon-shop
+  NPC nobody had reached before: `Map0015.lmu` event 2 (武器屋, a 武器屋の親父
+  scripting its own Buy/Sell/"あの宝箱は？" Show Choices menu, same pattern as
+  the item shop cycle #144 used), whose own buy-only Open Shop command
+  (`mode=1`, `type=2`) stocks 30 real weapon/armour/shield goods straight
+  from `RPG_RT.ldb`'s own item table (ids 27-205 -- ダガー/Dagger through
+  プレートメイル/Plate Mail) -- found by decoding every `Map*.lmu`'s event
+  pages for `OPEN_SHOP` (10720) commands and cross-referencing each one's
+  goods list against the database item table's own `type` field (1=weapon,
+  2=shield, 3=armour, 4/5=two accessory categories, 6=medicine per the
+  wikiwiki-sourced `LCF::Schema::DATABASE` item schema), rather than
+  synthesising an Open Shop command as the task's own candidate description
+  anticipated might be necessary. No synthetic event editing was needed at
+  all this cycle.
+  Reached the live Buy list (Continue -> file 1 -> `--map 15 --at 5,9
+  --facing up --clear-scene` stands the party directly below the counter,
+  the same recipe cycle #144 used for Map0016) and drove genuine RPG_RT.exe
+  under wine (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1,
+  matchbox-window-manager, LANG=ja_JP.UTF-8) through the NPC's own greeting,
+  Show Choices menu and into the Buy list. **Methodology finding worth
+  flagging for every future cycle that drives genuine RPG_RT.exe under
+  wine**: `Return` is *not* this build's action/decision key on the map --
+  it works to confirm the title screen's New Game/Continue cursor (already
+  relied on by `compare-nepheshel-save-wine.bash`'s own title-screen steps,
+  unaffected) but ten consecutive `Return` presses against a genuine,
+  reachable shop NPC (confirmed reachable, since the identical facing/
+  position later worked) produced zero visible change, no message, nothing
+  -- while `z` (RPG2000's actual default Decision binding alongside Enter/
+  Space, per Enterbrain's own convention, evidently not aliased to Enter in
+  this particular installation/config) immediately produced the greeting
+  message on the very next press. Movement keys (Up/Down/Left) were
+  independently confirmed to reach the window correctly the whole time
+  (`WINEDEBUG=+key` traced every synthesised keydown/keyup converting to the
+  right vkey and posting to the game's own hwnd), so the many initial
+  "nothing happens" frames were never a key-delivery problem -- they were
+  Return simply not being bound to anything the map screen's own input
+  handling reads. Any future probe that needs to trigger an event's action
+  button (not just walk) should use `z`, not `Return`.
+  The captured Buy list's own right-hand column showed a genuine, separate
+  bordered window in the mystery band -- same x/width as the status panel
+  below it (`SCREEN_W - SHOP_STATUS_W - 6`, `SHOP_STATUS_W` wide), holding
+  one small icon left-aligned near its own top edge -- for *every* weapon and
+  armour good tried, and confirmed still blank (as cycle #144 already found)
+  for a held-over non-equipment probe on the same map's own item-shop
+  pattern. Two things were actively ruled out for what the icon *is*, both
+  confirmed live rather than assumed, so this stays a "presence and geometry
+  confirmed, exact content not reproduced" fix rather than a guess dressed up
+  as one:
+  - **not a per-item stat comparator**: pixel-identical across a 30x price
+    range and every stat tier this shop stocks (150G ダガー/Dagger through
+    1400G バスタードソード/Bastard Sword through 4500G プレートメイル/Plate
+    Mail armour) -- a comparator (an up/down arrow, or a coloured delta) would
+    have to change at least once across that range and never did. This
+    codebase's own other equip-comparison UI, `equip_menu.rb`'s
+    `#draw_stat_row`, draws a `>` glyph and a coloured new-value *number* per
+    stat row (confirmed against EasyRPG's actual C++ source in an earlier
+    cycle, `Window_EquipStatus::DrawParameter`) -- a completely different,
+    text-based mechanism, not reusable here and not what this icon is either;
+  - **not a Left/Right party-member preview selector**: Left and Right, which
+    such a selector would visibly answer to, produced no change either. Only
+    tested against this save's own single-member party (growing it risked
+    repeating cycle #135's own documented "editing a save's party field
+    crashes genuine RPG_RT" mistake, out of scope for this cycle's time-box),
+    so a multi-member party showing more than one icon here remains
+    untested.
+  Fixed `mruby-rpg2k/mrblib/game.rb`: `Game::Shop#equip?(id)` (mirroring
+  `#description`), true when the item's own database `type` falls in
+  `Actor::ITEM_WEAPON..Party::ITEM_ACCESSORY` (1..5). Fixed
+  `mruby-rpg2k/mrblib/scene/map.rb`: new `SHOP_PARTY_H` constant
+  (`SHOP_STATUS_Y - SHOP_DESC_H`) and `#draw_shop_party` (new, called from
+  `#draw_shop` alongside `#draw_shop_status`/`#draw_shop_desc`), gated on the
+  same `shop_status_item_id` the status panel already uses (so it inherits
+  `SHOP_PANELS_VISIBLE_ON`'s own buy/quantity/purchased/sold visibility for
+  free) intersected with `@shop[:model].equip?(id)`; builds a bordered,
+  contentless window at the status panel's own x/width, top edge flush to
+  the description bar, bottom edge flush to the status panel -- and disposes
+  to `nil` (not merely hidden) the instant the highlighted good stops being
+  equipment, matching how the description/status panels already toggle.
+  `#close_shop` disposes the new window alongside the existing four;
+  `#open_shop`'s initial `@shop` hash gained the `party: nil` key for
+  consistency with its siblings. Covered by a new `scripts/
+  rpg2k_scene_check.rb` check (a buy-only shop stocking one consumable and
+  one synthetic weapon good: the band is absent on the consumable, present
+  with the exact expected geometry on the weapon, and absent again moving
+  back to the consumable), confirmed to fail against the pre-fix code
+  (`RuntimeError: the highlighted good is now equipment -- the band is a
+  real window`, since `shop[:party]` was always `nil` pre-fix) via a
+  `git stash` of `game.rb`/`map.rb` only before the fix. Full suite
+  reconfirmed passing (925 checks, up from 924); `rpg2k_render_check.rb`
+  (41) and `rpg2k_logic_check.rb` (1134) reconfirmed passing unaffected.
+  `Save01.lsd` (position/facing only, via `gen-rpg2k-save.rb --map 15 --at
+  5,9 --facing up --clear-scene`) was the only game-data file touched by any
+  probe this cycle, restored to its original bytes (`md5sum`-confirmed) and
+  the canonical debug save reconfirmed clean by `scripts/lcf_save_check.rb`
+  (map 12, (40,15), scene cleared, unchanged) afterward.
+  **Deliberately still open** for the next cycle: the icon's own exact
+  pixels/asset (most likely needs a windowskin/system-graphic asset dump and
+  a pixel-for-pixel crop compare, not a further behavioural probe, given both
+  behavioural hypotheses tried above came back negative); whether a
+  multi-member party shows more than one icon here; and the two gaps cycle
+  #144 already left open and this cycle did not touch (candidate 2 from this
+  cycle's own task list -- the description bar's correctness on the native
+  `:command` has_menu screen, which still needs a *synthetic* Open Shop
+  command since no Nepheshel NPC exercises that path -- and real RPG_RT's
+  behaviour once a shop's goods list exceeds the list window's fixed minimum
+  capacity).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
