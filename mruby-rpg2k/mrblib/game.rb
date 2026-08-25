@@ -8578,6 +8578,16 @@ module Game
       it ? it.description.to_s : ''
     end
 
+    # Whether item `id` is equipment (weapon/shield/armour/helmet/accessory
+    # -- database type 1..5, `Actor::ITEM_WEAPON`..`Party::ITEM_ACCESSORY`)
+    # rather than a consumable/switch/special good. Drives the shop screen's
+    # own mystery party-window band (`Scene::Map#draw_shop_party`) -- see its
+    # doc comment and the cycle #145 docs/TODO.md entry.
+    def equip?(id)
+      it = @db.item[id]
+      it && (Actor::ITEM_WEAPON..Party::ITEM_ACCESSORY).cover?(it.type)
+    end
+
     # Half the database price — what a sale returns (RPG2000 rounds down).
     def sell_price(id); price(id) / 2; end
 

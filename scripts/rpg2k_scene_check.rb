@@ -16072,6 +16072,56 @@ check 'Open Shop scene: the shopkeeper prompt is a fixed 320x80 panel at the ' \
      'the list docks directly under the description bar'
 end
 
+# Follow-up (cycle #145, 2026-08-25): closed cycle #144's own last-open shop
+# gap -- the band between the description bar and the status panel, which
+# cycle #144 confirmed real RPG_RT draws but only tested with a non-equipment
+# good, leaving the box entirely undrawn here. Reached a live buy list of
+# genuine weapon/armour goods (Nepheshel's own weapon-shop NPC, Map0015 event
+# 2) under wine and found real RPG_RT shows a bordered window there,
+# specifically when the highlighted good is equipment -- see
+# `Scene::Map#draw_shop_party`'s own doc comment for the full evidence
+# (including what was ruled out for the icon inside it, deliberately not
+# reproduced here).
+check 'Open Shop scene: the mystery band above the status panel is a window, ' \
+      'shown only when the highlighted good is equipment' do
+  ic = Game::Interpreter::Cmd
+  db = fake_db
+  db.item[3].type = 6 # Potion -- ordinary consumable, not equipment
+  db.item[11] = OpenStruct.new(name: 'Short Sword', price: 200, type: 1) # weapon
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::OPEN_SHOP, [1, 0, 0, 0, 3, 11], indent: 0)] # buy-only
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, { 1 => event(2, 2, auto) })
+  scene = RPG2k::Scene::Map.new(fake_parent(db), state)
+  state.instance_variable_set(:@party, ShopStubParty.new(500))
+  3.times { scene.update } # straight to the buy list (buy-only)
+
+  shop = scene.instance_variable_get(:@shop)
+  map_mod = RPG2k::Scene::Map
+  eq :buy, shop[:screen]
+  ok shop[:party].nil?, 'the first good (a Potion) is not equipment -- no band'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the Short Sword
+  scene.update
+  RGSS::Input.triggered = []
+  shop = scene.instance_variable_get(:@shop)
+  win = shop[:party]
+  ok win, 'the highlighted good is now equipment -- the band is a real window'
+  eq map_mod::SCREEN_W - map_mod::SHOP_STATUS_W - 6, win.x,
+     'same x as the status panel below it'
+  eq map_mod::SHOP_STATUS_W, win.width, 'same width as the status panel below it'
+  eq map_mod::SHOP_DESC_H, win.y, 'top edge flush to the description bar'
+  eq map_mod::SHOP_PARTY_H, win.height
+  eq map_mod::SHOP_STATUS_Y, win.y + win.height,
+     'bottom edge flush to the status panel, no gap between them'
+
+  RGSS::Input.triggered = [RGSS::Input::UP] # back to the Potion
+  scene.update
+  RGSS::Input.triggered = []
+  ok scene.instance_variable_get(:@shop)[:party].nil?,
+     'the band hides again once a non-equipment good is highlighted'
+end
+
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
   ic = Game::Interpreter::Cmd
   db = fake_db

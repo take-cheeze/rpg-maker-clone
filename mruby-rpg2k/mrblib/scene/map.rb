@@ -5273,7 +5273,7 @@ class RPG2k
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
         @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
                   cmd_index: 0, window: nil, gold: build_shop_gold_window,
-                  status: nil, desc: nil, prompt: nil,
+                  status: nil, party: nil, desc: nil, prompt: nil,
                   terms: shop_terms(req[:type]), browsed: false,
                   interp: it }
         draw_shop
@@ -5345,11 +5345,11 @@ class RPG2k
       # coordinates) against a genuine RPG_RT.exe capture of Nepheshel's own
       # Map0016 event 4 shop (cycle #144): status at y=80, gold at y=128 --
       # not y=6 / y=50 as this file used to hardcode before the description
-      # bar above them existed. The 48px gap above the status panel (roughly
-      # y=32..80) is real RPG_RT's own third, always-blank-for-non-equipment-
-      # goods party window, deliberately left undrawn here -- see the
-      # "Follow-up (cycle #144" entry in docs/TODO.md for why, and for the
-      # next cycle that picks it up.
+      # bar above them existed. The gap above the status panel (y=30..80,
+      # `SHOP_PARTY_H`) is real RPG_RT's own third window, blank for a
+      # non-equipment good and holding a small icon (not yet reproduced) for
+      # an equipment one -- see `#draw_shop_party`'s own doc comment and the
+      # "Follow-up (cycle #145" entry in docs/TODO.md.
       SHOP_STATUS_Y = 80
       SHOP_GOLD_Y = 128
 
@@ -5463,6 +5463,7 @@ class RPG2k
         @shop[:window] = win
         draw_shop_gold
         draw_shop_status(lines)
+        draw_shop_party(lines)
         draw_shop_desc(lines)
         draw_shop_prompt
       end
@@ -5623,6 +5624,66 @@ class RPG2k
         c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H,
                     @state.party.equipped_item_count(id).to_s, 2
         win.contents = c
+      end
+
+      # The band between the description bar and the status panel (native y
+      # SHOP_DESC_H..SHOP_STATUS_Y, 30..80) that cycle #144 found real
+      # RPG_RT draws and left entirely undrawn, having only tested a
+      # non-equipment good (medicine) -- confirmed blank for that case, but
+      # never tried an actual weapon/armour good. Closed this cycle (#145):
+      # reached a live Buy list of genuine weapon/armour/shield goods
+      # (Nepheshel's own weapon-shop NPC, Map0015 event 2 -- a real, shipped
+      # Open Shop mode=1 (buy-only) type=2 command Nepheshel's own database
+      # ships, never a synthetic one) and found real RPG_RT draws a bordered
+      # window here -- same x/width as the status panel below it
+      # (SCREEN_W - SHOP_STATUS_W - 6, SHOP_STATUS_W wide), height
+      # SHOP_PARTY_H -- holding one small icon, left-aligned near its own top
+      # edge, *only* when the highlighted good is equipment (database type
+      # 1..5: weapon/shield/armour/helmet/accessory -- `Game::Shop#equip?`);
+      # for a non-equipment good (medicine, confirmed again this cycle) the
+      # band is blank, matching cycle #144's own finding exactly.
+      #
+      # **The icon itself is deliberately not reproduced here** -- its exact
+      # pixels were not identified with the confidence this codebase's other
+      # fixes require. What was ruled out, each confirmed live against
+      # genuine RPG_RT.exe under wine rather than assumed:
+      #   - **not a per-item stat comparator**: pixel-identical across a
+      #     97x price/stat range (150G ダガー/Dagger through 1400G
+      #     バスタードソード/Bastard Sword through 4500G プレートメイル/Plate
+      #     Mail), where a comparator (up/down arrow, or coloured delta) would
+      #     have to change at least once -- unlike this codebase's own other
+      #     equip-comparison UI, `equip_menu.rb`'s `#draw_stat_row`, which
+      #     draws a `>` glyph and a coloured new-value *number*, not an icon,
+      #     confirming the shop's icon is a different mechanism, not
+      #     reusable from there;
+      #   - **not a Left/Right party-member preview selector**: Left and
+      #     Right, which such a selector would visibly answer to, produced no
+      #     change either (tested with the save's own single-member party --
+      #     left open whether a multi-member party would show more than one
+      #     icon here, since growing the test party risked cycle #135's own
+      #     documented party-field crash and was out of scope for this
+      #     cycle's time-box).
+      # See the cycle #145 docs/TODO.md entry for the full evidence and
+      # exactly what a future cycle would need to identify the icon itself
+      # (most likely: a windowskin/system-graphic asset dump and a pixel-
+      # for-pixel crop compare, not a further behavioural probe).
+      SHOP_PARTY_H = SHOP_STATUS_Y - SHOP_DESC_H
+
+      def draw_shop_party(lines)
+        id = shop_status_item_id(lines)
+        visible = id && @shop[:model].equip?(id)
+        unless visible
+          @shop[:party].dispose if @shop[:party]
+          @shop[:party] = nil
+          return
+        end
+        @shop[:party] ||= begin
+          win = Window.new(SCREEN_W - SHOP_STATUS_W - 6, SHOP_DESC_H,
+                           SHOP_STATUS_W, SHOP_PARTY_H)
+          win.z = 300
+          win.windowskin = @windowskin
+          win
+        end
       end
 
       # Confirmed against EasyRPG's Window_Shop::Update (src/window_shop.cpp):
@@ -5835,6 +5896,7 @@ class RPG2k
         @shop[:window].dispose if @shop[:window]
         @shop[:gold].dispose if @shop[:gold]
         @shop[:status].dispose if @shop[:status]
+        @shop[:party].dispose if @shop[:party]
         @shop[:desc].dispose if @shop[:desc]
         @shop[:prompt].dispose if @shop[:prompt]
         @shop = nil
