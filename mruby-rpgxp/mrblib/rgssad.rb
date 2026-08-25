@@ -35,6 +35,12 @@
 # data). Decrypted bytes are assembled by packing bounded chunks with
 # `Array#pack("C*")` (mruby-pack) and joining them, so no single Array grows past
 # mruby's array-length cap on large entries.
+#
+# .open (below) never reads the archive whole: it opens a seekable stream and
+# only reads the header plus each version's entry table, then seeks straight to
+# an entry's own bytes when #read asks for it by name. See docs/adr/0047-psp-
+# memory-budget.md Finding 2 for why that matters -- a released game routinely
+# packs this file past the size of the PSP's entire RAM budget by itself.
 
 class RPGXP
   class RGSSAD
@@ -57,8 +63,16 @@ class RPGXP
       nil
     end
 
+    # Opens the archive for streaming, seekable reads (see #initialize) rather
+    # than reading the whole file up front: a released XP/VX game routinely
+    # packs tens of MB into this single file, comfortably larger than the
+    # PSP's entire ~24 MB budget by itself (docs/adr/0047-psp-memory-budget.md,
+    # Finding 2), so the old `File.read` here was a hard memory-budget
+    # blocker for any archive bigger than what was left of RAM. The `File`
+    # stays open for the archive object's lifetime (the same lifetime the
+    # whole-buffer version kept its String alive for).
     def self.open(path)
-      new(File.open(path, "rb") { |f| f.read })
+      new(File.open(path, "rb"))
     end
 
     # Build a version-1 archive from `files`, a list of [name, bytes] pairs (name
@@ -195,11 +209,20 @@ class RPGXP
       bytes
     end
 
-    # `data` is the raw archive bytes.
+    # `data` is either a `String` of the whole archive (wrapped in a
+    # `StringIO` below -- how the tests and pack_v1/pack_v3's own round-trip
+    # callers use this) or an IO-like object already open for reading (what
+    # .open above passes: a real `File`, read on demand instead of slurped
+    # whole up front). Either way, only the header and each version's entry
+    # table are read here; entry *data* is read lazily by #read via a seek,
+    # so opening the archive no longer requires it to fit in RAM all at once
+    # (see .open's comment above).
     def initialize(data)
-      @data = data
-      raise "not an RGSSAD archive (bad header)" unless header_ok?
-      @version = @data.getbyte(7)
+      @io = data.is_a?(String) ? StringIO.new(data) : data
+      @io.seek(0)
+      header = @io.read(8)
+      raise "not an RGSSAD archive (bad header)" unless header_ok?(header)
+      @version = header.getbyte(7)
       @entries = {}
       case @version
       when 1
@@ -225,20 +248,25 @@ class RPGXP
     end
 
     # Decrypted bytes for one entry, or nil when it is not in the archive. `name`
-    # may be given with '/' or '\' separators.
+    # may be given with '/' or '\' separators. Seeks to the entry's own offset
+    # and reads only its own bytes -- the archive is never loaded whole (see
+    # #initialize).
     def read(name)
       e = @entries[normalize(name)]
       return nil unless e
-      decrypt_data(@data[e[:offset], e[:size]], e[:key])
+      @io.seek(e[:offset])
+      bytes = @io.read(e[:size])
+      return nil if bytes.nil?
+      decrypt_data(bytes, e[:key])
     end
 
     private
 
-    def header_ok?
-      return false if @data.bytesize < 8
+    def header_ok?(header)
+      return false if header.nil? || header.bytesize < 8
       i = 0
       while i < 7
-        return false unless @data.getbyte(i) == HEADER.getbyte(i)
+        return false unless header.getbyte(i) == HEADER.getbyte(i)
         i += 1
       end
       true
@@ -254,83 +282,103 @@ class RPGXP
       (key / POW[n]) % 256
     end
 
-    # Read a 32-bit little-endian integer at `i`, de-obfuscated with `key`.
-    def read_int(i, key)
+    # De-obfuscate an already-read 4-byte little-endian integer with `key`.
+    def decrypt_int(bytes, key)
       v = 0
       b = 0
       while b < 4
-        v += (@data.getbyte(i + b) ^ key_byte(key, b)) * POW[b]
+        v += (bytes.getbyte(b) ^ key_byte(key, b)) * POW[b]
         b += 1
       end
       v
     end
 
-    # Read a plain (un-obfuscated) 32-bit little-endian integer at `i`.
-    def read_plain_int(i)
+    # An already-read, plain (un-obfuscated) 4-byte little-endian integer.
+    def plain_int(bytes)
       v = 0
       b = 0
       while b < 4
-        v += @data.getbyte(i + b) * POW[b]
+        v += bytes.getbyte(b) * POW[b]
         b += 1
       end
       v
     end
 
+    # Walks the archive sequentially from just after the 8-byte header,
+    # reading only each entry's own name-length/name/size fields and then
+    # seeking past its data block (never reading the data itself -- that
+    # only happens lazily, per entry, in #read). A short/missing read at any
+    # point (a truncated or otherwise malformed tail) stops enumeration the
+    # same way running off the end of a bounds-checked buffer used to.
     def parse_v1
       key = START_KEY
-      i = 8
-      len = @data.bytesize
-      while i + 4 <= len
-        nlen = read_int(i, key)
+      loop do
+        len_bytes = @io.read(4)
+        break if len_bytes.nil? || len_bytes.bytesize < 4
+        nlen = decrypt_int(len_bytes, key)
         key = advance(key)
-        i += 4
-        break if nlen <= 0 || i + nlen + 4 > len
+        break if nlen <= 0
 
+        name_enc = @io.read(nlen)
+        break if name_enc.nil? || name_enc.bytesize < nlen
         name_bytes = []
         j = 0
         while j < nlen
-          name_bytes << (@data.getbyte(i + j) ^ key_byte(key, 0))
+          name_bytes << (name_enc.getbyte(j) ^ key_byte(key, 0))
           key = advance(key)
           j += 1
         end
-        i += nlen
 
-        size = read_int(i, key)
+        size_bytes = @io.read(4)
+        break if size_bytes.nil? || size_bytes.bytesize < 4
+        size = decrypt_int(size_bytes, key)
         key = advance(key)
-        i += 4
-        break if size < 0 || i + size > len
+        break if size < 0
 
-        @entries[name_bytes.pack("C*")] = { offset: i, size: size, key: key }
-        i += size
+        offset = @io.pos
+        @entries[name_bytes.pack("C*")] = { offset: offset, size: size, key: key }
+        @io.seek(offset + size) # skip the data block itself -- see #read
       end
     end
 
     # Parse the v3 (`.rgss3a`) entry table. The base key comes from the plaintext
     # header seed and stays fixed while walking the records; each record carries
     # its data's absolute offset, size and per-file key, so unlike v1 the records
-    # live together up front and the data blocks follow. Terminated by a record
-    # whose offset field decrypts to 0.
+    # live together up front and the data blocks follow -- meaning this table was
+    # already cheap to read without touching the data even before streaming.
+    # Terminated by a record whose offset field decrypts to 0.
     def parse_v3
-      key = (read_plain_int(8) * 9 + 3) % MASK
-      i = 12
-      len = @data.bytesize
-      while i + 16 <= len
-        offset = read_int(i, key)
+      seed_bytes = @io.read(4)
+      return if seed_bytes.nil? || seed_bytes.bytesize < 4
+      key = (plain_int(seed_bytes) * 9 + 3) % MASK
+      loop do
+        offset_bytes = @io.read(4)
+        break if offset_bytes.nil? || offset_bytes.bytesize < 4
+        offset = decrypt_int(offset_bytes, key)
         break if offset == 0 # terminator record
-        size = read_int(i + 4, key)
-        file_key = read_int(i + 8, key)
-        nlen = read_int(i + 12, key)
-        i += 16
-        break if nlen <= 0 || i + nlen > len
 
+        size_bytes = @io.read(4)
+        break if size_bytes.nil? || size_bytes.bytesize < 4
+        size = decrypt_int(size_bytes, key)
+
+        fkey_bytes = @io.read(4)
+        break if fkey_bytes.nil? || fkey_bytes.bytesize < 4
+        file_key = decrypt_int(fkey_bytes, key)
+
+        nlen_bytes = @io.read(4)
+        break if nlen_bytes.nil? || nlen_bytes.bytesize < 4
+        nlen = decrypt_int(nlen_bytes, key)
+        break if nlen <= 0
+
+        name_enc = @io.read(nlen)
+        break if name_enc.nil? || name_enc.bytesize < nlen
         name_bytes = []
         j = 0
         while j < nlen
-          name_bytes << (@data.getbyte(i + j) ^ key_byte(key, j % 4))
+          name_bytes << (name_enc.getbyte(j) ^ key_byte(key, j % 4))
           j += 1
         end
-        i += nlen
-        next if offset < 0 || offset + size > len
+        next if offset < 0
 
         @entries[name_bytes.pack("C*")] = { offset: offset, size: size, key: file_key }
       end
