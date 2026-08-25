@@ -129,6 +129,25 @@ function(rpg2k_add_mruby)
   set(mruby_defined_keyword_patch
       "${ARG_REPO_ROOT}/patches/mruby-defined-keyword.patch")
 
+  # Vendored mruby's own out-of-memory recovery has two real gaps
+  # (patches/mruby-nomemoryerror-reentrant-alloc.patch's own preamble has the
+  # full trail, including a host-native repro harness built against this
+  # project's own exact PSP arena allocator): the pre-allocated
+  # NoMemoryError/SystemStackError/arena-overflow singletons were never
+  # actually frozen, so raising one of them can still trigger a second,
+  # avoidable allocation (a backtrace capture) at exactly the moment there is
+  # no room left; and mrb_open() cannot tell mrb_core_init_abort()'s
+  # deliberate mrb->exc=NULL apart from genuine success, so an allocation
+  # failure early enough in bootstrap lets it proceed into gem init on a
+  # half-initialized state instead of failing cleanly. Found chasing P1c
+  # (docs/adr/0047-psp-memory-budget.md), though the repro did not reproduce
+  # P1c's own exact crash signature -- these are real, independently
+  # verified fixes, not a confirmed fix for P1c itself. Same patch-in-place
+  # treatment as the other mruby patches above, for the same reason (no fork
+  # of upstream mruby/mruby this project controls).
+  set(mruby_nomem_patch
+      "${ARG_REPO_ROOT}/patches/mruby-nomemoryerror-reentrant-alloc.patch")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -147,6 +166,8 @@ function(rpg2k_add_mruby)
             "${mruby_dollar_bang_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_defined_keyword_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_nomem_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -157,7 +178,7 @@ function(rpg2k_add_mruby)
     WORKING_DIRECTORY "${mruby_prefix}"
     DEPENDS "${ARG_REPO_ROOT}/build_config.rb" "${mruby_colon3_patch}"
             "${mruby_dollar_bang_patch}" "${mruby_defined_keyword_patch}"
-            ${mrb_files})
+            "${mruby_nomem_patch}" ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
 

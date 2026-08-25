@@ -1,0 +1,133 @@
+mruby bug: raising `NoMemoryError` is not itself allocation-free, and a
+second allocation failure while raising the first corrupts more than it
+should. Two separate gaps, found chasing docs/adr/0047-psp-memory-budget.md's
+P1c (a real `ppsspp-headless` segfault, deterministic across three separate
+CI runs, once the PSP's fixed mruby arena climbed to ~95% full mid-map-load)
+and confirmed with a standalone host-native repro: a tiny C++ harness
+(`app/psp/main.cxx`'s exact fixed first-fit arena allocator, just
+parameterized smaller) driving precompiled mruby bytecode (matching the PSP
+target exactly -- it never parses/compiles Ruby at runtime, only executes
+gem_init-linked bytecode) under a shrunk arena, with `gdb` attached directly
+(the PSP target itself gives no such access -- `ppsspp-headless` runs the
+EBOOT under MIPS emulation with no debugger hook this project has). That
+repro reproduced a real, confirmable class of bug (below); it did not,
+despite substantial effort across several allocation patterns (deep
+recursion, flat live-object accumulation, closures forcing real
+env-unshare traffic, and a Fiber-driven loop mirroring RGSS's own script-host
+architecture, ADR 0023), reproduce the *exact* segfault signature P1c saw.
+This patch is the real, verified fix for what the repro did confirm; P1c's
+own crash may or may not be the same root cause and remains open.
+
+1. `mrb->nomem_err`/`mrb->stack_err`/`mrb->arena_err` are pre-allocated
+   singleton exception objects, created once in `mrb_init_exception`
+   specifically so raising them never needs a fresh allocation -- the whole
+   point of pre-allocating them. But `mrb_exc_set` (src/error.c) captures a
+   backtrace for any exception it is given unless
+   `!mrb->gc.out_of_memory && !mrb_frozen_p(mrb->exc)` is false, and neither
+   of these three objects was ever actually frozen, so the frozen half of
+   that guard never protected them. The `out_of_memory` half is not
+   reliable either: `mrb_realloc` (src/gc.c) sets `mrb->gc.out_of_memory =
+   TRUE` right before raising on failure, but resets it back to `FALSE` the
+   next time *any* allocation succeeds -- and between the original raise and
+   `mrb_exc_set` actually running, several allocations (call-frame/GC
+   bookkeeping) can succeed. So `mrb_keep_backtrace` (src/backtrace.c) often
+   runs anyway for `nomem_err`, allocating a backtrace object at exactly the
+   moment there is the least room to spare -- a second, avoidable
+   allocation failure stacked on the first. (`src/print.c` and
+   `src/backtrace.c` already special-case `nomem_err` to skip the normal
+   message-formatting/lookup path when *printing* it, for the same
+   underlying reason -- this patch closes the one remaining gap, at the
+   point the exception is first set rather than where it is later printed.)
+
+   Confirmed via the repro: with a small Fiber-driven live-object workload,
+   `gdb` (`break mrb_raise_nomemory`, `bt`) showed the real chain --
+   `mrb_realloc` fails building a string, raises `nomem_err`; `mrb_exc_set`
+   -> `mrb_keep_backtrace` -> `packed_backtrace` -> `mrb_obj_alloc` fails
+   *again* allocating the backtrace object itself. Freezing the three
+   singletons (this patch) removes that second failure from the trace
+   entirely -- confirmed by re-running the same repro afterward.
+
+   Fix: freeze all three singletons right after creation. `mrb_frozen_p`
+   only gates high-level Ruby-visible mutation (ivar/backtrace setters);
+   direct C-level bookkeeping on them (`clear_error_object` in src/gc.c,
+   called during GC sweep to null out their `iv`/`mesg`/`backtrace` fields)
+   writes the struct fields directly and is unaffected by the frozen bit,
+   so this does not interfere with their own lifecycle management.
+
+2. `mrb_open_core` (src/state.c) can fail before `mrb->nomem_err` exists to
+   raise it through normally -- `init_gc_and_core` calls `mrb_malloc` for
+   `mrb->c` itself (the root `mrb_context`) before `mrb_init_core` has run
+   far enough to create any exception objects at all. `mrb_raise_nomemory`
+   handles that specific case via `mrb_core_init_abort`, which *deliberately*
+   sets `mrb->exc = NULL` before throwing (there being no valid exception
+   object this early to expose) and unwinds back to `mrb_open_core`'s own
+   `mrb_core_init_protect` guard.
+
+   `mrb_open_core` itself handles this correctly -- it checks
+   `mrb_core_init_protect`'s return code directly and returns early on
+   failure, never relying on `mrb->exc`. But its caller, `mrb_open`, has no
+   way to see that return code -- it can only inspect the `mrb_state` it
+   gets back, via `if (mrb == NULL || mrb->exc)`. Since
+   `mrb_core_init_abort` sets `mrb->exc` to NULL specifically, that check
+   cannot tell "abort fired" apart from "core init genuinely succeeded" --
+   both leave `mrb->exc` NULL. `mrb_open` then proceeds into
+   `mrb_init_mrbgems` on a state whose `mrb->c` (and `mrb->root_c`,
+   `mrb->jmp`, `mrb->top_self`) were never set, corrupting further from
+   there -- confirmed via the repro under `gdb`: `mrb->c` reads back as a
+   literal `NULL` pointer, `root_c`/`jmp` as small-integer garbage, at a
+   segfault several frames into gem bootstrap trying to dereference through
+   it.
+
+   Fix: `mrb_open` also treats `mrb->c == NULL` as failure.
+   `init_gc_and_core` sets `mrb->c` unconditionally, immediately before
+   calling `mrb_init_core` -- the one field guaranteed NULL after this
+   specific abort path and non-NULL after a real success, unlike `mrb->exc`.
+
+Neither gap is PSP-specific -- both are reachable on any target whose
+allocator can run genuinely out of memory (this project's PSP arena is the
+one that actually exercises it, being the only fixed/bounded allocator any
+target here uses; the Wio Terminal's own even-tighter budget, ADR 0007,
+could plausibly hit the second one too, though it has not been observed
+there). Real, not vendor-specific: verified directly against this
+project's own mruby 4.0.0 checkout, and the underlying gaps read as
+present in current upstream mruby/mruby too (both files' relevant logic is
+unchanged there as of this writing). This submodule tracks upstream
+mruby/mruby directly (no fork this project controls to carry the fix on),
+so it is patched in place here instead, the same treatment
+patches/mruby-colon3-assign-setmcnst.patch and its neighbors already use.
+
+--- a/src/error.c
++++ b/src/error.c
+@@ -927,10 +927,13 @@ mrb_init_exception(mrb_state *mrb)
+   mrb_define_class_id(mrb, MRB_SYM(NoMatchingPatternError), E_STANDARD_ERROR);                         /* pattern matching */
+   struct RClass *stack_error = mrb_define_class_id(mrb, MRB_SYM(SystemStackError), exception);
+   mrb->stack_err = mrb_obj_ptr(mrb_exc_new_lit(mrb, stack_error, "stack level too deep"));
++  mrb->stack_err->frozen = 1;
+
+   struct RClass *nomem_error = mrb_define_class_id(mrb, MRB_SYM(NoMemoryError), exception);
+   mrb->nomem_err = mrb_obj_ptr(mrb_exc_new_lit(mrb, nomem_error, "Out of memory"));
++  mrb->nomem_err->frozen = 1;
+ #ifdef MRB_GC_FIXED_ARENA
+   mrb->arena_err = mrb_obj_ptr(mrb_exc_new_lit(mrb, nomem_error, "arena overflow error"));
++  mrb->arena_err->frozen = 1;
+ #endif
+ }
+--- a/src/state.c
++++ b/src/state.c
+@@ -78,7 +78,15 @@ mrb_open(void)
+ {
+   mrb_state *mrb = mrb_open_core();
+
+-  if (mrb == NULL || mrb->exc) {
++  /* mrb->c == NULL: mrb_core_init_abort() fired during init_gc_and_core
++   * (an allocation failed before mrb->nomem_err existed to raise it
++   * through normally) and deliberately clears mrb->exc when it does, since
++   * there is no valid exception object this early to expose -- so mrb->exc
++   * alone cannot distinguish that abort from a genuinely successful init.
++   * mrb->c can: init_gc_and_core sets it unconditionally on success, right
++   * before calling mrb_init_core, so it is the one field guaranteed to
++   * still be NULL after this abort path and non-NULL after a real one. */
++  if (mrb == NULL || mrb->exc || mrb->c == NULL) {
+     /* Either allocation failed or core init failed */
+     return mrb;
+   }
