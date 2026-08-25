@@ -20229,6 +20229,51 @@ check 'Scene::ItemMenu: cancelling the Teleport destination list returns to the 
   ok !parent.pop_to_map_called
 end
 
+check 'Scene::ItemMenu: the description banner and item grid are removed ' \
+      'outright (not narrowed, not covered) once the Teleport destination ' \
+      'picker opens, and rebuilt full-width on Cancel' do
+  # Confirmed against genuine RPG_RT.exe under wine (cycle #142), closing
+  # the lead cycles #140/#141 both explicitly left open ("that picker's own
+  # banner was not re-examined this cycle"). Unlike :target mode (which
+  # narrows both boxes to make room for a right-anchored panel), the
+  # destination picker disposes them outright: driving a synthetic
+  # Teleport-invoking special item into this screen showed a solid
+  # map-coloured band with no window border/gradient anywhere in the whole
+  # top two-thirds of the screen, above the destination list's own
+  # full-width, bottom-anchored box -- tested at both ends of the
+  # registered-destination-count boundary reached (1 and 3 targets).
+  parent = fake_parent(fake_db)
+  state = escape_teleport_item_state
+  scene = RPG2k::Scene::ItemMenu.new(parent, state)
+  ok scene.instance_variable_get(:@desc_window), ':items mode: banner exists'
+  ok scene.instance_variable_get(:@item_window), ':items mode: item grid exists'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the Teleport item
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq :teleport_target, scene.instance_variable_get(:@mode)
+  ok scene.instance_variable_get(:@desc_window).nil?,
+     'the description banner is disposed outright, not narrowed'
+  ok scene.instance_variable_get(:@item_window).nil?,
+     'the item grid is disposed outright, not narrowed or covered'
+  ok scene.instance_variable_get(:@teleport_window), 'only the destination list itself remains'
+
+  RGSS::Input.triggered = [RGSS::Input::B]           # Cancel back to the item list
+  scene.update
+  RGSS::Input.reset
+  eq :items, scene.instance_variable_get(:@mode)
+  desc = scene.instance_variable_get(:@desc_window)
+  item_win = scene.instance_variable_get(:@item_window)
+  ok desc, 'the banner is rebuilt on Cancel'
+  ok item_win, 'the item grid is rebuilt on Cancel'
+  eq RPG2k::Scene::ItemMenu::SCREEN_W, desc.width, 'rebuilt banner is full width, not left narrowed'
+  eq RPG2k::Scene::ItemMenu::SCREEN_W, item_win.width, 'rebuilt item grid is full width, not left narrowed'
+  ok scene.instance_variable_get(:@teleport_window).nil?, 'the destination list itself is gone'
+end
+
 check 'Scene::SkillMenu: the skill grid cursor does not wrap, caster is fixed, ' \
       'the target cursor does wrap' do
   scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
@@ -20525,6 +20570,53 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   eq :skills, scene.instance_variable_get(:@mode)
   ok state.pending_teleport.nil?
   ok !parent.pop_to_map_called
+end
+
+check 'Scene::SkillMenu: the description banner and skill grid are removed ' \
+      'outright (not narrowed, not covered) once the Teleport destination ' \
+      'picker opens, and rebuilt full-width on Cancel' do
+  # Confirmed against genuine RPG_RT.exe under wine (cycle #142), closing
+  # the lead cycles #140/#141 both explicitly left open ("that picker's own
+  # banner was not re-examined this cycle"). Unlike :target mode (which
+  # narrows both boxes to make room for a right-anchored panel), the
+  # destination picker disposes them outright: driving a synthetic Teleport-
+  # type skill into this screen (Nepheshel's own database has no Escape/
+  # Teleport-type skill to begin with -- see docs/TODO.md's own cycle #142
+  # entry for the full recipe) showed a solid map-coloured band with no
+  # window border/gradient anywhere in the whole top two-thirds of the
+  # screen, above the destination list's own full-width, bottom-anchored
+  # box -- tested at both ends of the registered-destination-count boundary
+  # reached (1 and 3 targets).
+  parent = fake_parent(fake_db)
+  state = escape_teleport_state
+  scene = RPG2k::Scene::SkillMenu.new(parent, state)
+  ok scene.instance_variable_get(:@desc_window), ':skills mode: banner exists'
+  ok scene.instance_variable_get(:@skill_window), ':skills mode: skill grid exists'
+
+  RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto Teleport
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]           # confirm -- opens the destination list
+  scene.update
+  RGSS::Input.reset
+  eq :teleport_target, scene.instance_variable_get(:@mode)
+  ok scene.instance_variable_get(:@desc_window).nil?,
+     'the description banner is disposed outright, not narrowed'
+  ok scene.instance_variable_get(:@skill_window).nil?,
+     'the skill grid is disposed outright, not narrowed or covered'
+  ok scene.instance_variable_get(:@teleport_window), 'only the destination list itself remains'
+
+  RGSS::Input.triggered = [RGSS::Input::B]           # Cancel back to the skill list
+  scene.update
+  RGSS::Input.reset
+  eq :skills, scene.instance_variable_get(:@mode)
+  desc = scene.instance_variable_get(:@desc_window)
+  skill_win = scene.instance_variable_get(:@skill_window)
+  ok desc, 'the banner is rebuilt on Cancel'
+  ok skill_win, 'the skill grid is rebuilt on Cancel'
+  eq RPG2k::Scene::SkillMenu::SCREEN_W, desc.width, 'rebuilt banner is full width, not left narrowed'
+  eq RPG2k::Scene::SkillMenu::SCREEN_W, skill_win.width, 'rebuilt skill grid is full width, not left narrowed'
+  ok scene.instance_variable_get(:@teleport_window).nil?, 'the destination list itself is gone'
 end
 
 # A single-target skill (scope != 2/4, so the target cursor is not locked)

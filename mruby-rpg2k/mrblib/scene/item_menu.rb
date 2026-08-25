@@ -222,8 +222,7 @@ class RPG2k
           @pending_item = id
           @mode = :teleport_target
           @teleport_index = 0
-          build_teleport_window
-          refresh_desc
+          enter_teleport_target
         elsif sk
           if sk.type == Game::Party::SKILL_SWITCH
             # A switch skill has no target and no confirmation message either
@@ -436,6 +435,39 @@ class RPG2k
         play_system_se(SFX_CURSOR)
       end
 
+      # :teleport_target's own left side -- unlike :target mode (which
+      # narrows the description banner/item grid to make room for a
+      # right-anchored panel, cycle #140), the destination picker removes
+      # both entirely, leaving raw map background where they used to be --
+      # confirmed against genuine RPG_RT.exe under wine (cycle #142, closing
+      # the lead cycles #140/#141 both explicitly left open): a real type-9
+      # special item repointed at a synthetic Teleport-type skill (Nepheshel's
+      # own database has no Escape/Teleport-type skill or item to begin with
+      # -- see docs/TODO.md's own cycle #142 entry for the full recipe, and
+      # Scene::SkillMenu's identical #enter_teleport_target for the shared
+      # citation) opened onto a solid map-coloured band across the whole top
+      # two-thirds of the screen, no window border/gradient anywhere in it,
+      # directly above the destination list's own full-width, bottom-anchored
+      # box -- not the banner/grid merely covered (the destination box does
+      # not span that height) nor narrowed (its own box runs the full
+      # `SCREEN_W`, not `SCREEN_W - TARGET_W`). Tested at both ends of the
+      # registered-destination-count boundary this cycle could reach (1 and 3
+      # targets); both left the same bare band above the list. Cancelling out
+      # (confirmed live, both counts) restores the ordinary full-width
+      # `:items` banner and grid exactly, which #leave_teleport_target's own
+      # rebuild (mirroring #enter_teleport_target) now matches.
+      def enter_teleport_target
+        if @desc_window
+          @desc_window.dispose
+          @desc_window = nil
+        end
+        if @item_window
+          @item_window.dispose
+          @item_window = nil
+        end
+        build_teleport_window
+      end
+
       def leave_teleport_target
         @pending_item = nil
         @mode = :items
@@ -443,7 +475,8 @@ class RPG2k
           @teleport_window.dispose
           @teleport_window = nil
         end
-        refresh_desc
+        build_desc_window
+        build_item_window
       end
 
       # The registered teleport destinations as `[map_id, name]` pairs,
@@ -602,10 +635,12 @@ class RPG2k
       # right-anchored target panel once :target mode is entered -- confirmed
       # against genuine RPG_RT.exe under wine (cycle #140): both boxes sit
       # flush against the target panel's own left edge (`SCREEN_W -
-      # TARGET_W`), not the full screen. Left at the full-width :items
-      # formula for :teleport_target too, matching that mode's own
-      # unchanged, unnarrowed banner (out of scope this cycle -- see
-      # #build_possessed_window's own doc comment).
+      # TARGET_W`), not the full screen. :teleport_target never reaches this
+      # formula at all -- #enter_teleport_target disposes both windows
+      # outright rather than narrowing them (cycle #142; see its own doc
+      # comment), so `@mode == :teleport_target` never calls #build_desc_
+      # window/#build_item_window in the first place. Left branchless (only
+      # :target narrows) rather than adding a dead :teleport_target case.
       def left_panel_w
         @mode == :target ? SCREEN_W - TARGET_W : SCREEN_W
       end
@@ -617,10 +652,10 @@ class RPG2k
       # mode. Once :target mode narrows this banner (see #left_panel_w), real
       # RPG_RT switches its text too -- confirmed against genuine RPG_RT.exe
       # under wine (cycle #140): it shows the pending item's own *name*
-      # ("薬草"), not its description, while target mode is open. :teleport_
-      # target is untouched (still the pending item's description) -- that
-      # picker's own banner was not re-examined this cycle, see
-      # #build_possessed_window's own doc comment for why.
+      # ("薬草"), not its description, while target mode is open. This method
+      # is never reached in :teleport_target mode at all (see
+      # #enter_teleport_target, cycle #142) since that mode disposes
+      # `@desc_window` outright rather than refreshing its text.
       def build_desc_window
         @desc_window.dispose if @desc_window
         w = left_panel_w
@@ -735,12 +770,11 @@ class RPG2k
       # 136 == SCREEN_W - TARGET_W` panel width, a real recurring RPG_RT
       # layout rather than a coincidence of this one screen.
       #
-      # :teleport_target is deliberately not given the same treatment: this
-      # cycle only drove the plain single-target-medicine path under wine, so
-      # whether the destination-teleport picker's own left column reflows the
-      # same way is unverified and left open for a future cycle -- applying
-      # this same fix there on the strength of this cycle's one probe would
-      # be guessing, not verifying.
+      # :teleport_target does not get a possessed-count box of its own at
+      # all -- confirmed against genuine RPG_RT.exe under wine (cycle #142):
+      # unlike :target, the destination picker does not narrow-and-replace
+      # the left column, it removes it outright (see #enter_teleport_
+      # target's own doc comment).
       def build_possessed_window
         w = left_panel_w
         inner_w = w - Window::BORDER * 2

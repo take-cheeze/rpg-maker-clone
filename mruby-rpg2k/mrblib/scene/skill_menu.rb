@@ -190,8 +190,7 @@ class RPG2k
           @pending_skill = sid
           @mode = :teleport_target
           @teleport_index = 0
-          build_teleport_window
-          refresh_desc
+          enter_teleport_target
         else
           @pending_skill = sid
           enter_target_confirm(sk && sk.scope == 2 ? :self : sk && sk.scope == 4 ? :party : nil)
@@ -438,6 +437,39 @@ class RPG2k
         @parent.pop_to_map
       end
 
+      # :teleport_target's own left side -- unlike :target mode (which
+      # narrows the description banner/skill grid to make room for a
+      # right-anchored panel, cycles #140/#141), the destination picker
+      # removes both entirely, leaving raw map background where they used
+      # to be -- confirmed against genuine RPG_RT.exe under wine (cycle
+      # #142, closing the lead cycles #140/#141 both explicitly left open):
+      # driving a synthetic Teleport-type skill (Set Teleport Target /
+      # Change Teleport Access have no existing exerciser in Nepheshel's own
+      # database, so this needed a scratch skill row and a hand-edited save
+      # -- see docs/TODO.md's own cycle #142 entry for the full recipe) into
+      # this screen showed a solid map-coloured band across the whole top
+      # two-thirds of the screen, with no window border/gradient anywhere in
+      # it, directly above the destination list's own full-width, bottom-
+      # anchored box -- not the banner/grid merely covered (the destination
+      # box does not span that height) nor narrowed (its own box runs the
+      # full `SCREEN_W`, not `SCREEN_W - TARGET_W`). Tested at both ends of
+      # the registered-destination-count boundary this cycle could reach (1
+      # and 3 targets); both left the same bare band above the list.
+      # Cancelling out (confirmed live, both counts) restores the ordinary
+      # full-width :skills banner and grid exactly, which #leave_teleport_
+      # target's own rebuild (mirroring #enter_teleport_target) now matches.
+      def enter_teleport_target
+        if @desc_window
+          @desc_window.dispose
+          @desc_window = nil
+        end
+        if @skill_window
+          @skill_window.dispose
+          @skill_window = nil
+        end
+        build_teleport_window
+      end
+
       def leave_teleport_target
         @pending_skill = nil
         @mode = :skills
@@ -445,7 +477,8 @@ class RPG2k
           @teleport_window.dispose
           @teleport_window = nil
         end
-        refresh_desc
+        build_desc_window
+        build_skill_window
       end
 
       # After a successful cast, drop back to the skill list and rebuild it (SP
@@ -465,13 +498,12 @@ class RPG2k
       # panel's own left edge (`SCREEN_W - TARGET_W`), not the full screen --
       # pixel-sampled at the identical native x (136, the border pattern
       # starting right where the target panel's own left edge does) as the
-      # already-fixed Item screen. Left at the full-width :skills formula for
-      # :teleport_target too, matching that mode's own unchanged, unnarrowed
-      # banner -- this cycle only drove the ordinary self/single-ally/
-      # all-ally target-confirm path under wine, not the Teleport picker, so
-      # extending this there would be guessing, not verifying (the same
-      # restraint Scene::ItemMenu#left_panel_w's own doc comment already
-      # takes for its own Teleport picker).
+      # already-fixed Item screen. :teleport_target never reaches this
+      # formula at all -- #enter_teleport_target disposes both windows
+      # outright rather than narrowing them (cycle #142; see its own doc
+      # comment), so `@mode == :teleport_target` never calls #build_desc_
+      # window/#build_skill_window in the first place. Left branchless (only
+      # :target narrows) rather than adding a dead :teleport_target case.
       def left_panel_w
         @mode == :target ? SCREEN_W - TARGET_W : SCREEN_W
       end
@@ -488,9 +520,10 @@ class RPG2k
       # (scope 3), self-locked (scope 2) and all-ally-locked (scope 4) skill
       # alike -- all three tested, since #enter_target_confirm's own lock
       # argument only changes cursor behaviour, not (as this fix confirms)
-      # whether the reflow happens. :teleport_target is untouched (still the
-      # pending skill's description) -- that picker's own banner was not
-      # re-examined this cycle, see #left_panel_w's own doc comment for why.
+      # whether the reflow happens. This method is never reached in
+      # :teleport_target mode at all (see #enter_teleport_target, cycle
+      # #142) since that mode disposes `@desc_window` outright rather than
+      # refreshing its text.
       def build_desc_window
         @desc_window.dispose if @desc_window
         w = left_panel_w
@@ -603,8 +636,11 @@ class RPG2k
       # status`, a real recurring RPG_RT layout rather than a coincidence of
       # one screen.
       #
-      # :teleport_target is deliberately not given the same treatment -- see
-      # #left_panel_w's own doc comment for why.
+      # :teleport_target does not get an MP-cost box of its own at all --
+      # confirmed against genuine RPG_RT.exe under wine (cycle #142): unlike
+      # :target, the destination picker does not narrow-and-replace the left
+      # column, it removes it outright (see #enter_teleport_target's own doc
+      # comment).
       def build_mp_cost_window
         w = left_panel_w
         inner_w = w - Window::BORDER * 2
