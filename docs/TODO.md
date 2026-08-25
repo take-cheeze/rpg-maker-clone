@@ -2238,6 +2238,135 @@ The work below is roughly ordered by the critical path to a walkable game
   and the long-deferred short-synthetic-autostart-page crash (candidate 2)
   and Enter Hero Name charset-2 hang (candidate 3) from this cycle's own
   task list, neither attempted this cycle.
+  ✅ **Follow-up (cycle #149, 2026-08-25): picked up candidate 3 from cycle
+  #148's own task list -- the Enter Hero Name charset-2 hang cycle #125
+  first flagged and no cycle had chased since. Deliberately steered away
+  from the shop/item/skill family (12 cycles running on it) into the
+  message/event-command system instead. Result: charset 2 was never a real
+  RPG2000 feature to begin with -- genuine RPG_RT.exe throws a genuine
+  internal access violation for *any* charset value past 0/1, not something
+  specific to "2", caught by the game's own exception handler and left
+  permanently stuck rather than crashing outright. Comments corrected; no
+  runtime behavior changed, since genuine RPG_RT.exe has no working behavior
+  left to reproduce for any such value.** Built a fresh injector
+  (`inject_name_input.rb`, scratch-only, modeled directly on cycle #148's own
+  `inject_shop_command_event.rb`) that splices a single synthetic Enter Hero
+  Name (10740, actor 1, configurable charset, seed 0) onto the front of the
+  same genuine 89-command Map0478 event 2 page 2 tail cycles #130-148 have
+  spliced onto, added as a new autostart event on a scratch copy of Map0012 --
+  reusing the established long-tail workaround so this probe cannot be
+  confused with the still-open candidate-2 short-list crash mystery, even
+  though that mystery's own symptom (dies only on the *next* transition after
+  a completed autostart) does not match what this cycle found anyway (the
+  hang here happens immediately, before the spliced page's own first command
+  even finishes). Drove genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+  `LIBGL_ALWAYS_SOFTWARE=1`, matchbox-window-manager, `LANG=ja_JP.UTF-8`,
+  `xdotool windowfocus`) on the already-canonical debug save (map 12,
+  (40,15), scene cleared, untouched this cycle) through Continue -> file 1,
+  letting the autostart fire, and screenshotted/`ps`-sampled the running
+  `RPG_RT.exe` process every 3s out to 35s. Charset 0 (hiragana) and charset 1
+  (katakana) each opened their real gojuuon grid within the first 3s sample,
+  pixel-identical to each other's own widget shape and to cycle #125's
+  original findings (actor 1's own real face portrait, name-so-far field, and
+  full kana table all present and legible), and `ps`'s own `STAT` column read
+  `R` (running) throughout, consistent with the engine actively drawing.
+  Charset 2 -- and charset 3, tested identically as a second, previously
+  untested data point -- instead produced a screen that stayed a flat black
+  client area under a ~33px grey strip at every single sample out to 35s (own
+  Python/Pillow pixel scan: RGB (0,0,0) below y=33, a uniform (189,190,189)
+  Windows-dialog-face grey above it, confirmed by direct sampling, not
+  eyeballing), `ps`'s own `STAT` column read `S` (sleeping) at every sample
+  for both, and cumulative `%CPU` *fell* over time (58% -> 33% by t35 for
+  charset 2) rather than climbing or holding -- ruling out a busy-loop
+  explanation for the hang and confirming it is genuinely blocked, not
+  computing. `xdotool search --name .` during the hang found a **new** third
+  `Nepheshel Ver2.04b`-titled top-level window (id varies per run, geometry
+  ~326x94 near screen-center) that did not exist right after boot, alongside
+  the original two -- consistent with a modal dialog/frame the app itself
+  created but that this Xvfb/matchbox setup never painted content into.
+  Decisive evidence came from re-running both charset 2 and charset 3 with
+  `WINEDEBUG=+seh`: each run logs a genuine `dispatch_exception code=c0000005`
+  (`EXCEPTION_ACCESS_VIOLATION`) inside `RPG_RT.exe` itself, at a small,
+  near-null-offset faulting address (`info[1]` around `0xfd`, the classic
+  shape of dereferencing a null/garbage base pointer read from an
+  out-of-bounds table index) shortly after the autostart's Enter Hero Name
+  command runs, caught by an identical chain of the app's own SEH handler
+  addresses for both charset values (`0046D862`/`004751E8`/`0047548E`/
+  `00455533`/`00455544`/`00443248`) even though the two runs' own faulting
+  addresses differ slightly (`00403D68` for charset 2, `0040B766` for charset
+  3) -- strong evidence this is one mechanism (almost certainly indexing an
+  internal, exactly-two-entry hiragana/katakana table with an out-of-range
+  value and following whatever garbage pointer comes back), not two unrelated
+  bugs, and that the *value* 2 carries no special meaning at all: 3 breaks
+  identically. The exception is caught internally rather than surfacing any
+  visible crash dialog, which is exactly why this reads as a silent "hang"
+  rather than a visible crash -- the engine's own exception handler leaves it
+  parked with nothing left to paint. **This falsifies this codebase's own
+  prior doc comment ("for English-patched games, the Latin alphabet (2)"),
+  which had no genuine-RPG_RT-behavior citation behind it at all** -- there
+  is no genuine RPG2000 "English charset" mode; any real RPG2000 project's
+  own editor only ever writes 0 or 1 into this field, and a value of 2 (or
+  anything else) reaching real RPG_RT.exe is already off the rails.
+  **No runtime behavior was changed.** Making this codebase's own engine
+  reproduce a silent, permanent, untestable hang for charset >= 2 would be
+  actively harmful (unlike every other "genuine behavior" this project
+  chases, there is no working reference behavior here to copy, and shipping
+  a deliberate hang would make this build strictly worse for players/authors
+  who legitimately want non-Japanese name entry) -- so this build's own
+  choice to keep offering a working Latin/digit grid for charset 2
+  specifically (and to fall back to hiragana for any *other* out-of-range
+  value, an existing, pre-cycle-149 split with no genuine-behavior basis
+  either way) was left exactly as-is, now correctly documented as this
+  codebase's own usability extension rather than a modeled RPG_RT feature.
+  Fixed the doc comments that made the opposite (false) claim: the "Enter
+  Hero Name (name-entry widget)" section comment and `#drive_name_input`'s
+  own comment in `mruby-rpg2k/mrblib/scene/map.rb`, and `do_name_input`'s
+  comment in `mruby-rpg2k/mrblib/interpreter.rb`, all rewritten to state the
+  genuine finding (only 0/1 are real, the access-violation trace, and that
+  this build's charset-2/fallback split is its own invention). Added one new
+  `scripts/rpg2k_scene_check.rb` check pinning the specific pre-existing
+  behavior that previously had zero coverage -- an out-of-range charset that
+  is not exactly 1 or 2 (tested with 3) opens the ordinary kana widget on the
+  hiragana page, not the letters grid and not katakana -- confirmed to fail
+  against a deliberately injected regression (`req[:charset] != 0 ? :katakana
+  : :hiragana` in place of the real `req[:charset] == 1 ? ...`, i.e. widening
+  the katakana condition to swallow charset 3 too), `RuntimeError: expected
+  :hiragana, got :katakana`, before being reverted. Full suite reconfirmed
+  passing (929 checks, up from 928); `rpg2k_render_check.rb` (41),
+  `rpg2k_logic_check.rb` (1134), `rpg2k3_battle_row_check.rb` (19) and
+  `rpg2k3_battle_gauge_check.rb` (15) all reconfirmed passing unaffected.
+  No EasyRPG source was consulted for any part of this cycle -- every claim
+  above traces to this cycle's own genuine RPG_RT.exe wine captures
+  (screenshots, `ps` snapshots, and `WINEDEBUG=+seh` traces). One pre-existing,
+  untouched citation was noticed in passing and is flagged here rather than
+  fixed, per this file's own standing rule (not required by this cycle's own
+  fix): the "holding a direction auto-repeats the grid cursor" check's own
+  comment in `scripts/rpg2k_scene_check.rb` still cites EasyRPG's
+  `Window_Keyboard::Update` (`src/window_keyboard.cpp`), mislabeled "RPG_RT's
+  own live source" -- the same mislabeling pattern cycle #125 already fixed
+  for two sibling claims on this exact widget, but this one third instance
+  escaped that pass; it documents auto-repeat behavior, not charset
+  legitimacy, so this cycle's own fix did not need to touch it and left it
+  alone, same as cycle #148 left the shop code's own pre-existing citations
+  alone. `Map0012.lmu`/`Save01.lsd` were edited only as scratch copies for
+  every probe above (in `data/Nepheshel206beta/Nepheshel206Rbeta/` directly,
+  the same file the wine driver reads and writes back after each injection --
+  not a separate scratch directory) and restored to their original bytes
+  (byte-identical by `md5sum` against the values cycle #148 itself recorded:
+  `c2fa69a0...` / `3ab5bb01...`) after every probe; `scripts/
+  lcf_testbed_check.rb` (1099 maps/22858 events) and `scripts/
+  lcf_save_check.rb` (map 12, (40,15), scene cleared) both reconfirmed clean
+  afterward. **Left for a future cycle**: whether the exact same
+  access-violation/hang reproduces on `Nepheshel206Nbeta`'s own separate
+  `RPG_RT.exe` (a different binary by `md5sum`, never booted this cycle) or
+  is specific to the `Nepheshel206Rbeta` build this project's own tooling
+  always drives; whether still-larger/negative charset values (255, -1) fault
+  the same way or differently (only 2 and 3 were tested, since two identical
+  results already settled the "is 2 special" question this cycle set out to
+  answer); and candidate 2, the short-synthetic-autostart-page crash mystery,
+  remains completely untouched this cycle (four prior attempts: cycles
+  #135/#137-138/#139/#143), still this file's single longest-running open
+  investigation.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
