@@ -6604,6 +6604,102 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #142, 2026-08-25): closed the `:teleport_target`
+  lead cycles #140 and #141 both explicitly left open ("that picker's own
+  banner was not re-examined this cycle") on `Scene::ItemMenu` and
+  `Scene::SkillMenu` alike. Real RPG_RT does not narrow the description
+  banner/item-or-skill grid the way `:target` mode does, and does not merely
+  leave them alone either (the guess both prior cycles flagged as
+  "plausibly... but genuinely unverified") -- it removes them outright,
+  leaving bare map background above the destination picker's own full-width,
+  bottom-anchored box.** Nepheshel's own database ships zero Escape/Teleport-
+  type skills or items (confirmed by dumping every one of its 306 skill rows
+  and cross-checking all 14 type-9 special items' `skill_id`s: every real
+  skill in this game is type 0 Normal or type 3 Switch, the latter only for
+  scripted summon/boss-intro skills, never Teleport(1)/Escape(2)) -- so this
+  needed a hand-edited scratch skill row and save, not existing content.
+  Picked an unused, blank-named skill slot (id 129, confirmed unreferenced by
+  any item's `skill_id`) in a scratch copy of `RPG_RT.ldb`, gave it a name/
+  description and `type = 1` (`SKILL_TELEPORT`), and hand-edited a scratch
+  copy of the canonical debug save (`Save01.lsd`) to learn it. **This
+  surfaced a real save-format footgun worth recording for future cycles
+  independent of the banner finding itself:** `SAVE_PARTY_ACTOR`'s field 52
+  (`skills`, the raw uint16 id array) is not self-describing -- genuine
+  RPG_RT reads exactly `skill_size` (field 51) entries from it and ignores
+  the rest, the same size-then-array pairing already documented for field
+  81/82 (`state_size`/`states`). Setting field 52 alone (to `[129]`, or even
+  to a *known-good, previously-validated* id like 32 alone) left the skill
+  genuinely absent under genuine RPG_RT -- rendered as an empty list with
+  only a bare cursor box, indistinguishable at a glance from "the skill's own
+  name failed to render" (which is what this looked like at first, and cost
+  three dead-end wine boots chasing an encoding/rendering theory before the
+  actual cause -- a missing size field -- was found by controlling for list
+  length with a single already-known-good skill id). `gen-rpg2k-save.rb`/
+  cycle #141's own recipe never hit this because 3 is also what cycle #141
+  set field 51 to alongside it, just not called out in that cycle's own
+  writeup; this engine's own `Game::Actor#to_lsd` (`mruby-rpg2k/mrblib/
+  game.rb`) already writes both fields together correctly, so this is a
+  hand-editing gotcha for future save probes, not a production bug. Also
+  registered 1 and then 3 teleport destinations directly in the save's own
+  chunk 110 (`SAVE_TARGET`, `map_id`/`x`/`y` per entry) and enabled
+  `SAVE_SYSTEM` field 121 (`teleport_allowed`) the same way, sidestepping any
+  need for a synthetic autostart map event (and its own unrelated,
+  still-unexplained crash risk, cycles #137-140) entirely -- save-only edits
+  are sufficient to reach and probe this screen. Drove genuine RPG_RT.exe
+  under wine (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1, matchbox-window-
+  manager, LANG=ja_JP.UTF-8) on the resulting save: Continue -> file 1,
+  Escape (field menu), Down (Skill), Decision, Decision (solo actor row) ->
+  the single-entry skill list (now showing correctly, "MP cost" box format
+  confirming the field-51 fix already) -> Decision on the Teleport skill.
+  Both the description banner and the skill grid vanished completely --
+  pixel-sampled the capture and found a flat, uniform map-floor colour with
+  no window border/gradient pattern anywhere across the entire top two-
+  thirds of the screen (native y 0-152 of 240), directly above the
+  destination list's own box, which runs the full `SCREEN_W` (not `SCREEN_W
+  - TARGET_W`, ruling out a `:target`-style narrow) anchored to the screen's
+  bottom edge (`SCREEN_H - h - BORDER*2`, matching `Window_Teleport`'s
+  already-ported geometry). Repeated with exactly 1 registered destination
+  (a single left-aligned entry, no second column) and 3 (two rows, a blank
+  second cell in the incomplete last row) -- both boundary cases showed the
+  identical bare band above the list, ruling out "the banner narrows to make
+  room and I mismeasured" as an alternative explanation at either end.
+  Cancelling out of the picker (confirmed live at both destination counts)
+  restored the ordinary full-width, description/grid-showing `:skills` shape
+  exactly, with no stale narrowed geometry left over. Repeated the identical
+  probe through `Scene::ItemMenu`, repointing a real type-9 special item
+  (id 25, 毒針玉) at the same synthetic skill 129 instead of its real skill
+  88 and giving the save a single held copy of it -- pixel-identical result:
+  banner and item grid both gone, same bottom-anchored full-width
+  destination box, Cancel restores the full-width `:items` shape. Fixed
+  `mruby-rpg2k/mrblib/scene/skill_menu.rb` and `item_menu.rb` identically: a
+  new `#enter_teleport_target` (called from `#choose_skill`/`#choose_item`'s
+  own Teleport branch in place of the old `build_teleport_window;
+  refresh_desc` pair) disposes `@desc_window` and `@skill_window`/
+  `@item_window` outright before building the destination list, and
+  `#leave_teleport_target` now calls `#build_desc_window`/`#build_skill_
+  window`/`#build_item_window` (full rebuild, matching `:skills`/`:items`
+  mode's own full-width formula since `left_panel_w` is never touched by
+  `:teleport_target`) instead of a bare `#refresh_desc` that never actually
+  existed to refresh once the fix removes the windows it would have
+  refreshed. Updated the stale doc comments on `#left_panel_w`, `#build_
+  desc_window`/`#refresh_desc`, and `#build_mp_cost_window`/`#build_
+  possessed_window` in both files that previously described this picker as
+  "unverified"/"deliberately not touched" -- `left_panel_w`'s own `:target`-
+  only branch is now correctly documented as never reached in
+  `:teleport_target` mode at all, rather than silently returning the (now
+  irrelevant) full-width case for it. New `scripts/rpg2k_scene_check.rb`
+  checks on both screens (reusing the existing `EscapeTeleportItemStubParty`/
+  `EscapeTeleportStubParty` fixtures) asserting `@desc_window`/`@item_window`
+  (`@skill_window` for the Skill screen) become `nil` on entering
+  `:teleport_target` and are rebuilt at the screen's own full width on
+  Cancel; both confirmed to fail against the pre-fix code (a stashed diff of
+  just the two production files) with `RuntimeError: the description banner
+  is disposed outright, not narrowed`. Full suite reconfirmed passing (921
+  checks, up from 919); `rpg2k_render_check.rb` (41) and `rpg2k_logic_
+  check.rb` (1134) reconfirmed passing unaffected. All edited game-data files
+  (`RPG_RT.ldb`, `Save01.lsd`) restored to their original bytes and
+  re-confirmed byte-identical by `md5sum`, and the canonical debug save
+  reconfirmed clean by `scripts/lcf_save_check.rb`, after every probe.
   ✅ **Follow-up (cycle #141, 2026-08-25): closed the lead cycle #140 left open
   on its own doc comment -- `Scene::SkillMenu`'s target-confirm screen gets
   the identical description-banner-narrows/skill-list-replaced reflow cycle
