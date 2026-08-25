@@ -10,7 +10,7 @@ map) as the `wasm` build artifact. Two downstream jobs publish that artifact:
 | `deploy-pages` | push to `master` | GitHub Pages | `https://<owner>.github.io/<repo>/` |
 | `preview-cloudflare` | `/preview` comment on a PR | Cloudflare Pages preview | commented on the PR |
 
-Neither job rebuilds anything — they reuse the exact bytes the `wasm` job
+Neither job rebuilds the wasm page — they reuse the exact bytes the `wasm` job
 produced, so what the preview shows is what ships.
 
 The build links without pthreads / SharedArrayBuffer, so the page needs no
@@ -18,6 +18,14 @@ The build links without pthreads / SharedArrayBuffer, so the page needs no
 on static hosts (like GitHub Pages) that cannot set them. Neither deployment
 bakes a game in, so the page opens on its runtime loader — drop in a local
 `.zip`, a `.zip` URL, or a `owner/repo` GitHub project to play.
+
+## Changelog sub-page
+
+Both `deploy-pages` and `preview-cloudflare` additionally check out
+`CHANGELOG.md` and render it (via `scripts/render-changelog-page.bash`, which
+shells out to `marked`) into a `changelog/` sub-page, linked from the game
+page's header — so a `/preview` build shows the same changelog a merge would
+publish.
 
 ## One-time setup
 

@@ -125,6 +125,8 @@
       button:disabled { opacity: .5; cursor: default; }
       .hint { color: var(--muted); font-size: 12px; margin: 0; text-align: center; }
       .hint code { background: #12141a; padding: 1px 5px; border-radius: 4px; }
+      .hint a { color: var(--accent); text-decoration: none; }
+      .hint a:hover { text-decoration: underline; }
       .divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
       .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
       label.check { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -228,6 +230,7 @@
   </head>
   <body>
     <h1>RPG Maker clone <small>— load a project to play</small></h1>
+    <p class="hint"><a href="changelog/">Changelog</a></p>
 
     <div class="panel" id="loader">
       <!-- Shown only when a sample project is bundled into the page's virtual
