@@ -1063,17 +1063,30 @@ jobs:
 
       # Same run_id problem as the Emscripten cache above, but ccache's
       # contents legitimately evolve with source changes, so it cannot use a
-      # toolchain-pin key. Keying on the commit instead of the run still
-      # caps growth to one new cache per commit rather than one per
-      # workflow *run* -- re-runs, `issue_comment`/`push`/`pull_request`
-      # firing on the same SHA, and manual workflow_dispatch retries all
-      # collapse onto the same exact-match key instead of each minting a
-      # fresh multi-hundred-MB cache entry.
+      # toolchain-pin key the way that cache does. This used to key on
+      # github.sha instead, capping growth to one new cache per commit rather
+      # than one per workflow *run* -- but on a repo this commit-heavy, "one
+      # per commit" is still a fresh multi-hundred-MB entry on nearly every
+      # push, almost none of which ever gets an exact-match hit again (the
+      # next commit has a different sha), so they just piled up as dead
+      # weight -- flooding github.com/<repo>/actions/caches and evicting the
+      # Nix/RTP/wine/game caches above the same way the old emcc key did.
+      # Rotate on a week instead: every push in the same
+      # ISO week exact-matches the same key (ccache updates locally but the
+      # post-job save step is a no-op on an exact-match restore, since
+      # actions/cache cannot overwrite an existing entry), and
+      # `restore-keys` falls back to the most recent prior week's entry once
+      # the week rolls over. That bounds this to ~52 entries/year while still
+      # refreshing ccache's contents regularly.
+      - name: Cache period
+        id: cache-period
+        run: echo "value=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
       - name: Restore and cache ccache
         uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.ccache
-          key: wasm-ccache-${{ github.sha }}
+          key: wasm-ccache-${{ steps.cache-period.outputs.value }}
           restore-keys: wasm-ccache-
 
       # Emscripten builds its system libraries (libc/libc++, and the -fexceptions
