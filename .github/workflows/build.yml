@@ -1464,8 +1464,16 @@ jobs:
           # would have passed a build that never pumped a frame.
           if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless.log" &&
              grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless.log"; then
-            grep -E 'RPG2K_PSP_(BOOT|BRINGUP)' "$GITHUB_WORKSPACE/headless.log" \
-              | head -5
+            # Every RPG2K_PSP_* marker, not just BOOT/BRINGUP: the
+            # PRE_MRUBY_OPEN/MRUBY_OPEN pair (mrb_open()'s own memory/timing
+            # cost, docs/adr/0047-psp-memory-budget.md) and GAME_START/
+            # GAME_READY/GAME_STOP are otherwise only visible by pulling the
+            # `psp-smoke` artifact's full headless.log, which needs GitHub API
+            # access this job's own log does not. -10 covers every one-shot
+            # marker (there are at most a handful) plus a few BRINGUP
+            # heartbeats.
+            grep -E 'RPG2K_PSP_[A-Z_]+' "$GITHUB_WORKSPACE/headless.log" \
+              | head -10
           else
             echo "boot or bring-up marker missing from the emulator log; last 100 lines:"
             tail -100 "$GITHUB_WORKSPACE/headless.log"
