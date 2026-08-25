@@ -495,8 +495,12 @@ module LCF
       # this same table hundreds of times over (once per event page and once
       # per page's :condition sub-table) for no behavioural difference.
       if @schema
-        @sym2idx = @schema[:sym2idx] ||=
-          @schema[:elements].each_with_object({}) { |(k, e), h| h[e[:name]] = k }
+        @sym2idx = @schema[:sym2idx]
+        unless @sym2idx
+          @sym2idx = {}
+          @schema[:elements].each { |k, e| @sym2idx[e[:name]] = k }
+          @schema[:sym2idx] = @sym2idx
+        end
       end
     end
 
