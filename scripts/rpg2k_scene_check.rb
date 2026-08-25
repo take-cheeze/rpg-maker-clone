@@ -23370,6 +23370,43 @@ check 'Shift only fast-forwards messages during Test Play' do
   ok !reveal.done?, 'a released game never sees Shift fast-forward the reveal'
 end
 
+# Cycle #143, re-verified against genuine RPG_RT.exe under wine (see
+# #drive_text_message's own updated comment): Cancel (B) dismisses a plain,
+# non-choice message exactly like Decision (C) does, rather than being
+# swallowed or opening the field menu. Only the C side of `confirm` had a
+# dedicated check before this (the Shift/page checks above); B was only ever
+# exercised on the Show Choices path (cancel-out-of-a-choice, a structurally
+# different branch of #drive_message).
+check 'Cancel (B), not just Decision (C), dismisses a plain message and resumes the event' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hello'),
+                          ECmd.new(ic::CONTROL_SWITCHES, [0, 1, 1, 0])]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  st = scene.instance_variable_get(:@state)
+  msg = nil
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
+  ok msg, 'message window opened'
+  reveal = msg[:reveal]
+  ok !reveal.done?, 'a fresh short message has not finished typing out yet'
+
+  # A first confirm (either key) only completes the reveal (fast_forward);
+  # it takes a second confirm, once fully shown, to actually dismiss --
+  # mirroring the Shift-fast-forward check above, but driving completion
+  # with B itself so this check pins B doing both jobs, not just C.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok reveal.done?, 'a first Cancel press completes the reveal instead of dismissing'
+  ok scene.instance_variable_get(:@message), 'the window is still open right after that'
+
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  ok !scene.instance_variable_get(:@message), 'a second Cancel dismissed the message, same as Decision'
+  5.times { RGSS::Input.reset; scene.update }
+  ok st.switches[1], 'the interpreter resumed past it and ran the next command'
+end
+
 check 'F9 opens the debug menu during Test Play, and B returns to the map' do
   scene = new_scene({}, test_play: true)
   RGSS::Input.triggered = [RGSS::Input::F9]
