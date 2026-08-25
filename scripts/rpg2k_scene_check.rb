@@ -17918,6 +17918,19 @@ class MenuStubParty
   # specific disabled path overrides this.
   def field_usable?(_id, _state = nil); true; end
   def field_skills(_actor, _state = nil); []; end
+  # Mirrors Game::Party#skill_cost off the same [id, cost] pairs #field_skills
+  # already returns -- Scene::SkillMenu's target-confirm screen now reads this
+  # for its own "MP cost" box (cycle #141's #build_mp_cost_window), the same
+  # shape as #item_count just above for Scene::ItemMenu's "held count" box.
+  # Real Game::Party#skill_cost takes the skill row itself, not a bare id, so
+  # this looks the row up by its own `id` -- every existing db_skill stub's
+  # OpenStruct answers `nil` for a field it never set, which simply misses
+  # every pair here and falls back to 0 rather than raising; a check that
+  # cares about the shown cost sets `id:` on its stub row to match.
+  def skill_cost(sk, caster)
+    pair = field_skills(caster).find { |i, _| i == sk.id }
+    pair ? pair[1] : 0
+  end
   def reorder(new_order); @actors = new_order.map { |i| @actors[i] }; end
   # Mirrors Game::Party#stat_mode/#adjust_stat/#effective_atk (etc, see
   # game.rb) -- Scene::StatusMenu/Scene::EquipMenu now read an actor's
@@ -20524,7 +20537,7 @@ class NormalTargetSkillStubParty < WrapMenuParty
   def field_skills(_actor, _state = nil); [[SKILL_ID, 5]]; end
   def db_skill(id)
     return nil unless id == SKILL_ID
-    OpenStruct.new(name: 'Heal', type: Game::Party::SKILL_NORMAL, scope: 3,
+    OpenStruct.new(id: SKILL_ID, name: 'Heal', type: Game::Party::SKILL_NORMAL, scope: 3,
                    animation_id: ANIMATION_ID)
   end
   def cast_skill(caster, sid, target = nil, _free = false)
@@ -20611,6 +20624,72 @@ check "Scene::SkillMenu: an animation's own success SE skips past a " \
      'real sound plays instead'
 end
 
+check 'Scene::SkillMenu: the description banner and skill-list box both ' \
+      'narrow and are replaced by an "MP cost" box once target mode is ' \
+      'entered, and revert on Cancel' do
+  # Confirmed against genuine RPG_RT.exe under wine (cycle #141): cycle #140
+  # fixed this identical reflow for Scene::ItemMenu but deliberately left
+  # Scene::SkillMenu alone, since a skill has no "held count" concept -- its
+  # own doc comment guessed the analogous box here might show "an MP消費/
+  # cost box... but genuinely unverified". It does: not a cosmetic overlap
+  # of the pre-existing full-width banner/grid by the (already-shared)
+  # right-anchored target panel, both boxes genuinely narrow to `SCREEN_W -
+  # TARGET_W` and the skill grid (plus its caster-name/MP header line) is
+  # replaced outright by a single-row "MP cost" box, not merely covered.
+  # See #build_mp_cost_window's own doc comment for the pixel measurement.
+  state = Game::State.new(NormalTargetSkillStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state)
+  narrow_w = RPG2k::Scene::SkillMenu::SCREEN_W - RPG2k::Scene::SkillMenu::TARGET_W
+
+  desc = scene.instance_variable_get(:@desc_window)
+  skill_win = scene.instance_variable_get(:@skill_window)
+  eq RPG2k::Scene::SkillMenu::SCREEN_W, desc.width, ':skills mode: banner is full width'
+  eq RPG2k::Scene::SkillMenu::SCREEN_W, skill_win.width, ':skills mode: skill grid is full width'
+
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the (only) skill -- opens target mode
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+
+  desc = scene.instance_variable_get(:@desc_window)
+  cost_win = scene.instance_variable_get(:@skill_window)
+  eq narrow_w, desc.width, ':target mode: banner narrows to SCREEN_W - TARGET_W'
+  eq 0, desc.x, 'banner stays at the screen\'s left edge'
+  eq 0, desc.y, 'banner stays at the top'
+  eq RPG2k::Scene::SkillMenu::DESC_H, desc.height, 'banner height is unchanged'
+  eq narrow_w, cost_win.width, ':target mode: the MP-cost box is the same narrowed width'
+  eq 0, cost_win.x, 'MP-cost box stays at the screen\'s left edge'
+  eq RPG2k::Scene::SkillMenu::DESC_H, cost_win.y, 'MP-cost box sits where the skill grid\'s own top row did'
+  eq RPG2k::Scene::SkillMenu::DESC_H, cost_win.height,
+     'MP-cost box is exactly one row tall, not sized to the (irrelevant) skill count'
+
+  desc_texts = window_texts(desc)
+  eq ['Heal'], desc_texts, 'the banner shows the pending skill\'s own name, not its description'
+  cost_texts = window_texts(cost_win)
+  ok cost_texts.include?('MP Cost'), 'the MP-cost box labels itself with the mp_cost term ' \
+                                      '(English fallback here, blank in the fixture db)'
+  ok cost_texts.include?('5'), 'and shows the pending skill\'s own cost (5, from ' \
+                                'NormalTargetSkillStubParty\'s #field_skills)'
+  # Right-aligned (Bitmap#draw_text's `align` 2), the same "label left, value
+  # right" row Scene::ItemMenu#build_possessed_window already draws for its
+  # own held-count box.
+  cost_call = (cost_win.contents.draw_calls || []).find { |c| c[4] == '5' }
+  ok cost_call, 'the cost is drawn'
+  eq 2, cost_call[5], 'right-aligned (align 2), not flush left beside the label'
+
+  # Cancel reverts both boxes back to their full-width, description-showing
+  # :skills shape -- not just a mode-variable flip with stale geometry left
+  # over from target mode.
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :skills, scene.instance_variable_get(:@mode)
+  desc = scene.instance_variable_get(:@desc_window)
+  skill_win = scene.instance_variable_get(:@skill_window)
+  eq RPG2k::Scene::SkillMenu::SCREEN_W, desc.width, 'Cancel: banner is back to full width'
+  eq RPG2k::Scene::SkillMenu::SCREEN_W, skill_win.width, 'Cancel: skill grid is back to full width'
+end
+
 # Confirmed against EasyRPG's actual C++ source:
 # `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect` case
 # (`src/game_character.cpp`) -- `if (move_command.parameter_string !=
@@ -20659,6 +20738,8 @@ end
 class SelfAllySkillStubParty < MenuStubParty
   SELF_SID = 70
   PARTY_SID = 71
+  SELF_COST = 5
+  PARTY_COST = 3
 
   attr_reader :cast_skill_calls
 
@@ -20668,12 +20749,14 @@ class SelfAllySkillStubParty < MenuStubParty
     @cast_skill_calls = []
   end
 
-  def field_skills(_actor, _state = nil); [[SELF_SID, 5], [PARTY_SID, 3]]; end
+  def field_skills(_actor, _state = nil); [[SELF_SID, SELF_COST], [PARTY_SID, PARTY_COST]]; end
 
+  # `id:` set on both rows so MenuStubParty#skill_cost (cycle #141) can find
+  # them by the same key #build_mp_cost_window looks up.
   def db_skill(id)
     case id
-    when SELF_SID  then OpenStruct.new(name: 'Guard Up', type: Game::Party::SKILL_NORMAL, scope: 2)
-    when PARTY_SID then OpenStruct.new(name: 'Heal All', type: Game::Party::SKILL_NORMAL, scope: 4)
+    when SELF_SID  then OpenStruct.new(id: SELF_SID, name: 'Guard Up', type: Game::Party::SKILL_NORMAL, scope: 2)
+    when PARTY_SID then OpenStruct.new(id: PARTY_SID, name: 'Heal All', type: Game::Party::SKILL_NORMAL, scope: 4)
     end
   end
 
@@ -20743,6 +20826,38 @@ check 'Scene::SkillMenu: cancelling a self-scope skill\'s target-confirm screen 
   RGSS::Input.reset
   eq :skills, scene.instance_variable_get(:@mode)
   ok state.party.cast_skill_calls.empty?, 'nothing was cast'
+end
+
+check 'Scene::SkillMenu: the "MP cost" box shows the right cost for a ' \
+      'self-locked or all-ally-locked skill too, not just a single-ally one' do
+  # Cycle #141's own wine probe confirmed the reflow happens regardless of
+  # scope/lock (a self-scope heal and an all-ally-scope heal both showed the
+  # narrowed banner and MP-cost box exactly like the single-ally case) --
+  # this pins that the box's own *cost value* tracks whichever skill was
+  # actually chosen, not just the first one ever cast.
+  state = Game::State.new(SelfAllySkillStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state)
+  RGSS::Input.triggered = [RGSS::Input::C] # confirm the self-scope skill (index 0)
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+  cost_win = scene.instance_variable_get(:@skill_window)
+  ok window_texts(cost_win).include?(SelfAllySkillStubParty::SELF_COST.to_s),
+     'the MP-cost box shows the self-scope skill\'s own cost'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::RIGHT] # move to the all-ally skill (index 1)
+  scene.update
+  RGSS::Input.reset
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :target, scene.instance_variable_get(:@mode)
+  cost_win = scene.instance_variable_get(:@skill_window)
+  ok window_texts(cost_win).include?(SelfAllySkillStubParty::PARTY_COST.to_s),
+     'the MP-cost box shows the all-ally skill\'s own cost'
 end
 
 # A party exposing a real #can_cast?, to prove Scene::SkillMenu now gates
@@ -20983,7 +21098,7 @@ end
 # mruby-rpg2k (confirmed with scripts/rpg2k_field_audit.rb against a real
 # game's database), so the Skill screen showed no flavour text at all.
 check 'Scene::SkillMenu: the description banner shows the highlighted skill\'s own text, ' \
-      'follows the cursor, and keeps the pending skill\'s text in target mode' do
+      'follows the cursor, and switches to the pending skill\'s name in target mode' do
   scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
   ok window_texts(scene.instance_variable_get(:@desc_window)).include?('Description of skill 10.'),
      'starts on the first skill (id 10)'
@@ -20998,8 +21113,15 @@ check 'Scene::SkillMenu: the description banner shows the highlighted skill\'s o
   scene.update
   RGSS::Input.reset
   eq :target, scene.instance_variable_get(:@mode)
-  ok window_texts(scene.instance_variable_get(:@desc_window)).include?('Description of skill 11.'),
-     'the pending skill\'s own description is still shown while picking a target'
+  # Once :target mode narrows this banner (see #left_panel_w), real RPG_RT
+  # switches its text too -- confirmed against genuine RPG_RT.exe under wine
+  # (cycle #141), the same swap cycle #140 already found on the Item screen:
+  # it shows the pending skill's own *name* ("Skill11"), not its
+  # description, while target mode is open.
+  desc_texts = window_texts(scene.instance_variable_get(:@desc_window))
+  ok desc_texts.include?('Skill11'), 'the banner switches to the pending skill\'s own name'
+  ok !desc_texts.include?('Description of skill 11.'),
+     'not its description, which the old (unnarrowed) banner used to keep showing'
 end
 
 check 'Scene::Map: a pending teleport queued by the field skill menu is applied' do
