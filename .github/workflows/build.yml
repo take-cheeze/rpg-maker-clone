@@ -1488,6 +1488,135 @@ jobs:
           path: headless.log
           if-no-files-found: warn
 
+  psp-smoke-game:
+    # Same idea as `psp-smoke`, but with a real RPG2k project placed at the
+    # EBOOT's fixed Memory Stick path (app/psp/main.cxx's kGameDir,
+    # "ms0:/PSP/GAME/rpg2k") instead of nothing. `psp-smoke` above only ever
+    # exercises the idle HAL screen -- no game is ever detected there, so
+    # RPG2K_PSP_GAME_READY never fires and RPG2K_PSP_BRINGUP's scene= is
+    # always "none". This is the first CI job to boot a real game through the
+    # PSP build and capture what docs/adr/0047-psp-memory-budget.md's P1/P1b
+    # actually need: real device memory numbers for "the database and map
+    # tree loaded, Scene::Title built" (GAME_READY) and for steady-state
+    # Title (BRINGUP's scene=RPG2k::Scene::Title). RPG2K_NEW_GAME is
+    # hardcoded false in main.cxx (no command line to carry a real flag on),
+    # so the game never advances past Title on its own -- reaching Map/Menu/
+    # Battle needs either a compile-time toggle or real input scripting,
+    # neither of which exists yet; this job's scope is Title only.
+    #
+    # Nepheshel is the same RPG2000 test-bed the desktop `build` job's own
+    # "RPG2k real-game boot smoke test" step already downloads and boots, so
+    # no new fixture is introduced.
+    #
+    # Getting the game to where the EBOOT looks for it took one wrong turn
+    # worth recording: a `--memstick=DIR` flag looked right from PPSSPP's own
+    # source (Headless.cpp checks `cmdLineOptions.memStick.has_value()`), but
+    # the first real run showed PPSSPP's arg parser never consuming it as a
+    # flag at all -- it treated the whole `--memstick=...` string as another
+    # positional boot target and tried (and failed) to run it as one,
+    # confirmed by the emulator's own log ("Test init failed for
+    # --memstick=...", right next to the real EBOOT's own "Test timeout").
+    # hrydgard/ppsspp#20552 ("Allow Linux to change memstick directory") backs
+    # this up: as of this writing Linux headless has no working way to
+    # redirect the memstick location at all. What *is* real, quoted straight
+    # from Headless.cpp's own default-path branch (taken whenever no memstick
+    # override applies): non-Windows, non-Android headless runs default
+    # `g_Config.memStickDirectory` to `$HOME/.ppsspp`, creating it if it does
+    # not exist. So instead of trying to redirect it, this job just writes
+    # Nepheshel into that same default location ahead of time.
+    #
+    # continue-on-error: true for now. `psp-smoke` above used to run the same
+    # way while PPSSPP's headless HLE was still catching up (see its own
+    # comment) and was promoted once proven stable; this job is the same
+    # starting point for a real game specifically, which is new ground the
+    # idle path never covered, and Nepheshel's download host has its own
+    # known intermittency (see scripts/download-nepheshel.bash's neighbors'
+    # comments) unrelated to the EBOOT itself. Promote once this has run
+    # green for a while.
+    needs: [psp, psp-smoke]
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Download EBOOT
+        uses: actions/download-artifact@v8
+        with:
+          name: psp-eboot
+          path: eboot
+
+      - uses: nixbuild/nix-quick-install-action@v35
+
+      # Same cache key as `psp-smoke`'s identically-named step, so this job
+      # (which `needs: psp-smoke` and so always starts after it) reuses the
+      # Nix store that step already populated instead of compiling PPSSPP
+      # from source a second time.
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'nix/patches/ppsspp-lwmutex-workarea-validate.patch') }}
+          restore-prefixes-first-match: nix-ppsspp-${{ runner.os }}-
+
+      - name: Fetch PPSSPP
+        run: nix build -L --out-link ppsspp '.#ppsspp'
+
+      - name: Download Nepheshel
+        # unar (download-nepheshel.bash's own unpacker) is a devShell package
+        # (flake.nix), and this job never enters the full devShell the way
+        # `nix-develop-export-env.bash` does for the desktop `build` job --
+        # pulling that whole closure in just for one archive tool would be
+        # wasteful here (and a bare `nixpkgs#unar` would resolve against
+        # whatever nixpkgs the ambient Nix registry defaults to, not this
+        # flake's own pinned one), so just apt-get the one package this needs,
+        # the same way the `android` job below installs its one-off `gperf`.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q unar
+          ./scripts/download-nepheshel.bash
+
+      - name: Place Nepheshel at the EBOOT's fixed Memory Stick path
+        # $HOME/.ppsspp is headless's own default memstick root on Linux (see
+        # this job's own top comment) -- created it here ahead of time with
+        # the game already in place, rather than after the emulator creates
+        # it, so there is no race with PPSSPP's own first-run setup.
+        run: |
+          memstick="$HOME/.ppsspp"
+          mkdir -p "$memstick/PSP/GAME/rpg2k"
+          cp -r data/Nepheshel206beta/Nepheshel206Rbeta/. "$memstick/PSP/GAME/rpg2k/"
+
+      - name: Run headless with a real game
+        run: |
+          EBOOT="$GITHUB_WORKSPACE/eboot/EBOOT.PBP"
+          ls -l "$EBOOT"
+          # Longer timeout than psp-smoke's idle-path 15s: a real database
+          # and map tree load (RPG_RT.ldb/.lmt) is real work the idle path
+          # never does.
+          ./ppsspp/bin/ppsspp-headless --log --graphics=software --timeout=45 \
+            "$EBOOT" > "$GITHUB_WORKSPACE/headless-game.log" 2>&1 || true
+          echo "=== asserting the EBOOT booted, found the game, and pumped frames ==="
+          if grep -q 'RPG2K_PSP_BOOT' "$GITHUB_WORKSPACE/headless-game.log" &&
+             grep -q 'RPG2K_PSP_GAME_START RPG2k ok' "$GITHUB_WORKSPACE/headless-game.log" &&
+             grep -q 'RPG2K_PSP_BRINGUP' "$GITHUB_WORKSPACE/headless-game.log"; then
+            grep -E 'RPG2K_PSP_[A-Z_]+' "$GITHUB_WORKSPACE/headless-game.log" \
+              | head -20
+          else
+            echo "boot, game-start or bring-up marker missing; last 150 lines:"
+            tail -150 "$GITHUB_WORKSPACE/headless-game.log"
+            exit 1
+          fi
+
+      - name: Upload real-game smoke-test output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: psp-smoke-game
+          path: headless-game.log
+          if-no-files-found: warn
+
   android:
     # Build the Android debug APK (app/android). Like the Wio/PSP jobs, this is
     # the external check for the port: cross-compiles mruby, LVGL,
