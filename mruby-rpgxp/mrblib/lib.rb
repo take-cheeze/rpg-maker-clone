@@ -74,9 +74,12 @@ class RPGXP
   # `SceneManager.scene`; script_host.rb). "none" covers the script host being
   # disabled, a project shipping no scripts, or the host simply not having
   # reported a scene yet.
+  # `.to_s`, not `.name` -- see RPG2k#current_scene_name's comment
+  # (mruby-rpg2k/mrblib/main.rb) for why: `Class#name` needs the
+  # mruby-class-ext gem, which this build never includes.
   def current_scene_name
     scene = ScriptHost.enabled? ? ScriptHost.current_scene : nil
-    scene ? scene.class.name : "none"
+    scene ? scene.class.to_s : "none"
   end
 
   # One frame of the game: one resume of the host's Fiber, which runs the

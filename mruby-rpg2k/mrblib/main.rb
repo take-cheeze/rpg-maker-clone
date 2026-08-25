@@ -553,8 +553,15 @@ class RPG2k
   # (app/psp/main.cxx) uses this to attribute its per-second memory numbers to
   # a scene instead of just a frame count; see
   # docs/adr/0047-psp-memory-budget.md.
+  # `.to_s`, not `.name`: `Class#name` lives in the mruby-class-ext gem, which
+  # this project's build_config.rb never pulls in, so it raises NoMethodError
+  # here (confirmed by a real psp-smoke-game CI run -- every heartbeat read
+  # back "none" despite the scene stack never actually being empty). Core
+  # mruby's `Module#to_s` (3rd/mruby/src/class.c's mrb_mod_to_s) resolves
+  # through the identical mrb_class_path machinery and returns the same
+  # qualified name ("RPG2k::Scene::Title") for free.
   def current_scene_name
-    @scenes.empty? ? "none" : @scenes.last.class.name
+    @scenes.empty? ? "none" : @scenes.last.class.to_s
   end
 
   # RPG_RT.exe (and the RPG2000/2003 editor's own Test Play button) is launched

@@ -995,6 +995,49 @@ the interpreter-linking slice, in this order:
   `stack_used_max` 1800 -> 3356 B: `mrb_open()`'s own call depth (gem
   registration is recursive) peaks noticeably higher than the idle loop's own
   ~1.8 KB baseline, but nowhere near the 256 KB stack budget (P5).
+
+  **First real-game run, `psp-smoke-game`'s CI job (2026-08-25, Nepheshel
+  under PPSSPP-headless) — "memory right before the title screen":**
+
+  ```
+  RPG2K_PSP_GAME_START RPG2k ok
+  RPG2K_PSP_GAME_READY RPG2k t_us=1239419 free=782336 maxfree=524288 lvgl_used=3788 lvgl_max=3788 stack_free=245160 stack_used_max=16984 arena_used=4391744
+  ```
+
+  `arena_used` 563,648 B right after `mrb_open()` (idle path, no game) ->
+  4,391,744 B (~4.19 MiB) once `RPG2k.new` finishes constructing the game
+  object (database, map tree, `Scene::Title`) -- so loading a real project's
+  own data (Nepheshel's `.ldb`/`.lmt` plus every asset `Scene::Title#initialize`
+  touches) costs roughly 3.6 MiB more than the interpreter's own bootstrap
+  alone, on top of a fixed 12 MB arena (P2). `t_us=1239419` vs.
+  `RPG2K_PSP_MRUBY_OPEN`'s `t_us=109126` on the same idle-path run puts
+  main-to-game-ready around 1.1 s, most of it disk I/O against the emulated
+  Memory Stick rather than CPU work. `stack_used_max` jumps to 16,984 B --
+  still comfortably inside the 256 KB budget, but an order of magnitude
+  deeper than `mrb_open()`'s own 3,356 B peak, since constructing a game
+  recurses through the RGSS/RPG2k class hierarchy far more than gem
+  registration alone does.
+
+  This same run's `RPG2K_PSP_BRINGUP` heartbeats all read `scene=none`,
+  including at `frame=600` (several seconds into a running game) -- not
+  because the scene stack was ever actually empty (RPG2k#main_loop calls
+  `@scenes.last.update` every frame with no rescue around it, so an empty
+  stack would have crashed the loop outright, and no `RPG2K_PSP_GAME_STOP`
+  marker appears), but because `#current_scene_name`'s `@scenes.last.class.
+  name` raised `NoMethodError` every single call: `Class#name`/`Module#name`
+  lives in the `mruby-class-ext` gem (`3rd/mruby/mrbgems/mruby-class-ext/src/
+  class.c`'s `mod_name`), which `build_config.rb`'s `rpg_maker_gems` never
+  includes, and `app/psp/main.cxx`'s `append_scene_name` deliberately
+  swallows any exception from the call into `"none"` (a diagnostic marker
+  must never abort the frame loop) -- so the bug read as "scene is always
+  none" instead of surfacing as a crash or a build error. Fixed by having
+  `current_scene_name` call `.to_s` instead of `.name` in all three
+  implementations (`mruby-rpg2k/mrblib/main.rb`, `mruby-rpgxp/mrblib/lib.rb`,
+  `mruby-rpgvx/mrblib/lib.rb`): `Module#to_s` (`mrb_mod_to_s`, core mruby,
+  `3rd/mruby/src/class.c`) resolves through the identical `mrb_class_path`
+  machinery and returns the same qualified name for a named class, with no
+  extra gem. Not yet re-verified against a fresh `psp-smoke-game` run with
+  the fix in place -- follow-up.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
