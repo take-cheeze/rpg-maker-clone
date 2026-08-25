@@ -2624,6 +2624,126 @@ The work below is roughly ordered by the critical path to a walkable game
   `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
   rpg2k3_battle_gauge_check.rb` (15) -- all unchanged from cycle #150, since
   no production code was touched this cycle.
+  ✅ **Follow-up (cycle #152, 2026-08-25): gave the autostart-crash mystery
+  one last look for a genuinely new angle per this file's own task brief,
+  found none within a reasonable effort, and pivoted to candidate 2 -- a
+  real, fixable behavioral gap this cycle actually lands with a code fix
+  and regression coverage, closing a "left for later" note from an earlier
+  (2026-08-21) BGM cluster fix: `Game::State#bgm_stopping` (RPG_RT's own
+  `music_stopping` flag, set true by Fade Out BGM and forcing the next
+  same-name Play BGM/Play Memorized BGM to restart rather than silently
+  continue) was session-only -- liblcf's `SaveSystem` field 61
+  (`generator/csv/fields.csv`, `0x3D`) was never modelled in `schema.rb`'s
+  `SAVE_SYSTEM`, so the flag silently reset to `false` on every Save/
+  Continue.** On the crash mystery itself: re-read cycle #150/#151's own
+  entries in full first; both of this file's own suggested untested
+  threads (a non-autostart trigger for the >=2-command list; whether the
+  field menu differs from battle/teleport/save because of a surface
+  resolution/mode difference) would need either a new player-triggered,
+  non-autostart list-completion harness or a pixel-format trace comparison
+  neither of which looked reachable as a clean, decisive result inside this
+  cycle's own time budget after the schema investigation below turned up a
+  genuine fixable gap instead -- left for a future cycle exactly as framed,
+  not abandoned. **Confirmed directly against a genuine RPG_RT.exe save
+  under wine that field 61 is real and is written conditionally, not
+  merely inferred from liblcf's field list (used here only for the field
+  id/type, per this file's own standing exception).** Reused cycle #150/
+  #151's own `LCF::MapUnit`-based injector design (fresh scratch dir this
+  session, `Map0012_orig.lmu`/`Save01_clean.lsd` re-copied from cycle
+  #150's own saved copies and re-verified byte-identical: `c2fa69a0...`/
+  `3ab5bb01...`, matching every prior cycle back to #148) to build a single
+  autostart event -- genuine content commands throughout (Play BGM ->
+  Wait -> [Fade Out BGM -> Wait] -> [Play BGM -> Wait] -> Open Save Menu),
+  never a bare no-op list, so per cycle #151's own "appending any further
+  command suppresses the count-4 signature" finding this was not expected
+  to (and did not) interact with the crash mystery at all -- then drove the
+  real save UI under Xvfb (640x480x16, `LIBGL_ALWAYS_SOFTWARE=1`,
+  matchbox-window-manager, `LANG=ja_JP.UTF-8`, `WINEARCH=win32`,
+  `WINEPREFIX=~/.wine-nepheshel32`) down to the empty File 2 slot
+  (`xdotool` Down + Return -- confirmed by screenshot that an empty slot
+  saves and returns to the map on a single Return, no yes/no confirm,
+  unlike overwriting an occupied one) to produce a genuine `Save02.lsd`,
+  copied out and inspected field-by-field with this project's own
+  `LCF::Array1D` reader (`key?`/raw `@data` access, bypassing the schema so
+  an undeclared field's mere presence -- not just its decoded value -- is
+  visible). **Three scenarios, each independently run once:** no Fade Out
+  BGM ever issued (field 61 absent -- matches the shipped `Save01.lsd`
+  fixture itself, also checked and also absent); Play BGM then Fade Out BGM
+  then a wait long enough for the fade to finish, then save (field 61
+  present, exactly one byte, value `1`); the same, then a further Play BGM
+  of the identical track before saving, clearing the flag back to `false`
+  per this codebase's own already-existing `#play_audio` logic (field 61
+  absent again, not present-as-`0`). This pins both the field's genuine
+  on-disk presence (settling "is this really persisted at all, or does
+  liblcf's field list merely document an in-memory-only RPG_RT struct" in
+  the affirmative) and RPG_RT's own write convention for it: present only
+  while true, the same "omit at false" pattern field 41
+  (`message_transparent`) already empirically shows in the shipped save
+  (also spot-checked this cycle), not the unconditional-write convention
+  fields 121-124 use -- so this is not a uniform per-type rule but a
+  genuinely per-field fact, worth recording since a future field-61-shaped
+  gap elsewhere in this table cannot be assumed either way without its own
+  check. **A methodology aside, timeboxed and not chased further:** an
+  extraneous, otherwise-idle second Return keypress sent immediately after
+  a successful save-and-return-to-map was found to reliably kill genuine
+  RPG_RT.exe outright in this cycle's own harness (reproduced once,
+  `ps`-confirmed real process death, not merely `alive` returning false
+  once) -- interesting and possibly related to this file's own broader
+  crash-mystery territory, but a single further keypress on the map with
+  nothing to interact with is a different precondition shape than anything
+  the mystery's own existing writeups cover, so this is flagged rather than
+  investigated; the fix that mattered for this cycle's own probe was simply
+  not sending that second keypress, which every real run below already
+  does. **Fixed** by adding `61 => { name: :bgm_stopping, type: :bool,
+  default: false }` to `SAVE_SYSTEM` (`mruby-lcf/mrblib/schema.rb`), a
+  conditional `sys[61] = true if @bgm_stopping` in `Game::State#to_lsd` and
+  `state.bgm_stopping = sys.bgm_stopping ? true : false` in `.from_lsd`
+  (both `mruby-rpg2k/mrblib/game.rb`) -- the `?true:false`/absent-default
+  round trip mirroring this same file's own `message_transparent`/
+  `teleport_allowed`-style boolean fields already in this table. Covered by
+  two new `scripts/rpg2k_logic_check.rb` checks: a direct `to_lsd`/
+  `from_lsd` round-trip asserting field 61's physical presence (`key?(61)`)
+  tracks `bgm_stopping` exactly (present+true / absent+false, both
+  directions), and a behavioral check that starts a fresh `Game::
+  Interpreter` on a *newly* `Game::State.from_lsd`-built state (not the
+  same live objects the original Fade Out BGM ran on, matching a real
+  Continue) and confirms a same-name Play BGM issued after that load still
+  restarts the track (two `:bgm` log entries) rather than only adjusting
+  volume in place -- both confirmed to fail against the pre-fix code
+  (`git stash` of just `schema.rb`/`game.rb`): the round-trip check never
+  ran (pre-fix `SAVE_SYSTEM` has no `:bgm_stopping` accessor at all, so
+  `.from_lsd`'s own new read line would raise `NoMethodError`/`TypeError`
+  reaching into an unindexed field -- avoided here by stashing the read
+  line along with the schema, so the check instead demonstrates the
+  behavioral gap directly), and the behavioral check failed with a precise,
+  specific `RuntimeError: expected ["town", "town"], got ["town"]` --
+  exactly the silently-wrong "resumed the fade's leftover state instead of
+  restarting" symptom this fix closes. `Map0012.lmu`/`Save01.lsd` were
+  restored to their original bytes (byte-identical by `md5sum` against the
+  same `c2fa69a0.../3ab5bb01...` values every prior cycle back to #148
+  recorded) and the scratch `Save02.lsd` this cycle's own probes produced
+  was removed from the game directory (never a tracked fixture) after
+  every run; `git status` on `data/` came back clean. No EasyRPG source was
+  consulted for any claim in this cycle, and no web search was used either
+  -- the only outside reference was liblcf's own `generator/csv/fields.csv`
+  field id/type for field 61, this file's own standing narrow exception,
+  and every behavioral claim (the field's genuine presence, its value, and
+  its write-only-when-true convention) traces to this cycle's own genuine
+  RPG_RT.exe wine captures and this codebase's own pre-fix/post-fix test
+  runs. Full suite reconfirmed passing, `scripts/rpg2k_logic_check.rb` up
+  by 2: `scripts/rpg2k_scene_check.rb` (929), `scripts/
+  rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb` (1136),
+  `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15). **Left open for a future cycle:** the
+  crash mystery's own two still-untested threads (see above, unchanged from
+  cycle #151's own framing); the "extraneous Return kills RPG_RT" aside
+  just above, which might or might not be the same underlying mechanism as
+  the mystery proper; and whether any *other* SAVE_SYSTEM field this table
+  already declares actually follows the "unconditional write" convention
+  its own `to_lsd` code assumes rather than the "omit at false/default"
+  convention field 41 and now field 61 both empirically show -- this cycle
+  only spot-checked 41/61/121, not an exhaustive field-by-field audit of
+  the whole table.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

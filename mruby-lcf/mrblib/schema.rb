@@ -1503,6 +1503,21 @@ module LCF
       # transparency), not a player-visibility override -- see SAVE_MOVABLE's
       # field 24 for where Set Transparent Flag's state actually lives, and
       # why it was wrongly modelled here before.
+      # liblcf's `SaveSystem.music_stopping` (`generator/csv/fields.csv`,
+      # `0x3D`/61) -- see `Game::State#bgm_stopping`'s own doc comment in
+      # game.rb for what the flag means. Confirmed present in a genuine
+      # RPG_RT.exe save under wine only while the flag is actually true: a
+      # synthetic autostart list (Play BGM -> Fade Out BGM -> wait out the
+      # fade -> Open Save Menu) saved with chunk 101 carrying this field as
+      # a single 0x01 byte, while the identical list with no Fade Out BGM at
+      # all, and a third variant that faded out and then re-issued Play BGM
+      # of the same track before saving (clearing the flag back to false --
+      # `#play_audio`'s own `@state.bgm_stopping = false` on every BgmPlay,
+      # restart or not), both omitted field 61 entirely -- so real RPG_RT
+      # writes this field only when true, the same "false is simply absent"
+      # convention field 41 (`message_transparent`) already follows here,
+      # not the unconditional-write convention fields 121-124 use.
+      61 => { name: :bgm_stopping, type: :bool, default: false },
       # Overridden BGM/SE playback state. An empty file name means "use the
       # database value".
       71 => { name: :title_bgm, type: :Array1D, elements: BGM },
