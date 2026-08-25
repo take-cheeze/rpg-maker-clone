@@ -137,9 +137,12 @@ class RPGVX
   # The active scene's class name -- see RPGXP#current_scene_name
   # (mruby-rpgxp/mrblib/lib.rb) for what this means and why; VX / VX Ace
   # shares that engine's ScriptHost wholesale (@use_script_host above).
+  # `.to_s`, not `.name` -- see RPG2k#current_scene_name's comment
+  # (mruby-rpg2k/mrblib/main.rb) for why: `Class#name` needs the
+  # mruby-class-ext gem, which this build never includes.
   def current_scene_name
     scene = RPGXP::ScriptHost.enabled? ? RPGXP::ScriptHost.current_scene : nil
-    scene ? scene.class.name : "none"
+    scene ? scene.class.to_s : "none"
   end
 
   # The edition's display name, for logs ("RPG Maker VX Ace").
