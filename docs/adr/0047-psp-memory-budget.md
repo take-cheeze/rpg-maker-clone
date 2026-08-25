@@ -1101,6 +1101,23 @@ the interpreter-linking slice, in this order:
   data point or unusually heavy; (3) root-cause the crash itself before
   treating the 12 MB arena figure (P2) as validated for anything beyond an
   idle title screen.
+
+  Follow-up (1) shipped in
+  [#1354](https://github.com/take-cheeze/rpg-maker-clone/pull/1354): the
+  emulator invocation now checks its own exit status and prints a
+  `::warning::` for a signal-killed exit (128+signal) rather than relying
+  on someone to read raw output. Its own CI run confirmed the warning fires
+  correctly (`ppsspp-headless was killed by signal 11 (exit 139)`) -- and,
+  more importantly, reproduced the *exact same crash*: identical `t_us`
+  timestamps and identical `arena_used` figures at every marker
+  (`GAME_READY` 4,391,744; `BRINGUP frame=0` 10,762,352 at `t_us=5726062`;
+  `BRINGUP frame=200` 11,887,824 at `t_us=18729969`) across two independent
+  CI runs on two different commits. `ppsspp-headless`'s emulated clock is
+  deterministic, so byte-identical figures across separate runs mean this
+  is not a timing-dependent flake -- it is a fully reproducible failure
+  landing at the same point in execution every time, which strengthens
+  (without yet confirming) the arena-exhaustion hypothesis over an
+  intermittent/unrelated one. Follow-ups (2) and (3) remain not started.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
