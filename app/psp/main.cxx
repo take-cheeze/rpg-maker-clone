@@ -185,11 +185,33 @@ lv_obj_t* g_status_label = nullptr;
 // pinned at ~12.0 MB (mruby grows to fill capacity and GCs under pressure;
 // one transient exhaustion per 3 minutes, recovered cleanly by the GC retry),
 // while 16 MB starves the newlib/sbrk heap that decoded bitmaps and the C++
-// exception machinery share (std::bad_alloc during map play). So 12 MB is the
-// measured working size on this ~24 MB target: the heartbeat below reports the
-// arena's own occupancy (arena_used) alongside the system figures, for the day
-// a game outgrows it.
-constexpr size_t kMrbArenaSize = 12u * 1024u * 1024u;
+// exception machinery share (std::bad_alloc during map play). So 12 MB was
+// the measured working size on this ~24 MB target -- with a known sharp edge
+// left open on purpose, this same comment already warned: "a game that
+// genuinely exhausts 12 MB will hit the same corrupting-unwind cliff until
+// the failure paths are hardened." The heartbeat below reports the arena's
+// own occupancy (arena_used) alongside the system figures precisely to catch
+// that day arriving.
+//
+// It arrived under CI: `psp-smoke-game`'s `.psp_ci_new_game` marker
+// (docs/adr/0047-psp-memory-budget.md's P1c) drives Nepheshel through a real
+// New Game into map 371, and `ppsspp-headless` segfaults deterministically
+// (byte-identical across three separate runs) once arena_used climbs to
+// 11,887,824 B -- 94.5% of the old 12 MB ceiling, with the OS-level
+// `sceKernelTotalFreeMemSize` figure (`free=` in the heartbeat) sitting
+// unchanged at 782,336 B (~764 KiB) throughout every marker of every run,
+// proving that headroom was never touched by anything else and is free to
+// give to the arena. 12.5 MB is a first experiment, not a re-validated
+// figure: it spends 512 KiB of that ~764 KiB margin (leaving ~250 KiB for
+// the newlib/sbrk heap decoded bitmaps and the C++ exception machinery
+// still need, per the 16 MB finding above) to see whether Nepheshel's
+// specific session fits inside it, or whether the ceiling just moves and the
+// same cliff waits further out -- exactly the open question P1c's own
+// follow-up (3) raised. Either result is useful: surviving confirms this
+// session was purely capacity-bound; crashing again (later, at a
+// correspondingly higher arena_used) strengthens the case for hardening the
+// failure paths themselves rather than keeps chasing the size.
+constexpr size_t kMrbArenaSize = 12u * 1024u * 1024u + 512u * 1024u;
 alignas(16) uint8_t g_mrb_arena[kMrbArenaSize];
 
 constexpr size_t kMrbAlign = 16;
