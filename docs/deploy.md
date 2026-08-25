@@ -21,11 +21,11 @@ bakes a game in, so the page opens on its runtime loader — drop in a local
 
 ## Changelog sub-page
 
-`deploy-pages` additionally checks out `CHANGELOG.md` and renders it (via
-`scripts/render-changelog-page.bash`, which shells out to `marked`) into
-`https://<owner>.github.io/<repo>/changelog/`, linked from the game page's
-header. This only runs in `deploy-pages` — `preview-cloudflare` still ships
-just the wasm page.
+Both `deploy-pages` and `preview-cloudflare` additionally check out
+`CHANGELOG.md` and render it (via `scripts/render-changelog-page.bash`, which
+shells out to `marked`) into a `changelog/` sub-page, linked from the game
+page's header — so a `/preview` build shows the same changelog a merge would
+publish.
 
 ## One-time setup
 

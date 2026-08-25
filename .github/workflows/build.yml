@@ -1750,6 +1750,29 @@ jobs:
         with:
           name: wasm
           path: site
+
+      # Same changelog sub-page as `deploy-pages` (see its comment above), so
+      # a reviewer can check the rendered CHANGELOG.md in the preview before
+      # it ships. `ref` matches what the `wasm` job built (the PR head, not
+      # this event's own ref) so the preview always renders the same commit it
+      # deployed. Checked out to its own path, not "." -- a default checkout
+      # here would `git clean` the site/ directory just downloaded above.
+      - name: Fetch CHANGELOG.md
+        if: steps.creds.outputs.configured == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preview-gate.outputs.head-sha }}
+          path: changelog-src
+          sparse-checkout: |
+            CHANGELOG.md
+            scripts/render-changelog-page.bash
+          sparse-checkout-cone-mode: false
+          show-progress: false
+          persist-credentials: false
+      - name: Render the changelog to HTML
+        if: steps.creds.outputs.configured == 'true'
+        run: ./changelog-src/scripts/render-changelog-page.bash changelog-src/CHANGELOG.md site/changelog
+
       - name: Deploy preview to Cloudflare Pages
         id: cf
         if: steps.creds.outputs.configured == 'true'
