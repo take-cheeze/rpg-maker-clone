@@ -968,6 +968,33 @@ the interpreter-linking slice, in this order:
   P1's own "measure a real game" follow-up flagged); the `mrb_open()`-bracket
   markers are the one pair that already fire on the idle path today, since
   they run before `kGameDir` is even consulted.
+
+  **`mrb_open()`'s real device cost, measured (2026-08-25, `psp-smoke`'s own
+  idle-path run):**
+
+  ```
+  RPG2K_PSP_PRE_MRUBY_OPEN t_us=133658 free=782336 maxfree=524288 lvgl_used=2208 lvgl_max=2208 stack_free=260344 stack_used_max=1800 arena_used=0
+  RPG2K_PSP_MRUBY_OPEN ok  t_us=225289 free=782336 maxfree=524288 lvgl_used=2208 lvgl_max=2208 stack_free=258788 stack_used_max=3356 arena_used=563632
+  ```
+
+  `arena_used` 0 -> 563,632 B (~550 KiB): opening the interpreter and
+  defining every gem's classes (core VM state, the symbol table, RPG2k/RGSS/
+  RPGXP/RPGVX/onig-regexp/bigint/... mrblib) costs about 550 KiB on real
+  32-bit MIPS -- lower than Finding 1's ~1.2-1.4 MB x86-64 host-proxy
+  estimate, and roughly the "these figures plausibly halve on 32-bit"
+  correction that finding already flagged (`sizeof(RVALUE)` and `mrb_value`
+  both shrink going from a 64-bit host to this 32-bit target), now confirmed
+  rather than guessed. `t_us` 133,658 -> 225,289: `mrb_open()` itself takes
+  ~91.6 ms. Notably, `free=` (the kernel's general-purpose free RAM) does not
+  move at all across the call, 782,336 both times -- confirms P2's arena
+  design does exactly what it was meant to: every mruby allocation comes out
+  of the fixed static `g_mrb_arena` (already counted in the EBOOT's
+  `.bss`-resident footprint from process start), never the kernel's dynamic
+  heap that `sceKernelTotalFreeMemSize` tracks. `lvgl_used`/`lvgl_max` are
+  likewise unchanged (2208/2208) -- `mrb_open()` touches no LVGL state.
+  `stack_used_max` 1800 -> 3356 B: `mrb_open()`'s own call depth (gem
+  registration is recursive) peaks noticeably higher than the idle loop's own
+  ~1.8 KB baseline, but nowhere near the 256 KB stack budget (P5).
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
