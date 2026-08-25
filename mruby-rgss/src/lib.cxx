@@ -40,6 +40,24 @@
 
 #include <iostream>
 
+// The asset search this engine actually performs only ever tries .png,
+// .jpg/.jpeg, .bmp (via stb, all three formats an RPG Maker XP/VX RTP mixes —
+// see docs/adr/0025-rpgxp-cross-runtime-testing.md) and .xyz (the custom
+// decoder below, not stb's). None of stb's other format decoders — GIF, PSD,
+// TGA, HDR, PIC, PNM — are reachable from any loader in this codebase
+// (confirmed by grep: no stbi__gif/psd/tga/hdr/pic/pnm-specific symbol is
+// referenced anywhere). Compiling them in cost real bytes for nothing: on the
+// PSP every PT_LOAD segment of the EBOOT is mapped into RAM at launch (see
+// docs/adr/0047-psp-memory-budget.md's uni-algo trim for the same reasoning),
+// so this is live RAM there, not just file/flash size, and it shrinks the
+// desktop/wasm/wio/android binaries for free the same way that trim did.
+#define STBI_NO_GIF
+#define STBI_NO_PSD
+#define STBI_NO_TGA
+#define STBI_NO_HDR
+#define STBI_NO_PIC
+#define STBI_NO_PNM
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 

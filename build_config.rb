@@ -328,6 +328,15 @@ if psp
       # behaviour change.
       t.defines << 'MRB_HEAP_PAGE_SIZE=256'
       t.defines << 'KHASH_INITIAL_SIZE=16'
+      # stb_image's FILE*-based stbi_load(path, ...) is only ever called by
+      # mruby-mvjs's mvcanvas.cxx (MV/MZ's Image loader); this cross-build
+      # excludes mvjs (include_mvjs: false below) and mruby-rgss's own loader
+      # always reads bytes itself and decodes via stbi_load_from_memory (see
+      # bmp_decode_into, mruby-rgss/src/lib.cxx), so the stdio path is dead
+      # code here. Dropping it removes newlib's stdio-backed stb decode path
+      # (and the buffered-FILE state it pulls in) from the one PT_LOAD-mapped
+      # EBOOT that would otherwise carry it unused.
+      t.defines << 'STBI_NO_STDIO'
     end
     conf.linker.flags += cpu_flags
 
