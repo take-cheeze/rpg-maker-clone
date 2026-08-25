@@ -1662,6 +1662,27 @@ jobs:
         with:
           name: wasm
           path: site
+
+      # The full changelog lives in CHANGELOG.md at the repo root; render it
+      # into site/changelog/ as a sub-page rather than shipping raw Markdown.
+      # Checked out to its own path (not "."), since a default checkout here
+      # would `git clean` the site/ directory just downloaded above. Only
+      # CHANGELOG.md and the render script are needed, not the whole tree, so
+      # sparse checkout keeps this a few-second step even though deploy-pages
+      # otherwise never checks out the repo.
+      - name: Fetch CHANGELOG.md
+        uses: actions/checkout@v7
+        with:
+          path: changelog-src
+          sparse-checkout: |
+            CHANGELOG.md
+            scripts/render-changelog-page.bash
+          sparse-checkout-cone-mode: false
+          show-progress: false
+          persist-credentials: false
+      - name: Render the changelog to HTML
+        run: ./changelog-src/scripts/render-changelog-page.bash changelog-src/CHANGELOG.md site/changelog
+
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
