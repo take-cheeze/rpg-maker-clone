@@ -10,5 +10,11 @@
   which a real allocation falls back to the failure path that leads to the
   still-unhardened corrupting-unwind cliff. `app/psp/main.cxx`'s frame loop
   now forces `mrb_full_gc()` every 30 frames once arena usage crosses 85%,
-  reclaiming that headroom earlier. Not yet confirmed against a real device
-  run -- see the ADR's P1c for the pending result.
+  reclaiming that headroom earlier. Landed together with two real memory
+  reductions (lazy call-only common events, shared LCF field-lookup
+  tables); a `psp-smoke-game` run with all three together no longer
+  crashes at all (previously guaranteed by `frame=200`) and reaches
+  `frame=1600` cleanly, `arena_used` oscillating well clear of the ceiling
+  instead of climbing into it -- see the ADR's P1c for the full numbers
+  and the honest caveat that the underlying corrupting-unwind mechanism
+  itself is still not hardened, only avoided for this game's workload.
