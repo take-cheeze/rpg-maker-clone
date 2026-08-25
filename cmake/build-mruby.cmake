@@ -133,18 +133,18 @@ function(rpg2k_add_mruby)
   # (patches/mruby-nomemoryerror-reentrant-alloc.patch's own preamble has the
   # full trail, including a host-native repro harness built against this
   # project's own exact PSP arena allocator): the pre-allocated
-  # NoMemoryError/SystemStackError/arena-overflow singletons were never
-  # actually frozen, so raising one of them can still trigger a second,
-  # avoidable allocation (a backtrace capture) at exactly the moment there is
-  # no room left; and mrb_open() cannot tell mrb_core_init_abort()'s
-  # deliberate mrb->exc=NULL apart from genuine success, so an allocation
-  # failure early enough in bootstrap lets it proceed into gem init on a
-  # half-initialized state instead of failing cleanly. Found chasing P1c
+  # NoMemoryError/SystemStackError/arena-overflow singletons were never actually
+  # frozen, so raising one of them can still trigger a second, avoidable
+  # allocation (a backtrace capture) at exactly the moment there is no room
+  # left; and mrb_open() cannot tell mrb_core_init_abort()'s deliberate
+  # mrb->exc=NULL apart from genuine success, so an allocation failure early
+  # enough in bootstrap lets it proceed into gem init on a half-initialized
+  # state instead of failing cleanly. Found chasing P1c
   # (docs/adr/0047-psp-memory-budget.md), though the repro did not reproduce
-  # P1c's own exact crash signature -- these are real, independently
-  # verified fixes, not a confirmed fix for P1c itself. Same patch-in-place
-  # treatment as the other mruby patches above, for the same reason (no fork
-  # of upstream mruby/mruby this project controls).
+  # P1c's own exact crash signature -- these are real, independently verified
+  # fixes, not a confirmed fix for P1c itself. Same patch-in-place treatment as
+  # the other mruby patches above, for the same reason (no fork of upstream
+  # mruby/mruby this project controls).
   set(mruby_nomem_patch
       "${ARG_REPO_ROOT}/patches/mruby-nomemoryerror-reentrant-alloc.patch")
 
