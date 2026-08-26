@@ -49,14 +49,23 @@ class RPGVX
       @system = load_data("System")
       @map_infos = load_data("MapInfos")
       @cache = {}
-      ARRAY_FILES.each { |name, file| @cache[name] = load_data(file) }
-      EDITION_FILES[@edition].each { |name, file| @cache[name] = load_data(file) }
     end
 
     attr_reader :system, :map_infos, :game_dir, :edition, :ext
 
-    ALL_FILES.each do |name|
-      define_method(name) { @cache[name] }
+    # Each table loads lazily, on first access to its reader, the same as
+    # RPGXP::RGSSData (mruby-rpgxp/mrblib/rgss_data.rb) -- a session that
+    # never opens a battle never needs Troops/Enemies/Animations, often the
+    # largest files in this group. #summary below reports each table without
+    # forcing this load, so the boot-time census stays accurate without
+    # undoing the laziness the instant the game starts.
+    ARRAY_FILES.each { |name, file| define_method(name) { @cache[name] ||= load_data(file) } }
+    (EDITION_FILES[:vx].keys + EDITION_FILES[:vxace].keys).each do |name|
+      file = (EDITION_FILES[:vx][name] || EDITION_FILES[:vxace][name])
+      define_method(name) do
+        next nil unless EDITION_FILES[@edition][name]
+        @cache[name] ||= load_data(file)
+      end
     end
 
     # Load one map (Data/MapNNN.rvdata(2)) by id. Maps are big, so they are not
@@ -90,12 +99,25 @@ class RPGVX
       @edition == :vxace
     end
 
-    # A one-line census of what loaded, for the boot log.
+    # A one-line census of what's available, for the boot log. Deliberately
+    # does not force a table to load just to report it -- a table already
+    # touched (because something read it) gets an exact record count; one
+    # still lazy gets its on-disk byte size instead (a loose file's #size, or
+    # the packed archive entry's already-parsed header size -- RGSSAD only
+    # reads entry headers at open, never decrypts until #read), so this
+    # boot-time log stays cheap without undoing the laziness the readers
+    # above provide the instant the game starts.
     def summary
       counts = ALL_FILES.map do |name|
+        file = ARRAY_FILES[name] || EDITION_FILES[@edition][name]
+        next nil unless file
         table = @cache[name]
-        next nil unless table
-        "#{name}=#{table.compact.size}"
+        if table
+          "#{name}=#{table.compact.size}"
+        else
+          size = table_byte_size(file)
+          size && "#{name}~#{size}B"
+        end
       end
       counts = counts.compact
       counts.unshift "maps=#{(@map_infos || {}).size}"
@@ -168,6 +190,16 @@ class RPGVX
     # before the archive, matching RGSS.
     def load_data(base)
       read_object("Data/#{base}#{@ext}")
+    end
+
+    # Byte size of a not-yet-loaded Data/ entry by base name, without reading
+    # or decrypting it -- #summary's cheap stand-in for a record count. A
+    # loose file's own #size, or the packed archive entry's already-parsed
+    # header size; nil if neither has it (a genuinely missing table).
+    def table_byte_size(base)
+      path = data_path(base)
+      return File.size(path) if File.exist?(path)
+      @archive && @archive.entry_size("Data/#{base}#{@ext}")
     end
   end
 end

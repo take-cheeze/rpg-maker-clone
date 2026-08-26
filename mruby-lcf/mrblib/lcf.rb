@@ -493,16 +493,26 @@ module LCF
     # a :Array1D / :Array2D chunk re-parses its *whole* table on every read, and
     # the runtime asks for the same one over and over -- building a party alone
     # reads `db.item` thirty times (Game::Actor#equip_bonus, six stats over five
-    # equipment slots), which cost 7.7 seconds on Nepheshel's database. Only the
-    # container types are cached: they are read-only to callers (Array1D exposes
-    # no field writers), where a scalar or String decode is cheap and handing out
-    # the same mutable object would change what a caller can do with it. The two
-    # writers below, #[]= and #delete, drop the cached decode with the bytes.
+    # equipment slots), which cost 7.7 seconds on Nepheshel's database. The same
+    # applies to :event/:move_commands chunks (an RPG2000 event page's own
+    # command list, or a Move Route's): each decode builds one EventCommand (or
+    # move-command Hash) object per entry from scratch, and both
+    # Scene::Map#build_event and Scene::Base::EventResolver#map_event_commands
+    # (mruby-rpg2k) re-read the same page's #event_commands on every page-flip
+    # (a switch-gated dialogue is a routine RPG2000 idiom, not a one-off) or
+    # Call Event, not just once. Cached the same way as the container types:
+    # read-only to callers (Array1D exposes no field writers, and nothing in
+    # this codebase mutates a decoded EventCommand/move-command list in place),
+    # where a scalar or String decode is cheap and handing out the same mutable
+    # object would change what a caller can do with it. The two writers below,
+    # #[]= and #delete, drop the cached decode with the bytes.
     def [] idx
       cached = @decoded && @decoded[idx]
       return cached if cached
-      value = LCF.to_rb @data[idx], @schema[:elements][idx]
-      if value.is_a?(Array1D) || value.is_a?(Array2D)
+      elem = @schema[:elements][idx]
+      value = LCF.to_rb @data[idx], elem
+      if value.is_a?(Array1D) || value.is_a?(Array2D) ||
+         elem[:type] == :event || elem[:type] == :move_commands
         @decoded ||= {}
         @decoded[idx] = value
       end
