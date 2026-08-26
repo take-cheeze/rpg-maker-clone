@@ -502,6 +502,117 @@ in the standing hypothesis (real SDL2/OpenSLES concurrency bug vs.
 image to distinguish) still stands unchanged; this only corrects the one
 concrete mechanism named for SDLThread's side of it.
 
+**Update (2026-08-26, much later: local reproduction on real hardware).**
+Every occurrence above was investigated from CI-uploaded logs alone, with
+no emulator available in the environment doing the investigating. That
+changed: the dev machine this update was written on has `/dev/kvm`, the
+Android SDK/NDK, and (once added to the `kvm` group and given the
+`emulator`/`system-images;android-30;google_apis;x86_64` packages
+`sdkmanager` hadn't installed yet) can boot the exact same AVD config CI
+uses. Downloading the `android-debug-apk` and `android-smoke` CI-run
+artifacts directly (`gh run download`) skips needing a full cross-build.
+
+At full speed, this machine's emulator would not reproduce the crash at
+all: 14 straight clean runs, `android-smoke-check.bash` unmodified,
+identical `-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+-camera-back none -no-snapshot-save` flags CI uses. The reason became
+obvious from timing alone — device-open to `[RPG2k-MAP]` took ~5-7s
+locally against ~35-40s on CI's own runs (timestamps above) — a ~6x gap
+consistent with a shared runner plus first-boot ART JIT warmup that a
+dedicated desktop simply doesn't pay. Every one of those 14 clean runs
+logged exactly one `PlayerBase::stop()` (the harmless 0-frame open probe
+already named above) and nothing more — no second, real-frame-count stop
+at the title→map handoff at all, so whatever race needs that handoff
+under load never even got a chance to run.
+
+Throttling the emulator's own CPU budget (`systemd-run --user --scope -p
+CPUQuota=20% -- emulator ...`, i.e. one qemu process capped to a fifth of
+a core) reproduced the crash on the very next attempt, with the identical
+tombstone shape CI's own runs show (`Scudo ERROR: invalid chunk state`,
+`SIGABRT` on `SDLThread`). This run's full, continuous `adb logcat -d`
+(not just the pid-scoped tail `android_smoke_check.bash` prints on
+failure) caught something no CI-log excerpt so far had shown — a genuine
+new lead, not a rehash:
+
+```
+21:19:08.394  PlayerBase::PlayerBase()        tid 2511 (SDLThread)  -- device opened
+21:19:10.492  PlayerBase::stop() from IPlayer tid 2647              -- 0 frames (open probe)
+21:19:11.393  PlayerBase::stop() from IPlayer tid 2647              -- 2048 frames
+21:19:11.492  E libOpenSLES: frameworks/wilhelm/src/itf/IBufferQueue.cpp:56:
+              pthread_mutex_lock_timeout_np returned 110               -- tid 2651, x2
+21:20:53.800  PlayerBase::stop() from IPlayer tid 2647              -- 976896 frames (title/loading BGM)
+21:21:33.029  PlayerBase::stop() from IPlayer tid 2647              -- 542720 frames
+21:22:18.401  [RPG2k-MAP] map=371 x=10 y=7                          -- map scene reached
+21:22:18.796  PlayerBase::stop() from IPlayer tid 2511 (SDLThread)  -- 748818 frames -- our own thread, again
+21:22:22.000  scudo: invalid chunk state when deallocating
+21:22:22.000  F libc: Fatal signal 6 (SIGABRT), tid 2511 (SDLThread)
+```
+
+`110` is `ETIMEDOUT`. `frameworks/wilhelm` is AOSP's own OpenSL ES
+implementation (`libOpenSLES.so`, platform code, not anything this repo
+or SDL2 ships) — `IBufferQueue.cpp` guards its buffer-queue bookkeeping
+with a *timed* mutex lock, and this line is that lock timing out under
+load. It fires from a third thread (2651) neither of the other two named
+above, `IBufferQueue`'s own service thread. This is the earliest concrete
+sign of anything going wrong in this entire run — three minutes before
+the eventual abort, on the very first substantial `stop()` after device
+open, long before the map scene or the title/loading BGM's real handoff.
+None of the 14 clean, full-speed runs logged this line even once
+(grepped for `IBufferQueue`/`mutex_lock_timeout` across all their full
+device logs); every fast run's audio path apparently never contends for
+that lock long enough to time out.
+
+That timing — corruption's earliest visible sign minutes before the
+abort that finally notices it — fits Scudo's own documented behavior
+exactly (this ADR's first crash update, above: "Scudo only reports it at
+the *deallocation* that notices the damage, which can be well downstream
+of whatever actually corrupted the chunk"). It also completes the
+SDLThread side of the picture the previous update above narrowed but
+could not close: `Mix_FreeMusic()`'s ordinary per-track cleanup — not a
+device teardown, confirmed absent above — running synchronously on
+SDLThread during the title→map BGM handoff is entirely ordinary code;
+what makes *that particular* free() the one Scudo catches is that it
+happens to touch a heap region `IBufferQueue`'s own timed-lock failure
+already corrupted minutes earlier, not that anything is wrong with the
+free itself.
+
+Recalibrating the throttle toward CI's own pacing (`CPUQuota=40%`,
+device-open to map ~30-35s, matching CI's own runs closely) gave 6/6
+clean local runs — and, tellingly, none of those six ever logged the
+real-frame-count second `stop()` either, only the harmless open probe.
+So `CPUQuota=20%` overshoots CI's own gross timing by roughly the same
+6x it was chosen to close, yet is what actually reproduced the bug, while
+the better-calibrated `40%` did not in six tries. Read together with the
+lock-timeout finding, the operative variable looks less like "elapsed
+wall-clock time to reach the map scene" and more like moment-to-moment
+scheduling contention around the buffer-queue lock specifically — a
+narrow, load-dependent window a merely-slower-but-still-smooth run can
+miss entirely, which is consistent with this being a genuine, load-
+triggered race in the platform's own OpenSL ES code rather than
+anything this port's own timing or CI's specific pacing controls
+directly.
+
+Net effect on the two standing hypotheses: this is a real concurrency
+bug class, reproduced purely through CPU-scheduling pressure with
+`ndk_translation`/ARM-on-x86_64 translation held constant throughout
+(same AVD, same APK, every run) — evidence against "an
+`ndk_translation`-only artifact" as the *dominant* explanation, though it
+does not rule out translation making the same underlying platform race
+easier to hit (untested here: a native arm64-v8a system image or real
+device under equivalent load would be the next thing to try, and remains
+unavailable in this environment beyond the one physical `C330` on hand,
+which is not proven able to reproduce load-triggered timing bugs the same
+way — it was never run under artificial CPU pressure). The concurrency
+side of the standing hypothesis now has a specific, named, platform-level
+mechanism behind it (`IBufferQueue.cpp`'s timed lock under contention)
+rather than only a correlation in CI log timestamps. Root-causing (and
+any fix) is still out of scope for this CI-infrastructure PR — a genuine
+fix would live in AOSP/SDL2's OpenSL ES backend or in switching this
+port's Android audio backend away from OpenSL ES entirely, neither a
+small change — but `android-smoke`'s own `continue-on-error: true` is now
+better justified than "new and unproven": the failure it occasionally
+catches looks like a real, load-dependent platform bug, not noise.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
