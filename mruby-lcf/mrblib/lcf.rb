@@ -485,23 +485,6 @@ module LCF
         len = LCF.read_ber s
         @data[idx] = s.read len
       end
-
-      # `@schema` is always one of schema.rb's shared, module-level constant
-      # Hashes (e.g. MAP_EVENT_PAGE) -- every Array1D built against a given
-      # record type is handed the exact same object, not a copy -- so the
-      # name -> chunk-id lookup table built from it is identical across every
-      # instance too. Memoized onto the schema itself instead of rebuilt into
-      # a fresh per-instance Hash: a map with a few hundred events decodes
-      # this same table hundreds of times over (once per event page and once
-      # per page's :condition sub-table) for no behavioural difference.
-      if @schema
-        @sym2idx = @schema[:sym2idx]
-        unless @sym2idx
-          @sym2idx = {}
-          @schema[:elements].each { |k, e| @sym2idx[e[:name]] = k }
-          @schema[:sym2idx] = @sym2idx
-        end
-      end
     end
 
     attr_reader :schema
@@ -597,11 +580,36 @@ module LCF
 
     def method_missing sym, *args
       raise args unless args.empty?
-      self[@sym2idx[sym]]
+      self[sym2idx[sym]]
     end
 
     def respond_to_missing? sym, include_private = false
-      (@sym2idx && @sym2idx.key?(sym)) || super
+      (@schema && sym2idx.key?(sym)) || super
+    end
+
+    private
+
+    # Field-name -> chunk-id lookup for method_missing dispatch, built lazily
+    # (only paid by callers that actually use a symbolic field accessor --
+    # several save-data call sites write every field through numeric #[]=
+    # and never touch this at all) and shared per record type via the schema
+    # itself: `@schema` is normally one of schema.rb's shared, module-level
+    # constant Hashes (e.g. MAP_EVENT_PAGE), so every Array1D built against a
+    # given record type is handed the exact same object, not a copy, and the
+    # lookup table built from it is identical across every instance too --
+    # memoized onto the schema instead of rebuilt into a fresh per-instance
+    # Hash. (A caller that instead builds a fresh, throwaway schema wrapper
+    # on every call gets no sharing benefit here, but pays nothing either
+    # unless it actually uses a symbolic accessor -- laziness alone already
+    # covers that case.)
+    def sym2idx
+      return @sym2idx if @sym2idx
+      return nil unless @schema
+      @sym2idx = @schema[:sym2idx]
+      return @sym2idx if @sym2idx
+      @sym2idx = {}
+      @schema[:elements].each { |k, e| @sym2idx[e[:name]] = k }
+      @schema[:sym2idx] = @sym2idx
     end
   end
 
