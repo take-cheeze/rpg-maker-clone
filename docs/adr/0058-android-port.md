@@ -699,6 +699,58 @@ argues mildly for Android-specific code (`__ANDROID__`-guarded branches,
 or something about this NDK/Scudo/`ndk_translation` combination) but does
 not settle it.
 
+A same-day attempt at the desktop half of that open question (an ASan
+build is far cheaper to stand up on desktop than wiring `-fsanitize=
+address` into `app/android`'s NDK/Gradle build) did not reach a verdict:
+`cmake -DCMAKE_CXX_FLAGS=-fsanitize=address ...` configures and links
+cleanly against this repo's own CMakeLists.txt, but the resulting binary
+aborts before `main()` reaches `--error_dump_probe` (or even
+`--rpg2k_new_game`) at all, `Failed loading SDL3 library.` on stderr and
+no ASan error block in a `log_path` capture — this nix devShell's SDL2
+comes from `sdl2-compat`, a shim that `dlopen()`s a real `libSDL3.so` at
+runtime, and that specific `dlopen` fails only in the ASan-instrumented
+binary (tried under `xvfb-run` matching `scripts/rpg2k_boot_check.bash`
+exactly, with and without `SDL_VIDEODRIVER=dummy`/`SDL_AUDIODRIVER=dummy`
+to sidestep real rendering entirely — same result every time). This is a
+`sdl2-compat`-under-ASan packaging interaction in the dev environment, not
+a finding about the bug: an ASan desktop build remains a promising next
+step, but needs either a non-`sdl2-compat` SDL2 (a different nix input, or
+linking a real libSDL2 directly) or resolving why ASan's presence breaks
+that specific `dlopen` first.
+
+A plain (non-ASan) `Debug` desktop build was the fallback, since it needs
+no special linking `sdl2-compat` could object to: it ran the exact same
+`--test_play --error_dump_probe` invocation clean (`[ErrorDump-PROBE] ok`,
+exit 0 — matches this ADR's earlier note that desktop's own
+`error_report_check.rb`/`test.rb` coverage exercises this path routinely
+without incident), then ran again under `valgrind --track-origins=yes`
+(a separate `nix shell nixpkgs#valgrind`, sidestepping the ASan/dlopen
+issue entirely — memcheck needs no special compile-time instrumentation).
+**`ERROR SUMMARY: 0 errors from 0 contexts`** — no invalid read/write, no
+use of uninitialised memory, no invalid free, across the identical code
+path that reliably corrupts the heap on Android. Grepping
+`src/error_dump.cxx`, `src/log_bridge.cxx`, the `__log_bridge_write`/
+`script_location` walk in `mruby-rgss/src/lib.cxx`, and
+`include/terminal.hxx` for `__ANDROID__` turns up nothing relevant either
+— the C++ source in this whole pipeline is identical on both platforms,
+no conditional branch to diverge on.
+
+Two tools built specifically to catch this class of bug (memcheck's shadow
+memory, and Scudo's chunk-header validation) landing on opposite verdicts,
+over source code that does not differ between the two runs, points less at
+"a bug memcheck happens to miss" and more at something structural to the
+platforms themselves: NDK/Android ships libc++ where this nix desktop
+build links libstdc++ (GCC 15.2.0, visible in the build log) — different
+`std::string`/exception-object ABI and allocation patterns under the same
+source — or Scudo's specific hardened-allocator internals (redzone
+placement, chunk-header layout) surface a class of overflow/corruption
+that ptmalloc-under-memcheck's simulated heap does not reproduce the same
+way. Distinguishing those needs the Android-side ASan/HWASan build this
+update could not stand up, or a close manual read of `build()`'s
+`std::string` concatenation and the `mrb_gc_arena_save`/`mrb_gc_protect`/
+`mrb_gc_arena_restore` sequence around the `mrb_funcall` round-trips in
+`error_dump_report()`/`call()`, neither completed here.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
