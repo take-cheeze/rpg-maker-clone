@@ -24,6 +24,15 @@ public class RpgMakerCloneActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         String gameDir = getExternalFilesDir(null) + "/game";
+        // Ensure the directory itself exists, not just its `files` parent:
+        // getExternalFilesDir(null) creates that parent as a side effect, but
+        // the `game` subdirectory below it is only ever a string here. Any
+        // Android storage backend lets the owning app mkdir its own tree, but
+        // some (the AVD's FUSE-backed emulated storage, confirmed the hard
+        // way in the android-smoke CI job) refuse `adb push` the same mkdir
+        // once the app itself has not created it first -- doing it here
+        // covers every backend and every caller, `adb push` included.
+        new java.io.File(gameDir).mkdirs();
         java.util.ArrayList<String> args = new java.util.ArrayList<>();
         args.add("--game_dir");
         args.add(gameDir);
