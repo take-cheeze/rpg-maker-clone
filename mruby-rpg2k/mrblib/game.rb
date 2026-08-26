@@ -138,19 +138,17 @@ module Game
               # `\N[]`'s id-0-means-party-leader convenience
               # (`Scene::Map#actor_name`) only applies when a digit or a
               # resolvable nested `\V[]` was actually read inside the
-              # brackets -- confirmed directly against RPG_RT's live
-              # source: `Game_Message::ParseParam` (`src/game_message.cpp`)
-              # guards the substitution on `values.front() == 0 &&
-              # got_valid_number`, not on the value alone. A bracket that
-              # parsed nothing at all (a bare `\N[]`, or `\N[x]` where `x`
-              # is neither a digit nor `\V[]`/`\v[]`) leaves the id at 0,
-              # which is not a valid 1-based actor id -- real RPG_RT's
-              # `DefaultCommandInserter` (`src/pending_message.cpp`) then
-              # misses on `GetActor(0)` and expands to an empty string, not
-              # the leader's name. `-1` here is simply a value #actor_name's
-              # own `id.to_i.zero?` leader check will never match, so an
-              # unresolved bracket falls through to its own dangling-id
-              # blank-string path unchanged.
+              # brackets -- gated on "a digit or resolvable nested `\V[]`
+              # was read" (`got_number`), not on the value alone. A bracket
+              # that parsed nothing at all (a bare `\N[]`, or `\N[x]` where
+              # `x` is neither a digit nor `\V[]`/`\v[]`) leaves the id at 0,
+              # which is not a valid 1-based actor id. `-1` here is simply a
+              # value #actor_name's own `id.to_i.zero?` leader check will
+              # never match, so an unresolved bracket falls through to its
+              # own dangling-id blank-string path unchanged. This whole
+              # gating design was ported from EasyRPG Player's source and is
+              # NOT independently confirmed against genuine RPG_RT under
+              # wine.
               s = (names[got_number ? val : -1] || '').to_s
               cur << s
               count += s.length
@@ -161,18 +159,17 @@ module Game
             segs << { text: cur, color: color } unless cur.empty?
             cur = ''
             # An out-of-range index (>19, the highest real palette colour)
-            # resets to colour 0 rather than staying out of range -- EasyRPG's
-            # Window_Message::UpdateMessage (src/window_message.cpp): `text_color
-            # = pres.value > 19 ? 0 : pres.value` (the vanilla, non-Maniac-patch
-            # path, so this applies to every ordinary RPG2000/2003 game). Left
-            # unclamped, an out-of-range colour used to fail the renderer's own
-            # 0..19 validity check and fall back to a flat approximation colour
-            # instead of the windowskin's own (properly shaded) swatch 0 -- see
-            # Scene::Map::MessagePalette.valid?/#message_color. `#parse_bracket_value`
-            # (not a bare `arg.to_i`) so a variable-driven `\C[\V[n]]` resolves
-            # the same way `\N[]`/`\V[]` already do -- EasyRPG's ParseColor is
-            # the exact same ParseParam nested-`\V[]` machinery as ParseActor/
-            # ParseVariable, not special-cased. No bracket at all resets to 0
+            # resets to colour 0 rather than staying out of range (believed
+            # to apply to every ordinary RPG2000/2003 game, ported from
+            # EasyRPG Player's source and NOT independently confirmed against
+            # genuine RPG_RT under wine). Left unclamped, an out-of-range
+            # colour used to fail the renderer's own 0..19 validity check and
+            # fall back to a flat approximation colour instead of the
+            # windowskin's own (properly shaded) swatch 0 -- see
+            # Scene::Map::MessagePalette.valid?/#message_color.
+            # `#parse_bracket_value` (not a bare `arg.to_i`) so a
+            # variable-driven `\C[\V[n]]` resolves the same way `\N[]`/`\V[]`
+            # already do -- not special-cased. No bracket at all resets to 0
             # too (`\C` alone), matching the pre-existing default.
             if text[i] == '['
               v, i = parse_bracket_value(text, i, variables)
@@ -181,11 +178,10 @@ module Game
               color = 0
             end
           when 's', 'S' # speed change: how fast the typewriter reveals from
-            # here on, clamped to RPG_RT's 1..20 (EasyRPG Player's
-            # window_message.cpp: `speed = Utils::Clamp(pres.value, 1, 20)`).
-            # `#parse_bracket_value`, not a bare `arg.to_i`, for the same
-            # `\S[\V[n]]` reason as `\C[]` just above (ParseSpeed shares the
-            # same ParseParam nested-variable machinery). No bracket at all
+            # here on, clamped to 1..20 (ported from EasyRPG Player's source
+            # and NOT independently confirmed against genuine RPG_RT under
+            # wine). `#parse_bracket_value`, not a bare `arg.to_i`, for the
+            # same `\S[\V[n]]` reason as `\C[]` just above. No bracket at all
             # defaults to full speed (1), matching the pre-existing default.
             if text[i] == '['
               v, i = parse_bracket_value(text, i, variables)
@@ -253,47 +249,47 @@ module Game
     # default per code and is not this method's concern). Returns
     # `[value, new_i]`, `new_i` positioned just past the matching `]`.
     #
-    # Confirmed against EasyRPG's `Game_Message::ParseParam`
-    # (`src/game_message.cpp`), which backs all four codes identically
-    # (`ParseColor`/`ParseSpeed`/`ParseActor`/`ParseVariable` are thin
-    # wrappers over the same function) -- this is a straight port of its
-    # character-scanning loop, not the "extract a balanced-bracket substring,
-    # then regex it" approach this used to take:
+    # Ported from EasyRPG Player's `Game_Message::ParseParam`, which backs
+    # all four codes identically (`ParseColor`/`ParseSpeed`/`ParseActor`/
+    # `ParseVariable` are thin wrappers over the same function) -- this is a
+    # straight port of its character-scanning loop, not the "extract a
+    # balanced-bracket substring, then regex it" approach this used to take.
+    # None of the specifics below are independently confirmed against
+    # genuine RPG_RT under wine; they are carried over as believed-accurate
+    # from the port:
     #
     # - Digits accumulate positionally (`value = value * 10 + digit`).
     # - A nested `\v[]`/`\V[]` reference (yado.tk: `\N[\V[1]]` substitutes
     #   variable 1's own *value* in place of a literal number) recurses one
-    #   level deep at most -- RPG_RT's own limit (EasyRPG's
-    #   `rpg_rt_default_max_recursion = 1`, vs. its own looser 8-level
-    #   `easyrpg_default_max_recursion` extension this port does not take);
-    #   `\N[\V[\V[1]]]`'s inner `\V[1]` is simply never reached, same as
-    #   real RPG_RT. The recursion resolves the *inner* bracket to a variable
+    #   level deep at most (vs. EasyRPG's own looser 8-level extension this
+    #   port does not take); `\N[\V[\V[1]]]`'s inner `\V[1]` is simply never
+    #   reached. The recursion resolves the *inner* bracket to a variable
     #   *index*, then reads that variable's own value and concatenates its
     #   decimal digits onto whatever was already accumulated -- `\N[1\V[2]]`
-    #   with variable 2 = 45 becomes 145, not "1" or "45" -- via RPG_RT's own
+    #   with variable 2 = 45 becomes 145, not "1" or "45" -- via
     #   `m = 10; m *= 10 while m < var_val; value = value * m + var_val`
     #   arithmetic, ported verbatim (including its own quirk of only ever
     #   widening `m` in powers of 10 relative to the newly-read value, not
-    #   the exact combined digit width -- this is RPG_RT's real arithmetic,
-    #   not an approximation to smooth over).
+    #   the exact combined digit width).
     # - The first character that is neither a digit nor a recognised nested
     #   reference stops further accumulation but *keeps* whatever was
-    #   already read (RPG_RT: "stop parsing until the next closing bracket"),
-    #   rather than resetting to 0 -- unlike this method's own predecessor,
-    #   which fell through to `String#to_i` and silently dropped everything
-    #   from the first non-leading-digit character on.
+    #   already read ("stop parsing until the next closing bracket"), rather
+    #   than resetting to 0 -- unlike this method's own predecessor, which
+    #   fell through to `String#to_i` and silently dropped everything from
+    #   the first non-leading-digit character on.
     #
     # Returns a third element, `got_number` -- whether a digit or a
-    # resolvable nested `\V[]` was actually read (RPG_RT's own
-    # `got_valid_number`, `src/game_message.cpp`) -- callers besides `\N[]`
+    # resolvable nested `\V[]` was actually read -- callers besides `\N[]`
     # (`\V[]`/`\C[]`/`\S[]`) have no use for it and simply destructure the
     # first two elements, which Ruby allows without error.
     def self.parse_bracket_value(text, i, variables, depth = 1)
       n = text.length
       # No bracket at all (reachable recursively too -- a malformed nested
-      # reference like `\N[\V]`, `\v` with no `[` following): RPG_RT's own
-      # ParseParam returns 0 without consuming anything, matching `if (iter
-      # == end || *iter != '[') { return { iter, 0 }; }`.
+      # reference like `\N[\V]`, `\v` with no `[` following): returns 0
+      # without consuming anything, matching EasyRPG Player's own
+      # `ParseParam` (`if (iter == end || *iter != '[') { return { iter, 0
+      # }; }`) -- ported behavior, NOT independently confirmed against
+      # genuine RPG_RT under wine.
       return [0, i, false] unless i < n && text[i] == '['
       i += 1
       value = 0
@@ -3807,15 +3803,16 @@ module Game
     # why this bumps @revision the same as #promote_to_leader above, the
     # existing precedent for a leader change with no membership change.
     #
-    # `Game_Party::AddActor`/`RemoveActor` (`src/game_party.cpp`) -- the pair
-    # `Confirm()` calls once per member during the remove/re-add dance -- each
-    # unconditionally call `Main_Data::game_player->ResetGraphic()` as a side
-    # effect, and `Game_Player::ResetGraphic()` (`src/game_player.cpp`) re-reads
-    # slot 0's (the new leader's) CharSet name/index/transparency onto the map
-    # sprite. Skipping the replay (above) also skipped this side effect, so
-    # `@leader_graphic_dirty` reproduces it directly: set unconditionally here,
-    # the same way real RPG_RT's own call is unconditional, not only when the
-    # leader actually changed.
+    # Ported from EasyRPG Player's own `Game_Party::AddActor`/`RemoveActor`
+    # -- the pair `Confirm()` calls once per member during the remove/re-add
+    # dance -- which each unconditionally call `Game_Player::ResetGraphic()`
+    # there as a side effect, re-reading slot 0's (the new leader's) CharSet
+    # name/index/transparency onto the map sprite. Skipping the replay
+    # (above) also skipped this side effect, so `@leader_graphic_dirty`
+    # reproduces it directly: set unconditionally here, mirroring that
+    # unconditional call rather than only firing when the leader actually
+    # changed. This unconditional-refresh behavior is NOT independently
+    # confirmed against genuine RPG_RT under wine.
     def reorder(new_order)
       @actors = new_order.map { |i| @actors[i] }
       @revision += 1
@@ -3954,15 +3951,17 @@ module Game
     # can flash only when there is something to report.
     #
     # A negative `amount` is a *healing* tile (RPG2000/2003 terrain rows carry
-    # one plain signed damage field, no separate heal flag) -- confirmed
-    # against EasyRPG's actual C++ source: `Game_Player::Move`'s terrain block
-    # (`src/game_player.cpp`) guards the per-actor loop with `terrain->damage
-    # < 0 || !hero->PreventsTerrainDamage()`, so a negative value heals *every*
+    # one plain signed damage field, no separate heal flag) -- ported from
+    # EasyRPG Player's own `Game_Player::Move` terrain block, which guards
+    # its per-actor loop with `terrain->damage < 0 || !hero->
+    # PreventsTerrainDamage()` there, so a negative value heals *every*
     # party member unconditionally, bypassing `no_terrain_damage` gear
-    # entirely -- only positive damage respects that immunity. `ChangeHp` is
-    # still called with `-terrain->damage` either way (`-(-1) = +1`, a heal),
-    # so the existing `-amount` formula already produces the right sign; only
-    # which branch the immunity check gates needed to change.
+    # entirely in that design -- only positive damage respects that
+    # immunity. `ChangeHp` is still called with `-terrain->damage` either
+    # way (`-(-1) = +1`, a heal), so the existing `-amount` formula already
+    # produces the right sign; only which branch the immunity check gates
+    # needed to change. This heal/immunity interaction is NOT independently
+    # confirmed against genuine RPG_RT under wine.
     def apply_terrain_damage(amount)
       return [] unless amount && amount != 0
       hit = []
@@ -4201,12 +4200,14 @@ module Game
     # field 0x0F -- see mruby-lcf/mrblib/schema.rb): when active, a random
     # (wandering-monster) encounter's party wipe skips the ordinary Game
     # Over screen and instead runs a common event and/or teleports the
-    # party. Matches EasyRPG's `Game_Battle::HasDeathHandler`
-    # (src/game_battle.cpp): `Player::IsRPG2k3() && db.death_handler`. A
-    # scripted Battle Processing command's own [Defeat] handler is a
-    # separate, already-correct mechanism (Interpreter#do_enemy_encounter's
-    # own `defeat_game_over: cmd.param(4) == 0`) that never consults this --
-    # the death handler applies to wandering encounters only. A bare test
+    # party, gated on `rpg2003? && db.death_handler`. This gating and the
+    # overall death-handler behavior are NOT independently confirmed against
+    # genuine RPG_RT under wine -- first-principles reasoning from the
+    # database field's own name and liblcf's schema only. A scripted Battle
+    # Processing command's own [Defeat] handler is a separate,
+    # already-correct mechanism (Interpreter#do_enemy_encounter's own
+    # `defeat_game_over: cmd.param(4) == 0`) that never consults this -- the
+    # death handler applies to wandering encounters only. A bare test
     # fixture with no `#battlecommands` table, or an RPG2000 database, reads
     # false, same as `#alternate_battle_layout?` above.
     def death_handler?
@@ -4216,8 +4217,8 @@ module Game
     end
 
     # The common event id a Death Handler runs (`battlecommands.death_event`),
-    # or 0 when the handler is not active -- matches EasyRPG's
-    # `Game_Battle::GetDeathHandlerCommonEvent`.
+    # or 0 when the handler is not active. NOT independently confirmed
+    # against genuine RPG_RT under wine (see `#death_handler?` above).
     def death_handler_event
       return 0 unless death_handler?
       table = @db.battlecommands
@@ -4228,8 +4229,9 @@ module Game
     # same 1-based-facing-or-0-for-keep-current layout the Teleport event
     # command's own facing parameter uses -- see Interpreter
     # #teleport_facing, and schema.rb's `death_teleport_face` comment for
-    # why they line up), or nil when no teleport is configured. Matches
-    # EasyRPG's `Game_Battle::GetDeathHandlerTeleport`.
+    # why they line up), or nil when no teleport is configured. NOT
+    # independently confirmed against genuine RPG_RT under wine (see
+    # `#death_handler?` above).
     def death_handler_teleport
       return nil unless death_handler?
       table = @db.battlecommands
@@ -6396,22 +6398,22 @@ module Game
     # What a following move-route "Move Forward" sub-command walks in --
     # NOT simply "the direction actually walked/jumped by the last
     # successful move" the way an uncited yado.tk claim this comment used to
-    # repeat had it. RPG_RT's own `Game_Character::UpdateMoveRoute`
-    # (`src/game_character.cpp`) uses a single shared `direction` field for
-    # both purposes: a Face/Turn sub-command's branch (`SetDirection(...)`
-    # for Face Up/Right/Down/Left, or `Turn90DegreeRight`/`Turn90DegreeLeft`/
-    # `Turn180Degree`/`TurnRandom`/`TurnTowardCharacter`/
-    # `TurnAwayFromCharacter`, each itself a `SetDirection` call) writes the
-    # exact same `direction` a later Move-command branch's `Move(GetDirection
-    # ())` reads for Move Forward -- so `Turn Right` immediately followed by
-    # `Move Forward` walks in the *turned* direction in real RPG_RT, not
-    # whichever direction the character was last physically stepped in
-    # before the route began. #face!/#turn_right/#turn_left/#turn_around
-    # (the move-route Face/Turn sub-commands) update this field for exactly
-    # that reason; #move/#jump/#move_diagonal (actual steps) update it too,
-    # since RPG_RT's shared field is written by both. A blocked #do_move
-    # (turns to face an obstruction but never steps) still leaves it alone,
-    # matching #face's own lock-respecting, no-step nature.
+    # repeat had it. Ported from EasyRPG Player's `Game_Character::
+    # UpdateMoveRoute`, which uses a single shared `direction` field for
+    # both purposes: a Face/Turn sub-command's branch (Face Up/Right/Down/
+    # Left, or a 90/180-degree/random/toward/away turn, each itself a
+    # `SetDirection` call there) writes the exact same `direction` a later
+    # Move-command branch's `Move(GetDirection())` reads for Move Forward --
+    # so `Turn Right` immediately followed by `Move Forward` is believed to
+    # walk in the *turned* direction, not whichever direction the character
+    # was last physically stepped in before the route began. This whole
+    # mechanism is NOT independently confirmed against genuine RPG_RT under
+    # wine. #face!/#turn_right/#turn_left/#turn_around (the move-route
+    # Face/Turn sub-commands) update this field for exactly that reason;
+    # #move/#jump/#move_diagonal (actual steps) update it too, mirroring the
+    # ported shared-field design. A blocked #do_move (turns to face an
+    # obstruction but never steps) still leaves it alone, matching #face's
+    # own lock-respecting, no-step nature.
     #
     # A plain numpad int (2/4/6/8) after #move/#jump/#face!/#turn_*, or a
     # `[horizontal, vertical]` pair after #move_diagonal -- see
@@ -6511,20 +6513,22 @@ module Game
     # Land on (x, y) in one hop — the move-route Begin Jump / End Jump pair,
     # whose enclosed moves name a destination rather than a path.
     #
-    # RPG_RT faces the jump's **dominant axis**, vertical winning a tie, which is
-    # not the direction of the last enclosed move: a jump two right and two down
-    # lands facing down. #last_move_direction always picks up that same
-    # dominant-axis direction, even for a jump that ends where it started --
-    # verified against EasyRPG Player's actual C++ source rather than guessed
-    # at: `Game_Character::Jump` (`src/game_character.cpp`) computes and
-    # applies `SetDirection` (this codebase's #last_move_direction, what Move
-    # Forward reads) unconditionally, before ever checking `dx != 0 || dy !=
-    # 0` -- a null jump's tie (`dy.abs() >= dx.abs()` when both are 0, `dy >=
-    # 0` when dy is 0) always resolves to Down. Only the *visible* facing
+    # RPG_RT is believed to face the jump's **dominant axis**, vertical
+    # winning a tie, which is not the direction of the last enclosed move: a
+    # jump two right and two down lands facing down. #last_move_direction
+    # always picks up that same dominant-axis direction, even for a jump
+    # that ends where it started -- ported from EasyRPG Player's own
+    # `Game_Character::Jump`, which computes and applies `SetDirection`
+    # (this codebase's #last_move_direction, what Move Forward reads)
+    # unconditionally, before ever checking `dx != 0 || dy != 0` -- a null
+    # jump's tie (`dy.abs() >= dx.abs()` when both are 0, `dy >= 0` when dy
+    # is 0) always resolves to Down there. Only the *visible* facing
     # (`SetFacing`, this codebase's #face) is gated behind that displacement
-    # check (and, inside it, `IsFacingLocked`, which #face already respects) --
-    # so a jump going nowhere still silently turns a character to face south
-    # internally, it just never shows on screen.
+    # check in the port (and, inside it, `IsFacingLocked`, which #face
+    # already respects) -- so a jump going nowhere is believed to still
+    # silently turn a character to face south internally without it showing
+    # on screen. This whole dominant-axis/null-jump mechanism is NOT
+    # independently confirmed against genuine RPG_RT under wine.
     def jump(x, y)
       dx = x - @x
       dy = y - @y
@@ -6539,20 +6543,22 @@ module Game
     # The facing a diagonal move settles on: whichever of the diagonal's two
     # cardinal components (`horizontal`/`vertical`) shares the axis the
     # character is *already* facing, unchanged if it was already on that
-    # axis -- confirmed against RPG_RT's own live source:
-    # `Game_Character::UpdateFacing` (`src/game_character.cpp`) only
-    # reverses the prior facing (`SetFacing((facing + 2) % 4)`) when it
-    # matches *neither* of the diagonal's two cardinal components, otherwise
-    # leaving it untouched. Since a 180-degree flip of a facing that is on
-    # neither component always lands exactly on the component sharing its
-    # own axis (Up flips to Down's opposite-axis partner... concretely: Down
-    # flips to Up, Left flips to Right), the net effect is simply "keep the
-    # vertical component if already facing vertically, keep the horizontal
-    # component if already facing horizontally" -- RPG_RT never
-    # unconditionally snaps to the diagonal's vertical part the way this
-    # method's own prior, uncited comment ("RPG2000 keeps a cardinal facing
-    # on diagonals, so we face the vertical part") claimed. A character
-    # facing Left that steps Up-Right ends up facing Right, not Up.
+    # axis -- ported from EasyRPG Player's own `Game_Character::
+    # UpdateFacing`, which only reverses the prior facing
+    # (`SetFacing((facing + 2) % 4)`) when it matches *neither* of the
+    # diagonal's two cardinal components, otherwise leaving it untouched
+    # there. Since a 180-degree flip of a facing that is on neither
+    # component always lands exactly on the component sharing its own axis
+    # (Up flips to Down's opposite-axis partner... concretely: Down flips to
+    # Up, Left flips to Right), the net effect is simply "keep the vertical
+    # component if already facing vertically, keep the horizontal component
+    # if already facing horizontally" in the port -- not the diagonal
+    # always snapping to its vertical part the way this method's own prior,
+    # uncited comment ("RPG2000 keeps a cardinal facing on diagonals, so we
+    # face the vertical part") claimed. A character facing Left that steps
+    # Up-Right would end up facing Right, not Up, under this design. This
+    # whole mechanism is NOT independently confirmed against genuine RPG_RT
+    # under wine.
     def diagonal_facing(horizontal, vertical)
       [8, 2].include?(@direction) ? vertical : horizontal
     end
@@ -6600,14 +6606,15 @@ module Game
     # Direction pointing from this character toward (tx, ty). ~~Ties (and
     # equal distance) resolve to the horizontal axis, matching RPG2000's
     # toward-hero behaviour; returns the current facing when already on the
-    # tile.~~ Corrected against RPG_RT's own live source: `Game_Character::
-    # GetDirectionToCharacter` (`src/game_character.cpp`) compares with a
-    # strict `>` (`std::abs(sx) > std::abs(sy)`), so an exact tie -- and the
-    # degenerate same-tile case (dx == dy == 0), which the reference does not
+    # tile.~~ Corrected to match EasyRPG Player's own `Game_Character::
+    # GetDirectionToCharacter`, which compares with a strict `>`
+    # (`std::abs(sx) > std::abs(sy)`), so an exact tie -- and the degenerate
+    # same-tile case (dx == dy == 0), which that reference does not
     # special-case at all -- falls through to the *vertical* branch, and
     # lands on Down there since `sy > 0` is false when `sy == 0`. This used
     # to compare with `>=` and treat the same-tile case as "keep the current
-    # facing," neither of which the reference does.
+    # facing," neither of which the reference does. NOT independently
+    # confirmed against genuine RPG_RT under wine.
     def direction_toward(tx, ty)
       dx = tx - @x
       dy = ty - @y
@@ -6831,9 +6838,10 @@ module Game
       when LOCK_FACING   then character.facing_locked = true;  [:effect, true]
       when UNLOCK_FACING then character.facing_locked = false; [:effect, true]
       # Bounds are the internal 0..5 scale (real Move Speed 1..6 minus 1; see
-      # Scene::Map::SLIDE_UNITS/#page_move_speed), matching EasyRPG's own
-      # `SetMoveSpeed(min(GetMoveSpeed() + 1, 6))` / `max(GetMoveSpeed() - 1, 1)`
-      # (src/game_character.cpp) shifted down by that same offset.
+      # Scene::Map::SLIDE_UNITS/#page_move_speed), shifted down by that same
+      # offset from EasyRPG Player's own `SetMoveSpeed(min(GetMoveSpeed() +
+      # 1, 6))` / `max(GetMoveSpeed() - 1, 1)`. NOT independently confirmed
+      # against genuine RPG_RT under wine.
       when SPEED_UP   then character.move_speed = [character.move_speed + 1, 5].min; [:effect, true]
       when SPEED_DOWN then character.move_speed = [character.move_speed - 1, 0].max; [:effect, true]
       when FREQ_UP    then character.move_frequency = [character.move_frequency + 1, 8].min; [:effect, true]
@@ -6870,13 +6878,15 @@ module Game
     # only what the caller does with a failure that was already going to
     # happen. `Scene::Map#step_event` turns it into this map event's own
     # Event Touch (2) trigger, mirroring `#move_autonomous`'s identical
-    # dedicated hero check for a Random/Approach/Away-type move: EasyRPG's
-    # `Game_Character::Move` calls `CheckCollisonOnMoveFailure`, which starts
-    # an Event Touch (`Trigger_collision`) page right here with no
-    # `IsMoveRouteOverwritten` guard (unlike the player's own touch check,
-    # gated on exactly that flag in `Game_Player::UpdateMovement`) -- so a Set
-    # Move Route/page-authored custom route walking a map event onto the
-    # party fires it exactly like an autonomous move already does.
+    # dedicated hero check for a Random/Approach/Away-type move: ported from
+    # EasyRPG Player's own `Game_Character::Move`, which calls
+    # `CheckCollisonOnMoveFailure` there to start an Event Touch
+    # (`Trigger_collision`) page with no `IsMoveRouteOverwritten` guard
+    # (unlike the player's own touch check, gated on exactly that flag in
+    # its `Game_Player::UpdateMovement`) -- so a Set Move Route/page-authored
+    # custom route walking a map event onto the party is believed to fire it
+    # exactly like an autonomous move already does. This is NOT
+    # independently confirmed against genuine RPG_RT under wine.
     def do_move(character, world, dir)
       return [:turned, true] if dir.nil?
       prev_dir = character.direction
@@ -6888,13 +6898,15 @@ module Game
         nx, ny = Character.step_tile(character.x, character.y, dir)
         status = world.hero_position == [nx, ny] ? :touched_hero : :blocked
         if @skippable
-          # ...unless the route can skip past the block, in which case
-          # EasyRPG's UpdateMoveRoute (src/game_character.cpp) reverts the
-          # turn entirely (`SetDirection(prev_direction);
-          # SetFacing(prev_facing);`) before advancing to the next command --
-          # a skipped step has no visible effect at all, not even a flinch
-          # toward the obstacle. A non-skippable route keeps the turn (the
-          # same command retries next frame, still facing the obstacle).
+          # ...unless the route can skip past the block, in which case this
+          # reverts the turn entirely before advancing to the next command --
+          # ported from EasyRPG Player's own `UpdateMoveRoute`
+          # (`SetDirection(prev_direction); SetFacing(prev_facing);`) there
+          # -- a skipped step is believed to have no visible effect at all,
+          # not even a flinch toward the obstacle. A non-skippable route
+          # keeps the turn (the same command retries next frame, still
+          # facing the obstacle). NOT independently confirmed against
+          # genuine RPG_RT under wine.
           character.direction = prev_dir
           [status, true]
         else
@@ -7011,11 +7023,12 @@ module Game
     # Move Upper-Right/etc. sub-command (#do_diagonal, which looks up its
     # `horizontal`/`vertical` pair from the move id) or from Move Forward
     # continuing a diagonal #last_move_direction (see #execute's own
-    # MOVE_FORWARD case) -- RPG_RT's own `UpdateMoveRoute`
-    # (src/game_character.cpp) has no such split at all: `Move(GetDirection())`
-    # is the one call site for every move sub-command, cardinal or diagonal
-    # alike, since `GetDirection()` is an 8-way enum that a diagonal move
-    # simply leaves set.
+    # MOVE_FORWARD case) -- mirroring EasyRPG Player's own `UpdateMoveRoute`,
+    # which has no such split at all there: `Move(GetDirection())` is the
+    # one call site for every move sub-command, cardinal or diagonal alike,
+    # since `GetDirection()` is an 8-way enum that a diagonal move simply
+    # leaves set. This structural choice is a design mirror, not a claim
+    # independently confirmed against genuine RPG_RT under wine.
     def do_diagonal_dir(character, world, horizontal, vertical)
       prev_dir = character.direction
       character.face(character.diagonal_facing(horizontal, vertical))
@@ -8585,18 +8598,20 @@ module Game
       cur < target ? cur + step : cur - step
     end
 
-    # Pixels moved per frame for a pan speed (1..6). EasyRPG's own
-    # Game_Player::StartPan/ResetPan (src/game_player.cpp) set `pan_speed = 2
-    # << speed`, a value that lives in RPG_RT's own 1/16-pixel subpixel space
-    # (game_map.h's SCREEN_TILE_SIZE = 256, sixteen per this codebase's own
-    # real TILE = 16 px) -- so the real whole-pixel rate is `(2 << speed) /
-    # 16.0`: 0.25, 0.5, 1, 2, 4, 8 px/frame for speed 1..6, not a plain
-    # doubling starting at a whole pixel (1, 2, 4, 8, 16, 32), which was 4x
-    # too fast at every setting. @pan_x/@pan_y (see #approach/#pan_offset)
-    # accumulate this sub-pixel-per-frame rate exactly at speeds 1/2 (0.25
-    # and 0.5 are both exact powers of two in binary floating point, so this
-    # never drifts), landing on the same whole-pixel target #pan_offset's own
-    # rounding always resolves to once a pan finishes.
+    # Pixels moved per frame for a pan speed (1..6). Ported from EasyRPG
+    # Player's own `Game_Player::StartPan`/`ResetPan`, which sets
+    # `pan_speed = 2 << speed` there, a value believed to live in a
+    # 1/16-pixel subpixel space (its own `SCREEN_TILE_SIZE = 256`, sixteen
+    # per this codebase's own real TILE = 16 px) -- so the real whole-pixel
+    # rate under that reading is `(2 << speed) / 16.0`: 0.25, 0.5, 1, 2, 4, 8
+    # px/frame for speed 1..6, not a plain doubling starting at a whole
+    # pixel (1, 2, 4, 8, 16, 32), which was 4x too fast at every setting.
+    # @pan_x/@pan_y (see #approach/#pan_offset) accumulate this sub-pixel-
+    # per-frame rate exactly at speeds 1/2 (0.25 and 0.5 are both exact
+    # powers of two in binary floating point, so this never drifts), landing
+    # on the same whole-pixel target #pan_offset's own rounding always
+    # resolves to once a pan finishes. These exact px/frame rates are NOT
+    # independently confirmed against genuine RPG_RT under wine.
     def pan_step_for(speed)
       (2 << Game.clamp(speed, 1, 6)) / 16.0
     end

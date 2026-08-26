@@ -5172,6 +5172,170 @@ The work below is roughly ordered by the critical path to a walkable game
   (not covered by cycle #174's own grep, and this cycle found one real
   instance there) remain open; "iris"'s own switch-gated pages (cycle #174's
   own open question 3) were not investigated further.
+  ✅ **Follow-up (cycle #176, 2026-08-26): continued the EasyRPG-citation
+  sweep (22 more comment-only fixes across `mrblib/game.rb`/`main.rb` and
+  fully cleared `mruby-lcf/mrblib/schema.rb`), and resolved cycle #174's own
+  open question 3 with direct wine evidence: "iris"'s pages are NOT "all
+  switch-gated" as previously characterized -- her page 1 has no condition
+  at all (`flags=0`) and is her ordinary default/idle page, confirmed
+  rendering under genuine RPG_RT.exe in exactly this debug save's
+  all-switches-off state.** Re-ran the citation grep
+  (`grep -roE "src/[a-z_]+\.(cpp|h)"`) across `mrblib/*.rb` AND, per cycle
+  #175's own finding that `scripts/` isn't covered by the original count,
+  across `scripts/*.rb` too -- and the `scripts/` total turned out far
+  larger than cycle #175's "one instance" characterization suggested:
+  **398 instances in `scripts/` alone** (187 in `rpg2k_logic_check.rb`, 208
+  in `rpg2k_scene_check.rb`, one each in `rpg2k3_battle_gauge_check.rb`/
+  `rpg2k3_battle_row_check.rb`/`rpg2k_render_check.rb`) on top of **230
+  remaining in `mrblib/*.rb`** (163 `game.rb`, 67 `interpreter.rb`, 0
+  `main.rb`, 0 `schema.rb` -- both files fully cleared this cycle) --
+  **628 total remaining**, a genuinely large new lower bound for a future
+  cycle sizing up this sweep (cycle #175's own grep evidently never actually
+  ran against `scripts/`, despite naming it as in scope; sampling
+  `rpg2k_logic_check.rb`'s hits confirmed they are real citations of the
+  same kind -- e.g. its own lines 198/262/361/525/542 all cite
+  `src/game_character.cpp` by name for behavioral claims -- not false
+  positives from an unrelated string). This cycle's own 22 fixes: all 5 in
+  `mruby-lcf/mrblib/schema.rb` (RPG2003 battle-command grid placement,
+  Death Handler gating -- also fixing the same misattribution in
+  `Game::Party#death_handler?`/`#death_handler_event`/
+  `#death_handler_teleport` in `game.rb`, found while reading the schema
+  comment it's tied to -- the states-array slot-walk claim, and the two
+  chunk-111 Change-Encounter-Rate/Parallax-override "matching Game_Map::..."
+  tails); all 4 in `mruby-rpg2k/mrblib/main.rb` (the pause-arrow port
+  citation, dropped in favor of keeping the independent 2026-08-22 wine
+  evidence already in the same comment; the open/close-animation port
+  citations in `#initialize`/`#open_animation`/`#close_animation`/
+  `#opening?`; and the two "confirmed against RPG_RT's own live source"
+  cursor-blink claims in `#update`/`#draw_cursor`, which were misattributing
+  EasyRPG source as "RPG_RT's own live source" -- a direct instance of the
+  exact hard rule-1 violation pattern, not just an uncited port -- rewritten
+  to keep the internal-consistency bug-fix reasoning (a constant defined and
+  never read) while dropping the false RPG_RT attribution); and 13 in
+  `mruby-rpg2k/mrblib/game.rb`, split across a message-parsing cluster
+  (`\N[]`'s id-0-leader gating, `\C[]`'s out-of-range colour clamp, `\S[]`'s
+  speed clamp, and `#parse_bracket_value`'s whole ported character-scanning
+  algorithm -- 5 sites), a `Character`/move-route cluster (`#last_move_
+  direction`'s Move-Forward semantics, `#jump`'s dominant-axis/null-jump
+  facing, `#diagonal_facing`'s axis-preserving reversal, `#direction_toward`'s
+  tie-breaking, the move-route Speed Up/Down clamp bounds, `#do_move`'s
+  Event-Touch-on-blocked-route mechanism, and its skippable-block direction
+  revert -- 7 sites), and a `Party`/`Player` cluster (`#reorder`'s
+  unconditional leader-graphic-dirty side effect, terrain damage's heal/
+  immunity interaction, and Pan Screen's px-per-frame speed table -- 3
+  sites). Every fix followed the same rule: where independent wine evidence
+  already existed in the same comment, the citation was dropped and the
+  evidence kept unchanged (the pause-arrow case only); everywhere else, the
+  claim was honestly downgraded to "ported from EasyRPG Player's source,
+  NOT independently confirmed against genuine RPG_RT under wine" without
+  fabricating evidence, while preserving the actual technical description of
+  what the ported code does (still useful documentation, just honestly
+  sourced) -- no behavior was changed anywhere, this is comment-only.
+  **The "iris" investigation itself:** dumped `Map0016.lmu`'s event table
+  directly (a new scratch script parsing the `.lmu` through this repo's own
+  `LCF::MapUnit`/schema, not read by hand) and found iris (event 2, at
+  (14,9)) has **9 pages**, of which page 1 has `condition.flags == 0` --
+  no switch/variable/item/actor/timer condition enabled at all -- while
+  pages 2-9 are each gated on one of eight different switches (1572-1591
+  range). `Game::EventPage.select` (`mruby-rpg2k/mrblib/game.rb`) already
+  implements "iterate pages in order, keep the *last* one whose condition
+  currently holds" (`active?` returns `true` unconditionally when `flags`
+  has no bits set), so with this debug save's switch array empty (all
+  switches read false), pages 2-9 all fail and page 1 -- not "no page" --
+  is correctly selected. This directly contradicts cycle #174's own
+  characterization ("her own pages are all switch-gated ... every one of
+  her conditional pages reads as inactive"), which was written while that
+  cycle was simultaneously chasing the actor-15 leader position bug (fixed
+  in cycle #175) and evidently never actually confirmed what was standing
+  at (14,9) itself, only what was (or wasn't) visible at the landing spot
+  its own position-write bug put the party at. Verified directly under
+  genuine RPG_RT.exe using cycle #175's own confirmed-working ordinary-
+  leader recipe (chunk 100 `hero_name`/`hero_level`/`hero_hp` + chunk 109
+  `inventory.party` patched to database actor 1 "リト" on a copy of
+  `Save01.lsd`, then `gen-rpg2k-save.rb --map 16 --at 13,9 --facing right`
+  to stand one tile west of iris): the file-select screen showed "ファイル
+  ２ リト LV1 HP50" as expected, and the resulting map frame shows a second,
+  distinct character sprite (pink hair, blue headband -- matching
+  `CharSet/subchar.png`'s own second-row portrait exactly) standing right
+  next to the leader at iris's authored (14,9) tile, screenshotted directly.
+  No other Map0016 event sits at or near that tile, so this is unambiguously
+  iris's own page 1 rendering, not a coincidence. **Conclusion: this is
+  expected, legitimate pre-quest-progress state, not a bug** -- an NPC with
+  a default idle/appearance page plus several switch-gated dialogue variants
+  is an ordinary RPG2000 authoring idiom, and the engine's existing page-
+  selection logic already handles it correctly; no code change was needed
+  or made. (A secondary curiosity -- pressing the action key `z` while
+  facing her produced no visible response, unlike cycle #175's own
+  successful shop-trigger interaction with the *separate* event 4 a tile
+  away -- was noted but not chased further, since it is outside this
+  question's scope and does not bear on the switch-gating question itself;
+  a bare screenshot cannot distinguish "her page 1's own command list is
+  simply undramatic/near-empty" from "the interaction needs a different
+  approach tile/facing," and either would need its own investigation.)
+  **A one-time technique note for future cycles building a save
+  programmatically through `LCF::SaveData`/`LCF::Array1D` (`mruby-lcf/
+  mrblib/lcf.rb`) directly (as opposed to `gen-rpg2k-save.rb`'s own
+  established `save[104] = hero` pattern, which already does this
+  correctly):** mutating a decoded nested chunk in place (e.g.
+  `save.title[11] = 'x'`) does NOT persist through `#save_to` -- `Array1D#[]`
+  caches the decoded child in a *separate* `@decoded` hash it consults on
+  read, but `#to_lcf` serialises from the original, untouched `@data` array
+  instead, so an edit that only touches the cached child is silently
+  dropped on write while still reading back correctly from the *same*
+  in-memory object (which is what made this cycle's own first attempt look
+  like it had worked when it demonstrably had not: a fresh re-parse of the
+  written file showed the original, unedited values). The fix, matching
+  `gen-rpg2k-save.rb`'s own existing pattern, is to explicitly reassign the
+  mutated child back through the parent's own `[]=` (`save[100] = title`)
+  before calling `#save_to` -- this is a caller-discipline note about using
+  the library correctly, not a library bug, since every existing shipped
+  script already follows this pattern; it is recorded here purely because
+  it cost real time to rediscover by trial and error.
+  **Verification:** `ruby -c` clean on all three edited files; a line-level
+  diff confirmed every changed line in all three files is a comment or
+  blank line (no code semantics touched) --
+  `git diff ... | grep -vE "^[+-][[:space:]]*#"` returned nothing beyond the
+  three `+++`/`---` diff headers; `cd build && ctest -R mruby_test` passed
+  (12.33s); `scripts/rpg2k_logic_check.rb` (1150), `scripts/
+  rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) all matched cycle #175's own recorded
+  baselines exactly; `scripts/rpg2k_save_load_check.rb` reconfirmed at
+  exactly its 3 known pre-existing, unrelated failures (BGM `balance`,
+  picture `show_x`/`show_y`, transition-defaults warning). No `.cxx`/`.hxx`/
+  `.cc`/`.h`/`CMakeLists.txt` was touched, so no `clang-format`/
+  `cmake-format` step applies. `data/` was left byte-identical --
+  `md5sum` reconfirmed unchanged on `Save01.lsd`/`Map0016.lmu`/`RPG_RT.ldb`
+  (matching the values recorded since cycle #148/#175) both before and after
+  this cycle's two scratch `Save02.lsd`/`Save09.lsd` probes, both of which
+  were deleted afterward (`ls Save*.lsd` showing only `Save01.lsd` left,
+  `git status` on `data/` clean); every wine/Xvfb/matchbox process this
+  cycle started was confirmed terminated (`ps aux` clean) between and after
+  every boot, with an explicit `wineserver -k` + sleep before each of this
+  cycle's two separate wine invocations per the methodology note in the
+  ground rules. No EasyRPG source was consulted for any behavioral claim
+  (the citations under review were read only to identify and rewrite them);
+  no web search was used. No changelog fragment: no shipped behavioral fix
+  to `mrblib` code was made this cycle (citation rewrites are comment-only;
+  the iris investigation confirmed existing, already-correct behavior rather
+  than fixing a bug).
+  **Left open for a future cycle, in priority order:** (1) the citation
+  sweep's real scope is now **628 remaining instances** (230 in `mrblib/
+  *.rb`: 163 `game.rb` + 67 `interpreter.rb`; 398 in `scripts/*.rb`: 187
+  `rpg2k_logic_check.rb` + 208 `rpg2k_scene_check.rb` + 3 scattered
+  singles) -- `interpreter.rb`'s own 67 were not touched at all this cycle
+  and are a natural next target, being both large and (per cycles #172-175's
+  own interpreter-focused work) closely tied to behavior this project
+  already cares about verifying; the two `scripts/` check files are almost
+  certainly the single biggest remaining concentration by volume, but sit in
+  test/check code rather than shipped `mrblib` behavior, so may warrant a
+  different cadence than the `mrblib` sweep; (2) this cycle's own secondary
+  curiosity about why interacting with iris directly produced no visible
+  response; (3) actually verifying under wine any of the 22 comment claims
+  this cycle downgraded rather than confirmed/refuted -- the move-route
+  Speed Up/Down clamp bounds and the Pan Screen px/frame table both look
+  tractable with the same synthetic-move-route-splicing technique cycles
+  #137-139's own safe-alternatives note describes.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
