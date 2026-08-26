@@ -1130,13 +1130,25 @@ module LCF
       12 => { name: :x, type: :int },
       13 => { name: :y, type: :int },
       # liblcf's `SaveMapEventBase.facing` (generator/csv/fields.csv, 0x16 ==
-      # 22): 0 = up, 1 = right, 2 = down, 3 = left, matching `Game_Character::
-      # Direction`'s own enum order (src/game_character.h) -- *not* this
-      # runtime's numpad convention (2/4/6/8). `Game::CharSet::DIR_ROW`
-      # (numpad -> row index) is numerically the same up/right/down/left
-      # table, so it doubles as the encoder here; `EventGraphic.
-      # numpad_direction` is the decoder, the same conversion the database-
-      # side event-page facing field already needs.
+      # 22) -- *not* this runtime's numpad convention (2/4/6/8) the database-
+      # side event-page facing field (MAP_EVENT_PAGE field 23) uses directly.
+      # The 0=up/1=right/2=down/3=left enum order this codebase assumes
+      # (`Game::CharSet::DIR_ROW` doubles as the encoder, `EventGraphic.
+      # numpad_direction` as the decoder) is NOT independently confirmed
+      # against genuine RPG_RT under wine -- cycle #174 tried and could not
+      # reach a verdict either way: varying this field across all four raw
+      # values (0/1/2/3) on a genuine Nepheshel `Save01.lsd` produced a
+      # byte-identical (`compare -metric AE` == 0) rendered hero across every
+      # value, on four independent wine boots, so no directional difference
+      # was observable to check the mapping against at all. The same probe
+      # also found this field's sibling `x`/`y` (11-13 above) silently
+      # ignored the same way -- writing 2,2 vs 14,11 vs 14,9 on the same
+      # save/map all rendered identically too -- so the null result likely
+      # traces to this specific save's own leader (database actor 15,
+      # "デモ用", a demo/placeholder actor from Nepheshel's scripted opening;
+      # see `scripts/gen-rpg2k-save.rb`'s own header) rather than to this
+      # field's meaning being wrong. Left open: repeat this probe against a
+      # save whose leader is an ordinary, non-placeholder actor.
       22 => { name: :direction, type: :int },
       # liblcf's `SaveMapEventBase.transparency` (generator/csv/fields.csv,
       # 0x18 == 24): "0 or 3 - Transparency level of the current event page".

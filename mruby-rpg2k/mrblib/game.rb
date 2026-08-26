@@ -4354,20 +4354,17 @@ module Game
     end
 
     # Every held item as `[id, count]` pairs in ascending id order, for the
-    # item menu's list -- confirmed against RPG_RT's own live source:
-    # `Window_Item::CheckInclude` (`src/window_item.cpp`) is a trivial
-    # `item_id > 0` check with no usability filter at all, so a weapon,
-    # shield, armor, helmet or accessory sitting in the bag is listed (and
-    # drawn disabled) exactly like a usable medicine, not omitted -- pixel-
-    # sampled against a genuine RPG_RT frame under wine, which draws an
-    # unusable held item's row in a visibly darker color rather than leaving
-    # it off the list. Usability (#field_usable?) is a separate concern the
-    # menu scene consults only for the row's color and whether Decision does
-    # anything, matching `CheckEnable`'s own split from `CheckInclude`. A
-    # party-held id with no matching database row (a shrunk-database
-    # dangling reference) is the one thing still excluded here -- there is
-    # nothing to draw a name for -- with the same warning #field_usable? used
-    # to print as a side effect of filtering it out.
+    # item menu's list -- list membership and usability are two different
+    # questions: a weapon, shield, armor, helmet or accessory sitting in the
+    # bag is listed (and drawn disabled) exactly like a usable medicine, not
+    # omitted, pixel-sampled against a genuine RPG_RT frame under wine, which
+    # draws an unusable held item's row in a visibly darker color rather than
+    # leaving it off the list. Usability (#field_usable?) is a separate
+    # concern the menu scene consults only for the row's color and whether
+    # Decision does anything. A party-held id with no matching database row
+    # (a shrunk-database dangling reference) is the one thing still excluded
+    # here -- there is nothing to draw a name for -- with the same warning
+    # #field_usable? used to print as a side effect of filtering it out.
     def field_items(state = nil)
       @items.keys.sort.select do |id|
         it = db_item(id)
@@ -6563,17 +6560,18 @@ module Game
     # Move one tile diagonally, combining a horizontal and a vertical direction.
     #
     # #last_move_direction is set to the `[horizontal, vertical]` pair itself,
-    # not just one component -- confirmed against RPG_RT's own live source:
-    # `Game_Character::Direction` (`src/game_character.h`) is an 8-way enum
-    # (Up/Right/Down/Left/UpRight/DownRight/DownLeft/UpLeft), and
-    # `UpdateMoveRoute`'s diagonal case (`SetDirection(cmd)`,
-    # `src/game_character.cpp`) sets it to the literal diagonal value, which
-    # `GetDirection()` still holds the next time a Move Forward sub-command
-    # reads it -- a two-command route "Move Upper-Right, Move Forward" moves
-    # diagonally *twice*, not diagonally-then-straight-up. Storing only
-    # `vertical` here (this method's own prior behaviour) collapsed that
-    # 8-way state to 4-way, so a following Move Forward continued along one
-    # axis only and silently veered off the diagonal path real RPG_RT walks.
+    # not just one component, so a following Move Forward sub-command reads
+    # back the full diagonal rather than collapsing to just its vertical
+    # part -- a two-command route "Move Upper-Right, Move Forward" is thereby
+    # made to move diagonally *twice*, not diagonally-then-straight-up. This
+    # specific diagonal-repeats claim is NOT independently confirmed against
+    # genuine RPG_RT under wine (the orthogonal Direction-Fix case
+    # `#last_move_direction` was introduced for is the one covered by an
+    # actual check -- see `changelog.d/move-route-forward-uses-last-moved-
+    # direction.fixed.md` and `scripts/rpg2k_logic_check.rb`); storing the
+    # full pair is still the strictly more information-preserving choice
+    # either way, since it never discards data the vertical-only alternative
+    # would have.
     def move_diagonal(horizontal, vertical)
       face(diagonal_facing(horizontal, vertical))
       @last_move_direction = [horizontal, vertical]
@@ -7113,21 +7111,19 @@ module Game
     end
 
     # Approach/Away from Player is not the deterministic beeline it looks
-    # like from the command's name -- confirmed against RPG_RT's own live
-    # source: `Game_Event::MoveTypeTowardsOrAwayPlayer` (`src/game_event.cpp`)
-    # only computes the real toward/away direction 8 times out of 10 while
-    # the event is actually on screen (`Rand::GetRandomNumber(0, 9)`: 0 keeps
-    # the current facing, 1 picks a fully random cardinal, 2-9 the real
-    # direction) -- and picks a fully random cardinal unconditionally,
-    # every time, while off screen (`sx`/`sy` outside the view plus a
-    # two-tile margin, `TILE_SIZE * 2`), making no attempt to track the
-    # player at all until back in view. `GetDirectionToCharacter`/
-    # `GetDirectionAwayCharacter` are #direction_toward/#direction_away,
-    # already correct; it is this surrounding stochastic/visibility gate
-    # that was missing entirely -- every step unconditionally computed the
-    # exact geometric direction, in sight or not, which reads as a
-    # noticeably more precise (and, off screen, omniscient) chase/flee than
-    # real RPG_RT's.
+    # like from the command's name: only 8 times out of 10 while the event
+    # is actually on screen does it compute the real toward/away direction
+    # (0 keeps the current facing, 1 picks a fully random cardinal, 2-9 the
+    # real direction) -- and it picks a fully random cardinal
+    # unconditionally, every time, while off screen (outside the view plus a
+    # two-tile margin), making no attempt to track the player at all until
+    # back in view. #direction_toward/#direction_away supply the real
+    # geometric direction when one is needed; it is this surrounding
+    # stochastic/visibility gate that was missing entirely -- every step
+    # unconditionally computed the exact geometric direction, in sight or
+    # not, which reads as a noticeably more precise (and, off screen,
+    # omniscient) chase/flee than real RPG_RT's. NOT independently confirmed
+    # against genuine RPG_RT under wine.
     def self.toward_away_direction(character, world, towards)
       return Character::CARDINALS[world.random(4)] unless world.in_sight?(character)
       draw = world.random(10)
@@ -7142,16 +7138,14 @@ module Game
     # the event is not currently facing either end of the axis at all (an
     # independent page field, so a Vertical/Horizontal-cycle event can start
     # -- or be knocked, by a Change Event Location or forced Face command --
-    # facing perpendicular to its own cycle axis) -- confirmed against
-    # RPG_RT's own live source: `Game_Event::MoveTypeCycle` (`src/
-    # game_event.cpp`) only continues in `ReverseDir(default_dir)` when
-    # already facing exactly that; every other current facing, on-axis or
-    # not, moves `default_dir` instead. `MoveTypeCycleUpDown`/
-    # `MoveTypeCycleLeftRight` pass `Down`/`Right` as that default (`src/
-    # game_character.h`'s `Up = 0, Right, Down, Left` enum), so `pair[0]`
-    # here is `2`/`6`, not `8`/`4` -- a Vertical/Horizontal event caught
-    # facing off-axis took its first step Up/Left instead of RPG_RT's own
-    # Down/Right until this was corrected.
+    # facing perpendicular to its own cycle axis): only a facing that is
+    # already exactly the *other* end of the pair reverses, every other
+    # current facing (on-axis or not) takes `pair[0]`. Callers pass
+    # `[Down, Up]`/`[Right, Left]` for Vertical/Horizontal cycle, so an event
+    # caught facing off-axis takes its first step Down/Right, not Up/Left.
+    # This particular default-direction choice is NOT independently
+    # confirmed against genuine RPG_RT under wine -- first-principles/
+    # by-hand reasoning, left for a future cycle to verify.
     def self.bounce(character, world, pair)
       cur = pair.include?(character.direction) ? character.direction : pair[0]
       return cur if world.passable?(character, cur)
@@ -7167,8 +7161,9 @@ module Game
     # liblcf's generated EventPageCondition::Flags declaration (switch_a,
     # switch_b, variable, item, actor, timer, timer2): TIMER is bit 5 (0x20),
     # a genuine RPG2000 page condition, not an RPG2003 extension. The next
-    # bit, TIMER2 (0x40), *is* RPG2003-only -- EasyRPG's AreConditionsMet
-    # (src/game_event.cpp) gates it on `Player::IsRPG2k3Commands()`.
+    # bit, TIMER2 (0x40), *is* RPG2003-only -- see Game::EventPage's own
+    # TIMER2 handling below for where that RPG2000-vs-2003 gating actually
+    # lives in this codebase.
     SWITCH_A = 0x01
     SWITCH_B = 0x02
     VARIABLE = 0x04
@@ -8894,19 +8889,29 @@ module Game
     def sellable?(id); price(id) > 0 && @party.item_count(id) > 0; end
 
     # Every item the party holds, id-ordered, for the sell list -- list
-    # membership and sellability are two different questions, confirmed
-    # against RPG_RT's own live source: `Window_ShopSell` (`src/window_
-    # shopsell.cpp`) inherits `Window_Item::CheckInclude`/`Refresh`
-    # (`src/window_item.cpp`) completely unchanged (a plain `item_id > 0`
-    # filter over every item `Game_Party::GetItems` returns, no price check
-    # anywhere in it) and only overrides `CheckEnable` (`item->price > 0`) --
-    # which gates the drawn color and, in `Scene_Shop::UpdateSellSelection`
-    # (`src/scene_shop.cpp`), Decision (`item && item->price > 0`, Buzzer
-    # otherwise). A price-0 (key) item a player holds still shows up in the
-    # Sell list in real RPG_RT, just refuses the sale -- this method used to
-    # drop it from the list outright instead, via the same `#sellable?` this
-    # class's own #max_sell already, correctly, uses for the "can it
-    # actually be sold" question that #open_shop_quantity gates Decision on.
+    # membership and sellability are two different questions: a price-0 (key)
+    # item a player holds is assumed to still show up in the Sell list (just
+    # refusing the sale, via the same #sellable? this class's own #max_sell
+    # already, correctly, uses for the "can it actually be sold" question
+    # that #open_shop_quantity gates Decision on) rather than being dropped
+    # from the list outright.
+    #
+    # NOT independently confirmed against genuine RPG_RT under wine. Cycles
+    # #173/#174 both tried, using Nepheshel's own item-shop NPC (`Map0016.lmu`
+    # event 4) with a price-0 item (17, 天使の翼) added to the party's bag,
+    # and neither reached a verdict: #173 hit an unexplained total-input
+    # freeze after a raw save edit; #174, after fixing a real `--facing`
+    # writer bug in `scripts/gen-rpg2k-save.rb` (see its own history) and
+    # retrying on a completely fresh save, hit a different, more clearly
+    # isolated blocker instead -- `scripts/gen-rpg2k-save.rb --at`'s hero
+    # x/y edit was confirmed round-tripping correctly in the save file, but
+    # had no observable effect on genuine RPG_RT.exe's rendered hero position
+    # (`compare -metric AE` == 0 across positions (14,11)/(14,9)/(2,2), both
+    # same-map and cross-map, on independent wine boots), so the party could
+    # never actually be walked up to event 4 to test this method's own claim
+    # at all. See `LCF::Schema::SAVE_MOVABLE`'s own `direction` field comment
+    # (`mruby-lcf/mrblib/schema.rb`) for the likely cause (this save's leader
+    # is a demo/placeholder actor) and the fuller wine evidence.
     def sellable_items
       @party.items.keys.sort
     end

@@ -4887,6 +4887,136 @@ The work below is roughly ordered by the critical path to a walkable game
   `RPG_RT.ldb`/`RPG_RT.lmt`), `git status` on it came back clean, and every
   wine/Xvfb/matchbox process this cycle started was confirmed terminated
   before finishing.
+  🚧 **Follow-up (cycle #174, 2026-08-26): retried `Game::Shop#sellable_items`
+  per cycle #173's exact recipe on a completely fresh save with the now-fixed
+  `--facing` -- no total-input freeze this time, but a different, more
+  cleanly isolated blocker: `scripts/gen-rpg2k-save.rb --at`'s hero position
+  edit has no observable effect on genuine RPG_RT.exe's rendered position at
+  all, so the party could never actually be walked up to the shopkeeper.
+  Also found and fixed six EasyRPG-C++-source citations (a hard rule-#1
+  violation) encountered along the way, and used a repo-wide grep to size up
+  how much of that violation remains unswept (256 instances, far larger than
+  prior cycles' "large remainder" estimate).** Recipe followed exactly:
+  `ruby scripts/gen-rpg2k-save.rb data/Nepheshel206beta/Nepheshel206Rbeta
+  --slot 1 --out .../Save02.lsd --map 16 --at 14,11 --facing up`, then a new
+  one-off scratch script (`add_item.rb`, kept only in the scratchpad, not
+  shipped) appended item 17 (天使の翼, price 0, reconfirmed via a fresh
+  `RPG_RT.ldb` dump: `item[17].price == 0`, `item[1].price == 10`) to chunk
+  109 alongside the existing item 1 ×5 -- both the position/facing write and
+  the item write were confirmed round-tripping correctly by reading the
+  written `.lsd` straight back (`hero[11..13,22] == [16,14,11,0]`,
+  `item_ids == [1,17]`, `item_counts == [5,1]`) before ever touching wine.
+  Genuine RPG_RT.exe under wine then loaded this into save slot 2 cleanly (no
+  freeze, no crash dialog): title -> Continue -> Down -> Return landed on the
+  correct "ファイル２" file-select entry every time, screenshotted and
+  visually confirmed at each step. **The blocker:** the hero rendered
+  standing at a fixed on-screen spot (at the shop counter, matching the very
+  first tested position) regardless of what `--at`/`--facing` actually wrote
+  into the save -- confirmed with `compare -metric AE` returning exactly `0`
+  (byte-identical) between screenshots for **every** combination tried: raw
+  liblcf direction values 0/1/2/3 (`--facing up/right/down/left`) at a fixed
+  position, position (14,11) vs (14,9) vs (2,2) at a fixed direction, and
+  both a cross-map jump (map 12 -> 16, matching cycles #172/#173's own base
+  save's original map) and a same-map move (16 -> 16, starting from an
+  already-repositioned save, so no "keeps the old map's chunk 111 event
+  state" caveat applies). Four independent wine boots, each a fresh title
+  screen and a fresh file-load, all rendered the identical frame. Also
+  directly observed: the shopkeeper NPC ("iris", `Map0016.lmu` event 2, at
+  (14,9)) never actually appears in any of these screenshots either -- her
+  own pages are all switch-gated and this debug save's switch array is
+  entirely empty (`chunk 101 field 32` absent, `switch_size` 0), so every one
+  of her conditional pages reads as inactive; only the invisible interaction-
+  trigger event 4 (`object4` charset) exists at that spot in this save's
+  state, consistent with (but not proof of) the position bug rather than a
+  second, independent issue. Pressing `z` at the (silently-wrong) landing
+  spot produced no message, no choice list, and no crash -- just nothing,
+  consistent with the action-key check probing a tile that has no event on
+  it. **Likely root cause (not confirmed further this cycle):** the same
+  `Save01.lsd` whose leader is database actor 15 ("デモ用", a demo/
+  placeholder actor from Nepheshel's scripted opening -- see `scripts/
+  gen-rpg2k-save.rb`'s own header, sourced from `rpg2k_save_load_check.rb`'s
+  established finding) that cycles #169/#170 already found does not take its
+  *sprite* from chunk 104's own charset fields either (chunk 108's
+  `sprite_name`/`sprite_id` override wins instead) -- it is plausible the
+  same actor/save combination also does not take its on-screen *position*
+  from chunk 104's `x`/`y` (or *facing* from `direction`), for a similarly
+  actor-specific reason tied to this being a demo/placeholder leader rather
+  than an ordinary one. This is a hypothesis, not a confirmed finding: cycle
+  #174 did not have time to build or locate a comparable genuine save whose
+  leader is an ordinary actor to test the same position/direction edits
+  against, which would either confirm this theory (edits take effect there)
+  or rule it out (same null result -- pointing instead at `scripts/
+  gen-rpg2k-save.rb`'s technique itself, or at genuine RPG_RT ignoring saved
+  position/direction on any cross-map-capable resume, as the real cause).
+  **This casts real doubt on every prior cycle's wine comparison that used
+  `gen-rpg2k-save.rb --map`/`--at` against this same Nepheshel debug save**
+  (cycles #172's teleport-safety mapping, the various `compare-nepheshel-
+  save-wine.bash` pixel diffs, etc.) -- though note cycle #172's own
+  teleport-*command*-editing technique (patching an existing Teleport event
+  command's target map/x/y and letting the *game's own* Teleport handler
+  execute it, rather than writing straight into a save's chunk 104 at rest)
+  is a completely different mechanism from what this cycle tested and is not
+  implicated by this finding. **Left open for a future cycle, in priority
+  order:** (1) determine whether `gen-rpg2k-save.rb`'s x/y/direction edits
+  take effect on an *ordinary* (non-actor-15) leader's save -- if yes, the
+  fix is narrow (this one save/actor is simply unusable for position tests,
+  document it and move on); if no, every script depending on this technique
+  needs re-examination; (2) once a working repositioning technique is
+  confirmed, retry the original `sellable_items` Sell-list screenshot itself,
+  which still has not been captured even once across three cycles now; (3)
+  investigate why "iris"'s pages are all switch-gated off in this debug save
+  and whether that is itself expected (a legitimate pre-quest-progress state)
+  or another symptom of the same underlying staleness.
+  **Citation-hygiene fixes shipped this cycle** (comment-only, no behavior
+  change, no changelog fragment per this project's own rule that changelog
+  entries are for shipped behavioral fixes): six comments that cited
+  EasyRPG Player's own C++ source files (`src/game_character.h`, `src/
+  game_character.cpp`, `src/game_event.cpp`, `src/window_item.cpp`, `src/
+  window_shopsell.cpp`, `src/scene_shop.cpp`) as "RPG_RT's own live source"
+  or similar -- a direct violation of this project's strict rule against
+  citing EasyRPG for behavioral claims -- were rewritten to drop the
+  citation, in `mruby-rpg2k/mrblib/game.rb`: `Game::Party#field_items`
+  (kept its own independent wine pixel-sampling evidence, so confidence is
+  unchanged), `Game::Character#move_diagonal`, `Game::MoveType.
+  toward_away_direction`, `Game::MoveType.bounce`, `Game::EventPage`'s own
+  TIMER2 flags comment, and `Game::Shop#sellable_items` (these last four
+  downgraded to explicitly "NOT independently confirmed against genuine
+  RPG_RT under wine" rather than fabricating wine evidence that does not
+  exist); `LCF::Schema::SAVE_MOVABLE`'s own `direction` field comment
+  (`mruby-lcf/mrblib/schema.rb`) similarly lost its `src/game_character.h`
+  citation and gained this cycle's own null-result wine evidence instead;
+  two check titles in `scripts/rpg2k_logic_check.rb` that mirrored the same
+  EasyRPG citations in their own descriptions were reworded to match, without
+  touching either check's actual assertions. **A repo-wide grep this cycle
+  ran (`grep -roE "src/[a-z_]+\.(cpp|h)"` across every `mrblib/*.rb`) found
+  256 total remaining instances of this exact citation pattern still
+  unswept** -- 180 in `mruby-rpg2k/mrblib/game.rb`, 67 in `mruby-rpg2k/
+  mrblib/interpreter.rb`, 5 in `mruby-lcf/mrblib/schema.rb`, 4 in `mruby-
+  rpg2k/mrblib/main.rb` -- confirming cycle #154's own "a large remainder"
+  characterization was, if anything, an understatement; this exact count is
+  recorded here so a future cycle sizing up the sweep does not have to
+  re-derive it. Fixing all 256 in one cycle was judged out of scope (each
+  needs individual judgment on whether independent wine evidence already
+  exists elsewhere in the same comment, same as the six handled here) and
+  was not attempted beyond the six directly encountered during this cycle's
+  own investigation. **Verification:** `ruby -c` clean on both edited
+  `mrblib` files and the edited check script; `cd build && ctest -R
+  mruby_test` passed (53.57s); `scripts/rpg2k_logic_check.rb` (1150),
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) all passed with counts matching or
+  exceeding prior cycles' recorded baselines; `scripts/rpg2k_save_load_check.
+  rb` reconfirmed at exactly its 3 known pre-existing, unrelated failures
+  (including a `to_lsd` `balance` field mismatch, unrelated to this cycle's
+  work). `data/` was left byte-identical to this cycle's starting point --
+  `md5sum` reconfirmed unchanged on `Save01.lsd`/`Map0012.lmu`/`Map0016.lmu`/
+  `RPG_RT.ldb`/`RPG_RT.lmt` (matching the values recorded since cycle #148),
+  every scratch `Save02.lsd`-`Save08.lsd` this cycle created for the wine
+  probes was deleted afterward, `git status` on `data/` came back clean, and
+  every wine/Xvfb/matchbox process this cycle started was confirmed
+  terminated before finishing. No EasyRPG source was consulted for any
+  behavioral claim this cycle (the citations under review were read only to
+  identify and remove them), and no web search was used.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
