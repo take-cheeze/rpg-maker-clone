@@ -356,7 +356,7 @@ the same starting point `psp-smoke-game` used before it proved stable.
 real crash — cause not yet pinned down.** Once the storage plumbing above
 worked, `android-smoke` reached `[RPG2k-MAP]` — the engine really does
 boot, load Nepheshel and put up the map on this emulator — and then the
-process itself SIGABRTed about half a second later, reproducibly across
+process itself SIGABRTed about half a second later, on three straight
 runs: `Scudo ERROR: invalid chunk state when deallocating address 0x...`
 in `SDLThread`. That is Android's hardened allocator (Scudo) catching a
 real double-free or heap-corruption-then-free, not an emulator artifact by
@@ -386,6 +386,18 @@ real device or an arm64-v8a system image run (impractically slow for CI,
 per that same comment, but usable as a one-off diagnostic). Root-causing
 this is out of scope for the CI-infrastructure change that added
 `android-smoke` itself; tracked as a follow-up rather than fixed here.
+
+The 4th run — the same commit as the print-full-log-on-failure fix above,
+no engine code touched — came back clean: `[RPG2k-MAP]`, no crash marker,
+15 seconds start to finish. Three failures then a clean pass is exactly
+the shape of a real race rather than a deterministic bug in dead code, and
+rules out "always crashes, just wasn't checked before": it does not always
+crash. That cuts against the second hypothesis somewhat (a translation-
+layer artifact would more plausibly be either deterministic per input or
+never triggered at all) without ruling it out, and means the next
+reproduction is itself the open question — `android-smoke` will keep
+surfacing it if and when it recurs, now with full pid-scoped context
+attached when it does.
 
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
