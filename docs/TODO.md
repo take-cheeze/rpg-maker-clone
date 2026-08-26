@@ -4692,6 +4692,64 @@ The work below is roughly ordered by the critical path to a walkable game
   part of this cycle's fields 11/12/13 -- purely wine experiment, unlike
   fields 1/2/31/32/etc.'s own liblcf-confirmed provenance already documented
   in `SAVE_PARTY_ACTOR`'s own comment.
+  ✅ **Follow-up (cycle #171, 2026-08-26): resolved cycle #169's own left-open
+  question about `Scene::Map#player_translucent?` (the leader actor
+  graphic's "Transparent" ghost-opacity flag) -- the behavior was already
+  correct, only its citation, duplicated in two places, was not.** Verified
+  under wine with a from-scratch experiment: a fresh autostart page on
+  Map0371 (the genuine New Game start map)'s own event 1 ran a real Change
+  Sprite Association (10630) on the default leader (actor 15) to a known
+  graphic (`"mainchr"`/4), with the command's own "Transparent" param0 either
+  0 (control) or 1 (trans), then went idle with no further command so the
+  hero stood still on the map for a clean screenshot -- no Save menu, no
+  animation-frame drift between the two runs. Sampling every high-signal
+  colour channel across the whole sprite (1298 samples) showed the "trans"
+  run's pixels consistently at 0.616 mean ratio (min 0.48, max 0.65) of the
+  "control" run's own values against the map's black background -- a real
+  alpha blend, not a hide (0%) and not unaffected (100%), closely matching
+  this codebase's own already-implemented `TRANSLUCENT_OPACITY = 159`
+  (159/255 = 0.6235; wine screenshots came through a 16bpp X11 framebuffer,
+  which explains the spread but not the central tendency). **Fixed**: only
+  the citation, in the two places it was duplicated verbatim
+  (`Scene::Map#player_translucent?` in `mruby-rpg2k/mrblib/scene/map.rb` and
+  the matching check comment in `scripts/rpg2k_scene_check.rb`), which both
+  cited EasyRPG Player's own `Game_Actor::SetSprite`/`Game_Character::
+  GetOpacity` (`src/game_actor.cpp`/`src/game_character.cpp`) as if it were
+  "RPG_RT's own live source" -- replaced with this cycle's genuine wine
+  evidence above; the exact 159 vs 160 distinction is left as EasyRPG's own
+  derivation since wine's own 16bpp screenshots can't resolve it. Also fixed
+  a second, independent bug found in passing: `Interpreter#do_change_actor_
+  sprite`'s own comment in `mruby-rpg2k/mrblib/interpreter.rb` flatly said
+  the Change Sprite Association command's transparent param "hides the
+  sprite" -- factually wrong, and contradicted this codebase's own already-
+  correct `player_translucent?` (which the same line of code, `actor.
+  transparent = cmd.param(2) != 0`, feeds); corrected to describe the real
+  translucent-ghost effect. No behavioral code changed anywhere (`git diff`
+  on both `mrblib` files touched only `#` comment lines), so no regression
+  check applies, matching cycle #169's own precedent for citation-only
+  fixes. **Verification:** all of `scripts/rpg2k_scene_check.rb` (929, incl.
+  the pre-existing "Transparent flag makes the player sprite translucent"
+  check, whose own `eq 159, spr.opacity` assertion is unchanged and still
+  passes), `scripts/rpg2k_logic_check.rb` (1146), `scripts/
+  rpg2k_render_check.rb` (41), `scripts/rpg2k3_battle_row_check.rb` (19),
+  `scripts/rpg2k3_battle_gauge_check.rb` (15) and `ctest -R mruby_test` all
+  passed; `scripts/rpg2k_save_load_check.rb`'s own 3 pre-existing failures
+  (BGM `balance`, `show_x`/`show_y`, the transition-defaults warning) were
+  reconfirmed present identically. All wine work ran against scratch copies
+  of Nepheshel's game directory (a fresh copy of cycle #170's own
+  `game/`, never the checked-in one) -- `RPG_RT.ldb`/`Map0012.lmu`/
+  `Save01.lsd`/`Map0371.lmu`/`RPG_RT.lmt` are reconfirmed byte-identical by
+  `md5sum` to their previously-recorded values, `git status` on `data/`
+  (gitignored) came back clean, and no stray Xvfb/wine/engine processes were
+  left running. No EasyRPG source was consulted for any behavioral claim
+  this cycle (the citations under review were read only to identify and
+  replace them), and no web search was used. **Left open for a future
+  cycle:** field 125's own remaining "what is it" question; the party-
+  roster-field crash; the autostart-crash mystery (cycles #137-139); the
+  missing-Picture-asset hang; and every other EasyRPG-style citation cycle
+  #154's own repo-wide grep turned up that no cycle has yet touched (a large
+  remainder -- this cycle deliberately fixed only the two duplicates of the
+  one citation named as this cycle's primary target, not the wider sweep).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

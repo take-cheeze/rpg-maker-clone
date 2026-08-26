@@ -3655,21 +3655,38 @@ class RPG2k
       end
 
       # Whether the leader's *actor graphic* carries RPG2000's "Transparent"
-      # ghost flag (the ChangeActorGraphic/database Actor checkbox) -- this
-      # does not hide the sprite, it makes it translucent. Confirmed against
-      # RPG_RT's own live source: `Game_Actor::SetSprite` stores `data.
-      # transparency = transparent ? 3 : 0` (`src/game_actor.cpp`), and
-      # `Game_Character::GetOpacity` (`src/game_character.cpp`) is `Clamp((8 -
-      # GetTransparency()) * 32 - 1, 0, 255)` -- level 3 yields opacity
-      # 159/255 (~62%), not 0. This codebase used to fold this flag into
-      # #player_hidden? and hide the sprite outright instead.
+      # ghost flag (the Change Actor Graphic (10630) dialog's own checkbox,
+      # param2, or the database Actor's "Transparent" checkbox, field 5
+      # `semi_transparent`) -- this does not hide the sprite, it makes it
+      # translucent. Confirmed against genuine RPG_RT.exe under wine, cycle
+      # #171: a from-scratch autostart page ran a real Change Sprite
+      # Association on actor 15 to a real graphic ("mainchr"/4) on Map0371
+      # (the genuine New Game start map), once with the command's own
+      # transparent param 0 (control) and once with it 1, and the two runs
+      # were screenshotted at the identical frame with no further commands
+      # run. The "transparent" run's sprite pixels were consistently ~61-63%
+      # of the control run's own values (1298 sampled colour channels across
+      # the whole sprite, mean ratio 0.616, matching this codebase's own
+      # already-implemented TRANSLUCENT_OPACITY below almost exactly) --
+      # genuinely alpha-blended with the background, not hidden (0%) and not
+      # left unaffected (100%). This corrects a prior version of this comment
+      # that mislabelled EasyRPG Player's own `src/game_actor.cpp` and
+      # `src/game_character.cpp` as "RPG_RT's own live source" -- the 159/255
+      # constant below happens to already match genuine RPG_RT.exe, but that
+      # was never actually confirmed against real RPG_RT.exe until this
+      # cycle. This codebase used to fold this flag into #player_hidden? and
+      # hide the sprite outright instead.
       def player_translucent?
         leader = @state.party.leader
         leader && leader.transparent ? true : false
       end
 
-      # RPG_RT's own opacity for the "Transparent" ghost flag (see
-      # #player_translucent?'s citation) -- `(8 - 3) * 32 - 1 == 159`.
+      # The "Transparent" ghost flag's own opacity -- confirmed against
+      # genuine RPG_RT.exe (see #player_translucent?'s own citation above) to
+      # land around 159-160/255 (~62%); kept at 159, the exact value EasyRPG
+      # Player's own source independently derives via `(8 - 3) * 32 - 1`, since
+      # wine's own screenshot pixels (taken through a 16bpp X11 framebuffer)
+      # can't distinguish 159 from 160 to the last unit.
       TRANSLUCENT_OPACITY = 159
 
       # Apply both independent visibility signals to the player sprite: a

@@ -2483,9 +2483,12 @@ module Game
 
     # Change Sprite Association (Change Actor Graphic): give the actor whose id is
     # param0 a new CharSet graphic — the command string names the file, param1 is
-    # the cell index and param2 the transparency flag (non-zero hides the sprite).
-    # Records a one-shot request so the owning scene can reload the party leader's
-    # on-screen sprite.
+    # the cell index and param2 the dialog's own "Transparent" checkbox (non-zero
+    # renders the sprite as a translucent ghost, ~62% opacity, via
+    # `Scene::Map#player_translucent?` -- it does NOT hide the sprite; confirmed
+    # against genuine RPG_RT.exe under wine, cycle #171, see that method's own
+    # citation). Records a one-shot request so the owning scene can reload the
+    # party leader's on-screen sprite.
     def do_change_actor_sprite(cmd)
       actor = identity_target(cmd)
       return unless actor
