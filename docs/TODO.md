@@ -3680,6 +3680,117 @@ The work below is roughly ordered by the critical path to a walkable game
   crash; the autostart-crash mystery; the missing-Picture-asset hang; and
   every EasyRPG-style citation cycle #154's own repo-wide grep turned up
   that no cycle has yet touched (see cycle #154's own list, unchanged).
+  ✅ **Follow-up (cycle #160, 2026-08-26): picked up candidate 1 (SAVE_SYSTEM
+  fields 51-54/71-140, unblocked again by cycle #159's own candidate-1
+  finding), landing a real fix on fields 51-54 (Change Face Graphic's
+  face_name/face_index/face_right_position/face_flip) -- the exact same
+  "unconditional write" bug fields 41-44 and field 61 already had before
+  cycles #152/#153 fixed them, still present in this cluster because those
+  cycles never got to it.** Fields 71-140 were spot-checked structurally
+  (schema/round-trip only, no fresh genuine-RPG_RT capture this cycle) and
+  found already consistent with their own documented conventions -- see
+  "left open" below. **Evidence:** built a new scratch injector
+  (`inject_face_probe.rb`, same `LCF::MapUnit` short-synthetic-prefix +
+  genuine-89-command-tail shape cycles #148-159 established) adding one
+  autostart event to a byte-identical copy of Map0012.lmu (md5
+  `c2fa69a0...`) whose prefix issues Change Face Graphic (10130) then Open
+  Save Menu (11910) with *no* Wait in between -- `do_open_save_menu`
+  (`mruby-rpg2k/mrblib/interpreter.rb`) sets `@waiting = true` immediately,
+  so the calling event's own command list never reaches `finished?` while
+  the save menu is up, meaning the separate "yado.tk"
+  auto-clear-on-event-finish rule (`@face_owner`, cycle #150-something's own
+  finding, `#update`) never fires and whatever face state was set moments
+  earlier is still live at the exact instant of save -- isolating the
+  save-format question from that unrelated auto-clear rule. Drove genuine
+  RPG_RT.exe under wine (`drive_face_probe.bash`, adapted from cycle #159's
+  own `drive_picture_probe.bash`: Xvfb 640x480x16, matchbox,
+  `LIBGL_ALWAYS_SOFTWARE=1`, `ja_JP.UTF-8`, continue from the same clean
+  Save01.lsd, save into the empty File 2 slot) through four scenarios,
+  reading each resulting genuine `Save02.lsd` chunk 101 with `LCF::SaveData`
+  + `Array1D#key?` (raw field presence, bypassing schema defaults --
+  `read_face_fields.rb`): (1) `notouch` -- Change Face Graphic never issued
+  at all -- left fields 51/52/53/54 **all absent**; (2) `changed` -- Change
+  Face Graphic('face', index=3, right=1, flip=1), all four params off their
+  schema defaults -- wrote **all four fields present** with the exact set
+  values (51="face", 52=3, 53=1, 54=true); (3) `cleared` -- the same
+  `changed` call followed immediately by a second Change Face Graphic('')
+  (explicit reset to the default, still mid-event so no auto-clear
+  involved) -- left all four **absent again**, ruling out "ever touched" as
+  the gating rule and confirming per-value comparison, the same convention
+  already established for fields 41-44 (cycle #153) and field 61 (cycle
+  #152); (4) `name_only` -- a real face name at otherwise-default
+  index/side/flip (`change_face('face', 0, false, false)`) -- wrote **only
+  field 51 present**, leaving 52-54 absent, confirming the four fields are
+  gated *independently* per field, not as one all-or-nothing group keyed on
+  "is a face shown at all" (the same independence already implicit in how
+  fields 41-44 are written, now directly confirmed for this cluster too).
+  **The gap:** this codebase's own `Game::State#to_lsd`
+  (`mruby-rpg2k/mrblib/game.rb`) wrote `sys[51..54]` unconditionally on every
+  save (`mc.face_name || ''`, `mc.face_index || 0`, etc.), so a save taken
+  with no face ever shown carried explicit `''`/`0`/`false`-valued bytes for
+  all four fields that a genuine RPG_RT.exe save never does -- the reverse
+  of cycle #158's own SAVE_PICTURE finding (over-omission) but the same
+  species of bug cycles #152/#153 fixed for 41-44/61 (over-writing).
+  **Fixed:** `sys[51] = mc.face_name if mc.face?`, `sys[52] = mc.face_index
+  if mc.face_index != 0`, `sys[53] = 1 if mc.face_right`, `sys[54] = true if
+  mc.face_flipped` -- mirroring the exact per-field gating style fields
+  41-44 already use. `.from_lsd` needed no change: it already read
+  `sys.face_name || ''` etc., and the schema's own `default:` values for
+  51-54 (already declared, apparently in preparation for exactly this fix)
+  make an absent field decode back to the correct default automatically.
+  Also updated `SAVE_SYSTEM`'s own schema comment (`mruby-lcf/mrblib/
+  schema.rb`) to document the confirmed convention, matching the style
+  already used for the message-config cluster just above it. **New coverage
+  in `scripts/rpg2k_logic_check.rb`:** one new check drives `Game::State`
+  directly through all four of this cycle's own genuine capture shapes
+  (untouched, changed, cleared-back-to-default, name-only) and asserts
+  `#to_lsd`'s chunk 101 field presence/values against them exactly, plus a
+  round-trip through `.from_lsd`. **Proved the fix and the new check
+  actually catch the regression:** `git stash` of just `mruby-rpg2k/mrblib/
+  game.rb` reverted to the pre-fix unconditional-write code and rerunning
+  `rpg2k_logic_check.rb` failed the new check immediately with a precise,
+  specific error (`RuntimeError: expected false, got true (field 51 is
+  absent on a freshly-constructed state (no face shown, matching its own
+  schema default))`) before `git stash pop` restored the fix and all checks
+  passed again. Full suite reconfirmed passing, `scripts/
+  rpg2k_logic_check.rb` up by 1: `scripts/rpg2k_scene_check.rb` (929),
+  `scripts/rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb`
+  (1142), `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15); `scripts/rpg2k_save_load_check.rb`'s
+  own 3 pre-existing failures (an unmodelled BGM `balance` field and a
+  `show_x`/`show_y` `nil`-vs-absent mismatch, both unrelated to Change Face
+  Graphic) were independently reconfirmed present identically before and
+  after this cycle's own changes, ruling this cycle out as their cause. This
+  cycle also built the mruby engine binary from source (`cmake --build
+  build --target rpg_maker_clone`, using the two hash-pinned Unicode tables
+  already fetched to `/tmp/tables` by an earlier cycle) and confirmed it
+  links cleanly. Every scratch map/save this cycle's probes produced lived
+  entirely under this session's own scratch dir; the two live fixtures the
+  wine driver copies into `data/` on each run (`Save01.lsd`, `Map0012.lmu`)
+  were restored to their exact original bytes and reconfirmed byte-identical
+  by `md5sum` against the same `c2fa69a0.../3ab5bb01...` values every prior
+  cycle back to #148 recorded; `git status` on `data/` came back clean. No
+  EasyRPG source was consulted for any claim this cycle, and no web search
+  was used either. **Left open for a future cycle:** fields 71-140 of
+  `SAVE_SYSTEM` (the BGM/SE override slots, transition-effect bytes, the
+  121-124 unconditional-write cluster, `battle_background`, `save_count`/
+  `save_slot`, and `atb_mode`) were not spot-checked against a fresh genuine
+  RPG_RT.exe capture this cycle -- their own schema comments already assert
+  specific conventions (unconditional for 121-124, always-present for
+  111-116/131/132, default-gated for 140) inherited from earlier cycles'
+  reasoning rather than this cycle's own new evidence, so a future cycle
+  should verify at least one representative field from each of those named
+  sub-conventions the same way this cycle did for 51-54, rather than
+  assuming cycle #159's "reachable again" note was itself a completed
+  verification; whether RPG2003's own picture-flag commands would ever
+  surface `SAVE_PICTURE` field 9 (cycle #159's own open item); whether a
+  picture mid-Move-Picture at the instant of Erase Picture freezes or keeps
+  gliding (cycle #159's own open item); `SAVE_PICTURE`'s own still-missing
+  `fixed_to_map`/`use_transparent_color` fields (cycle #155/#158); the
+  party-roster-field crash; the autostart-crash mystery; the
+  missing-Picture-asset hang; and every EasyRPG-style citation cycle #154's
+  own repo-wide grep turned up that no cycle has yet touched (see cycle
+  #154's own list, unchanged).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

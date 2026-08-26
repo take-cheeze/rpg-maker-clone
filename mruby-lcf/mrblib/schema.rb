@@ -1566,6 +1566,14 @@ module LCF
       42 => { name: :message_position, type: :int, default: 2 },
       43 => { name: :message_prevent_overlap, type: :bool, default: true },
       44 => { name: :message_continue_events, type: :bool, default: false },
+      # Change Face Graphic (10130) state. Confirmed against a genuine
+      # RPG_RT.exe save under wine (cycle #160): each field is written only
+      # when it differs from its own declared default here, independently of
+      # the other three -- the same per-field "omit at default" convention
+      # already confirmed for the message-config cluster just above (41-44)
+      # and for field 61 (`bgm_stopping`) -- not the unconditional-write
+      # convention fields 121-124 use. See `Game::State#to_lsd`'s own comment
+      # in game.rb for the exact capture shapes tried.
       51 => { name: :face_name, type: :string, default: '' },
       52 => { name: :face_index, type: :int, default: 0 },
       53 => { name: :face_right_position, type: :int, default: 0 },
