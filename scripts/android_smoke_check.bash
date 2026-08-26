@@ -62,8 +62,15 @@ adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${GAME_DIR}/"
 adb logcat -c
 
 echo "== launching ${ACTIVITY}"
-adb shell am start -W -n "${ACTIVITY}" \
-    --es rpg2k_extra_args "--test_play --rpg2k_new_game --timeout_ms=${TIMEOUT_MS}"
+# One argv element, not several: `adb shell` re-joins multiple arguments with
+# plain spaces before sending them to the device's own shell, which then
+# re-splits on those same spaces -- the space-separated extras value below
+# came back apart as separate `am start` options ("Unknown option:
+# --rpg2k_new_game") the first time this ran. Single-quoting the value here
+# and handing the whole command to `adb shell` as one string lets the
+# device's shell -- not adb's own re-join -- be the one place that matters.
+EXTRA_ARGS="--test_play --rpg2k_new_game --timeout_ms=${TIMEOUT_MS}"
+adb shell "am start -W -n ${ACTIVITY} --es rpg2k_extra_args '${EXTRA_ARGS}'"
 
 # Poll logcat for the [RPG2k-MAP] marker (Scene::Map reached) rather than a
 # blind sleep: first-boot ART JIT warmup makes a fixed wait unreliable. Waits
