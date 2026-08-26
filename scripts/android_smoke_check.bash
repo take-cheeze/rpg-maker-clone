@@ -116,7 +116,11 @@ else
     # "last 150 lines" was 100% unrelated system noise, nothing from this
     # app at all). Filtering by this run's own pid keeps the result relevant
     # regardless of how much else logged in between.
-    PID="$(tail -1 "${LOGCAT_OUT}" | awk '{print $3}')"
+    # grep for an actual RPG2K line first: logcat's own
+    # "--------- beginning of crash" buffer-switch marker (not tied to the
+    # -s RPG2K filter at all) can be the literal last line, and it has no
+    # pid column to extract.
+    PID="$(grep ' RPG2K ' "${LOGCAT_OUT}" | tail -1 | awk '{print $3}')"
     if echo "${PID}" | grep -qE '^[0-9]+$' ; then
         echo "full device log lines for this run's pid (${PID}):" >&2
         adb logcat -d --pid="${PID}" >&2 || true
