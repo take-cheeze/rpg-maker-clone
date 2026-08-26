@@ -1633,6 +1633,37 @@ the interpreter-linking slice, in this order:
   the ~24 MB, and getting instrumentation that can actually show it,
   remains open — not resolved by this follow-up, only made safer against
   the unbounded-growth case regardless of what the numbers turn out to be.
+
+  **Second follow-up (2026-08-26): direct instrumentation, since
+  `sceKernelTotalFreeMemSize`/`MaxFreeMemSize` couldn't be trusted.**
+  Rather than continue relying on a kernel API that demonstrably didn't
+  move across a real run, `Bitmap` (`mruby-rgss/src/lib.cxx`) now tracks its
+  own live byte totals directly, through its constructor/destructor/
+  `operator=` — no dependency on the PSP kernel's own reporting at all.
+  Split into two module-level counters by how a buffer's contents came to
+  be, since the two pools this ADR has been treating as one "third pool"
+  actually grow for different reasons and on different schedules: `decoded`
+  (real asset pixels — CharSet/Picture/Chipset/..., what
+  `mruby-rpg2k`'s new `LRUBitmapCache` above now bounds) and `blank`
+  (render targets, canvases, snapshots, and a `Bitmap#clone`'s own copy —
+  RPG::Cache's hue-variant pattern, which allocates via the same
+  constructor but copies an existing buffer rather than decoding one, and
+  is deliberately *not* double-counted against `decoded` even though the
+  bitmap it was cloned from was). `app/psp/main.cxx` surfaces both as new
+  `bmp_decoded`/`bmp_blank` fields on every existing heartbeat marker,
+  alongside `arena_used`. Verified locally: no PSP cross-compiler available
+  in this environment (the standing limitation this ADR has noted
+  throughout), so this was checked by extracting the exact struct/
+  constructor/destructor/`operator=`/deleted-copy-constructor shape into a
+  standalone host-compiled C++ program mirroring `DataType<T>::alloc_obj`'s
+  own `T{args...}` braced-init call pattern (including the untouched 3-arg
+  call sites picking up the new parameter's default correctly) — construct/
+  clone-via-`operator=`/destroy round-trips both counters back to exactly
+  their prior values, in every order tried. Real device numbers, and
+  whatever the `decoded` figure turns out to say about whether Finding 3's
+  "no cap of its own" pool is actually a problem in practice, are — like
+  every other measurement in this section — left to CI's own
+  `psp-smoke-game` run.
 - **P5 — done, including the real-game measurement.** `app/psp/main.cxx` now
   declares `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting
   pspsdk's implicit default, and the `RPG2K_PSP_BRINGUP` heartbeat carries
