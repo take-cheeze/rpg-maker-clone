@@ -615,6 +615,60 @@ assert "RGSS::Bitmap blt" do
   assert_equal 0.0, dst.get_pixel(0, 0).alpha # untouched
 end
 
+assert "RGSS::Bitmap blt_quads matches per-quad blt" do
+  # The batched form is the map renderer's tile path; it must lay down the
+  # exact same pixels as calling #blt once per quad. A quad clipped by both
+  # bitmaps' edges and a partial-alpha source cover the interesting cases
+  # (the batch draws at full opacity only -- #blt's optional opacity stays
+  # single-rect).
+  mk = lambda do |a|
+    s = RGSS::Bitmap.new(3, 3)
+    s.fill_rect(0, 0, 2, 2, RGSS::Color.new(10, 200, 30, a))
+    s.fill_rect(2, 2, 1, 1, RGSS::Color.new(255, 0, 0, 128))
+    s
+  end
+
+  src = mk.call(160)
+  want = RGSS::Bitmap.new(6, 6)
+  want.blt(1, 1, src, RGSS::Rect.new(0, 0, 2, 2))          # plain quad
+  want.blt(4, 0, src, RGSS::Rect.new(2, 2, 1, 1))          # second chip piece
+  want.blt(-1, 4, src, RGSS::Rect.new(1, 1, 2, 2))         # clipped by dst+src
+
+  got = RGSS::Bitmap.new(6, 6)
+  got.blt_quads(
+    1, 1, src,
+    [[0, 0, 0, 0, 2, 2], [3, -1, 2, 2, 1, 1], [-2, 3, 1, 1, 2, 2]]
+  )
+
+  6.times do |y|
+    6.times do |x|
+      w, g = want.get_pixel(x, y), got.get_pixel(x, y)
+      assert_equal w.alpha, g.alpha, "alpha at #{x},#{y}"
+      next if w.alpha == 0.0
+      assert_equal w.red, g.red, "red at #{x},#{y}"
+      assert_equal w.green, g.green, "green at #{x},#{y}"
+      assert_equal w.blue, g.blue, "blue at #{x},#{y}"
+    end
+  end
+
+  # A partial-alpha source over an existing destination still blends in the
+  # batch, same as #blt.
+  base_w = RGSS::Bitmap.new(4, 4)
+  base_g = RGSS::Bitmap.new(4, 4)
+  under = RGSS::Color.new(0, 0, 255, 255)
+  base_w.fill_rect(0, 0, 4, 4, under)
+  base_g.fill_rect(0, 0, 4, 4, under)
+  faint = mk.call(64)
+  base_w.blt(0, 0, faint, RGSS::Rect.new(0, 0, 2, 2))
+  base_g.blt_quads(0, 0, faint, [[0, 0, 0, 0, 2, 2]])
+  4.times do |y|
+    4.times do |x|
+      assert_equal base_w.get_pixel(x, y).green, base_g.get_pixel(x, y).green,
+                   "blend at #{x},#{y}"
+    end
+  end
+end
+
 assert "RGSS::Bitmap copy_blt matches blt onto a cleared destination" do
   # The justification for #copy_blt is that onto a *cleared* destination it
   # shows the same picture as #blt -- that is what lets the map renderer swap

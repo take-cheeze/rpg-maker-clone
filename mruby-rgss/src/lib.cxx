@@ -1837,20 +1837,16 @@ mrb_value bmp_set_pixel(mrb_state* M, V self) {
   return self;
 }
 
-mrb_value bmp_blt(mrb_state* M, V self) {
-  mrb_int x, y;
-  Bitmap* src;
-  V srect;
-  mrb_int opacity = 255;
-  mrb_get_args(M, "iido|i", &x, &y, &src, &DataType<Bitmap>::data_type, &srect,
-               &opacity);
-  Bitmap& dst = bmp_self(M, self);
-  Bitmap& sb = bmp_require(M, src);
-  Rect& rc = DataType<Rect>::get(M, srect);
-  if (opacity < 0)
-    opacity = 0;
-  if (opacity > 255)
-    opacity = 255;
+// The pixel loop #blt and #blt_quads share: composite src_rect over (x, y)
+// at `opacity`, per-pixel, skipping transparent source pixels and anything
+// outside either bitmap. Kept in one place so the batched form cannot drift
+// from the single-rect one.
+static void blt_pixels(Bitmap& dst,
+                       const Bitmap& sb,
+                       mrb_int x,
+                       mrb_int y,
+                       const Rect& rc,
+                       int opacity) {
   for (mrb_int sy = rc.y; sy < rc.y + rc.height; ++sy) {
     for (mrb_int sx = rc.x; sx < rc.x + rc.width; ++sx) {
       if (sx < 0 || sy < 0 || sx >= sb.width || sy >= sb.height)
@@ -1872,6 +1868,70 @@ mrb_value bmp_blt(mrb_state* M, V self) {
       bmp_read(dst, dx, dy, dr, dg, db, da);
       blend_over(dst, dx, dy, r, g, bl, alpha, dr, dg, db, da);
     }
+  }
+}
+
+mrb_value bmp_blt(mrb_state* M, V self) {
+  mrb_int x, y;
+  Bitmap* src;
+  V srect;
+  mrb_int opacity = 255;
+  mrb_get_args(M, "iido|i", &x, &y, &src, &DataType<Bitmap>::data_type, &srect,
+               &opacity);
+  Bitmap& dst = bmp_self(M, self);
+  Bitmap& sb = bmp_require(M, src);
+  Rect& rc = DataType<Rect>::get(M, srect);
+  if (opacity < 0)
+    opacity = 0;
+  if (opacity > 255)
+    opacity = 255;
+  blt_pixels(dst, sb, x, y, rc, opacity);
+  dst.dirty = true;
+  return self;
+}
+
+// Bitmap#blt_quads(x, y, src, quads) -- #blt for a batch of source rects in
+// one dispatch. Each element of `quads` is [qdx, qdy, sx, sy, w, h]: the
+// rect src[sx,sy,w,h] composited at (x+qdx, y+qdy) with full opacity,
+// exactly as an individual #blt call would draw it.
+//
+// It exists because that batching shape is the map renderer's tile hot
+// path. Drawing one chip means several #blt calls (ChipsetLayout#quads),
+// and every animation step re-draws every animated cell on the map -- on
+// the RPG2000 testbed's water-heavy overworld that is hundreds of mruby
+// dispatches plus a Rect allocation apiece, which measured as ~45-60ms
+// spikes once per animation step. One dispatch and no Rect objects turns
+// the spike back into the per-pixel work itself.
+mrb_value bmp_blt_quads(mrb_state* M, V self) {
+  mrb_int x, y;
+  Bitmap* src;
+  V quads_v;
+  // "A" both fetches the batch and enforces that it is an Array.
+  mrb_get_args(M, "iidA", &x, &y, &src, &DataType<Bitmap>::data_type, &quads_v);
+  Bitmap& dst = bmp_self(M, self);
+  Bitmap& sb = bmp_require(M, src);
+  Rect rc;
+  const mrb_int n = RARRAY_LEN(quads_v);
+  for (mrb_int i = 0; i < n; ++i) {
+    V qv = mrb_ary_ref(M, quads_v, i);
+    if (!mrb_array_p(qv) || RARRAY_LEN(qv) != 6)
+      mrb_raisef(
+          M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
+          "blt_quads: each quad must be [qdx, qdy, sx, sy, w, h] (%S)", qv);
+    V nums[6];
+    for (int j = 0; j < 6; ++j) {
+      nums[j] = mrb_ary_ref(M, qv, j);
+      if (!mrb_integer_p(nums[j]))
+        mrb_raisef(
+            M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "RGSSError"),
+            "blt_quads: each quad element must be an Integer (%S)", qv);
+    }
+    rc.x = mrb_integer(nums[2]);
+    rc.y = mrb_integer(nums[3]);
+    rc.width = mrb_integer(nums[4]);
+    rc.height = mrb_integer(nums[5]);
+    blt_pixels(dst, sb, x + mrb_integer(nums[0]), y + mrb_integer(nums[1]), rc,
+               255);
   }
   dst.dirty = true;
   return self;
@@ -6691,6 +6751,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "get_pixel", bmp_get_pixel, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "set_pixel", bmp_set_pixel, MRB_ARGS_REQ(3));
   mrb_define_method(M, bmp, "blt", bmp_blt, MRB_ARGS_REQ(4) | MRB_ARGS_OPT(1));
+  mrb_define_method(M, bmp, "blt_quads", bmp_blt_quads, MRB_ARGS_REQ(4));
   mrb_define_method(M, bmp, "copy_blt", bmp_copy_blt, MRB_ARGS_REQ(4));
   mrb_define_method(M, bmp, "tone_blt", bmp_tone_blt, MRB_ARGS_REQ(2));
   mrb_define_method(M, bmp, "stretch_blt", bmp_stretch_blt,
