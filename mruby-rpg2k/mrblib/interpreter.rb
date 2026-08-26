@@ -3345,11 +3345,25 @@ module Game
     # Set Transparent Flag (Change Player Visibility): toggle whether the party
     # leader's map sprite is hidden. Non-blocking — it only records the flag on
     # the shared game state; the owning scene reads it each frame. The polarity
-    # (param0 zero = hidden) follows RPG_RT's own live source: `Game_Interpreter
-    # ::CommandPlayerVisibility` (`src/game_interpreter.cpp`, code 11310) is
-    # `bool hidden = (com.parameters[0] == 0); player->SetSpriteHidden(hidden);`
-    # -- the reverse of an earlier, uncited pass here that had param0 non-zero
-    # meaning hidden instead. The flag persists through Save / Continue.
+    # (param0 zero = hidden) used to be cited to EasyRPG Player's own
+    # `Game_Interpreter::CommandPlayerVisibility` (`src/game_interpreter.cpp`)
+    # as if that were RPG_RT's own source -- it is not, and that citation was
+    # never checked against the genuine executable (see docs/TODO.md's cycle
+    # #168/#169 entries). Confirmed against genuine RPG_RT.exe under wine this
+    # cycle instead: this exact Nepheshel `Save01.lsd`'s own resolved party
+    # leader (database actor 15, see `Game::State.from_lsd`'s title-chunk
+    # leader fixup) has a blank `charset_name`, so a blank-sprite save can
+    # never show a visibility difference on its own -- worked around by
+    # patching a *scratch copy* of `RPG_RT.ldb` to give that same actor 15 a
+    # real charset (`"mainchr"`/4, actor 1's own graphic; the checked-in
+    # fixture itself was never touched), then splicing a single-command
+    # autostart page (`Set Transparent Flag` + the required `code=0`
+    # terminator -- an event command list with no terminator hangs genuine
+    # RPG_RT.exe, cycle #168's own finding) onto an existing Map0012 event.
+    # param0=0 left the hero invisible for the rest of the run and param0=1
+    # showed it normally (matching the untouched-flag baseline) -- i.e. param0
+    # zero really is hidden, confirming this polarity was already correct,
+    # only its citation was not. The flag persists through Save / Continue.
     def do_player_visibility(cmd)
       @state.player_transparent = cmd.param(0) == 0
     end

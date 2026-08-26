@@ -3641,13 +3641,15 @@ class RPG2k
 
       # Whether the party leader's map sprite is genuinely hidden this frame --
       # the Set Transparent Flag command (11310), which RPG_RT itself calls
-      # "Change Player Visibility" and implements as a real hide. Confirmed
-      # against RPG_RT's own live source: `Game_Interpreter::
-      # CommandPlayerVisibility` (`src/game_interpreter.cpp`) is `bool hidden =
-      # (com.parameters[0] == 0); player->SetSpriteHidden(hidden);` -- a wholly
-      # separate mechanism from #player_translucent? below (`IsSpriteHidden()`
-      # vs `GetOpacity()`, both independently gating `Game_Character::
-      # IsVisible()`).
+      # "Change Player Visibility" and implements as a real hide (param0 zero
+      # hides, non-zero shows -- confirmed against genuine RPG_RT.exe under
+      # wine, cycle #169; not EasyRPG source, correcting a prior comment here
+      # that mislabelled EasyRPG Player's own `src/game_interpreter.cpp` as
+      # "RPG_RT's own live source" -- see `Interpreter#do_player_visibility`'s
+      # own comment in interpreter.rb for the full evidence). A wholly
+      # separate mechanism from #player_translucent? below (a real hide vs. a
+      # translucency tint, independently gating whether the sprite draws at
+      # all).
       def player_hidden?
         @state.player_transparent ? true : false
       end
