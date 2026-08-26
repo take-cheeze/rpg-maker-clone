@@ -399,6 +399,61 @@ reproduction is itself the open question — `android-smoke` will keep
 surfacing it if and when it recurs, now with full pid-scoped context
 attached when it does.
 
+**Update (2026-08-26, later still): it recurred, and this time the
+pid-scoped context above actually caught it.** `print_pid_context()`'s
+fix landed and the crash reappeared a run later; unlike the first three
+occurrences (whose nearby-log correlation turned out, per the correction
+above, to be reading a different run entirely), this one is genuinely
+this crash's own pid, verified against the job's own log. The full
+timeline for this run (times trimmed to `HH:MM:SS.mmm`, tids as logged):
+
+```
+11:34:44.478  PlayerBase::PlayerBase()             tid 3530 (SDLThread)  -- device opened (rgss_audio_init/Mix_OpenAudio)
+11:34:44.551  PlayerBase::stop() from IPlayer       tid 3582              -- AudioTrack stop(15): 0 frames (device-open probe stop)
+...
+11:35:12.080  [RPG2k-MAP] map=371 x=10 y=7                                -- map scene reached
+11:35:12.168  PlayerBase::stop() from IPlayer       tid 3582              -- AudioTrack stop(15): 1218560 frames (title/loading BGM, ~27.6s, stopped)
+11:35:12.221  PlayerBase::stop() from IPlayer       tid 3530 (SDLThread)  -- a SECOND stop(), 53ms later, on our own thread
+11:35:12.539  scudo: Scudo ERROR: invalid chunk state when deallocating address 0x6ffe3a7265f0
+11:35:12.539  F libc: Fatal signal 6 (SIGABRT), tid 3530 (SDLThread)
+```
+
+Two `stop()` calls land within 53ms of each other on two *different*
+threads: tid 3582, which every occurrence so far shows only ever issuing
+`IPlayer` stops (i.e. Android's own OpenSLES/AudioTrack framework thread,
+not anything this engine spawns), and tid 3530, which is `SDLThread` --
+the thread this engine's own `Mix_HaltMusic()`/`Mix_FreeMusic()` calls
+run on, reached via `bgm_play()` (`src/sdl_audio.cxx`) when the map's BGM
+replaces the title/loading BGM. The Scudo abort follows the *second*
+(engine-side) stop by well under a second, on that same thread.
+
+That shape — the platform's own audio-framework thread and this engine's
+BGM-handoff code independently reaching into what is presumably the same
+underlying `AudioTrack`/player object within 53ms of each other, then a
+heap-corruption abort — reads much more like a race in SDL2's Android
+OpenSLES backend's teardown path (freeing/reusing a player object mid-stop
+from the framework's own callback thread while `SDLThread` is also
+stopping/replacing it) than a bug in this repo's own code:
+`src/sdl_audio.cxx`'s `free_music()`/`play_music()` sequence was already
+read in full for this investigation and does not touch any raw buffer or
+handle SDL_mixer doesn't already own, and `mruby-rgss/src/audio.cxx` is a
+thin, SDL-free forwarder with nothing of its own to race. Nothing here
+rules out an SDL2-side bug being *triggered* only through this engine's
+specific stop/reload sequence, so "not this repo's fault" is a lead, not
+a conclusion -- but it does narrow where a fix would have to land if one
+is pursued: SDL2's `src/audio/openslES/` backend (pinned submodule
+commit noted above), not this engine's own audio glue.
+
+This is still consistent with — and now gives concrete shape to — both
+standing hypotheses above: a real SDL2/OpenSLES concurrency bug that
+Scudo happens to catch and glibc happens not to, or that same race
+existing only because `ndk_translation`'s binary translation perturbs
+the timing between these two threads enough to expose it (a race that
+narrow could plausibly *not* reproduce on real arm64 hardware at all).
+Distinguishing those two still needs a real device or an arm64-v8a
+system image, neither available in the environment this port is being
+worked from; still tracked as a follow-up, not fixed here.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
