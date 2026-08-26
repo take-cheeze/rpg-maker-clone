@@ -813,18 +813,24 @@ class RPG2k
 
         @flash_sprite = Sprite.new
         @flash_sprite.z = 450
-        @flash_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        @flash_sprite.bitmap = @flash_bmp
         @flash_sprite.opacity = 0
+        # Built lazily by #update_screen_overlay on the first real Flash
+        # Screen -- most maps never trigger one, so this screen-sized
+        # (307,200 B decoded) buffer shouldn't be every map visit's cost.
+        # @flash_rgb stays nil until then, which is also what forces that
+        # first real flash to allocate it (see the fill_rect branch below).
         @flash_rgb = nil
 
 
         # Weather Effects: rain / snow particles drawn on a screen-sized layer
-        # (under the flash / fade overlays), animated by @anim_frame.
+        # (under the flash / fade overlays), animated by @anim_frame. Most
+        # maps never turn weather on at all, so its screen-sized (307,200 B
+        # decoded) buffer is built lazily by #draw_weather on first actual
+        # use rather than paid by every map visit -- unlike @fade_bmp/
+        # @flash_bmp just above, whose bitmaps #draw_weather's own siblings
+        # need from frame one (a fade is how most map transitions arrive).
         @weather_sprite = Sprite.new
         @weather_sprite.z = 430
-        @weather_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        @weather_sprite.bitmap = @weather_bmp
         @weather_sprite.visible = false
       end
 
@@ -843,6 +849,10 @@ class RPG2k
         else
           rgb = [r, g, b]
           if @flash_rgb != rgb
+            unless @flash_bmp
+              @flash_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+              @flash_sprite.bitmap = @flash_bmp
+            end
             @flash_bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
             @flash_rgb = rgb
           end
@@ -1020,6 +1030,10 @@ class RPG2k
           @weather_sprite.visible = false
           return
         end
+        unless @weather_bmp
+          @weather_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+          @weather_sprite.bitmap = @weather_bmp
+        end
         @weather_sprite.visible = true
         @weather_bmp.clear
         n = weather_particle_count(w)
@@ -1134,8 +1148,10 @@ class RPG2k
       def setup_pictures
         @picture_sprite = Sprite.new
         @picture_sprite.z = 250
-        @picture_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        @picture_sprite.bitmap = @picture_bmp
+        # Built lazily by #draw_pictures on the first frame that actually
+        # shows one -- a map that never runs Show Picture (or a Parallel
+        # Process that only ever shows one on some maps, not this one)
+        # shouldn't pay for this screen-sized (307,200 B decoded) buffer.
         # Toned copies of picture sources, keyed by image + tone (see
         # #toned_picture_src). Picture sources themselves are cached in
         # @picture_cache (see #picture_src).
@@ -9702,6 +9718,11 @@ class RPG2k
         sig = pictures_signature pics, cam_x, cam_y
         return if sig == @pictures_sig
         @pictures_sig = sig
+        return if pics.empty? && @picture_bmp.nil?
+        unless @picture_bmp
+          @picture_bmp = Bitmap.new(SCREEN_W, SCREEN_H)
+          @picture_sprite.bitmap = @picture_bmp
+        end
         @picture_bmp.clear
         return if pics.empty?
         # An erased id's own `Game::Picture` object lingers in `@state.
