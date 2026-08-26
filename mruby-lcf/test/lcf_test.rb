@@ -480,7 +480,7 @@ assert "LCF::SaveData teleport targets, map events and pictures" do
   assert_equal [0x02, 0x03], save.map_events.chip_replacement_lower
 
   assert_equal "Fog", save.pictures[1].name
-  assert_true save.pictures[1].visible
+  assert_true save.pictures[1].use_transparent_color
   assert_equal 150, save.pictures[1].zoom
   assert_equal 20, save.pictures[1].tone_red
 end
