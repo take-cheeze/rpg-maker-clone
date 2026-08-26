@@ -55,7 +55,15 @@ STAGING="/data/local/tmp/nepheshel"
 adb shell rm -rf "${STAGING}"
 adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${STAGING}/"
 echo "== copying Nepheshel into ${GAME_DIR} as ${PACKAGE}"
-adb shell run-as "${PACKAGE}" sh -c "mkdir -p '${GAME_DIR}' && cp -r '${STAGING}/.' '${GAME_DIR}/'"
+# One argv element again (see the `am start` comment below): `adb shell`
+# re-joins several arguments with plain spaces, so the unquoted `&&` between
+# mkdir and cp came back apart as two separate remote commands ("mkdir:
+# Needs 1 argument") instead of staying inside sh -c's one string. Handing
+# adb the whole thing pre-quoted, with the sh -c argument itself
+# double-quoted, keeps the remote shell's own top-level parse from splitting
+# on that `&&` before sh -c ever sees it.
+COPY_CMD="mkdir -p '${GAME_DIR}' && cp -r '${STAGING}/.' '${GAME_DIR}/'"
+adb shell "run-as ${PACKAGE} sh -c \"${COPY_CMD}\""
 adb shell rm -rf "${STAGING}"
 
 adb logcat -c
