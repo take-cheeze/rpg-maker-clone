@@ -112,8 +112,28 @@ its dispatch function is the simplest of the four (no private prerequisites
 of its own beyond calling `mruby-rpgxp`'s function first), so the residual
 risk is low, but a real VX boot check is follow-up work.
 
-No byte-count measurement was taken for this change (ADR 0047's Finding 1
-numbers are the closest reference point, for a different target). Measuring
-the actual live-heap delta per maker, and deciding whether `mruby-lcf` and
-similar "explicitly declared but really only used by one maker" gems are
+**Measured** (2026-08-26, host x86-64, same methodology as ADR 0047's Finding
+1: a plain `mrb_state`, default allocator, no LVGL pool in the way, median
+`/proc/self/status` VmRSS delta over 20 runs per mode, built from this
+project's own `3rd/mruby` + gem sources against `build/mruby/host/lib/libmruby.a`):
+
+| mode (`mrb_open_core()` + ...)      | median ΔVmRSS | vs. `mrb_open()` (all four makers) |
+|--------------------------------------|--------------:|------------------------------------:|
+| `mrb_open()` (old, unconditional)    |     3488 KB   |                                    — |
+| shared gems + `mruby-rpg2k`          |     3096 KB   |               392 KB less (~11%)    |
+| shared gems + `mruby-rpgxp`          |     2612 KB   |               876 KB less (~25%)    |
+| shared gems + `mruby-rpgvx`          |     2748 KB   |               740 KB less (~21%)    |
+| shared gems + `mruby-mvjs` (MV/MZ)   |     2320 KB   |              1168 KB less (~33%)    |
+
+Every maker now costs meaningfully less than the old unconditional
+`mrb_open()`, confirming the change delivers on ADR 0047 Finding 1's premise
+(paying for classes a run will never touch). RPG2000/2003 sees the smallest
+win: `mruby-rpg2k` is the smallest of the four maker gems, so skipping the
+other three (which include the larger `mruby-rpgxp`/`mruby-rpgvx`/`mruby-mvjs`)
+is proportionally less of its own baseline than for, say, MV/MZ. These are
+host x86-64 numbers with no LVGL pool involved (see ADR 0047 Finding 1's own
+caveat: a 32-bit target's `RVALUE`/`mrb_value` sizes roughly halve, so the
+device-side delta is plausibly smaller in absolute terms but not by an order
+of magnitude); a PSP/Wio-side measurement, and deciding whether `mruby-lcf`
+and similar "explicitly declared but really only used by one maker" gems are
 worth narrowing further, are both left as follow-ups.
