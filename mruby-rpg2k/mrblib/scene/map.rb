@@ -257,7 +257,10 @@ class RPG2k
         # Tiles #warn_stale_terrain has already reported this visit -- see
         # #terrain_row_at.
         @warned_stale_terrain = {}
-        @page_revision = page_revision
+        # Per-event condition ids are per map: event ids repeat across maps,
+        # and a memo left from the previous visit would answer for the wrong
+        # pages (see #page_condition_ids).
+        @page_condition_ids = {}
         build_events
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
@@ -3275,15 +3278,14 @@ class RPG2k
       # countdown). Rather than flagging each command — which silently misses
       # any path that is not an event command, like using an item from the menu
       # — this watches the revision counters those carry, so every writer is
-      # covered by construction. Timer1's seconds figure has no revision
-      # counter of its own, but it only ever changes once a second (it is
-      # already whole seconds -- #timer_seconds), so folding it into the sum
-      # catches exactly the frame a Timer condition's threshold is crossed
-      # without sweeping every frame in between.
-      def page_revision
-        rev(@state.switches) + rev(@state.variables) + rev(@state.party) +
-          @state.timer_seconds
-      end
+      # covered by construction, and the switches/variables also record *which*
+      # ids were written, so a frame where a parallel process ticks an
+      # unrelated counter re-selects only the events reading it (see
+      # #pages_changed?). Timer1/Timer2 have no revision counter of their own,
+      # but they only ever change once a second (they are already whole
+      # seconds -- #timer_seconds), so comparing the swept second catches
+      # exactly the frame a Timer condition's threshold is crossed without
+      # sweeping every frame in between.
 
       # A collaborator's revision counter, or 0 for one that keeps none (the
       # party stand-ins some harnesses pass in). A source that cannot report a
@@ -3297,9 +3299,6 @@ class RPG2k
       # unless a page actually flipped, so a parallel process writing a variable
       # every frame costs a sweep, not a rebuild.
       def refresh_event_pages
-        rev = page_revision
-        return if rev == @page_revision
-        @page_revision = rev
         return unless pages_changed?
         rebuild_events_preserving_positions
       rescue StandardError => e
@@ -3310,22 +3309,84 @@ class RPG2k
       # is running. Walks the *map's* events rather than the live list, so it
       # also catches an event that has no active page at all right now and has
       # just gained one — those are absent from @events entirely.
+      #
+      # The walk is not over every event every time. Switches and Variables
+      # record *which* ids were written since the last sweep (a parallel
+      # process ticking a frame counter would otherwise drag the whole map
+      # through re-selection every frame), and #page_condition_ids knows which
+      # ids each event's pages read, so an event whose conditions reference
+      # nothing that moved is skipped outright. Party and timer movement still
+      # re-select everything they can affect: the party has no per-id record
+      # (an item or a member appeared), and a timer-conditioned event flips on
+      # the timer's own schedule.
       def pages_changed?
         evs = @map.unit.events
         return false unless evs
+        sw = @state.switches
+        va = @state.variables
+        sw_dirty = sw.dirty
+        var_dirty = va.dirty
+        party_moved = rev(@state.party) != @swept_party_revision
+        timer_moved = @state.timer_seconds != @swept_timer_seconds ||
+                      @state.timer2_seconds != @swept_timer2_seconds
+        if sw_dirty.nil? && var_dirty.nil? && !party_moved && !timer_moved
+          return false
+        end
         live = {}
         @events.each { |e| live[e[:id]] = e }
         changed = false
         evs.each do |id, src|
           next if changed || @erased_events[id]
-          selected = Game::EventPage.select(src.pages, @state.switches,
-                                            @state.variables, @state.party,
+          ids = page_condition_ids(id, src)
+          unless party_moved ||
+                 (timer_moved && ids[:timer]) ||
+                 ids_touch?(ids[:switches], sw_dirty) ||
+                 ids_touch?(ids[:variables], var_dirty)
+            next
+          end
+          selected = Game::EventPage.select(src.pages, sw, va, @state.party,
                                             @state.timer_seconds, @state.timer2_seconds)
           page = selected && selected[1]
           e = live[id]
           changed = true unless page.equal?(e && e[:page])
         end
+        sw.clear_dirty
+        va.clear_dirty
+        @swept_party_revision = rev(@state.party)
+        @swept_timer_seconds = @state.timer_seconds
+        @swept_timer2_seconds = @state.timer2_seconds
         changed
+      end
+
+      # Which condition inputs one map event's pages read, memoised per event
+      # source: `{switches:[id..], variables:[id..], timer:bool}`. Item and
+      # actor conditions are deliberately absent — they read the party, whose
+      # revision gates them wholesale. Extracted from the raw page conditions
+      # (the same fields #active? tests), so the skip can never disagree with
+      # the selection it guards.
+      def page_condition_ids(id, src)
+        (@page_condition_ids ||= {})[id] ||= begin
+          sw = []; var = []; timer = false
+          (src.pages || []).each do |_pid, page|
+            cond = page && page.condition
+            next unless cond
+            flags = cond.flags || 0
+            sw << cond.switch_a_id if flags & Game::EventPage::SWITCH_A != 0
+            sw << cond.switch_b_id if flags & Game::EventPage::SWITCH_B != 0
+            var << cond.variable_id if flags & Game::EventPage::VARIABLE != 0
+            timer = true if flags & (Game::EventPage::TIMER | Game::EventPage::TIMER2) != 0
+          end
+          { switches: sw, variables: var, timer: timer }
+        end
+      end
+
+      # Whether any of `ids` appears in the sweep's dirty set (nil dirty set =
+      # a bulk write, relevant to everything; nil/empty ids = this event does
+      # not read this input at all).
+      def ids_touch?(ids, dirty)
+        return true if dirty.nil?
+        return false if ids.nil? || ids.empty? || dirty.empty?
+        ids.any? { |i| dirty.key?(i) }
       end
 
       # Rebuild the runtime events for the newly-selected pages, carrying each
@@ -7772,7 +7833,7 @@ class RPG2k
         # reasoning as the tables above -- a stale reference on the map being
         # left says nothing about the destination.
         @warned_stale_terrain = {}
-        @page_revision = page_revision
+        @page_condition_ids = {}
         build_events
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
