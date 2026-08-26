@@ -5768,6 +5768,163 @@ The work below is roughly ordered by the critical path to a walkable game
   newly-honest "NOT independently confirmed" claims cycle #177 flagged
   (Change Items' signed-value asymmetric guard, Teleport's RPG2003-only
   facing-parameter gate, the `block_pending_*` message-blocking helpers).
+  ✅ **Follow-up (cycle #180, 2026-08-26): got a direct genuine RPG_RT.exe
+  measurement of the SPEED_UP ceiling itself (cycle #179's own left-open
+  item), on a different, uncrowded map -- narrowed the question from "not
+  measured at all" to "some ceiling clamp is confirmed to exist; its exact
+  internal value (4 vs. 5) is not yet pinned to single-frame precision."
+  Also found and fixed a real, independent stale-comment bug (not a
+  behavioral bug) in `Scene::Map`'s own `SLIDE_UNITS` documentation, plus one
+  more illegitimate EasyRPG-source citation embedded in the same block. No
+  changelog fragment: nothing in `mrblib` behavior changed this cycle, only
+  comments.
+  **Method:** cycle #179 diagnosed Map0068's crowded-map colour-mask problem
+  but did not attempt (b) hunting for a similar route on a less-crowded map
+  or (c) a distance-in-fixed-time discriminator -- both tried this cycle. A
+  scratch scan (`scan_speedup.rb`/`dump_speed_moves.rb`, over this
+  codebase's own `LCF::MapUnit`, not EasyRPG) of every Nepheshel map's own
+  move routes for runs of >=4 consecutive Speed Ups found the "up-first"
+  template (page-default speed, then Speed Ups with no preceding Speed Down)
+  reused across seven maps (0068, 0089, 0142, 0159, 0166, 0178, 0179) as a
+  shared "will-o-wisp" monster design -- all with an *identical* internal
+  structure: 8 consecutive Speed Ups from the page's own move_speed 1
+  (internal 0) default, **immediately followed by 8 Transparency-Up
+  commands** before the discriminating move commands ever run, so every one
+  of these maps' own dash segments is dimmed, not fully hidden. `Map0089.lmu`
+  (20x15, one screen) was picked over Map0068 specifically because its own
+  event 25 ("emy2526") is the *only* event on the map with a real, non-hidden
+  charset -- its 24 sibling events all use a `"hidden03"` placeholder
+  graphic on switch-gated pages, confirmed inactive by default (`dump_cond.rb`
+  read every page's own condition flags/switch ids directly from the
+  `.lmu`), so there is no crowded-map colour-mask problem here at all.
+  Event 25's own page 2 (the one carrying the Speed Up route) needed switch
+  262 on (`flags=2`, switch_b only) to activate; `set_switch89.rb` flipped it
+  in a scratch copy of `Save01.lsd` (extending the save's own empty
+  `switches` bool-array to 262 entries, reassigning the mutated `SAVE_SYSTEM`
+  chunk back through the parent's own `[]=` before `#save_to`, per cycle
+  #176's in-place-mutation caveat) alongside `gen-rpg2k-save.rb --map 89 --at
+  19,0 --facing down --clear-scene` (party actor 15/"Renamed" is not
+  database actor 1, so `Map0089.lmu` event 23's own actor-gated autostart
+  page -- checked first, per cycle #179's own new routine -- stays inactive
+  too; the map's one unconditional parallel-process event, 24, only touches
+  switches/variables, confirmed by reading its own command list, so it can't
+  contaminate the run either). Standing at (19,0) keeps the party 18
+  Manhattan tiles from the event's own (8,7) spawn -- more than the 12
+  (slow approach) + 3 (post-Speed-Up Move Toward Hero) commands guaranteed
+  to close distance before the discriminating segment plays, so no
+  contact-triggered battle interrupts the probe (unlike cycle #179's two
+  failed Map0068 attempts at 23 and 8 tiles).
+  Genuine RPG_RT.exe was booted under wine exactly as cycles #178-179
+  (`~/.wine-nepheshel32`, Xvfb, matchbox, `LIBGL_ALWAYS_SOFTWARE=1`,
+  `LANG=ja_JP.UTF-8`, tight `xwd`-only capture loop, ~51-57fps) for two runs
+  (16s then 50s, `wineserver -k` + sleep between). Because the dash is
+  dimmed rather than invisible, a **relative-hue mask** (green-tinted:
+  `G-R>8 and G-B>8`; pink-tinted: `R-G>25`) replaced cycle #179's
+  fixed-colour-plus-fuzz mask, since transparency blends every sprite pixel
+  uniformly toward the grey background and a fixed-colour mask loses the
+  dimmed sprite entirely (confirmed directly: sampling the dimmed sprite's
+  own pixels mid-dash gave colours like `#425531`/`#394931`, nowhere near
+  the fully-opaque `#298208`/`#5AC310` the fixed mask needed). This tracked
+  the wisp continuously through the whole capture, including every dash.
+  **Result:** the wisp's own slow initial approach (internal 0, unaffected
+  by any clamp question) crossed each tile in ~50-55 observed frames -- close
+  to, but a systematic ~15-20% under, the 64-frame/tile prediction newly
+  confirmed correct this same cycle (see the `SLIDE_UNITS` fix below) --
+  establishing this measurement's own baseline noise level. Five clean
+  post-Speed-Up dash segments (bounded by >=4-frame position-stable runs on
+  each side, screenshotted and visually confirmed as genuine multi-frame
+  slides -- see the cropped frame strip saved to this cycle's scratchpad --
+  not a single instant jump) measured 3.9-9.2 frames/tile, most of that
+  spread plausibly from Move Random's own occasional backtracking (net
+  displacement undercounts true path length whenever a Move Random step
+  doubles back, which this measurement can't detect or correct for).
+  **This directly and cleanly rules out an unclamped raw internal 8**
+  (0 + 8 Speed Ups with no ceiling at all): the corrected frames/tile table
+  predicts 64 / (1 << 8) = 0.25 frames/tile at that raw value -- several
+  tiles completing within a single video frame, an instant teleport with no
+  visible intermediate frames -- which is not what was observed even once
+  across five separate dashes over a 50-second capture; every dash was a
+  clearly gradual, multi-frame (9-14 captured frames) slide. The measured
+  range brackets the existing ceiling-of-5 prediction (2 frames/tile) and a
+  hypothetical ceiling-of-4 (4 frames/tile) far better than anything close to
+  instantaneous, but given the baseline's own ~15-20% systematic bias and
+  Move Random's backtracking, **this cycle cannot distinguish ceiling 4 from
+  ceiling 5 to single-frame precision** -- so the code's existing `[..., 5].min`
+  clamp is corroborated (no-clamp-at-all is now positively excluded, not just
+  "not contradicted") but not confirmed to its exact value. No behavioral
+  change was made on this evidence: the existing clamp is plausible and
+  actively supported by this cycle's own measurement, not merely unrefuted.
+  **Also found, fixed in passing:** `Scene::Map`'s own `SLIDE_UNITS` header
+  comment (`mruby-rpg2k/mrblib/scene/map.rb`) stated the frames-per-tile
+  table as `32, 16, 8, 4, 2, 1` for internal move_speed 0..5, and separately
+  claimed the *default* internal value was 2 (real Move Speed 3) yielding 8
+  frames/tile -- both wrong, and mutually inconsistent with each other
+  (`64/(1<<2)` is 16, not 8). The actual, tested code
+  (`scripts/rpg2k_scene_check.rb`'s own "Move Speed is no longer dead" check,
+  `eq 1/2/8/32` for `walk_slide_step(0/1/3/5)`, reconfirmed passing this
+  cycle) computes `1 << s` directly with no offset, giving `64, 32, 16, 8, 4,
+  2` for s = 0..5 -- and the *hero's* own default is internal 3 (real Move
+  Speed 4, RPG_RT's own `Game_Player` ctor default), not internal 2, which is
+  what actually yields the unchanged 8-frames/tile baseline; an ordinary
+  *event*'s default page Move Speed (real 3, internal 2) deliberately yields
+  16, half the hero's rate (see the "converts from RPG_RT's real 1..6 scale,
+  not fed through raw" check in the same test file). This cycle's own fresh
+  wine measurement (the ~50-55-frames/tile internal-0 approach above)
+  independently corroborates the corrected 64-frames/tile prediction and
+  rules out the old comment's 32. The stale comment also carried a direct
+  EasyRPG Player source citation (`1 << (1 + GetMoveSpeed())`,
+  `src/game_character.cpp`) describing a formula that does not even match
+  this codebase's own actual, tested code -- removed along with the rest of
+  the incorrect text, not left standing. This is a documentation-only fix:
+  nothing in `mrblib`'s actual behavior changed, and the existing test
+  baseline (929 `rpg2k_scene_check.rb` checks) was unaffected, confirming
+  the code was already correct and only the comment was wrong.
+  **Verification:** `ruby -c` clean on both edited files; `git diff --
+  mruby-rpg2k/mrblib/game.rb mruby-rpg2k/mrblib/scene/map.rb | grep -vE
+  "^[+-][[:space:]]*#"` shows nothing beyond `+++`/`---`/context noise
+  (comment-only in both files); `cd build && ctest -R mruby_test` passed
+  (12.41s); `scripts/rpg2k_logic_check.rb` (1150), `scripts/
+  rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) all matched cycles #175-179's own
+  recorded baselines exactly; `scripts/rpg2k_save_load_check.rb`
+  reconfirmed at exactly its 3 known pre-existing, unrelated failures (BGM
+  `balance` x2, picture `show_x`/`show_y`), and its own printed save summary
+  (`leader="Renamed" ... map=12 pos=(40,15)`) confirms `Save01.lsd` is back
+  to its pre-cycle state. No `.cxx`/`.hxx`/`.cc`/`.h`/`CMakeLists.txt` was
+  touched, so no `clang-format`/`cmake-format` step applies. `data/` was
+  left byte-identical: `md5sum` reconfirmed `Save01.lsd` (edited to
+  reposition the party and flip switch 262 for the wine boots, restored from
+  a pre-edit backup and confirmed byte-for-byte immediately after), plus
+  `Map0089.lmu` and `RPG_RT.ldb` (only ever read, never opened for writing)
+  all unchanged from their pre-cycle values. `git status --porcelain` shows
+  only `mruby-rpg2k/mrblib/game.rb` and `mruby-rpg2k/mrblib/scene/map.rb`
+  changed (the pre-existing dirty `3rd/mruby` submodule pointer predates
+  this cycle and was not touched). Every wine/Xvfb/matchbox process this
+  cycle started was confirmed terminated (`ps aux` clean) between and after
+  both boots, with an explicit `wineserver -k` + sleep before each. No
+  EasyRPG source was consulted for any behavioral claim -- the removed
+  citation was read only long enough to know to delete it, never treated as
+  evidence; no web search was used.
+  **Left open for a future cycle, in priority order:** (1) pinning the
+  SPEED_UP ceiling's exact internal value (4 vs. 5) -- needs a discriminating
+  template with no Move Random (so net displacement is trustworthy as a
+  path-length proxy) and no Transparency-Up/Down (so the sprite needs no
+  relative-hue tracking, eliminating the dimmed-sprite jitter this cycle's
+  own baseline measurement shows ~15-20% systematic bias from); none of this
+  game's own seven "up-first" wisp routes offer that combination, so this
+  likely needs either a different genuine RPG2000/2003 test-bed game or a
+  single-parameter edit to strip the Transparency/Random commands from one
+  of these routes in a scratch copy (per cycles #137-139/#176/#178's
+  single-parameter-splice discipline) rather than a from-scratch synthetic
+  route (cycles #137-139's own crash risk); (2) `mrblib/game.rb`'s own
+  ~163-instance citation count, still unread-through-in-full; (3) the two
+  `scripts/` check files (`rpg2k_logic_check.rb`/`rpg2k_scene_check.rb`,
+  ~395 instances) as a possibly-different-cadence cleanup; (4)
+  `interpreter.rb`'s own remaining newly-honest "NOT independently
+  confirmed" claims cycle #177 flagged (Change Items' signed-value
+  asymmetric guard, Teleport's RPG2003-only facing-parameter gate, the
+  `block_pending_*` message-blocking helpers).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

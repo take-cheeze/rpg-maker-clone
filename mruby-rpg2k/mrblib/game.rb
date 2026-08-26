@@ -6875,21 +6875,61 @@ module Game
       # trace's slope visibly drops back to the slow regime. That lands
       # squarely on the floor-confirmed 0.4s prediction (~4 frames/tile) and
       # rules out the unclamped 1.6s alternative by a wide margin (a 55fps
-      # capture cannot mistake 0.4s for 1.6s). The SPEED_UP ceiling (5) was
-      # not itself isolated this way -- Map0068's own events 1-3 (cycle
-      # #178's own left-open item; a "default speed + 4 Speed Ups" route
-      # with no slow calibration phase beforehand) sit on a much larger,
-      # wisp-crowded map where every position far enough from the event to
-      # survive its own fast, through-walls dash toward the party without
-      # triggering contact first is also crowded with several other,
-      # similarly-coloured wisp events, and narrowing the colour mask to a
-      # screen-space strip still caught more than one blob; not resolved
-      # this cycle (see docs/TODO.md). Standing evidence for it instead:
-      # this same clamp expression's mirror-image half (the floor) is now
-      # wine-confirmed, and a real, shipped move route (Map0068 above)
-      # already authors exactly 4 consecutive Speed Ups from the page
-      # default -- reaching this ceiling exactly, not short of or past it --
-      # and visibly trusts that not to wrap or error.
+      # capture cannot mistake 0.4s for 1.6s).
+      #
+      # The SPEED_UP ceiling (5) got a direct measurement of its own in
+      # cycle #180, on a different real route from a different, uncrowded
+      # map (`Map0089.lmu` event 25, a lone "will-o-wisp" -- the only visible
+      # sprite on this 20x15 map, its 24 sibling events all switch-gated off
+      # by default; switch 262 flipped on in a scratch save to activate its
+      # page 2, per this project's own established switch-flip technique).
+      # Its own repeating route authors 8 consecutive Speed Ups from the
+      # page's move_speed-1 (editor) default -- internal 0 -- immediately
+      # followed by 8 Transparency-Up commands and then 7 move commands
+      # (3 Move Toward Hero, 4 Move Random) at whatever speed those Ups
+      # left behind, so the dash itself is dimmed but not literally
+      # invisible: a relative-hue mask (green/pink tinted relative to the
+      # grey background, robust to uniform transparency blending, unlike a
+      # fixed-colour mask which loses the dimmed sprite entirely) tracked it
+      # through the whole segment. Result, captured under wine the same way
+      # as the floor probe (`~/.wine-nepheshel32`, tight `xwd`-only loop):
+      # the post-Speed-Up dash is clearly **not** instantaneous -- it shows a
+      # smooth, multi-frame slide (visibly interpolating across 9-14 capture
+      # frames per dash, several times, over a 50s capture) covering roughly
+      # 1-3 tiles each time. This alone rules out an unclamped raw internal
+      # 8 (0+8 Speed Ups with no ceiling): `Scene::Map`'s own frames/tile
+      # table (see `SLIDE_UNITS`, corrected this same cycle) predicts 64 /
+      # (1 << 8) = 0.25 frames/tile at that raw value -- multiple tiles
+      # completing within a single video frame, i.e. an instant teleport
+      # with no visible intermediate frames, which is not what was observed.
+      # The measured frames/tile across five clean dash segments (5.6-9.2,
+      # skewed upward by Move Random's own occasional backtracking, which
+      # this net-displacement measurement can't distinguish from a genuinely
+      # slower dash) brackets the internal-5 ceiling's own prediction (2
+      # frames/tile) and internal-4's (4 frames/tile) far better than
+      # anything close to instantaneous, but the exact internal value (4 vs.
+      # 5) is NOT pinned down to single-frame precision this cycle -- Move
+      # Random's backtracking and the dimmed-sprite centroid's own animation
+      # jitter both bias the measurement, and the same methodology's
+      # baseline (the *slow*, internal-0 initial approach on this same
+      # route, unaffected by backtracking since Move Toward Hero doesn't
+      # double back) itself reads ~50-55 frames/tile against a clean 64
+      # prediction -- a ~15-20% systematic undercount this measurement
+      # doesn't fully explain, so the ceiling's exact value is left an open
+      # follow-up rather than rounded to either 4 or 5 on this evidence
+      # alone. **Conclusion: some ceiling clamp genuinely holds in RPG_RT.exe
+      # (ruling out no-clamp-at-all); this codebase's existing ceiling of 5
+      # is plausible and not contradicted, but not yet confirmed to the
+      # exact internal value.** A real, shipped move route (Map0068, cycle
+      # #178) also authors exactly 4 consecutive Speed Ups from its own page
+      # default (internal 2) -- reaching internal 5 exactly if the ceiling
+      # is 5, or overshooting a ceiling of 4 by one wasted command if it
+      # isn't -- corroborating evidence either way, not a tiebreaker.
+      # Left for a future cycle: a discriminating template with no Move
+      # Random (so net displacement is trustworthy) and no transparency (so
+      # the sprite needs no relative-hue tracking at all) would pin the
+      # exact value down; none of this game's own authored "up-first" wisp
+      # routes offer that combination.
       when SPEED_UP   then character.move_speed = [character.move_speed + 1, 5].min; [:effect, true]
       when SPEED_DOWN then character.move_speed = [character.move_speed - 1, 0].max; [:effect, true]
       when FREQ_UP    then character.move_frequency = [character.move_frequency + 1, 8].min; [:effect, true]

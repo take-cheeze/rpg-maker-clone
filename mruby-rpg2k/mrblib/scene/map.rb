@@ -19,17 +19,26 @@ class RPG2k
       ROWS = SCREEN_H / TILE + 1
       # Sub-pixel movement model. RPG2000's Move Speed (1..6) is no longer dead:
       # the per-frame slide advance for a character of internal move_speed `s`
-      # is `1 << s` quarter-tile units (a full tile is SLIDE_UNITS), so
-      # frames-per-tile is 64 / (1 << s) = 32, 16, 8, 4, 2, 1 for s = 0..5. The
-      # default (s = 2, i.e. real Move Speed 3, "Normal") yields 8 frames/tile,
-      # identical to the old hardcoded 2px/frame, so the baseline is untouched
-      # -- only the previously-ignored non-default speeds (and the SPEED_UP /
-      # SPEED_DOWN move-route commands) now take effect. The port's internal
-      # move_speed is real RPG_RT's own 1-indexed Move Speed minus 1 (matching
-      # EasyRPG's `1 << (1 + GetMoveSpeed())`, `src/game_character.cpp`), which
-      # is why the formula here is plain `1 << s`; see #page_move_speed for
-      # where that conversion happens and docs/TODO.md "Move Speed is dead
-      # code".
+      # (real RPG_RT's own 1-indexed Move Speed minus 1; see #page_move_speed
+      # for where that conversion happens) is `1 << s` quarter-tile units (a
+      # full tile is SLIDE_UNITS), so frames-per-tile is 64 / (1 << s) = 64,
+      # 32, 16, 8, 4, 2 for s = 0..5 -- confirmed by both #walk_slide_step's
+      # own check ("Move Speed is no longer dead", scripts/rpg2k_scene_check.rb:
+      # eq 1/2/8/32 for s = 0/1/3/5) and, independently, a genuine RPG_RT.exe
+      # wine probe (cycle #180: Nepheshel `Map0089.lmu` event 25's own s = 0
+      # approach crossed each tile in roughly 50-55 observed captured frames
+      # against this 64-frame/tile prediction, not the 32 the old text here
+      # claimed -- close enough, given ~57fps sampling of a ~60fps target, to
+      # rule out 32 outright). The *hero*'s own default internal move_speed is
+      # 3 (real RPG_RT's Game_Player ctor default, Move Speed 4), giving 8
+      # frames/tile -- identical to the old hardcoded 2px/frame, so the
+      # on-foot baseline is untouched. An ordinary *event*'s default page Move
+      # Speed is real 3 ("Normal", internal 2), giving 16 frames/tile -- half
+      # the hero's own rate, and deliberately so (see the "converts from
+      # RPG_RT's real 1..6 scale, not fed through raw" check) -- so only the
+      # previously-ignored non-default speeds (and the SPEED_UP/SPEED_DOWN
+      # move-route commands) now take effect for both. See docs/TODO.md "Move
+      # Speed is dead code" for the original fix this replaced.
       SLIDE_UNITS = TILE * 4   # quarter-tile units per tile (64)
 
       # Jump slide advance (quarter-tile units/frame) by move_speed, port 0..5.
