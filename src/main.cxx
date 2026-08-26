@@ -6,6 +6,7 @@
 #include <memory>
 #include <regex>
 #include <string>
+#include <vector>
 
 #include <SDL2/SDL.h>
 #include <lvgl.h>
@@ -1080,7 +1081,30 @@ int main(int argc, char** argv) {
     if (*host_env != '\0')
       FLAGS_rgss_script_host = script_host_env_enabled(host_env);
 
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
+  // Parse a copy, not argv itself. ParseCommandLineFlags's remove_flags=true
+  // fixup (3rd/gflags/src/gflags.cc) does `(*argv)[first_nonopt-1] =
+  // (*argv)[0]` to compact flags out of the array in place -- duplicating
+  // argv[0]'s pointer into a later slot rather than shifting every element.
+  // Harmless wherever argv came from the OS/libc, which never frees it, but
+  // fatal on Android: SDL's own JNI glue synthesizes this argv from Java
+  // (nativeRunMain, 3rd/SDL/src/core/android/SDL_android.c) and frees every
+  // element itself once main() returns, still counting up to its own
+  // original (larger) argc -- so it frees that duplicated pointer twice.
+  // Confirmed with AddressSanitizer on a real device (double-free, both
+  // stacks landing on this exact SDL_strdup/SDL_free pair) after
+  // docs/adr/0058-android-port.md's android-smoke investigation had chased
+  // Scudo's downstream, much-later abort through several false leads
+  // (an audio backend race, a report-file write) that never survived
+  // testing. The copy's backing storage outlives this function (a local
+  // std::vector, not touched again after this block), so nothing downstream
+  // needs to change.
+  std::vector<char*> argv_copy(argv,
+                               argv + argc + 1);  // + argv[argc] == nullptr
+  int parse_argc = argc;
+  char** parse_argv = argv_copy.data();
+  gflags::ParseCommandLineFlags(&parse_argc, &parse_argv, true);
+  argc = parse_argc;
+  argv = parse_argv;
   if (FLAGS_game_dir.empty()) {
 #ifdef __EMSCRIPTEN__
     // A game directory is baked into the virtual filesystem at /game (see the

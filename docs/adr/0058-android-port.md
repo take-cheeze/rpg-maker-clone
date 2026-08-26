@@ -751,6 +751,147 @@ update could not stand up, or a close manual read of `build()`'s
 `mrb_gc_arena_restore` sequence around the `mrb_funcall` round-trips in
 `error_dump_report()`/`call()`, neither completed here.
 
+**Update (2026-08-27): root-caused and fixed.** The Android-side ASan build
+the previous update couldn't stand up got stood up: `app/android/app/
+build.gradle`'s `externalNativeBuild.cmake` took `-fsanitize=address
+-fno-omit-frame-pointer -g` compile flags and matching linker flags, the
+NDK's own `libclang_rt.asan-aarch64-android.so` was packaged under
+`app/src/main/jniLibs/arm64-v8a/` alongside a `wrap.sh`
+(`app/src/main/resources/lib/arm64-v8a/wrap.sh`, per
+[the NDK's own guide](https://developer.android.com/ndk/guides/asan)) that
+`LD_PRELOAD`s it, `aaptOptions { noCompress "sh" }` and `android:
+extractNativeLibs="true"` (+ matching `packagingOptions.jniLibs.
+useLegacyPackaging true`) worked around two Play-Store-era packaging
+checks that reject a plain script under `lib/<abi>/` (compressed, then
+not page-aligned) that real `.so`s automatically satisfy and a script
+does not. All of this was temporary scaffolding for this diagnostic
+build only — none of it is in the tree now.
+
+It could not run on the emulator this whole investigation had used:
+`wrap.sh`'s `LD_PRELOAD` is set before `ndk_translation` ever sees the
+process, and the emulator's `app_process64` is a real x86_64 binary --
+loading an aarch64 `.so` into it fails at the OS linker, immediately,
+before any of our code runs (`CANNOT LINK EXECUTABLE ... is for
+EM_AARCH64 (183) instead of EM_X86_64 (62)`). The one physical device
+already on hand for this investigation (`C330`, genuine arm64-v8a, no
+translation layer) has no such problem, and running there was always the
+better test of the standing "real bug vs. `ndk_translation` artifact"
+question anyway. `--test_play --error_dump_probe` on it produced a
+complete, symbol-resolved report on the first run:
+
+```
+==PID==ERROR: AddressSanitizer: attempting double-free on 0x...:
+    #1 libSDL2.so+0x2d83ac
+    #2 libSDL2.so+0x2d8814
+    #3 libSDL2.so+0x4c9128
+0x... is located 0 bytes inside of 12-byte region [...]
+freed by thread T16 (SDLThread) here:            (same three frames)
+previously allocated by thread T16 (SDLThread) here:
+    #1 libSDL2.so+0x2d8330
+    #2 libSDL2.so+0x2d8684
+    #3 libSDL2.so+0x2d9e20
+    #4 libSDL2.so+0x4c8d34
+SUMMARY: AddressSanitizer: double-free
+```
+
+`llvm-addr2line` against this build's own unstripped `libSDL2.so`
+resolves every offset to one function: `Java_org_libsdl_app_
+SDLActivity_nativeRunMain` (`3rd/SDL/src/core/android/SDL_android.c`).
+That function is SDL's own JNI entry point on Android: it builds a fresh
+`argv` from the Java `String[]` it's handed (`argv[0] = SDL_strdup(
+"app_process")`, one more `SDL_strdup` per Java arg, line 782), calls
+`SDL_main(argc, argv)` -- our own `main()`, `src/main.cxx` -- and once it
+returns, frees every element: `for (i = 0; i < argc; ++i) SDL_free(
+argv[i]);` (line 807). Both the "previously allocated" and "freed by"
+stacks in the report land on exactly this `SDL_strdup`/`SDL_free` pair,
+for a 12-byte allocation -- `strlen("app_process") + 1`. `argv[0]` itself
+gets freed twice.
+
+The reason: `main()`'s very first line is `gflags::ParseCommandLineFlags(
+&argc, &argv, true)`. With `remove_flags=true`, gflags' own fixup
+(`3rd/gflags/src/gflags.cc`) is `(*argv)[first_nonopt-1] = (*argv)[0];
+(*argv) += (first_nonopt-1); (*argc) -= (first_nonopt-1);` -- it does not
+shift every element to compact recognised flags out; it overwrites the
+*last* flag slot with a copy of `argv[0]`'s pointer, then advances the
+array's own base pointer past the flags. That is a correct, self-contained
+trick when nothing else needs the original array back -- true of the
+libc/OS-owned `argv` every other platform hands `main()`, which nothing
+ever explicitly frees, so gflags quietly leaking one flag's string and
+duplicating `argv[0]`'s pointer into a stale slot is invisible everywhere
+else this engine ships. It is not true on Android, uniquely: `argv` did
+not come from the OS, it came from `nativeRunMain()`, which still holds
+(and, above, still frees) its own original, unmodified `argc`/`argv` --
+completely unaware `main()`'s *local* copies of those variables got
+silently repointed inside gflags. `nativeRunMain()`'s cleanup loop walks
+its own original range and finds `argv[0]`'s pointer sitting in two
+slots: the real `argv[0]`, and the flag slot gflags overwrote to match
+it. `SDL_free()` on the second occurrence is the double-free ASan (and,
+all along, Scudo) caught.
+
+Every earlier finding in this investigation is consistent with this,
+now that the mechanism is known rather than inferred:
+- **Deterministic, not a race** (the local ASan/Valgrind updates above):
+  this fires on *any* run with at least one recognised flag before the
+  first positional argument -- true of every real invocation, self-driving
+  test harness or ordinary launch alike.
+- **Backend- and audio-independent** (the AAudio update above): the bug
+  is in argument parsing, run once at the very top of `main()`, nowhere
+  near `rgss_audio_init()`.
+- **Reproducible via `--error_dump_probe` alone, at full speed** (same
+  update): the probe needs no game, no map, no timeout -- just `main()`
+  returning through `nativeRunMain()`, same as every run does.
+- **Invisible to desktop and to Valgrind** (this ADR's immediately
+  preceding update): no other platform's `main()` gets its `argv` freed
+  by anything after returning, so the same gflags fixup is harmless
+  everywhere else this engine ships -- explaining the "0 errors" verdict
+  on source that does not differ between platforms without needing a
+  libc++/Scudo-internals explanation after all.
+- **Always at the very end of a run, whichever run** (the AAudio update's
+  own re-framing away from "mid-game" and toward "clean-exit shutdown"):
+  correct in spirit, but the actual free that corrupts happens in SDL's
+  JNI glue *after* `SDL_main` returns, not in anything this engine's own
+  shutdown sequence (`rgss_tts_shutdown`/`rgss_audio_shutdown`) does.
+
+The fix (`src/main.cxx`): parse a copy of `argv`, not `argv` itself, so
+gflags' in-place fixup lands on a `std::vector<char*>` local to `main()`
+instead of the array `nativeRunMain()` owns and will free:
+
+```cxx
+std::vector<char*> argv_copy(argv, argv + argc + 1);  // + argv[argc] == nullptr
+int parse_argc = argc;
+char** parse_argv = argv_copy.data();
+gflags::ParseCommandLineFlags(&parse_argc, &parse_argv, true);
+argc = parse_argc;
+argv = parse_argv;
+```
+
+`argc`/`argv` are read in three more places after this point (`nglog::
+InitializeLogging(argv[0])`; building `RGSS`'s `ARGV`/`$0` from any
+remaining positional args) -- all of them want the *post-parse* values,
+which this still provides, now backed by the copy's own storage (a local
+variable, alive for the rest of `main()`, never touched again after this
+block) rather than `nativeRunMain()`'s array. Not `#ifdef __ANDROID__`-ed:
+copying is free everywhere this runs, the bug it avoids is real on every
+platform (gflags still leaks one string and duplicates a pointer in the
+original array — argv just happens to be otherwise-unowned, unfreed
+memory everywhere but here), and a single code path is simpler than one
+more platform branch for a fix that costs nothing elsewhere.
+
+Verified in two ways. First, on the `C330` with the ASan build still
+wired in: the identical `--test_play --error_dump_probe` invocation that
+reliably reported the double-free, 5/5 clean afterward, and the full
+self-driving `--rpg2k_new_game --timeout_ms=20000` path through to
+`[RPG2k-MAP]` and SDL's own `Finished main function` log line (printed
+immediately before the very cleanup loop that used to double-free)
+completing with no AddressSanitizer report at all. Second, back on the
+emulator with the ASan scaffolding removed (a normal debug build, the fix
+included): `scripts/android_smoke_check.bash` 8/8 clean at the
+CI-calibrated `CPUQuota=40%` throttle from the AAudio update above (the
+two failures out of 5 at the much harsher `CPUQuota=20%` were the
+already-documented "script's own poll timeout, not a crash" shape --
+`never reached the map scene ([RPG2k-MAP] missing) after 80s`, zero Scudo
+or crash markers in any of the 5 runs at that level).
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
