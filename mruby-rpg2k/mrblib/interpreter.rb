@@ -3212,17 +3212,52 @@ module Game
     # wrong one — only "left" happened to line up. ~~An RPG2000 project writes 0
     # here, so converting unconditionally is the same as EasyRPG's
     # `IsRPG2k3Commands` guard for the games that can emit it.~~ Corrected
-    # against EasyRPG Player's source, NOT independently confirmed against
-    # genuine RPG_RT under wine: `Game_Interpreter_Map::CommandTeleport`
+    # against EasyRPG Player's source: `Game_Interpreter_Map::CommandTeleport`
     # reads param3 only `if
-    # (com.parameters.size() > 3 && Player::IsRPG2k3Commands())` — a genuine
-    # RPG2000 binary never reads it at all, regardless of what the parameter
-    # array happens to hold, the same edition gate `#do_flash_screen`/
-    # `#do_shake_screen` already carry a few methods below. "An RPG2000
+    # (com.parameters.size() > 3 && Player::IsRPG2k3Commands())`. "An RPG2000
     # project writes 0 here" is not something this command's own reference
     # source relies on or guarantees for every possible on-disk command list
     # (a hand-edited/imported one included), so converting unconditionally
     # was an uncited equivalence claim, not an actual port of the guard.
+    #
+    # Cycle #181 got a direct genuine RPG_RT.exe reading on the *gate itself*
+    # (independent of that EasyRPG citation), though only for one half of the
+    # question. Method: a single-parameter splice (per cycles #137-139/#176/
+    # #178/#180's discipline) appending a facing value onto an already-genuine
+    # Teleport command already authored in Nepheshel's own Map0519 (event 1,
+    # an autostart page reachable by loading a repositioned save with no
+    # switch gate, no crash risk) — [237, 16, 10] -> [237, 16, 10, 3] ("arrive
+    # facing down"), run against BOTH of the two genuine RPG_RT.exe binaries
+    # this project's own `data/Nepheshel206beta` fixture ships side by side:
+    # `Nepheshel206Rbeta/RPG_RT.exe` (PE timestamp June 2003) and
+    # `Nepheshel206Nbeta/RPG_RT.exe` (PE timestamp May 2001, `md5sum`-distinct
+    # from the other) — same event data, same save, same starting facing
+    # ("up", via `gen-rpg2k-save.rb --facing up`). Result: the arriving hero
+    # showed the identical "up" pose (a raw pixel crop of the sprite,
+    # unmistakably the back-of-head idle frame, not the front-facing "down"
+    # one) in three separate captures — the unedited 3-parameter baseline
+    # under the 2003-dated exe, the edited 4-parameter version under that
+    # same exe, and the edited version again under the 2001-dated exe — i.e.
+    # **the added facing parameter changed nothing under either binary**,
+    # refuting the idea that merely running a later-dated RPG_RT.exe is
+    # sufficient to make this parameter take effect. This is a narrower
+    # result than it first looks, though: this fixture's own `RPG_RT.ldb`
+    # reports `rpg2003? == false` (no chunk 30) for *both* game folders
+    # despite the differing exe builds — i.e. Nepheshel is a maker=2000-
+    # format database played through two different genuine binaries, not a
+    # maker=2003-format one — so this cannot separate "ignored because the
+    # exe predates the feature" from "ignored because the database itself is
+    # RPG2000-format regardless of which binary loads it," and it says
+    # nothing about what a genuine RPG2003-*authored* (maker=2003) database's
+    # own Teleport would do, which this project has no test-bed for. What it
+    # does settle: the existing `@state.party.rpg2003?` (database-format)
+    # gate's prediction for *this* database — ignore the parameter — matches
+    # genuine RPG_RT.exe's own observed behavior on both available binaries,
+    # so the gate is not shown wrong by this evidence, even though its exact
+    # mechanism (exe build vs. database format) is still not pinned down.
+    # `scripts/lcf_testbed_check.rb`'s own byte-exact round-trip and this
+    # cycle's `git diff`/`md5sum` confirm the splice and its restoration
+    # touched only this one command's own parameter list.
     def do_teleport(cmd)
       return if block_pending_teleport_command
       dir = @state.party.rpg2003? && cmd.parameters.size > 3 ? teleport_facing(cmd.param(3)) : 0
