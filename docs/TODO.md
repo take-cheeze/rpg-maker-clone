@@ -3919,6 +3919,126 @@ The work below is roughly ordered by the critical path to a walkable game
   missing-Picture-asset hang; and every EasyRPG-style citation cycle #154's
   own repo-wide grep turned up that no cycle has yet touched (see cycle
   #154's own list, unchanged).
+  ✅ **Follow-up (cycle #162, 2026-08-26): picked up the explicitly-flagged
+  gap left by cycle #161 -- field 122 (`escape_allowed`) was never
+  independently probed and was only assumed to share field 121's
+  "unconditional write" convention "by analogy" -- and found that
+  assumption was itself built on an incomplete test, landing a real fix
+  that corrects both fields 121 and 122 at once, plus each one's own
+  constructor default.** **Evidence:** reused cycle #161's own scratch
+  injector/driver shape (`inject_access_probe.rb`, `drive_slot_probe.bash`,
+  both still present in this session's scratchpad from that cycle,
+  untouched) to add two new scenarios -- `escape_reset` (Control Escape
+  Access ENABLE(1) then DISABLE(0), ending at false, mirroring cycle #161's
+  own `teleport_reset`) and, critically, `escape_on`/`teleport_on` (ENABLE
+  only, leaving the flag at **true** -- the one end of the value range
+  neither cycle #160 nor #161 had ever tested for this cluster). Drove
+  genuine RPG_RT.exe under wine (Xvfb 640x480x16, matchbox,
+  `LIBGL_ALWAYS_SOFTWARE=1`, `ja_JP.UTF-8`, continuing from the same clean
+  Save01.lsd cycle #160/#161 used, `BOOT_WAIT=35` -- the previously-recorded
+  25s was occasionally too short for this session's boot and produced a
+  blank splash-screen capture, caught by inspecting the boot screenshot
+  before trusting a run) through four scenarios, reading each resulting
+  genuine Save0N.lsd's raw chunk 101 with `LCF::SaveData` + `Array1D#key?`:
+  `escape_reset` came back **present** with value **false** (matching
+  `teleport_reset`'s own already-recorded result exactly); `escape_on` and
+  `teleport_on` each came back **fully absent** -- the opposite of what an
+  "unconditional write" convention predicts (which would stay present
+  regardless of value) and exactly what "omit at true default" predicts,
+  *provided the true default is actually allowed, not forbidden*. Cross-
+  checked against the project's own untouched continued-game baseline
+  (`notouch2`, produced by cycle #161 and still on disk in this session's
+  scratchpad): both 121 and 122 were present with value false there too,
+  consistent with this checkpoint's own story having explicitly forbidden
+  both earlier, not with either field being freshly at some engine default.
+  **The gap:** cycle #161's own probe for field 121 only ever tested an
+  ENABLE-then-DISABLE round trip that ends at the codebase's *assumed* false
+  default -- present in that shape either way, so it could never distinguish
+  "written unconditionally" from "written because false is the actual
+  non-default value" -- and it treated field 122 as sharing 121's conclusion
+  "by analogy" without any probe of its own. This cycle's `_on` scenarios
+  close exactly that gap and show both fields are gated by value, at a true
+  default -- meaning `Game::State#initialize`'s own `@teleport_access =
+  false` / `@escape_access = false` (present since long before this cycle,
+  and contradicted by that very method's own neighbouring comment claiming
+  parity with `#save_access`) had the *default itself* backwards: genuine
+  RPG_RT.exe allows Teleport and Escape until an event forbids them, the
+  same on-by-default posture Save/Menu access already had. **Fixed:**
+  `Game::State#initialize` now sets `@teleport_access = true` /
+  `@escape_access = true`; `#to_lsd` now writes `sys[121] = false unless
+  @teleport_access` / `sys[122] = false unless @escape_access` (previously
+  unconditional `@teleport_access ? true : false` etc.); and `.from_h` (the
+  internal mruby quicksave format) had a latent second bug in the same
+  neighbourhood -- it coerced a missing key straight to `false`
+  (`h[:teleport_access] ? true : false`) instead of falling back to the
+  constructor default the way `#menu_access`/`#save_access` already do,
+  harmless while the constructor default was itself false but silently
+  defeating the new true default for any legacy quicksave missing the key --
+  fixed to the same `unless h[:key].nil?` pattern. `.from_lsd` needed no
+  change: its own `unless sys.xxx_allowed.nil?` guard already deferred to
+  whatever the constructor default was. Updated `SAVE_SYSTEM`'s own schema
+  comments (`mruby-lcf/mrblib/schema.rb`) and `Game::State`'s own comments
+  (`mruby-rpg2k/mrblib/game.rb`, both the `attr_accessor` doc and `#to_lsd`'s
+  own inline comment) to document the corrected, now-uniform convention
+  covering all of fields 121-124 alike. **New/extended coverage in
+  `scripts/rpg2k_logic_check.rb`:** rewrote the fields-121-124 check to
+  assert all four are absent at a fresh state's own true default and present
+  holding false once flipped, replacing the old assertion that 121/122 stay
+  present at their (then-false) default; added an explicit-false reset
+  branch to the same check proving a fresh-state `false` value still writes
+  and round-trips correctly rather than being swallowed by the new default;
+  updated the "Change Teleport / Escape Access" interpreter check's own
+  opening assertion from "defaults off" to "defaults on"; and extended the
+  quicksave round-trip check with a legacy-missing-key case now expecting
+  `true` (previously `false`) plus a new explicit-`false` case proving that
+  value still survives `.from_h`'s corrected fallback. **Proved the fix and
+  the updated checks actually catch the regression:** `git stash` of just
+  `mruby-rpg2k/mrblib/game.rb` and `mruby-lcf/mrblib/schema.rb` (keeping the
+  updated check file) reverted to the pre-fix code and rerunning
+  `rpg2k_logic_check.rb` failed three checks immediately with precise,
+  specific errors (`RuntimeError: expected false, got true (field 121 absent
+  at its own true default (omit-at-default))`, `expected true, got false
+  (teleport access defaults on)`, and a plain `expected true, got false` from
+  the round-trip check) before `git stash pop` restored the fix and all
+  checks passed again. Full suite reconfirmed passing, `scripts/
+  rpg2k_logic_check.rb` unchanged in count at 1144 (existing checks extended
+  in place rather than new ones added): `scripts/rpg2k_scene_check.rb`
+  (929), `scripts/rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb`
+  (1144), `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15); `scripts/rpg2k_save_load_check.rb`'s
+  own 3 pre-existing failures (the unmodelled BGM `balance` field, the
+  `show_x`/`show_y` `nil`-vs-absent mismatch, and the "screen transition
+  defaults unreadable" stderr warning) were reconfirmed present identically
+  before and after this cycle's changes, ruling this cycle out as their
+  cause. This cycle also built the mruby engine binary from source
+  (`cmake --build build --target rpg_maker_clone`, using the two
+  hash-pinned Unicode tables already fetched to `/tmp/tables` by an earlier
+  cycle) and confirmed it links cleanly. Every scratch map/save this cycle's
+  probes produced lived entirely under this session's own scratch dir; the
+  two live fixtures the wine driver copies into `data/` on each run
+  (`Save01.lsd`, `Map0012.lmu`) were restored to their exact original bytes
+  and reconfirmed byte-identical by `md5sum` against the same
+  `c2fa69a0.../3ab5bb01...` values every prior cycle back to #148 recorded;
+  `git status` on `data/` came back clean. No EasyRPG source was consulted
+  for any claim this cycle, and no web search was used either. **Left open
+  for a future cycle:** field 140 (`atb_mode`) was still not re-probed this
+  cycle -- its "2003-only, default-gated" status rests on the same
+  repeated-absence observation (every capture across cycles #159-#162 alike)
+  already recorded rather than a dedicated fresh test, and *why* it is
+  always absent from this RPG2000 project's own saves (a version-gated
+  chunk vs. simply always being at its default 0) still was never
+  disambiguated the way this cycle disambiguated 121/122's identical
+  question -- a future cycle with access to a genuine RPG2003 project could
+  settle both by the same explicit-DISABLE/ENABLE-then-reset technique used
+  here; whether RPG2003's own picture-flag commands would ever surface
+  `SAVE_PICTURE` field 9 (cycle #159's own open item); whether a picture
+  mid-Move-Picture at the instant of Erase Picture freezes or keeps gliding
+  (cycle #159's own open item); `SAVE_PICTURE`'s own still-missing
+  `fixed_to_map`/`use_transparent_color` fields (cycle #155/#158); the
+  party-roster-field crash; the autostart-crash mystery; the
+  missing-Picture-asset hang; and every EasyRPG-style citation cycle #154's
+  own repo-wide grep turned up that no cycle has yet touched (see cycle
+  #154's own list, unchanged).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

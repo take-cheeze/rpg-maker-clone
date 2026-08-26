@@ -4537,79 +4537,77 @@ check 'to_lsd omits SAVE_SYSTEM fields 51-54 (Change Face Graphic state) when ' 
   eq false, saved4.key?(54), 'field 54 absent (face_flipped still at its default, false)'
 end
 
-check 'to_lsd writes SAVE_SYSTEM fields 121/122 (teleport/escape access) ' \
-      'unconditionally but omits 123/124 (save/menu access) at their own ' \
-      'true default, matching genuine RPG_RT.exe' do
-  # Cycle #161: probed each of the four Control Teleport/Escape/Save/Menu
-  # Access fields independently against a genuine RPG_RT.exe save under wine
-  # (a synthetic autostart event issuing the matching Control command --
+check 'to_lsd omits SAVE_SYSTEM fields 121/122/123/124 (teleport/escape/' \
+      'save/menu access) alike at their own true default, matching genuine ' \
+      'RPG_RT.exe' do
+  # Cycle #161 probed all four Control Teleport/Escape/Save/Menu Access
+  # fields against a genuine RPG_RT.exe save under wine (a synthetic
+  # autostart event issuing the matching Control command --
   # 11820/11840/11930/11960 -- then Open Save Menu with no Wait in between,
-  # the same shape cycle #160 used for fields 51-54, continuing from the
-  # project's own baseline save whose inherited state already has
-  # teleport_access/escape_access/save_access all false and menu_access at
-  # its true default): 121 (teleport_allowed) stayed present with value
-  # false even right after an explicit ENABLE-then-DISABLE putting it back
-  # to that exact false default, mid-event -- an unconditional write. 123
-  # (save_allowed) went from present (false) right after an explicit DISABLE
-  # to fully absent once a further ENABLE put it back to its own true
-  # default, still mid-event; 124 (menu_allowed), never touched at all
-  # (still at its own true default), was absent from every capture, and an
-  # explicit DISABLE-then-ENABLE round trip (matching the "notouch" and
-  # "reset" pair already used for fields 51-54/132) showed the identical
-  # present-then-absent-again pattern -- the same per-value "omit at
-  # default" convention already confirmed for 41-44/51-54/61/132, not the
-  # unconditional-write convention 121/122 actually use and this codebase's
-  # own #to_lsd previously applied to all four alike (`@save_access ? true :
-  # false`, `@menu_access ? true : false`).
+  # the same shape cycle #160 used for fields 51-54) but only ever tested
+  # 121 with an ENABLE-then-DISABLE round trip that ends at the codebase's
+  # then-assumed false default -- a test that cannot tell "written
+  # unconditionally" apart from "written because false is the non-default
+  # value" -- and never independently probed 122 at all, concluding (wrongly)
+  # that 121/122 were an unconditional-write pair unlike 123/124's confirmed
+  # "omit at true default". Cycle #162 ran the missing ENABLE-only probe
+  # (leaving the flag at **true**, the untested end) for both 121 and 122
+  # against a genuine RPG_RT.exe save: both came back **absent**, exactly
+  # matching 123/124's own pattern and revealing that real RPG_RT.exe's
+  # actual default for Teleport/Escape access is **allowed** (true), not
+  # forbidden -- so all four fields share one "omit at true default"
+  # convention, and `Game::State#initialize`'s prior `false` default for
+  # teleport_access/escape_access was itself backwards.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
 
   # A freshly-constructed state already sits at every one of these fields'
-  # own constructor default (teleport/escape_access false, save/menu_access
-  # true) -- exactly the "notouch" genuine capture shape.
+  # own constructor default (all four true) -- exactly the "notouch" genuine
+  # capture shape, and all four should be absent.
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   saved = st.to_lsd[101]
-  eq true, saved.key?(121), 'field 121 present even at its own false default (unconditional)'
-  eq false, saved[121], 'field 121 holds false'
-  eq true, saved.key?(122), 'field 122 present even at its own false default (unconditional)'
-  eq false, saved[122], 'field 122 holds false'
+  eq false, saved.key?(121), 'field 121 absent at its own true default (omit-at-default)'
+  eq false, saved.key?(122), 'field 122 absent at its own true default (omit-at-default)'
   eq false, saved.key?(123), 'field 123 absent at its own true default (omit-at-default)'
   eq false, saved.key?(124), 'field 124 absent at its own true default (omit-at-default)'
 
-  # Flip all four away from their defaults (Control Teleport/Escape/Save/Menu
-  # Access DISABLE/DISABLE/DISABLE/DISABLE) -- every field should now be
-  # present holding its changed (non-default) value.
+  # Flip all four away from their true defaults (Control Teleport/Escape/
+  # Save/Menu Access DISABLE/DISABLE/DISABLE/DISABLE) -- every field should
+  # now be present holding false.
   st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
-  st2.teleport_access = true   # away from its own false default
-  st2.escape_access = true     # away from its own false default
+  st2.teleport_access = false  # away from its own true default
+  st2.escape_access = false    # away from its own true default
   st2.save_access = false      # away from its own true default
   st2.menu_access = false      # away from its own true default
   saved2 = st2.to_lsd[101]
-  eq true, saved2.key?(121), 'field 121 present once teleport_access differs from its default'
-  eq true, saved2[121]
-  eq true, saved2.key?(122), 'field 122 present once escape_access differs from its default'
-  eq true, saved2[122]
-  eq true, saved2.key?(123), 'field 123 present once save_access differs from its default (true)'
+  eq true, saved2.key?(121), 'field 121 present once teleport_access differs from its true default'
+  eq false, saved2[121]
+  eq true, saved2.key?(122), 'field 122 present once escape_access differs from its true default'
+  eq false, saved2[122]
+  eq true, saved2.key?(123), 'field 123 present once save_access differs from its true default'
   eq false, saved2[123]
-  eq true, saved2.key?(124), 'field 124 present once menu_access differs from its default (true)'
+  eq true, saved2.key?(124), 'field 124 present once menu_access differs from its true default'
   eq false, saved2[124]
   round2 = Game::State.from_lsd(db, st2.to_lsd)
-  eq true, round2.teleport_access, 'teleport_access round-trips true'
-  eq true, round2.escape_access, 'escape_access round-trips true'
+  eq false, round2.teleport_access, 'teleport_access round-trips false'
+  eq false, round2.escape_access, 'escape_access round-trips false'
   eq false, round2.save_access, 'save_access round-trips false'
   eq false, round2.menu_access, 'menu_access round-trips false'
 
-  # Put 123/124 back to their own true default, still mid-scenario (no
+  # Put all four back to their own true default, still mid-scenario (no
   # save/load boundary crossed) -- mirrors the "reset" genuine-RPG_RT probe:
-  # the fields go absent again, not "present, but re-holding the default
-  # value". 121/122 stay present even back at their own false default,
-  # since they are unconditional.
-  st2.teleport_access = false
-  st2.escape_access = false
+  # every field goes absent again, not "present, but re-holding the default
+  # value".
+  st2.teleport_access = true
+  st2.escape_access = true
   st2.save_access = true
   st2.menu_access = true
   saved3 = st2.to_lsd[101]
-  eq true, saved3.key?(121), 'field 121 still present back at its own false default (unconditional)'
-  eq true, saved3.key?(122), 'field 122 still present back at its own false default (unconditional)'
+  eq false, saved3.key?(121),
+     'field 121 is absent again once teleport_access is put back to its true default, ' \
+     'not left present holding the default value'
+  eq false, saved3.key?(122),
+     'field 122 is absent again once escape_access is put back to its true default, ' \
+     'not left present holding the default value'
   eq false, saved3.key?(123),
      'field 123 is absent again once save_access is put back to its true default, ' \
      'not left present holding the default value'
@@ -10767,8 +10765,12 @@ end
 
 check 'Change Teleport / Escape Access toggle their flags, non-blocking' do
   st = party_state
-  eq false, st.teleport_access, 'teleport access defaults off'
-  eq false, st.escape_access, 'escape access defaults off'
+  # Cycle #162: confirmed against genuine RPG_RT.exe that these default
+  # **on** (allowed), not off -- see Game::State#initialize's own comment.
+  eq true, st.teleport_access, 'teleport access defaults on'
+  eq true, st.escape_access, 'escape access defaults on'
+  st.teleport_access = false
+  st.escape_access = false
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::CHANGE_TELEPORT_ACCESS, [1]),
             FakeCmd.new(IC::CHANGE_ESCAPE_ACCESS, [1]),
@@ -10797,13 +10799,28 @@ check 'Teleport / Escape access round-trip through the save' do
   loaded = Game::State.load(db, st.to_h)
   eq true, loaded.teleport_access
   eq true, loaded.escape_access
-  # A save written before these existed defaults them off.
+
+  # A save written before these existed defaults them **on** -- cycle #162:
+  # `.from_h` used to coerce a missing key straight to false
+  # (`h[:teleport_access] ? true : false`) instead of falling back to the
+  # constructor default the way `#menu_access`/`#save_access` do; fixed to
+  # match, and the constructor default itself is now true (confirmed against
+  # genuine RPG_RT.exe), so a legacy save missing the key resumes allowed.
   legacy = st.to_h
   legacy.delete(:teleport_access)
   legacy.delete(:escape_access)
   legacy_loaded = Game::State.load(db, legacy)
-  eq false, legacy_loaded.teleport_access
-  eq false, legacy_loaded.escape_access
+  eq true, legacy_loaded.teleport_access
+  eq true, legacy_loaded.escape_access
+
+  # An explicit false still round-trips as false, not swallowed by the new
+  # constructor-default fallback.
+  st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st2.teleport_access = false
+  st2.escape_access = false
+  loaded2 = Game::State.load(db, st2.to_h)
+  eq false, loaded2.teleport_access, 'an explicit false still loads as false'
+  eq false, loaded2.escape_access, 'an explicit false still loads as false'
 end
 
 # -- EXP / level (Change EXP / Change Level) ---------------------------------

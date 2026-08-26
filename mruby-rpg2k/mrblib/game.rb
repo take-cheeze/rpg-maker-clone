@@ -14149,7 +14149,9 @@ module Game
     # setting on every map load and Teleport (`Scene::Map#apply_map_access`,
     # `Game::MapAccess.teleport_allowed?` / `#escape_allowed?`) -- so a value
     # set here is only the *initial* one (before any map has loaded), matching
-    # `#save_access`. Persisted in the save. Read by
+    # `#save_access`. Both default **on** (cycle #162, confirmed against
+    # genuine RPG_RT.exe -- see `#to_lsd`'s own comment below), the same as
+    # `#save_access`/`#menu_access`. Persisted in the save. Read by
     # Game::Party#escape_skill_available? / #teleport_skill_available? to gate
     # the field skill menu.
     attr_accessor :teleport_access, :escape_access
@@ -14375,8 +14377,11 @@ module Game
       @message_config = MessageConfig.new
       @menu_access = true
       @save_access = true
-      @teleport_access = false
-      @escape_access = false
+      # Cycle #162: confirmed **on** by default against genuine RPG_RT.exe
+      # (previously false here, the reverse of the confirmed default -- see
+      # `#to_lsd`'s own comment for the capture evidence).
+      @teleport_access = true
+      @escape_access = true
       @current_bgm = nil
       @memorized_bgm = nil
       @bgm_looped = false
@@ -14859,35 +14864,40 @@ module Game
         sys[field] = se_chunk(se) if se
       end
       # SAVE_SYSTEM fields 121-124 (Control Teleport/Escape/Save/Menu Access)
-      # are NOT one uniform "unconditional write" cluster the way an earlier
-      # cycle's own schema comment claimed -- confirmed against genuine
-      # RPG_RT.exe under wine (cycle #161), each field probed independently
-      # via a synthetic autostart event issuing the matching Control command
-      # then Open Save Menu with no Wait in between (same shape cycle #160
-      # used for fields 51-54): 121 (`teleport_access`, constructor default
-      # false) stayed **present** with value false even after an explicit
-      # ENABLE followed immediately by a DISABLE resetting it back to that
-      # same default, mid-event -- ruling out "omit at default" for this
-      # field and confirming the unconditional-write claim only for it (122
-      # was not independently probed this cycle but shares 121's exact code
-      # shape and command family, so is treated as the same convention by
-      # analogy pending its own direct check); by contrast 123
-      # (`save_access`, constructor default true) and 124 (`menu_access`,
-      # constructor default true) both went from **present** (value false)
-      # right after an explicit DISABLE to **absent** once a further ENABLE
-      # put them back to their own true default, still mid-event -- the same
-      # per-value "omit at default" convention already confirmed for fields
-      # 41-44/51-54/61/132, not the unconditional-write convention 121/122
-      # actually use. This codebase's own #to_lsd used to write all four
-      # fields unconditionally (`@save_access ? true : false` etc.,
-      # inherited from whichever earlier cycle wrote the doc comment this
-      # cycle corrected), so a save taken with save/menu access still at
-      # their own true default carried explicit `true`-valued bytes for
-      # fields 123/124 that a genuine RPG_RT.exe save never does -- the same
-      # species of over-writing bug cycles #152/#153/#160 already fixed for
-      # other fields in this schema.
-      sys[121] = @teleport_access ? true : false
-      sys[122] = @escape_access ? true : false
+      # are all ONE uniform "omit at true default" cluster after all --
+      # cycle #161 mistakenly split them into an "unconditional" pair
+      # (121/122) and an "omit at true default" pair (123/124), because its
+      # own probe for 121 only ever tested an ENABLE-then-DISABLE round trip
+      # that ends at the codebase's *assumed* false default -- a test that
+      # cannot distinguish "written unconditionally" from "written because
+      # false is actually the non-default value", and it never independently
+      # probed 122 at all (treated as sharing 121's convention "by analogy").
+      # Cycle #162 closed both gaps against genuine RPG_RT.exe under wine
+      # (same synthetic-autostart-event + Open-Save-Menu-with-no-Wait shape
+      # cycles #160/#161 used): an ENABLE-only probe for each of 121
+      # (`teleport_access`) and 122 (`escape_access`) -- leaving the flag at
+      # **true**, the opposite end from every previous probe -- came back
+      # with the field **absent**, while the project's own untouched
+      # continued-game baseline (where prior story events had already left
+      # both flags at false) and an ENABLE-then-DISABLE round trip (also
+      # ending at false) both came back **present** with value false. That
+      # present-at-false/absent-at-true split is exactly the per-value "omit
+      # at true default" convention already confirmed for 123/124 (and for
+      # fields 41-44/51-54/61/132 elsewhere in this schema) -- not a written-
+      # regardless-of-value convention -- which also means this codebase's
+      # own claimed *default* for 121/122 was backwards: genuine RPG_RT.exe
+      # treats Teleport and Escape as **allowed** until an event forbids
+      # them, the same on-by-default posture Save and Menu access already
+      # had, not forbidden-by-default as `Game::State#initialize` used to set
+      # (see its own updated comment above). This codebase's own #to_lsd used
+      # to write 121/122 unconditionally (`@teleport_access ? true : false`
+      # etc.), so a save taken with teleport/escape access still at their
+      # true default carried explicit `true`-valued bytes a genuine
+      # RPG_RT.exe save never does, the same species of over-writing bug
+      # cycles #152/#153/#160 already fixed elsewhere in this schema, now
+      # shown to cover this whole cluster.
+      sys[121] = false unless @teleport_access
+      sys[122] = false unless @escape_access
       sys[123] = false unless @save_access
       sys[124] = false unless @menu_access
       # Screen-transition slots 0..5 map to chunks 111..116 in order.
@@ -15838,8 +15848,16 @@ module Game
         pic = Picture.from_h(id, ph)
         state.pictures[id] = pic if pic
       end
-      state.teleport_access = h[:teleport_access] ? true : false
-      state.escape_access = h[:escape_access] ? true : false
+      # Cycle #162: these two used to coerce a missing key straight to false
+      # (`h[:teleport_access] ? true : false`) instead of falling back to the
+      # constructor default the way `#menu_access`/`#save_access` just above
+      # do -- harmless while the constructor default was itself false, but
+      # wrong now that it is true (see `Game::State#initialize`'s own
+      # comment): a quicksave written before these two keys existed should
+      # resume with Teleport/Escape allowed, the same "defaults on" fallback
+      # `#menu_access`/`#save_access` already give an older save.
+      state.teleport_access = h[:teleport_access] unless h[:teleport_access].nil?
+      state.escape_access = h[:escape_access] unless h[:escape_access].nil?
       # Registries default empty / unset; a save written before these existed
       # simply restores nothing.
       state.encounter_rate = h[:encounter_rate]
