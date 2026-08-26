@@ -4554,6 +4554,78 @@ The work below is roughly ordered by the critical path to a walkable game
   party-roster-field crash; the autostart-crash mystery (cycles #137-139);
   the missing-Picture-asset hang; and every EasyRPG-style citation cycle
   #154's own repo-wide grep turned up that no cycle has yet touched.
+  ✅ **Follow-up (cycle #169, 2026-08-26): finished cycle #168's own Set
+  Transparent Flag polarity investigation against genuine RPG_RT.exe --
+  **the existing polarity was already correct; only its citation was not.**
+  Two attempts at swapping in a leader with a real charset without touching
+  the checked-in fixture both left the hero invisible under genuine
+  RPG_RT.exe despite this engine's own renderer showing one clearly at the
+  identical position: (1) a from-scratch `Game::State#to_lsd` save (leader
+  rebuilt as actor 1, `Struct.new(:width,:height)` stood in for `self.map` so
+  the hero-centred camera scroll -- chunk 111 -- still got written without a
+  per-event position table) loaded fine (the file-select screen correctly
+  showed "リト" LV1 HP50) but drew no hero on the map; (2) a minimal,
+  surgical patch of the real save's own chunk 104 fields 73/74 (`charset_
+  name`/`charset_index`, schema.rb's own "sprite override" fields) -- every
+  other byte, including who the leader *is*, left untouched -- did nothing
+  either. Both are recorded here as a real, if incidental, finding: genuine
+  RPG_RT.exe does not appear to read chunk 104's hero-record charset fields
+  as a live per-save sprite override the way `Game::State#to_lsd`'s own
+  comment assumed (never chased further -- out of scope for this cycle,
+  flagged below for whoever wants it). **What worked:** left the checked-in
+  `Save01.lsd` and its resolved leader (database actor 15, "デモ用")
+  completely alone and instead patched a *scratch copy* of `RPG_RT.ldb`
+  (chunk 11, actor 15's own `charset_name`/`charset_index`, fields 3/4) to
+  `"mainchr"`/4 -- actor 1's own real graphic -- then repositioned the
+  untouched save with `scripts/gen-rpg2k-save.rb --map 12 --at 9,7
+  --clear-scene` onto a Map0012 tile confirmed via this engine's own
+  `Game::ChipSet#elevated?` to have no upper-layer tile drawing in front of
+  characters (the original saved position, (40,15), does have one -- an
+  unrelated, genuine reason that exact spot never shows a sprite regardless
+  of charset or the transparent flag, also newly root-caused this cycle).
+  That combination showed the hero cleanly under genuine RPG_RT.exe. Using
+  cycle #168's own proven single-page-plus-terminator injector
+  (`inject_transparency_probe2.rb`) to splice a lone Set Transparent Flag
+  (11310) autostart command onto the map's own event 1: **param0=0 left the
+  hero invisible for the rest of the run; param0=1 showed it normally,
+  identical to the untouched-flag baseline** -- reproduced twice for
+  param0=0. This matches `do_player_visibility`'s existing polarity
+  (`@state.player_transparent = cmd.param(0) == 0`) exactly. **Fixed** only
+  the citation, in the four places it was duplicated verbatim
+  (`Interpreter#do_player_visibility` and `Scene::Map#player_hidden?` in
+  `mruby-rpg2k/mrblib/{interpreter.rb,scene/map.rb}`, and the matching check
+  comments in `scripts/{rpg2k_logic_check.rb,rpg2k_scene_check.rb}`), which
+  all cited EasyRPG Player's own `Game_Interpreter::CommandPlayerVisibility`
+  (`src/game_interpreter.cpp`) as if it were "RPG_RT's own live source" --
+  replaced with this cycle's genuine wine evidence above. No behavioral code
+  changed (`cmd.param(0) == 0` stands), so no regression check applies.
+  **Verification:** all of `scripts/rpg2k_scene_check.rb` (929), `scripts/
+  rpg2k_logic_check.rb` (1146), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k3_battle_row_check.rb` (19), `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) and `ctest -R mruby_test` all passed;
+  `scripts/rpg2k_save_load_check.rb`'s own 3 pre-existing failures (BGM
+  `balance`, `show_x`/`show_y`, the transition-defaults warning) were
+  reconfirmed present identically. The checked-in `RPG_RT.ldb`/`Map0012.lmu`/
+  `Save01.lsd` were never opened for writing (only read, to build scratch
+  copies elsewhere) and are reconfirmed byte-identical by `md5sum` to the
+  values recorded since cycle #148 (`a738d3b9.../c2fa69a0.../3ab5bb01...`);
+  `git status` on `data/` (gitignored) came back clean, and no stray
+  Xvfb/wine/engine processes were left running. No EasyRPG source was
+  consulted for any behavioral claim this cycle (the citations under review
+  were read only to identify and replace them), and no web search was used.
+  **Left open for a future cycle:** whether genuine RPG_RT.exe actually reads
+  a save's own chunk 104 hero `charset_name`/`charset_index` fields at all
+  (this cycle's own incidental finding above suggests maybe not, but it was
+  never chased to a real root cause, and `Game::State#to_lsd`'s own comment
+  claiming they round-trip a "live graphic override" is itself now suspect
+  and unverified against genuine RPG_RT.exe); field 125's own remaining
+  "what is it" question; the party-roster-field crash; the autostart-crash
+  mystery (cycles #137-139); the missing-Picture-asset hang; the leader's
+  own actor-graphic "Transparent" ghost-opacity mechanism (`Scene::Map
+  #player_translucent?`, a still-EasyRPG-cited, still-unverified *separate*
+  claim noticed but out of scope this cycle); and every other EasyRPG-style
+  citation cycle #154's own repo-wide grep turned up that no cycle has yet
+  touched.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

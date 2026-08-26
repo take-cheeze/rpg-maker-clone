@@ -10070,11 +10070,12 @@ end
 
 # -- Player Visibility / Return to Title --------------------------------------
 
-# Confirmed against RPG_RT's own live source: `Game_Interpreter::
-# CommandPlayerVisibility` (`src/game_interpreter.cpp`, code 11310) is
-# `bool hidden = (com.parameters[0] == 0); player->SetSpriteHidden(hidden);`
-# -- param0 *zero* hides the player, non-zero shows it, the reverse of an
-# earlier, uncited pass here that had the polarity backwards.
+# param0 *zero* hides the player, non-zero shows it again -- confirmed
+# against genuine RPG_RT.exe under wine (cycle #169; not EasyRPG source,
+# correcting a prior comment here that mislabelled EasyRPG Player's own
+# `src/game_interpreter.cpp` as "RPG_RT's own live source"): see
+# `Interpreter#do_player_visibility`'s own comment in interpreter.rb for the
+# full wine-verification evidence.
 check 'Set Transparent Flag toggles the player-transparent state, non-blocking' do
   st = party_state
   it = Game::Interpreter.new(st)
