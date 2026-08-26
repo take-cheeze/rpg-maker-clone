@@ -8598,8 +8598,8 @@ module Game
       cur < target ? cur + step : cur - step
     end
 
-    # Pixels moved per frame for a pan speed (1..6). Ported from EasyRPG
-    # Player's own `Game_Player::StartPan`/`ResetPan`, which sets
+    # Pixels moved per frame for a pan speed (1..6). Originally ported from
+    # EasyRPG Player's own `Game_Player::StartPan`/`ResetPan`, which sets
     # `pan_speed = 2 << speed` there, a value believed to live in a
     # 1/16-pixel subpixel space (its own `SCREEN_TILE_SIZE = 256`, sixteen
     # per this codebase's own real TILE = 16 px) -- so the real whole-pixel
@@ -8610,8 +8610,36 @@ module Game
     # per-frame rate exactly at speeds 1/2 (0.25 and 0.5 are both exact
     # powers of two in binary floating point, so this never drifts), landing
     # on the same whole-pixel target #pan_offset's own rounding always
-    # resolves to once a pan finishes. These exact px/frame rates are NOT
-    # independently confirmed against genuine RPG_RT under wine.
+    # resolves to once a pan finishes.
+    #
+    # **Confirmed against genuine RPG_RT.exe under wine (cycle #178,
+    # 2026-08-26)**, at speeds 1 and 3: Nepheshel's own `Map0521.lmu` event 1
+    # page 1 (trigger=3 autostart, condition flags=0) is a genuine, already-
+    # authored Pan Screen (op=2, direction=left, distance=9 tiles, **wait
+    # ON**) immediately followed by Erase Screen then a Teleport -- the one
+    # `wait==1` Pan Screen call found anywhere across every Nepheshel map
+    # (checked by dumping every map's own event-command list), so its own
+    # Erase Screen (a plain fade to black, ~35 frames/0.58s once the pan's
+    # own interpreter wait releases it) is a directly observable, real-engine
+    # marker of exactly when the pan finished. Timed with fixed-offset
+    # screenshots (0.25s resolution) from the moment Continue loaded a save
+    # standing on map 521 (no code, only Save01.lsd's own hero-position
+    # chunk edited via `gen-rpg2k-save.rb --map 521 --clear-scene`):
+    # at the genuine, unmodified speed 1 the screen was still visibly
+    # scrolling at t=11.5s and fully black by t=12.0s; at speed 3 (the map's
+    # own Pan Screen command's speed parameter edited in place from 1 to 3,
+    # nothing else touched, then restored byte-identical afterward) the same
+    # transition landed at t=4.5-5.0s instead. `(2<<3)/16.0 - (2<<1)/16.0 =
+    # 0.75` px/frame more at speed 3 than speed 1 predicts a 144px/0.25 -
+    # 144px/1.0 = 576 - 144 = 432-frame (7.2s) gap between the two runs'
+    # pan durations; the observed gap between the two runs' own black-screen
+    # landings was ~7.0s (12.0s - ~5.0s) -- matching to within the
+    # measurement's own 0.25s screenshot resolution and ruling out the
+    # rejected "plain doubling from a whole pixel" alternative by a wide
+    # margin (that table predicts only a 2.4s - 0.6s = 1.8s gap between the
+    # same two speeds, a 4x smaller difference than what genuine RPG_RT
+    # actually shows). See docs/TODO.md's cycle #178 entry for the full
+    # screenshot-by-screenshot timing table and the probe scripts.
     def pan_step_for(speed)
       (2 << Game.clamp(speed, 1, 6)) / 16.0
     end
