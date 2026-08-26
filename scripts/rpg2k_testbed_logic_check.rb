@@ -283,13 +283,33 @@ def check_game(dir)
       eq nil, state.party.actor_by_id(aid), "actor #{aid} is away"
 
       # The game's own commands, run while the target is out of the party. Every
-      # one must find its actor; none may silently no-op.
+      # one must actually resolve its actor through the roster (the lookup
+      # #stat_targets/#identity_target use, not `party.actors`) and run without
+      # raising.
+      #
+      # This used to assert the command's value effect was visible in the
+      # actor's snapshot instead -- a stand-in for "the lookup did not
+      # silently drop it" with no direct hook into the private resolution
+      # methods available. That proxy false-positived on kk1.12: several of
+      # its own fixed-id commands are legitimately no-ops when run back-to-
+      # back outside their narrative context (Full Heal on an actor already
+      # full/unafflicted right after joining, a variable-sourced Change Level
+      # delta with the variable at its harness default of 0, a name change
+      # immediately undone by a second one) -- worth confirming they do not
+      # raise, but not evidence of a lookup miss. Calling the interpreter's
+      # own resolution methods directly is the same check ADR 0030's fix
+      # actually guards (both already read `party.roster`, never
+      # `party.actors`, precisely so an away actor keeps resolving) without
+      # depending on incidental value churn to detect a regression there.
       away = state.party.roster.existing(aid)
       ok away, 'the absent actor is still in the roster'
-      before = snapshot(away)
-      aimed_at_companions[aid].each { |c| run(state, [c]) }
-      ok snapshot(away) != before,
-         "#{aimed_at_companions[aid].size} command(s) changed the absent actor"
+      interp = Game::Interpreter.new(state)
+      aimed_at_companions[aid].each do |c|
+        layout = FIXED_ACTOR_COMMANDS[c.code]
+        resolved = layout == :actor0 ? [interp.send(:identity_target, c)] : interp.send(:stat_targets, c)
+        ok resolved.include?(away), "command #{c.code} resolved actor #{aid}"
+        run(state, [c])
+      end
     end
   end
 end
@@ -506,10 +526,14 @@ def check_ko_only(dir)
   puts format('   items: %d 蘇生専用 (revive-only)', ko.size)
   return if ko.empty?
 
+  party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+  hero = party.leader
+  unless hero
+    puts '   (no initial party — revive-item check skipped)'
+    return
+  end
+
   check "#{name}: a real revive item is inert on a member still standing" do
-    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
-    hero = party.leader
-    ok hero, 'the game has a party to test with'
     ko.each do |iid|
       it = items[iid]
       # Every one of them restores a *percentage* of max HP, which is what makes
@@ -653,8 +677,19 @@ def check_states(dir)
       blinding.each do |sid|
         clear.states = [sid]
         ratio = states[sid].reduce_hit_ratio
-        eq base * ratio / 100, bat.send(:to_hit, clear, foe),
-           "state ##{sid} (#{states[sid].name}) scales accuracy by #{ratio}%"
+        # #hit_modifier -- the exact hook reduce_hit_ratio feeds -- rather than
+        # re-deriving the whole scaled #to_hit figure from the unafflicted
+        # `base` above: a real state carrying reduce_hit_ratio need not be a
+        # *pure* accuracy debuff. kk1.12's own #15 (チャージ, "Charge") pairs
+        # it with affect_agility/:double, so the afflicted attacker's AGI term
+        # in #to_hit's own formula is no longer identical to the unafflicted
+        # one `base` was measured against -- `base * ratio / 100` silently
+        # assumes it is, which only holds when attacker and target start at
+        # equal AGI *and* the state touches nothing else. #hit_modifier is
+        # what reduce_hit_ratio alone controls, so it is the one figure this
+        # check can assert exactly regardless of whatever else the state does.
+        eq ratio, bat.send(:hit_modifier, clear),
+           "state ##{sid} (#{states[sid].name}) feeds #{ratio}% into #hit_modifier"
       end
     end
   end
@@ -704,14 +739,15 @@ def check_states(dir)
     end
   end
 
-  unless slipping.empty?
+  if !slipping.empty? && (db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil).to_a.empty?
+    puts '   (no initial party — map-slip state check skipped)'
+  elsif !slipping.empty?
     check "#{name}: a map-slipping state drains on its own step interval" do
       # The real party, walking the real interval. mtf-meido-action's Poison is
       # the only state in either test bed that carries the field (1 HP every 4
       # steps), so this is the check that says the reading is right rather than
       # merely self-consistent.
       party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
-      ok !party.actors.empty?, 'the initial party has members to poison'
       slipping.each do |sid|
         row = states[sid]
         every = row.hp_change_map_steps
@@ -915,10 +951,15 @@ def check_terrain(dir)
               damaging.size, blockers.size)
   return if damaging.empty?
 
+  no_leader = (db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil).to_a.empty?
+  if no_leader
+    puts '   (no initial party — terrain-damage check skipped)'
+    return
+  end
+
   check "#{name}: a damaging terrain takes HP, and cannot kill" do
     party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
     leader = party.leader
-    ok leader, 'the game has a party to hurt'
     damaging.each do |tid|
       amount = terrain[tid].damage
       leader.hp = leader.max_hp
@@ -1042,11 +1083,14 @@ def check_items(dir)
   puts format('   items: %d curative medicine(s), %d with reverse_state_effect',
               curative.size, reversed.size)
   return if curative.empty?
+  if (db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil).to_a.empty?
+    puts '   (no initial party — curative-medicine check skipped)'
+    return
+  end
 
   check "#{name}: every curative medicine actually cures what it names" do
     party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
     actor = party.leader
-    ok actor, 'the initial party has a leader to heal'
     curative.each do |iid, ids|
       row = items[iid]
       eq ids, party.item_cured_states(row),

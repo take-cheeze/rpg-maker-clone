@@ -25,6 +25,7 @@
           - "scripts/gen-lcf-save-wine.bash"
           - "scripts/*nepheshel*"
           - "scripts/download-prayforyou.bash"
+          - "scripts/download-killer-knights.bash"
           - "scripts/rtp_install.bash"
           - "scripts/analyze_game.rb"
           - "docs/rpg2000-sample-analysis.md"
