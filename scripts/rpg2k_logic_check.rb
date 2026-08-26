@@ -4186,6 +4186,51 @@ check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
   eq false, restored.battle_commands_changed?
 end
 
+check 'to_lsd/from_lsd writes chunk 108\'s states (81/82) as a dense, ' \
+      'database-sized array, not a sparse list of only the afflicted ids' do
+  # Confirmed against a genuine kk1.12 (RPG2003) save under wine: field 81
+  # (the paired count) read exactly 30, that game's own total state count,
+  # on every actor in the roster, none of them afflicted with anything --
+  # not "how many states are currently active", which #to_lsd used to write
+  # there (0 for an unafflicted actor, so the chunk carried no 81/82 at all,
+  # rather than the fixed-length all-zero array a genuine save always has).
+  # See Actor#total_state_count's own citation for the EasyRPG source
+  # confirming the dense, per-state-id shape.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1],
+                       {}, {}, {}, { 1 => FakeStateDef.new(0), 2 => FakeStateDef.new(0),
+                                     3 => FakeStateDef.new(0) })
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+  eq 3, hero.total_state_count
+
+  # Unafflicted: the chunk is still present, all-zero, sized to the
+  # database's own state count -- not omitted (this codebase's own prior
+  # "unless a.states.empty?" guard).
+  untouched = st.to_lsd[108][1]
+  eq 3, untouched.state_size
+  eq [0, 0, 0], untouched.states
+
+  # Afflicted with state 2 (index 1): only that slot goes nonzero.
+  hero.states = [2]
+  saved = st.to_lsd[108][1]
+  eq 3, saved.state_size
+  eq [0, 1, 0], saved.states, 'state id 2 sets slot index 1 (state_id - 1), the rest stay 0'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq [2], round.party.leader.states,
+     'a nonzero slot reads back as "afflicted", regardless of its own turn-counter value'
+
+  # A dangling save with no situation table at all (an old fixture, or a
+  # database edition with zero defined states) must not blow up: an empty
+  # dense array round-trips to no active states, the same as before.
+  bare_db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1])
+  bare_st = Game::State.new(Game::Party.new(bare_db), 1, 0, 0)
+  eq 0, bare_st.party.leader.total_state_count
+  bare_saved = bare_st.to_lsd[108][1]
+  eq 0, bare_saved.state_size
+  eq [], bare_saved.states || []
+end
+
 check 'to_lsd/from_lsd round-trips the file-select screen\'s face-thumbnail ' \
       'snapshot (State#preview_faces), independent of the loaded actors\' own data' do
   # Confirmed against a genuine RPG_RT.exe under wine: the save/load

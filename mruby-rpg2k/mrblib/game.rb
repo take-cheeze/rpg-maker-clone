@@ -1699,6 +1699,49 @@ module Game
     # own comment at #initialize.
     def sprite_changed?; @sprite_changed; end
 
+    # Whether #name/#title currently differ from this actor's own database
+    # row -- the gate #to_lsd uses for chunk 108 fields 1/2, confirmed
+    # against a genuine kk1.12 (RPG2003) save under wine: every actor in
+    # that save's roster (no Change Actor Name/Title ever run against any of
+    # them) carried the "\x01" placeholder byte ADR 0014 already documents,
+    # not its own database name/title -- a value this codebase's own writer
+    # used to ignore, unconditionally writing the actor's current (here,
+    # untouched-from-default) name/title instead. This is a plain value
+    # comparison, not a "did the command ever run" flag like
+    # #sprite_changed?/#class_changed?: `Game_Actor::SetName`'s own real
+    # RPG_RT source (see #do_change_actor_name's own citation) collapses
+    # "set back to exactly the database name" into the identical
+    # no-override state as never having touched it at all, so comparing
+    # against the database row's own value reproduces that same collapse
+    # for free, with no separate "ever changed" bookkeeping to keep in sync.
+    def name_changed?; @name != (@db_row.name || ''); end
+    def title_changed?
+      default = @db_row.respond_to?(:title) ? (@db_row.title || '') : ''
+      @title != default
+    end
+
+    # Total number of states (状態) this game's database defines -- the fixed
+    # length genuine RPG_RT.exe's own chunk 108 field 82 always uses, index
+    # `state_id - 1`, one slot per database state id, confirmed against a
+    # genuine kk1.12 save under wine: field 81 (its paired count) read
+    # exactly 30, this test bed's own total state count, for every actor,
+    # none of them afflicted with anything -- not "how many states are
+    # currently active" as `#to_lsd` used to assume when it treated this
+    # pair as a sparse list of only the afflicted ids (the same
+    # count-then-data shape, but the wrong cardinality). EasyRPG Player's own
+    # `Game_Battler::GetInflictedStates` (`src/game_battler.cpp`) confirms
+    # the wire semantics too: it walks its own dense, database-sized status
+    # vector and collects `i + 1` wherever `states[i] > 0` -- a per-state
+    # turn counter, not a boolean -- so a slot's value is genuinely `0` for
+    # "not afflicted" and *some* positive count for "afflicted", though this
+    # codebase has no turn-counter of its own to round-trip once a state
+    # survives past the battle that inflicted it, so `#to_lsd` below writes
+    # a plain `1` for "afflicted" rather than a real duration.
+    def total_state_count
+      table = @db.respond_to?(:situation) ? @db.situation : nil
+      table ? table.to_a.size : 0
+    end
+
     # The actor's FaceSet graphic (顔グラフィック), shown on the save-select
     # screen (the SAVE_TITLE face slots) -- distinct from the message face
     # configured per Show Message. Comes from the database row until a Change
@@ -14219,6 +14262,12 @@ module Game
     # picture and Show Picture on one is a no-op (yado.tk).
     MAX_PICTURE_ID = 50
 
+    # liblcf's own declared default for chunk 108 field 80 (battle_commands):
+    # seven "defer to class/database" slots -- see #to_lsd's own citation for
+    # why this is written unconditionally (not merely when
+    # Actor#battle_commands_changed?).
+    BATTLE_COMMANDS_DEFAULT = [-1, -1, -1, -1, -1, -1, -1].freeze
+
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
     attr_accessor :map, :map_id, :x, :y, :direction
     # Whether the player may open the main menu / save, toggled by the Change
@@ -15025,15 +15074,22 @@ module Game
       actors = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
       @party.roster.each do |a|
         e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PARTY_ACTOR })
-        # Field 1 carries the actor's *current* name (renamed or not, matching
-        # a genuine save), so a Change Actor Name override on any roster
-        # member -- not just the leader, who also gets it via chunk 100's
-        # title -- survives Save/Continue.
-        e[1] = a.name
-        # Field 2 is the actor's current title (renamed or not by Change
-        # Actor Title), confirmed against liblcf's SaveActor field table --
-        # see SAVE_PARTY_ACTOR's comment in schema.rb.
-        e[2] = a.title
+        # Field 1 is the actor's current name, but ONLY while it actually
+        # differs from the database row (#name_changed?) -- an untouched
+        # actor writes the ADR 0014 "\x01" placeholder instead, confirmed
+        # against a genuine kk1.12 save under wine (see #name_changed?'s own
+        # citation); a prior version of this line wrote the current name
+        # unconditionally, which happens to equal the database default for
+        # any actor never hit by Change Actor Name, so it looked correct
+        # against a save whose leader/party actually had been renamed
+        # (Nepheshel Save01) while silently diverging from genuine RPG_RT
+        # for every other, untouched roster entry.
+        e[1] = a.name_changed? ? a.name : "\x01"
+        # Field 2 is the actor's current title, gated on #title_changed? the
+        # same way -- confirmed against liblcf's SaveActor field table (see
+        # SAVE_PARTY_ACTOR's comment in schema.rb) for the field id, and
+        # against the same genuine kk1.12 save for the placeholder gating.
+        e[2] = a.title_changed? ? a.title : "\x01"
         # A live Change Sprite Association (10630) override -- fields 11
         # (sprite_name) / 12 (sprite_id) / 13 (sprite_transparent), gated on
         # #sprite_changed? (the command actually having run), not merely a
@@ -15054,10 +15110,18 @@ module Game
         e[61] = a.equipment
         e[71] = a.hp
         e[72] = a.mp
-        unless a.states.empty?
-          e[81] = a.states.size
-          e[82] = a.states
-        end
+        # Field 82 is a dense array, one slot per database state id
+        # (`total_state_count` long), not a sparse list of only the
+        # currently-afflicted ids -- see Actor#total_state_count's own
+        # citation. Written unconditionally (even all-zero) to match a
+        # genuine save, the same "container present, contents sparse"
+        # convention chunk 103's own 50-slot picture range already
+        # established.
+        n = a.total_state_count
+        dense = Array.new(n, 0)
+        a.states.each { |sid| dense[sid - 1] = 1 if sid >= 1 && sid <= n }
+        e[81] = n
+        e[82] = dense
         # A live Change Class survives Save/Continue too, not just the name/
         # title/sprite overrides above -- only once #change_class (or a
         # restored one) has actually run, matching EasyRPG's own
@@ -15065,13 +15129,18 @@ module Game
         # default), not merely "class_id > 0" -- Change Class to "no class"
         # (id 0) is itself a real, persisted change.
         e[90] = a.class_id if a.class_changed?
-        # Same for a live Change Battle Commands (or a Change Class, which
-        # also materializes the list): EasyRPG's `changed_battle_commands`
-        # flag, mirrored by #battle_commands_changed?'s own raw-ivar check.
-        if a.battle_commands_changed?
-          e[80] = a.battle_commands
-          e[83] = true
-        end
+        # Field 80 (battle_commands) is written unconditionally -- liblcf's
+        # own generator/csv/fields.csv declares its default as the literal
+        # sentinel array `[-1]*7` (seven "defer to class/database" slots),
+        # and a genuine kk1.12 save under wine carries field 80 present with
+        # exactly that default on every actor whose commands were never
+        # touched (field 83, `changed_battle_commands`, absent alongside
+        # it) -- not omitted the way this codebase's own writer used to
+        # treat "untouched" fields. Field 83 stays gated on
+        # #battle_commands_changed? (EasyRPG's own flag of the same name),
+        # the actual "was this ever overridden" signal `.from_lsd` reads.
+        e[80] = a.battle_commands_changed? ? a.battle_commands : BATTLE_COMMANDS_DEFAULT
+        e[83] = true if a.battle_commands_changed?
         # RPG2003 battle row (0x5B/91, liblcf's `ChunkSaveActor::row`) --
         # only written off the front-row default, the same eliding-writer
         # convention `class_id`/`battle_commands` follow above, so an
@@ -15082,14 +15151,20 @@ module Game
         # Continue too -- see SAVE_PARTY_ACTOR's own comment for the
         # genuine-RPG_RT verification. `@base_raw` is the curve plus this
         # modifier with no equipment folded in, so subtracting the curve
-        # back out isolates the same delta #change_param itself computes;
-        # only written per-stat when actually nonzero, the same
-        # eliding-writer convention every field above follows.
+        # back out isolates the same delta #change_param itself computes.
         raw = a.base_raw
         curve = a.base_stats(a.level)
-        # Field ids in STAT_NAMES order (max_hp, max_mp, atk, def, int, agi).
-        [33, 34, 41, 42, 43, 44].each_with_index do |field, i|
-          delta = raw[i] - curve[i]
+        # hp_mod/sp_mod (33/34) are written unconditionally, delta 0
+        # included -- confirmed against a genuine kk1.12 save under wine,
+        # every actor's own untouched hp_mod/sp_mod present as an explicit
+        # 0, distinct from liblcf's own declared -1 ("never touched")
+        # default (see schema.rb's own comment on these two fields).
+        # attack_mod/defense_mod/spirit_mod/agility_mod (41-44) keep the
+        # opposite, "omit at zero" convention the same save confirms.
+        e[33] = raw[0] - curve[0]
+        e[34] = raw[1] - curve[1]
+        [41, 42, 43, 44].each_with_index do |field, i|
+          delta = raw[i + 2] - curve[i + 2]
           e[field] = delta if delta != 0
         end
         actors[a.id] = e
@@ -15535,7 +15610,16 @@ module Game
           end
           actor.equip(sa.equipment) if sa.equipment
           actor.skills = sa.skills if sa.skills
-          actor.states = sa.states if sa.states
+          # sa.states is the same dense, database-sized array #to_lsd now
+          # writes (see Actor#total_state_count's own citation) -- a
+          # nonzero slot means "afflicted", regardless of its actual
+          # turn-counter value, which this codebase does not otherwise
+          # track once a state survives past the battle that inflicted it.
+          if sa.states
+            ids = []
+            sa.states.each_index { |i| ids << (i + 1) if sa.states[i] && sa.states[i] != 0 }
+            actor.states = ids
+          end
           # A live Change Battle Commands (or a Change Class, which also
           # materializes the list) -- gated on `changed_battle_commands` the
           # same way EasyRPG's own read does, not merely "the field is
