@@ -4412,6 +4412,78 @@ The work below is roughly ordered by the critical path to a walkable game
   field crash; the autostart-crash mystery (cycles #137-139); the missing-
   Picture-asset hang; and every EasyRPG-style citation cycle #154's own
   repo-wide grep turned up that no cycle has yet touched.
+  ✅ **Follow-up (cycle #167, 2026-08-26): completed cycle #165/#166's own
+  `SAVE_SYSTEM` field 125 (`battle_background`) investigation and closed it
+  with a definitive negative result -- genuine RPG_RT.exe does NOT persist
+  a Change Battle Background override past the battle it was issued in, so
+  this codebase's existing (unwired) behavior was already correct. No
+  production code changed; only `mruby-lcf/mrblib/schema.rb`'s own comment
+  on field 125 was extended to record the finding.** **Evidence:** picked
+  up cycle #166's own option (a) -- rather than hand-authoring a different
+  Enemy Encounter map event (option (b), which would have repeated cycles
+  #137-139's own demonstrated "hand-built battle-event map commands crash
+  genuine RPG_RT.exe" risk with unverified content), extended cycle
+  #130-165's proven-safe Map0478-event-2 splice to copy **all three** of
+  that event's genuine pages (not just page 2), preserving their own real
+  conditions/triggers (`build_battle_probe3.rb`, this session's scratchpad):
+  page 1 (flags=0, always active, trigger forced to autostart(3) since its
+  genuine trigger is touch-by-player) sets switch 911 at its own end: page 2
+  (genuinely autostart already, condition switch 911) is the real 89-command
+  Victory/Escape/Defeat script, and sets switch 913 on Victory; page 3
+  (genuinely trigger=action-key i.e. inert once selected, condition switch
+  913) is what stops the event from re-autostarting -- this is the exact
+  genuine mechanism cycle #166 was missing when its page-2-only splice
+  looped forever on Victory. Confirmed under wine: boots, Continues, the
+  full genuine dialogue plays, the fight is winnable, and afterward the
+  party returns to an ordinary map with no loop and no reduced menu from
+  the splice itself. Separately discovered the actual remaining blocker
+  wasn't the loop at all: `Save01_clean.lsd` (the demo save cycles #130-165
+  have reused since #148) itself carries `save_allowed: false` (field 123),
+  so the ordinary in-game System menu never offers Save regardless of
+  Victory/Escape -- this is a property of the fixture, not of the battle
+  script, and would have blocked cycle #166's option (a) too. Worked around
+  it the same way cycle #155's own picture probes already do: appended a
+  trailing Open Save Menu (11910) command, no Wait, right after page 2's
+  own genuine tail (`APPEND_SAVE_MENU=1` in `build_battle_probe3.rb`) --
+  Open Save Menu forces the save screen open regardless of `save_allowed`,
+  same as it did for cycles #160/#161's own field-123/124 probes. Ran the
+  full battle -> Victory -> auto-opened Save Menu -> save sequence twice
+  under wine: (1) troop 103 completely unmodified (baseline) and (2) with
+  cycle #166's own proven-safe troop-page-injection technique reapplied
+  (one new page on troop 103's own `RPG_RT.ldb` entry, condition copied
+  from the troop's own page 2 shape `flags=8/turn_a=1/turn_b=0`, running
+  Change Battle Background("light")) -- confirmed the backdrop visibly
+  changed to the real pink/white `Backdrop/light.png` gradient mid-fight in
+  run (2) (screenshot evidence in this session's scratchpad), the same
+  visible effect cycle #166 already established. Reading each resulting
+  genuine `Save01.lsd`'s chunk 101 with `LCF::SaveData`/`Array1D#key?(125)`
+  came back **absent in both runs** -- a real A/B result (only the Change
+  Battle Background firing differed between the two runs) rather than an
+  inconclusive one, settling the open question: this override is
+  battle-scoped only, exactly matching this codebase's own pre-existing
+  `@battle_background`-on-`Scene::Battle` behavior. **Verification:** all of
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_logic_check.rb`
+  (1145), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19), `scripts/rpg2k3_battle_gauge_check.rb`
+  (15) and `ctest -R mruby_test` reconfirmed passing after the comment-only
+  change (identical counts to before); `scripts/rpg2k_save_load_check.rb`'s
+  own 3 pre-existing failures (BGM `balance`, `show_x`/`show_y`, the
+  transition-defaults warning) were reconfirmed present identically. All
+  three touched fixtures (`RPG_RT.ldb`, `Map0012.lmu`, `Save01.lsd`) were
+  restored and reconfirmed byte-identical by `md5sum` to the values
+  recorded since cycle #148 (`a738d3b9.../c2fa69a0.../3ab5bb01...`); `git
+  status` on `data/` (gitignored) came back clean. No EasyRPG source was
+  consulted for any claim, and no web search was used. **Left open for a
+  future cycle:** what field 125 actually represents, if anything (this
+  schema's own `:battle_background` name was always a positional guess, now
+  disproven for this specific command -- no alternative candidate
+  identified); the party-roster-field crash; the autostart-crash mystery
+  (cycles #137-139); the missing-Picture-asset hang; and every EasyRPG-style
+  citation cycle #154's own repo-wide grep turned up that no cycle has yet
+  touched. The 3-genuine-page splice technique and the "append Open Save
+  Menu after a genuine battle script's own tail" idiom this cycle proved
+  safe are both reusable building blocks for any future cycle needing a
+  clean post-battle save capture from this specific encounter.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
