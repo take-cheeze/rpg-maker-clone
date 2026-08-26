@@ -4484,6 +4484,76 @@ The work below is roughly ordered by the critical path to a walkable game
   Menu after a genuine battle script's own tail" idiom this cycle proved
   safe are both reusable building blocks for any future cycle needing a
   clean post-battle save capture from this specific encounter.
+  ✅ **Follow-up (cycle #168, 2026-08-26): investigated the never-wine-
+  verified "Set Transparent Flag polarity" EasyRPG citation (`do_player_
+  visibility`, fixed 2026-08-20 purely from reading EasyRPG's
+  `Game_Interpreter::CommandPlayerVisibility` source, never against genuine
+  RPG_RT.exe) using the reused Nepheshel `Save01.lsd`/`Map0012.lmu` autostart
+  harness -- inconclusive on the polarity question itself, but landed one
+  real fix along the way and fully root-caused a long-standing loose end in
+  `scripts/gen-rpg2k-save.rb`'s own comment. No production `mrblib` code was
+  changed; the existing polarity code is neither confirmed nor disproven.**
+  Built a fresh single-command autostart-page injector (`LCF::MapUnit`-based,
+  this session's own scratchpad) to splice a lone Set Transparent Flag
+  (11310) command onto an existing Map0012 event as a new page (not a new
+  event id, to keep the save's own 21-entry per-event position array the
+  same shape) and toggle param0 while resuming the shared demo save under
+  wine. First attempt hung/black-screened genuine RPG_RT.exe regardless of
+  param0 -- traced to this cycle's own harness bug, not an engine finding:
+  every genuine RPG2000 event-command list ends with an explicit `code=0`
+  terminator command (confirmed by decoding the map's own existing pages --
+  an empty page is exactly one `code=0` entry, `event_command_size` 4 bytes,
+  matching cycles #137-150's own "1 bare BlankLine" description of this
+  identical shape), and the injector's list lacked one; adding it (two
+  commands total: the real one + the terminator, computing field 51 as the
+  encoded blob's actual byte length rather than a command count, also
+  wrong in the first draft) fixed the hang. With that fixed, **both param0=0
+  and param0=1 produced an identical result (no hero sprite either way)**,
+  making the probe unable to answer the polarity question on this fixture --
+  chased down why: this exact `Save01.lsd`'s real party leader (per
+  `scripts/rpg2k_save_load_check.rb`'s own already-established "leader is
+  not chunk 109's first roster entry" finding, re-confirmed by directly
+  reading `RPG_RT.ldb` this cycle) is database actor 15 ("デモ用"), whose own
+  `charset_name` is a blank string -- a blank charset draws nothing in
+  genuine RPG_RT regardless of the transparent flag, so no toggle of that
+  flag can ever produce a visible difference from this save/position. Also
+  confirmed `Game::State.from_lsd` already promotes the correct leader (15)
+  via its own title-chunk fixup, and that this engine's own `--test_play`-
+  only debug marker (`Scene::Map`, `mruby-rpg2k/mrblib/scene/map.rb`,
+  explicitly alpha-0/invisible outside test play) was the only reason our
+  own renderer ever showed anything different there -- not a real rendering
+  gap. **Fixed:** `scripts/gen-rpg2k-save.rb`'s own stale comment, which
+  blamed the missing hero sprite on "Set Transparent Flag is on (chunk 101
+  field 55)" -- wrong twice over (field 55 is liblcf's unrelated
+  `event_message_active`, and the live fixture's actual transparency field,
+  chunk 104 field 24, already reads 0/not-transparent) -- rewritten with the
+  real, now fully root-caused mechanism above. **Verification:** all of
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_logic_check.rb`
+  (1146), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19), `scripts/rpg2k3_battle_gauge_check.rb`
+  (15) and `ctest -R mruby_test` reconfirmed passing (comment-only change,
+  no script logic touched); `scripts/rpg2k_save_load_check.rb`'s own 3
+  pre-existing failures (BGM `balance`, `show_x`/`show_y`, the transition-
+  defaults warning) were reconfirmed present identically. All three touched
+  fixtures (`RPG_RT.ldb`, `Map0012.lmu`, `Save01.lsd`) were restored and
+  reconfirmed byte-identical by `md5sum` to the values recorded since cycle
+  #148 (`a738d3b9.../c2fa69a0.../3ab5bb01...`); `git status` on `data/`
+  (gitignored) came back clean, and no stray Xvfb/wine/engine processes were
+  left running. No EasyRPG source was consulted for any claim this cycle
+  (the citation under review was read only to identify it as unverified, not
+  relied on), and no web search was used. **Left open for a future cycle:**
+  the Set Transparent Flag polarity question itself is still genuinely
+  unverified against real RPG_RT.exe -- answering it needs a hero position
+  where the leader actually has a real charset (e.g. reposition this same
+  save with `scripts/gen-rpg2k-save.rb --map --at` onto a tile where actor 1,
+  not actor 15, is confirmed to render, or patch the save's own party roster
+  to a leader with a non-blank `charset_name` before probing); the now-fixed
+  single-command-plus-terminator autostart-page-injection technique above is
+  a reusable, wine-proven building block for that follow-up. Also still
+  open, unchanged: field 125's own remaining "what is it" question; the
+  party-roster-field crash; the autostart-crash mystery (cycles #137-139);
+  the missing-Picture-asset hang; and every EasyRPG-style citation cycle
+  #154's own repo-wide grep turned up that no cycle has yet touched.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
