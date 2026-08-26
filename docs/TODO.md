@@ -4750,6 +4750,60 @@ The work below is roughly ordered by the critical path to a walkable game
   #154's own repo-wide grep turned up that no cycle has yet touched (a large
   remainder -- this cycle deliberately fixed only the two duplicates of the
   one citation named as this cycle's primary target, not the wider sweep).
+  🚧 **Follow-up (cycle #172, 2026-08-26): attempted to verify
+  `Game::Parallax.anchored_offset`'s clamp formula (`mruby-rpg2k/mrblib/
+  game.rb`) -- the one EasyRPG-style citation in this area explicitly
+  flagged by its own module doc as "mirrors EasyRPG's formulae but has not
+  been visually diffed against RPG_RT under wine" -- but hit an unexplained
+  wine reproduction blocker and made no code change.** Plan: inject a
+  synthetic autostart Teleport + Change Parallax Background (11720) pair
+  into a scratch copy of Nepheshel (never the checked-in `data/`) so a
+  fresh New Game lands the hero at a chosen map's far scroll edge with a
+  custom two-colour (red/blue halves) panorama image, letting a screenshot
+  distinguish the clamped-span formula (`[cam_max, img_px-screen_px].min`)
+  from the naive always-full-excess one by whether both colours are visible
+  or only one. The injector itself (a small script using this codebase's
+  own `LCF::MapUnit`/`Array1D`/`Array2D` under CRuby, mirroring `scripts/
+  lcf_testbed_check.rb`'s load pattern) works correctly and was validated
+  three independent ways: (1) editing an existing, real Teleport command's
+  target map/x/y in place (leaving everything else byte-identical) and
+  landing cleanly on Map0372 with no error, confirmed twice with different
+  target coordinates; (2) a full round-trip re-read of every edited `.lmu`
+  parsing back exactly as authored; (3) map dimensions unchanged after
+  editing. **The blocker:** the identical teleport-editing technique, when
+  retargeted to two other, unrelated maps (Map0008 "スタッフルーム", chipset
+  2; Map0057, a dungeon room, chipset 4) -- chosen only for their width
+  (cam_max 128px / 160px, comfortably under the test image's 320px excess,
+  so the clamp is actually exercised) -- makes genuine RPG_RT.exe pop a
+  small native-looking dialog window (~241x108px, cyan titlebar reading
+  "Nepheshel Ver2.04b", an X close button, no OK/Cancel) with a completely
+  blank body immediately after the teleport, before any parallax command
+  even runs (reproduced with the Change Parallax Background command
+  removed entirely, isolating it to the Teleport alone). Both suspect
+  maps' own chipset graphic files were confirmed present on disk
+  (`町１.png`, `wall_01.png`), ruling out the obvious missing-asset
+  explanation; a CJK font-substitution registry pass (mirroring
+  `scripts/run-rpg2k-rpgrt-wine.bash`'s own trick) did not make the dialog
+  body's text render, so its content is still unread. Whether this is a
+  real, reproducible RPG_RT behavior (e.g. some validation on the
+  destination map/chipset pairing) or an artifact of forcing a teleport
+  before the game's own normal state machine would ever reach that map
+  this early is undetermined. **Left open for a future cycle:** read the
+  dialog's actual text (a debugger breakpoint on the relevant Win32 call,
+  or testing against a game with ASCII map/chipset names to rule out a
+  CJK-rendering-specific dialog, would both help); once understood, retry
+  the parallax-clamp screenshot test on a map confirmed teleport-safe
+  (Map0372 chipset 1 is proven safe but is exactly at the clamp boundary,
+  `cam_max == img excess`, so not discriminating -- a *different*,
+  genuinely narrow map is still needed, ideally reached by walking there
+  through ordinary early-game progression rather than a forced teleport,
+  which would sidestep this whole blocker); everything else already listed
+  as open in cycle #171's own note above, unchanged. No source or `data/`
+  files were modified this cycle -- `git status` on both came back clean
+  (the pre-existing, unrelated `3rd/mruby` submodule-pointer drift aside),
+  confirmed by `md5sum` on every `.lmu`/`.lmt` touched during the wine
+  probes, and all wine/Xvfb/matchbox processes were confirmed terminated
+  before finishing.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
