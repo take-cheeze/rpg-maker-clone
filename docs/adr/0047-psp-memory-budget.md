@@ -1362,9 +1362,16 @@ the interpreter-linking slice, in this order:
   `scripts/rpg2k_scene_check.rb` (929 checks) -- both of which exercise
   `LCF::Database`/`LCF::MapTree`/`LCF::MapUnit` through real
   Scene::Map/battle/event-command paths against synthetic RPG2000 fixtures
-  -- still pass unchanged. Real map-tree/database row counts and
-  arena-usage impact on Nepheshel are, as with every prior round in this
-  section, left to CI's own `psp-smoke-game` run to measure.
+  -- still pass unchanged. Real arena-usage impact on Nepheshel, measured
+  by CI's own `psp-smoke-game` run on the merged commit (`5eb7599`, PR
+  #1374): `GAME_READY` **2,997,728** (was 4,317,728 in #1367's run),
+  `frame=0` **4,461,360** (was 6,813,520), `frame=200` **5,159,200** (was
+  7,149,920), `frame=400` **5,724,880** (was 7,486,816) -- every heartbeat
+  through `frame=1600` stayed between roughly 4.4M and 6.1M, with this
+  run's peak **6,099,664** (at `frame=1000`), **48.5%** of the 12MB
+  ceiling. That is a further drop from #1367's own peak of 77.9%, on top
+  of everything already landed in this section -- still no crash, still
+  reaches `frame=1600` cleanly.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
