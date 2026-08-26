@@ -1404,6 +1404,18 @@ module LCF
       61 => { name: :equipment, type: :int16_array },      # 装備 [武器,盾,鎧,兜,装飾]
       71 => { name: :hp, type: :int },                     # 現在ＨＰ
       72 => { name: :mp, type: :int },                     # 現在ＭＰ
+      # A dense array, one slot per database state id (index `state_id - 1`,
+      # length `state_size`), NOT a sparse list of only the afflicted ones --
+      # confirmed against a genuine kk1.12 (RPG2003) save under wine: field
+      # 81 read exactly 30, that game's own total state count, on every
+      # actor, none of them afflicted with anything, and against EasyRPG
+      # Player's own live source (`Game_Battler::GetInflictedStates`,
+      # `src/game_battler.cpp`), which walks this exact shape of vector and
+      # collects `i + 1` wherever the slot is nonzero. Each slot is a
+      # per-state turn counter in genuine RPG_RT (`> 0` means afflicted),
+      # not a plain boolean -- see `Game::Actor#total_state_count`'s own
+      # comment for why this codebase's own writer only ever puts a plain
+      # `1` there.
       81 => { name: :state_size, type: :int, default: 0 }, # 『状態』情報のデータ数
       82 => { name: :states, type: :int16_array },         # 『状態』情報 (uint16[])
 
