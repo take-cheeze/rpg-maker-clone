@@ -35,6 +35,21 @@ echo "== installing ${APK}"
 adb wait-for-device
 adb install -r "${APK}"
 
+# `adb push` straight into Android/data/<pkg>/... fails on a fresh install
+# with "remote secure_mkdirs failed: Permission denied": the FUSE-backed
+# external storage only lets adb create directories under an app's own
+# Android/data/<pkg> root once that root exists, and nothing creates it until
+# the app itself calls getExternalFilesDir() (RpgMakerCloneActivity's own
+# getArguments(), see app/android/README.md > Building). Priming it with one
+# throwaway launch -- no project pushed yet, so it finds nothing under
+# --game_dir and exits almost immediately (src/main.cxx's "no project found"
+# path) -- creates that root under the app's own UID; force-stopping after
+# leaves nothing running for the push and the real launch below to race.
+echo "== priming ${PACKAGE}'s external-files directory"
+adb shell am start -W -n "${ACTIVITY}"
+sleep 5
+adb shell am force-stop "${PACKAGE}"
+
 echo "== pushing Nepheshel to ${GAME_DIR}"
 adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${GAME_DIR}/"
 
