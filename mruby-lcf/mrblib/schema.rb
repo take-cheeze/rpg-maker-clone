@@ -1049,6 +1049,21 @@ module LCF
       36 => { name: :animation_type, type: :int, default: 0 },
       37 => { name: :move_speed, type: :int, default: 3 },
       41 => { name: :move_route, type: :Array1D, elements: MOVE_ROUTE },
+      # Mirrors field 52's own encoded byte length exactly (confirmed
+      # empirically: a genuine file's own field 51 == `LCF.encode_event_
+      # commands(page.event_commands).bytesize` for every page checked) --
+      # NOT a command count, despite the name. Genuine RPG_RT.exe reads and
+      # trusts this length rather than deriving it from field 52's own outer
+      # chunk framing: cycle #181 confirmed this the hard way, splicing one
+      # extra parameter onto an already-genuine Teleport command (growing
+      # field 52 by a byte) without recomputing this field, which
+      # reproducibly hung genuine RPG_RT.exe on a black screen after the
+      # Teleport -- an artifact of the stale length, not of anything about
+      # the added parameter itself. Recomputing this field after any edit
+      # to field 52 (`page[51] = LCF.encode_event_commands(cmds).bytesize`)
+      # fixed it; any future single-parameter splice onto an event command
+      # list (per cycles #137-139/#176/#178/#180/#181's own discipline) must
+      # do the same.
       51 => { name: :event_command_size, type: :int, default: 0 },
       52 => { name: :event_commands, type: :event },
     }

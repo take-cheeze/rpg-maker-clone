@@ -5925,6 +5925,210 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmed" claims cycle #177 flagged (Change Items' signed-value
   asymmetric guard, Teleport's RPG2003-only facing-parameter gate, the
   `block_pending_*` message-blocking helpers).
+  ✅ **Follow-up (cycle #181, 2026-08-26): got a direct genuine RPG_RT.exe
+  reading on Teleport's own RPG2003-only facing-parameter gate (cycle #177's
+  own flagged claim, left open by #178-180) -- narrowed but not fully
+  settled. Also found and fixed a real, independent methodology bug in this
+  cycle's own edit tooling (not a behavioral bug, and not the finding it
+  first looked like), documented for future cycles. No changelog fragment:
+  nothing in `mrblib` behavior changed, only comments (in `interpreter.rb`
+  and, newly, `mruby-lcf/mrblib/schema.rb`'s own `event_command_size` field).**
+  **Discovery along the way (the real story of this cycle's own first two
+  hours):** `data/Nepheshel206beta` ships TWO genuine RPG_RT.exe binaries
+  side by side, not one -- `Nepheshel206Rbeta/RPG_RT.exe` (PE timestamp June
+  2003, `md5sum fbc7ddbe...`) and `Nepheshel206Nbeta/RPG_RT.exe` (PE
+  timestamp May 2001, `md5sum fab4d182...`), both 32-bit PE, both booting the
+  same underlying game under the exact same wine setup prior cycles already
+  use. Neither game folder's own `RPG_RT.ldb` reports `rpg2003? == true`
+  (`LCF::Database#rpg2003?`, chunk 30 absent in both, confirmed by this
+  project's own `LCF::Database` reader) -- Nepheshel is a maker=2000-format
+  database distributed with a choice of two genuine runtime binaries, not a
+  maker=2003 one. `Nepheshel206Nbeta` had been noted as existing (cycles
+  #148/#150) but never booted before this cycle.
+  **First attempt (Map0359 event 9's own genuine, already-authored Teleport
+  to Map0231, single-parameter-spliced from `[231,1,7]` to `[231,1,7,3]`
+  per cycles #137-139/#176/#178/#180's discipline) reproducibly hung genuine
+  RPG_RT.exe on a black screen after the Teleport** -- alarming at first, but
+  root-caused, NOT a finding about the facing parameter: `MAP_EVENT_PAGE`
+  field 51 (`event_command_size`) mirrors field 52's (`event_commands`) own
+  encoded byte length exactly (confirmed empirically:
+  `LCF.encode_event_commands(cmds).bytesize` matches a genuine file's field
+  51 exactly on every page checked) and genuine RPG_RT.exe evidently reads
+  and trusts that length rather than deriving it from field 52's own chunk
+  framing -- growing field 52 by one parameter without recomputing field 51
+  left it one byte short, and re-running the *identical* edit with field 51
+  recomputed (`page[51] = LCF.encode_event_commands(cmds).bytesize`)
+  reached the Map0231 slideshow cleanly, matching the unedited baseline's
+  own timing exactly (both: bright ~0.94-mean-brightness slideshow reached
+  by ~14s post-load, confirmed via `xwd`+`convert -format "%[fx:mean]"`
+  brightness sampling every 2s across a 30s capture) -- **first real
+  confirmation that a well-formed 4-parameter Teleport command does not
+  itself crash or hang genuine RPG_RT.exe** (2003-dated binary), refuting
+  this cycle's own false alarm. Documented as a new comment on
+  `MAP_EVENT_PAGE`'s own field 51 in `mruby-lcf/mrblib/schema.rb` so no
+  future single-parameter splice onto an event command list repeats this.
+  Map0231 itself turned out to be a poor vehicle for the facing question
+  itself, though: its own autostart is a ~50-second, screen-filling picture
+  slideshow (the game's own opening flashback) that gave no clean look at
+  the hero's own sprite before chaining onward through two more genuine
+  Teleports of its own, so this path was abandoned for that purpose (but
+  not wasted -- it is what proved "no crash").
+  **Second attempt (Map0547's own "debug room" autostart event, gated on a
+  mid-script Conditional Branch on switch 582) could not be made to fire its
+  own true-branch at all, under genuine RPG_RT.exe OR this project's own
+  engine's headless `--rpg2k_continue` probe agreeing on the switch's value
+  -- but disagreeing on the outcome.** This cost the bulk of this cycle's
+  own time and deserves a full account so a future cycle does not repeat it:
+  this project's own `Game::State.from_lsd` shifts the save's chunk 101
+  field 32 (`switches`) bool-array by one (`switches[i+1] = v`, i.e. array
+  index N holds game switch N+1), so a first attempt writing switch 582
+  directly to array index 582 was tried, "fixed" to index 581 to match that
+  shift once found, then -- because neither changed the observed outcome --
+  BOTH indices were set true simultaneously in one save as a belt-and-braces
+  check. This project's own engine (`--rpg2k_continue`, `[RPG2k-MAP]`
+  marker) reached Map0021 (the branch's own Teleport target) with the
+  index-581 save, confirming the shifted convention is what this codebase's
+  own reader expects and cycle #180's own switch-262 precedent used
+  correctly. Genuine RPG_RT.exe, given the IDENTICAL byte-for-byte save (all
+  three switch-index variants), never showed any sign of taking the
+  branch: the two message boxes and a Yes/No choice inside the branch's own
+  body never appeared (confirmed by dense 0.2-0.3s-interval screenshot
+  sampling across the whole transition, which would have shown genuine
+  RPG_RT blocked on the first one, indefinitely, had the branch fired) --
+  every run reached the debug room's own unconditional post-branch dialogue
+  (`"このデータをセーブしますか？"`) in under 2 seconds regardless of which
+  switch convention the save used, including the switch-*off* control.
+  Following that dialogue through to a genuine, real "Save Game" event
+  command (confirmed as real -- unlike the earlier dialogue, this one
+  visibly wrote a new `Save01.lsd`, `ls -la` timestamp/size both changing)
+  and reading the RESULTING GENUINE save back with this project's own LCF
+  tooling gave an authoritative answer no screenshot ambiguity could:
+  `hero[11,12,13,22]` (map, x, y, direction) came back `[547, 10, 7, 0]` --
+  still on Map0547 at the original spot, facing "up" (liblcf 0) exactly as
+  set before load -- for the switch-off control AND (separately re-run) for
+  the switch-on (index 581) case alike. Whatever gate this specific debug
+  room's own switch check depends on, it is not simply "is array index N or
+  N-1 true" the way this project's own `Game::State.from_lsd`/cycle #180's
+  own precedent models it -- a genuine, unresolved discrepancy between this
+  codebase's switch-array convention and whatever genuine RPG_RT.exe
+  actually keys this one specific debug event on, **left open, honestly, as
+  a blocker** rather than forced to a conclusion (per this file's own
+  standing instruction) -- this event's own purpose (a developer-only debug
+  menu, likely gated on something project-specific like a build flag or a
+  different persistence mechanism entirely, not a plain switch at all) may
+  simply not be a fair test of ordinary switch semantics to begin with.
+  **Third attempt succeeded cleanly and is this cycle's own real result.**
+  Abandoning both prior candidates, a fresh scan
+  (`scan_clean_tp4.rb`, filtering this game's own 2017 Teleport commands for
+  ones on an unconditional -- `flags=0`, no switch needed at all --
+  autostart page whose own preceding commands are ALL indent 0, i.e. no
+  conditional branches of any kind before the Teleport, sidestepping the
+  switch-convention question entirely) found Map0519 event 1: an
+  unconditional autostart cutscene (seven genuine, linear Show Message
+  boxes, zero branches) ending in a genuine Teleport to Map0237 (`[237, 16,
+  10]`), itself confirmed to carry no autostart/parallel page of its own (a
+  clean destination, unlike Map0231). Single-parameter-spliced to `[237, 16,
+  10, 3]` (arrive facing "down"), with field 51 recomputed correctly this
+  time from the start. Positioned a promoted-leader save (database actor 1,
+  "リト" -- cycle #175's technique, needed here because this project's
+  standard debug leader, actor 15, renders no sprite at all, ground rule 4)
+  on Map0519 facing "up" (`gen-rpg2k-save.rb --facing up`), then clicked
+  through the seven genuine message boxes under wine (paced `xdotool`
+  keydown/keyup, ~0.8-1.5s apart) to reach Map0237. **Result, from a raw
+  pixel crop of the arriving hero's own sprite (unmistakable: the "up" pose
+  is a solid mass of hair with no face showing; "down" shows a visible pale
+  face beneath a smaller hair tuft -- confirmed distinct in this exact
+  charset by cross-referencing the Map0547 debug room's own now-known-
+  irrelevant "down"-posed screenshots from the abandoned second attempt)**:
+  three separate genuine-RPG_RT-exe captures -- the unedited 3-parameter
+  baseline under `Nepheshel206Rbeta`'s 2003-dated exe, the edited
+  4-parameter version under that same exe, and the edited version again
+  under `Nepheshel206Nbeta`'s 2001-dated exe -- all three showed the
+  IDENTICAL "up" pose, byte-for-byte matching crop regions confirmed by eye
+  (a pixel-diff was not additionally run; the crops are visually
+  unambiguous and reproduced across three independent wine boots). **The
+  added facing parameter changed nothing under either genuine binary.**
+  This directly refutes "merely running a later-dated RPG_RT.exe is
+  sufficient to make Teleport's facing parameter take effect," independent
+  of the EasyRPG-sourced citation this comment used to lean on alone.
+  **What this does NOT settle, stated as plainly as the evidence allows:**
+  Nepheshel's own database is maker=2000-format on both game folders (see
+  the discovery note above), so this cannot separate "the 2001 exe ignores
+  it because RPG2000 binaries never had the feature" (uncontroversial) from
+  "the 2003-dated exe ALSO ignores it because the *database* is
+  RPG2000-format, regardless of which binary loads it" (the more surprising
+  possibility, and the one this test actually bears on) -- and it says
+  nothing at all about a genuine RPG2003-*authored* (maker=2003) database's
+  own Teleport, for which this project has no test-bed. What it DOES
+  settle: this codebase's own existing gate (`@state.party.rpg2003?`, keyed
+  on the loaded database's own format, not on any notion of "which binary")
+  predicts "ignore the parameter" for this exact database -- and that
+  prediction matches genuine RPG_RT.exe's own observed behavior on both
+  available binaries. The gate is not shown wrong by this evidence, though
+  its precise mechanism (database format vs. exe build) remains unpinned.
+  `interpreter.rb`'s own comment on `#do_teleport` is updated with the full
+  finding and its own honest caveats, replacing only the "NOT independently
+  confirmed" framing for the parts now actually evidenced -- the removed
+  EasyRPG citation's own literal text (`Game_Interpreter_Map::
+  CommandTeleport` / `IsRPG2k3Commands()`) is left in place as a plain
+  historical description of where the ported gate's *shape* came from, per
+  this file's own standing rule that an already-present citation predating
+  the sweep needs no unrelated cycle to remove it.
+  **Verification:** `ruby -c` clean on both edited files (`interpreter.rb`,
+  `mruby-lcf/mrblib/schema.rb`); `git diff -- <both files> | grep -vE
+  "^[+-][[:space:]]*#"` shows nothing beyond `+++`/`---`/context noise
+  (comment-only in both); `cd build && ctest -R mruby_test` passed (12.93s);
+  `scripts/rpg2k_logic_check.rb` (1150), `scripts/rpg2k_scene_check.rb`
+  (929), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15) all matched every prior cycle's own recorded baseline exactly;
+  `scripts/lcf_testbed_check.rb` reconfirmed clean (1099 maps, 22858 events,
+  116042 move commands, matching cycle #178/#180's own recorded figures);
+  `scripts/rpg2k_save_load_check.rb` reconfirmed at exactly its 3 known
+  pre-existing, unrelated failures (BGM `balance` x2, picture `show_x`/
+  `show_y`), and its own printed save summary (`leader="Renamed" ...
+  map=12 pos=(40,15)`) confirms `Save01.lsd` is back to its pre-cycle state.
+  `data/` was left byte-identical: every `Map0359.lmu`/`Map0519.lmu`/
+  `Map0547.lmu`/`Save01.lsd` edit this cycle made (in both
+  `Nepheshel206Rbeta` and `Nepheshel206Nbeta`) was to a working copy, with
+  the genuine originals re-extracted from this project's own checked-in
+  `data/Nepheshel206beta.zip` and `md5sum`-verified identical to this
+  cycle's own pre-edit backups before being written back over the working
+  directories; `Nepheshel206Nbeta/Save01.lsd` (which this cycle created --
+  that game folder ships with none) was deleted rather than left behind.
+  Final `md5sum` of every touched file matches the values recorded at this
+  cycle's own start (`Save01.lsd 3ab5bb01...`, `Map0359.lmu 5d6da9af...`,
+  `Map0547.lmu 98bc5e4b...`, `Map0519.lmu 61289ad6...`, both game folders;
+  `RPG_RT.ldb` in both folders untouched throughout, only ever read).
+  `git status --porcelain` on the repo shows only `mruby-rpg2k/mrblib/
+  interpreter.rb` and `mruby-lcf/mrblib/schema.rb` changed (the pre-existing
+  dirty `3rd/mruby` submodule pointer predates this cycle). Every wine/
+  Xvfb/matchbox process this cycle started was confirmed terminated (`ps
+  aux` clean) between and after every boot (roughly a dozen across both
+  binaries), with an explicit `wineserver -k` (scoped to
+  `~/.wine-nepheshel32`, shared by both game folders) plus a sleep before
+  each. No EasyRPG source was consulted for any behavioral claim this cycle
+  -- the one pre-existing citation quoted above was read only long enough to
+  describe accurately, never treated as evidence; no web search was used.
+  **Left open for a future cycle, in priority order:** (1) the Map0547
+  debug-room switch mystery above, honestly unresolved -- if it matters
+  enough to chase, the first new move should be finding out what governs
+  that specific event's own branch (a build-time flag baked into this one
+  compiled `RPG_RT.exe`? some non-switch persistence this project's own
+  `Game::State.from_lsd` does not model at all?) rather than re-trying
+  switch-index variations, which this cycle already exhausted; (2)
+  `mrblib/game.rb`'s own ~163-instance citation count, still unread-through-
+  in-full; (3) the two `scripts/` check files (`rpg2k_logic_check.rb`/
+  `rpg2k_scene_check.rb`, ~395 instances) as a possibly-different-cadence
+  cleanup; (4) `interpreter.rb`'s own remaining newly-honest "NOT
+  independently confirmed" claims cycle #177 flagged and this cycle did not
+  reach (Change Items' signed-value asymmetric guard, the `block_pending_*`
+  message-blocking helpers); (5) whether a genuine RPG2003-*authored*
+  (maker=2003) database's own Teleport facing parameter behaves differently
+  from what this cycle found -- needs a different RPG2003 test-bed game,
+  which this project does not currently have; (6) the SPEED_UP ceiling's
+  exact internal value (4 vs. 5), cycle #180's own left-open item, untouched
+  this cycle.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
