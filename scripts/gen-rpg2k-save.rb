@@ -146,6 +146,32 @@ end
 
 DIRECTIONS = { 'up' => 8, 'right' => 6, 'left' => 4, 'down' => 2 }.freeze
 
+# LCF::Schema::SAVE_MOVABLE's own field 22 (which HERO_DIRECTION above points
+# at) is documented there as liblcf's own facing enum -- 0=up, 1=right,
+# 2=down, 3=left, matching `Game_Character::Direction`'s enum order -- NOT
+# this runtime's numpad convention (2/4/6/8) DIRECTIONS holds. Game::CharSet
+# ::DIR_ROW (mruby-rpg2k/mrblib/game.rb) is that exact numpad -> liblcf-index
+# table, so it doubles as the encoder here (this script cannot load the mruby
+# gem, so the table is inlined rather than shared).
+#
+# Found by hand this cycle: this script used to write DIRECTIONS.fetch(...)
+# (the numpad value, e.g. 8 for 'up') straight into field 22 instead of
+# converting it first, putting an out-of-range value into a field this
+# codebase's own decoder (`EventGraphic.numpad_direction`'s own
+# `LCF_DIR_TO_NUMPAD[lcf_dir] || 2` fallback) reads back as facing *down*
+# for anything it does not recognise -- silently wrong for every direction
+# but 'down' (whose numpad value, 2, happens to equal its own liblcf index,
+# masking the bug for that one case). A `--facing up` save resumed under
+# genuine RPG_RT.exe under wine this cycle also drew the leader facing down
+# rather than up, consistent with the same fallback, though that single
+# observation was not isolated cleanly enough (an unrelated input freeze hit
+# the same probe) to stand as this cycle's own confirmed behavioral finding
+# on its own -- the schema's own pre-existing documentation above is this
+# fix's real basis, independent of that wine capture. A future probe relying
+# on `--facing up/right/left` should confirm the resulting facing with a
+# screenshot rather than assume this bug is the only thing that can go wrong.
+LCF_DIRECTION = { 'up' => 0, 'right' => 1, 'down' => 2, 'left' => 3 }.freeze
+
 options = { slot: 1 }
 parser = OptionParser.new do |o|
   o.banner = 'Usage: ruby scripts/gen-rpg2k-save.rb [GAME_DIR] [options]'
@@ -201,7 +227,7 @@ end
 hero[HERO_MAP] = map_id
 hero[HERO_X] = x
 hero[HERO_Y] = y
-hero[HERO_DIRECTION] = DIRECTIONS.fetch(options[:facing]) if options[:facing]
+hero[HERO_DIRECTION] = LCF_DIRECTION.fetch(options[:facing]) if options[:facing]
 
 # Reading a chunk decodes a detached copy, so the edited chunk has to go back in
 # before serialising (same as scripts/lcf_save_roundtrip.rb).
@@ -245,6 +271,17 @@ unless got == [map_id, x, y]
   warn "FAILED: wrote map=#{map_id} (#{x},#{y}) but read back " \
        "map=#{got[0]} (#{got[1]},#{got[2]})"
   exit 1
+end
+if options[:facing]
+  want_dir = LCF_DIRECTION.fetch(options[:facing])
+  got_dir = back[104][HERO_DIRECTION]
+  unless got_dir == want_dir
+    warn "FAILED: wrote facing=#{options[:facing]} (liblcf #{want_dir}) but " \
+         "read back #{got_dir} -- this would resume facing the wrong way " \
+         '(or the schema default fallback, "down") in any runtime that reads ' \
+         'this field, not just the writer bug this check exists to catch'
+    exit 1
+  end
 end
 if options[:clear_scene] && (back.key?(FOREGROUND_EVENT) || back.key?(PICTURES))
   warn 'FAILED: --clear-scene left chunk 113/103 in the written save'

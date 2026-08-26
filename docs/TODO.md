@@ -4750,6 +4750,143 @@ The work below is roughly ordered by the critical path to a walkable game
   #154's own repo-wide grep turned up that no cycle has yet touched (a large
   remainder -- this cycle deliberately fixed only the two duplicates of the
   one citation named as this cycle's primary target, not the wider sweep).
+  🚧 **Follow-up (cycle #172, 2026-08-26): attempted to verify
+  `Game::Parallax.anchored_offset`'s clamp formula (`mruby-rpg2k/mrblib/
+  game.rb`) -- the one EasyRPG-style citation in this area explicitly
+  flagged by its own module doc as "mirrors EasyRPG's formulae but has not
+  been visually diffed against RPG_RT under wine" -- but hit an unexplained
+  wine reproduction blocker and made no code change.** Plan: inject a
+  synthetic autostart Teleport + Change Parallax Background (11720) pair
+  into a scratch copy of Nepheshel (never the checked-in `data/`) so a
+  fresh New Game lands the hero at a chosen map's far scroll edge with a
+  custom two-colour (red/blue halves) panorama image, letting a screenshot
+  distinguish the clamped-span formula (`[cam_max, img_px-screen_px].min`)
+  from the naive always-full-excess one by whether both colours are visible
+  or only one. The injector itself (a small script using this codebase's
+  own `LCF::MapUnit`/`Array1D`/`Array2D` under CRuby, mirroring `scripts/
+  lcf_testbed_check.rb`'s load pattern) works correctly and was validated
+  three independent ways: (1) editing an existing, real Teleport command's
+  target map/x/y in place (leaving everything else byte-identical) and
+  landing cleanly on Map0372 with no error, confirmed twice with different
+  target coordinates; (2) a full round-trip re-read of every edited `.lmu`
+  parsing back exactly as authored; (3) map dimensions unchanged after
+  editing. **The blocker:** the identical teleport-editing technique, when
+  retargeted to two other, unrelated maps (Map0008 "スタッフルーム", chipset
+  2; Map0057, a dungeon room, chipset 4) -- chosen only for their width
+  (cam_max 128px / 160px, comfortably under the test image's 320px excess,
+  so the clamp is actually exercised) -- makes genuine RPG_RT.exe pop a
+  small native-looking dialog window (~241x108px, cyan titlebar reading
+  "Nepheshel Ver2.04b", an X close button, no OK/Cancel) with a completely
+  blank body immediately after the teleport, before any parallax command
+  even runs (reproduced with the Change Parallax Background command
+  removed entirely, isolating it to the Teleport alone). Both suspect
+  maps' own chipset graphic files were confirmed present on disk
+  (`町１.png`, `wall_01.png`), ruling out the obvious missing-asset
+  explanation; a CJK font-substitution registry pass (mirroring
+  `scripts/run-rpg2k-rpgrt-wine.bash`'s own trick) did not make the dialog
+  body's text render, so its content is still unread. Whether this is a
+  real, reproducible RPG_RT behavior (e.g. some validation on the
+  destination map/chipset pairing) or an artifact of forcing a teleport
+  before the game's own normal state machine would ever reach that map
+  this early is undetermined. **Left open for a future cycle:** read the
+  dialog's actual text (a debugger breakpoint on the relevant Win32 call,
+  or testing against a game with ASCII map/chipset names to rule out a
+  CJK-rendering-specific dialog, would both help); once understood, retry
+  the parallax-clamp screenshot test on a map confirmed teleport-safe
+  (Map0372 chipset 1 is proven safe but is exactly at the clamp boundary,
+  `cam_max == img excess`, so not discriminating -- a *different*,
+  genuinely narrow map is still needed, ideally reached by walking there
+  through ordinary early-game progression rather than a forced teleport,
+  which would sidestep this whole blocker); everything else already listed
+  as open in cycle #171's own note above, unchanged. No source or `data/`
+  files were modified this cycle -- `git status` on both came back clean
+  (the pre-existing, unrelated `3rd/mruby` submodule-pointer drift aside),
+  confirmed by `md5sum` on every `.lmu`/`.lmt` touched during the wine
+  probes, and all wine/Xvfb/matchbox processes were confirmed terminated
+  before finishing.
+  ✅ **Follow-up (cycle #173, 2026-08-26): attempted to verify the `Game::
+  Shop#sellable_items` citation (`mruby-rpg2k/mrblib/game.rb`, "a price-0
+  item a player holds still shows up in the Sell list") via a genuine
+  RPG_RT.exe wine probe (Nepheshel's own item-shop NPC, `Map0016.lmu` event
+  4, the same reachable-with-zero-synthetic-editing recipe cycles #144/#145
+  used) but did not reach a conclusion -- instead found and fixed a real
+  bug in `scripts/gen-rpg2k-save.rb`'s own `--facing` option that actively
+  produced a wrong test setup, and hit a second, unexplained wine input
+  freeze this cycle could not root-cause in the time remaining.** The
+  `--facing` bug: `gen-rpg2k-save.rb` wrote its numpad-convention direction
+  value (`DIRECTIONS`, e.g. 8 for 'up') straight into the save's chunk 104
+  field 22 -- but `LCF::Schema::SAVE_MOVABLE`'s own pre-existing doc comment
+  for that exact field says it holds liblcf's *own* 0=up/1=right/2=down/
+  3=left enum instead, with `Game::CharSet::DIR_ROW` (`mruby-rpg2k/mrblib/
+  game.rb`) named as the numpad -> liblcf-index conversion table -- and the
+  script was never applying it. Confirmed the mismatch is real and
+  consequential, not just cosmetic, two ways: (1) every direction but
+  'down' writes a value this codebase's own decoder (`EventGraphic.
+  numpad_direction`'s `LCF_DIR_TO_NUMPAD[lcf_dir] || 2` fallback) cannot
+  recognise at all (out of its 0..3 domain), silently falling back to
+  facing down regardless of the option requested -- 'down' alone survives
+  by coincidence, since its numpad value (2) already equals its own liblcf
+  index; (2) a `--facing up` save resumed under genuine RPG_RT.exe under
+  wine this cycle also visibly drew the leader facing down, not up,
+  consistent with that same fallback -- though this single observation is
+  *not* claimed as this cycle's own confirmed behavioral finding on its
+  own, since an unrelated freeze (below) hit the same probe run and was
+  never cleanly isolated from it; the schema's own pre-existing
+  documentation is this fix's real, independent basis. **Fixed**: added a
+  correct `LCF_DIRECTION` (up/right/down/left -> 0/1/2/3) table and pointed
+  the hero-direction write at it instead of the numpad-convention
+  `DIRECTIONS` (kept, unchanged, for the CLI's own `--facing` option-name
+  list); extended the script's own existing post-write read-back
+  verification to also assert the written direction round-trips as the
+  correct liblcf value, so a future regression fails loudly instead of
+  silently mis-positioning a probe. **Verification**: reverting only the
+  write line (keeping the new check) reproduces a clean `FAILED: wrote
+  facing=up (liblcf 0) but read back 8 ...` and a non-zero exit; all four
+  directions round-trip to their correct liblcf indices (0/1/2/3) with the
+  fix in place; `ruby -c` and a dry run against Nepheshel's own `Save01.lsd`
+  both pass. Since this change touches only a standalone CRuby dev script,
+  not any shipped `mrblib` code, the shipped-engine check suites were run
+  purely as a sanity confirmation rather than because they could exercise
+  this diff: `scripts/rpg2k_scene_check.rb` (929), `scripts/
+  rpg2k_logic_check.rb` (1147), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k3_battle_row_check.rb` (19), `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) and `ctest -R mruby_test` all
+  unchanged and green; `scripts/rpg2k_save_load_check.rb` reconfirmed at
+  exactly its 3 known pre-existing, unrelated failures. No changelog
+  fragment applies (a dev-tooling fix, not a shipped behavior change).
+  **The second, unexplained problem, left open:** after correcting the
+  save's own direction field (via a raw one-off edit, not yet through the
+  fixed script) and reloading, genuine RPG_RT.exe stopped responding to
+  *any* key at all (movement included, not just the shop NPC's own action-
+  key interaction) for the remainder of that run, surviving a full process
+  kill-and-relaunch of RPG_RT.exe itself (a fresh interpreter reading the
+  same save from disk) -- `WINEDEBUG=+key` traced the keys still reaching
+  the game's own hwnd correctly throughout, so this is not a repeat of
+  cycle #145's own "wrong key bound" finding. Low confidence this is a
+  genuine RPG_RT quirk rather than an artifact of this cycle's own several
+  earlier exploratory `z` presses (sent before the direction bug was
+  understood, potentially already having triggered event 4's own 48-command
+  script, which was never confirmed to have exited cleanly) -- not chased
+  further given the time-box. **Left open for a future cycle:** retry the
+  `sellable_items` verification from a completely fresh save (no
+  exploratory keypresses beforehand) using the now-fixed
+  `gen-rpg2k-save.rb`, standing the party at Map0016 (14,11) `--facing up`
+  with item 17 (天使の翼, price 0, confirmed via a fresh `RPG_RT.ldb` item-
+  table dump this cycle) added alongside the save's existing item 1 (薬草)
+  in chunk 109, then driving `z` once cleanly into the shopkeeper's own
+  Show Choices -> Sell list and screenshotting it; if the same total-input-
+  freeze recurs on a clean save with correct facing, that itself becomes
+  the more interesting, reproducible finding to chase next. Also
+  unchanged: everything else already listed as open in cycle #172's own
+  note above, and every other EasyRPG-style citation this file's own past
+  cycles have not yet swept (a large remainder spanning both `mrblib`
+  files -- see cycle #154's own list plus the many more recent instances a
+  fresh repo-wide grep this cycle ran still turns up, none yet individually
+  triaged). `data/` was left byte-identical to this cycle's own starting
+  point (`md5sum`-confirmed on `Save01.lsd`/`Map0012.lmu`/`Map0016.lmu`/
+  `RPG_RT.ldb`/`RPG_RT.lmt`), `git status` on it came back clean, and every
+  wine/Xvfb/matchbox process this cycle started was confirmed terminated
+  before finishing.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
