@@ -4198,6 +4198,123 @@ The work below is roughly ordered by the critical path to a walkable game
   fixtures), the party-roster-field crash, the autostart-crash mystery, the
   missing-Picture-asset hang, and every EasyRPG-style citation cycle #154's
   own repo-wide grep turned up that no cycle has yet touched.
+  ✅ **Follow-up (cycle #165, 2026-08-26): picked up field 140 (`atb_mode`)'s
+  own repeatedly-deferred "needs a genuine RPG2003 project" blocker and
+  settled it definitively -- it is not reachable with this repo's current
+  fixtures, full stop, which had never actually been re-confirmed against
+  *this session's own* two game directories before being re-flagged cycle
+  after cycle (#159-#164) as if a future cycle finding new access might
+  still close it. No behavioural fix landed this cycle; this is a
+  fixture-availability finding plus one new, concrete lead for whoever
+  picks this up next.** **Evidence:** `data/Nepheshel206beta/
+  Nepheshel206Rbeta/RPG_RT.exe` (the fixture cycles #148-164 have all used
+  for genuine wine captures) carries the registry strings
+  `Software\Enterbrain\RPG2000` / `Software\ASCII\RPG2000` (`strings -n 8
+  RPG_RT.exe`) -- this is a genuine RPG Maker **2000** binary, not 2003 --
+  and its own `RPG_RT.ldb`, loaded through this repo's own CRuby-hosted
+  `mruby-lcf` parser, answers `db.rpg2003?` **false** (no chunk 30/Classes
+  section at all), matching the EXE. So Nepheshel cannot write a 2003-only
+  save chunk no matter what event commands a synthetic autostart page
+  issues -- the field's absence across every cycle-159-through-164 capture
+  was never actually ambiguous, it was structurally guaranteed from the
+  start. Separately, `data/mtf-meido-action/Debug/RPG_RT.ldb` **does**
+  answer `db.rpg2003?` **true** (a real chunk-30-bearing RPG2003 database),
+  but that directory's only executable is `Player.exe` alongside
+  `EasyRPG.ini`/`ultimate_rt_eb.dll` -- an EasyRPG Player build, not genuine
+  `RPG_RT.exe` -- which this project's own methodology already excludes as
+  a behavioural source (and which two much older entries in this very file,
+  the cycle-121-era Status-menu writeup and its own follow-up, already
+  documented independently: "the one RPG2003 test-bed available
+  (`mtf-meido-action`) has no genuine `RPG_RT.exe`, only EasyRPG's
+  Player.exe"). Those two facts were never cross-referenced from the
+  atb_mode entries themselves, which is why four consecutive cycles kept
+  re-listing "needs a genuine RPG2003 project" as if it were merely
+  unattempted rather than presently impossible with what this sandbox
+  actually contains. **Recommendation:** drop field 140 from the rotating
+  candidate list until a genuine RPG2003 `RPG_RT.exe` is added to the repo's
+  fixtures; re-flagging it without new fixture access just re-derives this
+  same dead end. **New lead surfaced while checking this (not chased to a
+  fix this cycle, see below): `SAVE_SYSTEM` field 125 (`battle_background`,
+  `mruby-lcf/mrblib/schema.rb`) is declared but completely unplumbed --
+  `Game::State#to_lsd`/`.from_lsd` never read or write it, despite this
+  being a real, in-use, non-hypothetical RPG_RT feature.** Searching
+  Nepheshel's own `RPG_RT.ldb` for every battle-event page anywhere in the
+  database that issues Change Battle Background (13210) turned up exactly
+  one: troop 160 (`ラスボス` submember of the final-boss group), page 4,
+  `code=13210 str="light"` (deep in a turn/switch-gated cutscene page,
+  `Backdrop/light.png` is a real file in this project) -- confirming this
+  codebase's own `Interpreter#do_change_battle_bg`
+  (`@battle_background = cmd.string`) already decodes the exact parameter
+  shape genuine RPG_RT authors this command with (a bare string, no numeric
+  params), which was not previously cross-checked against a real usage
+  site. The open question is whether a Change Battle Background override,
+  like the BGM/SE override slots (fields 71-102, already confirmed
+  persistent) or `bgm_stopping` (field 61), is meant to survive past the
+  one fight it was issued in and round-trip through Save/Continue via field
+  125 -- this codebase's own `@battle_background` is presently scoped
+  entirely to the live `Scene::Battle` instance and is discarded the moment
+  the fight ends, never touching `Game::State` at all, so if genuine
+  RPG_RT does persist it this is a real, fixable gap. **Why this was not
+  chased to a verified fix this cycle:** confirming it needs a live battle
+  in which 13210 actually executes, followed shortly by a save -- and this
+  repo's own established wine-probe machinery has a standing, still-
+  unexplained hazard directly in the way: cycles #137-#139's own
+  structural investigation found that *any* hand-built short synthetic
+  autostart **map**-event command list crashes genuine RPG_RT.exe on the
+  next screen transition, regardless of content, length, or realistic
+  command shapes tried, while only a bare single command or the one
+  genuine 89-command Map478-event-2/page-2 Enemy-Encounter-through-
+  EndBattle tail (troop 103) have ever survived. That rules out hand-
+  authoring a fresh Enemy-Encounter-plus-Change-Battle-Background map event
+  the way this cycle first attempted (built and then discarded, see below)
+  -- the only proven-safe live-battle route reuses that exact troop-103
+  tail verbatim, and troop 103's own 19 real battle-event pages carry no
+  Change Battle Background call to observe. The untested, and structurally
+  different, alternative for a future cycle: extend troop 103's *own*
+  `RPG_RT.ldb` entry (chunk 15/enemy_group id 103) with one additional
+  battle-event page (condition flags 0, i.e. always-active) whose event
+  list is just `[Change Battle Background(name), 0]`, leaving `Map0012.lmu`
+  and the proven-safe troop-103 map splice completely untouched -- this
+  edits a different file/subsystem than the one cycles #137-139 showed is
+  crash-prone (database battle-event pages loaded once at battle start, not
+  a map's own per-frame autostart-page dispatch), and every ordinary troop
+  in this same database already carries 18-19 such pages natively, so the
+  *shape* of the edit is not synthetic in the way a hand-built map event is
+  -- but no cycle has ever tried editing `RPG_RT.ldb` itself, so this is an
+  untested hypothesis about risk, not a proven-safe recipe, and should be
+  attempted cautiously (small, single-field edit; screenshot/process-alive
+  checks before proceeding to the save step) rather than assumed safe.
+  This cycle built exactly this experiment (a scratch `RPG_RT.ldb` with a
+  synthetic troop 601/602 pair, `inject_troop_bgprobe.rb`, plus a from-
+  scratch map autostart event, `inject_bgprobe_map.rb`) but caught, before
+  ever booting wine, that the map-event half was a hand-built short command
+  list of exactly the shape cycles #137-139 proved unsafe -- so it was
+  discarded unrun rather than risking a corrupted probe or a wasted wine
+  session, and `RPG_RT.ldb`/`Map0012.lmu`/`Save01.lsd` were restored to
+  their exact original bytes (`a738d3b9.../c2fa69a0.../3ab5bb01...`,
+  reconfirmed by `md5sum` against every prior cycle's own recorded values)
+  with `git status` on `data/` clean before any wine session was ever
+  started. **No production code was changed this cycle**: per this file's
+  own standing rule and this session's explicit time-box, a plausible-but-
+  unverified fix for field 125 was deliberately not shipped rather than
+  forcing one without the genuine-RPG_RT.exe evidence this project's
+  methodology requires. Also swept, without finding any new discrepancy or
+  mislabeling, several of this cycle's own suggested EasyRPG-citation
+  targets: `do_change_equipment`, the skill-seal/`IsSkillUsable`-equivalent
+  logic, `EnemyAi::IsActionValid`, `CalcNormalAttackAutoBattleTargetRank`/
+  `CalcSkillAutoBattleTargetRank`, `Window_ShopSell`'s list-vs-sellability
+  split, and the move-route command dispatch (`Game::MoveRoute#execute`,
+  `#do_move`/`#do_jump`) -- every citation checked already carries an
+  explicit "confirmed against RPG_RT's own live source"/"fetched live"
+  qualifier from an earlier cycle rather than treating EasyRPG as
+  authoritative on its own, so none of these needed correction. **Left open
+  for a future cycle:** `SAVE_SYSTEM` field 125 (`battle_background`, see
+  above -- the most concrete new lead from this cycle); the party-roster-
+  field crash; the autostart-crash mystery (cycles #137-139, directly
+  relevant to any future map-event-based probe); the missing-Picture-asset
+  hang; and every EasyRPG-style citation cycle #154's own repo-wide grep
+  turned up that no cycle has yet touched. Field 140 (`atb_mode`) is
+  removed from this rotating list per the recommendation above.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
