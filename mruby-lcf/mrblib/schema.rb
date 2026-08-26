@@ -1635,6 +1635,33 @@ module LCF
     # common-event id -- 505 entries in a real Nepheshel save. Each entry's
     # field 1 is that event's interpreter execution state, kept as an opaque blob
     # (like SAVE_MAP_EVENT's tile replacements) until its grammar is documented.
+    #
+    # liblcf's own generator/csv/fields.csv (not yet decoded field-by-field
+    # here) names field 1 (0x01) `parallel_event_execstate`, a
+    # `SaveEventExecState` struct -- NOT a simple resume index like this
+    # codebase's own `Game::State#common_event_progress` (a command-list
+    # cursor per running Common Event). It is a genuine interpreter call-
+    # stack snapshot: `stack` (0x01, `Array<SaveEventExecFrame>`), each frame
+    # carrying its OWN full `commands` list (0x02, `Vector<EventCommand>`,
+    # i.e. the exact command page being executed, not just an id — a Call
+    # Event pushes a frame whose commands come from the called event, so
+    # nested calls round-trip correctly), `current_command` (0x0B, the
+    # index into that frame's own commands), `event_id` (0x0C, 0 for a
+    # common event or one belonging to another map), a
+    # `triggered_by_decision_key` flag (0x0D), and `subcommand_path` (0x15
+    # count / 0x16 data) -- one byte per nesting level, the chosen Show
+    # Choice branch id at that level (255 once taken, per liblcf's own
+    # comment on the field). `SaveEventExecState` itself also carries
+    # `show_message` (0x04), `abort_on_escape` (0x0B), `wait_movement`
+    # (0x0D), a `wait_time` countdown (0x1F), and a whole keyinput_* cluster
+    # (0x15-0x2A) for a live Wait For Key Input / mouse-input pause.
+    # `SaveMapEvent`'s own 0x6C field and `SaveCommonEvent`'s 0x01 both point
+    # at this same struct. Implementing this for real means snapshotting
+    # `Game::Interpreter`'s actual call stack (command list + cursor per
+    # frame, not just the coarser resume-index this codebase tracks today)
+    # -- a genuine feature addition, not a small field fix, so it stays
+    # undecoded here; `Game::State#common_event_progress`'s own comment
+    # tracks this as a standing gap.
     SAVE_COMMON_EVENT = {
       1 => { name: :execution_state, type: :int8_array },
     }
@@ -1643,6 +1670,11 @@ module LCF
     # that was mid-execution when the game was saved. A save taken from an
     # on-screen choice keeps that choice's option strings inside this blob, which
     # is how the section was identified; its inner grammar is left opaque for now.
+    #
+    # Same `SaveEventExecState` struct as SAVE_COMMON_EVENT's own field 1 --
+    # see that table's own comment for liblcf's full field breakdown
+    # (`generator/csv/fields.csv`'s `Save.foreground_event_execstate` field,
+    # 0x71 at the top-level Save struct).
     SAVE_FOREGROUND_EVENT = {
       1 => { name: :execution_state, type: :int8_array },
     }

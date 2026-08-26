@@ -15082,11 +15082,22 @@ module Game
       end
 
       sys = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_SYSTEM })
+      # liblcf's own `scene` field (0x01/1): a legacy field RPG_RT itself
+      # always writes as 5 (its own "file menu" scene id) for any save file
+      # and EasyRPG Player never reads back -- confirmed present with
+      # exactly this value on a genuine kk1.12 save under wine.
+      sys[1] = 5
       sw = @switches.to_h
       sw_max = sw.empty? ? 0 : sw.keys.max
       switches = Array.new(sw_max, false)
       sw.each { |id, v| switches[id - 1] = v ? true : false }
-      sys[31] = sw_max
+      # Field 31 (the count) is elided when no switch has ever been touched
+      # (sw_max 0), but field 32 (the data array, empty in that case) is
+      # still written -- confirmed against a genuine kk1.12 save under
+      # wine: an early save whose party had never touched a switch omitted
+      # field 31 entirely (rather than an explicit count of 0) while still
+      # carrying field 32 present as a zero-length array.
+      sys[31] = sw_max if sw_max > 0
       sys[32] = switches
       vr = @variables.to_h
       vr_max = vr.empty? ? 0 : vr.keys.max
@@ -15145,18 +15156,30 @@ module Game
       # both a save taken with no fade ever issued and one taken after a
       # later Play BGM cleared the flag back to false both omit it entirely.
       sys[61] = true if @bgm_stopping
+      # Field 71 (title_bgm) has no live tracking of its own in this
+      # codebase -- RPG_RT never lets Change System BGM touch it (see
+      # SYSTEM_BGM_SAVE_FIELD's own comment) -- but a genuine save still
+      # carries it present, always at its own blank-name default, alongside
+      # 72-82. Written unconditionally to match.
+      sys[71] = bgm_chunk({})
       sys[75] = bgm_chunk(@current_bgm) if @current_bgm
       sys[78] = bgm_chunk(@memorized_bgm) if @memorized_bgm
-      # Change System BGM (10660) / Change System SFX (10670) overrides, one
-      # save field per populated slot (see SYSTEM_BGM_SAVE_FIELD /
-      # SYSTEM_SFX_SAVE_FIELD above).
+      # Change System BGM (10660) overrides (SYSTEM_BGM_SAVE_FIELD above) --
+      # like field 71 and the SFX slots below, all seven are written
+      # unconditionally (blank when unset), confirmed against the same
+      # genuine kk1.12 save under wine: every one of battle_music(72)..
+      # gameover_music(82) was present, blank-named, even though that
+      # save's party never ran Change System BGM at all.
       SYSTEM_BGM_SAVE_FIELD.each do |slot, field|
-        bgm = @system_bgm[slot]
-        sys[field] = bgm_chunk(bgm) if bgm
+        sys[field] = bgm_chunk(@system_bgm[slot] || {})
       end
+      # Change System SFX (10670) overrides (SYSTEM_SFX_SAVE_FIELD above) --
+      # unlike the BGM slots, all 12 are written unconditionally (blank when
+      # unset), confirmed against a genuine kk1.12 save under wine: every
+      # one of cursor_se(91)..item_se(102) was present, blank-named, even
+      # though that save's party never ran Change System SFX at all.
       SYSTEM_SFX_SAVE_FIELD.each do |slot, field|
-        se = @system_sfx[slot]
-        sys[field] = se_chunk(se) if se
+        sys[field] = se_chunk(@system_sfx[slot] || {})
       end
       # SAVE_SYSTEM fields 121-124 (Control Teleport/Escape/Save/Menu Access)
       # are all ONE uniform "omit at true default" cluster after all --
@@ -15197,9 +15220,13 @@ module Game
       sys[124] = false unless @menu_access
       # Screen-transition slots 0..5 map to chunks 111..116 in order.
       @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
-      # System windowskin / font override (Change System Graphics).
+      # System windowskin / font override (Change System Graphics). Font id
+      # is elided at its own declared default (0) -- confirmed against a
+      # genuine kk1.12 save under wine, whose party never touched Change
+      # System Graphics' font option, omitting field 23 entirely rather than
+      # writing an explicit 0 the way this codebase's own writer always did.
       sys[21] = @system_graphic if @system_graphic
-      sys[23] = @font_id
+      sys[23] = @font_id if @font_id != 0
       # RPG2003's wait/active toggle (chunk 140). Written only when it leaves
       # the default 0 (wait) -- the chunk is 2003-only, so an RPG2000 save
       # must not gain a stray 0 here.
@@ -15644,9 +15671,17 @@ module Game
     def bgm_chunk(bgm)
       b = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
       b[1] = bgm[:name] || ''
-      b[3] = bgm[:volume] || 100
-      b[4] = bgm[:tempo] || 100
-      b[5] = bgm[:balance] || 50
+      # Elided at their own schema default (100/100/50) -- confirmed against
+      # a genuine kk1.12 save under wine: an untouched BGM record's raw
+      # bytes carried field 1 (name) alone, with fields 3-5 entirely absent,
+      # not present holding the default values this codebase's own writer
+      # used to always emit.
+      vol = bgm[:volume] || 100
+      tempo = bgm[:tempo] || 100
+      bal = bgm[:balance] || 50
+      b[3] = vol if vol != 100
+      b[4] = tempo if tempo != 100
+      b[5] = bal if bal != 50
       b
     end
 
@@ -15661,9 +15696,14 @@ module Game
     def se_chunk(se)
       s = LCF::Array1D.new('', { elements: LCF::Schema::SE })
       s[1] = se[:name] || ''
-      s[3] = se[:volume] || 100
-      s[4] = se[:tempo] || 100
-      s[5] = se[:balance] || 50
+      # Elided at default, the same as #bgm_chunk's own fields 3-5 -- see
+      # that method's own citation.
+      vol = se[:volume] || 100
+      tempo = se[:tempo] || 100
+      bal = se[:balance] || 50
+      s[3] = vol if vol != 100
+      s[4] = tempo if tempo != 100
+      s[5] = bal if bal != 50
       s
     end
 
