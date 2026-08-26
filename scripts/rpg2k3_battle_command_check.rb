@@ -86,13 +86,16 @@ fail "battle_type out of range 0..2" unless (0..2).cover?(bt.to_i)
 puts "  placement=#{bc.placement} battle_type=#{bt}"
 
 # The two newly-declared top-level fields (9 / 24) must not raise on access and
-# must read back as integers.
+# must read back as integers -- via the raw id (bc[fid]), not the accessor
+# name, so this keeps working if schema.rb ever renames them. Not required to
+# be *physically present* in the file, though: like any LCF chunk field, the
+# editor is free to omit one that matches its schema default (0 for both),
+# and a real 2003 database doing exactly that (kk1.12, whose battlecommands
+# carries no chunk 24 at all) is not a decode failure.
 [9, 24].each do |fid|
-  v = bc.instance_variable_get(:@sym2idx) && bc.send(:[], fid) rescue nil
-  # access via raw id to avoid depending on the accessor name
-  raw = bc.instance_variable_get(:@data)[fid]
-  fail "battlecommands field #{fid} absent" if raw.nil?
-  puts "  field #{fid} = #{LCF.read_ber(StringIO.new(raw)) rescue raw.bytes.inspect}"
+  v = bc.send(:[], fid)
+  fail "battlecommands field #{fid} did not decode to an Integer (got #{v.inspect})" unless v.is_a?(Integer)
+  puts "  field #{fid} = #{v}#{bc.key?(fid) ? '' : ' (schema default -- chunk absent)'}"
 end
 
 if $errors.zero?
