@@ -613,6 +613,92 @@ small change — but `android-smoke`'s own `continue-on-error: true` is now
 better justified than "new and unproven": the failure it occasionally
 catches looks like a real, load-dependent platform bug, not noise.
 
+**Update (2026-08-26, later still): the OpenSL ES/AAudio theory above does
+not survive testing, and the real trigger turned out to need no load at
+all.** Asked to go from investigating to fixing, the first attempt applied
+the standing theory directly: `src/main.cxx` set `SDL_HINT_AUDIODRIVER` to
+`"AAudio"` on Android (SDL's own OpenSL ES replacement, introduced API 26,
+this app's minSdk is already 28) to route around `IBufferQueue.cpp`
+entirely. Built locally (`nix develop .#android -c ... assembleDebug`,
+after fixing two submodule paths — `3rd/uni-algo`, `3rd/mruby-marshal` —
+left empty by an earlier interrupted `--recursive` init) and re-run under
+the same `CPUQuota=20%` throttle that reproduced the crash before: it
+crashed anyway, identical Scudo signature, now with `AAudio`'s own
+`PlayerBase`/`AudioStreamTrack` log lines in place of OpenSL ES's. That
+falsifies the specific backend-bug theory outright — two backends sharing
+no code below SDL's generic audio API both corrupt the heap the same way,
+so the bug is not in either backend.
+
+The AAudio run's log also reframed *when* this happens: the real,
+large-frame-count `PlayerBase::stop()` fired *immediately* after
+`[RPG2k-MAP]` (0.7s later), paired with `AAudioStream_close()` — a genuine
+device close, not a mid-play `Mix_HaltMusic()` pause. `Mix_CloseAudio()`
+is called exactly once, at `rgss_audio_shutdown()` (confirmed earlier in
+this ADR) — so this was never a mid-game BGM handoff at all. It is the
+self-driving harness's own clean exit: `--timeout_ms` (`mruby-rgss/src/
+lib.cxx`'s frame-loop check against `lv_tick_get()`) raises
+`RGSS::Timeout`, which `src/main.cxx`'s post-`game_obj.start()` handler
+does not treat as a `SystemExit`, so it runs `error_dump_report()` then
+`rgss_tts_shutdown()` then `rgss_audio_shutdown()` before exiting. Every
+apparent "crashes near the map scene" occurrence across this whole
+investigation was this shutdown sequence — reached quickly on a fast
+local run (mistaken, in the 14-clean-run count above, for "the race never
+triggered") or slowly on a throttled/CI one (mistaken for "the map
+transition itself races"), never actually about the map or BGM timing.
+
+That reframing pointed at `error_dump_report()` (`src/error_dump.cxx`)
+directly, and `--error_dump_probe` (`src/main.cxx`, already-existing
+tooling that raises a real exception through the exact same report path
+standalone, no game, no map, no timeout wait) confirms it: launched with
+`--test_play --error_dump_probe` (the flag is gated on test-play, per
+`main.cxx`'s own log line — a first attempt without `--test_play` silently
+booted the real game instead and was mistaken for a hang) it **crashes
+every single time**, identically, including with `CPUQuota=` reset to
+unlimited (no throttle at all) and with `--error_dump=` (empty — SDL_mixer
+audio untouched, and `write_report_file()`'s own file write, the previous
+lead, explicitly skipped: `if (FLAGS_error_dump.empty()) return false;` in
+`error_dump.cxx`). Both of those were real, false leads this investigation
+had been chasing: **this was never a race and was never about writing the
+report file** — it reproduces standalone, at full speed, whichever way the
+report gets used. What is common to every occurrence, throttled or not,
+audio or not, file-write or not, is the one thing `--error_dump_probe`
+deliberately exercises on its own: an mruby exception raised, then
+reported (`build()` in `error_dump.cxx` calling back into Ruby for
+`#message`, `#backtrace`, and `RGSS::ErrorReport.log_tail`, which itself
+forwards every buffered line through the native script-location walk in
+`RGSS.__log_bridge_write`, `mruby-rgss/src/lib.cxx`).
+
+Symbolicating frame #06 (unresolved in every tombstone so far, this ADR's
+own first crash update above already named the reason) against the
+unstripped `.so` this build actually produced
+(`app/android/app/build/intermediates/cxx/Debug/*/obj/arm64-v8a/
+librpg_maker_clone.so`, `llvm-addr2line` from the same NDK) resolved every
+offset seen across every run (`0x19aa21`, `0x19ac04`, `0x19ac77` — three
+independent crashes) to the same place: `GCC_except_table22` in
+`data.cpp` (uni-algo's Unicode tables) — an exception-handling landing-pad
+table, not executable code. That confirms rather than contradicts the
+standing note about `ndk_translation`: the crash address is inside an
+`<anonymous:...>` JIT-translated mapping with no reliable 1:1 correspondence
+to the original arm64 `.so`'s layout, so this offset cannot be trusted to
+name the real call site — a dead end for this technique specifically,
+not new evidence about where the bug lives.
+
+Root cause is narrowed a great deal (the exception → report pipeline,
+deterministic, backend- and load-independent, reproducible with
+`--error_dump_probe` alone) but not yet pinned to a single write. That
+needs either a debugger stepping through `build()`/`log_tail`/
+`__log_bridge_write` on-device, or an ASan/HWASan build (NDK r27 supports
+`-fsanitize=address`, not yet wired into `app/android`'s CMake/Gradle) to
+catch the corrupting write itself rather than Scudo's downstream
+deallocation. Neither is done here. Whether this is Android-specific code
+or a bug that also exists on desktop but only Scudo's stricter checking
+catches is still open — desktop's own exception-report coverage
+(`scripts/error_report_check.rb`, `mruby-rgss/test/test.rb`) exercises the
+same `build()`/`log_tail` path routinely and has never shown this, which
+argues mildly for Android-specific code (`__ANDROID__`-guarded branches,
+or something about this NDK/Scudo/`ndk_translation` combination) but does
+not settle it.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
