@@ -102,8 +102,17 @@ echo "=== asserting the engine booted and reached the map scene ==="
 if grep -q '\[RPG2k-MAP\]' "${LOGCAT_OUT}" ; then
     grep '\[RPG2k-MAP\]' "${LOGCAT_OUT}"
 else
-    echo "never reached the map scene ([RPG2k-MAP] missing) after ${waited}s; last 100 lines:" >&2
+    echo "never reached the map scene ([RPG2k-MAP] missing) after ${waited}s; last 100 RPG2K lines:" >&2
     tail -100 "${LOGCAT_OUT}" >&2
+    # The RPG2K tag only ever carries this app's own bridged stderr (see
+    # main.cxx's android_stderr_bridge) -- a native abort's tombstone
+    # (F DEBUG/F libc) is logged by the system under other tags entirely, so
+    # a crash with no application-level message needs the full device log,
+    # not just the filtered one above, to see why at all. Printed here
+    # (rather than only in the uploaded artifact) so a failure is diagnosable
+    # straight from the job's own console output.
+    echo "last 150 lines of the full device log:" >&2
+    tail -150 "${FULL_LOGCAT_OUT}" >&2
     exit 1
 fi
 
