@@ -1929,8 +1929,11 @@ static void blt_pixels(Bitmap& dst,
       uint8_t* d =
           dst.buffer.data() + ((size_t)(y + row) * dst.width + x) * bpp;
       bool opaque = bpp < 4;
-      for (mrb_int col = 0; !opaque && col < w; ++col)
-        opaque = s[(size_t)col * bpp + 3] == 255;
+      if (!opaque) {
+        opaque = true;
+        for (mrb_int col = 0; opaque && col < w; ++col)
+          opaque = s[(size_t)col * bpp + 3] == 255;
+      }
       if (opaque)
         std::memcpy(d, s, (size_t)w * bpp);
       else
