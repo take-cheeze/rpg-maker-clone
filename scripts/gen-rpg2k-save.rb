@@ -57,13 +57,38 @@
 # lock-step. Everything else in the save (map event positions, the party,
 # switches and variables) is preserved byte-for-byte.
 #
-# One thing --clear-scene cannot restore is the hero *sprite*: the debug save is
-# taken in Nepheshel's demo mode, where Set Transparent Flag is on (chunk 101
-# field 55). Clearing that flag and giving the hero the party leader's CharSet
-# makes our engine draw him, but the genuine RPG_RT resumed from the same file
-# still does not, so it only manufactures a difference. Character-sprite
-# rendering is therefore compared through the map's *events*, which both
-# runtimes do draw -- and that is what caught the CharSet colour-key bug.
+# One thing --clear-scene cannot restore is the hero *sprite*: this comment
+# used to blame that on Set Transparent Flag being on via "chunk 101 field
+# 55" -- wrong on two counts, corrected here rather than left to mislead the
+# next reader. Field 55 of the *system* chunk (101) is liblcf's own
+# `event_message_active` (ShowMessage/ShowChoices/NumberInput bookkeeping),
+# not a visibility flag at all, and Set Transparent Flag's own runtime state
+# actually lives on the hero's movable record instead (chunk 104, field 24 of
+# `LCF::Schema::SAVE_MOVABLE`) -- but checking that field against the
+# checked-in `data/Nepheshel206beta` fixture's own `Save01.lsd` (gitignored,
+# reused by many prior cycles' own wine probes) shows it already reads 0 (not
+# transparent), so transparency was never the actual mechanism either. The
+# real cause, per `scripts/rpg2k_save_load_check.rb`'s own established
+# finding (see its "leader is not simply chunk 109's party list's first
+# entry" comment): this exact save's *actual* party leader, the one genuine
+# RPG_RT.exe resolves and shows throughout its own menus, is database actor
+# 15 ("デモ用", matching the title chunk's hero_name/level/hp) -- a demo/
+# placeholder actor whose own `charset_name` (RPG_RT.ldb chunk 11 field 3) is
+# a blank string, not chunk 109's nominal first roster entry (actor 1,
+# "リト", which does carry a real "mainchr" charset). `Game::State.from_lsd`
+# already promotes the correct leader (actor 15) via that same title-chunk
+# fixup, so our own engine resolves the identical blank charset here too --
+# a blank charset draws nothing in production in both runtimes alike, not a
+# bug, just this particular save's own leader having no assigned graphic at
+# capture time. The only reason our own renderer ever shows *anything* at
+# this hero position is `Scene::Map`'s own `--test_play`-only debug marker
+# for an unavailable CharSet graphic (`mruby-rpg2k/mrblib/scene/map.rb`,
+# gated on `parent.test_play`, alpha 0 -- i.e. invisible -- otherwise); that
+# marker is exactly what a naive screenshot diff of this save would
+# manufacture as a difference, not a genuine rendering gap. Character-sprite rendering
+# is therefore compared through the map's *events*, which both runtimes do
+# draw regardless of which actor the party leader resolves to -- and that is
+# what caught the CharSet colour-key bug.
 
 require 'stringio'
 require 'optparse'
