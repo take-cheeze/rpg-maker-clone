@@ -35,37 +35,28 @@ echo "== installing ${APK}"
 adb wait-for-device
 adb install -r "${APK}"
 
-# `adb push` into Android/data/<pkg>/... as the plain `shell` user fails on
-# this AVD system image even once the app has created that directory itself
-# (getExternalFilesDir()/mkdirs(), RpgMakerCloneActivity#getArguments()):
-# first "remote secure_mkdirs failed: Permission denied" creating it, then
-# (after priming it with one throwaway launch, still below) "stat failed ...
-# Permission denied" on the now-existing directory -- confirmed on real CI
-# runs, both against `google_apis` x86_64 API 30. Scoped storage is meant to
-# carve out an adb-push/pull exception for exactly this (it works for real,
-# undocumented, on a real device -- see app/android/README.md > Building),
-# but this AVD image does not honor it. `adb root` sidesteps the whole
-# question: a root adbd is not subject to scoped storage at all. The one
-# throwaway launch below is kept anyway (harmless, and still useful if a
-# future non-rooted image needs it back).
-adb root
-adb wait-for-device
-
-echo "== priming ${PACKAGE}'s external-files directory"
-adb shell am start -W -n "${ACTIVITY}"
-sleep 5
-adb shell am force-stop "${PACKAGE}"
-
-echo "== pushing Nepheshel to ${GAME_DIR}"
-adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${GAME_DIR}/"
-
-# Pushed as root (above), so the files land owned by root rather than going
-# through the FUSE layer's normal shell-user permission translation -- the
-# app's own UID then can't read them back: a real CI run crashed with
-# libc++abi's filesystem_error, "Permission denied" on posix_stat'ing
-# RPG_RT.ini. World-readable/-writable settles it regardless of which UID
-# the app process actually runs as.
-adb shell chmod -R 777 "${GAME_DIR}"
+# `adb push` straight into Android/data/<pkg>/... as the plain `shell` user
+# fails outright on this AVD system image (`google_apis` x86_64 API 30),
+# existing destination or not: "remote secure_mkdirs failed" creating it,
+# "stat failed" once it exists. `adb root` gets past both, but then the
+# pushed files are owned by root rather than going through the FUSE layer's
+# normal shell-user permission translation, so the app's own UID can't read
+# them back either (a real CI run crashed in libc++abi's filesystem_error,
+# "Permission denied" posix_stat'ing RPG_RT.ini -- `chmod -R 777` as root
+# did not fix this: this AVD's emulated external storage is FUSE-backed and
+# synthesizes access from *which app owns the path*, not from real mode
+# bits, so chmod is a no-op on it). `run-as` sidesteps all of that at once:
+# it runs a command as the app's own UID, which the OS already grants
+# unrestricted read/write to its own external-files directory -- no root,
+# no scoped-storage exception needed. Stage the files somewhere any shell
+# user can write (world-writable /data/local/tmp) and have the app itself
+# copy them into place.
+STAGING="/data/local/tmp/nepheshel"
+adb shell rm -rf "${STAGING}"
+adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${STAGING}/"
+echo "== copying Nepheshel into ${GAME_DIR} as ${PACKAGE}"
+adb shell run-as "${PACKAGE}" sh -c "mkdir -p '${GAME_DIR}' && cp -r '${STAGING}/.' '${GAME_DIR}/'"
+adb shell rm -rf "${STAGING}"
 
 adb logcat -c
 
