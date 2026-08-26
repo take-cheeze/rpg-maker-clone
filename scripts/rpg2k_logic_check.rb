@@ -7374,12 +7374,12 @@ end
 
 check 'a skill book does nothing on a downed actor -- unlike Medicine, ' \
       'Book/Seed have no ko_only-style exception' do
-  # Confirmed against RPG_RT's own live source: Game_Actor::UseItem
-  # (src/game_actor.cpp) only reaches its Type_book/Type_material branches
-  # inside an `if (!IsDead())` guard; falling through to
-  # Game_Battler::UseItem (src/game_battler.cpp) for a dead actor lands on
-  # neither type at all (only Medicine/Switch/skill-invoking items are
-  # handled there), so the item is silently never consumed.
+  # Confirmed directly against genuine RPG_RT.exe under wine (cycle #156, see
+  # Game::Party#use_skill_book's own comment in mruby-rpg2k/mrblib/game.rb
+  # for the full write-up) -- the prior version of this comment cited
+  # "RPG_RT's own live source: Game_Actor::UseItem (src/game_actor.cpp)",
+  # which is EasyRPG Player's own reimplementation, not RPG_RT's actual
+  # source.
   st = item_party({ 8 => fake_item(type: 7, skill_id: 42) })
   st.party.gain_item(8, 1)
   hero = st.party.leader
@@ -7401,8 +7401,8 @@ check 'a seed permanently raises the target stats (points2 set) and is consumed'
   eq 1, st.party.item_count(9)                  # one seed consumed
 end
 
-check 'a seed does nothing on a downed actor -- the identical Game_Actor::' \
-      'UseItem `if (!IsDead())` gate as a skill book' do
+check 'a seed does nothing on a downed actor -- the identical dead-actor ' \
+      'gate as a skill book (cycle #156, genuine RPG_RT.exe under wine)' do
   st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
   st.party.gain_item(9, 1)
   hero = st.party.leader                        # max_hp 100, atk 10
