@@ -24,6 +24,32 @@ public class RpgMakerCloneActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         String gameDir = getExternalFilesDir(null) + "/game";
-        return new String[] { "--game_dir", gameDir };
+        // Ensure the directory itself exists, not just its `files` parent:
+        // getExternalFilesDir(null) creates that parent as a side effect, but
+        // the `game` subdirectory below it is only ever a string here. Any
+        // Android storage backend lets the owning app mkdir its own tree, but
+        // some (the AVD's FUSE-backed emulated storage, confirmed the hard
+        // way in the android-smoke CI job) refuse `adb push` the same mkdir
+        // once the app itself has not created it first -- doing it here
+        // covers every backend and every caller, `adb push` included.
+        new java.io.File(gameDir).mkdirs();
+        java.util.ArrayList<String> args = new java.util.ArrayList<>();
+        args.add("--game_dir");
+        args.add(gameDir);
+        // CI hook: `adb shell am start ... --es rpg2k_extra_args "..."` lets
+        // the android-smoke CI job (.github/workflows/build.yml) pass the
+        // same self-driving flags scripts/rpg2k_boot_check.bash uses on
+        // desktop (--test_play --rpg2k_new_game --timeout_ms=..., see
+        // src/main.cxx) without any touch-input automation. Absent from every
+        // real launch, so getStringExtra returns null and ordinary installs
+        // are unaffected.
+        String extraArgs = getIntent() != null
+            ? getIntent().getStringExtra("rpg2k_extra_args") : null;
+        if (extraArgs != null && !extraArgs.trim().isEmpty()) {
+            for (String arg : extraArgs.trim().split("\\s+")) {
+                args.add(arg);
+            }
+        }
+        return args.toArray(new String[0]);
     }
 }

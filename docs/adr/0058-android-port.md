@@ -328,6 +328,570 @@ The animation-step `map.layers` spikes above were precisely this loop, so
 the device-side win should track whatever share of them was compose rather
 than dispatch; the scrolling present path is the one named remainder left.
 
+**Update (2026-08-26, later): CI now boots the APK itself, on an emulator.**
+Every update above was confirmed by hand on the `C330`; nothing in CI ever ran
+the APK past `aapt dump badging` (the `android` job's own scope). The new
+`android-smoke` job (`.github/workflows/build.yml`, `needs: android`) closes
+that specific gap: an x86_64 `google_apis` emulator under KVM, leaning on the
+Android Emulator's own ARM-binary translation (bundled with Google APIs
+images from API 28 on — this app's own `minSdk` floor, not a coincidence) to
+run the arm64-v8a `.so` unmodified rather than needing a second native build.
+It installs the APK, stages Nepheshel into the app's own internal storage
+(scoped storage on this AVD image blocks every other route — see
+`scripts/android_smoke_check.bash`'s own comments), launches
+`RpgMakerCloneActivity` with a CI-only `rpg2k_extra_args` intent-extra hook
+(`getArguments()`, absent on every real launch) carrying the same
+`--test_play --rpg2k_new_game --timeout_ms=...` flags
+`scripts/rpg2k_boot_check.bash` already uses on desktop, and asserts the
+engine reaches `[RPG2k-MAP]` with no native crash marker in the device log.
+This is a *boot-and-crash* check, not a performance measurement — an
+emulator's frame times mean nothing next to the C330 numbers above, which
+`docs/android-perf-followups.md` still asks a real device for — but it does
+catch the class of bug every update above found by hand before a device was
+available: a runtime crash, a missing lookup, a native abort that only shows
+up once the `.so` actually loads and runs. `continue-on-error: true` for now,
+the same starting point `psp-smoke-game` used before it proved stable.
+
+**Update (2026-08-26, still later): the new job's first clean run found a
+real crash — cause not yet pinned down.** Once the storage plumbing above
+worked, `android-smoke` reached `[RPG2k-MAP]` — the engine really does
+boot, load Nepheshel and put up the map on this emulator — and then the
+process itself SIGABRTed about half a second later, on three straight
+runs: `Scudo ERROR: invalid chunk state when deallocating address 0x...`
+in `SDLThread`. That is Android's hardened allocator (Scudo) catching a
+real double-free or heap-corruption-then-free, not an emulator artifact by
+itself — Scudo only reports it at the *deallocation* that notices the
+damage, which can be well downstream of whatever actually corrupted the
+chunk, so the backtrace alone (bionic/Scudo frames, then one unsymbolized
+address in our own `.so`) does not say where.
+[This engine's own CI logs](https://github.com/take-cheeze/rpg-maker-clone/actions)
+cannot be fetched from every environment this port is worked from (an
+outbound-network policy blocks the Azure Blob Storage host GitHub Actions
+artifacts download from), so a first pass at correlating the crash with
+nearby audio-stack log lines (`PlayerBase`/`AudioTrack`) turned out to be
+reading the *wrong* run's log entirely — a mistake worth naming so it is
+not repeated. `scripts/android_smoke_check.bash` now prints the full
+device log for the crashing run's own pid directly into the CI job's own
+console on either assertion failure, precisely so this does not require an
+artifact download to investigate next time.
+Two standing hypotheses, neither confirmed: an actual bug in this engine's
+audio path (Glibc's allocator on desktop is far less strict about this
+class of corruption than Scudo, which would explain nothing in the desktop
+test suite catching it), or an artifact of running an arm64-v8a `.so`
+through this AVD's `ndk_translation` binary-translation layer specifically
+(present because this is an x86_64 host emulator, not real arm64 hardware
+— see the `android-smoke` job's own comment) doing something the real C330
+device's native execution never would. Telling them apart needs either a
+real device or an arm64-v8a system image run (impractically slow for CI,
+per that same comment, but usable as a one-off diagnostic). Root-causing
+this is out of scope for the CI-infrastructure change that added
+`android-smoke` itself; tracked as a follow-up rather than fixed here.
+
+The 4th run — the same commit as the print-full-log-on-failure fix above,
+no engine code touched — came back clean: `[RPG2k-MAP]`, no crash marker,
+15 seconds start to finish. Three failures then a clean pass is exactly
+the shape of a real race rather than a deterministic bug in dead code, and
+rules out "always crashes, just wasn't checked before": it does not always
+crash. That cuts against the second hypothesis somewhat (a translation-
+layer artifact would more plausibly be either deterministic per input or
+never triggered at all) without ruling it out, and means the next
+reproduction is itself the open question — `android-smoke` will keep
+surfacing it if and when it recurs, now with full pid-scoped context
+attached when it does.
+
+**Update (2026-08-26, later still): it recurred, and this time the
+pid-scoped context above actually caught it.** `print_pid_context()`'s
+fix landed and the crash reappeared a run later; unlike the first three
+occurrences (whose nearby-log correlation turned out, per the correction
+above, to be reading a different run entirely), this one is genuinely
+this crash's own pid, verified against the job's own log. The full
+timeline for this run (times trimmed to `HH:MM:SS.mmm`, tids as logged):
+
+```
+11:34:44.478  PlayerBase::PlayerBase()             tid 3530 (SDLThread)  -- device opened (rgss_audio_init/Mix_OpenAudio)
+11:34:44.551  PlayerBase::stop() from IPlayer       tid 3582              -- AudioTrack stop(15): 0 frames (device-open probe stop)
+...
+11:35:12.080  [RPG2k-MAP] map=371 x=10 y=7                                -- map scene reached
+11:35:12.168  PlayerBase::stop() from IPlayer       tid 3582              -- AudioTrack stop(15): 1218560 frames (title/loading BGM, ~27.6s, stopped)
+11:35:12.221  PlayerBase::stop() from IPlayer       tid 3530 (SDLThread)  -- a SECOND stop(), 53ms later, on our own thread
+11:35:12.539  scudo: Scudo ERROR: invalid chunk state when deallocating address 0x6ffe3a7265f0
+11:35:12.539  F libc: Fatal signal 6 (SIGABRT), tid 3530 (SDLThread)
+```
+
+Two `stop()` calls land within 53ms of each other on two *different*
+threads: tid 3582, which every occurrence so far shows only ever issuing
+`IPlayer` stops (i.e. Android's own OpenSLES/AudioTrack framework thread,
+not anything this engine spawns), and tid 3530, which is `SDLThread` --
+the thread this engine's own `Mix_HaltMusic()`/`Mix_FreeMusic()` calls
+run on, reached via `bgm_play()` (`src/sdl_audio.cxx`) when the map's BGM
+replaces the title/loading BGM. The Scudo abort follows the *second*
+(engine-side) stop by well under a second, on that same thread.
+
+That shape — the platform's own audio-framework thread and this engine's
+BGM-handoff code independently reaching into what is presumably the same
+underlying `AudioTrack`/player object within 53ms of each other, then a
+heap-corruption abort — reads much more like a race in SDL2's Android
+OpenSLES backend's teardown path (freeing/reusing a player object mid-stop
+from the framework's own callback thread while `SDLThread` is also
+stopping/replacing it) than a bug in this repo's own code:
+`src/sdl_audio.cxx`'s `free_music()`/`play_music()` sequence was already
+read in full for this investigation and does not touch any raw buffer or
+handle SDL_mixer doesn't already own, and `mruby-rgss/src/audio.cxx` is a
+thin, SDL-free forwarder with nothing of its own to race. Nothing here
+rules out an SDL2-side bug being *triggered* only through this engine's
+specific stop/reload sequence, so "not this repo's fault" is a lead, not
+a conclusion -- but it does narrow where a fix would have to land if one
+is pursued: SDL2's `src/audio/openslES/` backend (pinned submodule
+commit noted above), not this engine's own audio glue.
+
+This is still consistent with — and now gives concrete shape to — both
+standing hypotheses above: a real SDL2/OpenSLES concurrency bug that
+Scudo happens to catch and glibc happens not to, or that same race
+existing only because `ndk_translation`'s binary translation perturbs
+the timing between these two threads enough to expose it (a race that
+narrow could plausibly *not* reproduce on real arm64 hardware at all).
+Distinguishing those two still needs a real device or an arm64-v8a
+system image, neither available in the environment this port is being
+worked from; still tracked as a follow-up, not fixed here.
+
+**Update (2026-08-26, later still): a second independent CI run hit the
+same crash with the same two-stage shape, and one specific mechanism in
+the standing hypothesis is now ruled out by reading the code.** This
+run's own pid-scoped log (`tid` 3579 for the framework-side thread, 3484
+for `SDLThread` — different tids than the first occurrence's 3582/3530,
+same roles):
+
+```
+11:47:55.522  PlayerBase::PlayerBase()       tid 3484 (SDLThread)  -- device opened
+11:47:55.580  PlayerBase::stop() from IPlayer tid 3579              -- 0 frames (open probe)
+11:48:32.265  [RPG2k-MAP] map=371 x=10 y=7                          -- map scene reached
+11:48:32.348  PlayerBase::stop() from IPlayer tid 3579              -- 1622016 frames (title/loading BGM stopped)
+11:48:32.390  PlayerBase::stop() from IPlayer tid 3484 (SDLThread)  -- second stop, 42ms later, our own thread
+11:48:32.732  scudo: invalid chunk state when deallocating          -- 342ms after that second stop
+11:48:32.732  F libc: Fatal signal 6 (SIGABRT), tid 3484 (SDLThread)
+```
+
+Two independent runs now show the identical shape: framework-thread stop
+with a real frame count, then a second stop ~42-53ms later on `SDLThread`
+itself, then the Scudo abort ~320-340ms after *that* — consistent enough
+across runs that this reads more like a fixed sequence than raw race
+jitter, though two data points is not enough to lean hard on that.
+
+The earlier hypothesis named `bgm_play()`'s `Mix_HaltMusic()`/
+`Mix_FreeMusic()` sequence (`src/sdl_audio.cxx`) as SDLThread's route into
+whatever calls `PlayerBase::stop()`. Reading SDL_mixer's own
+implementation of both (`3rd/SDL_mixer/src/music.c`,
+`Mix_FreeMusic`/`Mix_HaltMusic`/`music_internal_halt`) rules that specific
+mechanism out: they only ever call `Mix_LockAudio`/`Mix_UnlockAudio`
+(`SDL_LockAudioDevice`/`SDL_UnlockAudioDevice`, a plain mutex around the
+mixer's internal state) and flip in-process flags on the `Mix_Music`
+struct — neither one calls anything in `SDL_openslES.c`. That backend's
+only path to `SetPlayState(SL_PLAYSTATE_STOPPED)` is
+`openslES_DestroyPCMPlayer`, reachable only from `Mix_CloseAudio`
+(`rgss_audio_shutdown`, engine exit) or the sample-rate-retry branch in
+`openslES_OpenDevice` (initial open only) — and `Mix_OpenAudio`/
+`Mix_CloseAudio` are each called exactly once, at `rgss_audio_init`/
+shutdown (verified by grepping `src/sdl_audio.cxx` for every `Mix_*Audio`
+call site), so the single `bqPlayerObject` this backend creates is never
+torn down or recreated over a BGM handoff. Whatever calls `stop()` on
+`SDLThread` at the title→map handoff, it is not through this specific
+teardown path — narrowing what "the SDLThread-side call" in the standing
+hypothesis could actually be, without yet identifying it. Everything else
+in the standing hypothesis (real SDL2/OpenSLES concurrency bug vs.
+`ndk_translation`-only artifact, needs a real device or arm64-v8a system
+image to distinguish) still stands unchanged; this only corrects the one
+concrete mechanism named for SDLThread's side of it.
+
+**Update (2026-08-26, much later: local reproduction on real hardware).**
+Every occurrence above was investigated from CI-uploaded logs alone, with
+no emulator available in the environment doing the investigating. That
+changed: the dev machine this update was written on has `/dev/kvm`, the
+Android SDK/NDK, and (once added to the `kvm` group and given the
+`emulator`/`system-images;android-30;google_apis;x86_64` packages
+`sdkmanager` hadn't installed yet) can boot the exact same AVD config CI
+uses. Downloading the `android-debug-apk` and `android-smoke` CI-run
+artifacts directly (`gh run download`) skips needing a full cross-build.
+
+At full speed, this machine's emulator would not reproduce the crash at
+all: 14 straight clean runs, `android-smoke-check.bash` unmodified,
+identical `-no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+-camera-back none -no-snapshot-save` flags CI uses. The reason became
+obvious from timing alone — device-open to `[RPG2k-MAP]` took ~5-7s
+locally against ~35-40s on CI's own runs (timestamps above) — a ~6x gap
+consistent with a shared runner plus first-boot ART JIT warmup that a
+dedicated desktop simply doesn't pay. Every one of those 14 clean runs
+logged exactly one `PlayerBase::stop()` (the harmless 0-frame open probe
+already named above) and nothing more — no second, real-frame-count stop
+at the title→map handoff at all, so whatever race needs that handoff
+under load never even got a chance to run.
+
+Throttling the emulator's own CPU budget (`systemd-run --user --scope -p
+CPUQuota=20% -- emulator ...`, i.e. one qemu process capped to a fifth of
+a core) reproduced the crash on the very next attempt, with the identical
+tombstone shape CI's own runs show (`Scudo ERROR: invalid chunk state`,
+`SIGABRT` on `SDLThread`). This run's full, continuous `adb logcat -d`
+(not just the pid-scoped tail `android_smoke_check.bash` prints on
+failure) caught something no CI-log excerpt so far had shown — a genuine
+new lead, not a rehash:
+
+```
+21:19:08.394  PlayerBase::PlayerBase()        tid 2511 (SDLThread)  -- device opened
+21:19:10.492  PlayerBase::stop() from IPlayer tid 2647              -- 0 frames (open probe)
+21:19:11.393  PlayerBase::stop() from IPlayer tid 2647              -- 2048 frames
+21:19:11.492  E libOpenSLES: frameworks/wilhelm/src/itf/IBufferQueue.cpp:56:
+              pthread_mutex_lock_timeout_np returned 110               -- tid 2651, x2
+21:20:53.800  PlayerBase::stop() from IPlayer tid 2647              -- 976896 frames (title/loading BGM)
+21:21:33.029  PlayerBase::stop() from IPlayer tid 2647              -- 542720 frames
+21:22:18.401  [RPG2k-MAP] map=371 x=10 y=7                          -- map scene reached
+21:22:18.796  PlayerBase::stop() from IPlayer tid 2511 (SDLThread)  -- 748818 frames -- our own thread, again
+21:22:22.000  scudo: invalid chunk state when deallocating
+21:22:22.000  F libc: Fatal signal 6 (SIGABRT), tid 2511 (SDLThread)
+```
+
+`110` is `ETIMEDOUT`. `frameworks/wilhelm` is AOSP's own OpenSL ES
+implementation (`libOpenSLES.so`, platform code, not anything this repo
+or SDL2 ships) — `IBufferQueue.cpp` guards its buffer-queue bookkeeping
+with a *timed* mutex lock, and this line is that lock timing out under
+load. It fires from a third thread (2651) neither of the other two named
+above, `IBufferQueue`'s own service thread. This is the earliest concrete
+sign of anything going wrong in this entire run — three minutes before
+the eventual abort, on the very first substantial `stop()` after device
+open, long before the map scene or the title/loading BGM's real handoff.
+None of the 14 clean, full-speed runs logged this line even once
+(grepped for `IBufferQueue`/`mutex_lock_timeout` across all their full
+device logs); every fast run's audio path apparently never contends for
+that lock long enough to time out.
+
+That timing — corruption's earliest visible sign minutes before the
+abort that finally notices it — fits Scudo's own documented behavior
+exactly (this ADR's first crash update, above: "Scudo only reports it at
+the *deallocation* that notices the damage, which can be well downstream
+of whatever actually corrupted the chunk"). It also completes the
+SDLThread side of the picture the previous update above narrowed but
+could not close: `Mix_FreeMusic()`'s ordinary per-track cleanup — not a
+device teardown, confirmed absent above — running synchronously on
+SDLThread during the title→map BGM handoff is entirely ordinary code;
+what makes *that particular* free() the one Scudo catches is that it
+happens to touch a heap region `IBufferQueue`'s own timed-lock failure
+already corrupted minutes earlier, not that anything is wrong with the
+free itself.
+
+Recalibrating the throttle toward CI's own pacing (`CPUQuota=40%`,
+device-open to map ~30-35s, matching CI's own runs closely) gave 6/6
+clean local runs — and, tellingly, none of those six ever logged the
+real-frame-count second `stop()` either, only the harmless open probe.
+So `CPUQuota=20%` overshoots CI's own gross timing by roughly the same
+6x it was chosen to close, yet is what actually reproduced the bug, while
+the better-calibrated `40%` did not in six tries. Read together with the
+lock-timeout finding, the operative variable looks less like "elapsed
+wall-clock time to reach the map scene" and more like moment-to-moment
+scheduling contention around the buffer-queue lock specifically — a
+narrow, load-dependent window a merely-slower-but-still-smooth run can
+miss entirely, which is consistent with this being a genuine, load-
+triggered race in the platform's own OpenSL ES code rather than
+anything this port's own timing or CI's specific pacing controls
+directly.
+
+Net effect on the two standing hypotheses: this is a real concurrency
+bug class, reproduced purely through CPU-scheduling pressure with
+`ndk_translation`/ARM-on-x86_64 translation held constant throughout
+(same AVD, same APK, every run) — evidence against "an
+`ndk_translation`-only artifact" as the *dominant* explanation, though it
+does not rule out translation making the same underlying platform race
+easier to hit (untested here: a native arm64-v8a system image or real
+device under equivalent load would be the next thing to try, and remains
+unavailable in this environment beyond the one physical `C330` on hand,
+which is not proven able to reproduce load-triggered timing bugs the same
+way — it was never run under artificial CPU pressure). The concurrency
+side of the standing hypothesis now has a specific, named, platform-level
+mechanism behind it (`IBufferQueue.cpp`'s timed lock under contention)
+rather than only a correlation in CI log timestamps. Root-causing (and
+any fix) is still out of scope for this CI-infrastructure PR — a genuine
+fix would live in AOSP/SDL2's OpenSL ES backend or in switching this
+port's Android audio backend away from OpenSL ES entirely, neither a
+small change — but `android-smoke`'s own `continue-on-error: true` is now
+better justified than "new and unproven": the failure it occasionally
+catches looks like a real, load-dependent platform bug, not noise.
+
+**Update (2026-08-26, later still): the OpenSL ES/AAudio theory above does
+not survive testing, and the real trigger turned out to need no load at
+all.** Asked to go from investigating to fixing, the first attempt applied
+the standing theory directly: `src/main.cxx` set `SDL_HINT_AUDIODRIVER` to
+`"AAudio"` on Android (SDL's own OpenSL ES replacement, introduced API 26,
+this app's minSdk is already 28) to route around `IBufferQueue.cpp`
+entirely. Built locally (`nix develop .#android -c ... assembleDebug`,
+after fixing two submodule paths — `3rd/uni-algo`, `3rd/mruby-marshal` —
+left empty by an earlier interrupted `--recursive` init) and re-run under
+the same `CPUQuota=20%` throttle that reproduced the crash before: it
+crashed anyway, identical Scudo signature, now with `AAudio`'s own
+`PlayerBase`/`AudioStreamTrack` log lines in place of OpenSL ES's. That
+falsifies the specific backend-bug theory outright — two backends sharing
+no code below SDL's generic audio API both corrupt the heap the same way,
+so the bug is not in either backend.
+
+The AAudio run's log also reframed *when* this happens: the real,
+large-frame-count `PlayerBase::stop()` fired *immediately* after
+`[RPG2k-MAP]` (0.7s later), paired with `AAudioStream_close()` — a genuine
+device close, not a mid-play `Mix_HaltMusic()` pause. `Mix_CloseAudio()`
+is called exactly once, at `rgss_audio_shutdown()` (confirmed earlier in
+this ADR) — so this was never a mid-game BGM handoff at all. It is the
+self-driving harness's own clean exit: `--timeout_ms` (`mruby-rgss/src/
+lib.cxx`'s frame-loop check against `lv_tick_get()`) raises
+`RGSS::Timeout`, which `src/main.cxx`'s post-`game_obj.start()` handler
+does not treat as a `SystemExit`, so it runs `error_dump_report()` then
+`rgss_tts_shutdown()` then `rgss_audio_shutdown()` before exiting. Every
+apparent "crashes near the map scene" occurrence across this whole
+investigation was this shutdown sequence — reached quickly on a fast
+local run (mistaken, in the 14-clean-run count above, for "the race never
+triggered") or slowly on a throttled/CI one (mistaken for "the map
+transition itself races"), never actually about the map or BGM timing.
+
+That reframing pointed at `error_dump_report()` (`src/error_dump.cxx`)
+directly, and `--error_dump_probe` (`src/main.cxx`, already-existing
+tooling that raises a real exception through the exact same report path
+standalone, no game, no map, no timeout wait) confirms it: launched with
+`--test_play --error_dump_probe` (the flag is gated on test-play, per
+`main.cxx`'s own log line — a first attempt without `--test_play` silently
+booted the real game instead and was mistaken for a hang) it **crashes
+every single time**, identically, including with `CPUQuota=` reset to
+unlimited (no throttle at all) and with `--error_dump=` (empty — SDL_mixer
+audio untouched, and `write_report_file()`'s own file write, the previous
+lead, explicitly skipped: `if (FLAGS_error_dump.empty()) return false;` in
+`error_dump.cxx`). Both of those were real, false leads this investigation
+had been chasing: **this was never a race and was never about writing the
+report file** — it reproduces standalone, at full speed, whichever way the
+report gets used. What is common to every occurrence, throttled or not,
+audio or not, file-write or not, is the one thing `--error_dump_probe`
+deliberately exercises on its own: an mruby exception raised, then
+reported (`build()` in `error_dump.cxx` calling back into Ruby for
+`#message`, `#backtrace`, and `RGSS::ErrorReport.log_tail`, which itself
+forwards every buffered line through the native script-location walk in
+`RGSS.__log_bridge_write`, `mruby-rgss/src/lib.cxx`).
+
+Symbolicating frame #06 (unresolved in every tombstone so far, this ADR's
+own first crash update above already named the reason) against the
+unstripped `.so` this build actually produced
+(`app/android/app/build/intermediates/cxx/Debug/*/obj/arm64-v8a/
+librpg_maker_clone.so`, `llvm-addr2line` from the same NDK) resolved every
+offset seen across every run (`0x19aa21`, `0x19ac04`, `0x19ac77` — three
+independent crashes) to the same place: `GCC_except_table22` in
+`data.cpp` (uni-algo's Unicode tables) — an exception-handling landing-pad
+table, not executable code. That confirms rather than contradicts the
+standing note about `ndk_translation`: the crash address is inside an
+`<anonymous:...>` JIT-translated mapping with no reliable 1:1 correspondence
+to the original arm64 `.so`'s layout, so this offset cannot be trusted to
+name the real call site — a dead end for this technique specifically,
+not new evidence about where the bug lives.
+
+Root cause is narrowed a great deal (the exception → report pipeline,
+deterministic, backend- and load-independent, reproducible with
+`--error_dump_probe` alone) but not yet pinned to a single write. That
+needs either a debugger stepping through `build()`/`log_tail`/
+`__log_bridge_write` on-device, or an ASan/HWASan build (NDK r27 supports
+`-fsanitize=address`, not yet wired into `app/android`'s CMake/Gradle) to
+catch the corrupting write itself rather than Scudo's downstream
+deallocation. Neither is done here. Whether this is Android-specific code
+or a bug that also exists on desktop but only Scudo's stricter checking
+catches is still open — desktop's own exception-report coverage
+(`scripts/error_report_check.rb`, `mruby-rgss/test/test.rb`) exercises the
+same `build()`/`log_tail` path routinely and has never shown this, which
+argues mildly for Android-specific code (`__ANDROID__`-guarded branches,
+or something about this NDK/Scudo/`ndk_translation` combination) but does
+not settle it.
+
+A same-day attempt at the desktop half of that open question (an ASan
+build is far cheaper to stand up on desktop than wiring `-fsanitize=
+address` into `app/android`'s NDK/Gradle build) did not reach a verdict:
+`cmake -DCMAKE_CXX_FLAGS=-fsanitize=address ...` configures and links
+cleanly against this repo's own CMakeLists.txt, but the resulting binary
+aborts before `main()` reaches `--error_dump_probe` (or even
+`--rpg2k_new_game`) at all, `Failed loading SDL3 library.` on stderr and
+no ASan error block in a `log_path` capture — this nix devShell's SDL2
+comes from `sdl2-compat`, a shim that `dlopen()`s a real `libSDL3.so` at
+runtime, and that specific `dlopen` fails only in the ASan-instrumented
+binary (tried under `xvfb-run` matching `scripts/rpg2k_boot_check.bash`
+exactly, with and without `SDL_VIDEODRIVER=dummy`/`SDL_AUDIODRIVER=dummy`
+to sidestep real rendering entirely — same result every time). This is a
+`sdl2-compat`-under-ASan packaging interaction in the dev environment, not
+a finding about the bug: an ASan desktop build remains a promising next
+step, but needs either a non-`sdl2-compat` SDL2 (a different nix input, or
+linking a real libSDL2 directly) or resolving why ASan's presence breaks
+that specific `dlopen` first.
+
+A plain (non-ASan) `Debug` desktop build was the fallback, since it needs
+no special linking `sdl2-compat` could object to: it ran the exact same
+`--test_play --error_dump_probe` invocation clean (`[ErrorDump-PROBE] ok`,
+exit 0 — matches this ADR's earlier note that desktop's own
+`error_report_check.rb`/`test.rb` coverage exercises this path routinely
+without incident), then ran again under `valgrind --track-origins=yes`
+(a separate `nix shell nixpkgs#valgrind`, sidestepping the ASan/dlopen
+issue entirely — memcheck needs no special compile-time instrumentation).
+**`ERROR SUMMARY: 0 errors from 0 contexts`** — no invalid read/write, no
+use of uninitialised memory, no invalid free, across the identical code
+path that reliably corrupts the heap on Android. Grepping
+`src/error_dump.cxx`, `src/log_bridge.cxx`, the `__log_bridge_write`/
+`script_location` walk in `mruby-rgss/src/lib.cxx`, and
+`include/terminal.hxx` for `__ANDROID__` turns up nothing relevant either
+— the C++ source in this whole pipeline is identical on both platforms,
+no conditional branch to diverge on.
+
+Two tools built specifically to catch this class of bug (memcheck's shadow
+memory, and Scudo's chunk-header validation) landing on opposite verdicts,
+over source code that does not differ between the two runs, points less at
+"a bug memcheck happens to miss" and more at something structural to the
+platforms themselves: NDK/Android ships libc++ where this nix desktop
+build links libstdc++ (GCC 15.2.0, visible in the build log) — different
+`std::string`/exception-object ABI and allocation patterns under the same
+source — or Scudo's specific hardened-allocator internals (redzone
+placement, chunk-header layout) surface a class of overflow/corruption
+that ptmalloc-under-memcheck's simulated heap does not reproduce the same
+way. Distinguishing those needs the Android-side ASan/HWASan build this
+update could not stand up, or a close manual read of `build()`'s
+`std::string` concatenation and the `mrb_gc_arena_save`/`mrb_gc_protect`/
+`mrb_gc_arena_restore` sequence around the `mrb_funcall` round-trips in
+`error_dump_report()`/`call()`, neither completed here.
+
+**Update (2026-08-27): root-caused and fixed.** The Android-side ASan build
+the previous update couldn't stand up got stood up: `app/android/app/
+build.gradle`'s `externalNativeBuild.cmake` took `-fsanitize=address
+-fno-omit-frame-pointer -g` compile flags and matching linker flags, the
+NDK's own `libclang_rt.asan-aarch64-android.so` was packaged under
+`app/src/main/jniLibs/arm64-v8a/` alongside a `wrap.sh`
+(`app/src/main/resources/lib/arm64-v8a/wrap.sh`, per
+[the NDK's own guide](https://developer.android.com/ndk/guides/asan)) that
+`LD_PRELOAD`s it, `aaptOptions { noCompress "sh" }` and `android:
+extractNativeLibs="true"` (+ matching `packagingOptions.jniLibs.
+useLegacyPackaging true`) worked around two Play-Store-era packaging
+checks that reject a plain script under `lib/<abi>/` (compressed, then
+not page-aligned) that real `.so`s automatically satisfy and a script
+does not. All of this was temporary scaffolding for this diagnostic
+build only — none of it is in the tree now.
+
+It could not run on the emulator this whole investigation had used:
+`wrap.sh`'s `LD_PRELOAD` is set before `ndk_translation` ever sees the
+process, and the emulator's `app_process64` is a real x86_64 binary --
+loading an aarch64 `.so` into it fails at the OS linker, immediately,
+before any of our code runs (`CANNOT LINK EXECUTABLE ... is for
+EM_AARCH64 (183) instead of EM_X86_64 (62)`). The one physical device
+already on hand for this investigation (`C330`, genuine arm64-v8a, no
+translation layer) has no such problem, and running there was always the
+better test of the standing "real bug vs. `ndk_translation` artifact"
+question anyway. `--test_play --error_dump_probe` on it produced a
+complete, symbol-resolved report on the first run:
+
+```
+==PID==ERROR: AddressSanitizer: attempting double-free on 0x...:
+    #1 libSDL2.so+0x2d83ac
+    #2 libSDL2.so+0x2d8814
+    #3 libSDL2.so+0x4c9128
+0x... is located 0 bytes inside of 12-byte region [...]
+freed by thread T16 (SDLThread) here:            (same three frames)
+previously allocated by thread T16 (SDLThread) here:
+    #1 libSDL2.so+0x2d8330
+    #2 libSDL2.so+0x2d8684
+    #3 libSDL2.so+0x2d9e20
+    #4 libSDL2.so+0x4c8d34
+SUMMARY: AddressSanitizer: double-free
+```
+
+`llvm-addr2line` against this build's own unstripped `libSDL2.so`
+resolves every offset to one function: `Java_org_libsdl_app_
+SDLActivity_nativeRunMain` (`3rd/SDL/src/core/android/SDL_android.c`).
+That function is SDL's own JNI entry point on Android: it builds a fresh
+`argv` from the Java `String[]` it's handed (`argv[0] = SDL_strdup(
+"app_process")`, one more `SDL_strdup` per Java arg, line 782), calls
+`SDL_main(argc, argv)` -- our own `main()`, `src/main.cxx` -- and once it
+returns, frees every element: `for (i = 0; i < argc; ++i) SDL_free(
+argv[i]);` (line 807). Both the "previously allocated" and "freed by"
+stacks in the report land on exactly this `SDL_strdup`/`SDL_free` pair,
+for a 12-byte allocation -- `strlen("app_process") + 1`. `argv[0]` itself
+gets freed twice.
+
+The reason: `main()`'s very first line is `gflags::ParseCommandLineFlags(
+&argc, &argv, true)`. With `remove_flags=true`, gflags' own fixup
+(`3rd/gflags/src/gflags.cc`) is `(*argv)[first_nonopt-1] = (*argv)[0];
+(*argv) += (first_nonopt-1); (*argc) -= (first_nonopt-1);` -- it does not
+shift every element to compact recognised flags out; it overwrites the
+*last* flag slot with a copy of `argv[0]`'s pointer, then advances the
+array's own base pointer past the flags. That is a correct, self-contained
+trick when nothing else needs the original array back -- true of the
+libc/OS-owned `argv` every other platform hands `main()`, which nothing
+ever explicitly frees, so gflags quietly leaking one flag's string and
+duplicating `argv[0]`'s pointer into a stale slot is invisible everywhere
+else this engine ships. It is not true on Android, uniquely: `argv` did
+not come from the OS, it came from `nativeRunMain()`, which still holds
+(and, above, still frees) its own original, unmodified `argc`/`argv` --
+completely unaware `main()`'s *local* copies of those variables got
+silently repointed inside gflags. `nativeRunMain()`'s cleanup loop walks
+its own original range and finds `argv[0]`'s pointer sitting in two
+slots: the real `argv[0]`, and the flag slot gflags overwrote to match
+it. `SDL_free()` on the second occurrence is the double-free ASan (and,
+all along, Scudo) caught.
+
+Every earlier finding in this investigation is consistent with this,
+now that the mechanism is known rather than inferred:
+- **Deterministic, not a race** (the local ASan/Valgrind updates above):
+  this fires on *any* run with at least one recognised flag before the
+  first positional argument -- true of every real invocation, self-driving
+  test harness or ordinary launch alike.
+- **Backend- and audio-independent** (the AAudio update above): the bug
+  is in argument parsing, run once at the very top of `main()`, nowhere
+  near `rgss_audio_init()`.
+- **Reproducible via `--error_dump_probe` alone, at full speed** (same
+  update): the probe needs no game, no map, no timeout -- just `main()`
+  returning through `nativeRunMain()`, same as every run does.
+- **Invisible to desktop and to Valgrind** (this ADR's immediately
+  preceding update): no other platform's `main()` gets its `argv` freed
+  by anything after returning, so the same gflags fixup is harmless
+  everywhere else this engine ships -- explaining the "0 errors" verdict
+  on source that does not differ between platforms without needing a
+  libc++/Scudo-internals explanation after all.
+- **Always at the very end of a run, whichever run** (the AAudio update's
+  own re-framing away from "mid-game" and toward "clean-exit shutdown"):
+  correct in spirit, but the actual free that corrupts happens in SDL's
+  JNI glue *after* `SDL_main` returns, not in anything this engine's own
+  shutdown sequence (`rgss_tts_shutdown`/`rgss_audio_shutdown`) does.
+
+The fix (`src/main.cxx`): parse a copy of `argv`, not `argv` itself, so
+gflags' in-place fixup lands on a `std::vector<char*>` local to `main()`
+instead of the array `nativeRunMain()` owns and will free:
+
+```cxx
+std::vector<char*> argv_copy(argv, argv + argc + 1);  // + argv[argc] == nullptr
+int parse_argc = argc;
+char** parse_argv = argv_copy.data();
+gflags::ParseCommandLineFlags(&parse_argc, &parse_argv, true);
+argc = parse_argc;
+argv = parse_argv;
+```
+
+`argc`/`argv` are read in three more places after this point (`nglog::
+InitializeLogging(argv[0])`; building `RGSS`'s `ARGV`/`$0` from any
+remaining positional args) -- all of them want the *post-parse* values,
+which this still provides, now backed by the copy's own storage (a local
+variable, alive for the rest of `main()`, never touched again after this
+block) rather than `nativeRunMain()`'s array. Not `#ifdef __ANDROID__`-ed:
+copying is free everywhere this runs, the bug it avoids is real on every
+platform (gflags still leaks one string and duplicates a pointer in the
+original array — argv just happens to be otherwise-unowned, unfreed
+memory everywhere but here), and a single code path is simpler than one
+more platform branch for a fix that costs nothing elsewhere.
+
+Verified in two ways. First, on the `C330` with the ASan build still
+wired in: the identical `--test_play --error_dump_probe` invocation that
+reliably reported the double-free, 5/5 clean afterward, and the full
+self-driving `--rpg2k_new_game --timeout_ms=20000` path through to
+`[RPG2k-MAP]` and SDL's own `Finished main function` log line (printed
+immediately before the very cleanup loop that used to double-free)
+completing with no AddressSanitizer report at all. Second, back on the
+emulator with the ASan scaffolding removed (a normal debug build, the fix
+included): `scripts/android_smoke_check.bash` 8/8 clean at the
+CI-calibrated `CPUQuota=40%` throttle from the AAudio update above (the
+two failures out of 5 at the much harsher `CPUQuota=20%` were the
+already-documented "script's own poll timeout, not a crash" shape --
+`never reached the map scene ([RPG2k-MAP] missing) after 80s`, zero Scudo
+or crash markers in any of the 5 runs at that level).
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
