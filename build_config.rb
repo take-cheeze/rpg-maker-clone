@@ -124,6 +124,154 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
   conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
+
+  rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs)
+end
+
+# mrb_open() eagerly runs *every* configured gem's init -- defining every
+# class and method mruby-rpg2k, mruby-rpgxp, mruby-rpgvx and mruby-mvjs carry,
+# whichever single one of them a run actually uses (docs/adr/0047's Finding 1
+# measured ~1.2-1.4 MB of live heap for rpg2k+lcf+rgss's mrblib alone, before
+# rpgxp/rpgvx/mvjs are even counted). src/main.cxx knows which maker a game
+# directory is before it opens mruby (RPG_RT.ldb / Game.ini / js/rpg_core.js /
+# .rvdata* are plain filesystem checks), so it can skip initialising the ones
+# it will never use -- but mruby's own generated mrb_init_mrbgems() (called
+# from mrb_open()) is one flat, unconditional loop with no per-gem opt-out.
+#
+# This generates a small sibling to that file, built from the *same* resolved
+# `conf.gems` mrbgems.rake itself computed (gems.setup_build / gems.check
+# already ran by the time this file task's recipe actually runs, since Rake
+# loads every task file -- including this one -- before invoking any of
+# them), so it can never drift out of sync with build_config.rb's own gem
+# list the way a hand-copied call order would: it walks each maker's own
+# `add_dependency` chain (mruby-lcf for mruby-rpg2k; mruby-eval and the
+# Binding/Method/Proc-ext trio mruby-rpgxp's own eval dependency pulls in;
+# ...) to find the gems *only* that one maker needs, and puts everything
+# else -- including a gem two makers both happen to need, e.g. mruby-rgss
+# itself, which every maker gem depends on -- in the always-init group. The
+# split reuses the *same* generated GENERATED_TMP_mrb_<funcname>_gem_init
+# entry points mrb_init_mrbgems already calls, so it costs nothing beyond
+# which function calls which of them. See src/main.cxx's "Deferred per-maker
+# gem init" section for the call side.
+def rpg_maker_gem_dispatch(conf, include_mvjs:)
+  maker_gem_names = %w[mruby-rpg2k mruby-rpgxp mruby-rpgvx] +
+                     (include_mvjs ? %w[mruby-mvjs] : [])
+  src = "#{conf.build_dir}/mrbgems/rpg_maker_gem_dispatch.c"
+
+  # Gems declared directly, at the top of rpg_maker_gems, rather than pulled
+  # in only as some other gem's add_dependency: those calls are this
+  # project's own explicit "every build variant needs this" list (see that
+  # method's comment), so they stay in the always-init group even where one
+  # happens to *also* sit on a single maker's dependency chain -- mruby-lcf
+  # is only add_dependency'd by mruby-rpg2k, but it is its own top-level
+  # conf.gem call too, so it is not this dispatch's call to demote.
+  explicit_shared_names = %w[
+    mruby-array-ext mruby-hash-ext mruby-enum-ext mruby-io mruby-dir
+    mruby-numeric-ext mruby-fiber mruby-exit mruby-sprintf mruby-kernel-ext
+    mruby-random mruby-math mruby-time mruby-bigint mruby-stringio
+    mruby-marshal mruby-onig-regexp mruby-lcf mruby-rgss
+  ]
+
+  file src => "#{conf.build_dir}/mrbgems/gem_init.c" do |t|
+    active = conf.gems.select(&:generate_functions)
+    by_name = active.each_with_object({}) { |g, h| h[g.name] = g }
+    makers = maker_gem_names.map do |name|
+      by_name.fetch(name) do
+        fail "rpg_maker_gem_dispatch: gem '#{name}' is not active/generating"
+      end
+    end
+
+    # Every (transitive) prerequisite a maker gem's own add_dependency chain
+    # reaches, not counting a *sibling* maker reached along the way (rpgvx
+    # depends on rpgxp, but rpgxp's own private prerequisites -- eval and
+    # friends -- belong to rpgxp's bucket, not rpgvx's; rpgvx gets them by
+    # calling rpg_maker_init_rpgxp_gem itself, below).
+    closure_of = lambda do |root|
+      seen = {}
+      stack = [root]
+      until stack.empty?
+        g = stack.pop
+        next if seen[g.name]
+        seen[g.name] = true
+        next if g.name != root.name && maker_gem_names.include?(g.name)
+        g.dependencies.each do |dep|
+          dep_gem = by_name[dep[:gem]]
+          stack << dep_gem if dep_gem
+        end
+      end
+      seen.keys - maker_gem_names
+    end
+
+    # A prerequisite more than one maker's closure claims (mruby-rgss itself,
+    # chief among them -- every maker gem depends on it) can only ever be
+    # initialised once, so it has to live in the always-init group rather
+    # than any single maker's bucket.
+    maker_closures = makers.map { |m| closure_of.call(m) }
+    claim_counts = Hash.new(0)
+    maker_closures.each { |cl| cl.each { |n| claim_counts[n] += 1 } }
+    private_names = maker_closures.map do |cl|
+      cl.select { |n| claim_counts[n] == 1 && !explicit_shared_names.include?(n) }
+    end
+    all_private_names = private_names.flatten
+
+    shared = active.reject do |g|
+      maker_gem_names.include?(g.name) || all_private_names.include?(g.name)
+    end
+    maker_private = maker_gem_names.each_with_index.to_h do |name, i|
+      [name, active.select { |g| private_names[i].include?(g.name) }]
+    end
+
+    mkdir_p File.dirname(t.name)
+    open(t.name, 'w') do |f|
+      f.puts '/* Generated by build_config.rb (rpg_maker_gem_dispatch).'
+      f.puts ' * See its comment for what this is and why it exists. */'
+      f.puts
+      f.puts '#include <mruby.h>'
+      f.puts '#include <mruby/error.h>'
+      f.puts
+      (shared + maker_private.values.flatten + makers).uniq.each do |g|
+        f.puts "void GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb_state*);"
+      end
+      f.puts
+
+      emit_call = lambda do |g|
+        f.puts "  GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb);"
+        f.puts '  if (mrb->exc) mrb_exc_raise(mrb, mrb_obj_value(mrb->exc));'
+      end
+
+      f.puts 'void rpg_maker_init_shared_gems(mrb_state *mrb) {'
+      shared.each(&emit_call)
+      f.puts '}'
+
+      rpg2k, rpgxp, rpgvx, mvjs = makers
+      f.puts
+      f.puts 'void rpg_maker_init_rpg2k_gem(mrb_state *mrb) {'
+      maker_private['mruby-rpg2k'].each(&emit_call)
+      emit_call.call(rpg2k)
+      f.puts '}'
+      f.puts
+      f.puts 'void rpg_maker_init_rpgxp_gem(mrb_state *mrb) {'
+      maker_private['mruby-rpgxp'].each(&emit_call)
+      emit_call.call(rpgxp)
+      f.puts '}'
+      f.puts
+      f.puts 'void rpg_maker_init_rpgvx_gem(mrb_state *mrb) {'
+      f.puts '  rpg_maker_init_rpgxp_gem(mrb); /* RGSS2/3 extends RGSS */'
+      maker_private['mruby-rpgvx'].each(&emit_call)
+      emit_call.call(rpgvx)
+      f.puts '}'
+      if mvjs
+        f.puts
+        f.puts 'void rpg_maker_init_mvjs_gem(mrb_state *mrb) {'
+        maker_private['mruby-mvjs'].each(&emit_call)
+        emit_call.call(mvjs)
+        f.puts '}'
+      end
+    end
+  end
+
+  conf.libmruby_objs << conf.objfile(src.sub(/\.c$/, ''))
+  file conf.objfile(src.sub(/\.c$/, '')) => src
 end
 
 # When cross-compiling (Emscripten, Android, or the Wio Terminal below) the
