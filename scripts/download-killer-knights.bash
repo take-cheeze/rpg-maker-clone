@@ -31,5 +31,14 @@ if [ ! -f kk1.12.zip ] ; then
 fi
 
 if [ ! -d kk1.12 ] ; then
-    unar -q kk1.12.zip
+    # -e cp932: the archive's internal file names are Shift_JIS (e.g.
+    # Picture/キラーナイツ隊旗.png, Picture/地名：レスト城.png) -- unar's
+    # default guess mangles every one of them into mojibake that the LCF/
+    # RPG_RT.ldb-only checks never notice (they read no filenames a game
+    # database points at) but that breaks the genuine RPG_RT.EXE outright:
+    # running it live under wine, it opened cleanly up to the title screen
+    # on a plain `unar -q` extraction, then failed to open a Picture file by
+    # name the moment a map event actually showed one. rtp_install.bash's
+    # own RTP unpack already carries this same flag for the same reason.
+    unar -q -e cp932 kk1.12.zip
 fi
