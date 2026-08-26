@@ -270,7 +270,8 @@ def check_game(dir)
   state.show_picture(7, name: 'flagpic', x: 10, y: 20, fixed_to_map: true,
                          use_transparent_color: true)
 
-  round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd(state.save_count).to_lcf)))
+  round_lsd = LCF::SaveData.new(StringIO.new(state.to_lsd(state.save_count).to_lcf))
+  round = Game::State.from_lsd(db, round_lsd)
   fp = round.pictures[7]
   eq true, !fp.nil? && fp.fixed_to_map,
      'to_lsd: a picture shown fixed-to-map keeps that flag across Save/Continue'
@@ -340,6 +341,26 @@ def check_game(dir)
     eq 'HeroAlt', round.party.leader.charset_name, 'to_lsd: leader sprite override'
     eq 5, round.party.leader.charset_index, 'to_lsd: leader sprite index'
     eq 'Renamed', round.party.leader.name, 'to_lsd: leader name override'
+    lentry = round_lsd[108][round.party.leader.id]
+    eq 'HeroAlt', lentry && lentry.sprite_name,
+       'to_lsd: chunk 108 carries the live sprite override (not chunk 104)'
+    eq true, round.party.leader.sprite_changed?,
+       'to_lsd: leader sprite_changed? survives the round trip'
+  end
+  # An actor whose charset was never touched by a live Change Sprite
+  # Association must keep chunk 108's own sprite fields (11/12/13) elided --
+  # confirmed against genuine RPG_RT.exe under wine (cycle #170): a plain
+  # database-default graphic must not round-trip as though it were a live
+  # override. See Game::Actor#sprite_changed?'s own citation and
+  # SAVE_PARTY_ACTOR's schema.rb comment for the full writeup.
+  untouched = state.party.actors.find { |a| state.party.leader.nil? || a.id != state.party.leader.id }
+  if untouched
+    uentry = round_lsd[108][untouched.id]
+    eq nil, uentry && uentry.sprite_name,
+       "to_lsd: actor #{untouched.id}'s untouched sprite stays elided from chunk 108"
+    ub = round.party.actor_by_id(untouched.id)
+    eq false, ub && ub.sprite_changed?,
+       "to_lsd: actor #{untouched.id}'s sprite_changed? stays false untouched"
   end
 
   puts "  leader=#{state.party.leader.name.inspect} hp=#{state.party.leader.hp} " \

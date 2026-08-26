@@ -1578,6 +1578,20 @@ module Game
       # mirrors it by keying on this flag rather than on `@class_id > 0` alone.
       @battler_animation_override = 0
       @class_changed = false
+      # Whether a Change Sprite Association (10630) has actually run for this
+      # actor, as opposed to @charset_name/@charset_index still being the
+      # actor's own untouched database default set two lines up -- confirmed
+      # against genuine RPG_RT.exe under wine (cycle #170): a save taken right
+      # after Change Sprite Association wrote new fields 11 (sprite_name) / 12
+      # (sprite_id) / 13 (sprite_transparent, absent unless the transparency
+      # flag was set) onto that actor's own SAVE_PARTY_ACTOR entry (chunk
+      # 108), while an otherwise identical actor whose *database* row already
+      # carried that same non-blank graphic -- no Change Sprite Association
+      # ever run -- left chunk 108 entirely without fields 11-13 (only the
+      # hero's own live-sprite mirror on chunk 104, fields 73/74, reflected
+      # it, elided only when blank). See SAVE_PARTY_ACTOR's own schema.rb
+      # comment and #to_lsd/.from_lsd's own citations for the full writeup.
+      @sprite_changed = false
       @battle_commands = nil # lazily taken from the database on the first change
       # RPG2003 battle front/back row (ADR 0053): purely runtime/save state,
       # never derived from the database's own `battle_x`/`battle_y` manual
@@ -1670,11 +1684,20 @@ module Game
     end
 
     # Replace the actor's CharSet graphic (the Change Sprite Association event
-    # command): `name` is the file and `index` the cell within it.
+    # command): `name` is the file and `index` the cell within it. Also called
+    # while restoring a saved override (Game::State.from_lsd) -- both are a
+    # real, persisted "changed" event, not the actor's own untouched database
+    # default set at #initialize -- see @sprite_changed's own comment there.
     def set_charset(name, index)
       @charset_name = name
       @charset_index = index
+      @sprite_changed = true
     end
+
+    # Whether #set_charset has actually run for this actor (a live Change
+    # Sprite Association, or one restored from a save) -- see @sprite_changed's
+    # own comment at #initialize.
+    def sprite_changed?; @sprite_changed; end
 
     # The actor's FaceSet graphic (顔グラフィック), shown on the save-select
     # screen (the SAVE_TITLE face slots) -- distinct from the message face
@@ -3613,6 +3636,17 @@ module Game
         meta[a.id] = { name: a.name, title: a.title,
                        charset_name: a.charset_name,
                        charset_index: a.charset_index,
+                       # Gates whether a restore actually calls #set_charset
+                       # (see #apply_actor_meta below) -- without it, an actor
+                       # whose charset_name is merely their own non-blank
+                       # database default (never a real Change Sprite
+                       # Association) would spuriously come back marked
+                       # #sprite_changed?, the same "changed at all" flag
+                       # Game::State#to_lsd now gates chunk 108's own
+                       # sprite_name/sprite_id/sprite_transparent fields on
+                       # (see that method's own citation) -- mirrors
+                       # class_changed just below.
+                       sprite_changed: a.sprite_changed?,
                        transparent: a.transparent, states: a.states.dup,
                        # A Change Parameters command's unclamped shadow total
                        # (see Actor#change_param / #restore_base) -- without
@@ -3700,7 +3734,12 @@ module Game
       return unless m
       actor.name = m[:name] if m[:name]
       actor.title = m[:title] unless m[:title].nil?
-      if m[:charset_name]
+      # `sprite_changed` false means the database default was never actually
+      # overridden -- skip #set_charset so the actor's own #sprite_changed?
+      # stays false too (see #to_h's own citation). A save written before
+      # `sprite_changed` existed carries no such key (nil, not false), read
+      # as "assume changed" -- the old behavior, gated on charset_name alone.
+      if m[:charset_name] && m[:sprite_changed] != false
         actor.set_charset(m[:charset_name], m[:charset_index] || actor.charset_index)
       end
       actor.transparent = m[:transparent] unless m[:transparent].nil?
@@ -14799,8 +14838,22 @@ module Game
       # SAVE_MOVABLE comment on why it lives here, on the hero's own movable
       # record, not the system chunk).
       hero[24] = @player_transparent ? 3 : 0
-      if leader
-        hero[73] = leader.charset_name || ''
+      # A live mirror of the leader's *currently drawn* CharSet graphic --
+      # elided when blank, confirmed against genuine RPG_RT.exe under wine
+      # (cycle #170): a leader whose graphic was blank (no override, blank
+      # database default) left these fields absent, one whose *database* row
+      # already carried a non-blank graphic (still no override) wrote them
+      # present anyway, and one with a live Change Sprite Association
+      # override also wrote them present with the overridden value -- so
+      # this pair tracks "what the hero currently looks like", not "was
+      # there a live override" (that is chunk 108's own sprite_name/
+      # sprite_id/sprite_transparent job instead, on the *actor's* own
+      # SAVE_PARTY_ACTOR entry -- see #to_lsd's own citation just below and
+      # SAVE_PARTY_ACTOR's schema.rb comment). Continuing a save never reads
+      # this pair back (see .from_lsd's own citation) -- it is write-only
+      # parity with what genuine RPG_RT itself puts here, not a restore path.
+      if leader && leader.charset_name && !leader.charset_name.empty?
+        hero[73] = leader.charset_name
         hero[74] = leader.charset_index || 0
       end
       save[104] = hero
@@ -14973,6 +15026,19 @@ module Game
         # Actor Title), confirmed against liblcf's SaveActor field table --
         # see SAVE_PARTY_ACTOR's comment in schema.rb.
         e[2] = a.title
+        # A live Change Sprite Association (10630) override -- fields 11
+        # (sprite_name) / 12 (sprite_id) / 13 (sprite_transparent), gated on
+        # #sprite_changed? (the command actually having run), not merely a
+        # non-blank current graphic -- see SAVE_PARTY_ACTOR's own schema.rb
+        # comment for the genuine-RPG_RT wine verification this cycle (#170)
+        # that pinned these fields down, and for why chunk 104's own hero-
+        # record mirror (fields 73/74) is *not* what a genuine Continue
+        # restores the sprite from.
+        if a.sprite_changed?
+          e[11] = a.charset_name || ''
+          e[12] = a.charset_index || 0
+          e[13] = 3 if a.transparent
+        end
         e[31] = a.level
         e[32] = a.exp
         e[51] = a.skills.size
@@ -15477,6 +15543,18 @@ module Game
           # only the reserve-actor placeholder byte is skipped.
           tt = sa.title
           actor.title = tt if tt && tt != "\x01"
+          # A live Change Sprite Association override (chunk 108 fields
+          # 11/12/13) -- what genuine RPG_RT.exe itself restores the on-map
+          # sprite from, not chunk 104's hero-record mirror (fields 73/74,
+          # never read back -- see #to_lsd's own citation and
+          # SAVE_PARTY_ACTOR's schema.rb comment for cycle #170's wine
+          # verification of both halves of this). Gated on sprite_name's own
+          # presence, the same "the command actually ran" signal #to_lsd
+          # writes it under; an absent field leaves the actor's own database
+          # default charset (#initialize) untouched.
+          sn = sa.sprite_name
+          actor.set_charset(sn, sa.sprite_id || 0) if sn
+          actor.transparent = (sa.sprite_transparent || 0) != 0 if sn
         end
         hp[aid] = sa.hp if sa.hp
         mp[aid] = sa.mp if sa.mp
@@ -15519,11 +15597,10 @@ module Game
             { x: t.x || 0, y: t.y || 0, switch_id: t.switch_on ? t.switch_id : nil }
         end
       end
-      # The leader's on-map sprite override (a Change Sprite Association), stored
-      # in the hero chunk's CharSet fields.
-      if party.leader && hero.charset_name && !hero.charset_name.empty?
-        party.leader.set_charset(hero.charset_name, hero.charset_index || 0)
-      end
+      # A live Change Sprite Association override is restored per-actor above,
+      # from chunk 108's own sprite_name/sprite_id/sprite_transparent fields
+      # (not chunk 104's hero-record mirror, fields 73/74 -- see #to_lsd's own
+      # citation and SAVE_PARTY_ACTOR's schema.rb comment for why).
       sys = save[101]
       switches = {}
       (sys.switches || []).each_with_index { |v, i| switches[i + 1] = v if v }
