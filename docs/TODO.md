@@ -5614,6 +5614,160 @@ The work below is roughly ordered by the critical path to a walkable game
   Teleport's RPG2003-only facing-parameter gate, the `block_pending_*`
   message-blocking helpers) for the same kind of real wine resolution this
   cycle gave the Pan Screen table.
+  ✅ **Follow-up (cycle #179, 2026-08-26): resolved half of cycle #178's own
+  left-open move-route Speed Up/Down clamp measurement -- the SPEED_DOWN
+  floor (internal 0) is now directly wine-confirmed; the SPEED_UP ceiling
+  (internal 5) is not, and is left open below with a concrete diagnosis of
+  why the same technique didn't close it this cycle.** No EasyRPG source was
+  consulted for any behavioral claim; the two direct EasyRPG-source
+  citations that were sitting in this exact clamp's own comment (a
+  `SetMoveSpeed(min(GetMoveSpeed()+1,6))`/`max(...,1)` reference) were
+  removed as part of this cycle's fix, not left standing -- see "Also found"
+  below.
+  **Method (same spirit as cycle #178's Pan Screen probe, extended from a
+  single fade-to-black marker to full per-frame position tracking):**
+  dumping every Nepheshel `.lmu`'s own move-route command list (a scratch
+  script over this codebase's own `LCF::MapUnit`/schema, not EasyRPG) for
+  runs of >=4 consecutive Speed Up/Down commands turned up two distinct real,
+  already-authored templates, reused across dozens of maps: an
+  **"up-first"** one (Map0068 events 1-3 -- cycle #178's own original find:
+  default speed, then 4 Speed Ups reaching the ceiling exactly, revealed
+  only much later by a matching Speed Down block) and a **"down-first"** one
+  (used by every "chimera"/"griffon" corridor-guard monster across Maps
+  0100-0471 -- e.g. `Map0465.lmu` event 4: 4 Speed Downs from the page
+  default reaching the floor, then, after a couple of moves and two Wait
+  commands, 4 Speed Ups and 6 Move Forward commands whose speed directly
+  exposes what the Down block actually left behind). Both templates are the
+  same idea in opposite order: push a real move route past one clamp bound,
+  then read the aftermath off a subsequent, oppositely-signed block. Picked
+  the down-first template on `Map0465.lmu` specifically because that map is
+  only 20x15 tiles -- smaller than one screen (`Scene::Map::COLS`/`ROWS`),
+  so standing at its corner (`gen-rpg2k-save.rb --map 465 --at 1,1
+  --clear-scene`) keeps the whole map, and both of its only two wisp-style
+  events, on screen at fixed camera-independent positions the entire time,
+  with no scrolling and (checked directly, not assumed) no unconditional
+  autostart/parallel event anywhere on the map to contaminate the run.
+  Genuine RPG_RT.exe was booted under wine (`~/.wine-nepheshel32`, Xvfb,
+  matchbox, `LIBGL_ALWAYS_SOFTWARE=1`, `LANG=ja_JP.UTF-8`) and driven through
+  Continue/file-select with the same fixed three-key script established
+  cycles ago; a new capture technique replaced cycle #178's discrete
+  `xwd`+`convert`-per-step screenshots with a **tight bare-`xwd`-only loop**
+  (no `convert` in the hot loop) started the instant the load's Return was
+  sent, sustaining a measured ~55-58 frames/sec -- close enough to genuine
+  RPG_RT's own 60fps to resolve individual frames of even a 4-frames/tile
+  slide. Event 4's own sprite was isolated per-frame by its charset colour
+  (a `convert -fuzz 8% -fill white -opaque '#39AA5A' -fill black +opaque
+  white -trim` mask, cross-checked against its known map coordinates at
+  t=0) and reduced to a bounding-box centre, giving a clean, continuous
+  position trace across ~14s and ~840 frames with no manual frame-picking.
+  **Result:** the trace shows a still period (the two Wait commands),
+  then a steady dash of exactly 192 screen-px (96 native px = 6 tiles,
+  matching the route's own 6 Move Forward commands) in 0.374-0.412s
+  (bracketed by the last still sample and the first/last samples on each
+  side of the dash's slope change), before the slope visibly drops back to
+  a slow regime. `Scene::Map::SLIDE_UNITS`'s own frames/tile table predicts
+  4 frames/tile (0.4s for 6 tiles) if the Down block's floor genuinely holds
+  at internal 0 before the Ups claw back up to internal 4, or 16
+  frames/tile (1.6s, a clean 4x slower) if the floor doesn't hold and the
+  raw value went to -2 first. The measured 0.374-0.412s lands squarely on
+  the floor-confirmed prediction and is nowhere near the unclamped one -- a
+  55fps capture cannot mistake 0.4s for 1.6s, so this is not a
+  close-call reading. **Conclusion: the SPEED_DOWN floor
+  (`[character.move_speed - 1, 0].max`) is confirmed correct against
+  genuine RPG_RT.exe.** The code was already correct, so this is a
+  comment-only fix (no changelog fragment): `game.rb`'s own SPEED_UP/DOWN
+  comment was rewritten to record this wine evidence in place of the old
+  EasyRPG-sourced, "NOT independently confirmed" text.
+  **SPEED_UP ceiling -- still not directly measured, diagnosed rather than
+  forced:** the up-first template (Map0068) is the one that actually reaches
+  the ceiling from the page default in one block, but every occurrence of it
+  sits on `Map0068.lmu`, a large 60x60 map with 20+ near-identical
+  "will-o-wisp" (`ういすぷ`) events scattered every 4-9 tiles, several
+  sharing close enough charset colours that a colour mask alone (the
+  technique that worked cleanly on `Map0465.lmu`'s only-two-events map)
+  pulls in more than one blob even when narrowed to a screen-space vertical
+  strip along the dashing event's known fixed x-coordinate. Compounding
+  this, the up-first route has no slow calibration phase before its dash
+  (unlike the down-first template's leading Speed-Down-then-creep segment),
+  so there is no natural "it just started moving" marker to anchor on, and
+  the dash is `through`-mode (ignores walls) directly at the party, so any
+  standing distance short of its full ~18-tile close range risks ending the
+  run in a contact-triggered battle before the discriminating post-dash
+  segment ever plays -- confirmed the hard way on two earlier attempts this
+  cycle (23 and 8 tiles away) that both ended in combat instead of data.
+  Not attempted further this cycle: isolating one blob among several
+  similarly-coloured ones needs either a smaller connected-component
+  labelling step this environment's ImageMagick-only toolchain doesn't
+  offer cheaply, or hand-editing the route to a fixed, unique colour/graphic
+  for the duration of the test (a larger edit than the single-parameter
+  splices cycles #137-139/#176/#178 established as safe). Standing
+  evidence in the meantime: this cycle's SPEED_DOWN confirmation shows the
+  *floor* half of this exact clamp expression genuinely holds in the real
+  engine, and cycle #178 already found a real, shipped move route
+  (`Map0068.lmu`) authoring exactly 4 consecutive Speed Ups from the page
+  default -- landing precisely on the ceiling, not short of or past it --
+  and visibly trusting that not to wrap or error. Neither is a substitute
+  for a direct measurement, so the comment states exactly this (confirmed
+  floor, corroborated-but-unmeasured ceiling) rather than rounding up to
+  "confirmed" for both directions.
+  **Also found, fixed in passing:** the SPEED_UP/DOWN comment being
+  rewritten anyway had carried two direct EasyRPG Player source citations
+  since before this citation-sweep project's own rule against them (a
+  `Game_Character`-style `SetMoveSpeed` reference) -- removed as part of
+  this same edit rather than left standing next to the new wine evidence.
+  **Verification:** `ruby -c` clean on `game.rb`; `git diff --
+  mruby-rpg2k/mrblib/game.rb | grep -vE "^[+-][[:space:]]*#"` shows nothing
+  beyond `+++`/`---`/context noise (comment-only); `cd build && ctest -R
+  mruby_test` passed (12.59s); `scripts/rpg2k_logic_check.rb` (1150),
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb`
+  (41), `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) all matched cycles #175-178's own
+  recorded baselines exactly; `scripts/rpg2k_save_load_check.rb`
+  reconfirmed at exactly its 3 known pre-existing, unrelated failures (BGM
+  `balance` x2, picture `show_x`/`show_y`), and its own printed save summary
+  (`leader="Renamed" ... map=12 pos=(40,15)`) confirms `Save01.lsd` is back
+  to its pre-cycle state. No `.cxx`/`.hxx`/`.cc`/`.h`/`CMakeLists.txt` was
+  touched, so no `clang-format`/`cmake-format` step applies. `data/` was
+  left byte-identical: `md5sum` reconfirmed `Save01.lsd`, `Map0068.lmu`,
+  `Map0352.lmu`, `Map0465.lmu` and `RPG_RT.ldb` all unchanged from their
+  pre-cycle values (`Save01.lsd` was edited to reposition the party for each
+  wine boot and restored from a pre-edit backup, confirmed byte-for-byte by
+  `md5sum` immediately after restoring each time; every other file was only
+  ever read, never opened for writing, this cycle). `git status --porcelain`
+  shows only `mruby-rpg2k/mrblib/game.rb` changed (the pre-existing dirty
+  `3rd/mruby` submodule pointer predates this cycle and was not touched).
+  Every wine/Xvfb/matchbox process this cycle started was confirmed
+  terminated (`ps aux` clean) between and after every boot (five total),
+  with an explicit `wineserver -k` + sleep before each. No EasyRPG source
+  was consulted for any behavioral claim -- the two pre-existing citations
+  in the comment being rewritten were read only long enough to know to
+  delete them, never treated as evidence; no web search was used.
+  **Also found, left open (not itself acted on this cycle):**
+  `Map0352.lmu` event 13 carries an unconditional (`cond_flags=0`) autostart
+  (trigger 3) page -- placing the party on that map via `gen-rpg2k-save.rb`
+  and loading genuine RPG_RT.exe drops straight into a battle before any
+  other event on the map gets a chance to run, regardless of party position.
+  Harmless to the actual game (it is presumably a real intentional ambush
+  the player is meant to walk into via the normal entrance), but a trap for
+  a future cycle's own wine probe reusing this same "reposition the save,
+  boot, observe" technique on that specific map -- checking a candidate
+  map's own events for an unconditional trigger-3/4 page first (as this
+  cycle started doing after being burned by it) is now worth doing
+  routinely before investing in a probe there.
+  **Left open for a future cycle, in priority order:** (1) the SPEED_UP
+  ceiling's own direct measurement, per the diagnosis above -- most
+  promising next step is probably a connected-component-style isolation
+  (e.g. flood-fill per contiguous colour region rather than a single global
+  `-trim`) rather than fighting the crowded map with colour masks alone;
+  (2) `mrblib/game.rb`'s own ~163-instance citation count, still
+  unread-through-in-full (cycle #177's own experience on `interpreter.rb`
+  suggests the real count is meaningfully higher once read end to end, not
+  just grepped); (3) the two `scripts/` check files
+  (`rpg2k_logic_check.rb`/`rpg2k_scene_check.rb`, ~395 instances) as a
+  possibly-different-cadence cleanup; (4) `interpreter.rb`'s own remaining
+  newly-honest "NOT independently confirmed" claims cycle #177 flagged
+  (Change Items' signed-value asymmetric guard, Teleport's RPG2003-only
+  facing-parameter gate, the `block_pending_*` message-blocking helpers).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
