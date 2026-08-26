@@ -4315,6 +4315,103 @@ The work below is roughly ordered by the critical path to a walkable game
   hang; and every EasyRPG-style citation cycle #154's own repo-wide grep
   turned up that no cycle has yet touched. Field 140 (`atb_mode`) is
   removed from this rotating list per the recommendation above.
+  ✅ **Follow-up (cycle #166, 2026-08-26): attempted cycle #165's own
+  concrete lead on `SAVE_SYSTEM` field 125 (`battle_background`) -- extend
+  troop 103's own `RPG_RT.ldb` entry with an additional battle-event page
+  rather than hand-authoring a fresh map event. Confirmed the injection
+  technique itself is safe against genuine RPG_RT.exe and that Change
+  Battle Background does take live effect from a battle-event page, but
+  could not complete the actual save-round-trip question this cycle --
+  reporting the partial result rather than shipping an unverified fix, per
+  this project's own time-box/verification rules.** **What was confirmed,
+  with evidence:** (1) adding a brand-new page (id 20) to troop 103's own
+  `pages` table (chunk 15/enemy_group, condition `flags=8`/`turn_a=1`/
+  `turn_b=0` -- copied verbatim from that same troop's own pre-existing
+  page 2, which already uses this exact "always true from turn 1" shape)
+  is a **safe edit**: the modified `RPG_RT.ldb` boots to the title screen,
+  Continues into the map, and the spliced Map0478-event-2/page-2 tail
+  (troop 103, unmodified, the same proven-safe technique cycles #130-165
+  established) still triggers a normal encounter against it -- no crash,
+  no corruption, all 600 enemy groups and all 20 of troop 103's own pages
+  (19 original + 1 new) still decode cleanly afterward. This closes cycle
+  #165's own "untested hypothesis about risk" on this specific technique.
+  (2) A page with **all-zero condition flags** (`flags=0`, no condition
+  bits set at all) was tried first and was never observed to fire across a
+  live battle (backdrop stayed the default black/none for several rounds);
+  switching to the exact `flags=8`/`turn_a=1` shape copied from the
+  troop's own page 2 fired **immediately and reproducibly** (confirmed
+  twice, in two separate wine sessions) -- the added page's Change Battle
+  Background(`"light"`) command visibly swapped the live battle backdrop
+  from black to the real `Backdrop/light.png` image (a bright white/pink
+  radial gradient, unmistakable against the prior plain black), screenshot
+  evidence in this session's own scratch dir. This is a small, useful,
+  previously-undocumented finding in its own right for whoever next
+  authors a synthetic battle-event page this way: don't assume "no
+  condition bits" reads as "always active" against genuine RPG_RT.exe --
+  it did not behave that way here, whereas copying an existing "fires
+  every turn" condition shape from the same database did. **Why the actual
+  field 125 question stayed unresolved:** finishing it needs the fight to
+  end (win, escape, or lose) and the party to reach an ordinary map state
+  with Save reachable through the ordinary system menu, so a save taken
+  right after can be read back for chunk 101 field 125. Troop 103's own
+  script (as authored across Map0478 event 2's *pages*, of which the
+  established splice technique only ever copies *page 2* in isolation) did
+  not cooperate: choosing **Escape** from the battle options window ran
+  the genuine Escape-handler branch (variable/switch writes, no visible
+  text) and landed the party in a small interior room with a **visibly
+  reduced system menu** (only three commands plus "return", no Save or
+  Status entries at all -- not merely greyed out, structurally absent) --
+  plausibly because the escape branch's own `Change Party Member` calls
+  swap in a placeholder/demo party ("デモ用") outside its intended story
+  context, since this splice is being run stripped of whatever sibling
+  page(s) of the same event would ordinarily follow it once the relevant
+  switch flips. Choosing **Fight** instead and grinding it out (confirmed
+  winnable: HP visibly dropped over several rounds to a genuine "戦いに
+  勝った！" victory message, screenshot evidence) turned out to be a
+  scripted **multi-phase** encounter: the "victory" message was followed
+  by the same enemy reappearing at a fresh, lower HP total ("闘神ディー
+  ヴァ" replacing "デモ用" as the display name) and eventually looped
+  all the way back to the encounter's own *opening* line ("来るぞ！"),
+  consistent with this being one page of an autostart event whose
+  condition never stops being satisfied once the fight ends, so the same
+  page simply re-triggers -- again a symptom of splicing a single page out
+  of what is evidently a multi-page event in the real game, missing the
+  sibling page(s)/switch-driven page-swap that would normally end the loop
+  after a real playthrough's first pass. A third attempt tried sidestepping
+  the whole navigation problem by adding **Open Save Menu (11910)** as a
+  second command directly inside the same battle-event page, right after
+  Change Battle Background, reasoning that this codebase's own interpreter
+  dispatches every command (map or battle) through one shared `case`
+  statement so nothing should stop it. Against genuine RPG_RT.exe this
+  produced a **sustained solid-black screen** (confirmed not a hang at the
+  process level -- CPU time kept climbing across repeated checks over
+  ~10s -- but nothing ever rendered again), which was **abandoned rather
+  than investigated further**: authoring "Open Save Menu" inside a battle
+  page is not a combination any real RPG2000 project would ever contain
+  (Save is a map-only concept), so this is not a meaningful behavioural
+  discrepancy to chase, just an unsafe probe technique to avoid repeating.
+  **No production code was changed this cycle.** All three touched
+  fixtures (`RPG_RT.ldb`, `Map0012.lmu`, `Save01.lsd`) were restored and
+  reconfirmed byte-identical by `md5sum` to the values recorded since
+  cycle #148 (`a738d3b9.../c2fa69a0.../3ab5bb01...`) before ending the
+  session; `git status` on `data/` (gitignored) and the tracked tree both
+  came back clean of any change from this cycle. No EasyRPG source was
+  consulted for any claim, and no web search was used. **Left open for a
+  future cycle, more precisely scoped than cycle #165 left it:** field 125
+  itself is still unverified either way; the concrete way forward is
+  either (a) splice **all** of Map0478 event 2's pages (not just page 2)
+  onto the synthetic autostart event, preserving whatever switch-gated
+  page-priority relationship makes the real game's own copy of this event
+  terminate cleanly after one pass, so Escape/Victory lead to an ordinary,
+  save-capable map state; or (b) find a different, simpler genuine
+  Enemy-Encounter tail elsewhere in Nepheshel's own map data (a single-
+  page, non-looping, escape-or-win-cleanly encounter) to splice instead of
+  troop 103's own multi-phase boss script, then repeat this cycle's
+  already-proven-safe troop-page-injection technique against that
+  encounter's own troop id. Also still open, unchanged: the party-roster-
+  field crash; the autostart-crash mystery (cycles #137-139); the missing-
+  Picture-asset hang; and every EasyRPG-style citation cycle #154's own
+  repo-wide grep turned up that no cycle has yet touched.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
