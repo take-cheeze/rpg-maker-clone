@@ -2005,8 +2005,25 @@ module Game
       party.gain_gold(cmd.param(0) == 0 ? v : -v)
     end
 
-    # Ported from EasyRPG Player's source, NOT independently confirmed
-    # against genuine RPG_RT under wine: `Game_Interpreter::
+    # Confirmed against genuine RPG_RT.exe under wine (cycle #182): both
+    # halves of this guard were tested by single-parameter-splicing an
+    # already-genuine, unconditional Change Items "Add const" command
+    # (Nepheshel's Map0012 event 10, an action-triggered item pickup) to
+    # source its amount from an otherwise-unused save variable instead, then
+    # setting that variable to -3 in the save before boot. With the command
+    # left as Add (param0=0), value (= amount = -3) is negative, and the
+    # party's item count came back byte-for-byte unchanged from an untouched
+    # baseline capture (`compare -metric AE` reported 0 differing pixels on
+    # the in-game Item-menu count digit, and a distinctly different count
+    # -- the same probe with the variable set to +3 instead -- produced a
+    # visibly different digit, ruling out a stuck/uninitialized display as
+    # the explanation for the "unchanged" result). With the SAME command
+    # flipped to Remove (param0=1) and the same variable still at -3, value
+    # (= -amount = +3) is positive, and the item count again came back
+    # byte-for-byte unchanged. Both are exactly the no-op this guard
+    # predicts (Add with a negative value, or Remove with a positive one);
+    # genuine RPG_RT.exe really does refuse to apply either, matching the
+    # asymmetric-no-op description below. `Game_Interpreter::
     # CommandChangeItems` computes its signed
     # `value` through the same `OperateValue` a variable-sourced amount can
     # make negative even under "Add", then refuses to apply it at all --

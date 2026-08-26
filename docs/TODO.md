@@ -6129,6 +6129,149 @@ The work below is roughly ordered by the critical path to a walkable game
   which this project does not currently have; (6) the SPEED_UP ceiling's
   exact internal value (4 vs. 5), cycle #180's own left-open item, untouched
   this cycle.
+  ✅ **Follow-up (cycle #182, 2026-08-26): confirmed Change Items' (10320)
+  signed-value asymmetric guard against genuine RPG_RT.exe under wine --
+  cycle #177's own flagged claim, left open by #178-181. Comment-only:
+  `mruby-rpg2k/mrblib/interpreter.rb`'s `#do_change_items` comment updated
+  with the finding; no `mrblib` behavior changed, no changelog fragment.**
+  **Method:** single-parameter-splice discipline (cycles #137-139/#176/#178/
+  #180/#181), applied to `Game::State#do_change_items`'s own guard rather
+  than the Teleport/switch targets those cycles used. Nepheshel's Map0012
+  event 10 (an ordinary, already-genuine, unconditional action-triggered
+  item-pickup page -- `[Show Message]`/`[Change Items: Add item 407 const
+  1]`/`[Erase Event]`/`[End]`, four commands total, ci=1 is the target) was
+  retargeted to source its amount from an otherwise-unused save variable
+  (id 5000, confirmed unreferenced anywhere in the game: the highest
+  variable id any `Control Variables` command in the whole data set touches
+  is 1097) instead of the constant 1, recomputing field 51
+  (`event_command_size`) each time per the schema's own standing warning.
+  The save's inventory (chunk 109) was set to item 407 x5 and the leader
+  promoted to actor 1 ("リト", cycle #175's technique -- the debug leader,
+  actor 15, renders no sprite). Ground truth for this event's own layer
+  mattered here: `Scene::Map#try_action_trigger`'s own comment (this
+  codebase's code, read for a positioning hypothesis only, not a behavioral
+  citation) notes a `layer=0` ("below") action-triggered event only answers
+  the button from the overlap check (standing ON its tile), never from an
+  adjacent facing tile -- confirmed necessary in practice: a first attempt
+  standing adjacent and facing the tile got no response at all, standing
+  directly on the tile and pressing the decision key fired it immediately.
+  **First finding (title-menu false start, worth recording so a future
+  cycle does not repeat the confusion):** the first boot's "Down, Return,
+  Return" (the exact sequence cycles #180/#181 used successfully) landed on
+  a completely different scene -- a hand-drawn character sketch captioned
+  "企画・シナリオ gezigezi" followed by ominous sword/prophecy flavour text
+  -- which turned out to be Nepheshel's own **New Game** intro, not a
+  Continue. Root cause found by inspecting the target map's own data before
+  re-trying: the first attempt used Map0373 (one of three structurally
+  identical "item-dungeon" clone maps sharing the same event set --
+  Map0012/Map0312/Map0373 all carry an `EV0010`-equivalent at (3,6) with the
+  exact same `[Show Message]/[Change Items]/[Erase Event]` shape), and
+  Map0373 turns out to carry its own genuine, unconditional autostart page
+  (event 12, `trigger=3, cond_flags=0`) that unconditionally chains a short
+  scripted sequence into a Teleport to Map0525 the instant the map loads --
+  this IS the credits/flashback scene, triggered automatically by loading
+  onto that specific map, nothing to do with title-menu navigation at all
+  (a zoomed screenshot of the title screen confirmed the cursor really did
+  land on "続きから"/Continue both times, byte-for-byte). Switching to
+  Map0012 -- confirmed to carry no autostart/parallel-trigger event
+  anywhere on the map at all -- resolved this cleanly; Map0012 was also
+  already the CURRENT map of this game folder's pre-existing `Save01.lsd`
+  (at a different position, deep in the same dungeon), so this cycle's own
+  target event's on-disk position (3,6) was cross-checked against that
+  save's own chunk 111 per-event snapshot first and found unmoved/unerased,
+  confirming it was safe to relocate onto without contaminating the test.
+  **Test 1 (Add, sanity check that the retargeted variable path works at
+  all):** var 5000 set to `+3` in the save, baseline item count 5 --
+  genuine RPG_RT.exe's own in-game Item menu read back `8` after the pickup
+  fired (message "またたびもどきを手に入れた！" shown once, as expected).
+  **Test 2 (Add, the actual guard target):** var 5000 set to `-3`, same
+  baseline -- the SAME message appeared (confirming the message text is a
+  static string, unaffected by the actual delta, not a tell either way),
+  but the resulting Item-menu count came back **byte-for-byte pixel-
+  identical** to an untouched (event never triggered) baseline capture of
+  the same screen (`compare -metric AE` reported `0` differing pixels
+  against that baseline, vs. `56` against the Test 1 "8" capture, ruling
+  out a stuck/frozen display as an alternative explanation for "unchanged")
+  -- i.e. count stayed at 5, exactly the no-op this guard predicts for
+  Add-with-a-negative-value. **Test 3 (the guard's other half, Remove):**
+  the same command's op flipped to Remove (param0 1 -> the guard's
+  predicted trigger is now Remove-with-a-positive-value, since `value =
+  -amount = -(-3) = +3`), var 5000 still `-3` -- again `AE=0` against the
+  untouched baseline, confirming Remove-with-a-positive-value is ALSO a
+  genuine no-op, not just the Add side. Both halves of the "asymmetric
+  no-op" the ported comment described are now independently confirmed
+  against genuine RPG_RT.exe, not merely inherited from a citation.
+  **Map0547 switch mystery (item (1) above): revisited briefly, not
+  resolved further.** Re-decoded the gating Conditional Branch command
+  itself (`params=[0, 582, 0, 0, 0, 0]`) against `#eval_condition`'s own
+  parameter layout to rule out a parse-order mixup (e.g. mistaking a
+  variable id for a switch id) as a mundane explanation for cycle #181's
+  result -- it is not: param0=0 unambiguously selects the switch-type
+  condition, param1=582 the switch id, param2=0 "check ON", exactly the
+  reading cycle #181 already tested from both plausible array-index
+  conventions. No new hypothesis materialized beyond cycle #181's own
+  candidates (a build-time flag, or a persistence mechanism this project's
+  save reader does not model at all); left open, honestly, rather than
+  re-spending this cycle's own wine-boot budget re-trying variations
+  cycle #181 already exhausted.
+  **Verification:** `ruby -c` clean on `interpreter.rb` (the only file
+  changed); `git diff -- mruby-rpg2k/mrblib/interpreter.rb | grep -vE
+  "^[+-][[:space:]]*#"` shows nothing beyond `+++`/`---`/context noise
+  (comment-only); `cd build && ctest -R mruby_test` passed (10.08s);
+  `scripts/rpg2k_logic_check.rb` (1150), `scripts/rpg2k_scene_check.rb`
+  (929), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15) all matched every prior cycle's own recorded baseline exactly;
+  `scripts/lcf_testbed_check.rb` reconfirmed clean (1099 maps, 22858 events,
+  116042 move commands, matching cycles #178/#180/#181's own recorded
+  figures); `scripts/rpg2k_save_load_check.rb` reconfirmed at exactly its 3
+  known pre-existing, unrelated failures (BGM `balance` x2, picture
+  `show_x`/`show_y`), with its own printed save summary (`leader="Renamed"
+  ... map=12 pos=(40,15)`) confirming `Save01.lsd` is back to its
+  pre-cycle state. `data/` was left byte-identical: every `Map0012.lmu`/
+  `Map0373.lmu`/`Save01.lsd` edit this cycle made (all in
+  `Nepheshel206Rbeta`) was to a working copy, restored from this cycle's
+  own pre-edit backups and independently re-verified against a fresh
+  extraction of the checked-in `data/Nepheshel206beta.zip` (`Map0012.lmu`
+  `c2fa69a0...`, `Map0373.lmu` `be917b35...`, both matching the zip
+  exactly; `Save01.lsd` `3ab5bb01...`, matching cycle #181's own recorded
+  end-of-cycle value). `git status --porcelain` on the repo shows only
+  `mruby-rpg2k/mrblib/interpreter.rb` changed (the pre-existing dirty
+  `3rd/mruby` submodule pointer predates this cycle). Every wine/Xvfb/
+  matchbox process this cycle started was confirmed terminated (`ps aux`
+  clean) between and after every boot (five total), with an explicit
+  `wineserver -k` (scoped to `~/.wine-nepheshel32`) plus a sleep before
+  each. No EasyRPG source was consulted for any behavioral claim this cycle
+  (this codebase's own `Scene::Map#try_action_trigger` comment was read
+  once, for a positioning hypothesis, not treated as evidence of RPG_RT's
+  behavior); no web search was used.
+  **Left open for a future cycle, in priority order:** (1) the Map0547
+  debug-room switch mystery, still honestly unresolved (see above -- no new
+  angle found this cycle either); (2) the `block_pending_*` message-
+  blocking helpers (interpreter.rb ~3850-4000), not reached this cycle --
+  a natural test needs a parallel-process event attempting a
+  Teleport/Battle/Screen/etc. command while a SEPARATE event's message
+  window is held open, which this project has no already-authored example
+  of and which synthesizing safely (two coordinated events, not a
+  single-parameter edit to one already-genuine command) falls outside the
+  single-command-splice discipline every confirmed finding so far has
+  relied on -- flagged for a cycle willing to design a two-event synthetic
+  probe (and mindful of cycles #137-139's warning that synthetic command
+  lists can crash genuine RPG_RT.exe unpredictably even with field 51
+  correct); (3) `mrblib/game.rb`'s own remaining "NOT independently
+  confirmed" instances -- down to 11 in the current file (not ~163;
+  that older count evidently predates several cycles' worth of sweep
+  progress this file's own history does not fully narrate) -- spanning
+  message-control-code edge cases (`\N[]` unresolved-bracket fallback,
+  `\C[]` out-of-range colour clamp-to-0, `\S[]` speed clamp), the overall
+  death-handler mechanism, and several movement/pathfinding claims
+  (diagonal-repeat move routes, obstacle-facing, chase/flee AI) -- none
+  reached this cycle; (4) the two `scripts/` check files
+  (`rpg2k_logic_check.rb`/`rpg2k_scene_check.rb`, ~395 instances), untouched
+  this cycle; (5) whether a genuine RPG2003-authored database's own
+  Teleport facing parameter behaves differently from cycle #181's finding
+  -- still no RPG2003 test-bed game available; (6) the SPEED_UP ceiling's
+  exact internal value (4 vs. 5), untouched since cycle #180.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
