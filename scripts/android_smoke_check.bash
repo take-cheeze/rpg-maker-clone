@@ -35,16 +35,22 @@ echo "== installing ${APK}"
 adb wait-for-device
 adb install -r "${APK}"
 
-# `adb push` straight into Android/data/<pkg>/... fails on a fresh install
-# with "remote secure_mkdirs failed: Permission denied": the FUSE-backed
-# external storage only lets adb create directories under an app's own
-# Android/data/<pkg> root once that root exists, and nothing creates it until
-# the app itself calls getExternalFilesDir() (RpgMakerCloneActivity's own
-# getArguments(), see app/android/README.md > Building). Priming it with one
-# throwaway launch -- no project pushed yet, so it finds nothing under
-# --game_dir and exits almost immediately (src/main.cxx's "no project found"
-# path) -- creates that root under the app's own UID; force-stopping after
-# leaves nothing running for the push and the real launch below to race.
+# `adb push` into Android/data/<pkg>/... as the plain `shell` user fails on
+# this AVD system image even once the app has created that directory itself
+# (getExternalFilesDir()/mkdirs(), RpgMakerCloneActivity#getArguments()):
+# first "remote secure_mkdirs failed: Permission denied" creating it, then
+# (after priming it with one throwaway launch, still below) "stat failed ...
+# Permission denied" on the now-existing directory -- confirmed on real CI
+# runs, both against `google_apis` x86_64 API 30. Scoped storage is meant to
+# carve out an adb-push/pull exception for exactly this (it works for real,
+# undocumented, on a real device -- see app/android/README.md > Building),
+# but this AVD image does not honor it. `adb root` sidesteps the whole
+# question: a root adbd is not subject to scoped storage at all. The one
+# throwaway launch below is kept anyway (harmless, and still useful if a
+# future non-rooted image needs it back).
+adb root
+adb wait-for-device
+
 echo "== priming ${PACKAGE}'s external-files directory"
 adb shell am start -W -n "${ACTIVITY}"
 sleep 5
