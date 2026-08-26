@@ -694,26 +694,36 @@ module LCF
 
     private
 
-    # Scan (without decoding) one row's chunk stream and return its exact raw
-    # bytes, from the first chunk id through the id-0 terminator inclusive --
+    # Scan (without decoding) one row's chunk stream and return its raw bytes,
+    # from the first chunk id through the id-0 terminator inclusive --
     # precisely the span Array1D#to_lcf(true) would itself produce, so handing
-    # it back out unread through #to_lcf is a byte-for-byte passthrough. Walks
-    # the same id/len chunk structure Array1D#initialize does, but seeks over
-    # each chunk's payload instead of reading it, then rewinds and takes the
-    # whole span in one read -- cheaper than decoding, and it never touches
-    # cp932 conversion or nested Array1D/Array2D construction at all.
+    # it back out unread through #to_lcf is a byte-for-byte passthrough for a
+    # real file (write_ber always re-emits the same shortest encoding RPG_RT
+    # itself writes -- see write_ber's own comment). Walks the same id/len
+    # chunk structure Array1D#initialize does, forward-only: each id/len is
+    # read then re-emitted via write_ber (exactly what Array1D#to_lcf already
+    # does for every chunk, touched or not, so this changes nothing about
+    # what "byte-exact" means here) and each payload is read and appended
+    # rather than decoded, so this never touches cp932 conversion or nested
+    # Array1D/Array2D construction. Deliberately forward-only, no #seek: a
+    # `#seek(len, IO::SEEK_CUR)` skip here -- tried first -- desyncs mruby-io's
+    # read-ahead buffer against the real fd position when interleaved with
+    # read_ber's own small buffered reads (`#seek` issues a raw `lseek` on the
+    # fd without correcting for bytes already buffered-but-unconsumed), which
+    # silently corrupted every row after the first on a real `File`-backed
+    # stream (StringIO has no such buffer, so a local, String-only check
+    # missed it entirely -- confirmed by CI's real-game boot check).
     def read_row_bytes s
-      start_pos = s.pos
+      out = String.new
       loop do
         break if s.eof?
         idx = LCF.read_ber s
+        out = out + LCF.write_ber(idx)
         break if idx == 0
         len = LCF.read_ber s
-        s.seek(len, IO::SEEK_CUR)
+        out = out + LCF.write_ber(len) + s.read(len)
       end
-      end_pos = s.pos
-      s.seek(start_pos, IO::SEEK_SET)
-      s.read(end_pos - start_pos)
+      out
     end
   end
 end

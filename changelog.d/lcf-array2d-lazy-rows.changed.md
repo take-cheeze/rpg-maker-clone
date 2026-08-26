@@ -5,7 +5,7 @@
   pay for a full row of decoded objects up front, even though a session only
   ever touches the current map's tree-ancestry and a fraction of database
   rows. Table-open now only scans each row's chunk stream to capture its raw
-  byte span (seeking over payloads instead of reading them); `#[]`/`#each`
+  byte span (reading forward past payloads without decoding them); `#[]`/`#each`
   decode a row into an `Array1D` on first actual access and cache it in
   place, the same trick `Array1D#[]` already uses for its own nested chunks.
   `#[]=`/`#to_lcf` needed no changes -- they already handled a mixed
