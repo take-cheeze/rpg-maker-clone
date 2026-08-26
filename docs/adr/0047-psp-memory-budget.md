@@ -1307,25 +1307,64 @@ the interpreter-linking slice, in this order:
   directly) is now lazy too, via a `#summary` that reports a not-yet-loaded
   table's on-disk byte size instead of forcing a decode just to count it.**
 
-  **Open follow-up, deliberately not yet implemented: `LCF::Array2D` still
-  eagerly builds one `Array1D` object per row for an entire table the
-  instant it's decoded** (`mruby-lcf/mrblib/lcf.rb`'s `Array2D#initialize`)
-  -- applies to `.lmt`'s `map_properties` (one row per map in the project)
-  and every `Array2D` table in `.ldb` (items/actors/skills/enemies/troops/
-  animations/common_events/...), even though a session only ever touches
-  the current map's tree-ancestry and a fraction of database rows. This is
-  the same shape as the fixes above (materializing N objects when a
-  fraction are ever read), but riskier to land blind: unlike caching a
-  decode result, this means Array2D would need to store each row's raw
-  byte span instead of a materialized `Array1D`, decoding lazily on first
-  `#[]`/`#each` access -- new binary-format boundary-scanning logic, not
-  just deferred work, in a class whose byte-exact `#to_lcf` round-trip
-  real save/database files depend on. Not implemented without a way to
-  measure its actual payoff first (a real game's map-tree/database row
-  counts) and confirm no round-trip regression on real data -- both blocked
-  in the environment that did this investigation (no network path to the
-  test fixtures beyond what CI already fetches). Left as a scoped,
-  concrete option for whoever picks this up next, not a vague TODO.
+  **Further fixes (2026-08-26,
+  [#1374](https://github.com/take-cheeze/rpg-maker-clone/pull/1374)):
+  `LCF::Array2D` no longer builds one `Array1D` object per row for an
+  entire table the instant it's decoded** (`mruby-lcf/mrblib/lcf.rb`'s
+  `Array2D#initialize`) -- this applied to `.lmt`'s `map_properties` (one
+  row per map in the project) and every `Array2D` table in `.ldb`
+  (items/actors/skills/enemies/troops/animations/common_events/...), even
+  though a session only ever touches the current map's tree-ancestry and a
+  fraction of database rows. This was left as a deliberately-scoped open
+  follow-up above because, unlike caching a decode result, it meant
+  `Array2D` storing each row's raw byte span instead of a materialized
+  `Array1D` and decoding lazily on first `#[]`/`#each` access -- new
+  binary-format boundary-scanning logic in a class whose byte-exact
+  `#to_lcf` round-trip real save/database files depend on, not just
+  deferred work. Implemented by scanning (not decoding) each row's chunk
+  stream at table-open time -- walking the same id/len structure
+  `Array1D#initialize` already does -- and capturing the byte span (id
+  through the id-0 terminator, inclusive) as a raw String. `#[]`/`#each`
+  decode a row's span into an `Array1D` on first access and replace it in
+  place, the same in-place-cache trick `Array1D#[]` already uses for its
+  own nested chunks; `#[]=`/`#to_lcf` needed no changes at all, since they
+  already handled a mixed String/`Array1D` entry polymorphically -- an
+  untouched row now round-trips as a direct byte passthrough instead of a
+  decode-then-reencode, which is faster as well as smaller.
+
+  **A first version used `StringIO#seek`/`IO::SEEK_CUR` to skip over each
+  chunk's payload instead of reading it, confirmed present in this mruby
+  build via the C source -- and passed every local check (StringIO-backed,
+  CRuby). CI's `build` job caught what the local check couldn't: booting
+  Nepheshel and a second real project both failed immediately with
+  `RuntimeError: truncated BER integer`, corrupting the stream from the
+  second row on whenever the table was opened from a real `File`, not a
+  `StringIO`.** mruby-io's `IO#seek` issues a raw `lseek` on the file
+  descriptor without correcting for bytes already pulled into its internal
+  read-ahead buffer but not yet consumed by the small buffered reads
+  `read_ber`'s `#getbyte` makes -- interleaving the two desyncs the logical
+  read position from the real one. `StringIO` has no such buffer, so a
+  StringIO-backed local check could not have caught this; it takes a
+  `File`-backed stream, which only CI's own fetched game fixtures provided.
+  Fixed by dropping `#seek` entirely: the scan now reads forward only,
+  re-emitting each id/len via `write_ber` as it goes (exactly what
+  `Array1D#to_lcf` already does for every chunk, so this changes nothing
+  about what "byte-exact" means for a real file, whose ids/lengths already
+  round-trip through `write_ber` unchanged -- see `write_ber`'s own
+  comment) instead of skip-and-rewind. Re-verified locally, including a new
+  `File`-backed (not just `StringIO`-backed) case exercising the same
+  forward-only path CI's failure was in: untouched-row passthrough,
+  touched-row decode-and-cache identity, sparse-table holes through
+  `#each`, an empty writable-from-scratch table, editing one row without
+  disturbing siblings, a nested `Array2D`-inside-`Array1D` field (the actor
+  parameter-table shape), and a real-`File` multi-row round-trip all pass;
+  `scripts/rpg2k_logic_check.rb` (1140 checks) and
+  `scripts/rpg2k_scene_check.rb` (929 checks) -- both of which exercise
+  `LCF::Database`/`LCF::MapTree`/`LCF::MapUnit` through real
+  Scene::Map/battle/event-command paths against synthetic RPG2000 fixtures
+  -- still pass unchanged. Real map-tree/database row counts and
+  arena-usage impact on Nepheshel are, as with every prior round in this
+  section, left to CI's own `psp-smoke-game` run to measure.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none

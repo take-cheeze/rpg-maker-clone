@@ -628,18 +628,33 @@ module LCF
       s = StringIO.new s if s.is_a? String
 
       @data = []
-      @scheme = schema
+      @schema = schema
 
       # An empty string builds an empty, writable table from scratch (populate
       # via #[]= then #to_lcf); a real chunk starts with a BER entry count.
       return if s.eof?
 
+      # Each row used to be decoded into an Array1D right here, so opening a
+      # table meant building N objects up front (one per project map, or per
+      # item/actor/skill/... row in the database) even though a session only
+      # ever touches a fraction of them -- the tree-ancestry maps, or whatever
+      # database rows the current scene reads. Only the row's raw byte span is
+      # captured now; #[] and #each decode it into an Array1D lazily, on first
+      # actual access, and keep the result (the same in-place-replace trick
+      # Array1D#[] uses for its own nested chunks).
       (0...LCF.read_ber(s)).each do
-        @data[LCF.read_ber s] = Array1D.new(s, schema)
+        idx = LCF.read_ber s
+        @data[idx] = read_row_bytes(s)
       end
     end
 
-    def [] idx ; @data[idx] end
+    # Decode (and cache) row +idx+ on first access; a row never read stays a
+    # raw byte span forever. nil for an id the table never had.
+    def [] idx
+      entry = @data[idx]
+      return entry unless entry.is_a? String
+      @data[idx] = Array1D.new(entry, @schema)
+    end
 
     # Store an entry (an Array1D, or its already-serialised bytes) at id +idx+,
     # so an authored table can be assembled and written back out via #to_lcf.
@@ -649,9 +664,13 @@ module LCF
     end
 
     # Iterate over defined (id, Array1D) entries; useful for walking event or
-    # actor tables that are sparsely populated.
+    # actor tables that are sparsely populated. Decodes each row it yields,
+    # same as #[] -- a full-table scan (e.g. searching common events by name)
+    # still pays for every row it actually visits, just no longer for the
+    # ones it doesn't.
     def each
-      @data.each_with_index do |v, i|
+      @data.size.times do |i|
+        v = self[i]
         yield i, v unless v.nil?
       end
     end
@@ -669,6 +688,40 @@ module LCF
         entry = @data[i]
         bytes = LCF.binstr(entry.is_a?(String) ? entry : entry.to_lcf)
         out = out + LCF.write_ber(i) + bytes
+      end
+      out
+    end
+
+    private
+
+    # Scan (without decoding) one row's chunk stream and return its raw bytes,
+    # from the first chunk id through the id-0 terminator inclusive --
+    # precisely the span Array1D#to_lcf(true) would itself produce, so handing
+    # it back out unread through #to_lcf is a byte-for-byte passthrough for a
+    # real file (write_ber always re-emits the same shortest encoding RPG_RT
+    # itself writes -- see write_ber's own comment). Walks the same id/len
+    # chunk structure Array1D#initialize does, forward-only: each id/len is
+    # read then re-emitted via write_ber (exactly what Array1D#to_lcf already
+    # does for every chunk, touched or not, so this changes nothing about
+    # what "byte-exact" means here) and each payload is read and appended
+    # rather than decoded, so this never touches cp932 conversion or nested
+    # Array1D/Array2D construction. Deliberately forward-only, no #seek: a
+    # `#seek(len, IO::SEEK_CUR)` skip here -- tried first -- desyncs mruby-io's
+    # read-ahead buffer against the real fd position when interleaved with
+    # read_ber's own small buffered reads (`#seek` issues a raw `lseek` on the
+    # fd without correcting for bytes already buffered-but-unconsumed), which
+    # silently corrupted every row after the first on a real `File`-backed
+    # stream (StringIO has no such buffer, so a local, String-only check
+    # missed it entirely -- confirmed by CI's real-game boot check).
+    def read_row_bytes s
+      out = String.new
+      loop do
+        break if s.eof?
+        idx = LCF.read_ber s
+        out = out + LCF.write_ber(idx)
+        break if idx == 0
+        len = LCF.read_ber s
+        out = out + LCF.write_ber(len) + s.read(len)
       end
       out
     end
